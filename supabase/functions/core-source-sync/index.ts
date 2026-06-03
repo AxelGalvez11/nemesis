@@ -84,6 +84,10 @@ import {
   fetchDrugsFda,
   type DrugsFdaFetchOpts,
 } from "./providers/drugs-fda.ts";
+import {
+  fetchOrangeBook,
+  type OrangeBookFetchOpts,
+} from "./providers/orange-book.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -108,6 +112,7 @@ interface SyncRequest {
     | OpenStaxBookFetchOpts
     | NcbiBookFetchOpts
     | DrugsFdaFetchOpts
+    | OrangeBookFetchOpts
     | { bulk: true };
   /** Skip embedding step (useful for content_hash-only refresh). */
   skip_embed?: boolean;
@@ -292,14 +297,10 @@ async function dispatchFetch(req: SyncRequest): Promise<NormalizedSource[]> {
         curatedDefault(req.opts, "cdc_mmwr", "public_domain", CDC_MMWR_PAGES),
       );
     case "fda_orange_book":
-      return fetchCuratedPages(
-        curatedDefault(
-          req.opts,
-          "fda_orange_book",
-          "fda_public",
-          FDA_ORANGE_PAGES,
-        ),
-      );
+      // Structured TE data via the companion parser (scripts/orange-book-ingest.ts),
+      // POSTed as opts.pre_parsed with skip_embed:true. The old FDA_ORANGE_PAGES
+      // HTML-hub scrape is retired — it carried no therapeutic-equivalence data.
+      return fetchOrangeBook(req.opts as OrangeBookFetchOpts);
     case "lactmed": {
       const opts = (req.opts ?? {}) as Record<string, unknown>;
       if (opts.book_id) {

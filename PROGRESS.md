@@ -43,7 +43,7 @@ supersedes correctly.
 
 ### Task status
 - [x] **CP1 — openFDA validated on ~10 seed drugs** (the prove-before-bulk gate) ✅
-- [ ] CP2 — Orange Book real data-file provider (`skip_embed`), proven on a few records
+- [x] CP2 — Orange Book real data-file provider (`skip_embed`), proven on a few records ✅
 - [ ] CP3 — Purple Book provider (`skip_embed`), proven on a few records
 - [ ] CP4 — confirm `clinicaltrials` + `pubmed_oa` + `rxnorm` fetch (AC5/AC6 not closable on labels alone)
 - [ ] CP5 — pricing projection table + NADAC refresh (build last)
@@ -82,3 +82,27 @@ concurrent `serve` + compile tipped Docker over). Recovered via force-quit → r
 (the corrupted `storage` volume failed health checks and aborted a full start; those
 services aren't needed for ingest/retrieve). Lesson applied: never run `db reset` + `serve`
 + compile concurrently; one heavy op at a time.
+
+#### CP2 — Orange Book provider ✅ (2026-06-03, local stack)
+Real FDA TE data, not the old HTML-hub scrape. The `fda_orange_book` dispatch was
+repurposed from `curated-pages`(FDA_ORANGE_PAGES) to the data-file provider
+`providers/orange-book.ts`. Heavy parse lives in the companion `scripts/orange-book-ingest.ts`
+(the drugs-fda house pattern) — the edge fn can't unzip+join ~70k rows in 60s.
+Reproduce: `deno run -A scripts/orange-book-ingest.ts --dir=<unzipped EOBZIP> --ingredients=…`
+
+- **Parser (real `~`-delimited files):** 48,215 products / 21,112 patents / 2,110
+  exclusivity → 2,730 ingredients; joins patents+exclusivity to products by
+  (Appl_No, Product_No), aggregates per ingredient. Spot-checks correct:
+  AMLODIPINE BESYLATE → 127 products, generic=true, TE=AB, 18 patents; AMOXICILLIN → 132
+  products, generic=true, TE=AB.
+- **Ingest (skip_embed):** 58 seed-related ingredients, 0 errors;
+  `core_sources` = `{openfda:10, fda_orange_book:58}`.
+- **skip_embed verified:** `core_source_chunks` stayed at **127 before and after** — structured
+  rows carry provenance/license/hash + structured `metadata`, ZERO chunks (no vector
+  pollution). Citeable via the source row (URL + `fda_public`).
+- **Structured metadata** (per ingredient): `generic_available`, `te_codes`,
+  `rld_trade_name`, `product_count`, `products[]` (TE/RLD/RS/strength/applicant/approval),
+  `patents[]` (no/expiry/use-code/flags), `exclusivity[]` — ready for the Phase-2 typed
+  projection + drug page (§12).
+- Note: `semaglutide` is a biologic → not in the Orange Book (belongs in the Purple Book,
+  CP3). Small-molecule seeds all present.
