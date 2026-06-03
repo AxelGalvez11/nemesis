@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build / cache
+.next/
+.turbo/
+dist/
+build/
+*.tsbuildinfo
+
+# Expo / React Native
+.expo/
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+*.orig.*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Supabase
+supabase/.temp/
+supabase/.branches/
+
+# OS / editor
+.DS_Store
+*.log
+.idea/
+.vscode/
