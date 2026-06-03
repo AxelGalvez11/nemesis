@@ -84,6 +84,18 @@ import {
   fetchDrugsFda,
   type DrugsFdaFetchOpts,
 } from "./providers/drugs-fda.ts";
+import {
+  fetchOrangeBook,
+  type OrangeBookFetchOpts,
+} from "./providers/orange-book.ts";
+import {
+  fetchPurpleBook,
+  type PurpleBookFetchOpts,
+} from "./providers/purple-book.ts";
+import {
+  fetchPricing,
+  type PricingFetchOpts,
+} from "./providers/pricing.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -108,6 +120,9 @@ interface SyncRequest {
     | OpenStaxBookFetchOpts
     | NcbiBookFetchOpts
     | DrugsFdaFetchOpts
+    | OrangeBookFetchOpts
+    | PurpleBookFetchOpts
+    | PricingFetchOpts
     | { bulk: true };
   /** Skip embedding step (useful for content_hash-only refresh). */
   skip_embed?: boolean;
@@ -292,14 +307,20 @@ async function dispatchFetch(req: SyncRequest): Promise<NormalizedSource[]> {
         curatedDefault(req.opts, "cdc_mmwr", "public_domain", CDC_MMWR_PAGES),
       );
     case "fda_orange_book":
-      return fetchCuratedPages(
-        curatedDefault(
-          req.opts,
-          "fda_orange_book",
-          "fda_public",
-          FDA_ORANGE_PAGES,
-        ),
-      );
+      // Structured TE data via the companion parser (scripts/orange-book-ingest.ts),
+      // POSTed as opts.pre_parsed with skip_embed:true. The old FDA_ORANGE_PAGES
+      // HTML-hub scrape is retired — it carried no therapeutic-equivalence data.
+      return fetchOrangeBook(req.opts as OrangeBookFetchOpts);
+    case "purple_book":
+      // FDA Purple Book licensed biologics (351a/351k, biosimilar/interchangeable,
+      // reference product). Structured data via scripts/purple-book-ingest.ts,
+      // POSTed as opts.pre_parsed with skip_embed:true.
+      return fetchPurpleBook(req.opts as PurpleBookFetchOpts);
+    case "cms_nadac":
+      // CMS NADAC pricing — coarse dataset-level provenance row (skip_embed).
+      // Per-NDC price series → Phase-2 drug_prices projection. "Average
+      // acquisition cost, not your out-of-pocket price."
+      return fetchPricing(req.opts as PricingFetchOpts);
     case "lactmed": {
       const opts = (req.opts ?? {}) as Record<string, unknown>;
       if (opts.book_id) {
