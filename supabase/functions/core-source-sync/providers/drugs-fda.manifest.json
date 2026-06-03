@@ -1,0 +1,173 @@
+{
+  "$schema": "./drugs-fda.manifest.schema.json",
+  "_doc": "Shared source-of-truth for the Drugs@FDA review-document crawler. Read by both the Deno provider (drugs-fda.ts) and the Node ingest script (scripts/drugs-fda-ingest.mjs).",
+  "_url_format": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/{year}/{nda}{suffix}.pdf",
+  "_doc_types": {
+    "clinpharm": "Clinical Pharmacology Biopharmaceutics Review",
+    "medical": "Medical Review",
+    "pharmacology": "Pharmacology Review",
+    "label": "Approved Prescribing Information (label PDF)"
+  },
+  "entries": [
+    {
+      "nda": "020702",
+      "drug_name": "Atorvastatin",
+      "generic_name": "atorvastatin calcium",
+      "year": 2009,
+      "therapeutic_area": "cardiology-lipid",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2009/020702Orig1s056.pdf"
+        }
+      ]
+    },
+    {
+      "nda": "021366",
+      "drug_name": "Rosuvastatin",
+      "generic_name": "rosuvastatin calcium",
+      "year": 2010,
+      "therapeutic_area": "cardiology-lipid",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2010/021366s016SumR.pdf"
+        }
+      ]
+    },
+    {
+      "nda": "202155",
+      "drug_name": "Apixaban",
+      "generic_name": "apixaban",
+      "year": 2012,
+      "therapeutic_area": "cardiology-anticoag",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2012/202155Orig1s000ClinPharmR.pdf"
+        }
+      ]
+    },
+    {
+      "nda": "202439",
+      "drug_name": "Rivaroxaban",
+      "generic_name": "rivaroxaban",
+      "year": 2011,
+      "therapeutic_area": "cardiology-anticoag",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2011/202439Orig1s000ClinPharmR.pdf"
+        }
+      ]
+    },
+    {
+      "nda": "204042",
+      "drug_name": "Canagliflozin",
+      "generic_name": "canagliflozin",
+      "year": 2013,
+      "therapeutic_area": "endocrine-dm",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2013/204042Orig1s000ClinPharmR.pdf"
+        }
+      ]
+    },
+    {
+      "nda": "204629",
+      "drug_name": "Empagliflozin",
+      "generic_name": "empagliflozin",
+      "year": 2014,
+      "therapeutic_area": "endocrine-dm",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2014/204629Orig1s000ClinPharmR.pdf"
+        }
+      ]
+    },
+    {
+      "nda": "021995",
+      "drug_name": "Sitagliptin",
+      "generic_name": "sitagliptin phosphate",
+      "year": 2006,
+      "therapeutic_area": "endocrine-dm",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2006/021995s000_ClinPharmR.pdf"
+        }
+      ]
+    },
+    {
+      "nda": "209637",
+      "drug_name": "Semaglutide",
+      "generic_name": "semaglutide",
+      "year": 2017,
+      "therapeutic_area": "endocrine-dm",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2017/209637Orig1s000ClinPharmR.pdf"
+        },
+        {
+          "type": "medical",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2017/209637Orig1s000MedR.pdf"
+        }
+      ]
+    },
+    {
+      "nda": "021427",
+      "drug_name": "Duloxetine",
+      "generic_name": "duloxetine hydrochloride",
+      "year": 2007,
+      "therapeutic_area": "psych",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2007/021427Orig1s015_s017.pdf"
+        }
+      ]
+    },
+    {
+      "nda": "022512",
+      "drug_name": "Dabigatran",
+      "generic_name": "dabigatran etexilate mesylate",
+      "year": 2010,
+      "therapeutic_area": "cardiology-anticoag",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2010/022512Orig1s000ClinPharmR.pdf"
+        }
+      ]
+    },
+    {
+      "nda": "022433",
+      "drug_name": "Ticagrelor",
+      "generic_name": "ticagrelor",
+      "year": 2011,
+      "therapeutic_area": "cardiology-antiplatelet",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2011/022433Orig1s000ClinPharmR.pdf"
+        }
+      ]
+    },
+    {
+      "nda": "022307",
+      "drug_name": "Prasugrel",
+      "generic_name": "prasugrel",
+      "year": 2009,
+      "therapeutic_area": "cardiology-antiplatelet",
+      "docs": [
+        {
+          "type": "clinpharm",
+          "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2009/022307s000_SumR.pdf"
+        }
+      ]
+    }
+  ]
+}
