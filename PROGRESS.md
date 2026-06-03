@@ -45,7 +45,7 @@ supersedes correctly.
 - [x] **CP1 — openFDA validated on ~10 seed drugs** (the prove-before-bulk gate) ✅
 - [x] CP2 — Orange Book real data-file provider (`skip_embed`), proven on a few records ✅
 - [x] CP3 — Purple Book provider (`skip_embed`), proven on a few records ✅
-- [ ] CP4 — confirm `clinicaltrials` + `pubmed_oa` + `rxnorm` fetch (AC5/AC6 not closable on labels alone)
+- [x] CP4 — confirm `clinicaltrials` + `pubmed_oa` + `rxnorm` fetch (AC5/AC6 not closable on labels alone) ✅
 - [ ] CP5 — pricing projection table + NADAC refresh (build last)
 - [ ] CP6 — 100-entity / 10-class seed ingest (only after all providers proven)
 - [ ] CP7 — pg_cron refresh jobs (§10)
@@ -130,3 +130,15 @@ Reproduce: `deno run -A scripts/purple-book-ingest.ts --file=<purplebook.csv> --
 - Migration `0108` applied locally via `supabase migration up` (insert success proves the
   `purple_book` enum value is live). Pricing's `cms_nadac` value is added here too (used by
   CP5's coarse dataset-level provenance row).
+
+#### CP4 — clinicaltrials / pubmed_oa / rxnorm confirmed ✅ (2026-06-03, local stack)
+The Phase-1 gate is AC4 **and** AC5/AC6, so labels alone don't close it. These three
+forked providers fetch live and embed prose (real chunks — NOT skip_embed):
+- `clinicaltrials` (query "semaglutide", pageSize 5): fetched 5, ingested 5, **30 chunks** → AC5.
+- `pubmed_oa` (query "metformin lactic acidosis", retmax 3): fetched 3, ingested 3, **7 chunks** → AC6.
+- `rxnorm` (name "lisinopril"): fetched 1, ingested 1, 2 chunks.
+
+Corpus now spans 6 providers: `{openfda:10, fda_orange_book:58, purple_book:78, clinicaltrials:5,
+pubmed_oa:3, rxnorm:1}`; `core_source_chunks` 127 → **166** (the +39 from CT/PubMed/RxNorm
+confirms prose embeds while Orange/Purple stay chunk-free). Full AC5/AC6 *acceptance*
+(drug-page panels, /ask summaries) lands in Phases 2–3; the corpus side is proven here.
