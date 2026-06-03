@@ -48,7 +48,7 @@ supersedes correctly.
 - [x] CP4 — confirm `clinicaltrials` + `pubmed_oa` + `rxnorm` fetch (AC5/AC6 not closable on labels alone) ✅
 - [x] CP5 — CMS NADAC source + coarse provenance row (per-NDC projection → Phase 2) ✅
 - [x] CP6 — 100-entity / 10-class seed ingest → CLOUD (only after all providers proven) ✅
-- [ ] CP7 — pg_cron refresh jobs (§10)
+- [~] CP7 — refresh automation **re-scoped → Phase 2 as a scheduled host-runner** (pg_cron is the wrong tool; see note)
 
 ### Evidence log
 
@@ -199,4 +199,34 @@ the structured sources (full).
   Layer-B schema (Phase 2) — in Phase 1 the classes are represented by their seeded member
   drugs.
 
-#### Phase 1 nearly closed: only CP7 (pg_cron refresh) remains before the PR.
+#### Cloud supersession (other half of the §13 gate) ✅ (2026-06-03, cloud)
+Re-proven on cloud (CP1 proved it locally on the now-abandoned local DB): re-ingest
+lisinopril unchanged → `{ingested:0, skipped_unchanged:1}`; PATCH `content_hash` (204) +
+re-ingest → `{ingested:1, chunk_count:13}` (old chunks wiped + re-embedded). Gate evidence
+now lives where the corpus does.
+
+#### CP7 re-scope — refresh automation → Phase 2 host-runner (NOT pg_cron)
+pg_cron is the wrong tool here: (1) it can only `net.http_post` the edge function, so it
+**cannot** drive the Orange/Purple/NADAC refreshes, which run in host companion scripts
+(download+unzip+parse, deliberately outside the 60s edge budget); (2) the query refreshes
+(openFDA/CT/PubMed) need the entity list = `drug_entities`, which is Phase-2 schema.
+Building Vault+pg_cron now = a security-sensitive in-DB secret + half-coverage job that
+gets rewritten in Phase 2. Decision: refresh = ONE scheduled **host runner** (e.g. a
+GitHub Action with the service key as a CI secret) that runs the existing idempotent
+scripts (`seed-ingest.ts` + the 3 companions) on a cadence — covers query AND structured
+providers, no in-DB secret. Sequenced into Phase 2.
+
+#### Phase-2 corpus-quality follow-ups (logged, not gate issues)
+- openFDA `limit:1` sometimes grabs a combo product (metformin→ZITUVIMET, lisinopril→+HCTZ).
+  Prefer monotherapy labels / ingest >1 label per drug in Phase 2 entity-linking.
+- Orange Book 2729/2730 & Purple Book 647/648 off-by-one: a blank/null name skipped in
+  normalize. Cosmetic; not chased.
+
+---
+
+## ✅ PHASE 1 COMPLETE — gate met with cloud evidence. Phase-1 PR opened.
+§13 acceptance: **corpus retrievable + cited** (10/10 cross-entity recall on cloud at 4,162
+chunks; every chunk carries provider/license/url) **and changed-label supersession** (cloud,
+above). Corpus: 4,192 sources / 4,162 chunks across 7 providers, live on
+`qyjmivntajbigjswhahb`. Next: Phase 2 (domain tables §4, A↔B bridge §5, entity-linking,
+`/search`, `/drugs/{id}`) against the merged Phase-1 substrate.
