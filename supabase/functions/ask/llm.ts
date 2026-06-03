@@ -115,7 +115,7 @@ export async function callTool<T>(
   apiKey: string,
 ): Promise<{ input: T; model: string; usage?: Usage }> {
   let lastErr = "no attempts";
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 5; attempt++) {
     const res = await chat(
       { ...params, tool_choice: { type: "function", function: { name: toolName } } },
       apiKey,

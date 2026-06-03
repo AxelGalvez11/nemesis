@@ -162,14 +162,23 @@ async function runAsk(
   // ---- 4. health context (verified-user-scoped) ----
   const healthContext = useHealthContext ? await loadHealthContext(userId) : null;
 
-  // ---- 5. generate ----
-  const gen = await generate({
-    question,
-    intent: cls.intent,
-    chunks: ret.chunks,
-    healthContext,
-    apiKey,
-  });
+  // ---- 5. generate (graceful: a total LLM failure degrades to a cited refusal,
+  //         never a user-facing 500) ----
+  let gen: Awaited<ReturnType<typeof generate>>;
+  try {
+    gen = await generate({
+      question,
+      intent: cls.intent,
+      chunks: ret.chunks,
+      healthContext,
+      apiKey,
+    });
+  } catch (e) {
+    console.error("ask generate failed after retries:", (e as Error).message);
+    return await finalizeTemplate(answerId, question, cls.intent,
+      unique<SafetyFlag>([...flags, "no_sources_found"]), entities, userId,
+      "no_source", `${cls.model}|generate_failed`, true, ret.chunks);
+  }
   const modelName = `${cls.model}|${gen.model}`;
 
   // ---- 6a. post-generation safety filter (the doc-20 guarantee) ----

@@ -60,7 +60,9 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
       // Multi-point cited answers can be long; 2048 truncated the JSON mid-string
       // (DeepSeek then returned malformed tool arguments). 4096 leaves headroom.
       max_tokens: 4096,
-      temperature: 0.2,
+      // Deterministic generation: more reliable structured output + reproducible
+      // answers for a medical app (and lower malformed-JSON rate from DeepSeek).
+      temperature: 0,
       system: generateSystem(opts.intent),
       tools: [GENERATE_TOOL],
       messages: [{ role: "user", content: userContent }],
