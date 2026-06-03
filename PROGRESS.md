@@ -46,7 +46,7 @@ supersedes correctly.
 - [x] CP2 — Orange Book real data-file provider (`skip_embed`), proven on a few records ✅
 - [x] CP3 — Purple Book provider (`skip_embed`), proven on a few records ✅
 - [x] CP4 — confirm `clinicaltrials` + `pubmed_oa` + `rxnorm` fetch (AC5/AC6 not closable on labels alone) ✅
-- [ ] CP5 — pricing projection table + NADAC refresh (build last)
+- [x] CP5 — CMS NADAC source + coarse provenance row (per-NDC projection → Phase 2) ✅
 - [ ] CP6 — 100-entity / 10-class seed ingest (only after all providers proven)
 - [ ] CP7 — pg_cron refresh jobs (§10)
 
@@ -142,3 +142,33 @@ Corpus now spans 6 providers: `{openfda:10, fda_orange_book:58, purple_book:78, 
 pubmed_oa:3, rxnorm:1}`; `core_source_chunks` 127 → **166** (the +39 from CT/PubMed/RxNorm
 confirms prose embeds while Orange/Purple stay chunk-free). Full AC5/AC6 *acceptance*
 (drug-page panels, /ask summaries) lands in Phases 2–3; the corpus side is proven here.
+
+#### CP5 — CMS NADAC pricing source ✅ (2026-06-03, local stack)
+New provider `providers/pricing.ts` (`cms_nadac`, enum from migration 0108, license
+`public_domain`). The weekly NADAC file is a ~666k-row per-NDC TIME SERIES, so per the
+advisor it is NOT stored per-NDC in `core_sources` (would churn supersession). Layer A
+holds ONE coarse dataset-level provenance row; the per-NDC price series → a Phase-2
+`drug_prices` projection table. Companion `scripts/pricing-ingest.ts` resolves the current
+CSV URL from the data.medicaid.gov DKAN API (rotates weekly) and POSTs the descriptor.
+Reproduce: `deno run -A scripts/pricing-ingest.ts`
+
+- **DKAN resolve:** NADAC 2026 → download_url (06-03-2026 file), `as_of_date=2026-06-03`,
+  dataset modified `2026-06-02`, source page (dataset id `fbb83258-…`).
+- **Ingest (skip_embed):** 1 provenance row, 0 chunks; `core_source_chunks` still **166**;
+  `core_sources` now 7 providers incl. `cms_nadac:1`. `provider_id="cms-nadac-weekly"`
+  (stable → content_hash carries as-of date → supersedes weekly).
+- **Disclaimer enforced** (goal requirement): metadata `pricing_basis=average_acquisition_cost`,
+  `disclaimer="NADAC is the average price pharmacies pay … NOT your out-of-pocket or cash
+  price."` PUBLIC CMS data only — no GoodRx/scraped feeds.
+- **Deferred to Phase 2:** `drug_prices` projection (NADAC Per Unit + generic-equivalent
+  price keyed by NDC/RxCUI), built with the rest of the §4 domain schema.
+
+---
+
+### Phase 1 status: corpus providers DONE (CP1–CP5). Remaining: CP6 (100-seed), CP7 (pg_cron) → Phase-1 PR.
+All 5 source-provider checkpoints proven locally + committed to `phase-1-corpus`. Corpus
+spans 7 providers; structured FDA/CMS data is `skip_embed` (citeable, not vector-polluting),
+prose embeds. Next: extract the doc-05 seed list (100 entities / 10 classes), run the seed
+ingest (validate locally → push to cloud `qyjmivntajbigjswhahb`), add pg_cron refresh (§10),
+then open the Phase-1 PR. Open question for the operator: run the 100-seed + ongoing work
+locally (Docker has been flaky) or against cloud.

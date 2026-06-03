@@ -92,6 +92,10 @@ import {
   fetchPurpleBook,
   type PurpleBookFetchOpts,
 } from "./providers/purple-book.ts";
+import {
+  fetchPricing,
+  type PricingFetchOpts,
+} from "./providers/pricing.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -118,6 +122,7 @@ interface SyncRequest {
     | DrugsFdaFetchOpts
     | OrangeBookFetchOpts
     | PurpleBookFetchOpts
+    | PricingFetchOpts
     | { bulk: true };
   /** Skip embedding step (useful for content_hash-only refresh). */
   skip_embed?: boolean;
@@ -311,6 +316,11 @@ async function dispatchFetch(req: SyncRequest): Promise<NormalizedSource[]> {
       // reference product). Structured data via scripts/purple-book-ingest.ts,
       // POSTed as opts.pre_parsed with skip_embed:true.
       return fetchPurpleBook(req.opts as PurpleBookFetchOpts);
+    case "cms_nadac":
+      // CMS NADAC pricing — coarse dataset-level provenance row (skip_embed).
+      // Per-NDC price series → Phase-2 drug_prices projection. "Average
+      // acquisition cost, not your out-of-pocket price."
+      return fetchPricing(req.opts as PricingFetchOpts);
     case "lactmed": {
       const opts = (req.opts ?? {}) as Record<string, unknown>;
       if (opts.book_id) {
