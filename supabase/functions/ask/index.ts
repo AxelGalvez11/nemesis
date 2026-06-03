@@ -126,15 +126,30 @@ async function runAsk(
   const scopeId = resolvedIds.length === 1 ? resolvedIds[0] : null; // 2+ entities -> broad
 
   // ---- 3. retrieve ----
-  const ret = await retrieve({
+  const priority = providerPriorityForIntent(cls.intent);
+  let ret = await retrieve({
     question,
-    providers: providerPriorityForIntent(cls.intent),
+    providers: priority,
     entityId: scopeId,
     threshold: ASK_MATCH_THRESHOLD,
     matchCount: MATCH_COUNT,
     sbUrl: SB_URL,
     serviceKey: SERVICE_KEY,
   });
+  // An investigational drug (e.g. retatrutide) has no FDA label, so a label-first
+  // priority returns nothing though its trials/PubMed sources exist. Fall back to
+  // all providers before refusing.
+  if (ret.chunks.length === 0 && priority !== null) {
+    ret = await retrieve({
+      question,
+      providers: null,
+      entityId: scopeId,
+      threshold: ASK_MATCH_THRESHOLD,
+      matchCount: MATCH_COUNT,
+      sbUrl: SB_URL,
+      serviceKey: SERVICE_KEY,
+    });
+  }
 
   if (ret.chunks.length === 0) {
     return await finalizeTemplate(answerId, question, cls.intent,

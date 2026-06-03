@@ -113,6 +113,10 @@ export async function callTool<T>(
   try {
     input = parseToolArguments(call.function.arguments) as T;
   } catch {
+    const raw = String(call.function.arguments ?? "");
+    console.error(
+      `tool '${toolName}' invalid JSON (finish_reason=${res.choices[0]?.finish_reason}, len=${raw.length}): ${raw.slice(0, 700)}`,
+    );
     throw new Error(`tool '${toolName}' arguments were not valid JSON`);
   }
   return { input, model: res.model, usage: res.usage };
