@@ -111,9 +111,31 @@ export async function callTool<T>(
   }
   let input: T;
   try {
-    input = JSON.parse(call.function.arguments) as T;
+    input = parseToolArguments(call.function.arguments) as T;
   } catch {
     throw new Error(`tool '${toolName}' arguments were not valid JSON`);
   }
   return { input, model: res.model, usage: res.usage };
+}
+
+/**
+ * Parse a function-call arguments string. DeepSeek occasionally wraps the JSON
+ * in ```json fences or appends prose; strip those and extract the object. A
+ * genuinely truncated payload still throws (surfaced as a 500, the honest
+ * signal that max_tokens was too low).
+ */
+function parseToolArguments(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // ignore — fall through to recovery
+  }
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = (fenced ? fenced[1] : raw).trim();
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    return JSON.parse(candidate.slice(start, end + 1));
+  }
+  return JSON.parse(candidate); // throws -> caller reports invalid JSON
 }

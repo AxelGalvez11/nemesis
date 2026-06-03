@@ -92,3 +92,13 @@ Deno.test("enforce: plain_english_summary echoes the (supported) bottom line", (
   const r = enforceCitations(base());
   assert(r.plain_english_summary.includes("SSRI"));
 });
+
+Deno.test("enforce: a point with a missing citations array does not throw", () => {
+  // DeepSeek can omit the (schema-required) citations field; must not crash.
+  const inp = base();
+  // deno-lint-ignore no-explicit-any
+  (inp.what_we_know as any).push({ text: "Unsourced extra claim." });
+  const r = enforceCitations(inp);
+  assertEquals(r.refusedUnsupported, false);
+  assert(!r.answer_sections.what_we_know.some((p) => p.text.includes("Unsourced extra")));
+});

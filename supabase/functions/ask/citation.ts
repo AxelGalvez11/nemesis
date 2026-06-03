@@ -53,6 +53,7 @@ export interface EnforceResult {
 
 /** Keep only tags that map to a real retrieved chunk; preserve order, dedupe. */
 function validTags(citations: string[], valid: Set<string>): string[] {
+  if (!Array.isArray(citations)) return []; // model may omit the array entirely
   const seen = new Set<string>();
   const out: string[] = [];
   for (const t of citations) {

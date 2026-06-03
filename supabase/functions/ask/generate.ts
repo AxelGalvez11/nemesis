@@ -54,10 +54,12 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
     healthBlock +
     `\n\nCompose the answer using compose_answer. Every factual sentence must carry the [n] tag(s) that support it.`;
 
-  const { input, model } = await callTool<RawAnswer>(
+  const { input, model } = await callTool<Record<string, unknown>>(
     {
       model: GENERATE_MODEL,
-      max_tokens: 2048,
+      // Multi-point cited answers can be long; 2048 truncated the JSON mid-string
+      // (DeepSeek then returned malformed tool arguments). 4096 leaves headroom.
+      max_tokens: 4096,
       temperature: 0.2,
       system: generateSystem(opts.intent),
       tools: [GENERATE_TOOL],
@@ -67,15 +69,42 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
     opts.apiKey,
   );
 
+  // Normalize defensively: DeepSeek does not enforce the schema's `required`, so
+  // a point can arrive without a citations array (or text). Guarantee the shape
+  // here so downstream enforcement never sees a malformed field.
   return {
     raw: {
-      bottom_line: input.bottom_line ?? { text: "", citations: [] },
-      what_we_know: input.what_we_know ?? [],
-      what_we_do_not_know: input.what_we_do_not_know ?? [],
-      safety_notes: input.safety_notes ?? [],
-      questions_to_ask: input.questions_to_ask ?? [],
-      evidence_grade: input.evidence_grade ?? "unknown",
+      bottom_line: normPoint(input.bottom_line),
+      what_we_know: normPoints(input.what_we_know),
+      what_we_do_not_know: normPoints(input.what_we_do_not_know),
+      safety_notes: normPoints(input.safety_notes),
+      questions_to_ask: normStrings(input.questions_to_ask),
+      evidence_grade: normGrade(input.evidence_grade),
     },
     model,
   };
+}
+
+const GRADES = new Set<EvidenceGrade>([
+  "very_strong", "strong", "moderate", "weak", "very_weak", "unknown", "not_applicable",
+]);
+
+function normPoint(p: unknown): RawPoint {
+  const o = (p ?? {}) as { text?: unknown; citations?: unknown };
+  return {
+    text: typeof o.text === "string" ? o.text : "",
+    citations: Array.isArray(o.citations) ? o.citations.map((c) => String(c)) : [],
+  };
+}
+
+function normPoints(a: unknown): RawPoint[] {
+  return Array.isArray(a) ? a.map(normPoint) : [];
+}
+
+function normStrings(a: unknown): string[] {
+  return Array.isArray(a) ? a.filter((x): x is string => typeof x === "string") : [];
+}
+
+function normGrade(g: unknown): EvidenceGrade {
+  return typeof g === "string" && GRADES.has(g as EvidenceGrade) ? (g as EvidenceGrade) : "unknown";
 }
