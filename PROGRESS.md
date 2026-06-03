@@ -230,3 +230,131 @@ chunks; every chunk carries provider/license/url) **and changed-label supersessi
 above). Corpus: 4,192 sources / 4,162 chunks across 7 providers, live on
 `qyjmivntajbigjswhahb`. Next: Phase 2 (domain tables §4, A↔B bridge §5, entity-linking,
 `/search`, `/drugs/{id}`) against the merged Phase-1 substrate.
+
+---
+
+## Phase 2 — Domain + search 🚧 IN PROGRESS (branch `phase-2-domain`)
+
+**Goal:** typed Layer-B catalog on top of the corpus — §4 tables, §5 A↔B bridge,
+entity-linking, `/search` (FTS+trgm+aliases), `/drugs/{id}` (+label/trials/pubmed) read
+RPCs, `drug_prices` (NADAC). **Gate (§13): AC1/AC4/AC5/AC6** — "ozempic" → semaglutide page
+renders label sections + ClinicalTrials + PubMed, **all cited**; search resolves brand/
+generic/alias. All work + validation on cloud (`qyjmivntajbigjswhahb`).
+
+### Decisions locked this phase (advisor-reviewed before writing)
+- **`drug_entities.normalized_name` is a UNIQUE upsert key.** The entity-linker re-runs
+  (it doubles as the Phase-5 refresh runner); without a unique key it duplicates entities
+  and fragments a drug page across copies. `canonical_name` = display.
+- **Canonicalize by salt-stripped ingredient name, not RxCUI.** openFDA `rxcui[]` are
+  product/SCD-level, Orange Book has none — the levels don't line up. Seed (manifest) names
+  are NOT salt-stripped (`creatine` vs `creatine monohydrate` must stay distinct); only the
+  CORPUS tail is (`ATORVASTATIN CALCIUM` → atorvastatin). Plus route/form stripping
+  (`ORAL SEMAGLUTIDE` → semaglutide) + containment fallback vs curated names. RxCUI is a
+  secondary signal stamped onto the entity.
+- **Brand aliases come from Orange Book `products[].trade_name` + openFDA `brand_names` +
+  Purple Book `proprietary_names`** → "ozempic"/"wegovy"/"rybelsus" all resolve to
+  semaglutide even though the single seeded openFDA label is *Rybelsus/oral*.
+- **"Cited" is enforced in the read-RPC payload, not just an FK.** `get_drug_label/trials/
+  pubmed` JOIN `core_sources` and return `citation_url`/`license`/`retrieved_at`.
+- **Read RPCs are `SECURITY DEFINER` and validated as an authenticated end-user**, not the
+  service key (service_role bypasses RLS + has blanket grants → would not exercise the real
+  app path). `scripts/phase2-validate.ts` mints a throwaway `*.test` user, signs in for a
+  role=authenticated JWT, and runs the §8 reads with it.
+- **`filter_drug_entity` on `match_core_source_chunks` deferred to Phase 3** (only /ask
+  exercises it). The `drug_entity_sources` bridge table is built now; the optional retriever
+  arg + metadata stamp land with /ask so an untested signature change doesn't ship.
+- **`publication_types` (RCT/SR/meta) + trial results-posted date are empty corpus-wide** —
+  the providers never extracted them. Not needed for AC6; logged as a **Phase-4 backfill**
+  for the §9 evidence engine.
+
+### Task status
+- [x] **CP1 — migrations `0109` (domain schema + RLS) + `0110` (bridge + read RPCs) pushed to cloud** ✅
+- [x] CP2 — entity-linker; prove-before-bulk on 10 anchors; **AC1/4/5/6 pass as authenticated** ✅
+- [x] CP3 — bulk-link full corpus (3,011 entities incl. Orange/Purple tail) ✅
+- [x] CP4 — 10 classes (+GLP-1) + memberships seeded ✅
+- [x] CP5 — `drug_prices` NADAC join (best-effort, non-blocking) ✅
+
+### Evidence log
+
+#### CP1 — schema + bridge + reads on cloud ✅ (2026-06-03, `qyjmivntajbigjswhahb`)
+`supabase db push` applied `0109` + `0110` clean (only a benign "schema extensions already
+exists" NOTICE). pg_trgm resolved (the `extensions.gin_trgm_ops` trgm indexes built; if the
+extension were missing the `CREATE INDEX` would have failed). REST verified all 15 new tables
+return 200 and `search_entities` RPC returns 200/`[]` empty. Migration list: local==remote
+through `0110`.
+
+#### CP2/CP3 — entity-linking (cloud) ✅ (2026-06-03)
+`scripts/entity-link.ts` (host-side, supabase-js, idempotent, `--bulk` / default-anchors).
+Prove-before-bulk first (the Phase-1 CP1 discipline): linked the 10 anchor drugs + projections,
+validated, THEN bulk-linked all 4,192 sources.
+
+- **Bulk catalog (cloud, exact counts):** `drug_entities` **3,011** (105 curated manifest +
+  2,906 Orange/Purple tail for search breadth), `drug_aliases` **8,585**,
+  `drug_entity_sources` **3,548**, `label_documents` **85**, `clinical_trials` **379**,
+  `pubmed_articles` **264**, `drug_entity_trials` **571**, `drug_entity_pubmed` **702**,
+  `drug_classes` **11**, `drug_class_memberships` **52**. Bulk run 48 s, 0 errors.
+- **Bug found + fixed by prove-before-bulk (exactly its purpose):** (1) manifest
+  `type:"investigational"` isn't a valid `entity_type` (it's a status) → map investigational
+  → entity_type=drug/status=investigational. (2) semaglutide's openFDA label `generic_names`
+  = `["ORAL SEMAGLUTIDE"]` didn't reduce to "semaglutide" → label never linked, AC4 failed →
+  added route/form stripping + curated-name containment. Both caught on the 10-anchor gate,
+  before the 4,192 bulk.
+
+#### Phase-2 acceptance gate — AC1/AC4/AC5/AC6 ✅ (2026-06-03, cloud, **as authenticated user**)
+`scripts/phase2-validate.ts` — signs in as a role=authenticated JWT, runs the §8 reads:
+- **AC1** `search_entities("ozempic")` → **Semaglutide** (brand-alias resolution);
+  `search("semaglutide")` → same. Spot-checks: lipitor→Atorvastatin, glucophage→Metformin,
+  humira→Adalimumab, zoloft→Sertraline, prinivil→Lisinopril, acetaminophen→Acetaminophen.
+- **AC4** `get_drug_label(semaglutide)` → 8 extracted sections (boxed_warning, indications,
+  contraindications-class, adverse_reactions, …) **+ citation** (`openfda` / `fda_public` / url).
+- **AC5** `get_drug_trials` → 11 ClinicalTrials studies, **every row carries `citation_url`**
+  (e.g. NCT07527195 → clinicaltrials.gov/study/NCT07527195).
+- **AC6** `get_drug_pubmed` → 12 PubMed articles, **every row carries `citation_url`**
+  (e.g. PMID 42213650 → pubmed.ncbi.nlm.nih.gov).
+- **overview** `get_drug` → counts {labels≥1, trials, pubmed} + cited Layer-A `sources[]`.
+- Re-validated unchanged after the bulk link (idempotent). Second entity atorvastatin/lipitor
+  also passes all four. Reproduce: `SB_URL=.. SERVICE_KEY=.. ANON_KEY=.. deno run -A
+  scripts/phase2-validate.ts [--entity=.. --brand=..]`.
+
+#### CP5 — drug_prices (NADAC per-NDC) ✅ best-effort (2026-06-03, cloud)
+`scripts/price-link.ts` streams the current NADAC CSV (DKAN-resolved, 06-03-2026, 666,275
+rows), normalizes NDCs to 11-digit, joins the 9-digit labeler+product prefix to openFDA label
+NDCs → entities. **3,169 price rows inserted, all entity-linked** (e.g. Rivaroxaban 418 NDCs,
+Simvastatin 264, Rosuvastatin 64). NADAC framed as average *acquisition* cost (not
+out-of-pocket) on the `cms_nadac` source row. Coverage is partial by design (only drugs whose
+openFDA label NDCs intersect NADAC); non-AC, non-blocking.
+
+#### CP6 — code review + security hardening ✅ (2026-06-03)
+`code-reviewer` agent over the 5 new files: **0 CRITICAL, 2 HIGH, 2 MEDIUM, 1 LOW**. RLS
+model, SECURITY-DEFINER scoping (zero user-table reads), and SQL-injection posture all PASS.
+Fixed before commit:
+- **HIGH — alias needle-index truncation** (`entity-link.ts`): the trial/pubmed linker built
+  its match index from a bare `.select()` on `drug_aliases`, silently capped at PostgREST's
+  1000 rows (table = 8,585) → links under-counted on `--bulk`/refresh while the 10-anchor gate
+  stayed green. Now paginates via `loadAll`. Re-ran bulk → links recovered (trials 571→**587**,
+  pubmed 702→**709**).
+- **HIGH — persistent test user** (`phase2-validate.ts`): was a fixed `*.test` email + repo-known
+  password, never deleted. Now a unique email + `crypto.randomUUID()` password per run, **deleted
+  in a `finally` teardown**.
+- **MEDIUM — swallowed write errors** (`entity-link.ts`): memberships / rxcui / mechanism updates
+  now `if (error) throw` like the rest of the file (data-integrity posture).
+- **Security boundary (found in validation, migrations `0111`+`0112`):** the SECURITY-DEFINER
+  read RPCs were callable by **anon** — Postgres' default `PUBLIC` execute grant, plus Supabase's
+  `ALTER DEFAULT PRIVILEGES ... TO anon` at function creation. `0111` revoked PUBLIC (insufficient
+  — anon had a direct grant), `0112` revoked from `anon` explicitly. Verified: anon →
+  **HTTP 401 permission denied** on `search_entities` + `match_core_source_chunks`; authenticated
+  → still PASS. Matches the documented "authenticated read" model; guest mode becomes a
+  deliberate future grant, not an accidental default.
+
+#### Notes / follow-ups (logged, not gate issues)
+- Phase-4 backfill: `pubmed_articles.publication_types` + trial `results_first_posted` (needed
+  by the §9 evidence engine, not by Phase 2; the providers never extracted them).
+- Tail entities (2,906) are lower-fidelity by design (Orange/Purple structured only, often
+  empty drug pages = the doc-06 "no label" state) — they exist for AC1 search breadth.
+- LOW (review): `get_drug_label` has no `LIMIT` (siblings do). Practical risk minimal
+  (labels/entity is tiny); add a cap when the RPC family is next revised.
+- MEDIUM (review, repo-wide/pre-existing): SECURITY-DEFINER `search_path = public, extensions`
+  mirrors `0105`/`0107`; relies on `authenticated` lacking `CREATE` on `public` (Supabase
+  default). Harden repo-wide if ever in doubt.
+- Guest mode (doc-06): currently true-anon is DENIED. Decide in Phase 3/6 whether guest =
+  Supabase anonymous sign-in (role=authenticated) or a deliberate `anon` grant. (§8)
