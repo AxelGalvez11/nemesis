@@ -47,7 +47,7 @@ supersedes correctly.
 - [x] CP3 — Purple Book provider (`skip_embed`), proven on a few records ✅
 - [x] CP4 — confirm `clinicaltrials` + `pubmed_oa` + `rxnorm` fetch (AC5/AC6 not closable on labels alone) ✅
 - [x] CP5 — CMS NADAC source + coarse provenance row (per-NDC projection → Phase 2) ✅
-- [ ] CP6 — 100-entity / 10-class seed ingest (only after all providers proven)
+- [x] CP6 — 100-entity / 10-class seed ingest → CLOUD (only after all providers proven) ✅
 - [ ] CP7 — pg_cron refresh jobs (§10)
 
 ### Evidence log
@@ -172,3 +172,31 @@ prose embeds. Next: extract the doc-05 seed list (100 entities / 10 classes), ru
 ingest (validate locally → push to cloud `qyjmivntajbigjswhahb`), add pg_cron refresh (§10),
 then open the Phase-1 PR. Open question for the operator: run the 100-seed + ongoing work
 locally (Docker has been flaky) or against cloud.
+
+#### CP6 — 100-entity seed ingest → CLOUD ✅ (2026-06-03, project qyjmivntajbigjswhahb)
+Operator chose cloud (local Docker flaky). Cloud prep: `db push` (migration 0108) +
+`supabase secrets set --env-file` (Voyage/openFDA) + `functions deploy core-source-sync`
+(173 kB). Smoke test: unauth→401, authed openFDA ingest writes to cloud. Then
+`scripts/seed-ingest.ts` ran the manifest's query providers, and the 3 companions loaded
+the structured sources (full).
+
+- **Seed ingest (query providers):** 375/375 jobs, **0 failures**. openFDA 82 labels,
+  ClinicalTrials 369 studies, PubMed 258 articles, RxNorm 85 concepts.
+- **Structured companions (skip_embed, full):** Orange Book 2,729 ingredients,
+  Purple Book 647 biologics, NADAC 1 provenance row — 0 batch errors.
+- **Cloud corpus (exact counts):** `{openfda:85, rxnorm:87, clinicaltrials:379,
+  pubmed_oa:264, fda_orange_book:2729, purple_book:647, cms_nadac:1}` = **4,192 sources,
+  4,162 embedded chunks** (structured sources contribute 0 chunks — skip_embed verified
+  at scale).
+- **Post-bulk recall test (the advisor's "test after load"):** re-ran the 10-drug
+  cross-entity check against cloud at 4,162 chunks → **10/10 right drug ranked #1**, sims
+  0.70–0.77 unchanged. `ivfflat (lists=100)` recall holds at this scale (the label match
+  sits well clear of other drugs). **hnsw migration deferred** until the corpus is much
+  larger (742k target) — documented, tested-when-needed, no premature optimization.
+- Fixed `scripts/validate-openfda.ts` `loadSourceMap` to paginate (PostgREST 1000-row cap
+  would have silently truncated the id→source map at corpus scale → false failures).
+- The 10 medication classes live in the manifest; `drug_classes` + memberships are
+  Layer-B schema (Phase 2) — in Phase 1 the classes are represented by their seeded member
+  drugs.
+
+#### Phase 1 nearly closed: only CP7 (pg_cron refresh) remains before the PR.

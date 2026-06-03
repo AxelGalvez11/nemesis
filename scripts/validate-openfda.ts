@@ -76,17 +76,26 @@ interface SourceMeta {
 }
 
 async function loadSourceMap(): Promise<Map<string, SourceMeta>> {
-  const res = await fetch(
-    `${SB_URL}/rest/v1/core_sources?select=id,title,provider,license,metadata`,
-    { headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}` } },
-  );
-  if (!res.ok) {
-    throw new Error(
-      `core_sources fetch ${res.status}: ${(await res.text()).slice(0, 200)}`,
+  // Paginate: PostgREST caps responses at 1000 rows, and the corpus exceeds
+  // that after the seed (4k+ sources), so a single fetch would silently
+  // truncate the id→source map and produce false retrieval failures.
+  const map = new Map<string, SourceMeta>();
+  const PAGE = 1000;
+  for (let offset = 0; ; offset += PAGE) {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/core_sources?select=id,title,provider,license,metadata&limit=${PAGE}&offset=${offset}`,
+      { headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}` } },
     );
+    if (!res.ok) {
+      throw new Error(
+        `core_sources fetch ${res.status}: ${(await res.text()).slice(0, 200)}`,
+      );
+    }
+    const rows = (await res.json()) as SourceMeta[];
+    for (const r of rows) map.set(r.id, r);
+    if (rows.length < PAGE) break;
   }
-  const rows = (await res.json()) as SourceMeta[];
-  return new Map(rows.map((r) => [r.id, r]));
+  return map;
 }
 
 interface MatchRow {
