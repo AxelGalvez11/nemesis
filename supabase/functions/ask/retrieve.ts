@@ -53,9 +53,11 @@ export async function retrieve(opts: RetrieveOpts): Promise<RetrieveResult> {
 
   if (rows.length === 0) return { chunks: [], maxSimilarity: 0 };
 
-  const titles = await fetchSourceMeta(opts.sbUrl, opts.serviceKey, [
-    ...new Set(rows.map((r) => r.source_id)),
-  ]);
+  // source_id values come from a SECURITY DEFINER RPC (UUID column), but validate
+  // before interpolating into the PostgREST in.(...) filter — defense in depth.
+  const sourceIds = [...new Set(rows.map((r) => r.source_id))]
+    .filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+  const titles = await fetchSourceMeta(opts.sbUrl, opts.serviceKey, sourceIds);
 
   const chunks: RetrievedChunk[] = rows.map((r, i) => {
     const meta = titles.get(r.source_id);

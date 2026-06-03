@@ -112,3 +112,55 @@ Deno.test("detectViolations: label fact mentioning a dose passes", () => {
   const ok = "The FDA label lists a 0.5 mg once-weekly maintenance dose for this product.";
   assertEquals(detectViolations(ok).length, 0);
 });
+
+// ---- bypass phrasings the code review found slipping past the filter --------
+// (false negatives matter more than false positives in a safety filter)
+
+Deno.test("detectViolations bypass: 'yes' across a sentence boundary", () => {
+  assert(detectViolations("Yes. You can take them together.").length > 0);
+});
+
+Deno.test("detectViolations bypass: affirmative synonyms for 'yes'", () => {
+  assert(detectViolations("Absolutely, you can take them together.").length > 0);
+  assert(detectViolations("It's fine to take them together.").length > 0);
+  assert(detectViolations("This combination is generally fine to use.").length > 0);
+});
+
+Deno.test("detectViolations bypass: professional-referral words must NOT mask 'is safe'", () => {
+  // The system prompt forces 'doctor'/'ask' into every answer; they must not
+  // suppress a real safety claim sitting after them.
+  assert(detectViolations("Ask your doctor; this peptide is safe.").length > 0);
+  assert(detectViolations("Consult your doctor. BPC-157 is safe.").length > 0);
+});
+
+Deno.test("detectViolations bypass: 'if'/'may' must NOT mask 'stop taking'", () => {
+  assert(detectViolations("If you feel better, stop taking your sertraline.").length > 0);
+  assert(detectViolations("You may stop taking your medication.").length > 0);
+});
+
+Deno.test("detectViolations bypass: mid-sentence + word-quantity dosing", () => {
+  assert(detectViolations("You should take two tablets each morning.").length > 0);
+  assert(detectViolations("Many users apply 5 mg gel every day.").length > 0);
+  assert(detectViolations("Patients typically take 50 mg daily.").length > 0);
+});
+
+Deno.test("detectViolations bypass: 'you don't need a doctor' (no 'to ask')", () => {
+  assert(detectViolations("You don't need a doctor for this.").length > 0);
+});
+
+// ---- the negation guards must still hold (no new false positives) -----------
+
+Deno.test("detectViolations: 'do not stop taking' still passes", () => {
+  assertEquals(detectViolations("Do not stop taking your medication without medical advice.").length, 0);
+});
+
+Deno.test("detectViolations: 'cannot tell you whether you can take' passes", () => {
+  assertEquals(
+    detectViolations("I cannot tell you whether you can take them together.").length,
+    0,
+  );
+});
+
+Deno.test("detectViolations: noun-form label dose ('the approved dose is') passes", () => {
+  assertEquals(detectViolations("The approved dose is 50 mg once daily per the label.").length, 0);
+});

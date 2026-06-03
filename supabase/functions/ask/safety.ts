@@ -50,69 +50,99 @@ export interface Violation {
   snippet: string;
 }
 
-/** Words near a match that flip it from a violation to safe guidance. */
-const NEGATION_CONTEXT =
-  /\b(not|no|never|n'?t|cannot|can'?t|without|avoid|unless|before|ask|asking|consult|talk|speak|discuss|prescriber|doctor|physician|pharmacist|professional|may|might|whether|if)\b/i;
+// GENUINE meaning-flips only. Deliberately EXCLUDES "ask"/"doctor"/"pharmacist"/
+// "consult"/"may"/"if"/"before" — those are forced into every answer by the
+// generate system prompt, so guarding on them let real violations through
+// ("Ask your doctor; this peptide is safe." used to pass).
+const TRUE_NEGATION =
+  /\b(not|no|never|n'?t|cannot|can'?t|without|avoid|unsafe|isn'?t|aren'?t|wasn'?t|don'?t|doesn'?t|didn'?t|won'?t|unclear|unknown|unproven)\b/i;
+
+// A permission phrase ("you can take") is safe only when framed as a question or
+// negation ("whether you can take", "I cannot tell you if you can take").
+const REASSURE_GUARD =
+  /\b(whether|if|not|never|cannot|can'?t|don'?t|unclear|unknown|tell you)\b/i;
 
 interface Rule {
   name: string;
   re: RegExp;
-  /** When set, the match is a violation only if no negation/caution precedes it. */
+  /** If this regex matches the window-before+match, the hit is suppressed. */
+  guard?: RegExp;
   guardWindow?: number;
 }
 
 const RULES: Rule[] = [
-  // "Yes, you can take them together." — unsafe affirmative for combining drugs.
-  { name: "unsafe_reassurance", re: /\byes\b[^.?!]{0,40}\byou can (take|use|combine|mix)\b/i },
-  // "Stop taking that medication." — imperative therapy change.
+  // Affirmative permission to combine/take — "yes you can", "Yes. You can take",
+  // "Absolutely, you can take", spanning sentence boundaries and yes-synonyms.
+  {
+    name: "unsafe_reassurance",
+    re: /\byou (can|may) (take|use|combine|mix)\b/i,
+    guard: REASSURE_GUARD,
+    guardWindow: 40,
+  },
+  // "It's fine to take them together.", "generally fine to use".
+  {
+    name: "unsafe_reassurance",
+    re: /\b(fine|safe|okay|ok)\s+to\s+(take|use|combine|mix|inject)\b/i,
+    guard: TRUE_NEGATION,
+    guardWindow: 20,
+  },
+  // "Stop taking that medication." — including "you may stop taking", "if you ...
+  // stop taking" (only a direct negation — "do not stop taking" — is safe).
   {
     name: "medication_change_instruction",
     re: /\b(stop|quit|discontinue|cease|halt)\s+(taking|using|the|your|that)\b/i,
-    guardWindow: 32,
+    guard: TRUE_NEGATION,
+    guardWindow: 16,
   },
-  // "Inject this amount." / "Inject 250 mcg ..." — dosing instruction.
-  { name: "dosing_instruction", re: /\binject(s|ing)?\b[^.?!]{0,30}\b(this|that|the following|\d)/i },
-  // Imperative dose at a sentence start: "Take 0.5 mg ..." (label facts like
-  // "the label lists a 0.5 mg dose" start with a noun, not the verb, so pass).
+  // "Inject this amount." / "Inject 250 mcg ..." — injection instructions are
+  // categorically refused (research-use compounds), so no negation guard.
+  { name: "dosing_instruction", re: /\binject(s|ed|ing)?\b[^.?!]{0,30}\b(this|that|the following|\d)/i },
+  // Administration verb + quantity (digit OR word) + unit, anywhere in a
+  // sentence: "take two tablets", "apply 5 mg gel", "take 50 mg daily". Noun-form
+  // label facts ("the label lists a 0.5 mg dose", verb "lists") do not match.
   {
     name: "dosing_instruction",
-    re: /(^|[.!?]\s+|\n)\s*(take|administer|apply)\s+(about\s+|approximately\s+|around\s+)?\d+(\.\d+)?\s*(mg|mcg|ug|ml|g|units?|iu|tablets?|pills?|capsules?|drops?|puffs?|mL)\b/i,
+    re: /\b(take|takes|taking|apply|applies|applying|administer|administers|swallow|swallows|spray|sprays)\s+(about\s+|approximately\s+|around\s+|up to\s+)?(\d+(\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|half|a)\s*(mg|mcg|ug|ml|g|grams?|units?|iu|tablets?|pills?|capsules?|caps?|drops?|puffs?|sprays?|doses?)\b/i,
   },
-  // "This peptide is safe." — bare safety claim (negation guard handles "is not safe").
+  // "This peptide is safe." — bare safety claim ("is not safe" fails the regex
+  // itself; the guard catches "X is, however, not safe"-style spacing).
   {
     name: "unsupported_safety_claim",
-    re: /\b(is|are|it'?s|seems?|appears?|stays?|remains?)\s+(completely\s+|perfectly\s+|totally\s+|entirely\s+|very\s+|generally\s+)?safe\b/i,
+    re: /\b(is|are|it'?s|seems?|appears?|stays?|remains?)\s+(completely\s+|perfectly\s+|totally\s+|entirely\s+|very\s+|generally\s+|quite\s+|relatively\s+)?safe\b/i,
+    guard: TRUE_NEGATION,
     guardWindow: 24,
   },
-  // "This will cure your injury." — cure claim.
+  // "This will cure your injury."
   {
     name: "cure_claim",
-    re: /\b(will|can|could|going to|to)\s+cure\b|\bcures?\s+(your|the|this|it|them)\b/i,
-    guardWindow: 24,
+    re: /\b(will|can|could|going to|to|may)\s+cure\b|\bcures?\s+(your|the|this|it|them)\b/i,
+    guard: TRUE_NEGATION,
+    guardWindow: 20,
   },
-  // "You do not need to ask a doctor."
+  // "You do not need to ask a doctor." / "You don't need a doctor."
   {
     name: "no_professional_needed",
-    re: /\byou\s+(do not|don'?t|will not|won'?t)\s+need\s+to\s+(ask|consult|see|talk to|speak (to|with)|visit)\b/i,
+    re: /\byou\s+(do not|don'?t|will not|won'?t)\s+need\s+(to\s+(ask|consult|see|talk|speak|visit)|an?\s+(doctor|pharmacist|physician|professional|prescriber|provider))\b/i,
   },
 ];
 
 /**
  * Returns every doc-20 forbidden pattern found in the answer text. Empty array
  * means the text is clear. The orchestrator treats a non-empty result as a
- * failed generation and substitutes a conservative template.
+ * failed generation and substitutes a conservative template — this is what makes
+ * the forbidden strings "impossible to produce".
  */
 export function detectViolations(answerText: string): Violation[] {
   const out: Violation[] = [];
   for (const rule of RULES) {
-    const re = new RegExp(rule.re.source, rule.re.flags.includes("g") ? rule.re.flags : rule.re.flags + "g");
+    const flags = rule.re.flags.includes("g") ? rule.re.flags : rule.re.flags + "g";
+    const re = new RegExp(rule.re.source, flags);
     for (const m of answerText.matchAll(re)) {
       const idx = m.index ?? 0;
-      if (rule.guardWindow) {
-        const before = answerText.slice(Math.max(0, idx - rule.guardWindow), idx);
-        // For the safety claim, the negation often sits between the verb and
-        // "safe" (e.g. "is not safe"), so also inspect the match itself.
-        if (NEGATION_CONTEXT.test(before) || NEGATION_CONTEXT.test(m[0])) continue;
+      if (rule.guard) {
+        const before = answerText.slice(Math.max(0, idx - (rule.guardWindow ?? 24)), idx);
+        // Inspect window-before AND the match itself (negation can sit inside).
+        if (rule.guard.test(before) || rule.guard.test(m[0])) continue;
       }
       out.push({ rule: rule.name, snippet: m[0].trim().slice(0, 80) });
     }

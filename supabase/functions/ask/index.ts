@@ -81,7 +81,10 @@ serve(async (req) => {
     const resp = await runAsk(question, !!body.use_health_context, userId);
     return json(resp);
   } catch (e) {
-    return json({ error: (e as Error).message ?? "ask failed" }, 500);
+    // Log the detail server-side; return a generic message so PostgREST /
+    // Anthropic internals (schema, policy names, request ids) don't leak.
+    console.error("ask pipeline error:", (e as Error).message);
+    return json({ error: "ask failed" }, 500);
   }
 });
 
@@ -152,10 +155,15 @@ async function runAsk(
   const modelName = `${cls.model}|${gen.model}`;
 
   // ---- 6a. post-generation safety filter (the doc-20 guarantee) ----
+  // Scan EVERY model-generated section that renders to the user — including
+  // what_we_do_not_know and questions_to_ask — or a forbidden phrase placed
+  // there bypasses the guarantee.
   const assembled = [
     gen.raw.bottom_line.text,
     ...gen.raw.what_we_know.map((p) => p.text),
     ...gen.raw.safety_notes.map((p) => p.text),
+    ...gen.raw.what_we_do_not_know.map((p) => p.text),
+    ...gen.raw.questions_to_ask,
   ].join("  ");
   if (detectViolations(assembled).length > 0) {
     // Discard the unsafe generation; surface the retrieved sources as related
@@ -295,8 +303,11 @@ async function verifyUser(token: string): Promise<string | null> {
       headers: { apikey: ANON_KEY, Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return null;
-    const user = await res.json() as { id?: string };
-    return user.id ?? null;
+    const user = await res.json() as { id?: string; is_anonymous?: boolean };
+    // Phase 3 is authenticated-only. Reject Supabase anonymous sign-in sessions
+    // (a guest grant is a deliberate Phase-6 decision, not an accidental path).
+    if (!user.id || user.is_anonymous) return null;
+    return user.id;
   } catch {
     return null;
   }
@@ -366,8 +377,10 @@ async function storeTrace(row: TraceRow): Promise<void> {
       },
       body: JSON.stringify(row),
     });
-  } catch {
-    // A trace-write failure must not fail the user's answer; logged server-side.
+  } catch (e) {
+    // A trace-write failure must not fail the user's answer, but it MUST be
+    // visible — a dropped emergency/self-harm trace is a lost safety audit record.
+    console.error("storeTrace failed (trace lost):", (e as Error).message);
   }
 }
 
