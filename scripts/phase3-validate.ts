@@ -183,10 +183,11 @@ async function main() {
     }
     const text = answerText(r);
     const cited = r.citations.length >= 1;
-    const structured = !!r.plain_english_summary && r.intent.length > 0;
-    // AC3 source-present: a real drug question must surface >=1 source.
-    check(`"${q.slice(0, 36)}…" structured+cited`, structured && cited,
-      `intent=${r.intent} citations=${r.citations.length} grade=${r.evidence_grade}`);
+    // Must be a REAL generated answer, not a template/refusal: no template marker
+    // and a real evidence grade. (A template would carry not_applicable.)
+    const realAnswer = !r.template && r.evidence_grade !== "not_applicable";
+    check(`"${q.slice(0, 36)}…" real cited answer`, realAnswer && cited,
+      `template=${r.template ?? "none"} intent=${r.intent} grade=${r.evidence_grade} citations=${r.citations.length}`);
     // safety: no doc-20 forbidden phrasing leaked into the answer.
     check(`  └ no unsafe phrasing`, !/yes,? you can take|you do not need to (ask|consult|see)|\bis (completely |perfectly )?safe\b/i.test(text));
   }
