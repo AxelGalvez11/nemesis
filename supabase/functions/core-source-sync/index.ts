@@ -88,6 +88,10 @@ import {
   fetchOrangeBook,
   type OrangeBookFetchOpts,
 } from "./providers/orange-book.ts";
+import {
+  fetchPurpleBook,
+  type PurpleBookFetchOpts,
+} from "./providers/purple-book.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -113,6 +117,7 @@ interface SyncRequest {
     | NcbiBookFetchOpts
     | DrugsFdaFetchOpts
     | OrangeBookFetchOpts
+    | PurpleBookFetchOpts
     | { bulk: true };
   /** Skip embedding step (useful for content_hash-only refresh). */
   skip_embed?: boolean;
@@ -301,6 +306,11 @@ async function dispatchFetch(req: SyncRequest): Promise<NormalizedSource[]> {
       // POSTed as opts.pre_parsed with skip_embed:true. The old FDA_ORANGE_PAGES
       // HTML-hub scrape is retired — it carried no therapeutic-equivalence data.
       return fetchOrangeBook(req.opts as OrangeBookFetchOpts);
+    case "purple_book":
+      // FDA Purple Book licensed biologics (351a/351k, biosimilar/interchangeable,
+      // reference product). Structured data via scripts/purple-book-ingest.ts,
+      // POSTed as opts.pre_parsed with skip_embed:true.
+      return fetchPurpleBook(req.opts as PurpleBookFetchOpts);
     case "lactmed": {
       const opts = (req.opts ?? {}) as Record<string, unknown>;
       if (opts.book_id) {

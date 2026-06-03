@@ -39,7 +39,10 @@ export type CoreSourceProvider =
   | "drugs_fda"
   | "nci_pdq"
   | "dhhs_hiv"
-  | "orphanet";
+  | "orphanet"
+  // PharmaBro net-new (Phase 1) — structured FDA/CMS reference data
+  | "purple_book"
+  | "cms_nadac";
 
 export type CoreSourceLicense =
   | "public_domain"
@@ -158,4 +161,7 @@ export const PROVIDER_DEFAULT_LICENSE: Readonly<
   nci_pdq: "public_domain", // NIH/NCI, US fed
   dhhs_hiv: "public_domain", // DHHS clinicalinfo.hiv.gov, US fed
   orphanet: "cc_by", // Orphanet CC BY 4.0 (per orphadata.com)
+  // PharmaBro net-new (Phase 1)
+  purple_book: "fda_public", // FDA Purple Book, US fed work
+  cms_nadac: "public_domain", // CMS NADAC, US fed work
 };

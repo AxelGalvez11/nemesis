@@ -44,7 +44,7 @@ supersedes correctly.
 ### Task status
 - [x] **CP1 — openFDA validated on ~10 seed drugs** (the prove-before-bulk gate) ✅
 - [x] CP2 — Orange Book real data-file provider (`skip_embed`), proven on a few records ✅
-- [ ] CP3 — Purple Book provider (`skip_embed`), proven on a few records
+- [x] CP3 — Purple Book provider (`skip_embed`), proven on a few records ✅
 - [ ] CP4 — confirm `clinicaltrials` + `pubmed_oa` + `rxnorm` fetch (AC5/AC6 not closable on labels alone)
 - [ ] CP5 — pricing projection table + NADAC refresh (build last)
 - [ ] CP6 — 100-entity / 10-class seed ingest (only after all providers proven)
@@ -104,5 +104,29 @@ Reproduce: `deno run -A scripts/orange-book-ingest.ts --dir=<unzipped EOBZIP> --
   `rld_trade_name`, `product_count`, `products[]` (TE/RLD/RS/strength/applicant/approval),
   `patents[]` (no/expiry/use-code/flags), `exclusivity[]` — ready for the Phase-2 typed
   projection + drug page (§12).
-- Note: `semaglutide` is a biologic → not in the Orange Book (belongs in the Purple Book,
-  CP3). Small-molecule seeds all present.
+- Note: `semaglutide` is regulated as a drug (NDA / §505), not a §351 biologic, so it
+  belongs to the Orange Book world, not the Purple Book. (Earlier note here had this
+  backwards.) Small-molecule seeds all present.
+
+#### CP3 — Purple Book provider ✅ (2026-06-03, local stack)
+New provider `providers/purple-book.ts` + migration `0108` (adds `purple_book` + `cms_nadac`
+enum values) + license map (`purple_book`→`fda_public`). Companion `scripts/purple-book-ingest.ts`
+parses the monthly Purple Book CSV (a full snapshot of licensed biologics + an N/R/U change
+annotation) with a quote-aware reader (fields embed commas), aggregates per Proper Name.
+Reproduce: `deno run -A scripts/purple-book-ingest.ts --file=<purplebook.csv> --proper=…`
+
+- **Parser (real CSV):** 648 biologics; biosimilar/interchangeable detection from `License
+  Type` (351(a) originator / 351(k) / 351(k) Interchangeable), reference product linked via
+  `Ref. Product Proper Name`. Spot-checks correct: `adalimumab` (Humira, originator) + 10
+  biosimilars (`adalimumab-bwwd`/Hadlima = interchangeable, ref adalimumab; etc.).
+- **Ingest (skip_embed):** 78 biologics, 0 errors;
+  `core_sources` = `{openfda:10, fda_orange_book:58, purple_book:78}`.
+- **skip_embed verified:** `core_source_chunks` still **127** (zero chunks). Citeable via
+  source row, `license=fda_public`.
+- **Structured metadata** (per biologic): `license_class`, `is_biosimilar`,
+  `is_interchangeable`, `ref_product_proper_name/proprietary_name`, `bla_numbers`,
+  `proprietary_names`, `products[]` (BLA/strength/form/route/presentation/marketing_status/
+  approval/center) — ready for the drug page (§12: biosimilar badge + reference product).
+- Migration `0108` applied locally via `supabase migration up` (insert success proves the
+  `purple_book` enum value is live). Pricing's `cms_nadac` value is added here too (used by
+  CP5's coarse dataset-level provenance row).
