@@ -62,6 +62,19 @@ const TRUE_NEGATION =
 const REASSURE_GUARD =
   /\b(whether|if|not|never|cannot|can'?t|don'?t|unclear|unknown|tell you)\b/i;
 
+// For "[X] is safe" / "cures Y": excuse the hit on a genuine NEGATION (anywhere in
+// the window — it flips the meaning) OR an interrogative that governs the SAME
+// clause. "whether/which X is safe" is a QUESTION about safety, not an assertion,
+// and it rides on real interaction answers in what_we_know / what_we_do_not_know
+// (which ARE scanned — index.ts), so mis-flagging it discards a good cited answer.
+// The `[^,]*$` anchor keeps the interrogative in-clause: "whether X is safe" (no
+// comma) is excused, but "When used correctly, it is completely safe" (comma ->
+// the claim is a separate, asserted clause) is still caught. The comma-free
+// conditional ("if taken as directed X is safe") is a knowingly accepted hole,
+// backstopped by the generate prompt — far cheaper than discarding real answers.
+const CLAIM_GUARD =
+  /\b(not|no|never|n'?t|cannot|can'?t|without|avoid|unsafe|isn'?t|aren'?t|wasn'?t|don'?t|doesn'?t|didn'?t|won'?t|unclear|unknown|unproven)\b|\b(whether|which|what|if|when|how)\b[^,]*$/i;
+
 interface Rule {
   name: string;
   re: RegExp;
@@ -104,25 +117,26 @@ const RULES: Rule[] = [
     name: "dosing_instruction",
     re: /\b(take|takes|taking|apply|applies|applying|administer|administers|swallow|swallows|spray|sprays)\s+(about\s+|approximately\s+|around\s+|up to\s+)?(\d+(\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|half|a)\s*(mg|mcg|ug|ml|g|grams?|units?|iu|tablets?|pills?|capsules?|caps?|drops?|puffs?|sprays?|doses?)\b/i,
   },
-  // "This peptide is safe." — bare safety claim. ONLY a genuine negation excuses
-  // it: "is not safe" fails the regex outright, and the wide window catches a
-  // far-placed negation ("we do not yet know whether it is safe"). Interrogative
-  // framing is NOT a guard here — "which dose is safe?" only appears in
-  // questions_to_ask, which the orchestrator excludes from this scan, so a
-  // conditional assertion ("if taken as directed, it is safe") is still caught.
+  // "This peptide is safe." — bare safety claim. Excused only by a genuine
+  // negation ("is not safe" fails the regex itself; a far-placed "we do not yet
+  // know whether it is safe" is caught by the wide window) OR by an interrogative
+  // governing the same clause ("whether/which X is safe" — a question, not a
+  // claim, and it rides on real interaction answers that MUST NOT be discarded).
+  // CLAIM_GUARD's comma anchor still catches "When used correctly, it is safe".
   {
     name: "unsupported_safety_claim",
     re: /\b(is|are|it'?s|seems?|appears?|stays?|remains?)\s+(completely\s+|perfectly\s+|totally\s+|entirely\s+|very\s+|generally\s+|quite\s+|relatively\s+)?safe\b/i,
-    guard: TRUE_NEGATION,
+    guard: CLAIM_GUARD,
     guardWindow: 40,
   },
   // "This will cure your injury." / "TB-500 cures tendons." — any object, not
   // just a pronoun. The (?!for|of) lookahead lets the benign NOUN phrase "a cure
-  // for X" pass; TRUE_NEGATION lets "no evidence it cures X" pass.
+  // for X" pass; CLAIM_GUARD lets "no evidence it cures X" (negation) and
+  // "whether it cures X" (question) pass.
   {
     name: "cure_claim",
     re: /\b(will|can|could|going to|to|may)\s+cures?\b|\bcures?\s+(?!for\b|of\b)\w/i,
-    guard: TRUE_NEGATION,
+    guard: CLAIM_GUARD,
     guardWindow: 36,
   },
   // "You do not need to ask a doctor." / "You don't need a doctor."

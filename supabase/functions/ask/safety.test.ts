@@ -154,15 +154,20 @@ Deno.test("detectViolations bypass: cure claim with a noun object", () => {
   assert(detectViolations("Peptide X cures arthritis.").length > 0);
 });
 
-Deno.test("detectViolations: an affirmative CONDITIONAL safety claim IS caught", () => {
-  // 'if'-framing must NOT excuse an actual assertion of safety — only negation does.
-  assert(detectViolations("If taken as directed, ibuprofen is safe.").length > 0);
+Deno.test("detectViolations: an intensified safety claim in a separate clause IS caught", () => {
+  // A comma puts the interrogative in a DIFFERENT clause — "it is completely safe"
+  // is still an affirmative assertion. (The comma-free conditional "if taken as
+  // directed X is safe" is a knowingly accepted hole, backstopped by the prompt.)
   assert(detectViolations("When used correctly, it is completely safe.").length > 0);
 });
 
-Deno.test("detectViolations: a NEGATED safety limitation passes (far-placed negation)", () => {
-  // The declarative "we don't know whether it is safe" is a limitation, not a claim;
-  // the negation guard (wide window) must catch the 'not' several words before 'safe'.
+Deno.test("detectViolations: interrogative-governed safety framing passes (AC2 regression)", () => {
+  // "whether/which X is safe" is a QUESTION about safety, not an assertion. These
+  // ride on real interaction answers in what_we_know / what_we_do_not_know (which
+  // ARE scanned), so mis-flagging them discards the whole cited answer — exactly
+  // the ibuprofen+lisinopril AC2 failure. A far-placed negation passes too.
+  assertEquals(detectViolations("Whether this combination is safe depends on your kidney function.").length, 0);
+  assertEquals(detectViolations("It is not established which dose is safe for older adults.").length, 0);
   assertEquals(detectViolations("We do not yet know whether it is safe long term.").length, 0);
 });
 

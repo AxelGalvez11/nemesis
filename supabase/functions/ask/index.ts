@@ -193,9 +193,14 @@ async function runAsk(
     ...gen.raw.safety_notes.map((p) => p.text),
     ...gen.raw.what_we_do_not_know.map((p) => p.text),
   ].join("  ");
-  if (detectViolations(assembled).length > 0) {
+  const violations = detectViolations(assembled);
+  if (violations.length > 0) {
     // Discard the unsafe generation; surface the retrieved sources as related
-    // info instead of the synthesized (unsafe) text.
+    // info instead of the synthesized (unsafe) text. LOG why (rule + snippet):
+    // a backstop that silently swallows a cited answer is not debuggable, and a
+    // spurious discard (cautious interrogative phrasing mis-flagged) is
+    // indistinguishable from a real catch without this line — in prod too.
+    console.error("ask safety_fallback — discarded generation:", JSON.stringify(violations));
     return await finalizeTemplate(answerId, question, cls.intent,
       flags, entities, userId, "safety_fallback", modelName, true, ret.chunks);
   }
