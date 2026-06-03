@@ -1,0 +1,8 @@
+{
+  "name": "@pharmabro/mobile",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "echo \"[mobile] Expo app is initialized in Phase 6 (see IMPLEMENTATION_PLAN.md §12)\" && exit 0"
+  }
+}
