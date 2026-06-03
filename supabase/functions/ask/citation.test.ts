@@ -39,6 +39,19 @@ Deno.test("enforce: fully-cited answer is kept and not refused", () => {
   assertEquals(r.citations.length, 2);
 });
 
+Deno.test("enforce: bracketed tags from the model resolve (e.g. '[1]' -> '1')", () => {
+  // DeepSeek emits citations as ["[1]","[2]"]; the valid set is bare "1","2".
+  const inp = base();
+  inp.bottom_line.citations = ["[1]"];
+  inp.what_we_know[0].citations = ["[1]", "[2]"];
+  inp.what_we_know[1].citations = ["[2]"];
+  inp.safety_notes[0].citations = ["[1]"];
+  const r = enforceCitations(inp);
+  assertEquals(r.refusedUnsupported, false); // bottom line "[1]" matched chunk "1"
+  assertEquals(r.citations.length, 2);
+  assertEquals(r.citations.map((c) => c.chunk_tag).sort(), ["1", "2"]);
+});
+
 Deno.test("enforce: hallucinated tag is dropped from a kept point", () => {
   const inp = base();
   inp.what_we_know[0].citations = ["1", "9"]; // 9 does not exist

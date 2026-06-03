@@ -51,12 +51,18 @@ export interface EnforceResult {
   oldest_source_date: string | null;
 }
 
+/** "[1]" / " 1 " -> "1". Models emit bracketed tags; our valid set is bare. */
+function normTag(t: unknown): string {
+  return String(t).replace(/[\[\]\s]/g, "");
+}
+
 /** Keep only tags that map to a real retrieved chunk; preserve order, dedupe. */
 function validTags(citations: string[], valid: Set<string>): string[] {
   if (!Array.isArray(citations)) return []; // model may omit the array entirely
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const t of citations) {
+  for (const raw of citations) {
+    const t = normTag(raw);
     if (valid.has(t) && !seen.has(t)) {
       seen.add(t);
       out.push(t);

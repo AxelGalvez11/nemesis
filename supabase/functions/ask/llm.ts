@@ -82,16 +82,25 @@ export async function chat(params: ChatParams, apiKey: string): Promise<ChatResp
   }
   if (params.tool_choice) body.tool_choice = params.tool_choice;
 
-  const res = await fetch(`${llmBaseUrl()}/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
+  // Retry transient rate-limit / 5xx (DeepSeek can 429 under bursty traffic).
+  let lastErr = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(`${llmBaseUrl()}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return await res.json() as ChatResponse;
+
     const text = await res.text().catch(() => "");
-    throw new Error(`llm ${res.status}: ${text.slice(0, 300)}`);
+    lastErr = `llm ${res.status}: ${text.slice(0, 300)}`;
+    if ((res.status === 429 || res.status >= 500) && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+      continue;
+    }
+    throw new Error(lastErr);
   }
-  return await res.json() as ChatResponse;
+  throw new Error(lastErr);
 }
 
 /** Force `toolName` and return its parsed arguments as T. */
