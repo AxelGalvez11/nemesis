@@ -62,14 +62,6 @@ const TRUE_NEGATION =
 const REASSURE_GUARD =
   /\b(whether|if|not|never|cannot|can'?t|don'?t|unclear|unknown|tell you)\b/i;
 
-// Negation OR interrogative/conditional framing — neither is an affirmative
-// claim. "which dose is safe", "whether it is safe", "if it cures" are not the
-// forbidden assertions "[X] is safe" / "[X] cures Y". Deliberately EXCLUDES
-// "ask" — that is referral boilerplate the prompt forces into every answer, and
-// guarding on it would mask a real claim ("Ask your doctor; this peptide is safe").
-const CLAIM_GUARD =
-  /\b(not|no|never|n'?t|cannot|can'?t|without|avoid|unsafe|isn'?t|aren'?t|wasn'?t|don'?t|doesn'?t|didn'?t|won'?t|unclear|unknown|unproven|if|whether|which|what|when|how)\b/i;
-
 interface Rule {
   name: string;
   re: RegExp;
@@ -112,13 +104,17 @@ const RULES: Rule[] = [
     name: "dosing_instruction",
     re: /\b(take|takes|taking|apply|applies|applying|administer|administers|swallow|swallows|spray|sprays)\s+(about\s+|approximately\s+|around\s+|up to\s+)?(\d+(\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|half|a)\s*(mg|mcg|ug|ml|g|grams?|units?|iu|tablets?|pills?|capsules?|caps?|drops?|puffs?|sprays?|doses?)\b/i,
   },
-  // "This peptide is safe." — bare safety claim ("is not safe" fails the regex
-  // itself; the guard catches "X is, however, not safe"-style spacing).
+  // "This peptide is safe." — bare safety claim. ONLY a genuine negation excuses
+  // it: "is not safe" fails the regex outright, and the wide window catches a
+  // far-placed negation ("we do not yet know whether it is safe"). Interrogative
+  // framing is NOT a guard here — "which dose is safe?" only appears in
+  // questions_to_ask, which the orchestrator excludes from this scan, so a
+  // conditional assertion ("if taken as directed, it is safe") is still caught.
   {
     name: "unsupported_safety_claim",
     re: /\b(is|are|it'?s|seems?|appears?|stays?|remains?)\s+(completely\s+|perfectly\s+|totally\s+|entirely\s+|very\s+|generally\s+|quite\s+|relatively\s+)?safe\b/i,
-    guard: CLAIM_GUARD,
-    guardWindow: 36,
+    guard: TRUE_NEGATION,
+    guardWindow: 40,
   },
   // "This will cure your injury." / "TB-500 cures tendons." — any object, not
   // just a pronoun. The (?!for|of) lookahead lets the benign NOUN phrase "a cure
@@ -126,7 +122,7 @@ const RULES: Rule[] = [
   {
     name: "cure_claim",
     re: /\b(will|can|could|going to|to|may)\s+cures?\b|\bcures?\s+(?!for\b|of\b)\w/i,
-    guard: CLAIM_GUARD,
+    guard: TRUE_NEGATION,
     guardWindow: 36,
   },
   // "You do not need to ask a doctor." / "You don't need a doctor."

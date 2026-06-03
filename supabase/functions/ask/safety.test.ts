@@ -154,16 +154,16 @@ Deno.test("detectViolations bypass: cure claim with a noun object", () => {
   assert(detectViolations("Peptide X cures arthritis.").length > 0);
 });
 
-Deno.test("detectViolations: interrogative 'is safe' passes (a question, not a claim)", () => {
-  // "which dose is safe for me?" / "whether it is safe" are questions/conditionals,
-  // not the forbidden assertion "[X] is safe".
-  assertEquals(detectViolations("Which statin dose is safe for me?").length, 0);
-  assertEquals(detectViolations("Ask whether this combination is safe for you.").length, 0);
-  assertEquals(detectViolations("We do not yet know whether it is safe long term.").length, 0);
+Deno.test("detectViolations: an affirmative CONDITIONAL safety claim IS caught", () => {
+  // 'if'-framing must NOT excuse an actual assertion of safety — only negation does.
+  assert(detectViolations("If taken as directed, ibuprofen is safe.").length > 0);
+  assert(detectViolations("When used correctly, it is completely safe.").length > 0);
 });
 
-Deno.test("detectViolations: interrogative 'will it cure' passes", () => {
-  assertEquals(detectViolations("Patients often ask whether it will cure the condition.").length, 0);
+Deno.test("detectViolations: a NEGATED safety limitation passes (far-placed negation)", () => {
+  // The declarative "we don't know whether it is safe" is a limitation, not a claim;
+  // the negation guard (wide window) must catch the 'not' several words before 'safe'.
+  assertEquals(detectViolations("We do not yet know whether it is safe long term.").length, 0);
 });
 
 Deno.test("detectViolations: benign 'cure' noun phrase passes", () => {
