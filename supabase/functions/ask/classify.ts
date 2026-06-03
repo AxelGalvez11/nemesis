@@ -1,11 +1,13 @@
 // Step 1: classify intent + entity mentions + safety flags (Claude Haiku, forced
 // tool_use -> guaranteed structured). Cheap + fast; the heavy reasoning is in generate.
 
-import { callTool } from "./anthropic.ts";
+import { callTool } from "./llm.ts";
 import { CLASSIFY_SYSTEM, CLASSIFY_TOOL } from "./prompts.ts";
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 
-const CLASSIFY_MODEL = "claude-haiku-4-5-20251001";
+// DeepSeek-V3 (deepseek-chat) supports function calling; the reasoner (R1) does
+// not, so both steps use deepseek-chat. Swap via LLM_BASE_URL + this id.
+const CLASSIFY_MODEL = Deno.env.get("LLM_CLASSIFY_MODEL") ?? "deepseek-chat";
 
 export interface Classification {
   intent: Intent;
@@ -25,7 +27,8 @@ export async function classify(question: string, apiKey: string): Promise<Classi
     {
       model: CLASSIFY_MODEL,
       max_tokens: 512,
-      system: [{ type: "text", text: CLASSIFY_SYSTEM, cache_control: { type: "ephemeral" } }],
+      temperature: 0,
+      system: CLASSIFY_SYSTEM,
       tools: [CLASSIFY_TOOL],
       messages: [{ role: "user", content: question }],
     },

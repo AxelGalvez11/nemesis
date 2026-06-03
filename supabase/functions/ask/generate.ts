@@ -1,12 +1,12 @@
 // Step 5: generate the structured answer (Claude Sonnet, forced tool_use). The
 // retrieved chunks are the ONLY grounding; the model cites them by [n] tag.
 
-import { callTool } from "./anthropic.ts";
+import { callTool } from "./llm.ts";
 import { GENERATE_TOOL, generateSystem } from "./prompts.ts";
 import type { EvidenceGrade, Intent } from "../../../packages/shared/src/answer.ts";
 import type { RetrievedChunk } from "./citation.ts";
 
-const GENERATE_MODEL = "claude-sonnet-4-6";
+const GENERATE_MODEL = Deno.env.get("LLM_GENERATE_MODEL") ?? "deepseek-chat";
 
 interface RawPoint {
   text: string;
@@ -59,7 +59,7 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
       model: GENERATE_MODEL,
       max_tokens: 2048,
       temperature: 0.2,
-      system: [{ type: "text", text: generateSystem(opts.intent), cache_control: { type: "ephemeral" } }],
+      system: generateSystem(opts.intent),
       tools: [GENERATE_TOOL],
       messages: [{ role: "user", content: userContent }],
     },

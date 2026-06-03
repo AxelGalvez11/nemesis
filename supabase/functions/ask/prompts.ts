@@ -3,7 +3,7 @@
 // metadata).
 
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
-import type { Tool } from "./anthropic.ts";
+import type { Tool } from "./llm.ts";
 
 export const PROMPT_VERSION = "ask-v1-2026-06-03";
 
@@ -39,7 +39,7 @@ export const CLASSIFY_SYSTEM =
 export const CLASSIFY_TOOL: Tool = {
   name: "classify",
   description: "Record the intent, mentioned entities, and safety flags for a question.",
-  input_schema: {
+  parameters: {
     type: "object",
     properties: {
       intent: { type: "string", enum: INTENTS },
@@ -75,7 +75,7 @@ const POINT_SCHEMA = {
 export const GENERATE_TOOL: Tool = {
   name: "compose_answer",
   description: "Compose the structured, source-grounded answer.",
-  input_schema: {
+  parameters: {
     type: "object",
     properties: {
       bottom_line: {

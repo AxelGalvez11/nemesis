@@ -21,6 +21,7 @@ import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
 import { generate } from "./generate.ts";
 import { enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { hasLlmKey, llmApiKey } from "./llm.ts";
 import { PROMPT_VERSION } from "./prompts.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
@@ -49,7 +50,6 @@ const CORS = {
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-const ANTHROPIC_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 
 // Retrieval cutoff: below this cosine similarity we treat the corpus as having
 // no support and refuse (AC3). Tuned empirically in scripts/phase3-validate.ts
@@ -61,7 +61,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
-  if (!ANTHROPIC_KEY) return json({ error: "ANTHROPIC_API_KEY not configured" }, 500);
+  if (!hasLlmKey()) return json({ error: "LLM API key not configured" }, 500);
 
   // ---- verify caller (authenticated-only) ----
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
@@ -94,6 +94,7 @@ async function runAsk(
   userId: string,
 ): Promise<AskResponse> {
   const answerId = crypto.randomUUID();
+  const apiKey = llmApiKey();
 
   // ---- 0. deterministic pre-screen (no LLM) ----
   const pre = preScreen(question);
@@ -107,7 +108,7 @@ async function runAsk(
   }
 
   // ---- 1. classify ----
-  const cls = await classify(question, ANTHROPIC_KEY);
+  const cls = await classify(question, apiKey);
   const flags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
 
   if (flags.some((f) => f === "emergency_possible" || f === "overdose_possible" || f === "self_harm")) {
@@ -150,7 +151,7 @@ async function runAsk(
     intent: cls.intent,
     chunks: ret.chunks,
     healthContext,
-    apiKey: ANTHROPIC_KEY,
+    apiKey,
   });
   const modelName = `${cls.model}|${gen.model}`;
 
