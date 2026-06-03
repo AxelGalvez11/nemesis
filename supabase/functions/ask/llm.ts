@@ -103,32 +103,38 @@ export async function chat(params: ChatParams, apiKey: string): Promise<ChatResp
   throw new Error(lastErr);
 }
 
-/** Force `toolName` and return its parsed arguments as T. */
+/**
+ * Force `toolName` and return its parsed arguments as T. DeepSeek's structured
+ * output is INTERMITTENTLY malformed on complex nested schemas (~some fraction
+ * of calls), so we retry the whole generation on a no-tool-call / invalid-JSON
+ * result — an independent re-roll almost always succeeds.
+ */
 export async function callTool<T>(
   params: ChatParams,
   toolName: string,
   apiKey: string,
 ): Promise<{ input: T; model: string; usage?: Usage }> {
-  const res = await chat(
-    { ...params, tool_choice: { type: "function", function: { name: toolName } } },
-    apiKey,
-  );
-  const call = res.choices[0]?.message.tool_calls?.find((c) => c.function.name === toolName);
-  if (!call) {
-    const finish = res.choices[0]?.finish_reason ?? "unknown";
-    throw new Error(`model did not call tool '${toolName}' (finish_reason=${finish})`);
-  }
-  let input: T;
-  try {
-    input = parseToolArguments(call.function.arguments) as T;
-  } catch {
-    const raw = String(call.function.arguments ?? "");
-    console.error(
-      `tool '${toolName}' invalid JSON (finish_reason=${res.choices[0]?.finish_reason}, len=${raw.length}): ${raw.slice(0, 700)}`,
+  let lastErr = "no attempts";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await chat(
+      { ...params, tool_choice: { type: "function", function: { name: toolName } } },
+      apiKey,
     );
-    throw new Error(`tool '${toolName}' arguments were not valid JSON`);
+    const call = res.choices[0]?.message.tool_calls?.find((c) => c.function.name === toolName);
+    if (!call) {
+      lastErr = `no tool call (finish_reason=${res.choices[0]?.finish_reason})`;
+      continue;
+    }
+    try {
+      const input = parseToolArguments(call.function.arguments) as T;
+      return { input, model: res.model, usage: res.usage };
+    } catch {
+      const raw = String(call.function.arguments ?? "");
+      lastErr = `invalid JSON (len=${raw.length})`;
+      console.error(`tool '${toolName}' ${lastErr} attempt ${attempt + 1}: ${raw.slice(0, 300)}`);
+    }
   }
-  return { input, model: res.model, usage: res.usage };
+  throw new Error(`tool '${toolName}' failed after retries: ${lastErr}`);
 }
 
 /**

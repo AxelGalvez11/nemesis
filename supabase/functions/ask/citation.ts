@@ -81,11 +81,21 @@ export function enforceCitations(input: EnforceInput): EnforceResult {
       .map((p) => ({ text: p.text, citation_ids: validTags(p.citations, valid) }))
       .filter((p) => p.citation_ids.length > 0);
 
-  const bottomTags = validTags(input.bottom_line.citations, valid);
-  const refusedUnsupported = bottomTags.length === 0;
-
   const what_we_know = keepCited(input.what_we_know);
   const safety_notes = keepCited(input.safety_notes);
+
+  // The bottom line is a SUMMARY of the body. Models routinely cite the detail
+  // points and leave the summary bare, so requiring the bottom line to carry its
+  // own [n] falsely refuses well-grounded answers. Attribute it to the body when
+  // empty; refuse only when NOTHING in the answer is cited (AC3).
+  let bottomTags = validTags(input.bottom_line.citations, valid);
+  if (bottomTags.length === 0) {
+    bottomTags = [...new Set([
+      ...what_we_know.flatMap((p) => p.citation_ids),
+      ...safety_notes.flatMap((p) => p.citation_ids),
+    ])];
+  }
+  const refusedUnsupported = bottomTags.length === 0;
   // Limitations + questions don't assert sourced facts -> kept verbatim.
   const what_we_do_not_know = input.what_we_do_not_know.map((p) => ({
     text: p.text,

@@ -136,14 +136,16 @@ async function runAsk(
     sbUrl: SB_URL,
     serviceKey: SERVICE_KEY,
   });
-  // An investigational drug (e.g. retatrutide) has no FDA label, so a label-first
-  // priority returns nothing though its trials/PubMed sources exist. Fall back to
-  // all providers before refusing.
-  if (ret.chunks.length === 0 && priority !== null) {
+  // Scoped retrieval can come back empty for an investigational drug (no FDA
+  // label -> fails a label-first provider filter) or one whose sources weren't
+  // bridged to its entity in Phase 2 (e.g. retatrutide, BPC-157 — their
+  // trials/PubMed chunks exist but the drug_entity_sources link is sparse). Before
+  // refusing, retry with NO provider AND NO entity filter (broad semantic search).
+  if (ret.chunks.length === 0 && (priority !== null || scopeId !== null)) {
     ret = await retrieve({
       question,
       providers: null,
-      entityId: scopeId,
+      entityId: null,
       threshold: ASK_MATCH_THRESHOLD,
       matchCount: MATCH_COUNT,
       sbUrl: SB_URL,

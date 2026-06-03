@@ -90,6 +90,9 @@ const GRADES = new Set<EvidenceGrade>([
 ]);
 
 function normPoint(p: unknown): RawPoint {
+  // DeepSeek sometimes returns bottom_line (or a point) as a bare string instead
+  // of {text, citations}; keep the text and let citation backfill attribute it.
+  if (typeof p === "string") return { text: p, citations: [] };
   const o = (p ?? {}) as { text?: unknown; citations?: unknown };
   return {
     text: typeof o.text === "string" ? o.text : "",

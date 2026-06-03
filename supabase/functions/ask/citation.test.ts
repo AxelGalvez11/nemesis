@@ -61,18 +61,27 @@ Deno.test("enforce: hallucinated tag is dropped from a kept point", () => {
   assert(!r.citations.some((c) => c.chunk_tag === "9"));
 });
 
-Deno.test("enforce: bottom line with only a hallucinated tag refuses (AC3)", () => {
+Deno.test("enforce: refuses only when NOTHING is cited (AC3)", () => {
+  // Whole answer unsupported: bottom line + every body point cite nothing real.
   const inp = base();
-  inp.bottom_line.citations = ["9"]; // nothing real backs the claim
+  inp.bottom_line.citations = ["9"]; // hallucinated
+  inp.what_we_know = [
+    { text: "Unsupported claim A.", citations: [] },
+    { text: "Unsupported claim B.", citations: ["9"] },
+  ];
+  inp.safety_notes = [{ text: "Unsupported safety note.", citations: [] }];
   const r = enforceCitations(inp);
   assertEquals(r.refusedUnsupported, true);
 });
 
-Deno.test("enforce: bottom line with no tags refuses (AC3)", () => {
+Deno.test("enforce: bottom line uncited but body cited is NOT refused (backfill)", () => {
+  // The model often cites the detail points and leaves the summary bare; the
+  // answer is still source-grounded, so attribute the bottom line to the body.
   const inp = base();
-  inp.bottom_line.citations = [];
+  inp.bottom_line.citations = []; // model left the summary uncited
   const r = enforceCitations(inp);
-  assertEquals(r.refusedUnsupported, true);
+  assertEquals(r.refusedUnsupported, false);
+  assert(r.citations.length >= 1); // body sources carry through
 });
 
 Deno.test("enforce: an unsupported load-bearing point is dropped", () => {
