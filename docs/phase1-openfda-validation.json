@@ -1,0 +1,432 @@
+[
+  {
+    "drug": "lisinopril",
+    "query": "lisinopril contraindications",
+    "pass": true,
+    "top_similarity": 0.764324591417588,
+    "ranked": [
+      {
+        "sim": 0.7643,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "Lisinopril and Hydrochlorothiazide (LISINOPRIL AND HYDROCHLOROTHIAZIDE TABLETS)"
+      },
+      {
+        "sim": 0.7345,
+        "provider": "openfda",
+        "section": "WARNINGS AND PRECAUTIONS",
+        "license": "fda_public",
+        "source": "Lisinopril and Hydrochlorothiazide (LISINOPRIL AND HYDROCHLOROTHIAZIDE TABLETS)"
+      },
+      {
+        "sim": 0.678,
+        "provider": "openfda",
+        "section": "DRUG INTERACTIONS",
+        "license": "fda_public",
+        "source": "Lisinopril and Hydrochlorothiazide (LISINOPRIL AND HYDROCHLOROTHIAZIDE TABLETS)"
+      },
+      {
+        "sim": 0.6713,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "Amlodipine Besylate (AMLODIPINE BESYLATE)"
+      },
+      {
+        "sim": 0.6612,
+        "provider": "openfda",
+        "section": "BOXED WARNING",
+        "license": "fda_public",
+        "source": "Lisinopril and Hydrochlorothiazide (LISINOPRIL AND HYDROCHLOROTHIAZIDE TABLETS)"
+      }
+    ]
+  },
+  {
+    "drug": "metformin",
+    "query": "metformin contraindications",
+    "pass": true,
+    "top_similarity": 0.738165174186811,
+    "ranked": [
+      {
+        "sim": 0.7382,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "ZITUVIMET (SITAGLIPTIN AND METFORMIN HYDROCHLORIDE)"
+      },
+      {
+        "sim": 0.7111,
+        "provider": "openfda",
+        "section": "BOXED WARNING",
+        "license": "fda_public",
+        "source": "ZITUVIMET (SITAGLIPTIN AND METFORMIN HYDROCHLORIDE)"
+      },
+      {
+        "sim": 0.7084,
+        "provider": "openfda",
+        "section": "WARNINGS AND PRECAUTIONS",
+        "license": "fda_public",
+        "source": "ZITUVIMET (SITAGLIPTIN AND METFORMIN HYDROCHLORIDE)"
+      },
+      {
+        "sim": 0.6523,
+        "provider": "openfda",
+        "section": "DRUG INTERACTIONS",
+        "license": "fda_public",
+        "source": "ZITUVIMET (SITAGLIPTIN AND METFORMIN HYDROCHLORIDE)"
+      },
+      {
+        "sim": 0.6519,
+        "provider": "openfda",
+        "section": "USE IN SPECIFIC POPULATIONS",
+        "license": "fda_public",
+        "source": "ZITUVIMET (SITAGLIPTIN AND METFORMIN HYDROCHLORIDE)"
+      }
+    ]
+  },
+  {
+    "drug": "atorvastatin",
+    "query": "atorvastatin contraindications",
+    "pass": true,
+    "top_similarity": 0.770234369344571,
+    "ranked": [
+      {
+        "sim": 0.7702,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "Atorvastatin calcium (ATORVASTATIN CALCIUM)"
+      },
+      {
+        "sim": 0.7134,
+        "provider": "openfda",
+        "section": "WARNINGS AND PRECAUTIONS",
+        "license": "fda_public",
+        "source": "Atorvastatin calcium (ATORVASTATIN CALCIUM)"
+      },
+      {
+        "sim": 0.6776,
+        "provider": "openfda",
+        "section": "USE IN SPECIFIC POPULATIONS",
+        "license": "fda_public",
+        "source": "Atorvastatin calcium (ATORVASTATIN CALCIUM)"
+      },
+      {
+        "sim": 0.6506,
+        "provider": "openfda",
+        "section": "DRUG INTERACTIONS",
+        "license": "fda_public",
+        "source": "Atorvastatin calcium (ATORVASTATIN CALCIUM)"
+      },
+      {
+        "sim": 0.6395,
+        "provider": "openfda",
+        "section": "ADVERSE REACTIONS",
+        "license": "fda_public",
+        "source": "Atorvastatin calcium (ATORVASTATIN CALCIUM)"
+      }
+    ]
+  },
+  {
+    "drug": "semaglutide",
+    "query": "semaglutide contraindications",
+    "pass": true,
+    "top_similarity": 0.744868561319656,
+    "ranked": [
+      {
+        "sim": 0.7449,
+        "provider": "openfda",
+        "section": "WARNINGS AND PRECAUTIONS",
+        "license": "fda_public",
+        "source": "OZEMPIC (ORAL SEMAGLUTIDE)"
+      },
+      {
+        "sim": 0.7413,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "OZEMPIC (ORAL SEMAGLUTIDE)"
+      },
+      {
+        "sim": 0.7146,
+        "provider": "openfda",
+        "section": "BOXED WARNING",
+        "license": "fda_public",
+        "source": "OZEMPIC (ORAL SEMAGLUTIDE)"
+      },
+      {
+        "sim": 0.7012,
+        "provider": "openfda",
+        "section": "ADVERSE REACTIONS",
+        "license": "fda_public",
+        "source": "OZEMPIC (ORAL SEMAGLUTIDE)"
+      },
+      {
+        "sim": 0.6854,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "ZITUVIMET (SITAGLIPTIN AND METFORMIN HYDROCHLORIDE)"
+      }
+    ]
+  },
+  {
+    "drug": "warfarin",
+    "query": "warfarin contraindications",
+    "pass": true,
+    "top_similarity": 0.724878592781948,
+    "ranked": [
+      {
+        "sim": 0.7249,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "Warfarin Sodium (WARFARIN SODIUM)"
+      },
+      {
+        "sim": 0.6798,
+        "provider": "openfda",
+        "section": "WARNINGS AND PRECAUTIONS",
+        "license": "fda_public",
+        "source": "Warfarin Sodium (WARFARIN SODIUM)"
+      },
+      {
+        "sim": 0.6552,
+        "provider": "openfda",
+        "section": "BOXED WARNING",
+        "license": "fda_public",
+        "source": "Warfarin Sodium (WARFARIN SODIUM)"
+      },
+      {
+        "sim": 0.6382,
+        "provider": "openfda",
+        "section": "ADVERSE REACTIONS",
+        "license": "fda_public",
+        "source": "Warfarin Sodium (WARFARIN SODIUM)"
+      },
+      {
+        "sim": 0.6332,
+        "provider": "openfda",
+        "section": "INDICATIONS AND USAGE",
+        "license": "fda_public",
+        "source": "Warfarin Sodium (WARFARIN SODIUM)"
+      }
+    ]
+  },
+  {
+    "drug": "amoxicillin",
+    "query": "amoxicillin contraindications",
+    "pass": true,
+    "top_similarity": 0.732147709599275,
+    "ranked": [
+      {
+        "sim": 0.7321,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "AMOXICILLIN AND CLAVULANATE POTASSIUM (AMOXICILLIN AND CLAVULANATE POTASSIUM)"
+      },
+      {
+        "sim": 0.6814,
+        "provider": "openfda",
+        "section": "WARNINGS AND PRECAUTIONS",
+        "license": "fda_public",
+        "source": "AMOXICILLIN AND CLAVULANATE POTASSIUM (AMOXICILLIN AND CLAVULANATE POTASSIUM)"
+      },
+      {
+        "sim": 0.6238,
+        "provider": "openfda",
+        "section": "ADVERSE REACTIONS",
+        "license": "fda_public",
+        "source": "AMOXICILLIN AND CLAVULANATE POTASSIUM (AMOXICILLIN AND CLAVULANATE POTASSIUM)"
+      },
+      {
+        "sim": 0.616,
+        "provider": "openfda",
+        "section": "DRUG INTERACTIONS",
+        "license": "fda_public",
+        "source": "AMOXICILLIN AND CLAVULANATE POTASSIUM (AMOXICILLIN AND CLAVULANATE POTASSIUM)"
+      },
+      {
+        "sim": 0.6097,
+        "provider": "openfda",
+        "section": "USE IN SPECIFIC POPULATIONS",
+        "license": "fda_public",
+        "source": "AMOXICILLIN AND CLAVULANATE POTASSIUM (AMOXICILLIN AND CLAVULANATE POTASSIUM)"
+      }
+    ]
+  },
+  {
+    "drug": "sertraline",
+    "query": "sertraline contraindications",
+    "pass": true,
+    "top_similarity": 0.758233308792114,
+    "ranked": [
+      {
+        "sim": 0.7582,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "Sertraline Hydrochloride (SERTRALINE HYDROCHLORIDE)"
+      },
+      {
+        "sim": 0.6919,
+        "provider": "openfda",
+        "section": "WARNINGS AND PRECAUTIONS",
+        "license": "fda_public",
+        "source": "Sertraline Hydrochloride (SERTRALINE HYDROCHLORIDE)"
+      },
+      {
+        "sim": 0.685,
+        "provider": "openfda",
+        "section": "BOXED WARNING",
+        "license": "fda_public",
+        "source": "Sertraline Hydrochloride (SERTRALINE HYDROCHLORIDE)"
+      },
+      {
+        "sim": 0.6677,
+        "provider": "openfda",
+        "section": "DRUG INTERACTIONS",
+        "license": "fda_public",
+        "source": "Sertraline Hydrochloride (SERTRALINE HYDROCHLORIDE)"
+      },
+      {
+        "sim": 0.6249,
+        "provider": "openfda",
+        "section": "ADVERSE REACTIONS",
+        "license": "fda_public",
+        "source": "Sertraline Hydrochloride (SERTRALINE HYDROCHLORIDE)"
+      }
+    ]
+  },
+  {
+    "drug": "omeprazole",
+    "query": "omeprazole contraindications",
+    "pass": true,
+    "top_similarity": 0.703078207098414,
+    "ranked": [
+      {
+        "sim": 0.7031,
+        "provider": "openfda",
+        "section": "WARNINGS AND PRECAUTIONS",
+        "license": "fda_public",
+        "source": "Omeprazole (OMEPRAZOLE)"
+      },
+      {
+        "sim": 0.595,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "Atorvastatin calcium (ATORVASTATIN CALCIUM)"
+      },
+      {
+        "sim": 0.5712,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "OZEMPIC (ORAL SEMAGLUTIDE)"
+      },
+      {
+        "sim": 0.5657,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "AMOXICILLIN AND CLAVULANATE POTASSIUM (AMOXICILLIN AND CLAVULANATE POTASSIUM)"
+      },
+      {
+        "sim": 0.5609,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "ZITUVIMET (SITAGLIPTIN AND METFORMIN HYDROCHLORIDE)"
+      }
+    ]
+  },
+  {
+    "drug": "amlodipine",
+    "query": "amlodipine contraindications",
+    "pass": true,
+    "top_similarity": 0.732296055462604,
+    "ranked": [
+      {
+        "sim": 0.7323,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "Amlodipine Besylate (AMLODIPINE BESYLATE)"
+      },
+      {
+        "sim": 0.6603,
+        "provider": "openfda",
+        "section": "WARNINGS AND PRECAUTIONS",
+        "license": "fda_public",
+        "source": "Amlodipine Besylate (AMLODIPINE BESYLATE)"
+      },
+      {
+        "sim": 0.6206,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "Lisinopril and Hydrochlorothiazide (LISINOPRIL AND HYDROCHLOROTHIAZIDE TABLETS)"
+      },
+      {
+        "sim": 0.6073,
+        "provider": "openfda",
+        "section": "INDICATIONS AND USAGE",
+        "license": "fda_public",
+        "source": "Amlodipine Besylate (AMLODIPINE BESYLATE)"
+      },
+      {
+        "sim": 0.6042,
+        "provider": "openfda",
+        "section": "DRUG INTERACTIONS",
+        "license": "fda_public",
+        "source": "Amlodipine Besylate (AMLODIPINE BESYLATE)"
+      }
+    ]
+  },
+  {
+    "drug": "levothyroxine",
+    "query": "levothyroxine contraindications",
+    "pass": true,
+    "top_similarity": 0.765310338260857,
+    "ranked": [
+      {
+        "sim": 0.7653,
+        "provider": "openfda",
+        "section": "CONTRAINDICATIONS",
+        "license": "fda_public",
+        "source": "Levothyroxine sodium (LEVOTHYROXINE SODIUM)"
+      },
+      {
+        "sim": 0.6941,
+        "provider": "openfda",
+        "section": "BOXED WARNING",
+        "license": "fda_public",
+        "source": "Levothyroxine sodium (LEVOTHYROXINE SODIUM)"
+      },
+      {
+        "sim": 0.6896,
+        "provider": "openfda",
+        "section": "WARNINGS AND PRECAUTIONS",
+        "license": "fda_public",
+        "source": "Levothyroxine sodium (LEVOTHYROXINE SODIUM)"
+      },
+      {
+        "sim": 0.6676,
+        "provider": "openfda",
+        "section": "INDICATIONS AND USAGE",
+        "license": "fda_public",
+        "source": "Levothyroxine sodium (LEVOTHYROXINE SODIUM)"
+      },
+      {
+        "sim": 0.6445,
+        "provider": "openfda",
+        "section": "ADVERSE REACTIONS",
+        "license": "fda_public",
+        "source": "Levothyroxine sodium (LEVOTHYROXINE SODIUM)"
+      }
+    ]
+  }
+]
