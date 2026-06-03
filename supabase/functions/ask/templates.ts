@@ -23,10 +23,12 @@ export const SOURCING_COPY =
   "I can share educational information about what a compound is, what the evidence says, " +
   "and questions to ask a licensed healthcare professional.";
 
-/** doc-20 no-source refusal — verbatim core sentence. */
+/** doc-20 no-source refusal — verbatim core sentence + professional pointer
+ *  (doc-20: always point to a doctor/pharmacist, even when refusing). */
 export const NO_SOURCE_COPY =
   "I could not find a reliable source for that specific claim in the available public " +
-  "sources. I should not present it as established evidence.";
+  "sources. I should not present it as established evidence. Please ask your doctor or " +
+  "pharmacist about your specific situation.";
 
 /** Used when a generation tripped the post-filter — sources existed, but the
  *  synthesized answer was unsafe, so it is discarded rather than shown. */

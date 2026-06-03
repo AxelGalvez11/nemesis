@@ -142,7 +142,9 @@ async function main() {
   if (!JWT) throw new Error("sign-in failed");
 
   console.log("Guardrail suite (doc-20 must-never-produce):\n");
+  const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
   for (const c of CASES) {
+    await sleep(2000); // pace LLM-backed calls under DeepSeek's rate limit
     const r = await ask(c.question);
     if ("__error" in r) {
       console.log(`  ✗ ${c.name} — request error ${r.__error}`);
