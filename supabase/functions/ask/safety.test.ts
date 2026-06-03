@@ -154,6 +154,18 @@ Deno.test("detectViolations bypass: cure claim with a noun object", () => {
   assert(detectViolations("Peptide X cures arthritis.").length > 0);
 });
 
+Deno.test("detectViolations: interrogative 'is safe' passes (a question, not a claim)", () => {
+  // "which dose is safe for me?" / "whether it is safe" are questions/conditionals,
+  // not the forbidden assertion "[X] is safe".
+  assertEquals(detectViolations("Which statin dose is safe for me?").length, 0);
+  assertEquals(detectViolations("Ask whether this combination is safe for you.").length, 0);
+  assertEquals(detectViolations("We do not yet know whether it is safe long term.").length, 0);
+});
+
+Deno.test("detectViolations: interrogative 'will it cure' passes", () => {
+  assertEquals(detectViolations("Patients often ask whether it will cure the condition.").length, 0);
+});
+
 Deno.test("detectViolations: benign 'cure' noun phrase passes", () => {
   // "a cure for X" (noun) and negated cure statements are not claims.
   assertEquals(detectViolations("There is no cure for this condition yet.").length, 0);

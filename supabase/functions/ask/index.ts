@@ -182,15 +182,16 @@ async function runAsk(
   const modelName = `${cls.model}|${gen.model}`;
 
   // ---- 6a. post-generation safety filter (the doc-20 guarantee) ----
-  // Scan EVERY model-generated section that renders to the user — including
-  // what_we_do_not_know and questions_to_ask — or a forbidden phrase placed
-  // there bypasses the guarantee.
+  // Scan every DECLARATIVE model section (assertions the system would be making).
+  // questions_to_ask is excluded ON PURPOSE: it is interrogative — "is it safe
+  // for me?" / "should I stop X?" are questions to pose to a clinician, NOT the
+  // forbidden assertions "[X] is safe" / "stop taking X", and scanning them with
+  // the claim detectors false-positives (discarding good answers).
   const assembled = [
     gen.raw.bottom_line.text,
     ...gen.raw.what_we_know.map((p) => p.text),
     ...gen.raw.safety_notes.map((p) => p.text),
     ...gen.raw.what_we_do_not_know.map((p) => p.text),
-    ...gen.raw.questions_to_ask,
   ].join("  ");
   if (detectViolations(assembled).length > 0) {
     // Discard the unsafe generation; surface the retrieved sources as related
