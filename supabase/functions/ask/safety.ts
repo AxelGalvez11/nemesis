@@ -112,12 +112,14 @@ const RULES: Rule[] = [
     guard: TRUE_NEGATION,
     guardWindow: 24,
   },
-  // "This will cure your injury."
+  // "This will cure your injury." / "TB-500 cures tendons." — any object, not
+  // just a pronoun. The (?!for|of) lookahead lets the benign NOUN phrase "a cure
+  // for X" pass; TRUE_NEGATION lets "no evidence it cures X" pass.
   {
     name: "cure_claim",
-    re: /\b(will|can|could|going to|to|may)\s+cure\b|\bcures?\s+(your|the|this|it|them)\b/i,
+    re: /\b(will|can|could|going to|to|may)\s+cures?\b|\bcures?\s+(?!for\b|of\b)\w/i,
     guard: TRUE_NEGATION,
-    guardWindow: 20,
+    guardWindow: 28,
   },
   // "You do not need to ask a doctor." / "You don't need a doctor."
   {

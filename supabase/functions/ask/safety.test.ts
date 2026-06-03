@@ -148,6 +148,19 @@ Deno.test("detectViolations bypass: 'you don't need a doctor' (no 'to ask')", ()
   assert(detectViolations("You don't need a doctor for this.").length > 0);
 });
 
+Deno.test("detectViolations bypass: cure claim with a noun object", () => {
+  assert(detectViolations("TB-500 cures tendons.").length > 0);
+  assert(detectViolations("This supplement cures cancer.").length > 0);
+  assert(detectViolations("Peptide X cures arthritis.").length > 0);
+});
+
+Deno.test("detectViolations: benign 'cure' noun phrase passes", () => {
+  // "a cure for X" (noun) and negated cure statements are not claims.
+  assertEquals(detectViolations("There is no cure for this condition yet.").length, 0);
+  assertEquals(detectViolations("Researchers are still searching for a cure for the disease.").length, 0);
+  assertEquals(detectViolations("No evidence shows it cures anything.").length, 0);
+});
+
 // ---- the negation guards must still hold (no new false positives) -----------
 
 Deno.test("detectViolations: 'do not stop taking' still passes", () => {
