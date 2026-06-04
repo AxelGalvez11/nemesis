@@ -915,3 +915,73 @@ backend changes** (every RPC already existed and is anon-REVOKEd; the payoff of 
   polish pass (avoid leaking internal Postgres text).
 - **Trial jsonb columns** (conditions/interventions/primary_outcomes) rendered minimally; richer
   display deferred to device polish (6b-5).
+
+---
+
+## Phase 6b-3 — Ask (cited answers + safety routing) — DONE (gate green) → AC2/AC3 visible
+
+Ask a medication question → a cited, structured answer, or a deterministic safety/refusal template.
+Built against the frozen §8 `AskResponse`, validated headlessly **as the real seeded authenticated
+user against the live `ask` edge function** (DeepSeek-backed) — **zero backend changes** (the `ask`
+fn was deployed + authenticated-only in Phase 3).
+
+### What shipped
+- **Ask tab** (`src/app/(tabs)/index.tsx`): question input + submit (`useMutation`) + idle/guest/
+  loading/error states; follow-up `questions_to_ask` chips re-ask. Authenticated-only (the fn
+  rejects anonymous) → guest sees a sign-in affordance.
+- **AnswerView** (`src/components/AnswerView.tsx`): renders every `AskResponse` variant — the doc-20
+  structured answer (bottom line + evidence-grade badge + what-we-know/don't-know/safety-notes cited
+  bullets + follow-ups + a numbered **Sources** list) and the deterministic templates. Citations
+  **reuse the 6b-2 Source Viewer** (`source_id` → `SourceLink` → `/source/[id]`).
+- **SafetyBanner** (`src/components/SafetyBanner.tsx`): emergency (urgent-care) + caution (sensitive
+  class) tones.
+- **Typed client**: `src/api/ask.ts` (`supabase.functions.invoke('ask')`), `toAskResponse` cast
+  (guards answer_id+summary+sections; **coerces** safety_flags/citations/evidence_grade so a
+  field-light body degrades instead of white-screening on a safety path).
+
+### Gate (`e2e/phase6b-3.spec.ts`, real authenticated user, cloud) — PASS
+```
+  ✓ 6b-2: search ozempic → semaglutide page (… all cited) → Source Viewer (2.7s)
+  ✓ 6b-2: unknown source id → no-source state (real get_source null path) (1.6s)
+  ✓ 6b-3: ask a medication question → cited structured answer → Source Viewer (AC2/AC3) (14.1s)
+  ✓ 6b-3: emergency phrasing → deterministic urgent-care routing (safety) (2.9s)
+  6 passed (31.1s)
+```
+- **AC2** — "side effects of semaglutide" → a structured answer (bottom line + what-we-know section).
+- **AC3** — ≥1 cited source rendered (intent `side_effects`, grade `very_strong`, 2 citations), each
+  opening the Source Viewer.
+- **Safety** — emergency phrasing → the deterministic urgent-care banner carrying the backend
+  call-emergency/poison-control copy (no LLM, ~2-3s). Preserves the live preScreen + detectViolations
+  + interrogative-aware CLAIM_GUARD already in the `ask` fn.
+- Also: `tsc` clean; `deno test cast.test.ts derive.test.ts` **24/24** (incl. the prop-driven
+  `answerKind` render-shape tests).
+
+### Honesty guard — what this PR does NOT close
+- **no_source / unsupported-claim refusal is not asserted via a live LLM call**: against this corpus a
+  made-up compound ("flogiston-7") still retrieves diabetes neighbors and returns a *safe grounded*
+  answer ("no evidence it exists"), not a hard `refused_unsupported`/`no_source` template — so a live
+  Playwright refusal assertion would be non-deterministic. Coverage instead: (a) the refusal *logic*
+  is **Phase-3 script-gated** (already green) server-side; (b) the AnswerView **render-shape**
+  decision — emergency / refused / normal — is extracted to the pure `answerKind` selector and
+  **unit-tested prop-driven** (the same discipline as 6b-2's `sourceViewState`), so the `refused`
+  render branch is covered even though it has no live trigger. The e2e gate asserts the deterministic
+  emergency short-circuit end-to-end.
+- **Health context** not wired here — `askQuestion` sends `use_health_context: false` (the
+  user_health_context read/edit lands in 6b-5).
+- **Saved answers** deferred — no §8 read RPC for a user's `generated_answers`; out of AC scope.
+- **Ask latency** ~13s observed (doc-02 target <10s) — surfaced as an explicit loading state; a
+  perceived-latency pass (streaming / optimistic copy) is a 6b-5/Phase-8 item.
+
+### Reviews (both before commit)
+- **code-reviewer**: 0 CRITICAL, **1 HIGH** + 2 LOW — HIGH addressed (coerce safety_flags/citations/
+  evidence_grade in `toAskResponse` so the renderer can't crash on a field-light safety body; locked
+  with a test). LOW: follow-up `key={q}`.
+- **security-reviewer**: anon-key-only posture **UPHELD** — no key leak (`functions.invoke` auto-
+  attaches the JWT; service key server-side only), question flows as a JSON body field (no URL/SQL
+  interpolation), answer text rendered via inert RN `<Text>` (no XSS), **no new RPCs/migrations**,
+  `use_health_context=false`, no question/answer logging. LOW (applied): `encodeURIComponent` on the
+  `SourceLink` path; `maxLength={500}` on the Ask input.
+
+### Carry-forwards
+- Unchanged from 6b-1/6b-2 (guest anon reads · web `localStorage` · `uuid@7` · RPC errors→UI copy).
+- Health-context toggle + saved answers + perceived-latency polish → 6b-5 / Phase 8.

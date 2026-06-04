@@ -1,4 +1,4 @@
-import type { DrugOverview, SearchResult, SourceDetail } from "@pharmabro/shared";
+import type { AskResponse, DrugOverview, SearchResult, SourceDetail } from "@pharmabro/shared";
 import type { DrugPubmed, DrugTrial, LabelDoc } from "./types.ts";
 
 // jsonb / RPC-row -> DTO narrowing at the §8 client boundary. `supabase gen types`
@@ -69,4 +69,22 @@ export function castTrials(raw: unknown): DrugTrial[] {
 /** GET /drugs/{id}/pubmed (get_drug_pubmed) — row array keyed by article_id. */
 export function castPubmed(raw: unknown): DrugPubmed[] {
   return rows(raw, (r) => (typeof r.article_id === "string" ? (r as unknown as DrugPubmed) : null));
+}
+
+/** POST /ask (the `ask` edge fn) — the frozen AskResponse. A refusal/template answer
+ * is still a valid AskResponse (not null); only a malformed body is null. We guard the
+ * fields the AnswerView dereferences: answer_id, plain_english_summary, answer_sections. */
+export function toAskResponse(raw: unknown): AskResponse | null {
+  if (!isObj(raw)) return null;
+  if (typeof raw.answer_id !== "string" || typeof raw.plain_english_summary !== "string") return null;
+  if (!isObj(raw.answer_sections)) return null;
+  // Coerce the array/grade fields the AnswerView dereferences (.some/.filter/.replace)
+  // so a body that omits them degrades gracefully instead of white-screening on a
+  // safety/refusal path — the cast invariant: guard what the renderer touches.
+  return {
+    ...raw,
+    safety_flags: Array.isArray(raw.safety_flags) ? raw.safety_flags : [],
+    citations: Array.isArray(raw.citations) ? raw.citations : [],
+    evidence_grade: typeof raw.evidence_grade === "string" ? raw.evidence_grade : "not_applicable",
+  } as unknown as AskResponse;
 }

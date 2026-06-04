@@ -9,6 +9,7 @@ import {
   castPubmed,
   castSearchResults,
   castTrials,
+  toAskResponse,
   toDrugOverview,
   toSourceDetail,
 } from "./cast.ts";
@@ -127,4 +128,34 @@ Deno.test("castPubmed: drops rows without article_id", () => {
   const out = castPubmed(raw);
   assertEquals(out.length, 1);
   assertEquals(out[0].pmid, "42211143");
+});
+
+// --- toAskResponse (the `ask` edge fn body) ---
+
+Deno.test("toAskResponse: null/missing mandatory fields -> null", () => {
+  assertEquals(toAskResponse(null), null);
+  assertEquals(toAskResponse({ answer_id: "a1", plain_english_summary: "x" }), null); // no answer_sections
+  assertEquals(toAskResponse({ answer_id: "a1", answer_sections: {} }), null); // no summary
+});
+
+Deno.test("toAskResponse: a real answer (and a refusal) pass through", () => {
+  const answer = {
+    answer_id: "a1",
+    intent: "side_effects",
+    plain_english_summary: "Common side effects are nausea...",
+    evidence_grade: "very_strong",
+    answer_sections: { what_we_know: [{ text: "...[1]", citation_ids: ["1"] }], questions_to_ask: [] },
+    citations: [{ chunk_tag: "1", source_id: "0c7a82b9" }],
+    safety_flags: [],
+    refused_unsupported: false,
+  };
+  assertEquals(toAskResponse(answer)?.intent, "side_effects");
+  // A template/refusal is still a valid AskResponse (not null), and the array/grade
+  // fields the renderer dereferences are coerced even when the body omits them.
+  const refusal = { answer_id: "a2", plain_english_summary: "This could be urgent...", answer_sections: {}, template: "emergency_routing" };
+  const out = toAskResponse(refusal);
+  assertEquals(out?.answer_id, "a2");
+  assertEquals(out?.safety_flags, []);
+  assertEquals(out?.citations, []);
+  assertEquals(out?.evidence_grade, "not_applicable");
 });
