@@ -19,7 +19,7 @@ export function SourceLink({
     <Pressable
       testID={testID}
       style={styles.link}
-      onPress={() => router.push(`/source/${sourceId}`)}
+      onPress={() => router.push(`/source/${encodeURIComponent(sourceId)}`)}
     >
       <Text style={styles.linkText}>{label} →</Text>
     </Pressable>

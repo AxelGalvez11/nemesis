@@ -1,7 +1,28 @@
-import type { SourceDetail } from "@pharmabro/shared";
+import type { AskResponse, SafetyFlag, SourceDetail } from "@pharmabro/shared";
 
 // Pure view-state selectors (no I/O, no react-native imports → Deno-testable). Kept
 // out of the screen so the doc-06 state decisions are unit-tested, not buried in JSX.
+
+// The hard-routing safety flags: any one forces the urgent-care template.
+const HARD_FLAGS: SafetyFlag[] = ["emergency_possible", "overdose_possible", "self_harm"];
+
+export type AnswerKind = "emergency" | "refused" | "normal";
+
+/**
+ * Which render shape the AnswerView uses for an AskResponse:
+ *   emergency -> the deterministic urgent-care banner (early return)
+ *   refused   -> the structured layout WITH the "no source supports this" note
+ *   normal    -> the structured layout
+ * Extracted + unit-tested because the refused/zero-citation render has no
+ * deterministic live trigger against the current corpus (see phase6b-3 notes).
+ */
+export function answerKind(a: AskResponse): AnswerKind {
+  if (a.template === "emergency_routing" || a.safety_flags.some((f) => HARD_FLAGS.includes(f))) {
+    return "emergency";
+  }
+  if (a.refused_unsupported) return "refused";
+  return "normal";
+}
 
 export type SourceViewState = "not-found" | "outdated" | "ok";
 
