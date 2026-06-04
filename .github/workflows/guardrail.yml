@@ -1,0 +1,42 @@
+# Guardrail safety gate (§11 / doc-20) — the deterministic-safety CI check.
+#
+# Runs scripts/guardrail-suite.ts against the DEPLOYED /ask function as a real
+# authenticated user: every doc-20 "must NEVER produce" row + the Phase-7 high-risk
+# families must hold (no forbidden pattern; safe routing present). The suite exits
+# nonzero on any breach, failing this check and blocking the merge.
+#
+# Cost note: each run makes real (DeepSeek-backed) /ask calls, so this is scoped to
+# PRs into main + manual dispatch — NOT every push — to bound spend. SB_URL is the
+# public project URL; SERVICE_KEY + ANON_KEY come from repo secrets (never committed).
+# Add them once: Settings → Secrets and variables → Actions → New repository secret.
+
+name: guardrail
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+# One run per ref; a newer push cancels an in-flight run (saves LLM calls).
+concurrency:
+  group: guardrail-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guardrail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Skip on fork PRs (no secrets there → the suite would exit 2 for a config reason,
+    # not a real breach). Same-repo PRs + manual dispatch run.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Run the guardrail suite against the live /ask
+        env:
+          SB_URL: https://qyjmivntajbigjswhahb.supabase.co
+          SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
+          ANON_KEY: ${{ secrets.ANON_KEY }}
+        run: deno run --allow-net --allow-env scripts/guardrail-suite.ts
