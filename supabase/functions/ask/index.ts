@@ -23,6 +23,7 @@ import { generate } from "./generate.ts";
 import { enforceCitations, type RetrievedChunk } from "./citation.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
 import { PROMPT_VERSION } from "./prompts.ts";
+import { withProfessionalRouting } from "./routing.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
@@ -214,12 +215,20 @@ async function runAsk(
   }
 
   // ---- 7. assemble ----
+  // Deterministic professional-routing guarantee: generation under-emits the
+  // "talk to your pharmacist/prescriber" line for personal-decision intents, so
+  // append it here (post-enforcement — an uncited safety note would otherwise be
+  // dropped by enforceCitations). See routing.ts.
+  const answer_sections = {
+    ...enf.answer_sections,
+    safety_notes: withProfessionalRouting(enf.answer_sections.safety_notes, cls.intent),
+  };
   const resp: AskResponse = {
     answer_id: answerId,
     intent: cls.intent,
     plain_english_summary: enf.plain_english_summary,
     evidence_grade: gen.raw.evidence_grade,
-    answer_sections: enf.answer_sections,
+    answer_sections,
     citations: enf.citations,
     safety_flags: flags,
     refused_unsupported: false,
