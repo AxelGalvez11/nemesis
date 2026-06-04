@@ -839,3 +839,79 @@ UI state. Also: `tsc` clean; `deno test cast.test.ts` 4/4.
   config-time only, not bundled at runtime; monitor for an `@expo/config-plugins` bump.
 - **`packages/db` gen types** moved to 6b-4 (where watchlist table-row types are needed).
 - SDK 56 is bleeding-edge; node v24 is ahead of its tested range (no issues observed).
+
+---
+
+## Phase 6b-2 — Explore + Drug page + Source Viewer — DONE (gate green) → AC1/AC4/AC5/AC6/AC9 visible
+
+The read surface: search a drug, open its page (label · trials · pubmed · evidence — every item
+cited), and open any citation in the doc-12 Source Viewer. Built against the frozen §8 contract,
+validated headlessly **as the real seeded authenticated user against cloud** — and with **zero
+backend changes** (every RPC already existed and is anon-REVOKEd; the payoff of the 0110/0111/0112/
+0118 grant posture).
+
+### What shipped
+- **Explore** (`src/app/(tabs)/explore.tsx`): debounced `search_entities` → results → drug page.
+  Guest sees a sign-in affordance; idle/loading/empty/error states.
+- **Drug page** (`src/app/drug/[id].tsx`): overview (name·status·mechanism·brands) + **EvidenceCard**
+  (AC9: score+rationale+counts+limitations) + **LabelSections** (AC4) + **TrialList** (AC5) +
+  **PubmedList** (AC6). Four §8 reads run in parallel; each section owns its doc-06 load/error/empty
+  state. "Related" = the drug's `classes` rendered as **display-only** chips (no class-members RPC
+  exists — not navigable).
+- **Source Viewer** (`src/app/source/[id].tsx`): `get_source` → provider·title·license·sections·
+  is_current + "open original" (http(s)-guarded). State chosen by the pure, unit-tested
+  `sourceViewState` (not-found / outdated / ok).
+- **Typed client** (`src/api/`): `search.ts`, `sources.ts`, `drugs.ts` (+label/trials/pubmed),
+  app-local read-row view types (`types.ts`) — the frozen `@pharmabro/shared` is not reopened.
+  jsonb→DTO casts (`cast.ts`) guard the field each renderer dereferences.
+- **"All cited"** (Phase-2 acceptance, row 673): **every** row carries a non-null `source_id` —
+  verified across all rows for semaglutide (label 1/1, trials 11/11, pubmed 12/12), not just the
+  first → a `SourceLink` to its Source Viewer; the gate asserts the affordance per section.
+
+### Gate (`e2e/phase6b-2.spec.ts`, real authenticated user, cloud `qyjmivntajbigjswhahb`) — PASS
+```
+  ✓ 6b-1: sign-in → 4-tab shell → authenticated get_drug render → sign-out (3.5s)
+  ✓ 6b-1: guest UI state renders (browse-only, no session) (0.6s)
+  ✓ 6b-2: search ozempic → semaglutide page (label/trials/pubmed/evidence, all cited) → Source Viewer (2.7s)
+  ✓ 6b-2: unknown source id → no-source state (real get_source null path) (2.1s)
+  4 passed (13.7s)
+```
+- **AC1** — "ozempic" (brand alias) → result resolves to Semaglutide → tap → drug page.
+- **AC4/AC5/AC6** — label sections, ≥1 trial, ≥1 pubmed render, **each with a visible citation**
+  (semaglutide real counts: labels 1, trials 11, pubmed 12).
+- **AC9** — evidence score (`very_strong`) + rationale + counts + limitations all visible.
+- Source Viewer — a citation opens `get_source` (provider/title/sections/url); unknown uuid → the
+  real null path → no-source state.
+- Also: `tsc` clean; `deno test cast.test.ts derive.test.ts` **17/17**.
+
+### Honesty guard — what this PR does NOT close
+- **"Outdated" state has no live trigger**: the corpus has **0 superseded sources**
+  (`core_sources WHERE superseded_at IS NOT NULL == 0`), so `is_current` is always true. The doc-06
+  outdated branch is therefore proven **prop-driven** (`sourceViewState` unit test), **not** via a
+  live Playwright source. No gate line claims a real-data outdated path.
+- **AC9 "off-label < approved"** is the **Phase-4 engine** guarantee (already green in PROGRESS); the
+  UI renders the drug-level (approved) score. 6b-2 surfaces the score; it does not re-prove the
+  ordering in the UI (no claim-level off-label score is rendered).
+- **Guest = UI affordance only** (no real anonymous reads). Real guest reads need Supabase
+  anonymous-sign-in enabled — a **cloud auth-config change**, deliberately not flipped. The gate
+  user is the seeded email account.
+- **Add-to-watchlist** deferred to 6b-4 (AC7), where watchlist CRUD lands — no half-built follow
+  button in 6b-2.
+
+### Reviews (both before commit)
+- **code-reviewer**: 0 CRITICAL/HIGH, 2 MEDIUM + 2 LOW — ALL addressed: guard `status` in
+  `castSearchResults` + `?? ""` on `approved_status` (no `.replace` on a possibly-null field);
+  extracted the duplicated `UUID_RE`→`src/lib/validation.ts` and `Centered`→`components/ui.tsx`;
+  `Linking.openURL` now scheme-guarded + `.catch`; dropped the redundant `isFetching`.
+- **security-reviewer**: anon-key-only posture **UPHELD** — no service-key leak (confined to the Node
+  e2e setup), no string-built SQL/URLs (supabase-js `.rpc` binding), uuid route-guard adequate, **no
+  new RPCs/migrations** (nothing to REVOKE), no XSS (RN `<Text>` sinks). LOW: external-URL scheme
+  guard (applied); RPC error strings surfaced to UI (consistent with 6b-1 — uniform polish in 6b-5).
+
+### Carry-forwards (not 6b-2 blockers)
+- **Guest anonymous reads** + **web `localStorage` session** + **transitive `uuid@7`** — unchanged
+  from 6b-1.
+- **RPC error messages → UI**: replace raw `error.message` with a generic copy in the 6b-5 8-state
+  polish pass (avoid leaking internal Postgres text).
+- **Trial jsonb columns** (conditions/interventions/primary_outcomes) rendered minimally; richer
+  display deferred to device polish (6b-5).

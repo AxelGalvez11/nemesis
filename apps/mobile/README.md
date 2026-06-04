@@ -53,18 +53,23 @@ src/
     _layout.tsx        providers (react-query, AuthProvider, SafeArea) + Stack
     sign-in.tsx        email sign-in + "continue as guest"
     (tabs)/            the 4-tab shell (Ask/Explore/Watchlist/Profile), auth-guarded
-    drug/[id].tsx      data-bound drug screen (get_drug) — 6b-1 fidelity proof
-  api/                 typed §8 client over supabase-js (supabase, drugs, cast)
+      explore.tsx      search (search_entities) → results → drug page
+    drug/[id].tsx      drug page: overview · evidence · label · trials · pubmed (all cited)
+    source/[id].tsx    doc-12 Source Viewer (get_source)
+  api/                 typed §8 client over supabase-js (supabase, search, drugs,
+                       sources, cast, derive, types)
   auth/                AuthProvider (email sign-in + guest UI state)
-  components/states/   the doc-06 8-state primitives
-  theme/               shared styles (doc-13 design system fleshed out in 6b-2…6b-5)
-e2e/                   Playwright fidelity gate (global-setup seeds the test user)
+  components/          EvidenceCard · LabelSections · TrialList · PubmedList · SourceLink
+                       · ui (Card/Chip/Badge/Centered) · states (doc-06 8-state primitives)
+  lib/                 route-param validation (UUID_RE)
+  theme/               shared styles (doc-13 design system fleshed out in 6b-5)
+e2e/                   Playwright AC gates (global-setup seeds the test user)
 ```
 
 ## Roadmap (sub-PRs)
 
-- **6b-1** (this PR): scaffold · auth (email + guest UI state) · typed §8 client (`get_drug`) · 8-state primitives · Playwright fidelity gate.
-- **6b-2**: Explore + Drug page + Source Viewer → AC1/4/5/6/9.
+- **6b-1** ✅: scaffold · auth (email + guest UI state) · typed §8 client (`get_drug`) · 8-state primitives · Playwright fidelity gate.
+- **6b-2** (this PR): Explore + Drug page + Source Viewer → AC1/4/5/6/9.
 - **6b-3**: Ask (cited answers + safety routing) → AC2/3.
 - **6b-4**: Watchlist + Compare → AC7/8.
 - **6b-5**: Profile + legal + full 8-state matrix (AC10 affordances) + device sign-off.
