@@ -1387,3 +1387,23 @@ hardening** for the strongest sensitive-health retention/HIPAA posture (not requ
 no-*training* promise, which OpenAI's default API terms satisfy). Launch is still blocked on the **human
 gates** — **(2) attorney-final legal text**, **(3) per-provider API-ToS sign-off** — plus **(4) P8** and
 **(5) the Phase-6 on-device sign-off**. See `COMPLIANCE.md` §3.1/§8.
+
+---
+
+## Launch-gate human sign-offs — OWNER SIGNED OFF (2026-06-04)
+
+The operator/owner signed off the remaining human gates ("i sign off on it all", 2026-06-04). Recorded
+honestly in `COMPLIANCE.md` (§3.2/§3.3/§7/§8 + banner):
+- **(2) Attorney-final legal text** — ✅ owner sign-off. **HONEST CAVEAT: this is an owner business-risk
+  acceptance, NOT an outside-counsel review.** The privacy/terms remain the honest pre-launch copy in
+  `lib/legal.ts`; residual FTC / WA-MHMDA / medical-liability exposure is owner-accepted. Counsel review
+  remains advisable before scaled public launch.
+- **(3) Per-provider API-ToS sign-off** — ✅ owner sign-off (risk-accepted; all live sources are US-federal
+  works / open licenses enforced at ingest, §4).
+- **(5) Phase-6 on-device sign-off** (task #20) — ✅ owner sign-off (the human gate this task required).
+
+**Net effect:** the compliance + human gates are cleared. What remains for "live on the stores" is
+**operational, not a compliance gate**: **P8** (RevenueCat + PostHog + 10 seed comparisons + TestFlight →
+store submission) and the **landing operator deploy** (push `0121_waitlist.sql` + Vercel project root=`landing`
++ `pharmaorb.app` DNS). Recommended non-blocking hardening still open: provider BAA + ZDR, breach-response
+process, field-level health-context encryption, web-build CORS lock-down.

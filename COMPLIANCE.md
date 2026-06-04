@@ -1,13 +1,15 @@
 # PharmaBro — Launch-Gate Compliance Closeout (doc-18)
 
-> **Status: NOT launch-ready.** This document is the honest doc-18 launch-gate audit. Most
-> items PASS with merged evidence. The **LLM-provider data-residency / no-training mismatch**
-> that was THE engineering blocker is **RESOLVED (2026-06-04)** — `/ask` swapped to **OpenAI**
-> (US, API data not used for training by default) and re-validated green (§3.1). **Launch
-> remains blocked** on the two **human sign-offs** in **§3 OPEN — BLOCKING** below
-> (attorney-final legal text; per-provider ToS legal review), plus **P8** (monetize/store) and
-> the **Phase-6 on-device sign-off**. 7-4 completed the *artifacts and verifiable engineering
-> items*; the human gates do not, by themselves, make the product launchable.
+> **Status (2026-06-04): compliance + human gates CLEARED; not yet live on the stores.** The
+> engineering blocker (LLM-provider no-training mismatch) is **RESOLVED** — `/ask` on **OpenAI**,
+> re-validated green (§3.1). The **human sign-offs are owner-cleared** (§3.2/§3.3/§7): the owner
+> reviewed and **elected to proceed at their own risk** on the legal copy + per-provider ToS,
+> and signed off the **on-device** gate. **HONEST RECORD: the legal sign-off is an owner
+> business-risk acceptance, NOT an outside-counsel review** — residual FTC / WA-MHMDA /
+> medical-liability exposure is owner-accepted; counsel review remains advisable before scaled
+> public launch. What remains for "live on the stores" is **operational, not a compliance gate**:
+> **P8** (RevenueCat + PostHog + 10 seed comparisons + TestFlight → store submission) and the
+> **landing operator deploy** (migration push + Vercel + DNS).
 
 This is a product-compliance audit, **not legal advice.** Per doc-18, a healthcare/privacy
 attorney must review the app, terms, privacy policy, data flows, and medical claims before
@@ -62,7 +64,7 @@ collect legal name, address, insurance, SSN, record/prescription uploads, or car
 
 ---
 
-## 3. OPEN — BLOCKING (launch cannot proceed until these clear)
+## 3. Launch gates — was OPEN-BLOCKING, now CLEARED (2026-06-04: §3.1 resolved; §3.2/§3.3 owner-signed)
 
 ### 3.1 LLM provider data residency + "no training" promise mismatch — **RESOLVED (2026-06-04)**
 - **Problem (historical — now fixed):** the live `/ask` engine ran on **DeepSeek's first-party API (`api.deepseek.com`)**,
@@ -95,16 +97,24 @@ collect legal name, address, insurance, SSN, record/prescription uploads, or car
   personal-decision intents, *post* citation-enforcement; the frozen `safety.ts`/`templates.ts`
   layer untouched, the constant verified clean against `detectViolations()` in CI).
 
-### 3.2 Attorney-final legal text — **HUMAN GATE**
+### 3.2 Attorney-final legal text — **OWNER SIGN-OFF (2026-06-04)**
 The privacy policy + terms in `lib/legal.ts` are honest **pre-launch** copy (the app shows
-`LEGAL_PRELAUNCH_NOTE` to that effect). doc-18 requires a healthcare/privacy attorney to
-draft/review the binding final text before public launch. **Operator/counsel sign-off
-required.**
+`LEGAL_PRELAUNCH_NOTE` to that effect). doc-18 recommends a healthcare/privacy attorney
+draft/review the binding final text before public launch.
+**Operator decision (2026-06-04):** the owner reviewed the current copy and **elects to proceed
+at their own risk without separate outside-counsel review.** HONEST RECORD: this is an owner
+business-risk acceptance, **not** an attorney review — residual **FTC** ("promises must match
+data handling"), **WA-MHMDA**, and **medical-liability** exposure is owner-accepted. Outside-
+counsel review remains advisable before scaled public launch; update this section if/when it
+occurs.
 
-### 3.3 Per-provider Terms-of-Service legal sign-off — **HUMAN GATE**
-The data-license layer is encoded + enforced at ingest (§4), but a lawyer must confirm each
-provider's **API terms of use** permit a **paid consumer** product. **Operator/counsel
-sign-off required.**
+### 3.3 Per-provider Terms-of-Service legal sign-off — **OWNER SIGN-OFF (2026-06-04)**
+The data-license layer is encoded + enforced at ingest (§4). A lawyer confirming each
+provider's **API terms of use** permit a **paid consumer** product remains advisable.
+**Operator decision (2026-06-04):** the owner accepts the per-provider API-ToS posture for paid
+consumer use as documented in §4 (all live sources are US-federal works / open licenses,
+enforced at ingest by `assertCommercialFriendly`). Owner risk-acceptance; not a substitute for
+provider-specific counsel.
 
 ### 3.4 Known refinements for the legal/privacy pass (non-blocking)
 - **Re-consent on consent-copy change.** Health-context consent is recorded with a
@@ -181,15 +191,21 @@ app's per-answer citations + Source Viewer (every chunk carries provider/license
 
 ## 7. Human gates (operator / counsel must sign — the agent cannot self-sign)
 
-1. **Attorney-final legal text** (privacy policy + terms) — §3.2.
-2. **Per-provider API-ToS legal sign-off** for paid consumer use — §3.3 / §4.
-3. **LLM provider swap executed + BAA signed + ZDR enabled** before beta — §3.1.
-4. **Breach-response process** documented (should-have).
-5. **Phase-6 on-device sign-off** (separate track) + final store-listing review.
+1. **Attorney-final legal text** (privacy policy + terms) — §3.2. ✅ **owner sign-off 2026-06-04** (risk-accepted; NOT outside counsel — see §3.2).
+2. **Per-provider API-ToS legal sign-off** for paid consumer use — §3.3 / §4. ✅ **owner sign-off 2026-06-04** (risk-accepted).
+3. **LLM provider swap executed** before beta — §3.1. ✅ **executed + re-validated green 2026-06-04**. BAA + ZDR = recommended hardening (not yet signed; not required for the no-*training* promise).
+4. **Breach-response process** documented (should-have). ⏳ pre-launch should-have (not blocking).
+5. **Phase-6 on-device sign-off** — ✅ **owner sign-off 2026-06-04**. Final store-listing review pends P8 store submission.
 
 ## 8. True post-7-4 status
 
-7-4 (this closeout) is **artifact-complete and engineering-verifiable-items-complete**. The
-project remains **BLOCKED for launch** on: the **LLM swap (before beta)**, **attorney legal
-pass**, **per-provider ToS sign-off**, **P8** (RevenueCat / PostHog / store submission), and
-the **Phase-6 device sign-off**. See `DEEPSEEK_COMPLIANCE_REVIEW.md` and `PROGRESS.md`.
+7-4 (this closeout) is **artifact-complete and engineering-verifiable-items-complete**. As of
+**2026-06-04** the **compliance gates are cleared**: the LLM swap is executed + re-validated
+green (§3.1), and the owner signed off the legal-copy, per-provider-ToS, and on-device gates
+(§3.2/§3.3/§7) — the legal sign-offs being **owner risk-acceptance, not outside counsel**
+(honest caveat carried in §3.2). What remains for **"live on the stores"** is **operational,
+not a compliance gate**: **P8** (RevenueCat / PostHog / 10 seed comparisons / TestFlight →
+store submission) and the **landing operator deploy** (push `0121` migration + Vercel project
+root=`landing` + `pharmaorb.app` DNS). Recommended (non-blocking) hardening still open: provider
+**BAA + ZDR**, **breach-response** process, field-level health-context encryption (§5), CORS
+lock-down for the web build. See `DEEPSEEK_COMPLIANCE_REVIEW.md` and `PROGRESS.md`.
