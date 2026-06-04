@@ -9,7 +9,11 @@ import {
   castPubmed,
   castSearchResults,
   castTrials,
+  castWatchlistItems,
+  castWatchlistUpdates,
   toAskResponse,
+  toComparison,
+  toDigest,
   toDrugOverview,
   toSourceDetail,
 } from "./cast.ts";
@@ -158,4 +162,35 @@ Deno.test("toAskResponse: a real answer (and a refusal) pass through", () => {
   assertEquals(out?.safety_flags, []);
   assertEquals(out?.citations, []);
   assertEquals(out?.evidence_grade, "not_applicable");
+});
+
+// --- watchlist / digest / compare (6b-4) ---
+
+Deno.test("castWatchlistItems: drops rows without id (needed to unfollow)", () => {
+  const raw = [
+    { id: "w1", item_type: "drug", item_ref: "c674", frequency: "weekly" },
+    { item_type: "drug", item_ref: "no-id" }, // dropped
+  ];
+  assertEquals(castWatchlistItems(raw).length, 1);
+  assertEquals(castWatchlistItems(null), []);
+});
+
+Deno.test("castWatchlistUpdates: keeps id'd rows; null -> []", () => {
+  const raw = [{ id: "u1", item_type: "drug", item_ref: "c674", update_type: "pubmed_new", title: "x" }];
+  assertEquals(castWatchlistUpdates(raw).length, 1);
+  assertEquals(castWatchlistUpdates("nope"), []);
+});
+
+Deno.test("toDigest: null/no-id -> null; items coerced to []", () => {
+  assertEquals(toDigest(null), null);
+  assertEquals(toDigest({ update_count: 0 }), null); // no id
+  assertEquals(toDigest({ id: "d1", update_count: 0 })?.items, []); // missing items -> []
+  assertEquals(toDigest({ id: "d1", items: [{ id: "u1" }] })?.items.length, 1);
+});
+
+Deno.test("toComparison: requires left+right+sections objects", () => {
+  assertEquals(toComparison(null), null);
+  assertEquals(toComparison({ left: { id: "a" }, right: { id: "b" } }), null); // no sections
+  const ok = { left: { id: "a", name: "A" }, right: { id: "b", name: "B" }, sections: {}, sources: [] };
+  assertEquals(toComparison(ok)?.left.name, "A");
 });
