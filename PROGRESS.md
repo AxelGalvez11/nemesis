@@ -707,3 +707,61 @@ Run live on `qyjmivntajbigjswhahb`; 11/11 checks green:
 through `0117`). Follow → detect → weekly digest works end-to-end as a verified authenticated user,
 ranked by the deterministic doc-12 key, with cross-user isolation and anon denial enforced. Next:
 Phase 6 (mobile, RN+Expo against the frozen §8 contract) — or Phase 3.5 (RAG quality).
+
+---
+
+# Phase 6a — §8 backend gaps the mobile app depends on (`get_source` + `compare`)
+
+Phase 6 (mobile) builds against the frozen §8 contract, but two read endpoints it needs weren't built
+in Phases 2–5. This sub-phase lands them, headlessly verified as an authenticated end-user (same gate
+discipline as Phases 2–5). The RN/Expo app (6b) follows separately in plan mode — a UI phase's
+validation bar shapes the build, so those decisions get settled with the operator first.
+
+### What shipped
+- **`0118_get_source.sql`** — `get_source(p_id uuid) RETURNS jsonb`, the §8 `GET /sources/{id}`
+  source-viewer record (doc-12): provider, title, url, `external_id` (provider_id), license/attribution,
+  `published_at`/`fetched_at`/`retrieved_at`, `superseded_at` + `is_current` (drives the doc-06
+  "outdated" state), `sections` (distinct chunk sections), metadata. SECURITY DEFINER, `search_path`
+  pinned; **REVOKE PUBLIC+anon, GRANT authenticated+service_role** (mirrors get_drug + the 0111/0112
+  read-lock). `SourceDetail` type added to `packages/shared/src/search.ts`. Applied to cloud.
+- **`supabase/functions/compare`** — `GET /compare?left&right` → structured side-by-side (doc-11):
+  `mechanism`, `approved_uses`, `evidence_strength`, `trial_status`, `safety`, `cost_access` (6 section
+  groups) + unioned `sources`. Composes the existing authenticated reads (`get_drug` + `get_drug_label`
+  + `get_drug_trials`) for both entities; the client renders, never computes. Pure `buildComparison`
+  (4 unit tests) + IO wrapper (verify authenticated non-anonymous caller; validate `left`/`right` are
+  uuids and differ; service-role reads). `Comparison` type in `packages/shared/src/compare.ts`.
+  Deployed to cloud via `--use-api` (server-side bundle — the default Docker bundler wedged locally).
+
+### Reviews
+- **code-reviewer**: 0 CRITICAL, 0 HIGH; 4 MEDIUM addressed (log verifyUser cause; robust label-section
+  flatten for string/array/object; sources-from-bridge + get_drug-null-convention doc notes).
+- **security-reviewer**: both cruxes CONFIRMED CORRECT — `get_source` anon-revoke + `search_path`
+  pinned; `compare` rejects anon/anonymous, uuid-validates, no injection / no secret-leak. `metadata`
+  exposure is ≤ the already-authenticated-readable `core_sources` table (no new exposure).
+
+### Gate (`scripts/phase6a-validate.ts`, authenticated end-user, cloud) — PASS
+```
+[6a] get_source — the Source Viewer record
+  ✓ get_source returns the record (authenticated) — status=200
+  ✓   └ provider + title + url present; external_id present
+  ✓   └ is_current is a boolean (drives 'outdated' state) — true
+  ✓   └ sections is an array — 15 sections
+  ✓ anon → get_source DENIED — status=401
+[6a] compare — structured side-by-side (6 section groups)
+  ✓ compare returns 200 (authenticated); left/right headers present
+  ✓   └ mechanism / approved_uses / evidence_strength / trial_status / safety / cost_access all left+right
+  ✓   └ sources is an array — 3 sources; trial_status.left has a count
+  ✓ anon → compare DENIED — status=401
+  ✓ compare rejects a non-uuid (400); rejects left===right (400)
+✅ PHASE 6a GATE PASS (get_source + compare)
+```
+
+### Notes / carry-forwards
+- `get_source` returns `200 null` for a missing id (same convention as `get_drug`); the client treats
+  null as not-found.
+- No per-function rate limiting on `compare` (matches `ask`; auth-gated + platform backstop).
+- `compare` requires authenticated non-anonymous; guest scope is a 6b decision.
+
+## ✅ PHASE 6a COMPLETE — `get_source` + `compare` live on `qyjmivntajbigjswhahb` (migrations through
+`0118`), the §8 read surface the mobile app needs. Gate green as a verified authenticated user. Next:
+Phase 6b (RN/Expo app) — to plan mode for the validation-bar / auth-scope / PR-granularity decisions.
