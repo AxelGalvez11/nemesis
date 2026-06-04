@@ -39,6 +39,30 @@ export interface SourceRef {
   retrieved_at: string | null;
 }
 
+/**
+ * GET /sources/{id} full source-viewer record (get_source RPC). The durable
+ * source-LEVEL fields; answer-specific why_used + cited excerpt come from the
+ * answer's citation objects, not here. `is_current` (superseded_at IS NULL) drives
+ * the doc-06 "outdated" state.
+ */
+export interface SourceDetail {
+  source_id: string;
+  provider: string;
+  title: string;
+  subtitle: string | null;
+  url: string;
+  external_id: string;
+  license: string;
+  attribution_required: boolean;
+  published_at: string | null;
+  fetched_at: string | null;
+  retrieved_at: string | null;
+  superseded_at: string | null;
+  is_current: boolean;
+  sections: string[];
+  metadata: Record<string, unknown>;
+}
+
 /** GET /drugs/{id} overview (get_drug RPC). */
 export interface DrugOverview {
   id: string;
