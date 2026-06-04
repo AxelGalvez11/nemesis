@@ -50,18 +50,6 @@ const RANK: Record<EvidenceTier, number> = {
   unknown: -1, very_weak: 0, weak: 1, moderate: 2, strong: 3, very_strong: 4,
 };
 
-async function loadAll<T>(table: string, select: string): Promise<T[]> {
-  const out: T[] = [];
-  const page = 1000;
-  for (let from = 0; ; from += page) {
-    const { data, error } = await sb.from(table).select(select).range(from, from + page - 1);
-    if (error) throw new Error(`${table}: ${error.message}`);
-    out.push(...((data ?? []) as T[]));
-    if (!data || data.length < page) break;
-  }
-  return out;
-}
-
 interface WatchRow { user_id: string; item_type: WatchItemType; item_ref: string }
 interface UpdateRow {
   id: string; item_type: WatchItemType; item_ref: string; update_type: UpdateType;
@@ -90,22 +78,34 @@ async function main() {
     return;
   }
 
-  // All updates + drug-level evidence tiers, loaded once and matched in memory.
-  const updates = await loadAll<UpdateRow>(
-    "updates",
-    "id,item_type,item_ref,update_type,title,summary,source_id,source_url,importance_score,detected_at",
-  );
-  const scores = await loadAll<{ entity_id: string; score: EvidenceTier }>(
-    "evidence_scores", "entity_id,score",
-  );
-  const tierByEntity = new Map<string, EvidenceTier>();
-  for (const s of scores) if (!tierByEntity.has(s.entity_id)) tierByEntity.set(s.entity_id, s.score);
+  // Updates in the window, filtered SERVER-side + paginated (don't pull the whole
+  // growing table into memory; updates_detected_idx covers this).
+  const updates: UpdateRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await sb.from("updates")
+      .select("id,item_type,item_ref,update_type,title,summary,source_id,source_url,importance_score,detected_at")
+      .gte("detected_at", periodStart).lt("detected_at", periodEnd)
+      .range(from, from + 999);
+    if (error) throw new Error(`updates: ${error.message}`);
+    updates.push(...((data ?? []) as UpdateRow[]));
+    if (!data || data.length < 1000) break;
+  }
 
-  // Index updates by the (item_type,item_ref) seam, pre-filtered to the window.
-  const inWindow = (d: string) => d >= periodStart && d < periodEnd;
+  // Drug-LEVEL evidence tiers only. Claim rows share entity_id with the drug
+  // (evidence-score.ts writes entity_id=drug for both), so an unfiltered load could
+  // let a claim tier win the entity's evidence_rank. One drug-level row per entity
+  // (engine delete-then-inserts), so set() is unambiguous.
+  const { data: scoreData, error: sErr } = await sb.from("evidence_scores")
+    .select("entity_id,score").eq("entity_type", "drug").is("claim_text", null);
+  if (sErr) throw new Error(`evidence_scores: ${sErr.message}`);
+  const tierByEntity = new Map<string, EvidenceTier>();
+  for (const s of (scoreData ?? []) as Array<{ entity_id: string; score: EvidenceTier }>) {
+    tierByEntity.set(s.entity_id, s.score);
+  }
+
+  // Index the windowed updates by the (item_type,item_ref) seam.
   const updatesByKey = new Map<string, UpdateRow[]>();
   for (const u of updates) {
-    if (!inWindow(u.detected_at)) continue;
     const k = `${u.item_type}|${u.item_ref}`;
     (updatesByKey.get(k) ?? updatesByKey.set(k, []).get(k)!).push(u);
   }
@@ -116,7 +116,7 @@ async function main() {
     (followsByUser.get(w.user_id) ?? followsByUser.set(w.user_id, []).get(w.user_id)!).push(w);
   }
 
-  let written = 0, emptySkipped = 0;
+  let written = 0, emptySkipped = 0, upsertErrors = 0;
   for (const [userId, follows] of followsByUser) {
     const candidates: DigestCandidate[] = [];
     const seenUpdate = new Set<string>();
@@ -149,13 +149,19 @@ async function main() {
       generated_by_version: VERSION,
       generated_at: now,
     }, { onConflict: "user_id,period_start,period_end" });
-    if (error) { console.error(`  upsert ${userId}: ${error.message}`); continue; }
+    if (error) { console.error(`  upsert ${userId}: ${error.message}`); upsertErrors++; continue; }
     written++;
   }
 
   console.log(
     `\n${DRY_RUN ? "[dry-run] " : ""}✅ digest ${VERSION}: ${written} digest(s) ${DRY_RUN ? "would be " : ""}written, ${emptySkipped} user(s) had nothing this window`,
   );
+  // No silent failures: a failed upsert must surface so the gate cannot pass on a
+  // digest that did not actually write.
+  if (upsertErrors > 0) {
+    console.error(`generate-digest: ${upsertErrors} upsert error(s) — exiting non-zero`);
+    Deno.exit(1);
+  }
 }
 
 main().catch((e) => {

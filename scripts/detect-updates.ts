@@ -130,6 +130,7 @@ async function main() {
   const entityName = new Map(entities.map((e) => [e.id, e.canonical_name]));
 
   const rows: UpdateRow[] = [];
+  let skippedNoSource = 0;
 
   // ---- pubmed_new: one update per (drug entity, bridged article) ----
   if (!TRIALS_ONLY) {
@@ -145,6 +146,10 @@ async function main() {
       if (onlyId && b.drug_entity_id !== onlyId) continue;
       const a = byId.get(b.article_id);
       if (!a) continue;
+      // An update must carry provenance (source_id → Layer A; also what powers the
+      // dedup key). Skip + count the rare source-less row rather than let
+      // NULLS NOT DISTINCT silently collapse distinct articles into one.
+      if (!a.source_id) { skippedNoSource++; continue; }
       const types = a.publication_types ?? [];
       const datePart = a.publication_date ? ` · published ${a.publication_date}` : "";
       const typePart = types.length ? ` · ${types.slice(0, 3).join(", ")}` : "";
@@ -176,6 +181,7 @@ async function main() {
       if (onlyId && b.drug_entity_id !== onlyId) continue;
       const t = byId.get(b.trial_id);
       if (!t || !t.results_first_posted) continue; // results posted = the event
+      if (!t.source_id) { skippedNoSource++; continue; } // provenance required (see pubmed note)
       rows.push({
         item_type: "drug",
         item_ref: b.drug_entity_id,
@@ -202,6 +208,7 @@ async function main() {
   }, {});
   console.log(`Candidate updates: ${target.length}/${rows.length}`);
   for (const [k, v] of Object.entries(byType)) console.log(`  ${k}: ${v}`);
+  if (skippedNoSource > 0) console.log(`  skipped (no source_id): ${skippedNoSource}`);
   if (onlyId) console.log(`  (for ${entityName.get(onlyId) ?? onlyId})`);
 
   if (DRY_RUN) {
@@ -229,8 +236,11 @@ async function main() {
     console.log(`  …emitted ${inserted} new (batch ${i / BATCH + 1})`);
   }
   console.log(
-    `\n✅ detect-updates: ${inserted} new updates emitted, ${target.length - inserted} already present, ${errors} batch errors`,
+    `\n${errors === 0 ? "✅" : "⚠️"} detect-updates: ${inserted} new updates emitted, ${target.length - inserted} already present, ${skippedNoSource} skipped (no source_id), ${errors} batch errors`,
   );
+  // No silent failures: a batch error means some updates did not land — fail loud
+  // so the AC8 gate cannot pass on a partial/empty emit.
+  if (errors > 0) Deno.exit(1);
 }
 
 main().catch((e) => {
