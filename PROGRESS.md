@@ -1185,3 +1185,38 @@ A-owned safety-flagged answer (decouples the queue test from the user-report tes
 relative to the remote history. 0119 and 0120 are **independent** (both depend only on 0109's
 `generated_answers`), so applying them out of order is semantically safe — but the 7-1 `db push` will need
 **`--include-all`** for the CLI to accept the out-of-order 0119.
+
+### 7-1 — account-delete + data export — DONE (deployed + gate green on cloud)
+Branch `phase-7-1-account-delete-export` (rebased onto main: `a5d0c3d` feat + `f80420d` docs). The AC10
+user-data lifecycle: a signed-in user exports their own data, and irreversibly deletes their account.
+- **Built**: `supabase/functions/account-delete/` (verify JWT → own uid, `{confirm:true}`, Admin-API delete of
+  auth.users → FK cascade; service key in fn env only), `migrations/0119_account_data_lifecycle.sql`
+  (`export_my_data()` SECURITY DEFINER, auth.uid()-scoped, REVOKE anon, subscription projects plan/status only),
+  mobile `api/account.ts` + real `profile/export.tsx` (RPC + web JSON download) + `profile/delete-account.tsx`
+  (confirm → delete → sign-out), `e2e/phase7-1.spec.ts`.
+- **Reviews** (before commit): code-reviewer + security-reviewer, **0 CRITICAL/HIGH**. Applied: export no longer
+  emits RevenueCat internals; native download button web-gated; gate hardened to prove `generated_answers`
+  ANONYMIZE (SET NULL survives, not CASCADE), subscriptions/profiles cascade, non-vacuous cross-user isolation
+  (per-user sentinels), confirm/anon guards. `tsc` + `deno check` clean.
+- **DEPLOYED to prod 2026-06-04** (operator, fresh-auth): `db push --include-all` applied **0119**; `supabase
+  functions deploy account-delete --use-api` deployed the edge fn.
+
+### Gate (`apps/mobile/e2e/phase7-1.spec.ts`) — 3/3 GREEN on cloud (real authenticated users)
+```
+✓ 7-1: export_my_data returns the caller's own rows; cross-user + anon denied (3.5s)
+✓ 7-1: account-delete cascades every owned table (REST) + requires confirmation (4.3s)
+✓ 7-1: delete-account through the UI signs the user out and removes the account (3.6s)
+3 passed
+```
+- **export_my_data** — A's bundle = A's own rows (watchlist / health_context / saved_reports / answers all
+  present); B's bundle is B's own (A's `A-RANGE` sentinel never leaks into B); **anon** → ≥401 (REVOKE verified).
+  The exported `subscription` is the user-facing projection ONLY (`plan` / `status` / `current_period_end`) with
+  the RevenueCat internals (`rc_app_user_id` / `rc_entitlement`) asserted **ABSENT** — guards the security
+  reviewer's build-time PII-strip against a silent regression. UI: A signs in → /profile/export → export-ready.
+- **account-delete** — no `confirm` → 400; no bearer → 401; confirmed → 200 and the cascade is real: service-key
+  readback shows `user_health_context` / `watchlist_items` / `saved_reports` / `subscriptions` / `profiles` = 0
+  for C, the auth user 404 (gone), and `generated_answers` SURVIVES with `user_id = null` (the §8 anonymize
+  guarantee + a regression probe against a slip to ON DELETE CASCADE). UI: A confirms → deleted → signed out.
+- One fix during validation (test-only): the gate's `saved_reports` seed omitted `user_id` (NOT NULL, and — unlike
+  `watchlist_items`' 0117 default — no column default) → added `user_id: u.id` (satisfies `sr_owner` WITH CHECK).
+  Product code unchanged; the green run proves 0119 + the edge fn are live.
