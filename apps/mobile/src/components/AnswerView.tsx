@@ -1,6 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useMutation } from "@tanstack/react-query";
 import type { AnswerPoint, AskResponse, EvidenceGrade, SafetyFlag } from "@pharmabro/shared";
 import { ANSWER_STALE_YEARS, answerFreshness, answerKind } from "@/api/derive";
+import { reportAnswer } from "@/api/report";
 import { Badge, Card, SectionHeader } from "./ui";
 import { SafetyBanner } from "./SafetyBanner";
 import { SourceLink } from "./SourceLink";
@@ -143,7 +145,33 @@ export function AnswerView({
           ))}
         </View>
       ) : null}
+
+      <ReportAnswer answerId={answer.answer_id} />
     </View>
+  );
+}
+
+// §11 user-facing report: flags THIS answer (own-row) for the operator review queue.
+function ReportAnswer({ answerId }: { answerId: string }) {
+  const report = useMutation({ mutationFn: () => reportAnswer(answerId) });
+  if (report.isSuccess) {
+    return (
+      <Text style={styles.reportDone} testID="report-answer-done">
+        Reported — thanks. We'll review this answer.
+      </Text>
+    );
+  }
+  if (report.isError) {
+    return (
+      <Text style={styles.reportErr} testID="report-answer-error">
+        Couldn't report — please try again.
+      </Text>
+    );
+  }
+  return (
+    <Pressable testID="report-answer" style={styles.reportBtn} disabled={report.isPending} onPress={() => report.mutate()}>
+      <Text style={styles.reportText}>{report.isPending ? "Reporting…" : "⚑ Report this answer"}</Text>
+    </Pressable>
   );
 }
 
@@ -159,4 +187,8 @@ const styles = StyleSheet.create({
   followUpText: { fontSize: 14, color: "#208AEF", fontWeight: "600" },
   citeTitle: { fontSize: 14, fontWeight: "600", color: "#1f2933" },
   citeMeta: { fontSize: 12, color: "#6b7686" },
+  reportBtn: { paddingVertical: 10, alignSelf: "flex-start" },
+  reportText: { fontSize: 13, color: "#6b7686", fontWeight: "600" },
+  reportDone: { fontSize: 13, color: "#1c7d4d", fontWeight: "600", paddingVertical: 10 },
+  reportErr: { fontSize: 13, color: "#c0392b", fontWeight: "600", paddingVertical: 10 },
 });

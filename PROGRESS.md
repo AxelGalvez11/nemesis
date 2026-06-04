@@ -1120,3 +1120,68 @@ row → 0 rows matched + A's value untouched (ground-truthed). SELECT/INSERT/UPD
 `apps/mobile/DEVICE_CHECKLIST.md` is updated and READY. Phase 6 is "done" once the operator runs it on a
 physical iOS/Android device and records the sign-off (date + device/OS) here. The code + headless gate +
 8-state matrix are complete and green; the on-device loop is the remaining human gate.
+
+---
+
+## Phase 7 — Safety & legal LAUNCH GATE (AC10 backend) — IN PROGRESS
+
+The launch-block phase: working account deletion + data export, the guardrail suite complete + in CI, a
+human-review queue for flagged answers, and the doc-18 compliance closeout. Plan: 4 sub-PRs (7-1 account
+lifecycle, 7-2 guardrail CI, 7-3 review queue, 7-4 compliance closeout). The deterministic safety layer
+(`ask/safety.ts` + `templates.ts`) is FROZEN — Phase 7 grows the test suite around it, never the layer.
+
+### 7-3 — Answer human-review queue (§11) — DONE (backend gated green on cloud)
+Built ahead of 7-1's deploy (branch-parallel); merged first to realign source-of-truth (0120 is live on
+prod but main didn't yet carry it). The human loop for what slips past the deterministic layer: answers a
+USER flags, or that carry `safety_flags`.
+
+- **Migration `0120_answer_review_queue.sql`** (APPLIED TO PROD 2026-06-04 via operator `db push`):
+  - `report_answer(p_answer_id)` — SECURITY DEFINER, `WHERE id = p_answer_id AND user_id = auth.uid()`
+    (own-row is the access control; `generated_answers` has no authenticated UPDATE policy). `RETURNS`
+    whether a row flipped. **REVOKE PUBLIC + anon; GRANT authenticated** (the default-grant trap).
+  - `list_flagged_answers(max)` + `mark_answer_reviewed(p_id)` — SERVICE-ROLE ONLY (an authenticated
+    end-user is NOT an admin; mirrors 0114's evidence-review model). **REVOKE PUBLIC + anon + authenticated;
+    GRANT service_role.** No end-user admin role / allowlist introduced; a panel UI is post-launch.
+  - `generated_answers` gains `reviewed bool NOT NULL DEFAULT false` + `reviewed_at`; partial index
+    `WHERE NOT reviewed AND (user_reported OR jsonb_array_length(safety_flags) > 0)` — predicate matches
+    `list_flagged_answers`' WHERE exactly (widened in review so safety-only-flagged rows hit the index).
+- **Mobile**: `api/report.ts` (`reportAnswer` → `report_answer` RPC; `data !== true` throws so the UI shows
+  "couldn't report", never a false confirmation) + a `ReportAnswer` affordance in `AnswerView` (a
+  `useMutation` wrapper at the bottom of the main answer — never on the emergency early-return).
+
+### Gate (`apps/mobile/e2e/phase7-3.spec.ts`) — 2/2 GREEN against live 0120 (cloud)
+REST-layer only, deliberately **no `/ask` call** → the gate is DeepSeek-cost-free. Seeds A + B + a separate
+A-owned safety-flagged answer (decouples the queue test from the user-report test).
+```
+✓ 7-3: report_answer flags only the caller's own answer; anon denied
+✓ 7-3: the review queue is service-role only + the review flow clears a flag
+2 passed
+```
+- **report_answer** — A flags A's own answer → `true` + the row flips `user_reported = true`; A flags B's
+  answer → `false` (own-row filter matched 0 rows) + **B's row is untouched** (ground-truthed via service
+  key); **anon** → status ≥ 401 (REVOKE verified).
+- **review queue** — authenticated end-user AND anon are both **denied** on `list_flagged_answers` and
+  `mark_answer_reviewed` (service-role-only REVOKE verified); service-role sees the safety-flagged answer in
+  the queue (the `safety_flags` branch, flagged at seed → stands alone); `mark_answer_reviewed` → it leaves
+  the queue.
+
+### Honest scope (what 7-3 does NOT close)
+- **The mobile "Report this answer" button is tsc-clean + reviewed, NOT e2e-exercised.** The REST gate proves
+  the security-critical RPC (own-row + anon-denied + service-role queue); the thin `useMutation → report_answer`
+  UI wrapper is covered by tsc + review only. The full in-app flow is exercised when the operator runs a
+  cost-OK (`/ask`) pass. Stated plainly rather than implied as covered.
+- **Admin surface = the service-role RPCs only.** No web panel / dashboard UI — the operator calls
+  `list_flagged_answers` / `mark_answer_reviewed` with the service key. A full panel is post-launch (per plan).
+
+### Reviews (both before commit)
+- **code-reviewer**: index predicate widened to match the query's WHERE (safety-only rows now indexed);
+  `reportAnswer` treats `data !== true` as failure → UI error, not a false "reported".
+- **security-reviewer**: REVOKE discipline correct on all three RPCs (PUBLIC + anon on the user RPC; +
+  authenticated on the operator RPCs); own-row filter is the access control on a SECURITY DEFINER write;
+  gate covers the `safety_flags` branch independently of the user-report path (decoupled test ordering).
+
+### Migration-ordering note (carried into 7-1)
+0120 was applied to prod **before** 0119 (7-1's `export_my_data`, not yet pushed) → 0119 is now "out-of-order"
+relative to the remote history. 0119 and 0120 are **independent** (both depend only on 0109's
+`generated_answers`), so applying them out of order is semantically safe — but the 7-1 `db push` will need
+**`--include-all`** for the CLI to accept the out-of-order 0119.
