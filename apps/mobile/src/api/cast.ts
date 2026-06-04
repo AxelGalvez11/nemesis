@@ -1,4 +1,13 @@
-import type { AskResponse, DrugOverview, SearchResult, SourceDetail } from "@pharmabro/shared";
+import type {
+  AskResponse,
+  Comparison,
+  Digest,
+  DrugOverview,
+  SearchResult,
+  SourceDetail,
+  WatchlistItem,
+  WatchlistUpdate,
+} from "@pharmabro/shared";
 import type { DrugPubmed, DrugTrial, LabelDoc } from "./types.ts";
 
 // jsonb / RPC-row -> DTO narrowing at the §8 client boundary. `supabase gen types`
@@ -69,6 +78,30 @@ export function castTrials(raw: unknown): DrugTrial[] {
 /** GET /drugs/{id}/pubmed (get_drug_pubmed) — row array keyed by article_id. */
 export function castPubmed(raw: unknown): DrugPubmed[] {
   return rows(raw, (r) => (typeof r.article_id === "string" ? (r as unknown as DrugPubmed) : null));
+}
+
+/** GET /watchlist (watchlist_items, PostgREST) — owner-scoped row array; need an id to unfollow. */
+export function castWatchlistItems(raw: unknown): WatchlistItem[] {
+  return rows(raw, (r) => (typeof r.id === "string" ? (r as unknown as WatchlistItem) : null));
+}
+
+/** GET /watchlist/updates (get_watchlist_updates) — row array keyed by id. */
+export function castWatchlistUpdates(raw: unknown): WatchlistUpdate[] {
+  return rows(raw, (r) => (typeof r.id === "string" ? (r as unknown as WatchlistUpdate) : null));
+}
+
+/** The latest digest snapshot (digests, PostgREST) — single object or null; items coerced to []. */
+export function toDigest(raw: unknown): Digest | null {
+  if (!isObj(raw)) return null;
+  if (typeof raw.id !== "string") return null;
+  return { ...raw, items: Array.isArray(raw.items) ? raw.items : [] } as unknown as Digest;
+}
+
+/** GET /compare (the `compare` edge fn) — the frozen Comparison; null = not-found/error. */
+export function toComparison(raw: unknown): Comparison | null {
+  if (!isObj(raw)) return null;
+  if (!isObj(raw.left) || !isObj(raw.right) || !isObj(raw.sections)) return null;
+  return raw as unknown as Comparison;
 }
 
 /** POST /ask (the `ask` edge fn) — the frozen AskResponse. A refusal/template answer

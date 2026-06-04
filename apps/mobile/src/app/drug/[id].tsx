@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { fetchDrug, fetchDrugLabel, fetchDrugPubmed, fetchDrugTrials } from "@/api/drugs";
 import { useAuth } from "@/auth/AuthProvider";
@@ -8,6 +8,7 @@ import { EvidenceCard } from "@/components/EvidenceCard";
 import { LabelSections } from "@/components/LabelSections";
 import { TrialList } from "@/components/TrialList";
 import { PubmedList } from "@/components/PubmedList";
+import { FollowButton } from "@/components/FollowButton";
 import { ErrorState } from "@/components/states";
 import { Badge, Centered, Chip, SectionHeader } from "@/components/ui";
 import { UUID_RE } from "@/lib/validation";
@@ -76,6 +77,17 @@ export default function DrugScreen() {
         {drug.canonical_name}
       </Text>
       <Badge label={(drug.approved_status ?? "").replace(/_/g, " ")} tone="neutral" testID="drug-status" />
+
+      <View style={styles.actions}>
+        <FollowButton drugId={drug.id} />
+        <Pressable
+          testID="drug-compare"
+          style={styles.compareLink}
+          onPress={() => router.push(`/compare?left=${drug.id}`)}
+        >
+          <Text style={styles.compareText}>Compare with another →</Text>
+        </Pressable>
+      </View>
 
       {drug.mechanism_summary ? (
         <Text style={styles.mechanism}>{drug.mechanism_summary}</Text>
@@ -148,4 +160,7 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   muted: { fontSize: 14, color: "#6b7686" },
   sectionLoading: { paddingVertical: 16, alignItems: "center" },
+  actions: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 16 },
+  compareLink: { paddingVertical: 8 },
+  compareText: { color: "#208AEF", fontSize: 14, fontWeight: "600" },
 });
