@@ -1,0 +1,22 @@
+# Env / secrets (defense-in-depth — the root .gitignore also covers these; the app
+# ships only the public EXPO_PUBLIC_* anon key, but never commit the .env anyway)
+.env
+.env.*
+!.env.example
+
+# Expo / RN
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+
+# Generated native projects
+/ios
+/android
+
+# Playwright
+/test-results/
+/playwright-report/
+/.playwright/
+/e2e/.auth/

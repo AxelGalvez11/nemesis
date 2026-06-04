@@ -765,3 +765,77 @@ validation bar shapes the build, so those decisions get settled with the operato
 ## ✅ PHASE 6a COMPLETE — `get_source` + `compare` live on `qyjmivntajbigjswhahb` (migrations through
 `0118`), the §8 read surface the mobile app needs. Gate green as a verified authenticated user. Next:
 Phase 6b (RN/Expo app) — to plan mode for the validation-bar / auth-scope / PR-granularity decisions.
+
+---
+
+# Phase 6b — mobile app (RN + Expo): PLANNED & APPROVED (build deferred to operator go-ahead)
+
+Full plan: `~/.claude/plans/immutable-rolling-whale.md` (approved 2026-06-03).
+
+**Decisions (operator):** (1) validation = headless **Playwright on Expo-web vs cloud as a real
+authenticated user** + a **required human device-checklist** for the native parts; (2) **5 sub-PRs**
+— 6b-1 scaffold/auth/typed-client/Playwright-harness → 6b-2 Explore+Drug+SourceViewer (AC1/4/5/6/9) →
+6b-3 Ask (AC2/3) → 6b-4 Watchlist+Compare (AC7/8) → 6b-5 Profile+legal+8-state polish (AC10
+affordances); (3) auth = **guest + email now**, Apple/Google OAuth deferred to operator native
+config; (4) **build nothing until the operator says "build 6b-1."**
+
+**Stack:** Expo Router + react-native-web + supabase-js + TanStack Query. App ships `EXPO_PUBLIC_*`
+anon key + user JWT **only** (service key never in the bundle — the REVOKE-anon/GRANT-authenticated
+posture from 0111/0112/0118 is the payoff). Playwright global-setup seeds a confirmed test user via
+the admin API (lift `scripts/phase6a-validate.ts:37-55`).
+
+**Honesty guard:** AC10's delete *cascade* + independent health-context delete + export = **Phase 7**;
+6b shows AC10 affordances only. "On device" = the human checklist, not headless.
+
+**Status: 6b-1 BUILT + gate-green (see below); awaiting merge. Remaining: 6b-2…6b-5.**
+
+---
+
+## Phase 6b-1 — Expo scaffold + auth + typed §8 client + RNW fidelity gate — DONE (gate green; awaiting merge)
+
+The mobile foundation, built against the frozen §8 contract and validated **headlessly as a real
+authenticated end-user against cloud** — the project's gate discipline, now applied to the app surface.
+
+### What shipped
+- **Expo SDK 56 + Expo Router + react-native-web** in the pnpm/turbo monorepo (`.npmrc`
+  `node-linker=hoisted`, monorepo `metro.config.js`, `babel-preset-expo`; `reactCompiler` off).
+  Native-only template UI libs (`@expo/ui`/glass/symbols) dropped — web-safe primitives only.
+- **4-tab shell** (Ask·Explore·Watchlist·Profile), auth-guarded; screens are labelled stubs for
+  6b-2…6b-5. **8-state primitives** (`src/components/states/`) with doc-06 verbatim empty copy.
+- **Auth** (`src/auth/AuthProvider`): email sign-in + sign-out + a guest browse-only UI state. App
+  ships `EXPO_PUBLIC_*` anon key + user JWT only — service key never in the bundle.
+- **Typed §8 client** (`src/api/`) over supabase-js — `get_drug`, returning `@pharmabro/shared`
+  DTOs; the jsonb→DTO cast guards mandatory fields (Deno unit test, 4/4).
+- **Data-bound drug screen** rendering a real `get_drug` under react-native-web (uuid- + session-
+  gated). **Playwright gate** (`e2e/`): admin-seeded confirmed user, real UI sign-in, AC-visible
+  walk; teardown deletes the user + removes the local seed file.
+- `DEVICE_CHECKLIST.md` — the human gate for native parts (exercised at 6b-5).
+
+### Gate (`e2e/phase6b-1.spec.ts`, real authenticated user, cloud `qyjmivntajbigjswhahb`) — PASS
+```
+  ✓ 6b-1: sign-in → 4-tab shell → authenticated get_drug render → sign-out (3.3s)
+  ✓ 6b-1: guest UI state renders (browse-only, no session) (0.6s)
+  2 passed (8.5s)
+```
+Proves: web boot + react-native-web fidelity + monorepo Metro resolution of `@pharmabro/shared` +
+the typed §8 client + supabase email auth + an authenticated `get_drug` read + 4-tab paint + guest
+UI state. Also: `tsc` clean; `deno test cast.test.ts` 4/4.
+
+### Reviews (both before commit)
+- **code-reviewer**: 0 CRITICAL/HIGH, 2 MEDIUM + 5 LOW — ALL addressed (getSession `.finally` so the
+  route guards can't spin forever; cast validates mandatory fields; memoized AuthProvider; normalized
+  `drugId`; de-duped loading testIDs; dropped the unused `@pharmabro/db` dep → re-added in 6b-4;
+  `.env` added to the app `.gitignore`; commented the deferred `signUpEmail`).
+- **security-reviewer**: anon-key-only posture **UPHELD** (no service-key leak; confined to the Node
+  e2e setup; `.env` gitignored; no SQLi/XSS; route guard + query session-gating correct). Fixes:
+  uuid-gate the drug query; teardown now logs failures + always removes the plaintext seed file.
+
+### Carry-forwards (not 6b-1 blockers)
+- **Guest reads**: real anonymous reads need Supabase anonymous-sign-in enabled (a cloud auth change)
+  + the anon role; 6b-1 ships guest as a UI state only. Settle in 6b-2.
+- **Web session storage**: supabase-js uses `localStorage` on web (XSS-exposed) — fine for the e2e
+  path; harden (sessionStorage adapter / chunked SecureStore) before any public web build.
+- **Transitive `uuid@7.0.3`** (moderate, GHSA-w5hq-g745-h8pq) via `expo→@expo/cli→xcode` — build/
+  config-time only, not bundled at runtime; monitor for an `@expo/config-plugins` bump.
+- **`packages/db` gen types** moved to 6b-4 (where watchlist table-row types are needed).
+- SDK 56 is bleeding-edge; node v24 is ahead of its tested range (no issues observed).
