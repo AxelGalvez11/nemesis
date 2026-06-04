@@ -20,3 +20,6 @@ expo-env.d.ts
 /playwright-report/
 /.playwright/
 /e2e/.auth/
+
+# Deno (only the unit-test runner; the lock is regenerated on `deno test`)
+deno.lock
