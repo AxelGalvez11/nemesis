@@ -31,17 +31,31 @@ Native-only capabilities:
 - [ ] Notification-permission prompt appears (when push lands — Phase-5 carry-forward).
 - [ ] Apple sign-in works (after OAuth native config is provided — deferred).
 - [ ] Google sign-in works (after OAuth native config is provided — deferred).
-- [ ] True offline: airplane mode shows the cached/offline state, not a crash.
+- [ ] True offline: airplane mode shows the global offline banner (the headless gate
+      drives this via `setOffline`; on device, confirm the real radio toggle is observed
+      by `useOnline` and the banner clears when connectivity returns).
 
 AC-visible end-to-end on device (mirrors the headless gate):
 - [ ] Search → drug page with label / trials / PubMed / evidence score (AC1/4/5/6/9).
 - [ ] Ask → cited structured answer; emergency phrasing routes to urgent care (AC2/3).
 - [ ] Follow ≥3 items; weekly digest renders (AC7/8).
-- [ ] Privacy / terms / educational disclaimer / delete-account affordances reachable (AC10 surfaces).
+- [ ] Privacy / terms / educational disclaimer / delete-account / export affordances reachable (AC10 surfaces).
+- [ ] My Health Context: edit + consent + **save**, reload shows it persisted, then
+      **delete** removes it (the on-device keyboard + the comma-separated list fields behave).
 
-## 6b-1 status
+## 6b-5 status — READY FOR DEVICE SIGN-OFF
 
-Scaffold + auth + typed §8 client + the Playwright harness are in place; the headless
-fidelity gate passes (web boot + seeded-user sign-in + authenticated `get_drug` render
-+ guest UI state). No device sign-off is expected at 6b-1 — this checklist is created
-now and exercised at 6b-5.
+All Phase-6 screens have landed (6b-1…6b-5). The headless gate is green end-to-end:
+**13/13** Playwright tests as real authenticated users against cloud — AC1–AC9 fully
+exercised + AC10 affordances present/reachable + the 8-state matrix's live cells (offline,
+guest). `tsc` clean; `deno test` 34/34. The 30-cell matrix ledger is in `STATE_MATRIX.md`.
+
+What remains for Phase 6 to be called **done** is exactly this checklist, run by a human
+on a physical device — the genuinely native parts a web gate cannot honestly prove. This
+is a **human gate the agent cannot self-sign.** When you (the operator) complete the ticks
+above, record the sign-off (date + device/OS) in `PROGRESS.md`.
+
+> Deferred-by-design (not sign-off blockers, tracked in `PROGRESS.md`): Apple/Google OAuth
+> (needs native config), push-notification delivery (Phase-5 carry-forward), and the
+> real account-delete **cascade** + data-export **generation** (Phase 7 — the 6b-5 screens
+> are honest affordances, not working deletion/export).

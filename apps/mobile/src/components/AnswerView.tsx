@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { AnswerPoint, AskResponse, EvidenceGrade, SafetyFlag } from "@pharmabro/shared";
-import { answerKind } from "@/api/derive";
+import { ANSWER_STALE_YEARS, answerFreshness, answerKind } from "@/api/derive";
 import { Badge, Card, SectionHeader } from "./ui";
 import { SafetyBanner } from "./SafetyBanner";
 import { SourceLink } from "./SourceLink";
@@ -73,6 +73,7 @@ export function AnswerView({
   const cautionFlags = answer.safety_flags.filter((f) => CAUTION_LABELS[f]);
   const sections = answer.answer_sections;
   const followUps = sections.questions_to_ask ?? [];
+  const freshness = answerFreshness(answer, new Date());
 
   return (
     <View style={styles.wrap} testID="answer-view">
@@ -95,6 +96,15 @@ export function AnswerView({
           />
         ) : null}
       </Card>
+
+      {freshness.stale ? (
+        <View style={styles.freshness} testID="answer-freshness">
+          <Text style={styles.freshnessText}>
+            Some cited sources are over {ANSWER_STALE_YEARS} years old (oldest: {freshness.oldestDate}). Newer
+            guidance may exist — open a source to check its date.
+          </Text>
+        </View>
+      ) : null}
 
       {kind === "refused" ? (
         <Text style={styles.refused} testID="answer-refused">
@@ -142,6 +152,8 @@ const styles = StyleSheet.create({
   section: { gap: 6 },
   bottomLine: { fontSize: 16, lineHeight: 23, color: "#1f2933", fontWeight: "500" },
   refused: { fontSize: 14, color: "#7a4a1e", fontStyle: "italic" },
+  freshness: { backgroundColor: "#fff6e5", borderRadius: 8, padding: 10 },
+  freshnessText: { fontSize: 13, lineHeight: 19, color: "#7a4a1e" },
   point: { fontSize: 14, lineHeight: 21, color: "#3a4451" },
   followUp: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#eceff3" },
   followUpText: { fontSize: 14, color: "#208AEF", fontWeight: "600" },

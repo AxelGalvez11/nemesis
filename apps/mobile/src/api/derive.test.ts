@@ -7,7 +7,7 @@
 // state. We therefore prove the outdated branch prop-driven, here, rather than
 // claiming a real-data outdated path in the gate. (Honesty guard.)
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { answerKind, sourceViewState } from "./derive.ts";
+import { answerFreshness, answerKind, sourceViewState } from "./derive.ts";
 
 Deno.test("sourceViewState: null -> not-found", () => {
   assertEquals(sourceViewState(null), "not-found");
@@ -42,4 +42,24 @@ Deno.test("answerKind: a caution-only flag (insulin) is NOT emergency -> normal"
 
 Deno.test("answerKind: plain answer -> normal", () => {
   assertEquals(answerKind({ safety_flags: [], refused_unsupported: false } as never), "normal");
+});
+
+// answerFreshness — the Ask/outdated cell. Driven by oldest_source_date with `now`
+// injected (the live date mix is not a deterministic trigger, so it is proven here).
+const NOW = new Date("2026-06-04T00:00:00Z");
+
+Deno.test("answerFreshness: no oldest date -> not stale", () => {
+  assertEquals(answerFreshness({ oldest_source_date: null } as never, NOW), { oldestDate: null, stale: false });
+});
+
+Deno.test("answerFreshness: a recent source -> not stale", () => {
+  assertEquals(answerFreshness({ oldest_source_date: "2025-01-01" } as never, NOW), { oldestDate: "2025-01-01", stale: false });
+});
+
+Deno.test("answerFreshness: a source older than 3y -> stale (outdated banner)", () => {
+  assertEquals(answerFreshness({ oldest_source_date: "2019-06-04" } as never, NOW), { oldestDate: "2019-06-04", stale: true });
+});
+
+Deno.test("answerFreshness: a garbage date -> not stale (no false banner)", () => {
+  assertEquals(answerFreshness({ oldest_source_date: "not-a-date" } as never, NOW), { oldestDate: null, stale: false });
 });
