@@ -2,6 +2,8 @@
 // (search_entities, get_drug, get_drug_label/trials/pubmed) so the app and the
 // backend agree on one set of names.
 
+import type { EvidenceCounts, EvidenceTier } from "./evidence.ts";
+
 export type EntityType =
   | "drug"
   | "supplement"
@@ -48,11 +50,16 @@ export interface DrugOverview {
   primary_class: { id: string; name: string } | null;
   classes: Array<{ id: string; name: string }>;
   brand_names: string[];
+  // Phase-4 contract touch-up: the evidence engine persists the frozen
+  // EvidenceTier + EvidenceCounts, and limitations is a doc-12 ARRAY (jsonb,
+  // migration 0114). The Phase-2 sketch typed these as string/Record<string,
+  // number>/string|null while the column was empty text; corrected here at the
+  // source of truth BEFORE Phase 6 consumes it.
   evidence_score: {
-    score: string;
+    score: EvidenceTier;
     rationale: string;
-    evidence_counts: Record<string, number>;
-    limitations: string | null;
+    evidence_counts: EvidenceCounts;
+    limitations: string[];
   } | null;
   counts: { labels: number; trials: number; pubmed: number; prices: number };
   sources: SourceRef[];

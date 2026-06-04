@@ -481,3 +481,121 @@ refuse-only-when-nothing-cited, missing-array tolerance).
 ## ✅ PHASE 3 COMPLETE — AC2/AC3 met with cloud evidence; guardrails hold; §8 frozen.
 `/ask` live on `qyjmivntajbigjswhahb` (migrations through `0113`). Next: Phase 4 (evidence-scoring
 engine §9, the IP) — or Phase 6 mobile against the now-frozen §8 contract.
+
+---
+
+## Phase 4 — Evidence-scoring engine (the IP) ✅ COMPLETE — AC9 met with cloud evidence (branch `phase-4-evidence`)
+
+**Goal:** the §9 deterministic + auditable evidence-scoring engine — signal extraction →
+ordered tiering → guardrail overrides → persist to `evidence_scores`; admin review queue.
+**Gate (§13): AC9** — drug/compound pages show score + rationale + counts + limitations;
+**off-label < approved**. All work + validation on cloud (`qyjmivntajbigjswhahb`).
+
+### Decisions locked this phase (advisor-reviewed before writing)
+- **Deterministic TIER, LLM PROSE ONLY** (the §9 mandate; same discipline as the safety layer).
+  `packages/shared/src/evidence-scoring.ts` is a PURE core (`extractSignals`/`deriveSignals`/
+  `tier`/`applyOverrides`/`scoreSignals`); the LLM writes only `rationale`/`limitations` and can
+  never change the tier. Overrides may only **lower**. TDD'd (32 tests) against the §9 worked
+  examples BEFORE any backfill (the gate-critical artifact needs no data).
+- **The squishy signals are the real risk** (advisor's headline), so each is pinned with an exact
+  computation + conservative default, documented as the spec table in `evidence-scoring.ts`:
+  `findings_consistent` = synthesis/replication/approval adjudicated it (`n_meta≥1 ∨ n_sr≥1 ∨
+  n_rct≥2 ∨ fda_approved`, else false); `sample_size_adequate` = max interventional enrollment
+  ≥ 100 (false when unknown); `only_evidence_is_abstract`/`indirect_evidence_only` reserved=false
+  (no shaky detector). One documented §9 strengthening: `moderate` floors on ANY human-grade
+  evidence so a lone meta-analysis can't fall through to `unknown`.
+- **Backfill was REQUIRED, not a re-project** (advisor's "verify before deriving"): trial
+  `enrollment`/`results_first_posted`/`study_type` and pubmed `publication_types` were ALL null
+  corpus-wide (the providers under-captured into `core_sources.metadata`; the projections had no
+  `study_type` column at all). `scripts/backfill-evidence-signals.ts` re-fetches CT.gov v2 by NCT
+  + NCBI efetch by PMID. (Migration `0115` adds `clinical_trials.study_type`.)
+- **AC9 "off-label < approved" needs CLAIM-level rows** (a drug-level score is its approved use).
+  We lack per-claim retrieval, so the worked-example claims are CURATED (`scripts/evidence-claims.ts`)
+  — the curator asserts the claim-scoped evidence posture; the TIER is still computed
+  deterministically. entity_type/approved_status/is_off_label are NOT curatable (pinned from the
+  entity) so a claim can't escape the peptide/research-use cap.
+- **Admin review API is SERVICE-ROLE ONLY** (`0114`): the default-grant trap again — `REVOKE
+  EXECUTE FROM PUBLIC + anon + authenticated`, `GRANT TO service_role`, `search_path` pinned.
+- **§8 contract touch-up (advisor-caught):** the frozen `evidence_score` shape in
+  `packages/shared/src/search.ts` was written in Phase 2 when `limitations` was `text` — it typed
+  `score: string`, `evidence_counts: Record<string,number>`, `limitations: string|null`. The engine
+  persists the frozen `EvidenceTier` + `EvidenceCounts` (max_trial_phase is a string) and a
+  `limitations[]` array (jsonb, `0114`). Corrected the read-contract to reference the frozen
+  evidence types at the source of truth, BEFORE Phase 6 consumes it (the freeze permits corrective
+  tightening while no consumer exists; a rename after Phase 6 would be the breaking change).
+- **Scope split** (advisor): NLI citation support-verify + retrieval re-ranking + Corrective-RAG
+  are orthogonal RAG-quality work, NOT the AC9 gate → carried forward as **Phase 3.5** (the goal
+  prompt bundled them under P4; logged here, not silently dropped).
+
+### Task status
+- [x] **CP1 — deterministic tier core + signal spec (`packages/shared`), TDD 32 green** ✅
+- [x] CP2 — backfill signals (trials v2 re-fetch + pubmed efetch) ✅
+- [x] CP3 — scoring engine (extractSignals + LLM rationale w/ template fallback + batch writer) ✅
+- [x] CP4 — curated off-label claim rows (semaglutide weight vs gym; BPC-157 tendon) ✅
+- [x] CP5 — review queue + admin RPCs (`0114`); `study_type` column (`0115`) ✅
+- [x] CP6 — code-review (2 HIGH fixed) + security-review (clean) before commit ✅
+
+### Evidence log
+
+#### Phase-4 acceptance gate — AC9 ✅ (2026-06-03, cloud, **as authenticated end-user**)
+`scripts/phase4-validate.ts` (signs in role=authenticated, runs the deployed reads):
+- **AC9 page** `get_drug(semaglutide)` → `evidence_score` block: score **very_strong**, non-empty
+  rationale, `evidence_counts{}`, `limitations[]`.
+- **AC9 off-label < approved** semaglutide claims: "chronic weight management" (approved) →
+  **very_strong**; "gym / physique performance" (off-label) → **unknown**. unknown < very_strong ✓.
+- **Research peptide conservative** BPC-157 drug-level → **weak** (peptide cap holds; it has one
+  real Phase-1 n=42 interventional trial, so "weak" is the honest tier, not very_weak); the
+  curated claim "tendon healing in humans" → **very_weak** (the §9 example).
+- **Admin API locked**: anon → 401, authenticated → 403, service_role → 200 (review queue);
+  `mark_score_reviewed` authenticated → 403, service_role → true.
+- Reproduce: `SB_URL=.. SERVICE_KEY=.. ANON_KEY=.. deno run -A scripts/phase4-validate.ts`.
+
+#### Backfill (cloud) ✅
+- Trials: **379/379** updated from CT.gov v2 — 363 with enrollment, 93 with results_posted,
+  study_type populated, 18 multi-phase trials pipe-joined (→ highest phase). 0 errors.
+- PubMed: **263/264** updated via efetch — publication_types extracted (5 RCTs, 12 reviews/meta
+  across the seed corpus) + mesh refreshed.
+
+#### Scoring (cloud) ✅
+- `scripts/evidence-score.ts` wrote **395 evidence_scores** (392 drug-level over the
+  evidence-bearing catalog + 3 curated claims); **23 flagged for human review**. Tier
+  distribution: moderate 137 · unknown 123 · strong 88 · very_strong 22 · very_weak 14 · weak 11.
+- Anchor spot-check: Semaglutide/Tirzepatide very_strong; statins/SSRIs strong (high-risk flagged);
+  Retatrutide moderate; BPC-157/TB-500 weak (research_use flagged); Creatine very_weak (corpus has
+  no creatine RCTs linked — honest reflection of LINKED evidence, not absolute literature).
+
+#### Code review (code-reviewer agent) — 0 CRITICAL, 2 HIGH (both fixed before commit) ✅
+- **HIGH — claim spread order**: `CuratedClaim.evidence` could override entity_type/approved_status
+  and slip past the peptide/research-use cap → closed via `Omit` of identity fields + pinning them
+  after the spread (the determinism invariant's one leak path).
+- **HIGH — `phases[0]`**: multi-phase trials stored only the first phase (Phase2/3 → "PHASE2"),
+  under-counting `max_trial_phase` → `phases.join("|")` (parsePhase resolves the highest);
+  re-backfilled + re-scored. (Display-only — the tier ladder does not read max_trial_phase.)
+- MEDIUM/LOW: named caps, clarifying comments on the intentional findings_consistent/very_strong
+  narrowing + the reserved overrides, nct_id shape-validation, test-section comment.
+
+#### Security review (security-reviewer agent) — 0 CRITICAL/HIGH/MEDIUM ✅
+Default-grant trap correctly handled in `0114` (verified live: anon 401 / authenticated 403 /
+service_role 200); secrets stay in env; no injection (uuids/curated text); LLM tier deterministic;
+SSRF nil (hardcoded base + DB-sourced ids, now shape-validated). 4 optional LOWs noted.
+
+#### Notes / follow-ups (logged, not gate issues)
+- **Phase 3.5 — RAG quality** (deferred from P3, bundled under P4 by the goal prompt): NLI/2nd-pass
+  citation SUPPORT-verify (today existence-verified only), Voyage/Cohere re-ranking over a wider
+  candidate set, Corrective-RAG verification loop, thin `drug_interaction` retrieval.
+- **Rationale LLM reliability:** DeepSeek structured output is intermittently malformed (same as
+  Phase 3); the template fallback fired for ~half the prove set and the full bulk pass is
+  deterministic-template by design. Persisted rationales are the deterministic template (more
+  auditable); per-entity LLM prose is a refinement (pacing/retry).
+- **Claim-level scoring is curated** (per-claim retrieval = the deeper IP, future). Supplement
+  claim_type taxonomy (deficiency/wellness/disease) deferred — supplements use the standard ladder.
+- **Phase-2 bridge backfill** for investigational entities (retatrutide/BPC-157 broad-fallback) and
+  **MED — pubmed XML regex parse** (mirrors the provider; robust DOMParser if it ever mis-parses)
+  remain open.
+
+---
+
+## ✅ PHASE 4 COMPLETE — AC9 met with cloud evidence; engine deterministic + reviewed.
+Evidence scores live on `qyjmivntajbigjswhahb` (migrations through `0115`); drug pages render
+score+rationale+counts+limitations, off-label < approved. Next: Phase 5 (watchlist + digest,
+§10 → AC7/AC8) — or Phase 3.5 (RAG quality) / Phase 6 mobile against the frozen §8 contract.
