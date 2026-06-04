@@ -1185,3 +1185,24 @@ A-owned safety-flagged answer (decouples the queue test from the user-report tes
 relative to the remote history. 0119 and 0120 are **independent** (both depend only on 0109's
 `generated_answers`), so applying them out of order is semantically safe — but the 7-1 `db push` will need
 **`--include-all`** for the CLI to accept the out-of-order 0119.
+
+### 7-1 — account-delete + data export — BUILT + REVIEWED + COMMITTED; **gate PENDING prod deploy**
+Branch `phase-7-1-account-delete-export`, commit `66450c4` (off main). NOT yet gated/merged.
+- **Built** (to the deploy boundary, no cloud change): `supabase/functions/account-delete/` (verify JWT → own
+  uid, `{confirm:true}`, Admin-API delete of auth.users → FK cascade; service key in fn env only),
+  `migrations/0119_account_data_lifecycle.sql` (`export_my_data()` SECURITY DEFINER, auth.uid()-scoped, REVOKE
+  anon, subscription projects plan/status only), mobile `api/account.ts` + real `profile/export.tsx`
+  (RPC + web JSON download) + `profile/delete-account.tsx` (confirm → delete → sign-out), `e2e/phase7-1.spec.ts`.
+- **Reviews** (before commit): code-reviewer + security-reviewer, **0 CRITICAL/HIGH**. Applied: export no longer
+  emits RevenueCat internals; native download button web-gated; gate hardened to prove `generated_answers`
+  ANONYMIZE (SET NULL survives, not CASCADE), subscriptions/profiles cascade, non-vacuous cross-user isolation
+  (per-user sentinels), confirm/anon guards. `tsc` + `deno check` clean.
+- **BLOCKED on the operator** (prod deploy = fresh-auth boundary; sandbox blocks the agent from prod writes):
+  1. `set -a; source supabase/functions/.env; set +a; yes | supabase db push --password "$SUPABASE_DB_PASSWORD" --include-all`  (applies 0119)
+  2. `supabase functions deploy account-delete --use-api`  (deploys the edge fn)
+  Then run the gate: `pnpm --filter @pharmabro/mobile exec playwright test --config e2e/playwright.config.ts -g "7-1"`
+  (SB_URL + SERVICE_KEY + ANON_KEY sourced from `.env`). Gate green → advisor → PR → squash-merge → flesh this
+  section to DONE with the PASS block.
+- Migration state (post-rebase onto main): the local migrations dir holds **both 0119 and 0120**; remote prod has
+  **0120 applied, 0119 pending** → the push needs **`--include-all`** (0119 sits below the already-applied 0120,
+  which is semantically safe — both depend only on 0109's `generated_answers`).
