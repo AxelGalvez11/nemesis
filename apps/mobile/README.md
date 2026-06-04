@@ -59,12 +59,14 @@ src/
     drug/[id].tsx      drug page: overview · evidence · label · trials · pubmed · follow · compare
     source/[id].tsx    doc-12 Source Viewer (get_source)
     compare.tsx        side-by-side (compare fn): 6 doc-11 groups + unioned sources
+    profile/           Profile sub-screens: health-context (real CRUD) · legal (privacy/terms/
+                       disclaimer) · delete-account + export (AC10 affordances) · subscription
   api/                 typed §8 client over supabase-js (supabase, search, drugs, sources,
-                       ask, watchlist, compare, cast, derive, types)
+                       ask, watchlist, compare, healthContext, cast, derive, types)
   auth/                AuthProvider (email sign-in + guest UI state)
   components/          AnswerView · SafetyBanner · EvidenceCard · LabelSections · TrialList ·
-                       PubmedList · FollowButton · ComparisonView · SourceLink · ui · states
-  lib/                 route-param validation (UUID_RE) · free-tier limits
+                       PubmedList · FollowButton · ComparisonView · SourceLink · OfflineBanner · ui · states
+  lib/                 route-param validation (UUID_RE) · free-tier limits · legal copy (doc-18) · useOnline
   theme/               shared styles (doc-13 design system fleshed out in 6b-5)
 e2e/                   Playwright AC gates (global-setup seeds the test user)
 ```
@@ -74,5 +76,7 @@ e2e/                   Playwright AC gates (global-setup seeds the test user)
 - **6b-1** ✅: scaffold · auth (email + guest UI state) · typed §8 client (`get_drug`) · 8-state primitives · Playwright fidelity gate.
 - **6b-2** ✅: Explore + Drug page + Source Viewer → AC1/4/5/6/9.
 - **6b-3** ✅: Ask (cited answers + safety routing) → AC2/3.
-- **6b-4** (this PR): Watchlist + Compare → AC7/8.
-- **6b-5**: Profile + legal + full 8-state matrix (AC10 affordances) + device sign-off.
+- **6b-4** ✅: Watchlist + Compare → AC7/8.
+- **6b-5** (this PR): Profile hub + My Health Context (real CRUD) + legal/disclaimer + data/delete
+  affordances → AC10 surfaces; the 8-state matrix completed (see `STATE_MATRIX.md`). Device sign-off
+  (`DEVICE_CHECKLIST.md`) is the remaining human gate that closes Phase 6.

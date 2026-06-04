@@ -1046,3 +1046,77 @@ digest) is what's gated here; generation itself is the already-green Phase-5 cap
   per-tier cap is **Phase-8** server-side entitlement (RevenueCat). Not a security boundary.
 - Unchanged: web `localStorage` session · `uuid@7` · RPC errors→UI copy (6b-5 polish).
 - Compare/watchlist rich detail (trial jsonb, alert-type editing, instant/daily cadence) → device polish.
+
+---
+
+## Phase 6b-5 — Profile + legal + 8-state polish (AC10 affordances) — DONE (code; device sign-off pending)
+
+Last 6b sub-PR. Adds the Profile hub, **My Health Context** (the second authenticated WRITE
+path — and the most sensitive: PII), the **AC10** legal/data affordances, and completes the
+**doc-06 8-state matrix**. **No backend changes** — `user_health_context` already had owner RLS;
+the app sets `user_id` from the JWT (the table has no `DEFAULT auth.uid()`, unlike watchlist).
+
+### Gate (`e2e/phase6b-5.spec.ts`, real users, cloud) — PASS
+```
+  ✓ 6b-5: My Health Context CRUD round-trip through the UI (the new write path) (4.1s)
+  ✓ 6b-5: health-context cross-user RLS isolation + anon cannot read (PII) (1.3s)
+  ✓ 6b-5: AC10 affordances are present on Profile and each screen is reachable (3.2s)
+  ✓ 6b-5: 8-state matrix — global offline banner + guest affordances on the key screens (2.6s)
+  13 passed (1.1m)   ← incl. 6b-1/6b-2/6b-3/6b-4 regressions
+```
+- **AC10** — Profile links to Privacy, Terms, Educational disclaimer, Export, Delete-account; each
+  screen renders. The disclaimer + consent copy are **verbatim from doc-18**; privacy/terms render
+  doc-18's required-section structure with an explicit pre-launch note (doc-18 says an attorney drafts
+  final). "Present + reachable," which is what AC10 asks at Phase 6.
+- **My Health Context** — real owner-scoped CRUD: edit + doc-18 consent gate → **save** → reload shows
+  it persisted → **delete** removes it (independent of the account, the doc-18 "Health context deletion").
+  This is the first INSERT into `user_health_context`, so the green gate also **de-risks the GRANT** (the
+  authenticated role can write — no migration needed).
+- **8-state matrix** — the 30-cell ledger is `apps/mobile/STATE_MATRIX.md`, reconciled to the real
+  `getByTestId` assertions: **9 LIVE · 5 GLOBAL (offline) · 3 PROP · 2 TRANSITIVE · 11 BRANCH** (5 load +
+  5 error + Drug/no-source). So **19/30 are proven by execution**; the 11 BRANCH cells are primitive-proven +
+  per-screen branch present, not force-exercised (load is transient; live error injection vs cloud is
+  non-deterministic — stated plainly rather than faked). New this PR: the global `OfflineBanner` (a
+  `navigator.onLine` hook — not NetInfo; driven by `setOffline`), the Ask **outdated** cell (`answerFreshness`
+  on `oldest_source_date` + inline banner, unit-tested), and three deterministic **empty** cells now asserted
+  LIVE (Search/Drug/Watchlist).
+
+### PII isolation (the security bar — matches + exceeds 6b-4)
+A and B each save their own `user_health_context` row; each reads EXACTLY its own (A's read excludes B's
+and vice-versa). **Anon** read → **HTTP 200 RLS-filtered to 0 rows** while both rows exist (proves RLS is
+*enabled*, the Supabase footgun — not merely that the grant is absent). B→A spoofs are blocked on all three
+verbs: **INSERT** `{user_id:A}` → **403** (WITH CHECK) + service-key read-back = 0 planted; **UPDATE** of A's
+row → 0 rows matched + A's value untouched (ground-truthed). SELECT/INSERT/UPDATE parity + anon-denied.
+
+### Honest scope (what 6b-5 does NOT close)
+- **Account deletion + data export are affordances only** (present + reachable + honest "finalized for
+  launch"). The real cascade delete + export generation are **Phase 7** — no half-delete is wired (verified
+  by review: the buttons set a status flag, touch no data). The independent **health-context delete is real**.
+- **Legal text is pre-launch**, not attorney-final (doc-18's own "Important note").
+- Two matrix cells (Drug/Watchlist **outdated**) are **TRANSITIVE** via the Source Viewer's live `is_current`
+  state, documented in the ledger — not a separate per-screen path (0 superseded sources = no live trigger).
+
+### Reviews (both before commit)
+- **code-reviewer**: 0 CRITICAL/HIGH; 2 MEDIUM + 2 LOW — MEDIUMs fixed (delete-mutation now shows
+  `hc-delete-error`, no silent PII-delete failure; `goals` given an editor field so save no longer clobbers
+  it to `[]`); LOW fixed (stale "Saved." cleared on edit via `save.reset()`).
+- **security-reviewer**: 0 CRITICAL/HIGH; PII write path correctly owner-scoped (WITH CHECK pins `user_id`
+  server-side regardless of client); gate isolation assertions verified **discriminating** (specific-403 +
+  read-back, anon-200-empty). LOWs applied: gate now asserts the anon **200** status + an **evil-UPDATE**
+  probe (full RLS parity); delete-account lead copy made honest (no "deleted" implication pre-click). No
+  health data in logs/analytics/query-keys/URLs; no service key in any shipped file (anon key + JWT only).
+
+### Carry-forwards
+- **Saved answers** (doc-06 Ask · §12) — NOT built in 6b-5 (not in the plan's 6b-5 line; no AC needs it).
+  Cheap when wanted: `generated_answers` is already read-own (RLS `ga_read_own`), so a "your questions" list
+  is a read + a screen. Logged here so it's an explicit deferral, not a silent omission.
+- **AC10 backend** (cascade account-delete, export generation, health-context hard-delete audit) → **Phase 7**.
+- Apple/Google OAuth (native config) · push/email digest delivery (Phase-5) · RevenueCat real entitlement
+  (Phase 8) — unchanged.
+- Header/back affordance on stacked screens (drug/source/compare/profile sub-screens use browser/native back;
+  no in-app chevron) → device polish.
+
+### Phase 6 device sign-off — PENDING (human gate, cannot self-sign)
+`apps/mobile/DEVICE_CHECKLIST.md` is updated and READY. Phase 6 is "done" once the operator runs it on a
+physical iOS/Android device and records the sign-off (date + device/OS) here. The code + headless gate +
+8-state matrix are complete and green; the on-device loop is the remaining human gate.

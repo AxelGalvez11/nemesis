@@ -24,6 +24,33 @@ export function answerKind(a: AskResponse): AnswerKind {
   return "normal";
 }
 
+// An answer's cited evidence is flagged "may be outdated" once its oldest cited
+// source crosses this age. Labels/trials can legitimately be old, so this is a
+// freshness *banner*, not a correctness gate.
+export const ANSWER_STALE_YEARS = 3;
+
+export interface AnswerFreshness {
+  oldestDate: string | null;
+  stale: boolean;
+}
+
+/**
+ * The doc-06 "outdated" state for an Ask answer (the §12 Ask/outdated cell). Driven
+ * by the freshness field the response carries for exactly this purpose
+ * (oldest_source_date = oldest retrieved_at across cited sources). Pure + `now`
+ * injected so the threshold is unit-testable; prop-driven because the live corpus
+ * date mix is not a deterministic trigger.
+ */
+export function answerFreshness(a: AskResponse, now: Date): AnswerFreshness {
+  const oldestDate = a.oldest_source_date;
+  if (!oldestDate) return { oldestDate: null, stale: false };
+  const oldest = new Date(oldestDate);
+  if (Number.isNaN(oldest.getTime())) return { oldestDate: null, stale: false };
+  const cutoff = new Date(now);
+  cutoff.setFullYear(cutoff.getFullYear() - ANSWER_STALE_YEARS);
+  return { oldestDate, stale: oldest < cutoff };
+}
+
 export type SourceViewState = "not-found" | "outdated" | "ok";
 
 /**

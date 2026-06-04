@@ -20,6 +20,8 @@ export * from "./evidence-scoring.ts";
 // digest-ranking comparator (pure, like the §9 tier core).
 export * from "./watchlist.ts";
 export * from "./digest-ranking.ts";
+// My Health Context (user_health_context, 0109): user-owned, read/edit/delete.
+export * from "./health-context.ts";
 // Phase-6a backend gaps (§8): GET /compare structured comparison shapes.
 // (SourceDetail for GET /sources/{id} lives in search.ts alongside SourceRef.)
 export * from "./compare.ts";

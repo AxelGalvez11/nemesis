@@ -3,6 +3,7 @@ import type {
   Comparison,
   Digest,
   DrugOverview,
+  HealthContext,
   SearchResult,
   SourceDetail,
   WatchlistItem,
@@ -102,6 +103,35 @@ export function toComparison(raw: unknown): Comparison | null {
   if (!isObj(raw)) return null;
   if (!isObj(raw.left) || !isObj(raw.right) || !isObj(raw.sections)) return null;
   return raw as unknown as Comparison;
+}
+
+/** Only string members survive — the HC form maps over these as chips/text. */
+function strArray(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
+}
+
+/** GET user_health_context (PostgREST, owner-scoped) — single row or null (no context
+ * saved yet). The jsonb list columns coerce to string[] (the form maps over them) and
+ * the scalars to null, so a partial/legacy row never crashes the editor. */
+export function toHealthContext(raw: unknown): HealthContext | null {
+  if (!isObj(raw)) return null;
+  const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
+  const organ = (v: unknown): HealthContext["kidney_disease_flag"] =>
+    v === "yes" || v === "no" || v === "unknown" ? v : null;
+  return {
+    age_range: str(raw.age_range),
+    sex: str(raw.sex),
+    pregnancy_status: str(raw.pregnancy_status),
+    allergies: strArray(raw.allergies),
+    medications: strArray(raw.medications),
+    supplements: strArray(raw.supplements),
+    conditions: strArray(raw.conditions),
+    kidney_disease_flag: organ(raw.kidney_disease_flag),
+    liver_disease_flag: organ(raw.liver_disease_flag),
+    goals: strArray(raw.goals),
+    consent_version: str(raw.consent_version),
+    updated_at: str(raw.updated_at),
+  };
 }
 
 /** POST /ask (the `ask` edge fn) — the frozen AskResponse. A refusal/template answer

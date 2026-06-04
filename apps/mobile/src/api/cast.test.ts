@@ -15,6 +15,7 @@ import {
   toComparison,
   toDigest,
   toDrugOverview,
+  toHealthContext,
   toSourceDetail,
 } from "./cast.ts";
 
@@ -193,4 +194,29 @@ Deno.test("toComparison: requires left+right+sections objects", () => {
   assertEquals(toComparison({ left: { id: "a" }, right: { id: "b" } }), null); // no sections
   const ok = { left: { id: "a", name: "A" }, right: { id: "b", name: "B" }, sections: {}, sources: [] };
   assertEquals(toComparison(ok)?.left.name, "A");
+});
+
+// --- health context (6b-5) ---
+
+Deno.test("toHealthContext: null/non-object -> null", () => {
+  assertEquals(toHealthContext(null), null);
+  assertEquals(toHealthContext("nope"), null);
+});
+
+Deno.test("toHealthContext: jsonb lists coerce to string[]; scalars + bad organ flag -> null", () => {
+  const out = toHealthContext({
+    age_range: "30-39",
+    sex: "female",
+    allergies: ["penicillin", 42, null, "sulfa"], // non-strings dropped
+    medications: "not-an-array", // -> []
+    kidney_disease_flag: "no",
+    liver_disease_flag: "maybe", // invalid -> null
+    consent_version: "2026-06-04",
+  });
+  assertEquals(out?.allergies, ["penicillin", "sulfa"]);
+  assertEquals(out?.medications, []);
+  assertEquals(out?.kidney_disease_flag, "no");
+  assertEquals(out?.liver_disease_flag, null);
+  assertEquals(out?.pregnancy_status, null); // absent -> null
+  assertEquals(out?.consent_version, "2026-06-04");
 });
