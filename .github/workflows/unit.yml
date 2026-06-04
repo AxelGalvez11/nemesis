@@ -1,0 +1,33 @@
+# Edge-function unit gate — the cheap, always-on deterministic-safety check.
+#
+# Runs the Deno unit tests for the /ask edge function on every push + PR. Unlike
+# guardrail.yml (integration: real LLM calls, secrets, scoped to PRs into main),
+# these are PURE units — no network, no secrets — so they run broadly and fast.
+#
+# They lock the deterministic safety layer: safety.test.ts (preScreen +
+# detectViolations forbidden-pattern detector), citation.test.ts, and
+# routing.test.ts — which asserts the post-enforcement PROFESSIONAL_ROUTING_NOTE
+# trips ZERO detectViolations. That note is appended after the runtime safety
+# scan, so this test IS its guarantee: keep it in CI.
+
+name: unit
+
+on:
+  push: {}
+  pull_request: {}
+
+concurrency:
+  group: unit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ask-units:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Deno unit tests (ask edge function)
+        run: deno test --allow-env supabase/functions/ask/

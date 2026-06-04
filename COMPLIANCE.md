@@ -1,12 +1,13 @@
 # PharmaBro — Launch-Gate Compliance Closeout (doc-18)
 
 > **Status: NOT launch-ready.** This document is the honest doc-18 launch-gate audit. Most
-> items PASS with merged evidence, but **launch is blocked** on the items in
-> **§3 OPEN — BLOCKING** below — chiefly the **LLM-provider data-residency / no-training
-> mismatch** (must be resolved *before any real user sends a health question*, i.e. before
-> a public beta), plus the two **human sign-offs** (attorney-final legal text; per-provider
-> ToS legal review). 7-4 completes the *artifacts and the verifiable engineering items*; it
-> does not, by itself, make the product launchable.
+> items PASS with merged evidence. The **LLM-provider data-residency / no-training mismatch**
+> that was THE engineering blocker is **RESOLVED (2026-06-04)** — `/ask` swapped to **OpenAI**
+> (US, API data not used for training by default) and re-validated green (§3.1). **Launch
+> remains blocked** on the two **human sign-offs** in **§3 OPEN — BLOCKING** below
+> (attorney-final legal text; per-provider ToS legal review), plus **P8** (monetize/store) and
+> the **Phase-6 on-device sign-off**. 7-4 completed the *artifacts and verifiable engineering
+> items*; the human gates do not, by themselves, make the product launchable.
 
 This is a product-compliance audit, **not legal advice.** Per doc-18, a healthcare/privacy
 attorney must review the app, terms, privacy policy, data flows, and medical claims before
@@ -44,7 +45,7 @@ recommendations; never tells users to start/stop/change medications (enforced by
 | Health-context deletion | ✅ | owner-scoped delete on `user_health_context` (#13 / 6b-5) |
 | Data export (real) | ✅ | `export_my_data()` SECURITY DEFINER, REVOKE anon; gate green (#15, PROGRESS 7-1) |
 | Consent screen for optional health context | ✅ | `health-context.tsx` consent toggle + `consent_version` recorded (#13) |
-| No model training on health data **by default** (as written) | ⚠️ **promise present, UNMET on current LLM** | copy in `lib/legal.ts`; **see §3 — true only after the provider swap** |
+| No model training on health data **by default** (as written) | ✅ **met on OpenAI** | `/ask` runs on OpenAI (API data not used for training by default — substantiates the promise); swap deployed + re-validated 2026-06-04 (§3.1). ZDR + BAA = recommended retention/HIPAA hardening, not required for the no-*training* promise |
 | No sale of health data / no health data to ad networks | ✅ | "Analytics & vendors" privacy section; analytics events exclude health detail (doc-15 posture) |
 | Encryption in transit | ✅ | Supabase HTTPS/TLS on all API + Postgres connections |
 | Encryption at rest | ✅ | Supabase managed-disk encryption (AES-256) — the must-have baseline |
@@ -63,8 +64,8 @@ collect legal name, address, insurance, SSN, record/prescription uploads, or car
 
 ## 3. OPEN — BLOCKING (launch cannot proceed until these clear)
 
-### 3.1 LLM provider data residency + "no training" promise mismatch — **THE blocker**
-- **Problem:** the live `/ask` engine runs on **DeepSeek's first-party API (`api.deepseek.com`)**,
+### 3.1 LLM provider data residency + "no training" promise mismatch — **RESOLVED (2026-06-04)**
+- **Problem (historical — now fixed):** the live `/ask` engine ran on **DeepSeek's first-party API (`api.deepseek.com`)**,
   which processes/stores requests **in the PRC** with **indefinite retention**, **no
   API-level no-training / zero-retention guarantee**, under **PRC governing law + National
   Intelligence Law Art. 7**. Meanwhile the privacy policy (`lib/legal.ts`) **promises**
@@ -79,15 +80,20 @@ collect legal name, address, insurance, SSN, record/prescription uploads, or car
   review): **OpenAI** (native drop-in), **Anthropic** (best safety; small adapter), **Google
   Gemini** (Vertex), or **Fireworks** (same DeepSeek model, US infra). **Selected: OpenAI**
   (US-based; API data is not used for training by default — substantiates the promise; native
-  OpenAI-compat = config-only swap). Remaining blocking work: operator sets the prod secret
-  (`LLM_BASE_URL` / `LLM_API_KEY` / models), enable ZDR + sign a BAA for the sensitive-health
-  posture, then re-validate (below).
-- **Deadline:** **BEFORE any real user health question — i.e., before a public beta /
-  TestFlight**, NOT merely before store launch. A waitlist landing page (no `/ask`) is
-  unaffected.
-- **Re-validation required after swap:** re-run `scripts/guardrail-suite.ts` +
-  `scripts/phase3-validate.ts` green on the new provider before real traffic (a different
-  model must re-pass the deterministic-safety gate).
+  OpenAI-compat = config-only swap). **DONE (2026-06-04):** operator set the prod secret
+  (`LLM_BASE_URL=https://api.openai.com/v1`, `LLM_CLASSIFY_MODEL=gpt-4o-mini`,
+  `LLM_GENERATE_MODEL=gpt-4.1-mini`) + redeployed `ask` (fresh-auth). **ZDR + a signed BAA
+  remain a recommended hardening** for the sensitive-health retention/HIPAA posture — **not**
+  required to substantiate the no-*training* promise, which OpenAI's default API terms satisfy.
+- **Deadline — MET:** the swap landed before any real user health question / public beta.
+  (A waitlist landing page (no `/ask`) was unaffected regardless.)
+- **Re-validation — DONE (2026-06-04):** `guardrail-suite` **16/16** + `phase3-validate`
+  **10/10** green on OpenAI (gpt-4o-mini / gpt-4.1-mini), against the deployed `/ask` as
+  verified authenticated end-users (see PROGRESS.md). The one new-model gap — `gpt-4.1-mini`
+  under-emitting the professional-routing line on an interaction answer — was fixed
+  **deterministically** (`ask/routing.ts`: a fixed routing note appended to `safety_notes` for
+  personal-decision intents, *post* citation-enforcement; the frozen `safety.ts`/`templates.ts`
+  layer untouched, the constant verified clean against `detectViolations()` in CI).
 
 ### 3.2 Attorney-final legal text — **HUMAN GATE**
 The privacy policy + terms in `lib/legal.ts` are honest **pre-launch** copy (the app shows
