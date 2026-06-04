@@ -1274,3 +1274,59 @@ preScreen emergency-routes several BORDERLINE dose-change questions (e.g. "work 
 without a doctor", "stop my sertraline now") rather than a softer "ask your doctor" hedge. Safe (strongest
 outcome; the gate accepts it) but over-aggressive UX — review preScreen breadth POST-LAUNCH. See memory
 `pharmabro-prescreen-overroutes-postlaunch`. The deterministic layer stays FROZEN through launch.
+
+### 7-4 — Compliance closeout (doc-18 launch-gate audit) — ARTIFACTS DONE; LAUNCH STILL BLOCKED
+Branch `phase-7-4-compliance` (PR #17). Closes the doc-18 launch-gate **artifacts and the engineering-
+verifiable items**; it does NOT make the product launchable — the load-bearing blockers (LLM provider swap,
+attorney legal pass, per-provider ToS sign-off) are human/ops gates, listed below. **No cloud change** (UI
+copy + static legal screens + docs only → DeepSeek-cost-free).
+
+- **Age gate / minors handling** — entry-screen 18+/Terms+Privacy attestation. `sign-in.tsx` adds an
+  `age-ack` checkbox (`AGE_TOS_ACK`, `lib/legal.ts`); both entry actions (`signin-submit`, `continue-guest`)
+  are `disabled` until acknowledged, with the Terms + Privacy reachable from the gate (`link-terms` /
+  `link-privacy`). Sign-in stays sign-in-only (no UI signup — would hang on email confirmation).
+- **doc-18 privacy sections** — `lib/legal.ts` adds the three required-but-missing sections: **Breach
+  notification** (FTC Health Breach Notification Rule), **Children & minors** (18+; COPPA "no under-13"
+  floor; no pediatric dosing), **Your state privacy rights** (WA MHMDA + CCPA/CPRA access/delete/
+  withdraw-consent). Terms gains an **Age & eligibility** clause.
+- **`COMPLIANCE.md`** — the honest doc-18 launch-gate audit: §2 PASS table (deletion / export / disclaimer /
+  consent-gate / guardrails / review-queue / age-gate, each with merged evidence) with the **no-training row
+  flagged ⚠️ promise-present-but-UNMET-on-DeepSeek**; §3 OPEN-BLOCKING (the LLM residency/no-train mismatch
+  = THE blocker; attorney text; per-provider ToS); §4 per-provider ToS/license table (sourced from
+  `core-source-sync/license.ts`); §5 encryption decision (at-rest AES-256 ✓ must-have; field-level pgsodium
+  = deferred should-have); §6 HIPAA/FTC/MHMDA posture; §7 human gates; §8 true-status. The full provider
+  analysis lives in `DEEPSEEK_COMPLIANCE_REVIEW.md` (→ swap off the DeepSeek-PRC first-party API).
+- **8 regression patches** — the new age gate would red every prior spec that drives `signin-submit` /
+  `continue-guest`, so each call-site (phase6b-1 ×2, 6b-2, 6b-3, 6b-4, 6b-5 ×2, 7-1) now clicks `age-ack`
+  first. Product code unchanged; the green regression suite proves the gate is non-breaking.
+
+### Gate — phase7-4.spec.ts 3/3 GREEN (static/pre-auth UI; no /ask, no cloud writes, no seeded user)
+```
+✓ 7-4: entry-screen 18+/ToS age gate blocks both actions until acknowledged, then opens
+✓ 7-4: privacy screen renders the doc-18-required sections (breach / minors / state rights)
+✓ 7-4: terms carries the age & eligibility clause; educational disclaimer renders
+3 passed
+```
+Test 1 asserts both actions blocked before ack → clicks `age-ack` → both enabled → guest entry reaches the
+app shell (`tab-ask` + `state-guest`). **RNW learning:** react-native-web renders a disabled Pressable as
+`<div tabindex="-1" aria-disabled="true">`, which Playwright's `toBeDisabled()` does NOT treat as disabled —
+assert `toHaveAttribute("aria-disabled","true")` / `not.toHaveAttribute(...)` instead. The gate's first red
+was exactly this (code-reviewer had predicted it); fixed → 3/3.
+
+### Reviews (both before merge)
+- **code-reviewer**: no CRITICAL. Predicted the `toBeDisabled()`-on-RNW MEDIUM (fixed → `aria-disabled`
+  assertion). Applied LOW: clarified the COPPA copy so the 18+ stance and the under-13 floor don't read as
+  contradictory ("…is not directed to minors. Consistent with COPPA, …under 13.").
+- **security-reviewer**: no CRITICAL/HIGH. Applied H-1 — `COMPLIANCE.md`'s guardrail row claimed "every
+  PR→main" but fork PRs are intentionally skipped (no secrets) → reworded to "every same-repo PR→main (fork
+  PRs intentionally skipped — no secrets there)." Verified every §2 PASS claim is TRUE against merged code.
+
+### Honest status — 7-4 ≠ P7 ≠ AC10 green
+7-4 ships the closeout **artifacts** and ticks the **verifiable** items. **P7 is NOT complete and AC10 is NOT
+green.** Launch remains BLOCKED on: **(1) the LLM provider swap off DeepSeek** — chosen provider = **OpenAI**
+(config-only: `LLM_BASE_URL=https://api.openai.com/v1` + `LLM_API_KEY` + `gpt-4o-mini`); operator sets the
+prod secret (fresh-auth), then `guardrail-suite` + `phase3-validate` MUST re-pass green on the new model
+BEFORE any beta traffic (the no-training privacy promise is already written → false on DeepSeek the moment a
+real user asks a health question); **(2) attorney-final legal text**; **(3) per-provider API-ToS sign-off**;
+**(4) P8** (RevenueCat / PostHog / store submission); **(5) the Phase-6 on-device sign-off**. See
+`COMPLIANCE.md` §3/§8 + memory `pharmabro-llm-provider-deepseek`.

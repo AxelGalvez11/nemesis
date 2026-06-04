@@ -18,6 +18,7 @@ async function signIn(page: Page, email: string, password: string) {
   await expect(page.getByTestId("signin-screen")).toBeVisible({ timeout: 120_000 });
   await page.getByTestId("email").fill(email);
   await page.getByTestId("password").fill(password);
+  await page.getByTestId("age-ack").click();
   await page.getByTestId("signin-submit").click();
   await expect(page.getByTestId("tab-ask")).toBeVisible({ timeout: 30_000 });
 }
