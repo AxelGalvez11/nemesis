@@ -1,0 +1,5 @@
+# Standalone app — this file makes `landing` its OWN pnpm workspace root so its
+# Next.js / React 19 dependency graph never tangles with the parent PharmaBro Expo/RN
+# workspace (the advisor's "simple slips at the integration" warning). Deploy as its own
+# Vercel project with root directory: landing.
+packages: []
