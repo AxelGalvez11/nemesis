@@ -599,3 +599,111 @@ SSRF nil (hardcoded base + DB-sourced ids, now shape-validated). 4 optional LOWs
 Evidence scores live on `qyjmivntajbigjswhahb` (migrations through `0115`); drug pages render
 score+rationale+counts+limitations, off-label < approved. Next: Phase 5 (watchlist + digest,
 §10 → AC7/AC8) — or Phase 3.5 (RAG quality) / Phase 6 mobile against the frozen §8 contract.
+
+---
+
+# Phase 5 — Watchlist + weekly digest (§10 → AC7, AC8)
+
+**Branch** `phase-5-watchlist`. Retention loop: follow items → detect-updates emits `updates`
+from genuine corpus events → weekly digest ranks them per the doc-12 key. Migrations `0116`+`0117`
+live on `qyjmivntajbigjswhahb`.
+
+### Decisions (advisor-shaped)
+- **No fabricated updates.** The phase narrative said "label change → update", but `persist.ts`
+  supersedes IN PLACE (same `core_sources` id; `superseded_at` is only ever set to null) and emits
+  nothing — so there is no honest label-change signal today, and **0** sources are superseded
+  cloud-wide. Emitting a `label_update` for an unchanged label would manufacture a non-event, exactly
+  what "auditable, not vibes" forbids. So detect-updates emits ONLY append-only EVENT signals where a
+  new row IS the event: `pubmed_new` (bridged article) + `trial_results` (bridged trial with
+  `results_first_posted`). **AC8 is anchored on `pubmed_new`** (the literal AC is "a digest can be
+  generated"; any real update satisfies it). `label_update`/`trial_status` emission is deferred WITH
+  the supersede→emit freshness pipeline.
+- **Locked seam:** a drug follow is `item_type='drug', item_ref=<entity_id uuid as text>`;
+  detect-updates emits that SAME key, with article/trial identity in `source_id`+`title`+`source_url`
+  (NOT in `item_ref`). That is how `get_watchlist_updates` joins a follow to its updates while the
+  dedup key still separates one article from the next. Gate asserts the seam end-to-end.
+- **`detected_at` = detection time** ("surfaced to you this week"), with the real publish date in the
+  `summary` — not a soft temporal fabrication of "published this week".
+- **Ranking lives in ONE place.** The pure doc-12 comparator (`packages/shared/digest-ranking.ts`)
+  is the only ranking logic; the live `get_watchlist_updates` RPC is intentionally just recency, so
+  the two never drift.
+
+### Migrations
+- **`0116_watchlist_digest.sql`** — `digests` (per-user weekly snapshot; owner-read RLS, service-role
+  write; unique `(user_id,period_start,period_end)` ⇒ idempotent generation); `get_watchlist_updates(int)`
+  (frozen §8 `GET /watchlist/updates`; SECURITY DEFINER, `search_path` pinned, joins `updates`↔caller
+  `watchlist_items` on `(item_type,item_ref)` for `auth.uid()`, recency-ordered; **REVOKE anon, GRANT
+  authenticated** — user-facing, unlike the 0114 admin RPCs); `updates_dedup_idx
+  (item_type,item_ref,update_type,source_id) NULLS NOT DISTINCT` (idempotency key — exact for
+  append-only signals; in-place-superseded sources would need `content_hash`, deferred).
+- **`0117_watchlist_user_default.sql`** — `watchlist_items.user_id DEFAULT auth.uid()`. The frozen
+  §8 `POST /watchlist` body omits `user_id`; the 0109 column had no default, so an authenticated
+  insert 403'd on RLS `WITH CHECK`. Surfaced by the AC7 gate (no authenticated watchlist insert had
+  ever been exercised). WITH CHECK still pins ownership; anon (uid null) is rejected.
+
+### What shipped
+- **detect-updates.ts** (service-role, idempotent): emitted **859** real updates — **709 pubmed_new +
+  150 trial_results**, 0 skipped (all bridged rows carry `source_id`), 0 errors. Re-run = **0 new /
+  859 already present** (dedup index proven). `--only`/`--limit`/`--dry-run`. Exits non-zero on any
+  batch error (no silent partial emit).
+- **digest-ranking.ts** (PURE, **14 TDD tests**, RED→GREEN): doc-12 ordered key verbatim
+  (specificity → source_importance → evidence_quality → recency → safety_affecting → dedupe), total
+  deterministic order (id tiebreak) so digests are reproducible. Full shared suite **46 pass**.
+- **watchlist.ts**: §8 shared shapes (WatchItemType, UpdateType, WatchlistItem, WatchlistUpdate,
+  DigestEntry, Digest).
+- **generate-digest.ts** (service-role): per weekly user, match `updates`↔follows on the seam within
+  `[period_start,period_end)` (server-side window filter), join DRUG-LEVEL `evidence_scores` for
+  `evidence_rank`, `rankDigest`, upsert one `digests` row per (user,period). Exits non-zero on upsert
+  error.
+
+### AC7 + AC8 gate (`phase5-validate.ts`, role=authenticated JWT — not the service key) — PASS ✅
+Run live on `qyjmivntajbigjswhahb`; 11/11 checks green:
+- **AC7** — insert 3 follows → **201, 3 rows**; semaglutide follow `item_ref == entity_id` (seam);
+  `GET /watchlist` returns the user's **3** follows.
+- **AC8** — shells detect-updates(sema, idempotent no-op) + generate-digest(user) → **17 ranked
+  updates** (sema's 12 `pubmed_new` + 5 from the 2 other followed drugs); `get_watchlist_updates`
+  surfaces a semaglutide `pubmed_new`; matched update carries `item_ref == entity_id` (seam
+  end-to-end); the user's `digests` row has `update_count=17` and **CONTAINS the specific update id**
+  (containment, not just non-empty — the silent-empty-digest risk).
+- **Security** — user-2 (follows nothing) gets an empty feed and **cannot read** user-1's digest (RLS
+  owner-only); **anon → `get_watchlist_updates` 401**.
+
+### Code review (code-reviewer agent) — 0 CRITICAL, 3 HIGH + 1 MEDIUM (all fixed before the cloud run) ✅
+- **HIGH — silent write failure**: detect-updates + generate-digest exited 0 even if every batch/upsert
+  failed → the gate could pass on an empty emit. Both now `Deno.exit(1)` on any error.
+- **HIGH — evidence_rank poisoning**: claim rows share `entity_id` with the drug, so an unfiltered
+  first-wins load could let a CLAIM tier win the entity's `evidence_rank` → generate-digest now reads
+  drug-level only (`entity_type=drug & claim_text is null`).
+- **HIGH — null source_id collapse**: `NULLS NOT DISTINCT` would collapse distinct source-less
+  articles/trials into one → detect-updates skips + logs them (0 today; provenance is required anyway).
+- **MEDIUM — scale**: generate-digest filters `updates` server-side + paginated, not a full-table pull.
+
+### Security review (security-reviewer agent) — Phase-5 diff CLEAN; 1 pre-existing CRITICAL flagged
+- **CONFIRMED CORRECT (the cruxes):** `get_watchlist_updates` grant posture (`search_path` pinned;
+  `auth.uid()` scoping leak-proof — only `updates` columns projected, `watchlist_items` used only as a
+  filter; REVOKE PUBLIC+anon, GRANT authenticated+service_role; `max_results` clamped [1,500]); and
+  `digests` RLS (owner-read SELECT only, no authenticated write policy → users cannot forge/read
+  others' digests; FK cascade on user delete). No injection in the host scripts; no command injection
+  in the validator's subprocess (fixed-literal args); test users torn down.
+- **CRITICAL (pre-existing, OUTSIDE the diff) — secrets at rest in `supabase/functions/.env`**: live
+  `SERVICE_KEY`/DB password/provider keys. **Gitignored and never committed (verified)** — nothing
+  leaked — but present on disk. NOT rotated by me (operator decision; rotating mid-run would break the
+  authorized validation). Carry-forward below.
+
+### Carry-forwards (documented, NOT gate issues)
+- **Scheduling**: pg_cron jobs (`refresh_*`, `weekly_digest`) + Vault-stored creds — Phase 5 runs the
+  jobs by hand. **Delivery**: Resend email + Expo push. **Frequencies**: `instant`/`daily` (Phase 5
+  ships `weekly`).
+- **Change-event emission**: `label_update`/`trial_status` need a supersede→emit freshness pipeline
+  (persist.ts currently updates in place and emits nothing; the dedup key will gain `content_hash` then).
+- **Security ops**: rotate the six credentials in `supabase/functions/.env` + add a `gitleaks`/
+  `detect-secrets` pre-commit hook (the repo's husky/lefthook point exists).
+- **Watchlist paywall** (>3 followed items, doc-06) is a Phase-6/monetization concern, not AC7.
+
+---
+
+## ✅ PHASE 5 COMPLETE — AC7 + AC8 met with cloud evidence; reviewed + secured.
+`updates` (859) + `digests` + `get_watchlist_updates` live on `qyjmivntajbigjswhahb` (migrations
+through `0117`). Follow → detect → weekly digest works end-to-end as a verified authenticated user,
+ranked by the deterministic doc-12 key, with cross-user isolation and anon denial enforced. Next:
+Phase 6 (mobile, RN+Expo against the frozen §8 contract) — or Phase 3.5 (RAG quality).
