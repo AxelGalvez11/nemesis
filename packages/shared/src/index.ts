@@ -16,3 +16,7 @@ export * from "./evidence.ts";
 // Phase-4 evidence-scoring engine (§9): the deterministic tier core. Pure
 // functions + signal spec; the LLM only writes rationale/limitations prose.
 export * from "./evidence-scoring.ts";
+// Phase-5 watchlist/digest (§8/§10): shared shapes + the deterministic doc-12
+// digest-ranking comparator (pure, like the §9 tier core).
+export * from "./watchlist.ts";
+export * from "./digest-ranking.ts";
