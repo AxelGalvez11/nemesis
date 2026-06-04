@@ -43,7 +43,8 @@ export interface SourceRef {
  * GET /sources/{id} full source-viewer record (get_source RPC). The durable
  * source-LEVEL fields; answer-specific why_used + cited excerpt come from the
  * answer's citation objects, not here. `is_current` (superseded_at IS NULL) drives
- * the doc-06 "outdated" state.
+ * the doc-06 "outdated" state. A null RPC response (PostgREST 200 null) means
+ * not-found — same convention as get_drug.
  */
 export interface SourceDetail {
   source_id: string;

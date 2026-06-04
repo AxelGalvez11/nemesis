@@ -35,6 +35,9 @@ AS $$
       SELECT coalesce(jsonb_agg(DISTINCT ch.section ORDER BY ch.section), '[]'::jsonb)
       FROM core_source_chunks ch
       WHERE ch.source_id = s.id AND ch.section IS NOT NULL),
+    -- metadata is surfaced verbatim; it must stay NON-SENSITIVE (drug names, RxCUIs,
+    -- MeSH — already authenticated-readable via the core_sources table itself, so
+    -- this is no new exposure). Any future sensitive key must be allowlisted here.
     'metadata', s.metadata
   )
   FROM core_sources s

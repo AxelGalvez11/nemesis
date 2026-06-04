@@ -87,6 +87,8 @@ async function sideInput(id: string): Promise<CompareSideInput | null> {
     trial_count: drug.counts?.trials ?? 0,
     latest_trial_status: latestTrial?.status ?? null,
     price_points: drug.counts?.prices ?? 0,
+    // From the drug_entity_sources bridge (all relation types — label_for/trial_of/
+    // …), so label + trial citations are already represented.
     sources: Array.isArray(drug.sources) ? drug.sources : [],
   };
 }
@@ -94,13 +96,16 @@ async function sideInput(id: string): Promise<CompareSideInput | null> {
 function sectionText(sections: Record<string, unknown>, key: string): string | null {
   const v = sections?.[key];
   if (v == null) return null;
-  const t = typeof v === "string"
-    ? v
-    : Array.isArray(v)
-    ? v.join(" ")
-    : typeof v === "object"
-    ? JSON.stringify(v)
-    : String(v);
+  // openFDA sections (our primary label source) are plain strings; DailyMed-style
+  // structured arrays carry prose under `.text`. Flatten both so the client never
+  // renders a raw JSON blob.
+  const flat = (x: unknown): string =>
+    typeof x === "string"
+      ? x
+      : x && typeof x === "object"
+      ? String((x as Record<string, unknown>).text ?? JSON.stringify(x))
+      : String(x);
+  const t = typeof v === "string" ? v : Array.isArray(v) ? v.map(flat).join(" ") : flat(v);
   const trimmed = t.trim();
   if (!trimmed) return null;
   return trimmed.length > SECTION_MAX ? `${trimmed.slice(0, SECTION_MAX)}…` : trimmed;
@@ -130,7 +135,8 @@ async function verifyUser(token: string): Promise<string | null> {
     const user = await res.json() as { id?: string; is_anonymous?: boolean };
     if (!user.id || user.is_anonymous) return null; // guest scope = Phase-6b decision
     return user.id;
-  } catch {
+  } catch (e) {
+    console.error("compare verifyUser error:", (e as Error).message); // fail-closed, but log the cause
     return null;
   }
 }
