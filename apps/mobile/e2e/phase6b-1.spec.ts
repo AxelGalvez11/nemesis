@@ -25,6 +25,7 @@ test("6b-1: sign-in → 4-tab shell → authenticated get_drug render → sign-o
   // Real UI sign-in as the seeded confirmed user → the 4-tab shell.
   await page.getByTestId("email").fill(seed.email);
   await page.getByTestId("password").fill(seed.password);
+  await page.getByTestId("age-ack").click();
   await page.getByTestId("signin-submit").click();
   await expect(page.getByTestId("tab-ask")).toBeVisible({ timeout: 30_000 });
 
@@ -53,6 +54,7 @@ test("6b-1: sign-in → 4-tab shell → authenticated get_drug render → sign-o
 test("6b-1: guest UI state renders (browse-only, no session)", async ({ page }) => {
   await page.goto("/sign-in", { timeout: 120_000 });
   await expect(page.getByTestId("signin-screen")).toBeVisible({ timeout: 120_000 });
+  await page.getByTestId("age-ack").click();
   await page.getByTestId("continue-guest").click();
   await expect(page.getByTestId("tab-ask")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("state-guest")).toBeVisible();

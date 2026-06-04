@@ -32,6 +32,10 @@ export const LEGAL_PRELAUNCH_NOTE =
   "This is PharmaBro's current pre-launch policy. Final terms and privacy text are " +
   "reviewed by a healthcare/privacy attorney before public launch.";
 
+/** doc-18 age gate — the entry-screen 18+ / Terms+Privacy attestation. */
+export const AGE_TOS_ACK =
+  "I am 18 or older and agree to the Terms of Service and Privacy Policy.";
+
 /** doc-18 "Privacy policy sections to include." */
 export const PRIVACY_SECTIONS: { heading: string; body: string }[] = [
   { heading: "What we collect", body: "Your account email, your follows/watchlist, your asked questions, and — only if you choose to add it — your optional My Health Context." },
@@ -40,12 +44,16 @@ export const PRIVACY_SECTIONS: { heading: string; body: string }[] = [
   { heading: "Model training", body: "Your health data is not used for model training by default." },
   { heading: "Analytics & vendors", body: "Product analytics exclude health details. We do not sell health data or share it with ad networks." },
   { heading: "Retention, deletion & export", body: "You can delete your health context immediately, and request account deletion and data export. Encryption is applied in transit." },
+  { heading: "Breach notification", body: "If a security breach affects your information, we will notify affected users and regulators as required by the FTC Health Breach Notification Rule and applicable law." },
+  { heading: "Children & minors", body: "PharmaBro is intended for adults 18 and older and is not directed to minors. Consistent with COPPA, we do not knowingly collect data from anyone under 13. The app does not provide personalized pediatric dosing." },
+  { heading: "Your state privacy rights", body: "Depending on your state (for example, Washington's My Health My Data Act or California's CCPA/CPRA), you may have rights to access, delete, or limit use of your data and to withdraw consent for optional health context. Email privacy@pharmabro.app to exercise them." },
   { heading: "Contact", body: "Privacy questions: privacy@pharmabro.app" },
 ];
 
 /** doc-18 "Terms of service clauses to include." */
 export const TERMS_SECTIONS: { heading: string; body: string }[] = [
   { heading: "Educational use only", body: "PharmaBro is for education. It is not medical advice and creates no provider–patient relationship." },
+  { heading: "Age & eligibility", body: "PharmaBro is for adults 18 and older. By using it, you confirm you are 18 or older. Do not use it to make prescribing or pediatric-dosing decisions for anyone." },
   { heading: "Your responsibility", body: "Always consult a qualified professional for personal medical decisions. Do not use PharmaBro for emergencies or prescribing." },
   { heading: "Source & accuracy limits", body: "Information comes from public sources that may be incomplete or out of date; source limitations are shown, not hidden." },
   { heading: "Acceptable use", body: "No misuse for prescribing, sourcing unapproved compounds, or emergency care." },
