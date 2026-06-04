@@ -44,7 +44,7 @@ const DUMMY_DRUG = "00000000-0000-0000-0000-0000000000aa";
 async function seedData(u: Seed, ageMarker: string) {
   await fetch(`${SB_URL}/rest/v1/watchlist_items`, { method: "POST", headers: userHdrs(u.jwt), body: JSON.stringify({ item_type: "drug", item_ref: DUMMY_DRUG }) });
   await fetch(`${SB_URL}/rest/v1/user_health_context`, { method: "POST", headers: userHdrs(u.jwt), body: JSON.stringify({ user_id: u.id, consent_version: "test-v1", age_range: ageMarker }) });
-  await fetch(`${SB_URL}/rest/v1/saved_reports`, { method: "POST", headers: userHdrs(u.jwt), body: JSON.stringify({ title: "t", kind: "answer", payload: {} }) });
+  await fetch(`${SB_URL}/rest/v1/saved_reports`, { method: "POST", headers: userHdrs(u.jwt), body: JSON.stringify({ user_id: u.id, title: "t", kind: "answer", payload: {} }) });
   await fetch(`${SB_URL}/rest/v1/profiles`, { method: "POST", headers: userHdrs(u.jwt), body: JSON.stringify({ user_id: u.id }) });
   await fetch(`${SB_URL}/rest/v1/generated_answers`, { method: "POST", headers: svc, body: JSON.stringify({ user_id: u.id, question: `ga-${u.id}`, answer: "test", model_name: "test", prompt_version: "test" }) });
   await fetch(`${SB_URL}/rest/v1/subscriptions`, { method: "POST", headers: svc, body: JSON.stringify({ user_id: u.id, plan: "free", status: "active" }) });
@@ -97,6 +97,14 @@ test("7-1: export_my_data returns the caller's own rows; cross-user + anon denie
   expect(aExport.health_context?.age_range).toBe("A-RANGE");
   expect(Array.isArray(aExport.saved_reports) && aExport.saved_reports.length).toBeGreaterThan(0);
   expect(Array.isArray(aExport.answers) && aExport.answers.length).toBeGreaterThan(0);
+  // Subscription is the user-facing projection ONLY (plan/status/current_period_end) — never the
+  // RevenueCat internals (rc_app_user_id/rc_entitlement). Guards the security reviewer's build-time
+  // PII-strip against a silent regression in export_my_data.
+  expect(aExport.subscription?.plan).toBe("free");
+  expect(aExport.subscription?.status).toBe("active");
+  expect("current_period_end" in (aExport.subscription ?? {})).toBe(true);
+  expect(aExport.subscription).not.toHaveProperty("rc_app_user_id");
+  expect(aExport.subscription).not.toHaveProperty("rc_entitlement");
 
   // B's export is B's own — never A's. Assert non-empty FIRST (so .every isn't vacuously
   // true on an empty array), then that A's sentinel never appears in B's scalar PII.
