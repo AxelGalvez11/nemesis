@@ -8,6 +8,7 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+.playwright-mcp/
 
 # Expo / React Native
 .expo/
