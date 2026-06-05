@@ -15,18 +15,7 @@ export function Hero() {
     <section className="hero" id="waitlist">
       <HeroCanvas />
       <div className="hero-overlay" />
-      <div
-        style={{
-          position: "relative",
-          zIndex: 2,
-          width: "100%",
-          maxWidth: "700px",
-          margin: "0 auto",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-        }}
-      >
+      <div className="hero-content">
         <div className="hero-badge">
           <span className="bdot" />
           Beta · Coming soon

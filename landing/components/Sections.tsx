@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { WaitlistForm } from "@/components/WaitlistForm";
 import {
   BrandMark,
@@ -55,56 +56,78 @@ const STEPS = [
 
 const EVIDENCE = [
   {
+    tier: "vs",
     color: "#7ACC00",
     name: "Very Strong",
-    desc: "FDA-approved + multiple meta-analyses + consistent large trials",
-    tag: "High confidence",
-    tagBg: "rgba(122,204,0,.1)",
-    tagBorder: "rgba(122,204,0,.25)",
+    desc: "FDA-approved with multiple meta-analyses and large, consistent randomized controlled trials.",
+    tag: "High",
+    chips: ["FDA Approval", "Meta-analyses", "Large RCTs"],
+    litBars: 5,
+    breathe: "2.3s",
   },
   {
+    tier: "s",
     color: "#3BC87A",
     name: "Strong",
-    desc: "Multiple well-designed trials with consistent, reproducible findings",
-    tag: "Good confidence",
-    tagBg: "rgba(59,200,122,.1)",
-    tagBorder: "rgba(59,200,122,.25)",
+    desc: "Multiple well-designed randomized trials with consistent, reproducible findings.",
+    tag: "Good",
+    chips: ["RCTs", "Consistent trials", "Human data"],
+    litBars: 4,
+    breathe: "2.9s",
   },
   {
+    tier: "m",
     color: "#C97B06",
     name: "Moderate",
-    desc: "Limited or mixed human trial data — results may vary",
-    tag: "Some confidence",
-    tagBg: "rgba(201,123,6,.1)",
-    tagBorder: "rgba(201,123,6,.25)",
+    desc: "Limited or mixed human trial data — findings exist but may vary across studies.",
+    tag: "Some",
+    chips: ["Limited trials", "Mixed data"],
+    litBars: 3,
+    breathe: "3.6s",
   },
   {
+    tier: "w",
     color: "#C24A00",
     name: "Weak",
-    desc: "Observational studies or indirect evidence — no controlled trials",
-    tag: "Low confidence",
-    tagBg: "rgba(194,74,0,.1)",
-    tagBorder: "rgba(194,74,0,.25)",
+    desc: "Observational studies or indirect evidence only — no controlled trials available.",
+    tag: "Low",
+    chips: ["Observational", "Indirect evidence"],
+    litBars: 2,
+    breathe: "4.3s",
   },
   {
+    tier: "vw",
     color: "#B51C1C",
     name: "Very Weak",
-    desc: "Early lab or animal studies only — no human data available",
+    desc: "Early lab or animal studies only — no human clinical data yet available.",
     tag: "Preliminary",
-    tagBg: "rgba(181,28,28,.1)",
-    tagBorder: "rgba(181,28,28,.25)",
+    chips: ["Lab studies", "Animal data"],
+    litBars: 1,
+    breathe: "5.2s",
   },
   {
+    tier: "unk",
     color: "#555",
     nameColor: "#888",
     name: "Unknown",
-    desc: "Not enough data exists to grade this claim",
+    desc: "Insufficient data exists to assign a confidence level to this claim.",
     tag: "Ungraded",
     tagColor: "#888",
-    tagBg: "rgba(128,128,128,.1)",
-    tagBorder: "rgba(128,128,128,.2)",
+    chips: ["No data"],
+    litBars: 0,
   },
 ] as const;
+
+const EVIDENCE_TICKS = [
+  { label: "Very Weak", color: "#B51C1C" },
+  { label: "Weak", color: "#C24A00" },
+  { label: "Moderate", color: "#C97B06" },
+  { label: "Strong", color: "#3BC87A" },
+  { label: "Very Strong", color: "#7ACC00" },
+] as const;
+
+const EVIDENCE_BAR_HEIGHTS = ["20%", "40%", "60%", "80%", "100%"] as const;
+const EVIDENCE_BAR_DELAYS = [".05s", ".22s", ".38s", ".12s", ".28s"] as const;
 
 const FEATURES = [
   {
@@ -189,26 +212,74 @@ export function Evidence() {
             early lab data — always labelled, never hidden.
           </p>
         </div>
-        <div className="ev-list reveal" style={{ marginTop: "44px", maxWidth: "720px" }}>
+        <div className="ev-spectrum reveal">
+          <div className="ev-spectrum-track" />
+          <div className="ev-spectrum-ticks">
+            {EVIDENCE_TICKS.map((tick) => (
+              <span
+                className="ev-spectrum-tick"
+                style={{ color: tick.color }}
+                key={tick.label}
+              >
+                {tick.label}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="ev-grid">
           {EVIDENCE.map((ev) => (
-            <div className="ev-row" key={ev.name}>
-              <div className="ev-color" style={{ background: ev.color }} />
-              <div
-                className="ev-level-name"
-                style={{ color: "nameColor" in ev ? ev.nameColor : ev.color }}
-              >
-                {ev.name}
+            <div
+              className="ev-card reveal"
+              data-tier={ev.tier}
+              style={{ "--breathe": "breathe" in ev ? ev.breathe : undefined } as CSSProperties}
+              key={ev.name}
+            >
+              <div className="ev-signal" aria-hidden="true">
+                {EVIDENCE_BAR_HEIGHTS.map((height, i) => {
+                  const lit = i < ev.litBars;
+                  return (
+                    <div
+                      className={`ev-bar${lit ? " lit" : ""}`}
+                      style={{
+                        height,
+                        ...(lit
+                          ? { background: ev.color, animationDelay: EVIDENCE_BAR_DELAYS[i] }
+                          : {}),
+                      }}
+                      key={height}
+                    />
+                  );
+                })}
               </div>
-              <div className="ev-level-desc">{ev.desc}</div>
-              <div
-                className="ev-tag"
-                style={{
-                  background: ev.tagBg,
-                  color: "tagColor" in ev ? ev.tagColor : ev.color,
-                  border: `1px solid ${ev.tagBorder}`,
-                }}
-              >
-                {ev.tag}
+              <div className="ev-card-header">
+                <div
+                  className="ev-tier-name"
+                  style={{ color: "nameColor" in ev ? ev.nameColor : ev.color }}
+                >
+                  {ev.name}
+                </div>
+                <div
+                  className="ev-badge"
+                  style={{
+                    background: ev.tier === "unk" ? "rgba(128,128,128,.1)" : `${ev.color}1a`,
+                    color: "tagColor" in ev ? ev.tagColor : ev.color,
+                    border:
+                      ev.tier === "unk"
+                        ? "1px solid rgba(128,128,128,.2)"
+                        : `1px solid ${ev.color}40`,
+                  }}
+                >
+                  {ev.tag}
+                </div>
+              </div>
+              <p className="ev-desc">{ev.desc}</p>
+              <div className="ev-chips">
+                {ev.chips.map((chip) => (
+                  <span className="ev-chip" key={chip}>
+                    {chip}
+                  </span>
+                ))}
               </div>
             </div>
           ))}
