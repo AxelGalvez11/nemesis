@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/api/supabase";
+import { identify, resetAnalyticsUser } from "@/lib/analytics";
 
 interface AuthState {
   session: Session | null;
@@ -37,12 +38,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // a corrupted session) — otherwise the route guards would spin forever.
     supabase.auth
       .getSession()
-      .then(({ data }) => setSession(data.session))
+      .then(({ data }) => {
+        setSession(data.session);
+        // Associate analytics with the opaque user id (UUID). identify() ignores
+        // anything email-shaped; no-op until a sink is wired.
+        if (data.session) identify(data.session.user.id);
+      })
       .catch(() => setSession(null))
       .finally(() => setLoading(false));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
-      if (next) setIsGuest(false); // a real session supersedes guest mode
+      if (next) {
+        setIsGuest(false); // a real session supersedes guest mode
+        // Only on an actual sign-in — not every TOKEN_REFRESHED. The returning-user
+        // case is handled by getSession() above (buffered until the sink wires).
+        if (event === "SIGNED_IN") identify(next.user.id);
+      } else {
+        resetAnalyticsUser(); // sign-out → clear the analytics identity
+      }
     });
     return () => sub.subscription.unsubscribe();
   }, []);
