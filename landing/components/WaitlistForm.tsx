@@ -6,14 +6,29 @@ import { submitWaitlist, type WaitlistResult } from "@/lib/waitlist";
 
 type Status = "idle" | "submitting" | "success" | "invalid" | "error";
 
-export function WaitlistForm() {
+interface WaitlistFormProps {
+  /** Centers the form + helper copy (used by the CTA section). */
+  centered?: boolean;
+  /** Helper copy under the form (varies between hero and CTA in the design). */
+  note?: string;
+}
+
+/**
+ * Email-capture form styled with the design's `.wform` / `.winput` / `.wbtn` classes and
+ * wired to the REAL Supabase waitlist backend. Used twice (hero `#waitlist` + CTA); state
+ * is React-driven so the two instances never share DOM ids.
+ */
+export function WaitlistForm({
+  centered = false,
+  note = "We'll email you when the beta opens. No spam, ever.",
+}: WaitlistFormProps) {
   const [email, setEmail] = useState("");
   const [honeypot, setHoneypot] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const successRef = useRef<HTMLParagraphElement>(null);
 
-  // Move focus to the confirmation when the form is replaced, so keyboard / AT users
-  // aren't dropped to <body> after a successful submit.
+  // Move focus to the confirmation when the form is replaced, so keyboard / AT users aren't
+  // dropped to <body> after a successful submit.
   useEffect(() => {
     if (status === "success") successRef.current?.focus();
   }, [status]);
@@ -25,8 +40,10 @@ export function WaitlistForm() {
 
     let result: WaitlistResult;
     try {
-      // Adapter: supabase-js rpc() returns a thenable builder, not a plain Promise — await
-      // it here and hand submitWaitlist the minimal { error } shape it depends on.
+      // Adapter: supabase-js rpc() returns a thenable builder, not a plain Promise — await it
+      // here and hand submitWaitlist the minimal { error } shape it depends on. getSupabase()
+      // is called ONLY here (lazy; it throws if env is missing, so it must never run at
+      // module load or during render).
       result = await submitWaitlist(email, honeypot, {
         rpc: async (fn, args) => {
           const { error } = await getSupabase().rpc(fn, args);
@@ -47,9 +64,10 @@ export function WaitlistForm() {
         ref={successRef}
         tabIndex={-1}
         role="status"
-        className="rounded-xl border border-teal-600/30 bg-teal-50 px-4 py-3 text-sm font-medium text-teal-800 outline-none"
+        className="wsuccess"
+        style={centered ? { textAlign: "center" } : undefined}
       >
-        You&rsquo;re on the list. We&rsquo;ll email you when the beta opens.
+        You&rsquo;re on the list. We&rsquo;ll email you when the beta opens. ✓
       </p>
     );
   }
@@ -57,52 +75,72 @@ export function WaitlistForm() {
   const showError = status === "invalid" || status === "error";
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row" noValidate>
-      {/* Honeypot — offscreen, hidden from humans; bots that fill it get a silent no-op. */}
-      <input
-        type="text"
-        name="company"
-        tabIndex={-1}
-        autoComplete="off"
-        aria-hidden="true"
-        value={honeypot}
-        onChange={(e) => setHoneypot(e.target.value)}
-        className="absolute left-[-9999px] h-0 w-0 opacity-0"
-      />
-      <label htmlFor="email" className="sr-only">
-        Email address
-      </label>
-      <input
-        id="email"
-        type="email"
-        inputMode="email"
-        autoComplete="email"
-        required
-        aria-invalid={showError}
-        aria-describedby={showError ? "email-error" : undefined}
-        placeholder="you@example.com"
-        value={email}
-        onChange={(e) => {
-          setEmail(e.target.value);
-          if (showError) setStatus("idle");
-        }}
-        className="h-12 flex-1 rounded-xl border border-slate-300 bg-white px-4 text-base text-slate-900 outline-none placeholder:text-slate-400 focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20"
-      />
-      <button
-        type="submit"
-        disabled={status === "submitting"}
-        aria-busy={status === "submitting"}
-        className="h-12 rounded-xl bg-teal-600 px-6 text-base font-medium text-white transition-colors hover:bg-teal-700 disabled:opacity-60"
+    <>
+      <form
+        className="wform"
+        onSubmit={onSubmit}
+        noValidate
+        style={centered ? { justifyContent: "center" } : undefined}
       >
-        {status === "submitting" ? "Joining…" : "Join the waitlist"}
-      </button>
+        {/* Honeypot — visually hidden, not tab-reachable; bots that fill it get a silent no-op. */}
+        <input
+          type="text"
+          name="company"
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+          value={honeypot}
+          onChange={(e) => setHoneypot(e.target.value)}
+          style={{
+            position: "absolute",
+            left: "-9999px",
+            height: 0,
+            width: 0,
+            opacity: 0,
+          }}
+        />
+        <input
+          className="winput"
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          required
+          aria-label="Email address"
+          aria-invalid={showError}
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (showError) setStatus("idle");
+          }}
+        />
+        <button
+          className="wbtn"
+          type="submit"
+          disabled={status === "submitting"}
+          aria-busy={status === "submitting"}
+        >
+          {status === "submitting" ? "Joining…" : "Join the waitlist"}
+        </button>
+      </form>
+      <p className="wnote" style={centered ? { textAlign: "center" } : undefined}>
+        {note}
+      </p>
       {showError && (
-        <p id="email-error" role="alert" className="basis-full text-sm text-red-600">
+        <p
+          role="alert"
+          style={{
+            fontSize: "12px",
+            color: "var(--mint)",
+            marginTop: "10px",
+            ...(centered ? { textAlign: "center" } : {}),
+          }}
+        >
           {status === "invalid"
-            ? "Please enter a valid email address."
+            ? "Please enter a valid email."
             : "Something went wrong. Please try again."}
         </p>
       )}
-    </form>
+    </>
   );
 }

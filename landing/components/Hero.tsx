@@ -1,27 +1,66 @@
+"use client";
+
+import dynamic from "next/dynamic";
 import { WaitlistForm } from "@/components/WaitlistForm";
+
+// The WebGL hero (three.js) is client-only and code-split: ssr:false keeps `three`
+// out of the server render + initial bundle, loading it after hydration. A plain
+// var(--bg) hero shows underneath until it mounts, so there's no layout shift.
+const HeroCanvas = dynamic(() => import("@/components/HeroCanvas").then((m) => m.HeroCanvas), {
+  ssr: false,
+});
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden">
-      <div aria-hidden className="orb" />
-      <div className="relative z-10 mx-auto flex max-w-3xl flex-col items-center px-6 pb-20 pt-24 text-center sm:pt-32">
-        <span className="mb-5 rounded-full border border-teal-600/30 bg-teal-50 px-3 py-1 text-xs font-medium uppercase tracking-wider text-teal-700">
-          Coming soon
-        </span>
-        <h1 className="text-balance text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
-          Understand your medications — straight from the evidence.
-        </h1>
-        <p className="mt-6 max-w-xl text-pretty text-lg leading-8 text-slate-600">
-          PharmaOrb gives you clear, source-backed answers about drugs and supplements
-          &mdash; every claim traced to FDA labels, PubMed, and ClinicalTrials.gov.
-          Educational information, not medical advice.
-        </p>
-        <div className="mt-10 w-full max-w-md">
-          <WaitlistForm />
+    <section className="hero" id="waitlist">
+      <HeroCanvas />
+      <div className="hero-overlay" />
+      <div
+        style={{
+          position: "relative",
+          zIndex: 2,
+          width: "100%",
+          maxWidth: "700px",
+          margin: "0 auto",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+        }}
+      >
+        <div className="hero-badge">
+          <span className="bdot" />
+          Beta · Coming soon
         </div>
-        <p className="mt-3 text-xs text-slate-500">
-          Join the waitlist &mdash; we&rsquo;ll email you when the beta opens.
+        <h1 className="hero-h1">
+          Drug information that
+          <br />
+          actually shows its <em>work.</em>
+        </h1>
+        <p className="hero-sub">
+          Plain-English answers about any medication or supplement — every claim traced to FDA
+          labels, PubMed, and ClinicalTrials.gov.
         </p>
+        <div className="waitlist-wrap" id="waitlist-area">
+          <WaitlistForm note="We'll email you when the beta opens. No spam, ever." />
+        </div>
+        <p style={{ marginTop: "28px", fontSize: "13px", color: "var(--t35)" }}>
+          or{" "}
+          <a
+            href="#demo"
+            style={{
+              color: "var(--teal)",
+              fontWeight: 600,
+              textDecoration: "underline",
+              textUnderlineOffset: "3px",
+            }}
+          >
+            try a live query ↓
+          </a>
+        </p>
+      </div>
+      <div className="scroll-cue">
+        <div className="sline" />
+        Scroll
       </div>
     </section>
   );
