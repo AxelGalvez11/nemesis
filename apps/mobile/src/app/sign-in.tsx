@@ -1,16 +1,18 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { Link, router } from "expo-router";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
 import { useAuth } from "@/auth/AuthProvider";
-import { AGE_TOS_ACK } from "@/lib/legal";
-import { common } from "@/theme/common";
+import { AgeGate } from "@/components/AgeGate";
+import { BrandMark } from "@/components/BrandMark";
+import { Button, Input } from "@/components/ui";
+import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
+import { radius, space, type, useTheme } from "@/theme";
 
-// Sign-in screen. We drive real email/password sign-IN (never UI signup — that would
-// hang on email confirmation). "Continue as guest" enters the app in browse-only mode.
-// doc-18 age gate: an 18+ / Terms+Privacy attestation gates BOTH entry actions. There is
-// no separate signup form, so the entry screen is where the attestation lives; the
-// Terms/Privacy links resolve to the legal screens (the router has no auth guard).
+// Entry screen. Drives real email/password sign-IN; "Create account" routes to the
+// sign-up screen; "Continue as guest" enters browse-only mode. The doc-18 age gate
+// (18+ / Terms+Privacy) gates the two entry actions here; sign-up re-gates itself.
 export default function SignIn() {
+  const t = useTheme();
   const { signInEmail, continueAsGuest } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,100 +20,109 @@ export default function SignIn() {
   const [busy, setBusy] = useState(false);
   const [acked, setAcked] = useState(false);
 
+  async function onSignIn() {
+    setBusy(true);
+    setError(null);
+    const result = await signInEmail(email.trim(), password);
+    setBusy(false);
+    if (result.error) setError(result.error);
+    else router.replace("/");
+  }
+
   return (
-    <View style={common.center} testID="signin-screen">
-      <Text style={common.h1}>PharmaBro</Text>
-      <Text style={common.sub}>Educational use only — not medical advice.</Text>
-      <TextInput
-        testID="email"
-        style={common.input}
-        placeholder="Email"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
-      <TextInput
-        testID="password"
-        style={common.input}
-        placeholder="Password"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-      {error ? (
-        <Text testID="signin-error" style={common.err}>
-          {error}
-        </Text>
-      ) : null}
-
-      <Pressable
-        testID="age-ack"
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: acked }}
-        style={styles.ackRow}
-        onPress={() => setAcked((a) => !a)}
-      >
-        <View style={[styles.box, acked && styles.boxOn]}>
-          {acked ? <Text style={styles.tick}>✓</Text> : null}
+    <ScrollView
+      testID="signin-screen"
+      style={{ backgroundColor: t.color.background }}
+      contentContainerStyle={styles.scroll}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={styles.content}>
+        <View style={styles.brand}>
+          <BrandMark size={64} />
+          <Text style={[type.display, { color: t.color.text }]}>{APP_NAME}</Text>
+          <Text style={[type.body, styles.tagline, { color: t.color.textMuted }]}>{APP_TAGLINE}</Text>
         </View>
-        <Text style={styles.ackText}>{AGE_TOS_ACK}</Text>
-      </Pressable>
-      <View style={styles.links}>
-        <Link testID="link-terms" href="/profile/legal?doc=terms" style={common.link}>
-          Terms
-        </Link>
-        <Text style={styles.dot}>·</Text>
-        <Link testID="link-privacy" href="/profile/legal?doc=privacy" style={common.link}>
-          Privacy Policy
-        </Link>
-      </View>
 
-      <Pressable
-        testID="signin-submit"
-        style={[common.btn, (busy || !acked) && styles.disabled]}
-        disabled={busy || !acked}
-        onPress={async () => {
-          setBusy(true);
-          setError(null);
-          const result = await signInEmail(email.trim(), password);
-          setBusy(false);
-          if (result.error) setError(result.error);
-          else router.replace("/");
-        }}
-      >
-        <Text style={common.btnText}>{busy ? "Signing in…" : "Sign in"}</Text>
-      </Pressable>
-      <Pressable
-        testID="continue-guest"
-        style={[common.linkBtn, !acked && styles.disabled]}
-        disabled={!acked}
-        onPress={() => {
-          continueAsGuest();
-          router.replace("/");
-        }}
-      >
-        <Text style={common.link}>Continue as guest</Text>
-      </Pressable>
-    </View>
+        <View style={styles.form}>
+          <Input
+            testID="email"
+            label="Email"
+            placeholder="you@example.com"
+            autoCapitalize="none"
+            keyboardType="email-address"
+            autoComplete="email"
+            value={email}
+            onChangeText={setEmail}
+          />
+          <Input
+            testID="password"
+            label="Password"
+            placeholder="••••••••"
+            secureTextEntry
+            autoComplete="password"
+            value={password}
+            onChangeText={setPassword}
+            returnKeyType="go"
+            onSubmitEditing={() => {
+              if (acked && !busy) void onSignIn();
+            }}
+          />
+          {error ? (
+            <Text testID="signin-error" style={[type.bodySm, { color: t.color.danger }]}>
+              {error}
+            </Text>
+          ) : null}
+
+          <AgeGate checked={acked} onToggle={() => setAcked((a) => !a)} />
+
+          <Button
+            testID="signin-submit"
+            title="Sign in"
+            onPress={onSignIn}
+            loading={busy}
+            disabled={!acked}
+            fullWidth
+          />
+
+          <View style={styles.divider}>
+            <View style={[styles.rule, { backgroundColor: t.color.border }]} />
+            <Text style={[type.caption, { color: t.color.textSubtle }]}>NEW HERE?</Text>
+            <View style={[styles.rule, { backgroundColor: t.color.border }]} />
+          </View>
+
+          <Button
+            testID="link-signup"
+            title="Create account"
+            variant="secondary"
+            onPress={() => router.push("/sign-up")}
+            fullWidth
+          />
+
+          <Pressable
+            testID="continue-guest"
+            disabled={!acked}
+            style={[styles.guest, !acked && styles.guestDisabled]}
+            onPress={() => {
+              continueAsGuest();
+              router.replace("/");
+            }}
+          >
+            <Text style={[type.bodyStrong, { color: t.color.primary }]}>Continue as guest</Text>
+          </Pressable>
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  ackRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8, maxWidth: 320 },
-  box: {
-    width: 22,
-    height: 22,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    borderColor: "#9aa5b1",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  boxOn: { backgroundColor: "#1f6feb", borderColor: "#1f6feb" },
-  tick: { color: "#fff", fontSize: 14, fontWeight: "700", lineHeight: 16 },
-  ackText: { flex: 1, fontSize: 13, lineHeight: 18, color: "#3a4451" },
-  links: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 },
-  dot: { color: "#9aa5b1" },
-  disabled: { opacity: 0.45 },
+  scroll: { flexGrow: 1, justifyContent: "center", padding: space[6] },
+  content: { width: "100%", maxWidth: 420, alignSelf: "center", gap: space[8] },
+  brand: { alignItems: "center", gap: space[3] },
+  tagline: { textAlign: "center", maxWidth: 320 },
+  form: { gap: space[4] },
+  divider: { flexDirection: "row", alignItems: "center", gap: space[3], marginVertical: space[1] },
+  rule: { flex: 1, height: StyleSheet.hairlineWidth, borderRadius: radius.pill },
+  guest: { alignItems: "center", paddingVertical: space[3] },
+  guestDisabled: { opacity: 0.45 },
 });

@@ -1,32 +1,51 @@
 import { StyleSheet } from "react-native";
+import { lightTheme } from "./theme";
+import { radius, slate, space, teal, type } from "./tokens";
 
-// Minimal shared styles for 6b-1 stubs. The full doc-13 design system (tokens,
-// dark mode, typography scale) is fleshed out across 6b-2…6b-5.
+// Static shared styles for screens not yet migrated to the themed primitives. These
+// are LIGHT-only (a StyleSheet can't react to the theme); the app stays light-locked
+// until every screen consumes theme tokens (see ThemeProvider). Re-pointed onto the
+// token ramps so the whole app shares one palette — a screen still on `common` looks
+// consistent with the redesigned entry screens + themed primitives, not like a
+// different app. Keys are unchanged: 11 screens import them.
+const c = lightTheme.color;
+
 export const common = StyleSheet.create({
-  screen: { flex: 1, padding: 24, gap: 12 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 12 },
-  h1: { fontSize: 26, fontWeight: "700" },
-  sub: { fontSize: 14, opacity: 0.7 },
-  body: { fontSize: 15, opacity: 0.8, lineHeight: 21 },
+  screen: { flex: 1, padding: space[6], gap: space[3], backgroundColor: c.background },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: space[6],
+    gap: space[3],
+    backgroundColor: c.background,
+  },
+  h1: { ...type.h1, color: c.text },
+  sub: { ...type.bodySm, color: c.textMuted },
+  body: { ...type.body, color: c.text },
   input: {
     width: "100%",
     maxWidth: 360,
     borderWidth: 1,
-    borderColor: "#9aa4b2",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: c.inputBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: space[3] + 2,
+    paddingVertical: space[3],
     fontSize: 16,
+    backgroundColor: c.inputBg,
+    color: c.text,
   },
   btn: {
-    backgroundColor: "#208AEF",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
+    backgroundColor: teal[500],
+    paddingHorizontal: space[5],
+    paddingVertical: space[3],
+    borderRadius: radius.md,
     alignSelf: "flex-start",
+    minHeight: 48,
+    justifyContent: "center",
   },
-  btnText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-  link: { color: "#208AEF", fontSize: 15 },
-  linkBtn: { paddingVertical: 8 },
-  err: { color: "#c0392b" },
+  btnText: { color: slate[0], fontWeight: "600", fontSize: 16 },
+  link: { color: teal[600], fontSize: 15, fontWeight: "500" },
+  linkBtn: { paddingVertical: space[2] },
+  err: { color: c.danger },
 });

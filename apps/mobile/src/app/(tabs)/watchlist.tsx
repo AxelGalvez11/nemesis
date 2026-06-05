@@ -55,7 +55,7 @@ export default function WatchlistTab() {
         <EmptyState
           testID="watchlist-empty"
           title="No follows yet"
-          body="Follow drugs, clinical trials, medication classes, or PubMed keywords. PharmaBro will notify you when something important changes."
+          body="Follow drugs, clinical trials, medication classes, or PubMed keywords. PharmaOrb will notify you when something important changes."
         />
       ) : (
         <View style={styles.section}>

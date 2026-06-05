@@ -15,7 +15,7 @@ export default function ExportScreen() {
     <ScrollView contentContainerStyle={styles.body} testID="export-screen">
       <Text style={common.h1}>Export your data</Text>
       <Text style={common.body}>
-        Download a copy of your PharmaBro data — your profile, health context, follows, saved reports, and asked questions.
+        Download a copy of your PharmaOrb data — your profile, health context, follows, saved reports, and asked questions.
       </Text>
 
       <Pressable

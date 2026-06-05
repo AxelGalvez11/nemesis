@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/api/supabase";
+import { deriveSignUpResult, type SignUpOutcome } from "./signup";
 
 interface AuthState {
   session: Session | null;
@@ -19,9 +20,9 @@ interface AuthState {
   isGuest: boolean;
   continueAsGuest: () => void;
   signInEmail: (email: string, password: string) => Promise<{ error: string | null }>;
-  // Reserved for a future sign-up screen (with email-confirmation handling). Not wired
-  // into any screen in 6b-1, where we only drive sign-IN against seeded/known users.
-  signUpEmail: (email: string, password: string) => Promise<{ error: string | null }>;
+  // Email/password sign-up. Returns needsConfirmation when Supabase requires email
+  // verification (no session minted) so the screen can show "check your email".
+  signUpEmail: (email: string, password: string) => Promise<SignUpOutcome>;
   signOut: () => Promise<void>;
 }
 
@@ -55,8 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUpEmail = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password });
-    return { error: error?.message ?? null };
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    return deriveSignUpResult(data, error);
   }, []);
 
   const signOut = useCallback(async () => {

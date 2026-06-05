@@ -21,7 +21,7 @@ export default function SubscriptionScreen() {
         <Text style={common.sub}>Free includes search, ask, drug pages, and up to {FREE_WATCHLIST_LIMIT} follows.</Text>
       </Card>
 
-      <Text style={styles.heading}>PharmaBro Pro</Text>
+      <Text style={styles.heading}>PharmaOrb Pro</Text>
       {PRO_FEATURES.map((f) => (
         <View key={f} style={styles.row}>
           <Text style={styles.bullet}>•</Text>

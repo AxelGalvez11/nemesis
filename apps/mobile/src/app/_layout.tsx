@@ -4,6 +4,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { AuthProvider } from "@/auth/AuthProvider";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { ThemeProvider } from "@/theme";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -11,14 +12,16 @@ const queryClient = new QueryClient({
 
 export default function RootLayout() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <SafeAreaProvider>
-          <Stack screenOptions={{ headerShown: false }} />
-          <OfflineBanner />
-          <StatusBar style="auto" />
-        </SafeAreaProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <SafeAreaProvider>
+            <Stack screenOptions={{ headerShown: false }} />
+            <OfflineBanner />
+            <StatusBar style="auto" />
+          </SafeAreaProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
