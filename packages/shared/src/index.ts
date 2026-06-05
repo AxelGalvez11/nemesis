@@ -25,3 +25,5 @@ export * from "./health-context.ts";
 // Phase-6a backend gaps (§8): GET /compare structured comparison shapes.
 // (SourceDetail for GET /sources/{id} lives in search.ts alongside SourceRef.)
 export * from "./compare.ts";
+// MVP web-beta entitlements + usage snapshots (0122).
+export * from "./entitlements.ts";

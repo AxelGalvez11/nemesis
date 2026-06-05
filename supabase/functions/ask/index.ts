@@ -42,11 +42,17 @@ import type {
   SafetyFlag,
 } from "../../../packages/shared/src/answer.ts";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://app.pharmaorb.app",
+  "https://pharmaorb.app",
+  "https://www.pharmaorb.app",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:8081",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3001",
+  "http://127.0.0.1:8081",
+];
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -59,33 +65,34 @@ const ASK_MATCH_THRESHOLD = 0.5;
 const MATCH_COUNT = 8;
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405, req);
 
-  if (!hasLlmKey()) return json({ error: "LLM API key not configured" }, 500);
+  if (!hasLlmKey()) return json({ error: "LLM API key not configured" }, 500, req);
 
   // ---- verify caller (authenticated-only) ----
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   const userId = await verifyUser(token);
-  if (!userId) return json({ error: "authentication required" }, 401);
+  if (!userId) return json({ error: "authentication required" }, 401, req);
 
   let body: { question?: string; use_health_context?: boolean; conversation_id?: string };
   try {
     body = await req.json();
   } catch {
-    return json({ error: "invalid json" }, 400);
+    return json({ error: "invalid json" }, 400, req);
   }
   const question = (body.question ?? "").trim();
-  if (!question) return json({ error: "question required" }, 400);
+  if (!question) return json({ error: "question required" }, 400, req);
 
   try {
     const resp = await runAsk(question, !!body.use_health_context, userId);
-    return json(resp);
+    return json(resp, 200, req);
   } catch (e) {
+    if (e instanceof QuotaExceeded) return json(e.payload, 429, req);
     // Log the detail server-side; return a generic message so PostgREST /
     // Anthropic internals (schema, policy names, request ids) don't leak.
     console.error("ask pipeline error:", (e as Error).message);
-    return json({ error: "ask failed" }, 500);
+    return json({ error: "ask failed" }, 500, req);
   }
 });
 
@@ -107,6 +114,10 @@ async function runAsk(
     return await finalizeTemplate(answerId, question, "drug_sourcing", pre.flags, [], userId,
       "sourcing_refusal", "deterministic-prescreen", false);
   }
+
+  // ---- 0b. server-side usage limit (before LLM classify/generate spend) ----
+  const quota = await consumeAskQuota(userId);
+  if (!quota.allowed) throw new QuotaExceeded(quota);
 
   // ---- 1. classify ----
   const cls = await classify(question, apiKey);
@@ -407,6 +418,65 @@ interface TraceRow {
   used_health_context: boolean;
 }
 
+interface QuotaPayload {
+  error: "quota_exceeded";
+  counter_key: string;
+  used: number;
+  limit: number;
+  plan: string;
+}
+
+interface ConsumeUsageResult {
+  allowed: boolean;
+  reason: string;
+  plan: string;
+  counter_key: string;
+  used: number;
+  limit: number;
+}
+
+class QuotaExceeded extends Error {
+  readonly payload: QuotaPayload;
+
+  constructor(result: ConsumeUsageResult) {
+    super("quota_exceeded");
+    this.payload = {
+      error: "quota_exceeded",
+      counter_key: result.counter_key,
+      used: result.used,
+      limit: result.limit,
+      plan: result.plan,
+    };
+  }
+}
+
+async function consumeAskQuota(userId: string): Promise<ConsumeUsageResult> {
+  const res = await fetch(`${SB_URL}/rest/v1/rpc/consume_usage`, {
+    method: "POST",
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      p_user_id: userId,
+      p_counter_key: "ask_daily",
+      p_cost: 1,
+      p_metadata: { surface: "ask" },
+    }),
+  });
+  if (!res.ok) throw new Error(`usage check failed (${res.status})`);
+  const raw = await res.json() as Partial<ConsumeUsageResult>;
+  return {
+    allowed: raw.allowed === true,
+    reason: typeof raw.reason === "string" ? raw.reason : "unknown",
+    plan: typeof raw.plan === "string" ? raw.plan : "free",
+    counter_key: typeof raw.counter_key === "string" ? raw.counter_key : "ask_daily",
+    used: typeof raw.used === "number" ? raw.used : 0,
+    limit: typeof raw.limit === "number" ? raw.limit : 0,
+  };
+}
+
 async function storeTrace(row: TraceRow): Promise<void> {
   try {
     await fetch(`${SB_URL}/rest/v1/generated_answers`, {
@@ -430,9 +500,33 @@ function unique<T>(arr: T[]): T[] {
   return [...new Set(arr)];
 }
 
-function json(payload: unknown, status = 200): Response {
+function allowedOrigins(): string[] {
+  const env = Deno.env.get("WEB_ALLOWED_ORIGINS");
+  if (!env) return DEFAULT_ALLOWED_ORIGINS;
+  return [
+    ...DEFAULT_ALLOWED_ORIGINS,
+    ...env.split(",").map((s) => s.trim()).filter(Boolean),
+  ];
+}
+
+function isAllowedOrigin(origin: string): boolean {
+  if (allowedOrigins().includes(origin)) return true;
+  return /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
+}
+
+function corsHeaders(req?: Request): Record<string, string> {
+  const origin = req?.headers.get("origin") ?? "";
+  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.pharmaorb.app";
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
+
+function json(payload: unknown, status = 200, req?: Request): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(req), "Content-Type": "application/json" },
   });
 }
