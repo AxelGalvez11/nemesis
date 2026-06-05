@@ -42,36 +42,52 @@ export default function WatchlistPage() {
         Follow drugs and topics, then review source-backed updates and weekly digest snapshots.
       </PageHeader>
       {error ? <ErrorText>{error}</ErrorText> : null}
+      <section className="plan-bar">
+        <div>
+          <strong>Free plan · {items.length} / {limit} follows used</strong>
+          <p className="muted">Upgrade to Plus for 50 follows and higher Ask limits.</p>
+        </div>
+        <button type="button">Upgrade to Plus</button>
+      </section>
+
       <div className="grid two">
-        <Card>
-          <div className="row">
-            <h2>Follows</h2>
-            <Badge>{items.length}/{limit}</Badge>
+        <section>
+          <div className="eyebrow">Following ({items.length})</div>
+          <div className="updates-list">
+            {items.length ? items.map((item) => (
+              <div className="watch-row" key={item.id}>
+                <span className="watch-dot" style={{ background: item.item_type === "drug" ? "#1a8c5c" : "#0278c0" }} />
+                <div style={{ flex: 1 }}>
+                  <strong>{item.item_ref}</strong>
+                  <p className="muted">{item.item_type} · {item.frequency}</p>
+                </div>
+                <button className="secondary" onClick={() => void onUnfollow(item.id)}>Unfollow</button>
+              </div>
+            )) : (
+              <Card>
+                <h2>No follows yet</h2>
+                <p className="muted">Search a drug and tap Follow to start monitoring updates.</p>
+              </Card>
+            )}
           </div>
-          {items.length ? (
-            <ul className="list">
-              {items.map((item) => (
-                <li className="row" key={item.id}>
-                  <span>{item.item_type}: {item.item_ref}</span>
-                  <button className="secondary" onClick={() => void onUnfollow(item.id)}>Unfollow</button>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="muted">No follows yet. Search a drug and tap Follow.</p>}
-        </Card>
-        <Card>
-          <h2>Weekly digest</h2>
-          {digest ? (
-            <>
-              <p><strong>{digest.update_count}</strong> updates from {digest.period_start} to {digest.period_end}</p>
-              <p className="muted">Generated {digest.generated_at}</p>
-            </>
-          ) : <p className="muted">No digest generated yet.</p>}
-        </Card>
+        </section>
+
+        <section>
+          <div className="eyebrow">Weekly digest</div>
+          <Card className="acid">
+            {digest ? (
+              <>
+                <h2>{digest.update_count} updates</h2>
+                <p>From {digest.period_start} to {digest.period_end}</p>
+                <p className="muted">Generated {digest.generated_at}</p>
+              </>
+            ) : <p className="muted">No digest generated yet.</p>}
+          </Card>
+        </section>
       </div>
       <section className="answer-section">
-        <h2>Matched updates</h2>
-        <div className="grid">
+        <div className="eyebrow">What&apos;s new</div>
+        <div className="updates-list">
           {updates.length ? updates.map((u) => (
             <Card key={u.id}>
               <div className="row">

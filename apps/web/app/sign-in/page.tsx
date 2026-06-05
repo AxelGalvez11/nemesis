@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { ErrorText } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
+import { isPreviewMode } from "@/lib/env";
 
 export default function SignInPage() {
   const { signIn } = useAuth();
@@ -34,10 +35,11 @@ export default function SignInPage() {
         <p className="eyebrow">PharmaOrb beta</p>
         <h1>Sign in</h1>
         <p className="muted">Use your beta account to access cited Ask, search, and watchlists.</p>
+        {isPreviewMode ? <p className="muted">Preview mode: no account credentials required.</p> : null}
         <form onSubmit={onSubmit}>
-          <input type="email" autoComplete="email" required placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input type="password" autoComplete="current-password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <button disabled={busy} type="submit">{busy ? "Signing in…" : "Sign in"}</button>
+          <input type="email" autoComplete="email" required={!isPreviewMode} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input type="password" autoComplete="current-password" required={!isPreviewMode} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <button disabled={busy} type="submit">{busy ? "Signing in…" : isPreviewMode ? "Enter preview app" : "Sign in"}</button>
         </form>
         {error ? <ErrorText>{error}</ErrorText> : null}
         <p className="muted">No account yet? <Link className="source-link" href="/sign-up">Create one</Link></p>

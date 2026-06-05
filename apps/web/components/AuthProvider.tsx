@@ -2,6 +2,7 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { isPreviewMode } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 
 interface AuthContextValue {
@@ -14,11 +15,35 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+const previewSession = {
+  access_token: "preview-access-token",
+  token_type: "bearer",
+  expires_in: 3600,
+  expires_at: Math.floor(Date.now() / 1000) + 3600,
+  refresh_token: "preview-refresh-token",
+  user: {
+    id: "00000000-0000-4000-8000-000000000000",
+    aud: "authenticated",
+    role: "authenticated",
+    email: "preview@pharmaorb.app",
+    app_metadata: { provider: "email", providers: ["email"] },
+    user_metadata: {},
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+} as Session;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (isPreviewMode) {
+      setSession(previewSession);
+      setLoading(false);
+      return;
+    }
+
     let alive = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!alive) return;
@@ -36,16 +61,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    if (isPreviewMode) {
+      setSession(previewSession);
+      return null;
+    }
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     return error?.message ?? null;
   }, []);
 
   const signUp = useCallback(async (email: string, password: string) => {
+    if (isPreviewMode) {
+      setSession(previewSession);
+      return null;
+    }
     const { error } = await supabase.auth.signUp({ email, password });
     return error?.message ?? null;
   }, []);
 
   const signOut = useCallback(async () => {
+    if (isPreviewMode) {
+      setSession(null);
+      return;
+    }
     await supabase.auth.signOut();
   }, []);
 

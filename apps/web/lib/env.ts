@@ -1,5 +1,6 @@
 export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+export const isPreviewMode = !supabaseUrl || !supabaseAnonKey;
 export const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 export const landingUrl = process.env.NEXT_PUBLIC_LANDING_URL ?? "https://pharmaorb.app";
 

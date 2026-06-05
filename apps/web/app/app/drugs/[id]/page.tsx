@@ -65,56 +65,115 @@ export default function DrugPage() {
   if (!drug) return <main>Loading drug…</main>;
 
   return (
-    <>
-      <PageHeader title={drug.canonical_name} eyebrow="Evidence page">
-        {drug.mechanism_summary || "Source-backed profile with labels, trials, PubMed, and evidence score."}
-      </PageHeader>
-      <div className="grid two">
-        <Card>
-          <div className="row">
-            <Badge>{drug.approved_status}</Badge>
-            <button disabled={followed} onClick={onFollow}>{followed ? "Following" : "Follow"}</button>
-          </div>
-          {followError ? <ErrorText>{followError}</ErrorText> : null}
-          <p className="muted">Plan follow limit: {watchlist.length}/{limit}</p>
-        </Card>
+    <div className="drug-page-layout">
+      <section className="drug-main">
+        <h1 className="drug-title">{drug.canonical_name}</h1>
+        <div className="quick-chips">
+          <Badge>{drug.approved_status}</Badge>
+          {drug.primary_class ? <span className="chip">{drug.primary_class.name}</span> : null}
+        </div>
+        <div className="quick-chips">
+          <button disabled={followed} onClick={onFollow}>{followed ? "Following" : "Follow"}</button>
+          <button className="secondary" type="button">Compare</button>
+          <button className="secondary" type="button">Share</button>
+        </div>
+        {followError ? <ErrorText>{followError}</ErrorText> : null}
+        <p className="muted">Plan follow limit: {watchlist.length}/{limit}</p>
+
+        <div className="seg-tabs">
+          {["Summary", "Trials", "PubMed", "Sources"].map((tab, i) => (
+            <span className={i === 0 ? "active" : ""} key={tab}>{tab}</span>
+          ))}
+        </div>
+
         {drug.evidence_score ? (
-          <Card>
-            <Badge>{drug.evidence_score.score}</Badge>
+          <Card className="acid">
+            <div className="row">
+              <Badge>{drug.evidence_score.score}</Badge>
+              <span className="muted">Updated Jun 2026</span>
+            </div>
             <h2>Evidence strength</h2>
             <p>{drug.evidence_score.rationale}</p>
+            <div className="grid four-stats">
+              <Stat label="RCTs" value={String(drug.evidence_score.evidence_counts.n_rct ?? 0)} />
+              <Stat label="Human trials" value={String(drug.evidence_score.evidence_counts.n_human_trials ?? 0)} />
+              <Stat label="Phase" value={drug.evidence_score.evidence_counts.max_trial_phase ?? "n/a"} />
+              <Stat label="Labels" value={String(drug.counts.labels)} />
+            </div>
           </Card>
         ) : null}
-      </div>
-      <Section title="Label" empty="No label projection yet.">
-        {labels.map((l) => (
-          <Card key={l.label_id}>
-            <SourceAnchor sourceId={l.source_id} label="Open label source" />
-            {Object.entries(l.extracted_sections).slice(0, 5).map(([k, v]) => (
-              <p key={k}><strong>{k.replaceAll("_", " ")}:</strong> {String(v).slice(0, 420)}</p>
-            ))}
-          </Card>
+
+        <section className="answer-section">
+          <div className="eyebrow">Mechanism of action</div>
+          <p>{drug.mechanism_summary || "Source-backed profile with labels, trials, PubMed, and evidence score."}</p>
+        </section>
+
+        <Card>
+          <p className="error"><strong>Safety note</strong></p>
+          <p className="muted">Review labeled warnings, contraindications, and clinician guidance before making medication decisions.</p>
+        </Card>
+
+        <Section title="Label" empty="No label projection yet.">
+          {labels.map((l) => (
+            <Card key={l.label_id}>
+              <SourceAnchor sourceId={l.source_id} label="Open label source" />
+              {Object.entries(l.extracted_sections).slice(0, 5).map(([k, v]) => (
+                <p key={k}><strong>{k.replaceAll("_", " ")}:</strong> {String(v).slice(0, 420)}</p>
+              ))}
+            </Card>
+          ))}
+        </Section>
+        <Section title="ClinicalTrials.gov" empty="No linked trials yet.">
+          {trials.map((t) => (
+            <Card key={t.trial_id}>
+              <h3>{t.brief_title || t.nct_id}</h3>
+              <p className="muted">{t.phase} · {t.status}</p>
+              <SourceAnchor sourceId={t.source_id} label="Open trial source" />
+            </Card>
+          ))}
+        </Section>
+        <Section title="PubMed" empty="No linked PubMed articles yet.">
+          {pubmed.map((p) => (
+            <Card key={p.article_id}>
+              <h3>{p.title || p.pmid}</h3>
+              <p className="muted">{p.journal} · {p.publication_date}</p>
+              <SourceAnchor sourceId={p.source_id} label="Open PubMed source" />
+            </Card>
+          ))}
+        </Section>
+      </section>
+
+      <aside className="right-rail">
+        <div className="eyebrow">Products</div>
+        {[
+          { name: "Ozempic", form: "SC injection", dose: "0.5-2 mg", bg: "#1a3b78" },
+          { name: "Wegovy", form: "SC injection", dose: "2.4 mg", bg: "#1563b5" },
+          { name: "Rybelsus", form: "Oral tablet", dose: "3-14 mg", bg: "#1a7a42" },
+        ].map((product) => (
+          <section className="product-card" key={product.name}>
+            <div className="product-art" style={{ background: `linear-gradient(135deg, ${product.bg}cc, ${product.bg})` }}>{product.name[0]}</div>
+            <div className="drug-tile-body">
+              <strong>{product.name}</strong>
+              <p className="muted">{product.form}</p>
+              <p className="source-link">{product.dose}</p>
+            </div>
+          </section>
         ))}
-      </Section>
-      <Section title="ClinicalTrials.gov" empty="No linked trials yet.">
-        {trials.map((t) => (
-          <Card key={t.trial_id}>
-            <h3>{t.brief_title || t.nct_id}</h3>
-            <p className="muted">{t.phase} · {t.status}</p>
-            <SourceAnchor sourceId={t.source_id} label="Open trial source" />
-          </Card>
-        ))}
-      </Section>
-      <Section title="PubMed" empty="No linked PubMed articles yet.">
-        {pubmed.map((p) => (
-          <Card key={p.article_id}>
-            <h3>{p.title || p.pmid}</h3>
-            <p className="muted">{p.journal} · {p.publication_date}</p>
-            <SourceAnchor sourceId={p.source_id} label="Open PubMed source" />
-          </Card>
-        ))}
-      </Section>
-    </>
+        <div className="answer-section">
+          <div className="eyebrow">Related</div>
+          {["Tirzepatide", "Liraglutide", "Dulaglutide"].map((name) => <p key={name}>{name}</p>)}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <h2>{value}</h2>
+      <p className="muted">{label}</p>
+    </div>
   );
 }
 
