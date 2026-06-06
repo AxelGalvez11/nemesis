@@ -2,14 +2,19 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { isPreviewMode } from "@/lib/env";
+import { appUrl, isPreviewMode } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
+
+export interface SignUpResult {
+  error: string | null;
+  needsEmailConfirmation: boolean;
+}
 
 interface AuthContextValue {
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
-  signUp: (email: string, password: string) => Promise<string | null>;
+  signUp: (email: string, password: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
 }
 
@@ -72,10 +77,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = useCallback(async (email: string, password: string) => {
     if (isPreviewMode) {
       setSession(previewSession);
-      return null;
+      return { error: null, needsEmailConfirmation: false };
     }
-    const { error } = await supabase.auth.signUp({ email, password });
-    return error?.message ?? null;
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: `${appUrl}/app`,
+      },
+    });
+    if (error) return { error: error.message, needsEmailConfirmation: false };
+    if (data.session) setSession(data.session);
+    return { error: null, needsEmailConfirmation: !data.session };
   }, []);
 
   const signOut = useCallback(async () => {

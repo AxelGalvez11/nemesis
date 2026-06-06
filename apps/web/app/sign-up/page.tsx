@@ -8,10 +8,11 @@ import { useAuth } from "@/components/AuthProvider";
 import { isPreviewMode } from "@/lib/env";
 
 export default function SignUpPage() {
-  const { signUp, signIn } = useAuth();
+  const { signUp } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submittedEmail, setSubmittedEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -20,15 +21,32 @@ export default function SignUpPage() {
     setBusy(true);
     setError(null);
     const cleanEmail = email.trim();
-    const err = await signUp(cleanEmail, password);
-    if (err) {
+    const result = await signUp(cleanEmail, password);
+    if (result.error) {
       setBusy(false);
-      setError(err);
+      setError(result.error);
       return;
     }
-    await signIn(cleanEmail, password);
     setBusy(false);
+    if (result.needsEmailConfirmation) {
+      setSubmittedEmail(cleanEmail);
+      return;
+    }
     router.replace("/app");
+  }
+
+  if (submittedEmail) {
+    return (
+      <main className="centered">
+        <section className="auth-card">
+          <p className="eyebrow">PharmaOrb beta</p>
+          <h1>Check your email</h1>
+          <p className="muted">We sent a confirmation link to {submittedEmail}. Open it to finish creating your account.</p>
+          <p className="muted">After confirming, sign in with the same email and password.</p>
+          <Link className="source-link" href="/sign-in">Go to sign in</Link>
+        </section>
+      </main>
+    );
   }
 
   return (
