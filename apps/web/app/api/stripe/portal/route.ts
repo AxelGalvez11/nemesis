@@ -1,6 +1,6 @@
 import { appUrl } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
-import { stripe } from "@/lib/stripe";
+import { stripe, stripeFailureDetail } from "@/lib/stripe";
 
 export async function POST(req: Request) {
   try {
@@ -22,10 +22,13 @@ export async function POST(req: Request) {
     });
 
     return json({ url: session.url });
-  } catch {
+  } catch (error) {
+    const detail = stripeFailureDetail(error);
+    console.error("stripe_portal_failed", detail);
     return json({
       error: "stripe_portal_failed",
       message: "Stripe billing portal is not configured correctly.",
+      detail,
     }, 500);
   }
 }
