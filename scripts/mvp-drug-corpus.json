@@ -1,0 +1,49 @@
+{
+  "_doc": "Focused PharmaOrb MVP RAG seed list. This is the exact 10-drug set used to prove cited Ask, evidence briefs, drug workspaces, and watchlists before expanding to top-300 coverage.",
+  "drugs": [
+    "atorvastatin",
+    "metformin",
+    "semaglutide",
+    "isotretinoin",
+    "sertraline",
+    "omeprazole",
+    "amoxicillin",
+    "lisinopril",
+    "hydroxychloroquine",
+    "testosterone"
+  ],
+  "providers": [
+    "rxnorm",
+    "openfda",
+    "dailymed",
+    "clinicaltrials",
+    "pubmed_oa"
+  ],
+  "pubmed_query_families": [
+    {
+      "name": "reviews_meta_analyses",
+      "query_template": "\"{drug}\" AND (systematic review OR meta-analysis OR review)",
+      "retmax": 8
+    },
+    {
+      "name": "randomized_trials",
+      "query_template": "\"{drug}\" AND (randomized controlled trial OR clinical trial)",
+      "retmax": 8
+    },
+    {
+      "name": "recent_safety",
+      "query_template": "\"{drug}\" AND (safety OR adverse effects OR adverse reactions) AND 2020:3000[pdat]",
+      "retmax": 8
+    },
+    {
+      "name": "interactions",
+      "query_template": "\"{drug}\" AND (drug interaction OR pharmacokinetic interaction)",
+      "retmax": 5
+    },
+    {
+      "name": "pharmacology",
+      "query_template": "\"{drug}\" AND (mechanism OR pharmacokinetics OR pharmacodynamics)",
+      "retmax": 5
+    }
+  ]
+}

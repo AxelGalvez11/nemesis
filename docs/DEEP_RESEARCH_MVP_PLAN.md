@@ -22,20 +22,55 @@ This proves PharmaOrb is more than a chatbot without building the full researche
 
 ## What Ships First
 
-1. Evidence brief from an existing cited Ask trace.
+1. Focused 10-drug RAG corpus.
+   - Seed drugs: atorvastatin, metformin, semaglutide, isotretinoin, sertraline, omeprazole, amoxicillin, lisinopril, hydroxychloroquine, testosterone.
+   - Sources per drug: RxNorm, OpenFDA, DailyMed, ClinicalTrials.gov, and targeted PubMed OA query families.
+   - Run with `scripts/mvp-drug-corpus-ingest.ts`, then project with `scripts/entity-link.ts`.
+
+2. Evidence brief from an existing cited Ask trace.
    - Uses the stored answer, citations, and retrieved source IDs.
    - Cheap and auditable.
    - Saves into `saved_reports`.
 
-2. Entitlement counters.
+3. Entitlement counters.
    - `evidence_brief_daily_limit`
    - `deep_research_daily_limit`
    - `report_export_enabled`
    - `ppt_export_enabled`
 
-3. Pro-only deep research placeholder.
+4. Pro-only deep research placeholder.
    - The entitlement exists now.
    - The expensive multi-query retrieval and synthesis workflow ships later.
+
+## MVP Corpus Runbook
+
+Dry-run the exact ingest plan:
+
+```bash
+deno run --allow-net --allow-env --allow-read scripts/mvp-drug-corpus-ingest.ts --dry-run
+```
+
+Run the live ingest:
+
+```bash
+SERVICE_KEY=... SB_URL=https://<project-ref>.supabase.co \
+  deno run --allow-net --allow-env --allow-read scripts/mvp-drug-corpus-ingest.ts
+```
+
+Project the ingested sources into the drug catalog/drug pages:
+
+```bash
+SERVICE_KEY=... SB_URL=https://<project-ref>.supabase.co \
+  deno run -A scripts/entity-link.ts
+```
+
+Then check:
+
+- source/chunk counts by provider
+- 10 seed drugs resolve in Explore
+- each seed drug has label, PubMed, and trial surfaces where available
+- Ask answers cite the new chunks
+- evidence brief generation saves `saved_reports`
 
 ## Later Deep Research Workflow
 

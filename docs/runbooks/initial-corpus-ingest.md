@@ -69,6 +69,51 @@ Endpoint: `https://<project-ref>.supabase.co/functions/v1/core-source-sync`.
 
 ---
 
+## MVP shortcut — focused 10-drug corpus
+
+Before broader bulk expansion, run the focused public-web MVP corpus. This is
+the fastest way to improve Ask, evidence briefs, drug workspaces, and watchlist
+quality without attempting all-PubMed ingestion.
+
+Dry-run the exact job list:
+
+```bash
+deno run --allow-net --allow-env --allow-read scripts/mvp-drug-corpus-ingest.ts --dry-run
+```
+
+Run against Supabase:
+
+```bash
+SERVICE_KEY="<service-role-key>" SB_URL="https://<project-ref>.supabase.co" \
+  deno run --allow-net --allow-env --allow-read scripts/mvp-drug-corpus-ingest.ts
+```
+
+Project the ingested sources into the typed drug catalog:
+
+```bash
+SERVICE_KEY="<service-role-key>" SB_URL="https://<project-ref>.supabase.co" \
+  deno run -A scripts/entity-link.ts
+```
+
+Seed drugs:
+
+- atorvastatin
+- metformin
+- semaglutide
+- isotretinoin
+- sertraline
+- omeprazole
+- amoxicillin
+- lisinopril
+- hydroxychloroquine
+- testosterone
+
+Providers: RxNorm, OpenFDA, DailyMed, ClinicalTrials.gov, and targeted PubMed
+OA query families for reviews/meta-analyses, randomized trials, recent safety,
+interactions, and pharmacology.
+
+---
+
 ## Step 4 — trigger Tier 1 bulk ingests (in order)
 
 **Auth**: every call needs `Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>`.

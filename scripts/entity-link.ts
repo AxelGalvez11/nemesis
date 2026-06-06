@@ -48,8 +48,9 @@ const flag = (n: string) => Deno.args.includes(`--${n}`);
 const BULK = flag("bulk");
 const NO_PROJECTIONS = flag("no-projections");
 const DEFAULT_ANCHORS = [
-  "semaglutide", "metformin", "atorvastatin", "lisinopril", "warfarin",
-  "sertraline", "omeprazole", "amlodipine", "levothyroxine", "amoxicillin",
+  "atorvastatin", "metformin", "semaglutide", "isotretinoin", "sertraline",
+  "omeprazole", "amoxicillin", "lisinopril", "hydroxychloroquine",
+  "testosterone",
 ];
 const ONLY = (arg("only") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 const targetNorms = new Set(
