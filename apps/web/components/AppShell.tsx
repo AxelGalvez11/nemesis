@@ -78,6 +78,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const title = titleForPath(path);
   const wide = path.includes("/app/ask") || path.includes("/app/explore") || path.includes("/app/drugs/");
+  const askMeterWidth = planState.loaded && planState.askLimit > 0
+    ? `${Math.min(100, Math.round((planState.askUsed / planState.askLimit) * 100))}%`
+    : "12%";
 
   return (
     <div className="app-shell">
@@ -102,7 +105,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ? `${planState.askUsed} / ${planState.askLimit} Ask today. ${planState.followsUsed} / ${planState.followsLimit} follows used.`
               : "Loading current limits..."}
           </p>
-          <div className="mini-meter"><span /></div>
+          <div className="mini-meter"><span style={{ width: askMeterWidth }} /></div>
         </section>
         <div className="sidebar-footer">
           <a href={landingUrl}>Landing</a>

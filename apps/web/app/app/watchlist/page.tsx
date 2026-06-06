@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Digest, EntitlementSnapshot, WatchlistItem, WatchlistUpdate } from "@pharmabro/shared";
 import { fetchEntitlements, fetchLatestDigest, fetchWatchlist, fetchWatchlistUpdates, unfollowItem } from "@/lib/api";
@@ -34,6 +35,7 @@ export default function WatchlistPage() {
     await load();
   }
 
+  const plan = ent?.plan ?? "free";
   const limit = Number(ent?.entitlements.watchlist_limit ?? 3);
 
   return (
@@ -44,10 +46,10 @@ export default function WatchlistPage() {
       {error ? <ErrorText>{error}</ErrorText> : null}
       <section className="plan-bar">
         <div>
-          <strong>Free plan · {items.length} / {limit} follows used</strong>
-          <p className="muted">Upgrade to Plus for 50 follows and higher Ask limits.</p>
+          <strong>{plan} plan · {items.length} / {limit} follows used</strong>
+          <p className="muted">{plan === "plus" ? "Plus includes 50 follows and 100 Ask questions per day." : "Upgrade to Plus for 50 follows and higher Ask limits."}</p>
         </div>
-        <button type="button">Upgrade to Plus</button>
+        <Link className="button-link" href="/app/billing">{plan === "plus" ? "Manage billing" : "Upgrade to Plus"}</Link>
       </section>
 
       <div className="grid two">

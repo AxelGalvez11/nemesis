@@ -1,22 +1,43 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import type { AskResponse, Citation } from "@pharmabro/shared";
-import { askQuestion, type AskQuotaError } from "@/lib/api";
+import Link from "next/link";
+import { FormEvent, useEffect, useState } from "react";
+import type { AskResponse, Citation, UsageSnapshot } from "@pharmabro/shared";
+import { askQuestion, fetchUsage, type AskQuotaError } from "@/lib/api";
 import { Badge, ErrorText, SourceAnchor } from "@/components/ui";
 
 function isQuotaError(e: unknown): e is AskQuotaError {
   return e instanceof Error && "quota" in e;
 }
 
-const quickChips = ["Ask follow-up", "Compare to aspirin", "What are alternatives?", "Is occasional use safe?"];
+const quickChips = [
+  { label: "Warnings", question: "What are the major warnings for semaglutide?" },
+  { label: "Compare", question: "Compare semaglutide and tirzepatide safety evidence." },
+  { label: "Alternatives", question: "What are evidence-backed alternatives to semaglutide for weight management?" },
+  { label: "Safety", question: "What should patients ask a clinician before starting semaglutide?" },
+];
 
 export default function AskPage() {
   const [question, setQuestion] = useState("What are the major warnings for semaglutide?");
   const [lastQuestion, setLastQuestion] = useState(question);
   const [answer, setAnswer] = useState<AskResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
+  const [usageError, setUsageError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  async function refreshUsage() {
+    try {
+      setUsage(await fetchUsage());
+      setUsageError(null);
+    } catch (err) {
+      setUsageError(err instanceof Error ? err.message : "Usage failed");
+    }
+  }
+
+  useEffect(() => {
+    void refreshUsage();
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -34,12 +55,27 @@ export default function AskPage() {
       }
     } finally {
       setBusy(false);
+      void refreshUsage();
     }
   }
+
+  const askCounter = usage?.counters.ask_daily;
+  const askUsed = askCounter?.used ?? 0;
+  const askLimit = askCounter?.limit ?? 10;
+  const plan = usage?.plan ?? "free";
+  const limitReached = askUsed >= askLimit;
 
   return (
     <div className="chat-layout">
       <section className="chat-column">
+        <section className="plan-bar chat-quota">
+          <div>
+            <strong>{plan} plan · {askUsed} / {askLimit} Ask used today</strong>
+            <p className="muted">{limitReached ? "Daily Ask limit reached. Upgrade or wait for the next daily reset." : "Usage updates after each cited answer."}</p>
+          </div>
+          <Link className="button-link" href="/app/billing">{plan === "plus" ? "Manage plan" : "Upgrade"}</Link>
+        </section>
+        {usageError ? <div className="chat-inline-error"><ErrorText>{usageError}</ErrorText></div> : null}
         <div className="chat-thread">
           <div className="user-message">{lastQuestion}</div>
           <div className="ai-message">
@@ -50,11 +86,15 @@ export default function AskPage() {
 
         <form className="chat-input-bar" onSubmit={onSubmit}>
           <div className="quick-chips">
-            {quickChips.map((chip) => <span className="chip" key={chip}>{chip}</span>)}
+            {quickChips.map((chip) => (
+              <button className="chip" key={chip.label} type="button" onClick={() => setQuestion(chip.question)}>
+                {chip.label}
+              </button>
+            ))}
           </div>
           <div className="row">
             <textarea value={question} onChange={(e) => setQuestion(e.target.value)} maxLength={500} />
-            <button disabled={busy || !question.trim()} type="submit">{busy ? "Building..." : "Ask"}</button>
+            <button disabled={busy || !question.trim() || limitReached} type="submit">{busy ? "Building..." : "Ask"}</button>
           </div>
           {error ? <ErrorText>{error}</ErrorText> : null}
         </form>

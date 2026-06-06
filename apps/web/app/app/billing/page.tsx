@@ -24,7 +24,7 @@ export default function BillingPage() {
       if (!token) throw new Error("Sign in first");
       const res = await fetch(path, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
       const body = await res.json();
-      if (!res.ok || !body.url) throw new Error(body.error || "Stripe request failed");
+      if (!res.ok || !body.url) throw new Error(body.message || body.error || "Stripe request failed");
       window.location.href = body.url;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Stripe request failed");

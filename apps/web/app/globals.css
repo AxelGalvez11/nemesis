@@ -57,6 +57,19 @@ button.secondary {
   box-shadow: var(--shadow);
   color: var(--muted);
 }
+.button-link {
+  align-items: center;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent-mid));
+  border-radius: 8px;
+  box-shadow: var(--shadow-acid);
+  color: var(--text);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-weight: 800;
+  justify-content: center;
+  min-height: 40px;
+  padding: 10px 14px;
+}
 input, textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -442,6 +455,14 @@ button.danger-button:hover {
   min-width: 0;
   overflow: hidden;
 }
+.chat-quota {
+  flex: 0 0 auto;
+  margin: 20px 36px 0;
+}
+.chat-inline-error {
+  flex: 0 0 auto;
+  padding: 0 36px;
+}
 .chat-thread {
   display: flex;
   flex: 1;
@@ -504,11 +525,16 @@ button.danger-button:hover {
   background: var(--bg);
   border: 1px solid rgba(170, 255, 0, 0.18);
   border-radius: 999px;
+  box-shadow: none;
   color: var(--muted);
   display: inline-flex;
   font-size: 12px;
   font-weight: 600;
   padding: 5px 12px;
+}
+button.chip:hover {
+  box-shadow: none;
+  transform: none;
 }
 .source-rail {
   background: #fafffe;
