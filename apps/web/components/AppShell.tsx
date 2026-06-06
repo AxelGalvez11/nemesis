@@ -106,6 +106,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </section>
         <div className="sidebar-footer">
           <a href={landingUrl}>Landing</a>
+          <Link href="/legal/privacy">Privacy</Link>
+          <Link href="/legal/terms">Terms</Link>
           <button type="button" onClick={() => void signOut().then(() => router.replace("/sign-in"))}>
             Sign out
           </button>

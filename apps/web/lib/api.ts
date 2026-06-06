@@ -406,3 +406,40 @@ export async function fetchLatestDigest(): Promise<Digest | null> {
   const first = Array.isArray(data) ? data[0] : null;
   return isObj(first) && typeof first.id === "string" ? { ...first, items: Array.isArray(first.items) ? first.items : [] } as unknown as Digest : null;
 }
+
+export async function exportMyData(): Promise<Record<string, unknown>> {
+  if (isPreviewMode) {
+    return {
+      exported_at: new Date().toISOString(),
+      profile: { email: "preview@pharmaorb.app" },
+      subscription: { plan: "free", status: "preview" },
+      watchlist: demoWatchlist,
+      usage: demoUsage,
+    };
+  }
+  const { data, error } = await supabase.rpc("export_my_data");
+  if (error) throw new Error(`export failed: ${error.message}`);
+  return isObj(data) ? data : { exported_at: new Date().toISOString() };
+}
+
+export async function deleteMyAccount(): Promise<void> {
+  if (isPreviewMode) throw new Error("Account deletion is disabled in preview mode.");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to delete your account");
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/account-delete`, {
+    method: "POST",
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ confirm: true }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = isObj(body) && typeof body.error === "string" ? body.error : `delete failed (${res.status})`;
+    throw new Error(message);
+  }
+}

@@ -148,6 +148,69 @@ Keep `landing/` short term. Later either:
 Do not make mobile the first paid surface. Mobile should become a polished client
 after web proves subscriptions, reports, entitlement checks, and retention loops.
 
+## 3A. Platform Direction: API, MCP, CLI
+
+PharmaOrb should become more than a health chatbot. The durable product is a
+biomedical evidence engine that can be used by humans, applications, researchers,
+and AI agents.
+
+Long-term platform shape:
+
+```text
+One evidence backend
+  -> Mobile/Web app
+  -> Public API
+  -> MCP server
+  -> CLI
+  -> Reports
+  -> Watchlists
+```
+
+Each surface should be a thin access layer over the same evidence backend,
+entitlement resolver, usage ledger, source graph, and report/watchlist systems.
+Do not build separate evidence engines for app, API, MCP, or CLI.
+
+Surface positioning:
+
+```text
+App = consumer and prosumer product
+API = developers, companies, research teams
+MCP = AI agents and agentic workflows
+CLI = researchers and technical power users
+```
+
+Platform positioning:
+
+```text
+PubMed MCP finds papers.
+PharmaOrb turns biomedical evidence into cited answers, reports, alerts,
+safety checks, and agent workflows.
+```
+
+Recommended platform build order:
+
+1. Consumer web beta with Free/Plus.
+2. Better watchlists, Orb Briefs, and retained source traces.
+3. Evidence reports and exportable deliverables.
+4. Public API with API keys, credit accounting, quotas, and audit events.
+5. CLI as a wrapper around the public API.
+6. MCP server as an agent-native wrapper around the public API.
+7. Team and enterprise controls.
+
+MVP API/MCP/CLI principles:
+
+- Design database and usage tables now so API/MCP/CLI can share the same account
+  and credit pool later.
+- Do not block the public web MVP on external API/MCP/CLI launch.
+- API keys, MCP tool calls, CLI commands, reports, monitoring, and app usage should
+  eventually debit one credit ledger.
+- Start with a small tool surface: `search_literature`, `answer_with_citations`,
+  `get_drug_label`, `search_clinical_trials`, `generate_evidence_brief`, and
+  `monitor_topic`.
+- Add `grade_evidence`, `find_contradictions`, `compare_treatments`,
+  `check_interactions`, `extract_pico`, `export_bibtex`, and `generate_ppt`
+  only after the report/evidence trace system is strong enough.
+
 ## 4. Product Ladder
 
 Target tier ladder:
@@ -770,6 +833,10 @@ Build:
 - Team workspaces.
 - Shared reports.
 - API keys.
+- API usage ledger.
+- API developer dashboard.
+- MCP access tokens.
+- CLI credentials and install docs.
 - White-label templates.
 - Enterprise dashboards.
 
@@ -783,6 +850,10 @@ team_folders
 team_reports
 api_keys
 api_usage_events
+api_credit_grants
+api_rate_limits
+mcp_sessions
+cli_tokens
 dashboard_configs
 white_label_templates
 audit_events
@@ -796,12 +867,18 @@ Enterprise features:
 - Supplement formulation evidence map.
 - Claim-risk report.
 - API access.
+- MCP access.
+- CLI access.
 - White-label PDF/PPTX exports.
 
 Acceptance criteria:
 
 - Enterprise users belong to orgs, not normal personal subscription accounts only.
 - API access is key-scoped, rate-limited, and audited.
+- MCP tools authenticate through API-key or OAuth-style credentials and debit the
+  same usage ledger as API calls.
+- CLI commands are a signed client over the public API, not a separate privileged
+  backend.
 - Team reports and folders are isolated by org.
 
 ### Phase 9: Mobile Launch
@@ -1041,6 +1118,9 @@ source_record_versions
 - Digest/update feed works.
 - Legal/disclaimer/account deletion/export present.
 - Free limits enforced server-side.
+- Email confirmation redirects land on `app.pharmaorb.app`.
+- Production smoke tests cover sign-up, sign-in, Ask, Explore, Source Viewer,
+  Watchlist limit behavior, checkout start, billing portal, and account actions.
 
 ### Plus Gate
 
@@ -1049,6 +1129,8 @@ source_record_versions
 - Entitlements update immediately.
 - Plus watchlist/Ask limits work.
 - Orb Briefs produce useful cited summaries.
+- A completed test checkout upgrades Free -> Plus in Supabase.
+- Subscription cancellation/downgrade reverts Plus entitlements.
 
 ### Pro Gate
 
@@ -1073,20 +1155,33 @@ source_record_versions
 - Client-only limits removed or treated as hints.
 - Push notification signal quality is acceptable.
 
+### Platform Gate
+
+- Internal evidence service contracts are documented before public API launch.
+- API keys are scoped, revocable, rate-limited, and audited.
+- App, API, MCP, CLI, reports, and monitoring share one credit ledger.
+- MCP server exposes only stable API-backed tools, not privileged database access.
+- CLI authenticates through the same developer/user account model as the API.
+
 ## 12. Immediate Next Actions
 
-1. Create `apps/web`.
-2. Add shared entitlement model in `packages/shared`.
-3. Add plan/usage migrations in `supabase/migrations`.
-4. Update subscriptions plan values.
-5. Add an entitlement-check helper for edge functions.
-6. Build web Ask/Search/Drug/Source/Watchlist flows.
-7. Add Stripe checkout and webhook.
-8. Launch Free + Plus web beta.
-9. Add Pro reports.
-10. Upgrade monitoring and hybrid retrieval.
-11. Implement PubMed baseline/daily update ingestion.
-12. Launch mobile after web validates retention and paid flows.
+1. Close web MVP launch gaps: legal pages, data export, account deletion, email
+   confirmation URL configuration, and production smoke tests.
+2. Verify Stripe webhook end-to-end with a completed test checkout.
+3. Polish evidence-engine UX: source counts, freshness, evidence grade, study type,
+   citation/source viewer affordances, and report-answer feedback.
+4. Make Watchlist useful enough for retention: clearer update feed, digest display,
+   follow-from-Ask/Drug flows, and upgrade prompts at Free limits.
+5. Launch Free + Plus web beta to a small user cohort.
+6. Add Orb Briefs and richer watchlist monitoring.
+7. Add Pro reports with stored trace, PDF export, and citation tables.
+8. Define internal evidence API contracts and usage-credit ledger for future API,
+   MCP, and CLI surfaces.
+9. Launch public API after reports and traceability are solid.
+10. Launch CLI as an API client for researchers/power users.
+11. Launch MCP server as an agent-native API client.
+12. Upgrade monitoring, hybrid retrieval, and PubMed-scale ingestion.
+13. Launch mobile after web validates retention and paid flows.
 
 ## 13. Non-Goals Until After Web Launch
 
@@ -1116,4 +1211,3 @@ Users pay for monitoring and deliverables.
 ```
 
 Everything else should compound that loop.
-

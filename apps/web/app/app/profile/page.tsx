@@ -3,13 +3,29 @@
 import { useEffect, useState } from "react";
 import type { EntitlementSnapshot, UsageSnapshot } from "@pharmabro/shared";
 import { useAuth } from "@/components/AuthProvider";
-import { Badge, Card, PageHeader } from "@/components/ui";
-import { fetchEntitlements, fetchUsage } from "@/lib/api";
+import { Badge, Card, ErrorText, PageHeader } from "@/components/ui";
+import { deleteMyAccount, exportMyData, fetchEntitlements, fetchUsage } from "@/lib/api";
+
+function downloadJson(payload: Record<string, unknown>, filename: string) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
 export default function ProfilePage() {
-  const { session } = useAuth();
+  const { session, signOut } = useAuth();
   const [ent, setEnt] = useState<EntitlementSnapshot | null>(null);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
+  const [busy, setBusy] = useState<"export" | "delete" | null>(null);
+  const [confirmation, setConfirmation] = useState("");
+  const [accountMessage, setAccountMessage] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
 
   useEffect(() => {
     void Promise.all([fetchEntitlements(), fetchUsage()]).then(([e, u]) => {
@@ -19,6 +35,38 @@ export default function ProfilePage() {
   }, []);
 
   const ask = usage?.counters.ask_daily;
+  const canDelete = confirmation.trim() === "DELETE";
+
+  async function onExport() {
+    setBusy("export");
+    setAccountError(null);
+    setAccountMessage(null);
+    try {
+      const payload = await exportMyData();
+      const date = new Date().toISOString().slice(0, 10);
+      downloadJson(payload, `pharmaorb-account-export-${date}.json`);
+      setAccountMessage("Account export downloaded.");
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : "Export failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onDelete() {
+    if (!canDelete) return;
+    setBusy("delete");
+    setAccountError(null);
+    setAccountMessage(null);
+    try {
+      await deleteMyAccount();
+      await signOut();
+      window.location.assign("/sign-in?deleted=1");
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : "Account deletion failed");
+      setBusy(null);
+    }
+  }
 
   return (
     <>
@@ -40,6 +88,33 @@ export default function ProfilePage() {
           <p>Watchlist limit: {String(ent?.entitlements.watchlist_limit ?? 3)}</p>
         </Card>
       </div>
+      <Card className="account-actions">
+        <h2>Account data</h2>
+        <p className="muted">
+          Download a JSON copy of your account data or permanently delete your account.
+          Deletion removes the auth account and cascades user-owned rows where the backend schema allows it.
+        </p>
+        <div className="action-row">
+          <button type="button" className="secondary" disabled={busy !== null} onClick={() => void onExport()}>
+            {busy === "export" ? "Exporting..." : "Export data"}
+          </button>
+        </div>
+        <div className="danger-zone">
+          <h3>Delete account</h3>
+          <p className="muted">Type DELETE to enable permanent account deletion.</p>
+          <input
+            aria-label="Delete confirmation"
+            placeholder="DELETE"
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+          />
+          <button type="button" className="danger-button" disabled={!canDelete || busy !== null} onClick={() => void onDelete()}>
+            {busy === "delete" ? "Deleting..." : "Delete account"}
+          </button>
+        </div>
+        {accountMessage ? <p className="success-text">{accountMessage}</p> : null}
+        {accountError ? <ErrorText>{accountError}</ErrorText> : null}
+      </Card>
     </>
   );
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { ErrorText } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
 import { isPreviewMode } from "@/lib/env";
@@ -13,7 +13,12 @@ export default function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [deleted, setDeleted] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setDeleted(new URLSearchParams(window.location.search).get("deleted") === "1");
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -35,6 +40,7 @@ export default function SignInPage() {
         <p className="eyebrow">PharmaOrb beta</p>
         <h1>Sign in</h1>
         <p className="muted">Use your beta account to access cited Ask, search, and watchlists.</p>
+        {deleted ? <p className="success-text">Your account was deleted.</p> : null}
         {isPreviewMode ? <p className="muted">Preview mode: no account credentials required.</p> : null}
         <form onSubmit={onSubmit}>
           <input type="email" autoComplete="email" required={!isPreviewMode} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />

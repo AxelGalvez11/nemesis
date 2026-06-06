@@ -354,10 +354,80 @@ textarea { min-height: 130px; resize: vertical; }
 }
 .error { color: var(--danger); font-weight: 800; }
 .warning { color: var(--warn); font-weight: 800; }
+.success-text { color: var(--accent-dark); font-weight: 800; }
+.account-actions { margin-top: 16px; }
+.action-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.danger-zone {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  max-width: 520px;
+  padding-top: 18px;
+}
+.danger-zone h3 { margin: 0; }
+button.danger-button {
+  background: #fff;
+  border: 1px solid rgba(181, 28, 28, 0.28);
+  box-shadow: none;
+  color: var(--danger);
+}
+button.danger-button:hover {
+  box-shadow: 0 8px 22px rgba(181, 28, 28, 0.1);
+}
 .answer-section {
   border-top: 1px solid var(--line);
   margin-top: 18px;
   padding-top: 18px;
+}
+
+.legal-page {
+  background:
+    radial-gradient(circle at 15% 0%, rgba(170, 255, 0, 0.16), transparent 28%),
+    linear-gradient(180deg, #fbfff4 0%, var(--bg) 100%);
+  min-height: 100vh;
+  padding: 22px;
+}
+.legal-nav {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin: 0 auto;
+  max-width: 900px;
+  padding: 6px 0 26px;
+}
+.legal-nav div {
+  display: flex;
+  gap: 14px;
+}
+.legal-content {
+  margin: 0 auto;
+  max-width: 900px;
+}
+.legal-content h1 {
+  font-size: 42px;
+  line-height: 1;
+  margin: 0 0 8px;
+}
+.legal-content section {
+  border-top: 1px solid var(--line);
+  padding: 22px 0;
+}
+.legal-content h2 {
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+.legal-content p {
+  color: var(--muted);
+  line-height: 1.65;
+  margin: 0;
+  max-width: 760px;
 }
 
 .chat-layout {
