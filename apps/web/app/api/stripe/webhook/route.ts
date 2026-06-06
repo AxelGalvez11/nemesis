@@ -1,7 +1,7 @@
 import type Stripe from "stripe";
 import { stripeWebhookSecret, stripePlusPriceId } from "@/lib/env";
 import { adminClient, json } from "@/lib/server";
-import { planFromStripeStatus, stripe } from "@/lib/stripe";
+import { planFromStripeStatus, stripe, stripeFailureDetail } from "@/lib/stripe";
 
 export const runtime = "nodejs";
 
@@ -19,20 +19,30 @@ export async function POST(req: Request) {
     return json({ error: "invalid signature" }, 400);
   }
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object as Stripe.Checkout.Session;
-    if (typeof session.subscription === "string") {
-      const subscription = await stripe().subscriptions.retrieve(session.subscription);
-      await mirrorSubscription(subscription, session.client_reference_id ?? session.metadata?.user_id ?? null);
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      if (typeof session.subscription === "string") {
+        const subscription = await stripe().subscriptions.retrieve(session.subscription);
+        await mirrorSubscription(subscription, session.client_reference_id ?? session.metadata?.user_id ?? null);
+      }
     }
-  }
 
-  if (
-    event.type === "customer.subscription.created" ||
-    event.type === "customer.subscription.updated" ||
-    event.type === "customer.subscription.deleted"
-  ) {
-    await mirrorSubscription(event.data.object as Stripe.Subscription, null);
+    if (
+      event.type === "customer.subscription.created" ||
+      event.type === "customer.subscription.updated" ||
+      event.type === "customer.subscription.deleted"
+    ) {
+      await mirrorSubscription(event.data.object as Stripe.Subscription, null);
+    }
+  } catch (error) {
+    console.error("stripe_webhook_processing_failed", {
+      event_id: event.id,
+      event_type: event.type,
+      ...stripeFailureDetail(error),
+      message: error instanceof Error ? error.message : undefined,
+    });
+    return json({ error: "webhook_processing_failed" }, 500);
   }
 
   return json({ received: true });
