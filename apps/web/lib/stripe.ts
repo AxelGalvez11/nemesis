@@ -1,10 +1,13 @@
 import Stripe from "stripe";
-import { stripeSecretKey } from "./env";
+import { stripeAllowLive, stripeSecretKey } from "./env";
 
 let cached: Stripe | null = null;
 
 export function stripe(): Stripe {
   if (!stripeSecretKey) throw new Error("STRIPE_SECRET_KEY is required");
+  if (stripeSecretKey.startsWith("sk_live_") && !stripeAllowLive) {
+    throw new Error("Live Stripe key is disabled for beta. Use test-mode keys or set STRIPE_ALLOW_LIVE=true.");
+  }
   cached ??= new Stripe(stripeSecretKey);
   return cached;
 }

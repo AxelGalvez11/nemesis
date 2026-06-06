@@ -8,6 +8,7 @@ export const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 export const stripeSecretKey = process.env.STRIPE_SECRET_KEY ?? "";
 export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 export const stripePlusPriceId = process.env.STRIPE_PLUS_PRICE_ID ?? "";
+export const stripeAllowLive = process.env.STRIPE_ALLOW_LIVE === "true";
 
 export function requirePublicEnv(): void {
   if (!supabaseUrl || !supabaseAnonKey) {

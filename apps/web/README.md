@@ -25,6 +25,7 @@ Server-only:
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PLUS_PRICE_ID`
+- `STRIPE_ALLOW_LIVE` (`false` for MVP test mode; `true` only when deliberately going live)
 
 ## Commands
 
