@@ -64,6 +64,7 @@ htmlCheck("/legal/disclaimer", ["Medical Disclaimer", "Not medical advice"]);
 postStatusCheck("/api/stripe/checkout", 401);
 postStatusCheck("/api/stripe/portal", 401);
 postStatusCheck("/api/stripe/webhook", 400);
+postStatusCheck("/api/reports/evidence-brief", 401, "{\"answer_id\":\"00000000-0000-0000-0000-000000000000\"}");
 
 let failed = 0;
 console.log(`Web smoke target: ${baseUrl}`);

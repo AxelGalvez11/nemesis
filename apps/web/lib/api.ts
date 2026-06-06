@@ -5,6 +5,7 @@ import type {
   Digest,
   DrugOverview,
   EntitlementSnapshot,
+  EvidenceBriefResponse,
   QuotaExceededError,
   SearchResult,
   SourceDetail,
@@ -73,6 +74,18 @@ const demoUsage: UsageSnapshot = {
     ask_daily: {
       used: 2,
       limit: 10,
+      period_start: periodStart,
+      period_end: periodEnd,
+    },
+    evidence_brief_daily: {
+      used: 0,
+      limit: 1,
+      period_start: periodStart,
+      period_end: periodEnd,
+    },
+    deep_research_daily: {
+      used: 0,
+      limit: 0,
       period_start: periodStart,
       period_end: periodEnd,
     },
@@ -230,6 +243,70 @@ export async function askQuestion(question: string): Promise<AskResponse> {
   }
   if (!res.ok) throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `ask failed (${res.status})`);
   return body as AskResponse;
+}
+
+export async function generateEvidenceBrief(answerId: string): Promise<EvidenceBriefResponse> {
+  if (isPreviewMode) {
+    return {
+      report_id: "preview-evidence-brief",
+      kind: "evidence_brief",
+      depth: "brief",
+      status: "completed",
+      title: "Preview evidence brief",
+      summary: "Preview brief generated from a cited answer.",
+      evidence_grade: "strong",
+      sections: [
+        {
+          title: "Key Takeaway",
+          bullets: ["Evidence briefs turn a cited answer into a reusable report-style deliverable."],
+        },
+        {
+          title: "Safety And Caveats",
+          bullets: ["Personal medical decisions still require a licensed clinician or pharmacist."],
+        },
+      ],
+      citations: demoSources.map((source, index) => ({
+        chunk_tag: `[${index + 1}]`,
+        source_id: source.source_id,
+        source_type: source.provider,
+        title: source.title,
+        section: source.sections[0] ?? null,
+        url: source.url,
+        license: source.license,
+        published_date: source.published_at,
+        retrieved_at: source.retrieved_at,
+      })),
+      source_count: demoSources.length,
+      generated_from_answer_id: answerId,
+      export_formats: ["markdown"],
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to generate an evidence brief");
+
+  const res = await fetch("/api/reports/evidence-brief", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ answer_id: answerId, depth: "brief" }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    if (isObj(body) && body.error === "quota_exceeded") {
+      throw new Error(`Daily evidence brief limit reached (${body.used}/${body.limit}) on ${body.plan}.`);
+    }
+    throw new Error(isObj(body) && typeof body.message === "string"
+      ? body.message
+      : isObj(body) && typeof body.error === "string"
+        ? body.error
+        : `evidence brief failed (${res.status})`);
+  }
+  return body as EvidenceBriefResponse;
 }
 
 export async function searchEntities(q: string): Promise<SearchResult[]> {

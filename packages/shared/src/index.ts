@@ -27,3 +27,5 @@ export * from "./health-context.ts";
 export * from "./compare.ts";
 // MVP web-beta entitlements + usage snapshots (0122).
 export * from "./entitlements.ts";
+// Evidence brief / deep-research report contracts.
+export * from "./reports.ts";

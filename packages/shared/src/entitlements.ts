@@ -6,7 +6,11 @@ export type PlanCode = "free" | "plus" | "pro" | "student" | "professional" | "e
 export type EntitlementKey =
   | "ask_daily_limit"
   | "watchlist_limit"
-  | "stripe_plus_enabled";
+  | "stripe_plus_enabled"
+  | "evidence_brief_daily_limit"
+  | "deep_research_daily_limit"
+  | "report_export_enabled"
+  | "ppt_export_enabled";
 
 export interface EntitlementSnapshot {
   plan: PlanCode;
@@ -14,6 +18,10 @@ export interface EntitlementSnapshot {
     ask_daily_limit?: number;
     watchlist_limit?: number;
     stripe_plus_enabled?: boolean;
+    evidence_brief_daily_limit?: number;
+    deep_research_daily_limit?: number;
+    report_export_enabled?: boolean;
+    ppt_export_enabled?: boolean;
     [key: string]: unknown;
   };
 }

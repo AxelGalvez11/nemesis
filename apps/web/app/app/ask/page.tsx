@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import type { AskResponse, Citation, UsageSnapshot } from "@pharmabro/shared";
-import { askQuestion, fetchUsage, type AskQuotaError } from "@/lib/api";
+import type { AskResponse, Citation, EvidenceBriefResponse, UsageSnapshot } from "@pharmabro/shared";
+import { askQuestion, fetchUsage, generateEvidenceBrief, type AskQuotaError } from "@/lib/api";
 import { Badge, ErrorText, SourceAnchor } from "@/components/ui";
 
 function isQuotaError(e: unknown): e is AskQuotaError {
@@ -24,6 +24,9 @@ export default function AskPage() {
   const [error, setError] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
+  const [report, setReport] = useState<EvidenceBriefResponse | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function refreshUsage() {
@@ -44,6 +47,8 @@ export default function AskPage() {
     setBusy(true);
     setError(null);
     setAnswer(null);
+    setReport(null);
+    setReportError(null);
     setLastQuestion(question);
     try {
       setAnswer(await askQuestion(question));
@@ -64,6 +69,22 @@ export default function AskPage() {
   const askLimit = askCounter?.limit ?? 10;
   const plan = usage?.plan ?? "free";
   const limitReached = askUsed >= askLimit;
+  const briefCounter = usage?.counters.evidence_brief_daily;
+  const briefsEnabled = !!briefCounter;
+
+  async function onGenerateBrief() {
+    if (!answer) return;
+    setReportBusy(true);
+    setReportError(null);
+    try {
+      setReport(await generateEvidenceBrief(answer.answer_id));
+      void refreshUsage();
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : "Evidence brief failed");
+    } finally {
+      setReportBusy(false);
+    }
+  }
 
   return (
     <div className="chat-layout">
@@ -80,7 +101,16 @@ export default function AskPage() {
           <div className="user-message">{lastQuestion}</div>
           <div className="ai-message">
             <span className="ai-avatar">P</span>
-            {answer ? <AnswerCard answer={answer} /> : <EmptyAnswer busy={busy} />}
+            {answer ? (
+              <AnswerCard
+                answer={answer}
+                report={report}
+                reportBusy={reportBusy}
+                reportError={reportError}
+                briefsEnabled={briefsEnabled}
+                onGenerateBrief={onGenerateBrief}
+              />
+            ) : <EmptyAnswer busy={busy} />}
           </div>
         </div>
 
@@ -124,7 +154,21 @@ function EmptyAnswer({ busy }: { busy: boolean }) {
   );
 }
 
-function AnswerCard({ answer }: { answer: AskResponse }) {
+function AnswerCard({
+  answer,
+  report,
+  reportBusy,
+  reportError,
+  briefsEnabled,
+  onGenerateBrief,
+}: {
+  answer: AskResponse;
+  report: EvidenceBriefResponse | null;
+  reportBusy: boolean;
+  reportError: string | null;
+  briefsEnabled: boolean;
+  onGenerateBrief: () => void;
+}) {
   const sections = answer.answer_sections;
   return (
     <div className="answer-card">
@@ -137,6 +181,19 @@ function AnswerCard({ answer }: { answer: AskResponse }) {
       <AnswerList title="What we know" points={sections.what_we_know} />
       <AnswerList title="Safety notes" points={sections.safety_notes} />
       <AnswerList title="What we do not know" points={sections.what_we_do_not_know} />
+      {briefsEnabled ? (
+        <div className="answer-section report-actions">
+          <div>
+            <h3>Evidence brief</h3>
+            <p className="muted">Turn this cited answer into a saved report-style brief.</p>
+          </div>
+          <button type="button" onClick={onGenerateBrief} disabled={reportBusy}>
+            {reportBusy ? "Generating..." : report ? "Regenerate brief" : "Generate brief"}
+          </button>
+        </div>
+      ) : null}
+      {reportError ? <ErrorText>{reportError}</ErrorText> : null}
+      {report ? <EvidenceBriefCard report={report} /> : null}
       {answer.citations.length ? (
         <div className="answer-section">
           <h3>Sources</h3>
@@ -150,6 +207,27 @@ function AnswerCard({ answer }: { answer: AskResponse }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function EvidenceBriefCard({ report }: { report: EvidenceBriefResponse }) {
+  return (
+    <section className="brief-card">
+      <div className="row">
+        <h3>{report.title}</h3>
+        <Badge>{report.evidence_grade}</Badge>
+      </div>
+      <p>{report.summary}</p>
+      {report.sections.map((section) => (
+        <div className="answer-section" key={section.title}>
+          <h4>{section.title}</h4>
+          <ul>
+            {section.bullets.map((bullet, index) => <li key={`${section.title}-${index}`}>{bullet}</li>)}
+          </ul>
+        </div>
+      ))}
+      <p className="muted">Saved brief · {report.source_count} cited source{report.source_count === 1 ? "" : "s"} · Export: {report.export_formats.join(", ")}</p>
+    </section>
   );
 }
 
