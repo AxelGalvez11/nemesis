@@ -32,6 +32,7 @@ Server-only:
 pnpm --filter @pharmaorb/web dev
 pnpm --filter @pharmaorb/web typecheck
 pnpm --filter @pharmaorb/web build
+WEB_SMOKE_BASE_URL=https://app.pharmaorb.app pnpm --filter @pharmaorb/web smoke
 ```
 
 ## Deployment
