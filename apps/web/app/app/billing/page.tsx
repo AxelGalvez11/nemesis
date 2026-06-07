@@ -1,9 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CheckCircle2Icon, CreditCardIcon, ExternalLinkIcon, GaugeIcon } from "lucide-react";
 import type { EntitlementSnapshot } from "@pharmabro/shared";
 import { useAuth } from "@/components/AuthProvider";
-import { Card, ErrorText, PageHeader, Badge } from "@/components/ui";
+import { ErrorText, PageHeader } from "@/components/ui";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { fetchEntitlements } from "@/lib/api";
 
 export default function BillingPage() {
@@ -40,27 +52,56 @@ export default function BillingPage() {
       </PageHeader>
       {error ? <ErrorText>{error}</ErrorText> : null}
       <div className="grid two">
-        <Card>
-          <div className="row">
-            <h2>Current plan</h2>
-            <Badge>{ent?.plan ?? "free"}</Badge>
-          </div>
-          <p className="muted">Plan updates are mirrored from Stripe webhooks into Supabase subscriptions.</p>
-          <button disabled={busy === "/api/stripe/portal"} onClick={() => void post("/api/stripe/portal")}>
-            {busy === "/api/stripe/portal" ? "Opening…" : "Manage billing"}
-          </button>
+        <Card className="account-card">
+          <CardHeader>
+            <div className="row">
+              <CardTitle className="settings-title-row">
+                <GaugeIcon aria-hidden="true" />
+                Current plan
+              </CardTitle>
+              <Badge variant="secondary">{ent?.plan ?? "free"}</Badge>
+            </div>
+            <CardDescription>Plan updates are mirrored from Stripe webhooks into Supabase subscriptions.</CardDescription>
+          </CardHeader>
+          <CardContent className="billing-limit-list">
+            <div>
+              <span className="muted">Ask daily limit</span>
+              <strong>{String(ent?.entitlements.ask_daily_limit ?? 10)}</strong>
+            </div>
+            <Separator />
+            <div>
+              <span className="muted">Watchlist follows</span>
+              <strong>{String(ent?.entitlements.watchlist_limit ?? 3)}</strong>
+            </div>
+          </CardContent>
+          <CardFooter>
+            <Button disabled={busy === "/api/stripe/portal"} variant="outline" onClick={() => void post("/api/stripe/portal")}>
+              <ExternalLinkIcon data-icon="inline-start" aria-hidden="true" />
+              {busy === "/api/stripe/portal" ? "Opening..." : "Manage billing"}
+            </Button>
+          </CardFooter>
         </Card>
-        <Card>
-          <h2>PharmaOrb Plus</h2>
-          <p><strong>$12/month</strong></p>
-          <ul>
-            <li>100 Ask questions per day</li>
-            <li>50 watchlist follows</li>
-            <li>Plus monitoring surfaces as they roll out</li>
-          </ul>
-          <button disabled={busy === "/api/stripe/checkout"} onClick={() => void post("/api/stripe/checkout")}>
-            {busy === "/api/stripe/checkout" ? "Opening checkout…" : "Upgrade to Plus"}
-          </button>
+        <Card className="account-card plus-card">
+          <CardHeader>
+            <CardTitle className="settings-title-row">
+              <CreditCardIcon aria-hidden="true" />
+              PharmaOrb Plus
+            </CardTitle>
+            <CardDescription><strong>$12/month</strong></CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="billing-feature-list">
+              <li><CheckCircle2Icon aria-hidden="true" />100 Ask questions per day</li>
+              <li><CheckCircle2Icon aria-hidden="true" />50 watchlist follows</li>
+              <li><CheckCircle2Icon aria-hidden="true" />Plus monitoring surfaces as they roll out</li>
+            </ul>
+          </CardContent>
+          <CardFooter>
+            <Button disabled={busy === "/api/stripe/checkout"} onClick={() => void post("/api/stripe/checkout")}>
+              <ExternalLinkIcon data-icon="inline-start" aria-hidden="true" />
+              {busy === "/api/stripe/checkout" ? "Opening checkout..." : "Upgrade to Plus"}
+            </Button>
+          </CardFooter>
         </Card>
       </div>
     </>

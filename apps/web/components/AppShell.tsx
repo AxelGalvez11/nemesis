@@ -3,16 +3,38 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import {
+  BookmarkIcon,
+  CreditCardIcon,
+  HomeIcon,
+  LogOutIcon,
+  MenuIcon,
+  MessageSquareTextIcon,
+  MoonIcon,
+  SearchIcon,
+  SettingsIcon,
+  SunIcon,
+} from "lucide-react";
 import type { ConversationSummary } from "@pharmabro/shared";
 import { useAuth } from "./AuthProvider";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { fetchConversations, fetchEntitlements, fetchUsage, fetchWatchlist } from "@/lib/api";
 
 const nav = [
-  { href: "/app", label: "Home" },
-  { href: "/app/ask", label: "Ask" },
-  { href: "/app/explore", label: "Explore" },
-  { href: "/app/watchlist", label: "Watchlist" },
-  { href: "/app/settings", label: "Settings" },
+  { href: "/app", label: "Home", Icon: HomeIcon },
+  { href: "/app/ask", label: "Ask", Icon: MessageSquareTextIcon },
+  { href: "/app/explore", label: "Explore", Icon: SearchIcon },
+  { href: "/app/watchlist", label: "Watchlist", Icon: BookmarkIcon },
+  { href: "/app/settings", label: "Settings", Icon: SettingsIcon },
 ];
 
 function titleForPath(path: string) {
@@ -120,48 +142,86 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ? `${Math.min(100, Math.round((planState.askUsed / planState.askLimit) * 100))}%`
     : "12%";
   const shellClass = collapsed ? "app-shell sidebar-collapsed" : "app-shell";
+  const ThemeIcon = theme === "dark" ? SunIcon : MoonIcon;
 
-  return (
-    <div className={shellClass}>
-      <aside className="sidebar">
+  function renderNavLink(item: (typeof nav)[number], mode: "desktop" | "mobile") {
+    const link = (
+      <Link className={isActive(path, item.href) ? "active" : ""} href={item.href}>
+        <item.Icon className="nav-icon" aria-hidden="true" />
+        <span className="nav-label">{item.label}</span>
+      </Link>
+    );
+
+    if (mode === "mobile") {
+      return (
+        <SheetClose asChild key={item.href}>
+          {link}
+        </SheetClose>
+      );
+    }
+
+    return <span key={item.href} className="nav-link-shell">{link}</span>;
+  }
+
+  function renderRecentLink(conversation: ConversationSummary, mode: "desktop" | "mobile") {
+    const link = (
+      <Link
+        className="recent-chat"
+        href={`/app/ask?c=${conversation.id}`}
+      >
+        {conversation.title}
+      </Link>
+    );
+
+    if (mode === "mobile") {
+      return (
+        <SheetClose asChild key={conversation.id}>
+          {link}
+        </SheetClose>
+      );
+    }
+
+    return <span key={conversation.id} className="recent-chat-shell">{link}</span>;
+  }
+
+  function renderSidebarContent(mode: "desktop" | "mobile") {
+    const isMobile = mode === "mobile";
+
+    return (
+      <>
         <div className="brand-row">
           <span className="brand-mark">P</span>
           <Link className="brand" href="/app">Pharma<span>Orb</span></Link>
           <span className="beta-pill">Beta</span>
-          <button
-            type="button"
-            className="icon-button collapse-button"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            onClick={() => setCollapsed((current) => !current)}
-          >
-            {collapsed ? ">" : "<"}
-          </button>
+          {!isMobile ? (
+            <button
+              type="button"
+              className="icon-button collapse-button"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={() => setCollapsed((current) => !current)}
+            >
+              {collapsed ? ">" : "<"}
+            </button>
+          ) : null}
         </div>
         <nav>
-          {nav.map((item) => (
-            <Link key={item.href} className={isActive(path, item.href) ? "active" : ""} href={item.href}>
-              <span className="nav-dot" />
-              <span className="nav-label">{item.label}</span>
-            </Link>
-          ))}
+          {nav.map((item) => renderNavLink(item, mode))}
         </nav>
-        {!collapsed ? (
+        {!collapsed || isMobile ? (
           <section className="recent-chats">
             <div className="recent-heading">
               <span>Recent chats</span>
-              <Link href="/app/ask">New</Link>
+              {isMobile ? (
+                <SheetClose asChild>
+                  <Link href="/app/ask">New</Link>
+                </SheetClose>
+              ) : (
+                <Link href="/app/ask">New</Link>
+              )}
             </div>
             {conversations.length ? (
-              conversations.slice(0, 8).map((conversation) => (
-                <Link
-                  className="recent-chat"
-                  href={`/app/ask?c=${conversation.id}`}
-                  key={conversation.id}
-                >
-                  {conversation.title}
-                </Link>
-              ))
+              conversations.slice(0, 8).map((conversation) => renderRecentLink(conversation, mode))
             ) : (
               <p className="recent-empty">No saved chats yet.</p>
             )}
@@ -177,35 +237,76 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mini-meter"><span style={{ width: askMeterWidth }} /></div>
         </section>
         <div className="sidebar-footer">
-          <button
+          <Button
             type="button"
+            variant="ghost"
             className="theme-toggle"
             title={theme === "dark" ? "Use light mode" : "Use dark mode"}
             onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
           >
-            <span className="nav-dot" />
+            <ThemeIcon data-icon="inline-start" aria-hidden="true" />
             <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-          </button>
-          <Link href="/legal/privacy">Privacy</Link>
-          <Link href="/legal/terms">Terms</Link>
-          <button type="button" onClick={() => void signOut().then(() => router.replace("/sign-in"))}>
-            Sign out
-          </button>
+          </Button>
+          {isMobile ? (
+            <>
+              <SheetClose asChild>
+                <Link href="/legal/privacy">Privacy</Link>
+              </SheetClose>
+              <SheetClose asChild>
+                <Link href="/legal/terms">Terms</Link>
+              </SheetClose>
+            </>
+          ) : (
+            <>
+              <Link href="/legal/privacy">Privacy</Link>
+              <Link href="/legal/terms">Terms</Link>
+            </>
+          )}
+          <Button type="button" variant="ghost" onClick={() => void signOut().then(() => router.replace("/sign-in"))}>
+            <LogOutIcon data-icon="inline-start" aria-hidden="true" />
+            <span>Sign out</span>
+          </Button>
         </div>
+      </>
+    );
+  }
+
+  return (
+    <div className={shellClass}>
+      <aside className="sidebar">
+        {renderSidebarContent("desktop")}
       </aside>
       <main className="app-main">
         <header className="topbar">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button className="mobile-menu-button" variant="outline" size="icon" aria-label="Open navigation">
+                <MenuIcon aria-hidden="true" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent className="mobile-sidebar-content" side="left">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Navigation</SheetTitle>
+                <SheetDescription>Primary app navigation, recent chats, plan status, and account actions.</SheetDescription>
+              </SheetHeader>
+              <div className="sidebar mobile-sidebar">
+                {renderSidebarContent("mobile")}
+              </div>
+            </SheetContent>
+          </Sheet>
           <div className="topbar-title">{title}</div>
           {path.includes("/app/explore") ? <div className="topbar-search">Search drugs, trials...</div> : null}
           {path.includes("/app/ask") ? <Link className="button-link compact" href="/app/ask">New chat</Link> : null}
-          <button
+          <Button
             type="button"
+            variant="outline"
             className="topbar-theme"
             title={theme === "dark" ? "Use light mode" : "Use dark mode"}
             onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
           >
+            <ThemeIcon data-icon="inline-start" aria-hidden="true" />
             {theme === "dark" ? "Light" : "Dark"}
-          </button>
+          </Button>
           <div className="account-chip">
             <span className="account-avatar">{session.user.email?.[0]?.toUpperCase() ?? "A"}</span>
             <span>{session.user.email ?? "preview@pharmaorb.app"}</span>

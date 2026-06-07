@@ -335,6 +335,10 @@ textarea[data-slot="textarea"]:focus {
   gap: 3px;
   padding: 10px;
 }
+.nav-link-shell,
+.recent-chat-shell {
+  display: contents;
+}
 .sidebar nav a, .sidebar-footer a, .sidebar-footer button {
   align-items: center;
   border: 1px solid transparent;
@@ -362,6 +366,11 @@ textarea[data-slot="textarea"]:focus {
   border-radius: 999px;
   height: 8px;
   width: 8px;
+}
+.nav-icon {
+  flex: 0 0 auto;
+  height: 15px;
+  width: 15px;
 }
 .active .nav-dot { background: var(--accent-mid); box-shadow: 0 0 0 4px rgba(170, 255, 0, 0.16); }
 .recent-chats {
@@ -517,6 +526,9 @@ textarea[data-slot="textarea"]:focus {
   min-height: 34px;
   padding: 7px 11px;
 }
+.mobile-menu-button {
+  display: none;
+}
 .account-chip {
   align-items: center;
   color: var(--muted);
@@ -621,6 +633,81 @@ textarea[data-slot="textarea"]:focus {
 .warning { color: var(--warn); font-weight: 800; }
 .success-text { color: var(--accent-dark); font-weight: 800; }
 .account-actions { margin-top: 16px; }
+.account-card {
+  overflow: hidden;
+}
+.account-tabs {
+  display: grid;
+  gap: 16px;
+}
+.account-tabs-list {
+  align-items: center;
+  flex-wrap: wrap;
+  height: auto;
+  justify-content: flex-start;
+  max-width: 100%;
+  width: fit-content;
+}
+.settings-title-row {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+}
+.settings-title-row svg {
+  color: var(--accent-dark);
+  height: 16px;
+  width: 16px;
+}
+.settings-actions {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.legal-link-list {
+  display: grid;
+  gap: 10px;
+}
+.account-stat-list,
+.billing-limit-list,
+.account-data-content {
+  display: grid;
+  gap: 12px;
+}
+.account-stat-list > div,
+.billing-limit-list > div {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+.account-stat-list strong,
+.billing-limit-list strong {
+  color: var(--text);
+  font-size: 18px;
+}
+.account-feedback {
+  display: block;
+}
+.plus-card {
+  border-color: rgba(170, 255, 0, 0.26);
+  box-shadow: 0 2px 18px rgba(170, 255, 0, 0.08);
+}
+.billing-feature-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.billing-feature-list li {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+}
+.billing-feature-list svg {
+  color: var(--accent-dark);
+  height: 16px;
+  width: 16px;
+}
 .action-row {
   align-items: center;
   display: flex;
@@ -676,6 +763,26 @@ button.danger-button:hover {
   box-shadow: none;
   text-align: left;
   width: 100%;
+}
+.mobile-sidebar-content {
+  background: var(--surface);
+  max-width: none;
+  padding: 0;
+  width: min(320px, calc(100vw - 40px));
+}
+.mobile-sidebar {
+  border-right: 0;
+  height: 100%;
+  position: static;
+}
+.mobile-sidebar .brand-row {
+  padding-right: 48px;
+}
+.mobile-sidebar .sidebar-card {
+  display: block;
+}
+.mobile-sidebar .sidebar-footer {
+  display: grid;
 }
 
 .legal-page {
@@ -1207,16 +1314,12 @@ button.filter-item:hover {
 }
 
 @media (max-width: 980px) {
-  .app-shell { grid-template-columns: 1fr; }
-  .sidebar {
-    height: auto;
-    position: static;
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 1fr;
   }
-  .sidebar nav {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .recent-chats, .sidebar-card, .sidebar-footer { display: none; }
+  .app-shell > .sidebar { display: none; }
+  .mobile-menu-button { display: inline-flex; }
   .topbar-search, .account-chip { display: none; }
   .content { padding: 20px; }
   .chat-layout, .drug-page-layout { grid-template-columns: 1fr; height: auto; min-height: 0; }
@@ -1228,7 +1331,6 @@ button.filter-item:hover {
 }
 
 @media (max-width: 620px) {
-  .sidebar nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .topbar { padding: 0 16px; }
   .chat-thread, .chat-input-bar, .drug-main { padding-left: 18px; padding-right: 18px; }
   .message-row { max-width: 100%; }
