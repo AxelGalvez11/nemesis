@@ -1,7 +1,11 @@
 import Link from "next/link";
+import { Badge as ShadcnBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card as ShadcnCard } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <section className={`card ${className}`}>{children}</section>;
+  return <ShadcnCard className={cn("card", className)}>{children}</ShadcnCard>;
 }
 
 export function PageHeader({ title, eyebrow, children }: { title: string; eyebrow?: string; children?: React.ReactNode }) {
@@ -20,9 +24,11 @@ export function SourceAnchor({ sourceId, label = "Source" }: { sourceId?: string
 }
 
 export function Badge({ children }: { children: React.ReactNode }) {
-  return <span className="badge">{children}</span>;
+  return <ShadcnBadge variant="secondary" className="badge">{children}</ShadcnBadge>;
 }
 
 export function ErrorText({ children }: { children: React.ReactNode }) {
   return <p className="error">{children}</p>;
 }
+
+export { Button };

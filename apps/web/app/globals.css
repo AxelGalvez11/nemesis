@@ -1,5 +1,9 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap");
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   color-scheme: light;
   --bg: #f2fcf9;
@@ -26,6 +30,26 @@
   --shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
   --shadow-acid: 0 4px 20px rgba(170, 255, 0, 0.24);
   --font: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --radius: 0.5rem;
+  --background: 165 54% 97%;
+  --foreground: 90 100% 4%;
+  --card: 0 0% 100%;
+  --card-foreground: 90 100% 4%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 90 100% 4%;
+  --primary: 84 100% 50%;
+  --primary-foreground: 90 100% 4%;
+  --secondary: 162 38% 94%;
+  --secondary-foreground: 90 100% 4%;
+  --muted-shadcn: 162 32% 94%;
+  --muted-foreground: 172 10% 42%;
+  --accent-shadcn: 84 100% 92%;
+  --accent-foreground: 95 100% 24%;
+  --destructive: 0 73% 41%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 162 12% 88%;
+  --input: 162 12% 88%;
+  --ring: 84 100% 50%;
 }
 
 :root[data-theme="dark"] {
@@ -51,6 +75,25 @@
   --info: #7ccfff;
   --shadow: 0 1px 8px rgba(0, 0, 0, 0.28);
   --shadow-acid: 0 8px 28px rgba(170, 255, 0, 0.18);
+  --background: 150 20% 4%;
+  --foreground: 108 31% 95%;
+  --card: 142 16% 8%;
+  --card-foreground: 108 31% 95%;
+  --popover: 142 16% 8%;
+  --popover-foreground: 108 31% 95%;
+  --primary: 84 100% 50%;
+  --primary-foreground: 90 100% 4%;
+  --secondary: 142 14% 14%;
+  --secondary-foreground: 108 31% 95%;
+  --muted-shadcn: 142 14% 14%;
+  --muted-foreground: 135 12% 70%;
+  --accent-shadcn: 90 40% 15%;
+  --accent-foreground: 84 100% 65%;
+  --destructive: 0 80% 64%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 135 11% 20%;
+  --input: 135 11% 20%;
+  --ring: 84 100% 50%;
 }
 
 * { box-sizing: border-box; }
@@ -81,6 +124,53 @@ button {
 }
 button:hover { box-shadow: 0 8px 28px rgba(170, 255, 0, 0.32); transform: translateY(-1px); }
 button:disabled { cursor: not-allowed; filter: grayscale(0.3); opacity: 0.65; transform: none; }
+button[data-slot="button"] {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  box-shadow: none;
+  font-weight: 700;
+  min-height: 0;
+  padding: 0 10px;
+  transform: none;
+}
+button[data-slot="button"]:hover {
+  box-shadow: none;
+  transform: none;
+}
+button[data-slot="button"][data-variant="default"] {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+button[data-slot="button"][data-variant="outline"] {
+  background: hsl(var(--background));
+  border-color: hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+button[data-slot="button"][data-variant="secondary"] {
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+}
+button[data-slot="button"][data-variant="ghost"] {
+  background: transparent;
+  color: hsl(var(--foreground));
+}
+button[data-slot="button"][data-variant="destructive"] {
+  background: hsl(var(--destructive) / 0.1);
+  color: hsl(var(--destructive));
+}
+button[data-slot="button"][data-variant="link"] {
+  background: transparent;
+  color: hsl(var(--primary));
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+button[data-slot="button"][data-size="icon"],
+button[data-slot="button"][data-size="icon-lg"],
+button[data-slot="button"][data-size="icon-sm"],
+button[data-slot="button"][data-size="icon-xs"] {
+  padding: 0;
+}
 button.secondary {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -120,6 +210,18 @@ input:focus, textarea:focus {
 }
 input::placeholder, textarea::placeholder { color: var(--placeholder); }
 textarea { min-height: 130px; resize: vertical; }
+input[data-slot="input"],
+textarea[data-slot="textarea"] {
+  background: transparent;
+  border-color: hsl(var(--input));
+  box-shadow: none;
+  color: hsl(var(--foreground));
+}
+input[data-slot="input"]:focus,
+textarea[data-slot="textarea"]:focus {
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.16);
+}
 
 .centered {
   min-height: 100vh;
