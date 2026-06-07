@@ -29,3 +29,5 @@ export * from "./compare.ts";
 export * from "./entitlements.ts";
 // Evidence brief / deep-research report contracts.
 export * from "./reports.ts";
+// Public web beta chat persistence.
+export * from "./conversations.ts";

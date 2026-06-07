@@ -2,11 +2,14 @@
 
 import type {
   AskResponse,
+  ConversationMessage,
+  ConversationSummary,
   Digest,
   DrugOverview,
   EntitlementSnapshot,
   EvidenceBriefResponse,
   QuotaExceededError,
+  SaveConversationTurnResponse,
   SearchResult,
   SourceDetail,
   UsageSnapshot,
@@ -140,6 +143,9 @@ let demoWatchlist: WatchlistItem[] = [
   },
 ];
 
+let demoConversations: ConversationSummary[] = [];
+const demoMessages: Record<string, ConversationMessage[]> = {};
+
 function demoDrug(id: string): DrugOverview {
   return {
     id,
@@ -243,6 +249,101 @@ export async function askQuestion(question: string): Promise<AskResponse> {
   }
   if (!res.ok) throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `ask failed (${res.status})`);
   return body as AskResponse;
+}
+
+export async function fetchConversations(): Promise<ConversationSummary[]> {
+  if (isPreviewMode) return demoConversations;
+  const token = await requireAccessToken("load conversations");
+  const res = await fetch("/api/conversations", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `conversations failed (${res.status})`);
+  return Array.isArray(body) ? body as ConversationSummary[] : [];
+}
+
+export async function fetchConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
+  if (isPreviewMode) return demoMessages[conversationId] ?? [];
+  const token = await requireAccessToken("load messages");
+  const res = await fetch(`/api/conversations/${conversationId}/messages`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `messages failed (${res.status})`);
+  return Array.isArray(body) ? body as ConversationMessage[] : [];
+}
+
+export async function saveConversationTurn(
+  conversationId: string | null,
+  question: string,
+  answer: AskResponse,
+): Promise<SaveConversationTurnResponse> {
+  if (isPreviewMode) {
+    const now = new Date().toISOString();
+    const id = conversationId ?? `preview-conversation-${Date.now().toString(36)}`;
+    if (!demoConversations.some((conversation) => conversation.id === id)) {
+      demoConversations = [
+        {
+          id,
+          title: titleFromQuestion(question),
+          status: "active",
+          created_at: now,
+          updated_at: now,
+        },
+        ...demoConversations,
+      ];
+      demoMessages[id] = [];
+    }
+    const nextOrdinal = (demoMessages[id]?.at(-1)?.ordinal ?? 0) + 1;
+    const messages: ConversationMessage[] = [
+      {
+        id: `preview-message-${Date.now().toString(36)}-user`,
+        conversation_id: id,
+        role: "user",
+        ordinal: nextOrdinal,
+        content: question,
+        answer_id: null,
+        payload: {},
+        citations: [],
+        created_at: now,
+      },
+      {
+        id: `preview-message-${Date.now().toString(36)}-assistant`,
+        conversation_id: id,
+        role: "assistant",
+        ordinal: nextOrdinal + 1,
+        content: answer.plain_english_summary,
+        answer_id: answer.answer_id,
+        payload: answer,
+        citations: answer.citations,
+        created_at: now,
+      },
+    ];
+    demoMessages[id] = [...(demoMessages[id] ?? []), ...messages];
+    demoConversations = demoConversations
+      .map((conversation) => conversation.id === id ? { ...conversation, updated_at: now } : conversation)
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    emitConversationsChanged();
+    return { conversation: demoConversations.find((conversation) => conversation.id === id)!, messages };
+  }
+
+  const token = await requireAccessToken("save conversation");
+  const res = await fetch("/api/conversations/save-turn", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      question,
+      answer_id: answer.answer_id,
+    }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `save conversation failed (${res.status})`);
+  emitConversationsChanged();
+  return body as SaveConversationTurnResponse;
 }
 
 export async function generateEvidenceBrief(answerId: string): Promise<EvidenceBriefResponse> {
@@ -518,5 +619,24 @@ export async function deleteMyAccount(): Promise<void> {
   if (!res.ok) {
     const message = isObj(body) && typeof body.error === "string" ? body.error : `delete failed (${res.status})`;
     throw new Error(message);
+  }
+}
+
+async function requireAccessToken(action: string): Promise<string> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error(`Sign in to ${action}`);
+  return token;
+}
+
+function titleFromQuestion(question: string): string {
+  const title = question.replace(/\s+/g, " ").trim();
+  if (!title) return "New chat";
+  return title.length > 80 ? `${title.slice(0, 77)}...` : title;
+}
+
+function emitConversationsChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("pharmaorb:conversations-changed"));
   }
 }
