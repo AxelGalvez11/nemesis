@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import type { DrugOverview, EntitlementSnapshot, WatchlistItem } from "@pharmabro/shared";
 import {
   fetchDrug,
@@ -26,7 +27,6 @@ export default function DrugPage() {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [ent, setEnt] = useState<EntitlementSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [followError, setFollowError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -51,13 +51,17 @@ export default function DrugPage() {
   const limit = Number(ent?.entitlements.watchlist_limit ?? 3);
 
   async function onFollow() {
-    setFollowError(null);
     try {
       await followItem("drug", id);
       setWatchlist(await fetchWatchlist());
+      toast.success(`Following ${drug?.canonical_name ?? id}.`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Follow failed";
-      setFollowError(msg.includes("watchlist_limit_exceeded") ? `Watchlist limit reached (${watchlist.length}/${limit}). Upgrade to Plus for 50 follows.` : msg);
+      if (msg.includes("watchlist_limit_exceeded")) {
+        toast.warning(`Watchlist limit reached (${watchlist.length}/${limit}). Upgrade to Plus for 50 follows.`);
+      } else {
+        toast.error(msg);
+      }
     }
   }
 
@@ -77,7 +81,6 @@ export default function DrugPage() {
           <button className="secondary" type="button">Compare</button>
           <button className="secondary" type="button">Share</button>
         </div>
-        {followError ? <ErrorText>{followError}</ErrorText> : null}
         <p className="muted">Plan follow limit: {watchlist.length}/{limit}</p>
 
         <div className="seg-tabs">

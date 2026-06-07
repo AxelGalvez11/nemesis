@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import type { SearchResult } from "@pharmabro/shared";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryState } from "nuqs";
+import { useForm } from "react-hook-form";
+import type { DrugSearch, SearchResult } from "@pharmabro/shared";
+import { DrugSearchSchema } from "@pharmabro/shared";
 import { searchEntities } from "@/lib/api";
 import { Badge, Card, ErrorText } from "@/components/ui";
 
@@ -27,26 +31,32 @@ const statusColors: Record<string, string> = {
 };
 
 const filters = [
-  ["Approved", "#1a8c5c"],
-  ["Investigational", "#0278c0"],
-  ["Research Use", "#c97b06"],
-  ["Supplement", "#6d28d9"],
-];
+  { label: "Approved", value: "approved", color: "#1a8c5c" },
+  { label: "Investigational", value: "investigational", color: "#0278c0" },
+  { label: "Research Use", value: "research_use", color: "#c97b06" },
+  { label: "Supplement", value: "supplement", color: "#6d28d9" },
+] as const;
 
 const classes = ["GLP-1s", "SSRIs", "ACE Inhibitors", "Peptides", "Beta-blockers", "Statins", "Supplements", "Immunology"];
 
 export default function ExplorePage() {
-  const [query, setQuery] = useState("ozempic");
+  const [query, setQuery] = useQueryState("q", { defaultValue: "" });
+  const [activeStatus, setActiveStatus] = useQueryState("status");
+  const { register, handleSubmit } = useForm<DrugSearch>({
+    resolver: zodResolver(DrugSearchSchema),
+    values: { q: query, status: activeStatus as DrugSearch["status"] },
+  });
   const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function runSearch(data: DrugSearch) {
+    const nextQuery = data.q?.trim() ?? "";
     setBusy(true);
     setError(null);
     try {
-      setResults(await searchEntities(query));
+      setQuery(nextQuery);
+      setResults(await searchEntities(nextQuery));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
@@ -54,24 +64,34 @@ export default function ExplorePage() {
     }
   }
 
-  const cards = results.length ? results.map((r) => ({
+  function onSubmit(e: FormEvent) {
+    void handleSubmit(runSearch)(e);
+  }
+
+  const baseCards = results.length ? results.map((r) => ({
     id: r.id,
     name: r.name,
     subtitle: r.subtitle ?? r.type,
     status: r.status,
     bg: popular.find((p) => p.id === r.id)?.bg ?? "#1a6b4a",
   })) : popular;
+  const cards = activeStatus ? baseCards.filter((card) => card.status === activeStatus) : baseCards;
 
   return (
     <div className="explore-layout">
       <aside className="filter-rail">
         <div className="eyebrow">Status</div>
         <div className="stack" style={{ gap: 4, marginBottom: 22 }}>
-          {filters.map(([label, color], index) => (
-            <div className={index === 0 ? "filter-item active" : "filter-item"} key={label}>
+          {filters.map(({ label, value, color }) => (
+            <button
+              className={activeStatus === value ? "filter-item active" : "filter-item"}
+              key={value}
+              onClick={() => void setActiveStatus(activeStatus === value ? null : value)}
+              type="button"
+            >
               <span className="filter-dot" style={{ background: color }} />
               {label}
-            </div>
+            </button>
           ))}
         </div>
         <div className="eyebrow">Classes</div>
@@ -82,7 +102,12 @@ export default function ExplorePage() {
 
       <section className="content">
         <form className="row" onSubmit={onSubmit} style={{ marginBottom: 18 }}>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ozempic, sertraline, creatine..." />
+          <input
+            {...register("q", {
+              onChange: (e) => void setQuery(e.target.value),
+            })}
+            placeholder="ozempic, sertraline, creatine..."
+          />
           <button disabled={busy} type="submit">{busy ? "Searching..." : "Search"}</button>
         </form>
         {error ? <ErrorText>{error}</ErrorText> : null}

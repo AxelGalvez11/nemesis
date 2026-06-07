@@ -14,6 +14,8 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
+import { captureEdgeException } from "../_shared/sentry.ts";
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -25,6 +27,16 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
 serve(async (req) => {
+  try {
+    return await handle(req);
+  } catch (e) {
+    captureEdgeException(e, { functionName: "account-delete" });
+    console.error("account-delete unhandled error:", (e as Error).message);
+    return json({ error: "account deletion failed" }, 500);
+  }
+});
+
+async function handle(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
   if (!SB_URL || !SERVICE_KEY || !ANON_KEY) return json({ error: "function not configured" }, 500);
@@ -52,12 +64,17 @@ serve(async (req) => {
   });
   if (!res.ok) {
     const detail = (await res.text()).slice(0, 200);
+    captureEdgeException(new Error(`admin delete failed: ${res.status}`), {
+      functionName: "account-delete",
+      userId,
+      extra: { detail },
+    });
     console.error("account-delete admin DELETE failed:", res.status, detail);
     return json({ error: "account deletion failed" }, 502);
   }
 
   return json({ deleted: true });
-});
+}
 
 // Verify the bearer token against the auth server and return the caller's uid.
 // Rejects anonymous sign-in sessions (a guest cannot delete a real account).

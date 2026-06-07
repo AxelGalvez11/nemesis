@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import type { Digest, EntitlementSnapshot, WatchlistItem, WatchlistUpdate } from "@pharmabro/shared";
 import { fetchEntitlements, fetchLatestDigest, fetchWatchlist, fetchWatchlistUpdates, unfollowItem } from "@/lib/api";
 import { Badge, Card, ErrorText, PageHeader, SourceAnchor } from "@/components/ui";
@@ -31,8 +32,13 @@ export default function WatchlistPage() {
   }, []);
 
   async function onUnfollow(id: string) {
-    await unfollowItem(id);
-    await load();
+    try {
+      await unfollowItem(id);
+      await load();
+      toast.success("Removed from watchlist.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove from watchlist");
+    }
   }
 
   const plan = ent?.plan ?? "free";

@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useQueryState } from "nuqs";
 import { FormEvent, KeyboardEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import type {
   AskResponse,
   Citation,
@@ -55,17 +57,14 @@ function AskPageFallback() {
 
 function AskExperience() {
   const router = useRouter();
-  const search = useSearchParams();
-  const conversationIdFromUrl = search.get("c");
+  const [conversationId, setConversationId] = useQueryState("c");
   const bottomRef = useRef<HTMLDivElement | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(conversationIdFromUrl);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [question, setQuestion] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageSnapshot | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
   const [reports, setReports] = useState<Record<string, EvidenceBriefResponse>>({});
-  const [reportError, setReportError] = useState<string | null>(null);
   const [reportBusy, setReportBusy] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -84,10 +83,8 @@ function AskExperience() {
   }, []);
 
   useEffect(() => {
-    setConversationId(conversationIdFromUrl);
     setError(null);
-    setReportError(null);
-    if (!conversationIdFromUrl) {
+    if (!conversationId) {
       setMessages([]);
       setLoadingMessages(false);
       return;
@@ -95,7 +92,7 @@ function AskExperience() {
 
     let alive = true;
     setLoadingMessages(true);
-    void fetchConversationMessages(conversationIdFromUrl)
+    void fetchConversationMessages(conversationId)
       .then((loaded) => {
         if (alive) setMessages(loaded);
       })
@@ -109,7 +106,7 @@ function AskExperience() {
     return () => {
       alive = false;
     };
-  }, [conversationIdFromUrl]);
+  }, [conversationId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -148,7 +145,6 @@ function AskExperience() {
 
     setBusy(true);
     setError(null);
-    setReportError(null);
     setQuestion("");
     setMessages((current) => [...current, pendingUser]);
 
@@ -161,7 +157,7 @@ function AskExperience() {
           ...current.filter((message) => !message.id.startsWith("pending-")),
           ...saved.messages,
         ]);
-        if (!conversationId) router.replace(`/app/ask?c=${saved.conversation.id}`);
+        if (!conversationId) void setConversationId(saved.conversation.id);
       } catch (saveError) {
         const now = new Date().toISOString();
         setMessages((current) => [
@@ -183,16 +179,18 @@ function AskExperience() {
             created_at: now,
           },
         ]);
-        setError(saveError instanceof Error
+        toast.error(saveError instanceof Error
           ? `Answer generated, but this chat was not saved: ${saveError.message}`
           : "Answer generated, but this chat was not saved.");
       }
     } catch (err) {
       setMessages((current) => current.filter((message) => message.id !== pendingUser.id));
       if (isQuotaError(err)) {
-        setError(`Daily Ask limit reached (${err.quota.used}/${err.quota.limit}) on ${err.quota.plan}.`);
+        toast.warning(`Daily Ask limit reached (${err.quota.used}/${err.quota.limit}) on ${err.quota.plan}.`, {
+          action: { label: "Upgrade", onClick: () => router.push("/app/billing") },
+        });
       } else {
-        setError(err instanceof Error ? err.message : "Ask failed");
+        toast.error(err instanceof Error ? err.message : "Ask failed");
       }
     } finally {
       setBusy(false);
@@ -208,13 +206,13 @@ function AskExperience() {
 
   async function onGenerateBrief(answerId: string) {
     setReportBusy(answerId);
-    setReportError(null);
     try {
       const report = await generateEvidenceBrief(answerId);
       setReports((current) => ({ ...current, [answerId]: report }));
+      toast.success("Evidence brief saved.");
       void refreshUsage();
     } catch (err) {
-      setReportError(err instanceof Error ? err.message : "Evidence brief failed");
+      toast.error(err instanceof Error ? err.message : "Evidence brief failed");
     } finally {
       setReportBusy(null);
     }
@@ -262,7 +260,6 @@ function AskExperience() {
           {limitReached ? <ErrorText>Daily Ask limit reached. Upgrade or wait for the next daily reset.</ErrorText> : null}
           {usageError ? <ErrorText>{usageError}</ErrorText> : null}
           {error ? <ErrorText>{error}</ErrorText> : null}
-          {reportError ? <ErrorText>{reportError}</ErrorText> : null}
         </form>
       </section>
 
@@ -359,7 +356,7 @@ function AnswerCard({
 }) {
   const sections = answer.answer_sections;
   return (
-    <article className="answer-card compact-answer">
+    <article className="answer-card compact-answer" data-testid="ask-response">
       <div className="answer-heading">
         <Badge>{answer.evidence_grade}</Badge>
       </div>
@@ -440,6 +437,7 @@ function CitationBubbles({ ids, citations }: { ids: string[]; citations: Citatio
       {resolved.map((citation) => (
         <Link
           className="citation-bubble"
+          data-testid="citation"
           href={`/app/source/${citation.source_id}`}
           key={`${citation.source_id}-${citation.chunk_tag}`}
           title={citation.title ?? citation.source_type}
@@ -459,7 +457,7 @@ function SourceRail({ citations }: { citations: Citation[] }) {
         citations.map((source) => (
           <section className="source-card cited" key={`${source.source_id}-${source.chunk_tag}`}>
             <div className="source-card-heading">
-              <span className="citation-bubble static">{source.chunk_tag.replace(/\D/g, "") || source.chunk_tag}</span>
+              <span className="citation-bubble static" data-testid="citation">{source.chunk_tag.replace(/\D/g, "") || source.chunk_tag}</span>
               <div>
                 <Badge>{source.source_type}</Badge>
                 <p className="muted">{source.published_date ?? "current"}</p>

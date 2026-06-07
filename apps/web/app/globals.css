@@ -948,13 +948,23 @@ button.danger-button:hover {
 }
 .filter-item {
   align-items: center;
+  background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
+  box-shadow: none;
   color: var(--muted);
   display: flex;
   font-size: 12px;
+  font-weight: 600;
   gap: 8px;
+  justify-content: flex-start;
   padding: 7px 9px;
+  text-align: left;
+  width: 100%;
+}
+button.filter-item:hover {
+  box-shadow: none;
+  transform: none;
 }
 .filter-item.active {
   background: rgba(26, 140, 92, 0.08);

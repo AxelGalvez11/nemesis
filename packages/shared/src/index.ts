@@ -31,3 +31,5 @@ export * from "./entitlements.ts";
 export * from "./reports.ts";
 // Public web beta chat persistence.
 export * from "./conversations.ts";
+// Shared request schemas for web forms and API boundaries.
+export * from "./schemas/index.ts";

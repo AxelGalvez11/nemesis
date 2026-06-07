@@ -1,0 +1,47 @@
+name: web-e2e
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: web-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_PLUS_PRICE_ID: ${{ secrets.STRIPE_PLUS_PRICE_ID }}
+      STRIPE_ALLOW_LIVE: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --filter @pharmaorb/web exec playwright install --with-deps chromium
+
+      - name: Run web smoke tests
+        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' && env.SUPABASE_SERVICE_ROLE_KEY != '' }}
+        run: pnpm --filter @pharmaorb/web e2e
+
+      - name: Skip when secrets are missing
+        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL == '' || env.NEXT_PUBLIC_SUPABASE_ANON_KEY == '' || env.SUPABASE_SERVICE_ROLE_KEY == '' }}
+        run: echo "Skipping web E2E because Supabase smoke-test secrets are not configured."

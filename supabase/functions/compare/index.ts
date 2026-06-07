@@ -8,7 +8,9 @@
 // authenticated (non-anonymous) user — guest scope is a Phase-6b decision.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { z } from "npm:zod";
 
+import { captureEdgeException } from "../_shared/sentry.ts";
 import { buildComparison, type CompareSideInput } from "./build.ts";
 import type { SourceRef } from "../../../packages/shared/src/search.ts";
 import type { EvidenceTier } from "../../../packages/shared/src/evidence.ts";
@@ -23,8 +25,14 @@ const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SECTION_MAX = 500; // truncate label section prose — compare is a summary view
+const CompareQuerySchema = z.object({
+  left: z.string().uuid(),
+  right: z.string().uuid(),
+}).refine((value) => value.left !== value.right, {
+  message: "left and right must differ",
+  path: ["right"],
+});
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -35,18 +43,21 @@ serve(async (req) => {
   if (!userId) return json({ error: "authentication required" }, 401);
 
   const params = new URL(req.url).searchParams;
-  const left = params.get("left") ?? "";
-  const right = params.get("right") ?? "";
-  if (!UUID_RE.test(left) || !UUID_RE.test(right)) {
-    return json({ error: "left and right must be entity uuids" }, 400);
+  const parsed = CompareQuerySchema.safeParse({
+    left: params.get("left") ?? "",
+    right: params.get("right") ?? "",
+  });
+  if (!parsed.success) {
+    return json({ error: "invalid_request", details: parsed.error.flatten() }, 400);
   }
-  if (left === right) return json({ error: "left and right must differ" }, 400);
+  const { left, right } = parsed.data;
 
   try {
     const [ls, rs] = await Promise.all([sideInput(left), sideInput(right)]);
     if (!ls || !rs) return json({ error: "entity not found" }, 404);
     return json(buildComparison(ls, rs));
   } catch (e) {
+    captureEdgeException(e, { functionName: "compare", userId, extra: { left, right } });
     console.error("compare error:", (e as Error).message);
     return json({ error: "compare failed" }, 500);
   }

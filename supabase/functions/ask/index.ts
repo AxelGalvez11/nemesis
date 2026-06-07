@@ -14,7 +14,9 @@
 // trace write, scoping every user-owned read to the VERIFIED user id.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { z } from "npm:zod";
 
+import { captureEdgeException } from "../_shared/sentry.ts";
 import { detectViolations, preScreen } from "./safety.ts";
 import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
@@ -64,6 +66,12 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const ASK_MATCH_THRESHOLD = 0.5;
 const MATCH_COUNT = 8;
 
+const AskBodySchema = z.object({
+  question: z.string().trim().min(1).max(2000),
+  use_health_context: z.boolean().optional(),
+  conversation_id: z.string().uuid().optional(),
+});
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405, req);
@@ -75,14 +83,13 @@ serve(async (req) => {
   const userId = await verifyUser(token);
   if (!userId) return json({ error: "authentication required" }, 401, req);
 
-  let body: { question?: string; use_health_context?: boolean; conversation_id?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return json({ error: "invalid json" }, 400, req);
+  const rawBody = await req.json().catch(() => null);
+  const parsed = AskBodySchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return json({ error: "invalid_request", details: parsed.error.flatten() }, 400, req);
   }
-  const question = (body.question ?? "").trim();
-  if (!question) return json({ error: "question required" }, 400, req);
+  const body = parsed.data;
+  const question = body.question;
 
   try {
     const resp = await runAsk(question, !!body.use_health_context, userId);
@@ -91,6 +98,7 @@ serve(async (req) => {
     if (e instanceof QuotaExceeded) return json(e.payload, 429, req);
     // Log the detail server-side; return a generic message so PostgREST /
     // Anthropic internals (schema, policy names, request ids) don't leak.
+    captureEdgeException(e, { functionName: "ask", userId, extra: { step: "pipeline" } });
     console.error("ask pipeline error:", (e as Error).message);
     return json({ error: "ask failed" }, 500, req);
   }
@@ -186,6 +194,7 @@ async function runAsk(
       apiKey,
     });
   } catch (e) {
+    captureEdgeException(e, { functionName: "ask", userId, extra: { step: "generate" } });
     console.error("ask generate failed after retries:", (e as Error).message);
     return await finalizeTemplate(answerId, question, cls.intent,
       unique<SafetyFlag>([...flags, "no_sources_found"]), entities, userId,
@@ -492,6 +501,7 @@ async function storeTrace(row: TraceRow): Promise<void> {
   } catch (e) {
     // A trace-write failure must not fail the user's answer, but it MUST be
     // visible — a dropped emergency/self-harm trace is a lost safety audit record.
+    captureEdgeException(e, { functionName: "ask", userId: row.user_id, extra: { step: "storeTrace" } });
     console.error("storeTrace failed (trace lost):", (e as Error).message);
   }
 }
