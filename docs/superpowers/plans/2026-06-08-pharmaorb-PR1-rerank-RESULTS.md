@@ -55,8 +55,11 @@ cheap next to the embedding + LLM generation already in `/ask`. Tunable: rerank 
 ## Recommendation (eval-proven; SHIP step is owner-gated)
 1. **Adopt reranking as the P1 retrieval win; drop FTS-hybrid** (PR2 RPC stays deployed but
    unused — additive, harmless; do not flip `/ask` to it).
-2. **Shipping** = add the rerank step to the `/ask` retrieval path (after `match_core_source_chunks`,
-   before synthesis). That's edge code on the FROZEN-safety path → owner-gated
+2. **Shipping** = add the rerank step to the `/ask` retrieval path. ⚠️ More than "insert a call":
+   the eval reranks the **top-50 at threshold 0**, but production `/ask` retrieves a small
+   **top-K (~8) at threshold ~0.6**. Shipping therefore requires `/ask` to first **widen its
+   candidate pool** — retrieve ~50 at a low threshold → rerank → cut to the top-8 the synthesizer
+   sees. That's edge code on the FROZEN-safety path → owner-gated
    `supabase functions deploy`, behind a `RERANK_ENABLED` flag, then **re-freeze the committed
    baseline to the rerank numbers**. NOT done here (this PR is measurement only; committed
    baseline stays dense so CI keeps gating today's live engine).
