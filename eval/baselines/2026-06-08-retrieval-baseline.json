@@ -1,0 +1,368 @@
+{
+  "generated_for": "https://qyjmivntajbigjswhahb.supabase.co",
+  "golden_total": 43,
+  "answerable_scored": 39,
+  "unresolved_gold": 0,
+  "unanswerable_total": 4,
+  "unanswerable_clean": 4,
+  "aggregate": {
+    "recall@5": 0.8461538461538461,
+    "recall@10": 0.9743589743589743,
+    "recall@20": 1,
+    "ndcg@10": 0.7847734686081197,
+    "mrr": 0.7280650721827191
+  },
+  "per_item": [
+    {
+      "id": "sema-sideeffects-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.38685280723454163,
+      "mrr": 0.2
+    },
+    {
+      "id": "sema-boxed-thyroid-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.38685280723454163,
+      "mrr": 0.2
+    },
+    {
+      "id": "sema-dosing-titration-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "sema-alzheimer-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "sema-cocaine-pubmed-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "sema-schizophrenia-pubmed-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "metformin-lactic-acidosis-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.6309297535714575,
+      "mrr": 0.5
+    },
+    {
+      "id": "metformin-renal-001",
+      "gold": 1,
+      "recall@5": 0,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.3562071871080222,
+      "mrr": 0.16666666666666666
+    },
+    {
+      "id": "metformin-gi-tolerance-pubmed-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "metformin-headneck-cancer-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "metformin-longcovid-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "metformin-frailty-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "sertraline-pregnancy-001",
+      "gold": 1,
+      "recall@5": 0,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.3333333333333333,
+      "mrr": 0.14285714285714285
+    },
+    {
+      "id": "sertraline-suicidality-001",
+      "gold": 1,
+      "recall@5": 0,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.3333333333333333,
+      "mrr": 0.14285714285714285
+    },
+    {
+      "id": "sertraline-chestpain-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "sertraline-hiv-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "lisinopril-hyperkalemia-001",
+      "gold": 1,
+      "recall@5": 0,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.3562071871080222,
+      "mrr": 0.16666666666666666
+    },
+    {
+      "id": "lisinopril-pregnancy-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.38685280723454163,
+      "mrr": 0.2
+    },
+    {
+      "id": "lisinopril-hallucinations-pubmed-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "lisinopril-radiation-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "isotretinoin-pregnancy-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.43067655807339306,
+      "mrr": 0.25
+    },
+    {
+      "id": "isotretinoin-thyroid-pubmed-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "isotretinoin-seborrheic-pubmed-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "isotretinoin-neuroblastoma-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "atorvastatin-myopathy-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.38685280723454163,
+      "mrr": 0.2
+    },
+    {
+      "id": "atorvastatin-anticancer-pubmed-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "atorvastatin-rvo-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "atorvastatin-t1dm-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "omeprazole-indications-001",
+      "gold": 1,
+      "recall@5": 0,
+      "recall@10": 0,
+      "recall@20": 1,
+      "ndcg@10": 0,
+      "mrr": 0.058823529411764705
+    },
+    {
+      "id": "omeprazole-giardiasis-pubmed-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "amoxicillin-indications-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.6309297535714575,
+      "mrr": 0.5
+    },
+    {
+      "id": "amoxicillin-hpylori-pubmed-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.6309297535714575,
+      "mrr": 0.5
+    },
+    {
+      "id": "hcq-retinopathy-001",
+      "gold": 1,
+      "recall@5": 0,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 0.3562071871080222,
+      "mrr": 0.16666666666666666
+    },
+    {
+      "id": "hcq-covid-pubmed-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "hcq-iga-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "hcq-spms-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "testosterone-cyp-dosing-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "testosterone-diabetes-trial-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    },
+    {
+      "id": "testosterone-sepsis-pubmed-001",
+      "gold": 1,
+      "recall@5": 1,
+      "recall@10": 1,
+      "recall@20": 1,
+      "ndcg@10": 1,
+      "mrr": 1
+    }
+  ]
+}
