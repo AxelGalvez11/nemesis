@@ -213,6 +213,25 @@ Deno.test("identify respects opt-out", () => {
   reset();
 });
 
+Deno.test("identify before a sink is wired is buffered and replayed on configure (boot race)", () => {
+  reset();
+  identify("user-boot-1"); // no real sink yet -> buffered, not lost
+  const calls: string[] = [];
+  configureAnalytics({ capture: () => {}, identify: (id) => calls.push(id) });
+  assertEquals(calls, ["user-boot-1"]); // replayed when the sink connects
+  reset();
+});
+
+Deno.test("a buffered identify is NOT replayed if the user opted out before the sink wired", () => {
+  reset();
+  identify("user-boot-2"); // buffered
+  setOptOut(true);
+  const calls: string[] = [];
+  configureAnalytics({ capture: () => {}, identify: (id) => calls.push(id) });
+  assertEquals(calls.length, 0);
+  reset();
+});
+
 Deno.test("resetAnalyticsUser calls sink.reset and swallows errors", () => {
   reset();
   let resetCalled = false;

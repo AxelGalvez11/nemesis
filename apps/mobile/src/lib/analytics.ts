@@ -178,6 +178,10 @@ const noopSink: AnalyticsSink = { capture: () => {} };
 
 let sink: AnalyticsSink = noopSink;
 let optedOut = false;
+// Boot race: identify() can fire (from the auth listener) before the real sink is
+// wired (an async bootstrap). Buffer the id and replay it once a sink connects, so
+// returning users are still attributed. Only the latest id is kept.
+let pendingDistinctId: string | null = null;
 
 /** Surface a sink failure in development only (analytics is best-effort in prod). */
 function devWarn(scope: string, e: unknown): void {
@@ -190,11 +194,22 @@ function devWarn(scope: string, e: unknown): void {
  *  (setOptOut) BEFORE calling this, so an opted-out user never emits during boot. */
 export function configureAnalytics(next: AnalyticsSink): void {
   sink = next;
+  // Replay a buffered identify (fired before this sink connected).
+  if (pendingDistinctId !== null && !optedOut) {
+    const id = pendingDistinctId;
+    pendingDistinctId = null;
+    try {
+      sink.identify?.(id);
+    } catch (e) {
+      devWarn("identify", e);
+    }
+  }
 }
 
 /** Restore the no-op sink (sign-out, and test isolation). */
 export function resetAnalyticsSink(): void {
   sink = noopSink;
+  pendingDistinctId = null;
 }
 
 /**
@@ -232,6 +247,11 @@ export function identify(distinctId: string, props?: Record<string, unknown>): v
   if (optedOut) return;
   if (typeof distinctId !== "string" || distinctId.length === 0 || distinctId.includes("@")) {
     devWarn("identify", new Error("distinctId must be an opaque id, not an email/PII"));
+    return;
+  }
+  if (sink === noopSink) {
+    // No real sink yet (boot race): buffer; configureAnalytics() replays it.
+    pendingDistinctId = distinctId;
     return;
   }
   try {
