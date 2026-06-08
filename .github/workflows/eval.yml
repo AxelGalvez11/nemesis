@@ -1,0 +1,32 @@
+# .github/workflows/eval.yml
+# Quality gate (complements guardrail.yml, the safety gate). Retrieval-eval is cheap +
+# deterministic (no LLM, no /ask quota), so it runs on PRs into main and fails if
+# aggregate retrieval metrics regress below the committed baseline minus a tolerance band.
+name: eval
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  retrieval-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Skip fork PRs (no secrets → would exit for a config reason, not a regression).
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Metric math unit tests
+        run: deno test eval/lib/metrics.test.ts
+      - name: Retrieval eval vs committed baseline
+        env:
+          SB_URL: ${{ secrets.SB_URL }}
+          SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
+          ANON_KEY: ${{ secrets.ANON_KEY }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+        run: deno run --allow-net --allow-env --allow-read --allow-run eval/ci-gate.ts
