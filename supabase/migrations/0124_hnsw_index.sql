@@ -32,9 +32,12 @@
 DROP INDEX IF EXISTS public.core_source_chunks_vec_idx;
 
 -- 2. Create the HNSW ANN index (cosine; matches the RPC's <=> ordering).
+--    Opclass is schema-qualified (extensions.vector_cosine_ops): pgvector lives in the
+--    `extensions` schema and `supabase db push` runs without it on search_path, so an
+--    UNqualified opclass name fails with "operator class does not exist for access method hnsw".
 CREATE INDEX core_source_chunks_vec_idx
   ON public.core_source_chunks
-  USING hnsw (embedding vector_cosine_ops)
+  USING hnsw (embedding extensions.vector_cosine_ops)
   WITH (m = 16, ef_construction = 64);
 
 -- 3. Re-create the retriever with a pinned hnsw.ef_search. Signature + body are
