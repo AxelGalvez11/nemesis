@@ -55,7 +55,7 @@ export async function grantEnterprise(env: Env, userId: string): Promise<void> {
   if (!res.ok) throw new Error(`grantEnterprise failed ${res.status}: ${(await res.text()).slice(0, 160)}`);
 }
 
-export interface MatchRow { id: string; source_id: string; similarity: number; provider: string; }
+export interface MatchRow { id: string; source_id: string; similarity: number; provider: string; chunk_text: string; }
 
 /** Call the live retriever (authenticated). match_count high + threshold 0 = unbiased ranking. */
 export async function matchChunks(
