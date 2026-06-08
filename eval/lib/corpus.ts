@@ -70,6 +70,24 @@ export async function matchChunks(
   return await res.json();
 }
 
+/** Hybrid retriever (PR2): dense ANN ⊕ sparse FTS fused via RRF. Same ranked (chunk_id,
+ *  source_id) contract as matchChunks; passes the raw query_text for the FTS arm. The
+ *  dense-floor gate inside the RPC preserves AC3 (a fabricated-drug query returns zero rows). */
+export async function matchChunksHybrid(
+  env: Env, jwt: string, embedding: number[], queryText: string, matchCount = 50, matchThreshold = 0,
+): Promise<MatchRow[]> {
+  const res = await fetch(`${env.SB_URL}/rest/v1/rpc/hybrid_match_core_source_chunks`, {
+    method: "POST",
+    headers: { apikey: env.ANON_KEY, Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query_embedding: embedding, query_text: queryText,
+      match_count: matchCount, match_threshold: matchThreshold,
+    }),
+  });
+  if (!res.ok) throw new Error(`hybrid match RPC failed ${res.status}: ${(await res.text()).slice(0, 160)}`);
+  return await res.json();
+}
+
 /** Resolve gold (provider, provider_id) pairs to corpus source_ids. Unresolved = not in corpus.
  *  Strict: a row is kept only when BOTH its provider AND provider_id were requested. The query
  *  filters on provider_id alone (PostgREST in-list), so without the provider check a set-id that

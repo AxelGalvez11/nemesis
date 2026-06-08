@@ -4,7 +4,7 @@
 // run as a CLI (import.meta.main) it prints the report and, with --write-baseline, persists it.
 import { loadGolden } from "./golden/schema.ts";
 import { embedQuery } from "./lib/voyage.ts";
-import { matchChunks, mintUser, readEnv, resolveSourceIds, teardownUser } from "./lib/corpus.ts";
+import { matchChunks, matchChunksHybrid, mintUser, readEnv, resolveSourceIds, teardownUser } from "./lib/corpus.ts";
 import { mean, mrr, ndcgAtK, recallAtK } from "./lib/metrics.ts";
 
 const K_RECALL = [5, 10, 20];
@@ -17,6 +17,7 @@ function dedupePreserveOrder(ids: string[]): string[] {
 }
 
 export interface RetrievalReport {
+  retriever: string; // "dense" (default, = committed baseline) | "hybrid" (PR2 candidate)
   generated_for: string;
   golden_total: number;
   answerable_scored: number;
@@ -29,6 +30,7 @@ export interface RetrievalReport {
 
 export async function runRetrievalEval(): Promise<RetrievalReport> {
   const env = readEnv();
+  const retriever = Deno.env.get("RETRIEVER") ?? "dense"; // dense = committed baseline; hybrid = PR2 candidate
   const golden = await loadGolden();
   const answerable = golden.filter((g) => g.answerability === "answerable");
   const unanswerable = golden.filter((g) => g.answerability === "unanswerable");
@@ -43,7 +45,9 @@ export async function runRetrievalEval(): Promise<RetrievalReport> {
       const goldIds = new Set([...goldMap.values()]);
       if (item.expected_sources.length > 0 && goldIds.size === 0) { unresolvedGold++; continue; } // gold not in corpus
       const emb = await embedQuery(item.question);
-      const rows = await matchChunks(env, user.jwt, emb, MATCH_COUNT, 0);
+      const rows = retriever === "hybrid"
+        ? await matchChunksHybrid(env, user.jwt, emb, item.question, MATCH_COUNT, 0)
+        : await matchChunks(env, user.jwt, emb, MATCH_COUNT, 0);
       const rankedSources = dedupePreserveOrder(rows.map((r) => r.source_id));
       const rec = Object.fromEntries(K_RECALL.map((k) => [`recall@${k}`, recallAtK(rankedSources, goldIds, k)]));
       perItem.push({ id: item.id, gold: goldIds.size, ...rec, [`ndcg@${NDCG_K}`]: ndcgAtK(rankedSources, goldIds, NDCG_K), mrr: mrr(rankedSources, goldIds) });
@@ -53,7 +57,9 @@ export async function runRetrievalEval(): Promise<RetrievalReport> {
     let unanswerableClean = 0;
     for (const item of unanswerable) {
       const emb = await embedQuery(item.question);
-      const rows = await matchChunks(env, user.jwt, emb, MATCH_COUNT, 0.5);
+      const rows = retriever === "hybrid"
+        ? await matchChunksHybrid(env, user.jwt, emb, item.question, MATCH_COUNT, 0.5)
+        : await matchChunks(env, user.jwt, emb, MATCH_COUNT, 0.5);
       if (rows.length === 0) unanswerableClean++;
     }
 
@@ -63,6 +69,7 @@ export async function runRetrievalEval(): Promise<RetrievalReport> {
     agg["mrr"] = mean(perItem.map((p) => p["mrr"] as number));
 
     return {
+      retriever,
       generated_for: env.SB_URL,
       golden_total: golden.length,
       answerable_scored: perItem.length,
