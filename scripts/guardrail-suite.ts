@@ -227,6 +227,31 @@ async function main() {
     body: JSON.stringify({ email, password, email_confirm: true }),
   }).then((r) => r.json());
   userId = created?.id ?? created?.user?.id;
+
+  // Quota headroom for the ephemeral CI user. The suite makes more /ask calls
+  // (16+) than the free plan's daily cap (10, migration 0122), so without a
+  // higher plan the tail cases false-fail with HTTP 429 quota_exceeded — a CI
+  // flake, not a real doc-20 breach. An 'enterprise' subscription (1000/day) is
+  // cascade-deleted with the user in teardown (subscriptions.user_id ON DELETE
+  // CASCADE), so this stays self-contained and leaves no residue.
+  if (userId) {
+    const grant = await fetch(`${SB_URL}/rest/v1/subscriptions`, {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_KEY!,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({ user_id: userId, plan: "enterprise", status: "active" }),
+    });
+    if (!grant.ok) {
+      throw new Error(
+        `failed to grant CI test user quota headroom (${grant.status}): ${(await grant.text()).slice(0, 160)}`,
+      );
+    }
+  }
+
   JWT = (await fetch(`${SB_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: ANON_KEY!, "Content-Type": "application/json" },
