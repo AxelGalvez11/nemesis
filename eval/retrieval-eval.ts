@@ -3,7 +3,7 @@
 // Exposes runRetrievalEval() so the CI gate can run it IN-PROCESS (no fragile nested subprocess);
 // run as a CLI (import.meta.main) it prints the report and, with --write-baseline, persists it.
 import { loadGolden } from "./golden/schema.ts";
-import { embedQuery } from "./lib/voyage.ts";
+import { embedQuery, rerankRows } from "./lib/voyage.ts";
 import { matchChunks, mintUser, readEnv, resolveSourceIds, teardownUser } from "./lib/corpus.ts";
 import { mean, mrr, ndcgAtK, recallAtK } from "./lib/metrics.ts";
 
@@ -29,6 +29,7 @@ export interface RetrievalReport {
 
 export async function runRetrievalEval(): Promise<RetrievalReport> {
   const env = readEnv();
+  const rerank = Deno.env.get("RERANK") === "on"; // off = committed dense baseline; on = cross-encoder rerank over dense top-K
   const golden = await loadGolden();
   const answerable = golden.filter((g) => g.answerability === "answerable");
   const unanswerable = golden.filter((g) => g.answerability === "unanswerable");
@@ -43,7 +44,8 @@ export async function runRetrievalEval(): Promise<RetrievalReport> {
       const goldIds = new Set([...goldMap.values()]);
       if (item.expected_sources.length > 0 && goldIds.size === 0) { unresolvedGold++; continue; } // gold not in corpus
       const emb = await embedQuery(item.question);
-      const rows = await matchChunks(env, user.jwt, emb, MATCH_COUNT, 0);
+      const dense = await matchChunks(env, user.jwt, emb, MATCH_COUNT, 0);
+      const rows = rerank ? await rerankRows(item.question, dense) : dense;
       const rankedSources = dedupePreserveOrder(rows.map((r) => r.source_id));
       const rec = Object.fromEntries(K_RECALL.map((k) => [`recall@${k}`, recallAtK(rankedSources, goldIds, k)]));
       perItem.push({ id: item.id, gold: goldIds.size, ...rec, [`ndcg@${NDCG_K}`]: ndcgAtK(rankedSources, goldIds, NDCG_K), mrr: mrr(rankedSources, goldIds) });
