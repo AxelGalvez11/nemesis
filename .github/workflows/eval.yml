@@ -21,6 +21,8 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Cache eval deps
+        run: deno cache eval/ci-gate.ts eval/retrieval-eval.ts eval/lib/metrics.test.ts
       - name: Metric math unit tests
         run: deno test eval/lib/metrics.test.ts
       - name: Retrieval eval vs committed baseline
@@ -29,4 +31,4 @@ jobs:
           SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
           ANON_KEY: ${{ secrets.ANON_KEY }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
-        run: deno run --allow-net --allow-env --allow-read --allow-run eval/ci-gate.ts
+        run: deno run --allow-net --allow-env --allow-read eval/ci-gate.ts
