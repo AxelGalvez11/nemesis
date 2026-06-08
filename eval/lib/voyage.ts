@@ -32,10 +32,19 @@ export async function rerankRows<T extends { chunk_text: string }>(
   const res = await fetch("https://api.voyageai.com/v1/rerank", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: RERANK_MODEL, query, documents: rows.map((r) => r.chunk_text ?? ""), truncation: true }),
+    // NO top_k: reorder ALL rows (the "no rows added/removed" invariant). chunk_text is non-optional
+    // by the T constraint — no `?? ""` fallback, so a runtime field-rename throws here instead of
+    // silently reranking empty strings into meaningless-but-numerically-valid scores.
+    body: JSON.stringify({ model: RERANK_MODEL, query, documents: rows.map((r) => r.chunk_text), truncation: true }),
   });
   if (!res.ok) throw new Error(`voyage rerank failed ${res.status}: ${(await res.text()).slice(0, 160)}`);
   const body = await res.json();
   // body.data: [{ index, relevance_score }] sorted by relevance_score desc.
-  return (body.data as Array<{ index: number }>).map((d) => rows[d.index]);
+  const ranked = body.data as Array<{ index: number }>;
+  // Enforce the invariant rather than trust it: any drop (e.g. a future top_k) FAILS loudly instead
+  // of silently corrupting recall@k/ndcg by reconstructing a shorter ranking.
+  if (ranked.length !== rows.length) {
+    throw new Error(`rerank returned ${ranked.length} of ${rows.length} rows — reordering would drop rows`);
+  }
+  return ranked.map((d) => rows[d.index]);
 }
