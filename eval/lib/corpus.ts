@@ -70,12 +70,18 @@ export async function matchChunks(
   return await res.json();
 }
 
-/** Resolve gold (provider, provider_id) pairs to corpus source_ids. Unresolved = not in corpus. */
+/** Resolve gold (provider, provider_id) pairs to corpus source_ids. Unresolved = not in corpus.
+ *  Strict: a row is kept only when BOTH its provider AND provider_id were requested. The query
+ *  filters on provider_id alone (PostgREST in-list), so without the provider check a set-id that
+ *  exists under two providers (e.g. an SPL set-id under both openfda and dailymed) would resolve
+ *  to two rows and silently inflate gold size. Matching the exact (provider, provider_id) pair
+ *  keeps gold honest as the golden set grows. */
 export async function resolveSourceIds(
   env: Env, pairs: Array<{ provider: string; provider_id: string }>,
 ): Promise<Map<string, string>> {
   const out = new Map<string, string>(); // key `${provider}:${provider_id}` -> source_id
   if (pairs.length === 0) return out;
+  const wanted = new Set(pairs.map((p) => `${p.provider}:${p.provider_id}`));
   const ids = [...new Set(pairs.map((p) => p.provider_id))];
   const inList = ids.map((x) => `"${x.replaceAll('"', '')}"`).join(",");
   const rows = await fetch(
@@ -83,7 +89,8 @@ export async function resolveSourceIds(
     { headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}` } },
   ).then((r) => r.json());
   for (const r of rows as Array<{ id: string; provider: string; provider_id: string }>) {
-    out.set(`${r.provider}:${r.provider_id}`, r.id);
+    const key = `${r.provider}:${r.provider_id}`;
+    if (wanted.has(key)) out.set(key, r.id); // only the requested (provider, provider_id)
   }
   return out;
 }
