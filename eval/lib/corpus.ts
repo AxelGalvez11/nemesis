@@ -1,0 +1,89 @@
+// eval/lib/corpus.ts
+// Shared auth + corpus resolution for the eval harnesses. Mirrors scripts/phase3-validate.ts.
+
+export interface Env { SB_URL: string; SERVICE_KEY: string; ANON_KEY: string; }
+
+export function readEnv(): Env {
+  const SB_URL = Deno.env.get("SB_URL");
+  const SERVICE_KEY = Deno.env.get("SERVICE_KEY");
+  const ANON_KEY = Deno.env.get("ANON_KEY");
+  if (!SB_URL || !SERVICE_KEY || !ANON_KEY) {
+    console.error("SB_URL + SERVICE_KEY + ANON_KEY required");
+    Deno.exit(2);
+  }
+  return { SB_URL, SERVICE_KEY, ANON_KEY };
+}
+
+export interface TestUser { userId: string; jwt: string; }
+
+export async function mintUser(env: Env): Promise<TestUser> {
+  const email = `eval+${crypto.randomUUID().slice(0, 8)}@pharmabro.test`;
+  const password = crypto.randomUUID();
+  const created = await fetch(`${env.SB_URL}/auth/v1/admin/users`, {
+    method: "POST",
+    headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, email_confirm: true }),
+  }).then((r) => r.json());
+  const userId = created?.id ?? created?.user?.id;
+  const jwt = (await fetch(`${env.SB_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { apikey: env.ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  }).then((r) => r.json())).access_token;
+  if (!userId || !jwt) throw new Error("mintUser failed");
+  return { userId, jwt };
+}
+
+export async function teardownUser(env: Env, userId: string): Promise<void> {
+  await fetch(`${env.SB_URL}/rest/v1/generated_answers?user_id=eq.${userId}`, {
+    method: "DELETE",
+    headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}`, Prefer: "return=minimal" },
+  }).catch(() => {});
+  await fetch(`${env.SB_URL}/auth/v1/admin/users/${userId}`, {
+    method: "DELETE",
+    headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}` },
+  }).catch(() => {});
+}
+
+/** Only for /ask-exercising jobs (answer-eval). Retrieval-eval does NOT need this. */
+export async function grantEnterprise(env: Env, userId: string): Promise<void> {
+  const res = await fetch(`${env.SB_URL}/rest/v1/subscriptions`, {
+    method: "POST",
+    headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ user_id: userId, plan: "enterprise", status: "active" }),
+  });
+  if (!res.ok) throw new Error(`grantEnterprise failed ${res.status}: ${(await res.text()).slice(0, 160)}`);
+}
+
+export interface MatchRow { id: string; source_id: string; similarity: number; provider: string; }
+
+/** Call the live retriever (authenticated). match_count high + threshold 0 = unbiased ranking. */
+export async function matchChunks(
+  env: Env, jwt: string, embedding: number[], matchCount = 50, matchThreshold = 0,
+): Promise<MatchRow[]> {
+  const res = await fetch(`${env.SB_URL}/rest/v1/rpc/match_core_source_chunks`, {
+    method: "POST",
+    headers: { apikey: env.ANON_KEY, Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query_embedding: embedding, match_count: matchCount, match_threshold: matchThreshold }),
+  });
+  if (!res.ok) throw new Error(`match RPC failed ${res.status}: ${(await res.text()).slice(0, 160)}`);
+  return await res.json();
+}
+
+/** Resolve gold (provider, provider_id) pairs to corpus source_ids. Unresolved = not in corpus. */
+export async function resolveSourceIds(
+  env: Env, pairs: Array<{ provider: string; provider_id: string }>,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>(); // key `${provider}:${provider_id}` -> source_id
+  if (pairs.length === 0) return out;
+  const ids = [...new Set(pairs.map((p) => p.provider_id))];
+  const inList = ids.map((x) => `"${x.replaceAll('"', '')}"`).join(",");
+  const rows = await fetch(
+    `${env.SB_URL}/rest/v1/core_sources?select=id,provider,provider_id&provider_id=in.(${inList})`,
+    { headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}` } },
+  ).then((r) => r.json());
+  for (const r of rows as Array<{ id: string; provider: string; provider_id: string }>) {
+    out.set(`${r.provider}:${r.provider_id}`, r.id);
+  }
+  return out;
+}
