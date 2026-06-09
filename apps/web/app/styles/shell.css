@@ -119,14 +119,23 @@
 .msg-ai .orb { width: 28px; height: 28px; margin-top: 2px; }
 .ai-body { min-width: 0; flex: 1; }
 .ai-body h4 { font-size: 14px; font-weight: 700; margin: 2px 0 9px; letter-spacing: -0.01em; }
-.ai-body p { color: var(--text); margin: 0 0 12px; }
-.ai-body section { margin: 0 0 12px; }
-.ai-body section h5 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); font-weight: 600; margin: 0 0 6px; }
+.ai-body p { color: var(--text); margin: 0 0 12px; line-height: 1.6; }
+/* Lead paragraph: the bottom-line summary, promoted so it anchors the answer. */
+.ai-body p.lead { font-size: 16px; line-height: 1.6; font-weight: 500; color: var(--text); margin: 10px 0 16px; }
+.ai-body section { margin: 0 0 16px; }
+/* Section headers read as real headings (sentence-case, brighter, bolder) instead of tiny grey labels. */
+.ai-body section h5 { font-size: 13px; text-transform: none; letter-spacing: -0.005em; color: var(--text); font-weight: 700; margin: 0 0 7px; }
 .ai-body ul { margin: 0 0 4px; padding-left: 18px; }
-.ai-body li { margin: 0 0 5px; }
+.ai-body li { margin: 0 0 7px; line-height: 1.6; }
+/* Inline emphasis surfaced by lib/inline-md from the model's own markdown. */
+.ai-body strong { font-weight: 700; color: var(--text); }
+.ai-body em { font-style: italic; }
+.ai-body code { font-family: var(--mono); font-size: 0.92em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .caret { display: inline-block; width: 7px; height: 15px; background: var(--acid); vertical-align: -2px; margin-left: 2px; border-radius: 1px; animation: blink 1.05s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
-.cite { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 5px; padding: 0 4px; margin: 0 1px; cursor: pointer; vertical-align: 1px; transition: 0.15s; }
+/* Inline citation chip. It is a <button>, so reset the global acid button styling (legacy.css) back
+   to an inline text chip: no background, inherited line-height, baseline-aligned. */
+.cite { display: inline; font-family: var(--mono); font-size: 11px; font-weight: 500; line-height: inherit; color: var(--text-2); background: none; border: 1px solid var(--line-2); border-radius: 5px; padding: 0 4px; margin: 0 1px; cursor: pointer; vertical-align: 1px; transition: 0.15s; }
 .cite:hover { border-color: var(--acid); color: var(--acid); }
 .num { font-family: var(--mono); color: var(--text); font-weight: 500; }
 .grade-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -198,6 +207,8 @@
 .ev-body { flex: 1; overflow-y: auto; padding: 14px 14px 20px; }
 .src { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 12px 13px; margin-bottom: 10px; cursor: pointer; transition: 0.16s; position: relative; display: block; width: 100%; text-align: left; color: inherit; }
 .src:hover { border-color: var(--line-2); transform: translateY(-1px); }
+/* Highlight the card a clicked citation scrolled to. */
+.src.active { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid), 0 0 18px rgba(140, 220, 40, 0.18); }
 .src .badge-src { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: var(--text-3); text-transform: uppercase; }
 .src .badge-src .sq { width: 7px; height: 7px; border-radius: 2px; background: var(--text-3); }
 .src.openfda .sq, .src.dailymed .sq { background: #7fb2ff; }
@@ -259,6 +270,6 @@
 /* keyboard focus ring for the custom (non-shadcn) interactive elements */
 .icon-btn:focus-visible, .hist:focus-visible, .new:focus-visible, .mode:focus-visible, .send:focus-visible,
 .tool:focus-visible, .ev-tab:focus-visible, .chip-action:focus-visible, .acct-btn:focus-visible, .src:focus-visible,
-.search input:focus-visible, .box textarea:focus-visible {
+.cite:focus-visible, .search input:focus-visible, .box textarea:focus-visible {
   outline: 2px solid var(--acid-dim); outline-offset: 2px;
 }

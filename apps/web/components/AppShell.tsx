@@ -15,6 +15,7 @@ interface AppChromeValue {
   toggleRail: () => void;
   evidenceCollapsed: boolean;
   toggleEvidence: () => void;
+  openEvidence: () => void;
   setEvidence: (node: ReactNode | null) => void;
   setTopbar: (node: ReactNode | null) => void;
 }
@@ -23,6 +24,7 @@ const AppChromeContext = createContext<AppChromeValue>({
   toggleRail: () => {},
   evidenceCollapsed: false,
   toggleEvidence: () => {},
+  openEvidence: () => {},
   setEvidence: () => {},
   setTopbar: () => {},
 });
@@ -88,6 +90,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (mqMatch("(max-width: 1100px)")) setMobileEvidenceOpen((v) => !v);
     else setEvidenceCollapsed((v) => !v);
   }, []);
+  // Always-open command (used by citation clicks): opens the right place for the current breakpoint
+  // and never toggles an already-open panel shut. Mirrors toggleEvidence's breakpoint split.
+  const openEvidence = useCallback(() => {
+    setMobileNavOpen(false);
+    if (mqMatch("(max-width: 1100px)")) setMobileEvidenceOpen(true);
+    else setEvidenceCollapsed(false);
+  }, []);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
   const closeMobileEvidence = useCallback(() => setMobileEvidenceOpen(false), []);
 
@@ -145,8 +154,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const ctx = useMemo<AppChromeValue>(
-    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar }),
-    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar],
+    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar }),
+    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar],
   );
 
   // Hooks are all above this line — only conditional returns below (Rules of Hooks).
@@ -197,10 +206,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
 
             <div className="r-label">Projects</div>
-            <Link href="/app/settings" className="hist" aria-label="New project">
+            {/* Projects (group chats, sources & deliverables) is not built yet — inert placeholder,
+                NOT a link. It previously pointed at /app/settings (wrong page); /app/projects does
+                not exist, so a real href would 404. */}
+            <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }} aria-disabled="true">
               <Icon name="folder" className="hist-ic" />
-              <span>New project</span>
-            </Link>
+              <span style={{ fontSize: 12 }}>Projects — coming soon</span>
+            </div>
             <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }}>
               <span style={{ fontSize: 12 }}>Bundle chats, sources & deliverables</span>
             </div>
