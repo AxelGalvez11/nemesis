@@ -36,10 +36,15 @@ export async function rerankChunks(query: string, chunks: RetrievedChunk[]): Pro
 
   const body = await res.json();
   const data = body.data as Array<{ index: number; relevance_score: number }>;
-  // Invariant: reorder must not drop rows (a future top_k would silently shorten the set and corrupt
-  // the downstream refusal/citation logic). Fail loudly instead.
+  // Invariant: reorder must not drop, duplicate, or invent rows. A wrong count (a future top_k), an
+  // out-of-range index (chunks[undefined] → an all-undefined chunk that silently passes the fabrication
+  // guard and citation layer), or a repeated index all corrupt the downstream refusal logic. Fail loudly.
   if (!Array.isArray(data) || data.length !== chunks.length) {
     throw new Error(`rerank returned ${data?.length ?? 0} of ${chunks.length} rows`);
+  }
+  const indices = new Set(data.map((d) => d.index));
+  if (indices.size !== chunks.length || data.some((d) => d.index < 0 || d.index >= chunks.length)) {
+    throw new Error(`rerank returned invalid/duplicate indices for ${chunks.length} rows`);
   }
   return data.map((d) => ({ ...chunks[d.index], rerank_score: d.relevance_score }));
 }

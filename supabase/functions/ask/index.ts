@@ -178,9 +178,13 @@ async function runAsk(
   // Pull live candidates (PubMed/EuropePMC/ClinicalTrials/openFDA/FAERS), merge with the library
   // hits, and rerank the union on the cross-encoder's single scale. Fault-tolerant: any failure
   // degrades to the dense library result rather than failing the answer. A real-but-new drug with
-  // no library coverage can still be answered from live evidence here.
+  // no library coverage can still be answered from live evidence here. `pool` is the full reranked
+  // union (for the fabrication guard); `top` is the MATCH_COUNT slice shown to the generator.
+  let guardPool: RetrievedChunk[] = ret.chunks;
   if (LIVE_SOURCES_ON) {
-    ret = { ...ret, chunks: await augmentWithLive(question, cls.entity_mentions, ret.chunks) };
+    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks);
+    guardPool = aug.pool;
+    ret = { ...ret, chunks: aug.top };
   }
 
   if (ret.chunks.length === 0) {
@@ -192,9 +196,10 @@ async function runAsk(
   // ---- 3c. fabrication guard (answer-layer entity check; flag-gated) ----
   // Live sources move the fabricated-drug refusal OFF the dense floor: a class-plausible fake
   // ("florizagliflozin") pulls REAL class-sibling evidence that ranks high on both cosine and the
-  // reranker. Refuse when the drug the user literally named appears NOWHERE in the retained evidence
-  // (the fabricated-drug signature — all the support is about its real neighbors). See fabrication.ts.
-  if (LIVE_SOURCES_ON && isFabricatedDrugQuery(cls.entity_mentions, ret.chunks)) {
+  // reranker. Refuse when a drug the user literally named appears NOWHERE in the retrieved pool
+  // (the fabricated-drug signature — all the support is about its real neighbors). The guard runs on
+  // the FULL reranked pool, not the top-N slice, so a real drug named only lower down isn't refused.
+  if (LIVE_SOURCES_ON && isFabricatedDrugQuery(cls.entity_mentions, guardPool)) {
     return await finalizeTemplate(answerId, question, cls.intent,
       unique<SafetyFlag>([...flags, "no_sources_found"]), entities, userId,
       "no_source", cls.model, true);
@@ -296,21 +301,23 @@ async function runAsk(
 }
 
 /**
- * Merge live-source candidates with the library chunks and rerank the union. Fault-tolerant by
- * design: any failure returns the library chunks unchanged so live sources can never sink an answer.
+ * Merge live-source candidates with the library chunks and rerank the union. Returns the full reranked
+ * `pool` (for the fabrication guard) and the MATCH_COUNT `top` slice (for the generator). Fault-tolerant
+ * by design: any failure returns the library chunks unchanged so live sources can never sink an answer.
  */
 async function augmentWithLive(
   question: string,
   entityMentions: string[],
   libChunks: RetrievedChunk[],
-): Promise<RetrievedChunk[]> {
+): Promise<{ pool: RetrievedChunk[]; top: RetrievedChunk[] }> {
+  const fallback = { pool: libChunks, top: libChunks };
   try {
     // openFDA/FAERS/ClinicalTrials want a drug TERM, not a sentence (a raw question 400s). Use the
     // literal mentions when present — a real-but-new drug (retatrutide) is found by name; a fabricated
     // one returns nothing. Fall back to the question for general/non-drug queries.
     const term = entityMentions.length ? entityMentions.join(" ") : question;
     const live = await gatherLiveCandidates({ query: term, perSourceMax: LIVE_PER_SOURCE_MAX });
-    if (live.length === 0) return libChunks;
+    if (live.length === 0) return fallback;
 
     const combined = [...libChunks, ...live.map((c, i) => liveToChunk(c, String(i + 1)))];
     let ordered: RetrievedChunk[];
@@ -318,13 +325,14 @@ async function augmentWithLive(
       ordered = await rerankChunks(question, combined);
     } catch (e) {
       console.error("ask live rerank failed; using dense library order:", (e as Error).message);
-      return libChunks;
+      return fallback;
     }
     // Keep the top MATCH_COUNT in reranked order and retag 1..N for the generator + citation layer.
-    return ordered.slice(0, MATCH_COUNT).map((c, i) => ({ ...c, tag: String(i + 1) }));
+    const top = ordered.slice(0, MATCH_COUNT).map((c, i) => ({ ...c, tag: String(i + 1) }));
+    return { pool: ordered, top };
   } catch (e) {
     console.error("ask live augmentation failed; using library only:", (e as Error).message);
-    return libChunks;
+    return fallback;
   }
 }
 

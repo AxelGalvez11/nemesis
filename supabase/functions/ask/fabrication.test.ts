@@ -56,14 +56,34 @@ Deno.test("real-but-new drug (retatrutide) — live records literally name it �
   assertEquals(isFabricatedDrugQuery(["retatrutide"], chunks), false);
 });
 
-Deno.test("multiple mentions, at least one present → not refused (some-named passes)", () => {
+Deno.test("fake co-mentioned with a real drug → REFUSE (every named drug must be supported)", () => {
+  // CRITICAL guard property: a fabricated drug must not clear just because a co-mentioned real drug
+  // has evidence — the generator would otherwise make unsupported claims about the fake.
   const chunks = [chunk({ title: "Metformin review", chunk_text: "metformin lowers hepatic glucose output" })];
-  assertEquals(isFabricatedDrugQuery(["metformin", "florizagliflozin"], chunks), false);
+  assertEquals(isFabricatedDrugQuery(["metformin", "florizagliflozin"], chunks), true);
+});
+
+Deno.test("multiple real drugs, both present → not refused", () => {
+  const chunks = [
+    chunk({ chunk_text: "metformin lowers hepatic glucose output" }),
+    chunk({ chunk_text: "lisinopril is an ACE inhibitor" }),
+  ];
+  assertEquals(isFabricatedDrugQuery(["metformin", "lisinopril"], chunks), false);
 });
 
 Deno.test("case-insensitive matching", () => {
   const chunks = [chunk({ chunk_text: "DAPAGLIFLOZIN reduces HF events" })];
   assertEquals(isFabricatedDrugQuery(["Dapagliflozin"], chunks), false);
+});
+
+Deno.test("word boundary: fake 'maglutide' must NOT clear via real 'semaglutide' substring", () => {
+  const chunks = [chunk({ title: "Semaglutide trial", chunk_text: "semaglutide produced weight loss" })];
+  assertEquals(isFabricatedDrugQuery(["maglutide"], chunks), true);
+});
+
+Deno.test("word boundary: fake class stem 'gliflozin' must NOT clear via 'dapagliflozin'", () => {
+  const chunks = [chunk({ chunk_text: "dapagliflozin and empagliflozin reduce HF events" })];
+  assertEquals(isFabricatedDrugQuery(["gliflozin"], chunks), true);
 });
 
 Deno.test("BPC-158 fake is NOT matched by BPC-157 real (no spurious substring)", () => {

@@ -15,11 +15,15 @@ import type { RetrievedChunk } from "../supabase/functions/ask/citation.ts";
 
 const MATCH_COUNT = 8; // mirror index.ts
 
-/** Mirror augmentWithLive (live-only — library would add MORE class-siblings, never the fake). */
-async function retainedChunks(question: string, mentions: string[]): Promise<RetrievedChunk[]> {
+/**
+ * Mirror augmentWithLive: return the FULL reranked pool (the fabrication guard runs on the pool, not
+ * the top-N slice) plus the top-N count for reporting. Live-only here — library would add MORE
+ * class-siblings, never the fake, so live-only is a valid lower bound for the refusal test.
+ */
+async function retainedPool(question: string, mentions: string[]): Promise<{ pool: RetrievedChunk[]; topN: number }> {
   const term = mentions.length ? mentions.join(" ") : question;
   const live = await gatherLiveCandidates({ query: term, perSourceMax: 8 });
-  if (live.length === 0) return [];
+  if (live.length === 0) return { pool: [], topN: 0 };
   const combined = live.map((c, i) => liveToChunk(c, String(i + 1)));
   let ordered: RetrievedChunk[];
   try {
@@ -27,7 +31,7 @@ async function retainedChunks(question: string, mentions: string[]): Promise<Ret
   } catch {
     ordered = combined;
   }
-  return ordered.slice(0, MATCH_COUNT).map((c, i) => ({ ...c, tag: String(i + 1) }));
+  return { pool: ordered, topN: Math.min(ordered.length, MATCH_COUNT) };
 }
 
 interface Case {
@@ -64,12 +68,12 @@ const cases: Case[] = [
 
 let failures = 0;
 for (const c of cases) {
-  const chunks = await retainedChunks(c.question, c.mentions);
-  const refused = isFabricatedDrugQuery(c.mentions, chunks);
+  const { pool, topN } = await retainedPool(c.question, c.mentions);
+  const refused = isFabricatedDrugQuery(c.mentions, pool);
   const pass = refused === c.expectRefuse;
   if (!pass) failures++;
   console.log(
-    `${pass ? "✓" : "✗"} ${c.label.padEnd(36)} retained=${String(chunks.length).padStart(2)} ` +
+    `${pass ? "✓" : "✗"} ${c.label.padEnd(36)} pool=${String(pool.length).padStart(2)} top=${topN} ` +
       `refused=${refused} expected=${c.expectRefuse}` +
       (pass ? "" : "   ← LEAK"),
   );

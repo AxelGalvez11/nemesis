@@ -21,19 +21,41 @@ import type { RetrievedChunk } from "./citation.ts";
 
 const MIN_TOKEN_LEN = 3; // ignore ultra-short mentions ("k", "d3") that would match noise
 
-/** Normalize for substring matching: lowercase, collapse whitespace. */
+// SCOPE: this guard is only invoked when LIVE_SOURCES=on (see index.ts). The dense-only path keeps its
+// pre-existing behavior. DEPENDENCY: it checks classify's entity_mentions, which the classify prompt
+// requires be extracted VERBATIM ("every drug/supplement/peptide/compound name … verbatim as written").
+// If the classifier ever drops/normalizes a novel fake token, the guard can't see it — keep that prompt
+// honest. The guard should be run over the FULL retrieved candidate pool, not a top-N slice, so a real
+// drug named only in a lower-ranked chunk is not falsely refused (index.ts passes the pre-slice union).
+
+/** Normalize for matching: lowercase, collapse whitespace. */
 function norm(s: string): string {
   return s.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 /**
- * Did the user ask about a specific drug whose NAME appears nowhere in the retained evidence?
- * That is the fabricated-drug signature (the evidence is all real class-siblings). Returns true
- * = REFUSE. Returns false when either no specific drug was named (general question — nothing to
- * verify) or at least one asked mention is actually present in the evidence.
+ * Word-boundary-aware presence. The token must appear NOT flanked by alphanumerics, so a fabricated
+ * name that is a substring of a real sibling does NOT count as present: "maglutide" ⊄ "semaglutide",
+ * and "bpc-158" ⊄ "bpc-157" (the hyphen + digit boundary differ). This is what makes the check
+ * categorical rather than a loose contains().
+ */
+function namedIn(haystack: string, token: string): boolean {
+  const esc = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`).test(haystack);
+}
+
+/**
+ * Should we refuse because a drug the user LITERALLY named is unsupported by the retrieved evidence?
+ * That is the fabricated-drug signature: the evidence is all real class-siblings, the fake token
+ * appears nowhere. Returns true = REFUSE.
  *
- * @param mentions  classify's entity_mentions — the drug names the user literally typed.
- * @param chunks    the retained evidence (library + live), post-rerank.
+ * EVERY named drug must be present (word-boundary) in the evidence. If ANY is absent we refuse — a fake
+ * co-mentioned with a real drug ("metformin and florizagliflozin") must NOT clear just because metformin
+ * has support, or the generator would make unsupported claims about the fake. Conservative by design:
+ * err toward refuse + related-sources over a confident answer about a drug we have no evidence names.
+ *
+ * @param mentions  classify's entity_mentions — the drug names the user typed, verbatim.
+ * @param chunks    the retrieved candidate pool (library + live), pre-slice.
  */
 export function isFabricatedDrugQuery(mentions: string[], chunks: RetrievedChunk[]): boolean {
   const tokens = [...new Set(mentions.map(norm))].filter((t) => t.length >= MIN_TOKEN_LEN);
@@ -41,8 +63,8 @@ export function isFabricatedDrugQuery(mentions: string[], chunks: RetrievedChunk
   if (chunks.length === 0) return true; // asked about a drug, retrieved nothing → refuse
 
   const haystacks = chunks.map((c) => norm(`${c.title ?? ""} ${c.chunk_text ?? ""}`));
-  const anyMentionPresent = tokens.some((t) => haystacks.some((h) => h.includes(t)));
-  return !anyMentionPresent; // none of the asked drugs is named anywhere → fabricated → refuse
+  const someAbsent = tokens.some((t) => !haystacks.some((h) => namedIn(h, t)));
+  return someAbsent; // any named drug missing from ALL evidence → refuse
 }
 
 /**
