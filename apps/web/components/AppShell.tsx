@@ -51,6 +51,10 @@ function titleForPath(path: string): { title: string; sub?: string } {
 
 const FULL_BLEED = ["/app/ask", "/app/explore", "/app/drugs/"];
 
+// Client-only breakpoint probe (clicks are client-side, so window is always defined here).
+const mqMatch = (q: string) =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(q).matches;
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { session, loading, signOut } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
@@ -69,11 +73,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Stable setters so child effects don't loop.
   const setEvidence = useCallback((node: ReactNode | null) => setEvidenceNode(node), []);
   const setTopbar = useCallback((node: ReactNode | null) => setTopbarNode(node), []);
-  // The hamburger collapses the rail on desktop AND toggles the mobile drawer; the panel button
-  // collapses the evidence column on desktop AND toggles its drawer at ≤1100px. Each layout's CSS
-  // reads only its own state, so one button drives both. Opening one drawer closes the other.
-  const toggleRail = useCallback(() => { setRailCollapsed((v) => !v); setMobileNavOpen((v) => !v); setMobileEvidenceOpen(false); }, []);
-  const toggleEvidence = useCallback(() => { setEvidenceCollapsed((v) => !v); setMobileEvidenceOpen((v) => !v); setMobileNavOpen(false); }, []);
+  // The hamburger collapses the rail on desktop but toggles the off-canvas drawer at ≤720px; the
+  // panel button collapses the evidence column on desktop but toggles its drawer at ≤1100px. We
+  // gate on the live breakpoint so the *mobile* flags are only ever set at mobile widths — that
+  // way a value set on desktop can't make a drawer pop open when the window is later shrunk past
+  // the line. Opening one drawer closes the other.
+  const toggleRail = useCallback(() => {
+    setMobileEvidenceOpen(false);
+    if (mqMatch("(max-width: 720px)")) setMobileNavOpen((v) => !v);
+    else setRailCollapsed((v) => !v);
+  }, []);
+  const toggleEvidence = useCallback(() => {
+    setMobileNavOpen(false);
+    if (mqMatch("(max-width: 1100px)")) setMobileEvidenceOpen((v) => !v);
+    else setEvidenceCollapsed((v) => !v);
+  }, []);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
   const closeMobileEvidence = useCallback(() => setMobileEvidenceOpen(false), []);
 
@@ -117,6 +131,19 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [mobileNavOpen, mobileEvidenceOpen]);
 
+  // Force a drawer closed once the viewport grows back above its breakpoint, so it can't reappear
+  // when the window is shrunk across the line again.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const railMq = window.matchMedia("(max-width: 720px)");
+    const evMq = window.matchMedia("(max-width: 1100px)");
+    const syncRail = () => { if (!railMq.matches) setMobileNavOpen(false); };
+    const syncEv = () => { if (!evMq.matches) setMobileEvidenceOpen(false); };
+    railMq.addEventListener("change", syncRail);
+    evMq.addEventListener("change", syncEv);
+    return () => { railMq.removeEventListener("change", syncRail); evMq.removeEventListener("change", syncEv); };
+  }, []);
+
   const ctx = useMemo<AppChromeValue>(
     () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar }),
     [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar],
@@ -147,7 +174,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <AppChromeContext.Provider value={ctx}>
       <div className={appClass}>
         {/* ── rail ── */}
-        <aside className="rail">
+        <aside className="rail" id="app-rail">
           <div className="brand">
             <Orb size={28} />
             <div className="wordmark">PharmaOrb</div>
@@ -210,7 +237,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* ── main ── */}
         <main className="main">
           <div className="topbar">
-            <button className="icon-btn" onClick={toggleRail} title="Toggle sidebar" aria-label="Toggle sidebar">
+            <button className="icon-btn" onClick={toggleRail} title="Toggle sidebar" aria-label="Toggle sidebar" aria-controls="app-rail" aria-expanded={mobileNavOpen}>
               <Icon name="menu" />
             </button>
             {topbar ?? (
@@ -224,7 +251,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icon name={theme === "dark" ? "sun" : "moon"} />
             </button>
             {hasEvidence ? (
-              <button className="icon-btn" onClick={toggleEvidence} title="Toggle evidence">
+              <button className="icon-btn" onClick={toggleEvidence} title="Toggle evidence" aria-label="Toggle evidence" aria-controls="app-evidence" aria-expanded={mobileEvidenceOpen}>
                 <Icon name="panel" />
               </button>
             ) : null}
@@ -236,7 +263,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {hasEvidence ? (
           <>
             <button className="evidence-backdrop" aria-label="Close evidence" onClick={closeMobileEvidence} tabIndex={-1} />
-            <aside className="evidence">{evidence}</aside>
+            <aside className="evidence" id="app-evidence">{evidence}</aside>
           </>
         ) : null}
       </div>
