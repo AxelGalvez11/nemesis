@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type { AskResponse } from "@pharmabro/shared";
 import { askQuestion, fetchUsage, type AskQuotaError } from "@/lib/api";
 import { normTag } from "@/lib/cite";
@@ -25,10 +25,10 @@ const MODES = [
 ] as const;
 
 const SUGGESTIONS = [
-  "What are the major warnings for semaglutide?",
-  "Metformin dosing when eGFR is 40?",
-  "Compare semaglutide and tirzepatide safety evidence",
-  "Is lisinopril safe with spironolactone?",
+  { text: "What are the major warnings for semaglutide?", icon: "doc" as const },
+  { text: "Metformin dosing when eGFR is 40?", icon: "calc" as const },
+  { text: "Compare semaglutide and tirzepatide safety evidence", icon: "sparkle" as const },
+  { text: "Is lisinopril safe with spironolactone?", icon: "search" as const },
 ];
 
 const PROVIDER_ABBR: Record<string, string> = { openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", clinicaltrials: "NCT", faers: "FAERS" };
@@ -144,92 +144,126 @@ export default function AskPage() {
     }
   }
 
-  const activeMode = MODES.find((m) => m.id === mode)!;
   const hasThread = busy || answer != null || lastQuestion !== "";
+  const composer = (
+    <Composer
+      question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
+      submit={submit} busy={busy} mode={mode} setMode={setMode}
+      modeOpen={modeOpen} setModeOpen={setModeOpen} error={error}
+    />
+  );
+
+  // Empty state: a centered "welcome" with the composer in the middle (ChatGPT-style). Once a
+  // conversation starts, switch to the scrolling thread with the composer pinned to the bottom.
+  if (!hasThread) {
+    return (
+      <div className="welcome-wrap">
+        <div className="welcome">
+          <Orb size={56} />
+          <h2 className="welcome-title">What can I help you research?</h2>
+          <p className="welcome-sub">Every medical claim is source-backed. Ask about a drug, dose, interaction, or monograph for a cited answer.</p>
+          {composer}
+          <div className="chip-row welcome-chips">
+            {SUGGESTIONS.map((s) => (
+              <button key={s.text} className="chip-action" onClick={() => submit(s.text)}>
+                <Icon name={s.icon} size={14} />{s.text}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
       <div className="thread">
-        {!hasThread ? (
-          <Welcome onPick={submit} />
-        ) : (
-          <div className="turn">
-            <div className="msg-user"><div className="bubble">{lastQuestion}</div></div>
-            <div className="msg-ai">
-              <Orb size={28} busy={busy} bloom={bloom} className="" />
-              <div className="ai-body">
-                {busy ? <Thinking stage={stage} /> : answer ? <Answer answer={answer} onCite={onCite} /> : null}
-                {error ? <p className="tmpl-note">{error}</p> : null}
-              </div>
+        <div className="turn">
+          <div className="msg-user"><div className="bubble">{lastQuestion}</div></div>
+          <div className="msg-ai">
+            <Orb size={28} busy={busy} bloom={bloom} className="" />
+            <div className="ai-body">
+              {busy ? <Thinking stage={stage} /> : answer ? <Answer answer={answer} onCite={onCite} /> : null}
+              {error ? <p className="tmpl-note">{error}</p> : null}
             </div>
           </div>
-        )}
-      </div>
-
-      <div className="composer-wrap">
-        <div className="composer">
-          <div className="box">
-            <textarea
-              ref={taRef}
-              rows={1}
-              value={question}
-              maxLength={500}
-              aria-label="Ask a question about a drug, dose, interaction, or monograph"
-              placeholder="Ask about a drug, dose, interaction, or monograph…"
-              onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
-            />
-            <div className="tools">
-              <div className="mode-wrap" style={{ position: "relative" }}>
-                <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
-                  <Icon name="sparkle" size={14} />
-                  <b>{activeMode.label}</b>{activeMode.live ? " · live" : " · soon"}
-                </button>
-                {modeOpen ? (
-                  <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
-                    {MODES.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        role="menuitem"
-                        disabled={!m.live}
-                        onClick={() => { if (m.live) { setMode(m.id); setModeOpen(false); } }}
-                        title={m.hint}
-                      >
-                        <Icon name={m.live ? (m.id === mode ? "check" : "sparkle") : "lock"} size={14} />
-                        <span style={{ flex: 1 }}>{m.label}</span>
-                        {!m.live ? <small style={{ color: "var(--text-3)" }}>Soon</small> : null}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              <div className="spacer" />
-              <button className="send" title="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
-                <Icon name="send" size={18} />
-              </button>
-            </div>
-          </div>
-          {error ? <div className="err">{error}</div> : <div className="hint">⏎ to send · Shift+⏎ for a new line · answers are cited</div>}
         </div>
       </div>
+      <div className="composer-wrap">{composer}</div>
     </>
   );
 }
 
-function Welcome({ onPick }: { onPick: (q: string) => void }) {
+interface ComposerProps {
+  question: string;
+  setQuestion: Dispatch<SetStateAction<string>>;
+  taRef: RefObject<HTMLTextAreaElement | null>;
+  autoGrow: () => void;
+  submit: (q: string) => void;
+  busy: boolean;
+  mode: (typeof MODES)[number]["id"];
+  setMode: Dispatch<SetStateAction<(typeof MODES)[number]["id"]>>;
+  modeOpen: boolean;
+  setModeOpen: Dispatch<SetStateAction<boolean>>;
+  error: string | null;
+}
+
+// The input pill, shared between the centered welcome screen and the pinned bottom bar. A leading
+// "+" (attachments) and a "mic" (voice) are shown as ChatGPT-style affordances but disabled until
+// those features ship — same honest "coming soon" treatment as the non-live modes.
+function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error }: ComposerProps) {
+  const activeMode = MODES.find((m) => m.id === mode)!;
   return (
-    <div className="turn" style={{ paddingTop: 60, textAlign: "center" }}>
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}><Orb size={54} /></div>
-      <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", margin: "0 0 8px" }}>Ask PharmaOrb</h2>
-      <p className="muted" style={{ maxWidth: 460, margin: "0 auto 22px" }}>
-        Every medical claim is source-backed. Ask about a drug, dose, interaction, or monograph for a cited answer.
-      </p>
-      <div className="chip-row" style={{ justifyContent: "center", maxWidth: 560, margin: "0 auto" }}>
-        {SUGGESTIONS.map((s) => (
-          <button key={s} className="chip-action" onClick={() => onPick(s)}>{s}</button>
-        ))}
+    <div className="composer">
+      <div className="box">
+        <textarea
+          ref={taRef}
+          rows={1}
+          value={question}
+          maxLength={500}
+          aria-label="Ask a question about a drug, dose, interaction, or monograph"
+          placeholder="Ask anything about a drug, dose, interaction, or monograph…"
+          onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
+        />
+        <div className="tools">
+          <button className="tool" type="button" title="Attach — coming soon" aria-label="Attach" disabled>
+            <Icon name="plus" size={18} />
+          </button>
+          <div className="mode-wrap" style={{ position: "relative" }}>
+            <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
+              <Icon name="sparkle" size={14} />
+              <b>{activeMode.label}</b>{activeMode.live ? " · live" : " · soon"}
+            </button>
+            {modeOpen ? (
+              <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
+                {MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="menuitem"
+                    disabled={!m.live}
+                    onClick={() => { if (m.live) { setMode(m.id); setModeOpen(false); } }}
+                    title={m.hint}
+                  >
+                    <Icon name={m.live ? (m.id === mode ? "check" : "sparkle") : "lock"} size={14} />
+                    <span style={{ flex: 1 }}>{m.label}</span>
+                    {!m.live ? <small style={{ color: "var(--text-3)" }}>Soon</small> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className="spacer" />
+          <button className="tool" type="button" title="Voice — coming soon" aria-label="Voice input" disabled>
+            <Icon name="mic" size={18} />
+          </button>
+          <button className="send" title="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
+            <Icon name="send" size={18} />
+          </button>
+        </div>
       </div>
+      {error ? <div className="err">{error}</div> : <div className="hint">⏎ to send · Shift+⏎ for a new line · answers are cited</div>}
     </div>
   );
 }

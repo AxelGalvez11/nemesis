@@ -22,6 +22,7 @@ const PATHS: Record<string, React.ReactNode> = {
   save: <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />,
   attach: <path d="M21 11.5 12.5 20a4.5 4.5 0 1 1-6.4-6.4l8-8a3 3 0 1 1 4.3 4.3l-8 8a1.5 1.5 0 1 1-2.1-2.1l7.3-7.3" />,
   send: <path d="M5 12h14M13 6l6 6-6 6" />,
+  mic: (<><rect x="9" y="2" width="6" height="11" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8" /></>),
   sparkle: <path d="M12 3l2.4 6.3L21 11l-6.6 1.7L12 19l-2.4-6.3L3 11l6.6-1.7z" />,
   calc: (<><rect x="4" y="2" width="16" height="20" rx="2" /><path d="M8 6h8M8 10h2M12 10h2M16 10h.01M8 14h2M12 14h2M16 14h.01M8 18h2M12 18h2M16 18h.01" /></>),
   compute: <path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4M14 3h7v7M21 3l-9 9" />,
