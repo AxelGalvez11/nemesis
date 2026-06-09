@@ -154,7 +154,10 @@ async function withTimeout(
   ms: number,
   label: string,
 ): Promise<LiveCandidate[]> {
-  let timer: number | undefined;
+  // ReturnType<typeof setTimeout>, not number: Deno's setTimeout returns number, but when the
+  // type-checker pulls Node lib types into scope it returns NodeJS.Timeout — this handle type
+  // stays correct under either resolution (the unit gate type-checks this file on CI).
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<LiveCandidate[]>((resolve) => {
     timer = setTimeout(() => resolve([]), ms);
   });
