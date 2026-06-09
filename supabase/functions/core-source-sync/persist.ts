@@ -6,22 +6,15 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import type { CoreSourceLicense, CoreSourceProvider } from "./license.ts";
 import { assertCommercialFriendly, getLicenseRequirements } from "./license.ts";
 import type { SectionedChunk } from "./chunking.ts";
+import type { NormalizedSource } from "./normalized-source.ts";
 
-export interface NormalizedSource {
-  readonly provider: CoreSourceProvider;
-  readonly provider_id: string;
-  readonly title: string;
-  readonly subtitle?: string;
-  readonly source_url: string;
-  readonly license: CoreSourceLicense;
-  readonly content_text: string; // full raw text passed to chunker
-  readonly content_hash: string; // sha256 hex of normalized content
-  readonly metadata: Record<string, unknown>;
-  readonly effective_at?: string;
-}
+// NormalizedSource now lives in the leaf ./normalized-source.ts (no runtime deps) so providers
+// and the live path can name it without dragging this module's Supabase client into their
+// type-check graph. Re-exported here so the many ingest-only callers importing it from persist.ts
+// keep working unchanged.
+export type { NormalizedSource } from "./normalized-source.ts";
 
 export interface PersistResult {
   readonly source_id: string;

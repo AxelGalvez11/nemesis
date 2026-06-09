@@ -316,7 +316,7 @@ async function augmentWithLive(
     // literal mentions when present — a real-but-new drug (retatrutide) is found by name; a fabricated
     // one returns nothing. Fall back to the question for general/non-drug queries.
     const term = entityMentions.length ? entityMentions.join(" ") : question;
-    const live = await gatherLiveCandidates({ query: term, perSourceMax: LIVE_PER_SOURCE_MAX });
+    const live = await gatherLiveCandidates({ query: term, mentions: entityMentions, perSourceMax: LIVE_PER_SOURCE_MAX });
     if (live.length === 0) return fallback;
 
     const combined = [...libChunks, ...live.map((c, i) => liveToChunk(c, String(i + 1)))];

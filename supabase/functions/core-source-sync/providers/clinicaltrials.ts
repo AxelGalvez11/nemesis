@@ -9,7 +9,7 @@
  */
 
 import { sha256Hex } from "../embeddings.ts";
-import type { NormalizedSource } from "../persist.ts";
+import type { NormalizedSource } from "../normalized-source.ts";
 
 const BASE = "https://clinicaltrials.gov/api/v2/studies";
 const REQUEST_DELAY_MS = 200;
