@@ -1,9 +1,8 @@
 // Tests for the fabrication guard — the answer-layer name-presence check that refuses
 // class-plausible fabricated drugs the dense/rerank floors let through.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { isFabricatedDrugQuery, isLiveSourceId, liveToChunk } from "./fabrication.ts";
+import { isFabricatedDrugQuery } from "./fabrication.ts";
 import type { RetrievedChunk } from "./citation.ts";
-import type { LiveCandidate } from "./live-sources.ts";
 
 function chunk(partial: Partial<RetrievedChunk>): RetrievedChunk {
   return {
@@ -96,39 +95,6 @@ Deno.test("ultra-short mentions are ignored (treated as no specific drug)", () =
   assertEquals(isFabricatedDrugQuery(["d3"], chunks), false); // "d3" filtered (<3 chars after norm? len 2) → no-op
 });
 
-Deno.test("liveToChunk maps fields + synthetic id", () => {
-  const cand: LiveCandidate = {
-    origin: "pubmed",
-    provider: "pubmed_oa",
-    provider_id: "12345",
-    title: "A study",
-    url: "https://pubmed.ncbi.nlm.nih.gov/12345/",
-    text: "abstract body",
-    source: {
-      provider: "pubmed_oa",
-      provider_id: "12345",
-      title: "A study",
-      source_url: "https://pubmed.ncbi.nlm.nih.gov/12345/",
-      license: "cc_by",
-      content_text: "abstract body",
-      content_hash: "deadbeef",
-      metadata: {},
-      effective_at: "2025-03-10T00:00:00Z",
-    },
-  };
-  const rc = liveToChunk(cand, "3");
-  assertEquals(rc.tag, "3");
-  assertEquals(rc.source_id, "live:pubmed_oa:12345");
-  assertEquals(rc.chunk_id, "live:pubmed_oa:12345");
-  assertEquals(rc.chunk_text, "abstract body");
-  assertEquals(rc.provider, "pubmed_oa");
-  assertEquals(rc.license, "cc_by");
-  assertEquals(rc.published_date, "2025-03-10");
-  assertEquals(rc.similarity, 0);
-  assertEquals(isLiveSourceId(rc.source_id), true);
-});
-
-Deno.test("isLiveSourceId distinguishes synthetic from real UUID", () => {
-  assertEquals(isLiveSourceId("live:openfda:abc"), true);
-  assertEquals(isLiveSourceId("00000000-0000-0000-0000-000000000001"), false);
-});
+// Note: liveToChunk now lives in live-sources.ts (next to LiveCandidate). It is intentionally NOT
+// unit-tested here — importing live-sources.ts drags the supabase-js dependency into the ask-units
+// type-check graph (CI lacks node_modules). It is covered by typecheck + eval/live-pipeline-safety.ts.

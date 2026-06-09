@@ -8,9 +8,9 @@
 //
 // The deterministic guard LOGIC is covered by supabase/functions/ask/fabrication.test.ts (in CI).
 // This eval validates the guard against REAL live-source behavior, the thing unit tests can't mock honestly.
-import { gatherLiveCandidates } from "../supabase/functions/ask/live-sources.ts";
+import { gatherLiveCandidates, liveToChunk } from "../supabase/functions/ask/live-sources.ts";
 import { rerankChunks } from "../supabase/functions/ask/rerank.ts";
-import { isFabricatedDrugQuery, liveToChunk } from "../supabase/functions/ask/fabrication.ts";
+import { isFabricatedDrugQuery } from "../supabase/functions/ask/fabrication.ts";
 import type { RetrievedChunk } from "../supabase/functions/ask/citation.ts";
 
 const MATCH_COUNT = 8; // mirror index.ts

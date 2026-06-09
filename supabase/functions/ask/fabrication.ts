@@ -1,4 +1,4 @@
-// Fabrication guard (answer-layer entity check) + live→chunk adapters for the live-evidence path.
+// Fabrication guard — the answer-layer entity check for the live-evidence path.
 //
 // WHY THIS EXISTS — the dense retrieval floor (cosine ≥ 0.5) does NOT refuse class-plausible
 // fabricated drugs: "florizagliflozin" embeds mostly to its real SGLT2 neighbors and pulls REAL
@@ -15,8 +15,11 @@
 // We check the user's LITERAL mention, not the resolved canonical name: resolveEntities takes the top
 // fuzzy match, so a fake can mis-resolve to a real neighbor; trusting the canonical name would let the
 // fake back in. The literal mention is the only token the fake cannot borrow.
+//
+// This module is deliberately PURE (only the RetrievedChunk type from the pure citation.ts) so the
+// unit suite can type-check it without dragging in the supabase-js dependency chain. The live→chunk
+// adapter lives in live-sources.ts (next to the LiveCandidate it adapts).
 
-import type { LiveCandidate } from "./live-sources.ts";
 import type { RetrievedChunk } from "./citation.ts";
 
 const MIN_TOKEN_LEN = 3; // ignore ultra-short mentions ("k", "d3") that would match noise
@@ -65,33 +68,4 @@ export function isFabricatedDrugQuery(mentions: string[], chunks: RetrievedChunk
   const haystacks = chunks.map((c) => norm(`${c.title ?? ""} ${c.chunk_text ?? ""}`));
   const someAbsent = tokens.some((t) => !haystacks.some((h) => namedIn(h, t)));
   return someAbsent; // any named drug missing from ALL evidence → refuse
-}
-
-/**
- * Adapt a live candidate to the RetrievedChunk shape so it ranks + cites alongside library chunks.
- * Live results have no DB row, so source_id/chunk_id are SYNTHETIC ("live:<provider>:<id>") — safe
- * because generated_answers.source_ids is jsonb (no UUID type / FK) and enforceCitations keys on the
- * retrieval-local tag, not source_id. similarity is 0 (no dense score); the reranker sets the order.
- */
-export function liveToChunk(c: LiveCandidate, tag: string): RetrievedChunk {
-  const syntheticId = `live:${c.provider}:${c.provider_id}`;
-  return {
-    tag,
-    chunk_id: syntheticId,
-    chunk_text: c.text,
-    source_id: syntheticId,
-    provider: c.provider,
-    title: c.title,
-    section: null,
-    url: c.url,
-    license: c.source.license,
-    published_date: c.source.effective_at ? c.source.effective_at.slice(0, 10) : null,
-    retrieved_at: new Date().toISOString(),
-    similarity: 0,
-  };
-}
-
-/** True when an id is a synthetic live id (not a real core_sources UUID). */
-export function isLiveSourceId(id: string): boolean {
-  return id.startsWith("live:");
 }
