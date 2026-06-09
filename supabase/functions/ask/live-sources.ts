@@ -53,9 +53,12 @@ export function liveToChunk(c: LiveCandidate, tag: string): RetrievedChunk {
   };
 }
 
+// `mentions` are the literal drug names the classifier extracted (e.g. ["lisinopril",
+// "spironolactone"]); `query` is the free-text term (mentions joined, or the raw question when no
+// drug was named). Field-scoped providers (openFDA) MUST use mentions, not the free-text query.
 interface LiveSourceDef {
   origin: string;
-  fetch: (query: string, max: number) => Promise<NormalizedSource[]>;
+  fetch: (query: string, max: number, mentions: string[]) => Promise<NormalizedSource[]>;
 }
 
 // THE REGISTRY. Add a source = one line. (DailyMed is intentionally omitted: it returns the same
@@ -64,12 +67,38 @@ const LIVE_SOURCES: LiveSourceDef[] = [
   { origin: "pubmed", fetch: (q, n) => fetchPubMedOA({ query: q, retmax: n }) },
   { origin: "europepmc", fetch: (q, n) => fetchEuropePmc({ query: q, retmax: n }) },
   { origin: "clinicaltrials", fetch: (q, n) => fetchClinicalTrials({ query: q, pageSize: n }) },
-  { origin: "openfda", fetch: (q, n) => fetchOpenFdaLabels({ query: q, limit: n }) },
+  // openFDA: field-scope to the named drug (generic OR brand name). A bare full-text search matched
+  // FRAUDULENT OTC products that merely name-drop a trendy drug in their marketing copy — e.g.
+  // "slimming patches" returned for the investigational retatrutide, which the model then grounded
+  // its answer in and cited as an "openFDA label". Those products carry the drug in their label TEXT
+  // but not as their generic/brand NAME, so field-scoping excludes them while still matching real
+  // labels by generic (lisinopril) or brand (Ozempic). No drug named -> fall back to the free text.
+  { origin: "openfda", fetch: (q, n, mentions) => fetchOpenFdaLabels({ query: openFdaSearch(q, mentions), limit: n }) },
   { origin: "faers", fetch: (q, n) => fetchFaersReactions({ query: q, retmax: n }) },
 ];
 
+/**
+ * Build a field-scoped openFDA `search` value: each drug name matched against generic OR brand name,
+ * the names OR'd together. URLSearchParams (in the provider) encodes the spaces to `+`, yielding
+ * openFDA's canonical `field:"x"+OR+field:"y"` boolean form. Names are quoted so multi-word names
+ * ("insulin glargine") phrase-match instead of splitting into loose tokens. Falls back to the raw
+ * free-text query only when the classifier extracted no drug name (a general, non-drug question).
+ */
+export function openFdaSearch(rawQuery: string, mentions: string[]): string {
+  const names = mentions.map((m) => m.trim()).filter((m) => m.length > 0);
+  if (names.length === 0) return rawQuery;
+  return names
+    .map((m) => {
+      const q = JSON.stringify(m); // wrap in quotes + escape any embedded quote
+      return `openfda.generic_name:${q} OR openfda.brand_name:${q}`;
+    })
+    .join(" OR ");
+}
+
 export interface GatherLiveOpts {
   query: string;
+  /** Literal drug names the classifier extracted, for field-scoped providers (openFDA). */
+  mentions?: string[];
   perSourceMax?: number;
   timeoutMs?: number;
 }
@@ -85,8 +114,9 @@ export async function gatherLiveCandidates(opts: GatherLiveOpts): Promise<LiveCa
   const perSourceMax = opts.perSourceMax ?? PER_SOURCE_MAX;
   const timeoutMs = opts.timeoutMs ?? LIVE_TIMEOUT_MS;
 
+  const mentions = opts.mentions ?? [];
   const batches = await Promise.all(
-    LIVE_SOURCES.map((def) => withTimeout(fetchOne(def, opts.query, perSourceMax), timeoutMs, def.origin)),
+    LIVE_SOURCES.map((def) => withTimeout(fetchOne(def, opts.query, perSourceMax, mentions), timeoutMs, def.origin)),
   );
   // Dedupe the union by (provider, provider_id): e.g. PubMed and Europe PMC both returning the
   // same PMID collapse to one candidate (first wins). Keeps the rerank set clean.
@@ -97,8 +127,8 @@ export async function gatherLiveCandidates(opts: GatherLiveOpts): Promise<LiveCa
   });
 }
 
-async function fetchOne(def: LiveSourceDef, query: string, max: number): Promise<LiveCandidate[]> {
-  const sources = await def.fetch(query, max);
+async function fetchOne(def: LiveSourceDef, query: string, max: number, mentions: string[]): Promise<LiveCandidate[]> {
+  const sources = await def.fetch(query, max, mentions);
   return sources.map((s) => ({
     origin: def.origin,
     provider: s.provider,
