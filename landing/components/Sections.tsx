@@ -57,7 +57,7 @@ const STEPS = [
 const EVIDENCE = [
   {
     tier: "vs",
-    color: "#7ACC00",
+    color: "#9BD92E",
     name: "Very Strong",
     desc: "FDA-approved with multiple meta-analyses and large, consistent randomized controlled trials.",
     tag: "High",
@@ -123,7 +123,7 @@ const EVIDENCE_TICKS = [
   { label: "Weak", color: "#C24A00" },
   { label: "Moderate", color: "#C97B06" },
   { label: "Strong", color: "#3BC87A" },
-  { label: "Very Strong", color: "#7ACC00" },
+  { label: "Very Strong", color: "#9BD92E" },
 ] as const;
 
 const EVIDENCE_BAR_HEIGHTS = ["20%", "40%", "60%", "80%", "100%"] as const;

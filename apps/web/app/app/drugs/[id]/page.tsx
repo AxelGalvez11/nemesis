@@ -27,6 +27,7 @@ export default function DrugPage() {
   const [ent, setEnt] = useState<EntitlementSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [followError, setFollowError] = useState<string | null>(null);
+  const [shared, setShared] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -49,6 +50,13 @@ export default function DrugPage() {
 
   const followed = watchlist.some((w) => w.item_type === "drug" && w.item_ref === id);
   const limit = Number(ent?.entitlements.watchlist_limit ?? 3);
+
+  function onShare() {
+    if (typeof window === "undefined") return;
+    void navigator.clipboard?.writeText(window.location.href)
+      .then(() => { setShared(true); setTimeout(() => setShared(false), 1500); })
+      .catch(() => {});
+  }
 
   async function onFollow() {
     setFollowError(null);
@@ -74,17 +82,10 @@ export default function DrugPage() {
         </div>
         <div className="quick-chips">
           <button disabled={followed} onClick={onFollow}>{followed ? "Following" : "Follow"}</button>
-          <button className="secondary" type="button">Compare</button>
-          <button className="secondary" type="button">Share</button>
+          <button className="secondary" type="button" onClick={onShare}>{shared ? "Link copied" : "Share"}</button>
         </div>
         {followError ? <ErrorText>{followError}</ErrorText> : null}
         <p className="muted">Plan follow limit: {watchlist.length}/{limit}</p>
-
-        <div className="seg-tabs">
-          {["Summary", "Trials", "PubMed", "Sources"].map((tab, i) => (
-            <span className={i === 0 ? "active" : ""} key={tab}>{tab}</span>
-          ))}
-        </div>
 
         {drug.evidence_score ? (
           <Card className="acid">
@@ -144,24 +145,25 @@ export default function DrugPage() {
       </section>
 
       <aside className="right-rail">
-        <div className="eyebrow">Products</div>
-        {[
-          { name: "Ozempic", form: "SC injection", dose: "0.5-2 mg", bg: "#1a3b78" },
-          { name: "Wegovy", form: "SC injection", dose: "2.4 mg", bg: "#1563b5" },
-          { name: "Rybelsus", form: "Oral tablet", dose: "3-14 mg", bg: "#1a7a42" },
-        ].map((product) => (
-          <section className="product-card" key={product.name}>
-            <div className="product-art" style={{ background: `linear-gradient(135deg, ${product.bg}cc, ${product.bg})` }}>{product.name[0]}</div>
-            <div className="drug-tile-body">
-              <strong>{product.name}</strong>
-              <p className="muted">{product.form}</p>
-              <p className="source-link">{product.dose}</p>
-            </div>
-          </section>
-        ))}
+        {drug.brand_names.length ? (
+          <div className="answer-section">
+            <div className="eyebrow">Brand names</div>
+            <div className="quick-chips">{drug.brand_names.map((b) => <span className="chip" key={b}>{b}</span>)}</div>
+          </div>
+        ) : null}
+        {drug.classes.length ? (
+          <div className="answer-section">
+            <div className="eyebrow">Drug classes</div>
+            <div className="quick-chips">{drug.classes.map((c) => <span className="chip" key={c.id}>{c.name}</span>)}</div>
+          </div>
+        ) : null}
         <div className="answer-section">
-          <div className="eyebrow">Related</div>
-          {["Tirzepatide", "Liraglutide", "Dulaglutide"].map((name) => <p key={name}>{name}</p>)}
+          <div className="eyebrow">Evidence coverage</div>
+          <div className="quick-chips">
+            <span className="chip">{drug.counts.labels} labels</span>
+            <span className="chip">{drug.counts.trials} trials</span>
+            <span className="chip">{drug.counts.pubmed} PubMed</span>
+          </div>
         </div>
       </aside>
     </div>

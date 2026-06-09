@@ -13,13 +13,13 @@ export function BrandMark({ size = 26 }: { size?: number }) {
       <defs>
         <linearGradient id={id} x1="12" y1="6" x2="28" y2="38" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#DDFF99" />
-          <stop offset="55%" stopColor="#C8FF52" />
+          <stop offset="55%" stopColor="#BCFF3C" />
           <stop offset="100%" stopColor="#99EE00" />
         </linearGradient>
         <radialGradient id={oid} cx="50%" cy="42%" r="55%">
           <stop offset="0%" stopColor="#F4FFCC" />
           <stop offset="45%" stopColor="#BEFF66" />
-          <stop offset="100%" stopColor="#AAFF00" />
+          <stop offset="100%" stopColor="#BCFF3C" />
         </radialGradient>
       </defs>
       <path d="M12.5 7 A15 15 0 1 1 27.5 33" stroke={`url(#${id})`} strokeWidth="4.5" strokeLinecap="round" fill="none" />
@@ -114,11 +114,11 @@ export function FeaturedQueryIcon({ icon }: { icon: FeaturedIcon }) {
   }
 }
 
-// Feature-card icons (fill via explicit #AAFF00 stroke as in the prototype).
+// Feature-card icons (fill via explicit #BCFF3C stroke as in the prototype).
 export function FeatTraceIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-      <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2v-4M9 21H5a2 2 0 0 1-2-2v-4m0 0h18" stroke="#AAFF00" strokeWidth="1.75" strokeLinecap="round" />
+      <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2v-4M9 21H5a2 2 0 0 1-2-2v-4m0 0h18" stroke="#BCFF3C" strokeWidth="1.75" strokeLinecap="round" />
     </svg>
   );
 }
@@ -126,7 +126,7 @@ export function FeatTraceIcon() {
 export function FeatFollowIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-      <path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke="#AAFF00" strokeWidth="1.75" strokeLinejoin="round" />
+      <path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke="#BCFF3C" strokeWidth="1.75" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -134,7 +134,7 @@ export function FeatFollowIcon() {
 export function FeatShieldIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#AAFF00" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#BCFF3C" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

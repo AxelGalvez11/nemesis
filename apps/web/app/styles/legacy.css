@@ -1,0 +1,106 @@
+/* Legacy component styles for pages not yet rebuilt into shadcn (explore, watchlist, drugs,
+   billing, profile, home, source, auth, legal). They render dark automatically via the re-themed
+   tokens in globals.css. Each will be migrated to the shadcn design system incrementally; this
+   keeps them functional and on-theme in the meantime. Shell/chat classes live in shell.css. */
+
+/* base form elements (Tailwind preflight is disabled, so these provide the base look) */
+button { font: inherit; cursor: pointer; border: 0; border-radius: 8px; background: var(--acid); color: var(--on-acid); font-weight: 600; padding: 10px 14px; transition: filter 0.15s, transform 0.15s, box-shadow 0.15s; }
+button:hover { filter: brightness(1.06); }
+button:disabled { cursor: not-allowed; filter: grayscale(0.3); opacity: 0.6; transform: none; }
+button.secondary { background: var(--surface); border: 1px solid var(--line); color: var(--text-2); }
+.button-link { align-items: center; background: var(--acid); border-radius: 8px; color: var(--on-acid); display: inline-flex; flex: 0 0 auto; font-weight: 600; justify-content: center; min-height: 40px; padding: 10px 14px; }
+input, textarea, select { font: inherit; width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); padding: 11px 12px; }
+input:focus, textarea:focus, select:focus { border-color: var(--acid-dim); box-shadow: 0 0 0 3px rgba(140, 220, 40, 0.14); outline: none; }
+input::placeholder, textarea::placeholder { color: var(--text-3); }
+textarea { min-height: 130px; resize: vertical; }
+
+.centered { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.auth-card { width: min(460px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 28px; }
+.auth-card form, .stack { display: grid; gap: 12px; }
+
+.page-header { margin-bottom: 22px; }
+.page-header h1 { color: var(--text); font-size: 34px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; margin: 0; }
+.page-header p { color: var(--text-2); max-width: 760px; }
+.eyebrow { color: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+
+.grid { display: grid; gap: 16px; }
+.grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid.four-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 14px; text-align: center; }
+.grid.four-stats > div { border-right: 1px solid var(--line); }
+.grid.four-stats > div:last-child { border-right: 0; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 18px; }
+.card.acid { border-color: var(--line-acid); box-shadow: 0 2px 18px rgba(140, 220, 40, 0.08); }
+.card h2, .card h3 { margin-top: 0; }
+.badge { background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 999px; color: var(--acid-dim); display: inline-flex; font-size: 12px; font-weight: 600; padding: 4px 10px; }
+.source-link { color: var(--acid-dim); font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.row { align-items: center; display: flex; gap: 10px; justify-content: space-between; }
+.list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.error { color: var(--danger); font-weight: 600; }
+.warning { color: var(--warn); font-weight: 600; }
+.success-text { color: var(--acid-dim); font-weight: 600; }
+.chip { background: var(--bg-2); border: 1px solid var(--line); border-radius: 999px; color: var(--text-2); display: inline-flex; font-size: 12px; font-weight: 500; padding: 5px 12px; }
+.quick-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.account-actions { margin-top: 16px; }
+.action-row { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; }
+.danger-zone { border-top: 1px solid var(--line); display: grid; gap: 10px; margin-top: 18px; max-width: 520px; padding-top: 18px; }
+.danger-zone h3 { margin: 0; }
+button.danger-button { background: var(--surface); border: 1px solid rgba(255, 92, 77, 0.32); color: var(--danger); }
+.answer-section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 18px; }
+
+/* legal */
+.legal-page { min-height: 100vh; padding: 22px; }
+.legal-nav { align-items: center; display: flex; gap: 16px; justify-content: space-between; margin: 0 auto; max-width: 900px; padding: 6px 0 26px; }
+.legal-nav div { display: flex; gap: 14px; }
+.legal-content { margin: 0 auto; max-width: 900px; }
+.legal-content h1 { font-size: 40px; line-height: 1.05; margin: 0 0 8px; }
+.legal-content section { border-top: 1px solid var(--line); padding: 22px 0; }
+.legal-content h2 { font-size: 18px; margin: 0 0 8px; }
+.legal-content p { color: var(--text-2); line-height: 1.65; margin: 0; max-width: 760px; }
+
+/* explore */
+.explore-layout { display: grid; grid-template-columns: 204px minmax(0, 1fr); min-height: 100%; }
+.filter-rail { background: var(--surface); border-right: 1px solid var(--line); padding: 20px 14px; }
+.filter-item { align-items: center; border: 1px solid transparent; border-radius: 8px; color: var(--text-2); display: flex; font-size: 12px; gap: 8px; padding: 7px 9px; cursor: pointer; background: none; font-family: inherit; text-align: left; width: 100%; }
+.filter-item:hover { color: var(--text); border-color: var(--line); }
+.filter-item.active { background: var(--surface-2); border-color: var(--line-acid); color: var(--acid-dim); font-weight: 600; }
+.filter-dot { border-radius: 99px; height: 7px; width: 7px; }
+.drug-grid { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 28px; }
+.drug-tile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; cursor: pointer; }
+.drug-tile-art { align-items: center; color: var(--text-3); display: flex; font-size: 32px; font-weight: 700; height: 76px; justify-content: center; background: var(--surface-2); }
+.drug-tile-body { padding: 11px 13px; }
+.status-line { align-items: center; display: flex; font-size: 10px; font-weight: 600; gap: 5px; }
+
+/* watchlist + dashboard */
+.plan-bar { align-items: center; background: var(--surface-2); border: 1px solid var(--line-acid); border-radius: 12px; display: flex; justify-content: space-between; margin-bottom: 24px; padding: 13px 18px; }
+.watch-row { align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); display: flex; gap: 14px; padding: 14px 18px; }
+.watch-dot { border-radius: 999px; flex: 0 0 auto; height: 9px; width: 9px; }
+.updates-list { display: grid; gap: 9px; }
+
+/* drug detail */
+.drug-page-layout { display: grid; grid-template-columns: minmax(0, 1fr) 268px; min-height: 100%; }
+.drug-main { overflow: auto; padding: 28px 32px; }
+.drug-title { font-size: 34px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; margin: 0 0 12px; }
+.seg-tabs { background: var(--surface-2); border-radius: 11px; display: flex; gap: 3px; margin-bottom: 22px; padding: 4px; width: fit-content; }
+.seg-tabs span { border-radius: 8px; color: var(--text-3); font-size: 13px; padding: 7px 16px; cursor: pointer; }
+.seg-tabs .active { background: var(--surface); box-shadow: var(--shadow); color: var(--acid-dim); font-weight: 600; }
+.right-rail { background: var(--bg-2); border-left: 1px solid var(--line); overflow: auto; padding: 24px 18px; }
+.product-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 9px; overflow: hidden; }
+.product-art { align-items: center; color: var(--text-3); display: flex; font-size: 26px; font-weight: 700; height: 60px; justify-content: center; background: var(--surface-2); }
+
+@keyframes pharmaShimmer { 0% { background-position: -500px 0; } 100% { background-position: 500px 0; } }
+.skeleton { animation: pharmaShimmer 1.5s ease-in-out infinite; background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%); background-size: 1000px 100%; }
+
+@media (max-width: 980px) {
+  .explore-layout, .drug-page-layout { grid-template-columns: 1fr; }
+  .filter-rail { border-right: 0; border-bottom: 1px solid var(--line); }
+  .right-rail { border-left: 0; border-top: 1px solid var(--line); }
+  .drug-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid.two, .grid.three { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .drug-grid { grid-template-columns: 1fr; }
+  .plan-bar { align-items: flex-start; flex-direction: column; gap: 12px; }
+}
