@@ -1,22 +1,23 @@
 /* PharmaOrb app shell + chat — ported from docs/design/pharmaorb-chat-mockup.html.
    Drives AppShell (rail | main | evidence) and the chat page. Uses the tokens in globals.css. */
 
-/* ── ORB: a living ring of dots ── */
-.orb { position: relative; display: inline-block; flex: none; animation: orbspin 9s linear infinite; }
-.orb.busy { animation-duration: 2.1s; }
-.orb .slot { position: absolute; top: 50%; left: 50%; }
-.orb .d {
-  display: block; border-radius: 50%; background: var(--acid);
-  box-shadow: 0 0 6px rgba(188, 255, 60, var(--glow));
-  animation: orbpulse 1.7s ease-in-out infinite;
+/* ── ORB: halftone dot lattice (largest at center), a pulse rippling outward from the core.
+   Dots + falloff are generated in components/Orb.tsx; all motion is here. ── */
+.orb { position: relative; display: inline-block; flex: none; line-height: 0; }
+.orb svg { display: block; overflow: visible; filter: drop-shadow(0 0 1.5px rgba(188, 255, 60, calc(var(--glow) * 0.85))); }
+.orb .hd {
+  fill: var(--acid);
+  transform-box: fill-box; transform-origin: center;
+  animation: orbpulse 2.6s ease-in-out infinite;
 }
-.orb.busy .d { animation-duration: 0.85s; box-shadow: 0 0 9px rgba(188, 255, 60, 0.9); }
+.orb.busy svg { filter: drop-shadow(0 0 2.5px rgba(188, 255, 60, 0.9)); }
+.orb.busy .hd { animation-duration: 1.05s; }
 .orb::after {
-  content: ""; position: absolute; inset: 28%; border-radius: 50%;
-  background: radial-gradient(circle, rgba(188, 255, 60, 0.35), transparent 70%); opacity: 0.6;
+  content: ""; position: absolute; inset: 16%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(188, 255, 60, 0.32), transparent 70%);
+  opacity: var(--glow); pointer-events: none;
 }
-@keyframes orbspin { to { transform: rotate(360deg); } }
-@keyframes orbpulse { 0%, 100% { opacity: 0.18; transform: scale(0.5); } 45% { opacity: 1; transform: scale(1.12); } }
+@keyframes orbpulse { 0%, 100% { opacity: 0.74; transform: scale(0.96); } 45% { opacity: 1; transform: scale(1.05); } }
 
 /* ── app grid ── */
 .app {
