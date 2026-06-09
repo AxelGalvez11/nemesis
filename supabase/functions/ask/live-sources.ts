@@ -13,6 +13,8 @@ import type { NormalizedSource } from "../core-source-sync/persist.ts";
 import { fetchPubMedOA } from "../core-source-sync/providers/pubmed.ts";
 import { fetchClinicalTrials } from "../core-source-sync/providers/clinicaltrials.ts";
 import { fetchOpenFdaLabels } from "../core-source-sync/providers/openfda.ts";
+import { fetchEuropePmc } from "../core-source-sync/providers/europepmc.ts";
+import { fetchFaersReactions } from "../core-source-sync/providers/faers.ts";
 
 /** One live result, normalized for the reranker + citation layer; `source` is the full
  *  record, so a candidate the reranker keeps can be persisted via read-through-ingest. */
@@ -31,13 +33,14 @@ interface LiveSourceDef {
   fetch: (query: string, max: number) => Promise<NormalizedSource[]>;
 }
 
-// THE REGISTRY. Add openFDA adverse events (FAERS), Europe PMC, LiverTox, etc. as one line each.
-// (DailyMed is intentionally omitted: it returns the same FDA labels as openFDA, which is the
-//  preferred label source — adding it would be redundant, not additive.)
+// THE REGISTRY. Add a source = one line. (DailyMed is intentionally omitted: it returns the same
+// FDA labels as openFDA, the preferred label source — redundant, not additive.)
 const LIVE_SOURCES: LiveSourceDef[] = [
   { origin: "pubmed", fetch: (q, n) => fetchPubMedOA({ query: q, retmax: n }) },
+  { origin: "europepmc", fetch: (q, n) => fetchEuropePmc({ query: q, retmax: n }) },
   { origin: "clinicaltrials", fetch: (q, n) => fetchClinicalTrials({ query: q, pageSize: n }) },
   { origin: "openfda", fetch: (q, n) => fetchOpenFdaLabels({ query: q, limit: n }) },
+  { origin: "faers", fetch: (q, n) => fetchFaersReactions({ query: q, retmax: n }) },
 ];
 
 export interface GatherLiveOpts {
@@ -60,7 +63,13 @@ export async function gatherLiveCandidates(opts: GatherLiveOpts): Promise<LiveCa
   const batches = await Promise.all(
     LIVE_SOURCES.map((def) => withTimeout(fetchOne(def, opts.query, perSourceMax), timeoutMs, def.origin)),
   );
-  return batches.flat();
+  // Dedupe the union by (provider, provider_id): e.g. PubMed and Europe PMC both returning the
+  // same PMID collapse to one candidate (first wins). Keeps the rerank set clean.
+  const seen = new Set<string>();
+  return batches.flat().filter((c) => {
+    const key = `${c.provider}:${c.provider_id}`;
+    return seen.has(key) ? false : (seen.add(key), true);
+  });
 }
 
 async function fetchOne(def: LiveSourceDef, query: string, max: number): Promise<LiveCandidate[]> {

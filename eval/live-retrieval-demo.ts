@@ -51,7 +51,7 @@ try {
   const byOrigin = (o: string) => liveCands.filter((c) => c.origin === o).length;
 
   console.log(`\nQuery: ${query}`);
-  console.log(`Candidates → library:${library.length}  pubmed:${byOrigin("pubmed")}  clinicaltrials:${byOrigin("clinicaltrials")}  openfda:${byOrigin("openfda")}`);
+  console.log(`Candidates → library:${library.length}  pubmed:${byOrigin("pubmed")}  europepmc:${byOrigin("europepmc")}  clinicaltrials:${byOrigin("clinicaltrials")}  openfda:${byOrigin("openfda")}  faers:${byOrigin("faers")}`);
 
   // 3. Rerank ALL source types together (the reranker reads text → one scale).
   const ranked = await rerankRows(query, [...library, ...liveCands]);
