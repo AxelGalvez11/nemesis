@@ -21,6 +21,9 @@ import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
 import { generate } from "./generate.ts";
 import { enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { gatherLiveCandidates } from "./live-sources.ts";
+import { rerankChunks } from "./rerank.ts";
+import { isFabricatedDrugQuery, liveToChunk } from "./fabrication.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
 import { PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
@@ -63,6 +66,12 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 // (real example questions clear it; a made-up compound returns zero).
 const ASK_MATCH_THRESHOLD = 0.5;
 const MATCH_COUNT = 8;
+
+// Live evidence sources (PubMed / Europe PMC / ClinicalTrials / openFDA / FAERS) are gated behind a
+// flag so deploying this code is non-breaking: with LIVE_SOURCES unset the pipeline is byte-for-byte
+// the dense-only behavior the gate/guardrail suite locks in. The owner flips LIVE_SOURCES=on to enable.
+const LIVE_SOURCES_ON = Deno.env.get("LIVE_SOURCES") === "on";
+const LIVE_PER_SOURCE_MAX = 8; // how many candidates to pull per live source before the merge/rerank
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
@@ -165,7 +174,27 @@ async function runAsk(
     });
   }
 
+  // ---- 3b. live evidence augmentation (flag-gated; non-breaking when off) ----
+  // Pull live candidates (PubMed/EuropePMC/ClinicalTrials/openFDA/FAERS), merge with the library
+  // hits, and rerank the union on the cross-encoder's single scale. Fault-tolerant: any failure
+  // degrades to the dense library result rather than failing the answer. A real-but-new drug with
+  // no library coverage can still be answered from live evidence here.
+  if (LIVE_SOURCES_ON) {
+    ret = { ...ret, chunks: await augmentWithLive(question, cls.entity_mentions, ret.chunks) };
+  }
+
   if (ret.chunks.length === 0) {
+    return await finalizeTemplate(answerId, question, cls.intent,
+      unique<SafetyFlag>([...flags, "no_sources_found"]), entities, userId,
+      "no_source", cls.model, true);
+  }
+
+  // ---- 3c. fabrication guard (answer-layer entity check; flag-gated) ----
+  // Live sources move the fabricated-drug refusal OFF the dense floor: a class-plausible fake
+  // ("florizagliflozin") pulls REAL class-sibling evidence that ranks high on both cosine and the
+  // reranker. Refuse when the drug the user literally named appears NOWHERE in the retained evidence
+  // (the fabricated-drug signature — all the support is about its real neighbors). See fabrication.ts.
+  if (LIVE_SOURCES_ON && isFabricatedDrugQuery(cls.entity_mentions, ret.chunks)) {
     return await finalizeTemplate(answerId, question, cls.intent,
       unique<SafetyFlag>([...flags, "no_sources_found"]), entities, userId,
       "no_source", cls.model, true);
@@ -264,6 +293,39 @@ async function runAsk(
   });
 
   return resp;
+}
+
+/**
+ * Merge live-source candidates with the library chunks and rerank the union. Fault-tolerant by
+ * design: any failure returns the library chunks unchanged so live sources can never sink an answer.
+ */
+async function augmentWithLive(
+  question: string,
+  entityMentions: string[],
+  libChunks: RetrievedChunk[],
+): Promise<RetrievedChunk[]> {
+  try {
+    // openFDA/FAERS/ClinicalTrials want a drug TERM, not a sentence (a raw question 400s). Use the
+    // literal mentions when present — a real-but-new drug (retatrutide) is found by name; a fabricated
+    // one returns nothing. Fall back to the question for general/non-drug queries.
+    const term = entityMentions.length ? entityMentions.join(" ") : question;
+    const live = await gatherLiveCandidates({ query: term, perSourceMax: LIVE_PER_SOURCE_MAX });
+    if (live.length === 0) return libChunks;
+
+    const combined = [...libChunks, ...live.map((c, i) => liveToChunk(c, String(i + 1)))];
+    let ordered: RetrievedChunk[];
+    try {
+      ordered = await rerankChunks(question, combined);
+    } catch (e) {
+      console.error("ask live rerank failed; using dense library order:", (e as Error).message);
+      return libChunks;
+    }
+    // Keep the top MATCH_COUNT in reranked order and retag 1..N for the generator + citation layer.
+    return ordered.slice(0, MATCH_COUNT).map((c, i) => ({ ...c, tag: String(i + 1) }));
+  } catch (e) {
+    console.error("ask live augmentation failed; using library only:", (e as Error).message);
+    return libChunks;
+  }
 }
 
 // ---------------------------------------------------------------------------
