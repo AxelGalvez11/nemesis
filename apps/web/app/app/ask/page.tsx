@@ -44,6 +44,7 @@ export default function AskPage() {
   const [answer, setAnswer] = useState<AskResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [bloom, setBloom] = useState(false);
   const [stage, setStage] = useState(0);
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("evidence");
   const [modeOpen, setModeOpen] = useState(false);
@@ -95,6 +96,14 @@ export default function AskPage() {
     return () => clearInterval(t);
   }, [busy]);
 
+  // One-shot "bloom" flare on the orb the moment an answer lands.
+  useEffect(() => {
+    if (!answer) return;
+    setBloom(true);
+    const t = setTimeout(() => setBloom(false), 700);
+    return () => clearTimeout(t);
+  }, [answer]);
+
   // Close the mode menu on Escape / outside click.
   useEffect(() => {
     if (!modeOpen) return;
@@ -116,6 +125,7 @@ export default function AskPage() {
     const text = q.trim();
     if (!text || busy) return;
     setBusy(true);
+    setBloom(false); // clear any prior flare so the next answer re-triggers it (and it can't stick across an "ask again")
     setError(null);
     setAnswer(null);
     setActiveTag(null);
@@ -146,7 +156,7 @@ export default function AskPage() {
           <div className="turn">
             <div className="msg-user"><div className="bubble">{lastQuestion}</div></div>
             <div className="msg-ai">
-              <Orb size={28} busy={busy} className="" />
+              <Orb size={28} busy={busy} bloom={bloom} className="" />
               <div className="ai-body">
                 {busy ? <Thinking stage={stage} /> : answer ? <Answer answer={answer} onCite={onCite} /> : null}
                 {error ? <p className="tmpl-note">{error}</p> : null}
