@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v1-2026-06-03";
+export const PROMPT_VERSION = "ask-v2-2026-06-09";
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -72,29 +72,64 @@ const POINT_SCHEMA = {
   required: ["text", "citations"],
 };
 
-export const GENERATE_TOOL: Tool = {
-  name: "compose_answer",
-  description: "Compose the structured, source-grounded answer.",
-  parameters: {
-    type: "object",
-    properties: {
-      bottom_line: {
-        ...POINT_SCHEMA,
-        description: "One-sentence plain-English summary. MUST cite >=1 source tag.",
-      },
-      what_we_know: { type: "array", items: POINT_SCHEMA },
-      what_we_do_not_know: { type: "array", items: POINT_SCHEMA },
-      safety_notes: { type: "array", items: POINT_SCHEMA },
-      questions_to_ask: { type: "array", items: { type: "string" } },
-      evidence_grade: {
-        type: "string",
-        enum: ["very_strong", "strong", "moderate", "weak", "very_weak", "unknown", "not_applicable"],
-        description: "Your honest read of the strength of the HUMAN evidence behind the bottom line.",
-      },
-    },
-    required: ["bottom_line", "what_we_know", "what_we_do_not_know", "safety_notes", "questions_to_ask", "evidence_grade"],
+// The answer always carries the bottom line (the actual answer) and an honest
+// evidence grade. Everything else is filled ONLY when it fits the question — see
+// generateTool(): forcing all six sections produced the rigid "what we know /
+// safety / what we don't know / questions" skeleton on every answer, even a plain
+// "what is X". The other sections stay in the schema (so the model CAN use them);
+// only `required` changes per intent.
+const GENERATE_BASE_REQUIRED = ["bottom_line", "evidence_grade"];
+
+// Intents that imply a personal-use / dosing / safety judgement. For these the
+// model MUST produce substantive safety_notes — the appended professional-routing
+// line (routing.ts) is a generic backstop; the floor forces the SPECIFIC caution
+// (the interaction mechanism, the unknown long-term risk, the label warning).
+// Pure-informational intents (overview, mechanism, comparison, trial_lookup, …)
+// carry no floor, so a benign question gets a lean, question-specific answer.
+// health_context is included: an answer applied to the user's own stored profile
+// is inherently personal and must carry a caution. (routing.ts does not yet append
+// its routing note for health_context — a separate, pre-existing follow-up.)
+const SAFETY_FLOOR_INTENTS: ReadonlySet<Intent> = new Set<Intent>([
+  "drug_interaction", "supplement_peptide", "dosing", "pregnancy_pediatrics",
+  "side_effects", "health_context",
+]);
+
+const GENERATE_PROPERTIES = {
+  bottom_line: {
+    ...POINT_SCHEMA,
+    description: "One-sentence plain-English summary. MUST cite >=1 source tag.",
   },
-};
+  what_we_know: { type: "array", items: POINT_SCHEMA },
+  what_we_do_not_know: { type: "array", items: POINT_SCHEMA },
+  safety_notes: { type: "array", items: POINT_SCHEMA },
+  questions_to_ask: { type: "array", items: { type: "string" } },
+  evidence_grade: {
+    type: "string",
+    enum: ["very_strong", "strong", "moderate", "weak", "very_weak", "unknown", "not_applicable"],
+    description: "Your honest read of the strength of the HUMAN evidence behind the bottom line.",
+  },
+} as const;
+
+/**
+ * Build the compose_answer tool for a given intent. `required` is intent-aware:
+ * always bottom_line + evidence_grade, plus safety_notes for the safety-floor
+ * intents. The other sections are optional, so the model fills only what the
+ * question warrants instead of padding a fixed template.
+ */
+export function generateTool(intent: Intent): Tool {
+  const required = SAFETY_FLOOR_INTENTS.has(intent)
+    ? [...GENERATE_BASE_REQUIRED, "safety_notes"]
+    : [...GENERATE_BASE_REQUIRED];
+  return {
+    name: "compose_answer",
+    description: "Compose the structured, source-grounded answer.",
+    parameters: {
+      type: "object",
+      properties: GENERATE_PROPERTIES,
+      required,
+    },
+  };
+}
 
 const BASE_GENERATE_SYSTEM = [
   "You are PharmaBro's answer engine: a conservative, educational medical-information",
@@ -117,11 +152,27 @@ const BASE_GENERATE_SYSTEM = [
   '- "you do not need to ask a doctor"',
   "Always point the user to a licensed professional for personal decisions.",
   "",
-  "Fill the answer sections. bottom_line MUST be source-cited. what_we_do_not_know holds",
-  "limitations (no citations needed). questions_to_ask are for the user's clinician.",
+  "FORMAT — answer the SPECIFIC question; do NOT pad a fixed template:",
+  "- bottom_line MUST be source-cited. Put the real substance in what_we_know, each point cited.",
+  "- Fill ONLY the sections that genuinely apply to THIS question. Leave a section's array EMPTY",
+  "  rather than restating the bottom line, stating the obvious, or adding generic filler.",
+  "- A plain 'what is X' / mechanism / definition / trial-lookup question usually needs only",
+  "  bottom_line + what_we_know. Do NOT add what_we_do_not_know, safety_notes, or questions_to_ask",
+  "  unless the question or the sources genuinely raise a limitation, caution, or personal decision.",
+  "- Use safety_notes for REAL cautions (interactions, personal use, dosing, pregnancy, side effects),",
+  "  and questions_to_ask only when the user faces a decision a clinician should weigh in on.",
+  "- Match the answer's length to the question: a simple question gets a short, direct answer.",
 ].join("\n");
 
 const INTENT_GUIDANCE: Partial<Record<Intent, string>> = {
+  drug_overview:
+    "INTENT=overview. Give a focused, specific description grounded in the sources: what it is, its " +
+    "class/mechanism, what it is used or studied for, and approval/development status. Keep it lean — " +
+    "bottom_line + what_we_know usually suffice. Only add what_we_do_not_know or safety_notes if the " +
+    "question or sources genuinely raise them; do NOT append a generic safety/limitations template.",
+  mechanism:
+    "INTENT=mechanism. Explain how it works, grounded in the sources. bottom_line + what_we_know " +
+    "usually suffice; do not pad with generic safety or 'questions to ask' boilerplate.",
   drug_interaction:
     "INTENT=interaction. Do NOT say whether it is personally safe. Frame as 'this combination " +
     "may require caution', describe the mechanism/risk and what affects personal risk (dose, " +
