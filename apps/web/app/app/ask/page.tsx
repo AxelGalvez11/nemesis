@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AskResponse } from "@pharmabro/shared";
 import { askQuestion, fetchUsage, type AskQuotaError } from "@/lib/api";
+import { normTag } from "@/lib/cite";
+import { renderInline } from "@/lib/inline-md";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
@@ -34,7 +36,6 @@ function abbr(t: string): string {
   const k = Object.keys(PROVIDER_ABBR).find((p) => t.toLowerCase().includes(p));
   return (k ? PROVIDER_ABBR[k] : undefined) ?? "REF";
 }
-const normTag = (t: string) => t.replace(/[[\]\s]/g, "");
 
 export default function AskPage() {
   const chrome = useAppChrome();
@@ -46,14 +47,34 @@ export default function AskPage() {
   const [stage, setStage] = useState(0);
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("evidence");
   const [modeOpen, setModeOpen] = useState(false);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Clicking an inline citation chip opens the evidence panel (respecting the desktop column vs the
+  // ≤1100px drawer) and scrolls to / highlights the matching source card. openEvidence is a stable
+  // command from the shell that always OPENS (never toggles closed). The double rAF defers the
+  // scroll until after React applies the open state and the drawer's slide-in begins laying out.
+  const { setEvidence, setTopbar, openEvidence } = chrome;
+  const onCite = useCallback((tag: string) => {
+    openEvidence();
+    setActiveTag(tag);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`ev-src-${tag}`);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        // Move keyboard/AT focus into the panel too (the card is a focusable <a>/<Link>); on the
+        // ≤1100px drawer this gets focus past the backdrop scrim. preventScroll keeps the
+        // scrollIntoView framing above.
+        el?.focus({ preventScroll: true });
+      }),
+    );
+  }, [openEvidence]);
 
   // Inject the topbar (thread meta) + evidence panel into the shell. Depend on the STABLE setters
   // (useCallback in AppShell), NOT the whole `chrome` object — `chrome` is recreated every AppShell
   // render, so depending on it would re-run this effect in a loop as it sets shell state.
-  const { setEvidence, setTopbar } = chrome;
   useEffect(() => {
-    setEvidence(<EvidencePanel citations={answer?.citations ?? []} />);
+    setEvidence(<EvidencePanel citations={answer?.citations ?? []} activeTag={activeTag ?? undefined} />);
     setTopbar(
       <div>
         <div className="thread-title">{lastQuestion || "New question"}</div>
@@ -64,7 +85,7 @@ export default function AskPage() {
       setEvidence(null);
       setTopbar(null);
     };
-  }, [answer, lastQuestion, setEvidence, setTopbar]);
+  }, [answer, lastQuestion, activeTag, setEvidence, setTopbar]);
 
   // Animate the thinking stages while busy.
   useEffect(() => {
@@ -97,6 +118,7 @@ export default function AskPage() {
     setBusy(true);
     setError(null);
     setAnswer(null);
+    setActiveTag(null);
     setLastQuestion(text);
     setQuestion("");
     if (taRef.current) taRef.current.style.height = "auto";
@@ -126,7 +148,7 @@ export default function AskPage() {
             <div className="msg-ai">
               <Orb size={28} busy={busy} className="" />
               <div className="ai-body">
-                {busy ? <Thinking stage={stage} /> : answer ? <Answer answer={answer} /> : null}
+                {busy ? <Thinking stage={stage} /> : answer ? <Answer answer={answer} onCite={onCite} /> : null}
                 {error ? <p className="tmpl-note">{error}</p> : null}
               </div>
             </div>
@@ -218,7 +240,7 @@ function Thinking({ stage }: { stage: number }) {
   );
 }
 
-function Answer({ answer }: { answer: AskResponse }) {
+function Answer({ answer, onCite }: { answer: AskResponse; onCite: (tag: string) => void }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of answer.citations) m.set(normTag(c.chunk_tag), abbr(c.source_type));
@@ -233,17 +255,17 @@ function Answer({ answer }: { answer: AskResponse }) {
         <span className="grade">{answer.evidence_grade.replace(/_/g, " ")}</span>
         {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
       </div>
-      {answer.plain_english_summary ? <p style={{ marginTop: 10 }}>{answer.plain_english_summary}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
+      {answer.plain_english_summary ? <p className="lead">{renderInline(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
 
-      <Section title="What we know" points={s.what_we_know} citeMap={citeMap} />
-      <Section title="Safety" points={s.safety_notes} citeMap={citeMap} />
-      <Section title="What we don't know" points={s.what_we_do_not_know} citeMap={citeMap} />
+      <Section title="What we know" points={s.what_we_know} citeMap={citeMap} onCite={onCite} />
+      <Section title="Safety" points={s.safety_notes} citeMap={citeMap} onCite={onCite} />
+      <Section title="What we don't know" points={s.what_we_do_not_know} citeMap={citeMap} onCite={onCite} />
 
       {s.questions_to_ask?.length ? (
         <section>
           <h5>Questions to ask a clinician</h5>
-          <ul>{s.questions_to_ask.map((q, i) => <li key={i}>{q}</li>)}</ul>
+          <ul>{s.questions_to_ask.map((q, i) => <li key={i}>{renderInline(q)}</li>)}</ul>
         </section>
       ) : null}
 
@@ -254,7 +276,7 @@ function Answer({ answer }: { answer: AskResponse }) {
   );
 }
 
-function Section({ title, points, citeMap }: { title: string; points: Array<{ text: string; citation_ids?: string[] }>; citeMap: Map<string, string> }) {
+function Section({ title, points, citeMap, onCite }: { title: string; points: Array<{ text: string; citation_ids?: string[] }>; citeMap: Map<string, string>; onCite: (tag: string) => void }) {
   if (!points?.length) return null;
   return (
     <section>
@@ -262,10 +284,14 @@ function Section({ title, points, citeMap }: { title: string; points: Array<{ te
       <ul>
         {points.map((p, i) => (
           <li key={i}>
-            {p.text}{" "}
+            {renderInline(p.text)}{" "}
             {(p.citation_ids ?? []).map((id) => {
               const t = normTag(id);
-              return <span key={id} className="cite">{citeMap.get(t) ?? "REF"}&nbsp;{t}</span>;
+              return (
+                <button key={id} type="button" className="cite" onClick={() => onCite(t)} title="Show source" aria-label={`Show source ${t}`}>
+                  {citeMap.get(t) ?? "REF"}&nbsp;{t}
+                </button>
+              );
             })}
           </li>
         ))}

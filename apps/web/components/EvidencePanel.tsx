@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Citation } from "@pharmabro/shared";
+import { normTag } from "@/lib/cite";
 
 // Provider → the color-square class in shell.css (openfda blue, pubmed purple, trial orange, faers red).
 function providerClass(t: string): string {
@@ -25,7 +26,9 @@ function providerLabel(t: string): string {
 
 // The panel shows the sources behind the answer — the only data the /ask response carries.
 // (A Monograph + Calculators view will return here once the answer payload surfaces that data.)
-export function EvidencePanel({ citations }: { citations: Citation[] }) {
+// activeTag is the normalized chunk_tag of the citation the user just clicked in the answer; the
+// matching card gets an `id` anchor (so the Ask page can scrollIntoView it) and an `active` class.
+export function EvidencePanel({ citations, activeTag }: { citations: Citation[]; activeTag?: string }) {
   const total = citations.length;
 
   return (
@@ -46,6 +49,10 @@ export function EvidencePanel({ citations }: { citations: Citation[] }) {
             // reflects ordinal rank (first = strongest), not a fabricated per-source score.
             const rank = Math.max(34, Math.round(100 - (i / Math.max(1, total - 1)) * 60));
             const cls = providerClass(c.source_type);
+            const tag = normTag(c.chunk_tag);
+            const anchorId = `ev-src-${tag}`;
+            const active = activeTag === tag;
+            const klass = `src ${cls}${active ? " active" : ""}`;
             const inner = (
               <>
                 <div className="cidx">{i + 1}</div>
@@ -59,9 +66,9 @@ export function EvidencePanel({ citations }: { citations: Citation[] }) {
               </>
             );
             return c.url ? (
-              <a key={`${c.source_id}-${c.chunk_tag}`} className={`src ${cls}`} href={c.url} target="_blank" rel="noreferrer">{inner}</a>
+              <a key={`${c.source_id}-${c.chunk_tag}`} id={anchorId} className={klass} href={c.url} target="_blank" rel="noreferrer">{inner}</a>
             ) : (
-              <Link key={`${c.source_id}-${c.chunk_tag}`} className={`src ${cls}`} href={`/app/source/${c.source_id}`}>{inner}</Link>
+              <Link key={`${c.source_id}-${c.chunk_tag}`} id={anchorId} className={klass} href={`/app/source/${c.source_id}`}>{inner}</Link>
             );
           })
         )}
