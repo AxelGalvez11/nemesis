@@ -41,6 +41,18 @@ function resolveRate(args: CalcArgs): { rr: number; hr: number } {
     throw new CalcError("provide either heart rate (hr, bpm) or RR interval (rr, s)");
   }
   if (hasHr) {
+    if (hasRr) {
+      // Both supplied: heart rate takes precedence and RR is derived from it. Reject a contradictory
+      // pair (rather than silently discarding the user's RR) so the echoed RR is never a surprise.
+      const hr = num(args, "hr", { min: HR_MIN, max: HR_MAX });
+      const rrGiven = num(args, "rr", { min: RR_MIN, max: RR_MAX });
+      if (Math.abs(rrGiven - 60 / hr) > 0.05) {
+        throw new CalcError(
+          `heart rate (${hr} bpm → RR ${round(60 / hr, 3)} s) and the supplied RR (${rrGiven} s) disagree — provide only one`,
+        );
+      }
+      return { hr, rr: 60 / hr };
+    }
     const hr = num(args, "hr", { min: HR_MIN, max: HR_MAX });
     return { hr, rr: 60 / hr };
   }
@@ -166,6 +178,17 @@ export const qtcFramingham: CalculatorDef = {
     const sex = args["sex"] !== undefined && args["sex"] !== "" ? enumArg(args, "sex", SEX) : undefined;
     // Published formula is in seconds: QTc_s = QT_s + 0.154 × (1 − RR_s). Convert ms→s and back.
     const qtc = (qt / 1000 + 0.154 * (1 - rr)) * 1000;
+    // The linear correction can subtract more than QT at extreme bradycardia (HR ≪ 60) combined with a
+    // short QT — a physiologically impossible pairing, but it would yield a negative QTc that the
+    // prolongation bands silently read as "normal". Fail loudly instead (module contract: never return
+    // a silently-wrong value). Bazett/Fridericia (divide by a positive root) and Hodges (max −70 ms vs
+    // QT_MIN 200) cannot go non-positive within the validated input range, so only Framingham needs this.
+    if (qtc <= 0) {
+      throw new CalcError(
+        `Framingham correction yields a non-positive QTc (${round(qtc, 0)} ms) at HR=${round(hr, 0)} bpm with QT=${qt} ms — ` +
+          `the linear formula is not valid for extreme bradycardia paired with a short QT interval; re-check the inputs.`,
+      );
+    }
     const band = prolongationBand(qtc, sex);
     return {
       value: round(qtc, 0),

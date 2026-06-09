@@ -10,7 +10,7 @@
 // anchored to stated worked examples from authoritative sources (RegisteredNurseRN, NurseTogether,
 // ScienceCompany, medplore), never to invented values.
 
-import { type CalcArgs, CalcError, type CalculatorDef, type CalcResult, enumArg, num, round } from "./types.ts";
+import { type CalcArgs, type CalculatorDef, type CalcResult, enumArg, num, round } from "./types.ts";
 
 // ── IV infusion rate from a weight-based dose (mcg/kg/min → mL/hr) ────────────────────────────────
 // rate_mL/hr = (dose_mcg/kg/min × weight_kg × 60) ÷ (concentration_mg/mL × 1000)
