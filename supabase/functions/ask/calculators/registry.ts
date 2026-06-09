@@ -8,6 +8,9 @@ import { labsCalculators } from "./labs.ts";
 import { conversionsCalculators } from "./conversions.ts";
 import { cardiologyCalculators } from "./cardiology.ts";
 import { severityCalculators } from "./severity.ts";
+import { parenteralCalculators } from "./parenteral.ts";
+import { qtcCalculators } from "./qtc.ts";
+import { pediatricCalculators } from "./pediatric.ts";
 
 export const CALCULATORS: CalculatorDef[] = [
   ...renalCalculators,
@@ -16,6 +19,9 @@ export const CALCULATORS: CalculatorDef[] = [
   ...conversionsCalculators,
   ...cardiologyCalculators,
   ...severityCalculators,
+  ...parenteralCalculators,
+  ...qtcCalculators,
+  ...pediatricCalculators,
 ];
 
 export function getCalculator(id: string): CalculatorDef | undefined {
