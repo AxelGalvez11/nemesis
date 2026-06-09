@@ -105,6 +105,9 @@
 .acct-menu { position: absolute; bottom: calc(100% - 2px); left: 12px; right: 12px; background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius-sm); box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.6); padding: 6px; z-index: 40; animation: fade 0.16s both; }
 .acct-menu a, .acct-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); cursor: pointer; text-align: left; font-weight: 500; }
 .acct-menu a:hover, .acct-menu button:hover { background: var(--surface); color: var(--text); }
+.acct-menu button:disabled { opacity: 0.5; cursor: default; }
+.acct-menu button:disabled:hover { background: none; color: var(--text-2); }
+.acct-menu button:disabled small { text-transform: uppercase; letter-spacing: 0.04em; font-family: var(--mono); font-size: 9.5px; }
 .acct-menu .sep { height: 1px; background: var(--line); margin: 5px 2px; }
 
 /* ── chat thread ── */

@@ -156,16 +156,22 @@ export default function AskPage() {
                 {modeOpen ? (
                   <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
                     {MODES.map((m) => (
-                      <button key={m.id} onClick={() => { setMode(m.id); setModeOpen(false); }} title={m.hint}>
-                        <Icon name={m.id === mode ? "check" : "sparkle"} size={14} />
+                      <button
+                        key={m.id}
+                        type="button"
+                        role="menuitem"
+                        disabled={!m.live}
+                        onClick={() => { if (m.live) { setMode(m.id); setModeOpen(false); } }}
+                        title={m.hint}
+                      >
+                        <Icon name={m.live ? (m.id === mode ? "check" : "sparkle") : "lock"} size={14} />
                         <span style={{ flex: 1 }}>{m.label}</span>
-                        {!m.live ? <small style={{ color: "var(--text-3)" }}>soon</small> : null}
+                        {!m.live ? <small style={{ color: "var(--text-3)" }}>Soon</small> : null}
                       </button>
                     ))}
                   </div>
                 ) : null}
               </div>
-              <button className="tool" title="Attach (soon)" type="button" disabled><Icon name="attach" size={16} /></button>
               <div className="spacer" />
               <button className="send" title="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
                 <Icon name="send" size={18} />
@@ -243,7 +249,6 @@ function Answer({ answer }: { answer: AskResponse }) {
 
       <div className="msg-actions">
         <button className="icon-btn" title="Copy" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
-        <button className="icon-btn" title="Save (soon)" disabled><Icon name="save" size={15} /></button>
       </div>
     </div>
   );

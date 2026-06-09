@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import type { SearchResult } from "@pharmabro/shared";
 import { searchEntities } from "@/lib/api";
-import { Badge, Card, ErrorText } from "@/components/ui";
+import { ErrorText } from "@/components/ui";
 
 const popular = [
   { id: "semaglutide", name: "Semaglutide", status: "approved", bg: "#1a3b78", subtitle: "Ozempic, Wegovy, Rybelsus" },
@@ -26,57 +26,72 @@ const statusColors: Record<string, string> = {
   unknown: "#6b7280",
 };
 
-const filters = [
-  ["Approved", "#1a8c5c"],
-  ["Investigational", "#0278c0"],
-  ["Research Use", "#c97b06"],
-  ["Supplement", "#6d28d9"],
+const filters: Array<{ label: string; color: string; value: string }> = [
+  { label: "Approved", color: "#1a8c5c", value: "approved" },
+  { label: "Investigational", color: "#0278c0", value: "investigational" },
+  { label: "Research Use", color: "#c97b06", value: "research_use" },
+  { label: "Supplement", color: "#6d28d9", value: "supplement" },
 ];
 
-const classes = ["GLP-1s", "SSRIs", "ACE Inhibitors", "Peptides", "Beta-blockers", "Statins", "Supplements", "Immunology"];
+const classes = ["GLP-1", "SSRI", "ACE Inhibitor", "Peptide", "Beta-blocker", "Statin", "Supplement", "Immunology"];
 
 export default function ExplorePage() {
   const [query, setQuery] = useState("ozempic");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function runSearch(q: string) {
     setBusy(true);
     setError(null);
     try {
-      setResults(await searchEntities(query));
+      setResults(await searchEntities(q));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
       setBusy(false);
     }
   }
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    void runSearch(query);
+  }
 
-  const cards = results.length ? results.map((r) => ({
+  const baseCards = results.length ? results.map((r) => ({
     id: r.id,
     name: r.name,
     subtitle: r.subtitle ?? r.type,
     status: r.status,
     bg: popular.find((p) => p.id === r.id)?.bg ?? "#1a6b4a",
   })) : popular;
+  const cards = statusFilter ? baseCards.filter((c) => c.status === statusFilter) : baseCards;
 
   return (
     <div className="explore-layout">
       <aside className="filter-rail">
         <div className="eyebrow">Status</div>
         <div className="stack" style={{ gap: 4, marginBottom: 22 }}>
-          {filters.map(([label, color], index) => (
-            <div className={index === 0 ? "filter-item active" : "filter-item"} key={label}>
-              <span className="filter-dot" style={{ background: color }} />
-              {label}
-            </div>
+          {filters.map((f) => (
+            <button
+              type="button"
+              className={statusFilter === f.value ? "filter-item active" : "filter-item"}
+              key={f.label}
+              aria-pressed={statusFilter === f.value}
+              onClick={() => setStatusFilter((cur) => (cur === f.value ? null : f.value))}
+            >
+              <span className="filter-dot" style={{ background: f.color }} />
+              {f.label}
+            </button>
           ))}
         </div>
         <div className="eyebrow">Classes</div>
         <div className="stack" style={{ gap: 2 }}>
-          {classes.map((item) => <div className="filter-item" key={item}>{item}</div>)}
+          {classes.map((item) => (
+            <button type="button" className="filter-item" key={item} onClick={() => { setQuery(item); void runSearch(item); }}>
+              {item}
+            </button>
+          ))}
         </div>
       </aside>
 
@@ -87,7 +102,10 @@ export default function ExplorePage() {
         </form>
         {error ? <ErrorText>{error}</ErrorText> : null}
 
-        <div className="eyebrow">{results.length ? "Search results" : "Popular now"}</div>
+        <div className="eyebrow">
+          {results.length ? "Search results" : "Popular now"}
+          {statusFilter ? ` · ${statusFilter.replaceAll("_", " ")}` : ""}
+        </div>
         <div className="drug-grid">
           {cards.map((drug) => (
             <Link className="drug-tile" href={`/app/drugs/${drug.id}`} key={drug.id}>
@@ -103,18 +121,7 @@ export default function ExplorePage() {
             </Link>
           ))}
         </div>
-
-        <div className="eyebrow">Trending trials</div>
-        <div className="updates-list">
-          {["Obesity & metabolic syndrome - 12 active trials", "Alzheimer's disease - 8 active trials", "Oncology Phase 3 - 24 active trials"].map((trial) => (
-            <Card key={trial}>
-              <div className="row">
-                <span>{trial}</span>
-                <Badge>active</Badge>
-              </div>
-            </Card>
-          ))}
-        </div>
+        {cards.length === 0 ? <p className="muted">No {statusFilter?.replaceAll("_", " ")} matches in this view.</p> : null}
       </section>
     </div>
   );

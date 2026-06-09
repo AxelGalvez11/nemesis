@@ -63,7 +63,8 @@ button.danger-button { background: var(--surface); border: 1px solid rgba(255, 9
 /* explore */
 .explore-layout { display: grid; grid-template-columns: 204px minmax(0, 1fr); min-height: 100%; }
 .filter-rail { background: var(--surface); border-right: 1px solid var(--line); padding: 20px 14px; }
-.filter-item { align-items: center; border: 1px solid transparent; border-radius: 8px; color: var(--text-2); display: flex; font-size: 12px; gap: 8px; padding: 7px 9px; cursor: pointer; }
+.filter-item { align-items: center; border: 1px solid transparent; border-radius: 8px; color: var(--text-2); display: flex; font-size: 12px; gap: 8px; padding: 7px 9px; cursor: pointer; background: none; font-family: inherit; text-align: left; width: 100%; }
+.filter-item:hover { color: var(--text); border-color: var(--line); }
 .filter-item.active { background: var(--surface-2); border-color: var(--line-acid); color: var(--acid-dim); font-weight: 600; }
 .filter-dot { border-radius: 99px; height: 7px; width: 7px; }
 .drug-grid { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 28px; }
