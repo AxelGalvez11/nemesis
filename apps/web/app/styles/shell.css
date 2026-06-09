@@ -32,7 +32,7 @@
 
 /* ── left rail ── */
 .rail { background: var(--bg-2); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
-.rail-backdrop { display: none; }
+.rail-backdrop, .evidence-backdrop { display: none; }
 /* scoped to .rail so it can't deform a legacy page that also uses a `.brand` element */
 .rail .brand { display: flex; align-items: center; gap: 12px; padding: 18px 18px 14px; }
 .rail .brand .orb { width: 28px; height: 28px; }
@@ -209,8 +209,32 @@
 .ev-empty { color: var(--text-3); font-size: 12.5px; text-align: center; padding: 40px 16px; }
 .ev-foot { flex: none; border-top: 1px solid var(--line); padding: 10px 14px; font-family: var(--mono); font-size: 11px; color: var(--text-3); display: flex; justify-content: space-between; }
 
+/* ── tablet & down (≤1100px): the evidence panel leaves the grid and becomes a right-side
+   drawer toggled by the topbar panel button (fixes the phone bottom-stack AND the tablet
+   dead-button: inline evidence was forced to width 0 across this whole band). ── */
 @media (max-width: 1100px) {
-  .app, .app.rail-collapsed, .app.evidence-collapsed { grid-template-columns: var(--rail-collapsed) 1fr 0; }
+  .app, .app.rail-collapsed, .app.evidence-collapsed, .app.no-evidence { grid-template-columns: var(--rail-collapsed) 1fr; }
+
+  .evidence {
+    position: fixed; top: 0; bottom: 0; right: 0; width: min(var(--evidence), 86vw);
+    z-index: 60; transform: translateX(100%); transition: transform 0.25s ease;
+  }
+  .app.mobile-evidence-open .evidence { transform: none; box-shadow: 0 0 60px rgba(0, 0, 0, 0.6); }
+  .app.mobile-evidence-open .evidence-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.5); border: none;
+  }
+}
+
+/* ── tablet band only (721–1100px): the rail stays a 64px icon rail, so apply the collapsed
+   treatment (full-width labels would otherwise clip at 64px). At ≤720px the rail is instead a
+   full off-canvas drawer, so this is scoped above that breakpoint. ── */
+@media (min-width: 721px) and (max-width: 1100px) {
+  .rail .wordmark, .rail .r-label, .rail .new-txt, .rail .search input, .rail .acct-meta { display: none; }
+  .rail .brand { padding: 18px 0; justify-content: center; }
+  .rail .new { justify-content: center; padding: 10px 0; }
+  .rail .hist { justify-content: center; padding: 9px 0; }
+  .rail .hist span { display: none; }
+  .rail .acct-btn { justify-content: center; }
 }
 @media (max-width: 720px) {
   .app, .app.rail-collapsed, .app.evidence-collapsed, .app.no-evidence, .app.mobile-open { grid-template-columns: 1fr; }

@@ -63,16 +63,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [topbar, setTopbarNode] = useState<ReactNode | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
   const [plan, setPlan] = useState<{ plan: string; used: number; limit: number }>({ plan: "free", used: 0, limit: 10 });
 
   // Stable setters so child effects don't loop.
   const setEvidence = useCallback((node: ReactNode | null) => setEvidenceNode(node), []);
   const setTopbar = useCallback((node: ReactNode | null) => setTopbarNode(node), []);
-  // The hamburger collapses the rail on desktop AND toggles the mobile drawer; each layout's CSS
-  // ignores the other's state, so one button drives both without conflict.
-  const toggleRail = useCallback(() => { setRailCollapsed((v) => !v); setMobileNavOpen((v) => !v); }, []);
-  const toggleEvidence = useCallback(() => setEvidenceCollapsed((v) => !v), []);
+  // The hamburger collapses the rail on desktop AND toggles the mobile drawer; the panel button
+  // collapses the evidence column on desktop AND toggles its drawer at ≤1100px. Each layout's CSS
+  // reads only its own state, so one button drives both. Opening one drawer closes the other.
+  const toggleRail = useCallback(() => { setRailCollapsed((v) => !v); setMobileNavOpen((v) => !v); setMobileEvidenceOpen(false); }, []);
+  const toggleEvidence = useCallback(() => { setEvidenceCollapsed((v) => !v); setMobileEvidenceOpen((v) => !v); setMobileNavOpen(false); }, []);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
+  const closeMobileEvidence = useCallback(() => setMobileEvidenceOpen(false), []);
 
   useEffect(() => {
     if (!loading && !session) router.replace(`/sign-in?next=${encodeURIComponent(path)}`);
@@ -103,8 +106,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
   }, [menuOpen]);
 
-  // Close the mobile drawer on route change.
-  useEffect(() => { setMobileNavOpen(false); }, [path]);
+  // Close both mobile drawers on route change.
+  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); }, [path]);
+
+  // Close the open drawer on Escape.
+  useEffect(() => {
+    if (!mobileNavOpen && !mobileEvidenceOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setMobileNavOpen(false); setMobileEvidenceOpen(false); } };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mobileNavOpen, mobileEvidenceOpen]);
 
   const ctx = useMemo<AppChromeValue>(
     () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar }),
@@ -123,6 +134,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     "app",
     railCollapsed && "rail-collapsed",
     mobileNavOpen && "mobile-open",
+    hasEvidence && mobileEvidenceOpen && "mobile-evidence-open",
     hasEvidence ? evidenceCollapsed && "evidence-collapsed" : "no-evidence",
   ]
     .filter(Boolean)
@@ -220,8 +232,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className={pageClass}>{children}</div>
         </main>
 
-        {/* ── evidence (page-injected) ── */}
-        {hasEvidence ? <aside className="evidence">{evidence}</aside> : null}
+        {/* ── evidence (page-injected) — a right-side drawer at ≤1100px ── */}
+        {hasEvidence ? (
+          <>
+            <button className="evidence-backdrop" aria-label="Close evidence" onClick={closeMobileEvidence} tabIndex={-1} />
+            <aside className="evidence">{evidence}</aside>
+          </>
+        ) : null}
       </div>
     </AppChromeContext.Provider>
   );
