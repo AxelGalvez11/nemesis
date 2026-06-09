@@ -11,7 +11,7 @@
  */
 
 import { sha256Hex } from "../embeddings.ts";
-import type { NormalizedSource } from "../persist.ts";
+import type { NormalizedSource } from "../normalized-source.ts";
 
 const EVENT = "https://api.fda.gov/drug/event.json";
 

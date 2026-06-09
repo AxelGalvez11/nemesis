@@ -12,7 +12,7 @@
  */
 
 import { sha256Hex } from "../embeddings.ts";
-import type { NormalizedSource } from "../persist.ts";
+import type { NormalizedSource } from "../normalized-source.ts";
 import type { CoreSourceLicense } from "../license.ts";
 
 const SEARCH = "https://www.ebi.ac.uk/europepmc/webservices/rest/search";

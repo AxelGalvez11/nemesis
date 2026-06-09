@@ -9,7 +9,7 @@
 //
 // Wiring this into /ask's retrieval path is a separate, owner-gated edge deploy.
 
-import type { NormalizedSource } from "../core-source-sync/persist.ts";
+import type { NormalizedSource } from "../core-source-sync/normalized-source.ts";
 import type { RetrievedChunk } from "./citation.ts";
 import { fetchPubMedOA } from "../core-source-sync/providers/pubmed.ts";
 import { fetchClinicalTrials } from "../core-source-sync/providers/clinicaltrials.ts";

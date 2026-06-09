@@ -15,7 +15,7 @@
  */
 
 import { sha256Hex } from "../embeddings.ts";
-import type { NormalizedSource } from "../persist.ts";
+import type { NormalizedSource } from "../normalized-source.ts";
 
 const OPENFDA_BASE = "https://api.fda.gov/drug/label.json";
 const REQUEST_DELAY_MS = 250;
