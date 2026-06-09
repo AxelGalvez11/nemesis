@@ -11,6 +11,8 @@
 import { gatherLiveCandidates, liveToChunk } from "../supabase/functions/ask/live-sources.ts";
 import { rerankChunks } from "../supabase/functions/ask/rerank.ts";
 import { isFabricatedDrugQuery } from "../supabase/functions/ask/fabrication.ts";
+import { classify } from "../supabase/functions/ask/classify.ts";
+import { hasLlmKey, llmApiKey } from "../supabase/functions/ask/llm.ts";
 import type { RetrievedChunk } from "../supabase/functions/ask/citation.ts";
 
 const MATCH_COUNT = 8; // mirror index.ts
@@ -79,5 +81,41 @@ for (const c of cases) {
   );
 }
 
-console.log(`\n${failures === 0 ? "✓ PASS" : `✗ FAIL — ${failures} case(s) leaked`}`);
+// ── Part B: the guard's REAL input is classify's entity_mentions, NOT the token handed to it above.
+// If the classifier drops/normalizes a fake token, entity_mentions is empty and the guard returns
+// false (no refusal) — the exact leak the guard exists to stop. Part A cannot see this because it
+// bypasses classify. Verify the classifier actually extracts each fake token. Needs an LLM key.
+console.log(`\n── Part B: classify → entity_mention extraction (the guard's real input) ──`);
+let classifyIncomplete = false;
+if (!hasLlmKey()) {
+  classifyIncomplete = true;
+  console.log("  ⚠ SKIPPED — no LLM key in env (LLM_API_KEY / OPENAI_API_KEY / DEEPSEEK_API_KEY).");
+} else {
+  const key = llmApiKey();
+  for (const p of probes) {
+    try {
+      const cls = await classify(p.question, key);
+      const tok = p.fabricated_token.toLowerCase();
+      const extracted = cls.entity_mentions.some((m) => m.toLowerCase().includes(tok));
+      if (!extracted) failures++; // classify SUCCEEDED but dropped the fake → guard blind → real leak
+      console.log(
+        `  ${extracted ? "✓" : "✗"} ${p.id.padEnd(26)} entity_mentions=${JSON.stringify(cls.entity_mentions)}` +
+          (extracted ? "" : `   ← classify dropped "${p.fabricated_token}" → GUARD BLIND, fake would leak`),
+      );
+    } catch (e) {
+      // An auth/network failure is an ENV problem (stale key), NOT a guard leak — mark incomplete.
+      classifyIncomplete = true;
+      console.log(`  ⚠ ${p.id.padEnd(26)} classify call failed (${(e as Error).message.slice(0, 60)}) — could not verify`);
+    }
+  }
+}
+if (classifyIncomplete) {
+  console.log("\n  ‼ classify→mention check INCOMPLETE. The guard only sees classify's entity_mentions; if the");
+  console.log("    classifier ever drops/normalizes a novel fake token, the guard is blind and the fake leaks.");
+  console.log("    Run this eval with a VALID LLM key (the deployed function's key) and confirm all 3 fakes are");
+  console.log("    extracted BEFORE flipping LIVE_SOURCES=on. Part A (guard logic) does NOT cover this.");
+}
+
+const ok = failures === 0;
+console.log(`\n${ok ? (classifyIncomplete ? "◐ PART A PASS — Part B INCOMPLETE (see above)" : "✓ PASS (Part A + Part B)") : `✗ FAIL — ${failures} issue(s)`}`);
 if (failures > 0) Deno.exit(1);

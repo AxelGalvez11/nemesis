@@ -31,11 +31,18 @@ We check the literal mention, NOT the resolved canonical name — `resolveEntiti
 match, so a fake can mis-resolve to a real neighbor; trusting the canonical would let it back in.
 
 ## Validation
-- `supabase/functions/ask/fabrication.test.ts` — 12 deterministic unit tests (in CI / ask-units):
-  florizagliflozin refuses, BPC-158 ≠ BPC-157 (no spurious substring), retatrutide clears, general
-  questions exempt, live→chunk mapping.
-- `eval/live-pipeline-safety.ts` — full live-path gate (manual; hits live APIs + Voyage, so NOT in
-  blocking CI). Result: all 3 fakes REFUSE, retatrutide + dapagliflozin CLEAR. **Run before enabling.**
+- `supabase/functions/ask/fabrication.test.ts` — 13 deterministic unit tests (in CI / ask-units):
+  florizagliflozin refuses, fake co-mentioned with a real drug refuses (every named drug must be
+  supported), word-boundary (maglutide ⊄ semaglutide, BPC-158 ≠ BPC-157), retatrutide clears,
+  general questions exempt.
+- `eval/live-pipeline-safety.ts` — full live-path gate (manual; hits live APIs + Voyage + the LLM, so
+  NOT in blocking CI). TWO parts:
+  - **Part A (guard behavior):** all 3 fakes REFUSE, retatrutide + dapagliflozin CLEAR. ✓ passing.
+  - **Part B (classify→mention extraction):** the guard's only input is `classify`'s `entity_mentions`.
+    If the classifier ever drops/normalizes a fake token, the guard is BLIND and the fake leaks. Part B
+    classifies the 3 probe QUESTIONS and asserts each fake token is actually extracted. **Needs a valid
+    LLM key** — it is INCOMPLETE in any environment without one (e.g. local dev). **Must run green
+    before enabling.**
 - `eval/live-fabrication-probe.ts` — the diagnostic that measured the score-floor failure.
 
 ## Known conservative behavior (refine later)
@@ -47,6 +54,9 @@ bounded, but real per-question latency/cost once enabled.
 
 ## To enable (owner)
 1. `supabase functions deploy ask` (owner-gated).
-2. Set `LIVE_SOURCES=on` (+ optional `RR_MODEL`, `OPENFDA_API_KEY`/`NCBI_API_KEY` for higher limits).
-3. Run `eval/live-pipeline-safety.ts` green first. Read-through-ingest (saveToLibrary, the WRITE path)
-   stays a separate switch.
+2. **Run `eval/live-pipeline-safety.ts` with a VALID LLM key and confirm BOTH parts are green** —
+   Part B (classify extracts each fake token) is the end-to-end safety check and is INCOMPLETE without
+   the key. This is a recurring gate (live results change), not a one-time sign-off.
+3. Set `LIVE_SOURCES=on` (+ optional `RR_MODEL`, `OPENFDA_API_KEY`/`NCBI_API_KEY` for higher limits).
+
+Read-through-ingest (saveToLibrary, the WRITE path) stays a separate switch.
