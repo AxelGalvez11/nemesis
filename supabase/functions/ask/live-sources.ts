@@ -10,6 +10,7 @@
 // Wiring this into /ask's retrieval path is a separate, owner-gated edge deploy.
 
 import type { NormalizedSource } from "../core-source-sync/persist.ts";
+import type { RetrievedChunk } from "./citation.ts";
 import { fetchPubMedOA } from "../core-source-sync/providers/pubmed.ts";
 import { fetchClinicalTrials } from "../core-source-sync/providers/clinicaltrials.ts";
 import { fetchOpenFdaLabels } from "../core-source-sync/providers/openfda.ts";
@@ -26,6 +27,30 @@ export interface LiveCandidate {
   url: string;
   text: string; // fed to the reranker and to grounding
   source: NormalizedSource; // full normalized record (for save-to-library)
+}
+
+/**
+ * Adapt a live candidate to the RetrievedChunk shape so it ranks + cites alongside library chunks.
+ * Live results have no DB row, so source_id/chunk_id are SYNTHETIC ("live:<provider>:<id>") — safe
+ * because generated_answers.source_ids is jsonb (no UUID type / FK) and enforceCitations keys on the
+ * retrieval-local tag, not source_id. similarity is 0 (no dense score); the reranker sets the order.
+ */
+export function liveToChunk(c: LiveCandidate, tag: string): RetrievedChunk {
+  const syntheticId = `live:${c.provider}:${c.provider_id}`;
+  return {
+    tag,
+    chunk_id: syntheticId,
+    chunk_text: c.text,
+    source_id: syntheticId,
+    provider: c.provider,
+    title: c.title,
+    section: null,
+    url: c.url,
+    license: c.source.license,
+    published_date: c.source.effective_at ? c.source.effective_at.slice(0, 10) : null,
+    retrieved_at: new Date().toISOString(),
+    similarity: 0,
+  };
 }
 
 interface LiveSourceDef {
