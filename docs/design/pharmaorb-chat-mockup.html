@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PharmaOrb — UI direction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0A0A0B; --bg-2:#0E0E10; --surface:#141417; --surface-2:#1A1A1E; --raised:#1F1F24;
+  --line:#242428; --line-2:#2E2E34;
+  --text:#F4F4F5; --text-2:#A6A6AD; --text-3:#6C6C74;
+  --acid:#BCFF3C; --acid-dim:#9BD92E; --acid-deep:#74A81E; --on-acid:#0A0A0B;
+  --warn:#F5B23B; --danger:#FF5C4D;
+  --radius:14px; --radius-sm:10px; --rail:264px; --rail-collapsed:64px; --evidence:344px;
+  --font:"Hanken Grotesk",-apple-system,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+  --glow:.55;
+}
+[data-theme="light"]{
+  --bg:#FBFBF9; --bg-2:#F4F4F1; --surface:#FFFFFF; --surface-2:#F8F8F5; --raised:#FFFFFF;
+  --line:#E8E8E2; --line-2:#DBDBD3;
+  --text:#0D0D0F; --text-2:#5C5C63; --text-3:#9C9CA2;
+  --acid:#62B000; --acid-dim:#74A81E; --acid-deep:#4C8200; --on-acid:#FFFFFF;
+  --glow:.18;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--font); background:var(--bg); color:var(--text);
+  font-size:14.5px; line-height:1.55; letter-spacing:-0.01em; overflow:hidden;-webkit-font-smoothing:antialiased;
+  transition:background .4s,color .4s;
+  background-image:
+    radial-gradient(900px 500px at 78% -8%, rgba(140,220,40,calc(var(--glow)*.12)), transparent 60%),
+    radial-gradient(700px 600px at -5% 110%, rgba(140,220,40,calc(var(--glow)*.07)), transparent 55%);
+}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:.022;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");}
+.mono{font-family:var(--mono);font-feature-settings:"tnum" 1;letter-spacing:0}
+
+/* ── ORB: a living ring of dots ── */
+.orb{position:relative;display:inline-block;flex:none;animation:orbspin 9s linear infinite}
+.orb.busy{animation-duration:2.1s}
+.orb .slot{position:absolute;top:50%;left:50%}
+.orb .d{display:block;border-radius:50%;background:var(--acid);box-shadow:0 0 6px rgba(188,255,60,var(--glow));
+  animation:orbpulse 1.7s ease-in-out infinite}
+.orb.busy .d{animation-duration:.85s;box-shadow:0 0 9px rgba(188,255,60,.9)}
+.orb::after{content:"";position:absolute;inset:28%;border-radius:50%;background:radial-gradient(circle,rgba(188,255,60,.35),transparent 70%);opacity:.6}
+@keyframes orbspin{to{transform:rotate(360deg)}}
+@keyframes orbpulse{0%,100%{opacity:.18;transform:scale(.5)}45%{opacity:1;transform:scale(1.12)}}
+
+.app{display:grid;grid-template-columns:var(--rail) 1fr var(--evidence);height:100vh;transition:grid-template-columns .32s cubic-bezier(.4,0,.2,1)}
+.app.rail-collapsed{grid-template-columns:var(--rail-collapsed) 1fr var(--evidence)}
+.app.evidence-collapsed{grid-template-columns:var(--rail) 1fr 0}
+.app.rail-collapsed.evidence-collapsed{grid-template-columns:var(--rail-collapsed) 1fr 0}
+
+.rail{background:var(--bg-2);border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.brand{display:flex;align-items:center;gap:12px;padding:18px 18px 14px}
+.brand .orb{width:28px;height:28px}
+.wordmark{font-weight:700;font-size:16px;letter-spacing:-.02em;white-space:nowrap}
+.rail-collapsed .wordmark,.rail-collapsed .label,.rail-collapsed .new-txt,.rail-collapsed .search input,.rail-collapsed .acct-meta{display:none}
+.rail-collapsed .brand{padding:18px 0;justify-content:center}
+.new{margin:4px 12px 10px;display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:var(--radius-sm);
+  background:var(--acid);color:var(--on-acid);font-weight:600;cursor:pointer;border:none;white-space:nowrap;
+  box-shadow:0 6px 20px -8px rgba(140,220,40,.6);transition:filter .15s}
+.new:hover{filter:brightness(1.06)}
+.rail-collapsed .new{justify-content:center;padding:10px 0;margin:4px 12px}
+.search{margin:0 12px 14px;display:flex;align-items:center;gap:8px;padding:8px 11px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface)}
+.search input{background:none;border:none;color:var(--text);font-family:var(--font);font-size:13px;width:100%;outline:none}
+.search input::placeholder{color:var(--text-3)}
+.nav{flex:1;overflow-y:auto;padding:2px 10px 10px}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-3);padding:14px 8px 7px;font-weight:600}
+.hist{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:9px;color:var(--text-2);cursor:pointer;position:relative;white-space:nowrap;overflow:hidden}
+.hist span{text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+.hist:hover{background:var(--surface);color:var(--text)}
+.hist.active{background:var(--surface-2);color:var(--text)}
+.hist.active::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:2.5px;border-radius:2px;background:var(--acid);box-shadow:0 0 10px rgba(140,220,40,.7)}
+.hist-ic{width:15px;height:15px;flex:none;opacity:.7}
+.rail-collapsed .hist{justify-content:center;padding:9px 0}
+.rail-collapsed .hist span{display:none}
+.acct{border-top:1px solid var(--line);padding:12px;display:flex;align-items:center;gap:10px}
+.av{width:30px;height:30px;border-radius:50%;flex:none;background:linear-gradient(135deg,var(--surface-2),var(--raised));display:grid;place-items:center;font-weight:600;font-size:12px;color:var(--text-2);border:1px solid var(--line)}
+.acct-meta b{font-size:13px;font-weight:600;display:block}.acct-meta small{font-size:11px;color:var(--text-3)}
+.rail-collapsed .acct{justify-content:center}
+
+.main{display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+.topbar{height:56px;flex:none;display:flex;align-items:center;gap:12px;padding:0 18px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:blur(12px)}
+.icon-btn{width:34px;height:34px;border-radius:9px;border:1px solid transparent;background:none;color:var(--text-2);display:grid;place-items:center;cursor:pointer;transition:.15s}
+.icon-btn:hover{background:var(--surface);color:var(--text);border-color:var(--line)}
+.thread-title{font-weight:600;font-size:14.5px}.thread-sub{color:var(--text-3);font-size:12px}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border:1px solid var(--line-2);border-radius:999px;font-size:12.5px;color:var(--text-2);background:var(--surface);cursor:pointer}
+.pill .dot{width:6px;height:6px;border-radius:50%;background:var(--acid);box-shadow:0 0 8px var(--acid)}
+.spacer{flex:1}
+
+.thread{flex:1;overflow-y:auto;padding:30px 0 8px}
+.turn{max-width:720px;margin:0 auto;padding:0 28px 30px}
+.msg-user{display:flex;justify-content:flex-end}
+.bubble{background:var(--surface-2);border:1px solid var(--line);padding:11px 15px;border-radius:16px 16px 4px 16px;max-width:80%;color:var(--text)}
+.msg-ai{display:flex;gap:14px;margin-top:26px}
+.msg-ai .orb{width:28px;height:28px;margin-top:2px}
+.ai-body{min-width:0;flex:1}
+.ai-body h4{font-size:14px;font-weight:700;margin:2px 0 9px;letter-spacing:-.01em}
+.ai-body p{color:var(--text);margin:0 0 12px}
+.caret{display:inline-block;width:7px;height:15px;background:var(--acid);vertical-align:-2px;margin-left:2px;border-radius:1px;animation:blink 1.05s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.cite{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--text-2);border:1px solid var(--line-2);border-radius:5px;padding:0 4px;margin:0 1px;cursor:pointer;vertical-align:1px;transition:.15s}
+.cite:hover{border-color:var(--acid);color:var(--acid)}
+.num{font-family:var(--mono);color:var(--text);font-weight:500}
+
+/* thinking state */
+.thinking{display:none}
+.thinking.show{display:block;animation:fade .4s both}
+.think-row{display:flex;align-items:center;gap:11px;margin-bottom:14px}
+.think-row .orb{width:30px;height:30px}
+.shimmer{font-weight:600;font-size:14px;background:linear-gradient(90deg,var(--text-3) 30%,var(--text) 50%,var(--text-3) 70%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sh 1.6s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+.qsearch{display:flex;flex-direction:column;gap:7px;margin-left:41px}
+.qchip{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text-3);opacity:.5;transition:.35s}
+.qchip .tick{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--line-2);display:grid;place-items:center;flex:none;transition:.35s}
+.qchip .tick svg{width:10px;height:10px;stroke:var(--on-acid);opacity:0;transition:.2s}
+.qchip .cnt{font-family:var(--mono);font-size:11px;color:var(--text-3);margin-left:auto}
+.qchip.done{opacity:1;color:var(--text)}
+.qchip.done .tick{background:var(--acid);border-color:var(--acid);box-shadow:0 0 10px rgba(140,220,40,.5)}
+.qchip.done .tick svg{opacity:1}
+.qchip.done .cnt{color:var(--acid-dim)}
+
+.compute{border:1px solid var(--line-2);border-radius:var(--radius);background:linear-gradient(180deg,var(--surface),var(--bg-2));padding:13px 15px;margin:4px 0 14px}
+.compute .ctop{display:flex;align-items:center;gap:9px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);font-weight:600;margin-bottom:9px}
+.compute .ctop .ic{color:var(--acid);display:flex}
+.compute .big{font-family:var(--mono);font-size:25px;font-weight:600;color:var(--text)}
+.compute .big .u{font-size:14px;color:var(--text-3);margin-left:4px}
+.compute .stage{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--on-acid);background:var(--acid);border-radius:5px;padding:1px 7px;font-weight:600;margin-left:10px;vertical-align:4px}
+.compute .formula{font-family:var(--mono);font-size:11.5px;color:var(--text-3);margin-top:8px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.chip{font-size:12.5px;color:var(--text-2);border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 13px;cursor:pointer;transition:.15s}
+.chip:hover{border-color:var(--line-2);color:var(--text);background:var(--surface-2)}
+.actions{display:flex;gap:4px;margin-top:8px}.actions .icon-btn{width:30px;height:30px}
+
+.composer-wrap{padding:10px 0 22px;background:linear-gradient(0deg,var(--bg) 60%,transparent)}
+.composer{max-width:720px;margin:0 auto;padding:0 28px}
+.box{border:1px solid var(--line-2);background:var(--surface);border-radius:20px;padding:12px 12px 10px;transition:.2s}
+.box:focus-within{border-color:var(--acid-dim);box-shadow:0 0 0 3px rgba(140,220,40,.14)}
+.box textarea{width:100%;background:none;border:none;color:var(--text);font-family:var(--font);font-size:15px;resize:none;outline:none;min-height:24px}
+.box textarea::placeholder{color:var(--text-3)}
+.tools{display:flex;align-items:center;gap:7px;margin-top:9px}
+.mode{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-2);border:1px solid var(--line-2);border-radius:999px;padding:6px 12px;cursor:pointer;background:var(--bg-2)}
+.mode b{color:var(--text);font-weight:600}
+.tool{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:var(--bg-2);color:var(--text-2);display:grid;place-items:center;cursor:pointer}
+.tool:hover{color:var(--text);border-color:var(--line-2)}
+.send{width:36px;height:36px;border-radius:50%;border:none;background:var(--acid);color:var(--on-acid);display:grid;place-items:center;cursor:pointer;box-shadow:0 6px 18px -6px rgba(140,220,40,.7)}
+.send:hover{filter:brightness(1.07)}
+.composer .hint{text-align:center;color:var(--text-3);font-size:11px;margin-top:9px;font-family:var(--mono)}
+
+.evidence{background:var(--bg-2);border-left:1px solid var(--line);display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.app.evidence-collapsed .evidence{border-left:none}
+.ev-head{height:56px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line)}
+.ev-head b{font-size:13px;font-weight:600}
+.live{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;color:var(--acid-dim);border:1px solid rgba(140,220,40,.3);border-radius:999px;padding:2px 8px}
+.live .dot{width:5px;height:5px;border-radius:50%;background:var(--acid);box-shadow:0 0 8px var(--acid);animation:pulse 1.8s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.tabs{display:flex;gap:2px;padding:8px 12px 0;border-bottom:1px solid var(--line)}
+.tab{font-size:12.5px;color:var(--text-3);padding:9px 11px;cursor:pointer;position:relative;font-weight:500}
+.tab.active{color:var(--text)}
+.tab.active::after{content:"";position:absolute;left:11px;right:11px;bottom:-1px;height:2px;background:var(--acid);border-radius:2px;box-shadow:0 0 8px var(--acid)}
+.ev-body{flex:1;overflow-y:auto;padding:14px 14px 20px}
+.src{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:12px 13px;margin-bottom:10px;cursor:pointer;transition:.16s;position:relative}
+.src:hover{border-color:var(--line-2);transform:translateY(-1px)}
+.src .badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--text-3);text-transform:uppercase}
+.src .badge .sq{width:7px;height:7px;border-radius:2px;background:var(--text-3)}
+.src.openfda .sq{background:#7FB2FF}.src.pubmed .sq{background:#C7A6FF}.src.trial .sq{background:#FF9F7F}.src.faers .sq{background:#FF5C4D}
+.src h5{font-size:13px;font-weight:600;margin:7px 0 5px;line-height:1.35}
+.src .meta{font-family:var(--mono);font-size:10.5px;color:var(--text-3);display:flex;gap:9px;flex-wrap:wrap}
+.src .cidx{position:absolute;top:11px;right:12px;font-family:var(--mono);font-size:10px;color:var(--text-2);border:1px solid var(--line-2);border-radius:5px;padding:0 5px}
+.src .since{color:var(--acid-dim)}
+.relv{height:3px;border-radius:2px;background:var(--line-2);margin-top:9px;overflow:hidden}
+.relv i{display:block;height:100%;background:var(--acid);box-shadow:0 0 8px rgba(140,220,40,.6)}
+.ev-foot{flex:none;border-top:1px solid var(--line);padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--text-3);display:flex;justify-content:space-between}
+::-webkit-scrollbar{width:9px}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:9px;border:2px solid var(--bg-2)}::-webkit-scrollbar-track{background:transparent}
+svg{width:17px;height:17px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.fade{animation:fade .5s both}@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="rail">
+    <div class="brand"><span class="orb" data-dots="12" data-r="11" data-s="3"></span><div class="wordmark">PharmaOrb</div></div>
+    <button class="new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="new-txt">New chat</span></button>
+    <div class="search"><svg viewBox="0 0 24 24" style="width:15px;height:15px;opacity:.6"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input placeholder="Search chats & drugs"/></div>
+    <nav class="nav">
+      <div class="label">Today</div>
+      <div class="hist active"><svg class="hist-ic" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Metformin dosing in CKD</span></div>
+      <div class="hist"><svg class="hist-ic" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Tirzepatide & heart failure</span></div>
+      <div class="hist"><svg class="hist-ic" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>SSRI interaction check</span></div>
+      <div class="label">Projects</div>
+      <div class="hist"><svg class="hist-ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>GLP-1 formulary review</span></div>
+    </nav>
+    <div class="acct"><div class="av">AG</div><div class="acct-meta"><b>Axel Galvez</b><small>Pro · 1,000/day</small></div></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <button class="icon-btn" onclick="app.classList.toggle('rail-collapsed')" title="Toggle history"><svg viewBox="0 0 24 24"><path d="M3 5h18M3 12h18M3 19h18"/></svg></button>
+      <div><div class="thread-title">Metformin dosing in CKD</div><div class="thread-sub">12 sources · updated just now</div></div>
+      <div class="spacer"></div>
+      <button class="icon-btn" onclick="replay()" title="Replay thinking"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+      <button class="icon-btn" id="theme" onclick="toggleTheme()" title="Toggle light/dark"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg></button>
+      <div class="pill"><span class="dot"></span>PharmaOrb · Evidence</div>
+      <button class="icon-btn" onclick="app.classList.toggle('evidence-collapsed')" title="Toggle evidence"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M14 5v14"/></svg></button>
+    </div>
+
+    <div class="thread">
+      <div class="turn">
+        <div class="msg-user"><div class="bubble">What's the metformin dose for a patient with an eGFR of <span class="mono">40</span>?</div></div>
+        <div class="msg-ai">
+          <span class="orb" id="aiOrb" data-dots="12" data-r="11" data-s="3"></span>
+          <div class="ai-body">
+
+            <!-- THINKING STATE -->
+            <div class="thinking" id="thinking">
+              <div class="think-row"><span class="shimmer">Searching the evidence…</span></div>
+              <div class="qsearch" id="qsearch">
+                <div class="qchip" data-i="0"><span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg></span>PubMed <span class="cnt">10</span></div>
+                <div class="qchip" data-i="1"><span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg></span>Europe PMC <span class="cnt">8</span></div>
+                <div class="qchip" data-i="2"><span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg></span>ClinicalTrials.gov <span class="cnt">10</span></div>
+                <div class="qchip" data-i="3"><span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg></span>openFDA label <span class="cnt">2</span></div>
+                <div class="qchip" data-i="4"><span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg></span>FAERS safety <span class="cnt">1</span></div>
+                <div class="qchip" data-i="5"><span class="tick"><svg viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg></span>Reranking 47 candidates <span class="cnt">→ 12</span></div>
+              </div>
+            </div>
+
+            <!-- ANSWER -->
+            <div class="answer" id="answer">
+              <h4>Metformin at eGFR 40 mL/min/1.73m²</h4>
+              <p>At an eGFR of <span class="num">40</span>, metformin is <b>not contraindicated</b> but requires caution: per the FDA label, initiation is not recommended below <span class="num">45</span>, and the dose should be reviewed — many clinicians cap total daily dose around <span class="num">1000&nbsp;mg</span> in this range. <span class="cite">FDA&nbsp;1</span> Discontinue if eGFR falls below <span class="num">30</span>. <span class="cite">FDA&nbsp;2</span> Recent real-world data support continued use in stage 3b CKD with monitoring. <span class="cite">PMID&nbsp;3</span></p>
+              <div class="compute">
+                <div class="ctop"><span class="ic"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4M14 3h7v7M21 3l-9 9"/></svg></span>Computed · CKD-EPI 2021<span class="stage">Stage G3b</span></div>
+                <div class="big">40<span class="u">mL/min/1.73m²</span></div>
+                <div class="formula">142 · min(SCr/κ,1)^α · max(SCr/κ,1)^−1.200 · 0.9938^age · (1.012♀)</div>
+              </div>
+              <div class="chips">
+                <div class="chip">↳ Adjust by Cockcroft-Gault instead</div>
+                <div class="chip">Check interactions</div>
+                <div class="chip">Open full monograph</div>
+              </div>
+              <div class="actions">
+                <button class="icon-btn" title="Copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+                <button class="icon-btn" title="Regenerate"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+                <button class="icon-btn" title="Save"><svg viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer-wrap">
+      <div class="composer">
+        <div class="box">
+          <textarea rows="1" placeholder="Ask about a drug, dose, interaction, or monograph…"></textarea>
+          <div class="tools">
+            <div class="mode"><svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M12 3l2.4 6.3L21 11l-6.6 1.7L12 19l-2.4-6.3L3 11l6.6-1.7z"/></svg><b>Evidence</b> · live</div>
+            <button class="tool" title="Attach"><svg viewBox="0 0 24 24"><path d="M21 11.5 12.5 20a4.5 4.5 0 1 1-6.4-6.4l8-8a3 3 0 1 1 4.3 4.3l-8 8a1.5 1.5 0 1 1-2.1-2.1l7.3-7.3"/></svg></button>
+            <div class="spacer"></div>
+            <button class="send" title="Send"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          </div>
+        </div>
+        <div class="hint">⌘K commands · ⏎ to send · evidence updates live</div>
+      </div>
+    </div>
+  </main>
+
+  <aside class="evidence">
+    <div class="ev-head"><b>Evidence</b><div class="spacer"></div><span class="live"><span class="dot"></span>LIVE</span></div>
+    <div class="tabs">
+      <div class="tab active" onclick="tab(this)">Sources <span class="mono" style="color:var(--text-3)">12</span></div>
+      <div class="tab" onclick="tab(this)">Monograph</div>
+      <div class="tab" onclick="tab(this)">Calculators</div>
+    </div>
+    <div class="ev-body">
+      <div class="src openfda"><div class="cidx">1</div><div class="badge"><span class="sq"></span>openFDA · label</div><h5>Metformin HCl — Dosage &amp; Administration</h5><div class="meta"><span>FDA label</span><span>revised 2024-08-21</span></div><div class="relv"><i style="width:96%"></i></div></div>
+      <div class="src openfda"><div class="cidx">2</div><div class="badge"><span class="sq"></span>openFDA · label</div><h5>Warnings — renal function &amp; discontinuation</h5><div class="meta"><span>FDA label</span><span>§5.1</span></div><div class="relv"><i style="width:88%"></i></div></div>
+      <div class="src pubmed"><div class="cidx">3</div><div class="badge"><span class="sq"></span>PubMed · live <span class="since">· since label</span></div><h5>Glycemic trajectories on metformin in stage 3 CKD</h5><div class="meta"><span>PMID 42245050</span><span>2026</span></div><div class="relv"><i style="width:81%"></i></div></div>
+      <div class="src trial"><div class="cidx">4</div><div class="badge"><span class="sq"></span>ClinicalTrials · live</div><h5>Metformin in moderate renal impairment — PK/safety</h5><div class="meta"><span>NCT06147050</span><span>Recruiting</span></div><div class="relv"><i style="width:64%"></i></div></div>
+      <div class="src faers"><div class="cidx">5</div><div class="badge"><span class="sq"></span>FAERS · safety signal</div><h5>Top reactions: nausea, diarrhoea, lactic acidosis</h5><div class="meta"><span>FAERS</span><span class="mono">31,242 reports</span></div><div class="relv"><i style="width:52%"></i></div></div>
+    </div>
+    <div class="ev-foot"><span>5 of 12 shown</span><span>dense ⊕ rerank-2.5</span></div>
+  </aside>
+</div>
+
+<script>
+const app=document.getElementById('app');
+function buildOrb(el){const n=+el.dataset.dots||12,r=+el.dataset.r||11,s=+el.dataset.s||3;el.style.width=el.style.height=(r*2+s+4)+'px';el.innerHTML='';for(let i=0;i<n;i++){const slot=document.createElement('span');slot.className='slot';slot.style.transform=`translate(-50%,-50%) rotate(${i*360/n}deg) translateY(${-r}px)`;const d=document.createElement('span');d.className='d';d.style.width=d.style.height=s+'px';d.style.animationDelay=(i*(1.5/n)).toFixed(2)+'s';slot.appendChild(d);el.appendChild(slot);}}
+document.querySelectorAll('.orb').forEach(buildOrb);
+function tab(el){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');}
+function toggleTheme(){const h=document.documentElement;h.dataset.theme=h.dataset.theme==='dark'?'light':'dark';}
+const ta=document.querySelector('textarea');ta&&ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=ta.scrollHeight+'px'});
+
+const thinking=document.getElementById('thinking'),answer=document.getElementById('answer'),aiOrb=document.getElementById('aiOrb');
+let timers=[];
+function replay(){
+  timers.forEach(clearTimeout);timers=[];
+  document.querySelectorAll('.qchip').forEach(c=>c.classList.remove('done'));
+  answer.style.display='none';thinking.classList.add('show');aiOrb.classList.add('busy');
+  const chips=[...document.querySelectorAll('.qchip')];
+  chips.forEach((c,i)=>timers.push(setTimeout(()=>c.classList.add('done'),350+i*340)));
+  timers.push(setTimeout(()=>{thinking.classList.remove('show');aiOrb.classList.remove('busy');answer.style.display='block';answer.classList.remove('fade');void answer.offsetWidth;answer.classList.add('fade');},350+chips.length*340+500));
+}
+replay();
+</script>
+</body>
+</html>
