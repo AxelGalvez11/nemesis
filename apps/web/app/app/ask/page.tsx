@@ -74,6 +74,16 @@ export default function AskPage() {
     return () => clearInterval(t);
   }, [busy]);
 
+  // Close the mode menu on Escape / outside click.
+  useEffect(() => {
+    if (!modeOpen) return;
+    const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".mode-wrap")) setModeOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setModeOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [modeOpen]);
+
   function autoGrow() {
     const ta = taRef.current;
     if (!ta) return;
@@ -132,18 +142,19 @@ export default function AskPage() {
               rows={1}
               value={question}
               maxLength={500}
+              aria-label="Ask a question about a drug, dose, interaction, or monograph"
               placeholder="Ask about a drug, dose, interaction, or monograph…"
               onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
             />
             <div className="tools">
-              <div style={{ position: "relative" }}>
-                <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button">
+              <div className="mode-wrap" style={{ position: "relative" }}>
+                <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
                   <Icon name="sparkle" size={14} />
                   <b>{activeMode.label}</b>{activeMode.live ? " · live" : " · soon"}
                 </button>
                 {modeOpen ? (
-                  <div className="acct-menu" style={{ bottom: "auto", top: "calc(100% + 6px)", left: 0, right: "auto", width: 230 }}>
+                  <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
                     {MODES.map((m) => (
                       <button key={m.id} onClick={() => { setMode(m.id); setModeOpen(false); }} title={m.hint}>
                         <Icon name={m.id === mode ? "check" : "sparkle"} size={14} />
@@ -209,11 +220,14 @@ function Answer({ answer }: { answer: AskResponse }) {
   }, [answer.citations]);
 
   const s = answer.answer_sections;
+  const flags = (answer.safety_flags ?? []).filter((f) => f !== "no_sources_found");
   return (
     <div className="answer fade">
-      <span className="grade">{answer.evidence_grade.replace(/_/g, " ")}</span>
-      <h4 style={{ marginTop: 8 }}>{answer.plain_english_summary ? null : "Answer"}</h4>
-      {answer.plain_english_summary ? <p>{answer.plain_english_summary}</p> : null}
+      <div className="grade-row">
+        <span className="grade">{answer.evidence_grade.replace(/_/g, " ")}</span>
+        {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
+      </div>
+      {answer.plain_english_summary ? <p style={{ marginTop: 10 }}>{answer.plain_english_summary}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
 
       <Section title="What we know" points={s.what_we_know} citeMap={citeMap} />
@@ -228,7 +242,7 @@ function Answer({ answer }: { answer: AskResponse }) {
       ) : null}
 
       <div className="msg-actions">
-        <button className="icon-btn" title="Copy" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary)}><Icon name="copy" size={15} /></button>
+        <button className="icon-btn" title="Copy" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
         <button className="icon-btn" title="Save (soon)" disabled><Icon name="save" size={15} /></button>
       </div>
     </div>

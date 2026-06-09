@@ -62,13 +62,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [evidence, setEvidenceNode] = useState<ReactNode | null>(null);
   const [topbar, setTopbarNode] = useState<ReactNode | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [plan, setPlan] = useState<{ plan: string; used: number; limit: number }>({ plan: "free", used: 0, limit: 10 });
 
   // Stable setters so child effects don't loop.
   const setEvidence = useCallback((node: ReactNode | null) => setEvidenceNode(node), []);
   const setTopbar = useCallback((node: ReactNode | null) => setTopbarNode(node), []);
-  const toggleRail = useCallback(() => setRailCollapsed((v) => !v), []);
+  // The hamburger collapses the rail on desktop AND toggles the mobile drawer; each layout's CSS
+  // ignores the other's state, so one button drives both without conflict.
+  const toggleRail = useCallback(() => { setRailCollapsed((v) => !v); setMobileNavOpen((v) => !v); }, []);
   const toggleEvidence = useCallback(() => setEvidenceCollapsed((v) => !v), []);
+  const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
 
   useEffect(() => {
     if (!loading && !session) router.replace(`/sign-in?next=${encodeURIComponent(path)}`);
@@ -89,14 +93,36 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [session]);
 
+  // Close the account menu on Escape or an outside click.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".acct-wrap")) setMenuOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [menuOpen]);
+
+  // Close the mobile drawer on route change.
+  useEffect(() => { setMobileNavOpen(false); }, [path]);
+
+  const ctx = useMemo<AppChromeValue>(
+    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar }),
+    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar],
+  );
+
+  // Hooks are all above this line — only conditional returns below (Rules of Hooks).
   if (loading) return <div className="centered muted">Loading…</div>;
   if (!session) return <div className="centered muted">Redirecting…</div>;
 
   const hasEvidence = evidence != null;
+  const isChat = path.startsWith("/app/ask");
   const fullBleed = FULL_BLEED.some((p) => path.startsWith(p));
+  const pageClass = isChat ? "page-content" : fullBleed ? "page-content scroll" : "page-content padded";
   const appClass = [
     "app",
     railCollapsed && "rail-collapsed",
+    mobileNavOpen && "mobile-open",
     hasEvidence ? evidenceCollapsed && "evidence-collapsed" : "no-evidence",
   ]
     .filter(Boolean)
@@ -104,11 +130,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const defaultTitle = titleForPath(path);
   const email = session.user.email ?? "preview@pharmaorb.app";
   const initials = email.slice(0, 2).toUpperCase();
-
-  const ctx = useMemo<AppChromeValue>(
-    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar }),
-    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar],
-  );
 
   return (
     <AppChromeContext.Provider value={ctx}>
@@ -119,25 +140,25 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Orb size={28} />
             <div className="wordmark">PharmaOrb</div>
           </div>
-          <button className="new" onClick={() => router.push("/app/ask")}>
+          <button className="new" onClick={() => router.push("/app/ask")} aria-label="New chat">
             <Icon name="plus" size={16} />
             <span className="new-txt">New chat</span>
           </button>
           <div className="search">
             <Icon name="search" size={15} />
-            <input placeholder="Search chats & drugs" />
+            <input placeholder="Search chats & drugs" aria-label="Search chats and drugs" />
           </div>
           <nav className="nav">
             <div className="r-label">Workspace</div>
             {workspace.map((item) => (
-              <Link key={item.href} href={item.href} className={`hist${isActive(path, item.href) ? " active" : ""}`}>
+              <Link key={item.href} href={item.href} aria-label={item.label} className={`hist${isActive(path, item.href) ? " active" : ""}`}>
                 <Icon name={item.icon} className="hist-ic" />
                 <span>{item.label}</span>
               </Link>
             ))}
 
             <div className="r-label">Projects</div>
-            <Link href="/app/settings" className="hist">
+            <Link href="/app/settings" className="hist" aria-label="New project">
               <Icon name="folder" className="hist-ic" />
               <span>New project</span>
             </Link>
@@ -161,7 +182,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <button onClick={() => void signOut().then(() => router.replace("/sign-in"))}><Icon name="logout" size={15} />Sign out</button>
               </div>
             ) : null}
-            <button className="acct-btn" onClick={() => setMenuOpen((v) => !v)}>
+            <button className="acct-btn" onClick={() => setMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={menuOpen} aria-label="Account menu">
               <span className="av">{initials}</span>
               <span className="acct-meta">
                 <b>{email.split("@")[0]}</b>
@@ -171,10 +192,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </aside>
 
+        {/* mobile drawer backdrop */}
+        <button className="rail-backdrop" aria-label="Close menu" onClick={closeMobileNav} tabIndex={-1} />
+
         {/* ── main ── */}
         <main className="main">
           <div className="topbar">
-            <button className="icon-btn" onClick={toggleRail} title="Toggle sidebar">
+            <button className="icon-btn" onClick={toggleRail} title="Toggle sidebar" aria-label="Toggle sidebar">
               <Icon name="menu" />
             </button>
             {topbar ?? (
@@ -193,7 +217,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </button>
             ) : null}
           </div>
-          <div className={fullBleed ? "page-content" : "page-content padded"}>{children}</div>
+          <div className={pageClass}>{children}</div>
         </main>
 
         {/* ── evidence (page-injected) ── */}

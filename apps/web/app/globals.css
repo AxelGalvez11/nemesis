@@ -17,7 +17,7 @@
   /* mockup palette (hex) */
   --bg: #0a0a0b; --bg-2: #0e0e10; --surface: #141417; --surface-2: #1a1a1e; --raised: #1f1f24;
   --line: #242428; --line-2: #2e2e34;
-  --text: #f4f4f5; --text-2: #a6a6ad; --text-3: #6c6c74;
+  --text: #f4f4f5; --text-2: #a6a6ad; --text-3: #8c8c95;
   --acid: #bcff3c; --acid-dim: #9bd92e; --acid-deep: #74a81e; --on-acid: #0a0a0b;
   --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
 
@@ -51,7 +51,7 @@
   color-scheme: light;
   --bg: #fbfbf9; --bg-2: #f4f4f1; --surface: #ffffff; --surface-2: #f8f8f5; --raised: #ffffff;
   --line: #e8e8e2; --line-2: #dbdbd3;
-  --text: #0d0d0f; --text-2: #5c5c63; --text-3: #9c9ca2;
+  --text: #0d0d0f; --text-2: #5c5c63; --text-3: #6e6e77;
   --acid: #62b000; --acid-dim: #74a81e; --acid-deep: #4c8200; --on-acid: #ffffff;
   --warn: #b5760a; --danger: #cc3322; --info: #0278c0;
   --glow: 0.18;
