@@ -2,48 +2,73 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "./AuthProvider";
-import { landingUrl } from "@/lib/env";
-import { fetchEntitlements, fetchUsage, fetchWatchlist } from "@/lib/api";
+import { useTheme } from "./theme-provider";
+import { Orb } from "./Orb";
+import { fetchEntitlements, fetchUsage } from "@/lib/api";
+import { Icon } from "./icons";
 
-const nav = [
-  { href: "/app", label: "Home" },
-  { href: "/app/ask", label: "Ask" },
-  { href: "/app/explore", label: "Explore" },
-  { href: "/app/watchlist", label: "Watchlist" },
-  { href: "/app/billing", label: "Billing" },
-  { href: "/app/profile", label: "Profile" },
+/* ── chrome context: pages inject their evidence panel + topbar title here ── */
+interface AppChromeValue {
+  railCollapsed: boolean;
+  toggleRail: () => void;
+  evidenceCollapsed: boolean;
+  toggleEvidence: () => void;
+  setEvidence: (node: ReactNode | null) => void;
+  setTopbar: (node: ReactNode | null) => void;
+}
+const AppChromeContext = createContext<AppChromeValue>({
+  railCollapsed: false,
+  toggleRail: () => {},
+  evidenceCollapsed: false,
+  toggleEvidence: () => {},
+  setEvidence: () => {},
+  setTopbar: () => {},
+});
+export const useAppChrome = () => useContext(AppChromeContext);
+
+const workspace = [
+  { href: "/app/ask", label: "Ask", icon: "message" as const },
+  { href: "/app/explore", label: "Explore", icon: "search" as const },
+  { href: "/app/watchlist", label: "Watchlist", icon: "bell" as const },
 ];
 
-function titleForPath(path: string) {
-  if (path.includes("/app/ask")) return "Ask";
-  if (path.includes("/app/explore")) return "Explore";
-  if (path.includes("/app/watchlist")) return "Watchlist";
-  if (path.includes("/app/billing")) return "Billing";
-  if (path.includes("/app/profile")) return "Profile";
-  if (path.includes("/app/drugs/")) return "Drug page";
-  if (path.includes("/app/source/")) return "Source viewer";
-  return "Evidence workspace";
-}
-
 function isActive(path: string, href: string) {
-  if (href === "/app") return path === href;
   return path === href || path.startsWith(`${href}/`);
 }
+function titleForPath(path: string): { title: string; sub?: string } {
+  if (path.startsWith("/app/ask")) return { title: "Ask", sub: "live evidence · cited" };
+  if (path.startsWith("/app/explore")) return { title: "Explore" };
+  if (path.startsWith("/app/watchlist")) return { title: "Watchlist" };
+  if (path.startsWith("/app/billing")) return { title: "Billing" };
+  if (path.startsWith("/app/profile")) return { title: "Profile" };
+  if (path.startsWith("/app/settings")) return { title: "Settings" };
+  if (path.startsWith("/app/drugs/")) return { title: "Drug" };
+  if (path.startsWith("/app/source/")) return { title: "Source" };
+  return { title: "PharmaOrb" };
+}
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+const FULL_BLEED = ["/app/ask", "/app/explore", "/app/drugs/"];
+
+export function AppShell({ children }: { children: ReactNode }) {
   const { session, loading, signOut } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
   const router = useRouter();
   const path = usePathname();
-  const [planState, setPlanState] = useState({
-    plan: "free",
-    askUsed: 0,
-    askLimit: 10,
-    followsUsed: 0,
-    followsLimit: 3,
-    loaded: false,
-  });
+
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [evidenceCollapsed, setEvidenceCollapsed] = useState(false);
+  const [evidence, setEvidenceNode] = useState<ReactNode | null>(null);
+  const [topbar, setTopbarNode] = useState<ReactNode | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [plan, setPlan] = useState<{ plan: string; used: number; limit: number }>({ plan: "free", used: 0, limit: 10 });
+
+  // Stable setters so child effects don't loop.
+  const setEvidence = useCallback((node: ReactNode | null) => setEvidenceNode(node), []);
+  const setTopbar = useCallback((node: ReactNode | null) => setTopbarNode(node), []);
+  const toggleRail = useCallback(() => setRailCollapsed((v) => !v), []);
+  const toggleEvidence = useCallback(() => setEvidenceCollapsed((v) => !v), []);
 
   useEffect(() => {
     if (!loading && !session) router.replace(`/sign-in?next=${encodeURIComponent(path)}`);
@@ -52,81 +77,125 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!session) return;
     let alive = true;
-    void Promise.all([fetchEntitlements(), fetchUsage(), fetchWatchlist()])
-      .then(([entitlements, usage, watchlist]) => {
+    void Promise.all([fetchEntitlements(), fetchUsage()])
+      .then(([ent, usage]) => {
         if (!alive) return;
         const ask = usage.counters.ask_daily;
-        setPlanState({
-          plan: entitlements.plan,
-          askUsed: ask?.used ?? 0,
-          askLimit: ask?.limit ?? Number(entitlements.entitlements.ask_daily_limit ?? 10),
-          followsUsed: watchlist.length,
-          followsLimit: Number(entitlements.entitlements.watchlist_limit ?? 3),
-          loaded: true,
-        });
+        setPlan({ plan: ent.plan, used: ask?.used ?? 0, limit: ask?.limit ?? Number(ent.entitlements.ask_daily_limit ?? 10) });
       })
-      .catch(() => {
-        if (alive) setPlanState((current) => ({ ...current, loaded: true }));
-      });
+      .catch(() => {});
     return () => {
       alive = false;
     };
   }, [session]);
 
-  if (loading) return <main className="centered">Loading…</main>;
-  if (!session) return <main className="centered">Redirecting…</main>;
+  if (loading) return <div className="centered muted">Loading…</div>;
+  if (!session) return <div className="centered muted">Redirecting…</div>;
 
-  const title = titleForPath(path);
-  const wide = path.includes("/app/ask") || path.includes("/app/explore") || path.includes("/app/drugs/");
-  const askMeterWidth = planState.loaded && planState.askLimit > 0
-    ? `${Math.min(100, Math.round((planState.askUsed / planState.askLimit) * 100))}%`
-    : "12%";
+  const hasEvidence = evidence != null;
+  const fullBleed = FULL_BLEED.some((p) => path.startsWith(p));
+  const appClass = [
+    "app",
+    railCollapsed && "rail-collapsed",
+    hasEvidence ? evidenceCollapsed && "evidence-collapsed" : "no-evidence",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const defaultTitle = titleForPath(path);
+  const email = session.user.email ?? "preview@pharmaorb.app";
+  const initials = email.slice(0, 2).toUpperCase();
+
+  const ctx: AppChromeValue = { railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar };
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-row">
-          <span className="brand-mark">P</span>
-          <Link className="brand" href="/app">Pharma<span>Orb</span></Link>
-          <span className="beta-pill">Beta</span>
-        </div>
-        <nav>
-          {nav.map((item) => (
-            <Link key={item.href} className={isActive(path, item.href) ? "active" : ""} href={item.href}>
-              <span className="nav-dot" />
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <section className="sidebar-card">
-          <h3>{planState.plan} plan</h3>
-          <p>
-            {planState.loaded
-              ? `${planState.askUsed} / ${planState.askLimit} Ask today. ${planState.followsUsed} / ${planState.followsLimit} follows used.`
-              : "Loading current limits..."}
-          </p>
-          <div className="mini-meter"><span style={{ width: askMeterWidth }} /></div>
-        </section>
-        <div className="sidebar-footer">
-          <a href={landingUrl}>Landing</a>
-          <Link href="/legal/privacy">Privacy</Link>
-          <Link href="/legal/terms">Terms</Link>
-          <button type="button" onClick={() => void signOut().then(() => router.replace("/sign-in"))}>
-            Sign out
-          </button>
-        </div>
-      </aside>
-      <main className="app-main">
-        <header className="topbar">
-          <div className="topbar-title">{title}</div>
-          {path.includes("/app/explore") ? <div className="topbar-search">Search drugs, trials...</div> : null}
-          <div className="account-chip">
-            <span className="account-avatar">{session.user.email?.[0]?.toUpperCase() ?? "A"}</span>
-            <span>{session.user.email ?? "preview@pharmaorb.app"}</span>
+    <AppChromeContext.Provider value={ctx}>
+      <div className={appClass}>
+        {/* ── rail ── */}
+        <aside className="rail">
+          <div className="brand">
+            <Orb size={28} />
+            <div className="wordmark">PharmaOrb</div>
           </div>
-        </header>
-        <div className={wide ? "content wide" : "content"}>{children}</div>
-      </main>
-    </div>
+          <button className="new" onClick={() => router.push("/app/ask")}>
+            <Icon name="plus" size={16} />
+            <span className="new-txt">New chat</span>
+          </button>
+          <div className="search">
+            <Icon name="search" size={15} />
+            <input placeholder="Search chats & drugs" />
+          </div>
+          <nav className="nav">
+            <div className="r-label">Workspace</div>
+            {workspace.map((item) => (
+              <Link key={item.href} href={item.href} className={`hist${isActive(path, item.href) ? " active" : ""}`}>
+                <Icon name={item.icon} className="hist-ic" />
+                <span>{item.label}</span>
+              </Link>
+            ))}
+
+            <div className="r-label">Projects</div>
+            <Link href="/app/settings" className="hist">
+              <Icon name="folder" className="hist-ic" />
+              <span>New project</span>
+            </Link>
+            <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }}>
+              <span style={{ fontSize: 12 }}>Bundle chats, sources & deliverables</span>
+            </div>
+
+            <div className="r-label">Recent chats</div>
+            <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }}>
+              <span style={{ fontSize: 12 }}>Your saved chats appear here</span>
+            </div>
+          </nav>
+
+          <div className="acct-wrap">
+            {menuOpen ? (
+              <div className="acct-menu" role="menu">
+                <Link href="/app/settings" onClick={() => setMenuOpen(false)}><Icon name="settings" size={15} />Settings</Link>
+                <Link href="/app/profile" onClick={() => setMenuOpen(false)}><Icon name="user" size={15} />Profile</Link>
+                <Link href="/app/billing" onClick={() => setMenuOpen(false)}><Icon name="card" size={15} />Billing · {plan.plan}</Link>
+                <div className="sep" />
+                <button onClick={() => void signOut().then(() => router.replace("/sign-in"))}><Icon name="logout" size={15} />Sign out</button>
+              </div>
+            ) : null}
+            <button className="acct-btn" onClick={() => setMenuOpen((v) => !v)}>
+              <span className="av">{initials}</span>
+              <span className="acct-meta">
+                <b>{email.split("@")[0]}</b>
+                <small>{plan.plan} · {plan.used}/{plan.limit} today</small>
+              </span>
+            </button>
+          </div>
+        </aside>
+
+        {/* ── main ── */}
+        <main className="main">
+          <div className="topbar">
+            <button className="icon-btn" onClick={toggleRail} title="Toggle sidebar">
+              <Icon name="menu" />
+            </button>
+            {topbar ?? (
+              <div>
+                <div className="thread-title">{defaultTitle.title}</div>
+                {defaultTitle.sub ? <div className="thread-sub">{defaultTitle.sub}</div> : null}
+              </div>
+            )}
+            <div className="spacer" />
+            <button className="icon-btn" onClick={toggleTheme} title="Toggle light/dark">
+              <Icon name={theme === "dark" ? "sun" : "moon"} />
+            </button>
+            {hasEvidence ? (
+              <button className="icon-btn" onClick={toggleEvidence} title="Toggle evidence">
+                <Icon name="panel" />
+              </button>
+            ) : null}
+          </div>
+          <div className={fullBleed ? "page-content" : "page-content padded"}>{children}</div>
+        </main>
+
+        {/* ── evidence (page-injected) ── */}
+        {hasEvidence ? <aside className="evidence">{evidence}</aside> : null}
+      </div>
+    </AppChromeContext.Provider>
   );
 }
