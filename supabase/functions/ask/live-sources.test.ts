@@ -24,24 +24,30 @@ Deno.test("never falls back to bare full-text when a drug was named", () => {
   // The fraudulent-product bug was a BARE term hitting the full-text index. As long as a drug name
   // is present, the query MUST be field-scoped (contain a field selector), never the raw term alone.
   const q = openFdaSearch("retatrutide", ["retatrutide"]);
+  assert(q !== null, "a named drug must produce a field-scoped query, never null");
   assert(q.includes("openfda.generic_name:") && q.includes("openfda.brand_name:"));
   assert(!/^retatrutide$/.test(q));
 });
 
 Deno.test("multi-word drug name is phrase-quoted (no loose-token match)", () => {
   const q = openFdaSearch("insulin glargine", ["insulin glargine"]);
+  assert(q !== null);
   assert(q.includes(`"insulin glargine"`), "multi-word name must stay a quoted phrase");
 });
 
 Deno.test("a name containing a quote is escaped (no query injection)", () => {
   const q = openFdaSearch(`a"b`, [`a"b`]);
+  assert(q !== null);
   assert(q.includes(`"a\\"b"`), "embedded quote must be escaped via JSON.stringify");
 });
 
-Deno.test("no mentions → falls back to the raw free-text query (general question)", () => {
-  assertEquals(openFdaSearch("how do GLP-1 drugs work", []), "how do GLP-1 drugs work");
+Deno.test("no mentions → null (caller SKIPS openFDA; no bare free-text fallback)", () => {
+  // A general, non-drug question names no drug. Returning null tells the caller to skip openFDA
+  // entirely rather than run a bare free-text search — that free-text path is exactly what admitted
+  // the fraudulent name-drop products. The other live sources still handle the free-text query.
+  assertEquals(openFdaSearch("how do GLP-1 drugs work", []), null);
 });
 
-Deno.test("blank/whitespace mentions are ignored, fall back to raw query", () => {
-  assertEquals(openFdaSearch("raw q", ["", "   "]), "raw q");
+Deno.test("blank/whitespace mentions are ignored → null (skip openFDA)", () => {
+  assertEquals(openFdaSearch("raw q", ["", "   "]), null);
 });

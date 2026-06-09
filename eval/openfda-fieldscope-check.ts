@@ -17,6 +17,7 @@ const probes: Probe[] = [
 let issues = 0;
 for (const p of probes) {
   const q = openFdaSearch(p.mentions.join(" "), p.mentions);
+  if (q === null) { console.log(`(skipped — no drug mention) ${p.label}`); continue; }
   const sources = await fetchOpenFdaLabels({ query: q, limit: 8 });
   const names = sources.map((s) => `${s.title}`.toLowerCase());
   const empty = sources.length === 0;

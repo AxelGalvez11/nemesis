@@ -72,8 +72,14 @@ const LIVE_SOURCES: LiveSourceDef[] = [
   // "slimming patches" returned for the investigational retatrutide, which the model then grounded
   // its answer in and cited as an "openFDA label". Those products carry the drug in their label TEXT
   // but not as their generic/brand NAME, so field-scoping excludes them while still matching real
-  // labels by generic (lisinopril) or brand (Ozempic). No drug named -> fall back to the free text.
-  { origin: "openfda", fetch: (q, n, mentions) => fetchOpenFdaLabels({ query: openFdaSearch(q, mentions), limit: n }) },
+  // labels by generic (lisinopril) or brand (Ozempic). No drug named -> SKIP openFDA entirely
+  // (openFdaSearch returns null): a bare free-text fallback is exactly the pattern that admitted the
+  // name-drop products, and a general non-drug question needs no FDA label anyway. The other sources
+  // handle free text safely, so only openFDA opts out when the classifier extracted no drug.
+  { origin: "openfda", fetch: (q, n, mentions) => {
+    const scoped = openFdaSearch(q, mentions);
+    return scoped === null ? Promise.resolve([]) : fetchOpenFdaLabels({ query: scoped, limit: n });
+  } },
   { origin: "faers", fetch: (q, n) => fetchFaersReactions({ query: q, retmax: n }) },
 ];
 
@@ -81,12 +87,14 @@ const LIVE_SOURCES: LiveSourceDef[] = [
  * Build a field-scoped openFDA `search` value: each drug name matched against generic OR brand name,
  * the names OR'd together. URLSearchParams (in the provider) encodes the spaces to `+`, yielding
  * openFDA's canonical `field:"x"+OR+field:"y"` boolean form. Names are quoted so multi-word names
- * ("insulin glargine") phrase-match instead of splitting into loose tokens. Falls back to the raw
- * free-text query only when the classifier extracted no drug name (a general, non-drug question).
+ * ("insulin glargine") phrase-match instead of splitting into loose tokens. Returns `null` when the
+ * classifier extracted no drug name (a general, non-drug question): the caller then SKIPS openFDA
+ * rather than running a bare free-text search, which is the pattern that admitted fraudulent
+ * name-drop products. The raw query is retained in the signature for symmetry with the other sources.
  */
-export function openFdaSearch(rawQuery: string, mentions: string[]): string {
+export function openFdaSearch(_rawQuery: string, mentions: string[]): string | null {
   const names = mentions.map((m) => m.trim()).filter((m) => m.length > 0);
-  if (names.length === 0) return rawQuery;
+  if (names.length === 0) return null;
   return names
     .map((m) => {
       const q = JSON.stringify(m); // wrap in quotes + escape any embedded quote
