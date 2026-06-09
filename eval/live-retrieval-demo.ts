@@ -1,73 +1,84 @@
-// Demo: unified retrieval — library + live PubMed + live ClinicalTrials, reranked together.
-// Proves the architecture the owner asked for: EVERY query hits the library AND both live
-// APIs, and the cross-encoder reranker (today's PR1 win) ranks all three source types in one
-// list by relevance. No deploy — this calls the same providers /ask would use.
+// Demo: unified retrieval — library + live PubMed + ClinicalTrials + openFDA labels, reranked
+// together; with --save, the top live results are written back into the library (read-through-
+// ingest) so you can watch the library grow.
 //
-// Run:  deno run --allow-net --allow-env --allow-read --env-file=.env eval/live-retrieval-demo.ts "your question"
-//
-// Output: the unified top-K with an [origin] tag per row, so you can see live results
-// interleave with library chunks by relevance (not by source).
+// Run (read-only):  deno run --allow-net --allow-env --allow-read --env-file=.env eval/live-retrieval-demo.ts "your question"
+// Run (grow lib):   deno run --allow-net --allow-env --allow-read --env-file=.env eval/live-retrieval-demo.ts "your question" --save
 import { embedQuery, rerankRows } from "./lib/voyage.ts";
 import { matchChunks, mintUser, readEnv, teardownUser } from "./lib/corpus.ts";
-import { gatherLiveCandidates } from "../supabase/functions/ask/live-sources.ts";
+import { gatherLiveCandidates, type LiveCandidate } from "../supabase/functions/ask/live-sources.ts";
+import { saveToLibrary } from "../supabase/functions/ask/live-ingest.ts";
 
 interface Cand {
-  origin: "library" | "pubmed" | "clinicaltrials";
+  origin: "library" | string;
   provider: string;
-  ref: string; // source_id (library) | PMID/NCT (live)
+  ref: string;
   title: string;
-  url: string;
   chunk_text: string; // reranked field
+  live?: LiveCandidate; // present for live rows → carries the full source for save-back
 }
 
 const TOP_K = 12;
 const LIBRARY_POOL = 30;
+const SAVE = Deno.args.includes("--save");
+const query = Deno.args.find((a) => !a.startsWith("--")) ?? "What are the latest cardiovascular outcomes for tirzepatide?";
 
-const query = Deno.args[0] ?? "What are the latest cardiovascular outcomes for tirzepatide?";
 const env = readEnv();
-const user = await mintUser(env);
 
+async function countSources(): Promise<number> {
+  const res = await fetch(`${env.SB_URL}/rest/v1/core_sources?select=id`, {
+    method: "HEAD",
+    headers: { apikey: env.SERVICE_KEY, Authorization: `Bearer ${env.SERVICE_KEY}`, Prefer: "count=exact", Range: "0-0" },
+  });
+  const cr = res.headers.get("content-range");
+  return cr ? Number(cr.split("/")[1]) : -1;
+}
+
+const user = await mintUser(env);
 try {
   // 1. Library (dense ANN over the embedded corpus).
   const emb = await embedQuery(query);
   const libRows = await matchChunks(env, user.jwt, emb, LIBRARY_POOL, 0);
   const library: Cand[] = libRows.map((r) => ({
-    origin: "library",
-    provider: r.provider,
-    ref: r.source_id.slice(0, 8),
-    title: "(library chunk)",
-    url: "",
-    chunk_text: r.chunk_text,
+    origin: "library", provider: r.provider, ref: r.source_id.slice(0, 8), title: "(library chunk)", chunk_text: r.chunk_text,
   }));
 
-  // 2. Live PubMed + ClinicalTrials (parallel, fault-tolerant).
+  // 2. Live: every registered source, concurrently + fault-tolerantly.
   const live = await gatherLiveCandidates({ query });
   const liveCands: Cand[] = live.map((c) => ({
-    origin: c.origin,
-    provider: c.provider,
-    ref: c.provider_id,
-    title: c.title,
-    url: c.url,
-    chunk_text: c.text,
+    origin: c.origin, provider: c.provider, ref: c.provider_id, title: c.title, chunk_text: c.text, live: c,
   }));
+  const byOrigin = (o: string) => liveCands.filter((c) => c.origin === o).length;
 
   console.log(`\nQuery: ${query}`);
-  console.log(`Candidates → library:${library.length}  pubmed:${liveCands.filter((c) => c.origin === "pubmed").length}  clinicaltrials:${liveCands.filter((c) => c.origin === "clinicaltrials").length}`);
+  console.log(`Candidates → library:${library.length}  pubmed:${byOrigin("pubmed")}  clinicaltrials:${byOrigin("clinicaltrials")}  openfda:${byOrigin("openfda")}`);
 
-  // 3. Rerank ALL source types together — the reranker reads text, so it ranks a PubMed
-  //    abstract, a trial summary, and a library chunk on one scale.
-  const all = [...library, ...liveCands];
-  const ranked = await rerankRows(query, all);
+  // 3. Rerank ALL source types together (the reranker reads text → one scale).
+  const ranked = await rerankRows(query, [...library, ...liveCands]);
+  const top = ranked.slice(0, TOP_K);
 
   console.log(`\nUnified top-${TOP_K} (reranked across all sources):`);
-  ranked.slice(0, TOP_K).forEach((c, i) => {
+  top.forEach((c, i) => {
     const label = c.origin === "library" ? `library/${c.provider}` : `LIVE/${c.origin}`;
-    const head = c.title === "(library chunk)" ? c.chunk_text.slice(0, 72).replace(/\n/g, " ") : c.title.slice(0, 72);
+    const head = c.title === "(library chunk)" ? c.chunk_text.slice(0, 70).replace(/\n/g, " ") : c.title.slice(0, 70);
     console.log(`${String(i + 1).padStart(2)}. [${label}] ${c.ref}  ${head}`);
   });
+  console.log(`\n→ ${top.filter((c) => c.origin !== "library").length}/${TOP_K} of the top results are LIVE (not in the library).`);
 
-  const liveInTop = ranked.slice(0, TOP_K).filter((c) => c.origin !== "library").length;
-  console.log(`\n→ ${liveInTop}/${TOP_K} of the top results are LIVE (not in the library) — evidence the app couldn't cite today.`);
+  // 4. Optional read-through-ingest: save the live results that made the top-K into the library.
+  if (SAVE) {
+    const toSave = top.filter((c) => c.live).map((c) => c.live!.source);
+    if (toSave.length === 0) {
+      console.log("\n[--save] No live results in the top-K to save.");
+    } else {
+      const before = await countSources();
+      console.log(`\n[--save] Library has ${before} sources. Saving ${toSave.length} live result(s) back...`);
+      const r = await saveToLibrary(toSave);
+      const after = await countSources();
+      console.log(`[--save] newly embedded: ${r.newlyEmbedded}  chunks: ${r.chunksInserted}  already had (dedupe): ${r.alreadyHad}  failed/license-gated: ${r.failed}`);
+      console.log(`[--save] Library grew ${before} → ${after} sources (+${after - before}). Next time this question is asked, these are served from the library — no API call.`);
+    }
+  }
 } finally {
   await teardownUser(env, user.userId);
 }
