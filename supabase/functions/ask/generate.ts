@@ -2,7 +2,7 @@
 // retrieved chunks are the ONLY grounding; the model cites them by [n] tag.
 
 import { callTool } from "./llm.ts";
-import { GENERATE_TOOL, generateSystem } from "./prompts.ts";
+import { generateSystem, generateTool } from "./prompts.ts";
 import type { EvidenceGrade, Intent } from "../../../packages/shared/src/answer.ts";
 import type { RetrievedChunk } from "./citation.ts";
 
@@ -64,7 +64,7 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
       // answers for a medical app (and lower malformed-JSON rate from DeepSeek).
       temperature: 0,
       system: generateSystem(opts.intent),
-      tools: [GENERATE_TOOL],
+      tools: [generateTool(opts.intent)],
       messages: [{ role: "user", content: userContent }],
     },
     "compose_answer",
