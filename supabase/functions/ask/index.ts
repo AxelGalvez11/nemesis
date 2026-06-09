@@ -24,6 +24,7 @@ import { enforceCitations, type RetrievedChunk } from "./citation.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
+import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
 import { PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
@@ -259,6 +260,18 @@ async function runAsk(
       "no_source", modelName, true, ret.chunks);
   }
 
+  // ---- 6c. deterministic evidence-grade ceiling ----
+  // The model self-grades its answer's evidence strength (gen.raw.evidence_grade).
+  // Where we have a resolved single drug with an offline-computed §9 tier, trust that
+  // auditable, countable-evidence tier instead — as a CEILING that can only LOWER the
+  // grade, never raise it. No stored tier (or a multi-/zero-entity query) leaves the
+  // model grade untouched, so this is strictly non-degrading versus current behavior.
+  let finalGrade: EvidenceGrade = gen.raw.evidence_grade;
+  if (scopeId !== null) {
+    const storedTier = await fetchStoredEvidenceGrade(scopeId, SB_URL, SERVICE_KEY);
+    finalGrade = applyGradeCeiling(gen.raw.evidence_grade, storedTier);
+  }
+
   // ---- 7. assemble ----
   // Deterministic professional-routing guarantee: generation under-emits the
   // "talk to your pharmacist/prescriber" line for personal-decision intents, so
@@ -272,7 +285,7 @@ async function runAsk(
     answer_id: answerId,
     intent: cls.intent,
     plain_english_summary: enf.plain_english_summary,
-    evidence_grade: gen.raw.evidence_grade,
+    evidence_grade: finalGrade,
     answer_sections,
     citations: enf.citations,
     safety_flags: flags,
@@ -288,7 +301,7 @@ async function runAsk(
     intent: cls.intent,
     detected_entities: entities,
     answer: resp,
-    evidence_grade: gen.raw.evidence_grade,
+    evidence_grade: finalGrade,
     source_ids: unique(enf.citations.map((c) => c.source_id)),
     retrieval_scores: ret.chunks.map((c) => ({ chunk_id: c.chunk_id, similarity: c.similarity })),
     model_name: modelName,
