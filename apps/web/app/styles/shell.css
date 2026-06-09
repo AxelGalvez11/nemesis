@@ -4,20 +4,47 @@
 /* ── ORB: halftone dot lattice (largest at center), a pulse rippling outward from the core.
    Dots + falloff are generated in components/Orb.tsx; all motion is here. ── */
 .orb { position: relative; display: inline-block; flex: none; line-height: 0; }
-.orb svg { display: block; overflow: visible; filter: drop-shadow(0 0 1.5px rgba(188, 255, 60, calc(var(--glow) * 0.85))); }
+.orb svg { display: block; overflow: visible; filter: drop-shadow(0 0 1.5px rgba(188, 255, 60, calc(var(--glow) * 0.85))); transition: filter 0.45s ease; }
 .orb .hd {
   fill: var(--acid);
   transform-box: fill-box; transform-origin: center;
   animation: orbpulse 2.6s ease-in-out infinite;
 }
-.orb.busy svg { filter: drop-shadow(0 0 2.5px rgba(188, 255, 60, 0.9)); }
-.orb.busy .hd { animation-duration: 1.05s; }
+/* soft halo — breathes slowly at rest (out of phase with the dot pulse) so the mark feels alive */
 .orb::after {
   content: ""; position: absolute; inset: 16%; border-radius: 50%;
   background: radial-gradient(circle, rgba(188, 255, 60, 0.32), transparent 70%);
   opacity: var(--glow); pointer-events: none;
+  animation: orbglow 4.2s ease-in-out infinite;
 }
+/* sonar ring — invisible at rest, emanates outward only while thinking (echoes the answer ripple) */
+.orb::before {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  border: 1px solid var(--acid); opacity: 0; transform: scale(0.55); pointer-events: none;
+}
+
+/* ── thinking: faster ripple, brighter core, a looping sonar pulse + quicker halo ── */
+.orb.busy svg { filter: drop-shadow(0 0 3px rgba(188, 255, 60, 0.95)); }
+.orb.busy .hd { animation-duration: 1.05s; }
+.orb.busy::before { animation: orbsonar 1.5s ease-out infinite; }
+.orb.busy::after { animation-duration: 1.6s; }
+
+/* ── completion bloom: a one-shot flare the moment an answer lands ── */
+.orb.bloom { animation: orbbloom 0.7s ease-out; }
+.orb.bloom svg { filter: drop-shadow(0 0 5px rgba(188, 255, 60, 1)); }
+
 @keyframes orbpulse { 0%, 100% { opacity: 0.74; transform: scale(0.96); } 45% { opacity: 1; transform: scale(1.05); } }
+@keyframes orbglow { 0%, 100% { opacity: calc(var(--glow) * 0.62); } 50% { opacity: var(--glow); } }
+@keyframes orbsonar {
+  0% { opacity: 0.5; transform: scale(0.55); }
+  70%, 100% { opacity: 0; transform: scale(1.55); }
+}
+@keyframes orbbloom { 0% { transform: scale(1.16); } 55% { transform: scale(0.98); } 100% { transform: scale(1); } }
+
+/* respect the OS "reduce motion" setting: keep the mark, drop the looping/one-shot motion */
+@media (prefers-reduced-motion: reduce) {
+  .orb .hd, .orb::after, .orb.busy .hd, .orb.busy::after, .orb.busy::before, .orb.bloom { animation: none; }
+}
 
 /* ── app grid ── */
 .app {

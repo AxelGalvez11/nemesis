@@ -31,10 +31,10 @@ const DOTS: Dot[] = (() => {
   return out;
 })();
 
-export function Orb({ size = 28, busy = false, className }: { size?: number; busy?: boolean; className?: string }) {
+export function Orb({ size = 28, busy = false, bloom = false, className }: { size?: number; busy?: boolean; bloom?: boolean; className?: string }) {
   return (
     <span
-      className={`orb${busy ? " busy" : ""}${className ? ` ${className}` : ""}`}
+      className={`orb${busy ? " busy" : ""}${bloom ? " bloom" : ""}${className ? ` ${className}` : ""}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
