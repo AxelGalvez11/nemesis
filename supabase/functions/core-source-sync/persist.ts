@@ -7,7 +7,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import type { CoreSourceLicense, CoreSourceProvider } from "./license.ts";
-import { assertCommercialFriendly } from "./license.ts";
+import { assertCommercialFriendly, getLicenseRequirements } from "./license.ts";
 import type { SectionedChunk } from "./chunking.ts";
 
 export interface NormalizedSource {
@@ -71,15 +71,20 @@ export async function upsertCoreSource(
     return { source_id: existing.id, skipped_unchanged: !isOrphan };
   }
 
+  // Single source of truth for the stored flags: derive from the license's requirements rather
+  // than hardcoding. assertCommercialFriendly() above already rejects commercial_use_allowed:false,
+  // so this is always true here — but persisting the derived value keeps the row honest and makes
+  // the DB CHECK (commercial_use_allowed = true) a genuine third line of defense, not a tautology.
+  const req = getLicenseRequirements(src.license);
   const row = {
     provider: src.provider,
     provider_id: src.provider_id,
     title: src.title,
     subtitle: src.subtitle ?? null,
     license: src.license,
-    attribution_required: licenseRequiresAttribution(src.license),
-    commercial_use_allowed: true,
-    share_alike_required: src.license === "cc_by_sa",
+    attribution_required: req.attribution_required,
+    commercial_use_allowed: req.commercial_use_allowed,
+    share_alike_required: req.share_alike_required,
     source_url: src.source_url,
     content_hash: src.content_hash,
     fetched_at: new Date().toISOString(),
@@ -150,8 +155,4 @@ export async function insertChunks(
     inserted += slice.length;
   }
   return inserted;
-}
-
-function licenseRequiresAttribution(l: CoreSourceLicense): boolean {
-  return l === "cc_by" || l === "cc_by_sa" || l === "oer_open";
 }
