@@ -48,20 +48,23 @@ export default function AskPage() {
   const [modeOpen, setModeOpen] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  // Inject the topbar (thread meta) + evidence panel into the shell.
+  // Inject the topbar (thread meta) + evidence panel into the shell. Depend on the STABLE setters
+  // (useCallback in AppShell), NOT the whole `chrome` object — `chrome` is recreated every AppShell
+  // render, so depending on it would re-run this effect in a loop as it sets shell state.
+  const { setEvidence, setTopbar } = chrome;
   useEffect(() => {
-    chrome.setEvidence(<EvidencePanel citations={answer?.citations ?? []} />);
-    chrome.setTopbar(
+    setEvidence(<EvidencePanel citations={answer?.citations ?? []} />);
+    setTopbar(
       <div>
         <div className="thread-title">{lastQuestion || "New question"}</div>
         <div className="thread-sub">{answer ? `${answer.citations.length} sources · ${answer.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
       </div>,
     );
     return () => {
-      chrome.setEvidence(null);
-      chrome.setTopbar(null);
+      setEvidence(null);
+      setTopbar(null);
     };
-  }, [answer, lastQuestion, chrome]);
+  }, [answer, lastQuestion, setEvidence, setTopbar]);
 
   // Animate the thinking stages while busy.
   useEffect(() => {

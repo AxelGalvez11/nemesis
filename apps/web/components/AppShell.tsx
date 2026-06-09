@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
 import { Orb } from "./Orb";
@@ -105,7 +105,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const email = session.user.email ?? "preview@pharmaorb.app";
   const initials = email.slice(0, 2).toUpperCase();
 
-  const ctx: AppChromeValue = { railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar };
+  const ctx = useMemo<AppChromeValue>(
+    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar }),
+    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, setEvidence, setTopbar],
+  );
 
   return (
     <AppChromeContext.Provider value={ctx}>
