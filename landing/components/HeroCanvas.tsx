@@ -100,7 +100,7 @@ export function HeroCanvas() {
       uniforms: {
         time: { value: 0 },
         pointLightPos: { value: new THREE.Vector3(0, 0, 5) },
-        color: { value: new THREE.Color(0xaaff00) },
+        color: { value: new THREE.Color(0xbcff3c) },
       },
       vertexShader: VERTEX_SHADER,
       fragmentShader: FRAGMENT_SHADER,

@@ -1,15 +1,19 @@
 import type { Metadata } from "next";
-import { Space_Grotesk } from "next/font/google";
+import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-// The design spec uses Space Grotesk (weights 400–800). Google ships this family as a
-// variable font with a wght axis of 300–700, so we load the variable axis (the CSS's
-// `font-weight:800` declarations clamp to the 700 cap — exactly what the original
-// <link rel=...wght@...800> delivered, since Google caps Space Grotesk at 700). next/font
-// self-hosts it and exposes the --font-space-grotesk variable, which globals.css feeds --f.
-const spaceGrotesk = Space_Grotesk({
+// Match the app's type system (apps/web): Hanken Grotesk for everything, JetBrains Mono for
+// code/accent. Both are variable fonts, so the full wght axis loads and the CSS's
+// `font-weight:800` headings render at true 800 (Space Grotesk capped at 700). next/font
+// self-hosts them and exposes --font-hanken / --font-jetbrains, which globals.css feeds --f / --mono.
+const hanken = Hanken_Grotesk({
   subsets: ["latin"],
-  variable: "--font-space-grotesk",
+  variable: "--font-hanken",
+  display: "swap",
+});
+const jetbrains = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains",
   display: "swap",
 });
 
@@ -32,7 +36,7 @@ export default function RootLayout({
   return (
     // suppressHydrationWarning: the theme effect may add `class="light"` to <html> after
     // mount (read from localStorage), which would otherwise trip React's attribute check.
-    <html lang="en" className={spaceGrotesk.variable} suppressHydrationWarning>
+    <html lang="en" className={`${hanken.variable} ${jetbrains.variable}`} suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );
