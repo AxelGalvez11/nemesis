@@ -52,7 +52,12 @@ export type CoreSourceLicense =
   | "fda_public"
   | "nlm_public"
   | "oer_open"
-  | "ascend_owned";
+  | "ascend_owned"
+  // Restricted CC variants — present so the gate can actually REJECT them (the open-access set
+  // mixes these in). NC blocks commercial use outright; ND forbids derivatives, and our ingest
+  // chunks + embeds the text (a derivative), so ND is blocked here too. Both are commercial_use_allowed:false.
+  | "cc_by_nc"
+  | "cc_by_nd";
 
 export interface LicenseRequirements {
   readonly attribution_required: boolean;
@@ -101,6 +106,16 @@ const LICENSE_REQUIREMENTS: Readonly<
   ascend_owned: {
     attribution_required: false,
     commercial_use_allowed: true,
+    share_alike_required: false,
+  },
+  cc_by_nc: {
+    attribution_required: true,
+    commercial_use_allowed: false, // non-commercial — rejected at ingest
+    share_alike_required: false,
+  },
+  cc_by_nd: {
+    attribution_required: true,
+    commercial_use_allowed: false, // no-derivatives — our chunk+embed is a derivative, so reject
     share_alike_required: false,
   },
 };

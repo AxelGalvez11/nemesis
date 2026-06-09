@@ -120,9 +120,12 @@ async function findLabel(sbUrl: string, serviceKey: string, drug: string): Promi
 async function getSections(sbUrl: string, serviceKey: string, sourceId: string): Promise<MonographSection[]> {
   const url = new URL(`${sbUrl}/rest/v1/core_source_chunks`);
   url.searchParams.set("source_id", `eq.${sourceId}`);
-  url.searchParams.set("select", "section,content");
+  // Fetch and sort by position: upsert deletes+reinserts chunks on change, so physical row order is
+  // undefined. Without this, a multi-chunk section (e.g. a long DOSAGE block) can be reassembled scrambled.
+  url.searchParams.set("select", "section,content,position");
+  url.searchParams.set("order", "position.asc");
   url.searchParams.set("limit", "1000");
-  const rows = await get<Array<{ section: string | null; content: string }>>(url, serviceKey);
+  const rows = await get<Array<{ section: string | null; content: string; position: number }>>(url, serviceKey);
 
   const bySection = new Map<string, string[]>();
   for (const r of rows) {

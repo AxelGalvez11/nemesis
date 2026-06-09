@@ -23,7 +23,10 @@ export interface FaersFetchOpts {
 }
 
 export async function fetchFaersReactions(opts: FaersFetchOpts): Promise<NormalizedSource[]> {
-  const drug = opts.query.trim();
+  // The term is embedded inside openFDA's double-quoted phrase syntax below. Strip the only
+  // characters that can break out of that phrase (a literal " or a trailing \) so a term can't
+  // restructure the Boolean query — keep everything legitimate drug names use (/, -, +, ., spaces).
+  const drug = opts.query.replace(/["\\]/g, " ").trim();
   if (!drug) return [];
   const limit = Math.min(opts.retmax ?? 15, 50);
   const apiKey = Deno.env.get("OPENFDA_API_KEY");
