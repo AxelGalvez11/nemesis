@@ -312,3 +312,79 @@ Deno.test("buildCitations carries bibliographic metadata onto the Citation", () 
   assertEquals(c.journal, "N Engl J Med");
   assertEquals(c.volume, "390");
 });
+
+// ---------------------------------------------------------------------------
+// deriveGaps — deterministic run-scoped literature gaps
+// ---------------------------------------------------------------------------
+
+import { deriveGaps } from "./gaps.ts";
+
+function gapChunk(partial: Partial<RetrievedChunk>): RetrievedChunk {
+  return {
+    tag: "1", chunk_id: "x", source_id: "x", provider: "pubmed_oa", title: null, section: null,
+    url: null, license: null, published_date: null, retrieved_at: "2026-06-10T00:00:00Z",
+    similarity: 0, ...partial,
+  };
+}
+
+Deno.test("deriveGaps: no human trial, no rct, no synthesis when only labels retrieved", () => {
+  const chunks = [gapChunk({ provider: "openfda" }), gapChunk({ provider: "openfda" })];
+  const { gaps, counts } = deriveGaps(chunks, ["q1"]);
+  const types = gaps.map((g) => g.type).sort();
+  assertEquals(types.includes("no_human_trial"), true);
+  assertEquals(types.includes("no_rct"), true);
+  assertEquals(types.includes("no_synthesis"), true);
+  assertEquals(counts.total_retrieved, 2);
+  assertEquals(counts.per_provider.openfda, 2);
+  // Denominator-scoped phrasing, never "no evidence exists".
+  for (const g of gaps) {
+    assertEquals(/no evidence exists/i.test(g.text), false);
+    assertEquals(g.scope, "this_run");
+  }
+});
+
+Deno.test("deriveGaps: an RCT chunk removes the no_rct gap and the no_human_trial gap (if interventional)", () => {
+  const chunks = [
+    gapChunk({ provider: "pubmed_oa", publication_types: ["Randomized Controlled Trial"] }),
+    gapChunk({ provider: "clinicaltrials", study_type: "INTERVENTIONAL" }),
+  ];
+  const { gaps } = deriveGaps(chunks, ["q1"]);
+  assertEquals(gaps.some((g) => g.type === "no_rct"), false);
+  assertEquals(gaps.some((g) => g.type === "no_human_trial"), false);
+  // No synthesis still flagged.
+  assertEquals(gaps.some((g) => g.type === "no_synthesis"), true);
+});
+
+Deno.test("deriveGaps: a meta-analysis removes no_synthesis", () => {
+  const chunks = [gapChunk({ publication_types: ["Meta-Analysis"] })];
+  const { gaps } = deriveGaps(chunks, ["q1"]);
+  assertEquals(gaps.some((g) => g.type === "no_synthesis"), false);
+});
+
+Deno.test("deriveGaps: a systematic review also removes no_synthesis", () => {
+  const { gaps } = deriveGaps([gapChunk({ publication_types: ["Systematic Review"] })], ["q1"]);
+  assertEquals(gaps.some((g) => g.type === "no_synthesis"), false);
+});
+
+Deno.test("deriveGaps: recruiting trial attaches as corroborating, never deletes a gap", () => {
+  const chunks = [
+    gapChunk({ provider: "openfda" }),
+    gapChunk({ provider: "clinicaltrials", source_id: "live:clinicaltrials:NCT9", study_type: "INTERVENTIONAL", trial_status: "RECRUITING" }),
+  ];
+  const { gaps } = deriveGaps(chunks, ["q1"]);
+  // An interventional+recruiting trial means no_human_trial is gone, but no_rct/no_synthesis remain,
+  // and the recruiting NCT is attached to a surviving gap as "an answer may be coming".
+  const rct = gaps.find((g) => g.type === "no_rct");
+  assertEquals(!!rct, true);
+  assertEquals(rct?.corroborating_trials.includes("NCT9"), true);
+  assertEquals(gaps.some((g) => g.type === "no_human_trial"), false); // the recruiting interventional trial removed it
+  const synth = gaps.find((g) => g.type === "no_synthesis");
+  assertEquals(synth?.corroborating_trials.includes("NCT9"), true);   // NCT attaches to ALL surviving gaps
+});
+
+Deno.test("deriveGaps: empty pool yields counts but a single sparse gap", () => {
+  const { gaps, counts } = deriveGaps([], ["q1"]);
+  assertEquals(counts.total_retrieved, 0);
+  assertEquals(gaps.length, 1);
+  assertEquals(gaps[0].type, "sparse");
+});
