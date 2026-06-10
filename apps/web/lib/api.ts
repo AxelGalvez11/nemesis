@@ -669,3 +669,30 @@ export async function fetchResearchReports(): Promise<ResearchReportSummary[]> {
     } as ResearchReportSummary)
     : null));
 }
+
+/** Download a saved report as .docx/.pptx. Fetches the Node route WITH the user's bearer token
+ *  (a plain <a download> can't set Authorization), then triggers a browser download of the blob. */
+export async function downloadReportExport(
+  reportId: string,
+  format: "docx" | "pptx",
+  style: "vancouver" | "ama",
+): Promise<void> {
+  if (isPreviewMode) throw new Error("Export needs a live connection (not available in preview).");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to export");
+
+  const res = await fetch(`/api/reports/${reportId}/export/${format}?style=${style}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`export failed (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${reportId}.${format}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

@@ -44,6 +44,7 @@ function ResearchPage() {
   const [runId, setRunId] = useState<string | null>(null);
   const [run, setRun] = useState<ResearchRunRow | null>(null);
   const [report, setReport] = useState<ResearchReport | null>(null);
+  const [openedReportId, setOpenedReportId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [proGate, setProGate] = useState(false);
   const [history, setHistory] = useState<ResearchReportSummary[]>([]);
@@ -102,7 +103,7 @@ function ResearchPage() {
           if (row.status === "completed") {
             const rep = row.saved_report_id ? await fetchResearchReport(row.saved_report_id) : null;
             if (!alive) return;
-            if (rep) { setReport(rep); setPhase("done"); refreshHistory(); return; }
+            if (rep) { setReport(rep); setOpenedReportId(row.saved_report_id); setPhase("done"); refreshHistory(); return; }
             setErr("The report finished but could not be loaded."); setPhase("error"); return;
           }
           if (row.status === "failed") { setErr(row.error || "Research failed."); setPhase("error"); return; }
@@ -123,7 +124,7 @@ function ResearchPage() {
     void fetchResearchReport(rParam)
       .then((rep) => {
         if (!alive) return;
-        if (rep) { setReport(rep); setQuestion(rep.question); setPhase("done"); }
+        if (rep) { setReport(rep); setQuestion(rep.question); setOpenedReportId(rParam); setPhase("done"); }
         else { setErr("Report not found."); setPhase("error"); }
       })
       .catch(() => { if (alive) { setErr("Could not load report."); setPhase("error"); } });
@@ -138,7 +139,7 @@ function ResearchPage() {
 
   const reset = () => {
     startedRef.current = true; // don't let ?q re-trigger after a manual reset
-    setPhase("idle"); setReport(null); setRun(null); setRunId(null); setErr(null); setProGate(false); setQuestion(""); setInput("");
+    setPhase("idle"); setReport(null); setRun(null); setRunId(null); setErr(null); setProGate(false); setQuestion(""); setInput(""); setOpenedReportId(null);
     router.replace("/app/research");
   };
 
@@ -180,7 +181,7 @@ function ResearchPage() {
         </div>
       ) : null}
 
-      {phase === "done" && report ? <ResearchReportView report={report} /> : null}
+      {phase === "done" && report ? <ResearchReportView report={report} reportId={openedReportId ?? undefined} /> : null}
 
       {phase === "done" ? <ResearchHistory history={history} /> : null}
     </div>

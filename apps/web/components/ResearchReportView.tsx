@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import type { AnswerPoint, Citation, ResearchReport } from "@pharmabro/shared";
+import type { AnswerPoint, Citation, CitationStyle, ResearchReport } from "@pharmabro/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
 import { Icon } from "./icons";
+import { downloadReportExport } from "@/lib/api";
 
 const PROVIDER_ABBR: Record<string, string> = {
   openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID",
@@ -19,7 +20,7 @@ function abbr(t: string): string {
 /** Renders a finished Deep Research report: summary, verification state, themed cited sections,
  *  prominent safety, honest uncertainties, and a numbered sources list. Citation chips scroll to the
  *  matching source. Visual language matches the /ask Answer (same classes) so it feels like one app. */
-export function ResearchReportView({ report }: { report: ResearchReport }) {
+export function ResearchReportView({ report, reportId, style = "vancouver", onStyleChange }: { report: ResearchReport; reportId?: string; style?: CitationStyle; onStyleChange?: (s: CitationStyle) => void }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of report.citations) m.set(normTag(c.chunk_tag), abbr(c.source_type));
@@ -48,6 +49,17 @@ export function ResearchReportView({ report }: { report: ResearchReport }) {
         )}
         {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
       </div>
+
+      {reportId && !report.template ? (
+        <div className="report-export-bar">
+          <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "docx", style)}>
+            <Icon name="doc" size={14} />Word
+          </button>
+          <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pptx", style)}>
+            <Icon name="doc" size={14} />PowerPoint
+          </button>
+        </div>
+      ) : null}
 
       <p className="lead">{renderInline(report.summary)}</p>
       {report.template ? (
