@@ -92,8 +92,9 @@ export const REPORT_TOOL: Tool = {
           properties: {
             section: {
               type: "string",
-              description: "Short section heading this point belongs under (e.g. 'What it is', " +
-                "'Human evidence', 'Safety'). Reuse the same heading string for points in the same section.",
+              description: "A SHORT topic-label heading (2-4 words) this point belongs under — e.g. " +
+                "'What it is', 'Human evidence', 'Safety', 'Approval status', 'Comparison'. NOT the " +
+                "sub-question sentence. Reuse the exact same heading string for points in the same section.",
             },
             text: { type: "string", description: "One plain-English sentence." },
             citations: {
@@ -131,7 +132,9 @@ const REPORT_GUIDANCE = [
   "",
   "REPORT MODE (this is a multi-section research report, not a single chat answer):",
   "- Organize the body into a few clear sections via the `section` label on each point. Let the",
-  "  planned sub-questions below guide the sections, but merge or rename them so the report reads well.",
+  "  planned sub-questions below guide the sections, but give each a SHORT topic-label heading",
+  "  (2-4 words, e.g. 'What it is', 'Human evidence', 'Safety', 'Approval status') — never the full",
+  "  sub-question sentence as the heading.",
   "- `summary` is the bottom line up front: 2-4 plain sentences answering the user's question.",
   "- Every body point and safety note must carry the [n] tag(s) that support it. Unsupported body",
   "  points are dropped, so do not assert what the sources do not show.",

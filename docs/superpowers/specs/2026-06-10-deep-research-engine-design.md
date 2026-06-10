@@ -100,9 +100,17 @@ generate) to produce a multi-section report from a single synthesis.
 ## Verification
 
 - `deno check supabase/functions/ask/research/*.ts` — clean.
-- `deno test --allow-env supabase/functions/ask/` — 282 passed / 0 failed (19 new; frozen safety suite
-  untouched).
+- `deno test --allow-env supabase/functions/ask/` — 286 passed / 0 failed (23 new; frozen safety suite
+  untouched). Pure helpers only: `mergeEvidence`, `enforceReportCitations`, `applyVerdicts`,
+  `isFullyVerified`, `assembleSections`, `buildCitations`, `assembleReport`, `normalizeSubQuestions`.
 - `apps/web` `tsc --noEmit` — clean (additive shared export).
+- **End-to-end smoke** (real OpenAI + Voyage rerank + Supabase corpus, live sources off): question "what
+  is tesamorelin and is it safe for humans?" produced a real, non-template report — 6 planned
+  sub-questions, 5 short-labeled cited sections (9 body points), 8 citations (openFDA / ClinicalTrials /
+  RxNorm), evidence_grade `strong`, `claims_verified=true`. Confirms all three new tool schemas
+  (`PLAN_TOOL`, the flat `REPORT_TOOL`, `FAITH_TOOL`) round-trip through real models — the failure mode
+  the pure-helper tests cannot see. (Network surfaces `retrieve`/`rerank`/`gatherLiveCandidates` are
+  reused verbatim from the proven /ask path.)
 
 ## Gated deploy (NOT done — needs owner OK)
 
