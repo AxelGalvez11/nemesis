@@ -173,12 +173,19 @@ export const FAITH_TOOL: Tool = {
 };
 
 const FAITH_SYSTEM = [
-  "You are a strict fact-checking step for a conservative medical research engine. For each numbered",
-  "claim you are given the exact source excerpts it cites. Decide ONLY whether those excerpts directly",
-  "support the claim. Judge support, not truth: if the excerpts do not actually state or clearly imply",
-  "the claim (off-topic, weaker than the claim, or contradicting it), mark it unsupported. When in",
-  "doubt, mark unsupported. Record every claim's verdict with record_support.",
+  "You are a strict fact-checking step for a conservative medical research engine. You are given the",
+  "SOURCES once (each tagged [n]), then a list of numbered CLAIMS, each referencing the source tags it",
+  "cites. For each claim, decide ONLY whether the sources it cites directly support it. Judge support,",
+  "not truth: if those sources do not actually state or clearly imply the claim (off-topic, weaker than",
+  "the claim, or contradicting it), mark it unsupported. When in doubt, mark unsupported. Record every",
+  "claim's verdict with record_support.",
 ].join("\n");
+
+// Per-source excerpt cap fed to the judge. The judge only needs enough text to confirm support, and
+// presenting each cited chunk ONCE (not repeated per claim) keeps the request well under the model's
+// token-per-minute limit — the un-capped, per-claim-repeated form hit ~296k tokens on a real report
+// and 429'd, marking otherwise-verifiable reports unverified.
+const FAITH_EXCERPT_CAP = 1000;
 
 /**
  * Semantic support check. Returns the pruned report and whether EVERY judged claim was confirmed.
@@ -209,15 +216,17 @@ export async function checkFaithfulness(
   ];
   if (judgeItems.length === 0) return { report, verified: true }; // nothing to check is trivially consistent
 
-  const block = judgeItems
-    .map((it) => {
-      const evidence = it.tags
-        .map((t) => byTag.get(t)?.chunk_text ?? "")
-        .filter((s) => s.length > 0)
-        .join("\n---\n");
-      return `Claim ${it.index}: ${it.text}\nCited source excerpts:\n${evidence || "(none)"}`;
-    })
+  // Present each cited source ONCE (capped), then claims referencing tags — not the cited text repeated
+  // per claim, which over-counts overlapping citations into a token-limit 429. Only chunks some claim
+  // actually cites are included.
+  const citedTags = [...new Set(judgeItems.flatMap((it) => it.tags))].filter((t) => byTag.has(t));
+  const sourcesBlock = citedTags
+    .map((t) => `[${t}] ${(byTag.get(t)?.chunk_text ?? "").slice(0, FAITH_EXCERPT_CAP)}`)
     .join("\n\n");
+  const claimsBlock = judgeItems
+    .map((it) => `Claim ${it.index} (cites ${it.tags.length ? it.tags.map((t) => `[${t}]`).join(", ") : "nothing"}): ${it.text}`)
+    .join("\n");
+  const block = `SOURCES:\n${sourcesBlock || "(none)"}\n\nCLAIMS:\n${claimsBlock}`;
 
   try {
     const { input } = await callTool<{ verdicts?: unknown }>(
