@@ -27,3 +27,6 @@ export * from "./health-context.ts";
 export * from "./compare.ts";
 // MVP web-beta entitlements + usage snapshots (0122).
 export * from "./entitlements.ts";
+// Deep Research report contract (research-modes): the multi-step, cited REPORT
+// produced by plan -> gather -> synthesize -> faithfulness. Additive, optional.
+export * from "./research.ts";

@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { stripeAllowLive, stripeSecretKey } from "./env";
+import { stripeAllowLive, stripePlusPriceId, stripeProPriceId, stripeSecretKey } from "./env";
 
 let cached: Stripe | null = null;
 
@@ -12,10 +12,20 @@ export function stripe(): Stripe {
   return cached;
 }
 
-export function planFromStripeStatus(status: string | null | undefined, priceId: string | null | undefined): "free" | "plus" {
-  if (!priceId) return "free";
-  if (status === "active" || status === "trialing") return "plus";
+export type PaidPlan = "free" | "plus" | "pro";
+
+/** Which plan a Stripe price grants. Unrecognized prices grant nothing (free). */
+export function planForPriceId(priceId: string | null | undefined): PaidPlan {
+  if (priceId && stripeProPriceId && priceId === stripeProPriceId) return "pro";
+  if (priceId && stripePlusPriceId && priceId === stripePlusPriceId) return "plus";
   return "free";
+}
+
+/** Effective plan from a subscription: the price's plan when active/trialing, else free. */
+export function planFromStripeStatus(status: string | null | undefined, priceId: string | null | undefined): PaidPlan {
+  const plan = planForPriceId(priceId);
+  if (plan === "free") return "free";
+  return status === "active" || status === "trialing" ? plan : "free";
 }
 
 export interface StripeFailureDetail {

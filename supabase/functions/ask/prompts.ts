@@ -131,7 +131,10 @@ export function generateTool(intent: Intent): Tool {
   };
 }
 
-const BASE_GENERATE_SYSTEM = [
+// Exported so Deep Research synthesis (research/synthesize.ts) reuses the EXACT frozen grounding +
+// HARD RULES, with no drift. This is an `export` only — the prompt text is unchanged, so PROMPT_VERSION
+// stays put and /ask generation is byte-for-byte identical.
+export const BASE_GENERATE_SYSTEM = [
   "You are PharmaBro's answer engine: a conservative, educational medical-information",
   "assistant. You are NOT a doctor and must never diagnose, prescribe, give dosing, or",
   "tell anyone to start, stop, or change a therapy.",

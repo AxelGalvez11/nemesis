@@ -1,4 +1,4 @@
-import { appUrl, stripePlusPriceId } from "@/lib/env";
+import { appUrl, stripePlusPriceId, stripeProPriceId } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
 import { stripe, stripeFailureDetail } from "@/lib/stripe";
 
@@ -6,7 +6,15 @@ export async function POST(req: Request) {
   try {
     const user = await verifyBearer(req);
     if (!user) return json({ error: "authentication required" }, 401);
-    if (!stripePlusPriceId) return json({ error: "STRIPE_PLUS_PRICE_ID missing" }, 500);
+
+    // Which plan to buy. Defaults to plus (no body) for backward compatibility.
+    let plan: "plus" | "pro" = "plus";
+    try {
+      const body = await req.json();
+      if (body?.plan === "pro") plan = "pro";
+    } catch { /* no body → plus */ }
+    const priceId = plan === "pro" ? stripeProPriceId : stripePlusPriceId;
+    if (!priceId) return json({ error: `STRIPE_${plan.toUpperCase()}_PRICE_ID missing` }, 500);
 
     const admin = adminClient();
     const { data: existing } = await admin
@@ -35,11 +43,11 @@ export async function POST(req: Request) {
       mode: "subscription",
       customer: customerId,
       client_reference_id: user.id,
-      line_items: [{ price: stripePlusPriceId, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${appUrl}/app/billing?checkout=success`,
       cancel_url: `${appUrl}/app/billing?checkout=cancelled`,
-      subscription_data: { metadata: { user_id: user.id } },
-      metadata: { user_id: user.id },
+      subscription_data: { metadata: { user_id: user.id, plan } },
+      metadata: { user_id: user.id, plan },
     });
 
     return json({ url: session.url });

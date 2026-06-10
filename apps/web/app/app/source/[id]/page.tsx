@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { SourceDetail } from "@pharmabro/shared";
 import { fetchSource } from "@/lib/api";
+import { safeHref } from "@/lib/url";
 import { Badge, Card, ErrorText, PageHeader } from "@/components/ui";
 
 export default function SourcePage() {
@@ -33,7 +34,7 @@ export default function SourcePage() {
         <p><strong>License:</strong> {source.license || "unknown"}</p>
         <p><strong>External ID:</strong> {source.external_id || "n/a"}</p>
         <p><strong>Retrieved:</strong> {source.retrieved_at || source.fetched_at || "unknown"}</p>
-        {source.url ? <a className="source-link" href={source.url} target="_blank" rel="noreferrer">Open original</a> : null}
+        {safeHref(source.url) ? <a className="source-link" href={safeHref(source.url)!} target="_blank" rel="noreferrer">Open original</a> : null}
         {source.sections?.length ? (
           <>
             <h2>Sections</h2>

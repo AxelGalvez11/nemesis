@@ -6,6 +6,8 @@ import type {
   DrugOverview,
   EntitlementSnapshot,
   QuotaExceededError,
+  ResearchProgressStep,
+  ResearchReport,
   SearchResult,
   SourceDetail,
   UsageSnapshot,
@@ -559,4 +561,111 @@ export async function fetchConversationTurns(conversationId: string): Promise<Sa
     }
   }
   return turns;
+}
+
+// ── Deep Research (async, Pro-gated reports) ────────────────────────────────
+// startResearch kicks off a background job (research edge function); the run row is then POLLED
+// (no Realtime configured) for live progress, and the finished report is read from saved_reports —
+// all via the RLS-scoped browser client (every row restricted to user_id = auth.uid()).
+
+export type ResearchRunStatusValue = "queued" | "running" | "completed" | "failed";
+
+/** Live view of an in-flight (or finished) deep-research run, for polling. */
+export interface ResearchRunRow {
+  id: string;
+  status: ResearchRunStatusValue;
+  question: string;
+  progress: ResearchProgressStep[];
+  saved_report_id: string | null;
+  error: string | null;
+}
+
+/** A finished report listed in the rail history. */
+export interface ResearchReportSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  citation_count: number;
+}
+
+/** Start a deep-research run. Returns the run id to poll. Throws AskQuotaError on the Pro gate /
+ *  daily-limit 429 (deep_research_daily_limit is 0 for free/plus). */
+export async function startResearch(question: string): Promise<string> {
+  if (isPreviewMode) throw new Error("Deep research needs a live connection (not available in preview).");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to run deep research");
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/research`, {
+    method: "POST",
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ question }),
+  });
+  const body = await res.json().catch(() => null);
+  if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
+    const err = new Error("quota_exceeded") as AskQuotaError;
+    err.quota = body as unknown as QuotaExceededError;
+    throw err;
+  }
+  if (!res.ok || !isObj(body) || typeof body.run_id !== "string") {
+    throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `research failed (${res.status})`);
+  }
+  return body.run_id;
+}
+
+/** Poll one run row (RLS-scoped). Returns null if not found yet. */
+export async function fetchResearchRun(runId: string): Promise<ResearchRunRow | null> {
+  if (isPreviewMode) return null;
+  const { data, error } = await supabase
+    .from("research_report_runs")
+    .select("id,status,question,progress,saved_report_id,error")
+    .eq("id", runId)
+    .maybeSingle();
+  if (error) throw new Error(`research run failed: ${error.message}`);
+  if (!isObj(data) || typeof data.id !== "string") return null;
+  return {
+    id: data.id,
+    status: (typeof data.status === "string" ? data.status : "running") as ResearchRunStatusValue,
+    question: typeof data.question === "string" ? data.question : "",
+    progress: Array.isArray(data.progress) ? (data.progress as unknown as ResearchProgressStep[]) : [],
+    saved_report_id: typeof data.saved_report_id === "string" ? data.saved_report_id : null,
+    error: typeof data.error === "string" ? data.error : null,
+  };
+}
+
+/** Read a finished report's full body from saved_reports.payload. */
+export async function fetchResearchReport(savedReportId: string): Promise<ResearchReport | null> {
+  if (isPreviewMode) return null;
+  const { data, error } = await supabase
+    .from("saved_reports")
+    .select("payload")
+    .eq("id", savedReportId)
+    .eq("kind", "deep_research") // only deep-research rows carry a ResearchReport payload
+    .maybeSingle();
+  if (error) throw new Error(`research report failed: ${error.message}`);
+  return isObj(data) && isObj(data.payload) ? (data.payload as unknown as ResearchReport) : null;
+}
+
+/** The user's saved deep-research reports, newest first — drives the rail history. */
+export async function fetchResearchReports(): Promise<ResearchReportSummary[]> {
+  if (isPreviewMode) return [];
+  const { data, error } = await supabase
+    .from("saved_reports")
+    .select("id,title,created_at,citation_count")
+    .eq("kind", "deep_research")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) throw new Error(`research reports failed: ${error.message}`);
+  return rows(data, (r) => (typeof r.id === "string" && typeof r.title === "string"
+    ? ({
+      id: r.id,
+      title: r.title,
+      created_at: typeof r.created_at === "string" ? r.created_at : "",
+      citation_count: typeof r.citation_count === "number" ? r.citation_count : 0,
+    } as ResearchReportSummary)
+    : null));
 }

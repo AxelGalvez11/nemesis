@@ -16,13 +16,17 @@ export default function BillingPage() {
     void fetchEntitlements().then(setEnt).catch((e) => setError(e instanceof Error ? e.message : "Billing failed"));
   }, []);
 
-  async function post(path: string) {
-    setBusy(path);
+  async function post(action: string, path: string, payload?: Record<string, unknown>) {
+    setBusy(action);
     setError(null);
     try {
       const token = session?.access_token;
       if (!token) throw new Error("Sign in first");
-      const res = await fetch(path, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: payload ? JSON.stringify(payload) : undefined,
+      });
       const body = await res.json();
       if (!res.ok || !body.url) throw new Error(body.message || body.error || "Stripe request failed");
       window.location.href = body.url;
@@ -35,8 +39,8 @@ export default function BillingPage() {
 
   return (
     <>
-      <PageHeader title="Billing" eyebrow="Stripe Plus">
-        Upgrade to Plus for 100 cited questions per day and 50 watchlist follows.
+      <PageHeader title="Billing" eyebrow="Plans">
+        Plus unlocks more cited questions; Pro adds Deep Research — multi-step, fully cited reports.
       </PageHeader>
       {error ? <ErrorText>{error}</ErrorText> : null}
       <div className="grid two">
@@ -46,8 +50,8 @@ export default function BillingPage() {
             <Badge>{ent?.plan ?? "free"}</Badge>
           </div>
           <p className="muted">Plan updates are mirrored from Stripe webhooks into Supabase subscriptions.</p>
-          <button disabled={busy === "/api/stripe/portal"} onClick={() => void post("/api/stripe/portal")}>
-            {busy === "/api/stripe/portal" ? "Opening…" : "Manage billing"}
+          <button disabled={busy === "portal"} onClick={() => void post("portal", "/api/stripe/portal")}>
+            {busy === "portal" ? "Opening…" : "Manage billing"}
           </button>
         </Card>
         <Card>
@@ -58,8 +62,21 @@ export default function BillingPage() {
             <li>50 watchlist follows</li>
             <li>Plus monitoring surfaces as they roll out</li>
           </ul>
-          <button disabled={busy === "/api/stripe/checkout"} onClick={() => void post("/api/stripe/checkout")}>
-            {busy === "/api/stripe/checkout" ? "Opening checkout…" : "Upgrade to Plus"}
+          <button disabled={busy === "plus"} onClick={() => void post("plus", "/api/stripe/checkout", { plan: "plus" })}>
+            {busy === "plus" ? "Opening checkout…" : "Upgrade to Plus"}
+          </button>
+        </Card>
+        <Card>
+          <h2>PharmaOrb Pro</h2>
+          <p><strong>$49/month</strong></p>
+          <ul>
+            <li>Everything in Plus, plus:</li>
+            <li><strong>Deep Research</strong> — 3 multi-step cited reports per day</li>
+            <li>250 Ask questions per day · 100 watchlist follows</li>
+            <li>Literature review &amp; meta-analysis as they roll out</li>
+          </ul>
+          <button disabled={busy === "pro"} onClick={() => void post("pro", "/api/stripe/checkout", { plan: "pro" })}>
+            {busy === "pro" ? "Opening checkout…" : "Upgrade to Pro"}
           </button>
         </Card>
       </div>
