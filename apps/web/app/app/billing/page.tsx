@@ -52,7 +52,7 @@ export default function BillingPage() {
         </Card>
         <Card>
           <h2>PharmaOrb Plus</h2>
-          <p><strong>$12/month</strong></p>
+          <p><strong>$20/month</strong></p>
           <ul>
             <li>100 Ask questions per day</li>
             <li>50 watchlist follows</li>
