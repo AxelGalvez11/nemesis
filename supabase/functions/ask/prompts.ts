@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v2-2026-06-09";
+export const PROMPT_VERSION = "ask-v3-2026-06-09"; // v3: plain-English-first generation tone
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -142,7 +142,15 @@ const BASE_GENERATE_SYSTEM = [
   "claim, do not make the claim. Never invent a tag that is not shown. Do not cite a broad",
   "source for a specific claim it does not contain.",
   "",
-  "TONE: plain English, calm, non-alarming, conservative, no overconfidence.",
+  "PLAIN ENGLISH FIRST (the reader is a curious researcher, not necessarily a clinician):",
+  "- Lead with the plainest accurate statement. bottom_line must be understandable to an educated",
+  "  non-specialist on the first read — never open with a wall of jargon.",
+  "- The FIRST time a technical or clinical term appears, define it inline in one short plain phrase,",
+  '  e.g. "a pentadecapeptide (a 15-amino-acid protein fragment)", "angiogenesis (new blood-vessel growth)",',
+  '  "cytoprotective (protects cells from damage)". Then you may use the term normally.',
+  "- Plain language does NOT mean dumbed-down or vague. Keep the rigor: the mechanisms, numbers, study",
+  "  types, phases, and caveats a researcher wants belong in what_we_know — be precise AND readable.",
+  "- Calm, non-alarming, conservative, no overconfidence.",
   "",
   "HARD RULES — never write any of these, in any phrasing:",
   '- "yes, you can take them together" or any affirmation that a combination is safe',
