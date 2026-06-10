@@ -32,11 +32,14 @@ import type {
   SafetyFlag,
 } from "../../../../packages/shared/src/answer.ts";
 import type {
+  GapStatement,
   ResearchProgressStep,
   ResearchReport,
   ResearchSection,
+  RetrievalCounts,
 } from "../../../../packages/shared/src/research.ts";
 import { planSubQuestions } from "./plan.ts";
+import { deriveGaps } from "./gaps.ts";
 import { assembleSections, synthesizeReport } from "./synthesize.ts";
 import {
   checkFaithfulness,
@@ -131,6 +134,8 @@ export function assembleReport(args: {
   evidenceGrade: EvidenceGrade;
   safetyFlags: SafetyFlag[];
   claimsVerified: boolean;
+  gaps: GapStatement[];
+  counts: RetrievalCounts;
 }): ResearchReport {
   const { enforced, chunks } = args;
   const sections: ResearchSection[] = assembleSections(
@@ -162,6 +167,8 @@ export function assembleReport(args: {
     evidence_grade: args.evidenceGrade,
     safety_flags: args.safetyFlags,
     claims_verified: args.claimsVerified,
+    gaps: args.gaps,
+    counts: args.counts,
   };
 }
 
@@ -240,6 +247,7 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
 
   // ---- 4. merge into ONE citation namespace ----
   const chunks = mergeEvidence(perSubQuestion, REPORT_MAX_CHUNKS);
+  const { gaps, counts } = deriveGaps(chunks, subQuestions);
   emit("gathering", "Merged and deduplicated the evidence pool", chunks.length);
   if (chunks.length === 0) {
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
@@ -264,6 +272,7 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
     ...synth.raw.points.map((p) => p.text),
     ...synth.raw.safety_notes.map((p) => p.text),
     ...synth.raw.uncertainties.map((p) => p.text),
+    ...gaps.map((g) => g.text),
   ].join("  ");
   const violations = detectViolations(assembled);
   if (violations.length > 0) {
@@ -291,6 +300,8 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
     evidenceGrade: synth.raw.evidence_grade,
     safetyFlags: flags,
     claimsVerified: verified,
+    gaps,
+    counts,
   });
   emit("done", "Report ready", report.citations.length);
   return report;

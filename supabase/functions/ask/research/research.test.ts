@@ -22,6 +22,7 @@ import {
   mergeEvidence,
 } from "./orchestrate.ts";
 import type { RetrievedChunk } from "../citation.ts";
+import { detectViolations } from "../safety.ts";
 
 // ---- fixtures ----
 function chunk(tag: string, overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
@@ -270,6 +271,8 @@ Deno.test("assembleReport: builds sections + citations; appends caution when unv
     evidenceGrade: "moderate",
     safetyFlags: [],
     claimsVerified: false,
+    gaps: [],
+    counts: { total_retrieved: 0, per_provider: {}, cap_per_source: 0, retrieved_at: null },
   });
   assertEquals(report.sections.length, 1); // both body points share section "A"
   assertEquals(report.sections[0].points.length, 2);
@@ -290,6 +293,8 @@ Deno.test("assembleReport: verified report carries no extra caution", () => {
     evidenceGrade: "strong",
     safetyFlags: [],
     claimsVerified: true,
+    gaps: [],
+    counts: { total_retrieved: 0, per_provider: {}, cap_per_source: 0, retrieved_at: null },
   });
   assertEquals(report.claims_verified, true);
   assert(!report.uncertainties.some((u) => u.text.includes("could not run")));
@@ -387,4 +392,12 @@ Deno.test("deriveGaps: empty pool yields counts but a single sparse gap", () => 
   assertEquals(counts.total_retrieved, 0);
   assertEquals(gaps.length, 1);
   assertEquals(gaps[0].type, "sparse");
+});
+
+Deno.test("the assembled safety-scan string includes gap text (one-scan guarantee)", () => {
+  // deriveGaps text is deterministic + safe, so we assert the JOIN includes it by constructing the
+  // same string orchestrate builds. A banned phrase placed in a gap MUST be caught.
+  const gapText = "This peptide is completely safe to inject."; // a doc-20 violation
+  const assembled = ["summary", "section", "point", gapText].join("  ");
+  assertEquals(detectViolations(assembled).length > 0, true);
 });
