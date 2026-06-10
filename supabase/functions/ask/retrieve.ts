@@ -61,6 +61,9 @@ export async function retrieve(opts: RetrieveOpts): Promise<RetrieveResult> {
 
   const chunks: RetrievedChunk[] = rows.map((r, i) => {
     const meta = titles.get(r.source_id);
+    const md = (meta?.metadata ?? {}) as Record<string, unknown>;
+    const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : typeof v === "number" ? String(v) : undefined);
+    const strArr = (v: unknown) => (Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean) : undefined);
     return {
       tag: String(i + 1),
       chunk_id: r.id,
@@ -74,6 +77,16 @@ export async function retrieve(opts: RetrieveOpts): Promise<RetrieveResult> {
       published_date: meta?.effective_at ? meta.effective_at.slice(0, 10) : null,
       retrieved_at: r.retrieved_at,
       similarity: r.similarity,
+      authors: strArr(md.authors),
+      journal: str(md.journal_iso) ?? str(md.journal),
+      year: str(md.year),
+      volume: str(md.volume),
+      issue: str(md.issue),
+      pages: str(md.pages),
+      publication_types: strArr(md.publication_types),
+      study_type: str(md.study_type),
+      trial_status: str(md.status),
+      trial_phase: undefined,
     };
   });
 
@@ -83,6 +96,7 @@ export async function retrieve(opts: RetrieveOpts): Promise<RetrieveResult> {
 interface SourceMeta {
   title: string | null;
   effective_at: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 async function fetchSourceMeta(
@@ -92,13 +106,13 @@ async function fetchSourceMeta(
 ): Promise<Map<string, SourceMeta>> {
   const url = new URL(`${sbUrl}/rest/v1/core_sources`);
   url.searchParams.set("id", `in.(${sourceIds.join(",")})`);
-  url.searchParams.set("select", "id,title,effective_at");
+  url.searchParams.set("select", "id,title,effective_at,metadata");
   const res = await fetch(url, {
     headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
   });
   if (!res.ok) return new Map();
-  const rows = await res.json() as Array<{ id: string; title: string | null; effective_at: string | null }>;
-  return new Map(rows.map((r) => [r.id, { title: r.title, effective_at: r.effective_at }]));
+  const rows = await res.json() as Array<{ id: string; title: string | null; effective_at: string | null; metadata: Record<string, unknown> | null }>;
+  return new Map(rows.map((r) => [r.id, { title: r.title, effective_at: r.effective_at, metadata: r.metadata ?? null }]));
 }
 
 async function rpc<T>(
