@@ -42,6 +42,26 @@ export function preScreen(question: string): PreScreenResult {
 }
 
 // ---------------------------------------------------------------------------
+// Small-talk detector (deterministic, no LLM)
+// ---------------------------------------------------------------------------
+
+// Matches ONLY when the WHOLE message is a greeting / thanks / farewell / "what are you / what
+// can you do" capability ping — anchored ^…$ so anything with a real question mixed in ("hi, is
+// lisinopril safe?") falls through to the full pipeline untouched. Intentionally narrow: no drug,
+// dose, or clinical token can appear. It is checked AFTER preScreen (index.ts), so an
+// emergency/overdose/self-harm/sourcing message is hard-routed first and never reaches here.
+const SMALL_TALK =
+  /^\s*(?:(?:hi+|hey+|hello+|hiya|heya|yo|howdy|greetings)(?:\s+there)?|sup|wassup|what'?s up|good\s*(?:morning|afternoon|evening|day)|how\s*(?:are|r)\s*(?:you|u|ya)(?:\s*doing|\s*going)?|how'?s\s*it\s*going|how\s*are\s*things|thanks?(?:\s*(?:you|u|so much|a lot|a ton))?|thank\s*(?:you|u)|thx|ty|tysm|cheers|much appreciated|appreciate it|ok(?:ay)?(?:\s*(?:thanks?|cool|got it))?|cool|nice|awesome|great|perfect|got it|gotcha|makes sense|sounds good|bye+|goodbye|see\s*(?:ya|you)(?:\s*later)?|good\s*night|gn|take care|who\s*(?:are|r)\s*(?:you|u)|what\s*(?:are|r)\s*(?:you|u)|what\s*(?:can|do)\s*(?:you|u)\s*do|what\s*is\s*this)\s*[!.?,…]*\s*$/i;
+// NOTE: a bare "help" is intentionally NOT small-talk. In a medical app it can be a distress
+// signal, so it falls through to the full pipeline where the classifier can flag self_harm from
+// context — never answered with a canned greeting.
+
+/** True when the entire message is social/greeting/capability small-talk (no clinical content). */
+export function detectSmallTalk(question: string): boolean {
+  return SMALL_TALK.test(question.trim());
+}
+
+// ---------------------------------------------------------------------------
 // Post-generation forbidden-pattern detector
 // ---------------------------------------------------------------------------
 

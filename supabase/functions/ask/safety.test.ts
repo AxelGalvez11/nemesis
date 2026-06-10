@@ -3,7 +3,57 @@
 // gates the generated text AFTER, so a forbidden doc-20 string can never reach
 // the user even if the model emits it. Run: deno test supabase/functions/ask/
 import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { preScreen, detectViolations } from "./safety.ts";
+import { preScreen, detectViolations, detectSmallTalk } from "./safety.ts";
+
+// ---------------------------------------------------------------------------
+// detectSmallTalk — pure greeting/thanks/capability messages only
+// ---------------------------------------------------------------------------
+
+Deno.test("detectSmallTalk: bare greetings match", () => {
+  for (const q of ["hi", "Hi!", "hello", "hey there", "yo", "good morning", "howdy", "  hii  "]) {
+    assert(detectSmallTalk(q), `expected small-talk: ${JSON.stringify(q)}`);
+  }
+});
+
+Deno.test("detectSmallTalk: thanks / farewell / acknowledgements match", () => {
+  for (const q of ["thanks", "thank you", "thx", "ty", "ok thanks", "got it", "cool", "bye", "see ya", "sounds good"]) {
+    assert(detectSmallTalk(q), `expected small-talk: ${JSON.stringify(q)}`);
+  }
+});
+
+Deno.test("detectSmallTalk: capability/identity pings match", () => {
+  for (const q of ["who are you", "what are you", "what can you do", "what is this"]) {
+    assert(detectSmallTalk(q), `expected small-talk: ${JSON.stringify(q)}`);
+  }
+});
+
+Deno.test("detectSmallTalk: a bare 'help' is NOT small-talk (could be distress → full pipeline)", () => {
+  assertEquals(detectSmallTalk("help"), false);
+  assertEquals(detectSmallTalk("help!"), false);
+});
+
+Deno.test("detectSmallTalk: a mixed greeting + real question FALLS THROUGH (not small-talk)", () => {
+  // The critical case: the clinical question must reach the full pipeline, never be swallowed.
+  for (const q of [
+    "hi, is lisinopril safe with spironolactone?",
+    "hello what is metformin",
+    "hey, how do I take retatrutide?",
+    "thanks — now what about BPC-157?",
+  ]) {
+    assertEquals(detectSmallTalk(q), false, `must NOT be small-talk: ${JSON.stringify(q)}`);
+  }
+});
+
+Deno.test("detectSmallTalk: real clinical / drug questions are never small-talk", () => {
+  for (const q of [
+    "what is tesamorelin",
+    "side effects of semaglutide",
+    "how does metformin work",
+    "where can I buy testosterone", // sourcing — preScreen owns this, not small-talk
+  ]) {
+    assertEquals(detectSmallTalk(q), false, `must NOT be small-talk: ${JSON.stringify(q)}`);
+  }
+});
 
 // ---------------------------------------------------------------------------
 // preScreen — emergency / overdose / self-harm hard short-circuit

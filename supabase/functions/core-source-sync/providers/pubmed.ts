@@ -43,10 +43,19 @@ export async function fetchPubMedOA(
   const searchRes = await fetch(`${ESEARCH}?${searchParams.toString()}`, {
     headers: { "User-Agent": "AscendBot/1.0 (axel@ascend.app)" },
   });
-  if (!searchRes.ok) return [];
+  // Make the silent drop observable: a 429 here (shared-IP throttle when NCBI_API_KEY is unset)
+  // is exactly why live PubMed used to vanish from answers with no error in the logs. Distinguish
+  // an API error (throttle/outage) from a legitimately empty result so the two are diagnosable.
+  if (!searchRes.ok) {
+    console.warn(`pubmed esearch HTTP ${searchRes.status} (api_key ${apiKey ? "set" : "MISSING"}) — dropping live PubMed for "${opts.query.slice(0, 60)}"`);
+    return [];
+  }
   const searchData = await searchRes.json();
   const pmids: string[] = searchData?.esearchresult?.idlist ?? [];
-  if (!pmids.length) return [];
+  if (!pmids.length) {
+    console.warn(`pubmed esearch 0 results for "${opts.query.slice(0, 60)}"`);
+    return [];
+  }
 
   await sleep(REQUEST_DELAY_MS);
 
@@ -61,7 +70,10 @@ export async function fetchPubMedOA(
   const fetchRes = await fetch(`${EFETCH}?${fetchParams.toString()}`, {
     headers: { "User-Agent": "AscendBot/1.0 (axel@ascend.app)" },
   });
-  if (!fetchRes.ok) return [];
+  if (!fetchRes.ok) {
+    console.warn(`pubmed efetch HTTP ${fetchRes.status} (api_key ${apiKey ? "set" : "MISSING"}) for ${pmids.length} pmids`);
+    return [];
+  }
   const xml = await fetchRes.text();
 
   const articles = parsePubMedXml(xml);
