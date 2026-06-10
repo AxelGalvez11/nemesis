@@ -432,3 +432,33 @@ Deno.test("buildSearchMethod produces honest, PRISMA-clean method copy", () => {
   assert(/not an exhaustive census/i.test(m.inclusion_notes));
   assert(!/\b(included|excluded|eligibility)\b/i.test(m.inclusion_notes + " " + m.exclusion_notes)); // no screening/eligibility framing
 });
+
+// ---------------------------------------------------------------------------
+// assembleReport — mode payload vs kind (frozen read-path safety)
+// ---------------------------------------------------------------------------
+
+Deno.test("assembleReport output carries mode in payload, never a kind field", () => {
+  const report = assembleReport({
+    question: "q",
+    subQuestions: ["q"],
+    enforced: {
+      summary: "s",
+      body: [{ section: "X", text: "t", citation_ids: ["1"] }],
+      safety_notes: [],
+      uncertainties: [],
+    },
+    chunks: [chunk("1")],
+    evidenceGrade: "moderate",
+    safetyFlags: [],
+    claimsVerified: true,
+    gaps: [],
+    counts: { per_provider: {}, total_retrieved: 0, cap_per_source: 6, retrieved_at: null },
+    mode: "structured_review",
+  });
+  // mode must be preserved in the payload (used by export formatters + UI)
+  assertEquals(report.mode, "structured_review");
+  // kind must NEVER appear in assembleReport output — it is set only by the edge function
+  // when persisting to DB (insertSavedReport). The frozen read-path filters .eq('kind','deep_research'),
+  // so a stray kind here would cause structured_review reports to appear in the deep-research list.
+  assertEquals("kind" in report, false);
+});
