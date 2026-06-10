@@ -17,7 +17,7 @@ import { detectViolations, preScreen } from "../safety.ts";
 import { retrieve } from "../retrieve.ts";
 import { rerankChunks } from "../rerank.ts";
 import { gatherLiveCandidates, liveToChunk } from "../live-sources.ts";
-import type { RetrievedChunk } from "../citation.ts";
+import { citationMeta, type RetrievedChunk } from "../citation.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
@@ -106,6 +106,7 @@ export function buildCitations(tags: string[], chunks: RetrievedChunk[]): Citati
         license: c.license,
         published_date: c.published_date,
         retrieved_at: c.retrieved_at,
+        ...citationMeta(c),
       };
     });
 }

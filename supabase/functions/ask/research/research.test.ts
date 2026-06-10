@@ -295,3 +295,20 @@ Deno.test("assembleReport: verified report carries no extra caution", () => {
   assert(!report.uncertainties.some((u) => u.text.includes("could not run")));
   assertEquals(report.uncertainties.length, 1); // just the original gap
 });
+
+// ---------------------------------------------------------------------------
+// buildCitations carries bibliographic metadata onto the Citation
+// ---------------------------------------------------------------------------
+
+Deno.test("buildCitations carries bibliographic metadata onto the Citation", () => {
+  const chunks: RetrievedChunk[] = [{
+    tag: "1", chunk_id: "live:pubmed_oa:1", source_id: "live:pubmed_oa:1", provider: "pubmed_oa",
+    title: "A study", section: null, url: null, license: "cc_by",
+    published_date: "2024-01-01", retrieved_at: "2026-06-10T00:00:00Z", similarity: 0,
+    authors: ["Falutz J"], journal: "N Engl J Med", year: "2024", volume: "390", issue: "2", pages: "101-110",
+  }];
+  const [c] = buildCitations(["1"], chunks);
+  assertEquals(c.authors, ["Falutz J"]);
+  assertEquals(c.journal, "N Engl J Med");
+  assertEquals(c.volume, "390");
+});

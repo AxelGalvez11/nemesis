@@ -44,6 +44,18 @@ export interface RetrievedChunk {
   trial_phase?: string;
 }
 
+/** Copy the optional bibliographic fields from a chunk onto a Citation. PURE. */
+export function citationMeta(c: RetrievedChunk): Pick<Citation, "authors" | "journal" | "year" | "volume" | "issue" | "pages"> {
+  return {
+    authors: c.authors,
+    journal: c.journal,
+    year: c.year,
+    volume: c.volume,
+    issue: c.issue,
+    pages: c.pages,
+  };
+}
+
 interface RawPoint {
   text: string;
   citations: string[];
@@ -145,6 +157,7 @@ export function enforceCitations(input: EnforceInput): EnforceResult {
         license: c.license,
         published_date: c.published_date,
         retrieved_at: c.retrieved_at,
+        ...citationMeta(c),
       };
     });
 
