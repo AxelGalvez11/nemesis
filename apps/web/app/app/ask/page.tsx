@@ -49,6 +49,10 @@ export default function AskPage() {
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("evidence");
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  // Which answer's sources the evidence panel shows. null = follow the latest answer. Clicking a
+  // citation inside an OLDER turn pins the panel to THAT answer's sources, so a newer answer no
+  // longer clobbers the evidence you were looking at (each turn keeps its own sources).
+  const [activeAnswer, setActiveAnswer] = useState<AskResponse | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +72,11 @@ export default function AskPage() {
   // command from the shell that always OPENS (never toggles closed). The double rAF defers the
   // scroll until after React applies the open state and the drawer's slide-in begins laying out.
   const { setEvidence, setTopbar, openEvidence } = chrome;
-  const onCite = useCallback((tag: string) => {
+  // A citation click pins the panel to ITS answer's sources (per-turn evidence) before opening +
+  // scrolling. Takes the answer so an older turn's [n] tag resolves against that turn's citations,
+  // not the latest answer's (whose tag N may be a different source).
+  const onCite = useCallback((answer: AskResponse, tag: string) => {
+    setActiveAnswer(answer);
     openEvidence();
     setActiveTag(tag);
     requestAnimationFrame(() =>
@@ -86,19 +94,21 @@ export default function AskPage() {
   // Inject the topbar (thread meta) + evidence panel into the shell. Depend on the STABLE setters
   // (useCallback in AppShell), NOT the whole `chrome` object — `chrome` is recreated every AppShell
   // render, so depending on it would re-run this effect in a loop as it sets shell state.
+  // The panel shows the PINNED answer (a citation the user clicked) if set, else the latest answer.
+  const panelAnswer = activeAnswer ?? lastAnswered;
   useEffect(() => {
-    setEvidence(<EvidencePanel citations={lastAnswered?.citations ?? []} activeTag={activeTag ?? undefined} />);
+    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} activeTag={activeTag ?? undefined} />);
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
-        <div className="thread-sub">{lastAnswered && lastAnswered.intent !== "smalltalk" ? `${lastAnswered.citations.length} sources · ${lastAnswered.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
+        <div className="thread-sub">{panelAnswer && panelAnswer.intent !== "smalltalk" ? `${panelAnswer.citations.length} sources · ${panelAnswer.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
       </div>,
     );
     return () => {
       setEvidence(null);
       setTopbar(null);
     };
-  }, [lastAnswered, latest?.q, activeTag, setEvidence, setTopbar]);
+  }, [panelAnswer, latest?.q, activeTag, setEvidence, setTopbar]);
 
   // Thinking steps: a decelerating schedule that tracks the real pipeline (read the question fast,
   // then the slow library + live search, then ranking) and HOLDS on the final "composing" step until
@@ -148,6 +158,7 @@ export default function AskPage() {
     setBusy(true);
     setBloom(false); // clear any prior flare so the next answer re-triggers it (and it can't stick across an "ask again")
     setActiveTag(null);
+    setActiveAnswer(null); // unpin: the panel follows the new answer until a citation is clicked
     const idx = turns.length; // the index this turn will occupy — patch THIS turn, not "the last" (robust if the busy-guard ever loosens)
     setTurns((prev) => [...prev, { q: text, a: null, err: null }]); // append; previous turns stay on screen
     setQuestion("");
@@ -309,18 +320,23 @@ function Thinking({ stage }: { stage: number }) {
     <div className="thinking">
       <div className="think-row"><span className="shimmer">{STAGES[Math.min(stage, STAGES.length - 1)]}…</span></div>
       <div className="qsearch">
-        {STAGES.map((label, i) => (
-          <div key={label} className={`qchip${i < stage ? " done" : ""}`}>
-            <span className="tick"><Icon name="check" size={10} /></span>
-            {label}
-          </div>
-        ))}
+        {STAGES.map((label, i) => {
+          // done = ✓, active = live spinner, upcoming = faded. The active step is the one the
+          // pipeline is on right now, so it reads as honest in-progress work, not a finished list.
+          const state = i < stage ? "done" : i === stage ? "active" : "";
+          return (
+            <div key={label} className={`qchip ${state}`.trimEnd()}>
+              <span className="tick"><Icon name="check" size={10} /></span>
+              {label}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function Answer({ answer, onCite }: { answer: AskResponse; onCite: (tag: string) => void }) {
+function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string) => void }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of answer.citations) m.set(normTag(c.chunk_tag), abbr(c.source_type));
@@ -335,6 +351,7 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (tag: string)
 
   const s = answer.answer_sections;
   const flags = (answer.safety_flags ?? []).filter((f) => f !== "no_sources_found");
+  const cite = (tag: string) => onCite(answer, tag); // bind every [n] click to THIS answer's sources
   return (
     <div className="answer fade">
       <div className="grade-row">
@@ -344,15 +361,20 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (tag: string)
       {answer.plain_english_summary ? <p className="lead">{renderInline(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
 
-      <Section title="What we know" points={s.what_we_know} citeMap={citeMap} onCite={onCite} />
-      <Section title="Safety" points={s.safety_notes} citeMap={citeMap} onCite={onCite} />
-      <Section title="What we don't know" points={s.what_we_do_not_know} citeMap={citeMap} onCite={onCite} />
+      {/* Main explanation: flowing prose, no rigid "What we know" labeled-section scaffold. */}
+      <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} />
+
+      {/* Safety stays prominent — a clear bordered callout (conservative medical app), not a muted aside. */}
+      <SafetyBlock points={s.safety_notes} citeMap={citeMap} onCite={cite} />
+
+      {/* Uncertainty, de-emphasized. */}
+      <UnclearBlock points={s.what_we_do_not_know} citeMap={citeMap} onCite={cite} />
 
       {s.questions_to_ask?.length ? (
-        <section>
-          <h5>Questions to ask a clinician</h5>
+        <div className="ai-questions">
+          <div className="ai-block-label">Worth asking your clinician</div>
           <ul>{s.questions_to_ask.map((q, i) => <li key={i}>{renderInline(q)}</li>)}</ul>
-        </section>
+        </div>
       ) : null}
 
       <div className="msg-actions">
@@ -362,26 +384,65 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (tag: string)
   );
 }
 
-function Section({ title, points, citeMap, onCite }: { title: string; points: Array<{ text: string; citation_ids?: string[] }>; citeMap: Map<string, string>; onCite: (tag: string) => void }) {
+interface PointBlockProps {
+  points: Array<{ text: string; citation_ids?: string[] }>;
+  citeMap: Map<string, string>;
+  onCite: (tag: string) => void;
+}
+
+// Inline [n] citation chips trailing a point's text.
+function CiteChips({ ids, citeMap, onCite }: { ids?: string[]; citeMap: Map<string, string>; onCite: (tag: string) => void }) {
+  if (!ids?.length) return null;
+  return (
+    <>
+      {" "}
+      {ids.map((id) => {
+        const t = normTag(id);
+        return (
+          <button key={id} type="button" className="cite" onClick={() => onCite(t)} title="Show source" aria-label={`Show source ${t}`}>
+            {citeMap.get(t) ?? "REF"}&nbsp;{t}
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+// The answer body: each point a flowing paragraph (no section heading, no bullets) so the answer
+// reads like an explanation, not a filled-in form.
+function Prose({ points, citeMap, onCite }: PointBlockProps) {
   if (!points?.length) return null;
   return (
-    <section>
-      <h5>{title}</h5>
-      <ul>
-        {points.map((p, i) => (
-          <li key={i}>
-            {renderInline(p.text)}{" "}
-            {(p.citation_ids ?? []).map((id) => {
-              const t = normTag(id);
-              return (
-                <button key={id} type="button" className="cite" onClick={() => onCite(t)} title="Show source" aria-label={`Show source ${t}`}>
-                  {citeMap.get(t) ?? "REF"}&nbsp;{t}
-                </button>
-              );
-            })}
-          </li>
-        ))}
-      </ul>
-    </section>
+    <>
+      {points.map((p, i) => (
+        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
+      ))}
+    </>
+  );
+}
+
+// Safety: kept visibly prominent (conservative medical app) as a bordered callout — never muted.
+function SafetyBlock({ points, citeMap, onCite }: PointBlockProps) {
+  if (!points?.length) return null;
+  return (
+    <div className="ai-safety">
+      <div className="ai-safety-label"><Icon name="shield" size={14} />Safety</div>
+      {points.map((p, i) => (
+        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
+      ))}
+    </div>
+  );
+}
+
+// What's still unclear: de-emphasized (small muted label + muted text).
+function UnclearBlock({ points, citeMap, onCite }: PointBlockProps) {
+  if (!points?.length) return null;
+  return (
+    <div className="ai-unclear">
+      <div className="muted-label">Still uncertain</div>
+      {points.map((p, i) => (
+        <p key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
+      ))}
+    </div>
   );
 }

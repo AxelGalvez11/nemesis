@@ -154,6 +154,25 @@
 .ai-body section h5 { font-size: 18px; text-transform: none; letter-spacing: -0.01em; color: var(--text); font-weight: 700; margin: 2px 0 9px; }
 .ai-body ul { margin: 0 0 4px; padding-left: 18px; }
 .ai-body li { margin: 0 0 7px; font-size: 16px; line-height: 1.62; }
+
+/* ── answer body: flowing prose + callouts (replaces the rigid labeled-section form that read as
+   "robotic"). what-we-know becomes the prose body; safety stays a prominent callout; uncertainty
+   is de-emphasized; questions are a clear light block. ── */
+.ai-para { margin: 0 0 12px; }
+/* Safety: a clear, visible bordered callout — kept prominent (conservative medical app), never muted. */
+.ai-safety { border: 1px solid var(--line-2); border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 5%, var(--surface)); border-radius: 12px; padding: 13px 15px 3px; margin: 16px 0; }
+.ai-safety-label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 9px; }
+.ai-safety-label svg { color: var(--warn); }
+.ai-safety .ai-para { font-size: 15.5px; }
+/* "Still uncertain" — de-emphasized: muted micro-label + muted text. */
+.ai-unclear { margin: 16px 0; }
+.ai-unclear p { color: var(--text-2); font-size: 15px; line-height: 1.6; margin: 0 0 8px; }
+.muted-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); font-weight: 600; margin-bottom: 6px; }
+/* Questions: a clear, light block (actionable), not a heavy form section. */
+.ai-questions { margin: 16px 0 4px; }
+.ai-block-label { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 9px; }
+.ai-questions ul { margin: 0; padding-left: 18px; }
+.ai-questions li { font-size: 15.5px; color: var(--text-2); margin: 0 0 6px; line-height: 1.55; }
 /* Inline emphasis surfaced by lib/inline-md from the model's own markdown. */
 .ai-body strong { font-weight: 700; color: var(--text); }
 .ai-body em { font-style: italic; }
@@ -184,6 +203,11 @@
 .qchip.done .tick { background: var(--acid); border-color: var(--acid); box-shadow: 0 0 10px rgba(140, 220, 40, 0.5); }
 .qchip.done .tick svg { opacity: 1; }
 .qchip.done .cnt { color: var(--acid-dim); }
+/* the in-progress step: full opacity + a live spinner ring (done = filled check, upcoming = faded) */
+.qchip.active { opacity: 1; color: var(--text); }
+.qchip.active .tick { border-color: var(--acid); border-top-color: transparent; border-right-color: transparent; animation: qspin 0.65s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .qchip.active .tick { animation: none; } }
+@keyframes qspin { to { transform: rotate(360deg); } }
 
 /* ── compute card ── */
 .compute { border: 1px solid var(--line-2); border-radius: var(--radius); background: linear-gradient(180deg, var(--surface), var(--bg-2)); padding: 13px 15px; margin: 4px 0 14px; }
@@ -319,9 +343,12 @@
   .app.mobile-open .new, .app.mobile-open .hist { justify-content: flex-start; }
 }
 
-/* keyboard focus ring for the custom (non-shadcn) interactive elements */
+/* keyboard focus ring for the custom (non-shadcn) interactive elements. NOTE: the composer
+   textarea is deliberately EXCLUDED — text fields match :focus-visible even on a mouse click, so
+   an acid outline here read as the "green glow on the chat bar". Its focus is shown by the calm
+   .box:focus-within border tint instead (legacy.css already sets outline:none on textarea:focus). */
 .icon-btn:focus-visible, .hist:focus-visible, .new:focus-visible, .mode:focus-visible, .send:focus-visible,
 .tool:focus-visible, .ev-tab:focus-visible, .chip-action:focus-visible, .acct-btn:focus-visible, .src:focus-visible,
-.cite:focus-visible, .search input:focus-visible, .box textarea:focus-visible {
+.cite:focus-visible, .search input:focus-visible {
   outline: 2px solid var(--acid-dim); outline-offset: 2px;
 }

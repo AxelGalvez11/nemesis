@@ -15,11 +15,13 @@ function providerClass(t: string): string {
 }
 function providerLabel(t: string): string {
   const p = t.toLowerCase();
-  if (p.includes("openfda")) return "openFDA · label";
-  if (p.includes("dailymed")) return "DailyMed · label";
-  if (p.includes("pubmed_oa")) return "Europe PMC · live";
-  if (p.includes("pubmed")) return "PubMed";
-  if (p.includes("clinicaltrials") || p.includes("trial")) return "ClinicalTrials";
+  if (p.includes("openfda")) return "FDA label";
+  if (p.includes("dailymed")) return "DailyMed label";
+  // pubmed_oa is the PubMed open-access bucket (fetched via NCBI E-utilities OR Europe PMC — both
+  // are PubMed-indexed articles with PMIDs). Label it "PubMed" so it isn't confused for a separate
+  // source: a research article is a research article regardless of which mirror served it.
+  if (p.includes("pubmed_oa") || p.includes("pubmed")) return "PubMed · live";
+  if (p.includes("clinicaltrials") || p.includes("trial")) return "ClinicalTrials.gov";
   if (p.includes("faers")) return "FAERS · safety";
   return t;
 }
