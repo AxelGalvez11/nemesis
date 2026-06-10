@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import type { AnswerPoint, Citation, CitationStyle, ResearchReport } from "@pharmabro/shared";
+import { buildReferenceList } from "@pharmabro/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
@@ -9,7 +10,7 @@ import { Icon } from "./icons";
 import { downloadReportExport } from "@/lib/api";
 
 const PROVIDER_ABBR: Record<string, string> = {
-  openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID",
+  openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", europepmc: "PMID",
   clinicaltrials: "NCT", faers: "FAERS", rxnorm: "RxNorm",
 };
 function abbr(t: string): string {
@@ -52,6 +53,10 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
 
       {reportId && !report.template ? (
         <div className="report-export-bar">
+          <div className="cite-style-toggle" role="group" aria-label="Citation style">
+            <button type="button" className={style === "vancouver" ? "active" : ""} onClick={() => onStyleChange?.("vancouver")}>Vancouver</button>
+            <button type="button" className={style === "ama" ? "active" : ""} onClick={() => onStyleChange?.("ama")}>AMA</button>
+          </div>
           <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "docx", style)}>
             <Icon name="doc" size={14} />Word
           </button>
@@ -126,7 +131,7 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
         </div>
       ) : null}
 
-      {report.citations.length ? <Sources citations={report.citations} /> : null}
+      {report.citations.length ? <Sources citations={report.citations} style={style} /> : null}
     </div>
   );
 }
@@ -148,22 +153,20 @@ function CiteChips({ ids, citeMap, onCite }: { ids?: AnswerPoint["citation_ids"]
   );
 }
 
-function Sources({ citations }: { citations: Citation[] }) {
+function Sources({ citations, style }: { citations: Citation[]; style: CitationStyle }) {
+  const refs = buildReferenceList(citations, style);
+  const byTag = new Map(citations.map((c) => [normTag(c.chunk_tag), c]));
   return (
     <div className="research-sources">
-      <div className="ai-block-label">Sources ({citations.length})</div>
+      <div className="ai-block-label">References ({refs.length})</div>
       <ol>
-        {citations.map((c) => {
-          const href = safeHref(c.url);
+        {refs.map((r) => {
+          const c = byTag.get(r.tag);
+          const href = safeHref(c?.url ?? null);
           return (
-            <li key={c.chunk_tag} id={`rep-src-${normTag(c.chunk_tag)}`} className="research-src">
-              <span className="src-prov">{abbr(c.source_type)}</span>
-              {href ? (
-                <a href={href} target="_blank" rel="noopener noreferrer">{c.title ?? href}</a>
-              ) : (
-                <span>{c.title ?? c.source_id}</span>
-              )}
-              {c.published_date ? <small className="src-date"> · {c.published_date}</small> : null}
+            <li key={r.tag} id={`rep-src-${r.tag}`} className="research-src">
+              <span>{r.text}</span>
+              {href ? <a href={href} target="_blank" rel="noopener noreferrer" className="ref-link"> ↗</a> : null}
             </li>
           );
         })}

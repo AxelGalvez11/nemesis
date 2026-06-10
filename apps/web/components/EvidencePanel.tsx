@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Citation } from "@pharmabro/shared";
+import { formatReference } from "@pharmabro/shared";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
 
@@ -9,7 +10,7 @@ import { safeHref } from "@/lib/url";
 function providerClass(t: string): string {
   const p = t.toLowerCase();
   if (p.includes("openfda") || p.includes("dailymed") || p.includes("label")) return "openfda";
-  if (p.includes("pubmed")) return "pubmed";
+  if (p.includes("pubmed") || p.includes("europepmc")) return "pubmed";
   if (p.includes("trial") || p.includes("nct")) return "clinicaltrials";
   if (p.includes("faers")) return "faers";
   return "";
@@ -21,7 +22,7 @@ function providerLabel(t: string): string {
   // pubmed_oa is the PubMed open-access bucket (fetched via NCBI E-utilities OR Europe PMC — both
   // are PubMed-indexed articles with PMIDs). Label it "PubMed" so it isn't confused for a separate
   // source: a research article is a research article regardless of which mirror served it.
-  if (p.includes("pubmed_oa") || p.includes("pubmed")) return "PubMed · live";
+  if (p.includes("pubmed_oa") || p.includes("pubmed") || p.includes("europepmc")) return "PubMed · live";
   if (p.includes("clinicaltrials") || p.includes("trial")) return "ClinicalTrials.gov";
   if (p.includes("faers")) return "FAERS · safety";
   return t;
@@ -56,15 +57,17 @@ export function EvidencePanel({ citations, activeTag }: { citations: Citation[];
             const anchorId = `ev-src-${tag}`;
             const active = activeTag === tag;
             const klass = `src ${cls}${active ? " active" : ""}`;
+            const refText = formatReference(c, "vancouver");
             const inner = (
               <>
                 <div className="cidx">{i + 1}</div>
                 <div className="badge-src"><span className="sq" />{providerLabel(c.source_type)}</div>
-                <h5>{c.title || c.source_type}</h5>
+                <h5 title={refText}>{c.title || c.source_type}</h5>
                 <div className="meta">
                   {c.section ? <span>{c.section}</span> : null}
                   {c.published_date ? <span className="mono">{c.published_date}</span> : null}
                 </div>
+                <p className="ref-cite-line">{refText}</p>
                 <div className="relv"><i style={{ width: `${rank}%` }} /></div>
               </>
             );

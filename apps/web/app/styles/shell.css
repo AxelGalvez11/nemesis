@@ -297,6 +297,7 @@
 .src .since { color: var(--acid-dim); }
 .relv { height: 3px; border-radius: 2px; background: var(--line-2); margin-top: 9px; overflow: hidden; }
 .relv i { display: block; height: 100%; background: var(--acid); box-shadow: 0 0 8px rgba(140, 220, 40, 0.6); }
+.ref-cite-line { font-size: 10.5px; font-family: var(--mono); color: var(--text-3); margin: 4px 0 0; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .ev-empty { color: var(--text-3); font-size: 12.5px; text-align: center; padding: 40px 16px; }
 .ev-foot { flex: none; border-top: 1px solid var(--line); padding: 10px 14px; font-family: var(--mono); font-size: 11px; color: var(--text-3); display: flex; justify-content: space-between; }
 
@@ -364,9 +365,15 @@
 /* report body */
 .report-export-bar {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin: 6px 0 12px;
 }
+.cite-style-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-right: 4px; }
+.cite-style-toggle button { font-size: 11.5px; font-family: var(--font); padding: 5px 11px; background: var(--surface); color: var(--text-2); border: none; cursor: pointer; transition: 0.15s; }
+.cite-style-toggle button:not(:last-child) { border-right: 1px solid var(--line); }
+.cite-style-toggle button:hover { background: var(--surface-2); color: var(--text); }
+.cite-style-toggle button.active { background: var(--acid); color: #fff; }
 .research-section { margin: 18px 0; }
 .research-heading { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); margin: 0 0 8px; }
 .research-plan { margin: 12px 0 6px; font-size: 13px; }
@@ -398,6 +405,8 @@
 .research-src .src-prov { display: inline-block; font-family: var(--mono); font-size: 10px; text-transform: uppercase; color: var(--text-3); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; margin-right: 7px; vertical-align: 1px; }
 .research-src .src-date { color: var(--text-3); }
 .research-src.src-flash { background: color-mix(in srgb, var(--acid) 14%, transparent); }
+.ref-link { font-size: 11px; color: var(--text-3); margin-left: 5px; text-decoration: none; vertical-align: 1px; }
+.ref-link:hover { color: var(--acid); }
 
 /* live progress */
 .research-progress { margin-top: 8px; }

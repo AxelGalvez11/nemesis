@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { ResearchReport } from "@pharmabro/shared";
+import type { CitationStyle, ResearchReport } from "@pharmabro/shared";
 import {
   type AskQuotaError,
   fetchResearchReport,
@@ -48,6 +48,7 @@ function ResearchPage() {
   const [err, setErr] = useState<string | null>(null);
   const [proGate, setProGate] = useState(false);
   const [history, setHistory] = useState<ResearchReportSummary[]>([]);
+  const [citeStyle, setCiteStyle] = useState<CitationStyle>("vancouver");
   const startedRef = useRef(false);
 
   const refreshHistory = useCallback(() => {
@@ -181,7 +182,7 @@ function ResearchPage() {
         </div>
       ) : null}
 
-      {phase === "done" && report ? <ResearchReportView report={report} reportId={openedReportId ?? undefined} /> : null}
+      {phase === "done" && report ? <ResearchReportView report={report} reportId={openedReportId ?? undefined} style={citeStyle} onStyleChange={setCiteStyle} /> : null}
 
       {phase === "done" ? <ResearchHistory history={history} /> : null}
     </div>
