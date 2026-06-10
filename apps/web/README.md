@@ -8,7 +8,7 @@ in `landing/` on `pharmaorb.app`.
 - Email/password auth through Supabase.
 - Ask, Explore, Drug page, Source Viewer, Watchlist, Profile, Billing.
 - Free/Plus entitlements read from Supabase (`0122`).
-- Stripe Plus checkout at `$12/month`, mirrored into `subscriptions` by webhook.
+- Stripe Plus checkout at `$20/month`, mirrored into `subscriptions` by webhook.
 
 ## Environment
 
