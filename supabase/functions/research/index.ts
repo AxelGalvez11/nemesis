@@ -17,7 +17,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 import { runResearch } from "../ask/research/orchestrate.ts";
 import { hasLlmKey, llmApiKey } from "../ask/llm.ts";
-import type { ResearchProgressStep, ResearchReport } from "../../../packages/shared/src/research.ts";
+import type { ReportMode, ResearchProgressStep, ResearchReport } from "../../../packages/shared/src/research.ts";
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://app.pharmaorb.app",
@@ -49,7 +49,7 @@ serve(async (req) => {
   const userId = await verifyUser(token);
   if (!userId) return json({ error: "authentication required" }, 401, req);
 
-  let body: { question?: string };
+  let body: { question?: string; mode?: string };
   try {
     body = await req.json();
   } catch {
@@ -58,6 +58,7 @@ serve(async (req) => {
   const question = (body.question ?? "").trim();
   if (!question) return json({ error: "question required" }, 400, req);
   if (question.length > 1000) return json({ error: "question too long" }, 400, req);
+  const mode: ReportMode = body.mode === "structured_review" ? "structured_review" : "standard";
 
   // ---- Pro gate + daily limit (one call): deep_research_daily_limit is 0 for free/plus, 3 for pro ----
   const quota = await consumeQuota(userId);
@@ -88,7 +89,7 @@ serve(async (req) => {
   }
 
   // ---- execute in the background; respond immediately with the run id ----
-  const job = executeRun(runId, userId, question);
+  const job = executeRun(runId, userId, question, mode);
   if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
     EdgeRuntime.waitUntil(job);
   } else {
@@ -100,7 +101,7 @@ serve(async (req) => {
 });
 
 /** Run the engine, streaming progress to the run row, then persist the report. Never rejects. */
-async function executeRun(runId: string, userId: string, question: string): Promise<void> {
+async function executeRun(runId: string, userId: string, question: string, mode: ReportMode): Promise<void> {
   const steps: ResearchProgressStep[] = [];
   try {
     const report = await runResearch(question, {
@@ -108,6 +109,7 @@ async function executeRun(runId: string, userId: string, question: string): Prom
       sbUrl: SB_URL,
       serviceKey: SERVICE_KEY,
       liveOn: LIVE_SOURCES_ON,
+      mode,
       onProgress: (step) => {
         steps.push(step);
         // Best-effort live update; a dropped progress patch must not fail the run.

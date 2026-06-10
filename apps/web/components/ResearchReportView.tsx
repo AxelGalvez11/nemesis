@@ -71,6 +71,19 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
         <p className="tmpl-note">Conservative response ({report.template.replace(/_/g, " ")}).</p>
       ) : null}
 
+      {report.search_method ? (
+        <section className="research-section research-method">
+          <h4 className="research-heading">Methods &amp; Limitations</h4>
+          <p className="ai-para">Databases searched: {report.search_method.databases.join(", ")}.</p>
+          {report.search_method.queries.length ? (
+            <p className="ai-para">Search queries: {report.search_method.queries.join("; ")}.</p>
+          ) : null}
+          <p className="ai-para">Search date: {report.search_method.search_date}.</p>
+          <p className="ai-para">{report.search_method.inclusion_notes}</p>
+          <p className="ai-para">{report.search_method.exclusion_notes}</p>
+        </section>
+      ) : null}
+
       {report.sub_questions.length ? (
         <details className="research-plan">
           <summary>What I researched ({report.sub_questions.length} sub-questions)</summary>

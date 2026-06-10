@@ -380,6 +380,16 @@
 .research-plan summary { cursor: pointer; color: var(--text-2); font-weight: 600; }
 .research-plan ul { margin: 8px 0 0; padding-left: 20px; color: var(--text-2); line-height: 1.6; }
 
+/* Methods & Limitations block — subtle left rule + muted tone to set it apart from body sections */
+.research-method { border-left: 2px solid var(--border); padding-left: 12px; }
+.research-method .ai-para { color: var(--text-2); }
+
+/* Mode selector row (Standard / Structured review) */
+.research-mode-row { display: flex; gap: 6px; margin: 8px 0 4px; flex-wrap: wrap; }
+.research-mode-btn { padding: 4px 12px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--text-2); font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.research-mode-btn:hover { background: var(--surface-2); color: var(--text); }
+.research-mode-btn.active { background: var(--acid); color: #fff; border-color: var(--acid); }
+
 /* "What we searched" counts — collapsible, honest cap disclosure */
 .research-counts { margin: 10px 0; font-size: 13px; color: var(--text-2); }
 .research-counts summary { cursor: pointer; color: var(--text-2); font-weight: 600; }

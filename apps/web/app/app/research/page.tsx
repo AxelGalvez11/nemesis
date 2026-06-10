@@ -41,6 +41,7 @@ function ResearchPage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [question, setQuestion] = useState("");
   const [input, setInput] = useState("");
+  const [mode, setMode] = useState<"standard" | "structured_review">("standard");
   const [runId, setRunId] = useState<string | null>(null);
   const [run, setRun] = useState<ResearchRunRow | null>(null);
   const [report, setReport] = useState<ResearchReport | null>(null);
@@ -56,7 +57,7 @@ function ResearchPage() {
   }, []);
   useEffect(() => { refreshHistory(); }, [refreshHistory]);
 
-  const start = useCallback(async (q: string) => {
+  const start = useCallback(async (q: string, runMode: "standard" | "structured_review") => {
     const text = q.trim();
     if (!text) return;
     setPhase("running");
@@ -66,7 +67,7 @@ function ResearchPage() {
     setProGate(false);
     setQuestion(text);
     try {
-      const id = await startResearch(text);
+      const id = await startResearch(text, runMode);
       setRunId(id);
     } catch (e) {
       if (isQuotaError(e)) {
@@ -135,7 +136,7 @@ function ResearchPage() {
   // Auto-start a question handed off from the chat composer (?q=...), once.
   useEffect(() => {
     if (rParam || startedRef.current) return;
-    if (qParam) { startedRef.current = true; void start(qParam); }
+    if (qParam) { startedRef.current = true; void start(qParam, "standard"); }
   }, [qParam, rParam, start]);
 
   const reset = () => {
@@ -152,7 +153,7 @@ function ResearchPage() {
           <Orb size={52} />
           <h2 className="welcome-title">Deep research</h2>
           <p className="welcome-sub">A multi-step, fully cited report. I break your question into sub-questions, search the evidence for each, write the report, and fact-check every claim against its source.</p>
-          <ResearchComposer input={input} setInput={setInput} onSubmit={() => start(input)} />
+          <ResearchComposer input={input} setInput={setInput} mode={mode} setMode={setMode} onSubmit={() => start(input, mode)} />
         </div>
         <ResearchHistory history={history} />
       </div>
@@ -177,7 +178,7 @@ function ResearchPage() {
           {proGate ? (
             <Link href="/app/billing" className="chip-action"><Icon name="card" size={14} />See Pro plans</Link>
           ) : (
-            <button className="chip-action" onClick={() => start(question || input)}><Icon name="sparkle" size={14} />Try again</button>
+            <button className="chip-action" onClick={() => start(question || input, mode)}><Icon name="sparkle" size={14} />Try again</button>
           )}
         </div>
       ) : null}
@@ -189,7 +190,19 @@ function ResearchPage() {
   );
 }
 
-function ResearchComposer({ input, setInput, onSubmit }: { input: string; setInput: (v: string) => void; onSubmit: () => void }) {
+function ResearchComposer({
+  input,
+  setInput,
+  mode,
+  setMode,
+  onSubmit,
+}: {
+  input: string;
+  setInput: (v: string) => void;
+  mode: "standard" | "structured_review";
+  setMode: (m: "standard" | "structured_review") => void;
+  onSubmit: () => void;
+}) {
   return (
     <div className="composer">
       <div className="box">
@@ -208,6 +221,22 @@ function ResearchComposer({ input, setInput, onSubmit }: { input: string; setInp
             <Icon name="send" size={18} />
           </button>
         </div>
+      </div>
+      <div className="research-mode-row">
+        <button
+          type="button"
+          className={`research-mode-btn${mode === "standard" ? " active" : ""}`}
+          onClick={() => setMode("standard")}
+        >
+          Standard
+        </button>
+        <button
+          type="button"
+          className={`research-mode-btn${mode === "structured_review" ? " active" : ""}`}
+          onClick={() => setMode("structured_review")}
+        >
+          Structured review (documents its method)
+        </button>
       </div>
       <div className="hint">⏎ to run · this takes longer than a chat answer · Pro feature</div>
     </div>

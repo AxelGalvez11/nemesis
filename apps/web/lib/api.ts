@@ -590,7 +590,7 @@ export interface ResearchReportSummary {
 
 /** Start a deep-research run. Returns the run id to poll. Throws AskQuotaError on the Pro gate /
  *  daily-limit 429 (deep_research_daily_limit is 0 for free/plus). */
-export async function startResearch(question: string): Promise<string> {
+export async function startResearch(question: string, mode: "standard" | "structured_review" = "standard"): Promise<string> {
   if (isPreviewMode) throw new Error("Deep research needs a live connection (not available in preview).");
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -603,7 +603,7 @@ export async function startResearch(question: string): Promise<string> {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, mode }),
   });
   const body = await res.json().catch(() => null);
   if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
