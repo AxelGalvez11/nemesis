@@ -661,7 +661,7 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
     ? `Conservative response (${report.template.replace(/_/g, " ")}).`
     : report.claims_verified
     ? "Each claim was checked against its cited source."
-    : "NOT FULLY FACT-CHECKED — treat with extra caution.";
+    : "NOT FULLY FACT-CHECKED — the claim-by-claim check could not run; treat with extra caution.";
   title.addText(
     [
       { text: `Evidence grade: ${report.evidence_grade.replace(/_/g, " ")}`, options: { breakLine: true } },
@@ -676,9 +676,20 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
     const m = report.search_method;
     contentSlide(pptx, "Methods & Limitations", [
       { text: `Databases: ${m.databases.join(", ")}`, options: { bullet: true, breakLine: true } },
+      { text: `Search queries: ${m.queries.join("; ")}`, options: { bullet: true, breakLine: true } },
       { text: `Search date: ${m.search_date}`, options: { bullet: true, breakLine: true } },
       { text: m.inclusion_notes, options: { bullet: true, breakLine: true } },
       { text: m.exclusion_notes, options: { bullet: true, breakLine: true } },
+    ]);
+  }
+
+  // "What we searched" counts slide (parity with the Word doc's honesty disclosure).
+  if (report.counts) {
+    const c = report.counts;
+    const per = Object.entries(c.per_provider).map(([k, v]) => `${k}: ${v}`).join(", ");
+    contentSlide(pptx, "What we searched", [
+      { text: `${c.total_retrieved} candidate sources retrieved (top-ranked by relevance, capped at ${c.cap_per_source} per source — not an exhaustive census).`, options: { bullet: true, breakLine: true } },
+      { text: `By source: ${per}.`, options: { bullet: true, breakLine: true } },
     ]);
   }
 
