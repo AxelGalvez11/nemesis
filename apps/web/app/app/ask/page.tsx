@@ -40,9 +40,9 @@ function abbr(t: string): string {
 export default function AskPage() {
   const chrome = useAppChrome();
   const [question, setQuestion] = useState("");
-  const [lastQuestion, setLastQuestion] = useState("");
-  const [answer, setAnswer] = useState<AskResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // The full conversation: every question + its answer (or in-flight/errored state) stays on screen,
+  // so a second prompt no longer wipes the first.
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
   const [bloom, setBloom] = useState(false);
   const [stage, setStage] = useState(0);
@@ -50,6 +50,18 @@ export default function AskPage() {
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const latest = turns[turns.length - 1];
+  // The most recent COMPLETED answer drives the evidence panel + topbar, so the panel doesn't blank
+  // out while a follow-up question is still in flight.
+  const lastAnswered = useMemo(() => {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const t = turns[i];
+      if (t?.a) return t.a;
+    }
+    return null;
+  }, [turns]);
 
   // Clicking an inline citation chip opens the evidence panel (respecting the desktop column vs the
   // ≤1100px drawer) and scrolls to / highlights the matching source card. openEvidence is a stable
@@ -75,34 +87,43 @@ export default function AskPage() {
   // (useCallback in AppShell), NOT the whole `chrome` object — `chrome` is recreated every AppShell
   // render, so depending on it would re-run this effect in a loop as it sets shell state.
   useEffect(() => {
-    setEvidence(<EvidencePanel citations={answer?.citations ?? []} activeTag={activeTag ?? undefined} />);
+    setEvidence(<EvidencePanel citations={lastAnswered?.citations ?? []} activeTag={activeTag ?? undefined} />);
     setTopbar(
       <div>
-        <div className="thread-title">{lastQuestion || "New question"}</div>
-        <div className="thread-sub">{answer ? `${answer.citations.length} sources · ${answer.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
+        <div className="thread-title">{latest?.q || "New question"}</div>
+        <div className="thread-sub">{lastAnswered ? `${lastAnswered.citations.length} sources · ${lastAnswered.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
       </div>,
     );
     return () => {
       setEvidence(null);
       setTopbar(null);
     };
-  }, [answer, lastQuestion, activeTag, setEvidence, setTopbar]);
+  }, [lastAnswered, latest?.q, activeTag, setEvidence, setTopbar]);
 
-  // Animate the thinking stages while busy.
+  // Thinking steps: a decelerating schedule that tracks the real pipeline (read the question fast,
+  // then the slow library + live search, then ranking) and HOLDS on the final "composing" step until
+  // the answer actually arrives — so it reads as honest progress, never a checklist that finishes
+  // while the user is still waiting.
   useEffect(() => {
     if (!busy) return;
     setStage(0);
-    const t = setInterval(() => setStage((s) => Math.min(s + 1, STAGES.length)), 800);
-    return () => clearInterval(t);
+    const at = [600, 1900, 4200]; // ms to reach steps 1, 2, 3 (3 = final step, held until the answer lands)
+    const timers = at.map((ms, i) => setTimeout(() => setStage(i + 1), ms));
+    return () => timers.forEach(clearTimeout);
   }, [busy]);
 
-  // One-shot "bloom" flare on the orb the moment an answer lands.
+  // One-shot "bloom" flare on the orb the moment the newest answer lands.
   useEffect(() => {
-    if (!answer) return;
+    if (!latest?.a) return;
     setBloom(true);
     const t = setTimeout(() => setBloom(false), 700);
     return () => clearTimeout(t);
-  }, [answer]);
+  }, [latest?.a]);
+
+  // Keep the newest turn in view as the conversation grows.
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [turns, busy]);
 
   // Close the mode menu on Escape / outside click.
   useEffect(() => {
@@ -126,30 +147,33 @@ export default function AskPage() {
     if (!text || busy) return;
     setBusy(true);
     setBloom(false); // clear any prior flare so the next answer re-triggers it (and it can't stick across an "ask again")
-    setError(null);
-    setAnswer(null);
     setActiveTag(null);
-    setLastQuestion(text);
+    const idx = turns.length; // the index this turn will occupy — patch THIS turn, not "the last" (robust if the busy-guard ever loosens)
+    setTurns((prev) => [...prev, { q: text, a: null, err: null }]); // append; previous turns stay on screen
     setQuestion("");
     if (taRef.current) taRef.current.style.height = "auto";
+    const setLast = (patch: Partial<Turn>) =>
+      setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
     try {
       const res = await askQuestion(text);
-      setAnswer(res);
+      setLast({ a: res });
       void fetchUsage().catch(() => {});
     } catch (err) {
-      if (isQuotaError(err)) setError(`Daily Ask limit reached (${err.quota.used}/${err.quota.limit}) on ${err.quota.plan}.`);
-      else setError(err instanceof Error ? err.message : "Ask failed");
+      const msg = isQuotaError(err)
+        ? `Daily Ask limit reached (${err.quota.used}/${err.quota.limit}) on ${err.quota.plan}.`
+        : err instanceof Error ? err.message : "Ask failed";
+      setLast({ err: msg });
     } finally {
       setBusy(false);
     }
   }
 
-  const hasThread = busy || answer != null || lastQuestion !== "";
+  const hasThread = turns.length > 0;
   const composer = (
     <Composer
       question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
       submit={submit} busy={busy} mode={mode} setMode={setMode}
-      modeOpen={modeOpen} setModeOpen={setModeOpen} error={error}
+      modeOpen={modeOpen} setModeOpen={setModeOpen} error={latest?.err ?? null}
     />
   );
 
@@ -178,20 +202,32 @@ export default function AskPage() {
   return (
     <>
       <div className="thread">
-        <div className="turn">
-          <div className="msg-user"><div className="bubble">{lastQuestion}</div></div>
-          <div className="msg-ai">
-            <Orb size={28} busy={busy} bloom={bloom} className="" />
-            <div className="ai-body">
-              {busy ? <Thinking stage={stage} /> : answer ? <Answer answer={answer} onCite={onCite} /> : null}
-              {error ? <p className="tmpl-note">{error}</p> : null}
+        {turns.map((t, i) => {
+          const isLast = i === turns.length - 1;
+          return (
+            <div className="turn" key={i}>
+              <div className="msg-user"><div className="bubble">{t.q}</div></div>
+              <div className="msg-ai">
+                <Orb size={28} busy={isLast && busy} bloom={isLast && bloom} className="" />
+                <div className="ai-body">
+                  {t.a ? <Answer answer={t.a} onCite={onCite} /> : isLast && busy ? <Thinking stage={stage} /> : null}
+                  {t.err ? <p className="tmpl-note">{t.err}</p> : null}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })}
+        <div ref={bottomRef} />
       </div>
       <div className="composer-wrap">{composer}</div>
     </>
   );
+}
+
+interface Turn {
+  q: string;
+  a: AskResponse | null;
+  err: string | null;
 }
 
 interface ComposerProps {
