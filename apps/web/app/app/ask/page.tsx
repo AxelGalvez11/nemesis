@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { AskResponse } from "@pharmabro/shared";
-import { askQuestion, fetchUsage, type AskQuotaError } from "@/lib/api";
+import { askQuestion, createConversation, fetchConversationTurns, fetchUsage, saveTurn, type AskQuotaError } from "@/lib/api";
 import { normTag } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { useAppChrome } from "@/components/AppShell";
@@ -37,8 +38,24 @@ function abbr(t: string): string {
   return (k ? PROVIDER_ABBR[k] : undefined) ?? "REF";
 }
 
-export default function AskPage() {
+export default function AskPageRoute() {
+  // useSearchParams (for the ?c=<conversation> deep link) needs a Suspense boundary at build time.
+  return (
+    <Suspense fallback={null}>
+      <AskPage />
+    </Suspense>
+  );
+}
+
+function AskPage() {
   const chrome = useAppChrome();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const cParam = searchParams.get("c"); // the conversation to load, if the URL deep-links one
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [loadingChat, setLoadingChat] = useState(false); // true while a saved chat's turns are loading
+  const loadedConvRef = useRef<string | null>(null); // guards against reloading a chat we just created
+  const creatingConvRef = useRef<Promise<string | null> | null>(null); // dedupes concurrent first-turn creates
   const [question, setQuestion] = useState("");
   // The full conversation: every question + its answer (or in-flight/errored state) stays on screen,
   // so a second prompt no longer wipes the first.
@@ -71,7 +88,58 @@ export default function AskPage() {
   // ≤1100px drawer) and scrolls to / highlights the matching source card. openEvidence is a stable
   // command from the shell that always OPENS (never toggles closed). The double rAF defers the
   // scroll until after React applies the open state and the drawer's slide-in begins laying out.
-  const { setEvidence, setTopbar, openEvidence } = chrome;
+  const { setEvidence, setTopbar, openEvidence, bumpChats } = chrome;
+
+  // Load a saved chat when the URL targets one (?c=<id>); reset to a blank chat when it doesn't.
+  // loadedConvRef stops us re-fetching a conversation we just created in this session.
+  useEffect(() => {
+    if (!cParam) { loadedConvRef.current = null; creatingConvRef.current = null; setConversationId(null); setTurns([]); return; }
+    if (cParam === loadedConvRef.current) return;
+    loadedConvRef.current = cParam;
+    setConversationId(cParam);
+    setActiveTag(null);
+    setActiveAnswer(null);
+    // Clear the previous chat's turns and block sending until this one finishes loading — otherwise a
+    // submit mid-load would compute the wrong ordinal (from the old turns) and the insert would
+    // collide with this chat's existing rows (UNIQUE(conversation_id, ordinal)) and be lost.
+    setTurns([]);
+    setLoadingChat(true);
+    let alive = true;
+    void fetchConversationTurns(cParam)
+      .then((saved) => { if (alive) setTurns(saved.map((s) => ({ q: s.q, a: s.a, err: null }))); })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoadingChat(false); });
+    return () => { alive = false; };
+  }, [cParam]);
+
+  // Persist a completed turn — best-effort, so a save failure never breaks the chat. On the first
+  // message it creates the conversation, points the URL at it (refresh / deep-link works), and tells
+  // the rail to refresh so the new chat appears in history.
+  const persistTurn = useCallback(async (idx: number, q: string, answer: AskResponse) => {
+    try {
+      let convId = conversationId;
+      if (!convId) {
+        // Dedupe: if a create is already in flight (fast double-submit on the first message), reuse
+        // its promise so both turns land in ONE conversation instead of creating two.
+        if (!creatingConvRef.current) creatingConvRef.current = createConversation(q).catch(() => null);
+        convId = await creatingConvRef.current;
+        if (convId) {
+          loadedConvRef.current = convId;
+          setConversationId(convId);
+          router.replace(`/app/ask?c=${convId}`);
+          bumpChats();
+        } else {
+          // Create failed or returned null — clear the ref so the NEXT turn retries instead of being
+          // permanently stuck on a poisoned promise (persistence is best-effort, so it should recover).
+          creatingConvRef.current = null;
+        }
+      }
+      if (convId) await saveTurn(convId, idx * 2, q, answer);
+    } catch {
+      /* best-effort persistence */
+    }
+  }, [conversationId, router, bumpChats]);
+
   // A citation click pins the panel to ITS answer's sources (per-turn evidence) before opening +
   // scrolling. Takes the answer so an older turn's [n] tag resolves against that turn's citations,
   // not the latest answer's (whose tag N may be a different source).
@@ -154,7 +222,7 @@ export default function AskPage() {
 
   async function submit(q: string) {
     const text = q.trim();
-    if (!text || busy) return;
+    if (!text || busy || loadingChat) return;
     setBusy(true);
     setBloom(false); // clear any prior flare so the next answer re-triggers it (and it can't stick across an "ask again")
     setActiveTag(null);
@@ -169,6 +237,7 @@ export default function AskPage() {
       const res = await askQuestion(text);
       setLast({ a: res });
       void fetchUsage().catch(() => {});
+      void persistTurn(idx, text, res); // save the question + cited answer to chat history
     } catch (err) {
       const msg = isQuotaError(err)
         ? `Daily Ask limit reached (${err.quota.used}/${err.quota.limit}) on ${err.quota.plan}.`
@@ -187,6 +256,12 @@ export default function AskPage() {
       modeOpen={modeOpen} setModeOpen={setModeOpen} error={latest?.err ?? null}
     />
   );
+
+  // While a saved chat's turns are loading, show a quiet placeholder instead of the welcome screen
+  // (suggestions flashing mid-load reads as a bug).
+  if (loadingChat && !hasThread) {
+    return <div className="welcome-wrap"><p className="muted" style={{ fontSize: 14 }}>Loading chat…</p></div>;
+  }
 
   // Empty state: a centered "welcome" with the composer in the middle (ChatGPT-style). Once a
   // conversation starts, switch to the scrolling thread with the composer pinned to the bottom.

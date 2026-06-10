@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
 import { Orb } from "./Orb";
-import { fetchEntitlements, fetchUsage } from "@/lib/api";
+import { fetchConversations, fetchEntitlements, fetchUsage, type ConversationSummary } from "@/lib/api";
 import { Icon } from "./icons";
 
 /* ── chrome context: pages inject their evidence panel + topbar title here ── */
@@ -18,6 +18,7 @@ interface AppChromeValue {
   openEvidence: () => void;
   setEvidence: (node: ReactNode | null) => void;
   setTopbar: (node: ReactNode | null) => void;
+  bumpChats: () => void;
 }
 const AppChromeContext = createContext<AppChromeValue>({
   railCollapsed: false,
@@ -27,6 +28,7 @@ const AppChromeContext = createContext<AppChromeValue>({
   openEvidence: () => {},
   setEvidence: () => {},
   setTopbar: () => {},
+  bumpChats: () => {},
 });
 export const useAppChrome = () => useContext(AppChromeContext);
 
@@ -73,6 +75,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
   const [plan, setPlan] = useState<{ plan: string; used: number; limit: number }>({ plan: "free", used: 0, limit: 10 });
+  const [chats, setChats] = useState<ConversationSummary[]>([]);
+  const [chatsVersion, setChatsVersion] = useState(0);
+  // Lets the chat page refresh the rail history the moment it creates a new conversation.
+  const bumpChats = useCallback(() => setChatsVersion((v) => v + 1), []);
 
   // Stable setters so child effects don't loop.
   const setEvidence = useCallback((node: ReactNode | null) => setEvidenceNode(node), []);
@@ -121,6 +127,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [session]);
 
+  // Load the rail's saved-chat history (refreshes when the chat page bumps after creating one).
+  useEffect(() => {
+    if (!session) return;
+    let alive = true;
+    void fetchConversations().then((c) => { if (alive) setChats(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, [session, chatsVersion]);
+
   // Close the account menu on Escape or an outside click.
   useEffect(() => {
     if (!menuOpen) return;
@@ -156,8 +170,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const ctx = useMemo<AppChromeValue>(
-    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar }),
-    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar],
+    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats }),
+    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats],
   );
 
   // Hooks are all above this line — only conditional returns below (Rules of Hooks).
@@ -220,9 +234,18 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
 
             <div className="r-label">Recent chats</div>
-            <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }}>
-              <span style={{ fontSize: 12 }}>Your saved chats appear here</span>
-            </div>
+            {chats.length === 0 ? (
+              <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }}>
+                <span style={{ fontSize: 12 }}>Your saved chats appear here</span>
+              </div>
+            ) : (
+              chats.map((c) => (
+                <Link key={c.id} href={`/app/ask?c=${c.id}`} className="hist" title={c.title}>
+                  <Icon name="message" className="hist-ic" />
+                  <span>{c.title}</span>
+                </Link>
+              ))
+            )}
           </nav>
 
           <div className="acct-wrap">
