@@ -49,6 +49,8 @@ interface EpmcResult {
   journalInfo?: { journal?: { title?: string } };
   pubYear?: string;
   license?: string; // Europe PMC's own license tag for the article (core resultType)
+  authorList?: { author?: Array<{ lastName?: string; initials?: string }> };
+  pubTypeList?: { pubType?: string[] };
 }
 
 export async function fetchEuropePmc(opts: EuropePmcFetchOpts): Promise<NormalizedSource[]> {
@@ -85,7 +87,17 @@ export async function fetchEuropePmc(opts: EuropePmcFetchOpts): Promise<Normaliz
       license: mapEpmcLicense(r.license),
       content_text,
       content_hash: await sha256Hex(content_text),
-      metadata: { source: "europepmc", pmid: r.pmid, pmcid: r.pmcid, year: r.pubYear },
+      metadata: {
+        source: "europepmc",
+        pmid: r.pmid,
+        pmcid: r.pmcid,
+        year: r.pubYear,
+        journal: r.journalInfo?.journal?.title,
+        authors: (r.authorList?.author ?? [])
+          .map((au) => [au.lastName, au.initials].filter(Boolean).join(" "))
+          .filter(Boolean),
+        publication_types: r.pubTypeList?.pubType ?? [],
+      },
     });
   }
   return out;
