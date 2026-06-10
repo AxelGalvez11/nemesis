@@ -401,3 +401,11 @@ Deno.test("the assembled safety-scan string includes gap text (one-scan guarante
   const assembled = ["summary", "section", "point", gapText].join("  ");
   assertEquals(detectViolations(assembled).length > 0, true);
 });
+
+// ---------------------------------------------------------------------------
+// planSubQuestions mode parameter — prompt-only change; normalize contract unchanged
+// ---------------------------------------------------------------------------
+
+Deno.test("normalizeSubQuestions unchanged under structured mode (prompt-only change)", () => {
+  assertEquals(normalizeSubQuestions(["a", "b", "c"], "q").length, 3);
+});
