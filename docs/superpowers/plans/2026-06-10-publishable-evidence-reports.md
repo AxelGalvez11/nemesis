@@ -565,7 +565,9 @@ Create `packages/shared/src/citation-format.ts` with a numbered fallback (Phase 
 // Numbered medical reference formatter (Vancouver + AMA). Phase 1 ships a graceful numbered
 // fallback; Phase 4 replaces the body of formatReference with style-exact punctuation. The
 // SIGNATURE is final so callers (export routes, ReportView) never change again.
-import type { Citation, CitationStyle } from "./index.ts";
+// Import the source modules directly (NOT the ./index barrel) to avoid a barrel import cycle.
+import type { Citation } from "./answer.ts";
+import type { CitationStyle } from "./research.ts";
 
 export interface FormattedReference {
   n: number;
@@ -918,8 +920,8 @@ git commit -m "feat(web): Word/PowerPoint export buttons on the research report"
 
 - [ ] **Step 1: Read the existing smoke harness shape**
 
-Run: `sed -n '1,40p' apps/web/scripts/smoke.mjs`
-Expected: see how it imports/runs (it's run via `npm run smoke -w @pharmaorb/web`). Append a new check that imports the compiled formatters.
+Run: `sed -n '1,40p' apps/web/scripts/smoke.mjs` and `grep -n "smoke" apps/web/package.json`.
+Expected: learn how it loads modules. **Resolve the TypeScript-loader question NOW, before writing Step 2:** the export formatters are `.ts`, and a plain `node scripts/smoke.mjs` will NOT import `.ts`. Pick one and use it consistently in Steps 2–3: (a) if the existing smoke already runs under `tsx`/`--import tsx`, reuse that; (b) otherwise change the `smoke` script (or add `smoke:export`) to `tsx scripts/smoke.mjs` (add `tsx` as a web devDependency). The whole export-verification story rests on this loader actually loading the `.ts` formatters.
 
 - [ ] **Step 2: Add the export smoke check**
 
@@ -1882,11 +1884,25 @@ Deno.test("Vancouver journal article", () => {
   );
 });
 
-Deno.test("AMA journal article (full numeric form)", () => {
+// 8 authors → the styles diverge on author truncation (the real plain-text difference).
+const manyAuthors: Citation = { ...article, authors: ["A A", "B B", "C C", "D D", "E E", "F F", "G G", "H H"] };
+
+Deno.test("Vancouver lists the first 6 authors + et al when >6", () => {
   assertEquals(
-    formatReference(article, "ama"),
-    "Falutz J, Mamputu JC. Tesamorelin in HIV lipodystrophy. N Engl J Med. 2024;390(2):101-110.",
+    formatReference(manyAuthors, "vancouver"),
+    "A A, B B, C C, D D, E E, F F, et al. Tesamorelin in HIV lipodystrophy. N Engl J Med. 2024;390(2):101-110.",
   );
+});
+
+Deno.test("AMA lists the first 3 authors + et al when >6", () => {
+  assertEquals(
+    formatReference(manyAuthors, "ama"),
+    "A A, B B, C C, et al. Tesamorelin in HIV lipodystrophy. N Engl J Med. 2024;390(2):101-110.",
+  );
+});
+
+Deno.test("Vancouver and AMA agree when ≤6 authors (no truncation)", () => {
+  assertEquals(formatReference(article, "vancouver"), formatReference(article, "ama"));
 });
 
 Deno.test("graceful fallback when volume/issue/pages absent", () => {
@@ -1957,17 +1973,26 @@ export function formatReference(c: Citation, style: CitationStyle): string {
     return joinSentences(["FDA Adverse Event Reporting System (FAERS) database query", c.url ?? "", accessed]);
   }
 
-  // Journal article (PubMed / Europe PMC). Vancouver & AMA share this numeric skeleton:
+  // Journal article (PubMed / Europe PMC). The numeric skeleton is shared:
   //   Authors. Title. Journal. Year;Vol(Issue):Pages.
-  const authors = (c.authors ?? []).join(", ");
+  // The styles diverge ONLY on author truncation (the real plain-text difference, since we don't
+  // italicize): Vancouver/ICMJE lists the first 6 then "et al." when >6 authors; AMA lists the first 3.
+  const authors = formatAuthors(c.authors ?? [], style);
   const journal = c.journal ?? "";
   const year = c.year ?? (c.published_date ? c.published_date.slice(0, 4) : "");
   let volIss = c.volume ?? "";
   if (c.volume && c.issue) volIss = `${c.volume}(${c.issue})`;
   const tail = [year, volIss && `;${volIss}`, c.pages && `:${c.pages}`].filter(Boolean).join("");
-  // style currently only affects journal styling preference; both emit the same plain-text skeleton.
-  void style;
   return joinSentences([authors, title, journal, tail]);
+}
+
+/** Author list with style-specific truncation. ≤6 authors → list all; >6 → Vancouver keeps the
+ *  first 6 + "et al", AMA keeps the first 3 + "et al". The trailing period comes from joinSentences. */
+function formatAuthors(authors: string[], style: CitationStyle): string {
+  if (authors.length === 0) return "";
+  if (authors.length <= 6) return authors.join(", ");
+  const keep = style === "ama" ? 3 : 6;
+  return `${authors.slice(0, keep).join(", ")}, et al`;
 }
 
 /** Join non-empty parts as "A. B. C." with a single trailing period; collapses doubled periods. */
@@ -1984,7 +2009,7 @@ Keep `buildReferenceList` and `FormattedReference` as in Phase 1 (signature unch
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `deno test packages/shared/src/citation-format.test.ts`
-Expected: PASS (all 7).
+Expected: PASS (all 8) — including the two divergence tests proving the toggle is real (Vancouver keeps 6 authors, AMA keeps 3, when >6).
 
 - [ ] **Step 5: Commit**
 
@@ -2412,7 +2437,7 @@ Open the PR for `feat/publishable-evidence-reports`; confirm CI (ask-units, guar
 - §4 data model → Phase 0.1 (exact optional fields, `kind` unchanged, no migration).
 - §5.1 export → Phase 1 (RLS-scoped read, honesty carry-through, regenerate-on-download, style via query param, old-report caveat in release note).
 - §5.2 gaps + counts → Phases 2 (metadata) + 3 (deterministic gaps, denominator phrasing, CT strengthening-only, one-scan extension). The LLM-grounded `uncertainties` reframe is explicitly deferred.
-- §5.3 Vancouver/AMA → Phases 2 (3a/3b metadata) + 4 (3c formatter, client render, export-style wiring, europepmc `abbr()` fix). CSL declined.
+- §5.3 Vancouver/AMA → Phases 2 (3a/3b metadata) + 4 (3c formatter, client render, export-style wiring, europepmc `abbr()` fix). CSL declined. The toggle produces a **real** difference: author truncation (Vancouver first-6-then-"et al." vs AMA first-3) — not cosmetic, with divergence tests; `?style=` flows to the export route so a download matches the screen.
 - §5.4 structured mode → Phase 5 (plan variant, code-authored method, both safety guards, claims_verified surfaced, normal Pro slot). Deviation from spec: the method is deterministic code, not a synthesize.ts schema field — safer, documented in the Task 5.2 commit.
 - §6 phases → re-sequenced with the metadata foundation (Phase 2) pulled before gaps/citations; rationale documented at the top.
 - §7 testing → pure formatters + deriveGaps Deno-tested; export routes smoke-tested (PK bytes + honesty signals); forbidden-phrase guard tested; frozen 286-suite untouched.
