@@ -32,3 +32,4 @@ export * from "./entitlements.ts";
 export * from "./research.ts";
 // Publishable-reports: PRISMA-overclaim guard + numbered citation formatter (pure).
 export * from "./forbidden-phrases.ts";
+export * from "./citation-format.ts";
