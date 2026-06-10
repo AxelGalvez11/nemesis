@@ -112,6 +112,31 @@ generate) to produce a multi-section report from a single synthesis.
   the pure-helper tests cannot see. (Network surfaces `retrieve`/`rerank`/`gatherLiveCandidates` are
   reused verbatim from the proven /ask path.)
 
+## Wiring plan (owner approved "build the user-facing wiring", 2026-06-10)
+
+Reuses existing scaffolding — does NOT duplicate it:
+- **Entitlements/quota:** `consume_usage(userId, 'deep_research_daily')` (0122) already gates on
+  `deep_research_daily_limit` (0123: free/plus=0, pro=3, professional=10, enterprise=50). A limit of 0
+  IS the Pro gate — free/plus get a `quota_exceeded` 429. No new gating code.
+- **Run ledger:** `research_report_runs` (0123) already exists (status/plan/counter_key/error/timestamps,
+  own-row RLS). **0126** adds only a `progress jsonb` column for live steps.
+- **Saved report store:** `saved_reports` (0109, kind extended to `deep_research` in 0123, owner RLS
+  `sr_owner`) — the finished `ResearchReport` lands in `saved_reports.payload`.
+- **Live progress:** no Realtime is configured, so the frontend **polls** the run row (~1.5s) and reads
+  `progress` + `status`. Simpler and robust; no publication/subscription setup.
+
+Stages (all on the `feat/deep-research-engine` branch; prod deploys gated):
+1. **0126 migration** — `research_report_runs.progress jsonb`.
+2. **`research` edge function** — verify user → `consume_usage('deep_research_daily')` (429 on gate) →
+   insert run (status `running`) → `EdgeRuntime.waitUntil(runResearch(onProgress = PATCH progress))`;
+   on done insert `saved_reports` (kind `deep_research`, payload = report) + run `completed` +
+   `saved_report_id`; on error run `failed` + `error`. Returns `{ run_id }` (202) immediately.
+3. **web api client** — `startResearch`, `fetchResearchRun`, `fetchResearchReports`, `fetchResearchReport`
+   (direct RLS-scoped `supabase.from` reads + the function POST), mirroring `askQuestion` + chat-persistence.
+4. **frontend** — a "Deep research" mode toggle on the composer; a live-progress panel polling the run;
+   a `ResearchReport` renderer (sections, citations, safety prominent, `claims_verified` banner); rail
+   list of past reports (reopen by id), reusing the chat-persistence saved-revisitable pattern.
+
 ## Gated deploy (NOT done — needs owner OK)
 
 - `research_report_runs` migration (ledger row: status, progress steps, the saved report jsonb).

@@ -352,3 +352,48 @@
 .cite:focus-visible, .search input:focus-visible {
   outline: 2px solid var(--acid-dim); outline-offset: 2px;
 }
+
+/* ── Deep Research workspace ───────────────────────────────────────────────── */
+.research-wrap { max-width: 780px; margin: 0 auto; padding: 28px 28px 80px; }
+.research-intro { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px 0 8px; }
+.research-intro .composer { width: 100%; max-width: 100%; padding: 0; margin-top: 8px; }
+.research-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+.research-q { font-size: 16px; font-weight: 600; color: var(--text); line-height: 1.4; flex: 1; min-width: 200px; }
+.research-error { margin-top: 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+
+/* report body */
+.research-section { margin: 18px 0; }
+.research-heading { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); margin: 0 0 8px; }
+.research-plan { margin: 12px 0 6px; font-size: 13px; }
+.research-plan summary { cursor: pointer; color: var(--text-2); font-weight: 600; }
+.research-plan ul { margin: 8px 0 0; padding-left: 20px; color: var(--text-2); line-height: 1.6; }
+
+/* verification pill in the grade row */
+.verify-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 999px; padding: 2px 8px; }
+.verify-pill.ok { color: var(--acid-dim); border: 1px solid rgba(140, 220, 40, 0.3); }
+.verify-pill.warn { color: var(--warn); border: 1px solid rgba(245, 178, 59, 0.32); }
+
+/* sources list */
+.research-sources { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 14px; }
+.research-sources ol { margin: 8px 0 0; padding-left: 22px; display: flex; flex-direction: column; gap: 7px; }
+.research-src { font-size: 13.5px; line-height: 1.5; color: var(--text-2); border-radius: 6px; padding: 2px 4px; transition: background 0.2s; }
+.research-src a { color: var(--text); text-decoration: none; }
+.research-src a:hover { text-decoration: underline; }
+.research-src .src-prov { display: inline-block; font-family: var(--mono); font-size: 10px; text-transform: uppercase; color: var(--text-3); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; margin-right: 7px; vertical-align: 1px; }
+.research-src .src-date { color: var(--text-3); }
+.research-src.src-flash { background: color-mix(in srgb, var(--acid) 14%, transparent); }
+
+/* live progress */
+.research-progress { margin-top: 8px; }
+.research-progress .think-row { display: flex; align-items: center; gap: 10px; }
+.research-progress .src-count { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-left: auto; }
+.research-progress-note { font-size: 12px; color: var(--text-3); margin-top: 12px; line-height: 1.5; }
+
+/* report history */
+.research-history { margin-top: 28px; }
+.research-history-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.research-card { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-2); text-decoration: none; transition: 0.15s; }
+.research-card:hover { border-color: var(--line-2); background: var(--surface-2); color: var(--text); }
+.research-card svg { color: var(--text-3); flex: none; }
+.research-card-title { flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.research-card small { color: var(--text-3); font-family: var(--mono); font-size: 11px; flex: none; }

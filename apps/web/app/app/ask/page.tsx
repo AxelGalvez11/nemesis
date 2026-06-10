@@ -20,7 +20,7 @@ const STAGES = ["Reading the question", "Searching the evidence library", "Ranki
 
 const MODES = [
   { id: "evidence", label: "Evidence", live: true, hint: "Cited answer from the library + live sources" },
-  { id: "deep", label: "Deep research", live: false, hint: "Multi-step research — coming soon" },
+  { id: "deep", label: "Deep research", live: true, hint: "Multi-step, fully cited report (Pro)" },
   { id: "review", label: "Literature review", live: false, hint: "Structured lit review — coming soon" },
   { id: "meta", label: "Meta-analysis", live: false, hint: "Computed pooled estimates — coming soon" },
 ] as const;
@@ -223,6 +223,13 @@ function AskPage() {
   async function submit(q: string) {
     const text = q.trim();
     if (!text || busy || loadingChat) return;
+    // Deep research is a distinct long-running, report-producing flow — hand it off to its own
+    // workspace (which streams live progress and renders the cited report) instead of the chat path.
+    if (mode === "deep") {
+      router.push(`/app/research?q=${encodeURIComponent(text)}`);
+      setQuestion("");
+      return;
+    }
     setBusy(true);
     setBloom(false); // clear any prior flare so the next answer re-triggers it (and it can't stick across an "ask again")
     setActiveTag(null);

@@ -34,6 +34,7 @@ export const useAppChrome = () => useContext(AppChromeContext);
 
 const workspace = [
   { href: "/app/ask", label: "Ask", icon: "message" as const },
+  { href: "/app/research", label: "Deep research", icon: "doc" as const },
   // Explore is deferred (mostly mockup) — hidden from the nav until it's real. The route still exists.
   { href: "/app/watchlist", label: "Watchlist", icon: "bell" as const },
 ];
@@ -43,6 +44,7 @@ function isActive(path: string, href: string) {
 }
 function titleForPath(path: string): { title: string; sub?: string } {
   if (path.startsWith("/app/ask")) return { title: "Ask", sub: "live evidence · cited" };
+  if (path.startsWith("/app/research")) return { title: "Deep research", sub: "multi-step cited report" };
   if (path.startsWith("/app/explore")) return { title: "Explore" };
   if (path.startsWith("/app/watchlist")) return { title: "Watchlist" };
   if (path.startsWith("/app/billing")) return { title: "Billing" };
@@ -53,7 +55,7 @@ function titleForPath(path: string): { title: string; sub?: string } {
   return { title: "PharmaOrb" };
 }
 
-const FULL_BLEED = ["/app/ask", "/app/explore", "/app/drugs/"];
+const FULL_BLEED = ["/app/ask", "/app/research", "/app/explore", "/app/drugs/"];
 
 // Client-only breakpoint probe (clicks are client-side, so window is always defined here).
 const mqMatch = (q: string) =>
