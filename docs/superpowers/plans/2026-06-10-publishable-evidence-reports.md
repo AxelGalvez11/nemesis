@@ -2452,3 +2452,18 @@ Open the PR for `feat/publishable-evidence-reports`; confirm CI (ask-units, guar
 - §5.4 structured mode → Phase 5 (plan variant, code-authored method, both safety guards, claims_verified surfaced, normal Pro slot). Deviation from spec: the method is deterministic code, not a synthesize.ts schema field — safer, documented in the Task 5.2 commit.
 - §6 phases → re-sequenced with the metadata foundation (Phase 2) pulled before gaps/citations; rationale documented at the top.
 - §7 testing → pure formatters + deriveGaps Deno-tested; export routes smoke-tested (PK bytes + honesty signals); forbidden-phrase guard tested; frozen 286-suite untouched.
+
+---
+
+## Corrections applied during implementation (review-driven)
+
+These deviate from the code snippets above; the shipped code is authoritative. Each was caught by the per-task or final whole-branch review and fixed before the PR.
+
+- **Honest count framing (final review, Important).** `RetrievalCounts.cap_per_source` was a *per-sub-question-search* cap (6) but `per_provider` counts the *merged* pool (≤24) — so "24 retrieved, capped at 6 per source, pubmed_oa: 24" was a self-contradiction. Renamed `cap_per_source` → `per_search_cap`, added `n_searches`, and reframed the copy (screen + docx + pptx) to "{N} candidate sources retrieved across {M} sub-question searches (each kept its top {cap} by relevance), then merged and de-duplicated — a bounded, top-ranked sample, not an exhaustive census." The smoke honesty-needle changed from `"capped at"` → `"not an exhaustive census"`.
+- **`no_synthesis` gap phrasing (Task 3.1, Critical).** The tail "findings are not yet synthesized across studies" was an unscoped literature-wide claim (Altman-Bland); changed to "...so these retrieved findings are not yet synthesized."
+- **Structured-mode method copy (Task 5.2, Critical).** An implementer rewrite turned the inclusion/exclusion notes into eligibility-screening language (implying a screening process we don't run + dropping the "what was NOT done" disclosure); reverted to the honest copy and locked it with test assertions.
+- **pptx honesty parity (Task 1.4).** The deck was missing the "What we searched" counts slide the Word doc had; added.
+- **Vancouver/AMA toggle was a no-op in the first draft** (advisor, pre-implementation) — fixed in the plan itself to a real author-truncation difference before Phase 4 ran.
+- **Export gap-trials parity + europepmc labels + `EvidencePanel` europepmc badge** — small consistency fixes from review.
+
+The metadata-foundation phase (Phase 2) carries PubMed `publication_types` (for gap classification) alongside the citation fields in one parser pass, per the advisor — both gaps and citations read the same foundation.
