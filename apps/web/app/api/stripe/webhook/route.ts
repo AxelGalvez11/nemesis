@@ -1,5 +1,5 @@
 import type Stripe from "stripe";
-import { stripeWebhookSecret, stripePlusPriceId } from "@/lib/env";
+import { stripeWebhookSecret } from "@/lib/env";
 import { adminClient, json } from "@/lib/server";
 import { planFromStripeStatus, stripe, stripeFailureDetail } from "@/lib/stripe";
 
@@ -56,8 +56,8 @@ async function mirrorSubscription(subscription: Stripe.Subscription, fallbackUse
 
   const item = subscription.items.data[0];
   const priceId = item?.price.id ?? null;
-  const recognizedPlusPrice = priceId === stripePlusPriceId ? priceId : null;
-  const plan = planFromStripeStatus(subscription.status, recognizedPlusPrice);
+  // Resolve the plan from the actual price id (plus vs pro) — not "any recognized price = plus".
+  const plan = planFromStripeStatus(subscription.status, priceId);
   const period = subscription as Stripe.Subscription & { current_period_end?: number };
   const currentPeriodEnd = typeof period.current_period_end === "number"
     ? new Date(period.current_period_end * 1000).toISOString()
