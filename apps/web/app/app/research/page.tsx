@@ -84,9 +84,16 @@ function ResearchPage() {
   useEffect(() => {
     if (phase !== "running" || !runId) return;
     let alive = true;
+    let polls = 0;
+    const MAX_POLLS = 200; // ~5 min at 1500ms — bounded so a stuck/killed run can't poll forever
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
       if (!alive) return;
+      if (++polls > MAX_POLLS) {
+        setErr("Research is taking longer than expected — check your reports list in a bit.");
+        setPhase("error");
+        return;
+      }
       try {
         const row = await fetchResearchRun(runId);
         if (!alive) return;

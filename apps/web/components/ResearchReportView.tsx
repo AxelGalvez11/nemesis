@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { AnswerPoint, Citation, ResearchReport } from "@pharmabro/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
+import { safeHref } from "@/lib/url";
 import { Icon } from "./icons";
 
 const PROVIDER_ABBR: Record<string, string> = {
@@ -112,17 +113,20 @@ function Sources({ citations }: { citations: Citation[] }) {
     <div className="research-sources">
       <div className="ai-block-label">Sources ({citations.length})</div>
       <ol>
-        {citations.map((c) => (
-          <li key={c.chunk_tag} id={`rep-src-${normTag(c.chunk_tag)}`} className="research-src">
-            <span className="src-prov">{abbr(c.source_type)}</span>
-            {c.url ? (
-              <a href={c.url} target="_blank" rel="noopener noreferrer">{c.title ?? c.url}</a>
-            ) : (
-              <span>{c.title ?? c.source_id}</span>
-            )}
-            {c.published_date ? <small className="src-date"> · {c.published_date}</small> : null}
-          </li>
-        ))}
+        {citations.map((c) => {
+          const href = safeHref(c.url);
+          return (
+            <li key={c.chunk_tag} id={`rep-src-${normTag(c.chunk_tag)}`} className="research-src">
+              <span className="src-prov">{abbr(c.source_type)}</span>
+              {href ? (
+                <a href={href} target="_blank" rel="noopener noreferrer">{c.title ?? href}</a>
+              ) : (
+                <span>{c.title ?? c.source_id}</span>
+              )}
+              {c.published_date ? <small className="src-date"> · {c.published_date}</small> : null}
+            </li>
+          );
+        })}
       </ol>
     </div>
   );

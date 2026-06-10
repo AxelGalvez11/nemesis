@@ -73,12 +73,18 @@ serve(async (req) => {
   }
 
   // ---- create the run row (status running) ----
+  // Retry once before failing: the quota unit was already consumed (consume_usage is committed and has
+  // no rollback RPC), so a transient PostgREST blip should not silently cost a Pro user a daily run.
   let runId: string;
   try {
     runId = await insertRun(userId, question, quota.plan);
-  } catch (e) {
-    console.error("research insertRun failed:", (e as Error).message);
-    return json({ error: "could not start research" }, 500, req);
+  } catch {
+    try {
+      runId = await insertRun(userId, question, quota.plan);
+    } catch (e) {
+      console.error("research insertRun failed after retry:", (e as Error).message);
+      return json({ error: "could not start research" }, 500, req);
+    }
   }
 
   // ---- execute in the background; respond immediately with the run id ----
@@ -105,14 +111,14 @@ async function executeRun(runId: string, userId: string, question: string): Prom
       onProgress: (step) => {
         steps.push(step);
         // Best-effort live update; a dropped progress patch must not fail the run.
-        void patchRun(runId, { progress: steps }).catch((e) =>
+        void patchRun(runId, userId, { progress: steps }).catch((e) =>
           console.error("research progress patch failed:", (e as Error).message)
         );
       },
     });
 
     const savedReportId = await insertSavedReport(userId, question, report);
-    await patchRun(runId, {
+    await patchRun(runId, userId, {
       status: "completed",
       progress: steps,
       saved_report_id: savedReportId,
@@ -120,11 +126,13 @@ async function executeRun(runId: string, userId: string, question: string): Prom
       completed_at: new Date().toISOString(),
     });
   } catch (e) {
-    console.error("research run failed:", (e as Error).message);
-    await patchRun(runId, {
+    // Log the real detail server-side; store a GENERIC message on the row (it is read by the client),
+    // so Postgres / LLM-provider internals never reach the user — same posture as ask/index.ts.
+    console.error("research run failed (detail):", (e as Error).message);
+    await patchRun(runId, userId, {
       status: "failed",
       progress: steps,
-      error: (e as Error).message.slice(0, 500),
+      error: "Research could not be completed. Please try again.",
       completed_at: new Date().toISOString(),
     }).catch(() => {});
   }
@@ -245,9 +253,12 @@ async function insertSavedReport(userId: string, question: string, report: Resea
   }
 }
 
-async function patchRun(runId: string, fields: Record<string, unknown>): Promise<void> {
+async function patchRun(runId: string, userId: string, fields: Record<string, unknown>): Promise<void> {
   const url = new URL(`${SB_URL}/rest/v1/research_report_runs`);
   url.searchParams.set("id", `eq.${runId}`);
+  // Defense-in-depth: scope the patch to the owner too (runId is a server uuid, but this guarantees a
+  // patch can never touch another user's row even if an id were ever guessed/leaked).
+  url.searchParams.set("user_id", `eq.${userId}`);
   const res = await fetch(url, {
     method: "PATCH",
     headers: {

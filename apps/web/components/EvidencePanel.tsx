@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { Citation } from "@pharmabro/shared";
 import { normTag } from "@/lib/cite";
+import { safeHref } from "@/lib/url";
 
 // Provider → the color-square class in shell.css (openfda blue, pubmed purple, trial orange, faers red).
 function providerClass(t: string): string {
@@ -67,8 +68,9 @@ export function EvidencePanel({ citations, activeTag }: { citations: Citation[];
                 <div className="relv"><i style={{ width: `${rank}%` }} /></div>
               </>
             );
-            return c.url ? (
-              <a key={`${c.source_id}-${c.chunk_tag}`} id={anchorId} className={klass} href={c.url} target="_blank" rel="noreferrer">{inner}</a>
+            const href = safeHref(c.url);
+            return href ? (
+              <a key={`${c.source_id}-${c.chunk_tag}`} id={anchorId} className={klass} href={href} target="_blank" rel="noreferrer">{inner}</a>
             ) : (
               <Link key={`${c.source_id}-${c.chunk_tag}`} id={anchorId} className={klass} href={`/app/source/${c.source_id}`}>{inner}</Link>
             );

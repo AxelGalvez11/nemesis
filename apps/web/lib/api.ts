@@ -644,6 +644,7 @@ export async function fetchResearchReport(savedReportId: string): Promise<Resear
     .from("saved_reports")
     .select("payload")
     .eq("id", savedReportId)
+    .eq("kind", "deep_research") // only deep-research rows carry a ResearchReport payload
     .maybeSingle();
   if (error) throw new Error(`research report failed: ${error.message}`);
   return isObj(data) && isObj(data.payload) ? (data.payload as unknown as ResearchReport) : null;
