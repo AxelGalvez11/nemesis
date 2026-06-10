@@ -45,6 +45,17 @@ export interface ResearchReport {
    * to Deep Research unchanged.
    */
   template?: AnswerTemplate;
+  // ── Publishable-reports additions (all optional; default to today's behavior). ──
+  /** Rigor mode. Absent/`'standard'` = the existing Deep Research report. */
+  mode?: ReportMode;
+  /** Deterministic, denominator-scoped literature gaps (Phase 3). */
+  gaps?: GapStatement[];
+  /** Documented honest method, set only for `structured_review` (Phase 5). */
+  search_method?: SearchMethod;
+  /** "What we searched" counts (Phase 3). */
+  counts?: RetrievalCounts;
+  /** Citation style chosen for this report; exports read it so a download matches the screen. */
+  citation_style?: CitationStyle;
 }
 
 /** Async run lifecycle (mirrors research_report_runs.status). */
@@ -57,4 +68,61 @@ export interface ResearchProgressStep {
   /** Cumulative distinct sources gathered so far (shown live). */
   sources_found?: number;
   at: string; // ISO timestamp, stamped by the orchestrator
+}
+
+// ── Publishable-reports additions (additive & optional; saved in payload JSON) ──
+
+/** Report rigor mode. 'standard' = today's Deep Research; 'structured_review' = the
+ *  honest, method-documenting "structured / PRISMA-informed evidence review". */
+export type ReportMode = "standard" | "structured_review";
+
+/** Numbered medical citation style the reference list/exports use. */
+export type CitationStyle = "vancouver" | "ama";
+
+/** PICOS-ish dimension a gap is about (kept small + honest; not a formal framework). */
+export type GapDimension =
+  | "study_design"
+  | "population"
+  | "outcome"
+  | "comparator"
+  | "long_term"
+  | "synthesis";
+
+/** The scope a gap statement is measured against — what was searched, how many, when. */
+export interface EvidenceDenominator {
+  providers_searched: string[];
+  n_sources: number;
+  retrieved_at: string | null;
+}
+
+/** A deterministic, denominator-scoped literature gap. Computed in real code from the
+ *  evidence actually retrieved this run (never "no evidence exists" — Altman-Bland). */
+export interface GapStatement {
+  dimension: GapDimension;
+  type: "no_rct" | "no_human_trial" | "no_synthesis" | "conflicting" | "sparse";
+  /** 'this_run' = scoped to the sources we searched; 'indexed_literature' = scoped to
+   *  what we index (only used when projection coverage is verified — see plan §3). */
+  scope: "this_run" | "indexed_literature";
+  text: string;
+  denominator: EvidenceDenominator;
+  /** Ongoing/recruiting trials that may answer the gap (strengthening-only; never deletes a gap). */
+  corroborating_trials: string[]; // NCT ids
+}
+
+/** Honest "what we searched" summary. Counts are candidates retrieved (relevance-capped),
+ *  NEVER PRISMA "records identified". */
+export interface RetrievalCounts {
+  per_provider: Record<string, number>;
+  total_retrieved: number;
+  cap_per_source: number;
+  retrieved_at: string | null;
+}
+
+/** The documented, honest method for a structured_review report. Plain English; no PRISMA labels. */
+export interface SearchMethod {
+  databases: string[];
+  queries: string[];
+  search_date: string; // YYYY-MM-DD
+  inclusion_notes: string;
+  exclusion_notes: string;
 }

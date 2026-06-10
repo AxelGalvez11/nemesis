@@ -88,6 +88,16 @@ export interface Citation {
   license: string | null;
   published_date: string | null; // YYYY-MM-DD
   retrieved_at: string | null;
+  // ── Optional bibliographic metadata (publishable-reports). Populated for NEW
+  //    content once the Phase-2 plumbing lands; absent on older saved reports/chats,
+  //    where the reference formatter degrades gracefully. Never required. ──
+  authors?: string[];
+  journal?: string;
+  /** Authoritative publication year (may differ from published_date, which for live sources is the source's effective date). Formatters fall back to published_date.slice(0,4) when absent. */
+  year?: string;
+  volume?: string;
+  issue?: string;
+  pages?: string;
 }
 
 /** Frozen POST /ask response (doc-11 / §7 / §8 superset). */
