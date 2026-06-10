@@ -36,6 +36,15 @@ export const CONSERVATIVE_FALLBACK_COPY =
   "I can't give a direct answer to that safely. Below are the public sources most relevant " +
   "to your question, along with questions to ask a licensed healthcare professional.";
 
+/** Conversational reply for a pure greeting / thanks / "what can you do" message. Fixed copy
+ *  (never model output), so — like EMERGENCY_COPY / SOURCING_COPY — it is not run through the
+ *  generator or scanned by detectViolations. Kept clean of any forbidden pattern regardless. */
+export const GREETING_COPY =
+  "Hey — I'm PharmaOrb. I answer questions about medications, supplements, peptides, and " +
+  "clinical trials with cited, source-backed evidence. Ask me about a drug, an interaction, a " +
+  "mechanism, or what the research says about a treatment, and I'll pull the sources. What would " +
+  "you like to look into?";
+
 export const STANDARD_QUESTIONS = [
   "Is this appropriate for me given my health history?",
   "Are there interactions with my current medications?",
@@ -67,6 +76,7 @@ export function providerPriorityForIntent(intent: Intent): string[] | null {
     case "comparison":
     case "emergency_overdose":
     case "drug_sourcing":
-      return null; // broad (comparison) or unused (short-circuit)
+    case "smalltalk":
+      return null; // broad (comparison) or unused (short-circuit / smalltalk never retrieves)
   }
 }

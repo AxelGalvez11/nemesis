@@ -91,7 +91,7 @@ export default function AskPage() {
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
-        <div className="thread-sub">{lastAnswered ? `${lastAnswered.citations.length} sources · ${lastAnswered.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
+        <div className="thread-sub">{lastAnswered && lastAnswered.intent !== "smalltalk" ? `${lastAnswered.citations.length} sources · ${lastAnswered.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
       </div>,
     );
     return () => {
@@ -326,6 +326,12 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (tag: string)
     for (const c of answer.citations) m.set(normTag(c.chunk_tag), abbr(c.source_type));
     return m;
   }, [answer.citations]);
+
+  // Small-talk (a greeting / thanks / "what can you do") is a plain conversational reply — no
+  // evidence grade, no sources, no clinical sections. Render just the friendly line.
+  if (answer.intent === "smalltalk") {
+    return <div className="answer fade"><p className="lead">{renderInline(answer.plain_english_summary)}</p></div>;
+  }
 
   const s = answer.answer_sections;
   const flags = (answer.safety_flags ?? []).filter((f) => f !== "no_sources_found");

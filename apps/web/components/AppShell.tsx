@@ -64,7 +64,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
 
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [evidenceCollapsed, setEvidenceCollapsed] = useState(false);
+  // Evidence panel starts COLLAPSED: the chat is the focus on entry. It opens on demand — the
+  // topbar panel button, or a citation click (openEvidence) — so sources are one click away.
+  const [evidenceCollapsed, setEvidenceCollapsed] = useState(true);
   const [evidence, setEvidenceNode] = useState<ReactNode | null>(null);
   const [topbar, setTopbarNode] = useState<ReactNode | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);

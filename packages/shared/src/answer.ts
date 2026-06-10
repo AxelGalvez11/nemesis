@@ -1,6 +1,9 @@
 // Answer-spec types (doc-20 / §7 / §8). The /ask request + frozen response.
 
-/** doc-20 intent categories (the 15 the classifier maps to). */
+/** doc-20 intent categories (the 15 the classifier maps to). `smalltalk` is NOT one the
+ *  classifier emits — it is set deterministically by the small-talk short-circuit (safety.ts /
+ *  index.ts) for a pure greeting/thanks/capability message, answered conversationally without
+ *  retrieval. Kept in the union so the response type and the frontend can render it. */
 export type Intent =
   | "drug_overview"
   | "drug_interaction"
@@ -16,7 +19,8 @@ export type Intent =
   | "pregnancy_pediatrics"
   | "health_context"
   | "drug_sourcing"
-  | "investment";
+  | "investment"
+  | "smalltalk";
 
 /** doc-20 safety flags. The first three hard-short-circuit before generation. */
 export type SafetyFlag =

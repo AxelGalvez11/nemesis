@@ -15,7 +15,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
-import { detectViolations, preScreen } from "./safety.ts";
+import { detectSmallTalk, detectViolations, preScreen } from "./safety.ts";
 import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
@@ -31,6 +31,7 @@ import { withProfessionalRouting } from "./routing.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
+  GREETING_COPY,
   NO_SOURCE_COPY,
   providerPriorityForIntent,
   SOURCING_COPY,
@@ -123,6 +124,15 @@ async function runAsk(
   if (pre.shortCircuit === "sourcing_refusal") {
     return await finalizeTemplate(answerId, question, "drug_sourcing", pre.flags, [], userId,
       "sourcing_refusal", "deterministic-prescreen", false);
+  }
+
+  // ---- 0a. small-talk short-circuit (no LLM, no quota spend) ----
+  // A pure greeting / thanks / "what can you do" message is answered conversationally instead of
+  // being force-fed through clinical retrieval (which turned "hi" into a PubMed search for the
+  // abbreviation "HI"). preScreen already ran above, so an emergency/overdose/self-harm/sourcing
+  // message is hard-routed first and can never reach this branch.
+  if (detectSmallTalk(question)) {
+    return await finalizeSmallTalk(answerId, question, userId);
   }
 
   // ---- 0b. server-side usage limit (before LLM classify/generate spend) ----
@@ -347,6 +357,49 @@ async function augmentWithLive(
     console.error("ask live augmentation failed; using library only:", (e as Error).message);
     return fallback;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Small-talk (conversational, non-clinical) response
+// ---------------------------------------------------------------------------
+
+/** Friendly reply for a pure greeting/thanks/capability message: no retrieval, no generation,
+ *  no clinical sections, no evidence grade. Not a refusal template — it carries no `template`
+ *  field, so the app renders it as a plain conversational message (see ask/page.tsx Answer). */
+async function finalizeSmallTalk(
+  answerId: string,
+  question: string,
+  userId: string,
+): Promise<AskResponse> {
+  const resp: AskResponse = {
+    answer_id: answerId,
+    intent: "smalltalk",
+    plain_english_summary: GREETING_COPY,
+    evidence_grade: "not_applicable",
+    answer_sections: { what_we_know: [], what_we_do_not_know: [], safety_notes: [], questions_to_ask: [] },
+    citations: [],
+    safety_flags: [],
+    refused_unsupported: false,
+    oldest_source_date: null,
+  };
+
+  await storeTrace({
+    id: answerId,
+    user_id: userId,
+    question,
+    intent: "smalltalk",
+    detected_entities: [],
+    answer: resp,
+    evidence_grade: "not_applicable",
+    source_ids: [],
+    retrieval_scores: [],
+    model_name: "deterministic-smalltalk",
+    prompt_version: PROMPT_VERSION,
+    safety_flags: [],
+    used_health_context: false,
+  });
+
+  return resp;
 }
 
 // ---------------------------------------------------------------------------
