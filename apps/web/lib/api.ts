@@ -468,3 +468,95 @@ export async function deleteMyAccount(): Promise<void> {
     throw new Error(message);
   }
 }
+
+// ── Conversations (saved chat history) ──────────────────────────────────────
+// Direct, RLS-scoped table access (same pattern as watchlist_items): the policies on
+// conversations / conversation_messages restrict every row to user_id = auth.uid(), so the
+// authenticated browser client can only ever read/write the signed-in user's own chats.
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  updated_at: string;
+}
+
+/** One reconstructed turn: the question + its cited answer (null if it errored when saved). */
+export interface SavedTurn {
+  q: string;
+  a: AskResponse | null;
+}
+
+/** The user's saved chats, newest first — drives the rail history. */
+export async function fetchConversations(): Promise<ConversationSummary[]> {
+  if (isPreviewMode) return [];
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("id,title,updated_at")
+    .order("updated_at", { ascending: false })
+    .limit(50);
+  if (error) throw new Error(`conversations failed: ${error.message}`);
+  return rows(data, (r) => (typeof r.id === "string" && typeof r.title === "string" ? (r as unknown as ConversationSummary) : null));
+}
+
+/** Create a chat (title = first question, trimmed); returns its id. */
+export async function createConversation(title: string): Promise<string | null> {
+  if (isPreviewMode) return null;
+  const { data: sess } = await supabase.auth.getSession();
+  const userId = sess.session?.user.id;
+  if (!userId) throw new Error("Sign in to save chats");
+  const clean = title.trim().slice(0, 120) || "New chat";
+  const { data, error } = await supabase
+    .from("conversations")
+    .insert({ user_id: userId, title: clean })
+    .select("id")
+    .single();
+  if (error) throw new Error(`create chat failed: ${error.message}`);
+  return isObj(data) && typeof data.id === "string" ? data.id : null;
+}
+
+/** Persist one turn (question + cited answer) at the given ordinal base, and bump the chat's
+ *  updated_at so it sorts to the top of the history. */
+export async function saveTurn(conversationId: string, ordinalBase: number, question: string, answer: AskResponse): Promise<void> {
+  if (isPreviewMode) return;
+  const { data: sess } = await supabase.auth.getSession();
+  const userId = sess.session?.user.id;
+  if (!userId) return;
+  const { error } = await supabase.from("conversation_messages").insert([
+    { conversation_id: conversationId, user_id: userId, role: "user", ordinal: ordinalBase, content: question },
+    {
+      conversation_id: conversationId,
+      user_id: userId,
+      role: "assistant",
+      ordinal: ordinalBase + 1,
+      content: answer.plain_english_summary ?? "",
+      answer_id: answer.answer_id,
+      payload: answer, // full structured answer → a reopened chat re-renders identically
+      citations: answer.citations,
+    },
+  ]);
+  if (error) throw new Error(`save chat failed: ${error.message}`);
+  await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+}
+
+/** Load a chat's turns, ordered, rehydrating the full cited answers from `payload`. */
+export async function fetchConversationTurns(conversationId: string): Promise<SavedTurn[]> {
+  if (isPreviewMode) return [];
+  const { data, error } = await supabase
+    .from("conversation_messages")
+    .select("role,content,payload,ordinal")
+    .eq("conversation_id", conversationId)
+    .order("ordinal", { ascending: true });
+  if (error) throw new Error(`load chat failed: ${error.message}`);
+  const msgs = rows(data, (r) => r);
+  const turns: SavedTurn[] = [];
+  let pendingQ: string | null = null;
+  for (const m of msgs) {
+    if (m.role === "user") {
+      pendingQ = typeof m.content === "string" ? m.content : "";
+    } else if (m.role === "assistant") {
+      turns.push({ q: pendingQ ?? "", a: isObj(m.payload) ? (m.payload as unknown as AskResponse) : null });
+      pendingQ = null;
+    }
+  }
+  return turns;
+}
