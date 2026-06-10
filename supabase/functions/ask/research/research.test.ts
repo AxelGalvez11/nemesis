@@ -18,11 +18,13 @@ import {
 import {
   assembleReport,
   buildCitations,
+  buildSearchMethod,
   hasSupportedContent,
   mergeEvidence,
 } from "./orchestrate.ts";
 import type { RetrievedChunk } from "../citation.ts";
 import { detectViolations } from "../safety.ts";
+import { detectForbiddenPhrases } from "../../../../packages/shared/src/forbidden-phrases.ts";
 
 // ---- fixtures ----
 function chunk(tag: string, overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
@@ -408,4 +410,25 @@ Deno.test("the assembled safety-scan string includes gap text (one-scan guarante
 
 Deno.test("normalizeSubQuestions unchanged under structured mode (prompt-only change)", () => {
   assertEquals(normalizeSubQuestions(["a", "b", "c"], "q").length, 3);
+});
+
+// ---------------------------------------------------------------------------
+// buildSearchMethod — code-authored PRISMA-clean method copy
+// ---------------------------------------------------------------------------
+
+Deno.test("buildSearchMethod produces honest, PRISMA-clean method copy", () => {
+  const m = buildSearchMethod(
+    ["pubmed_oa", "clinicaltrials", "openfda"],
+    ["tesamorelin efficacy", "tesamorelin safety"],
+    "2026-06-10",
+  );
+  assertEquals(m.search_date, "2026-06-10");
+  // The fixed copy must never trip the PRISMA-overclaim guard.
+  const allCopy = [...m.databases, ...m.queries, m.inclusion_notes, m.exclusion_notes].join("  ");
+  assertEquals(detectForbiddenPhrases(allCopy), []);
+  // Honesty cornerstone (plan §2): the limitations disclosure must never be silently dropped,
+  // and the copy must NOT imply an eligibility/screening process PharmaOrb does not perform.
+  assert(/no registered protocol/i.test(m.exclusion_notes));
+  assert(/not an exhaustive census/i.test(m.inclusion_notes));
+  assert(!/\b(included|excluded|eligibility)\b/i.test(m.inclusion_notes + " " + m.exclusion_notes)); // no screening/eligibility framing
 });
