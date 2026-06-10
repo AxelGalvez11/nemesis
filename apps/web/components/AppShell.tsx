@@ -32,7 +32,7 @@ export const useAppChrome = () => useContext(AppChromeContext);
 
 const workspace = [
   { href: "/app/ask", label: "Ask", icon: "message" as const },
-  { href: "/app/explore", label: "Explore", icon: "search" as const },
+  // Explore is deferred (mostly mockup) — hidden from the nav until it's real. The route still exists.
   { href: "/app/watchlist", label: "Watchlist", icon: "bell" as const },
 ];
 

@@ -145,13 +145,13 @@
 .msg-ai { display: flex; gap: 14px; margin-top: 26px; }
 .msg-ai .orb { width: 28px; height: 28px; margin-top: 2px; }
 .ai-body { min-width: 0; flex: 1; }
-.ai-body h4 { font-size: 14px; font-weight: 700; margin: 2px 0 9px; letter-spacing: -0.01em; }
+.ai-body h4 { font-size: 17px; font-weight: 700; margin: 2px 0 9px; letter-spacing: -0.01em; }
 .ai-body p { color: var(--text); margin: 0 0 12px; line-height: 1.6; }
 /* Lead paragraph: the bottom-line summary, promoted so it anchors the answer. */
 .ai-body p.lead { font-size: 16px; line-height: 1.6; font-weight: 500; color: var(--text); margin: 10px 0 16px; }
 .ai-body section { margin: 0 0 16px; }
 /* Section headers read as real headings (sentence-case, brighter, bolder) instead of tiny grey labels. */
-.ai-body section h5 { font-size: 13px; text-transform: none; letter-spacing: -0.005em; color: var(--text); font-weight: 700; margin: 0 0 7px; }
+.ai-body section h5 { font-size: 16px; text-transform: none; letter-spacing: -0.01em; color: var(--text); font-weight: 700; margin: 2px 0 9px; }
 .ai-body ul { margin: 0 0 4px; padding-left: 18px; }
 .ai-body li { margin: 0 0 7px; line-height: 1.6; }
 /* Inline emphasis surfaced by lib/inline-md from the model's own markdown. */
@@ -203,8 +203,11 @@
 /* ── composer ── */
 .composer-wrap { padding: 10px 0 22px; background: linear-gradient(0deg, var(--bg) 60%, transparent); flex: none; }
 .composer { max-width: 720px; margin: 0 auto; padding: 0 28px; }
-.box { border: 1px solid var(--line-2); background: var(--surface); border-radius: 20px; padding: 12px 12px 10px; transition: 0.2s; }
-.box:focus-within { border-color: var(--acid-dim); box-shadow: 0 0 0 3px rgba(140, 220, 40, 0.14); }
+.box { border: 1px solid var(--line-2); background: var(--surface); border-radius: 20px; padding: 12px 12px 10px; transition: border-color 0.2s; }
+/* Calm focus: a subtle border tint, no acid glow ring (the bar no longer "lights up" on focus). */
+.box:focus-within { border-color: var(--line-2); }
+/* composer affordance icons sit dead-center in their buttons (svg as block removes baseline drift) */
+.box .tools svg { display: block; }
 .box textarea { width: 100%; background: none; border: none; color: var(--text); font-family: var(--font); font-size: 15px; resize: none; outline: none; min-height: 24px; max-height: 200px; padding: 0; }
 .box textarea::placeholder { color: var(--text-3); }
 .tools { display: flex; align-items: center; gap: 7px; margin-top: 9px; }
@@ -213,7 +216,7 @@
 .mode:hover { border-color: var(--acid-dim); }
 .tool { width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg-2); color: var(--text-2); display: grid; place-items: center; cursor: pointer; }
 .tool:hover { color: var(--text); border-color: var(--line-2); }
-.send { width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--acid); color: var(--on-acid); display: grid; place-items: center; cursor: pointer; box-shadow: 0 6px 18px -6px rgba(140, 220, 40, 0.7); }
+.send { width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--acid); color: var(--on-acid); display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 9px -5px rgba(140, 220, 40, 0.45); }
 .send:hover { filter: brightness(1.07); }
 .send:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(0.3); }
 .composer .hint { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 9px; font-family: var(--mono); }
