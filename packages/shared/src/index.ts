@@ -30,3 +30,5 @@ export * from "./entitlements.ts";
 // Deep Research report contract (research-modes): the multi-step, cited REPORT
 // produced by plan -> gather -> synthesize -> faithfulness. Additive, optional.
 export * from "./research.ts";
+// Publishable-reports: PRISMA-overclaim guard + numbered citation formatter (pure).
+export * from "./forbidden-phrases.ts";
