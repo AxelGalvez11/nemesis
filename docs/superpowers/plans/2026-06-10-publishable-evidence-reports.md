@@ -1611,7 +1611,7 @@ Create `supabase/functions/ask/research/gaps.ts`:
 import type { RetrievedChunk } from "../citation.ts";
 import type { GapStatement, RetrievalCounts } from "../../../../packages/shared/src/research.ts";
 
-const CAP_PER_SOURCE = 6; // LIVE_PER_SOURCE_MAX / SUB_TOP_M ceiling disclosed honestly; see orchestrate.ts.
+const CAP_PER_SOURCE = 6; // matches both LIVE_PER_SOURCE_MAX and SUB_TOP_M in orchestrate.ts (both 6); disclosed as the per-source cap.
 
 const isRct = (c: RetrievedChunk) => (c.publication_types ?? []).some((t) => /randomized controlled trial/i.test(t));
 const isSynthesis = (c: RetrievedChunk) =>
@@ -1687,7 +1687,7 @@ export function deriveGaps(
       dimension: "synthesis",
       type: "no_synthesis",
       scope: "this_run",
-      text: "No systematic review or meta-analysis was among the sources we searched — findings are not yet synthesized across studies.",
+      text: "No systematic review or meta-analysis was among the sources we searched for this question, so these retrieved findings are not yet synthesized.",
       denominator: denom,
       corroborating_trials: ongoingNct,
     });
