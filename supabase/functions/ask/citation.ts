@@ -27,6 +27,21 @@ export interface RetrievedChunk {
   published_date: string | null;
   retrieved_at: string | null;
   similarity: number;
+  // ── Optional bibliographic + study-type metadata (publishable-reports). Live results carry
+  //    these from the provider's NormalizedSource.metadata; library results from core_sources.
+  //    Absent on most chunks; consumers degrade gracefully. ──
+  authors?: string[];
+  journal?: string;
+  year?: string;
+  volume?: string;
+  issue?: string;
+  pages?: string;
+  /** PubMed PublicationType list (for gap study-type classification). */
+  publication_types?: string[];
+  /** ClinicalTrials.gov study type (INTERVENTIONAL | OBSERVATIONAL | ...) for gap classification. */
+  study_type?: string;
+  trial_status?: string;
+  trial_phase?: string;
 }
 
 interface RawPoint {
