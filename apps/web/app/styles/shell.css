@@ -373,6 +373,17 @@
 .research-plan summary { cursor: pointer; color: var(--text-2); font-weight: 600; }
 .research-plan ul { margin: 8px 0 0; padding-left: 20px; color: var(--text-2); line-height: 1.6; }
 
+/* "What we searched" counts — collapsible, honest cap disclosure */
+.research-counts { margin: 10px 0; font-size: 13px; color: var(--text-2); }
+.research-counts summary { cursor: pointer; color: var(--text-2); font-weight: 600; }
+.research-counts ul { margin: 6px 0 0; padding-left: 20px; color: var(--text-3); line-height: 1.6; }
+.muted-note { color: var(--text-3); font-size: 0.85em; margin: 4px 0 6px; }
+
+/* Evidence gaps */
+.research-gaps { margin: 10px 0; }
+.research-gaps .ai-para { color: var(--text-2); font-size: 15px; }
+.gap-trials { color: var(--text-3); font-style: italic; }
+
 /* verification pill in the grade row */
 .verify-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 999px; padding: 2px 8px; }
 .verify-pill.ok { color: var(--acid-dim); border: 1px solid rgba(140, 220, 40, 0.3); }

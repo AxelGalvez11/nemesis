@@ -91,6 +91,34 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
         </div>
       ) : null}
 
+      {report.counts ? (
+        <details className="research-counts">
+          <summary>What we searched ({report.counts.total_retrieved} candidate sources)</summary>
+          <p className="muted-note">
+            Top-ranked by relevance, capped at {report.counts.cap_per_source} per source — not an exhaustive census.
+          </p>
+          <ul>
+            {Object.entries(report.counts.per_provider).map(([prov, n]) => (
+              <li key={prov}>{abbr(prov)}: {n}</li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      {report.gaps?.length ? (
+        <div className="research-gaps">
+          <div className="muted-label">Evidence gaps</div>
+          {report.gaps.map((g, i) => (
+            <p className="ai-para" key={i}>
+              {g.text}
+              {g.corroborating_trials.length ? (
+                <span className="gap-trials"> An answer may be coming: {g.corroborating_trials.join(", ")}.</span>
+              ) : null}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
       {report.uncertainties.length ? (
         <div className="ai-unclear">
           <div className="muted-label">Still uncertain</div>
