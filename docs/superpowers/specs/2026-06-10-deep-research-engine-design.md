@@ -65,10 +65,23 @@ generate) to produce a multi-section report from a single synthesis.
    before any contributes a second (a sub-question only goes unrepresented if all its evidence is
    duplicated by others — i.e. no information lost).
 
-3. **Faithfulness failure is marked, never silent.** If the semantic-support judge errors, the report
-   is **not** shipped as if fully verified: `ResearchReport.claims_verified` is set `false` and an
-   explicit caution is appended to `uncertainties`. The deterministic safety scan and citation
-   existence check still ran, so this is a trust-transparency measure, not a safety hole.
+3. **Faithfulness failure is marked, never silent.** `claims_verified` is true **only** when the judge
+   returned a verdict for every judged claim *and* the summary held (`isFullyVerified`). A judge error,
+   an under-emitted (partial) response, or a flagged summary all set `claims_verified=false` with an
+   explicit caution appended to `uncertainties`. The summary (the headline sentence) is judged too —
+   against the chunks the body cites — but is never pruned; an unsupported summary just forces the
+   unverified mark. The deterministic safety scan and citation existence check always ran, so an
+   unverified report is a trust-transparency state, not a safety hole.
+
+### Reviewed divergences from /ask (deliberate)
+
+- **No evidence-grade ceiling.** `/ask` applies a deterministic §9 tier ceiling only when it resolves a
+  *single* drug entity; for multi-entity queries it ships the model's self-grade. Deep Research never
+  resolves a single entity (broad recall-first retrieval), so it is always in the multi-entity case
+  where `/ask` also ships the model grade — parity, not an omission. Adding a single-drug ceiling would
+  require entity resolution in the research path; deferred.
+- **Safety scan covers model-authored section headings**, which `/ask` does not need (its section names
+  are fixed). Headings reach the client, so they are included in the one `detectViolations` scan.
 
 ## Files
 

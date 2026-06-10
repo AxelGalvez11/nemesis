@@ -129,6 +129,23 @@ export function applyVerdicts(report: EnforcedReport, verdicts: ClaimVerdict[]):
   };
 }
 
+/**
+ * Coverage gate for claims_verified (PURE). The flag may be true ONLY when the judge returned a verdict
+ * for EVERY judged item (a partial / under-emitted response leaves some claims unjudged — and
+ * applyVerdicts deliberately keeps unjudged claims, so without this check an under-emitted response
+ * would ship unverified claims dressed as verified) AND it did not mark the summary unsupported.
+ */
+export function isFullyVerified(
+  expectedIndices: number[],
+  summaryIndex: number | null,
+  verdicts: ClaimVerdict[],
+): boolean {
+  const byIndex = new Map(verdicts.map((v) => [v.index, v.supported]));
+  const allCovered = expectedIndices.every((i) => byIndex.has(i));
+  const summaryOk = summaryIndex === null || byIndex.get(summaryIndex) !== false;
+  return allCovered && summaryOk;
+}
+
 export const FAITH_TOOL: Tool = {
   name: "record_support",
   description: "Record, for each numbered claim, whether the provided source excerpts directly support it.",
@@ -164,10 +181,13 @@ const FAITH_SYSTEM = [
 ].join("\n");
 
 /**
- * Semantic support check. Returns the pruned report and whether the check actually ran.
- * - verified=true  : the judge ran; unsupported claims were dropped.
- * - verified=false : the judge could not run (no claims, or it errored) — report returned UNCHANGED,
- *                    and the caller must mark claims_verified=false (never present it as verified).
+ * Semantic support check. Returns the pruned report and whether EVERY judged claim was confirmed.
+ * The summary (the headline sentence) is judged too — against the chunks the body/safety points cite —
+ * but is never pruned (a report needs a bottom line); an unsupported summary instead forces
+ * verified=false. Body/safety claims the judge marks unsupported are dropped.
+ * - verified=true  : the judge ran AND returned a verdict for every judged item AND the summary held.
+ * - verified=false : the judge errored, under-emitted (some claim unjudged), or flagged the summary —
+ *                    the caller marks claims_verified=false (never present such a report as verified).
  * Never throws.
  */
 export async function checkFaithfulness(
@@ -176,16 +196,26 @@ export async function checkFaithfulness(
   apiKey: string,
 ): Promise<{ report: EnforcedReport; verified: boolean }> {
   const claims = collectClaims(report);
-  if (claims.length === 0) return { report, verified: true }; // nothing to check is trivially consistent
-
   const byTag = new Map(chunks.map((c) => [c.tag, c]));
-  const block = claims
-    .map((c) => {
-      const evidence = c.citation_ids
+
+  // The summary summarizes the body, so its support set is the chunks the body+safety claims cite.
+  const hasSummary = report.summary.trim().length > 0;
+  const summaryIndex = hasSummary ? claims.length : null;
+  const summaryTags = [...new Set(claims.flatMap((c) => c.citation_ids))];
+
+  const judgeItems: Array<{ index: number; text: string; tags: string[] }> = [
+    ...claims.map((c) => ({ index: c.index, text: c.text, tags: c.citation_ids })),
+    ...(summaryIndex !== null ? [{ index: summaryIndex, text: report.summary, tags: summaryTags }] : []),
+  ];
+  if (judgeItems.length === 0) return { report, verified: true }; // nothing to check is trivially consistent
+
+  const block = judgeItems
+    .map((it) => {
+      const evidence = it.tags
         .map((t) => byTag.get(t)?.chunk_text ?? "")
         .filter((s) => s.length > 0)
         .join("\n---\n");
-      return `Claim ${c.index}: ${c.text}\nCited source excerpts:\n${evidence || "(none)"}`;
+      return `Claim ${it.index}: ${it.text}\nCited source excerpts:\n${evidence || "(none)"}`;
     })
     .join("\n\n");
 
@@ -203,7 +233,10 @@ export async function checkFaithfulness(
       apiKey,
     );
     const verdicts = normVerdicts(input.verdicts);
-    return { report: applyVerdicts(report, verdicts), verified: true };
+    // applyVerdicts only acts on body/safety (collectClaims indices); the summary index is ignored there.
+    const pruned = applyVerdicts(report, verdicts);
+    const verified = isFullyVerified(judgeItems.map((it) => it.index), summaryIndex, verdicts);
+    return { report: pruned, verified };
   } catch (e) {
     console.error("research faithfulness check failed; marking unverified:", (e as Error).message);
     return { report, verified: false };

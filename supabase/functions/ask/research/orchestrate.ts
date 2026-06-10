@@ -255,8 +255,11 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
   }
 
   // ---- 6. one deterministic safety scan over the whole synthesized report (the doc-20 guarantee) ----
+  // Scan the section HEADINGS too: unlike /ask (fixed field names), report headings are model-authored
+  // free text that ships to the client, so a forbidden string placed in a heading must also be caught.
   const assembled = [
     synth.raw.summary,
+    ...synth.raw.points.map((p) => p.section),
     ...synth.raw.points.map((p) => p.text),
     ...synth.raw.safety_notes.map((p) => p.text),
     ...synth.raw.uncertainties.map((p) => p.text),

@@ -12,6 +12,7 @@ import {
   collectClaims,
   type EnforcedReport,
   enforceReportCitations,
+  isFullyVerified,
   type RawReportLike,
 } from "./faithfulness.ts";
 import {
@@ -189,6 +190,41 @@ Deno.test("applyVerdicts: does not mutate the input", () => {
   const input = enforcedFixture();
   applyVerdicts(input, [{ index: 0, supported: false }]);
   assertEquals(input.body.length, 2); // original unchanged
+});
+
+// ---------------------------------------------------------------------------
+// isFullyVerified — the honest claims_verified gate
+// ---------------------------------------------------------------------------
+
+Deno.test("isFullyVerified: true only when every judged item has a verdict and summary holds", () => {
+  // 3 claims (0,1,2) + summary (3), all covered and supported
+  assert(isFullyVerified([0, 1, 2, 3], 3, [
+    { index: 0, supported: true },
+    { index: 1, supported: true },
+    { index: 2, supported: false }, // a dropped claim still counts as COVERED
+    { index: 3, supported: true },
+  ]));
+});
+
+Deno.test("isFullyVerified: false when the judge under-emits (a claim is unjudged)", () => {
+  // claim 2 has no verdict -> partial coverage -> NOT fully verified
+  assert(!isFullyVerified([0, 1, 2, 3], 3, [
+    { index: 0, supported: true },
+    { index: 1, supported: true },
+    { index: 3, supported: true },
+  ]));
+});
+
+Deno.test("isFullyVerified: false when the summary is marked unsupported", () => {
+  assert(!isFullyVerified([0, 3], 3, [
+    { index: 0, supported: true },
+    { index: 3, supported: false }, // summary unsupported
+  ]));
+});
+
+Deno.test("isFullyVerified: no summary index (null) -> only coverage matters", () => {
+  assert(isFullyVerified([0, 1], null, [{ index: 0, supported: true }, { index: 1, supported: false }]));
+  assert(!isFullyVerified([0, 1], null, [{ index: 0, supported: true }]));
 });
 
 // ---------------------------------------------------------------------------

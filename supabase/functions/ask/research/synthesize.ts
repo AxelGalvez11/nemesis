@@ -210,6 +210,9 @@ const GRADE_SET = new Set<EvidenceGrade>(EVIDENCE_GRADES);
 function normReportPoints(a: unknown): RawReportPoint[] {
   if (!Array.isArray(a)) return [];
   return a.map((p) => {
+    // A bare string (no {section,text,citations}) degrades to an uncited point; enforceReportCitations
+    // then drops it (no valid cite) — mirrors generate.ts's bare-string handling for /ask.
+    if (typeof p === "string") return { section: "", text: p, citations: [] };
     const o = (p ?? {}) as { section?: unknown; text?: unknown; citations?: unknown };
     return {
       section: typeof o.section === "string" ? o.section : "",
@@ -222,6 +225,7 @@ function normReportPoints(a: unknown): RawReportPoint[] {
 function normPoints(a: unknown): RawPoint[] {
   if (!Array.isArray(a)) return [];
   return a.map((p) => {
+    if (typeof p === "string") return { text: p, citations: [] };
     const o = (p ?? {}) as { text?: unknown; citations?: unknown };
     return {
       text: typeof o.text === "string" ? o.text : "",
