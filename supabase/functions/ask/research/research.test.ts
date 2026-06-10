@@ -274,7 +274,7 @@ Deno.test("assembleReport: builds sections + citations; appends caution when unv
     safetyFlags: [],
     claimsVerified: false,
     gaps: [],
-    counts: { total_retrieved: 0, per_provider: {}, cap_per_source: 0, retrieved_at: null },
+    counts: { total_retrieved: 0, per_provider: {}, per_search_cap: 6, n_searches: 3, retrieved_at: null },
   });
   assertEquals(report.sections.length, 1); // both body points share section "A"
   assertEquals(report.sections[0].points.length, 2);
@@ -296,7 +296,7 @@ Deno.test("assembleReport: verified report carries no extra caution", () => {
     safetyFlags: [],
     claimsVerified: true,
     gaps: [],
-    counts: { total_retrieved: 0, per_provider: {}, cap_per_source: 0, retrieved_at: null },
+    counts: { total_retrieved: 0, per_provider: {}, per_search_cap: 6, n_searches: 3, retrieved_at: null },
   });
   assertEquals(report.claims_verified, true);
   assert(!report.uncertainties.some((u) => u.text.includes("could not run")));
@@ -452,7 +452,7 @@ Deno.test("assembleReport output carries mode in payload, never a kind field", (
     safetyFlags: [],
     claimsVerified: true,
     gaps: [],
-    counts: { per_provider: {}, total_retrieved: 0, cap_per_source: 6, retrieved_at: null },
+    counts: { per_provider: {}, total_retrieved: 0, per_search_cap: 6, n_searches: 1, retrieved_at: null },
     mode: "structured_review",
   });
   // mode must be preserved in the payload (used by export formatters + UI)

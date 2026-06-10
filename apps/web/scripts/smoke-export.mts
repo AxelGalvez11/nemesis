@@ -81,7 +81,8 @@ const structuredReport: ResearchReport = {
   counts: {
     per_provider: { pubmed_oa: 6, clinicaltrials: 4 },
     total_retrieved: 10,
-    cap_per_source: 6,
+    per_search_cap: 6,
+    n_searches: 2,
     retrieved_at: "2026-06-10T00:00:00Z",
   },
   search_method: {
@@ -108,7 +109,7 @@ const structuredReport: ResearchReport = {
 const docxBuf2 = await reportToDocx(structuredReport, "vancouver");
 assertPkZip(docxBuf2, "structured docx");
 const xml = strFromU8(unzipSync(new Uint8Array(docxBuf2))["word/document.xml"]);
-for (const needle of ["NOT FULLY FACT-CHECKED", "capped at", "Methods"]) {
+for (const needle of ["NOT FULLY FACT-CHECKED", "not an exhaustive census", "Methods"]) {
   if (!xml.includes(needle)) throw new Error(`honesty signal missing from docx: ${needle}`);
 }
 console.log("✓ structured docx carries honesty signals");

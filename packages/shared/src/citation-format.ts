@@ -1,6 +1,6 @@
-// Numbered medical reference formatter (Vancouver + AMA). Phase 1 ships a graceful numbered
-// fallback; Phase 4 replaces the body of formatReference with style-exact punctuation. The
-// SIGNATURE is final so callers (export routes, ReportView) never change again.
+// Numbered medical reference formatter (Vancouver + AMA). This IS the live formatter —
+// style-exact punctuation is implemented below. The SIGNATURE is final so callers
+// (export routes, ReportView) never change again.
 // Import the source modules directly (NOT the ./index barrel) to avoid a barrel import cycle.
 import type { Citation } from "./answer.ts";
 import type { CitationStyle } from "./research.ts";

@@ -5,7 +5,7 @@
 import type { RetrievedChunk } from "../citation.ts";
 import type { GapStatement, RetrievalCounts } from "../../../../packages/shared/src/research.ts";
 
-const CAP_PER_SOURCE = 6; // matches both LIVE_PER_SOURCE_MAX and SUB_TOP_M in orchestrate.ts (both 6); disclosed as the per-source cap.
+const PER_SEARCH_CAP = 6; // top-ranked kept per sub-question search; must match SUB_TOP_M in orchestrate.ts (6).
 
 const isRct = (c: RetrievedChunk) => (c.publication_types ?? []).some((t) => /randomized controlled trial/i.test(t));
 const isSynthesis = (c: RetrievedChunk) =>
@@ -18,10 +18,9 @@ function nctOf(c: RetrievedChunk): string | null {
   return m ? m[1].toUpperCase() : null;
 }
 
-// _subQuestions is reserved for a future per-sub-question coverage mode; unused in this run-scoped derivation.
 export function deriveGaps(
   chunks: RetrievedChunk[],
-  _subQuestions: string[],
+  subQuestions: string[],
 ): { gaps: GapStatement[]; counts: RetrievalCounts } {
   const retrieved_at = chunks.find((c) => c.retrieved_at)?.retrieved_at ?? null;
   const per_provider: Record<string, number> = {};
@@ -30,7 +29,8 @@ export function deriveGaps(
   const counts: RetrievalCounts = {
     per_provider,
     total_retrieved: chunks.length,
-    cap_per_source: CAP_PER_SOURCE,
+    n_searches: subQuestions.length,
+    per_search_cap: PER_SEARCH_CAP,
     retrieved_at,
   };
 

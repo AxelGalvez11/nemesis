@@ -61,14 +61,15 @@ export async function reportToDocx(report: ResearchReport, style: CitationStyle)
     children.push(para(m.exclusion_notes));
   }
 
-  // "What we searched" counts (honest cap disclosure; never "records identified").
+  // "What we searched" counts (honest per-search cap disclosure; never "records identified").
   if (report.counts) {
     const c = report.counts;
     const per = Object.entries(c.per_provider).map(([k, v]) => `${k}: ${v}`).join(", ");
     children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("What we searched")] }));
     children.push(para(
-      `${c.total_retrieved} candidate sources retrieved (top-ranked by relevance, capped at ` +
-      `${c.cap_per_source} per source — not an exhaustive census). By source: ${per}.`,
+      `${c.total_retrieved} candidate sources retrieved across ${c.n_searches} sub-question searches ` +
+      `(each kept its top ${c.per_search_cap} by relevance), then merged and de-duplicated — ` +
+      `a bounded, top-ranked sample, not an exhaustive census. By source: ${per}.`,
     ));
   }
 
@@ -84,7 +85,9 @@ export async function reportToDocx(report: ResearchReport, style: CitationStyle)
 
   if (report.gaps?.length) {
     children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Evidence gaps")] }));
-    children.push(...report.gaps.map((g) => bullet(g.text)));
+    children.push(...report.gaps.map((g) =>
+      bullet(g.text + (g.corroborating_trials.length ? ` An answer may be coming: ${g.corroborating_trials.join(", ")}.` : ""))
+    ));
   }
 
   if (report.uncertainties.length) {

@@ -39,7 +39,8 @@ Deno.test("ResearchReport accepts the optional publishable-report fields", () =>
   const counts: RetrievalCounts = {
     per_provider: { pubmed_oa: 6, clinicaltrials: 4 },
     total_retrieved: 10,
-    cap_per_source: 6,
+    per_search_cap: 6,
+    n_searches: 2,
     retrieved_at: "2026-06-10T00:00:00Z",
   };
   const gap: GapStatement = {

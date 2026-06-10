@@ -57,7 +57,7 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
     const c = report.counts;
     const per = Object.entries(c.per_provider).map(([k, v]) => `${k}: ${v}`).join(", ");
     contentSlide(pptx, "What we searched", [
-      { text: `${c.total_retrieved} candidate sources retrieved (top-ranked by relevance, capped at ${c.cap_per_source} per source — not an exhaustive census).`, options: { bullet: true, breakLine: true } },
+      { text: `${c.total_retrieved} candidate sources retrieved across ${c.n_searches} sub-question searches (each kept its top ${c.per_search_cap} by relevance), then merged and de-duplicated — a bounded, top-ranked sample, not an exhaustive census.`, options: { bullet: true, breakLine: true } },
       { text: `By source: ${per}.`, options: { bullet: true, breakLine: true } },
     ]);
   }
@@ -65,7 +65,10 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
   for (const sec of report.sections) contentSlide(pptx, sec.heading, bullets(sec.points));
   if (report.safety_notes.length) contentSlide(pptx, "Safety", bullets(report.safety_notes));
   if (report.gaps?.length) {
-    contentSlide(pptx, "Evidence gaps", report.gaps.map((g) => ({ text: g.text, options: { bullet: true, breakLine: true } })));
+    contentSlide(pptx, "Evidence gaps", report.gaps.map((g) => ({
+      text: g.text + (g.corroborating_trials.length ? ` An answer may be coming: ${g.corroborating_trials.join(", ")}.` : ""),
+      options: { bullet: true, breakLine: true },
+    })));
   }
   if (report.uncertainties.length) contentSlide(pptx, "Still uncertain", bullets(report.uncertainties));
 

@@ -109,12 +109,16 @@ export interface GapStatement {
   corroborating_trials: string[]; // NCT ids
 }
 
-/** Honest "what we searched" summary. Counts are candidates retrieved (relevance-capped),
- *  NEVER PRISMA "records identified". */
+/** Honest "what we searched" summary. Counts are candidates retrieved (relevance-capped per
+ *  search, then merged + de-duplicated), NEVER PRISMA "records identified". */
 export interface RetrievalCounts {
   per_provider: Record<string, number>;
+  /** Size of the final merged, de-duplicated pool (what per_provider sums to). */
   total_retrieved: number;
-  cap_per_source: number;
+  /** Number of sub-question searches the pool was assembled from. */
+  n_searches: number;
+  /** Top-ranked sources kept PER SEARCH (not per source) before merge. */
+  per_search_cap: number;
   retrieved_at: string | null;
 }
 

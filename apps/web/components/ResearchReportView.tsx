@@ -113,7 +113,7 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
         <details className="research-counts">
           <summary>What we searched ({report.counts.total_retrieved} candidate sources)</summary>
           <p className="muted-note">
-            Top-ranked by relevance, capped at {report.counts.cap_per_source} per source — not an exhaustive census.
+            {report.counts.total_retrieved} candidate sources retrieved across {report.counts.n_searches} sub-question searches (each kept its top {report.counts.per_search_cap} by relevance), then merged and de-duplicated — a bounded, top-ranked sample, not an exhaustive census.
           </p>
           <ul>
             {Object.entries(report.counts.per_provider).map(([prov, n]) => (
