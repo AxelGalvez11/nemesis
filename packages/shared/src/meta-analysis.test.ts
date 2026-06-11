@@ -8,9 +8,22 @@ function study(p: Partial<StudyArm> & Pick<StudyArm, "events_treatment" | "total
     label: "test",
     citation_tag: "1",
     source_quote: "test source quote",
+    outcome_label: "test outcome",
     ...p,
   };
 }
+
+Deno.test("pooled rows carry the study's provenance (source_quote + outcome_label) for the forest table", () => {
+  const r = poolRiskRatio([
+    study({ events_treatment: 10, total_treatment: 100, events_control: 20, total_control: 100, source_quote: "10/100 vs 20/100", outcome_label: "mortality", label: "Trial A" }),
+    study({ events_treatment: 5, total_treatment: 80, events_control: 12, total_control: 90, citation_tag: "2", source_quote: "5/80 vs 12/90", outcome_label: "mortality", label: "Trial B" }),
+  ]);
+  if (!r.poolable) throw new Error("expected poolable");
+  assertEquals(r.studies[0].source_quote, "10/100 vs 20/100");
+  assertEquals(r.studies[0].outcome_label, "mortality");
+  assertEquals(r.studies[0].label, "Trial A");
+  assertEquals(r.studies[1].source_quote, "5/80 vs 12/90");
+});
 
 // ── Hand-computed analytic cases (expected values derived by hand, not from output) ──
 

@@ -26,6 +26,8 @@ export interface StudyArm {
   citation_tag: string;
   /** The exact source sentence the counts were read from (provenance; never used in the math). */
   source_quote: string;
+  /** The outcome this 2x2 measures (e.g. "all-cause mortality") — used to cluster comparable studies. */
+  outcome_label: string;
   events_treatment: number;
   total_treatment: number;
   events_control: number;
@@ -49,6 +51,10 @@ export interface PooledEstimate {
 export interface PooledStudy {
   label: string;
   citation_tag: string;
+  /** The exact source sentence the counts were read from — shown so a reader can audit each number. */
+  source_quote: string;
+  /** The outcome this row measures (every pooled row shares the same clustered outcome). */
+  outcome_label: string;
   effect_log: number;
   effect: number;
   variance: number;
@@ -176,6 +182,8 @@ export function poolRiskRatio(studies: StudyArm[]): MetaAnalysisResult {
     return {
       label: e.arm.label,
       citation_tag: e.arm.citation_tag,
+      source_quote: e.arm.source_quote,
+      outcome_label: e.arm.outcome_label,
       effect_log: e.y,
       effect: Math.exp(e.y),
       variance: e.v,
