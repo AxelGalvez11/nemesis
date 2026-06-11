@@ -59,7 +59,11 @@ serve(async (req) => {
   const question = (body.question ?? "").trim();
   if (!question) return json({ error: "question required" }, 400, req);
   if (question.length > 1000) return json({ error: "question too long" }, 400, req);
-  const mode: ReportMode = body.mode === "structured_review" ? "structured_review" : "standard";
+  const mode: ReportMode = body.mode === "meta"
+    ? "meta"
+    : body.mode === "structured_review"
+    ? "structured_review"
+    : "standard";
 
   // ---- Scoping pre-step: return clarifying questions only. No quota consumed and no run started — the
   // real run (a later POST WITHOUT action:"scope") is what bills a deep-research slot. Best-effort:

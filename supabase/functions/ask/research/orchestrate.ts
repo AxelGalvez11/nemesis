@@ -41,9 +41,15 @@ import type {
   SearchMethod,
 } from "../../../../packages/shared/src/research.ts";
 import { detectForbiddenPhrases } from "../../../../packages/shared/src/forbidden-phrases.ts";
+import { poolRiskRatio } from "../../../../packages/shared/src/meta-analysis.ts";
+import type { MetaAnalysisResult } from "../../../../packages/shared/src/meta-analysis.ts";
 import { planSubQuestions } from "./plan.ts";
 import { deriveGaps } from "./gaps.ts";
-import { assembleSections, synthesizeReport } from "./synthesize.ts";
+import { assembleSections, type RawReportPoint, synthesizeReport } from "./synthesize.ts";
+import { parsePico } from "./pico.ts";
+import { extractStudyArms } from "./extract.ts";
+import { groundStudies } from "./ground.ts";
+import { buildMetaProse, noComparisonProse } from "./meta-prose.ts";
 import {
   checkFaithfulness,
   type EnforcedReport,
@@ -178,11 +184,21 @@ export function assembleReport(args: {
   counts: RetrievalCounts;
   mode?: ReportMode;
   searchMethod?: SearchMethod;
+  /** Code-generated "Pooled analysis" points (meta mode). Already safety-scanned by the caller and
+   *  verified by construction, so they bypass the citation-enforcement / faithfulness judge and are
+   *  appended here as a trailing section. Their study tags fold into the citation list. */
+  metaPoints?: RawReportPoint[];
+  /** The computed pooled result the forest table renders (meta mode). */
+  metaAnalysis?: MetaAnalysisResult;
 }): ResearchReport {
   const { enforced, chunks } = args;
-  const sections: ResearchSection[] = assembleSections(
+  const bodySections: ResearchSection[] = assembleSections(
     enforced.body.map((p) => ({ section: p.section, point: { text: p.text, citation_ids: p.citation_ids } })),
   );
+  const metaSections: ResearchSection[] = args.metaPoints?.length
+    ? assembleSections(args.metaPoints.map((p) => ({ section: p.section, point: { text: p.text, citation_ids: p.citations } })))
+    : [];
+  const sections: ResearchSection[] = [...bodySections, ...metaSections];
   const safety_notes: AnswerPoint[] = enforced.safety_notes.map((p) => ({
     text: p.text,
     citation_ids: p.citation_ids,
@@ -214,6 +230,7 @@ export function assembleReport(args: {
     mode: args.mode ?? "standard",
     search_method: args.searchMethod,
     citation_style: "vancouver",
+    meta_analysis: args.metaAnalysis,
   };
 }
 
@@ -245,6 +262,35 @@ function templateReport(
 
 function unique<T>(arr: T[]): T[] {
   return [...new Set(arr)];
+}
+
+/**
+ * Build the single string the one safety scan (detectViolations) runs over: EVERY client-facing
+ * prose string in the report — the synthesized summary, section headings, body texts, safety notes,
+ * uncertainties, deterministic gaps, code-authored method copy, AND the code-generated meta-analysis
+ * section. Extracted as a PURE function so a test can prove that injected meta prose never escapes
+ * the one-scan guarantee.
+ */
+export function buildScanInput(args: {
+  summary: string;
+  points: { section: string; text: string }[];
+  safetyNotes: { text: string }[];
+  uncertainties: { text: string }[];
+  gapTexts: string[];
+  methodStrings: string[];
+  metaPoints: RawReportPoint[];
+}): string {
+  return [
+    args.summary,
+    ...args.points.map((p) => p.section),
+    ...args.points.map((p) => p.text),
+    ...args.safetyNotes.map((p) => p.text),
+    ...args.uncertainties.map((p) => p.text),
+    ...args.gapTexts,
+    ...args.methodStrings,
+    ...args.metaPoints.map((p) => p.section),
+    ...args.metaPoints.map((p) => p.text),
+  ].join("  ");
 }
 
 // ---------------------------------------------------------------------------
@@ -317,22 +363,45 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
   }
 
+  // ---- 5b. meta-analysis (meta mode only): pin the comparison, extract counts, GROUND them, pool ----
+  // The LLM only transcribes 2x2 counts (extract); ground.ts re-verifies every number against the real
+  // source before poolRiskRatio (pure code) computes the estimate. The pooled PROSE is code-generated
+  // (never the LLM) and injected into the safety scan + report below, so it rides the SAME one-scan and
+  // one-citation-namespace machinery as the synthesized body. It is verified by construction, so it
+  // bypasses the citation-enforcement / faithfulness judge (which would flag a multi-cite computed claim
+  // as unsupported). Zero behavior change for non-meta modes.
+  let metaResult: MetaAnalysisResult | undefined;
+  let metaPoints: RawReportPoint[] = [];
+  if (cfg.mode === "meta") {
+    emit("checking", "Extracting and pooling comparable study results");
+    const pico = await parsePico(question, cfg.apiKey);
+    if (!pico) {
+      metaPoints = noComparisonProse();
+    } else {
+      const rawStudies = await extractStudyArms(question, pico, chunks, cfg.apiKey);
+      const grounding = groundStudies(rawStudies, chunks, pico);
+      metaResult = poolRiskRatio(grounding.studies);
+      metaPoints = buildMetaProse(pico, grounding, metaResult);
+    }
+  }
+
   // ---- 6. one deterministic safety scan over the whole synthesized report (the doc-20 guarantee) ----
   // Scan the section HEADINGS too: unlike /ask (fixed field names), report headings are model-authored
   // free text that ships to the client, so a forbidden string placed in a heading must also be caught.
-  // Also include the code-authored method copy so any future label change is caught here too.
+  // Also include the code-authored method copy and the code-generated meta-analysis section so nothing
+  // client-facing escapes the one scan.
   const methodStrings: string[] = searchMethod
     ? [...searchMethod.databases, ...searchMethod.queries, searchMethod.inclusion_notes, searchMethod.exclusion_notes]
     : [];
-  const assembled = [
-    synth.raw.summary,
-    ...synth.raw.points.map((p) => p.section),
-    ...synth.raw.points.map((p) => p.text),
-    ...synth.raw.safety_notes.map((p) => p.text),
-    ...synth.raw.uncertainties.map((p) => p.text),
-    ...gaps.map((g) => g.text),
-    ...methodStrings,
-  ].join("  ");
+  const assembled = buildScanInput({
+    summary: synth.raw.summary,
+    points: synth.raw.points,
+    safetyNotes: synth.raw.safety_notes,
+    uncertainties: synth.raw.uncertainties,
+    gapTexts: gaps.map((g) => g.text),
+    methodStrings,
+    metaPoints,
+  });
   const violations = detectViolations(assembled);
   if (violations.length > 0) {
     console.error("research safety_fallback — discarded synthesis:", JSON.stringify(violations));
@@ -376,6 +445,8 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
     counts,
     mode: cfg.mode ?? "standard",
     searchMethod,
+    metaPoints,
+    metaAnalysis: metaResult,
   });
   emit("done", "Report ready", report.citations.length);
   return report;
