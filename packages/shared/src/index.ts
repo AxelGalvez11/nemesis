@@ -45,3 +45,7 @@ export * from "./meta-analysis.ts";
 // model for theme-aware React rendering + an SVG string for the Word/PDF/PPT export. Draws only numbers
 // the pool produced — never an LLM-drawn figure.
 export * from "./forest-plot.ts";
+
+// Structured abstract (Background/Methods/Results/Conclusions) for a meta report. The Results line is
+// computed from the real pool — never LLM-stated. Null unless the report actually pooled.
+export * from "./meta-abstract.ts";

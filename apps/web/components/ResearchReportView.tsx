@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { AnswerPoint, Citation, CitationStyle, MetaAnalysisResult, ResearchReport } from "@pharmabro/shared";
-import { buildReferenceList, evidenceRows } from "@pharmabro/shared";
+import { buildMetaAbstract, buildReferenceList, evidenceRows } from "@pharmabro/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
@@ -119,6 +119,9 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
   };
 
   const flags = (report.safety_flags ?? []).filter((f) => f !== "no_sources_found");
+  // A meta report opens with a journal-style structured abstract (Results computed from the pool, not
+  // narrated). When present it carries the bottom line, so the plain lead paragraph is omitted.
+  const abstract = buildMetaAbstract(report);
 
   return (
     <div className="answer fade research-report">
@@ -148,7 +151,17 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
         </div>
       ) : null}
 
-      <p className="lead">{renderInline(report.summary)}</p>
+      {abstract ? (
+        <section className="research-section meta-abstract">
+          <h4 className="research-heading">Abstract</h4>
+          <p className="ai-para"><b>Objective. </b>{abstract.objective}</p>
+          <p className="ai-para"><b>Methods. </b>{abstract.methods}</p>
+          <p className="ai-para"><b>Results. </b>{abstract.results}</p>
+          <p className="ai-para"><b>Conclusions. </b>{renderInline(abstract.conclusions)}</p>
+        </section>
+      ) : (
+        <p className="lead">{renderInline(report.summary)}</p>
+      )}
       {report.template ? (
         <p className="tmpl-note">Conservative response ({report.template.replace(/_/g, " ")}).</p>
       ) : null}

@@ -464,3 +464,6 @@
 /* Forest-plot figure: the computed meta graphic. Scrolls horizontally on narrow screens; SVG scales. */
 .forest-plot { margin: 4px 0 12px; overflow-x: auto; }
 .forest-plot svg { display: block; min-width: 460px; }
+/* Structured abstract — the journal-style opener for a meta report. */
+.meta-abstract { border-left: 2px solid var(--line-2); padding-left: 13px; }
+.meta-abstract .ai-para { margin: 5px 0; }
