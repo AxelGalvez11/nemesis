@@ -85,6 +85,9 @@ export function EvidencePanel({ citations, activeTag, activeQuote }: { citations
                 <div className="meta">
                   {c.section ? <span>{c.section}</span> : null}
                   {c.published_date ? <span className="mono">{c.published_date}</span> : null}
+                  {c.doaj_vetted ? (
+                    <span className="doaj-pill" title="Listed in the Directory of Open Access Journals — a vetted, anti-predatory open-access journal">✓ Vetted OA journal</span>
+                  ) : null}
                 </div>
                 {support ? (
                   <blockquote className="src-support">
