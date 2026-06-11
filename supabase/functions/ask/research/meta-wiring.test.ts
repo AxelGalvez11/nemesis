@@ -1,11 +1,20 @@
 import { assert, assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { assembleReport, buildScanInput } from "./orchestrate.ts";
 import { detectViolations } from "../safety.ts";
-import { META_SECTION } from "./meta-prose.ts";
+import { META_SECTION, buildMetaProse, noComparisonProse } from "./meta-prose.ts";
+import type { GroundingResult } from "./ground.ts";
 import type { RawReportPoint } from "./synthesize.ts";
 import type { EnforcedReport } from "./faithfulness.ts";
 import type { MetaAnalysisResult } from "../../../../packages/shared/src/meta-analysis.ts";
+import type { Pico } from "../../../../packages/shared/src/research.ts";
 import type { RetrievedChunk } from "../citation.ts";
+
+function scanOf(points: RawReportPoint[]): string {
+  return buildScanInput({
+    summary: "S", points: [{ section: "Findings", text: "body" }],
+    safetyNotes: [], uncertainties: [], gapTexts: [], methodStrings: [], metaPoints: points,
+  });
+}
 
 function chunk(tag: string, overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
   return {
@@ -86,4 +95,48 @@ Deno.test("assembleReport without metaPoints is unchanged (no meta section, no m
   });
   assertEquals(report.sections.some((s) => s.heading === META_SECTION), false);
   assertEquals(report.meta_analysis, undefined);
+});
+
+// The symmetric guarantee to the two tests above: bad content is CAUGHT, but legitimate code-generated
+// pooled prose must PASS the one scan cleanly — otherwise a real, verified-by-construction pool would be
+// silently thrown away as safety_fallback. We feed the actual buildMetaProse output (every branch)
+// through the same buildScanInput → detectViolations path the orchestrator uses.
+const pico: Pico = { intervention: "aspirin", comparator: "placebo", outcome: "recurrent stroke" };
+
+Deno.test("legitimate poolable prose passes the one safety scan (not falsely discarded)", () => {
+  const grounding: GroundingResult = { studies: [], dropped: [], outcome: pico.outcome, considered: 2 };
+  const points = buildMetaProse(pico, grounding, metaResult);
+  const scan = scanOf(points);
+  assertStringIncludes(scan, "pooled risk ratio for recurrent stroke");
+  assertEquals(detectViolations(scan).length, 0, "legitimate pooled prose must not trip the safety scan");
+});
+
+Deno.test("legitimate high-heterogeneity prose with exclusions passes the scan (caution wording is safe)", () => {
+  const highHet: MetaAnalysisResult = {
+    ...metaResult,
+    random: { estimate_log: -0.2, variance: 0.1, estimate: 0.82, ci_low: 0.55, ci_high: 1.22 },
+    heterogeneity: { q: 24, df: 2, i2: 88, tau2: 0.41 },
+  };
+  const grounding: GroundingResult = {
+    studies: [], outcome: pico.outcome, considered: 4,
+    dropped: [
+      { citation_tag: "9", label: "X", outcome_label: "bleeding", code: "different_outcome", reason: "r" },
+      { citation_tag: "10", label: "Y", outcome_label: "stroke", code: "quote_not_in_source", reason: "r" },
+    ],
+  };
+  const points = buildMetaProse(pico, grounding, highHet);
+  const scan = scanOf(points);
+  assertStringIncludes(scan, "I² = 88%");
+  assertStringIncludes(scan, "read with caution"); // the high-het caution sentence is present...
+  assertEquals(detectViolations(scan).length, 0, "...and it is still safe"); // ...and safe.
+});
+
+Deno.test("honest not-poolable prose (both branches) passes the scan and shows no number", () => {
+  const notPoolable: MetaAnalysisResult = { poolable: false, k: 1, reason: "fewer than 2 comparable studies" };
+  const grounding: GroundingResult = {
+    studies: [], outcome: pico.outcome, considered: 3,
+    dropped: [{ citation_tag: "9", label: "X", outcome_label: "bleeding", code: "different_outcome", reason: "r" }],
+  };
+  assertEquals(detectViolations(scanOf(buildMetaProse(pico, grounding, notPoolable))).length, 0);
+  assertEquals(detectViolations(scanOf(noComparisonProse())).length, 0);
 });

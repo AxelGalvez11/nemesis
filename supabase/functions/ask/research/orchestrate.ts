@@ -422,13 +422,17 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
   }
 
   // ---- 7. enforce citations (existence) then faithfulness (semantic support) ----
+  // A successful pool keeps the report alive even if the synthesized narrative pruned to empty: the
+  // pooled estimate is a real, verified-by-construction result the user asked for, and it lives in
+  // metaPoints/metaResult (not in `enforced`), so the no_source gates below must not discard it.
+  const pooled = metaResult?.poolable === true;
   const enforced = enforceReportCitations(synth.raw, chunks);
-  if (!hasSupportedContent(enforced)) {
+  if (!hasSupportedContent(enforced) && !pooled) {
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
   }
   emit("checking", "Fact-checking each claim against its cited source");
   const { report: verifiedContent, verified } = await checkFaithfulness(enforced, chunks, cfg.apiKey);
-  if (!hasSupportedContent(verifiedContent)) {
+  if (!hasSupportedContent(verifiedContent) && !pooled) {
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
   }
 
