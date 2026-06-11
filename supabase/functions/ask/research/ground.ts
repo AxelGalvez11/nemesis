@@ -79,9 +79,10 @@ function numHaystack(quoteNorm: string): string {
 
 /** True when `n` appears as a standalone INTEGER — not part of a longer run (15 must not match 150) and
  *  not the integer part of a decimal (5 must not match "5.0", which would launder a percentage into a
- *  count). The boundaries forbid an adjacent digit OR decimal point on either side. */
+ *  count). The boundaries forbid an adjacent digit OR decimal separator on either side; the decimal
+ *  separator covers both "." and the middle dot "·" (U+00B7) that Lancet/BMJ use (e.g. "0·85"). */
 function hasNumber(haystack: string, n: number): boolean {
-  return new RegExp(`(?<![\\d.])${n}(?!\\.?\\d)`).test(haystack);
+  return new RegExp(`(?<![\\d.\\u00b7])${n}(?![.\\u00b7]?\\d)`).test(haystack);
 }
 
 /** Strip leading/trailing whitespace and punctuation so a model-added period or unbalanced parenthesis
@@ -123,9 +124,13 @@ function isGenericComparator(comparator: string): boolean {
 
 /** If a percentage is printed immediately after `count` in the quote (no other digit between them),
  *  return it; otherwise null. e.g. "482 patients (22.9%)" → 22.9. LOOSE by design: it only fires on the
- *  clean "<count> … (<pct>%)" form, so it never drops a study merely because no percentage was given. */
+ *  clean "<count> … (<pct>%)" form, so it never drops a study merely because no percentage was given. A
+ *  trailing "% CI / % confidence / % credible" is a confidence LEVEL, not an event rate, so it is ignored
+ *  (otherwise "482 patients (95% CI …)" would be mis-read as a 95% event rate and wrongly dropped). */
 function pctAfterCount(haystack: string, count: number): number | null {
-  const m = haystack.match(new RegExp(`(?<![\\d.])${count}(?![\\d.])[^%\\d]{0,24}?(\\d{1,3}(?:\\.\\d+)?)\\s*%`));
+  const m = haystack.match(
+    new RegExp(`(?<![\\d.])${count}(?![\\d.])[^%\\d]{0,24}?(\\d{1,3}(?:\\.\\d+)?)\\s*%(?!\\s*(?:ci\\b|confidence|credible))`),
+  );
   return m ? parseFloat(m[1]) : null;
 }
 

@@ -218,3 +218,27 @@ Deno.test("grounds and pools two same-drug trials whose counts match their state
   assert(pooled.poolable, "two clean same-drug 2x2s must pool");
   assertEquals(pooled.poolable ? pooled.k : 0, 2);
 });
+
+// ── Fix A (middle-dot): Lancet/BMJ write decimals with "·" (U+00B7); 5 must not match "5·0" ─────
+Deno.test("does not let an integer count match a middle-dot decimal (5 is not 5·0)", () => {
+  const c = chunk("1", "Mortality was 5·0% on the drug and 8·0% on placebo; 1000 enrolled per group.");
+  const r = groundStudies(
+    [raw({ citation_tag: "1", source_quote: "Mortality was 5·0% on the drug and 8·0% on placebo; 1000 enrolled per group.", events_treatment: 5, total_treatment: 1000, events_control: 8, total_control: 1000 })],
+    [c],
+    PICO,
+  );
+  assertEquals(r.studies.length, 0);
+  assertEquals(r.dropped[0].code, "numbers_not_in_quote");
+});
+
+// ── Fix C (CI guard): a "95% CI" confidence LEVEL beside a count must not be read as that count's rate ─
+Deno.test("does not mistake a '95% CI' confidence level for an event rate", () => {
+  const c = chunk("1", "In the drug group, 482 patients (95% CI 0.75 to 0.93) of 2104 and 1110 of 4321 on placebo died.");
+  const r = groundStudies(
+    [raw({ citation_tag: "1", source_quote: "482 patients (95% CI 0.75 to 0.93) of 2104 and 1110 of 4321 on placebo died", events_treatment: 482, total_treatment: 2104, events_control: 1110, total_control: 4321 })],
+    [c],
+    PICO,
+  );
+  assertEquals(r.dropped.length, 0);
+  assertEquals(r.studies.length, 1);
+});

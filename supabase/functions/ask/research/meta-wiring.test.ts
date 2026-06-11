@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { assembleReport, buildScanInput, isNoSourceReport } from "./orchestrate.ts";
+import { assembleReport, buildScanInput, isNoSourceReport, metaEvidenceGrade } from "./orchestrate.ts";
 import { detectViolations } from "../safety.ts";
 import { META_SECTION, buildMetaProse, noComparisonProse } from "./meta-prose.ts";
 import type { GroundingResult } from "./ground.ts";
@@ -153,4 +153,33 @@ Deno.test("isNoSourceReport: an empty body with no pool IS discarded as no_sourc
 Deno.test("isNoSourceReport: a report with supported content is always kept (pool or not)", () => {
   assertEquals(isNoSourceReport(true, false), false);
   assertEquals(isNoSourceReport(true, true), false);
+});
+
+// Fix E (Finding 4): the layperson reads the confidence badge first. In meta mode, a confident grade
+// beside "No pooled estimate" is a self-contradiction — so a meta report that pooled nothing carries
+// no grade. Non-meta modes and successful pools are untouched.
+Deno.test("metaEvidenceGrade: meta mode with no pool carries no grade; everything else is unchanged", () => {
+  assertEquals(metaEvidenceGrade("meta", false, "moderate"), "not_applicable");
+  assertEquals(metaEvidenceGrade("meta", true, "moderate"), "moderate"); // a real pool keeps its grade
+  assertEquals(metaEvidenceGrade("standard", false, "moderate"), "moderate"); // non-meta untouched
+  assertEquals(metaEvidenceGrade(undefined, false, "weak"), "weak");
+});
+
+// The new comparability/percentage drop reasons produce client-facing excluded-summary text. Pin that
+// this NEW text flows through the same one safety scan the orchestrator runs (the invariant we keep
+// asserting), and is itself benign.
+Deno.test("the new drop-reason phrases flow through the one safety scan unflagged", () => {
+  const notPoolable: MetaAnalysisResult = { poolable: false, k: 0, reason: "no comparable studies" };
+  const grounding: GroundingResult = {
+    studies: [], outcome: pico.outcome, considered: 3,
+    dropped: [
+      { citation_tag: "7", label: "A", outcome_label: "stroke", code: "intervention_mismatch", reason: "r" },
+      { citation_tag: "8", label: "B", outcome_label: "stroke", code: "comparator_mismatch", reason: "r" },
+      { citation_tag: "9", label: "C", outcome_label: "stroke", code: "percentage_mismatch", reason: "r" },
+    ],
+  };
+  const scan = scanOf(buildMetaProse(pico, grounding, notPoolable));
+  assertStringIncludes(scan, "studied a different treatment");
+  assertStringIncludes(scan, "a count disagreed with the source's own percentage");
+  assertEquals(detectViolations(scan).length, 0);
 });

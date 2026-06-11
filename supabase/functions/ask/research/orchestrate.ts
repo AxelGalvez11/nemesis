@@ -247,6 +247,14 @@ export function isNoSourceReport(hasContent: boolean, pooled: boolean): boolean 
   return !hasContent && !pooled;
 }
 
+/** In meta mode the evidence-grade badge represents the strength of the POOLED finding. When nothing
+ *  pooled, showing a confident grade (e.g. "moderate") beside "No pooled estimate" is a self-contradiction
+ *  the layperson reads first — so the report carries no grade ("not_applicable"). Non-meta modes, and
+ *  successful pools, keep the synthesized grade untouched. PURE. */
+export function metaEvidenceGrade(mode: string | undefined, pooled: boolean, synthesizedGrade: EvidenceGrade): EvidenceGrade {
+  return mode === "meta" && !pooled ? "not_applicable" : synthesizedGrade;
+}
+
 function templateReport(
   question: string,
   template: AnswerTemplate,
@@ -450,7 +458,7 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
     subQuestions,
     enforced: verifiedContent,
     chunks,
-    evidenceGrade: synth.raw.evidence_grade,
+    evidenceGrade: metaEvidenceGrade(cfg.mode, pooled, synth.raw.evidence_grade),
     safetyFlags: flags,
     claimsVerified: verified,
     gaps,
