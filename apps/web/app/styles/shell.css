@@ -445,3 +445,11 @@
 .scope-input:focus { outline: none; border-color: var(--line-2); box-shadow: none; }
 .scope-actions { display: flex; gap: 8px; margin-top: 14px; }
 .chip-action.active { border-color: var(--acid); color: var(--text); background: color-mix(in srgb, var(--acid) 12%, var(--surface)); }
+
+/* Evidence-base table in a deep-research report (rendered from the citation list). */
+.evidence-table-wrap { overflow-x: auto; margin: 6px 0 8px; }
+.evidence-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.evidence-table th { text-align: left; font-weight: 600; color: var(--text-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 10px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+.evidence-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); color: var(--text-2); vertical-align: top; }
+.evidence-table tr:last-child td { border-bottom: none; }
+.evidence-table-title { color: var(--text); max-width: 380px; }
