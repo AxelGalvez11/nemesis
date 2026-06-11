@@ -3,8 +3,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskResponse } from "@pharmabro/shared";
-import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
+import type { AskResponse, ScopeQuestion } from "@pharmabro/shared";
+import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { useAppChrome } from "@/components/AppShell";
@@ -150,6 +150,24 @@ function AskPage() {
     } catch { /* best-effort persistence */ }
   }, [ensureConversation]);
 
+  // Turn slot `idx` into a running research card and kick off the run. `searchQ` may be enriched with
+  // clarifying answers, while `displayQ` stays the readable original (shown on the card + saved).
+  const launchResearch = useCallback(async (idx: number, displayQ: string, searchQ: string, runMode: "standard" | "structured_review") => {
+    setTurns((prev) => prev.map((t, i) => (i === idx ? { q: displayQ, a: null, err: null, research: { runId: "", mode: runMode, title: displayQ, error: null, proGate: false } } : t)));
+    try {
+      const runId = await startResearch(searchQ, runMode);
+      setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
+    } catch (e) {
+      const proGate = isQuotaError(e) && Number(e.quota.limit) === 0;
+      const msg = isQuotaError(e)
+        ? (proGate
+          ? `Deep research is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
+          : `Daily deep-research limit reached (${e.quota.used}/${e.quota.limit}) on ${e.quota.plan}.`)
+        : (e instanceof Error ? e.message : "Could not start research.");
+      setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, error: msg, proGate } } : t)));
+    }
+  }, []);
+
   // A citation click pins the panel to ITS answer's sources (per-turn evidence) before opening +
   // scrolling. Takes the answer so an older turn's [n] tag resolves against that turn's citations,
   // not the latest answer's (whose tag N may be a different source).
@@ -241,20 +259,15 @@ function AskPage() {
       // One Deep Research mode that always documents its method (the engine's structured_review path).
       const runMode: "standard" | "structured_review" = "structured_review";
       const ridx = turns.length;
-      setTurns((prev) => [...prev, { q: text, a: null, err: null, research: { runId: "", mode: runMode, title: text, error: null, proGate: false } }]);
+      // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
+      setTurns((prev) => [...prev, { q: text, a: null, err: null, scoping: true }]);
       setQuestion("");
       if (taRef.current) taRef.current.style.height = "auto";
-      try {
-        const runId = await startResearch(text, runMode);
-        setTurns((prev) => prev.map((t, i) => (i === ridx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
-      } catch (e) {
-        const proGate = isQuotaError(e) && Number(e.quota.limit) === 0;
-        const msg = isQuotaError(e)
-          ? (proGate
-            ? `Deep research is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
-            : `Daily deep-research limit reached (${e.quota.used}/${e.quota.limit}) on ${e.quota.plan}.`)
-          : (e instanceof Error ? e.message : "Could not start research.");
-        setTurns((prev) => prev.map((t, i) => (i === ridx && t.research ? { ...t, research: { ...t.research, error: msg, proGate } } : t)));
+      const scope = await scopeResearch(text); // best-effort; degrades to no-clarification on any failure
+      if (scope.needs_clarification) {
+        setTurns((prev) => prev.map((t, i) => (i === ridx ? { q: text, a: null, err: null, scope: { question: text, runMode, questions: scope.questions } } : t)));
+      } else {
+        void launchResearch(ridx, text, text, runMode);
       }
       return;
     }
@@ -331,7 +344,15 @@ function AskPage() {
               <div className="msg-ai">
                 <Orb size={28} busy={isLast && busy} bloom={isLast && bloom} className="" />
                 <div className="ai-body">
-                  {t.research ? <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} /> : t.a ? <Answer answer={t.a} onCite={onCite} /> : isLast && busy ? <Thinking stage={stage} /> : null}
+                  {t.scoping ? (
+                    <div className="thinking"><div className="think-row"><span className="shimmer">Scoping your question…</span></div></div>
+                  ) : t.scope ? (
+                    <ScopeTurn state={t.scope} onRun={(enriched) => void launchResearch(i, t.scope!.question, enriched, t.scope!.runMode)} />
+                  ) : t.research ? (
+                    <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
+                  ) : t.a ? (
+                    <Answer answer={t.a} onCite={onCite} />
+                  ) : isLast && busy ? <Thinking stage={stage} /> : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
               </div>
@@ -362,11 +383,21 @@ function rehydrateResearchCard(s: SavedResearchCard): ResearchCard {
   return { runId: "", mode: s.mode, title: s.title, error: null, proGate: false, completed: { savedReportId: s.savedReportId, sources: s.citationCount } };
 }
 
+// A pending clarification turn: the scope step found the question ambiguous, so we collect answers
+// (chips + free text) before starting the run.
+interface ScopeTurnState {
+  question: string;
+  runMode: "standard" | "structured_review";
+  questions: ScopeQuestion[];
+}
+
 interface Turn {
   q: string;
   a: AskResponse | null;
   err: string | null;
   research?: ResearchCard; // present when this turn is a deep-research run instead of a chat answer
+  scope?: ScopeTurnState;  // present while clarifying questions await answers
+  scoping?: boolean;       // brief: the scope step is running before we know if clarification is needed
 }
 
 interface ComposerProps {
@@ -459,6 +490,63 @@ function Thinking({ stage }: { stage: number }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// The clarifying-question turn: shown when the scope step found the question ambiguous. Each question
+// offers quick-pick chips (which fill the matching free-text box) plus a free-text answer. "Run with
+// answers" folds the answers into the question; "Just run it" runs the original unchanged.
+function ScopeTurn({ state, onRun }: { state: ScopeTurnState; onRun: (enrichedQuestion: string) => void }) {
+  const [answers, setAnswers] = useState<string[]>(() => state.questions.map(() => ""));
+  const [submitted, setSubmitted] = useState(false);
+  const setAnswer = (i: number, v: string) => setAnswers((prev) => prev.map((a, j) => (j === i ? v : a)));
+
+  const run = (withAnswers: boolean) => {
+    if (submitted) return;
+    setSubmitted(true);
+    if (!withAnswers) { onRun(state.question); return; }
+    const parts = state.questions
+      .map((q, i) => ({ q: q.text, a: (answers[i] ?? "").trim() }))
+      .filter((x) => x.a)
+      .map((x) => `${x.q} ${x.a}`);
+    onRun(parts.length ? `${state.question}\n\nFocus: ${parts.join("; ")}` : state.question);
+  };
+
+  return (
+    <div className="scope-card">
+      <div className="ai-block-label"><Icon name="sparkle" size={14} /> A couple of quick questions to focus this</div>
+      {state.questions.map((q, i) => (
+        <div key={i} className="scope-q">
+          <div className="scope-q-text">{q.text}</div>
+          {q.chips.length ? (
+            <div className="chip-row">
+              {q.chips.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  className={`chip-action${answers[i] === chip ? " active" : ""}`}
+                  onClick={() => setAnswer(i, answers[i] === chip ? "" : chip)}
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <input
+            className="scope-input"
+            value={answers[i] ?? ""}
+            placeholder="or type your own…"
+            aria-label={q.text}
+            onChange={(e) => setAnswer(i, e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") run(true); }}
+          />
+        </div>
+      ))}
+      <div className="scope-actions">
+        <button className="chip-action" onClick={() => run(true)} disabled={submitted}><Icon name="send" size={14} />Run with answers</button>
+        <button className="chip-action" onClick={() => run(false)} disabled={submitted}>Just run it</button>
       </div>
     </div>
   );

@@ -432,3 +432,16 @@
 .research-card svg { color: var(--text-3); flex: none; }
 .research-card-title { flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .research-card small { color: var(--text-3); font-family: var(--mono); font-size: 11px; flex: none; }
+
+/* Inline deep-research run card + clarifying-question (scope) card in the Ask thread. */
+.research-run-card { margin: 8px 0; }
+.research-run-card .ai-block-label { margin-bottom: 8px; }
+.scope-card { border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface); padding: 14px 15px; margin: 8px 0; }
+.scope-q { margin-top: 12px; }
+.scope-q-text { font-size: 14px; color: var(--text); margin-bottom: 7px; }
+.scope-card .chip-row { margin-bottom: 7px; }
+.scope-input { width: 100%; padding: 8px 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font-size: 14px; font-family: var(--font); }
+.scope-input::placeholder { color: var(--text-3); }
+.scope-input:focus { outline: none; border-color: var(--line-2); box-shadow: none; }
+.scope-actions { display: flex; gap: 8px; margin-top: 14px; }
+.chip-action.active { border-color: var(--acid); color: var(--text); background: color-mix(in srgb, var(--acid) 12%, var(--surface)); }

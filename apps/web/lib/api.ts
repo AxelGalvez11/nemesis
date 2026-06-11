@@ -8,6 +8,7 @@ import type {
   QuotaExceededError,
   ResearchProgressStep,
   ResearchReport,
+  ScopeResult,
   SearchResult,
   SourceDetail,
   UsageSnapshot,
@@ -661,6 +662,30 @@ export async function startResearch(question: string, mode: "standard" | "struct
     throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `research failed (${res.status})`);
   }
   return body.run_id;
+}
+
+/** Scope a deep-research question: returns clarifying questions ONLY when ambiguous. Best-effort —
+ *  any failure (no session, non-OK, malformed) resolves to needs_clarification:false ("just run it"),
+ *  so scoping can never block a run. Consumes no quota and starts no run. */
+export async function scopeResearch(question: string): Promise<ScopeResult> {
+  const none: ScopeResult = { needs_clarification: false, questions: [] };
+  if (isPreviewMode) return none;
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return none;
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/research`, {
+      method: "POST",
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ question, action: "scope" }),
+    });
+    if (!res.ok) return none;
+    const body = await res.json().catch(() => null);
+    if (!isObj(body) || typeof body.needs_clarification !== "boolean" || !Array.isArray(body.questions)) return none;
+    return body as unknown as ScopeResult;
+  } catch {
+    return none;
+  }
 }
 
 /** Poll one run row (RLS-scoped). Returns null if not found yet. */
