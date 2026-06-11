@@ -115,6 +115,10 @@ export interface Citation {
   volume?: string;
   issue?: string;
   pages?: string;
+  /** True when the source's journal is listed in DOAJ (a vetted, anti-predatory open-access journal).
+   *  A POSITIVE-ONLY credibility signal — absent/false means "not confirmed DOAJ-listed", not "low
+   *  quality". Stamped server-side from the journal ISSN; absent on older saved reports/chats. */
+  doaj_vetted?: boolean;
 }
 
 /** Frozen POST /ask response (doc-11 / §7 / §8 superset). */

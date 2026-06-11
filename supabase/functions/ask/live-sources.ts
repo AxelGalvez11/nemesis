@@ -65,6 +65,7 @@ export function liveToChunk(c: LiveCandidate, tag: string): RetrievedChunk {
     // Bibliographic (PubMed/Europe PMC).
     authors: strArr(m.authors),
     journal: str(m.journal_iso) ?? str(m.journal),
+    issn: strArr(m.issn),
     year: str(m.year),
     volume: str(m.volume),
     issue: str(m.issue),

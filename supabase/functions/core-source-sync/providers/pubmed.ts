@@ -113,6 +113,7 @@ export async function fetchPubMedOA(
         pmid: a.pmid,
         journal: a.journal,
         journal_iso: a.journal_iso,
+        issn: a.issn,
         volume: a.volume,
         issue: a.issue,
         pages: a.pages,
@@ -133,6 +134,7 @@ interface ParsedArticle {
   abstract: string;
   journal: string;
   journal_iso: string;
+  issn: string[];
   volume: string;
   issue: string;
   pages: string;
@@ -155,6 +157,8 @@ export function parsePubMedXml(xml: string): ParsedArticle[] {
     );
     const journal = decode(extract(block, /<Title[^>]*>([\s\S]*?)<\/Title>/));
     const journal_iso = decode(extract(block, /<ISOAbbreviation[^>]*>([\s\S]*?)<\/ISOAbbreviation>/));
+    // Journal ISSN(s) — <ISSN IssnType="Print|Electronic">. Used for the DOAJ vetted-journal check.
+    const issn = Array.from(block.matchAll(/<ISSN\b[^>]*>([\s\S]*?)<\/ISSN>/g), (m) => decode(m[1]).trim()).filter(Boolean);
     const volume = decode(extract(block, /<Volume>([\s\S]*?)<\/Volume>/));
     const issue = decode(extract(block, /<Issue>([\s\S]*?)<\/Issue>/));
     const pages = decode(extract(block, /<MedlinePgn>([\s\S]*?)<\/MedlinePgn>/));
@@ -184,7 +188,7 @@ export function parsePubMedXml(xml: string): ParsedArticle[] {
 
     if (pmid) {
       out.push({
-        pmid, title, abstract: abstractText, journal, journal_iso, volume, issue, pages,
+        pmid, title, abstract: abstractText, journal, journal_iso, issn, volume, issue, pages,
         year: yearStr ? Number(yearStr) : null, authors, publication_types, mesh, license,
       });
     }

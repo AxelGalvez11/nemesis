@@ -69,7 +69,7 @@ const NEJM_DEX: OpenAlexWork = {
     pmid: "https://pubmed.ncbi.nlm.nih.gov/32678530",
   },
   abstract_inverted_index: { Dexamethasone: [0], reduced: [1], mortality: [2] },
-  primary_location: { source: { display_name: "New England Journal of Medicine" }, license: null },
+  primary_location: { source: { display_name: "New England Journal of Medicine", issn_l: "0028-4793", issn: ["0028-4793", "1533-4406"] }, license: null },
   publication_year: 2020,
   type: "article",
   authorships: [{ author: { display_name: "RECOVERY Collaborative Group" } }],
@@ -92,6 +92,7 @@ Deno.test("normalizeWork maps a PMID-bearing work to a deduping pubmed_oa source
   assertEquals((s!.metadata as Record<string, unknown>).pmid, "32678530");
   assertEquals((s!.metadata as Record<string, unknown>).doi, "10.1056/nejmoa2021436");
   assertEquals((s!.metadata as Record<string, unknown>).authors, ["RECOVERY Collaborative Group"]);
+  assertEquals((s!.metadata as Record<string, unknown>).issn, ["0028-4793", "1533-4406"]); // issn_l + issn, deduped
   assertEquals((s!.metadata as Record<string, unknown>).volume, "384");
   assertEquals((s!.metadata as Record<string, unknown>).pages, "693-704");
   assertEquals(s!.content_hash.length, 64); // sha256 hex

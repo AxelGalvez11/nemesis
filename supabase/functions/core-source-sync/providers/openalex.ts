@@ -30,7 +30,7 @@ export interface OpenAlexWork {
   title?: string;
   ids?: { openalex?: string; doi?: string; pmid?: string; pmcid?: string; mag?: string };
   abstract_inverted_index?: Record<string, number[]> | null;
-  primary_location?: { source?: { display_name?: string } | null; license?: string | null } | null;
+  primary_location?: { source?: { display_name?: string; issn_l?: string | null; issn?: string[] | null } | null; license?: string | null } | null;
   publication_year?: number;
   type?: string;
   authorships?: Array<{ author?: { display_name?: string } }>;
@@ -114,7 +114,10 @@ export async function normalizeWork(work: OpenAlexWork): Promise<NormalizedSourc
 
   const pmid = barePmid(work.ids?.pmid);
   const doi = bareDoi(work.ids?.doi);
-  const journal = work.primary_location?.source?.display_name ?? undefined;
+  const src = work.primary_location?.source;
+  const journal = src?.display_name ?? undefined;
+  // ISSN(s) for the DOAJ vetted-journal check: prefer issn_l, then any in issn[], deduped.
+  const issn = [...new Set([src?.issn_l, ...(src?.issn ?? [])].filter((s): s is string => Boolean(s)))];
   const pages = [work.biblio?.first_page, work.biblio?.last_page].filter(Boolean).join("-") || undefined;
   const authors = (work.authorships ?? [])
     .map((a) => a.author?.display_name)
@@ -143,6 +146,7 @@ export async function normalizeWork(work: OpenAlexWork): Promise<NormalizedSourc
       doi,
       year: work.publication_year,
       journal,
+      issn,
       authors,
       volume: work.biblio?.volume ?? undefined,
       issue: work.biblio?.issue ?? undefined,
