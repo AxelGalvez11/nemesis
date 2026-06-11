@@ -40,3 +40,8 @@ export * from "./citation-meta.ts";
 // with Q / I^2 / tau^2. Real statistics in code — NEVER LLM-guessed. Validated against metafor's
 // published BCG analysis (Q = 152.2330). Extraction + go-live are owner-gated, not wired yet.
 export * from "./meta-analysis.ts";
+
+// Forest-plot figure: the iconic meta-analysis graphic, computed (PURE) from the pool above. A layout
+// model for theme-aware React rendering + an SVG string for the Word/PDF/PPT export. Draws only numbers
+// the pool produced — never an LLM-drawn figure.
+export * from "./forest-plot.ts";
