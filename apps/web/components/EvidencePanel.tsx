@@ -28,11 +28,25 @@ function providerLabel(t: string): string {
   return t;
 }
 
+// Append a Chrome text-fragment so an external source opens scrolled to the exact supporting
+// sentence (https://wicg.github.io/scroll-to-text-fragment/). Best-effort: if the destination HTML
+// doesn't contain the text verbatim the browser simply lands at the top, so it never breaks the link.
+// Only http(s) urls; the quote is capped + encoded (commas already percent-encoded by encodeURIComponent;
+// hyphens too, since "-" is a fragment delimiter).
+function withTextFragment(href: string, quote: string): string {
+  if (!/^https?:\/\//i.test(href) || href.includes("#")) return href;
+  const text = quote.trim().slice(0, 300);
+  if (text.length < 8) return href;
+  return `${href}#:~:text=${encodeURIComponent(text).replace(/-/g, "%2D")}`;
+}
+
 // The panel shows the sources behind the answer — the only data the /ask response carries.
 // (A Monograph + Calculators view will return here once the answer payload surfaces that data.)
 // activeTag is the normalized chunk_tag of the citation the user just clicked in the answer; the
 // matching card gets an `id` anchor (so the Ask page can scrollIntoView it) and an `active` class.
-export function EvidencePanel({ citations, activeTag }: { citations: Citation[]; activeTag?: string }) {
+// activeQuote is the verbatim source sentence backing the clicked claim — highlighted in the active
+// card so the citation visibly points at the line that supports the generated statement.
+export function EvidencePanel({ citations, activeTag, activeQuote }: { citations: Citation[]; activeTag?: string; activeQuote?: string }) {
   const total = citations.length;
 
   return (
@@ -58,6 +72,8 @@ export function EvidencePanel({ citations, activeTag }: { citations: Citation[];
             const active = activeTag === tag;
             const klass = `src ${cls}${active ? " active" : ""}`;
             const refText = formatReference(c, "vancouver");
+            // The supporting sentence belongs to the clicked claim, so it shows only on the active card.
+            const support = active && activeQuote ? activeQuote : null;
             const inner = (
               <>
                 <div className="cidx">{i + 1}</div>
@@ -67,11 +83,19 @@ export function EvidencePanel({ citations, activeTag }: { citations: Citation[];
                   {c.section ? <span>{c.section}</span> : null}
                   {c.published_date ? <span className="mono">{c.published_date}</span> : null}
                 </div>
+                {support ? (
+                  <blockquote className="src-support">
+                    <span className="src-support-label">Supports this claim</span>
+                    <mark>{support}</mark>
+                  </blockquote>
+                ) : null}
                 <p className="ref-cite-line">{refText}</p>
                 <div className="relv"><i style={{ width: `${rank}%` }} /></div>
               </>
             );
-            const href = safeHref(c.url);
+            const baseHref = safeHref(c.url);
+            // On the active card, deep-link the source to the supporting sentence (graceful no-op if absent).
+            const href = baseHref && support ? withTextFragment(baseHref, support) : baseHref;
             return href ? (
               <a key={`${c.source_id}-${c.chunk_tag}`} id={anchorId} className={klass} href={href} target="_blank" rel="noreferrer">{inner}</a>
             ) : (

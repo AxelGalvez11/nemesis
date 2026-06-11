@@ -298,6 +298,10 @@
 .relv { height: 3px; border-radius: 2px; background: var(--line-2); margin-top: 9px; overflow: hidden; }
 .relv i { display: block; height: 100%; background: var(--acid); box-shadow: 0 0 8px rgba(140, 220, 40, 0.6); }
 .ref-cite-line { font-size: 10.5px; font-family: var(--mono); color: var(--text-3); margin: 4px 0 0; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* The verbatim sentence in this source that backs the clicked claim — shown only on the active card. */
+.src .src-support { margin: 9px 0 2px; padding: 8px 10px; background: color-mix(in srgb, var(--acid) 9%, transparent); border-left: 2px solid var(--acid); border-radius: 0 8px 8px 0; }
+.src .src-support-label { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--acid-dim); margin-bottom: 4px; }
+.src .src-support mark { background: color-mix(in srgb, var(--acid) 24%, transparent); color: var(--text); padding: 1px 2px; border-radius: 3px; font-size: 12px; line-height: 1.6; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .ev-empty { color: var(--text-3); font-size: 12.5px; text-align: center; padding: 40px 16px; }
 .ev-foot { flex: none; border-top: 1px solid var(--line); padding: 10px 14px; font-family: var(--mono); font-size: 11px; color: var(--text-3); display: flex; justify-content: space-between; }
 

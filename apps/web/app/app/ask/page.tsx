@@ -3,9 +3,9 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskResponse, ReportMode, ScopeQuestion } from "@pharmabro/shared";
+import type { AskResponse, ClaimSupport, ReportMode, ScopeQuestion } from "@pharmabro/shared";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
-import { normTag } from "@/lib/cite";
+import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
@@ -67,6 +67,9 @@ function AskPage() {
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("evidence");
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  // The verbatim source sentence backing the claim whose citation was just clicked, shown highlighted
+  // in that source's evidence card. null = no claim-specific highlight (e.g. nothing cleared the bar).
+  const [activeQuote, setActiveQuote] = useState<string | null>(null);
   // Which answer's sources the evidence panel shows. null = follow the latest answer. Clicking a
   // citation inside an OLDER turn pins the panel to THAT answer's sources, so a newer answer no
   // longer clobbers the evidence you were looking at (each turn keeps its own sources).
@@ -99,6 +102,7 @@ function AskPage() {
     loadedConvRef.current = cParam;
     setConversationId(cParam);
     setActiveTag(null);
+    setActiveQuote(null);
     setActiveAnswer(null);
     // Clear the previous chat's turns and block sending until this one finishes loading — otherwise a
     // submit mid-load would compute the wrong ordinal (from the old turns) and the insert would
@@ -170,9 +174,12 @@ function AskPage() {
 
   // A citation click pins the panel to ITS answer's sources (per-turn evidence) before opening +
   // scrolling. Takes the answer so an older turn's [n] tag resolves against that turn's citations,
-  // not the latest answer's (whose tag N may be a different source).
-  const onCite = useCallback((answer: AskResponse, tag: string) => {
+  // not the latest answer's (whose tag N may be a different source). `quote` is the verbatim sentence
+  // in that source supporting the specific claim clicked — derived from the click, not the tag, so the
+  // same [n] cited by two claims highlights each claim's own supporting line.
+  const onCite = useCallback((answer: AskResponse, tag: string, quote?: string) => {
     setActiveAnswer(answer);
+    setActiveQuote(quote ?? null);
     openEvidence();
     setActiveTag(tag);
     requestAnimationFrame(() =>
@@ -193,7 +200,7 @@ function AskPage() {
   // The panel shows the PINNED answer (a citation the user clicked) if set, else the latest answer.
   const panelAnswer = activeAnswer ?? lastAnswered;
   useEffect(() => {
-    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} activeTag={activeTag ?? undefined} />);
+    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />);
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
@@ -204,7 +211,7 @@ function AskPage() {
       setEvidence(null);
       setTopbar(null);
     };
-  }, [panelAnswer, latest?.q, activeTag, setEvidence, setTopbar]);
+  }, [panelAnswer, latest?.q, activeTag, activeQuote, setEvidence, setTopbar]);
 
   // Thinking steps: a decelerating schedule that tracks the real pipeline (read the question fast,
   // then the slow library + live search, then ranking) and HOLDS on the final "composing" step until
@@ -275,6 +282,7 @@ function AskPage() {
     setBusy(true);
     setBloom(false); // clear any prior flare so the next answer re-triggers it (and it can't stick across an "ask again")
     setActiveTag(null);
+    setActiveQuote(null);
     setActiveAnswer(null); // unpin: the panel follows the new answer until a citation is clicked
     const idx = turns.length; // the index this turn will occupy — patch THIS turn, not "the last" (robust if the busy-guard ever loosens)
     setTurns((prev) => [...prev, { q: text, a: null, err: null }]); // append; previous turns stay on screen
@@ -630,7 +638,7 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
   );
 }
 
-function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string) => void }) {
+function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of answer.citations) m.set(normTag(c.chunk_tag), abbr(c.source_type));
@@ -645,7 +653,7 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskR
 
   const s = answer.answer_sections;
   const flags = (answer.safety_flags ?? []).filter((f) => f !== "no_sources_found");
-  const cite = (tag: string) => onCite(answer, tag); // bind every [n] click to THIS answer's sources
+  const cite = (tag: string, quote?: string) => onCite(answer, tag, quote); // bind every [n] click to THIS answer's sources + the clicked claim's supporting line
   return (
     <div className="answer fade">
       <div className="grade-row">
@@ -679,13 +687,15 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskR
 }
 
 interface PointBlockProps {
-  points: Array<{ text: string; citation_ids?: string[] }>;
+  points: Array<{ text: string; citation_ids?: string[]; support?: ClaimSupport[] }>;
   citeMap: Map<string, string>;
-  onCite: (tag: string) => void;
+  onCite: (tag: string, quote?: string) => void;
 }
 
-// Inline [n] citation chips trailing a point's text.
-function CiteChips({ ids, citeMap, onCite }: { ids?: string[]; citeMap: Map<string, string>; onCite: (tag: string) => void }) {
+// Inline [n] citation chips trailing a point's text. `support` carries the verbatim source sentence(s)
+// this point cited; clicking a chip passes that source's supporting line so the evidence card can
+// highlight exactly what backs the claim.
+function CiteChips({ ids, support, citeMap, onCite }: { ids?: string[]; support?: ClaimSupport[]; citeMap: Map<string, string>; onCite: (tag: string, quote?: string) => void }) {
   if (!ids?.length) return null;
   return (
     <>
@@ -693,7 +703,7 @@ function CiteChips({ ids, citeMap, onCite }: { ids?: string[]; citeMap: Map<stri
       {ids.map((id) => {
         const t = normTag(id);
         return (
-          <button key={id} type="button" className="cite" onClick={() => onCite(t)} title="Show source" aria-label={`Show source ${t}`}>
+          <button key={id} type="button" className="cite" onClick={() => onCite(t, supportQuoteFor(support, t))} title="Show source" aria-label={`Show source ${t}`}>
             {citeMap.get(t) ?? "REF"}&nbsp;{t}
           </button>
         );
@@ -709,7 +719,7 @@ function Prose({ points, citeMap, onCite }: PointBlockProps) {
   return (
     <>
       {points.map((p, i) => (
-        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
+        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
       ))}
     </>
   );
@@ -722,7 +732,7 @@ function SafetyBlock({ points, citeMap, onCite }: PointBlockProps) {
     <div className="ai-safety">
       <div className="ai-safety-label"><Icon name="shield" size={14} />Safety</div>
       {points.map((p, i) => (
-        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
+        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
       ))}
     </div>
   );
@@ -735,7 +745,7 @@ function UnclearBlock({ points, citeMap, onCite }: PointBlockProps) {
     <div className="ai-unclear">
       <div className="muted-label">Still uncertain</div>
       {points.map((p, i) => (
-        <p key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
+        <p key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
       ))}
     </div>
   );
