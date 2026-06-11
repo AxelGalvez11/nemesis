@@ -2,8 +2,8 @@
 // Buffer (pptxgenjs v4.0.1; write({ outputType: "nodebuffer" }) needs the Node runtime). A
 // briefing deck: title + honesty, summary, each section, safety, gaps, references.
 import pptxgen from "pptxgenjs";
-import type { AnswerPoint, Citation, CitationStyle, ResearchReport } from "@pharmabro/shared";
-import { buildReferenceList } from "@pharmabro/shared";
+import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@pharmabro/shared";
+import { buildReferenceList, evidenceRows } from "@pharmabro/shared";
 
 type Run = { text: string; options: { bullet: boolean; breakLine: boolean } };
 function bullets(ps: AnswerPoint[]): Run[] {
@@ -16,6 +16,19 @@ function contentSlide(pptx: pptxgen, title: string, runs: Run[]): void {
   if (runs.length) {
     slide.addText(runs, { x: 0.5, y: 1.2, w: 12.3, h: 5.6, fontSize: 15, color: "363636", valign: "top" });
   }
+}
+
+// Evidence-base table slide (# · Type · Source · Year), mirroring the on-screen review. Rows come
+// from the shared evidenceRows helper so the deck matches the screen exactly.
+function evidenceSlide(pptx: pptxgen, rows: EvidenceRow[]): void {
+  const slide = pptx.addSlide();
+  slide.addText(`Evidence base (${rows.length} sources)`, { x: 0.5, y: 0.3, w: 12.3, h: 0.8, fontSize: 26, bold: true, color: "1A1A1A" });
+  const head = ["#", "Type", "Source", "Year"].map((t) => ({ text: t, options: { bold: true, color: "FFFFFF", fill: { color: "1A1A1A" } } }));
+  const body = rows.map((r) => [r.tag, r.type, r.title, r.year].map((t) => ({ text: t, options: {} })));
+  slide.addTable([head, ...body], {
+    x: 0.5, y: 1.2, w: 12.3, fontSize: 12, color: "363636", border: { type: "solid", pt: 1, color: "DDDDDD" },
+    colW: [0.8, 2.6, 7.3, 1.6], valign: "top",
+  });
 }
 
 export async function reportToPptx(report: ResearchReport, style: CitationStyle): Promise<Buffer> {
@@ -61,6 +74,8 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
       { text: `By source: ${per}.`, options: { bullet: true, breakLine: true } },
     ]);
   }
+
+  if (report.citations.length) evidenceSlide(pptx, evidenceRows(report.citations as Citation[]));
 
   for (const sec of report.sections) contentSlide(pptx, sec.heading, bullets(sec.points));
   if (report.safety_notes.length) contentSlide(pptx, "Safety", bullets(report.safety_notes));

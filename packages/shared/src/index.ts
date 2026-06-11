@@ -33,3 +33,6 @@ export * from "./research.ts";
 // Publishable-reports: PRISMA-overclaim guard + numbered citation formatter (pure).
 export * from "./forbidden-phrases.ts";
 export * from "./citation-format.ts";
+// Evidence-base table helpers (publishable-reports): pure citation -> row mapping shared by the
+// on-screen report and the docx/pptx exports so both render the same body-of-evidence summary.
+export * from "./citation-meta.ts";

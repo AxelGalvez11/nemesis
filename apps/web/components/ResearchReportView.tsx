@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { AnswerPoint, Citation, CitationStyle, ResearchReport } from "@pharmabro/shared";
-import { buildReferenceList } from "@pharmabro/shared";
+import { buildReferenceList, evidenceRows } from "@pharmabro/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
@@ -18,46 +18,28 @@ function abbr(t: string): string {
   return (k ? PROVIDER_ABBR[k] : undefined) ?? "REF";
 }
 
-// Readable source-type labels for the evidence-base table (built from the existing citations — no
-// engine call, no new prose, so it carries no safety-scan / citation-namespace implications).
-const SOURCE_TYPE_LABEL: Record<string, string> = {
-  openfda: "Drug label", dailymed: "Drug label",
-  clinicaltrials: "Clinical trial", trial: "Clinical trial",
-  pubmed: "Study", pubmed_oa: "Study", europepmc: "Study",
-  faers: "Adverse-event report", rxnorm: "Drug reference",
-};
-function sourceTypeLabel(t: string): string {
-  return SOURCE_TYPE_LABEL[t] ?? t.replace(/_/g, " ");
-}
-function citationYear(c: Citation): string {
-  if (typeof c.year === "number") return String(c.year);
-  const m = /^(\d{4})/.exec(c.published_date ?? "");
-  return m?.[1] ?? "—";
-}
-
 // A study/evidence-characteristics table — the at-a-glance "body of evidence" a review opens with.
-// Rendered purely from report.citations metadata already shown in the reference list.
+// Rows come from the shared `evidenceRows` helper (pure, from report.citations metadata already
+// shown in the reference list), so this table is identical to the one in the docx/pptx exports.
 function EvidenceTable({ citations, onCite }: { citations: Citation[]; onCite: (tag: string) => void }) {
+  const rows = evidenceRows(citations);
   return (
     <section className="research-section">
-      <h4 className="research-heading">Evidence base ({citations.length} sources)</h4>
+      <h4 className="research-heading">Evidence base ({rows.length} sources)</h4>
       <div className="evidence-table-wrap">
         <table className="evidence-table">
           <thead>
             <tr><th>#</th><th>Type</th><th>Source</th><th>Year</th></tr>
           </thead>
           <tbody>
-            {citations.map((c) => {
-              const tag = normTag(c.chunk_tag);
-              return (
-                <tr key={tag}>
-                  <td><button type="button" className="cite" onClick={() => onCite(tag)} aria-label={`Show source ${tag}`}>{tag}</button></td>
-                  <td>{sourceTypeLabel(c.source_type)}</td>
-                  <td className="evidence-table-title" title={c.title ?? undefined}>{c.title ?? "—"}</td>
-                  <td>{citationYear(c)}</td>
-                </tr>
-              );
-            })}
+            {rows.map((r) => (
+              <tr key={r.tag}>
+                <td><button type="button" className="cite" onClick={() => onCite(r.tag)} aria-label={`Show source ${r.tag}`}>{r.tag}</button></td>
+                <td>{r.type}</td>
+                <td className="evidence-table-title" title={r.title}>{r.title}</td>
+                <td>{r.year}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
