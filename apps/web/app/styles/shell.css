@@ -381,6 +381,9 @@
 .cite-style-toggle button.active { background: var(--acid); color: #fff; }
 .research-section { margin: 18px 0; }
 .research-heading { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); margin: 0 0 8px; }
+/* Top-level IMRaD section marker (Results / Discussion) for meta reports — heavier than the per-topic
+   .research-heading, with a hairline rule, so the report reads like a paper's labelled sections. */
+.research-imrad-heading { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); margin: 26px 0 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line-2); }
 .research-plan { margin: 12px 0 6px; font-size: 13px; }
 .research-plan summary { cursor: pointer; color: var(--text-2); font-weight: 600; }
 .research-plan ul { margin: 8px 0 0; padding-left: 20px; color: var(--text-2); line-height: 1.6; }

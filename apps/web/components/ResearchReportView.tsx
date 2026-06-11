@@ -162,6 +162,19 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
   // A meta report opens with a journal-style structured abstract (Results computed from the pool, not
   // narrated). When present it carries the bottom line, so the plain lead paragraph is omitted.
   const abstract = buildMetaAbstract(report);
+  // For a poolable meta report we lay the body out in journal IMRaD order: Abstract -> Methods ->
+  // Results (the computed meta tables) -> Discussion (the narrative sections). Introduction is folded
+  // into the abstract's Objective. We only REORDER + GROUP existing pieces under standard headings —
+  // no prose is relabeled or invented.
+  const isMeta = report.meta_analysis?.poolable === true;
+  const sectionEls = report.sections.map((sec) => (
+    <section className="research-section" key={sec.heading}>
+      <h4 className="research-heading">{sec.heading}</h4>
+      {sec.points.map((p, i) => (
+        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
+      ))}
+    </section>
+  ));
 
   return (
     <div className="answer fade research-report">
@@ -228,17 +241,17 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
 
       {!report.template && report.citations.length ? <EvidenceTable citations={report.citations} onCite={onCite} /> : null}
 
-      {report.sections.map((sec) => (
-        <section className="research-section" key={sec.heading}>
-          <h4 className="research-heading">{sec.heading}</h4>
-          {sec.points.map((p, i) => (
-            <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
-          ))}
-        </section>
-      ))}
-
-      {report.meta_analysis ? <MetaStudyCharacteristics meta={report.meta_analysis} onCite={onCite} /> : null}
-      {report.meta_analysis ? <MetaForestTable meta={report.meta_analysis} onCite={onCite} /> : null}
+      {isMeta ? (
+        <>
+          <h3 className="research-imrad-heading">Results</h3>
+          {report.meta_analysis ? <MetaStudyCharacteristics meta={report.meta_analysis} onCite={onCite} /> : null}
+          {report.meta_analysis ? <MetaForestTable meta={report.meta_analysis} onCite={onCite} /> : null}
+          {report.sections.length ? <h3 className="research-imrad-heading">Discussion</h3> : null}
+          {sectionEls}
+        </>
+      ) : (
+        sectionEls
+      )}
 
       {report.safety_notes.length ? (
         <div className="ai-safety">
