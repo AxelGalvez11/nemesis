@@ -58,10 +58,27 @@ export interface AskRequest {
 }
 
 /** One narrative bullet that carries the source chunk_ids backing it. */
+/**
+ * A verbatim passage from a cited source that supports a specific claim (the provenance highlight
+ * behind a citation). Computed deterministically server-side — never an LLM — so `quote` is always a
+ * real substring of the cited source; the UI re-locates and highlights it.
+ */
+export interface ClaimSupport {
+  /** The cited source's [n] tag this passage comes from. */
+  citation_tag: string;
+  /** Verbatim supporting sentence from that source. */
+  quote: string;
+}
+
 export interface AnswerPoint {
   text: string;
   /** chunk_ids ([n] tags) the generator cited and citation-enforce kept. */
   citation_ids: string[];
+  /**
+   * Optional: verbatim passage(s) in the cited source(s) that support this claim, for highlighting
+   * provenance. Absent on older saved answers and whenever no passage cleared the support threshold.
+   */
+  support?: ClaimSupport[];
 }
 
 /**

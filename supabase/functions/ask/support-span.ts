@@ -6,6 +6,9 @@
 // "Null rather than a weak match" keeps the same never-fabricate discipline as the meta grounding gate:
 // we only ever point at text the source actually contains, and we say nothing when we are not sure.
 
+import type { AnswerPoint, AnswerSections, ClaimSupport } from "../../../packages/shared/src/answer.ts";
+import type { RetrievedChunk } from "./citation.ts";
+
 export interface SupportSpan {
   /** Verbatim substring of the source text: sourceText.slice(start, end) === quote. */
   quote: string;
@@ -76,4 +79,48 @@ export function bestSupportingSpan(claim: string, sourceText: string): SupportSp
     }
   }
   return best;
+}
+
+/** Deterministically attach each cited source's supporting passage to a claim. The quote is verbatim
+ *  source text (provenance), so this never introduces a fabricated highlight; a claim whose cited
+ *  source does not support it is simply left unmarked. Immutable — returns new objects. */
+function supportForPoint(point: AnswerPoint, byTag: Map<string, string>): ClaimSupport[] {
+  const out: ClaimSupport[] = [];
+  const seen = new Set<string>();
+  for (const tag of point.citation_ids) {
+    if (seen.has(tag)) continue;
+    const text = byTag.get(tag);
+    if (!text) continue;
+    const span = bestSupportingSpan(point.text, text);
+    if (span) {
+      out.push({ citation_tag: tag, quote: span.quote });
+      seen.add(tag);
+    }
+  }
+  return out;
+}
+
+function withSupport(points: AnswerPoint[], byTag: Map<string, string>): AnswerPoint[] {
+  return points.map((p) => {
+    const support = supportForPoint(p, byTag);
+    return support.length ? { ...p, support } : p;
+  });
+}
+
+/**
+ * Attach supporting passages to every claim in the answer sections, resolving each claim's cited [n]
+ * tags against the retrieved source text. PURE; additive (only sets the optional `support` field).
+ */
+export function attachSupport(
+  sections: AnswerSections,
+  chunks: ReadonlyArray<Pick<RetrievedChunk, "tag" | "chunk_text">>,
+): AnswerSections {
+  const byTag = new Map<string, string>();
+  for (const c of chunks) if (c.chunk_text) byTag.set(c.tag, c.chunk_text);
+  return {
+    ...sections,
+    what_we_know: withSupport(sections.what_we_know, byTag),
+    what_we_do_not_know: withSupport(sections.what_we_do_not_know, byTag),
+    safety_notes: withSupport(sections.safety_notes, byTag),
+  };
 }

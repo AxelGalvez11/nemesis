@@ -21,6 +21,7 @@ import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
 import { generate } from "./generate.ts";
 import { citationMeta, enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { attachSupport } from "./support-span.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
@@ -291,10 +292,13 @@ async function runAsk(
   // "talk to your pharmacist/prescriber" line for personal-decision intents, so
   // append it here (post-enforcement — an uncited safety note would otherwise be
   // dropped by enforceCitations). See routing.ts.
-  const answer_sections = {
+  // Attach each claim's supporting source passage (deterministic, verbatim) so the UI can highlight
+  // the exact line that backs a citation. Additive only — runs after enforcement; the support quotes
+  // are verbatim source provenance, not assistant prose, so they do not alter the answer or its scan.
+  const answer_sections = attachSupport({
     ...enf.answer_sections,
     safety_notes: withProfessionalRouting(enf.answer_sections.safety_notes, cls.intent),
-  };
+  }, ret.chunks);
   const resp: AskResponse = {
     answer_id: answerId,
     intent: cls.intent,

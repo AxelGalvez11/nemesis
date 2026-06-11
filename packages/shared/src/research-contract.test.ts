@@ -2,7 +2,7 @@
 // A green run proves the new fields exist with the intended shapes without changing
 // any existing required field (the frozen contract stays backward-compatible).
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import type { Citation } from "./answer.ts";
+import type { AnswerPoint, Citation, ClaimSupport } from "./answer.ts";
 import type {
   CitationStyle,
   GapStatement,
@@ -67,4 +67,12 @@ Deno.test("ResearchReport accepts the optional publishable-report fields", () =>
   };
   assertEquals(partial.mode, "structured_review");
   assertEquals(partial.gaps?.[0].type, "no_rct");
+});
+
+Deno.test("AnswerPoint accepts an optional verbatim support passage and stays valid without one", () => {
+  const support: ClaimSupport = { citation_tag: "2", quote: "Dexamethasone reduced 28-day mortality." };
+  const withSupport: AnswerPoint = { text: "Dexamethasone lowers mortality.", citation_ids: ["2"], support: [support] };
+  const withoutSupport: AnswerPoint = { text: "A claim.", citation_ids: [] }; // older answers: still valid
+  assertEquals(withSupport.support?.[0].quote, "Dexamethasone reduced 28-day mortality.");
+  assertEquals(withoutSupport.support, undefined);
 });
