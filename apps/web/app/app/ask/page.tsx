@@ -2,14 +2,16 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import type { AskResponse } from "@pharmabro/shared";
-import { askQuestion, createConversation, fetchConversationTurns, fetchUsage, saveTurn, type AskQuotaError } from "@/lib/api";
+import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveTurn, startResearch, type AskQuotaError, type ResearchRunRow } from "@/lib/api";
 import { normTag } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
+import { ResearchProgress } from "@/components/ResearchProgress";
 
 function isQuotaError(e: unknown): e is AskQuotaError {
   return e instanceof Error && "quota" in e;
@@ -19,10 +21,10 @@ function isQuotaError(e: unknown): e is AskQuotaError {
 const STAGES = ["Reading the question", "Searching the evidence library", "Ranking the strongest sources", "Composing a cited answer"];
 
 const MODES = [
-  { id: "evidence", label: "Evidence", live: true, hint: "Cited answer from the library + live sources" },
-  { id: "deep", label: "Deep research", live: true, hint: "Multi-step, fully cited report (Pro)" },
-  { id: "review", label: "Literature review", live: false, hint: "Structured lit review — coming soon" },
-  { id: "meta", label: "Meta-analysis", live: false, hint: "Computed pooled estimates — coming soon" },
+  { id: "evidence", label: "Quick answer", live: true, pro: false, hint: "Cited answer from the library + live sources" },
+  { id: "deep", label: "Deep research", live: true, pro: true, hint: "Multi-step, fully cited report (Pro)" },
+  { id: "structured_review", label: "Structured review", live: true, pro: true, hint: "A deep report that documents its own method (Pro)" },
+  { id: "meta", label: "Meta-analysis", live: false, pro: true, hint: "Computed pooled estimates — coming soon" },
 ] as const;
 
 const SUGGESTIONS = [
@@ -223,11 +225,28 @@ function AskPage() {
   async function submit(q: string) {
     const text = q.trim();
     if (!text || busy || loadingChat) return;
-    // Deep research is a distinct long-running, report-producing flow — hand it off to its own
-    // workspace (which streams live progress and renders the cited report) instead of the chat path.
-    if (mode === "deep") {
-      router.push(`/app/research?q=${encodeURIComponent(text)}`);
+    // Deep research / structured review run INLINE in the thread: append a turn whose body is a
+    // research-run card that streams live progress, then becomes a "Report ready" card linking to the
+    // full report in the Reports library. It runs in the background (no global busy lock), so the user
+    // can keep chatting while it works.
+    if (mode === "deep" || mode === "structured_review") {
+      const runMode: "standard" | "structured_review" = mode === "structured_review" ? "structured_review" : "standard";
+      const ridx = turns.length;
+      setTurns((prev) => [...prev, { q: text, a: null, err: null, research: { runId: "", mode: runMode, title: text, error: null, proGate: false } }]);
       setQuestion("");
+      if (taRef.current) taRef.current.style.height = "auto";
+      try {
+        const runId = await startResearch(text, runMode);
+        setTurns((prev) => prev.map((t, i) => (i === ridx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
+      } catch (e) {
+        const proGate = isQuotaError(e) && Number(e.quota.limit) === 0;
+        const msg = isQuotaError(e)
+          ? (proGate
+            ? `Deep research is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
+            : `Daily deep-research limit reached (${e.quota.used}/${e.quota.limit}) on ${e.quota.plan}.`)
+          : (e instanceof Error ? e.message : "Could not start research.");
+        setTurns((prev) => prev.map((t, i) => (i === ridx && t.research ? { ...t, research: { ...t.research, error: msg, proGate } } : t)));
+      }
       return;
     }
     setBusy(true);
@@ -303,7 +322,7 @@ function AskPage() {
               <div className="msg-ai">
                 <Orb size={28} busy={isLast && busy} bloom={isLast && bloom} className="" />
                 <div className="ai-body">
-                  {t.a ? <Answer answer={t.a} onCite={onCite} /> : isLast && busy ? <Thinking stage={stage} /> : null}
+                  {t.research ? <ResearchRunCard card={t.research} /> : t.a ? <Answer answer={t.a} onCite={onCite} /> : isLast && busy ? <Thinking stage={stage} /> : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
               </div>
@@ -317,10 +336,21 @@ function AskPage() {
   );
 }
 
+// A research-run turn: the body is a card that polls the run and becomes a "Report ready" link.
+// runId is "" only for the brief moment between submit and startResearch resolving.
+interface ResearchCard {
+  runId: string;
+  mode: "standard" | "structured_review";
+  title: string;
+  error: string | null;
+  proGate: boolean;
+}
+
 interface Turn {
   q: string;
   a: AskResponse | null;
   err: string | null;
+  research?: ResearchCard; // present when this turn is a deep-research run instead of a chat answer
 }
 
 interface ComposerProps {
@@ -362,7 +392,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
           <div className="mode-wrap" style={{ position: "relative" }}>
             <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
               <Icon name="sparkle" size={14} />
-              <b>{activeMode.label}</b>{activeMode.live ? " · live" : " · soon"}
+              <b>{activeMode.label}</b>{activeMode.live ? (activeMode.pro ? " · Pro" : " · live") : " · soon"}
             </button>
             {modeOpen ? (
               <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
@@ -377,7 +407,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
                   >
                     <Icon name={m.live ? (m.id === mode ? "check" : "sparkle") : "lock"} size={14} />
                     <span style={{ flex: 1 }}>{m.label}</span>
-                    {!m.live ? <small style={{ color: "var(--text-3)" }}>Soon</small> : null}
+                    {!m.live ? <small style={{ color: "var(--text-3)" }}>Soon</small> : m.pro ? <small style={{ color: "var(--text-3)" }}>Pro</small> : null}
                   </button>
                 ))}
               </div>
@@ -414,6 +444,72 @@ function Thinking({ stage }: { stage: number }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// The inline deep-research card. While the run is in flight it polls research_report_runs (RLS-scoped)
+// and shows live progress; on completion it becomes a "Report ready" card linking to the full report
+// in the Reports library. A start-time error (quota / Pro gate) is passed down on the card.
+function ResearchRunCard({ card }: { card: ResearchCard }) {
+  const [run, setRun] = useState<ResearchRunRow | null>(null);
+  const [done, setDone] = useState<{ id: string | null; sources: number; title: string } | null>(null);
+  const [err, setErr] = useState<string | null>(card.error);
+
+  useEffect(() => { if (card.error) setErr(card.error); }, [card.error]);
+
+  useEffect(() => {
+    if (!card.runId || card.error || done) return;
+    let alive = true;
+    let polls = 0;
+    const MAX_POLLS = 200; // ~5 min at 1500ms — bounded so a stuck/killed run can't poll forever
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (!alive) return;
+      if (++polls > MAX_POLLS) { setErr("This is taking longer than expected — check your Reports list in a bit."); return; }
+      try {
+        const row = await fetchResearchRun(card.runId);
+        if (!alive) return;
+        if (row) {
+          setRun(row);
+          if (row.status === "completed") {
+            const rep = row.saved_report_id ? await fetchResearchReport(row.saved_report_id) : null;
+            if (!alive) return;
+            setDone({ id: row.saved_report_id, sources: rep?.citations.length ?? 0, title: rep?.question || card.title });
+            return;
+          }
+          if (row.status === "failed") { setErr(row.error || "Research could not be completed."); return; }
+        }
+      } catch { /* transient read error — keep polling */ }
+      timer = setTimeout(tick, 1500);
+    };
+    void tick();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [card.runId, card.error, card.title, done]);
+
+  const modeLabel = card.mode === "structured_review" ? "Structured review" : "Deep research";
+
+  if (err) {
+    return (
+      <div className="research-run-card">
+        <p className="tmpl-note">{err}</p>
+        {card.proGate ? <Link href="/app/billing" className="chip-action"><Icon name="card" size={14} />See Pro plans</Link> : null}
+      </div>
+    );
+  }
+  if (done) {
+    return (
+      <Link href={done.id ? `/app/reports/${done.id}` : "/app/reports"} className="research-card" title={done.title}>
+        <Icon name="doc" size={15} />
+        <span className="research-card-title">Report ready: {done.title}</span>
+        <small>{done.sources} sources · {modeLabel}</small>
+      </Link>
+    );
+  }
+  return (
+    <div className="research-run-card">
+      <div className="ai-block-label"><Icon name="sparkle" size={14} /> {modeLabel} running…</div>
+      <ResearchProgress steps={run?.progress ?? []} done={false} />
     </div>
   );
 }
