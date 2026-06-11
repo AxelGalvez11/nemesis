@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { assembleReport, buildScanInput } from "./orchestrate.ts";
+import { assembleReport, buildScanInput, isNoSourceReport } from "./orchestrate.ts";
 import { detectViolations } from "../safety.ts";
 import { META_SECTION, buildMetaProse, noComparisonProse } from "./meta-prose.ts";
 import type { GroundingResult } from "./ground.ts";
@@ -139,4 +139,18 @@ Deno.test("honest not-poolable prose (both branches) passes the scan and shows n
   };
   assertEquals(detectViolations(scanOf(buildMetaProse(pico, grounding, notPoolable))).length, 0);
   assertEquals(detectViolations(scanOf(noComparisonProse())).length, 0);
+});
+
+// Directly lock the step-7 invariant the inline `&& !pooled` encodes: a successful pool must keep the
+// report alive even with an empty synthesized body. Without this, deleting `&& !pooled` would silently
+// discard real pools and nothing would go red.
+Deno.test("isNoSourceReport: an empty body with a successful pool is NOT discarded", () => {
+  assertEquals(isNoSourceReport(false, true), false);
+});
+Deno.test("isNoSourceReport: an empty body with no pool IS discarded as no_source", () => {
+  assertEquals(isNoSourceReport(false, false), true);
+});
+Deno.test("isNoSourceReport: a report with supported content is always kept (pool or not)", () => {
+  assertEquals(isNoSourceReport(true, false), false);
+  assertEquals(isNoSourceReport(true, true), false);
 });

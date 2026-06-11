@@ -239,6 +239,14 @@ export function hasSupportedContent(enforced: EnforcedReport): boolean {
   return enforced.body.length > 0 || enforced.safety_notes.length > 0;
 }
 
+/** The step-7 no_source decision, extracted so the "a successful pool keeps the report alive" invariant
+ *  is directly testable (not just implied by the inline `&& !pooled`). A report is discarded as no_source
+ *  only when it has no supported synthesized content AND no computed pool — the pooled estimate is a real,
+ *  verified-by-construction result that lives outside `enforced`, so it must survive an empty narrative. PURE. */
+export function isNoSourceReport(hasContent: boolean, pooled: boolean): boolean {
+  return !hasContent && !pooled;
+}
+
 function templateReport(
   question: string,
   template: AnswerTemplate,
@@ -427,12 +435,12 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
   // metaPoints/metaResult (not in `enforced`), so the no_source gates below must not discard it.
   const pooled = metaResult?.poolable === true;
   const enforced = enforceReportCitations(synth.raw, chunks);
-  if (!hasSupportedContent(enforced) && !pooled) {
+  if (isNoSourceReport(hasSupportedContent(enforced), pooled)) {
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
   }
   emit("checking", "Fact-checking each claim against its cited source");
   const { report: verifiedContent, verified } = await checkFaithfulness(enforced, chunks, cfg.apiKey);
-  if (!hasSupportedContent(verifiedContent) && !pooled) {
+  if (isNoSourceReport(hasSupportedContent(verifiedContent), pooled)) {
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
   }
 
