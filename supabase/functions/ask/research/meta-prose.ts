@@ -20,9 +20,12 @@ const f2 = (n: number) => n.toFixed(2);
 const DROP_PHRASE: Record<DropCode, string> = {
   tag_not_in_pool: "cited a source outside the search",
   source_text_unavailable: "had no readable source text",
+  intervention_mismatch: "studied a different treatment",
+  comparator_mismatch: "used a different comparison group",
   invalid_counts: "had impossible counts",
   quote_not_in_source: "could not be verified against the source",
   numbers_not_in_quote: "the numbers weren't in the quoted text",
+  percentage_mismatch: "a count disagreed with the source's own percentage",
   different_outcome: "reported a different outcome",
   duplicate_source: "duplicated another source",
 };
