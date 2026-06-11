@@ -67,7 +67,11 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 // no support and refuse (AC3). Tuned empirically in scripts/phase3-validate.ts
 // (real example questions clear it; a made-up compound returns zero).
 const ASK_MATCH_THRESHOLD = 0.5;
-const MATCH_COUNT = 8;
+// Sources shown to the generator (and surfaced as citations) after reranking. Raised 8 -> 12 alongside
+// the broadened PubMed retrieval (paywalled abstracts now eligible) so more of the strongest evidence
+// reaches the answer. The fabrication guard runs over the full retrieved `pool`, not this slice, so a
+// wider slice never weakens it.
+const MATCH_COUNT = 12;
 
 // Live evidence sources (PubMed / Europe PMC / ClinicalTrials / openFDA / FAERS) are gated behind a
 // flag so deploying this code is non-breaking: with LIVE_SOURCES unset the pipeline is byte-for-byte

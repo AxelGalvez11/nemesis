@@ -24,6 +24,22 @@ export interface PubMedFetchOpts {
   query: string;
   /** Max records (default 5, hard cap 25). */
   retmax?: number;
+  /**
+   * Restrict to free-full-text papers ("free full text[sb]"). Default false: PubMed indexes the
+   * ABSTRACT of paywalled papers too, and those abstracts are perfectly citable — and this provider
+   * only ever fetches the abstract anyway, so the old OA-only filter dropped citable papers for no
+   * gain. Opt in (oaOnly: true) only when a caller specifically wants free full text.
+   */
+  oaOnly?: boolean;
+}
+
+/**
+ * Build the esearch term. Broad by default (includes paywalled-but-indexed abstracts); the
+ * free-full-text subset filter is opt-in. PURE — unit-tested. (The historical name fetchPubMedOA and
+ * the "pubmed_oa" provider tag are kept to avoid churning stored data; this is no longer OA-only.)
+ */
+export function buildPubMedTerm(query: string, oaOnly: boolean): string {
+  return oaOnly ? `${query} AND free full text[sb]` : query;
 }
 
 export async function fetchPubMedOA(
@@ -34,7 +50,7 @@ export async function fetchPubMedOA(
 
   const searchParams = new URLSearchParams({
     db: "pubmed",
-    term: `${opts.query} AND free full text[sb]`,
+    term: buildPubMedTerm(opts.query, opts.oaOnly ?? false),
     retmax: String(retmax),
     retmode: "json",
   });

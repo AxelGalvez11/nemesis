@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { parsePubMedXml } from "./pubmed.ts";
+import { buildPubMedTerm, parsePubMedXml } from "./pubmed.ts";
 
 const XML = `
 <PubmedArticleSet><PubmedArticle>
@@ -35,4 +35,14 @@ Deno.test("parsePubMedXml captures bibliographic + publication-type metadata", (
   assertEquals(a.year, 2024);
   assertEquals(a.authors, ["Falutz J", "Mamputu JC"]);
   assertEquals(a.publication_types, ["Randomized Controlled Trial", "Journal Article"]);
+});
+
+Deno.test("buildPubMedTerm: default search is broad — paywalled (abstract-indexed) papers included", () => {
+  // The fetch only ever pulls the abstract, so the old `free full text[sb]` filter dropped citable
+  // paywalled abstracts for no gain. Broad is the default; OA-only is opt-in.
+  assertEquals(buildPubMedTerm("metformin AND lactic acidosis", false), "metformin AND lactic acidosis");
+});
+
+Deno.test("buildPubMedTerm: oaOnly opt-in re-applies the free-full-text filter", () => {
+  assertEquals(buildPubMedTerm("metformin", true), "metformin AND free full text[sb]");
 });
