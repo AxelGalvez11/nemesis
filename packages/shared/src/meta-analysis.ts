@@ -55,6 +55,12 @@ export interface PooledStudy {
   source_quote: string;
   /** The outcome this row measures (every pooled row shares the same clustered outcome). */
   outcome_label: string;
+  /** The raw 2x2 counts the effect was computed from — carried through so a "characteristics of
+   *  included studies" table can show the actual extracted data (auditable against source_quote). */
+  events_treatment: number;
+  total_treatment: number;
+  events_control: number;
+  total_control: number;
   effect_log: number;
   effect: number;
   variance: number;
@@ -184,6 +190,10 @@ export function poolRiskRatio(studies: StudyArm[]): MetaAnalysisResult {
       citation_tag: e.arm.citation_tag,
       source_quote: e.arm.source_quote,
       outcome_label: e.arm.outcome_label,
+      events_treatment: e.arm.events_treatment,
+      total_treatment: e.arm.total_treatment,
+      events_control: e.arm.events_control,
+      total_control: e.arm.total_control,
       effect_log: e.y,
       effect: Math.exp(e.y),
       variance: e.v,

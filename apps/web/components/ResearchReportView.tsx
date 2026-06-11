@@ -100,6 +100,46 @@ function MetaForestTable({ meta, onCite }: { meta: MetaAnalysisResult; onCite: (
   );
 }
 
+// "Characteristics of included studies": the journal-standard table of the RAW extracted data — the
+// 2x2 event counts behind the pool, one row per study, with the crude event rate. Every value comes
+// straight from report.meta_analysis.studies (read verbatim from each source, never computed by an
+// LLM); the crude % is a trivial honest division. This table is the auditable data; the forest table
+// below it is the computed effects.
+function MetaStudyCharacteristics({ meta, onCite }: { meta: MetaAnalysisResult; onCite: (tag: string) => void }) {
+  if (!meta.poolable) return null;
+  const arm = (e: number, n: number) => `${e}/${n}${n > 0 ? ` (${((e / n) * 100).toFixed(1)}%)` : ""}`;
+  const outcome = meta.studies[0]?.outcome_label;
+  const totalN = meta.studies.reduce((acc, s) => acc + s.total_treatment + s.total_control, 0);
+  return (
+    <section className="research-section">
+      <h4 className="research-heading">Characteristics of included studies</h4>
+      <p className="muted-note">
+        {meta.k} studies{outcome ? <> · outcome: <b>{outcome}</b></> : null} · {totalN.toLocaleString()} participants. Event counts are read verbatim from each source.
+      </p>
+      <div className="evidence-table-wrap">
+        <table className="evidence-table study-char-table">
+          <thead>
+            <tr><th>Study</th><th>Intervention (events/N)</th><th>Control (events/N)</th><th>Participants</th></tr>
+          </thead>
+          <tbody>
+            {meta.studies.map((s) => (
+              <tr key={s.citation_tag}>
+                <td>
+                  <button type="button" className="cite" onClick={() => onCite(normTag(s.citation_tag))} aria-label={`Show source ${s.citation_tag}`}>{normTag(s.citation_tag)}</button>
+                  {" "}{s.label}
+                </td>
+                <td className="mono">{arm(s.events_treatment, s.total_treatment)}</td>
+                <td className="mono">{arm(s.events_control, s.total_control)}</td>
+                <td className="mono">{(s.total_treatment + s.total_control).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 /** Renders a finished Deep Research report: summary, verification state, themed cited sections,
  *  prominent safety, honest uncertainties, and a numbered sources list. Citation chips scroll to the
  *  matching source. Visual language matches the /ask Answer (same classes) so it feels like one app. */
@@ -197,6 +237,7 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
         </section>
       ))}
 
+      {report.meta_analysis ? <MetaStudyCharacteristics meta={report.meta_analysis} onCite={onCite} /> : null}
       {report.meta_analysis ? <MetaForestTable meta={report.meta_analysis} onCite={onCite} /> : null}
 
       {report.safety_notes.length ? (

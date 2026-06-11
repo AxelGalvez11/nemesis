@@ -11,8 +11,8 @@ function poolable(over: { i2?: number; ci_low?: number; ci_high?: number } = {})
     measure: "risk_ratio",
     k: 2,
     studies: [
-      { label: "Trial A", citation_tag: "1", source_quote: "q1", outcome_label: "mortality", effect_log: -0.4, effect: 0.67, variance: 0.05, ci_low: 0.5, ci_high: 0.9, weight_percent: 50, continuity_corrected: false },
-      { label: "Trial B", citation_tag: "2", source_quote: "q2", outcome_label: "mortality", effect_log: -0.45, effect: 0.64, variance: 0.06, ci_low: 0.45, ci_high: 0.9, weight_percent: 50, continuity_corrected: false },
+      { label: "Trial A", citation_tag: "1", source_quote: "q1", outcome_label: "mortality", events_treatment: 12, total_treatment: 100, events_control: 18, total_control: 100, effect_log: -0.4, effect: 0.67, variance: 0.05, ci_low: 0.5, ci_high: 0.9, weight_percent: 50, continuity_corrected: false },
+      { label: "Trial B", citation_tag: "2", source_quote: "q2", outcome_label: "mortality", events_treatment: 11, total_treatment: 100, events_control: 17, total_control: 100, effect_log: -0.45, effect: 0.64, variance: 0.06, ci_low: 0.45, ci_high: 0.9, weight_percent: 50, continuity_corrected: false },
     ],
     fixed: { estimate_log: -0.42, variance: 0.04, estimate: 0.66, ci_low: 0.55, ci_high: 0.79 },
     random: { estimate_log: -0.43, variance: 0.06, estimate: 0.65, ci_low: over.ci_low ?? 0.50, ci_high: over.ci_high ?? 0.84 },

@@ -25,6 +25,20 @@ Deno.test("pooled rows carry the study's provenance (source_quote + outcome_labe
   assertEquals(r.studies[1].source_quote, "5/80 vs 12/90");
 });
 
+Deno.test("pooled rows carry the raw 2x2 counts so a characteristics table shows the extracted data", () => {
+  const r = poolRiskRatio([
+    study({ events_treatment: 10, total_treatment: 100, events_control: 20, total_control: 100, label: "Trial A" }),
+    study({ events_treatment: 5, total_treatment: 80, events_control: 12, total_control: 90, citation_tag: "2", label: "Trial B" }),
+  ]);
+  if (!r.poolable) throw new Error("expected poolable");
+  assertEquals(r.studies[0].events_treatment, 10);
+  assertEquals(r.studies[0].total_treatment, 100);
+  assertEquals(r.studies[0].events_control, 20);
+  assertEquals(r.studies[0].total_control, 100);
+  assertEquals(r.studies[1].events_treatment, 5);
+  assertEquals(r.studies[1].total_control, 90);
+});
+
 // ── Hand-computed analytic cases (expected values derived by hand, not from output) ──
 
 Deno.test("two identical studies: pooled effect equals each study, zero heterogeneity", () => {
