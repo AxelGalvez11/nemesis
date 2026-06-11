@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskResponse, ScopeQuestion } from "@pharmabro/shared";
+import type { AskResponse, ReportMode, ScopeQuestion } from "@pharmabro/shared";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
@@ -23,7 +23,7 @@ const STAGES = ["Reading the question", "Searching the evidence library", "Ranki
 const MODES = [
   { id: "evidence", label: "Quick answer", live: true, pro: false, hint: "Cited answer from the library + live sources" },
   { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report that documents its method (Pro)" },
-  { id: "meta", label: "Meta-analysis", live: false, pro: true, hint: "Computed pooled estimates — coming soon" },
+  { id: "meta", label: "Meta-analysis", live: true, pro: true, hint: "Pools comparable studies into a computed estimate, when the evidence supports it (Pro)" },
 ] as const;
 
 const SUGGESTIONS = [
@@ -143,7 +143,7 @@ function AskPage() {
   }, [ensureConversation]);
 
   // Persist a completed deep-research turn so its "Report ready" card survives a reopen.
-  const persistResearchTurn = useCallback(async (idx: number, q: string, mode: "standard" | "structured_review", result: { savedReportId: string | null; sources: number }) => {
+  const persistResearchTurn = useCallback(async (idx: number, q: string, mode: ReportMode, result: { savedReportId: string | null; sources: number }) => {
     try {
       const convId = await ensureConversation(q);
       if (convId) await saveResearchTurn(convId, idx * 2, q, { mode, savedReportId: result.savedReportId, title: q, citationCount: result.sources });
@@ -152,7 +152,7 @@ function AskPage() {
 
   // Turn slot `idx` into a running research card and kick off the run. `searchQ` may be enriched with
   // clarifying answers, while `displayQ` stays the readable original (shown on the card + saved).
-  const launchResearch = useCallback(async (idx: number, displayQ: string, searchQ: string, runMode: "standard" | "structured_review") => {
+  const launchResearch = useCallback(async (idx: number, displayQ: string, searchQ: string, runMode: ReportMode) => {
     setTurns((prev) => prev.map((t, i) => (i === idx ? { q: displayQ, a: null, err: null, research: { runId: "", mode: runMode, title: displayQ, error: null, proGate: false } } : t)));
     try {
       const runId = await startResearch(searchQ, runMode);
@@ -255,9 +255,10 @@ function AskPage() {
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
     // can keep chatting while it works.
-    if (mode === "deep") {
-      // One Deep Research mode that always documents its method (the engine's structured_review path).
-      const runMode: "standard" | "structured_review" = "structured_review";
+    if (mode === "deep" || mode === "meta") {
+      // Deep research documents its method (engine's structured_review); meta-analysis additionally
+      // pools comparable studies into a computed estimate when the evidence supports it.
+      const runMode: ReportMode = mode === "meta" ? "meta" : "structured_review";
       const ridx = turns.length;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
       setTurns((prev) => [...prev, { q: text, a: null, err: null, scoping: true }]);
@@ -370,7 +371,7 @@ function AskPage() {
 // runId is "" only for the brief moment between submit and startResearch resolving.
 interface ResearchCard {
   runId: string;
-  mode: "standard" | "structured_review";
+  mode: ReportMode;
   title: string;
   error: string | null;
   proGate: boolean;
@@ -387,7 +388,7 @@ function rehydrateResearchCard(s: SavedResearchCard): ResearchCard {
 // (chips + free text) before starting the run.
 interface ScopeTurnState {
   question: string;
-  runMode: "standard" | "structured_review";
+  runMode: ReportMode;
   questions: ScopeQuestion[];
 }
 

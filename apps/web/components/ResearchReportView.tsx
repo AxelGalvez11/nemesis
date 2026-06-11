@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import type { AnswerPoint, Citation, CitationStyle, ResearchReport } from "@pharmabro/shared";
+import type { AnswerPoint, Citation, CitationStyle, MetaAnalysisResult, ResearchReport } from "@pharmabro/shared";
 import { buildReferenceList, evidenceRows } from "@pharmabro/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
@@ -43,6 +43,57 @@ function EvidenceTable({ citations, onCite }: { citations: Citation[]; onCite: (
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+// Forest table for a poolable meta-analysis: one row per study (risk ratio + 95% CI + weight + the
+// exact sentence the counts came from), then the computed fixed/random pooled rows and heterogeneity.
+// Every number comes from report.meta_analysis (computed in code) — this only displays it.
+function MetaForestTable({ meta, onCite }: { meta: MetaAnalysisResult; onCite: (tag: string) => void }) {
+  if (!meta.poolable) return null;
+  const f2 = (n: number) => n.toFixed(2);
+  const ci = (lo: number, hi: number) => `${f2(lo)}–${f2(hi)}`;
+  const i2 = meta.heterogeneity.i2;
+  const highHet = i2 != null && i2 >= 75;
+  return (
+    <section className="research-section">
+      <h4 className="research-heading">Pooled estimate — forest table</h4>
+      <div className="evidence-table-wrap">
+        <table className="evidence-table forest-table">
+          <thead>
+            <tr><th>Study</th><th>Risk ratio (95% CI)</th><th>Weight</th><th>Source</th></tr>
+          </thead>
+          <tbody>
+            {meta.studies.map((s) => (
+              <tr key={s.citation_tag}>
+                <td>
+                  <button type="button" className="cite" onClick={() => onCite(normTag(s.citation_tag))} aria-label={`Show source ${s.citation_tag}`}>{normTag(s.citation_tag)}</button>
+                  {" "}{s.label}{s.continuity_corrected ? " *" : ""}
+                </td>
+                <td>{f2(s.effect)} ({ci(s.ci_low, s.ci_high)})</td>
+                <td>{Math.round(s.weight_percent)}%</td>
+                <td className="evidence-table-title" title={s.source_quote}>{s.source_quote}</td>
+              </tr>
+            ))}
+            <tr className="forest-pooled">
+              <td>Pooled (random effects)</td>
+              <td>{f2(meta.random.estimate)} ({ci(meta.random.ci_low, meta.random.ci_high)})</td>
+              <td>—</td><td />
+            </tr>
+            <tr className="forest-pooled">
+              <td>Pooled (fixed effect)</td>
+              <td>{f2(meta.fixed.estimate)} ({ci(meta.fixed.ci_low, meta.fixed.ci_high)})</td>
+              <td>—</td><td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className={`muted-note${highHet ? " forest-het-high" : ""}`}>
+        Heterogeneity: I² = {i2 == null ? "n/a" : `${Math.round(i2)}%`} · τ² = {meta.heterogeneity.tau2.toFixed(3)} · Q = {f2(meta.heterogeneity.q)} (df {meta.heterogeneity.df}).
+        {highHet ? " High heterogeneity — the studies disagree substantially, so read the pooled estimate with caution." : ""}
+        {meta.studies.some((s) => s.continuity_corrected) ? " * a 0.5 continuity correction was applied for a zero-event arm." : ""}
+      </p>
     </section>
   );
 }
@@ -130,6 +181,8 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
           ))}
         </section>
       ))}
+
+      {report.meta_analysis ? <MetaForestTable meta={report.meta_analysis} onCite={onCite} /> : null}
 
       {report.safety_notes.length ? (
         <div className="ai-safety">

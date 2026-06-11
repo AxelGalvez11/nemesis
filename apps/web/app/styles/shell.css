@@ -453,3 +453,7 @@
 .evidence-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); color: var(--text-2); vertical-align: top; }
 .evidence-table tr:last-child td { border-bottom: none; }
 .evidence-table-title { color: var(--text); max-width: 380px; }
+
+/* Meta-analysis forest table: pooled rows stand out; the high-heterogeneity note is a caution color. */
+.forest-table .forest-pooled td { font-weight: 600; color: var(--text); border-top: 1px solid var(--line-2); }
+.forest-het-high { color: var(--warn, #b45309); }

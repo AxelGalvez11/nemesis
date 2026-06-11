@@ -6,6 +6,7 @@ import type {
   DrugOverview,
   EntitlementSnapshot,
   QuotaExceededError,
+  ReportMode,
   ResearchProgressStep,
   ResearchReport,
   ScopeResult,
@@ -485,7 +486,7 @@ export interface ConversationSummary {
 
 /** A reconstructed deep-research card (persisted on completion) — links to the finished report. */
 export interface SavedResearchCard {
-  mode: "standard" | "structured_review";
+  mode: ReportMode;
   savedReportId: string | null;
   title: string;
   citationCount: number;
@@ -595,7 +596,7 @@ export async function fetchConversationTurns(conversationId: string): Promise<Sa
           q: pendingQ ?? "",
           a: null,
           research: {
-            mode: p.mode === "structured_review" ? "structured_review" : "standard",
+            mode: p.mode === "structured_review" ? "structured_review" : p.mode === "meta" ? "meta" : "standard",
             savedReportId: typeof p.saved_report_id === "string" ? p.saved_report_id : null,
             title: typeof p.title === "string" ? p.title : (pendingQ ?? ""),
             citationCount: typeof p.citation_count === "number" ? p.citation_count : 0,
@@ -637,7 +638,7 @@ export interface ResearchReportSummary {
 
 /** Start a deep-research run. Returns the run id to poll. Throws AskQuotaError on the Pro gate /
  *  daily-limit 429 (deep_research_daily_limit is 0 for free/plus). */
-export async function startResearch(question: string, mode: "standard" | "structured_review" = "standard"): Promise<string> {
+export async function startResearch(question: string, mode: ReportMode = "standard"): Promise<string> {
   if (isPreviewMode) throw new Error("Deep research needs a live connection (not available in preview).");
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
