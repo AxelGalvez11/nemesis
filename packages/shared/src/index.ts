@@ -36,3 +36,7 @@ export * from "./citation-format.ts";
 // Evidence-base table helpers (publishable-reports): pure citation -> row mapping shared by the
 // on-screen report and the docx/pptx exports so both render the same body-of-evidence summary.
 export * from "./citation-meta.ts";
+// Meta-analysis (deliverables track): pure inverse-variance + DerSimonian-Laird risk-ratio pooling
+// with Q / I^2 / tau^2. Real statistics in code — NEVER LLM-guessed. Validated against metafor's
+// published BCG analysis (Q = 152.2330). Extraction + go-live are owner-gated, not wired yet.
+export * from "./meta-analysis.ts";
