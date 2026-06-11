@@ -482,10 +482,19 @@ export interface ConversationSummary {
   updated_at: string;
 }
 
-/** One reconstructed turn: the question + its cited answer (null if it errored when saved). */
+/** A reconstructed deep-research card (persisted on completion) — links to the finished report. */
+export interface SavedResearchCard {
+  mode: "standard" | "structured_review";
+  savedReportId: string | null;
+  title: string;
+  citationCount: number;
+}
+
+/** One reconstructed turn: a cited chat answer, OR a deep-research card (when `research` is set). */
 export interface SavedTurn {
   q: string;
   a: AskResponse | null;
+  research?: SavedResearchCard;
 }
 
 /** The user's saved chats, newest first — drives the rail history. */
@@ -540,6 +549,29 @@ export async function saveTurn(conversationId: string, ordinalBase: number, ques
   await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
 }
 
+/** Persist a completed deep-research turn (question + a research-run card pointing at the saved
+ *  report) so a reopened chat re-renders the "Report ready" card. The card payload carries `kind:
+ *  "research_run"` to distinguish it from a normal cited answer on load. */
+export async function saveResearchTurn(conversationId: string, ordinalBase: number, question: string, card: SavedResearchCard): Promise<void> {
+  if (isPreviewMode) return;
+  const { data: sess } = await supabase.auth.getSession();
+  const userId = sess.session?.user.id;
+  if (!userId) return;
+  const { error } = await supabase.from("conversation_messages").insert([
+    { conversation_id: conversationId, user_id: userId, role: "user", ordinal: ordinalBase, content: question },
+    {
+      conversation_id: conversationId,
+      user_id: userId,
+      role: "assistant",
+      ordinal: ordinalBase + 1,
+      content: `Report: ${card.title}`,
+      payload: { kind: "research_run", mode: card.mode, saved_report_id: card.savedReportId, title: card.title, citation_count: card.citationCount },
+    },
+  ]);
+  if (error) throw new Error(`save research turn failed: ${error.message}`);
+  await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+}
+
 /** Load a chat's turns, ordered, rehydrating the full cited answers from `payload`. */
 export async function fetchConversationTurns(conversationId: string): Promise<SavedTurn[]> {
   if (isPreviewMode) return [];
@@ -556,7 +588,21 @@ export async function fetchConversationTurns(conversationId: string): Promise<Sa
     if (m.role === "user") {
       pendingQ = typeof m.content === "string" ? m.content : "";
     } else if (m.role === "assistant") {
-      turns.push({ q: pendingQ ?? "", a: isObj(m.payload) ? (m.payload as unknown as AskResponse) : null });
+      const p = m.payload;
+      if (isObj(p) && p.kind === "research_run") {
+        turns.push({
+          q: pendingQ ?? "",
+          a: null,
+          research: {
+            mode: p.mode === "structured_review" ? "structured_review" : "standard",
+            savedReportId: typeof p.saved_report_id === "string" ? p.saved_report_id : null,
+            title: typeof p.title === "string" ? p.title : (pendingQ ?? ""),
+            citationCount: typeof p.citation_count === "number" ? p.citation_count : 0,
+          },
+        });
+      } else {
+        turns.push({ q: pendingQ ?? "", a: isObj(p) ? (p as unknown as AskResponse) : null });
+      }
       pendingQ = null;
     }
   }
