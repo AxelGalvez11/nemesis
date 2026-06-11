@@ -102,6 +102,14 @@ export interface ResearchProgressStep {
  *  code-computed pooled estimate (risk ratio) when ≥2 comparable studies report extractable counts. */
 export type ReportMode = "standard" | "structured_review" | "meta";
 
+/** The fixed comparison a meta-analysis run pools around (PICO), parsed from the question BEFORE the
+ *  corpus is read so the contrast can never be inferred post-hoc across mismatched studies. */
+export interface Pico {
+  intervention: string;
+  comparator: string;
+  outcome: string;
+}
+
 /** Numbered medical citation style the reference list/exports use. */
 export type CitationStyle = "vancouver" | "ama";
 
