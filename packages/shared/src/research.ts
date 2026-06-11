@@ -8,6 +8,22 @@
 
 import type { AnswerPoint, AnswerTemplate, Citation, EvidenceGrade, SafetyFlag } from "./answer.ts";
 
+// ── Clarifying-question scoping (Phase 2) ───────────────────────────────────
+// Before a deep-research run, a cheap scope step may return 1-3 clarifying questions to focus the
+// search. Best-effort: needs_clarification=false means "just run it" (no clarification).
+
+/** One clarifying question with quick-pick chips (a free-text answer is always available in the UI). */
+export interface ScopeQuestion {
+  text: string;
+  chips: string[];
+}
+
+/** The scope step's output: whether the question is ambiguous, and the clarifiers if so. */
+export interface ScopeResult {
+  needs_clarification: boolean;
+  questions: ScopeQuestion[];
+}
+
 /** One themed section of a report (≈ one planned sub-question), with cited sentences. */
 export interface ResearchSection {
   heading: string;
