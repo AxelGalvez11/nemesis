@@ -10,6 +10,7 @@ import { safeHref } from "@/lib/url";
 function providerClass(t: string): string {
   const p = t.toLowerCase();
   if (p.includes("openfda") || p.includes("dailymed") || p.includes("label")) return "openfda";
+  if (p.includes("openalex")) return "openalex";
   if (p.includes("pubmed") || p.includes("europepmc")) return "pubmed";
   if (p.includes("trial") || p.includes("nct")) return "clinicaltrials";
   if (p.includes("faers")) return "faers";
@@ -19,6 +20,8 @@ function providerLabel(t: string): string {
   const p = t.toLowerCase();
   if (p.includes("openfda")) return "FDA label";
   if (p.includes("dailymed")) return "DailyMed label";
+  // OpenAlex: the non-PMID long tail (PMID-bearing works dedupe into the PubMed bucket upstream).
+  if (p.includes("openalex")) return "OpenAlex · live";
   // pubmed_oa is the PubMed open-access bucket (fetched via NCBI E-utilities OR Europe PMC — both
   // are PubMed-indexed articles with PMIDs). Label it "PubMed" so it isn't confused for a separate
   // source: a research article is a research article regardless of which mirror served it.

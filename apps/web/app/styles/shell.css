@@ -291,6 +291,7 @@
 .src.pubmed .sq, .src.pubmed_oa .sq { background: #c7a6ff; }
 .src.clinicaltrials .sq, .src.trial .sq { background: #ff9f7f; }
 .src.faers .sq { background: #ff5c4d; }
+.src.openalex .sq { background: #5ad1c5; }
 .src h5 { font-size: 13px; font-weight: 600; margin: 7px 0 5px; line-height: 1.35; }
 .src .meta { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); display: flex; gap: 9px; flex-wrap: wrap; }
 .src .cidx { position: absolute; top: 11px; right: 12px; font-family: var(--mono); font-size: 10px; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 5px; padding: 0 5px; }

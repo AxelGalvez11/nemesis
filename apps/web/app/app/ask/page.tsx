@@ -33,7 +33,7 @@ const SUGGESTIONS = [
   { text: "Is lisinopril safe with spironolactone?", icon: "search" as const },
 ];
 
-const PROVIDER_ABBR: Record<string, string> = { openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", clinicaltrials: "NCT", faers: "FAERS" };
+const PROVIDER_ABBR: Record<string, string> = { openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", clinicaltrials: "NCT", faers: "FAERS", openalex: "OA" };
 function abbr(t: string): string {
   const k = Object.keys(PROVIDER_ABBR).find((p) => t.toLowerCase().includes(p));
   return (k ? PROVIDER_ABBR[k] : undefined) ?? "REF";
