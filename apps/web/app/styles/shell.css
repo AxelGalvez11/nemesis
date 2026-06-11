@@ -461,3 +461,6 @@
 /* Meta-analysis forest table: pooled rows stand out; the high-heterogeneity note is a caution color. */
 .forest-table .forest-pooled td { font-weight: 600; color: var(--text); border-top: 1px solid var(--line-2); }
 .forest-het-high { color: var(--warn, #b45309); }
+/* Forest-plot figure: the computed meta graphic. Scrolls horizontally on narrow screens; SVG scales. */
+.forest-plot { margin: 4px 0 12px; overflow-x: auto; }
+.forest-plot svg { display: block; min-width: 460px; }

@@ -7,6 +7,7 @@ import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
 import { Icon } from "./icons";
+import { ForestPlot } from "./ForestPlot";
 import { downloadReportExport } from "@/lib/api";
 
 const PROVIDER_ABBR: Record<string, string> = {
@@ -58,7 +59,8 @@ function MetaForestTable({ meta, onCite }: { meta: MetaAnalysisResult; onCite: (
   const highHet = i2 != null && i2 >= 75;
   return (
     <section className="research-section">
-      <h4 className="research-heading">Pooled estimate — forest table</h4>
+      <h4 className="research-heading">Pooled estimate — forest plot</h4>
+      <ForestPlot meta={meta} />
       <div className="evidence-table-wrap">
         <table className="evidence-table forest-table">
           <thead>
