@@ -22,8 +22,7 @@ const STAGES = ["Reading the question", "Searching the evidence library", "Ranki
 
 const MODES = [
   { id: "evidence", label: "Quick answer", live: true, pro: false, hint: "Cited answer from the library + live sources" },
-  { id: "deep", label: "Deep research", live: true, pro: true, hint: "Multi-step, fully cited report (Pro)" },
-  { id: "structured_review", label: "Structured review", live: true, pro: true, hint: "A deep report that documents its own method (Pro)" },
+  { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report that documents its method (Pro)" },
   { id: "meta", label: "Meta-analysis", live: false, pro: true, hint: "Computed pooled estimates — coming soon" },
 ] as const;
 
@@ -238,8 +237,9 @@ function AskPage() {
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
     // can keep chatting while it works.
-    if (mode === "deep" || mode === "structured_review") {
-      const runMode: "standard" | "structured_review" = mode === "structured_review" ? "structured_review" : "standard";
+    if (mode === "deep") {
+      // One Deep Research mode that always documents its method (the engine's structured_review path).
+      const runMode: "standard" | "structured_review" = "structured_review";
       const ridx = turns.length;
       setTurns((prev) => [...prev, { q: text, a: null, err: null, research: { runId: "", mode: runMode, title: text, error: null, proGate: false } }]);
       setQuestion("");
@@ -514,7 +514,7 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
     return () => { alive = false; clearTimeout(timer); };
   }, [card.runId, card.error, card.completed, card.title, done]);
 
-  const modeLabel = card.mode === "structured_review" ? "Structured review" : "Deep research";
+  const modeLabel = "Deep research"; // one Pro research mode now
 
   if (err) {
     return (
