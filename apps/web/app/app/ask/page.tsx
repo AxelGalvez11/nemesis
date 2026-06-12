@@ -335,30 +335,20 @@ function AskPage() {
     );
   }
 
-  // A reopened conversation that loaded zero messages — distinct from the new-chat welcome below, so
-  // a chat that didn't persist reads clearly instead of looking like a fresh blank chat. (Turns that
-  // never saved can't be recovered; new chats save reliably now that the answer_id FK is dropped.)
-  if (cParam && !hasThread) {
-    return (
-      <div className="welcome-wrap">
-        <p className="muted" style={{ fontSize: 14, textAlign: "center" }}>
-          This chat has no saved messages.<br />
-          <span style={{ color: "var(--text-3)", fontSize: 12 }}>Its turns didn’t save (a now-fixed bug). New chats save reliably.</span><br />
-          <button type="button" className="mode" style={{ marginTop: 12 }} onClick={() => router.push("/app/ask")}>Start a new chat</button>
-        </p>
-      </div>
-    );
-  }
-
-  // Empty state: a centered "welcome" with the composer in the middle (ChatGPT-style). Once a
-  // conversation starts, switch to the scrolling thread with the composer pinned to the bottom.
+  // Empty state: a centered "welcome" with the composer in the middle (ChatGPT-style). This ALSO
+  // covers a reopened conversation that loaded zero saved turns — it keeps the composer (so you can
+  // keep typing in this chat) and shows a note, instead of a dead-end. Once a conversation starts,
+  // switch to the scrolling thread with the composer pinned to the bottom.
   if (!hasThread) {
+    const reopenedEmpty = Boolean(cParam); // an old chat reopened with no saved messages
     return (
       <div className="welcome-wrap">
         <div className="welcome">
           <Orb size={56} />
-          <h2 className="welcome-title">What can I help you research?</h2>
-          <p className="welcome-sub">Every medical claim is source-backed. Ask about a drug, dose, interaction, or monograph for a cited answer.</p>
+          <h2 className="welcome-title">{reopenedEmpty ? "This chat has no saved messages" : "What can I help you research?"}</h2>
+          <p className="welcome-sub">{reopenedEmpty
+            ? "Its earlier turns didn’t save (a now-fixed bug). Ask below to continue in this chat, or start a new one."
+            : "Every medical claim is source-backed. Ask about a drug, dose, interaction, or monograph for a cited answer."}</p>
           {composer}
           <div className="chip-row welcome-chips">
             {SUGGESTIONS.map((s) => (
