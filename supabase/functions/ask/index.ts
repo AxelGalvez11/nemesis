@@ -624,7 +624,7 @@ async function consumeAskQuota(userId: string): Promise<ConsumeUsageResult> {
 
 async function storeTrace(row: TraceRow): Promise<void> {
   try {
-    await fetch(`${SB_URL}/rest/v1/generated_answers`, {
+    const res = await fetch(`${SB_URL}/rest/v1/generated_answers`, {
       method: "POST",
       headers: {
         apikey: SERVICE_KEY,
@@ -634,6 +634,11 @@ async function storeTrace(row: TraceRow): Promise<void> {
       },
       body: JSON.stringify(row),
     });
+    // fetch resolves on HTTP 4xx/5xx (only network errors throw), so the status MUST be checked — an
+    // un-inspected reject silently loses the trace AND breaks the answer_id FK on the saved chat message.
+    if (!res.ok) {
+      console.error(`storeTrace rejected (trace lost): ${res.status} ${(await res.text()).slice(0, 300)}`);
+    }
   } catch (e) {
     // A trace-write failure must not fail the user's answer, but it MUST be
     // visible — a dropped emergency/self-harm trace is a lost safety audit record.

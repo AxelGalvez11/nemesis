@@ -542,7 +542,10 @@ export async function saveTurn(conversationId: string, ordinalBase: number, ques
       role: "assistant",
       ordinal: ordinalBase + 1,
       content: answer.plain_english_summary ?? "",
-      answer_id: answer.answer_id,
+      // NB: do NOT set answer_id here. It's a FK to generated_answers, and if the server's audit-trace
+      // write was rejected (storeTrace doesn't check the HTTP status), that row won't exist — the FK
+      // then fails and the WHOLE message insert is rejected, so the chat silently never persists and a
+      // reopen shows nothing. The full answer is in `payload`; the chat doesn't need the FK link.
       payload: answer, // full structured answer → a reopened chat re-renders identically
       citations: answer.citations,
     },

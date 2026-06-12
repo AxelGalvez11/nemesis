@@ -335,6 +335,21 @@ function AskPage() {
     );
   }
 
+  // A reopened conversation that loaded zero messages — distinct from the new-chat welcome below, so
+  // a chat that didn't persist reads clearly instead of looking like a fresh blank chat. (Turns that
+  // never saved can't be recovered; new chats save reliably now that the answer_id FK is dropped.)
+  if (cParam && !hasThread) {
+    return (
+      <div className="welcome-wrap">
+        <p className="muted" style={{ fontSize: 14, textAlign: "center" }}>
+          This chat has no saved messages.<br />
+          <span style={{ color: "var(--text-3)", fontSize: 12 }}>Its turns didn’t save (a now-fixed bug). New chats save reliably.</span><br />
+          <button type="button" className="mode" style={{ marginTop: 12 }} onClick={() => router.push("/app/ask")}>Start a new chat</button>
+        </p>
+      </div>
+    );
+  }
+
   // Empty state: a centered "welcome" with the composer in the middle (ChatGPT-style). Once a
   // conversation starts, switch to the scrolling thread with the composer pinned to the bottom.
   if (!hasThread) {
