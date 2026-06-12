@@ -93,8 +93,14 @@
 .hist.active { background: var(--surface-2); color: var(--text); }
 .hist.active::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 2.5px; border-radius: 2px; background: var(--acid); box-shadow: 0 0 10px rgba(140, 220, 40, 0.7); }
 .hist-ic { width: 15px; height: 15px; flex: none; opacity: 0.7; }
+/* A chat row = the link + a hover-revealed delete control. */
+.hist-row { display: flex; align-items: center; position: relative; }
+.hist-row .hist { flex: 1; min-width: 0; }
+.hist-del { flex: none; width: 22px; height: 22px; margin-right: 4px; border: none; background: none; color: var(--text-3); border-radius: 6px; cursor: pointer; font-size: 16px; line-height: 1; opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s; }
+.hist-row:hover .hist-del, .hist-del:focus-visible { opacity: 1; }
+.hist-del:hover { color: var(--danger); background: var(--surface); }
 .rail-collapsed .hist { justify-content: center; padding: 9px 0; }
-.rail-collapsed .hist span { display: none; }
+.rail-collapsed .hist span, .rail-collapsed .hist-del { display: none; }
 .acct { border-top: 1px solid var(--line); padding: 12px; display: flex; align-items: center; gap: 10px; }
 .av { width: 30px; height: 30px; border-radius: 50%; flex: none; background: linear-gradient(135deg, var(--surface-2), var(--raised)); display: grid; place-items: center; font-weight: 600; font-size: 12px; color: var(--text-2); border: 1px solid var(--line); }
 .acct-meta b { font-size: 13px; font-weight: 600; display: block; }

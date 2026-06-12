@@ -527,6 +527,13 @@ export async function createConversation(title: string): Promise<string | null> 
   return isObj(data) && typeof data.id === "string" ? data.id : null;
 }
 
+/** Delete a chat and (via ON DELETE CASCADE) its messages. RLS scopes the delete to the owner. */
+export async function deleteConversation(conversationId: string): Promise<void> {
+  if (isPreviewMode) return;
+  const { error } = await supabase.from("conversations").delete().eq("id", conversationId);
+  if (error) throw new Error(`delete chat failed: ${error.message}`);
+}
+
 /** Persist one turn (question + cited answer) at the given ordinal base, and bump the chat's
  *  updated_at so it sorts to the top of the history. */
 export async function saveTurn(conversationId: string, ordinalBase: number, question: string, answer: AskResponse): Promise<void> {
