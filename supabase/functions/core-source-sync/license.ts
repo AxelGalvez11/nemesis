@@ -182,7 +182,8 @@ export const PROVIDER_DEFAULT_LICENSE: Readonly<
   // PharmaBro net-new (Phase 1)
   purple_book: "fda_public", // FDA Purple Book, US fed work
   cms_nadac: "public_domain", // CMS NADAC, US fed work
-  // OpenAlex mixes licenses; default permissive but ALWAYS override per-record (mapOpenAlexLicense),
-  // since most clinical works are paywalled (license=None -> cc_by_nc -> live-only, never stored).
-  openalex: "cc_by",
+  // OpenAlex mixes licenses; mapOpenAlexLicense ALWAYS sets a per-record value, so this default is
+  // dormant. Keep it conservative (cc_by_nc = live-only, never stored) to match that per-record default,
+  // so any future path that reads the provider default instead can't treat a paywalled work as storable.
+  openalex: "cc_by_nc",
 };
