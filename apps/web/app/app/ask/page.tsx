@@ -55,6 +55,7 @@ function AskPage() {
   const cParam = searchParams.get("c"); // the conversation to load, if the URL deep-links one
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loadingChat, setLoadingChat] = useState(false); // true while a saved chat's turns are loading
+  const [chatLoadError, setChatLoadError] = useState<string | null>(null); // a failed reopen is shown, not swallowed
   const loadedConvRef = useRef<string | null>(null); // guards against reloading a chat we just created
   const creatingConvRef = useRef<Promise<string | null> | null>(null); // dedupes concurrent first-turn creates
   const [question, setQuestion] = useState("");
@@ -108,11 +109,12 @@ function AskPage() {
     // submit mid-load would compute the wrong ordinal (from the old turns) and the insert would
     // collide with this chat's existing rows (UNIQUE(conversation_id, ordinal)) and be lost.
     setTurns([]);
+    setChatLoadError(null);
     setLoadingChat(true);
     let alive = true;
     void fetchConversationTurns(cParam)
       .then((saved) => { if (alive) setTurns(saved.map((s) => ({ q: s.q, a: s.a, err: null, research: s.research ? rehydrateResearchCard(s.research) : undefined }))); })
-      .catch(() => {})
+      .catch((e) => { if (alive) setChatLoadError(e instanceof Error ? e.message : "Could not load this chat."); })
       .finally(() => { if (alive) setLoadingChat(false); });
     return () => { alive = false; };
   }, [cParam]);
@@ -318,6 +320,19 @@ function AskPage() {
   // (suggestions flashing mid-load reads as a bug).
   if (loadingChat && !hasThread) {
     return <div className="welcome-wrap"><p className="muted" style={{ fontSize: 14 }}>Loading chat…</p></div>;
+  }
+  // A failed reopen is surfaced (was silently swallowed → blank screen). The chat is still usable:
+  // the composer renders below for a fresh question.
+  if (chatLoadError && !hasThread) {
+    return (
+      <div className="welcome-wrap">
+        <p className="muted" style={{ fontSize: 14, textAlign: "center" }}>
+          Couldn’t open this chat.<br />
+          <span style={{ color: "var(--text-3)", fontSize: 12 }}>{chatLoadError}</span><br />
+          <button type="button" className="mode" style={{ marginTop: 12 }} onClick={() => router.push("/app/ask")}>Start a new chat</button>
+        </p>
+      </div>
+    );
   }
 
   // Empty state: a centered "welcome" with the composer in the middle (ChatGPT-style). Once a

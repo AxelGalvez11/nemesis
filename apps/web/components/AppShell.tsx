@@ -232,9 +232,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icon name="folder" className="hist-ic" />
               <span style={{ fontSize: 12 }}>Projects — coming soon</span>
             </div>
-            <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }}>
-              <span style={{ fontSize: 12 }}>Bundle chats, sources & deliverables</span>
-            </div>
 
             <div className="r-label">Recent chats</div>
             {chats.length === 0 ? (
