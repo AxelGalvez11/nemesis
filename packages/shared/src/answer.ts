@@ -129,6 +129,12 @@ export interface Citation {
   study_type?: string;
   /** Trial phase, Roman from PubMed ("Phase III") or CT.gov form ("PHASE3"). */
   trial_phase?: string;
+  /** A free-to-read full-text LINK (open-access PDF/article page) when the source exposes one — a
+   *  pointer the reader can follow to read the whole paper free, NOT text we retrieved or grounded
+   *  (we still only ground the abstract). Surfaced from OA data the live providers already return
+   *  (OpenAlex `best_oa_location`/`open_access`, Europe PMC `fullTextUrlList`); absent otherwise and
+   *  on older saved chats/reports. The UI shows it as a distinct "Read full text (free)" affordance. */
+  oa_url?: string;
 }
 
 /** Verbatim retrieved text behind one citation tag — the verification payload. Returned ONLY when the

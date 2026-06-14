@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  bestOaUrl,
   mapOpenAlexLicense,
   normalizeWork,
   type OpenAlexWork,
@@ -121,4 +122,42 @@ Deno.test("normalizeWork rejects works without a usable abstract or title", asyn
     await normalizeWork({ id: "https://openalex.org/W2", abstract_inverted_index: { a: [0] }, ids: {} }),
     null, // no title
   );
+});
+
+// --- bestOaUrl + metadata.oa_url -------------------------------------------
+// OpenAlex returns open_access + best_oa_location on every work; we surface the free-to-read link
+// (a LINK to free full text, not text we ground). Prefer a direct PDF, then the landing page, then
+// open_access.oa_url; undefined when the work is not open access.
+Deno.test("bestOaUrl prefers pdf_url, then landing_page_url, then open_access.oa_url", () => {
+  assertEquals(
+    bestOaUrl({ best_oa_location: { pdf_url: "https://x/a.pdf", landing_page_url: "https://x/a" }, open_access: { is_oa: true, oa_url: "https://x/oa" } }),
+    "https://x/a.pdf",
+  );
+  assertEquals(
+    bestOaUrl({ best_oa_location: { pdf_url: null, landing_page_url: "https://x/a" }, open_access: { is_oa: true, oa_url: "https://x/oa" } }),
+    "https://x/a",
+  );
+  assertEquals(
+    bestOaUrl({ open_access: { is_oa: true, oa_url: "https://x/oa" } }),
+    "https://x/oa",
+  );
+});
+
+Deno.test("bestOaUrl returns undefined when the work is not open access", () => {
+  assertEquals(bestOaUrl({ open_access: { is_oa: false, oa_url: null } }), undefined);
+  assertEquals(bestOaUrl({}), undefined);
+});
+
+Deno.test("normalizeWork carries the OA free-full-text link onto metadata.oa_url", async () => {
+  const w: OpenAlexWork = {
+    id: "https://openalex.org/W5",
+    title: "Dexamethasone in COVID-19",
+    ids: { openalex: "https://openalex.org/W5" },
+    abstract_inverted_index: { Mortality: [0], fell: [1] },
+    open_access: { is_oa: true, oa_status: "green", oa_url: "https://repo/dex" },
+    best_oa_location: { pdf_url: null, landing_page_url: "https://repo/dex" },
+  };
+  const s = await normalizeWork(w);
+  assert(s);
+  assertEquals((s!.metadata as Record<string, unknown>).oa_url, "https://repo/dex");
 });

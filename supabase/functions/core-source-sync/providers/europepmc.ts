@@ -33,6 +33,31 @@ function mapEpmcLicense(raw: string | undefined): CoreSourceLicense {
   return "cc_by_nc"; // unrecognized → restricted by default
 }
 
+/** One entry in a Europe PMC article's fullTextUrlList — a place the article can be read. */
+export interface EpmcFullTextUrl {
+  availability?: string; // "Free" | "Open access" | "Subscription required" | ...
+  availabilityCode?: string; // "F" (Free) | "OA" (Open access) | "S" (Subscription)
+  documentStyle?: string; // "html" | "pdf" | "doi"
+  site?: string;
+  url?: string;
+}
+
+/**
+ * The best FREE-to-read full-text LINK from an article's fullTextUrlList — a pointer to the free
+ * article, NOT text we retrieve or ground. Only "Free"/"Open access" locations count; prefer a
+ * readable HTML article page, then PDF. undefined when nothing free is offered. Zero extra network:
+ * fullTextUrlList rides the same resultType=core response we already fetch.
+ */
+export function bestFullTextUrl(list: EpmcFullTextUrl[] | undefined): string | undefined {
+  const free = (list ?? []).filter((u) =>
+    u.url?.trim() &&
+    (u.availabilityCode === "F" || u.availabilityCode === "OA" || /free|open access/i.test(u.availability ?? ""))
+  );
+  if (free.length === 0) return undefined;
+  const html = free.find((u) => (u.documentStyle ?? "").toLowerCase() === "html");
+  return (html ?? free[0]).url!.trim();
+}
+
 export interface EuropePmcFetchOpts {
   query: string;
   retmax?: number;
@@ -51,6 +76,7 @@ interface EpmcResult {
   license?: string; // Europe PMC's own license tag for the article (core resultType)
   authorList?: { author?: Array<{ lastName?: string; initials?: string }> };
   pubTypeList?: { pubType?: string[] };
+  fullTextUrlList?: { fullTextUrl?: EpmcFullTextUrl[] }; // free/paywalled read locations (core resultType)
 }
 
 export async function fetchEuropePmc(opts: EuropePmcFetchOpts): Promise<NormalizedSource[]> {
@@ -98,6 +124,7 @@ export async function fetchEuropePmc(opts: EuropePmcFetchOpts): Promise<Normaliz
           .map((au) => [au.lastName, au.initials].filter(Boolean).join(" "))
           .filter(Boolean),
         publication_types: r.pubTypeList?.pubType ?? [],
+        oa_url: bestFullTextUrl(r.fullTextUrlList?.fullTextUrl), // free-to-read LINK (not text we ground)
       },
     });
   }

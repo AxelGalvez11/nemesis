@@ -15,6 +15,11 @@ Deno.test("citationMeta stamps doaj_vetted from a DOAJ-listed journal ISSN (posi
   assertEquals(citationMeta(metaChunk({})).doaj_vetted, undefined); // no ISSN -> no claim
 });
 
+Deno.test("citationMeta carries the free full-text link (oa_url) through to the citation", () => {
+  assertEquals(citationMeta(metaChunk({ oa_url: "https://europepmc.org/articles/PMC9226592" })).oa_url, "https://europepmc.org/articles/PMC9226592");
+  assertEquals(citationMeta(metaChunk({})).oa_url, undefined); // absent -> no link claimed
+});
+
 function chunks(): RetrievedChunk[] {
   return [
     { tag: "1", chunk_id: "c1", source_id: "s1", provider: "openfda", title: "Sertraline label",

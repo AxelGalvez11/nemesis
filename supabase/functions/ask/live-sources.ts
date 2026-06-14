@@ -75,6 +75,8 @@ export function liveToChunk(c: LiveCandidate, tag: string): RetrievedChunk {
     study_type: str(m.study_type),
     trial_status: str(m.status),
     trial_phase: phases && phases.length ? phases[phases.length - 1] : undefined,
+    // Free-to-read full-text link (OpenAlex/Europe PMC OA data — a link, not grounded text).
+    oa_url: str(m.oa_url),
   };
 }
 

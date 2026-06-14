@@ -45,13 +45,16 @@ export interface RetrievedChunk {
   trial_phase?: string;
   /** The journal's ISSN(s) (print + online). Used to flag DOAJ-listed journals; not displayed. */
   issn?: string[];
+  /** Free-to-read full-text LINK (open-access PDF/article), when the source exposes one. A pointer the
+   *  reader can follow — NOT text we retrieved or grounded. Live OA providers (OpenAlex, Europe PMC) only. */
+  oa_url?: string;
 }
 
 /** Copy the optional bibliographic + study-type fields from a chunk onto a Citation, plus the DOAJ
  *  credibility flag derived from the journal ISSN. PURE. doaj_vetted is omitted (undefined) unless the
  *  journal is confirmed DOAJ-listed — a positive-only signal. The study-type fields are carried verbatim
  *  so the UI can derive a study-type badge (studyTypeLabel) without the LLM ever guessing the design. */
-export function citationMeta(c: RetrievedChunk): Pick<Citation, "authors" | "journal" | "year" | "volume" | "issue" | "pages" | "doaj_vetted" | "publication_types" | "study_type" | "trial_phase"> {
+export function citationMeta(c: RetrievedChunk): Pick<Citation, "authors" | "journal" | "year" | "volume" | "issue" | "pages" | "doaj_vetted" | "publication_types" | "study_type" | "trial_phase" | "oa_url"> {
   return {
     authors: c.authors,
     journal: c.journal,
@@ -63,6 +66,7 @@ export function citationMeta(c: RetrievedChunk): Pick<Citation, "authors" | "jou
     publication_types: c.publication_types,
     study_type: c.study_type,
     trial_phase: c.trial_phase,
+    oa_url: c.oa_url,
   };
 }
 
