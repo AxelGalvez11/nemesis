@@ -3,7 +3,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskResponse, ClaimSupport, ReportMode, ScopeQuestion } from "@pharmabro/shared";
+import type { AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
+import { scienceState } from "@pharmabro/shared";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
@@ -663,6 +664,15 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
   );
 }
 
+// Honest, countable basis for the science-state chip (hover) — derived from the cited sources,
+// never prose the model wrote.
+function scienceBasis(s: ScienceStateSignal): string {
+  const n = `${s.total} cited source${s.total === 1 ? "" : "s"}`;
+  return s.state === "well_studied"
+    ? `Includes ${s.syntheses} systematic review/meta-analysis among ${n}`
+    : `Cited evidence is early-stage — ${s.earlyStage} early-phase trial/preprint of ${n}`;
+}
+
 function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -678,11 +688,19 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskR
 
   const s = answer.answer_sections;
   const flags = (answer.safety_flags ?? []).filter((f) => f !== "no_sources_found");
+  // "Where the science stands" — deterministic, positive-only signal from the cited sources'
+  // study-type metadata (well_studied / emerging, or nothing). Never an LLM guess.
+  const science = scienceState(answer.citations);
   const cite = (tag: string, quote?: string) => onCite(answer, tag, quote); // bind every [n] click to THIS answer's sources + the clicked claim's supporting line
   return (
     <div className="answer fade">
       <div className="grade-row">
         <span className="grade">{answer.evidence_grade.replace(/_/g, " ")}</span>
+        {science ? (
+          <span className={`science-state ${science.state}`} title={scienceBasis(science)}>
+            {science.state === "well_studied" ? "Well-studied" : "Emerging"}
+          </span>
+        ) : null}
         {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
       </div>
       {answer.plain_english_summary ? <p className="lead">{renderInline(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
