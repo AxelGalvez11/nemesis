@@ -19,6 +19,23 @@ export interface PreScreenResult {
 
 const EMERGENCY_SYMPTOM =
   /\b(chest pain|can'?t breathe|cannot breathe|trouble breathing|short(ness)? of breath|unconscious|unresponsive|passing out|passed out|seizure|convuls|anaphyla|severe bleeding|blue lips|blacking out)\b/i;
+// A symptom NAME inside a clearly research- or treatment-framed question ("is there a study of X
+// for the treatment of chest pain", "a trial to reduce shortness of breath") is the disease being
+// STUDIED, not a caller in distress. Such phrasing suppresses ONLY the emergency_possible symptom
+// flag (never overdose/self-harm, which describe an action), and only when there is no first-person
+// self-report. The LLM classifier independently returns no emergency flag for these, so it remains
+// the backstop if this heuristic ever misses.
+// LITERATURE anchors only. Deliberately NOT a bare "treatment of" or "to reduce/treat/…" verb:
+// those match terse, non-first-person distress ("how to reduce chest pain", "treatment of chest
+// pain") and would pull a real symptom query out of the deterministic gate for zero benefit — the
+// benchmark questions are already caught by the study/trial anchors. Narrow surface = exactly the
+// demonstrated bug, nothing more.
+const RESEARCH_FRAMING =
+  /\b(is|are)\s+there\s+(a|any)\s+(study|studies|trial|trials|research|evidence|rct|meta-?analysis)\b|\b(study|studies|trial|trials|research|literature|evidence|data)\s+(of|on|for|about|into|investigating|evaluating|assessing|showing)\b|\bfor\s+the\s+treatment\s+of\b|\bclinical\s+trial\b|\bmeta-?analysis\b|\bsystematic\s+review\b/i;
+// First-person self-report VETOES the research exception — a person saying "I have chest pain" is
+// in distress even if they also ask for a study. Bare word "i"/"my"/"me"; research questions phrased
+// in the third person ("is there a study of…") contain none of these.
+const FIRST_PERSON_DISTRESS = /\b(i|i'?m|i'?ve|my|me|myself)\b/i;
 const OVERDOSE =
   /\b(overdose|overdosed|over-dosed|od'?d|took too many|too many pills|took a (whole|lot of)|swallowed (a|the) (bottle|pack)|how (much|many)[^.?!]*(to (die|overdose)|before i overdose))\b/i;
 const SELF_HARM =
@@ -29,7 +46,10 @@ const SOURCING =
 /** Scan the question. Emergency family wins over sourcing. */
 export function preScreen(question: string): PreScreenResult {
   const flags: SafetyFlag[] = [];
-  if (EMERGENCY_SYMPTOM.test(question)) flags.push("emergency_possible");
+  // emergency_possible (symptom topic) is suppressed for a third-person research/treatment
+  // question; overdose_possible / self_harm (an action) are NEVER suppressed.
+  const researchTopic = RESEARCH_FRAMING.test(question) && !FIRST_PERSON_DISTRESS.test(question);
+  if (EMERGENCY_SYMPTOM.test(question) && !researchTopic) flags.push("emergency_possible");
   if (OVERDOSE.test(question)) flags.push("overdose_possible");
   if (SELF_HARM.test(question)) flags.push("self_harm");
 

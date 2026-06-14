@@ -105,6 +105,61 @@ Deno.test("preScreen: interaction question does not false-positive emergency", (
   assertEquals(r.shortCircuit, null);
 });
 
+// ---- research/literature questions that NAME an emergency symptom as the topic --
+// A symptom keyword ("chest pain", "shortness of breath") inside a clearly research- or
+// treatment-framed question is the DISEASE being studied, not a caller in distress. These
+// must NOT hard-route to Poison Control. The LLM classifier independently returns no emergency
+// flag for them (verified), so it remains the backstop. Scope is strict: only emergency_possible
+// (symptom-as-topic) gets this exception — overdose_possible / self_harm describe an ACTION and
+// stay pure, and any first-person self-report ("I have…") vetoes the suppression.
+
+Deno.test("preScreen: research question about treating a symptom does NOT emergency-route", () => {
+  for (
+    const q of [
+      "Is there a study of sertraline for the treatment of noncardiac chest pain?",
+      "Is there a trial of lisinopril to reduce shortness of breath caused by radiation therapy?",
+    ]
+  ) {
+    const r = preScreen(q);
+    assertEquals(r.shortCircuit, null, `research question must not route: ${JSON.stringify(q)}`);
+    assertEquals(r.flags.includes("emergency_possible"), false, `no emergency flag: ${JSON.stringify(q)}`);
+  }
+});
+
+Deno.test("preScreen: first-person distress vetoes the research exception (still routes)", () => {
+  // Research framing must NOT disarm a genuine first-person emergency that happens to ask for a study.
+  const r = preScreen("I have chest pain right now — is there a study on what to do?");
+  assertEquals(r.shortCircuit, "emergency_routing");
+  assert(r.flags.includes("emergency_possible"));
+});
+
+Deno.test("preScreen: terse symptom-relief queries STILL route (no literature anchor)", () => {
+  // The research exception must fire ONLY on explicit literature framing (study/trial/RCT/…),
+  // never on a bare "how to reduce / treatment of" verb — those are exactly how a distressed,
+  // terse, non-first-person user types. preScreen is the deterministic gate that must catch them
+  // BEFORE the probabilistic classifier sees anything.
+  for (
+    const q of [
+      "how to reduce chest pain",
+      "treatment of chest pain",
+      "how to relieve shortness of breath",
+      "ways to reduce chest pain",
+    ]
+  ) {
+    const r = preScreen(q);
+    assertEquals(r.shortCircuit, "emergency_routing", `terse symptom query must route: ${JSON.stringify(q)}`);
+    assert(r.flags.includes("emergency_possible"), `emergency flag expected: ${JSON.stringify(q)}`);
+  }
+});
+
+Deno.test("preScreen: a research-framed OVERDOSE still routes (exception is symptom-only)", () => {
+  // The research exception applies ONLY to emergency_possible (a symptom topic). overdose_possible
+  // describes an action and is never given a literature pass — it must still hard-route.
+  const r = preScreen("Is there a study on acetaminophen overdose treatment outcomes?");
+  assertEquals(r.shortCircuit, "emergency_routing");
+  assert(r.flags.includes("overdose_possible"));
+});
+
 // ---------------------------------------------------------------------------
 // detectViolations — the doc-20 "must NEVER produce" list
 // ---------------------------------------------------------------------------
