@@ -34,9 +34,20 @@ export interface LiveCandidate {
  * Live results have no DB row, so source_id/chunk_id are SYNTHETIC ("live:<provider>:<id>") — safe
  * because generated_answers.source_ids is jsonb (no UUID type / FK) and enforceCitations keys on the
  * retrieval-local tag, not source_id. similarity is 0 (no dense score); the reranker sets the order.
+ * Bibliographic + study-type fields are read from c.source.metadata (already populated by the
+ * provider fetchers) so the citation layer and gap detector can use them without a second fetch.
  */
 export function liveToChunk(c: LiveCandidate, tag: string): RetrievedChunk {
   const syntheticId = `live:${c.provider}:${c.provider_id}`;
+  const m = (c.source.metadata ?? {}) as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => {
+    if (typeof v === "string" && v.trim()) return v;
+    if (typeof v === "number") return String(v);
+    return undefined;
+  };
+  const strArr = (v: unknown): string[] | undefined =>
+    Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean) : undefined;
+  const phases = strArr(m.phases);
   return {
     tag,
     chunk_id: syntheticId,
@@ -50,6 +61,18 @@ export function liveToChunk(c: LiveCandidate, tag: string): RetrievedChunk {
     published_date: c.source.effective_at ? c.source.effective_at.slice(0, 10) : null,
     retrieved_at: new Date().toISOString(),
     similarity: 0,
+    // Bibliographic (PubMed/Europe PMC).
+    authors: strArr(m.authors),
+    journal: str(m.journal_iso) ?? str(m.journal),
+    year: str(m.year),
+    volume: str(m.volume),
+    issue: str(m.issue),
+    pages: str(m.pages),
+    publication_types: strArr(m.publication_types),
+    // Study-type (ClinicalTrials).
+    study_type: str(m.study_type),
+    trial_status: str(m.status),
+    trial_phase: phases && phases.length ? phases[phases.length - 1] : undefined,
   };
 }
 

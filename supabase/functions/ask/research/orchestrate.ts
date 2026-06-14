@@ -17,7 +17,7 @@ import { detectViolations, preScreen } from "../safety.ts";
 import { retrieve } from "../retrieve.ts";
 import { rerankChunks } from "../rerank.ts";
 import { gatherLiveCandidates, liveToChunk } from "../live-sources.ts";
-import type { RetrievedChunk } from "../citation.ts";
+import { citationMeta, type RetrievedChunk } from "../citation.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
@@ -32,11 +32,17 @@ import type {
   SafetyFlag,
 } from "../../../../packages/shared/src/answer.ts";
 import type {
+  GapStatement,
+  ReportMode,
   ResearchProgressStep,
   ResearchReport,
   ResearchSection,
+  RetrievalCounts,
+  SearchMethod,
 } from "../../../../packages/shared/src/research.ts";
+import { detectForbiddenPhrases } from "../../../../packages/shared/src/forbidden-phrases.ts";
 import { planSubQuestions } from "./plan.ts";
+import { deriveGaps } from "./gaps.ts";
 import { assembleSections, synthesizeReport } from "./synthesize.ts";
 import {
   checkFaithfulness,
@@ -52,11 +58,48 @@ const SUB_TOP_M = 6; // kept per sub-question after reranking against that sub-q
 const REPORT_MAX_CHUNKS = 24; // cap on the merged single-namespace pool
 const LIVE_PER_SOURCE_MAX = 6; // live candidates per source per sub-question
 
+/** Human-readable database labels for each live/corpus provider key. */
+const PROVIDER_DB_LABELS: Record<string, string> = {
+  pubmed_oa: "PubMed / PubMed Central",
+  clinicaltrials: "ClinicalTrials.gov",
+  openfda: "openFDA drug labels",
+  faers: "FDA FAERS adverse-event reports",
+  europepmc: "Europe PMC",
+  corpus: "PharmaBro curated evidence corpus",
+};
+
+/**
+ * Build the code-authored, deterministic method section for a structured-review report.
+ * PURE: takes searchDate as an argument (caller supplies new Date().toISOString()).
+ * Output strings are fixed, honest copy — they must never trip detectForbiddenPhrases.
+ */
+export function buildSearchMethod(
+  providerKeys: string[],
+  queries: string[],
+  searchDate: string,
+): SearchMethod {
+  const databases = providerKeys.map((k) => PROVIDER_DB_LABELS[k] ?? k);
+  return {
+    databases,
+    queries,
+    inclusion_notes:
+      "Sources were retrieved automatically by relevance and capped per source — a bounded, " +
+      "top-ranked sample, not an exhaustive census. Each claim was checked against its cited source.",
+    exclusion_notes:
+      "This is an automated, single-pass evidence review: no registered protocol, no exhaustive " +
+      "search, no dual independent screening, and no per-study risk-of-bias or GRADE appraisal. " +
+      "Non-open-access full text was not read (abstracts/metadata only).",
+    search_date: searchDate,
+  };
+}
+
 export interface OrchestrateConfig {
   apiKey: string;
   sbUrl: string;
   serviceKey: string;
   liveOn: boolean;
+  /** Optional: drives structured-review mode (extended plan, code-authored method section). Default "standard". */
+  mode?: ReportMode;
   /** Optional progress sink for the future async/Realtime layer. Best-effort; never affects the run. */
   onProgress?: (step: ResearchProgressStep) => void;
 }
@@ -106,6 +149,7 @@ export function buildCitations(tags: string[], chunks: RetrievedChunk[]): Citati
         license: c.license,
         published_date: c.published_date,
         retrieved_at: c.retrieved_at,
+        ...citationMeta(c),
       };
     });
 }
@@ -130,6 +174,10 @@ export function assembleReport(args: {
   evidenceGrade: EvidenceGrade;
   safetyFlags: SafetyFlag[];
   claimsVerified: boolean;
+  gaps: GapStatement[];
+  counts: RetrievalCounts;
+  mode?: ReportMode;
+  searchMethod?: SearchMethod;
 }): ResearchReport {
   const { enforced, chunks } = args;
   const sections: ResearchSection[] = assembleSections(
@@ -161,6 +209,11 @@ export function assembleReport(args: {
     evidence_grade: args.evidenceGrade,
     safety_flags: args.safetyFlags,
     claims_verified: args.claimsVerified,
+    gaps: args.gaps,
+    counts: args.counts,
+    mode: args.mode ?? "standard",
+    search_method: args.searchMethod,
+    citation_style: "vancouver",
   };
 }
 
@@ -226,7 +279,7 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
 
   // ---- 2. plan ----
   emit("planning", "Breaking the question into focused sub-questions");
-  const subQuestions = await planSubQuestions(question, cfg.apiKey);
+  const subQuestions = await planSubQuestions(question, cfg.apiKey, cfg.mode ?? "standard");
   if (subQuestions.length === 0) {
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
   }
@@ -239,10 +292,20 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
 
   // ---- 4. merge into ONE citation namespace ----
   const chunks = mergeEvidence(perSubQuestion, REPORT_MAX_CHUNKS);
+  const { gaps, counts } = deriveGaps(chunks, subQuestions);
   emit("gathering", "Merged and deduplicated the evidence pool", chunks.length);
   if (chunks.length === 0) {
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
   }
+
+  // ---- 4b. build code-authored method section for structured_review (PURE, no LLM) ----
+  // Uses chunk providers present in the merged pool + the sub-questions as the query list.
+  // The resulting copy is deterministic and PRISMA-overclaim-safe by design, but we guard
+  // it here anyway to preserve the one-scan guarantee even if PROVIDER_DB_LABELS changes.
+  const providerKeys = [...new Set(chunks.map((c) => c.provider).filter(Boolean))];
+  const searchMethod: SearchMethod | undefined = cfg.mode === "structured_review"
+    ? buildSearchMethod(providerKeys, subQuestions, (counts.retrieved_at ?? new Date().toISOString()).slice(0, 10))
+    : undefined;
 
   // ---- 5. synthesize ONE report ----
   emit("writing", "Writing the cited report");
@@ -257,17 +320,36 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
   // ---- 6. one deterministic safety scan over the whole synthesized report (the doc-20 guarantee) ----
   // Scan the section HEADINGS too: unlike /ask (fixed field names), report headings are model-authored
   // free text that ships to the client, so a forbidden string placed in a heading must also be caught.
+  // Also include the code-authored method copy so any future label change is caught here too.
+  const methodStrings: string[] = searchMethod
+    ? [...searchMethod.databases, ...searchMethod.queries, searchMethod.inclusion_notes, searchMethod.exclusion_notes]
+    : [];
   const assembled = [
     synth.raw.summary,
     ...synth.raw.points.map((p) => p.section),
     ...synth.raw.points.map((p) => p.text),
     ...synth.raw.safety_notes.map((p) => p.text),
     ...synth.raw.uncertainties.map((p) => p.text),
+    ...gaps.map((g) => g.text),
+    ...methodStrings,
   ].join("  ");
   const violations = detectViolations(assembled);
   if (violations.length > 0) {
     console.error("research safety_fallback — discarded synthesis:", JSON.stringify(violations));
     return templateReport(question, "safety_fallback", CONSERVATIVE_FALLBACK_COPY, flags);
+  }
+
+  // ---- 6b. PRISMA-overclaim guard: separate from detectViolations, only checks method copy ----
+  // detectForbiddenPhrases catches words like "systematic review", "PRISMA", "records identified"
+  // that imply a formal methodology we do NOT claim. Code-authored copy should never trip this,
+  // but guard here defensively so a label change in PROVIDER_DB_LABELS cannot ship overclaiming copy.
+  if (searchMethod) {
+    const methodCopy = methodStrings.join("  ");
+    const overclaims = detectForbiddenPhrases(methodCopy);
+    if (overclaims.length > 0) {
+      console.error("research PRISMA-overclaim guard triggered on method copy:", JSON.stringify(overclaims));
+      return templateReport(question, "safety_fallback", CONSERVATIVE_FALLBACK_COPY, flags);
+    }
   }
 
   // ---- 7. enforce citations (existence) then faithfulness (semantic support) ----
@@ -290,6 +372,10 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
     evidenceGrade: synth.raw.evidence_grade,
     safetyFlags: flags,
     claimsVerified: verified,
+    gaps,
+    counts,
+    mode: cfg.mode ?? "standard",
+    searchMethod,
   });
   emit("done", "Report ready", report.citations.length);
   return report;

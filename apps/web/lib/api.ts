@@ -482,10 +482,19 @@ export interface ConversationSummary {
   updated_at: string;
 }
 
-/** One reconstructed turn: the question + its cited answer (null if it errored when saved). */
+/** A reconstructed deep-research card (persisted on completion) — links to the finished report. */
+export interface SavedResearchCard {
+  mode: "standard" | "structured_review";
+  savedReportId: string | null;
+  title: string;
+  citationCount: number;
+}
+
+/** One reconstructed turn: a cited chat answer, OR a deep-research card (when `research` is set). */
 export interface SavedTurn {
   q: string;
   a: AskResponse | null;
+  research?: SavedResearchCard;
 }
 
 /** The user's saved chats, newest first — drives the rail history. */
@@ -540,6 +549,29 @@ export async function saveTurn(conversationId: string, ordinalBase: number, ques
   await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
 }
 
+/** Persist a completed deep-research turn (question + a research-run card pointing at the saved
+ *  report) so a reopened chat re-renders the "Report ready" card. The card payload carries `kind:
+ *  "research_run"` to distinguish it from a normal cited answer on load. */
+export async function saveResearchTurn(conversationId: string, ordinalBase: number, question: string, card: SavedResearchCard): Promise<void> {
+  if (isPreviewMode) return;
+  const { data: sess } = await supabase.auth.getSession();
+  const userId = sess.session?.user.id;
+  if (!userId) return;
+  const { error } = await supabase.from("conversation_messages").insert([
+    { conversation_id: conversationId, user_id: userId, role: "user", ordinal: ordinalBase, content: question },
+    {
+      conversation_id: conversationId,
+      user_id: userId,
+      role: "assistant",
+      ordinal: ordinalBase + 1,
+      content: `Report: ${card.title}`,
+      payload: { kind: "research_run", mode: card.mode, saved_report_id: card.savedReportId, title: card.title, citation_count: card.citationCount },
+    },
+  ]);
+  if (error) throw new Error(`save research turn failed: ${error.message}`);
+  await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+}
+
 /** Load a chat's turns, ordered, rehydrating the full cited answers from `payload`. */
 export async function fetchConversationTurns(conversationId: string): Promise<SavedTurn[]> {
   if (isPreviewMode) return [];
@@ -556,7 +588,21 @@ export async function fetchConversationTurns(conversationId: string): Promise<Sa
     if (m.role === "user") {
       pendingQ = typeof m.content === "string" ? m.content : "";
     } else if (m.role === "assistant") {
-      turns.push({ q: pendingQ ?? "", a: isObj(m.payload) ? (m.payload as unknown as AskResponse) : null });
+      const p = m.payload;
+      if (isObj(p) && p.kind === "research_run") {
+        turns.push({
+          q: pendingQ ?? "",
+          a: null,
+          research: {
+            mode: p.mode === "structured_review" ? "structured_review" : "standard",
+            savedReportId: typeof p.saved_report_id === "string" ? p.saved_report_id : null,
+            title: typeof p.title === "string" ? p.title : (pendingQ ?? ""),
+            citationCount: typeof p.citation_count === "number" ? p.citation_count : 0,
+          },
+        });
+      } else {
+        turns.push({ q: pendingQ ?? "", a: isObj(p) ? (p as unknown as AskResponse) : null });
+      }
       pendingQ = null;
     }
   }
@@ -590,7 +636,7 @@ export interface ResearchReportSummary {
 
 /** Start a deep-research run. Returns the run id to poll. Throws AskQuotaError on the Pro gate /
  *  daily-limit 429 (deep_research_daily_limit is 0 for free/plus). */
-export async function startResearch(question: string): Promise<string> {
+export async function startResearch(question: string, mode: "standard" | "structured_review" = "standard"): Promise<string> {
   if (isPreviewMode) throw new Error("Deep research needs a live connection (not available in preview).");
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -603,7 +649,7 @@ export async function startResearch(question: string): Promise<string> {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, mode }),
   });
   const body = await res.json().catch(() => null);
   if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
@@ -668,4 +714,31 @@ export async function fetchResearchReports(): Promise<ResearchReportSummary[]> {
       citation_count: typeof r.citation_count === "number" ? r.citation_count : 0,
     } as ResearchReportSummary)
     : null));
+}
+
+/** Download a saved report as .docx/.pptx. Fetches the Node route WITH the user's bearer token
+ *  (a plain <a download> can't set Authorization), then triggers a browser download of the blob. */
+export async function downloadReportExport(
+  reportId: string,
+  format: "docx" | "pptx",
+  style: "vancouver" | "ama",
+): Promise<void> {
+  if (isPreviewMode) throw new Error("Export needs a live connection (not available in preview).");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to export");
+
+  const res = await fetch(`/api/reports/${reportId}/export/${format}?style=${style}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`export failed (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${reportId}.${format}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

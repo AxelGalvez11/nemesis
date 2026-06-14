@@ -96,8 +96,13 @@ export async function fetchPubMedOA(
       metadata: {
         pmid: a.pmid,
         journal: a.journal,
+        journal_iso: a.journal_iso,
+        volume: a.volume,
+        issue: a.issue,
+        pages: a.pages,
         year: a.year,
         authors: a.authors,
+        publication_types: a.publication_types,
         mesh: a.mesh,
       },
     });
@@ -111,32 +116,47 @@ interface ParsedArticle {
   title: string;
   abstract: string;
   journal: string;
+  journal_iso: string;
+  volume: string;
+  issue: string;
+  pages: string;
   year: number | null;
   authors: string[];
+  publication_types: string[];
   mesh: string[];
   license: CoreSourceLicense;
 }
 
-function parsePubMedXml(xml: string): ParsedArticle[] {
+export function parsePubMedXml(xml: string): ParsedArticle[] {
   const articleBlocks = xml.split(/<PubmedArticle[^>]*>/).slice(1);
   const out: ParsedArticle[] = [];
 
   for (const block of articleBlocks) {
     const pmid = extract(block, /<PMID[^>]*>([\s\S]*?)<\/PMID>/);
-    const title = decode(
-      extract(block, /<ArticleTitle[^>]*>([\s\S]*?)<\/ArticleTitle>/),
-    );
+    const title = decode(extract(block, /<ArticleTitle[^>]*>([\s\S]*?)<\/ArticleTitle>/));
     const abstractText = decode(
-      Array.from(
-        block.matchAll(/<AbstractText[^>]*>([\s\S]*?)<\/AbstractText>/g),
-        (m) => m[1],
-      ).join("\n\n"),
+      Array.from(block.matchAll(/<AbstractText[^>]*>([\s\S]*?)<\/AbstractText>/g), (m) => m[1]).join("\n\n"),
     );
     const journal = decode(extract(block, /<Title[^>]*>([\s\S]*?)<\/Title>/));
+    const journal_iso = decode(extract(block, /<ISOAbbreviation[^>]*>([\s\S]*?)<\/ISOAbbreviation>/));
+    const volume = decode(extract(block, /<Volume>([\s\S]*?)<\/Volume>/));
+    const issue = decode(extract(block, /<Issue>([\s\S]*?)<\/Issue>/));
+    const pages = decode(extract(block, /<MedlinePgn>([\s\S]*?)<\/MedlinePgn>/));
     const yearStr = extract(block, /<Year>(\d{4})<\/Year>/);
-    const authors = Array.from(
-      block.matchAll(/<LastName>([^<]+)<\/LastName>/g),
-      (m) => m[1],
+
+    // Authors as "LastName Initials" (Vancouver/AMA form). Each <Author> block parsed
+    // individually so a missing initials field degrades to last-name-only, not a mis-pair.
+    const authors = Array.from(block.matchAll(/<Author\b[^>]*>([\s\S]*?)<\/Author>/g), (m) => {
+      const a = m[1];
+      const last = decode(extract(a, /<LastName>([^<]+)<\/LastName>/));
+      const initials = decode(extract(a, /<Initials>([^<]+)<\/Initials>/));
+      if (!last) return "";
+      return initials ? `${last} ${initials}` : last;
+    }).filter(Boolean);
+
+    const publication_types = Array.from(
+      block.matchAll(/<PublicationType[^>]*>([^<]+)<\/PublicationType>/g),
+      (m) => decode(m[1]),
     );
     const mesh = Array.from(
       block.matchAll(/<DescriptorName[^>]*>([^<]+)<\/DescriptorName>/g),
@@ -148,14 +168,8 @@ function parsePubMedXml(xml: string): ParsedArticle[] {
 
     if (pmid) {
       out.push({
-        pmid,
-        title,
-        abstract: abstractText,
-        journal,
-        year: yearStr ? Number(yearStr) : null,
-        authors,
-        mesh,
-        license,
+        pmid, title, abstract: abstractText, journal, journal_iso, volume, issue, pages,
+        year: yearStr ? Number(yearStr) : null, authors, publication_types, mesh, license,
       });
     }
   }

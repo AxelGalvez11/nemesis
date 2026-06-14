@@ -20,7 +20,7 @@ import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
 import { generate } from "./generate.ts";
-import { enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { citationMeta, enforceCitations, type RetrievedChunk } from "./citation.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
@@ -440,6 +440,7 @@ async function finalizeTemplate(
     license: c.license,
     published_date: c.published_date,
     retrieved_at: c.retrieved_at,
+    ...citationMeta(c),
   }));
   const grade: EvidenceGrade = "not_applicable";
 

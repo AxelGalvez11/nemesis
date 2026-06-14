@@ -3,7 +3,46 @@
 // retatrutide); field-scoping to generic/brand NAME excludes them. These lock that behavior.
 // Run: deno test supabase/functions/ask/
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { openFdaSearch } from "./live-sources.ts";
+import { liveToChunk, openFdaSearch, type LiveCandidate } from "./live-sources.ts";
+
+Deno.test("liveToChunk carries PubMed bibliographic metadata onto the chunk", () => {
+  const c: LiveCandidate = {
+    origin: "pubmed", provider: "pubmed_oa", provider_id: "12345",
+    title: "A study", url: "https://pubmed.ncbi.nlm.nih.gov/12345/", text: "abstract",
+    source: {
+      provider: "pubmed_oa", provider_id: "12345", title: "A study",
+      source_url: "https://pubmed.ncbi.nlm.nih.gov/12345/", license: "cc_by",
+      content_text: "abstract", content_hash: "h",
+      metadata: {
+        authors: ["Falutz J"], journal: "N Engl J Med", year: 2024, volume: "390",
+        issue: "2", pages: "101-110", publication_types: ["Randomized Controlled Trial"],
+      },
+    },
+  };
+  const chunk = liveToChunk(c, "1");
+  assertEquals(chunk.authors, ["Falutz J"]);
+  assertEquals(chunk.journal, "N Engl J Med");
+  assertEquals(chunk.year, "2024");
+  assertEquals(chunk.volume, "390");
+  assertEquals(chunk.publication_types, ["Randomized Controlled Trial"]);
+});
+
+Deno.test("liveToChunk carries ClinicalTrials study type", () => {
+  const c: LiveCandidate = {
+    origin: "clinicaltrials", provider: "clinicaltrials", provider_id: "NCT1",
+    title: "Trial", url: "https://clinicaltrials.gov/study/NCT1", text: "trial",
+    source: {
+      provider: "clinicaltrials", provider_id: "NCT1", title: "Trial",
+      source_url: "https://clinicaltrials.gov/study/NCT1", license: "public_domain",
+      content_text: "trial", content_hash: "h",
+      metadata: { nct_id: "NCT1", study_type: "INTERVENTIONAL", status: "RECRUITING", phases: ["PHASE2"] },
+    },
+  };
+  const chunk = liveToChunk(c, "1");
+  assertEquals(chunk.study_type, "INTERVENTIONAL");
+  assertEquals(chunk.trial_status, "RECRUITING");
+  assertEquals(chunk.trial_phase, "PHASE2");
+});
 
 Deno.test("single drug → generic OR brand, quoted", () => {
   assertEquals(

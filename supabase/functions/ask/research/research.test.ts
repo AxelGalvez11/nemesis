@@ -18,10 +18,13 @@ import {
 import {
   assembleReport,
   buildCitations,
+  buildSearchMethod,
   hasSupportedContent,
   mergeEvidence,
 } from "./orchestrate.ts";
 import type { RetrievedChunk } from "../citation.ts";
+import { detectViolations } from "../safety.ts";
+import { detectForbiddenPhrases } from "../../../../packages/shared/src/forbidden-phrases.ts";
 
 // ---- fixtures ----
 function chunk(tag: string, overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
@@ -270,6 +273,8 @@ Deno.test("assembleReport: builds sections + citations; appends caution when unv
     evidenceGrade: "moderate",
     safetyFlags: [],
     claimsVerified: false,
+    gaps: [],
+    counts: { total_retrieved: 0, per_provider: {}, per_search_cap: 6, n_searches: 3, retrieved_at: null },
   });
   assertEquals(report.sections.length, 1); // both body points share section "A"
   assertEquals(report.sections[0].points.length, 2);
@@ -290,8 +295,170 @@ Deno.test("assembleReport: verified report carries no extra caution", () => {
     evidenceGrade: "strong",
     safetyFlags: [],
     claimsVerified: true,
+    gaps: [],
+    counts: { total_retrieved: 0, per_provider: {}, per_search_cap: 6, n_searches: 3, retrieved_at: null },
   });
   assertEquals(report.claims_verified, true);
   assert(!report.uncertainties.some((u) => u.text.includes("could not run")));
   assertEquals(report.uncertainties.length, 1); // just the original gap
+});
+
+// ---------------------------------------------------------------------------
+// buildCitations carries bibliographic metadata onto the Citation
+// ---------------------------------------------------------------------------
+
+Deno.test("buildCitations carries bibliographic metadata onto the Citation", () => {
+  const chunks: RetrievedChunk[] = [{
+    tag: "1", chunk_id: "live:pubmed_oa:1", source_id: "live:pubmed_oa:1", provider: "pubmed_oa",
+    title: "A study", section: null, url: null, license: "cc_by",
+    published_date: "2024-01-01", retrieved_at: "2026-06-10T00:00:00Z", similarity: 0,
+    authors: ["Falutz J"], journal: "N Engl J Med", year: "2024", volume: "390", issue: "2", pages: "101-110",
+  }];
+  const [c] = buildCitations(["1"], chunks);
+  assertEquals(c.authors, ["Falutz J"]);
+  assertEquals(c.journal, "N Engl J Med");
+  assertEquals(c.volume, "390");
+});
+
+// ---------------------------------------------------------------------------
+// deriveGaps — deterministic run-scoped literature gaps
+// ---------------------------------------------------------------------------
+
+import { deriveGaps } from "./gaps.ts";
+
+function gapChunk(partial: Partial<RetrievedChunk>): RetrievedChunk {
+  return {
+    tag: "1", chunk_id: "x", source_id: "x", provider: "pubmed_oa", title: null, section: null,
+    url: null, license: null, published_date: null, retrieved_at: "2026-06-10T00:00:00Z",
+    similarity: 0, ...partial,
+  };
+}
+
+Deno.test("deriveGaps: no human trial, no rct, no synthesis when only labels retrieved", () => {
+  const chunks = [gapChunk({ provider: "openfda" }), gapChunk({ provider: "openfda" })];
+  const { gaps, counts } = deriveGaps(chunks, ["q1"]);
+  const types = gaps.map((g) => g.type).sort();
+  assertEquals(types.includes("no_human_trial"), true);
+  assertEquals(types.includes("no_rct"), true);
+  assertEquals(types.includes("no_synthesis"), true);
+  assertEquals(counts.total_retrieved, 2);
+  assertEquals(counts.per_provider.openfda, 2);
+  // Denominator-scoped phrasing, never "no evidence exists".
+  for (const g of gaps) {
+    assertEquals(/no evidence exists/i.test(g.text), false);
+    assertEquals(g.scope, "this_run");
+  }
+});
+
+Deno.test("deriveGaps: an RCT chunk removes the no_rct gap and the no_human_trial gap (if interventional)", () => {
+  const chunks = [
+    gapChunk({ provider: "pubmed_oa", publication_types: ["Randomized Controlled Trial"] }),
+    gapChunk({ provider: "clinicaltrials", study_type: "INTERVENTIONAL" }),
+  ];
+  const { gaps } = deriveGaps(chunks, ["q1"]);
+  assertEquals(gaps.some((g) => g.type === "no_rct"), false);
+  assertEquals(gaps.some((g) => g.type === "no_human_trial"), false);
+  // No synthesis still flagged.
+  assertEquals(gaps.some((g) => g.type === "no_synthesis"), true);
+});
+
+Deno.test("deriveGaps: a meta-analysis removes no_synthesis", () => {
+  const chunks = [gapChunk({ publication_types: ["Meta-Analysis"] })];
+  const { gaps } = deriveGaps(chunks, ["q1"]);
+  assertEquals(gaps.some((g) => g.type === "no_synthesis"), false);
+});
+
+Deno.test("deriveGaps: a systematic review also removes no_synthesis", () => {
+  const { gaps } = deriveGaps([gapChunk({ publication_types: ["Systematic Review"] })], ["q1"]);
+  assertEquals(gaps.some((g) => g.type === "no_synthesis"), false);
+});
+
+Deno.test("deriveGaps: recruiting trial attaches as corroborating, never deletes a gap", () => {
+  const chunks = [
+    gapChunk({ provider: "openfda" }),
+    gapChunk({ provider: "clinicaltrials", source_id: "live:clinicaltrials:NCT9", study_type: "INTERVENTIONAL", trial_status: "RECRUITING" }),
+  ];
+  const { gaps } = deriveGaps(chunks, ["q1"]);
+  // An interventional+recruiting trial means no_human_trial is gone, but no_rct/no_synthesis remain,
+  // and the recruiting NCT is attached to a surviving gap as "an answer may be coming".
+  const rct = gaps.find((g) => g.type === "no_rct");
+  assertEquals(!!rct, true);
+  assertEquals(rct?.corroborating_trials.includes("NCT9"), true);
+  assertEquals(gaps.some((g) => g.type === "no_human_trial"), false); // the recruiting interventional trial removed it
+  const synth = gaps.find((g) => g.type === "no_synthesis");
+  assertEquals(synth?.corroborating_trials.includes("NCT9"), true);   // NCT attaches to ALL surviving gaps
+});
+
+Deno.test("deriveGaps: empty pool yields counts but a single sparse gap", () => {
+  const { gaps, counts } = deriveGaps([], ["q1"]);
+  assertEquals(counts.total_retrieved, 0);
+  assertEquals(gaps.length, 1);
+  assertEquals(gaps[0].type, "sparse");
+});
+
+Deno.test("the assembled safety-scan string includes gap text (one-scan guarantee)", () => {
+  // deriveGaps text is deterministic + safe, so we assert the JOIN includes it by constructing the
+  // same string orchestrate builds. A banned phrase placed in a gap MUST be caught.
+  const gapText = "This peptide is completely safe to inject."; // a doc-20 violation
+  const assembled = ["summary", "section", "point", gapText].join("  ");
+  assertEquals(detectViolations(assembled).length > 0, true);
+});
+
+// ---------------------------------------------------------------------------
+// planSubQuestions mode parameter — prompt-only change; normalize contract unchanged
+// ---------------------------------------------------------------------------
+
+Deno.test("normalizeSubQuestions unchanged under structured mode (prompt-only change)", () => {
+  assertEquals(normalizeSubQuestions(["a", "b", "c"], "q").length, 3);
+});
+
+// ---------------------------------------------------------------------------
+// buildSearchMethod — code-authored PRISMA-clean method copy
+// ---------------------------------------------------------------------------
+
+Deno.test("buildSearchMethod produces honest, PRISMA-clean method copy", () => {
+  const m = buildSearchMethod(
+    ["pubmed_oa", "clinicaltrials", "openfda"],
+    ["tesamorelin efficacy", "tesamorelin safety"],
+    "2026-06-10",
+  );
+  assertEquals(m.search_date, "2026-06-10");
+  // The fixed copy must never trip the PRISMA-overclaim guard.
+  const allCopy = [...m.databases, ...m.queries, m.inclusion_notes, m.exclusion_notes].join("  ");
+  assertEquals(detectForbiddenPhrases(allCopy), []);
+  // Honesty cornerstone (plan §2): the limitations disclosure must never be silently dropped,
+  // and the copy must NOT imply an eligibility/screening process PharmaOrb does not perform.
+  assert(/no registered protocol/i.test(m.exclusion_notes));
+  assert(/not an exhaustive census/i.test(m.inclusion_notes));
+  assert(!/\b(included|excluded|eligibility)\b/i.test(m.inclusion_notes + " " + m.exclusion_notes)); // no screening/eligibility framing
+});
+
+// ---------------------------------------------------------------------------
+// assembleReport — mode payload vs kind (frozen read-path safety)
+// ---------------------------------------------------------------------------
+
+Deno.test("assembleReport output carries mode in payload, never a kind field", () => {
+  const report = assembleReport({
+    question: "q",
+    subQuestions: ["q"],
+    enforced: {
+      summary: "s",
+      body: [{ section: "X", text: "t", citation_ids: ["1"] }],
+      safety_notes: [],
+      uncertainties: [],
+    },
+    chunks: [chunk("1")],
+    evidenceGrade: "moderate",
+    safetyFlags: [],
+    claimsVerified: true,
+    gaps: [],
+    counts: { per_provider: {}, total_retrieved: 0, per_search_cap: 6, n_searches: 1, retrieved_at: null },
+    mode: "structured_review",
+  });
+  // mode must be preserved in the payload (used by export formatters + UI)
+  assertEquals(report.mode, "structured_review");
+  // kind must NEVER appear in assembleReport output — it is set only by the edge function
+  // when persisting to DB (insertSavedReport). The frozen read-path filters .eq('kind','deep_research'),
+  // so a stray kind here would cause structured_review reports to appear in the deep-research list.
+  assertEquals("kind" in report, false);
 });

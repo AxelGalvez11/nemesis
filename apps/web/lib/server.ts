@@ -13,6 +13,17 @@ export function adminClient() {
   });
 }
 
+/** A per-request client that acts AS the signed-in user (their bearer token), so reads/writes
+ *  are RLS-enforced to their own rows. Use this — not adminClient — to read user-owned data in
+ *  route handlers (e.g. saved_reports), so the route can never read another user's row. */
+export function userClient(req: Request) {
+  const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 export async function verifyBearer(req: Request): Promise<VerifiedUser | null> {
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!token || !supabaseUrl || !supabaseAnonKey) return null;

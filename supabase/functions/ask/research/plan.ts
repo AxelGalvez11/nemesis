@@ -7,6 +7,7 @@
 // assert facts — so any failure degrades to the single original question rather than failing the run.
 
 import { callTool, type Tool } from "../llm.ts";
+import type { ReportMode } from "../../../../packages/shared/src/research.ts";
 
 const PLAN_MODEL = Deno.env.get("LLM_CLASSIFY_MODEL") ?? "gpt-4o-mini";
 
@@ -36,6 +37,14 @@ export const PLAN_TOOL: Tool = {
     required: ["sub_questions"],
   },
 };
+
+const STRUCTURED_SUFFIX = [
+  "",
+  "STRUCTURED REVIEW MODE: ensure the sub-questions explicitly cover, where the question warrants:",
+  "(1) identity/mechanism, (2) the human clinical evidence (trials), (3) safety/adverse effects,",
+  "(4) comparators/alternatives, and (5) the key open questions / unknowns. Favor completeness of",
+  "these facets over breadth of topic.",
+].join("\n");
 
 const PLAN_SYSTEM = [
   "You are the planning step of a conservative, source-grounded medical research engine.",
@@ -85,14 +94,15 @@ export function normalizeSubQuestions(raw: unknown, original: string): string[] 
  * Plan the research: one cheap LLM call returning 3-6 sub-questions, normalized. Degrades to
  * `[question]` on ANY failure (no key, model error, malformed output) — planning is best-effort.
  */
-export async function planSubQuestions(question: string, apiKey: string): Promise<string[]> {
+export async function planSubQuestions(question: string, apiKey: string, mode: ReportMode = "standard"): Promise<string[]> {
   try {
+    const system = mode === "structured_review" ? PLAN_SYSTEM + STRUCTURED_SUFFIX : PLAN_SYSTEM;
     const { input } = await callTool<{ sub_questions?: unknown }>(
       {
         model: PLAN_MODEL,
         max_tokens: 1024,
         temperature: 0,
-        system: PLAN_SYSTEM,
+        system,
         tools: [PLAN_TOOL],
         messages: [{ role: "user", content: `Question: ${question}\n\nDecompose it with plan_research.` }],
       },
