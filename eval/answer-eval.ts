@@ -1,10 +1,19 @@
 // eval/answer-eval.ts
 //
-// SCAFFOLD ONLY — NOT A GATE IN PR0. This file is intentionally NOT wired into
-// `.github/workflows/eval.yml`. It exercises the live `/ask` answer engine (LLM +
-// quota), so unlike the retrieval harness it is neither cheap nor deterministic
-// yet, and must not block merges until the judge model is chosen (see OPEN
-// DECISIONS in the plan) and the `{tag -> chunk_id}` map lands (see eval/README.md).
+// Answer-quality benchmark. NOT a CI gate: it exercises the live `/ask` engine (LLM + quota), so
+// unlike the deterministic retrieval gate it is run on demand to produce a tracked scorecard, not
+// on every PR. It is intentionally NOT wired into `.github/workflows/eval.yml`.
+//
+// IMPLEMENTED (deterministic, no judge): a scorecard over the golden set —
+//   - answered_rate       : answerable items that delivered a real cited answer,
+//   - grounding_coverage  : fraction of cited claims backed by a verbatim WS-C `support` span
+//                           (the headline faithfulness PROXY — "a supporting sentence was FOUND",
+//                           not yet "the source semantically ENTAILS the claim"),
+//   - citation_coverage   : fraction of claims carrying a citation tag,
+//   - clean_refusal_rate  : unanswerable items correctly refused.
+// STILL TODO (the semantic LLM-judge layer, a/b below): temperature-0 entailment faithfulness +
+// relevance + completeness, pending the judge-model decision. The `{tag -> chunk_id}` blocker noted
+// in eval/README.md is partially lifted by the WS-C `support` spans (per-claim source provenance).
 //
 // What it does today:
 //   - mints a throwaway authenticated user (real app path, not the service key),
@@ -25,8 +34,9 @@
 //   SB_URL=... SERVICE_KEY=... ANON_KEY=... \
 //     deno run --allow-net --allow-env --allow-read eval/answer-eval.ts
 
-import { loadGolden } from "./golden/schema.ts";
+import { loadGolden, type GoldenItem } from "./golden/schema.ts";
 import { grantEnterprise, mintUser, readEnv, teardownUser } from "./lib/corpus.ts";
+import { scoreAnswers, type ScoredAnswer } from "./lib/answer-metrics.ts";
 
 // Spacing between LLM-backed `/ask` calls so the run doesn't burst the provider
 // rate limit (real usage isn't bursty; a transient 5xx here would be a harness
@@ -43,9 +53,11 @@ interface AskResponse {
   plain_english_summary: string;
   evidence_grade: string;
   answer_sections: {
-    what_we_know: Array<{ text: string; citation_ids: string[] }>;
+    // `support` is the WS-C verbatim provenance span(s) for a claim — present only when a cited
+    // source sentence cleared the support threshold. Its presence is the grounding-coverage signal.
+    what_we_know: Array<{ text: string; citation_ids: string[]; support?: Array<{ quote?: string }> }>;
     what_we_do_not_know: Array<{ text: string }>;
-    safety_notes: Array<{ text: string; citation_ids: string[] }>;
+    safety_notes: Array<{ text: string; citation_ids: string[]; support?: Array<{ quote?: string }> }>;
     questions_to_ask: string[];
   };
   // NOTE: per eval/README.md, a Citation today carries `chunk_tag` + `source_id`
@@ -72,11 +84,33 @@ async function ask(
   return await res.json();
 }
 
+// Reduce a golden item + its /ask response to the deterministic signals the scorecard scores.
+// "delivered" = a real cited answer (not a safety template / unsupported-refusal / zero-citation).
+// A claim is "supported" when it carries a verbatim WS-C `support` span; "cited" when it has a tag.
+function toScored(item: GoldenItem, r: AskResponse | { __error: string }): ScoredAnswer {
+  const answerable = item.answerability === "answerable";
+  if ("__error" in r) return { id: item.id, answerable, delivered: false, claims: [] };
+  const delivered = !r.template && !r.refused_unsupported && r.citations.length > 0;
+  const points = delivered
+    ? [...(r.answer_sections?.what_we_know ?? []), ...(r.answer_sections?.safety_notes ?? [])]
+    : [];
+  return {
+    id: item.id,
+    answerable,
+    delivered,
+    claims: points.map((p) => ({
+      cited: (p.citation_ids?.length ?? 0) > 0,
+      supported: (p.support?.length ?? 0) > 0,
+    })),
+  };
+}
+
 const env = readEnv();
 const golden = await loadGolden();
 
 const user = await mintUser(env);
 const transcripts: Array<{ id: string; question: string; response: AskResponse | { __error: string } }> = [];
+const scored: ScoredAnswer[] = [];
 
 try {
   // enterprise entitlement → 1000/day, so the `/ask` burst doesn't 429-false-fail.
@@ -86,6 +120,7 @@ try {
     await sleep(PACE_MS);
     const response = await ask(env, user.jwt, item.question);
     transcripts.push({ id: item.id, question: item.question, response });
+    scored.push(toScored(item, response));
 
     // TODO(a) — temperature-0 LLM-judge groundedness + relevance scoring.
     //   Pending the judge-model choice (OPEN DECISION). When chosen, judge:
@@ -103,12 +138,22 @@ try {
     //   faithfulness can check whether each cited chunk entails its sentence.
   }
 
-  // SCAFFOLD: no scoring / no gate yet. Emit the raw transcripts so the judging
-  // TODOs above have something to consume once implemented.
+  // Deterministic answer-quality scorecard (no LLM judge — see TODO a/b for the semantic layer).
+  // grounding_coverage is the headline: fraction of cited claims backed by a verbatim source span.
+  const scorecard = scoreAnswers(scored);
+  const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
+  console.error(
+    `\nAnswer-quality scorecard (deterministic) — ${env.SB_URL}\n` +
+      `  answered_rate       ${pct(scorecard.answered_rate)}  (${scorecard.delivered}/${scorecard.answerable_total} answerable delivered)\n` +
+      `  grounding_coverage  ${pct(scorecard.grounding_coverage)}  (claims with a verbatim support span, of ${scorecard.claims_scored})\n` +
+      `  citation_coverage   ${pct(scorecard.citation_coverage)}\n` +
+      `  clean_refusal_rate  ${pct(scorecard.clean_refusal_rate)}  (${scorecard.unanswerable_refused}/${scorecard.unanswerable_total} unanswerable refused)\n`,
+  );
   console.log(JSON.stringify({
     generated_for: env.SB_URL,
     golden_total: golden.length,
-    note: "SCAFFOLD — no judge scoring yet (see TODO a/b); not a gate, not in eval.yml",
+    note: "deterministic scorecard; LLM-judge faithfulness/relevance/completeness still TODO (a/b)",
+    scorecard,
     transcripts,
   }, null, 2));
 } finally {
