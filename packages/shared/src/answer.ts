@@ -58,10 +58,27 @@ export interface AskRequest {
 }
 
 /** One narrative bullet that carries the source chunk_ids backing it. */
+/**
+ * A verbatim passage from a cited source that supports a specific claim (the provenance highlight
+ * behind a citation). Computed deterministically server-side — never an LLM — so `quote` is always a
+ * real substring of the cited source; the UI re-locates and highlights it.
+ */
+export interface ClaimSupport {
+  /** The cited source's [n] tag this passage comes from. */
+  citation_tag: string;
+  /** Verbatim supporting sentence from that source. */
+  quote: string;
+}
+
 export interface AnswerPoint {
   text: string;
   /** chunk_ids ([n] tags) the generator cited and citation-enforce kept. */
   citation_ids: string[];
+  /**
+   * Optional: verbatim passage(s) in the cited source(s) that support this claim, for highlighting
+   * provenance. Absent on older saved answers and whenever no passage cleared the support threshold.
+   */
+  support?: ClaimSupport[];
 }
 
 /**
@@ -98,6 +115,20 @@ export interface Citation {
   volume?: string;
   issue?: string;
   pages?: string;
+  /** True when the source's journal is listed in DOAJ (a vetted, anti-predatory open-access journal).
+   *  A POSITIVE-ONLY credibility signal — absent/false means "not confirmed DOAJ-listed", not "low
+   *  quality". Stamped server-side from the journal ISSN; absent on older saved reports/chats. */
+  doaj_vetted?: boolean;
+  // ── Optional study-type metadata (study-type badges). Carried through from the
+  //    provider's PubMed <PublicationType> / ClinicalTrials.gov fields so the UI can
+  //    show a verbatim study-type label (studyTypeLabel in study-type.ts). Never a
+  //    label the LLM guessed; absent on older saved reports/chats. ──
+  /** PubMed PublicationType list, e.g. ["Meta-Analysis", "Journal Article"]. */
+  publication_types?: string[];
+  /** ClinicalTrials.gov study type, e.g. "INTERVENTIONAL" | "OBSERVATIONAL". */
+  study_type?: string;
+  /** Trial phase, Roman from PubMed ("Phase III") or CT.gov form ("PHASE3"). */
+  trial_phase?: string;
 }
 
 /** Frozen POST /ask response (doc-11 / §7 / §8 superset). */

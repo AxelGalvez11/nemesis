@@ -96,7 +96,8 @@ export function normalizeSubQuestions(raw: unknown, original: string): string[] 
  */
 export async function planSubQuestions(question: string, apiKey: string, mode: ReportMode = "standard"): Promise<string[]> {
   try {
-    const system = mode === "structured_review" ? PLAN_SYSTEM + STRUCTURED_SUFFIX : PLAN_SYSTEM;
+    // Meta mode reuses the broader structured decomposition — wider recall finds more poolable studies.
+    const system = mode === "structured_review" || mode === "meta" ? PLAN_SYSTEM + STRUCTURED_SUFFIX : PLAN_SYSTEM;
     const { input } = await callTool<{ sub_questions?: unknown }>(
       {
         model: PLAN_MODEL,

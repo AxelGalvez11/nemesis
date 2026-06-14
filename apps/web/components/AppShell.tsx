@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
 import { Orb } from "./Orb";
-import { fetchConversations, fetchEntitlements, fetchUsage, type ConversationSummary } from "@/lib/api";
+import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, type ConversationSummary } from "@/lib/api";
 import { Icon } from "./icons";
 
 /* ── chrome context: pages inject their evidence panel + topbar title here ── */
@@ -82,6 +82,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [chatsVersion, setChatsVersion] = useState(0);
   // Lets the chat page refresh the rail history the moment it creates a new conversation.
   const bumpChats = useCallback(() => setChatsVersion((v) => v + 1), []);
+
+  // Delete a chat: optimistically drop it from the rail, then delete server-side (RLS-scoped). If we
+  // were viewing it, return to a blank chat. Re-fetch on failure so the rail reflects the real state.
+  const handleDeleteChat = useCallback(async (id: string) => {
+    setChats((prev) => prev.filter((c) => c.id !== id));
+    if (path.startsWith("/app/ask") && new URLSearchParams(window.location.search).get("c") === id) {
+      router.push("/app/ask");
+    }
+    try {
+      await deleteConversation(id);
+    } catch {
+      setChatsVersion((v) => v + 1); // resync from the server
+    }
+  }, [path, router]);
 
   // Stable setters so child effects don't loop.
   const setEvidence = useCallback((node: ReactNode | null) => setEvidenceNode(node), []);
@@ -232,9 +246,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icon name="folder" className="hist-ic" />
               <span style={{ fontSize: 12 }}>Projects — coming soon</span>
             </div>
-            <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }}>
-              <span style={{ fontSize: 12 }}>Bundle chats, sources & deliverables</span>
-            </div>
 
             <div className="r-label">Recent chats</div>
             {chats.length === 0 ? (
@@ -243,10 +254,19 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             ) : (
               chats.map((c) => (
-                <Link key={c.id} href={`/app/ask?c=${c.id}`} className="hist" title={c.title}>
-                  <Icon name="message" className="hist-ic" />
-                  <span>{c.title}</span>
-                </Link>
+                <div key={c.id} className="hist-row">
+                  <Link href={`/app/ask?c=${c.id}`} className="hist" title={c.title}>
+                    <Icon name="message" className="hist-ic" />
+                    <span>{c.title}</span>
+                  </Link>
+                  <button
+                    type="button"
+                    className="hist-del"
+                    aria-label={`Delete chat ${c.title}`}
+                    title="Delete chat"
+                    onClick={() => { if (window.confirm(`Delete "${c.title}"? This can't be undone.`)) void handleDeleteChat(c.id); }}
+                  >×</button>
+                </div>
               ))
             )}
           </nav>

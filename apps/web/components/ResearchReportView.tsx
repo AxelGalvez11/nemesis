@@ -1,12 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
-import type { AnswerPoint, Citation, CitationStyle, ResearchReport } from "@pharmabro/shared";
-import { buildReferenceList } from "@pharmabro/shared";
+import type { AnswerPoint, Citation, CitationStyle, MetaAnalysisResult, ResearchReport } from "@pharmabro/shared";
+import { buildMetaAbstract, buildReferenceList, evidenceRows } from "@pharmabro/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
 import { Icon } from "./icons";
+import { ForestPlot } from "./ForestPlot";
 import { downloadReportExport } from "@/lib/api";
 
 const PROVIDER_ABBR: Record<string, string> = {
@@ -16,6 +17,127 @@ const PROVIDER_ABBR: Record<string, string> = {
 function abbr(t: string): string {
   const k = Object.keys(PROVIDER_ABBR).find((p) => t.toLowerCase().includes(p));
   return (k ? PROVIDER_ABBR[k] : undefined) ?? "REF";
+}
+
+// A study/evidence-characteristics table — the at-a-glance "body of evidence" a review opens with.
+// Rows come from the shared `evidenceRows` helper (pure, from report.citations metadata already
+// shown in the reference list), so this table is identical to the one in the docx/pptx exports.
+function EvidenceTable({ citations, onCite }: { citations: Citation[]; onCite: (tag: string) => void }) {
+  const rows = evidenceRows(citations);
+  return (
+    <section className="research-section">
+      <h4 className="research-heading">Evidence base ({rows.length} sources)</h4>
+      <div className="evidence-table-wrap">
+        <table className="evidence-table">
+          <thead>
+            <tr><th>#</th><th>Type</th><th>Source</th><th>Year</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.tag}>
+                <td><button type="button" className="cite" onClick={() => onCite(r.tag)} aria-label={`Show source ${r.tag}`}>{r.tag}</button></td>
+                <td>{r.type}</td>
+                <td className="evidence-table-title" title={r.title}>{r.title}</td>
+                <td>{r.year}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+// Forest table for a poolable meta-analysis: one row per study (risk ratio + 95% CI + weight + the
+// exact sentence the counts came from), then the computed fixed/random pooled rows and heterogeneity.
+// Every number comes from report.meta_analysis (computed in code) — this only displays it.
+function MetaForestTable({ meta, onCite }: { meta: MetaAnalysisResult; onCite: (tag: string) => void }) {
+  if (!meta.poolable) return null;
+  const f2 = (n: number) => n.toFixed(2);
+  const ci = (lo: number, hi: number) => `${f2(lo)}–${f2(hi)}`;
+  const i2 = meta.heterogeneity.i2;
+  const highHet = i2 != null && i2 >= 75;
+  return (
+    <section className="research-section">
+      <h4 className="research-heading">Pooled estimate — forest plot</h4>
+      <ForestPlot meta={meta} />
+      <div className="evidence-table-wrap">
+        <table className="evidence-table forest-table">
+          <thead>
+            <tr><th>Study</th><th>Risk ratio (95% CI)</th><th>Weight</th><th>Source</th></tr>
+          </thead>
+          <tbody>
+            {meta.studies.map((s) => (
+              <tr key={s.citation_tag}>
+                <td>
+                  <button type="button" className="cite" onClick={() => onCite(normTag(s.citation_tag))} aria-label={`Show source ${s.citation_tag}`}>{normTag(s.citation_tag)}</button>
+                  {" "}{s.label}{s.continuity_corrected ? " *" : ""}
+                </td>
+                <td>{f2(s.effect)} ({ci(s.ci_low, s.ci_high)})</td>
+                <td>{Math.round(s.weight_percent)}%</td>
+                <td className="evidence-table-title" title={s.source_quote}>{s.source_quote}</td>
+              </tr>
+            ))}
+            <tr className="forest-pooled">
+              <td>Pooled (random effects)</td>
+              <td>{f2(meta.random.estimate)} ({ci(meta.random.ci_low, meta.random.ci_high)})</td>
+              <td>—</td><td />
+            </tr>
+            <tr className="forest-pooled">
+              <td>Pooled (fixed effect)</td>
+              <td>{f2(meta.fixed.estimate)} ({ci(meta.fixed.ci_low, meta.fixed.ci_high)})</td>
+              <td>—</td><td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className={`muted-note${highHet ? " forest-het-high" : ""}`}>
+        Heterogeneity: I² = {i2 == null ? "n/a" : `${Math.round(i2)}%`} · τ² = {meta.heterogeneity.tau2.toFixed(3)} · Q = {f2(meta.heterogeneity.q)} (df {meta.heterogeneity.df}).
+        {highHet ? " High heterogeneity — the studies disagree substantially, so read the pooled estimate with caution." : ""}
+        {meta.studies.some((s) => s.continuity_corrected) ? " * a 0.5 continuity correction was applied for a zero-event arm." : ""}
+      </p>
+    </section>
+  );
+}
+
+// "Characteristics of included studies": the journal-standard table of the RAW extracted data — the
+// 2x2 event counts behind the pool, one row per study, with the crude event rate. Every value comes
+// straight from report.meta_analysis.studies (read verbatim from each source, never computed by an
+// LLM); the crude % is a trivial honest division. This table is the auditable data; the forest table
+// below it is the computed effects.
+function MetaStudyCharacteristics({ meta, onCite }: { meta: MetaAnalysisResult; onCite: (tag: string) => void }) {
+  if (!meta.poolable) return null;
+  const arm = (e: number, n: number) => `${e}/${n}${n > 0 ? ` (${((e / n) * 100).toFixed(1)}%)` : ""}`;
+  const outcome = meta.studies[0]?.outcome_label;
+  const totalN = meta.studies.reduce((acc, s) => acc + s.total_treatment + s.total_control, 0);
+  return (
+    <section className="research-section">
+      <h4 className="research-heading">Characteristics of included studies</h4>
+      <p className="muted-note">
+        {meta.k} studies{outcome ? <> · outcome: <b>{outcome}</b></> : null} · {totalN.toLocaleString()} participants. Event counts are read verbatim from each source.
+      </p>
+      <div className="evidence-table-wrap">
+        <table className="evidence-table study-char-table">
+          <thead>
+            <tr><th>Study</th><th>Intervention (events/N)</th><th>Control (events/N)</th><th>Participants</th></tr>
+          </thead>
+          <tbody>
+            {meta.studies.map((s) => (
+              <tr key={s.citation_tag}>
+                <td>
+                  <button type="button" className="cite" onClick={() => onCite(normTag(s.citation_tag))} aria-label={`Show source ${s.citation_tag}`}>{normTag(s.citation_tag)}</button>
+                  {" "}{s.label}
+                </td>
+                <td className="mono">{arm(s.events_treatment, s.total_treatment)}</td>
+                <td className="mono">{arm(s.events_control, s.total_control)}</td>
+                <td className="mono">{(s.total_treatment + s.total_control).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 /** Renders a finished Deep Research report: summary, verification state, themed cited sections,
@@ -37,6 +159,22 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
   };
 
   const flags = (report.safety_flags ?? []).filter((f) => f !== "no_sources_found");
+  // A meta report opens with a journal-style structured abstract (Results computed from the pool, not
+  // narrated). When present it carries the bottom line, so the plain lead paragraph is omitted.
+  const abstract = buildMetaAbstract(report);
+  // For a poolable meta report we lay the body out in journal IMRaD order: Abstract -> Methods ->
+  // Results (the computed meta tables) -> Discussion (the narrative sections). Introduction is folded
+  // into the abstract's Objective. We only REORDER + GROUP existing pieces under standard headings —
+  // no prose is relabeled or invented.
+  const isMeta = report.meta_analysis?.poolable === true;
+  const sectionEls = report.sections.map((sec) => (
+    <section className="research-section" key={sec.heading}>
+      <h4 className="research-heading">{sec.heading}</h4>
+      {sec.points.map((p, i) => (
+        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
+      ))}
+    </section>
+  ));
 
   return (
     <div className="answer fade research-report">
@@ -66,7 +204,17 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
         </div>
       ) : null}
 
-      <p className="lead">{renderInline(report.summary)}</p>
+      {abstract ? (
+        <section className="research-section meta-abstract">
+          <h4 className="research-heading">Abstract</h4>
+          <p className="ai-para"><b>Objective. </b>{abstract.objective}</p>
+          <p className="ai-para"><b>Methods. </b>{abstract.methods}</p>
+          <p className="ai-para"><b>Results. </b>{abstract.results}</p>
+          <p className="ai-para"><b>Conclusions. </b>{renderInline(abstract.conclusions)}</p>
+        </section>
+      ) : (
+        <p className="lead">{renderInline(report.summary)}</p>
+      )}
       {report.template ? (
         <p className="tmpl-note">Conservative response ({report.template.replace(/_/g, " ")}).</p>
       ) : null}
@@ -91,14 +239,19 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
         </details>
       ) : null}
 
-      {report.sections.map((sec) => (
-        <section className="research-section" key={sec.heading}>
-          <h4 className="research-heading">{sec.heading}</h4>
-          {sec.points.map((p, i) => (
-            <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
-          ))}
-        </section>
-      ))}
+      {!report.template && report.citations.length ? <EvidenceTable citations={report.citations} onCite={onCite} /> : null}
+
+      {isMeta ? (
+        <>
+          <h3 className="research-imrad-heading">Results</h3>
+          {report.meta_analysis ? <MetaStudyCharacteristics meta={report.meta_analysis} onCite={onCite} /> : null}
+          {report.meta_analysis ? <MetaForestTable meta={report.meta_analysis} onCite={onCite} /> : null}
+          {report.sections.length ? <h3 className="research-imrad-heading">Discussion</h3> : null}
+          {sectionEls}
+        </>
+      ) : (
+        sectionEls
+      )}
 
       {report.safety_notes.length ? (
         <div className="ai-safety">

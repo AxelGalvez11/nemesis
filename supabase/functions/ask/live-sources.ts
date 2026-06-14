@@ -16,6 +16,7 @@ import { fetchClinicalTrials } from "../core-source-sync/providers/clinicaltrial
 import { fetchOpenFdaLabels } from "../core-source-sync/providers/openfda.ts";
 import { fetchEuropePmc } from "../core-source-sync/providers/europepmc.ts";
 import { fetchFaersReactions } from "../core-source-sync/providers/faers.ts";
+import { fetchOpenAlex } from "../core-source-sync/providers/openalex.ts";
 
 /** One live result, normalized for the reranker + citation layer; `source` is the full
  *  record, so a candidate the reranker keeps can be persisted via read-through-ingest. */
@@ -64,6 +65,7 @@ export function liveToChunk(c: LiveCandidate, tag: string): RetrievedChunk {
     // Bibliographic (PubMed/Europe PMC).
     authors: strArr(m.authors),
     journal: str(m.journal_iso) ?? str(m.journal),
+    issn: strArr(m.issn),
     year: str(m.year),
     volume: str(m.volume),
     issue: str(m.issue),
@@ -104,6 +106,10 @@ const LIVE_SOURCES: LiveSourceDef[] = [
     return scoped === null ? Promise.resolve([]) : fetchOpenFdaLabels({ query: scoped, limit: n });
   } },
   { origin: "faers", fetch: (q, n) => fetchFaersReactions({ query: q, retmax: n }) },
+  // OpenAlex LAST: the union is deduped first-wins by (provider, provider_id). A work carrying a PMID
+  // normalizes to pubmed_oa:<pmid> and collapses into the PubMed/Europe PMC hit above; only OpenAlex's
+  // non-PMID long tail (provider "openalex") survives as net-new breadth.
+  { origin: "openalex", fetch: (q, n) => fetchOpenAlex({ query: q, retmax: n }) },
 ];
 
 /**

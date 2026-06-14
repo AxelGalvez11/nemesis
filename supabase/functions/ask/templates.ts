@@ -23,18 +23,21 @@ export const SOURCING_COPY =
   "I can share educational information about what a compound is, what the evidence says, " +
   "and questions to ask a licensed healthcare professional.";
 
-/** doc-20 no-source refusal — verbatim core sentence + professional pointer
- *  (doc-20: always point to a doctor/pharmacist, even when refusing). */
+/** doc-20 no-source refusal — disclaimer-forward + professional pointer (doc-20: always point to a
+ *  doctor/pharmacist). Helpful tone: it's general information, not a refusal to engage. */
 export const NO_SOURCE_COPY =
-  "I could not find a reliable source for that specific claim in the available public " +
-  "sources. I should not present it as established evidence. Please ask your doctor or " +
-  "pharmacist about your specific situation.";
+  "I couldn't find a reliable public source for that specific point, so I won't present it as " +
+  "established evidence. This is general information, not medical advice — please ask your doctor " +
+  "or pharmacist about your specific situation.";
 
-/** Used when a generation tripped the post-filter — sources existed, but the
- *  synthesized answer was unsafe, so it is discarded rather than shown. */
+/** Used when a generation tripped the post-filter — sources existed, but the synthesized answer was
+ *  discarded. Lead with the disclaimer and still be USEFUL (offer the sources + good questions),
+ *  rather than a flat "I can't answer". */
 export const CONSERVATIVE_FALLBACK_COPY =
-  "I can't give a direct answer to that safely. Below are the public sources most relevant " +
-  "to your question, along with questions to ask a licensed healthcare professional.";
+  "This is general information from public sources — not medical advice, and no substitute for a " +
+  "clinician who knows your history. I couldn't put together a fully source-backed direct answer " +
+  "here, but the most relevant public sources are below, with good questions to bring to a " +
+  "healthcare professional.";
 
 /** Conversational reply for a pure greeting / thanks / "what can you do" message. Fixed copy
  *  (never model output), so — like EMERGENCY_COPY / SOURCING_COPY — it is not run through the

@@ -15,12 +15,14 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
-import { detectSmallTalk, detectViolations, preScreen } from "./safety.ts";
+import { detectSmallTalk, preScreen } from "./safety.ts";
+import { isBenignSalvageable, resolveSafety } from "./sanitize.ts";
 import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
 import { generate } from "./generate.ts";
 import { citationMeta, enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { attachSupport } from "./support-span.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
@@ -67,7 +69,11 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 // no support and refuse (AC3). Tuned empirically in scripts/phase3-validate.ts
 // (real example questions clear it; a made-up compound returns zero).
 const ASK_MATCH_THRESHOLD = 0.5;
-const MATCH_COUNT = 8;
+// Sources shown to the generator (and surfaced as citations) after reranking. Raised 8 -> 12 alongside
+// the broadened PubMed retrieval (paywalled abstracts now eligible) so more of the strongest evidence
+// reaches the answer. The fabrication guard runs over the full retrieved `pool`, not this slice, so a
+// wider slice never weakens it.
+const MATCH_COUNT = 12;
 
 // Live evidence sources (PubMed / Europe PMC / ClinicalTrials / openFDA / FAERS) are gated behind a
 // flag so deploying this code is non-breaking: with LIVE_SOURCES unset the pipeline is byte-for-byte
@@ -239,27 +245,33 @@ async function runAsk(
   const modelName = `${cls.model}|${gen.model}`;
 
   // ---- 6a. post-generation safety filter (the doc-20 guarantee) ----
-  // Scan every DECLARATIVE model section (assertions the system would be making).
-  // questions_to_ask is excluded ON PURPOSE: it is interrogative — "is it safe
-  // for me?" / "should I stop X?" are questions to pose to a clinician, NOT the
-  // forbidden assertions "[X] is safe" / "stop taking X", and scanning them with
-  // the claim detectors false-positives (discarding good answers).
-  const assembled = [
-    gen.raw.bottom_line.text,
-    ...gen.raw.what_we_know.map((p) => p.text),
-    ...gen.raw.safety_notes.map((p) => p.text),
-    ...gen.raw.what_we_do_not_know.map((p) => p.text),
-  ].join("  ");
-  const violations = detectViolations(assembled);
-  if (violations.length > 0) {
-    // Discard the unsafe generation; surface the retrieved sources as related
-    // info instead of the synthesized (unsafe) text. LOG why (rule + snippet):
-    // a backstop that silently swallows a cited answer is not debuggable, and a
-    // spurious discard (cautious interrogative phrasing mis-flagged) is
-    // indistinguishable from a real catch without this line — in prod too.
-    console.error("ask safety_fallback — discarded generation:", JSON.stringify(violations));
+  // detectViolations (safety.ts) is the untouched teeth; resolveSafety (sanitize.ts) is the pure,
+  // unit-tested decision around it. It scans every DECLARATIVE model section — questions_to_ask is
+  // excluded ON PURPOSE: it is interrogative ("is it safe for me?" / "should I stop X?" are questions
+  // to pose to a clinician, NOT the forbidden assertions), and scanning it false-positives. Outcomes:
+  //   clean    -> deliver as generated.
+  //   salvaged -> a BENIGN answer had an offending line; drop ONLY that line and keep the cited rest
+  //               (survivors re-scanned, so the guarantee holds). Restores the good acne-type answers
+  //               that a single "X is safe" / "cures" / dose line used to throw away wholesale.
+  //   fallback -> unsalvageable (headline trips, residual after scrub, nothing substantive left) OR a
+  //               SENSITIVE class (peptide / dosing / high-risk drug) where one forbidden line still
+  //               refuses the WHOLE answer, exactly as before. Conservative template + the sources.
+  // LOG either way: a backstop that silently swallows a cited answer is not debuggable.
+  const resolution = resolveSafety(gen.raw, { salvageable: isBenignSalvageable(cls.intent, flags) });
+  if (resolution.kind === "fallback") {
+    console.error(
+      `ask safety_fallback — discarded generation (${resolution.reason}):`,
+      JSON.stringify(resolution.violations),
+    );
     return await finalizeTemplate(answerId, question, cls.intent,
       flags, entities, userId, "safety_fallback", modelName, true, ret.chunks);
+  }
+  if (resolution.kind === "salvaged") {
+    console.warn(
+      `ask safety_salvage — dropped ${resolution.droppedCount} offending point(s), delivered the rest:`,
+      JSON.stringify(resolution.violations),
+    );
+    gen = { ...gen, raw: resolution.raw };
   }
 
   // ---- 6b. citation enforcement ----
@@ -287,10 +299,13 @@ async function runAsk(
   // "talk to your pharmacist/prescriber" line for personal-decision intents, so
   // append it here (post-enforcement — an uncited safety note would otherwise be
   // dropped by enforceCitations). See routing.ts.
-  const answer_sections = {
+  // Attach each claim's supporting source passage (deterministic, verbatim) so the UI can highlight
+  // the exact line that backs a citation. Additive only — runs after enforcement; the support quotes
+  // are verbatim source provenance, not assistant prose, so they do not alter the answer or its scan.
+  const answer_sections = attachSupport({
     ...enf.answer_sections,
     safety_notes: withProfessionalRouting(enf.answer_sections.safety_notes, cls.intent),
-  };
+  }, ret.chunks);
   const resp: AskResponse = {
     answer_id: answerId,
     intent: cls.intent,
@@ -616,7 +631,7 @@ async function consumeAskQuota(userId: string): Promise<ConsumeUsageResult> {
 
 async function storeTrace(row: TraceRow): Promise<void> {
   try {
-    await fetch(`${SB_URL}/rest/v1/generated_answers`, {
+    const res = await fetch(`${SB_URL}/rest/v1/generated_answers`, {
       method: "POST",
       headers: {
         apikey: SERVICE_KEY,
@@ -626,6 +641,11 @@ async function storeTrace(row: TraceRow): Promise<void> {
       },
       body: JSON.stringify(row),
     });
+    // fetch resolves on HTTP 4xx/5xx (only network errors throw), so the status MUST be checked — an
+    // un-inspected reject silently loses the trace AND breaks the answer_id FK on the saved chat message.
+    if (!res.ok) {
+      console.error(`storeTrace rejected (trace lost): ${res.status} ${(await res.text()).slice(0, 300)}`);
+    }
   } catch (e) {
     // A trace-write failure must not fail the user's answer, but it MUST be
     // visible — a dropped emergency/self-harm trace is a lost safety audit record.

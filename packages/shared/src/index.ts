@@ -33,3 +33,24 @@ export * from "./research.ts";
 // Publishable-reports: PRISMA-overclaim guard + numbered citation formatter (pure).
 export * from "./forbidden-phrases.ts";
 export * from "./citation-format.ts";
+// Evidence-base table helpers (publishable-reports): pure citation -> row mapping shared by the
+// on-screen report and the docx/pptx exports so both render the same body-of-evidence summary.
+export * from "./citation-meta.ts";
+// Meta-analysis (deliverables track): pure inverse-variance + DerSimonian-Laird risk-ratio pooling
+// with Q / I^2 / tau^2. Real statistics in code — NEVER LLM-guessed. Validated against metafor's
+// published BCG analysis (Q = 152.2330). Extraction + go-live are owner-gated, not wired yet.
+export * from "./meta-analysis.ts";
+
+// Forest-plot figure: the iconic meta-analysis graphic, computed (PURE) from the pool above. A layout
+// model for theme-aware React rendering + an SVG string for the Word/PDF/PPT export. Draws only numbers
+// the pool produced — never an LLM-drawn figure.
+export * from "./forest-plot.ts";
+
+// Structured abstract (Background/Methods/Results/Conclusions) for a meta report. The Results line is
+// computed from the real pool — never LLM-stated. Null unless the report actually pooled.
+export * from "./meta-abstract.ts";
+
+// Study-type badge: PURE label derived from a citation's PubMed PublicationType / ClinicalTrials.gov
+// study_type fields ("Meta-analysis", "Randomized controlled trial", "Interventional trial · Phase 3").
+// Never an LLM guess — computed verbatim or omitted (no false badge).
+export * from "./study-type.ts";

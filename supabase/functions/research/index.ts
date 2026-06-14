@@ -16,6 +16,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 import { runResearch } from "../ask/research/orchestrate.ts";
+import { scopeQuestion } from "../ask/research/scope.ts";
 import { hasLlmKey, llmApiKey } from "../ask/llm.ts";
 import type { ReportMode, ResearchProgressStep, ResearchReport } from "../../../packages/shared/src/research.ts";
 
@@ -49,7 +50,7 @@ serve(async (req) => {
   const userId = await verifyUser(token);
   if (!userId) return json({ error: "authentication required" }, 401, req);
 
-  let body: { question?: string; mode?: string };
+  let body: { question?: string; mode?: string; action?: string };
   try {
     body = await req.json();
   } catch {
@@ -58,7 +59,19 @@ serve(async (req) => {
   const question = (body.question ?? "").trim();
   if (!question) return json({ error: "question required" }, 400, req);
   if (question.length > 1000) return json({ error: "question too long" }, 400, req);
-  const mode: ReportMode = body.mode === "structured_review" ? "structured_review" : "standard";
+  const mode: ReportMode = body.mode === "meta"
+    ? "meta"
+    : body.mode === "structured_review"
+    ? "structured_review"
+    : "standard";
+
+  // ---- Scoping pre-step: return clarifying questions only. No quota consumed and no run started — the
+  // real run (a later POST WITHOUT action:"scope") is what bills a deep-research slot. Best-effort:
+  // scopeQuestion degrades to needs_clarification:false on any failure, so this never blocks a run. ----
+  if (body.action === "scope") {
+    const scope = await scopeQuestion(question, llmApiKey());
+    return json(scope, 200, req);
+  }
 
   // ---- Pro gate + daily limit (one call): deep_research_daily_limit is 0 for free/plus, 3 for pro ----
   const quota = await consumeQuota(userId);

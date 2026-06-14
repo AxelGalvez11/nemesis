@@ -24,6 +24,22 @@ export interface PubMedFetchOpts {
   query: string;
   /** Max records (default 5, hard cap 25). */
   retmax?: number;
+  /**
+   * Restrict to free-full-text papers ("free full text[sb]"). Default false: PubMed indexes the
+   * ABSTRACT of paywalled papers too, and those abstracts are perfectly citable — and this provider
+   * only ever fetches the abstract anyway, so the old OA-only filter dropped citable papers for no
+   * gain. Opt in (oaOnly: true) only when a caller specifically wants free full text.
+   */
+  oaOnly?: boolean;
+}
+
+/**
+ * Build the esearch term. Broad by default (includes paywalled-but-indexed abstracts); the
+ * free-full-text subset filter is opt-in. PURE — unit-tested. (The historical name fetchPubMedOA and
+ * the "pubmed_oa" provider tag are kept to avoid churning stored data; this is no longer OA-only.)
+ */
+export function buildPubMedTerm(query: string, oaOnly: boolean): string {
+  return oaOnly ? `${query} AND free full text[sb]` : query;
 }
 
 export async function fetchPubMedOA(
@@ -34,7 +50,7 @@ export async function fetchPubMedOA(
 
   const searchParams = new URLSearchParams({
     db: "pubmed",
-    term: `${opts.query} AND free full text[sb]`,
+    term: buildPubMedTerm(opts.query, opts.oaOnly ?? false),
     retmax: String(retmax),
     retmode: "json",
   });
@@ -97,6 +113,7 @@ export async function fetchPubMedOA(
         pmid: a.pmid,
         journal: a.journal,
         journal_iso: a.journal_iso,
+        issn: a.issn,
         volume: a.volume,
         issue: a.issue,
         pages: a.pages,
@@ -117,6 +134,7 @@ interface ParsedArticle {
   abstract: string;
   journal: string;
   journal_iso: string;
+  issn: string[];
   volume: string;
   issue: string;
   pages: string;
@@ -139,6 +157,8 @@ export function parsePubMedXml(xml: string): ParsedArticle[] {
     );
     const journal = decode(extract(block, /<Title[^>]*>([\s\S]*?)<\/Title>/));
     const journal_iso = decode(extract(block, /<ISOAbbreviation[^>]*>([\s\S]*?)<\/ISOAbbreviation>/));
+    // Journal ISSN(s) — <ISSN IssnType="Print|Electronic">. Used for the DOAJ vetted-journal check.
+    const issn = Array.from(block.matchAll(/<ISSN\b[^>]*>([\s\S]*?)<\/ISSN>/g), (m) => decode(m[1]).trim()).filter(Boolean);
     const volume = decode(extract(block, /<Volume>([\s\S]*?)<\/Volume>/));
     const issue = decode(extract(block, /<Issue>([\s\S]*?)<\/Issue>/));
     const pages = decode(extract(block, /<MedlinePgn>([\s\S]*?)<\/MedlinePgn>/));
@@ -168,7 +188,7 @@ export function parsePubMedXml(xml: string): ParsedArticle[] {
 
     if (pmid) {
       out.push({
-        pmid, title, abstract: abstractText, journal, journal_iso, volume, issue, pages,
+        pmid, title, abstract: abstractText, journal, journal_iso, issn, volume, issue, pages,
         year: yearStr ? Number(yearStr) : null, authors, publication_types, mesh, license,
       });
     }

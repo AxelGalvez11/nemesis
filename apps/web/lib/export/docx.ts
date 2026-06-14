@@ -11,10 +11,14 @@ import {
   HeadingLevel,
   Packer,
   Paragraph,
+  Table,
+  TableCell,
+  TableRow,
   TextRun,
+  WidthType,
 } from "docx";
-import type { AnswerPoint, Citation, CitationStyle, ResearchReport } from "@pharmabro/shared";
-import { buildReferenceList } from "@pharmabro/shared";
+import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@pharmabro/shared";
+import { buildReferenceList, evidenceRows } from "@pharmabro/shared";
 
 function para(text: string): Paragraph {
   return new Paragraph({ children: [new TextRun(text)] });
@@ -26,8 +30,22 @@ function points(ps: AnswerPoint[]): Paragraph[] {
   return ps.map((p) => bullet(p.text));
 }
 
+// Evidence-base table (# · Type · Source · Year), mirroring the on-screen review. Rows come from the
+// shared evidenceRows helper so the Word file matches the screen exactly.
+function cell(text: string, opts: { bold?: boolean } = {}): TableCell {
+  return new TableCell({ children: [new Paragraph({ children: [new TextRun({ text, bold: opts.bold })] })] });
+}
+function evidenceTable(rows: EvidenceRow[]): Table {
+  const header = new TableRow({
+    tableHeader: true,
+    children: [cell("#", { bold: true }), cell("Type", { bold: true }), cell("Source", { bold: true }), cell("Year", { bold: true })],
+  });
+  const body = rows.map((r) => new TableRow({ children: [cell(r.tag), cell(r.type), cell(r.title), cell(r.year)] }));
+  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [header, ...body] });
+}
+
 export async function reportToDocx(report: ResearchReport, style: CitationStyle): Promise<Buffer> {
-  const children: Paragraph[] = [];
+  const children: Array<Paragraph | Table> = [];
 
   children.push(new Paragraph({
     heading: HeadingLevel.TITLE,
@@ -71,6 +89,12 @@ export async function reportToDocx(report: ResearchReport, style: CitationStyle)
       `(each kept its top ${c.per_search_cap} by relevance), then merged and de-duplicated — ` +
       `a bounded, top-ranked sample, not an exhaustive census. By source: ${per}.`,
     ));
+  }
+
+  // Evidence base: the body-of-evidence table the review opens its findings with.
+  if (report.citations.length) {
+    children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(`Evidence base (${report.citations.length} sources)`)] }));
+    children.push(evidenceTable(evidenceRows(report.citations as Citation[])));
   }
 
   for (const sec of report.sections) {

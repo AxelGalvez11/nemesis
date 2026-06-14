@@ -42,7 +42,10 @@ export type CoreSourceProvider =
   | "orphanet"
   // PharmaBro net-new (Phase 1) — structured FDA/CMS reference data
   | "purple_book"
-  | "cms_nadac";
+  | "cms_nadac"
+  // Live evidence breadth — OpenAlex (~250M works, key-less). Per-record license; non-PMID long tail
+  // surfaces under this provider (PMID-bearing works dedupe under pubmed_oa instead).
+  | "openalex";
 
 export type CoreSourceLicense =
   | "public_domain"
@@ -179,4 +182,8 @@ export const PROVIDER_DEFAULT_LICENSE: Readonly<
   // PharmaBro net-new (Phase 1)
   purple_book: "fda_public", // FDA Purple Book, US fed work
   cms_nadac: "public_domain", // CMS NADAC, US fed work
+  // OpenAlex mixes licenses; mapOpenAlexLicense ALWAYS sets a per-record value, so this default is
+  // dormant. Keep it conservative (cc_by_nc = live-only, never stored) to match that per-record default,
+  // so any future path that reads the provider default instead can't treat a paywalled work as storable.
+  openalex: "cc_by_nc",
 };

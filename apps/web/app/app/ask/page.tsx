@@ -3,10 +3,11 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskResponse } from "@pharmabro/shared";
-import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
-import { normTag } from "@/lib/cite";
+import type { AskResponse, ClaimSupport, ReportMode, ScopeQuestion } from "@pharmabro/shared";
+import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
+import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
+import { phCapture } from "@/lib/posthog";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
@@ -22,9 +23,8 @@ const STAGES = ["Reading the question", "Searching the evidence library", "Ranki
 
 const MODES = [
   { id: "evidence", label: "Quick answer", live: true, pro: false, hint: "Cited answer from the library + live sources" },
-  { id: "deep", label: "Deep research", live: true, pro: true, hint: "Multi-step, fully cited report (Pro)" },
-  { id: "structured_review", label: "Structured review", live: true, pro: true, hint: "A deep report that documents its own method (Pro)" },
-  { id: "meta", label: "Meta-analysis", live: false, pro: true, hint: "Computed pooled estimates — coming soon" },
+  { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report that documents its method (Pro)" },
+  { id: "meta", label: "Meta-analysis", live: true, pro: true, hint: "Pools comparable studies into a computed estimate, when the evidence supports it (Pro)" },
 ] as const;
 
 const SUGGESTIONS = [
@@ -34,7 +34,7 @@ const SUGGESTIONS = [
   { text: "Is lisinopril safe with spironolactone?", icon: "search" as const },
 ];
 
-const PROVIDER_ABBR: Record<string, string> = { openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", clinicaltrials: "NCT", faers: "FAERS" };
+const PROVIDER_ABBR: Record<string, string> = { openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", clinicaltrials: "NCT", faers: "FAERS", openalex: "OA" };
 function abbr(t: string): string {
   const k = Object.keys(PROVIDER_ABBR).find((p) => t.toLowerCase().includes(p));
   return (k ? PROVIDER_ABBR[k] : undefined) ?? "REF";
@@ -56,6 +56,7 @@ function AskPage() {
   const cParam = searchParams.get("c"); // the conversation to load, if the URL deep-links one
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loadingChat, setLoadingChat] = useState(false); // true while a saved chat's turns are loading
+  const [chatLoadError, setChatLoadError] = useState<string | null>(null); // a failed reopen is shown, not swallowed
   const loadedConvRef = useRef<string | null>(null); // guards against reloading a chat we just created
   const creatingConvRef = useRef<Promise<string | null> | null>(null); // dedupes concurrent first-turn creates
   const [question, setQuestion] = useState("");
@@ -68,6 +69,9 @@ function AskPage() {
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("evidence");
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  // The verbatim source sentence backing the claim whose citation was just clicked, shown highlighted
+  // in that source's evidence card. null = no claim-specific highlight (e.g. nothing cleared the bar).
+  const [activeQuote, setActiveQuote] = useState<string | null>(null);
   // Which answer's sources the evidence panel shows. null = follow the latest answer. Clicking a
   // citation inside an OLDER turn pins the panel to THAT answer's sources, so a newer answer no
   // longer clobbers the evidence you were looking at (each turn keeps its own sources).
@@ -100,16 +104,18 @@ function AskPage() {
     loadedConvRef.current = cParam;
     setConversationId(cParam);
     setActiveTag(null);
+    setActiveQuote(null);
     setActiveAnswer(null);
     // Clear the previous chat's turns and block sending until this one finishes loading — otherwise a
     // submit mid-load would compute the wrong ordinal (from the old turns) and the insert would
     // collide with this chat's existing rows (UNIQUE(conversation_id, ordinal)) and be lost.
     setTurns([]);
+    setChatLoadError(null);
     setLoadingChat(true);
     let alive = true;
     void fetchConversationTurns(cParam)
       .then((saved) => { if (alive) setTurns(saved.map((s) => ({ q: s.q, a: s.a, err: null, research: s.research ? rehydrateResearchCard(s.research) : undefined }))); })
-      .catch(() => {})
+      .catch((e) => { if (alive) setChatLoadError(e instanceof Error ? e.message : "Could not load this chat."); })
       .finally(() => { if (alive) setLoadingChat(false); });
     return () => { alive = false; };
   }, [cParam]);
@@ -144,18 +150,39 @@ function AskPage() {
   }, [ensureConversation]);
 
   // Persist a completed deep-research turn so its "Report ready" card survives a reopen.
-  const persistResearchTurn = useCallback(async (idx: number, q: string, mode: "standard" | "structured_review", result: { savedReportId: string | null; sources: number }) => {
+  const persistResearchTurn = useCallback(async (idx: number, q: string, mode: ReportMode, result: { savedReportId: string | null; sources: number }) => {
     try {
       const convId = await ensureConversation(q);
       if (convId) await saveResearchTurn(convId, idx * 2, q, { mode, savedReportId: result.savedReportId, title: q, citationCount: result.sources });
     } catch { /* best-effort persistence */ }
   }, [ensureConversation]);
 
+  // Turn slot `idx` into a running research card and kick off the run. `searchQ` may be enriched with
+  // clarifying answers, while `displayQ` stays the readable original (shown on the card + saved).
+  const launchResearch = useCallback(async (idx: number, displayQ: string, searchQ: string, runMode: ReportMode) => {
+    setTurns((prev) => prev.map((t, i) => (i === idx ? { q: displayQ, a: null, err: null, research: { runId: "", mode: runMode, title: displayQ, error: null, proGate: false } } : t)));
+    try {
+      const runId = await startResearch(searchQ, runMode);
+      setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
+    } catch (e) {
+      const proGate = isQuotaError(e) && Number(e.quota.limit) === 0;
+      const msg = isQuotaError(e)
+        ? (proGate
+          ? `Deep research is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
+          : `Daily deep-research limit reached (${e.quota.used}/${e.quota.limit}) on ${e.quota.plan}.`)
+        : (e instanceof Error ? e.message : "Could not start research.");
+      setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, error: msg, proGate } } : t)));
+    }
+  }, []);
+
   // A citation click pins the panel to ITS answer's sources (per-turn evidence) before opening +
   // scrolling. Takes the answer so an older turn's [n] tag resolves against that turn's citations,
-  // not the latest answer's (whose tag N may be a different source).
-  const onCite = useCallback((answer: AskResponse, tag: string) => {
+  // not the latest answer's (whose tag N may be a different source). `quote` is the verbatim sentence
+  // in that source supporting the specific claim clicked — derived from the click, not the tag, so the
+  // same [n] cited by two claims highlights each claim's own supporting line.
+  const onCite = useCallback((answer: AskResponse, tag: string, quote?: string) => {
     setActiveAnswer(answer);
+    setActiveQuote(quote ?? null);
     openEvidence();
     setActiveTag(tag);
     requestAnimationFrame(() =>
@@ -176,7 +203,7 @@ function AskPage() {
   // The panel shows the PINNED answer (a citation the user clicked) if set, else the latest answer.
   const panelAnswer = activeAnswer ?? lastAnswered;
   useEffect(() => {
-    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} activeTag={activeTag ?? undefined} />);
+    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />);
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
@@ -187,7 +214,7 @@ function AskPage() {
       setEvidence(null);
       setTopbar(null);
     };
-  }, [panelAnswer, latest?.q, activeTag, setEvidence, setTopbar]);
+  }, [panelAnswer, latest?.q, activeTag, activeQuote, setEvidence, setTopbar]);
 
   // Thinking steps: a decelerating schedule that tracks the real pipeline (read the question fast,
   // then the slow library + live search, then ranking) and HOLDS on the final "composing" step until
@@ -234,33 +261,33 @@ function AskPage() {
   async function submit(q: string) {
     const text = q.trim();
     if (!text || busy || loadingChat) return;
+    phCapture("ask_submitted", { mode });
     // Deep research / structured review run INLINE in the thread: append a turn whose body is a
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
     // can keep chatting while it works.
-    if (mode === "deep" || mode === "structured_review") {
-      const runMode: "standard" | "structured_review" = mode === "structured_review" ? "structured_review" : "standard";
+    if (mode === "deep" || mode === "meta") {
+      // Deep research documents its method (engine's structured_review); meta-analysis additionally
+      // pools comparable studies into a computed estimate when the evidence supports it.
+      const runMode: ReportMode = mode === "meta" ? "meta" : "structured_review";
+      phCapture("research_started", { mode: runMode });
       const ridx = turns.length;
-      setTurns((prev) => [...prev, { q: text, a: null, err: null, research: { runId: "", mode: runMode, title: text, error: null, proGate: false } }]);
+      // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
+      setTurns((prev) => [...prev, { q: text, a: null, err: null, scoping: true }]);
       setQuestion("");
       if (taRef.current) taRef.current.style.height = "auto";
-      try {
-        const runId = await startResearch(text, runMode);
-        setTurns((prev) => prev.map((t, i) => (i === ridx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
-      } catch (e) {
-        const proGate = isQuotaError(e) && Number(e.quota.limit) === 0;
-        const msg = isQuotaError(e)
-          ? (proGate
-            ? `Deep research is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
-            : `Daily deep-research limit reached (${e.quota.used}/${e.quota.limit}) on ${e.quota.plan}.`)
-          : (e instanceof Error ? e.message : "Could not start research.");
-        setTurns((prev) => prev.map((t, i) => (i === ridx && t.research ? { ...t, research: { ...t.research, error: msg, proGate } } : t)));
+      const scope = await scopeResearch(text); // best-effort; degrades to no-clarification on any failure
+      if (scope.needs_clarification) {
+        setTurns((prev) => prev.map((t, i) => (i === ridx ? { q: text, a: null, err: null, scope: { question: text, runMode, questions: scope.questions } } : t)));
+      } else {
+        void launchResearch(ridx, text, text, runMode);
       }
       return;
     }
     setBusy(true);
     setBloom(false); // clear any prior flare so the next answer re-triggers it (and it can't stick across an "ask again")
     setActiveTag(null);
+    setActiveQuote(null);
     setActiveAnswer(null); // unpin: the panel follows the new answer until a citation is clicked
     const idx = turns.length; // the index this turn will occupy — patch THIS turn, not "the last" (robust if the busy-guard ever loosens)
     setTurns((prev) => [...prev, { q: text, a: null, err: null }]); // append; previous turns stay on screen
@@ -271,6 +298,7 @@ function AskPage() {
     try {
       const res = await askQuestion(text);
       setLast({ a: res });
+      phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
       void fetchUsage().catch(() => {});
       void persistTurn(idx, text, res); // save the question + cited answer to chat history
     } catch (err) {
@@ -278,6 +306,7 @@ function AskPage() {
         ? `Daily Ask limit reached (${err.quota.used}/${err.quota.limit}) on ${err.quota.plan}.`
         : err instanceof Error ? err.message : "Ask failed";
       setLast({ err: msg });
+      if (isQuotaError(err)) phCapture("ask_blocked", { mode, reason: "quota", plan: err.quota.plan });
     } finally {
       setBusy(false);
     }
@@ -297,16 +326,34 @@ function AskPage() {
   if (loadingChat && !hasThread) {
     return <div className="welcome-wrap"><p className="muted" style={{ fontSize: 14 }}>Loading chat…</p></div>;
   }
+  // A failed reopen is surfaced (was silently swallowed → blank screen). The chat is still usable:
+  // the composer renders below for a fresh question.
+  if (chatLoadError && !hasThread) {
+    return (
+      <div className="welcome-wrap">
+        <p className="muted" style={{ fontSize: 14, textAlign: "center" }}>
+          Couldn’t open this chat.<br />
+          <span style={{ color: "var(--text-3)", fontSize: 12 }}>{chatLoadError}</span><br />
+          <button type="button" className="mode" style={{ marginTop: 12 }} onClick={() => router.push("/app/ask")}>Start a new chat</button>
+        </p>
+      </div>
+    );
+  }
 
-  // Empty state: a centered "welcome" with the composer in the middle (ChatGPT-style). Once a
-  // conversation starts, switch to the scrolling thread with the composer pinned to the bottom.
+  // Empty state: a centered "welcome" with the composer in the middle (ChatGPT-style). This ALSO
+  // covers a reopened conversation that loaded zero saved turns — it keeps the composer (so you can
+  // keep typing in this chat) and shows a note, instead of a dead-end. Once a conversation starts,
+  // switch to the scrolling thread with the composer pinned to the bottom.
   if (!hasThread) {
+    const reopenedEmpty = Boolean(cParam); // an old chat reopened with no saved messages
     return (
       <div className="welcome-wrap">
         <div className="welcome">
           <Orb size={56} />
-          <h2 className="welcome-title">What can I help you research?</h2>
-          <p className="welcome-sub">Every medical claim is source-backed. Ask about a drug, dose, interaction, or monograph for a cited answer.</p>
+          <h2 className="welcome-title">{reopenedEmpty ? "This chat has no saved messages" : "What can I help you research?"}</h2>
+          <p className="welcome-sub">{reopenedEmpty
+            ? "Its earlier turns didn’t save (a now-fixed bug). Ask below to continue in this chat, or start a new one."
+            : "Every medical claim is source-backed. Ask about a drug, dose, interaction, or monograph for a cited answer."}</p>
           {composer}
           <div className="chip-row welcome-chips">
             {SUGGESTIONS.map((s) => (
@@ -331,7 +378,15 @@ function AskPage() {
               <div className="msg-ai">
                 <Orb size={28} busy={isLast && busy} bloom={isLast && bloom} className="" />
                 <div className="ai-body">
-                  {t.research ? <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} /> : t.a ? <Answer answer={t.a} onCite={onCite} /> : isLast && busy ? <Thinking stage={stage} /> : null}
+                  {t.scoping ? (
+                    <div className="thinking"><div className="think-row"><span className="shimmer">Scoping your question…</span></div></div>
+                  ) : t.scope ? (
+                    <ScopeTurn state={t.scope} onRun={(enriched) => void launchResearch(i, t.scope!.question, enriched, t.scope!.runMode)} />
+                  ) : t.research ? (
+                    <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
+                  ) : t.a ? (
+                    <Answer answer={t.a} onCite={onCite} />
+                  ) : isLast && busy ? <Thinking stage={stage} /> : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
               </div>
@@ -349,7 +404,7 @@ function AskPage() {
 // runId is "" only for the brief moment between submit and startResearch resolving.
 interface ResearchCard {
   runId: string;
-  mode: "standard" | "structured_review";
+  mode: ReportMode;
   title: string;
   error: string | null;
   proGate: boolean;
@@ -362,11 +417,21 @@ function rehydrateResearchCard(s: SavedResearchCard): ResearchCard {
   return { runId: "", mode: s.mode, title: s.title, error: null, proGate: false, completed: { savedReportId: s.savedReportId, sources: s.citationCount } };
 }
 
+// A pending clarification turn: the scope step found the question ambiguous, so we collect answers
+// (chips + free text) before starting the run.
+interface ScopeTurnState {
+  question: string;
+  runMode: ReportMode;
+  questions: ScopeQuestion[];
+}
+
 interface Turn {
   q: string;
   a: AskResponse | null;
   err: string | null;
   research?: ResearchCard; // present when this turn is a deep-research run instead of a chat answer
+  scope?: ScopeTurnState;  // present while clarifying questions await answers
+  scoping?: boolean;       // brief: the scope step is running before we know if clarification is needed
 }
 
 interface ComposerProps {
@@ -464,6 +529,63 @@ function Thinking({ stage }: { stage: number }) {
   );
 }
 
+// The clarifying-question turn: shown when the scope step found the question ambiguous. Each question
+// offers quick-pick chips (which fill the matching free-text box) plus a free-text answer. "Run with
+// answers" folds the answers into the question; "Just run it" runs the original unchanged.
+function ScopeTurn({ state, onRun }: { state: ScopeTurnState; onRun: (enrichedQuestion: string) => void }) {
+  const [answers, setAnswers] = useState<string[]>(() => state.questions.map(() => ""));
+  const [submitted, setSubmitted] = useState(false);
+  const setAnswer = (i: number, v: string) => setAnswers((prev) => prev.map((a, j) => (j === i ? v : a)));
+
+  const run = (withAnswers: boolean) => {
+    if (submitted) return;
+    setSubmitted(true);
+    if (!withAnswers) { onRun(state.question); return; }
+    const parts = state.questions
+      .map((q, i) => ({ q: q.text, a: (answers[i] ?? "").trim() }))
+      .filter((x) => x.a)
+      .map((x) => `${x.q} ${x.a}`);
+    onRun(parts.length ? `${state.question}\n\nFocus: ${parts.join("; ")}` : state.question);
+  };
+
+  return (
+    <div className="scope-card">
+      <div className="ai-block-label"><Icon name="sparkle" size={14} /> A couple of quick questions to focus this</div>
+      {state.questions.map((q, i) => (
+        <div key={i} className="scope-q">
+          <div className="scope-q-text">{q.text}</div>
+          {q.chips.length ? (
+            <div className="chip-row">
+              {q.chips.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  className={`chip-action${answers[i] === chip ? " active" : ""}`}
+                  onClick={() => setAnswer(i, answers[i] === chip ? "" : chip)}
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <input
+            className="scope-input"
+            value={answers[i] ?? ""}
+            placeholder="or type your own…"
+            aria-label={q.text}
+            onChange={(e) => setAnswer(i, e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") run(true); }}
+          />
+        </div>
+      ))}
+      <div className="scope-actions">
+        <button className="chip-action" onClick={() => run(true)} disabled={submitted}><Icon name="send" size={14} />Run with answers</button>
+        <button className="chip-action" onClick={() => run(false)} disabled={submitted}>Just run it</button>
+      </div>
+    </div>
+  );
+}
+
 // The inline deep-research card. While the run is in flight it polls research_report_runs (RLS-scoped)
 // and shows live progress; on completion it becomes a "Report ready" card linking to the full report
 // in the Reports library. A start-time error (quota / Pro gate) is passed down on the card.
@@ -514,7 +636,7 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
     return () => { alive = false; clearTimeout(timer); };
   }, [card.runId, card.error, card.completed, card.title, done]);
 
-  const modeLabel = card.mode === "structured_review" ? "Structured review" : "Deep research";
+  const modeLabel = "Deep research"; // one Pro research mode now
 
   if (err) {
     return (
@@ -541,7 +663,7 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
   );
 }
 
-function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string) => void }) {
+function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of answer.citations) m.set(normTag(c.chunk_tag), abbr(c.source_type));
@@ -556,7 +678,7 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskR
 
   const s = answer.answer_sections;
   const flags = (answer.safety_flags ?? []).filter((f) => f !== "no_sources_found");
-  const cite = (tag: string) => onCite(answer, tag); // bind every [n] click to THIS answer's sources
+  const cite = (tag: string, quote?: string) => onCite(answer, tag, quote); // bind every [n] click to THIS answer's sources + the clicked claim's supporting line
   return (
     <div className="answer fade">
       <div className="grade-row">
@@ -590,13 +712,15 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskR
 }
 
 interface PointBlockProps {
-  points: Array<{ text: string; citation_ids?: string[] }>;
+  points: Array<{ text: string; citation_ids?: string[]; support?: ClaimSupport[] }>;
   citeMap: Map<string, string>;
-  onCite: (tag: string) => void;
+  onCite: (tag: string, quote?: string) => void;
 }
 
-// Inline [n] citation chips trailing a point's text.
-function CiteChips({ ids, citeMap, onCite }: { ids?: string[]; citeMap: Map<string, string>; onCite: (tag: string) => void }) {
+// Inline [n] citation chips trailing a point's text. `support` carries the verbatim source sentence(s)
+// this point cited; clicking a chip passes that source's supporting line so the evidence card can
+// highlight exactly what backs the claim.
+function CiteChips({ ids, support, citeMap, onCite }: { ids?: string[]; support?: ClaimSupport[]; citeMap: Map<string, string>; onCite: (tag: string, quote?: string) => void }) {
   if (!ids?.length) return null;
   return (
     <>
@@ -604,7 +728,7 @@ function CiteChips({ ids, citeMap, onCite }: { ids?: string[]; citeMap: Map<stri
       {ids.map((id) => {
         const t = normTag(id);
         return (
-          <button key={id} type="button" className="cite" onClick={() => onCite(t)} title="Show source" aria-label={`Show source ${t}`}>
+          <button key={id} type="button" className="cite" onClick={() => onCite(t, supportQuoteFor(support, t))} title="Show source" aria-label={`Show source ${t}`}>
             {citeMap.get(t) ?? "REF"}&nbsp;{t}
           </button>
         );
@@ -620,7 +744,7 @@ function Prose({ points, citeMap, onCite }: PointBlockProps) {
   return (
     <>
       {points.map((p, i) => (
-        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
+        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
       ))}
     </>
   );
@@ -633,7 +757,7 @@ function SafetyBlock({ points, citeMap, onCite }: PointBlockProps) {
     <div className="ai-safety">
       <div className="ai-safety-label"><Icon name="shield" size={14} />Safety</div>
       {points.map((p, i) => (
-        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
+        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
       ))}
     </div>
   );
@@ -646,7 +770,7 @@ function UnclearBlock({ points, citeMap, onCite }: PointBlockProps) {
     <div className="ai-unclear">
       <div className="muted-label">Still uncertain</div>
       {points.map((p, i) => (
-        <p key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
+        <p key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
       ))}
     </div>
   );

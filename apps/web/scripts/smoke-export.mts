@@ -114,7 +114,22 @@ for (const needle of ["NOT FULLY FACT-CHECKED", "not an exhaustive census", "Met
 }
 console.log("✓ structured docx carries honesty signals");
 
+// Evidence-base table parity: the docx must carry the same body-of-evidence table the screen shows.
+for (const needle of ["Evidence base (1 sources)", "Study"]) {
+  if (!xml.includes(needle)) throw new Error(`evidence-base table missing from docx: ${needle}`);
+}
+console.log("✓ structured docx carries the evidence-base table");
+
 const pptxBuf2 = await reportToPptx(structuredReport, "ama");
 assertPkZip(pptxBuf2, "structured pptx");
+const pptxFiles = unzipSync(new Uint8Array(pptxBuf2));
+const slideXml = Object.entries(pptxFiles)
+  .filter(([name]) => name.startsWith("ppt/slides/slide") && name.endsWith(".xml"))
+  .map(([, data]) => strFromU8(data))
+  .join("");
+if (!slideXml.includes("Evidence base (1 sources)")) {
+  throw new Error("evidence-base table missing from pptx slides");
+}
+console.log("✓ structured pptx carries the evidence-base table");
 
 console.log("export smoke: PASS");

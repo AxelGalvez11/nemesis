@@ -46,7 +46,7 @@ interface EpmcResult {
   title?: string;
   authorString?: string;
   abstractText?: string;
-  journalInfo?: { journal?: { title?: string } };
+  journalInfo?: { journal?: { title?: string; issn?: string; essn?: string } };
   pubYear?: string;
   license?: string; // Europe PMC's own license tag for the article (core resultType)
   authorList?: { author?: Array<{ lastName?: string; initials?: string }> };
@@ -93,6 +93,7 @@ export async function fetchEuropePmc(opts: EuropePmcFetchOpts): Promise<Normaliz
         pmcid: r.pmcid,
         year: r.pubYear,
         journal: r.journalInfo?.journal?.title,
+        issn: [r.journalInfo?.journal?.issn, r.journalInfo?.journal?.essn].filter((s): s is string => Boolean(s)),
         authors: (r.authorList?.author ?? [])
           .map((au) => [au.lastName, au.initials].filter(Boolean).join(" "))
           .filter(Boolean),

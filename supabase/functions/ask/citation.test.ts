@@ -3,7 +3,17 @@
 // drop tags that don't map to a real chunk, refuse when the bottom line has no
 // valid support (AC3), and build the citations[] from survivors.
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { citationMeta, enforceCitations, type RetrievedChunk } from "./citation.ts";
+
+function metaChunk(extra: Partial<RetrievedChunk>): RetrievedChunk {
+  return { tag: "1", chunk_id: "c", source_id: "s", provider: "pubmed_oa", title: "t", section: null, url: null, license: null, published_date: null, retrieved_at: null, similarity: 0, ...extra };
+}
+
+Deno.test("citationMeta stamps doaj_vetted from a DOAJ-listed journal ISSN (positive-only)", () => {
+  assertEquals(citationMeta(metaChunk({ issn: ["1932-6203"] })).doaj_vetted, true); // PLoS ONE — DOAJ-listed
+  assertEquals(citationMeta(metaChunk({ issn: ["0028-4793"] })).doaj_vetted, undefined); // NEJM — not in DOAJ
+  assertEquals(citationMeta(metaChunk({})).doaj_vetted, undefined); // no ISSN -> no claim
+});
 
 function chunks(): RetrievedChunk[] {
   return [

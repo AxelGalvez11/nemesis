@@ -6,8 +6,10 @@ import type {
   DrugOverview,
   EntitlementSnapshot,
   QuotaExceededError,
+  ReportMode,
   ResearchProgressStep,
   ResearchReport,
+  ScopeResult,
   SearchResult,
   SourceDetail,
   UsageSnapshot,
@@ -484,7 +486,7 @@ export interface ConversationSummary {
 
 /** A reconstructed deep-research card (persisted on completion) — links to the finished report. */
 export interface SavedResearchCard {
-  mode: "standard" | "structured_review";
+  mode: ReportMode;
   savedReportId: string | null;
   title: string;
   citationCount: number;
@@ -525,6 +527,13 @@ export async function createConversation(title: string): Promise<string | null> 
   return isObj(data) && typeof data.id === "string" ? data.id : null;
 }
 
+/** Delete a chat and (via ON DELETE CASCADE) its messages. RLS scopes the delete to the owner. */
+export async function deleteConversation(conversationId: string): Promise<void> {
+  if (isPreviewMode) return;
+  const { error } = await supabase.from("conversations").delete().eq("id", conversationId);
+  if (error) throw new Error(`delete chat failed: ${error.message}`);
+}
+
 /** Persist one turn (question + cited answer) at the given ordinal base, and bump the chat's
  *  updated_at so it sorts to the top of the history. */
 export async function saveTurn(conversationId: string, ordinalBase: number, question: string, answer: AskResponse): Promise<void> {
@@ -540,7 +549,10 @@ export async function saveTurn(conversationId: string, ordinalBase: number, ques
       role: "assistant",
       ordinal: ordinalBase + 1,
       content: answer.plain_english_summary ?? "",
-      answer_id: answer.answer_id,
+      // NB: do NOT set answer_id here. It's a FK to generated_answers, and if the server's audit-trace
+      // write was rejected (storeTrace doesn't check the HTTP status), that row won't exist — the FK
+      // then fails and the WHOLE message insert is rejected, so the chat silently never persists and a
+      // reopen shows nothing. The full answer is in `payload`; the chat doesn't need the FK link.
       payload: answer, // full structured answer → a reopened chat re-renders identically
       citations: answer.citations,
     },
@@ -594,7 +606,7 @@ export async function fetchConversationTurns(conversationId: string): Promise<Sa
           q: pendingQ ?? "",
           a: null,
           research: {
-            mode: p.mode === "structured_review" ? "structured_review" : "standard",
+            mode: p.mode === "structured_review" ? "structured_review" : p.mode === "meta" ? "meta" : "standard",
             savedReportId: typeof p.saved_report_id === "string" ? p.saved_report_id : null,
             title: typeof p.title === "string" ? p.title : (pendingQ ?? ""),
             citationCount: typeof p.citation_count === "number" ? p.citation_count : 0,
@@ -636,7 +648,7 @@ export interface ResearchReportSummary {
 
 /** Start a deep-research run. Returns the run id to poll. Throws AskQuotaError on the Pro gate /
  *  daily-limit 429 (deep_research_daily_limit is 0 for free/plus). */
-export async function startResearch(question: string, mode: "standard" | "structured_review" = "standard"): Promise<string> {
+export async function startResearch(question: string, mode: ReportMode = "standard"): Promise<string> {
   if (isPreviewMode) throw new Error("Deep research needs a live connection (not available in preview).");
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -661,6 +673,30 @@ export async function startResearch(question: string, mode: "standard" | "struct
     throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `research failed (${res.status})`);
   }
   return body.run_id;
+}
+
+/** Scope a deep-research question: returns clarifying questions ONLY when ambiguous. Best-effort —
+ *  any failure (no session, non-OK, malformed) resolves to needs_clarification:false ("just run it"),
+ *  so scoping can never block a run. Consumes no quota and starts no run. */
+export async function scopeResearch(question: string): Promise<ScopeResult> {
+  const none: ScopeResult = { needs_clarification: false, questions: [] };
+  if (isPreviewMode) return none;
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return none;
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/research`, {
+      method: "POST",
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ question, action: "scope" }),
+    });
+    if (!res.ok) return none;
+    const body = await res.json().catch(() => null);
+    if (!isObj(body) || typeof body.needs_clarification !== "boolean" || !Array.isArray(body.questions)) return none;
+    return body as unknown as ScopeResult;
+  } catch {
+    return none;
+  }
 }
 
 /** Poll one run row (RLS-scoped). Returns null if not found yet. */

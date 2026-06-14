@@ -4,6 +4,11 @@ export const isPreviewMode = !supabaseUrl || !supabaseAnonKey;
 export const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 export const landingUrl = process.env.NEXT_PUBLIC_LANDING_URL ?? "https://pharmaorb.app";
 
+// PostHog product analytics. Public phc_ project key (write-only ingestion) + host — safe in the
+// browser bundle. Reads happen elsewhere with a personal API key.
+export const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
+export const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
+
 export const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 export const stripeSecretKey = process.env.STRIPE_SECRET_KEY ?? "";
 export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";

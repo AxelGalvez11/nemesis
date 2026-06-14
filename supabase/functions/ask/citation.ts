@@ -12,6 +12,7 @@
 // not misread as semantic-support verification.
 
 import type { AnswerSections, Citation } from "../../../packages/shared/src/answer.ts";
+import { isDoajVetted } from "./doaj-registry.ts";
 
 export interface RetrievedChunk {
   tag: string; // retrieval-local "1".."N" shown to the generator
@@ -42,10 +43,15 @@ export interface RetrievedChunk {
   study_type?: string;
   trial_status?: string;
   trial_phase?: string;
+  /** The journal's ISSN(s) (print + online). Used to flag DOAJ-listed journals; not displayed. */
+  issn?: string[];
 }
 
-/** Copy the optional bibliographic fields from a chunk onto a Citation. PURE. */
-export function citationMeta(c: RetrievedChunk): Pick<Citation, "authors" | "journal" | "year" | "volume" | "issue" | "pages"> {
+/** Copy the optional bibliographic + study-type fields from a chunk onto a Citation, plus the DOAJ
+ *  credibility flag derived from the journal ISSN. PURE. doaj_vetted is omitted (undefined) unless the
+ *  journal is confirmed DOAJ-listed — a positive-only signal. The study-type fields are carried verbatim
+ *  so the UI can derive a study-type badge (studyTypeLabel) without the LLM ever guessing the design. */
+export function citationMeta(c: RetrievedChunk): Pick<Citation, "authors" | "journal" | "year" | "volume" | "issue" | "pages" | "doaj_vetted" | "publication_types" | "study_type" | "trial_phase"> {
   return {
     authors: c.authors,
     journal: c.journal,
@@ -53,6 +59,10 @@ export function citationMeta(c: RetrievedChunk): Pick<Citation, "authors" | "jou
     volume: c.volume,
     issue: c.issue,
     pages: c.pages,
+    doaj_vetted: c.issn && isDoajVetted(c.issn) ? true : undefined,
+    publication_types: c.publication_types,
+    study_type: c.study_type,
+    trial_phase: c.trial_phase,
   };
 }
 

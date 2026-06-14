@@ -7,6 +7,24 @@
 // /ask AskResponse.
 
 import type { AnswerPoint, AnswerTemplate, Citation, EvidenceGrade, SafetyFlag } from "./answer.ts";
+// Direct module import (NOT the ./index barrel) to avoid a barrel import cycle.
+import type { MetaAnalysisResult } from "./meta-analysis.ts";
+
+// ── Clarifying-question scoping (Phase 2) ───────────────────────────────────
+// Before a deep-research run, a cheap scope step may return 1-3 clarifying questions to focus the
+// search. Best-effort: needs_clarification=false means "just run it" (no clarification).
+
+/** One clarifying question with quick-pick chips (a free-text answer is always available in the UI). */
+export interface ScopeQuestion {
+  text: string;
+  chips: string[];
+}
+
+/** The scope step's output: whether the question is ambiguous, and the clarifiers if so. */
+export interface ScopeResult {
+  needs_clarification: boolean;
+  questions: ScopeQuestion[];
+}
 
 /** One themed section of a report (≈ one planned sub-question), with cited sentences. */
 export interface ResearchSection {
@@ -56,6 +74,13 @@ export interface ResearchReport {
   counts?: RetrievalCounts;
   /** Citation style chosen for this report; exports read it so a download matches the screen. */
   citation_style?: CitationStyle;
+  /**
+   * Computed meta-analysis (Phase 4, `meta` mode only). Pooled risk-ratio estimate with Q/I²/τ²,
+   * or `poolable:false` with a reason. Stats are computed in code from grounded 2x2 counts, never
+   * LLM-guessed; the pooled prose lives in `sections` (so it rides the one safety scan), while this
+   * carries the structured per-study + pooled figures the forest table renders.
+   */
+  meta_analysis?: MetaAnalysisResult;
 }
 
 /** Async run lifecycle (mirrors research_report_runs.status). */
@@ -73,8 +98,17 @@ export interface ResearchProgressStep {
 // ── Publishable-reports additions (additive & optional; saved in payload JSON) ──
 
 /** Report rigor mode. 'standard' = today's Deep Research; 'structured_review' = the
- *  honest, method-documenting "structured / PRISMA-informed evidence review". */
-export type ReportMode = "standard" | "structured_review";
+ *  honest, method-documenting "structured / PRISMA-informed evidence review"; 'meta' = adds a
+ *  code-computed pooled estimate (risk ratio) when ≥2 comparable studies report extractable counts. */
+export type ReportMode = "standard" | "structured_review" | "meta";
+
+/** The fixed comparison a meta-analysis run pools around (PICO), parsed from the question BEFORE the
+ *  corpus is read so the contrast can never be inferred post-hoc across mismatched studies. */
+export interface Pico {
+  intervention: string;
+  comparator: string;
+  outcome: string;
+}
 
 /** Numbered medical citation style the reference list/exports use. */
 export type CitationStyle = "vancouver" | "ama";
