@@ -15,8 +15,8 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
-import { detectSmallTalk, detectViolations, preScreen } from "./safety.ts";
-import { sanitizeAnswer } from "./sanitize.ts";
+import { detectSmallTalk, preScreen } from "./safety.ts";
+import { isBenignSalvageable, resolveSafety } from "./sanitize.ts";
 import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
@@ -245,40 +245,33 @@ async function runAsk(
   const modelName = `${cls.model}|${gen.model}`;
 
   // ---- 6a. post-generation safety filter (the doc-20 guarantee) ----
-  // Scan every DECLARATIVE model section (assertions the system would be making).
-  // questions_to_ask is excluded ON PURPOSE: it is interrogative — "is it safe
-  // for me?" / "should I stop X?" are questions to pose to a clinician, NOT the
-  // forbidden assertions "[X] is safe" / "stop taking X", and scanning them with
-  // the claim detectors false-positives (discarding good answers).
-  const assembled = [
-    gen.raw.bottom_line.text,
-    ...gen.raw.what_we_know.map((p) => p.text),
-    ...gen.raw.safety_notes.map((p) => p.text),
-    ...gen.raw.what_we_do_not_know.map((p) => p.text),
-  ].join("  ");
-  const violations = detectViolations(assembled);
-  if (violations.length > 0) {
-    // SALVAGE before discarding. A single forbidden sentence used to throw away the WHOLE cited
-    // answer (a good reply to a benign health question lost to one "X is safe" / "cures" / dose
-    // line). Instead drop ONLY the offending body points and keep the rest — then RE-SCAN the
-    // survivors so the post-filter guarantee is preserved exactly. The bottom_line is the headline:
-    // if IT trips, or anything still trips after scrubbing, the answer is unsalvageable -> discard
-    // as before (conservative template + the retrieved sources as related info). LOG either way: a
-    // backstop that silently swallows a cited answer is not debuggable.
-    const san = sanitizeAnswer(gen.raw);
-    const survivors = [
-      san.raw.bottom_line.text,
-      ...san.raw.what_we_know.map((p) => p.text),
-      ...san.raw.safety_notes.map((p) => p.text),
-      ...san.raw.what_we_do_not_know.map((p) => p.text),
-    ].join("  ");
-    if (san.bottomLineViolation || detectViolations(survivors).length > 0) {
-      console.error("ask safety_fallback — discarded generation (unsalvageable):", JSON.stringify(violations));
-      return await finalizeTemplate(answerId, question, cls.intent,
-        flags, entities, userId, "safety_fallback", modelName, true, ret.chunks);
-    }
-    console.warn(`ask safety_salvage — dropped ${san.droppedCount} offending point(s), delivered the rest:`, JSON.stringify(violations));
-    gen = { ...gen, raw: san.raw };
+  // detectViolations (safety.ts) is the untouched teeth; resolveSafety (sanitize.ts) is the pure,
+  // unit-tested decision around it. It scans every DECLARATIVE model section — questions_to_ask is
+  // excluded ON PURPOSE: it is interrogative ("is it safe for me?" / "should I stop X?" are questions
+  // to pose to a clinician, NOT the forbidden assertions), and scanning it false-positives. Outcomes:
+  //   clean    -> deliver as generated.
+  //   salvaged -> a BENIGN answer had an offending line; drop ONLY that line and keep the cited rest
+  //               (survivors re-scanned, so the guarantee holds). Restores the good acne-type answers
+  //               that a single "X is safe" / "cures" / dose line used to throw away wholesale.
+  //   fallback -> unsalvageable (headline trips, residual after scrub, nothing substantive left) OR a
+  //               SENSITIVE class (peptide / dosing / high-risk drug) where one forbidden line still
+  //               refuses the WHOLE answer, exactly as before. Conservative template + the sources.
+  // LOG either way: a backstop that silently swallows a cited answer is not debuggable.
+  const resolution = resolveSafety(gen.raw, { salvageable: isBenignSalvageable(cls.intent, flags) });
+  if (resolution.kind === "fallback") {
+    console.error(
+      `ask safety_fallback — discarded generation (${resolution.reason}):`,
+      JSON.stringify(resolution.violations),
+    );
+    return await finalizeTemplate(answerId, question, cls.intent,
+      flags, entities, userId, "safety_fallback", modelName, true, ret.chunks);
+  }
+  if (resolution.kind === "salvaged") {
+    console.warn(
+      `ask safety_salvage — dropped ${resolution.droppedCount} offending point(s), delivered the rest:`,
+      JSON.stringify(resolution.violations),
+    );
+    gen = { ...gen, raw: resolution.raw };
   }
 
   // ---- 6b. citation enforcement ----
