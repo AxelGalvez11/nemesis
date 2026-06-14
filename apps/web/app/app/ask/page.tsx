@@ -7,6 +7,7 @@ import type { AskResponse, ClaimSupport, ReportMode, ScopeQuestion } from "@phar
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
+import { phCapture } from "@/lib/posthog";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
@@ -260,6 +261,7 @@ function AskPage() {
   async function submit(q: string) {
     const text = q.trim();
     if (!text || busy || loadingChat) return;
+    phCapture("ask_submitted", { mode });
     // Deep research / structured review run INLINE in the thread: append a turn whose body is a
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
@@ -268,6 +270,7 @@ function AskPage() {
       // Deep research documents its method (engine's structured_review); meta-analysis additionally
       // pools comparable studies into a computed estimate when the evidence supports it.
       const runMode: ReportMode = mode === "meta" ? "meta" : "structured_review";
+      phCapture("research_started", { mode: runMode });
       const ridx = turns.length;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
       setTurns((prev) => [...prev, { q: text, a: null, err: null, scoping: true }]);
@@ -295,6 +298,7 @@ function AskPage() {
     try {
       const res = await askQuestion(text);
       setLast({ a: res });
+      phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
       void fetchUsage().catch(() => {});
       void persistTurn(idx, text, res); // save the question + cited answer to chat history
     } catch (err) {
@@ -302,6 +306,7 @@ function AskPage() {
         ? `Daily Ask limit reached (${err.quota.used}/${err.quota.limit}) on ${err.quota.plan}.`
         : err instanceof Error ? err.message : "Ask failed";
       setLast({ err: msg });
+      if (isQuotaError(err)) phCapture("ask_blocked", { mode, reason: "quota", plan: err.quota.plan });
     } finally {
       setBusy(false);
     }

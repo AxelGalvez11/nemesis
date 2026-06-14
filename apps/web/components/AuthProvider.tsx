@@ -4,6 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { appUrl, isPreviewMode } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
+import { phCapture, phIdentify, phReset } from "@/lib/posthog";
 
 export interface SignUpResult {
   error: string | null;
@@ -53,10 +54,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data }) => {
       if (!alive) return;
       setSession(data.session ?? null);
+      if (data.session?.user) phIdentify(data.session.user.id, { email: data.session.user.email });
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
+      if (next?.user) phIdentify(next.user.id, { email: next.user.email });
+      else if (event === "SIGNED_OUT") phReset();
       setLoading(false);
     });
     return () => {
@@ -87,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     });
     if (error) return { error: error.message, needsEmailConfirmation: false };
+    phCapture("signup", { method: "email", needs_confirmation: !data.session });
     if (data.session) setSession(data.session);
     return { error: null, needsEmailConfirmation: !data.session };
   }, []);

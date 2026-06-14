@@ -5,6 +5,7 @@ import type { EntitlementSnapshot } from "@pharmabro/shared";
 import { useAuth } from "@/components/AuthProvider";
 import { Card, ErrorText, PageHeader, Badge } from "@/components/ui";
 import { fetchEntitlements } from "@/lib/api";
+import { phCapture } from "@/lib/posthog";
 
 export default function BillingPage() {
   const { session } = useAuth();
@@ -19,6 +20,7 @@ export default function BillingPage() {
   async function post(action: string, path: string, payload?: Record<string, unknown>) {
     setBusy(action);
     setError(null);
+    if (payload?.plan) phCapture("checkout_started", { plan: payload.plan });
     try {
       const token = session?.access_token;
       if (!token) throw new Error("Sign in first");

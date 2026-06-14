@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 import { stripeWebhookSecret } from "@/lib/env";
 import { adminClient, json } from "@/lib/server";
 import { planFromStripeStatus, stripe, stripeFailureDetail } from "@/lib/stripe";
+import { phServerCapture } from "@/lib/posthog-server";
 
 export const runtime = "nodejs";
 
@@ -33,7 +34,12 @@ export async function POST(req: Request) {
       event.type === "customer.subscription.updated" ||
       event.type === "customer.subscription.deleted"
     ) {
-      await mirrorSubscription(event.data.object as Stripe.Subscription, null);
+      const result = await mirrorSubscription(event.data.object as Stripe.Subscription, null);
+      if (event.type === "customer.subscription.created") {
+        await phServerCapture(result.userId, "subscription_started", { plan: result.plan, price_id: result.priceId });
+      } else if (event.type === "customer.subscription.deleted") {
+        await phServerCapture(result.userId, "subscription_canceled", { plan: result.plan, price_id: result.priceId });
+      }
     }
   } catch (error) {
     console.error("stripe_webhook_processing_failed", {
@@ -74,6 +80,8 @@ async function mirrorSubscription(subscription: Stripe.Subscription, fallbackUse
     current_period_end: currentPeriodEnd,
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id" });
+
+  return { userId, plan, priceId };
 }
 
 async function lookupUserIdByCustomer(customerId: string): Promise<string | null> {
