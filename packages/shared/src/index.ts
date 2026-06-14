@@ -54,3 +54,8 @@ export * from "./meta-abstract.ts";
 // study_type fields ("Meta-analysis", "Randomized controlled trial", "Interventional trial · Phase 3").
 // Never an LLM guess — computed verbatim or omitted (no false badge).
 export * from "./study-type.ts";
+
+// "Where the science stands": PURE evidence-MATURITY signal (well_studied / emerging) computed from
+// the cited sources' study-type metadata. Positive-only — null (no badge) when there's no signal to
+// stand behind. Never an LLM guess; consensus/"contested" is left to the meta engine's heterogeneity.
+export * from "./science-state.ts";
