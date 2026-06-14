@@ -11,7 +11,7 @@
 // that optional for Phase 3; logged for the §9/Phase-4 work so a green suite is
 // not misread as semantic-support verification.
 
-import type { AnswerSections, Citation } from "../../../packages/shared/src/answer.ts";
+import type { AnswerSections, Citation, SourceText } from "../../../packages/shared/src/answer.ts";
 import { isDoajVetted } from "./doaj-registry.ts";
 
 export interface RetrievedChunk {
@@ -45,13 +45,16 @@ export interface RetrievedChunk {
   trial_phase?: string;
   /** The journal's ISSN(s) (print + online). Used to flag DOAJ-listed journals; not displayed. */
   issn?: string[];
+  /** Free-to-read full-text LINK (open-access PDF/article), when the source exposes one. A pointer the
+   *  reader can follow — NOT text we retrieved or grounded. Live OA providers (OpenAlex, Europe PMC) only. */
+  oa_url?: string;
 }
 
 /** Copy the optional bibliographic + study-type fields from a chunk onto a Citation, plus the DOAJ
  *  credibility flag derived from the journal ISSN. PURE. doaj_vetted is omitted (undefined) unless the
  *  journal is confirmed DOAJ-listed — a positive-only signal. The study-type fields are carried verbatim
  *  so the UI can derive a study-type badge (studyTypeLabel) without the LLM ever guessing the design. */
-export function citationMeta(c: RetrievedChunk): Pick<Citation, "authors" | "journal" | "year" | "volume" | "issue" | "pages" | "doaj_vetted" | "publication_types" | "study_type" | "trial_phase"> {
+export function citationMeta(c: RetrievedChunk): Pick<Citation, "authors" | "journal" | "year" | "volume" | "issue" | "pages" | "doaj_vetted" | "publication_types" | "study_type" | "trial_phase" | "oa_url"> {
   return {
     authors: c.authors,
     journal: c.journal,
@@ -63,6 +66,7 @@ export function citationMeta(c: RetrievedChunk): Pick<Citation, "authors" | "jou
     publication_types: c.publication_types,
     study_type: c.study_type,
     trial_phase: c.trial_phase,
+    oa_url: c.oa_url,
   };
 }
 
@@ -189,4 +193,24 @@ function oldestDate(citations: Citation[]): string | null {
     .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
   if (dates.length === 0) return null;
   return dates.sort()[0];
+}
+
+/**
+ * Verbatim per-tag source text for the `include_source_text` verification payload. At most one entry
+ * per tag (first non-empty wins); a chunk with no usable body text is skipped — there is nothing to
+ * verify a claim against. PURE. The tags returned match Citation.chunk_tag, so a consumer can resolve
+ * each claim's cited [n] to the EXACT text it cited (faithful-vs-drift becomes a direct read, not a
+ * lossy re-fetch). Built from the SAME reranked chunk set the answer was generated and cited from.
+ */
+export function collectSourceTexts(
+  chunks: ReadonlyArray<Pick<RetrievedChunk, "tag" | "chunk_text">>,
+): SourceText[] {
+  const out: SourceText[] = [];
+  const seen = new Set<string>();
+  for (const c of chunks) {
+    if (seen.has(c.tag) || !c.chunk_text?.trim()) continue;
+    seen.add(c.tag);
+    out.push({ tag: c.tag, text: c.chunk_text });
+  }
+  return out;
 }

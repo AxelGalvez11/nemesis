@@ -52,6 +52,57 @@ Deno.test("returns null on empty inputs", () => {
   assertEquals(bestSupportingSpan("anything meaningful here", ""), null);
 });
 
+// ---------------------------------------------------------------------------
+// bounded multi-sentence window — grounds a claim whose support is SPREAD across
+// sentences (no single sentence clears the bar), at the SAME MIN_SCORE rigor.
+// Phase 2 only fires when no single sentence supports, so existing highlights are
+// unchanged. The window never lowers the bar and is capped at 3 sentences.
+// ---------------------------------------------------------------------------
+
+// Each sentence holds <34% of the claim's content words (so today's single-sentence matcher returns
+// null), but a 2-sentence span clears it. "It improved memory, reduced inflammation, and extended
+// survival." = {improved, memory, reduced, inflammation, extended, survival} (6 content tokens).
+const SPREAD =
+  "The compound improved memory in mice. It separately reduced inflammation markers. In a third cohort it extended survival. Tolerability was acceptable.";
+
+Deno.test("window: grounds a claim whose support is spread across sentences (verbatim span)", () => {
+  const claim = "It improved memory, reduced inflammation, and extended survival.";
+  // single best is 2/6 = 0.33 < 0.34 → no single sentence supports; a contiguous window does.
+  const s = bestSupportingSpan(claim, SPREAD);
+  assert(s, "expected a multi-sentence supporting span");
+  assertEquals(SPREAD.slice(s.start, s.end), s.quote); // still a VERBATIM substring (never fabricated)
+  assert(s.quote.includes("improved memory") && s.quote.includes("reduced inflammation"));
+});
+
+Deno.test("window is BOUNDED: support split across MORE than 3 sentences stays null", () => {
+  // "apixaban" (sentence 1) and "bleeding" (sentence 5) are 5 sentences apart; no ≤3-sentence window
+  // can hold both, so matched stays 1 (< MIN_MATCHED) everywhere → null. The bound keeps it rigorous.
+  const FAR = "Apixaban matters here. Filler one line. Filler two line. Filler three line. Bleeding matters here.";
+  assertEquals(bestSupportingSpan("apixaban bleeding risk", FAR), null);
+});
+
+Deno.test("window does NOT lower the bar: a too-sparse claim stays null (no manufactured support)", () => {
+  // The claim shares only ~20% of its words with the passage even across a full window — below 0.34,
+  // so it must stay unsupported (the genuine-drift case must never be hidden by the window).
+  const claim = "The intervention is a multicomponent program combining diet, exercise, and metformin dosing titration.";
+  const sparse = "This trial studies frailty in older adults. Metformin was one component. Outcomes are pending.";
+  assertEquals(bestSupportingSpan(claim, sparse), null);
+});
+
+// A decimal figure (1.4 percent) must not be split at its period into two "sentences", or the highlight
+// would begin mid-number at "4 percent" — a WRONG number in the provenance span, the worst place to be
+// loose on a clinical answer. The splitter must keep an inter-digit period inside the sentence.
+const DECIMAL_SRC =
+  "In clinical trials, hyperkalemia occurred in approximately 1.4 percent of hypertensive patients. Most values resolved.";
+
+Deno.test("decimal figures are not split at the period (highlight shows the whole number, not a mid-number fragment)", () => {
+  const claim = "Hyperkalemia occurred in approximately 1.4 percent of hypertensive patients";
+  const s = bestSupportingSpan(claim, DECIMAL_SRC);
+  assert(s, "expected a supporting span");
+  assertEquals(DECIMAL_SRC.slice(s.start, s.end), s.quote); // still a VERBATIM substring
+  assert(s.quote.includes("1.4 percent"), `quote must contain the whole figure, got: ${s.quote}`);
+});
+
 Deno.test("attachSupport adds a verbatim supporting quote for a claim its cited source supports", () => {
   const out = attachSupport(SECTIONS, CHUNKS);
   const p0 = out.what_we_know[0];

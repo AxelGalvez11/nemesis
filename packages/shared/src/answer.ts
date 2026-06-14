@@ -129,6 +129,23 @@ export interface Citation {
   study_type?: string;
   /** Trial phase, Roman from PubMed ("Phase III") or CT.gov form ("PHASE3"). */
   trial_phase?: string;
+  /** A free-to-read full-text LINK (open-access PDF/article page) when the source exposes one — a
+   *  pointer the reader can follow to read the whole paper free, NOT text we retrieved or grounded
+   *  (we still only ground the abstract). Surfaced from OA data the live providers already return
+   *  (OpenAlex `best_oa_location`/`open_access`, Europe PMC `fullTextUrlList`); absent otherwise and
+   *  on older saved chats/reports. The UI shows it as a distinct "Read full text (free)" affordance. */
+  oa_url?: string;
+}
+
+/** Verbatim retrieved text behind one citation tag — the verification payload. Returned ONLY when the
+ *  request opts in with `include_source_text`, so a benchmark/judge can check each claim against the
+ *  EXACT source text it cited (turning "grounded" into a per-claim verifiable read), rather than
+ *  reconstructing the source by re-fetching (lossy). Never part of a normal answer. */
+export interface SourceText {
+  /** The retrieval-local [n] tag, matching Citation.chunk_tag. */
+  tag: string;
+  /** Verbatim retrieved chunk text for that tag. */
+  text: string;
 }
 
 /** Frozen POST /ask response (doc-11 / §7 / §8 superset). */
@@ -147,6 +164,9 @@ export interface AskResponse {
   refused_unsupported: boolean;
   /** Freshness banner support: oldest retrieved_at across cited sources. */
   oldest_source_date: string | null;
+  /** Per-citation verbatim source text, present ONLY when the request set `include_source_text=true`
+   *  (a verification/eval aid). Omitted from normal answers and the stored trace to keep them small. */
+  source_texts?: SourceText[];
 }
 
 /** Which canned template produced the answer, when one did. */

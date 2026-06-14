@@ -31,6 +31,10 @@ export interface OpenAlexWork {
   ids?: { openalex?: string; doi?: string; pmid?: string; pmcid?: string; mag?: string };
   abstract_inverted_index?: Record<string, number[]> | null;
   primary_location?: { source?: { display_name?: string; issn_l?: string | null; issn?: string[] | null } | null; license?: string | null } | null;
+  // Open-access fields OpenAlex returns on every work — read straight off the same /works response
+  // (zero extra network) to surface a free-to-read link.
+  open_access?: { is_oa?: boolean; oa_status?: string; oa_url?: string | null } | null;
+  best_oa_location?: { pdf_url?: string | null; landing_page_url?: string | null } | null;
   publication_year?: number;
   type?: string;
   authorships?: Array<{ author?: { display_name?: string } }>;
@@ -67,6 +71,22 @@ export function mapOpenAlexLicense(raw: string | null | undefined): CoreSourceLi
   if (l.includes("sa")) return "cc_by_sa";
   if (l.includes("by")) return "cc_by";
   return "cc_by_nc"; // unrecognized publisher terms -> restricted by default
+}
+
+/**
+ * The best FREE-to-read full-text LINK for a work — a pointer the reader can follow to the free
+ * PDF/article, NOT text we retrieve or ground. Prefer a direct PDF, then the OA landing page, then
+ * open_access.oa_url; undefined when the work is not open access. Zero extra network: these fields
+ * ride the same /works response we already fetch.
+ */
+export function bestOaUrl(work: OpenAlexWork): string | undefined {
+  const pdf = work.best_oa_location?.pdf_url?.trim();
+  if (pdf) return pdf;
+  const landing = work.best_oa_location?.landing_page_url?.trim();
+  if (landing) return landing;
+  const oa = work.open_access;
+  if (oa?.is_oa && oa.oa_url?.trim()) return oa.oa_url.trim();
+  return undefined;
 }
 
 /** "https://openalex.org/W3042270788" -> "W3042270788". */
@@ -152,6 +172,7 @@ export async function normalizeWork(work: OpenAlexWork): Promise<NormalizedSourc
       issue: work.biblio?.issue ?? undefined,
       pages,
       publication_types: work.type ? [work.type] : [],
+      oa_url: bestOaUrl(work), // free-to-read full-text LINK (not text we ground); undefined when not OA
     },
   };
 }

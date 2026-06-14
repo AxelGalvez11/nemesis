@@ -40,10 +40,14 @@ interface Sentence {
   end: number;
 }
 
-/** Split into sentences, preserving each sentence's char offsets into the original text. */
+/** Split into sentences, preserving each sentence's char offsets into the original text. A period
+ *  flanked by digits — "1.4", "5.7", section numbers like "1.1" — is a decimal point, NOT a sentence
+ *  boundary; consuming it inside the run keeps the whole figure in one sentence so a provenance
+ *  highlight never begins mid-number (e.g. "4 percent" for a 1.4% claim). The two run alternatives are
+ *  mutually exclusive on the current char (`[^.!?]` never matches "."), so there is no backtracking. */
 function sentences(text: string): Sentence[] {
   const out: Sentence[] = [];
-  const re = /[^.!?]+[.!?]*/g;
+  const re = /(?:[^.!?]+|(?<=\d)\.(?=\d))+[.!?]*/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const raw = m[0];
@@ -60,25 +64,66 @@ function sentences(text: string): Sentence[] {
 const MIN_SCORE = 0.34;
 /** And at least this many distinct content words must overlap (so one shared word is never enough). */
 const MIN_MATCHED = 2;
+/** Phase-2 cap: a claim whose support is spread across sentences may be grounded to a CONTIGUOUS run of
+ *  at most this many sentences. Bounded ON PURPOSE — the window never lowers MIN_SCORE; it only lets the
+ *  same fraction of claim words be satisfied across a few adjacent sentences instead of exactly one. */
+const MAX_WINDOW_SENTENCES = 3;
 
-/**
- * Best supporting sentence for `claim` within `sourceText`, or null if nothing clears the bar. PURE.
- */
-export function bestSupportingSpan(claim: string, sourceText: string): SupportSpan | null {
-  const claimTokens = new Set(contentTokens(claim));
-  if (claimTokens.size === 0 || !sourceText.trim()) return null;
+/** Fraction of `claimTokens` present in `text`, or 0 when fewer than MIN_MATCHED distinct words overlap
+ *  (so one shared word is never enough — the same floor in both phases). */
+function passageScore(claimTokens: Set<string>, text: string): number {
+  const passageTokens = new Set(contentTokens(text));
+  let matched = 0;
+  for (const t of claimTokens) if (passageTokens.has(t)) matched++;
+  return matched >= MIN_MATCHED ? matched / claimTokens.size : 0;
+}
 
+/** Best SINGLE sentence clearing the bar (today's behavior, unchanged). */
+function bestSingleSentence(claimTokens: Set<string>, sens: Sentence[]): SupportSpan | null {
   let best: SupportSpan | null = null;
-  for (const sen of sentences(sourceText)) {
-    const senTokens = new Set(contentTokens(sen.text));
-    let matched = 0;
-    for (const t of claimTokens) if (senTokens.has(t)) matched++;
-    const score = matched / claimTokens.size;
-    if (matched >= MIN_MATCHED && score >= MIN_SCORE && (best === null || score > best.score)) {
+  for (const sen of sens) {
+    const score = passageScore(claimTokens, sen.text);
+    if (score >= MIN_SCORE && (best === null || score > best.score)) {
       best = { quote: sen.text, start: sen.start, end: sen.end, score };
     }
   }
   return best;
+}
+
+/** SMALLEST contiguous window (2..MAX_WINDOW_SENTENCES) that clears the bar, or null. Smallest-first is
+ *  deliberate: passageScore only grows with window size, so a "best score" rule would always emit the
+ *  widest 3-sentence span — maximizing both length and the risk of stitching co-occurring words across a
+ *  topic shift. The minimal passage that meets the bar is the honest "here is the support." The quote is
+ *  the verbatim source slice spanning the window, so support is never fabricated. */
+function bestWindowSpan(claimTokens: Set<string>, sens: Sentence[], sourceText: string): SupportSpan | null {
+  for (let n = 2; n <= MAX_WINDOW_SENTENCES; n++) {
+    let best: SupportSpan | null = null;
+    for (let i = 0; i + n <= sens.length; i++) {
+      const window = sens.slice(i, i + n);
+      const score = passageScore(claimTokens, window.map((s) => s.text).join(" "));
+      if (score >= MIN_SCORE && (best === null || score > best.score)) {
+        const start = window[0].start;
+        const end = window[n - 1].end;
+        best = { quote: sourceText.slice(start, end), start, end, score };
+      }
+    }
+    if (best !== null) return best; // smallest window-size that clears wins — tightest honest support
+  }
+  return null;
+}
+
+/**
+ * Best supporting passage for `claim` within `sourceText`, or null if nothing clears the bar. PURE.
+ * Two-phase: a single supporting sentence wins (unchanged behavior, tightest highlight); ONLY when no
+ * single sentence supports the claim do we try a bounded contiguous multi-sentence window — for a claim
+ * whose support is genuinely spread across adjacent sentences. The window keeps the SAME MIN_SCORE /
+ * MIN_MATCHED bar and is capped, so it never manufactures support for a claim the source doesn't carry.
+ */
+export function bestSupportingSpan(claim: string, sourceText: string): SupportSpan | null {
+  const claimTokens = new Set(contentTokens(claim));
+  if (claimTokens.size === 0 || !sourceText.trim()) return null;
+  const sens = sentences(sourceText);
+  return bestSingleSentence(claimTokens, sens) ?? bestWindowSpan(claimTokens, sens, sourceText);
 }
 
 /** Deterministically attach each cited source's supporting passage to a claim. The quote is verbatim
