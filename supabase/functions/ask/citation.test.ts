@@ -3,7 +3,7 @@
 // drop tags that don't map to a real chunk, refuse when the bottom line has no
 // valid support (AC3), and build the citations[] from survivors.
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { citationMeta, enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
 
 function metaChunk(extra: Partial<RetrievedChunk>): RetrievedChunk {
   return { tag: "1", chunk_id: "c", source_id: "s", provider: "pubmed_oa", title: "t", section: null, url: null, license: null, published_date: null, retrieved_at: null, similarity: 0, ...extra };
@@ -133,4 +133,37 @@ Deno.test("enforce: a point with a missing citations array does not throw", () =
   const r = enforceCitations(inp);
   assertEquals(r.refusedUnsupported, false);
   assert(!r.answer_sections.what_we_know.some((p) => p.text.includes("Unsourced extra")));
+});
+
+// ---------------------------------------------------------------------------
+// collectSourceTexts — the include_source_text verification payload
+// ---------------------------------------------------------------------------
+
+Deno.test("collectSourceTexts: one verbatim entry per tagged chunk that has text", () => {
+  const out = collectSourceTexts([
+    { tag: "1", chunk_text: "Alpha label text." },
+    { tag: "2", chunk_text: "Beta trial text." },
+  ]);
+  assertEquals(out, [
+    { tag: "1", text: "Alpha label text." },
+    { tag: "2", text: "Beta trial text." },
+  ]);
+});
+
+Deno.test("collectSourceTexts: skips chunks with no/empty/whitespace text (nothing to verify)", () => {
+  const out = collectSourceTexts([
+    { tag: "1", chunk_text: "real" },
+    { tag: "2", chunk_text: undefined },
+    { tag: "3", chunk_text: "" },
+    { tag: "4", chunk_text: "   " },
+  ]);
+  assertEquals(out.map((s) => s.tag), ["1"]);
+});
+
+Deno.test("collectSourceTexts: at most one entry per tag (first non-empty wins)", () => {
+  const out = collectSourceTexts([
+    { tag: "1", chunk_text: "first" },
+    { tag: "1", chunk_text: "dup" },
+  ]);
+  assertEquals(out, [{ tag: "1", text: "first" }]);
 });

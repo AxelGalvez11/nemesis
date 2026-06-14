@@ -11,7 +11,7 @@
 // that optional for Phase 3; logged for the §9/Phase-4 work so a green suite is
 // not misread as semantic-support verification.
 
-import type { AnswerSections, Citation } from "../../../packages/shared/src/answer.ts";
+import type { AnswerSections, Citation, SourceText } from "../../../packages/shared/src/answer.ts";
 import { isDoajVetted } from "./doaj-registry.ts";
 
 export interface RetrievedChunk {
@@ -189,4 +189,24 @@ function oldestDate(citations: Citation[]): string | null {
     .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
   if (dates.length === 0) return null;
   return dates.sort()[0];
+}
+
+/**
+ * Verbatim per-tag source text for the `include_source_text` verification payload. At most one entry
+ * per tag (first non-empty wins); a chunk with no usable body text is skipped — there is nothing to
+ * verify a claim against. PURE. The tags returned match Citation.chunk_tag, so a consumer can resolve
+ * each claim's cited [n] to the EXACT text it cited (faithful-vs-drift becomes a direct read, not a
+ * lossy re-fetch). Built from the SAME reranked chunk set the answer was generated and cited from.
+ */
+export function collectSourceTexts(
+  chunks: ReadonlyArray<Pick<RetrievedChunk, "tag" | "chunk_text">>,
+): SourceText[] {
+  const out: SourceText[] = [];
+  const seen = new Set<string>();
+  for (const c of chunks) {
+    if (seen.has(c.tag) || !c.chunk_text?.trim()) continue;
+    seen.add(c.tag);
+    out.push({ tag: c.tag, text: c.chunk_text });
+  }
+  return out;
 }

@@ -64,10 +64,14 @@ interface AskResponse {
   // but NO `chunk_id` / chunk text — which is exactly why strict per-citation
   // faithfulness (TODO b) is blocked until the Answer Engine persists a
   // `{tag -> chunk_id}` map.
-  citations: Array<{ source_id: string; source_type: string; url: string | null }>;
+  citations: Array<{ source_id: string; source_type: string; url: string | null; chunk_tag?: string }>;
   safety_flags: string[];
   template?: string;
   refused_unsupported: boolean;
+  // Per-citation verbatim source text (present because we request include_source_text below). Lets a
+  // diagnostic resolve each claim's cited [n] to the EXACT text it cited — direct faithful-vs-drift
+  // adjudication, not a lossy re-fetch. (The headline scorecard still uses the engine's support spans.)
+  source_texts?: Array<{ tag: string; text: string }>;
 }
 
 async function ask(
@@ -78,7 +82,7 @@ async function ask(
   const res = await fetch(`${env.SB_URL}/functions/v1/ask`, {
     method: "POST",
     headers: { apikey: env.ANON_KEY, Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ question, use_health_context: false }),
+    body: JSON.stringify({ question, use_health_context: false, include_source_text: true }),
   });
   if (!res.ok) return { __error: `${res.status} ${(await res.text()).slice(0, 200)}` };
   return await res.json();

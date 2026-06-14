@@ -21,7 +21,7 @@ import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
 import { generate } from "./generate.ts";
-import { citationMeta, enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
 import { attachSupport } from "./support-span.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
@@ -92,7 +92,15 @@ serve(async (req) => {
   const userId = await verifyUser(token);
   if (!userId) return json({ error: "authentication required" }, 401, req);
 
-  let body: { question?: string; use_health_context?: boolean; conversation_id?: string };
+  let body: {
+    question?: string;
+    use_health_context?: boolean;
+    conversation_id?: string;
+    // Verification opt-in: echo the verbatim source text behind each citation tag in the response
+    // (a benchmark/judge aid — see SourceText). Default false → normal answers are byte-for-byte
+    // unchanged. The sources are the public databases the answer already cites.
+    include_source_text?: boolean;
+  };
   try {
     body = await req.json();
   } catch {
@@ -102,7 +110,7 @@ serve(async (req) => {
   if (!question) return json({ error: "question required" }, 400, req);
 
   try {
-    const resp = await runAsk(question, !!body.use_health_context, userId);
+    const resp = await runAsk(question, !!body.use_health_context, userId, !!body.include_source_text);
     return json(resp, 200, req);
   } catch (e) {
     if (e instanceof QuotaExceeded) return json(e.payload, 429, req);
@@ -117,6 +125,7 @@ async function runAsk(
   question: string,
   useHealthContext: boolean,
   userId: string,
+  includeSourceText = false,
 ): Promise<AskResponse> {
   const answerId = crypto.randomUUID();
   const apiKey = llmApiKey();
@@ -335,7 +344,10 @@ async function runAsk(
     used_health_context: !!healthContext,
   });
 
-  return resp;
+  // Verification opt-in: attach the verbatim per-tag source text AFTER the trace write, so the stored
+  // trace and every normal response stay lean. Built from the same reranked `ret.chunks` the answer was
+  // generated and cited from, so a consumer can resolve each claim's [n] to the EXACT text it cited.
+  return includeSourceText ? { ...resp, source_texts: collectSourceTexts(ret.chunks) } : resp;
 }
 
 /**

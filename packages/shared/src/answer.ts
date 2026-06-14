@@ -131,6 +131,17 @@ export interface Citation {
   trial_phase?: string;
 }
 
+/** Verbatim retrieved text behind one citation tag — the verification payload. Returned ONLY when the
+ *  request opts in with `include_source_text`, so a benchmark/judge can check each claim against the
+ *  EXACT source text it cited (turning "grounded" into a per-claim verifiable read), rather than
+ *  reconstructing the source by re-fetching (lossy). Never part of a normal answer. */
+export interface SourceText {
+  /** The retrieval-local [n] tag, matching Citation.chunk_tag. */
+  tag: string;
+  /** Verbatim retrieved chunk text for that tag. */
+  text: string;
+}
+
 /** Frozen POST /ask response (doc-11 / §7 / §8 superset). */
 export interface AskResponse {
   answer_id: string;
@@ -147,6 +158,9 @@ export interface AskResponse {
   refused_unsupported: boolean;
   /** Freshness banner support: oldest retrieved_at across cited sources. */
   oldest_source_date: string | null;
+  /** Per-citation verbatim source text, present ONLY when the request set `include_source_text=true`
+   *  (a verification/eval aid). Omitted from normal answers and the stored trace to keep them small. */
+  source_texts?: SourceText[];
 }
 
 /** Which canned template produced the answer, when one did. */
