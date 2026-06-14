@@ -320,6 +320,11 @@
 .src .src-support { margin: 9px 0 2px; padding: 8px 10px; background: color-mix(in srgb, var(--acid) 9%, transparent); border-left: 2px solid var(--acid); border-radius: 0 8px 8px 0; }
 .src .src-support-label { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--acid-dim); margin-bottom: 4px; }
 .src .src-support mark { background: color-mix(in srgb, var(--acid) 24%, transparent); color: var(--text); padding: 1px 2px; border-radius: 3px; font-size: 12px; line-height: 1.6; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+/* A source card + its optional "read full text free" action share one row; the row owns the spacing. */
+.src-row { margin-bottom: 10px; }
+.src-row .src { margin-bottom: 0; }
+.oa-link { display: inline-flex; align-items: center; gap: 5px; width: fit-content; margin: 6px 0 0 2px; font-size: 11px; font-weight: 600; color: #6ea8ff; text-decoration: none; padding: 3px 9px; border: 1px solid color-mix(in srgb, #6ea8ff 34%, transparent); border-radius: 999px; background: color-mix(in srgb, #6ea8ff 9%, transparent); transition: border-color 0.16s, background 0.16s; }
+.oa-link:hover { border-color: #6ea8ff; background: color-mix(in srgb, #6ea8ff 15%, transparent); }
 .ev-empty { color: var(--text-3); font-size: 12.5px; text-align: center; padding: 40px 16px; }
 .ev-foot { flex: none; border-top: 1px solid var(--line); padding: 10px 14px; font-family: var(--mono); font-size: 11px; color: var(--text-3); display: flex; justify-content: space-between; }
 

@@ -107,10 +107,25 @@ export function EvidencePanel({ citations, activeTag, activeQuote }: { citations
             const baseHref = safeHref(c.url);
             // On the active card, deep-link the source to the supporting sentence (graceful no-op if absent).
             const href = baseHref && support ? withTextFragment(baseHref, support) : baseHref;
-            return href ? (
-              <a key={`${c.source_id}-${c.chunk_tag}`} id={anchorId} className={klass} href={href} target="_blank" rel="noreferrer">{inner}</a>
+            // Free-to-read full-text link (open-access providers). A separate destination from the card's
+            // canonical source, shown only when it adds something (differs from the source url). A LINK to
+            // the free article — we still only grounded the abstract — so the copy says "read", not "verified".
+            const oaHref = c.oa_url && c.oa_url !== c.url ? safeHref(c.oa_url) : null;
+            const card = href ? (
+              <a id={anchorId} className={klass} href={href} target="_blank" rel="noreferrer">{inner}</a>
             ) : (
-              <Link key={`${c.source_id}-${c.chunk_tag}`} id={anchorId} className={klass} href={`/app/source/${c.source_id}`}>{inner}</Link>
+              <Link id={anchorId} className={klass} href={`/app/source/${c.source_id}`}>{inner}</Link>
+            );
+            return (
+              <div className="src-row" key={`${c.source_id}-${c.chunk_tag}`}>
+                {card}
+                {oaHref ? (
+                  <a className="oa-link" href={oaHref} target="_blank" rel="noreferrer"
+                    title="Open the free full text on the publisher or repository site (we grounded the abstract)">
+                    Read full text (free) ↗
+                  </a>
+                ) : null}
+              </div>
             );
           })
         )}
