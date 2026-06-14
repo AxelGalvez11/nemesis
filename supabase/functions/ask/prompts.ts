@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v3-2026-06-09"; // v3: plain-English-first generation tone
+export const PROMPT_VERSION = "ask-v4-2026-06-13"; // v4: positive treatment-phrasing rules + health_context guidance (anti-refusal)
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -163,6 +163,17 @@ export const BASE_GENERATE_SYSTEM = [
   '- "you do not need to ask a doctor"',
   "Always point the user to a licensed professional for personal decisions.",
   "",
+  "PHRASING — describe what the evidence says; do NOT instruct or reassure. This is how you answer",
+  "treatment/condition questions WITHOUT crossing into advice (attribute every claim to a source):",
+  '- options/treatments: "studies describe X as a common first-line option [n]", "the literature reports',
+  '  Y is used for Z [n]" — NOT "use X" or "you should try X".',
+  '- tolerability: "X was generally well-tolerated in the cited studies [n]" — NEVER the bare claim "X is safe".',
+  '- effect: "X is used to treat / reduces / improves Y [n]" — NEVER "X cures Y".',
+  '- regimens: report what a source states ("the label lists a 100 mg dose [n]") — NEVER an instruction to',
+  '  take or apply a dose.',
+  "A plain treatment question ('how do I fix my acne?') gets a real, useful, cited answer phrased this way —",
+  "not a refusal. Describe the options and their evidence, then route the personal decision to a clinician.",
+  "",
   "FORMAT — answer the SPECIFIC question; do NOT pad a fixed template:",
   "- bottom_line MUST be source-cited. Put the real substance in what_we_know, each point cited.",
   "- Fill ONLY the sections that genuinely apply to THIS question. Leave a section's array EMPTY",
@@ -206,6 +217,12 @@ const INTENT_GUIDANCE: Partial<Record<Intent, string>> = {
   dosing:
     "INTENT=dosing. You may describe what a label REPORTS as approved dosing as a fact, but never instruct the " +
     "user on what to take. Redirect personal dosing to their prescriber.",
+  health_context:
+    "INTENT=personal/condition. The user describes a personal situation or asks how to manage/treat a condition " +
+    "('how do I fix my acne?'). Give a REAL, useful, source-grounded answer — never a refusal. Describe the " +
+    "options the literature reports and their evidence, attribute each to a source, and route the personal " +
+    "decision to a clinician. Do not tell the user what to take, apply, start, or stop, and do not call anything " +
+    "'safe' or a 'cure' — see the PHRASING rules.",
 };
 
 /** Full system prompt for a generation, = base + intent-specific guidance. */

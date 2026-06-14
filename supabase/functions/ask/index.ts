@@ -16,6 +16,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 import { detectSmallTalk, detectViolations, preScreen } from "./safety.ts";
+import { sanitizeAnswer } from "./sanitize.ts";
 import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
@@ -257,14 +258,27 @@ async function runAsk(
   ].join("  ");
   const violations = detectViolations(assembled);
   if (violations.length > 0) {
-    // Discard the unsafe generation; surface the retrieved sources as related
-    // info instead of the synthesized (unsafe) text. LOG why (rule + snippet):
-    // a backstop that silently swallows a cited answer is not debuggable, and a
-    // spurious discard (cautious interrogative phrasing mis-flagged) is
-    // indistinguishable from a real catch without this line — in prod too.
-    console.error("ask safety_fallback — discarded generation:", JSON.stringify(violations));
-    return await finalizeTemplate(answerId, question, cls.intent,
-      flags, entities, userId, "safety_fallback", modelName, true, ret.chunks);
+    // SALVAGE before discarding. A single forbidden sentence used to throw away the WHOLE cited
+    // answer (a good reply to a benign health question lost to one "X is safe" / "cures" / dose
+    // line). Instead drop ONLY the offending body points and keep the rest — then RE-SCAN the
+    // survivors so the post-filter guarantee is preserved exactly. The bottom_line is the headline:
+    // if IT trips, or anything still trips after scrubbing, the answer is unsalvageable -> discard
+    // as before (conservative template + the retrieved sources as related info). LOG either way: a
+    // backstop that silently swallows a cited answer is not debuggable.
+    const san = sanitizeAnswer(gen.raw);
+    const survivors = [
+      san.raw.bottom_line.text,
+      ...san.raw.what_we_know.map((p) => p.text),
+      ...san.raw.safety_notes.map((p) => p.text),
+      ...san.raw.what_we_do_not_know.map((p) => p.text),
+    ].join("  ");
+    if (san.bottomLineViolation || detectViolations(survivors).length > 0) {
+      console.error("ask safety_fallback — discarded generation (unsalvageable):", JSON.stringify(violations));
+      return await finalizeTemplate(answerId, question, cls.intent,
+        flags, entities, userId, "safety_fallback", modelName, true, ret.chunks);
+    }
+    console.warn(`ask safety_salvage — dropped ${san.droppedCount} offending point(s), delivered the rest:`, JSON.stringify(violations));
+    gen = { ...gen, raw: san.raw };
   }
 
   // ---- 6b. citation enforcement ----
