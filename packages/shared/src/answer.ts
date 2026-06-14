@@ -119,6 +119,16 @@ export interface Citation {
    *  A POSITIVE-ONLY credibility signal — absent/false means "not confirmed DOAJ-listed", not "low
    *  quality". Stamped server-side from the journal ISSN; absent on older saved reports/chats. */
   doaj_vetted?: boolean;
+  // ── Optional study-type metadata (study-type badges). Carried through from the
+  //    provider's PubMed <PublicationType> / ClinicalTrials.gov fields so the UI can
+  //    show a verbatim study-type label (studyTypeLabel in study-type.ts). Never a
+  //    label the LLM guessed; absent on older saved reports/chats. ──
+  /** PubMed PublicationType list, e.g. ["Meta-Analysis", "Journal Article"]. */
+  publication_types?: string[];
+  /** ClinicalTrials.gov study type, e.g. "INTERVENTIONAL" | "OBSERVATIONAL". */
+  study_type?: string;
+  /** Trial phase, Roman from PubMed ("Phase III") or CT.gov form ("PHASE3"). */
+  trial_phase?: string;
 }
 
 /** Frozen POST /ask response (doc-11 / §7 / §8 superset). */

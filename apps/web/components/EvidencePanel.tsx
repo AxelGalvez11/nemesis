@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { Citation } from "@pharmabro/shared";
-import { formatReference } from "@pharmabro/shared";
+import { formatReference, studyTypeLabel } from "@pharmabro/shared";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
 
@@ -75,6 +75,8 @@ export function EvidencePanel({ citations, activeTag, activeQuote }: { citations
             const active = activeTag === tag;
             const klass = `src ${cls}${active ? " active" : ""}`;
             const refText = formatReference(c, "vancouver");
+            // Study-design badge from the source's own publication-type metadata (undefined => no badge).
+            const studyType = studyTypeLabel(c);
             // The supporting sentence belongs to the clicked claim, so it shows only on the active card.
             const support = active && activeQuote ? activeQuote : null;
             const inner = (
@@ -83,6 +85,9 @@ export function EvidencePanel({ citations, activeTag, activeQuote }: { citations
                 <div className="badge-src"><span className="sq" />{providerLabel(c.source_type)}</div>
                 <h5 title={refText}>{c.title || c.source_type}</h5>
                 <div className="meta">
+                  {studyType ? (
+                    <span className="study-type-pill" title="Study design, derived from the source's publication-type metadata">{studyType}</span>
+                  ) : null}
                   {c.section ? <span>{c.section}</span> : null}
                   {c.published_date ? <span className="mono">{c.published_date}</span> : null}
                   {c.doaj_vetted ? (

@@ -49,3 +49,8 @@ export * from "./forest-plot.ts";
 // Structured abstract (Background/Methods/Results/Conclusions) for a meta report. The Results line is
 // computed from the real pool — never LLM-stated. Null unless the report actually pooled.
 export * from "./meta-abstract.ts";
+
+// Study-type badge: PURE label derived from a citation's PubMed PublicationType / ClinicalTrials.gov
+// study_type fields ("Meta-analysis", "Randomized controlled trial", "Interventional trial · Phase 3").
+// Never an LLM guess — computed verbatim or omitted (no false badge).
+export * from "./study-type.ts";

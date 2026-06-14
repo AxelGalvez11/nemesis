@@ -300,6 +300,9 @@
 .src.openalex .sq { background: #5ad1c5; }
 /* DOAJ vetted-journal pill: a calm positive credibility signal (presence = good; absence is neutral). */
 .doaj-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.01em; color: #3fae8f; border: 1px solid color-mix(in srgb, #3fae8f 38%, transparent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+/* Study-design pill: NEUTRAL descriptive metadata (study type), not a quality judgment. A calm slate-indigo
+   so it reads as informational and stays distinct from the green DOAJ credibility pill. */
+.study-type-pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.01em; color: #8b93c4; background: color-mix(in srgb, #8b93c4 12%, transparent); border: 1px solid color-mix(in srgb, #8b93c4 32%, transparent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
 .src h5 { font-size: 13px; font-weight: 600; margin: 7px 0 5px; line-height: 1.35; }
 .src .meta { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); display: flex; gap: 9px; flex-wrap: wrap; }
 .src .cidx { position: absolute; top: 11px; right: 12px; font-family: var(--mono); font-size: 10px; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 5px; padding: 0 5px; }
