@@ -17,6 +17,7 @@ import { fetchOpenFdaLabels } from "../core-source-sync/providers/openfda.ts";
 import { fetchEuropePmc } from "../core-source-sync/providers/europepmc.ts";
 import { fetchFaersReactions } from "../core-source-sync/providers/faers.ts";
 import { fetchOpenAlex } from "../core-source-sync/providers/openalex.ts";
+import { extractSearchTerms } from "./search-query.ts";
 
 /** One live result, normalized for the reranker + citation layer; `source` is the full
  *  record, so a candidate the reranker keeps can be persisted via read-through-ingest. */
@@ -152,10 +153,31 @@ const LIVE_TIMEOUT_MS = 4000;
 export async function gatherLiveCandidates(opts: GatherLiveOpts): Promise<LiveCandidate[]> {
   const perSourceMax = opts.perSourceMax ?? PER_SOURCE_MAX;
   const timeoutMs = opts.timeoutMs ?? LIVE_TIMEOUT_MS;
-
   const mentions = opts.mentions ?? [];
+
+  const primary = await fanOut(opts.query, perSourceMax, timeoutMs, mentions);
+
+  // Retry-on-empty for benign, no-drug questions. Conversational phrasing
+  // ("how do i get rid of heartburn fast?") matches NOTHING in PubMed term-mapping, while the bare
+  // topic ("heartburn") retrieves well. This fires ONLY when the primary fan-out returned nothing
+  // AND no drug was named — so it can never dilute a query that already retrieved (the benign
+  // questions that already work never reach here). When a drug WAS named, the term is the literal
+  // drug list already, so simplification is moot.
+  if (primary.length > 0 || mentions.length > 0) return primary;
+  const cleaned = extractSearchTerms(opts.query);
+  if (!cleaned || cleaned === opts.query) return primary;
+  return await fanOut(cleaned, perSourceMax, timeoutMs, mentions);
+}
+
+/** One concurrent, fault-tolerant pass over every live source, deduped by (provider, provider_id). */
+async function fanOut(
+  query: string,
+  perSourceMax: number,
+  timeoutMs: number,
+  mentions: string[],
+): Promise<LiveCandidate[]> {
   const batches = await Promise.all(
-    LIVE_SOURCES.map((def) => withTimeout(fetchOne(def, opts.query, perSourceMax, mentions), timeoutMs, def.origin)),
+    LIVE_SOURCES.map((def) => withTimeout(fetchOne(def, query, perSourceMax, mentions), timeoutMs, def.origin)),
   );
   // Dedupe the union by (provider, provider_id): e.g. PubMed and Europe PMC both returning the
   // same PMID collapse to one candidate (first wins). Keeps the rerank set clean.
