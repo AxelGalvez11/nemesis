@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v4-2026-06-13"; // v4: positive treatment-phrasing rules + health_context guidance (anti-refusal)
+export const PROMPT_VERSION = "ask-v5-2026-06-15"; // v5: reported speech obeys the phrasing rules (attribution doesn't license a bare "X is safe") so legit points survive the safety scan instead of being salvage-dropped
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -171,6 +171,10 @@ export const BASE_GENERATE_SYSTEM = [
   '- effect: "X is used to treat / reduces / improves Y [n]" — NEVER "X cures Y".',
   '- regimens: report what a source states ("the label lists a 100 mg dose [n]") — NEVER an instruction to',
   '  take or apply a dose.',
+  '- reported speech is NOT an exemption: when you relay what a study, label, or patient REPORTS, still use the',
+  '  approved forms — "parents reported it as well-tolerated and helpful [n]", NOT "parents report it is safe and',
+  '  effective". A forbidden phrase inside an attribution is removed by the safety scan and the useful point is',
+  '  lost with it — so phrase reported findings as carefully as your own claims, and keep the substance.',
   "A plain treatment question ('how do I fix my acne?') gets a real, useful, cited answer phrased this way —",
   "not a refusal. Describe the options and their evidence, then route the personal decision to a clinician.",
   "",
