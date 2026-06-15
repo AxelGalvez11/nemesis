@@ -493,3 +493,28 @@
 /* Structured abstract — the journal-style opener for a meta report. */
 .meta-abstract { border-left: 2px solid var(--line-2); padding-left: 13px; }
 .meta-abstract .ai-para { margin: 5px 0; }
+
+/* ── App modal (Settings / Profile / Billing as overlays) — shell-styled, NOT the Tailwind dialog ──
+   Sits above the rail (40), drawers (55–60), and topbar so an overlay is never occluded. The panel is
+   transform-centered, so its entrance animation is OPACITY-ONLY (the `fade` keyframe sets transform and
+   would fight the centering). Reuses the app tokens so it matches cards + the account menu. */
+@keyframes app-modal-in { from { opacity: 0; } to { opacity: 1; } }
+.app-modal-overlay { position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, 0.46); backdrop-filter: blur(2px); animation: app-modal-in 0.15s both; }
+.app-modal {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 71;
+  width: min(560px, calc(100vw - 32px)); max-height: min(86vh, 760px); display: flex; flex-direction: column;
+  background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius);
+  box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.6); animation: app-modal-in 0.15s both; outline: none;
+}
+.app-modal-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px 13px; border-bottom: 1px solid var(--line); }
+.app-modal-title { font-size: 16px; font-weight: 650; color: var(--text); margin: 0; line-height: 1.2; }
+.app-modal-sub { font-size: 12.5px; color: var(--text-3); margin-top: 3px; }
+.app-modal-close {
+  margin-left: auto; flex-shrink: 0; background: none; border: none; color: var(--text-3);
+  font-size: 22px; line-height: 1; cursor: pointer; padding: 1px 6px; border-radius: 8px; font-family: var(--font);
+}
+.app-modal-close:hover { color: var(--text); background: var(--surface); }
+.app-modal-body { padding: 16px 18px 18px; overflow-y: auto; display: grid; gap: 14px; }
+/* Cards inside a modal already sit on --raised, so drop their own border/bg to avoid a double frame. */
+.app-modal-body .card { background: transparent; border: none; padding: 0; }
+.app-modal-body .card + .card { border-top: 1px solid var(--line); padding-top: 14px; }
