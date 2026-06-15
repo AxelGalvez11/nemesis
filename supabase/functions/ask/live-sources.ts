@@ -17,6 +17,7 @@ import { fetchOpenFdaLabels } from "../core-source-sync/providers/openfda.ts";
 import { fetchEuropePmc } from "../core-source-sync/providers/europepmc.ts";
 import { fetchFaersReactions } from "../core-source-sync/providers/faers.ts";
 import { fetchOpenAlex } from "../core-source-sync/providers/openalex.ts";
+import { fetchMedlinePlus } from "../core-source-sync/providers/medlineplus.ts";
 import { extractSearchTerms } from "./search-query.ts";
 
 /** One live result, normalized for the reranker + citation layer; `source` is the full
@@ -113,6 +114,12 @@ const LIVE_SOURCES: LiveSourceDef[] = [
   // normalizes to pubmed_oa:<pmid> and collapses into the PubMed/Europe PMC hit above; only OpenAlex's
   // non-PMID long tail (provider "openalex") survives as net-new breadth.
   { origin: "openalex", fetch: (q, n) => fetchOpenAlex({ query: q, retmax: n }) },
+  // MedlinePlus: NLM/NIH consumer-health topic pages — mainstream "general guidance" register that the
+  // research sources lack. Distinct namespace (provider "medlineplus"), so no dedupe collision; it
+  // self-limits (only ~1k topics, returns nothing for a specific drug-pharmacology query) and the
+  // reranker orders it, so it adds an authoritative plain-language hit for benign/everyday questions
+  // without crowding technical ones.
+  { origin: "medlineplus", fetch: (q, n) => fetchMedlinePlus({ query: q, retmax: n }) },
 ];
 
 /**
