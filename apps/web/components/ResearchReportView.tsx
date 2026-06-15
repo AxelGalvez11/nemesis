@@ -12,7 +12,7 @@ import { downloadReportExport } from "@/lib/api";
 
 const PROVIDER_ABBR: Record<string, string> = {
   openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", europepmc: "PMID",
-  clinicaltrials: "NCT", faers: "FAERS", rxnorm: "RxNorm",
+  clinicaltrials: "NCT", faers: "FAERS", rxnorm: "RxNorm", medlineplus: "NLM",
 };
 function abbr(t: string): string {
   const k = Object.keys(PROVIDER_ABBR).find((p) => t.toLowerCase().includes(p));

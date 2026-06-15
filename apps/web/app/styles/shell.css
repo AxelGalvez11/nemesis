@@ -298,6 +298,7 @@
 .src.clinicaltrials .sq, .src.trial .sq { background: #ff9f7f; }
 .src.faers .sq { background: #ff5c4d; }
 .src.openalex .sq { background: #5ad1c5; }
+.src.medlineplus .sq { background: #e3b341; } /* amber — the plain-language NLM/NIH guidance source */
 /* DOAJ vetted-journal pill: a calm positive credibility signal (presence = good; absence is neutral). */
 .doaj-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.01em; color: #3fae8f; border: 1px solid color-mix(in srgb, #3fae8f 38%, transparent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
 /* Study-design pill: NEUTRAL descriptive metadata (study type), not a quality judgment. A calm slate-indigo
