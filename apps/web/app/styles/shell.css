@@ -518,3 +518,5 @@
 /* Cards inside a modal already sit on --raised, so drop their own border/bg to avoid a double frame. */
 .app-modal-body .card { background: transparent; border: none; padding: 0; }
 .app-modal-body .card + .card { border-top: 1px solid var(--line); padding-top: 14px; }
+/* Profile/Billing use a 2-/3-col grid full-page; stack them single-column in the narrow overlay. */
+.app-modal-body .grid.two, .app-modal-body .grid.three { grid-template-columns: 1fr; }

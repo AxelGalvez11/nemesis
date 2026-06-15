@@ -8,6 +8,12 @@ import { useTheme } from "./theme-provider";
 import { Orb } from "./Orb";
 import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, type ConversationSummary } from "@/lib/api";
 import { Icon } from "./icons";
+import { AppModal } from "./AppModal";
+import { SettingsPanel } from "./SettingsPanel";
+import { ProfilePanel } from "./ProfilePanel";
+import { BillingPanel } from "./BillingPanel";
+
+type Overlay = "settings" | "profile" | "billing" | null;
 
 /* ── chrome context: pages inject their evidence panel + topbar title here ── */
 interface AppChromeValue {
@@ -75,6 +81,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [evidence, setEvidenceNode] = useState<ReactNode | null>(null);
   const [topbar, setTopbarNode] = useState<ReactNode | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Settings/Profile/Billing render as overlays (account menu) instead of replacing the chat. The route
+  // pages (/app/settings etc.) still work for a direct URL; this is the in-shell affordance.
+  const [overlay, setOverlay] = useState<Overlay>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
   const [plan, setPlan] = useState<{ plan: string; used: number; limit: number }>({ plan: "free", used: 0, limit: 10 });
@@ -162,8 +171,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
   }, [menuOpen]);
 
-  // Close both mobile drawers on route change.
-  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); }, [path]);
+  // Close both mobile drawers + any account overlay on route change.
+  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setOverlay(null); }, [path]);
 
   // Close the open drawer on Escape.
   useEffect(() => {
@@ -274,9 +283,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="acct-wrap">
             {menuOpen ? (
               <div className="acct-menu" role="menu">
-                <Link href="/app/settings" onClick={() => setMenuOpen(false)}><Icon name="settings" size={15} />Settings</Link>
-                <Link href="/app/profile" onClick={() => setMenuOpen(false)}><Icon name="user" size={15} />Profile</Link>
-                <Link href="/app/billing" onClick={() => setMenuOpen(false)}><Icon name="card" size={15} />Billing · {plan.plan}</Link>
+                <button onClick={() => { setOverlay("settings"); setMenuOpen(false); }}><Icon name="settings" size={15} />Settings</button>
+                <button onClick={() => { setOverlay("profile"); setMenuOpen(false); }}><Icon name="user" size={15} />Profile</button>
+                <button onClick={() => { setOverlay("billing"); setMenuOpen(false); }}><Icon name="card" size={15} />Billing · {plan.plan}</button>
                 <div className="sep" />
                 <button onClick={() => void signOut().then(() => router.replace("/sign-in"))}><Icon name="logout" size={15} />Sign out</button>
               </div>
@@ -326,6 +335,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             <aside className="evidence" id="app-evidence">{evidence}</aside>
           </>
         ) : null}
+
+        {/* ── account overlays (Settings / Profile / Billing) — portaled, so they sit above everything ── */}
+        <AppModal open={overlay === "settings"} onClose={() => setOverlay(null)} title="Settings" sub="Appearance, account, and answer preferences.">
+          <SettingsPanel onNavigate={(t) => setOverlay(t)} />
+        </AppModal>
+        <AppModal open={overlay === "profile"} onClose={() => setOverlay(null)} title="Profile" sub="Your account, plan, and data.">
+          <ProfilePanel />
+        </AppModal>
+        <AppModal open={overlay === "billing"} onClose={() => setOverlay(null)} title="Billing" sub="Plus unlocks more cited questions; Pro adds Deep Research.">
+          <BillingPanel />
+        </AppModal>
       </div>
     </AppChromeContext.Provider>
   );
