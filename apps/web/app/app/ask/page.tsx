@@ -26,6 +26,7 @@ const MODES = [
   { id: "evidence", label: "Quick answer", live: true, pro: false, hint: "Cited answer from the library + live sources" },
   { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report that documents its method (Pro)" },
   { id: "meta", label: "Meta-analysis", live: true, pro: true, hint: "Pools comparable studies into a computed estimate, when the evidence supports it (Pro)" },
+  { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
 ] as const;
 
 const SUGGESTIONS = [
@@ -267,10 +268,11 @@ function AskPage() {
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
     // can keep chatting while it works.
-    if (mode === "deep" || mode === "meta") {
+    if (mode === "deep" || mode === "meta" || mode === "lab_draft") {
       // Deep research documents its method (engine's structured_review); meta-analysis additionally
-      // pools comparable studies into a computed estimate when the evidence supports it.
-      const runMode: ReportMode = mode === "meta" ? "meta" : "structured_review";
+      // pools comparable studies into a computed estimate when the evidence supports it; lab_draft
+      // produces a study-design scaffold (not a runnable protocol).
+      const runMode: ReportMode = mode === "meta" ? "meta" : mode === "lab_draft" ? "lab_draft" : "structured_review";
       phCapture("research_started", { mode: runMode });
       const ridx = turns.length;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
@@ -637,7 +639,7 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
     return () => { alive = false; clearTimeout(timer); };
   }, [card.runId, card.error, card.completed, card.title, done]);
 
-  const modeLabel = "Deep research"; // one Pro research mode now
+  const modeLabel = card.mode === "meta" ? "Meta-analysis" : card.mode === "lab_draft" ? "Lab draft (beta)" : "Deep research";
 
   if (err) {
     return (

@@ -430,6 +430,10 @@
 /* Evidence gaps */
 .research-gaps { margin: 10px 0; }
 .research-gaps .ai-para { color: var(--text-2); font-size: 15px; }
+
+/* Lab-draft unvalidated-draft notice — amber banner shown at the top of every lab_draft report */
+.lab-draft-notice { display: flex; align-items: flex-start; gap: 8px; background: color-mix(in srgb, var(--warn) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); border-left: 3px solid var(--warn); border-radius: 10px; padding: 11px 14px; margin: 12px 0 18px; font-size: 14px; line-height: 1.55; color: var(--text-2); }
+.lab-draft-notice svg { flex-shrink: 0; margin-top: 2px; color: var(--warn); }
 .gap-trials { color: var(--text-3); font-style: italic; }
 
 /* verification pill in the grade row */
