@@ -175,7 +175,10 @@ export type AnswerTemplate =
   | "sourcing_refusal"
   | "no_source"
   /** A generation tripped the post-filter (doc-20 forbidden pattern) and was discarded. */
-  | "safety_fallback";
+  | "safety_fallback"
+  /** A lab_draft request whose SCOPE was hazardous (chemical-synthesis/production, weaponization, or
+   *  pathogen gain-of-function) — declined before any retrieval by the lab-draft scope guard. */
+  | "lab_draft_refused";
 
 /** Detected-entity record stored on the trace + echoed for the app. */
 export interface DetectedEntity {

@@ -21,9 +21,12 @@ import { citationMeta, type RetrievedChunk } from "../citation.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
+  LAB_DRAFT_DISCLAIMER,
+  LAB_DRAFT_REFUSAL_COPY,
   NO_SOURCE_COPY,
   SOURCING_COPY,
 } from "../templates.ts";
+import { assessLabDraftScope } from "../lab-draft-guard.ts";
 import type {
   AnswerPoint,
   AnswerTemplate,
@@ -188,13 +191,22 @@ export function assembleReport(args: {
    *  verified by construction, so they bypass the citation-enforcement / faithfulness judge and are
    *  appended here as a trailing section. Their study tags fold into the citation list. */
   metaPoints?: RawReportPoint[];
+  /** Uncited study-DESIGN proposals (lab_draft mode): the scaffold's skeleton. Already safety-scanned by
+   *  the caller (they were part of synth.raw.points). They merge into the section list BY HEADING with the
+   *  cited evidence so e.g. "Endpoints & readouts" holds both the proposed endpoint and its cited precedent. */
+  designPoints?: RawReportPoint[];
   /** The computed pooled result the forest table renders (meta mode). */
   metaAnalysis?: MetaAnalysisResult;
 }): ResearchReport {
   const { enforced, chunks } = args;
-  const bodySections: ResearchSection[] = assembleSections(
-    enforced.body.map((p) => ({ section: p.section, point: { text: p.text, citation_ids: p.citation_ids } })),
-  );
+  // Merge the uncited design proposals (lab_draft) with the cited body in ONE assembleSections pass so a
+  // shared heading is a single section. Design points lead (empty for non-lab_draft → unchanged behavior).
+  const designInput = (args.designPoints ?? []).map((p) => ({
+    section: p.section,
+    point: { text: p.text, citation_ids: [] as string[] },
+  }));
+  const bodyInput = enforced.body.map((p) => ({ section: p.section, point: { text: p.text, citation_ids: p.citation_ids } }));
+  const bodySections: ResearchSection[] = assembleSections([...designInput, ...bodyInput]);
   const metaSections: ResearchSection[] = args.metaPoints?.length
     ? assembleSections(args.metaPoints.map((p) => ({ section: p.section, point: { text: p.text, citation_ids: p.citations } })))
     : [];
@@ -203,6 +215,11 @@ export function assembleReport(args: {
     text: p.text,
     citation_ids: p.citation_ids,
   }));
+  // lab_draft carries a fixed, code-authored disclaimer as the FIRST safety note (the UI also renders it
+  // as a prominent banner). Honest fixed copy → never trips the safety scan it bypasses (same as UNVERIFIED_NOTE).
+  if (args.mode === "lab_draft") {
+    safety_notes.unshift({ text: LAB_DRAFT_DISCLAIMER, citation_ids: [] });
+  }
   const uncertainties: AnswerPoint[] = enforced.uncertainties.map((p) => ({
     text: p.text,
     citation_ids: p.citation_ids,
@@ -276,6 +293,43 @@ function templateReport(
   };
 }
 
+/**
+ * lab_draft hazardous-SCOPE gate. Returns a refusal report when the mode is lab_draft AND the question's
+ * scope is chemical-synthesis/production, weaponization, or pathogen gain-of-function — decided by the
+ * pure ask/lab-draft-guard BEFORE any retrieval. Returns null otherwise (the run proceeds). The frozen
+ * preScreen/classify medical-safety layer runs FIRST and is unchanged; this is the lab_draft-only scope
+ * control. PURE (the guard is a deterministic regex pass). `flags` carries the safety flags so far.
+ */
+export function labDraftScopeRefusal(
+  mode: ReportMode | undefined,
+  question: string,
+  flags: SafetyFlag[],
+): ResearchReport | null {
+  if (mode !== "lab_draft") return null;
+  if (assessLabDraftScope(question).allowed) return null;
+  return templateReport(question, "lab_draft_refused", LAB_DRAFT_REFUSAL_COPY, flags);
+}
+
+/**
+ * Split a lab_draft synthesis's flat points into the two lanes a study-design scaffold needs.
+ * `design` = forward-looking proposals (Objective/Hypothesis/arms/controls/sample-size) the model left
+ * UNCITED — legitimately uncited, they must BYPASS citation-existence + faithfulness or the scaffold's
+ * skeleton gets pruned to nothing (the failure mode that would silently turn a valid design into a
+ * no_source template). `evidence` = claims about what existing studies DID; they carry [n] tags and flow
+ * through the normal enforce + faithfulness gates. BOTH lanes still ride the ONE safety scan, because the
+ * caller scans the full synth.raw.points (design ∪ evidence) before this split. PURE.
+ */
+export function splitLabDraftPoints(
+  points: RawReportPoint[],
+): { design: RawReportPoint[]; evidence: RawReportPoint[] } {
+  const design: RawReportPoint[] = [];
+  const evidence: RawReportPoint[] = [];
+  for (const p of points) {
+    (p.citations.length === 0 ? design : evidence).push(p);
+  }
+  return { design, evidence };
+}
+
 function unique<T>(arr: T[]): T[] {
   return [...new Set(arr)];
 }
@@ -339,6 +393,11 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
     return templateReport(question, "sourcing_refusal", SOURCING_COPY, flags);
   }
 
+  // ---- 1b. lab_draft hazardous-SCOPE gate — refuse synthesis/weaponization/biothreat scope BEFORE any
+  // retrieval. Frozen preScreen/classify above are unaffected; this only adds the lab_draft-only control. ----
+  const labRefusal = labDraftScopeRefusal(cfg.mode, question, flags);
+  if (labRefusal) return labRefusal;
+
   // ---- 2. plan ----
   emit("planning", "Breaking the question into focused sub-questions");
   const subQuestions = await planSubQuestions(question, cfg.apiKey, cfg.mode ?? "standard");
@@ -373,7 +432,7 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
   emit("writing", "Writing the cited report");
   let synth: Awaited<ReturnType<typeof synthesizeReport>>;
   try {
-    synth = await synthesizeReport({ question, subQuestions, chunks, apiKey: cfg.apiKey });
+    synth = await synthesizeReport({ question, subQuestions, chunks, apiKey: cfg.apiKey, mode: cfg.mode });
   } catch (e) {
     console.error("research synthesis failed after retries:", (e as Error).message);
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
@@ -437,18 +496,31 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
     }
   }
 
+  // ---- 6c. lab_draft: split the just-scanned points into the design scaffold (uncited proposals) and
+  // the cited evidence. Only the evidence flows through citation-existence + faithfulness — a
+  // forward-looking design proposal cannot be entailed by a source, so running it through those gates
+  // would prune the scaffold's skeleton to nothing (the silent no_source failure mode). The design lane
+  // already rode the ONE safety scan above (it was part of synth.raw.points). ----
+  const { design: designPoints, evidence: evidencePoints } = cfg.mode === "lab_draft"
+    ? splitLabDraftPoints(synth.raw.points)
+    : { design: [] as RawReportPoint[], evidence: synth.raw.points };
+  const rawForGates = cfg.mode === "lab_draft" ? { ...synth.raw, points: evidencePoints } : synth.raw;
+  // A lab_draft scaffold with a real design skeleton is a valid deliverable even if no cited evidence
+  // survived (the disclaimer makes its unvalidated nature explicit) — keep it alive like a successful pool.
+  const labScaffold = cfg.mode === "lab_draft" && designPoints.length > 0;
+
   // ---- 7. enforce citations (existence) then faithfulness (semantic support) ----
   // A successful pool keeps the report alive even if the synthesized narrative pruned to empty: the
   // pooled estimate is a real, verified-by-construction result the user asked for, and it lives in
   // metaPoints/metaResult (not in `enforced`), so the no_source gates below must not discard it.
   const pooled = metaResult?.poolable === true;
-  const enforced = enforceReportCitations(synth.raw, chunks);
-  if (isNoSourceReport(hasSupportedContent(enforced), pooled)) {
+  const enforced = enforceReportCitations(rawForGates, chunks);
+  if (isNoSourceReport(hasSupportedContent(enforced) || labScaffold, pooled)) {
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
   }
   emit("checking", "Fact-checking each claim against its cited source");
   const { report: verifiedContent, verified } = await checkFaithfulness(enforced, chunks, cfg.apiKey);
-  if (isNoSourceReport(hasSupportedContent(verifiedContent), pooled)) {
+  if (isNoSourceReport(hasSupportedContent(verifiedContent) || labScaffold, pooled)) {
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
   }
 
@@ -458,6 +530,7 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
     subQuestions,
     enforced: verifiedContent,
     chunks,
+    designPoints,
     evidenceGrade: metaEvidenceGrade(cfg.mode, pooled, synth.raw.evidence_grade),
     safetyFlags: flags,
     claimsVerified: verified,

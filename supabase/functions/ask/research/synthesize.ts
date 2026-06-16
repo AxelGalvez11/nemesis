@@ -14,7 +14,7 @@
 import { callTool, type Tool } from "../llm.ts";
 import { BASE_GENERATE_SYSTEM } from "../prompts.ts";
 import type { EvidenceGrade } from "../../../../packages/shared/src/answer.ts";
-import type { ResearchSection } from "../../../../packages/shared/src/research.ts";
+import type { ReportMode, ResearchSection } from "../../../../packages/shared/src/research.ts";
 import type { RetrievedChunk } from "../citation.ts";
 
 const SYNTH_MODEL = Deno.env.get("LLM_GENERATE_MODEL") ?? "gpt-4.1-mini";
@@ -56,6 +56,8 @@ export interface SynthesizeOpts {
   subQuestions: string[];
   chunks: RetrievedChunk[];
   apiKey: string;
+  /** Rigor mode. 'lab_draft' swaps in the study-design-scaffold system prompt; all else uses REPORT_SYSTEM. */
+  mode?: ReportMode;
 }
 
 const POINT_SCHEMA = {
@@ -144,6 +146,50 @@ const REPORT_GUIDANCE = [
 
 const REPORT_SYSTEM = `${BASE_GENERATE_SYSTEM}${REPORT_GUIDANCE}`;
 
+// lab_draft mode — a literature-grounded study-DESIGN scaffold. Inherits every BASE_GENERATE_SYSTEM
+// HARD RULE + phrasing rule (no "X is safe", no cure claims, no dose/inject INSTRUCTIONS, route personal
+// decisions to a clinician). The design-only framing is the SECONDARY safety control behind the
+// hazardous-scope guard: a legitimate study design is arms/endpoints/sample-size — it contains no
+// synthesis route and no instruction to a person.
+const LAB_DRAFT_GUIDANCE = [
+  "",
+  "LAB-DRAFT MODE — produce a LITERATURE-GROUNDED STUDY-DESIGN SCAFFOLD, not a chat answer and NOT an",
+  "executable protocol. The reader is a researcher who will take this to their PI/IRB before any work.",
+  "",
+  "WHAT TO PRODUCE — organize the body into these sections via each point's `section` label (use only",
+  "the ones that apply): 'Objective', 'Hypothesis', 'Study design', 'Arms & groups', 'Controls',",
+  "'Endpoints & readouts', 'Assays & instruments', 'Sample size', 'Known pitfalls'.",
+  "- `summary` = a 2-4 sentence plain-English overview of the proposed design.",
+  "",
+  "TWO KINDS OF POINTS — this matters for how each is checked:",
+  "- DESIGN PROPOSALS (Objective, Hypothesis, the design/arms/controls/sample-size you RECOMMEND) are",
+  "  forward-looking choices. State them plainly; they need NOT carry a [n] tag. Leave citations empty.",
+  "- EVIDENCE CLAIMS (anything you assert that an existing study DID — an endpoint it used, an assay or",
+  "  instrument it ran, the enrollment it achieved, the design it employed) MUST carry the [n] tag(s)",
+  "  that support it, drawn ONLY from the sources block. An uncited evidence claim is dropped. Prefer to",
+  "  ground concrete choices in precedent: \"a prior trial measured outcome Y with instrument Z [n]\".",
+  "",
+  "NEVER (refuse-by-omission — these are out of scope for a design scaffold):",
+  "- any chemical-synthesis route, reaction step, reagent/precursor recipe, or how to MAKE, extract, or",
+  "  produce a substance. You design how to STUDY a compound, never how to make one.",
+  "- any instruction to a person to take/apply/administer/inject a dose. Name a dose only as a DESIGN",
+  "  parameter of an arm (\"Arm B: drug X 20 mg once daily\") or as what a cited study used (\"a prior",
+  "  trial used 20 mg [n]\") — NEVER as \"take/apply/administer 20 mg\". Describe what to MEASURE,",
+  "  COMPARE, and OBSERVE, not what to do to a person.",
+  "- the BASE hard rules and phrasing rules above apply in full to every section.",
+  "",
+  "Put open design questions and evidence the literature does not settle in `uncertainties`. Put",
+  "oversight/approval and real safety cautions in `safety_notes`.",
+].join("\n");
+
+const LAB_DRAFT_SYSTEM = `${BASE_GENERATE_SYSTEM}${LAB_DRAFT_GUIDANCE}`;
+
+/** The system prompt for a synthesis, by mode. Exported so a test can assert the lab_draft prompt
+ *  carries its design-only safety constraints (the secondary control behind the scope guard). */
+export function synthesisSystemForMode(mode: ReportMode | undefined): string {
+  return mode === "lab_draft" ? LAB_DRAFT_SYSTEM : REPORT_SYSTEM;
+}
+
 export async function synthesizeReport(opts: SynthesizeOpts): Promise<SynthesizeResult> {
   const sourcesBlock = opts.chunks
     .map((c) => {
@@ -154,18 +200,23 @@ export async function synthesizeReport(opts: SynthesizeOpts): Promise<Synthesize
 
   const outline = opts.subQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n");
 
+  const closing = opts.mode === "lab_draft"
+    ? `Compose a study-design scaffold using compose_report. Cite [n] for every claim about what an ` +
+      `existing study did; design choices you propose need not be cited (leave citations empty).`
+    : `Compose the report using compose_report. Every factual sentence must carry the [n] tag(s) that support it.`;
+
   const userContent =
     `Research question: ${opts.question}\n\n` +
     `Planned sub-questions to cover (guide your sections):\n${outline}\n\n` +
     `Sources (cite by [n]; use ONLY these — do not use outside knowledge):\n${sourcesBlock}\n\n` +
-    `Compose the report using compose_report. Every factual sentence must carry the [n] tag(s) that support it.`;
+    closing;
 
   const { input, model } = await callTool<Record<string, unknown>>(
     {
       model: SYNTH_MODEL,
       max_tokens: SYNTH_MAX_TOKENS,
       temperature: 0,
-      system: REPORT_SYSTEM,
+      system: synthesisSystemForMode(opts.mode),
       tools: [REPORT_TOOL],
       messages: [{ role: "user", content: userContent }],
     },
