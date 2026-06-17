@@ -4,6 +4,7 @@ import { Nav } from "@/components/Nav";
 import { Hero } from "@/components/Hero";
 import { Stats } from "@/components/Stats";
 import { InteractiveDemo } from "@/components/InteractiveDemo";
+import { AnnounceVideo } from "@/components/AnnounceVideo";
 import {
   Sources,
   HowItWorks,
@@ -24,6 +25,8 @@ export default function Home() {
       <Nav theme={theme} onToggleTheme={toggle} />
       <Hero />
       <Stats />
+      <hr className="rule" />
+      <AnnounceVideo />
       <hr className="rule" />
       <InteractiveDemo />
       <hr className="rule" />

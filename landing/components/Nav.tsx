@@ -1,7 +1,8 @@
 "use client";
 
 import { useNavScrolled } from "@/lib/useLandingEffects";
-import { BrandMark, MoonIcon, SunIcon } from "@/components/icons";
+import { MoonIcon, SunIcon } from "@/components/icons";
+import { Orb } from "@/components/Orb";
 
 interface NavProps {
   theme: "dark" | "light";
@@ -14,8 +15,8 @@ export function Nav({ theme, onToggleTheme }: NavProps) {
     <nav className={`nav${scrolled ? " scrolled" : ""}`} id="nav">
       <div className="container nav-inner">
         <a className="nav-brand" href="#">
-          <BrandMark size={26} />
-          Pharma<span>Orb</span>
+          <Orb size={26} />
+          PharmaOrb
         </a>
         <div className="nav-links">
           <a href="#sources">Sources</a>

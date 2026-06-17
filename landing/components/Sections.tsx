@@ -1,11 +1,11 @@
 import type { CSSProperties } from "react";
 import { WaitlistForm } from "@/components/WaitlistForm";
 import {
-  BrandMark,
   FeatFollowIcon,
   FeatShieldIcon,
   FeatTraceIcon,
 } from "@/components/icons";
+import { Orb } from "@/components/Orb";
 
 const SOURCES = [
   {
@@ -340,8 +340,8 @@ export function SiteFooter() {
     <footer>
       <div className="container footer-in">
         <div className="footer-brand">
-          <BrandMark size={20} />
-          Pharma<span>Orb</span>
+          <Orb size={20} />
+          PharmaOrb
         </div>
         <div className="footer-links">
           <a href="#">Privacy</a>

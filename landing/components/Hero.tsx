@@ -16,14 +16,8 @@ export function Hero() {
       <HeroCanvas />
       <div className="hero-overlay" />
       <div className="hero-content">
-        <div className="hero-badge">
-          <span className="bdot" />
-          Beta · Coming soon
-        </div>
         <h1 className="hero-h1">
-          Drug information that
-          <br />
-          actually shows its <em>work.</em>
+          Answers that show their <em>work.</em>
         </h1>
         <p className="hero-sub">
           Plain-English answers about any medication or supplement — every claim traced to FDA
