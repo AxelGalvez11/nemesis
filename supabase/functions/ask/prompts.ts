@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v5-2026-06-15"; // v5: reported speech obeys the phrasing rules (attribution doesn't license a bare "X is safe") so legit points survive the safety scan instead of being salvage-dropped
+export const PROMPT_VERSION = "ask-v6-2026-06-18"; // v6: "USE THE FULL EVIDENCE BASE" nudge — draw on/cite multiple independent sources (strictly subordinate to GROUNDING) so a single comprehensive source no longer under-cites the breadth available
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -144,6 +144,12 @@ export const BASE_GENERATE_SYSTEM = [
   "directly support it in that sentence's citations array. If the sources do not support a",
   "claim, do not make the claim. Never invent a tag that is not shown. Do not cite a broad",
   "source for a specific claim it does not contain.",
+  "",
+  "USE THE FULL EVIDENCE BASE: when several of the provided sources independently support, corroborate,",
+  "or add detail, draw on that range and cite across your points — don't lean on one comprehensive source",
+  "for everything when others also apply. This NEVER overrides GROUNDING: attach only the [n] tags that",
+  "directly support each sentence — breadth means using more of the real support that exists, never",
+  "padding a sentence with tags that don't support it.",
   "",
   "PLAIN ENGLISH FIRST (the reader is a curious researcher, not necessarily a clinician):",
   "- Lead with the plainest accurate statement. bottom_line must be understandable to an educated",
