@@ -12,20 +12,20 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: "dark",
+  theme: "light",
   setTheme: () => {},
   toggle: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Default dark; the inline no-flash script in layout.tsx already applied the stored theme to
+  // Default light; the inline no-flash script in layout.tsx already resolved stored→OS→light onto
   // <html data-theme> before paint, so we read it back on mount to sync React state.
-  const [theme, setThemeState] = useState<Theme>("dark");
+  const [theme, setThemeState] = useState<Theme>("light");
 
   useEffect(() => {
     const fromDom = document.documentElement.dataset.theme as Theme | undefined;
     const stored = (typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null) as Theme | null;
-    setThemeState(stored ?? fromDom ?? "dark");
+    setThemeState(stored ?? fromDom ?? "light");
   }, []);
 
   const setTheme = (t: Theme) => {
