@@ -74,3 +74,7 @@ export * from "./watch-events.ts";
 // Live-monitoring tier gating: PURE read of the per-plan watch entitlements (limit / daily / email)
 // + the allowed-cadence resolver. Defaults to the free-tier floor when keys are absent.
 export * from "./watch-entitlements.ts";
+
+// Live-monitoring email digest: PURE builder of the same-day digest of LOUD alerts (alerts-only; the
+// quiet feed + walled news are never emailed). The send/schedule is owner-gated; this is the content core.
+export * from "./watch-digest.ts";
