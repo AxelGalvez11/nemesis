@@ -34,6 +34,7 @@ import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
   GREETING_COPY,
+  LAB_DRAFT_REFUSAL_COPY,
   NO_SOURCE_COPY,
   providerPriorityForIntent,
   SOURCING_COPY,
@@ -222,13 +223,21 @@ async function runAsk(
   // ---- 3c. fabrication guard (answer-layer entity check; flag-gated) ----
   // Live sources move the fabricated-drug refusal OFF the dense floor: a class-plausible fake
   // ("florizagliflozin") pulls REAL class-sibling evidence that ranks high on both cosine and the
-  // reranker. Refuse when a drug the user literally named appears NOWHERE in the retrieved pool
-  // (the fabricated-drug signature — all the support is about its real neighbors). The guard runs on
-  // the FULL reranked pool, not the top-N slice, so a real drug named only lower down isn't refused.
+  // reranker. The guard fires when a drug the user literally named appears NOWHERE in the retrieved
+  // pool — the fabricated-drug signature. It STAYS strict (no typo/edit-distance tolerance: a 1-char
+  // slip "tesamorein"→"tesamorelin" is indistinguishable from a fake near-miss "BPC-158"→"BPC-157", so
+  // loosening it would re-admit fakes — see fabrication.test.ts).
+  //
+  // BUT when it fires we have, by construction, a NON-EMPTY pool (the empty case returned above). A flat
+  // "no reliable source" is then misleading — we DID retrieve relevant evidence, just not the literal
+  // token (a typo, a colloquial abbreviation like "HGH", or a genuine fake). So degrade to the
+  // conservative fallback: SHOW the sources we found (no claim) rather than denying them. This NEVER runs
+  // the generator, so the anti-fabrication guarantee is fully intact — it only turns a dead-end refusal
+  // into "here's the most relevant evidence I found" + sources + good questions. ("unverified_entity"
+  // tags the trace for analytics without a new SafetyFlag.)
   if (LIVE_SOURCES_ON && isFabricatedDrugQuery(cls.entity_mentions, guardPool)) {
     return await finalizeTemplate(answerId, question, cls.intent,
-      unique<SafetyFlag>([...flags, "no_sources_found"]), entities, userId,
-      "no_source", cls.model, true);
+      flags, entities, userId, "safety_fallback", `${cls.model}|unverified_entity`, true, ret.chunks);
   }
 
   // ---- 4. health context (verified-user-scoped) ----
@@ -439,6 +448,9 @@ function templateCopy(t: AnswerTemplate): string {
     case "sourcing_refusal": return SOURCING_COPY;
     case "no_source": return NO_SOURCE_COPY;
     case "safety_fallback": return CONSERVATIVE_FALLBACK_COPY;
+    // index.ts never emits lab_draft_refused (that path lives in the lab_draft handler), but
+    // AnswerTemplate includes it — handle it for exhaustiveness so this switch type-checks cleanly.
+    case "lab_draft_refused": return LAB_DRAFT_REFUSAL_COPY;
   }
 }
 
