@@ -544,7 +544,11 @@ export async function saveTurn(conversationId: string, ordinalBase: number, ques
   const userId = sess.session?.user.id;
   if (!userId) return;
   const { error } = await supabase.from("conversation_messages").insert([
-    { conversation_id: conversationId, user_id: userId, role: "user", ordinal: ordinalBase, content: question },
+    // Both rows MUST carry the SAME keys: supabase-js sends the UNION of keys as PostgREST's `columns`
+    // param, and a row missing a listed column is inserted as NULL — the column DEFAULT is NOT applied. So
+    // omitting payload/citations on the user row made it violate their NOT NULL and 400'd the WHOLE insert,
+    // silently losing every chat (conversation created, zero messages). Keep both rows' keys in sync.
+    { conversation_id: conversationId, user_id: userId, role: "user", ordinal: ordinalBase, content: question, payload: {}, citations: [] },
     {
       conversation_id: conversationId,
       user_id: userId,
@@ -572,7 +576,9 @@ export async function saveResearchTurn(conversationId: string, ordinalBase: numb
   const userId = sess.session?.user.id;
   if (!userId) return;
   const { error } = await supabase.from("conversation_messages").insert([
-    { conversation_id: conversationId, user_id: userId, role: "user", ordinal: ordinalBase, content: question },
+    // Keep both rows' keys in sync (see saveTurn): a key on one row but missing on the other inserts NULL
+    // (default NOT applied) and 400s the whole insert. The assistant row sets payload, so the user row must.
+    { conversation_id: conversationId, user_id: userId, role: "user", ordinal: ordinalBase, content: question, payload: {} },
     {
       conversation_id: conversationId,
       user_id: userId,

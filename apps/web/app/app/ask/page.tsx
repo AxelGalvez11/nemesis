@@ -149,7 +149,7 @@ function AskPage() {
     try {
       const convId = await ensureConversation(q);
       if (convId) await saveTurn(convId, idx * 2, q, answer);
-    } catch { /* best-effort persistence */ }
+    } catch (e) { console.error("chat persist failed (best-effort):", e); }
   }, [ensureConversation]);
 
   // Persist a completed deep-research turn so its "Report ready" card survives a reopen.
@@ -157,7 +157,7 @@ function AskPage() {
     try {
       const convId = await ensureConversation(q);
       if (convId) await saveResearchTurn(convId, idx * 2, q, { mode, savedReportId: result.savedReportId, title: q, citationCount: result.sources });
-    } catch { /* best-effort persistence */ }
+    } catch (e) { console.error("research persist failed (best-effort):", e); }
   }, [ensureConversation]);
 
   // Turn slot `idx` into a running research card and kick off the run. `searchQ` may be enriched with
