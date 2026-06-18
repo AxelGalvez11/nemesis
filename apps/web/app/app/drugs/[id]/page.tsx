@@ -136,12 +136,27 @@ export default function DrugPage() {
       </section>
 
       <aside className="right-rail">
-        {drug.brand_names.length ? (
-          <div className="answer-section">
-            <div className="eyebrow">Brand names</div>
+        <div className="answer-section">
+          <div className="eyebrow">Products &amp; pricing</div>
+          {drug.brand_names.length ? (
             <div className="quick-chips">{drug.brand_names.map((b) => <span className="chip" key={b}>{b}</span>)}</div>
-          </div>
-        ) : null}
+          ) : (
+            <p className="muted" style={{ fontSize: 13 }}>No brand-name products on file (often available as a generic).</p>
+          )}
+          <a
+            className="chip-action"
+            href={goodRxUrl(drug.canonical_name)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ marginTop: 8, display: "inline-flex" }}
+            title="Opens GoodRx price comparison in a new tab"
+          >
+            Check prices on GoodRx ↗
+          </a>
+          <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+            Third-party pricing (US). PharmaOrb doesn&apos;t set or verify prices.
+          </p>
+        </div>
         {drug.classes.length ? (
           <div className="answer-section">
             <div className="eyebrow">Drug classes</div>
@@ -168,6 +183,13 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="muted">{label}</p>
     </div>
   );
+}
+
+// GoodRx drug pages live at goodrx.com/<slug> (e.g. goodrx.com/tretinoin). Slug the canonical name; a
+// wrong slug still lands on GoodRx's own search, so this degrades gracefully rather than 404ing.
+function goodRxUrl(name: string): string {
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `https://www.goodrx.com/${encodeURIComponent(slug)}`;
 }
 
 function Section({ title, empty, children }: { title: string; empty: string; children: React.ReactNode[] }) {
