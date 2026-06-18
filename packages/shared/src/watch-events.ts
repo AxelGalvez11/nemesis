@@ -35,6 +35,14 @@ export interface PartitionedWatchEvents {
   unreadAlertCount: number;
 }
 
+/** A display title for a watch created from a question: trimmed, whitespace-collapsed, capped at 120
+ *  chars with an ellipsis (mirrors the saved_reports title rule). Used by the "Watch this" affordance. */
+export function watchTitleFromQuestion(question: string): string {
+  const q = question.trim().replace(/\s+/g, " ");
+  if (!q) return "Untitled watch";
+  return q.length > 120 ? `${q.slice(0, 119)}…` : q;
+}
+
 /** Newest-first by detected_at. */
 function byDetectedDesc(a: WatchEvent, b: WatchEvent): number {
   return a.detected_at < b.detected_at ? 1 : a.detected_at > b.detected_at ? -1 : 0;

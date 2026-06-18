@@ -1,5 +1,20 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { partitionWatchEvents, type WatchEvent } from "./watch-events.ts";
+import { partitionWatchEvents, watchTitleFromQuestion, type WatchEvent } from "./watch-events.ts";
+
+Deno.test("watchTitleFromQuestion trims + collapses whitespace, keeps a short question as-is", () => {
+  assertEquals(watchTitleFromQuestion("  semaglutide   cardiovascular  outcomes "), "semaglutide cardiovascular outcomes");
+});
+
+Deno.test("watchTitleFromQuestion truncates a long question with an ellipsis (<=120 chars)", () => {
+  const long = "a".repeat(200);
+  const title = watchTitleFromQuestion(long);
+  assertEquals(title.length, 120);
+  assertEquals(title.endsWith("…"), true);
+});
+
+Deno.test("watchTitleFromQuestion falls back to a placeholder for an empty question", () => {
+  assertEquals(watchTitleFromQuestion("   "), "Untitled watch");
+});
 
 function ev(over: Partial<WatchEvent>): WatchEvent {
   return {

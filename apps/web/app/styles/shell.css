@@ -563,3 +563,8 @@
 .watch-news-item h5 a { color: var(--text-2); text-decoration: none; }
 .watch-news-item h5 a:hover { color: var(--text); text-decoration: underline; }
 .watch-news-meta { display: flex; gap: 9px; font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-top: 4px; }
+
+/* "Watch this" affordance — sits at the right end of the answer grade-row (reuses .chip-action). */
+.watch-this { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.watch-this-btn { white-space: nowrap; }
+.watch-this-note { font-size: 11px; color: var(--warn); }

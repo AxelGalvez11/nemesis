@@ -851,6 +851,50 @@ export async function fetchWatchEvents(watchId: string): Promise<WatchEvent[]> {
     : null));
 }
 
+export interface CreateWatchInput {
+  title: string;
+  topic: string;
+  query_terms: string;
+  mentions?: string[];
+  include_news?: boolean;
+  cadence?: "weekly" | "daily";
+}
+export type CreateWatchResult =
+  | { ok: true; id: string }
+  | { ok: false; reason: "not_enabled" | "limit" | "auth" | "unknown" };
+
+/** Create a topic watch (the "Watch this" affordance). user_id is set explicitly from the session and
+ *  validated by the evidence_watches RLS WITH CHECK (auth.uid() = user_id), so a client can't insert
+ *  for someone else. The per-plan limit is enforced by the enforce_watch_limit DB trigger, surfaced
+ *  here as reason:"limit". Pre-deploy the table is absent (PGRST205) → reason:"not_enabled", so the
+ *  button reports "monitoring isn't on yet" instead of crashing. */
+export async function createWatch(input: CreateWatchInput): Promise<CreateWatchResult> {
+  if (isPreviewMode) return { ok: false, reason: "not_enabled" };
+  const { data: sess } = await supabase.auth.getSession();
+  const userId = sess.session?.user?.id;
+  if (!userId) return { ok: false, reason: "auth" };
+  const { data, error } = await supabase
+    .from("evidence_watches")
+    .insert({
+      user_id: userId,
+      kind: "topic",
+      title: input.title,
+      topic: input.topic,
+      query_terms: input.query_terms,
+      mentions: input.mentions ?? [],
+      include_news: input.include_news ?? true,
+      cadence: input.cadence ?? "weekly",
+    })
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    if (isMissingRelation(error)) return { ok: false, reason: "not_enabled" };
+    if (/watch_limit_exceeded/i.test(error.message ?? "")) return { ok: false, reason: "limit" };
+    return { ok: false, reason: "unknown" };
+  }
+  return data && typeof data.id === "string" ? { ok: true, id: data.id } : { ok: false, reason: "unknown" };
+}
+
 /** Download a saved report as .docx/.pptx. Fetches the Node route WITH the user's bearer token
  *  (a plain <a download> can't set Authorization), then triggers a browser download of the blob. */
 export async function downloadReportExport(

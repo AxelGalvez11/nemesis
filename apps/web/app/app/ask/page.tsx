@@ -14,6 +14,7 @@ import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { ResearchProgress } from "@/components/ResearchProgress";
+import { WatchButton } from "@/components/WatchButton";
 
 function isQuotaError(e: unknown): e is AskQuotaError {
   return e instanceof Error && "quota" in e;
@@ -388,7 +389,7 @@ function AskPage() {
                   ) : t.research ? (
                     <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
                   ) : t.a ? (
-                    <Answer answer={t.a} onCite={onCite} />
+                    <Answer answer={t.a} onCite={onCite} question={t.q} />
                   ) : isLast && busy ? <Thinking stage={stage} /> : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
@@ -675,7 +676,7 @@ function scienceBasis(s: ScienceStateSignal): string {
     : `Cited evidence is early-stage — ${s.earlyStage} early-phase trial/preprint of ${n}`;
 }
 
-function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void }) {
+function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of answer.citations) m.set(normTag(c.chunk_tag), abbr(c.source_type));
@@ -704,6 +705,8 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskR
           </span>
         ) : null}
         {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
+        {/* "Watch this" — only on a real answer (not an emergency/refusal/no-source template). */}
+        {!answer.template && !answer.refused_unsupported ? <WatchButton question={question} /> : null}
       </div>
       {answer.plain_english_summary ? <p className="lead">{renderInline(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
