@@ -6,11 +6,16 @@ import { createWatch, type CreateWatchInput } from "@/lib/api";
 import { watchTitleFromQuestion } from "@pharmabro/shared";
 import { Icon } from "@/components/icons";
 
-// The "Watch this" affordance on an answer: one click starts monitoring the question's topic (a weekly
-// topic-watch, news on, by default — cadence/limits are refined by the tier-gating increment). Pre-deploy
-// the backend table is absent, so createWatch returns reason:"not_enabled" and the button says so rather
-// than failing. The watch is created from the QUESTION text (title/topic/query_terms); drug-name capture
-// for openFDA label monitoring is a later refinement — the loud alerts (PubMed/CT.gov) don't need it.
+// The "Watch this" affordance: one click starts monitoring a topic (a weekly topic-watch, news on, by
+// default — cadence/limits are refined by the tier-gating increment). Pre-deploy the backend table is
+// absent, so createWatch returns reason:"not_enabled" and the button says so rather than failing.
+//
+// Two callers:
+//  • Ask answer  → { kind: "topic", question }  — title/topic/query_terms all derive from the QUESTION.
+//  • Drug page   → { kind: "topic", question: drugName, title, mentions, label, existingWatchId } — the
+//    drug's name(s) flow into `mentions` so openFDA label monitoring is scoped to the drug, and
+//    `existingWatchId` (looked up by the caller) flips the button straight to "Watching" so a returning
+//    user can't silently create a DUPLICATE watch and burn their plan limit.
 
 type State =
   | { kind: "idle" }
@@ -26,21 +31,31 @@ const ERROR_COPY: Record<"not_enabled" | "limit" | "auth" | "unknown", string> =
 };
 
 type WatchButtonProps =
-  | { kind: "topic"; question: string }
+  | { kind: "topic"; question: string; title?: string; mentions?: string[]; label?: string; existingWatchId?: string }
   | { kind: "saved_question"; question: string; savedReportId: string };
 
 export function WatchButton(props: WatchButtonProps) {
-  const [state, setState] = useState<State>({ kind: "idle" });
-  const label = props.kind === "saved_question" ? "Watch this report" : "Watch this topic";
+  // The drug page only mounts this once its data (incl. the user's existing watches) has loaded, so
+  // reading existingWatchId at init is safe — it won't arrive late and miss this initializer.
+  const [state, setState] = useState<State>(
+    props.kind === "topic" && props.existingWatchId
+      ? { kind: "created", id: props.existingWatchId }
+      : { kind: "idle" },
+  );
+  const label = props.kind === "topic" && props.label
+    ? props.label
+    : props.kind === "saved_question"
+      ? "Watch this report"
+      : "Watch this topic";
 
   async function start() {
     if (state.kind === "creating") return;
     setState({ kind: "creating" });
     const q = props.question.trim();
-    const title = watchTitleFromQuestion(q);
+    const title = props.kind === "topic" && props.title ? props.title : watchTitleFromQuestion(q);
     const input: CreateWatchInput = props.kind === "saved_question"
       ? { kind: "saved_question", title, saved_report_id: props.savedReportId, query_terms: q }
-      : { kind: "topic", title, topic: q, query_terms: q };
+      : { kind: "topic", title, topic: q, query_terms: q, mentions: props.mentions };
     const res = await createWatch(input);
     if (res.ok) setState({ kind: "created", id: res.id });
     else setState({ kind: "error", message: ERROR_COPY[res.reason], upgrade: res.reason === "limit" });

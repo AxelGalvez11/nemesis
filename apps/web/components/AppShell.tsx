@@ -43,9 +43,8 @@ const workspace = [
   { href: "/app/reports", label: "Reports", icon: "doc" as const },
   { href: "/app/monitor", label: "Monitoring", icon: "bell" as const },
   // Explore is deferred (mostly mockup) — hidden from the nav until it's real. The route still exists.
-  // NOTE: "Watchlist" below is the DEPRECATED corpus-tied spine; "Monitoring" above is the new live
-  // evidence-watch feature. Owner decision pending on retiring the old one — keep both for now.
-  { href: "/app/watchlist", label: "Watchlist", icon: "bell" as const },
+  // (The old "Watchlist" feature was retired 2026-06-18, superseded by Monitoring above. Its empty DB
+  // tables stay dormant for now; the drug-page "Follow" now creates a Monitoring watch.)
 ];
 
 function isActive(path: string, href: string) {
@@ -57,7 +56,6 @@ function titleForPath(path: string): { title: string; sub?: string } {
   if (path.startsWith("/app/reports")) return { title: "Reports", sub: "your saved evidence reports" };
   if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };
   if (path.startsWith("/app/explore")) return { title: "Explore" };
-  if (path.startsWith("/app/watchlist")) return { title: "Watchlist" };
   if (path.startsWith("/app/billing")) return { title: "Billing" };
   if (path.startsWith("/app/profile")) return { title: "Profile" };
   if (path.startsWith("/app/settings")) return { title: "Settings" };

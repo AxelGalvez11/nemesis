@@ -54,7 +54,7 @@ htmlCheck("/sign-in", ["PharmaOrb", "Sign in"]);
 htmlCheck("/sign-up", ["PharmaOrb", "Create account"]);
 htmlCheck("/app/ask", ["PharmaOrb App", "Loading"]);
 htmlCheck("/app/explore", ["PharmaOrb App", "Loading"]);
-htmlCheck("/app/watchlist", ["PharmaOrb App", "Loading"]);
+htmlCheck("/app/monitor", ["PharmaOrb App", "Loading"]);
 htmlCheck("/app/profile", ["PharmaOrb App", "Loading"]);
 htmlCheck("/app/billing", ["PharmaOrb App", "Loading"]);
 htmlCheck("/legal/privacy", ["Privacy Policy", "Service providers"]);

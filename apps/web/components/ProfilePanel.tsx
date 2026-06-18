@@ -86,7 +86,7 @@ export function ProfilePanel() {
             <Badge>{ent?.plan ?? "free"}</Badge>
           </div>
           <p>Ask today: {ask?.used ?? 0}/{ask?.limit ?? 10}</p>
-          <p>Watchlist limit: {String(ent?.entitlements.watchlist_limit ?? 3)}</p>
+          <p>Monitoring watches: {String(ent?.entitlements.watch_limit ?? 1)}</p>
         </Card>
       </div>
       <Card className="account-actions">

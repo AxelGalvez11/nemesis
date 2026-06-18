@@ -18,14 +18,14 @@ export default function PrivacyPage() {
           <h2>What PharmaOrb collects</h2>
           <p>
             PharmaOrb collects account information, app activity, questions, generated answers,
-            watchlist items, billing status, and technical logs needed to operate the beta.
+            monitoring watches, billing status, and technical logs needed to operate the beta.
           </p>
         </section>
         <section>
           <h2>How data is used</h2>
           <p>
             We use data to authenticate accounts, provide cited evidence answers, enforce usage
-            limits, operate watchlists, improve reliability, investigate abuse, and support billing.
+            limits, operate monitoring, improve reliability, investigate abuse, and support billing.
           </p>
         </section>
         <section>

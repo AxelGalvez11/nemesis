@@ -39,7 +39,7 @@ export default function SignInPage() {
       <section className="auth-card">
         <p className="eyebrow">PharmaOrb beta</p>
         <h1>Sign in</h1>
-        <p className="muted">Use your beta account to access cited Ask, search, and watchlists.</p>
+        <p className="muted">Use your beta account to access cited Ask, search, and monitoring.</p>
         {deleted ? <p className="success-text">Your account was deleted.</p> : null}
         {isPreviewMode ? <p className="muted">Preview mode: no account credentials required.</p> : null}
         <form onSubmit={onSubmit}>
