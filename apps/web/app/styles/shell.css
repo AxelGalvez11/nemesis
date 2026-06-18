@@ -568,3 +568,9 @@
 .watch-this { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
 .watch-this-btn { white-space: nowrap; }
 .watch-this-note { font-size: 11px; color: var(--warn); }
+.watch-this-note a { color: var(--warn); font-weight: 600; }
+
+/* Monitoring page: the "3 of 10 watches used · checked daily" tier line under the intro. */
+.watch-usage { text-align: center; font-family: var(--mono); font-size: 11px; color: var(--text-3); margin: -2px 0 18px; }
+.watch-usage a { color: var(--acid-dim); text-decoration: none; }
+.watch-usage a:hover { text-decoration: underline; }

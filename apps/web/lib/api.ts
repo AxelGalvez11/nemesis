@@ -18,6 +18,7 @@ import type {
   WatchlistUpdate,
   WatchItemType,
 } from "@pharmabro/shared";
+import { resolveWatchCadence, watchEntitlement } from "@pharmabro/shared";
 import { supabase } from "./supabase";
 import { isPreviewMode, supabaseAnonKey, supabaseUrl } from "./env";
 
@@ -879,6 +880,11 @@ export async function createWatch(input: CreateWatchInput): Promise<CreateWatchR
   const { data: sess } = await supabase.auth.getSession();
   const userId = sess.session?.user?.id;
   if (!userId) return { ok: false, reason: "auth" };
+  // Tier-gate the cadence: a free user can't create/persist a daily watch (the scheduler enforces which
+  // watches are actually due; this is the client-side gate). Defensive read — a failed entitlement fetch
+  // falls back to the free floor (weekly), never silently grants daily.
+  const ent = watchEntitlement(await fetchEntitlements().catch(() => null));
+  const cadence = resolveWatchCadence(input.cadence, ent.dailyEnabled);
   // One object shape (not a union) so supabase-js's excess-property check stays happy. Both topic and
   // saved_report_id are nullable; exactly one is set per kind, which satisfies the kind_ref CHECK.
   const row = {
@@ -888,7 +894,7 @@ export async function createWatch(input: CreateWatchInput): Promise<CreateWatchR
     query_terms: input.query_terms,
     mentions: input.mentions ?? [],
     include_news: input.include_news ?? true,
-    cadence: input.cadence ?? "weekly",
+    cadence,
     topic: input.kind === "topic" ? input.topic : null,
     saved_report_id: input.kind === "saved_question" ? input.saved_report_id : null,
   };

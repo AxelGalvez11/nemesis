@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { fetchWatches, type WatchSummary } from "@/lib/api";
+import type { EntitlementSnapshot } from "@pharmabro/shared";
+import { watchEntitlement, watchUsageLabel } from "@pharmabro/shared";
+import { fetchEntitlements, fetchWatches, type WatchSummary } from "@/lib/api";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 
@@ -13,6 +15,7 @@ import { Icon } from "@/components/icons";
 // the empty state shows — no error.
 export default function MonitorPage() {
   const [watches, setWatches] = useState<WatchSummary[] | null>(null);
+  const [ent, setEnt] = useState<EntitlementSnapshot | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -20,8 +23,12 @@ export default function MonitorPage() {
     fetchWatches()
       .then((w) => { if (alive) setWatches(w); })
       .catch((e) => { if (alive) setErr(e instanceof Error ? e.message : "Could not load your watches."); });
+    // entitlements are best-effort: a failure just hides the usage line, never blocks the list
+    fetchEntitlements().then((e) => { if (alive) setEnt(e); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  const tier = watchEntitlement(ent);
 
   return (
     <div className="research-wrap">
@@ -33,6 +40,15 @@ export default function MonitorPage() {
           surface what&apos;s new — sounding a loud alert only when a finding could change the answer.
         </p>
       </div>
+
+      {watches && ent ? (
+        <p className="watch-usage">
+          {watchUsageLabel(watches.length, tier.limit)} · checked {tier.dailyEnabled ? "daily" : "weekly"}
+          {watches.length >= tier.limit
+            ? <> · <Link href="/app/billing">need more? see plans</Link></>
+            : null}
+        </p>
+      ) : null}
 
       {err ? <p className="tmpl-note">{err}</p> : null}
       {watches === null && !err ? <p className="muted" style={{ fontSize: 14 }}>Loading watches…</p> : null}

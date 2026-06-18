@@ -38,6 +38,14 @@ CREATE INDEX IF NOT EXISTS evidence_watches_user_idx ON evidence_watches (user_i
 -- the scheduler scans active watches by (cadence, last_checked_at) to find what's due
 CREATE INDEX IF NOT EXISTS evidence_watches_due_idx ON evidence_watches (cadence, last_checked_at)
   WHERE status = 'active';
+-- Idempotent "Watch this": at most one watch per (user, topic) and one per (user, saved report). PARTIAL
+-- so the NULL column of the other kind never participates (a topic-watch has saved_report_id NULL and a
+-- saved-question watch has topic NULL — and SQL treats NULLs as distinct, which would defeat a plain
+-- UNIQUE). The dedup-aware trigger below lets a re-watch reach these indexes instead of tripping the limit.
+CREATE UNIQUE INDEX IF NOT EXISTS evidence_watches_user_topic_uniq
+  ON evidence_watches (user_id, topic) WHERE topic IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS evidence_watches_user_report_uniq
+  ON evidence_watches (user_id, saved_report_id) WHERE saved_report_id IS NOT NULL;
 
 ALTER TABLE evidence_watches ENABLE ROW LEVEL SECURITY;
 CREATE POLICY ew_owner ON evidence_watches FOR ALL TO authenticated
@@ -124,6 +132,17 @@ DECLARE
   v_limit int;
   v_count int;
 BEGIN
+  -- An idempotent re-"Watch this" on a topic/report the user ALREADY watches is NOT a new slot: let it
+  -- through (it then no-ops on the partial unique indexes above; the client maps the duplicate to
+  -- "already watching"). Without this, a free user (limit 1) re-watching their one topic would hit the
+  -- limit error instead — a confusing false "limit reached".
+  IF (NEW.topic IS NOT NULL AND EXISTS (
+        SELECT 1 FROM evidence_watches WHERE user_id = NEW.user_id AND topic = NEW.topic))
+     OR (NEW.saved_report_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM evidence_watches WHERE user_id = NEW.user_id AND saved_report_id = NEW.saved_report_id)) THEN
+    RETURN NEW;
+  END IF;
+
   v_plan := public.resolve_user_plan(NEW.user_id);
   v_limit := public.plan_entitlement_int(v_plan, 'watch_limit');
   IF v_limit IS NULL THEN

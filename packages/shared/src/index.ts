@@ -70,3 +70,7 @@ export * from "./watch-detect.ts";
 // new" feed / the walled-off news list (the watch detail view renders from this; the news wall is
 // re-enforced here defensively).
 export * from "./watch-events.ts";
+
+// Live-monitoring tier gating: PURE read of the per-plan watch entitlements (limit / daily / email)
+// + the allowed-cadence resolver. Defaults to the free-tier floor when keys are absent.
+export * from "./watch-entitlements.ts";

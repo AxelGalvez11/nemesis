@@ -16,7 +16,7 @@ type State =
   | { kind: "idle" }
   | { kind: "creating" }
   | { kind: "created"; id: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; upgrade?: boolean };
 
 const ERROR_COPY: Record<"not_enabled" | "limit" | "auth" | "unknown", string> = {
   not_enabled: "Monitoring isn’t switched on yet.",
@@ -43,7 +43,7 @@ export function WatchButton(props: WatchButtonProps) {
       : { kind: "topic", title, topic: q, query_terms: q };
     const res = await createWatch(input);
     if (res.ok) setState({ kind: "created", id: res.id });
-    else setState({ kind: "error", message: ERROR_COPY[res.reason] });
+    else setState({ kind: "error", message: ERROR_COPY[res.reason], upgrade: res.reason === "limit" });
   }
 
   if (state.kind === "created") {
@@ -65,7 +65,12 @@ export function WatchButton(props: WatchButtonProps) {
       >
         <Icon name="bell" size={14} /> {state.kind === "creating" ? "Starting…" : label}
       </button>
-      {state.kind === "error" ? <span className="watch-this-note">{state.message}</span> : null}
+      {state.kind === "error" ? (
+        <span className="watch-this-note">
+          {state.message}
+          {state.upgrade ? <> <Link href="/app/billing">See plans</Link></> : null}
+        </span>
+      ) : null}
     </span>
   );
 }
