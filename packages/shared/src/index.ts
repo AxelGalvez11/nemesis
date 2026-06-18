@@ -59,3 +59,9 @@ export * from "./study-type.ts";
 // the cited sources' study-type metadata. Positive-only — null (no badge) when there's no signal to
 // stand behind. Never an LLM guess; consensus/"contested" is left to the meta engine's heterogeneity.
 export * from "./science-state.ts";
+
+// Live-monitoring (WS-D) change detection: PURE dated-diff over an accumulating per-watch known-source
+// set. Detects change by diffing source-API results by date, never by diffing engine output (avoids
+// retrieval-jitter false alerts). Cold-start baselines silently; per-source classifier flags the loud
+// conclusion-mover alerts (new high-tier study / retraction) reusing the study-type metadata.
+export * from "./watch-detect.ts";
