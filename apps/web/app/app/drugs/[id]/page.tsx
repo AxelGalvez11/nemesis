@@ -61,8 +61,12 @@ export default function DrugPage() {
   return (
     <div className="drug-page-layout">
       <section className="drug-main">
+        {/* Inner column caps line length for calm, readable prose (the .drug-main column is wide on
+            large screens). Left-anchored to the padding edge so it aligns with the title and doesn't
+            float against the right rail. Layout-only; reuses the foundation-restyled classes inside. */}
+        <div style={{ maxWidth: 720, width: "100%" }}>
         <h1 className="drug-title">{drug.canonical_name}</h1>
-        <div className="quick-chips">
+        <div className="quick-chips" style={{ marginBottom: 10 }}>
           <Badge>{drug.approved_status}</Badge>
           {drug.primary_class ? <span className="chip">{drug.primary_class.name}</span> : null}
         </div>
@@ -133,6 +137,7 @@ export default function DrugPage() {
             </Card>
           ))}
         </Section>
+        </div>
       </section>
 
       <aside className="right-rail">

@@ -76,22 +76,22 @@ export function ProfilePanel() {
     <>
       <div className="grid two">
         <Card>
-          <h2>Account</h2>
-          <p>{session?.user.email}</p>
-          <p className="muted">Educational information only. Not medical advice.</p>
+          <h2 style={{ marginBottom: 6 }}>Account</h2>
+          <p style={{ margin: "0 0 4px", fontWeight: 500 }}>{session?.user.email}</p>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>Educational information only. Not medical advice.</p>
         </Card>
         <Card>
-          <div className="row">
-            <h2>Plan</h2>
+          <div className="row" style={{ marginBottom: 10 }}>
+            <h2 style={{ margin: 0 }}>Plan</h2>
             <Badge>{ent?.plan ?? "free"}</Badge>
           </div>
-          <p>Ask today: {ask?.used ?? 0}/{ask?.limit ?? 10}</p>
-          <p>Monitoring watches: {String(ent?.entitlements.watch_limit ?? 1)}</p>
+          <p style={{ margin: "0 0 4px", fontSize: 14 }}>Ask today: {ask?.used ?? 0}/{ask?.limit ?? 10}</p>
+          <p style={{ margin: 0, fontSize: 14 }}>Monitoring watches: {String(ent?.entitlements.watch_limit ?? 1)}</p>
         </Card>
       </div>
       <Card className="account-actions">
-        <h2>Account data</h2>
-        <p className="muted">
+        <h2 style={{ marginBottom: 6 }}>Account data</h2>
+        <p className="muted" style={{ margin: "0 0 14px", fontSize: 13.5, lineHeight: 1.55 }}>
           Download a JSON copy of your account data or permanently delete your account.
           Deletion removes the auth account and cascades user-owned rows where the backend schema allows it.
         </p>
@@ -101,8 +101,8 @@ export function ProfilePanel() {
           </button>
         </div>
         <div className="danger-zone">
-          <h3>Delete account</h3>
-          <p className="muted">Type DELETE to enable permanent account deletion.</p>
+          <h3 style={{ fontSize: 15 }}>Delete account</h3>
+          <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>Type DELETE to enable permanent account deletion.</p>
           <input
             aria-label="Delete confirmation"
             placeholder="DELETE"

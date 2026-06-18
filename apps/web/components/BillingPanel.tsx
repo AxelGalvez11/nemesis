@@ -7,6 +7,10 @@ import { Card, ErrorText, Badge } from "@/components/ui";
 import { fetchEntitlements } from "@/lib/api";
 import { phCapture } from "@/lib/posthog";
 
+const billingList: React.CSSProperties = { listStyle: "none", margin: "0 0 16px", padding: 0, display: "grid", gap: 9 };
+const billingItem: React.CSSProperties = { display: "flex", gap: 8, fontSize: 13.5, color: "var(--text-2)", lineHeight: 1.45 };
+const billingTick: React.CSSProperties = { color: "var(--acid)", flex: "0 0 auto", fontWeight: 700, lineHeight: 1.45 };
+
 /**
  * Billing content (current plan + Plus/Pro upgrade cards), with NO page header — the host supplies the
  * heading. Stripe checkout/portal redirect via window.location, so this works identically whether it is
@@ -47,39 +51,48 @@ export function BillingPanel() {
   return (
     <>
       {error ? <ErrorText>{error}</ErrorText> : null}
+      <Card>
+        <div className="row" style={{ marginBottom: 6 }}>
+          <h2 style={{ margin: 0 }}>Current plan</h2>
+          <Badge>{ent?.plan ?? "free"}</Badge>
+        </div>
+        <p className="muted" style={{ margin: "0 0 14px" }}>Plan updates are mirrored from Stripe webhooks into Supabase subscriptions.</p>
+        <button className="secondary" disabled={busy === "portal"} onClick={() => void post("portal", "/api/stripe/portal")}>
+          {busy === "portal" ? "Opening…" : "Manage billing"}
+        </button>
+      </Card>
       <div className="grid two">
         <Card>
-          <div className="row">
-            <h2>Current plan</h2>
-            <Badge>{ent?.plan ?? "free"}</Badge>
-          </div>
-          <p className="muted">Plan updates are mirrored from Stripe webhooks into Supabase subscriptions.</p>
-          <button disabled={busy === "portal"} onClick={() => void post("portal", "/api/stripe/portal")}>
-            {busy === "portal" ? "Opening…" : "Manage billing"}
-          </button>
-        </Card>
-        <Card>
-          <h2>PharmaOrb Plus</h2>
-          <p><strong>$20/month</strong></p>
-          <ul>
-            <li>100 Ask questions per day</li>
-            <li>50 watchlist follows</li>
-            <li>Plus monitoring surfaces as they roll out</li>
+          <h2 style={{ margin: "0 0 2px" }}>PharmaOrb Plus</h2>
+          <p style={{ margin: "0 0 12px" }}>
+            <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>$20</strong>
+            <span className="muted" style={{ fontSize: 13 }}> / month</span>
+          </p>
+          <ul style={billingList}>
+            <li style={billingItem}><span style={billingTick}>✓</span>100 Ask questions per day</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>50 watchlist follows</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Plus monitoring surfaces as they roll out</li>
           </ul>
-          <button disabled={busy === "plus"} onClick={() => void post("plus", "/api/stripe/checkout", { plan: "plus" })}>
+          <button style={{ width: "100%" }} disabled={busy === "plus"} onClick={() => void post("plus", "/api/stripe/checkout", { plan: "plus" })}>
             {busy === "plus" ? "Opening checkout…" : "Upgrade to Plus"}
           </button>
         </Card>
-        <Card>
-          <h2>PharmaOrb Pro</h2>
-          <p><strong>$49/month</strong></p>
-          <ul>
-            <li>Everything in Plus, plus:</li>
-            <li><strong>Deep Research</strong> — 3 multi-step cited reports per day</li>
-            <li>250 Ask questions per day · 100 watchlist follows</li>
-            <li>Literature review &amp; meta-analysis as they roll out</li>
+        <Card className="acid">
+          <div className="row" style={{ marginBottom: 2 }}>
+            <h2 style={{ margin: 0 }}>PharmaOrb Pro</h2>
+            <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>Recommended</span>
+          </div>
+          <p style={{ margin: "0 0 12px" }}>
+            <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>$49</strong>
+            <span className="muted" style={{ fontSize: 13 }}> / month</span>
+          </p>
+          <ul style={billingList}>
+            <li style={{ ...billingItem, color: "var(--text-3)", fontWeight: 600, fontSize: 12.5 }}>Everything in Plus, plus:</li>
+            <li style={billingItem}><span style={billingTick}>✓</span><span><strong>Deep Research</strong> — 3 multi-step cited reports per day</span></li>
+            <li style={billingItem}><span style={billingTick}>✓</span>250 Ask questions per day · 100 watchlist follows</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Literature review &amp; meta-analysis as they roll out</li>
           </ul>
-          <button disabled={busy === "pro"} onClick={() => void post("pro", "/api/stripe/checkout", { plan: "pro" })}>
+          <button style={{ width: "100%" }} disabled={busy === "pro"} onClick={() => void post("pro", "/api/stripe/checkout", { plan: "pro" })}>
             {busy === "pro" ? "Opening checkout…" : "Upgrade to Pro"}
           </button>
         </Card>

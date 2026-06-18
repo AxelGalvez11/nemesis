@@ -29,6 +29,9 @@
 
   /* PharmaOrb accent — PRESERVED (was #62b000 light). Reserved for primary actions/links. */
   --acid: #62b000; --acid-dim: #74a81e; --acid-deep: #4c8200; --on-acid: #ffffff;
+  /* accent as raw RGB channels — lets the Orb's halo/sonar/glow build rgba()s that track the accent
+     per theme (the dots already use var(--acid); this fixes the surrounding glow's hue in light). */
+  --acid-rgb: 98, 176, 0;
   --warn: #b5760a; --danger: #cc3322; --info: #0278c0;
 
   /* layout + type */
@@ -69,6 +72,7 @@
 
   /* PharmaOrb accent — PRESERVED (was #bcff3c dark; contrast-tuned per theme). */
   --acid: #bcff3c; --acid-dim: #9bd92e; --acid-deep: #74a81e; --on-acid: #0d0d0d;
+  --acid-rgb: 188, 255, 60;
   --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
 
   --glow: 0;

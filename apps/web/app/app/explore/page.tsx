@@ -95,14 +95,16 @@ export default function ExplorePage() {
         </div>
       </aside>
 
-      <section className="content">
-        <form className="row" onSubmit={onSubmit} style={{ marginBottom: 18 }}>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="ozempic, sertraline, creatine..." />
-          <button disabled={busy} type="submit">{busy ? "Searching..." : "Search"}</button>
+      {/* The .content column has no CSS of its own and this page is full-bleed, so the scoped
+          padding here gives the search + grid the calm breathing room the design calls for. */}
+      <section className="content" style={{ padding: "28px 32px" }}>
+        <form className="row" onSubmit={onSubmit} style={{ marginBottom: 22, gap: 10 }}>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search drugs — ozempic, sertraline, creatine…" aria-label="Search drugs" />
+          <button disabled={busy} type="submit">{busy ? "Searching…" : "Search"}</button>
         </form>
         {error ? <ErrorText>{error}</ErrorText> : null}
 
-        <div className="eyebrow">
+        <div className="eyebrow" style={{ marginBottom: 12 }}>
           {results.length ? "Search results" : "Popular now"}
           {statusFilter ? ` · ${statusFilter.replaceAll("_", " ")}` : ""}
         </div>

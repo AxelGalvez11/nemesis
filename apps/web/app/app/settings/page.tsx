@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { PageHeader } from "@/components/ui";
 import { SettingsPanel } from "@/components/SettingsPanel";
 
 // Full-page Settings (direct URL). The same SettingsPanel also renders inside the account-menu overlay
@@ -9,10 +10,9 @@ export default function SettingsPage() {
   const router = useRouter();
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", display: "grid", gap: 16 }}>
-      <div className="page-header" style={{ marginBottom: 4 }}>
-        <h1>Settings</h1>
-        <p>Appearance, account, and answer preferences.</p>
-      </div>
+      <PageHeader title="Settings" eyebrow="Preferences">
+        Appearance, account, and answer preferences.
+      </PageHeader>
       <SettingsPanel onNavigate={(t) => router.push(`/app/${t}`)} />
     </div>
   );

@@ -62,8 +62,8 @@ export function SettingsPanel({ onNavigate }: { onNavigate: (target: "profile" |
         <p className="muted" style={{ fontSize: 13, margin: "0 0 14px" }}>Default mode for new questions. Advanced modes are rolling out.</p>
         <div className="chip-row">
           {MODES.map((m) => (
-            <button key={m} className="chip-action" onClick={() => setDefaultMode(m)} style={m === defaultMode ? { borderColor: "var(--acid-dim)", color: "var(--text)" } : undefined}>
-              {m === defaultMode ? "● " : ""}{m}{m === "Evidence" ? "" : " · soon"}
+            <button key={m} className={m === defaultMode ? "chip-action active" : "chip-action"} onClick={() => setDefaultMode(m)}>
+              {m}{m === "Evidence" ? "" : " · soon"}
             </button>
           ))}
         </div>
@@ -86,7 +86,7 @@ export function SettingsPanel({ onNavigate }: { onNavigate: (target: "profile" |
           <button className="button-link" onClick={() => onNavigate("billing")}>{plan?.plan === "plus" ? "Manage plan" : "Upgrade"}</button>
         </div>
         <div className="action-row">
-          <button className="button-link secondary" onClick={() => onNavigate("profile")} style={{ background: "var(--surface)", border: "1px solid var(--line)", color: "var(--text-2)" }}>Profile &amp; data</button>
+          <button className="secondary" onClick={() => onNavigate("profile")}>Profile &amp; data</button>
           <button className="secondary" onClick={() => void signOut().then(() => router.replace("/sign-in"))}>Sign out</button>
         </div>
       </section>
