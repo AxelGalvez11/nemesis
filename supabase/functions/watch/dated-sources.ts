@@ -312,8 +312,9 @@ export async function gatherDatedCandidates(opts: {
   });
 }
 
-/** Resolve to [] (never reject) if the source errors or exceeds `ms` — keeps a watch cycle robust. */
-async function withTimeout(run: () => Promise<WatchSource[]>, ms: number): Promise<WatchSource[]> {
+/** Resolve to [] (never reject) if the source errors or exceeds `ms` — keeps a watch cycle robust.
+ *  Exported so the edge fn races the retraction-recheck pass (same WatchSource[] shape) the same way. */
+export async function withTimeout(run: () => Promise<WatchSource[]>, ms: number): Promise<WatchSource[]> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<WatchSource[]>((resolve) => {
     timer = setTimeout(() => resolve([]), ms);

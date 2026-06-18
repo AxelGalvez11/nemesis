@@ -3,6 +3,7 @@ import {
   buildRetractionSources,
   fetchRetractedPmids,
   pmidFromSourceKey,
+  recheckCandidatesFromEvents,
 } from "./retraction-recheck.ts";
 import { classifyAlertReason, sourceKey } from "../../../packages/shared/src/watch-detect.ts";
 
@@ -30,6 +31,29 @@ Deno.test("buildRetractionSources turns a now-retracted candidate into a retract
 Deno.test("buildRetractionSources excludes non-retracted candidates and tolerates empty input", () => {
   assertEquals(buildRetractionSources([{ pmid: "9" }], new Set(["1"])), []);
   assertEquals(buildRetractionSources([], new Set(["1"])), []);
+});
+
+Deno.test("recheckCandidatesFromEvents keeps only high-tier (evidence + alert) PubMed papers, deduped first-wins", () => {
+  const out = recheckCandidatesFromEvents([
+    { channel: "evidence", source_key: "pubmed_oa:111", is_alert: true, title: "RCT one" },
+    { channel: "evidence", source_key: "pubmed_oa:111", is_alert: true, title: "RCT one (dup)" }, // dup PMID → first wins
+    { channel: "evidence", source_key: "clinicaltrials:NCT1", is_alert: true, title: "a trial" }, // not PubMed
+    { channel: "evidence", source_key: "pubmed_oa:222#retracted", is_alert: true, title: "prior recheck" }, // synthetic → excluded
+    { channel: "evidence", source_key: "pubmed_oa:333", is_alert: false, title: "feed-tier" }, // not a loud alert
+    { channel: "news", source_key: "news:https://x", is_alert: false, title: "news" }, // the wall
+    { channel: "evidence", source_key: "pubmed_oa:444", is_alert: true, title: "RCT two" },
+  ]);
+  assertEquals(out, [
+    { pmid: "111", title: "RCT one" },
+    { pmid: "444", title: "RCT two" },
+  ]);
+});
+
+Deno.test("recheckCandidatesFromEvents tolerates a null/absent title", () => {
+  assertEquals(
+    recheckCandidatesFromEvents([{ channel: "evidence", source_key: "pubmed_oa:5", is_alert: true, title: null }]),
+    [{ pmid: "5", title: undefined }],
+  );
 });
 
 const RETRACTED_XML = `<PubmedArticleSet>

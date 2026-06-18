@@ -19,15 +19,23 @@
 // is enforced in planPersistence + the schema CHECK); per-watch fetch is time-bounded + fault-tolerant.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { gatherDatedCandidates, windowSince } from "./dated-sources.ts";
+import { gatherDatedCandidates, windowSince, withTimeout } from "./dated-sources.ts";
+import type { WatchSource } from "../../../packages/shared/src/watch-detect.ts";
 import { fetchGoogleNews } from "../news/news-source.ts";
 import { runWatchCycle } from "./watch-cycle.ts";
 import { planPersistence, type WatchState } from "./plan-persistence.ts";
+import {
+  buildRetractionSources,
+  fetchRetractedPmids,
+  recheckCandidatesFromEvents,
+  type WatchEventRowForRecheck,
+} from "./retraction-recheck.ts";
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const NCBI_API_KEY = Deno.env.get("NCBI_API_KEY") ?? undefined;
 const OPENFDA_API_KEY = Deno.env.get("OPENFDA_API_KEY") ?? undefined;
+const RECHECK_TIMEOUT_MS = 6000; // bound the retraction recheck like a dated source — never sink the cycle
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://app.pharmaorb.app",
@@ -99,8 +107,18 @@ async function runOneWatch(watchId: string) {
   });
   const newsItems = watch.include_news ? await fetchGoogleNews({ query: watch.query_terms }) : [];
 
+  // Retraction recheck (the edat-window blind spot): a paper ALREADY in the known-set that is LATER
+  // retracted never reappears in the dated query → silently missed. So re-check the high-tier PubMed
+  // papers this watch already surfaced, and fold any now-retracted ones in as DISTINCT synthetic
+  // sources (pubmed_oa:<pmid>#retracted) that flow through the SAME detector → a loud retraction alert,
+  // once. Skipped on the baseline (no prior events). Fault-tolerant + time-bounded like the dated fetch:
+  // a failed/slow recheck yields [] and never sinks the cycle, and never blocks the cursor from advancing.
+  const retractionSources = firstRun
+    ? []
+    : await withTimeout(() => gatherRetractionSources(watchId), RECHECK_TIMEOUT_MS);
+
   const cycle = runWatchCycle({
-    evidenceSources,
+    evidenceSources: [...evidenceSources, ...retractionSources],
     newsItems,
     knownEvidenceKeys: known.evidence,
     knownNewsKeys: known.news,
@@ -138,7 +156,37 @@ async function runOneWatch(watchId: string) {
   };
 }
 
+/**
+ * Re-check the high-tier PubMed papers this watch already surfaced and return a retraction-classified
+ * synthetic source for each now flagged retracted. Self-contained fault-tolerance: any failure (events
+ * read, efetch) → [] (logged, non-fatal). The caller additionally races it against a timeout. The
+ * synthetic key is distinct from the original paper's, so it surfaces once then dedupes via the known-set.
+ */
+async function gatherRetractionSources(watchId: string): Promise<WatchSource[]> {
+  try {
+    const candidates = recheckCandidatesFromEvents(await loadHighTierEvidenceEvents(watchId));
+    if (candidates.length === 0) return [];
+    const retracted = await fetchRetractedPmids({ pmids: candidates.map((c) => c.pmid), ncbiApiKey: NCBI_API_KEY });
+    return buildRetractionSources(candidates, retracted);
+  } catch (e) {
+    console.warn("watch/retraction recheck failed (non-fatal):", (e as Error).message);
+    return [];
+  }
+}
+
 // ── DB I/O (raw PostgREST, service role — same pattern as research/index.ts) ──────────────────────
+/** The watch's loud evidence alerts so far — the high-tier papers worth re-checking for a retraction. */
+async function loadHighTierEvidenceEvents(watchId: string): Promise<WatchEventRowForRecheck[]> {
+  const url = new URL(`${SB_URL}/rest/v1/watch_events`);
+  url.searchParams.set("watch_id", `eq.${watchId}`);
+  url.searchParams.set("channel", "eq.evidence");
+  url.searchParams.set("is_alert", "is.true");
+  url.searchParams.set("select", "channel,source_key,is_alert,title");
+  const res = await fetch(url, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`load watch events failed (${res.status})`);
+  return await res.json() as WatchEventRowForRecheck[];
+}
+
 async function loadWatch(watchId: string): Promise<WatchRow | null> {
   const url = new URL(`${SB_URL}/rest/v1/evidence_watches`);
   url.searchParams.set("id", `eq.${watchId}`);

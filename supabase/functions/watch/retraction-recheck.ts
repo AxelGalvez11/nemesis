@@ -75,6 +75,33 @@ export function buildRetractionSources(
   return out;
 }
 
+/** One already-written watch_event row, as far as the recheck cares (the edge fn selects these columns). */
+export interface WatchEventRowForRecheck {
+  channel: string;
+  source_key: string;
+  is_alert?: boolean | null;
+  title?: string | null;
+}
+
+/**
+ * From a watch's already-written events, pick the high-tier PubMed papers worth re-checking for a
+ * retraction: evidence-channel + loud (is_alert) + a bare-PMID key. The prior `#retracted` synthetics are
+ * auto-excluded (pmidFromSourceKey returns null for them) so a retraction is never re-checked, and the
+ * news wall is honored defensively. Deduped by PMID, first-wins (keeps the title we first surfaced). PURE.
+ */
+export function recheckCandidatesFromEvents(rows: readonly WatchEventRowForRecheck[]): RetractionCandidate[] {
+  const seen = new Set<string>();
+  const out: RetractionCandidate[] = [];
+  for (const r of rows) {
+    if (r.channel !== "evidence" || !r.is_alert) continue;
+    const pmid = pmidFromSourceKey(r.source_key);
+    if (!pmid || seen.has(pmid)) continue;
+    seen.add(pmid);
+    out.push({ pmid, title: r.title ?? undefined });
+  }
+  return out;
+}
+
 /** efetch ONE chunk of (already-validated numeric) PMIDs → the subset now carrying a retraction type.
  *  Fully self-contained fault-tolerance: a non-200, a 200-with-error-body, a parse miss, or a thrown
  *  network error each yields an empty set and a warn — never throws, so one bad chunk can't sink the run. */
