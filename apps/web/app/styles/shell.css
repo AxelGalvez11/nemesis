@@ -525,3 +525,41 @@
 .app-modal-body .card + .card { border-top: 1px solid var(--line); padding-top: 14px; }
 /* Profile/Billing use a 2-/3-col grid full-page; stack them single-column in the narrow overlay. */
 .app-modal-body .grid.two, .app-modal-body .grid.three { grid-template-columns: 1fr; }
+
+/* ── Live monitoring — watch detail (WS-D) ──────────────────────────────────────────────────────
+   Three deliberately-distinct lanes: LOUD alerts (acid-tinted), the QUIET "what's new" feed (plain
+   .src cards), and the WALLED-OFF news list (no card chrome, muted, explicit "not verified" label —
+   the styling reinforces that news is never citable evidence). */
+.watch-detail { max-width: 780px; margin: 0 auto; padding: 22px 22px 80px; }
+.watch-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 8px; }
+.watch-title { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; margin: 0; }
+.watch-sub { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--text-3); margin: 5px 0 0; text-transform: lowercase; }
+.watch-unread { flex-shrink: 0; font-size: 11px; font-weight: 700; color: var(--on-acid); background: var(--acid); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+
+.watch-section { margin-top: 26px; }
+.watch-section-h { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); margin: 0 0 12px; }
+.watch-section-h small { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.02em; text-transform: none; color: var(--text-3); }
+.watch-empty { font-size: 13.5px; line-height: 1.55; color: var(--text-3); margin: 0; padding: 2px 0; }
+
+/* LOUD alert card: emphasized over a plain .src — acid left rail + faint acid wash so it reads as
+   "this moves the conclusion". (A retraction swaps to the danger color via .retraction below.) */
+.watch-alert { border-left: 3px solid var(--acid); background: color-mix(in srgb, var(--acid) 6%, var(--surface)); cursor: default; }
+.watch-alert:hover { transform: none; border-color: var(--line); border-left-color: var(--acid); }
+.watch-alert-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 2px; }
+.watch-alert-reason { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; border-radius: 999px; padding: 2px 9px; }
+.watch-alert-reason.study { color: var(--acid-deep); background: color-mix(in srgb, var(--acid) 16%, transparent); border: 1px solid color-mix(in srgb, var(--acid) 36%, transparent); }
+.watch-alert-reason.retraction { color: var(--danger); background: color-mix(in srgb, var(--danger) 13%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 38%, transparent); }
+.watch-alert.faers, .watch-alert { } /* keep the provider .sq color from .src.<provider> intact */
+.watch-summary { font-size: 13px; line-height: 1.55; color: var(--text-2); margin: 6px 0 2px; }
+
+/* WALLED-OFF news: separated by a rule + heading color, and rendered as plain rows (NOT .src cards)
+   with a neutral-gray left tick — visibly NOT the vetted, citable evidence above. */
+.watch-news-section { margin-top: 34px; border-top: 1px dashed var(--line-2); padding-top: 18px; }
+.watch-news-h { color: var(--text-3); }
+.watch-news-h small { color: var(--warn); }
+.watch-news-disclaimer { font-size: 12px; line-height: 1.5; color: var(--text-3); font-style: italic; margin: -4px 0 14px; }
+.watch-news-item { border-left: 2px solid var(--line-2); padding: 4px 0 4px 12px; margin-bottom: 12px; }
+.watch-news-item h5 { font-size: 13.5px; font-weight: 550; line-height: 1.4; margin: 0; color: var(--text-2); }
+.watch-news-item h5 a { color: var(--text-2); text-decoration: none; }
+.watch-news-item h5 a:hover { color: var(--text); text-decoration: underline; }
+.watch-news-meta { display: flex; gap: 9px; font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-top: 4px; }

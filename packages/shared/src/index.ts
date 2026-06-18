@@ -65,3 +65,8 @@ export * from "./science-state.ts";
 // retrieval-jitter false alerts). Cold-start baselines silently; per-source classifier flags the loud
 // conclusion-mover alerts (new high-tier study / retraction) reusing the study-type metadata.
 export * from "./watch-detect.ts";
+
+// Live-monitoring UI: the client WatchEvent shape + the PURE split into loud alerts / quiet "what's
+// new" feed / the walled-off news list (the watch detail view renders from this; the news wall is
+// re-enforced here defensively).
+export * from "./watch-events.ts";
