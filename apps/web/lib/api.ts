@@ -13,6 +13,7 @@ import type {
   SearchResult,
   SourceDetail,
   UsageSnapshot,
+  WatchEvent,
   WatchlistItem,
   WatchlistUpdate,
   WatchItemType,
@@ -749,6 +750,104 @@ export async function fetchResearchReports(): Promise<ResearchReportSummary[]> {
       created_at: typeof r.created_at === "string" ? r.created_at : "",
       citation_count: typeof r.citation_count === "number" ? r.citation_count : 0,
     } as ResearchReportSummary)
+    : null));
+}
+
+// ── Live monitoring (WS-D) — read-only fetches for the Monitoring section ────────────────────────
+// These read the owner-scoped evidence_watches / watch_events tables directly (RLS). Until the
+// monitoring migration is applied + the feature deployed (owner-gated), those tables don't exist:
+// a "relation does not exist" (Postgres 42P01) is EXPECTED pre-deploy and degrades to empty so the
+// pages show their normal empty states rather than a scary DB error. Any other error still surfaces.
+export interface WatchSummary {
+  id: string;
+  title: string;
+  cadence: string; // 'weekly' | 'daily'
+  status: string; // 'active' | 'paused'
+  last_checked_at: string | null;
+  baselined_at: string | null;
+}
+
+function isMissingRelation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  // supabase-js talks to PostgREST, NOT Postgres directly, so a missing table surfaces as PGRST205
+  // (schema-cache miss) — never Postgres 42P01. PGRST205 is the definitive pre-deploy signal; a broader
+  // "does not exist" match would also wrongly swallow a post-deploy column/function error as "empty".
+  return error.code === "PGRST205";
+}
+
+export async function fetchWatches(): Promise<WatchSummary[]> {
+  if (isPreviewMode) return [];
+  const { data, error } = await supabase
+    .from("evidence_watches")
+    .select("id,title,cadence,status,last_checked_at,baselined_at")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) {
+    if (isMissingRelation(error)) return []; // monitoring not deployed yet
+    throw new Error(`watches failed: ${error.message}`);
+  }
+  return rows(data, (r) => (typeof r.id === "string" && typeof r.title === "string"
+    ? ({
+      id: r.id,
+      title: r.title,
+      cadence: typeof r.cadence === "string" ? r.cadence : "weekly",
+      status: typeof r.status === "string" ? r.status : "active",
+      last_checked_at: typeof r.last_checked_at === "string" ? r.last_checked_at : null,
+      baselined_at: typeof r.baselined_at === "string" ? r.baselined_at : null,
+    } as WatchSummary)
+    : null));
+}
+
+export async function fetchWatch(id: string): Promise<WatchSummary | null> {
+  if (isPreviewMode) return null;
+  const { data, error } = await supabase
+    .from("evidence_watches")
+    .select("id,title,cadence,status,last_checked_at,baselined_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) {
+    if (isMissingRelation(error)) return null;
+    throw new Error(`watch failed: ${error.message}`);
+  }
+  if (!data || typeof data.id !== "string") return null;
+  return {
+    id: data.id,
+    title: typeof data.title === "string" ? data.title : "Watch",
+    cadence: typeof data.cadence === "string" ? data.cadence : "weekly",
+    status: typeof data.status === "string" ? data.status : "active",
+    last_checked_at: typeof data.last_checked_at === "string" ? data.last_checked_at : null,
+    baselined_at: typeof data.baselined_at === "string" ? data.baselined_at : null,
+  };
+}
+
+export async function fetchWatchEvents(watchId: string): Promise<WatchEvent[]> {
+  if (isPreviewMode) return [];
+  const { data, error } = await supabase
+    .from("watch_events")
+    .select("id,channel,source_key,is_alert,alert_reason,title,url,provider,study_type,published_date,summary,detected_at,read_at")
+    .eq("watch_id", watchId)
+    .order("detected_at", { ascending: false })
+    .limit(200);
+  if (error) {
+    if (isMissingRelation(error)) return [];
+    throw new Error(`watch events failed: ${error.message}`);
+  }
+  return rows(data, (r) => (typeof r.id === "string"
+    ? ({
+      id: r.id,
+      channel: r.channel === "news" ? "news" : "evidence",
+      source_key: typeof r.source_key === "string" ? r.source_key : "",
+      is_alert: r.is_alert === true,
+      alert_reason: r.alert_reason === "new_high_tier_study" || r.alert_reason === "retraction" ? r.alert_reason : null,
+      title: typeof r.title === "string" ? r.title : "",
+      url: typeof r.url === "string" ? r.url : null,
+      provider: typeof r.provider === "string" ? r.provider : null,
+      study_type: typeof r.study_type === "string" ? r.study_type : null,
+      published_date: typeof r.published_date === "string" ? r.published_date : null,
+      summary: typeof r.summary === "string" ? r.summary : null,
+      detected_at: typeof r.detected_at === "string" ? r.detected_at : "",
+      read_at: typeof r.read_at === "string" ? r.read_at : null,
+    } as WatchEvent)
     : null));
 }
 
