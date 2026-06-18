@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { createWatch } from "@/lib/api";
+import { createWatch, type CreateWatchInput } from "@/lib/api";
 import { watchTitleFromQuestion } from "@pharmabro/shared";
 import { Icon } from "@/components/icons";
 
@@ -25,14 +25,23 @@ const ERROR_COPY: Record<"not_enabled" | "limit" | "auth" | "unknown", string> =
   unknown: "Couldn’t start watching — try again.",
 };
 
-export function WatchButton({ question }: { question: string }) {
+type WatchButtonProps =
+  | { kind: "topic"; question: string }
+  | { kind: "saved_question"; question: string; savedReportId: string };
+
+export function WatchButton(props: WatchButtonProps) {
   const [state, setState] = useState<State>({ kind: "idle" });
+  const label = props.kind === "saved_question" ? "Watch this report" : "Watch this topic";
 
   async function start() {
     if (state.kind === "creating") return;
     setState({ kind: "creating" });
-    const q = question.trim();
-    const res = await createWatch({ title: watchTitleFromQuestion(q), topic: q, query_terms: q });
+    const q = props.question.trim();
+    const title = watchTitleFromQuestion(q);
+    const input: CreateWatchInput = props.kind === "saved_question"
+      ? { kind: "saved_question", title, saved_report_id: props.savedReportId, query_terms: q }
+      : { kind: "topic", title, topic: q, query_terms: q };
+    const res = await createWatch(input);
     if (res.ok) setState({ kind: "created", id: res.id });
     else setState({ kind: "error", message: ERROR_COPY[res.reason] });
   }
@@ -52,9 +61,9 @@ export function WatchButton({ question }: { question: string }) {
         className="chip-action watch-this-btn"
         onClick={() => void start()}
         disabled={state.kind === "creating"}
-        title="Monitor this topic for new evidence"
+        title="Monitor for new evidence"
       >
-        <Icon name="bell" size={14} /> {state.kind === "creating" ? "Starting…" : "Watch this topic"}
+        <Icon name="bell" size={14} /> {state.kind === "creating" ? "Starting…" : label}
       </button>
       {state.kind === "error" ? <span className="watch-this-note">{state.message}</span> : null}
     </span>

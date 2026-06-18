@@ -851,19 +851,25 @@ export async function fetchWatchEvents(watchId: string): Promise<WatchEvent[]> {
     : null));
 }
 
-export interface CreateWatchInput {
+interface CreateWatchCommon {
   title: string;
-  topic: string;
   query_terms: string;
   mentions?: string[];
   include_news?: boolean;
   cadence?: "weekly" | "daily";
 }
+// A watch is either a typed TOPIC or a saved REPORT's question — they differ only in where the terms
+// come from (the kind_ref CHECK in the migration requires topic for 'topic', saved_report_id for the other).
+export type CreateWatchInput =
+  | (CreateWatchCommon & { kind: "topic"; topic: string })
+  | (CreateWatchCommon & { kind: "saved_question"; saved_report_id: string });
+
 export type CreateWatchResult =
   | { ok: true; id: string }
   | { ok: false; reason: "not_enabled" | "limit" | "auth" | "unknown" };
 
-/** Create a topic watch (the "Watch this" affordance). user_id is set explicitly from the session and
+/** Create a watch — a typed topic or a saved report's question (the "Watch this" affordances). user_id
+ *  is set explicitly from the session and
  *  validated by the evidence_watches RLS WITH CHECK (auth.uid() = user_id), so a client can't insert
  *  for someone else. The per-plan limit is enforced by the enforce_watch_limit DB trigger, surfaced
  *  here as reason:"limit". Pre-deploy the table is absent (PGRST205) → reason:"not_enabled", so the
@@ -873,18 +879,22 @@ export async function createWatch(input: CreateWatchInput): Promise<CreateWatchR
   const { data: sess } = await supabase.auth.getSession();
   const userId = sess.session?.user?.id;
   if (!userId) return { ok: false, reason: "auth" };
+  // One object shape (not a union) so supabase-js's excess-property check stays happy. Both topic and
+  // saved_report_id are nullable; exactly one is set per kind, which satisfies the kind_ref CHECK.
+  const row = {
+    user_id: userId,
+    kind: input.kind,
+    title: input.title,
+    query_terms: input.query_terms,
+    mentions: input.mentions ?? [],
+    include_news: input.include_news ?? true,
+    cadence: input.cadence ?? "weekly",
+    topic: input.kind === "topic" ? input.topic : null,
+    saved_report_id: input.kind === "saved_question" ? input.saved_report_id : null,
+  };
   const { data, error } = await supabase
     .from("evidence_watches")
-    .insert({
-      user_id: userId,
-      kind: "topic",
-      title: input.title,
-      topic: input.topic,
-      query_terms: input.query_terms,
-      mentions: input.mentions ?? [],
-      include_news: input.include_news ?? true,
-      cadence: input.cadence ?? "weekly",
-    })
+    .insert(row)
     .select("id")
     .maybeSingle();
   if (error) {

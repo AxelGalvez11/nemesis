@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import type { CitationStyle, ResearchReport } from "@pharmabro/shared";
 import { fetchResearchReport } from "@/lib/api";
 import { ResearchReportView } from "@/components/ResearchReportView";
+import { WatchButton } from "@/components/WatchButton";
 
 // A single saved report, opened from the Reports library (or, later, a chat's "Report ready" card).
 // Reuses ResearchReportView verbatim — the same renderer the live run uses — so a saved report reads
@@ -35,6 +36,8 @@ export default function ReportDetailPage() {
     <div className="research-wrap">
       <div className="research-head">
         <Link className="chip-action" href="/app/reports">← All reports</Link>
+        {/* Monitor this report's question for new evidence (saved-question watch). */}
+        {report ? <WatchButton kind="saved_question" question={report.question} savedReportId={id} /> : null}
       </div>
       {loading ? <p className="muted" style={{ fontSize: 14 }}>Loading report…</p> : null}
       {err ? <p className="tmpl-note">{err}</p> : null}

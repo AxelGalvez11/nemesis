@@ -706,7 +706,7 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
         ) : null}
         {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
         {/* "Watch this" — only on a real answer (not an emergency/refusal/no-source template). */}
-        {!answer.template && !answer.refused_unsupported ? <WatchButton question={question} /> : null}
+        {!answer.template && !answer.refused_unsupported ? <WatchButton kind="topic" question={question} /> : null}
       </div>
       {answer.plain_english_summary ? <p className="lead">{renderInline(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
