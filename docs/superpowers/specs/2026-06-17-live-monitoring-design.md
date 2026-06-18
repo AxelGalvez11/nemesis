@@ -1,6 +1,6 @@
 # Live Monitoring — design spec
 
-**Status:** APPROVED by owner 2026-06-17 ("looks good" → "just build it"). Building in increments; migrations / scheduler / email / deploy each owner-gated.
+**Status:** APPROVED by owner 2026-06-17 ("looks good" → "just build it"). Building in increments; migrations / scheduler / email / deploy each owner-gated. Owner also requested (2026-06-17) a **separate walled-off NEWS signal** + an **autonomous self-checking build loop** (quality checks every increment; pauses at owner gates).
 **Date:** 2026-06-17
 **Workstream:** WS-D (standing-watch / topic monitoring) — the recurring-revenue flagship.
 
@@ -35,6 +35,14 @@ Consequences:
 
 Every alert is computed from real data; only the human-readable *description* is generated, and it flows through the single safety scan.
 
+## News signal (separate, walled-off channel — owner-requested 2026-06-17)
+A news signal sits ALONGSIDE the evidence monitoring, deliberately walled off so it cannot contaminate the "shows its work" guarantee.
+- **Source:** a topic news search. v1 = **Google News RSS** (free, no API key, no new secret); swappable later for a curated medical-news feed. Fetched fault-tolerantly + time-bounded like the evidence sources.
+- **The wall (non-negotiable):** a news item is NEVER converted to an evidence record (no `NormalizedSource` / `Citation` / `RetrievedChunk`), NEVER grounded, NEVER cited, NEVER enters the one citation namespace, and NEVER fires an evidence alert. News is **feed-only**: a distinct "In the news" list per watch, clearly labeled *"In the news — not verified evidence."* The evidence alert/inbox stays evidence-only.
+- **Type:** a standalone `NewsItem { title, url, source, published_at }` in its own module (`supabase/functions/news/`), intentionally NOT the evidence `NormalizedSource` shape — the type system helps enforce the wall.
+- **Diff:** news has its own simple seen-set diff (by URL); no "high-tier"/material concept (news never moves a conclusion) → new items just populate the feed, never the loud alert.
+- **Tier:** shown alongside the watch; no separate gating in v1.
+
 ## Tiers (starting numbers — adjustable)
 | | Free (taste) | Plus $20 | Pro $50 |
 |---|---|---|---|
@@ -65,6 +73,7 @@ Must-haves (easy to forget):
 
 ## Build sequence (each green-gated; gates marked)
 1. **Detection primitive** — `packages/shared/src/watch-detect.ts`: PURE dated-diff (known-set diff, cold-start `firstRun` suppression, accumulation, per-source material classifier reusing `studyTypeLabel`). Fully unit-tested, no DB/network. *(autonomous)*
+1b. **News signal (walled-off)** — pure news parse (`supabase/functions/news/`) + `NewsItem` type (NOT an evidence record); later a news fetch in `watch-check` + a separate "In the news" feed. Feed-only, never cited/grounded. *(parse autonomous; deploy gated)*
 2. **Topic-watch end-to-end, in-app only** — migrations (`evidence_watches`, known-set, `watch_alerts`) + `watch-check` edge fn (calls `gatherLiveCandidates` with the watch terms → `detectWatchDelta` → persist) + "what's new" feed + alerts inbox + "Watch this" button. *(migrations + deploy gated)*
 3. **Saved-question watch** — thin wrapper: terms come from the saved report. *(deploy gated)*
 4. **Tier gating + cadence** — wire Free/Plus/Pro watch limits + cadence into entitlements. *(migration gated)*
