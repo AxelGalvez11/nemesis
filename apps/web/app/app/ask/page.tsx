@@ -481,7 +481,10 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             </button>
             {modeOpen ? (
               <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
-                {MODES.map((m) => (
+                {/* lab_draft (beta) deploy is owner-gated separately and its engine (research fn) isn't
+                    live yet — keep it out of the selectable modes for the monitoring release. Re-enable
+                    by removing this filter once the lab_draft engine is deployed. */}
+                {MODES.filter((m) => m.id !== "lab_draft").map((m) => (
                   <button
                     key={m.id}
                     type="button"
