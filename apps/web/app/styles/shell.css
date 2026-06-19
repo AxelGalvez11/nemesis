@@ -544,6 +544,32 @@
 /* min-height keeps short sections (General/About) from collapsing smaller than the tall ones
    (Account/Billing) on the full page, so switching sections doesn't jump the layout. */
 .settings-body { display: grid; gap: 16px; min-width: 0; min-height: 440px; align-content: start; }
+
+/* Appearance — visual theme-preview cards (a mini app per theme: rail + page + accent dot). */
+.theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.theme-card { display: flex; flex-direction: column; gap: 8px; padding: 7px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); cursor: pointer; font-family: var(--font); text-align: left; transition: border-color .12s, box-shadow .12s, transform .12s; }
+.theme-card:hover { border-color: var(--line-2); transform: translateY(-1px); }
+.theme-card.active { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid); }
+.theme-swatch { display: flex; height: 56px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(127, 127, 127, 0.18); }
+.theme-swatch .tp-rail { width: 32%; }
+.theme-swatch .tp-page { flex: 1; position: relative; padding: 9px; display: flex; flex-direction: column; gap: 5px; }
+.theme-swatch .tp-line { height: 4px; width: 72%; border-radius: 2px; background: currentColor; opacity: 0.22; }
+.theme-swatch .tp-line.short { width: 46%; }
+.theme-swatch .tp-dot { position: absolute; right: 9px; bottom: 9px; width: 13px; height: 13px; border-radius: 50%; }
+.theme-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); padding: 0 2px; }
+.theme-card-foot svg { color: var(--acid); }
+[data-theme-preview="light"] { color: #0d0d0d; }
+[data-theme-preview="light"] .tp-rail { background: #f0f0f1; }
+[data-theme-preview="light"] .tp-page { background: #ffffff; }
+[data-theme-preview="light"] .tp-dot { background: #62b000; }
+[data-theme-preview="grey"] { color: #ececec; }
+[data-theme-preview="grey"] .tp-rail { background: #171717; }
+[data-theme-preview="grey"] .tp-page { background: #212121; }
+[data-theme-preview="grey"] .tp-dot { background: #bcff3c; }
+[data-theme-preview="dark"] { color: #f4f4f5; }
+[data-theme-preview="dark"] .tp-rail { background: #0e0e10; }
+[data-theme-preview="dark"] .tp-page { background: #0a0a0b; }
+[data-theme-preview="dark"] .tp-dot { background: #bcff3c; }
 /* the consolidated Settings modal is wider so the left nav + content sit comfortably side by side */
 .app-modal-wide { width: min(840px, calc(100vw - 32px)); height: min(86vh, 580px); }
 /* FIXED height + the body scrolls within → switching sections never resizes/re-centers the modal;

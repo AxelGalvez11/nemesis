@@ -8,7 +8,11 @@ import { Icon } from "@/components/icons";
 import { ProfilePanel } from "@/components/ProfilePanel";
 import { BillingPanel } from "@/components/BillingPanel";
 
-const MODES = ["Evidence", "Deep research", "Literature review", "Meta-analysis"] as const;
+const THEME_OPTIONS: { id: "light" | "grey" | "dark"; label: string }[] = [
+  { id: "light", label: "Light" },
+  { id: "grey", label: "Grey" },
+  { id: "dark", label: "Dark" },
+];
 
 export type SettingsSection = "general" | "account" | "billing" | "about";
 
@@ -23,16 +27,14 @@ const SECTIONS: { id: SettingsSection; label: string; icon: string }[] = [
  * The single Settings surface (Anthropic-style: a left section nav + the active section's content).
  * Consolidates what used to be three separate panels/overlays/routes — Settings, Profile, Billing —
  * into one place. Account = the existing ProfilePanel; Billing = the existing BillingPanel; General
- * holds appearance + answer preferences; About is the disclaimer. Rendered both in the account-menu
- * modal (AppShell) and on the /app/settings route.
+ * holds appearance (theme); About is the disclaimer. Rendered both in the account-menu modal
+ * (AppShell) and on the /app/settings route.
  */
 export function SettingsSurface({ initialSection = "general", checkoutStatus }: { initialSection?: SettingsSection; checkoutStatus?: string }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const { theme, setTheme } = useTheme();
   const { signOut } = useAuth();
   const router = useRouter();
-  const [defaultMode, setDefaultMode] = useState<string>("Evidence");
-  const [healthContext, setHealthContext] = useState(false);
 
   return (
     <div className="settings-surface">
@@ -53,41 +55,30 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
 
       <div className="settings-body">
         {section === "general" ? (
-          <>
-            <section className="card">
-              <h2 style={{ marginBottom: 4 }}>Appearance</h2>
-              <p className="muted" style={{ fontSize: 13, margin: "0 0 14px" }}>Choose how PharmaOrb looks. Your choice is saved on this device.</p>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                {(["light", "grey", "dark"] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setTheme(t)}
-                    className={theme === t ? "" : "secondary"}
-                    style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "capitalize" }}
-                  >
-                    <Icon name={t === "light" ? "sun" : "moon"} size={15} />{t}
-                    {theme === t ? <Icon name="check" size={14} /> : null}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section className="card">
-              <h2 style={{ marginBottom: 4 }}>Answer preferences</h2>
-              <p className="muted" style={{ fontSize: 13, margin: "0 0 14px" }}>Default mode for new questions. Advanced modes are rolling out.</p>
-              <div className="chip-row">
-                {MODES.map((m) => (
-                  <button key={m} className={m === defaultMode ? "chip-action active" : "chip-action"} onClick={() => setDefaultMode(m)}>
-                    {m}{m === "Evidence" ? "" : " · soon"}
-                  </button>
-                ))}
-              </div>
-              <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16, cursor: "pointer", width: "fit-content" }}>
-                <input type="checkbox" checked={healthContext} onChange={(e) => setHealthContext(e.target.checked)} style={{ width: 16, height: 16, accentColor: "var(--acid)" }} />
-                <span style={{ fontSize: 13 }}>Use my health context to tailor answers (when provided)</span>
-              </label>
-            </section>
-          </>
+          <section className="card">
+            <h2 style={{ marginBottom: 4 }}>Appearance</h2>
+            <p className="muted" style={{ fontSize: 13, margin: "0 0 16px" }}>Choose how PharmaOrb looks. Saved on this device.</p>
+            <div className="theme-grid">
+              {THEME_OPTIONS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`theme-card${theme === t.id ? " active" : ""}`}
+                  onClick={() => setTheme(t.id)}
+                  aria-pressed={theme === t.id}
+                >
+                  <span className="theme-swatch" data-theme-preview={t.id} aria-hidden="true">
+                    <span className="tp-rail" />
+                    <span className="tp-page"><span className="tp-line" /><span className="tp-line short" /><span className="tp-dot" /></span>
+                  </span>
+                  <span className="theme-card-foot">
+                    {t.label}
+                    {theme === t.id ? <Icon name="check" size={14} /> : null}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
         ) : null}
 
         {section === "account" ? (
