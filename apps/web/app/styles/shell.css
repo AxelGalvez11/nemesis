@@ -529,6 +529,11 @@
 .app-modal-body .card + .card { border-top: 1px solid var(--line); padding-top: 14px; }
 /* Profile/Billing use a 2-/3-col grid full-page; stack them single-column in the narrow overlay. */
 .app-modal-body .grid.two, .app-modal-body .grid.three { grid-template-columns: 1fr; }
+/* The Settings sections ARE real cards — undo the generic modal card-flatten above for them, which had
+   stripped their padding so text (Account / email / etc.) hugged the left edge. Match the full-page look. */
+.app-modal-body .settings-body .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; }
+.app-modal-body .settings-body .card.acid { border-color: var(--line-acid); }
+.app-modal-body .settings-body .card + .card { padding-top: 18px; }
 
 /* ── Consolidated Settings surface (Anthropic-style: left section nav + content) ──────────────── */
 .settings-surface { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 24px; align-items: start; }
