@@ -42,14 +42,14 @@ export function SettingsPanel({ onNavigate }: { onNavigate: (target: "profile" |
         <h3 style={{ marginBottom: 4 }}>Appearance</h3>
         <p className="muted" style={{ fontSize: 13, margin: "0 0 14px" }}>Choose how PharmaOrb looks. Your choice is saved on this device.</p>
         <div style={{ display: "flex", gap: 10 }}>
-          {(["dark", "light"] as const).map((t) => (
+          {(["light", "grey", "dark"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTheme(t)}
               className={theme === t ? "" : "secondary"}
               style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "capitalize" }}
             >
-              <Icon name={t === "dark" ? "moon" : "sun"} size={15} />{t}
+              <Icon name={t === "light" ? "sun" : "moon"} size={15} />{t}
               {theme === t ? <Icon name="check" size={14} /> : null}
             </button>
           ))}

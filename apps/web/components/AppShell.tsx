@@ -318,8 +318,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             )}
             <div className="spacer" />
-            <button className="icon-btn" onClick={toggleTheme} title="Toggle light/dark">
-              <Icon name={theme === "dark" ? "sun" : "moon"} />
+            <button className="icon-btn" onClick={toggleTheme} title="Switch theme (light · grey · dark)">
+              <Icon name={theme === "light" ? "moon" : "sun"} />
             </button>
             {hasEvidence ? (
               <button className="icon-btn" onClick={toggleEvidence} title="Toggle evidence" aria-label="Toggle evidence" aria-controls="app-evidence" aria-expanded={mobileEvidenceOpen}>

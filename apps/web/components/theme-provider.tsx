@@ -1,9 +1,11 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 
-type Theme = "dark" | "light";
+type Theme = "light" | "grey" | "dark";
 const STORAGE_KEY = "pharmaorb-theme";
+
+const isTheme = (v: unknown): v is Theme => v === "light" || v === "grey" || v === "dark";
 
 interface ThemeContextValue {
   theme: Theme;
@@ -23,9 +25,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("light");
 
   useEffect(() => {
-    const fromDom = document.documentElement.dataset.theme as Theme | undefined;
-    const stored = (typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null) as Theme | null;
-    setThemeState(stored ?? fromDom ?? "light");
+    const fromDom = document.documentElement.dataset.theme;
+    const stored = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+    setThemeState(isTheme(stored) ? stored : isTheme(fromDom) ? fromDom : "light");
   }, []);
 
   const setTheme = (t: Theme) => {
@@ -38,7 +40,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const toggle = () => setTheme(theme === "dark" ? "light" : "dark");
+  // The topbar button cycles light → grey → dark → light; Settings offers the three explicitly.
+  const toggle = () => setTheme(theme === "light" ? "grey" : theme === "grey" ? "dark" : "light");
 
   return <ThemeContext.Provider value={{ theme, setTheme, toggle }}>{children}</ThemeContext.Provider>;
 }

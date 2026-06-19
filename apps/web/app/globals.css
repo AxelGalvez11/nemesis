@@ -62,10 +62,10 @@
   --shadcn-radius: 14px;
 }
 
-:root[data-theme="dark"] {
+:root[data-theme="grey"] {
   color-scheme: dark;
 
-  /* page #212121 · sidebar #171717 · user-bubble #2f2f33 · border #2f2f33 */
+  /* GREY (soft dim — the ChatGPT-style dark): page #212121 · sidebar #171717 · user-bubble #2f2f33 */
   --bg: #212121; --bg-2: #171717; --surface: #2a2a2c; --surface-2: #2f2f33; --raised: #2a2a2c;
   --line: #2f2f33; --line-2: #3a3a40;
   --text: #ececec; --text-2: #a9a9b3; --text-3: #8e8e9a;
@@ -89,6 +89,36 @@
   --accent-shadcn: 240 4% 18%; --accent-foreground: 0 0% 93%;
   --destructive: 5 100% 65%; --destructive-foreground: 0 0% 5%;
   --border: 240 4% 19%; --input: 240 4% 24%; --ring: 81 100% 62%;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* DARK ("complete dark") — true near-black; PharmaOrb's pre-overhaul dark, restored.
+     page #0a0a0b · sidebar #0e0e10 · surface #141417 · raised #1f1f24 */
+  --bg: #0a0a0b; --bg-2: #0e0e10; --surface: #141417; --surface-2: #1a1a1e; --raised: #1f1f24;
+  --line: #232329; --line-2: #2c2c33;
+  --text: #f4f4f5; --text-2: #a6a6ad; --text-3: #8c8c95;
+
+  /* PharmaOrb accent — lime on near-black (same accent as grey). */
+  --acid: #bcff3c; --acid-dim: #9bd92e; --acid-deep: #74a81e; --on-acid: #0a0a0b;
+  --acid-rgb: 188, 255, 60;
+  --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
+
+  --glow: 0;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  --shadow-acid: 0 8px 28px -8px rgba(140, 220, 40, 0.5);
+  --line-acid: rgba(188, 255, 60, 0.28);
+
+  --background: 240 7% 4%; --foreground: 0 0% 96%;
+  --card: 240 6% 8%; --card-foreground: 0 0% 96%;
+  --popover: 240 6% 8%; --popover-foreground: 0 0% 96%;
+  --primary: 81 100% 62%; --primary-foreground: 0 0% 4%;
+  --secondary: 240 6% 11%; --secondary-foreground: 0 0% 96%;
+  --muted-shadcn: 240 5% 11%; --muted-foreground: 240 5% 64%;
+  --accent-shadcn: 240 6% 11%; --accent-foreground: 0 0% 96%;
+  --destructive: 5 100% 65%; --destructive-foreground: 0 0% 5%;
+  --border: 240 6% 13%; --input: 240 6% 16%; --ring: 81 100% 62%;
 }
 
 * { box-sizing: border-box; }
