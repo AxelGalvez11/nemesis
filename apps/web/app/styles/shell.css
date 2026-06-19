@@ -541,9 +541,14 @@
 }
 .settings-nav button:hover { background: var(--surface-2); color: var(--text); }
 .settings-nav button.active { background: var(--surface-2); color: var(--text); font-weight: 600; }
-.settings-body { display: grid; gap: 16px; min-width: 0; }
+/* min-height keeps short sections (General/About) from collapsing smaller than the tall ones
+   (Account/Billing) on the full page, so switching sections doesn't jump the layout. */
+.settings-body { display: grid; gap: 16px; min-width: 0; min-height: 440px; align-content: start; }
 /* the consolidated Settings modal is wider so the left nav + content sit comfortably side by side */
-.app-modal-wide { width: min(840px, calc(100vw - 32px)); }
+.app-modal-wide { width: min(840px, calc(100vw - 32px)); height: min(86vh, 580px); }
+/* FIXED height + the body scrolls within → switching sections never resizes/re-centers the modal;
+   the left nav stays put (position: sticky). Short sections just leave whitespace below. */
+.app-modal-wide .app-modal-body { flex: 1; min-height: 0; }
 @media (max-width: 680px) {
   .settings-surface { grid-template-columns: 1fr; gap: 14px; }
   .settings-nav { flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
