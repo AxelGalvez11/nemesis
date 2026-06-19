@@ -35,7 +35,7 @@ export function Hero() {
         <p style={{ marginTop: "28px", fontSize: "13px", color: "var(--t35)" }}>
           or{" "}
           <a
-            href="#demo"
+            href="#reel"
             style={{
               color: "var(--teal)",
               fontWeight: 600,
@@ -43,7 +43,7 @@ export function Hero() {
               textUnderlineOffset: "3px",
             }}
           >
-            try a live query ↓
+            watch the 30-second tour ↓
           </a>
         </p>
       </div>

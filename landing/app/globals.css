@@ -103,6 +103,23 @@ html.light .hero-overlay { background: linear-gradient(to top, var(--bg) 20%, rg
 .section-h2 { font-size:clamp(30px,4vw,48px); font-weight:800; letter-spacing:-.038em; line-height:1.1; text-wrap:pretty; margin-bottom:14px; }
 .section-p { font-size:16px; color:var(--t60); line-height:1.7; max-width:520px; }
 
+/* ─── VIDEO SHOWCASE ────────────────────────────────── */
+.vshow { background:var(--bg); }
+.vshow-head { text-align:center; margin-bottom:44px; display:flex; flex-direction:column; align-items:center; }
+.vshow-head .section-p { margin:0 auto; }
+.vshow-frame {
+  position:relative; max-width:940px; margin:0 auto; aspect-ratio:16/9;
+  border-radius:18px; overflow:hidden; cursor:pointer;
+  border:1px solid rgba(188,255,60,.18);
+  background:#000;
+  box-shadow:0 30px 90px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.03), 0 0 70px rgba(188,255,60,.08);
+  transition:transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s;
+}
+.vshow-frame:hover { transform:translateY(-3px); box-shadow:0 36px 110px rgba(0,0,0,.65), 0 0 0 1px rgba(188,255,60,.18), 0 0 90px rgba(188,255,60,.14); }
+.vshow-video { display:block; width:100%; height:100%; object-fit:cover; }
+.vshow-playcue { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(10,10,11,.32); }
+.vshow-playcue svg { width:34px; height:34px; padding:20px 18px 20px 23px; border-radius:50%; background:rgba(188,255,60,.16); border:1.5px solid rgba(188,255,60,.4); color:var(--mint); filter:drop-shadow(0 2px 10px rgba(0,0,0,.5)); box-sizing:content-box; }
+
 /* ─── DEMO ──────────────────────────────────────────── */
 .demo { background:var(--bg2); }
 .demo-head { text-align:center; margin-bottom:40px; }
@@ -491,3 +508,27 @@ html.light .footer-copy { color:rgba(13,13,15,.20); }
   .source-row{padding:14px}
   .ev-card{padding:18px 16px}
 }
+
+/* ─── LEGAL PAGES ───────────────────────────────────── */
+.legal-top { position:sticky; top:0; z-index:100; background:rgba(10,10,11,.82); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border-bottom:1px solid var(--border); }
+.legal-top .container { display:flex; align-items:center; justify-content:space-between; height:62px; }
+.legal-back { font-size:13.5px; color:var(--t60); font-weight:500; transition:color .15s; }
+.legal-back:hover { color:var(--teal); }
+.legal-wrap { max-width:700px; margin:0 auto; padding:80px 28px 72px; }
+.legal-kicker { font-family:var(--mono); font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--teal); margin-bottom:18px; }
+.legal h1 { font-size:clamp(36px,5vw,54px); font-weight:800; letter-spacing:-.04em; line-height:1.04; margin-bottom:18px; }
+.legal-updated { display:inline-block; font-family:var(--mono); font-size:12px; color:var(--t35); border:1px solid var(--border); border-radius:100px; padding:5px 13px; margin-bottom:8px; }
+.legal p.legal-lead { font-size:18.5px; line-height:1.66; color:rgba(244,244,245,.82); margin:28px 0 4px; }
+.legal h2 { font-size:22px; font-weight:700; letter-spacing:-.02em; line-height:1.2; color:var(--text); margin:48px 0 16px; padding-top:44px; border-top:1px solid var(--border); scroll-margin-top:84px; }
+.legal p, .legal li { font-size:16px; line-height:1.8; color:var(--t60); }
+.legal p { margin-bottom:18px; }
+.legal ul { list-style:none; margin:0 0 18px; padding:0; display:flex; flex-direction:column; gap:11px; }
+.legal li { position:relative; padding-left:24px; }
+.legal li::before { content:''; position:absolute; left:5px; top:12px; width:6px; height:6px; border-radius:50%; background:var(--teal); box-shadow:0 0 8px rgba(188,255,60,.5); }
+.legal a { color:var(--teal); text-decoration:underline; text-underline-offset:3px; text-decoration-thickness:1px; }
+.legal a:hover { text-decoration-thickness:2px; }
+.legal strong { color:var(--text); font-weight:700; }
+.legal-callout { background:linear-gradient(180deg,rgba(188,255,60,.055),rgba(188,255,60,.015)); border:1px solid rgba(188,255,60,.24); border-radius:16px; padding:24px 26px; margin:10px 0 28px; box-shadow:0 0 60px rgba(188,255,60,.05); }
+.legal-callout p { margin-bottom:14px; font-size:16px; }
+.legal-callout p:last-child { margin-bottom:0; }
+html.light .legal-top { background:rgba(251,251,249,.82); }

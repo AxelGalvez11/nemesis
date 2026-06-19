@@ -344,9 +344,9 @@ export function SiteFooter() {
           Pharma<span>Orb</span>
         </div>
         <div className="footer-links">
-          <a href="#">Privacy</a>
-          <a href="#">Terms</a>
-          <a href="#">Disclaimer</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/terms#disclaimer">Disclaimer</a>
         </div>
         <p className="footer-disc">
           PharmaOrb provides educational information from public sources including FDA labels,
