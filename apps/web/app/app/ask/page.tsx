@@ -30,11 +30,13 @@ const MODES = [
   { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
 ] as const;
 
-const SUGGESTIONS = [
-  { text: "What are the major warnings for semaglutide?", icon: "doc" as const },
-  { text: "Metformin dosing when eGFR is 40?", icon: "calc" as const },
-  { text: "Compare semaglutide and tirzepatide safety evidence", icon: "sparkle" as const },
-  { text: "Is lisinopril safe with spironolactone?", icon: "search" as const },
+// Example questions that cycle through the composer placeholder (the "chat bar") as live prompts,
+// instead of static suggestion chips under the welcome.
+const PLACEHOLDER_EXAMPLES = [
+  "What are the major warnings for semaglutide?",
+  "Metformin dosing when eGFR is 40?",
+  "Compare semaglutide and tirzepatide safety evidence",
+  "Is lisinopril safe with spironolactone?",
 ];
 
 const PROVIDER_ABBR: Record<string, string> = { openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", clinicaltrials: "NCT", faers: "FAERS", openalex: "OA" };
@@ -355,17 +357,10 @@ function AskPage() {
         <div className="welcome">
           <Orb size={56} />
           <h2 className="welcome-title">{reopenedEmpty ? "This chat has no saved messages" : "What can I help you research?"}</h2>
-          <p className="welcome-sub">{reopenedEmpty
-            ? "Its earlier turns didn’t save (a now-fixed bug). Ask below to continue in this chat, or start a new one."
-            : "Every medical claim is source-backed. Ask about a drug, dose, interaction, or monograph for a cited answer."}</p>
+          {reopenedEmpty ? (
+            <p className="welcome-sub">Its earlier turns didn’t save (a now-fixed bug). Ask below to continue in this chat, or start a new one.</p>
+          ) : null}
           {composer}
-          <div className="chip-row welcome-chips">
-            {SUGGESTIONS.map((s) => (
-              <button key={s.text} className="chip-action" onClick={() => submit(s.text)}>
-                <Icon name={s.icon} size={14} />{s.text}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
     );
@@ -457,6 +452,12 @@ interface ComposerProps {
 // those features ship — same honest "coming soon" treatment as the non-live modes.
 function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error }: ComposerProps) {
   const activeMode = MODES.find((m) => m.id === mode)!;
+  // Cycle the example questions through the placeholder so suggestions live in the chat bar itself.
+  const [phIdx, setPhIdx] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setPhIdx((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length), 3500);
+    return () => clearInterval(id);
+  }, []);
   return (
     <div className="composer">
       <div className="box">
@@ -466,7 +467,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
           value={question}
           maxLength={500}
           aria-label="Ask a question about a drug, dose, interaction, or monograph"
-          placeholder="Ask anything about a drug, dose, interaction, or monograph…"
+          placeholder={PLACEHOLDER_EXAMPLES[phIdx]}
           onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
         />
@@ -510,7 +511,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
           </button>
         </div>
       </div>
-      {error ? <div className="err">{error}</div> : <div className="hint">⏎ to send · Shift+⏎ for a new line · answers are cited</div>}
+      {error ? <div className="err">{error}</div> : null}
     </div>
   );
 }
