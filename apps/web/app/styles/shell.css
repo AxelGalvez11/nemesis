@@ -81,9 +81,16 @@
 .search {
   margin: 0 12px 12px; display: flex; align-items: center; gap: 8px; padding: 8px 11px;
   border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg);
+  transition: border-color 0.15s;
 }
+/* Calm focus: the wrapper tints its border (like the composer), instead of an acid glow/ring. */
+.search:focus-within { border-color: var(--line-2); }
 .search input { background: none; border: none; color: var(--text); font-family: var(--font); font-size: 13px; width: 100%; outline: none; padding: 0; }
 .search input::placeholder { color: var(--text-3); }
+/* Kill the global green focus glow (legacy.css `input:focus` box-shadow) on the sidebar search —
+   the .search wrapper shows focus via its own border, not an acid ring. The keyboard focus-visible
+   outline (the rule near the bottom of this file) is separate and stays. */
+.search input:focus { box-shadow: none; }
 .nav { flex: 1; overflow-y: auto; padding: 2px 8px 10px; }
 .r-label { font-size: 11px; letter-spacing: 0.02em; color: var(--text-2); padding: 14px 10px 6px; font-weight: 600; }
 .hist {
@@ -106,6 +113,9 @@
 .hist-more:hover, .hist-row.menu-open .hist-more { color: var(--text); background: var(--surface); }
 /* touch devices have no hover state — keep the affordance visible so it's discoverable */
 @media (hover: none) { .hist-more { opacity: 1; } }
+/* inline rename: the title becomes this editable field in place of the link, matched to the row.
+   Acid border marks the live edit; box-shadow:none kills the global green focus glow (legacy.css). */
+.hist-rename { flex: 1; min-width: 0; margin: 0; padding: 7px 10px; border: 1px solid var(--acid); border-radius: 8px; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; outline: none; box-shadow: none; }
 /* the per-chat menu — fixed-positioned (coords set inline) so the scrolling rail can't clip it */
 .row-menu { position: fixed; width: 200px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.28); padding: 6px; z-index: 60; animation: fade 0.16s both; }
 .row-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; text-align: left; }
@@ -183,9 +193,10 @@
 .ai-body ul { margin: 0 0 4px; padding-left: 18px; }
 .ai-body li { margin: 0 0 7px; font-size: 16px; line-height: 1.62; }
 
-/* ── answer body: flowing prose + callouts (replaces the rigid labeled-section form that read as
-   "robotic"). what-we-know becomes the prose body; safety stays a prominent callout; uncertainty
-   is de-emphasized; questions are a clear light block. ── */
+/* ── answer body: a prose lead + skimmable points + callouts (replaces the rigid labeled-section
+   form that read as "robotic"). The lead summary stays flowing prose; the supporting points bullet
+   when there are several (see .ai-list below); safety stays a prominent callout; uncertainty is
+   de-emphasized; questions are a clear light numbered block. ── */
 .ai-para { margin: 0 0 16px; font-size: 16px; line-height: 1.72; }
 /* Safety: a clear, visible bordered callout — kept prominent (conservative medical app), never muted. */
 .ai-safety { border: 1px solid var(--line-2); border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 5%, var(--surface)); border-radius: 12px; padding: 13px 15px 3px; margin: 16px 0; }
@@ -196,11 +207,27 @@
 .ai-unclear { margin: 16px 0; }
 .ai-unclear p { color: var(--text-2); font-size: 15px; line-height: 1.6; margin: 0 0 8px; }
 .muted-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); font-weight: 600; margin-bottom: 6px; }
-/* Questions: a clear, light block (actionable), not a heavy form section. */
+/* Questions: a clear, light block (actionable), not a heavy form section. Numbered (an ordered
+   list) so it reads as a checklist you can take to an appointment ("ask #2"). */
 .ai-questions { margin: 16px 0 4px; }
 .ai-block-label { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 9px; }
-.ai-questions ul { margin: 0; padding-left: 18px; }
+.ai-questions ul, .ai-questions ol { margin: 0; padding-left: 20px; }
 .ai-questions li { font-size: 15.5px; color: var(--text-2); margin: 0 0 6px; line-height: 1.55; }
+.ai-questions ol li::marker { color: var(--text-3); font-family: var(--mono); font-weight: 600; }
+/* Answer-body point lists: when a section has several discrete points they render as scannable
+   bullets (the lead summary above stays flowing prose, so the answer keeps a human top-line and
+   gains a skimmable body — not the old rigid "filled-in form"). A lone point stays a paragraph, so
+   a single bullet never appears. Scoped under .ai-body so they win over the generic .ai-body ul/li. */
+.ai-body .ai-list { margin: 6px 0 16px; padding-left: 22px; }
+.ai-body .ai-list li { font-size: 16px; line-height: 1.7; margin: 0 0 9px; padding-left: 3px; }
+.ai-body .ai-list li:last-child { margin-bottom: 0; }
+.ai-body .ai-list li::marker { color: var(--text-3); }
+/* Safety + uncertainty lists inherit their block's quieter sizing/color (placed after the base so
+   equal-specificity source order lets them win). */
+.ai-safety .ai-list { margin: 4px 0 6px; }
+.ai-safety .ai-list li { font-size: 15.5px; }
+.ai-unclear .ai-list { margin: 6px 0 0; }
+.ai-unclear .ai-list li { color: var(--text-2); font-size: 15px; line-height: 1.6; }
 /* Inline emphasis surfaced by lib/inline-md from the model's own markdown. */
 .ai-body strong { font-weight: 700; color: var(--text); }
 .ai-body em { font-style: italic; }
@@ -415,13 +442,14 @@
   .app.mobile-open .new, .app.mobile-open .hist { justify-content: flex-start; }
 }
 
-/* keyboard focus ring for the custom (non-shadcn) interactive elements. NOTE: the composer
-   textarea is deliberately EXCLUDED — text fields match :focus-visible even on a mouse click, so
-   an acid outline here read as the "green glow on the chat bar". Its focus is shown by the calm
-   .box:focus-within border tint instead (legacy.css already sets outline:none on textarea:focus). */
+/* keyboard focus ring for the custom (non-shadcn) interactive elements. NOTE: the composer textarea
+   AND the rail search input are deliberately EXCLUDED — text fields match :focus-visible even on a
+   mouse click, so an acid outline here read as a "green glow" on the box. Their focus is shown by a
+   calm border tint instead (.box:focus-within / .search:focus-within; legacy.css already sets
+   outline:none on the inputs themselves). */
 .icon-btn:focus-visible, .hist:focus-visible, .new:focus-visible, .mode:focus-visible, .send:focus-visible,
 .tool:focus-visible, .ev-tab:focus-visible, .chip-action:focus-visible, .acct-btn:focus-visible, .src:focus-visible,
-.cite:focus-visible, .search input:focus-visible {
+.cite:focus-visible {
   outline: 2px solid var(--acid-dim); outline-offset: 2px;
 }
 
@@ -548,6 +576,20 @@
    would fight the centering). Reuses the app tokens so it matches cards + the account menu. */
 @keyframes app-modal-in { from { opacity: 0; } to { opacity: 1; } }
 .app-modal-overlay { position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, 0.46); backdrop-filter: blur(2px); animation: app-modal-in 0.15s both; }
+
+/* ── confirm dialog (destructive actions, e.g. delete chat) — a compact centered modal above the
+   rail/drawers/row-menu/settings overlay. Reuses the app tokens + the modal fade-in. ── */
+.confirm-overlay { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, 0.46); backdrop-filter: blur(2px); display: grid; place-items: center; padding: 20px; animation: app-modal-in 0.15s both; }
+.confirm-card { width: min(400px, 100%); background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.6); padding: 20px 20px 16px; animation: app-modal-in 0.15s both; }
+.confirm-title { font-size: 16px; font-weight: 650; color: var(--text); margin: 0 0 8px; }
+.confirm-body { font-size: 14px; line-height: 1.55; color: var(--text-2); margin: 0 0 18px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 9px; }
+.confirm-actions button { padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; font-family: var(--font); cursor: pointer; border: 1px solid var(--line); transition: background 0.15s, border-color 0.15s, color 0.15s, filter 0.15s; }
+.confirm-cancel { background: var(--surface); color: var(--text-2); }
+.confirm-cancel:hover { background: var(--surface-2); color: var(--text); }
+.confirm-del { background: var(--danger); border-color: var(--danger); color: #fff; }
+.confirm-del:hover { filter: brightness(1.07); }
+.confirm-actions button:focus-visible { outline: 2px solid var(--acid-dim); outline-offset: 2px; }
 .app-modal {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 71;
   width: min(560px, calc(100vw - 32px)); max-height: min(86vh, 760px); display: flex; flex-direction: column;

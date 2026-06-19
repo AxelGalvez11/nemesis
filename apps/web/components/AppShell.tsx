@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
 import { Orb } from "./Orb";
@@ -92,6 +92,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Per-chat overflow (⋯) menu: which chat's menu is open + the fixed viewport coords to render it at
   // (fixed-positioned so the scrolling rail can't clip it).
   const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  // Delete confirmation: the chat awaiting a styled confirm dialog (replaces window.confirm). null = closed.
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null);
+  // Inline rename: the chat whose title is being edited in-row (replaces window.prompt) + the draft text.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  // Escape sets this so the input's blur handler cancels instead of saving — Enter and click-away both
+  // blur the field (the single commit path), and this flag tells that path it was a cancel.
+  const cancelRenameRef = useRef(false);
   // Lets the chat page refresh the rail history the moment it creates a new conversation.
   const bumpChats = useCallback(() => setChatsVersion((v) => v + 1), []);
 
@@ -120,6 +128,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       setChatsVersion((v) => v + 1); // resync from the server
     }
   }, []);
+
+  // Commit the inline rename: close the editor and persist the draft (handleRenameChat trims, caps,
+  // and no-ops a blank). Single commit path — Enter and click-away both blur the field; Escape cancels.
+  const commitRename = useCallback((id: string) => {
+    setRenamingId(null);
+    void handleRenameChat(id, renameDraft);
+  }, [handleRenameChat, renameDraft]);
 
   // Open the ⋯ menu anchored to the kebab button, clamped to the viewport (toggles if already open).
   const openRowMenu = useCallback((id: string, btn: HTMLElement) => {
@@ -218,8 +233,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [rowMenu]);
 
-  // Close both mobile drawers + any account overlay + the row menu on route change.
-  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setOverlay(null); setRowMenu(null); }, [path]);
+  // Close both mobile drawers + any account overlay + the row menu / its dialogs on route change.
+  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setOverlay(null); setRowMenu(null); setConfirmDelete(null); setRenamingId(null); }, [path]);
+
+  // Close the delete-confirm dialog on Escape.
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setConfirmDelete(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [confirmDelete]);
 
   // Close the open drawer on Escape.
   useEffect(() => {
@@ -311,21 +334,45 @@ export function AppShell({ children }: { children: ReactNode }) {
             ) : (
               chats.map((c) => (
                 <div key={c.id} className={`hist-row${rowMenu?.id === c.id ? " menu-open" : ""}`}>
-                  <Link href={`/app/ask?c=${c.id}`} className="hist" title={c.title}>
-                    <Icon name="message" className="hist-ic" />
-                    <span>{c.title}</span>
-                  </Link>
-                  <button
-                    type="button"
-                    className="hist-more"
-                    aria-label={`Options for chat ${c.title}`}
-                    aria-haspopup="menu"
-                    aria-expanded={rowMenu?.id === c.id}
-                    title="Chat options"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); openRowMenu(c.id, e.currentTarget); }}
-                  >
-                    <Icon name="more" size={16} />
-                  </button>
+                  {renamingId === c.id ? (
+                    // Inline rename: the title becomes an editable field. Enter or click-away saves;
+                    // Escape cancels (both route through blur — the single commit path).
+                    <input
+                      className="hist-rename"
+                      value={renameDraft}
+                      autoFocus
+                      maxLength={120}
+                      aria-label={`Rename chat ${c.title}`}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+                        else if (e.key === "Escape") { e.preventDefault(); cancelRenameRef.current = true; e.currentTarget.blur(); }
+                      }}
+                      onBlur={() => {
+                        if (cancelRenameRef.current) { cancelRenameRef.current = false; setRenamingId(null); return; }
+                        commitRename(c.id);
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <Link href={`/app/ask?c=${c.id}`} className="hist" title={c.title}>
+                        <Icon name="message" className="hist-ic" />
+                        <span>{c.title}</span>
+                      </Link>
+                      <button
+                        type="button"
+                        className="hist-more"
+                        aria-label={`Options for chat ${c.title}`}
+                        aria-haspopup="menu"
+                        aria-expanded={rowMenu?.id === c.id}
+                        title="Chat options"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); openRowMenu(c.id, e.currentTarget); }}
+                      >
+                        <Icon name="more" size={16} />
+                      </button>
+                    </>
+                  )}
                 </div>
               ))
             )}
@@ -391,7 +438,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           if (!c) return null;
           return (
             <div className="row-menu" role="menu" style={{ left: rowMenu.x, top: rowMenu.y }}>
-              <button role="menuitem" onClick={() => { setRowMenu(null); const next = window.prompt("Rename chat", c.title); if (next != null) void handleRenameChat(c.id, next); }}>
+              <button role="menuitem" onClick={() => { setRowMenu(null); setRenamingId(c.id); setRenameDraft(c.title); }}>
                 <Icon name="pencil" size={15} />Rename
               </button>
               {/* Pin needs a `pinned` column (owner-gated migration); Add to project waits on Projects.
@@ -399,12 +446,36 @@ export function AppShell({ children }: { children: ReactNode }) {
               <button role="menuitem" disabled><Icon name="pin" size={15} />Pin chat<small>Soon</small></button>
               <button role="menuitem" disabled><Icon name="folder" size={15} />Add to project<small>Soon</small></button>
               <div className="sep" />
-              <button role="menuitem" className="danger" onClick={() => { setRowMenu(null); if (window.confirm(`Delete "${c.title}"? This can't be undone.`)) void handleDeleteChat(c.id); }}>
+              <button role="menuitem" className="danger" onClick={() => { setRowMenu(null); setConfirmDelete({ id: c.id, title: c.title }); }}>
                 <Icon name="trash" size={15} />Delete chat
               </button>
             </div>
           );
         })()}
+
+        {/* ── delete-confirm dialog (styled in-app; replaces the native window.confirm) ── */}
+        {confirmDelete && (
+          <div className="confirm-overlay" role="presentation" onClick={() => setConfirmDelete(null)}>
+            <div
+              className="confirm-card"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="confirm-del-title"
+              aria-describedby="confirm-del-body"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="confirm-del-title" className="confirm-title">Delete this chat?</h3>
+              <p id="confirm-del-body" className="confirm-body">
+                “{confirmDelete.title}” will be permanently deleted. This can’t be undone.
+              </p>
+              <div className="confirm-actions">
+                {/* Cancel is the autofocused default — the safe choice for a destructive action. */}
+                <button type="button" className="confirm-cancel" autoFocus onClick={() => setConfirmDelete(null)}>Cancel</button>
+                <button type="button" className="confirm-del" onClick={() => { const id = confirmDelete.id; setConfirmDelete(null); void handleDeleteChat(id); }}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── account overlays (Settings / Profile / Billing) — portaled, so they sit above everything ── */}
         <AppModal open={overlay === "settings"} onClose={() => setOverlay(null)} title="Settings" sub="Appearance, account, billing, and preferences." wide>

@@ -324,6 +324,7 @@ function AskPage() {
       question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
       submit={submit} busy={busy} mode={mode} setMode={setMode}
       modeOpen={modeOpen} setModeOpen={setModeOpen} error={latest?.err ?? null}
+      welcome={!hasThread}
     />
   );
 
@@ -445,20 +446,25 @@ interface ComposerProps {
   modeOpen: boolean;
   setModeOpen: Dispatch<SetStateAction<boolean>>;
   error: string | null;
+  // true only on the empty welcome screen — drives the cycling example placeholders. In an active
+  // chat (thread) it's false, so the box shows a calm static "Ask a follow-up…" instead.
+  welcome: boolean;
 }
 
 // The input pill, shared between the centered welcome screen and the pinned bottom bar. A leading
 // "+" (attachments) and a "mic" (voice) are shown as ChatGPT-style affordances but disabled until
 // those features ship — same honest "coming soon" treatment as the non-live modes.
-function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error }: ComposerProps) {
+function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error, welcome }: ComposerProps) {
   const activeMode = MODES.find((m) => m.id === mode)!;
-  // Cycle example questions through an animated overlay placeholder (reveals in from the left, fades
-  // out) so suggestions live in the chat bar without a hard text swap.
+  // On the welcome screen, cycle example questions through an animated overlay placeholder (reveals
+  // in from the left, fades out) so suggestions live in the chat bar without a hard text swap. Once a
+  // chat is active the suggestions stop — the box shows a calm static placeholder instead.
   const [phIdx, setPhIdx] = useState(0);
   useEffect(() => {
+    if (!welcome) return;
     const id = setInterval(() => setPhIdx((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length), 5000);
     return () => clearInterval(id);
-  }, []);
+  }, [welcome]);
   return (
     <div className="composer">
       <div className="box">
@@ -469,11 +475,11 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             value={question}
             maxLength={500}
             aria-label="Ask a question about a drug, dose, interaction, or monograph"
-            placeholder=""
+            placeholder={welcome ? "" : "Ask a follow-up…"}
             onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
           />
-          {question ? null : <span className="ph-anim" key={phIdx} aria-hidden="true">{PLACEHOLDER_EXAMPLES[phIdx]}</span>}
+          {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{PLACEHOLDER_EXAMPLES[phIdx]}</span> : null}
         </div>
         <div className="tools">
           <button className="tool" type="button" title="Attach — coming soon" aria-label="Attach" disabled>
@@ -731,7 +737,7 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
       {s.questions_to_ask?.length ? (
         <div className="ai-questions">
           <div className="ai-block-label">Worth asking your clinician</div>
-          <ul>{s.questions_to_ask.map((q, i) => <li key={i}>{renderInline(q)}</li>)}</ul>
+          <ol>{s.questions_to_ask.map((q, i) => <li key={i}>{renderInline(q)}</li>)}</ol>
         </div>
       ) : null}
 
@@ -768,17 +774,34 @@ function CiteChips({ ids, support, citeMap, onCite }: { ids?: string[]; support?
   );
 }
 
-// The answer body: each point a flowing paragraph (no section heading, no bullets) so the answer
-// reads like an explanation, not a filled-in form.
-function Prose({ points, citeMap, onCite }: PointBlockProps) {
-  if (!points?.length) return null;
+// Render a section's points: several discrete points become scannable bullets; a lone point stays a
+// flowing paragraph (a single bullet reads oddly). Citation chips trail each point either way.
+// `paraClass` styles the single-point paragraph form per block (safety/uncertainty are quieter).
+function PointItems({ points, citeMap, onCite, paraClass = "ai-para" }: PointBlockProps & { paraClass?: string }) {
+  if (points.length >= 2) {
+    return (
+      <ul className="ai-list">
+        {points.map((p, i) => (
+          <li key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></li>
+        ))}
+      </ul>
+    );
+  }
   return (
     <>
       {points.map((p, i) => (
-        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
+        <p className={paraClass} key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
       ))}
     </>
   );
+}
+
+// The answer body: a prose lead (rendered by Answer) followed by the supporting points. Several
+// points read as scannable bullets; a lone point stays a paragraph — so the answer keeps a human
+// top-line and gains a skimmable body, without the old rigid "filled-in form" feel.
+function Prose({ points, citeMap, onCite }: PointBlockProps) {
+  if (!points?.length) return null;
+  return <PointItems points={points} citeMap={citeMap} onCite={onCite} />;
 }
 
 // Safety: kept visibly prominent (conservative medical app) as a bordered callout — never muted.
@@ -787,9 +810,7 @@ function SafetyBlock({ points, citeMap, onCite }: PointBlockProps) {
   return (
     <div className="ai-safety">
       <div className="ai-safety-label"><Icon name="shield" size={14} />Safety</div>
-      {points.map((p, i) => (
-        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
-      ))}
+      <PointItems points={points} citeMap={citeMap} onCite={onCite} />
     </div>
   );
 }
@@ -800,9 +821,7 @@ function UnclearBlock({ points, citeMap, onCite }: PointBlockProps) {
   return (
     <div className="ai-unclear">
       <div className="muted-label">Still uncertain</div>
-      {points.map((p, i) => (
-        <p key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
-      ))}
+      <PointItems points={points} citeMap={citeMap} onCite={onCite} paraClass="" />
     </div>
   );
 }
