@@ -26,7 +26,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: string }[] = [
  * holds appearance + answer preferences; About is the disclaimer. Rendered both in the account-menu
  * modal (AppShell) and on the /app/settings route.
  */
-export function SettingsSurface({ initialSection = "general" }: { initialSection?: SettingsSection }) {
+export function SettingsSurface({ initialSection = "general", checkoutStatus }: { initialSection?: SettingsSection; checkoutStatus?: string }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const { theme, setTheme } = useTheme();
   const { signOut } = useAuth();
@@ -99,7 +99,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
           </>
         ) : null}
 
-        {section === "billing" ? <BillingPanel /> : null}
+        {section === "billing" ? <BillingPanel checkoutStatus={checkoutStatus} /> : null}
 
         {section === "about" ? (
           <section className="card">
