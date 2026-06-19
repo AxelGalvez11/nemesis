@@ -456,7 +456,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   // out) so suggestions live in the chat bar without a hard text swap.
   const [phIdx, setPhIdx] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setPhIdx((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length), 4000);
+    const id = setInterval(() => setPhIdx((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length), 5000);
     return () => clearInterval(id);
   }, []);
   return (

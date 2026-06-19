@@ -536,6 +536,15 @@ export async function deleteConversation(conversationId: string): Promise<void> 
   if (error) throw new Error(`delete chat failed: ${error.message}`);
 }
 
+/** Rename a chat (title only; trimmed/capped). RLS scopes the update to the owner. No-op if blank. */
+export async function renameConversation(conversationId: string, title: string): Promise<void> {
+  if (isPreviewMode) return;
+  const clean = title.trim().slice(0, 120);
+  if (!clean) return;
+  const { error } = await supabase.from("conversations").update({ title: clean }).eq("id", conversationId);
+  if (error) throw new Error(`rename chat failed: ${error.message}`);
+}
+
 /** Persist one turn (question + cited answer) at the given ordinal base, and bump the chat's
  *  updated_at so it sorts to the top of the history. */
 export async function saveTurn(conversationId: string, ordinalBase: number, question: string, answer: AskResponse): Promise<void> {

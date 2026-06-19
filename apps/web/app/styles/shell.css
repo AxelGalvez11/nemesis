@@ -99,11 +99,26 @@
 /* A chat row = the link + a hover-revealed delete control. */
 .hist-row { display: flex; align-items: center; position: relative; }
 .hist-row .hist { flex: 1; min-width: 0; }
-.hist-del { flex: none; width: 22px; height: 22px; margin-right: 4px; border: none; background: none; color: var(--text-3); border-radius: 6px; cursor: pointer; font-size: 16px; line-height: 1; opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s; }
-.hist-row:hover .hist-del, .hist-del:focus-visible { opacity: 1; }
-.hist-del:hover { color: var(--danger); background: var(--surface); }
+/* per-chat ⋯ (overflow) button — centered glyph, revealed on row hover / when its menu is open */
+.hist-more { flex: none; width: 26px; height: 26px; margin-right: 4px; display: grid; place-items: center; padding: 0; border: none; background: none; color: var(--text-3); border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s; }
+.hist-more svg { display: block; }
+.hist-row:hover .hist-more, .hist-more:focus-visible, .hist-row.menu-open .hist-more { opacity: 1; }
+.hist-more:hover, .hist-row.menu-open .hist-more { color: var(--text); background: var(--surface); }
+/* touch devices have no hover state — keep the affordance visible so it's discoverable */
+@media (hover: none) { .hist-more { opacity: 1; } }
+/* the per-chat menu — fixed-positioned (coords set inline) so the scrolling rail can't clip it */
+.row-menu { position: fixed; width: 200px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.28); padding: 6px; z-index: 60; animation: fade 0.16s both; }
+.row-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; text-align: left; }
+.row-menu button svg { display: block; flex: none; }
+.row-menu button:hover { background: var(--surface-2); color: var(--text); }
+.row-menu button:disabled { opacity: 0.55; cursor: default; }
+.row-menu button:disabled:hover { background: none; color: var(--text-2); }
+.row-menu button:disabled small { margin-left: auto; text-transform: uppercase; letter-spacing: 0.04em; font-family: var(--mono); font-size: 9.5px; }
+.row-menu .danger { color: var(--danger); }
+.row-menu .danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.row-menu .sep { height: 1px; background: var(--line); margin: 5px 2px; }
 .rail-collapsed .hist { justify-content: center; padding: 9px 0; }
-.rail-collapsed .hist span, .rail-collapsed .hist-del { display: none; }
+.rail-collapsed .hist span, .rail-collapsed .hist-more { display: none; }
 .acct { border-top: 1px solid var(--line); padding: 12px; display: flex; align-items: center; gap: 10px; }
 .av { width: 30px; height: 30px; border-radius: 50%; flex: none; background: var(--surface-2); display: grid; place-items: center; font-weight: 600; font-size: 12px; color: var(--text-2); border: 1px solid var(--line); }
 .acct-meta b { font-size: 13px; font-weight: 600; display: block; }
@@ -245,7 +260,7 @@
 .box:focus-within { border-color: var(--line-2); box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.18); }
 /* composer affordance icons sit dead-center in their buttons (svg as block removes baseline drift) */
 .box .tools svg { display: block; }
-.box textarea { width: 100%; background: none; border: none; color: var(--text); font-family: var(--font); font-size: 15.5px; line-height: 24px; resize: none; outline: none; min-height: 24px; max-height: 200px; padding: 0; }
+.box textarea { width: 100%; background: none; border: none; color: var(--text); font-family: var(--font); font-size: 15.5px; line-height: 24px; text-align: left; resize: none; outline: none; min-height: 24px; max-height: 200px; padding: 0; }
 .box textarea::placeholder { color: var(--text-3); }
 /* Animated cycling placeholder: a non-interactive overlay (shown only when the field is empty) that
    wipes in left-to-right then fades out, so the example questions live in the chat bar without a
@@ -253,14 +268,16 @@
 .ta-wrap { position: relative; }
 .ph-anim {
   position: absolute; top: 0; left: 0; right: 0; pointer-events: none;
-  color: var(--text-3); font-size: 15.5px; line-height: 24px;
+  color: var(--text-3); font-size: 15.5px; line-height: 24px; text-align: left;
   white-space: nowrap; overflow: hidden; text-overflow: clip;
-  animation: phReveal 4s ease forwards;
+  animation: phReveal 5s ease-in-out forwards;
 }
+/* Slow, graceful reveal: wipe in left→right over the first ~1.5s, hold, then fade out over the last
+   ~0.75s (no hard switch). Paired with the 5s remount interval in the Ask composer. */
 @keyframes phReveal {
   0%   { opacity: 0; clip-path: inset(0 100% 0 0); }
-  12%  { opacity: 1; clip-path: inset(0 0 0 0); }
-  80%  { opacity: 1; clip-path: inset(0 0 0 0); }
+  30%  { opacity: 1; clip-path: inset(0 0 0 0); }
+  85%  { opacity: 1; clip-path: inset(0 0 0 0); }
   100% { opacity: 0; clip-path: inset(0 0 0 0); }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
 import { Orb } from "./Orb";
-import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, type ConversationSummary } from "@/lib/api";
+import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, renameConversation, type ConversationSummary } from "@/lib/api";
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
 import { SettingsSurface } from "./SettingsSurface";
@@ -89,6 +89,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [plan, setPlan] = useState<{ plan: string; used: number; limit: number }>({ plan: "free", used: 0, limit: 10 });
   const [chats, setChats] = useState<ConversationSummary[]>([]);
   const [chatsVersion, setChatsVersion] = useState(0);
+  // Per-chat overflow (⋯) menu: which chat's menu is open + the fixed viewport coords to render it at
+  // (fixed-positioned so the scrolling rail can't clip it).
+  const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   // Lets the chat page refresh the rail history the moment it creates a new conversation.
   const bumpChats = useCallback(() => setChatsVersion((v) => v + 1), []);
 
@@ -105,6 +108,30 @@ export function AppShell({ children }: { children: ReactNode }) {
       setChatsVersion((v) => v + 1); // resync from the server
     }
   }, [path, router]);
+
+  // Rename a chat: optimistic title swap in the rail, then persist (RLS-scoped). Resync on failure.
+  const handleRenameChat = useCallback(async (id: string, title: string) => {
+    const clean = title.trim().slice(0, 120);
+    if (!clean) return;
+    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, title: clean } : c)));
+    try {
+      await renameConversation(id, clean);
+    } catch {
+      setChatsVersion((v) => v + 1); // resync from the server
+    }
+  }, []);
+
+  // Open the ⋯ menu anchored to the kebab button, clamped to the viewport (toggles if already open).
+  const openRowMenu = useCallback((id: string, btn: HTMLElement) => {
+    setRowMenu((cur) => {
+      if (cur?.id === id) return null;
+      const r = btn.getBoundingClientRect();
+      const W = 200, H = 184;
+      const x = Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8));
+      const y = r.bottom + 4 + H > window.innerHeight ? Math.max(8, r.top - 4 - H) : r.bottom + 4;
+      return { id, x, y };
+    });
+  }, []);
 
   // Stable setters so child effects don't loop.
   const setEvidence = useCallback((node: ReactNode | null) => setEvidenceNode(node), []);
@@ -171,8 +198,28 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
   }, [menuOpen]);
 
-  // Close both mobile drawers + any account overlay on route change.
-  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setOverlay(null); }, [path]);
+  // Close the per-chat ⋯ menu on outside click / Escape, and (since it's fixed-positioned and won't
+  // track the rail) on scroll or resize.
+  useEffect(() => {
+    if (!rowMenu) return;
+    const close = () => setRowMenu(null);
+    const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".row-menu, .hist-more")) setRowMenu(null); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setRowMenu(null); };
+    const nav = document.querySelector(".nav");
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    nav?.addEventListener("scroll", close, { passive: true });
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+      nav?.removeEventListener("scroll", close);
+      window.removeEventListener("resize", close);
+    };
+  }, [rowMenu]);
+
+  // Close both mobile drawers + any account overlay + the row menu on route change.
+  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setOverlay(null); setRowMenu(null); }, [path]);
 
   // Close the open drawer on Escape.
   useEffect(() => {
@@ -263,18 +310,22 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             ) : (
               chats.map((c) => (
-                <div key={c.id} className="hist-row">
+                <div key={c.id} className={`hist-row${rowMenu?.id === c.id ? " menu-open" : ""}`}>
                   <Link href={`/app/ask?c=${c.id}`} className="hist" title={c.title}>
                     <Icon name="message" className="hist-ic" />
                     <span>{c.title}</span>
                   </Link>
                   <button
                     type="button"
-                    className="hist-del"
-                    aria-label={`Delete chat ${c.title}`}
-                    title="Delete chat"
-                    onClick={() => { if (window.confirm(`Delete "${c.title}"? This can't be undone.`)) void handleDeleteChat(c.id); }}
-                  >×</button>
+                    className="hist-more"
+                    aria-label={`Options for chat ${c.title}`}
+                    aria-haspopup="menu"
+                    aria-expanded={rowMenu?.id === c.id}
+                    title="Chat options"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); openRowMenu(c.id, e.currentTarget); }}
+                  >
+                    <Icon name="more" size={16} />
+                  </button>
                 </div>
               ))
             )}
@@ -333,6 +384,27 @@ export function AppShell({ children }: { children: ReactNode }) {
             <aside className="evidence" id="app-evidence">{evidence}</aside>
           </>
         ) : null}
+
+        {/* ── per-chat ⋯ menu (fixed-positioned so the scrolling rail can't clip it) ── */}
+        {rowMenu && (() => {
+          const c = chats.find((x) => x.id === rowMenu.id);
+          if (!c) return null;
+          return (
+            <div className="row-menu" role="menu" style={{ left: rowMenu.x, top: rowMenu.y }}>
+              <button role="menuitem" onClick={() => { setRowMenu(null); const next = window.prompt("Rename chat", c.title); if (next != null) void handleRenameChat(c.id, next); }}>
+                <Icon name="pencil" size={15} />Rename
+              </button>
+              {/* Pin needs a `pinned` column (owner-gated migration); Add to project waits on Projects.
+                  Shown honestly as disabled "Soon" rather than wired to nothing. */}
+              <button role="menuitem" disabled><Icon name="pin" size={15} />Pin chat<small>Soon</small></button>
+              <button role="menuitem" disabled><Icon name="folder" size={15} />Add to project<small>Soon</small></button>
+              <div className="sep" />
+              <button role="menuitem" className="danger" onClick={() => { setRowMenu(null); if (window.confirm(`Delete "${c.title}"? This can't be undone.`)) void handleDeleteChat(c.id); }}>
+                <Icon name="trash" size={15} />Delete chat
+              </button>
+            </div>
+          );
+        })()}
 
         {/* ── account overlays (Settings / Profile / Billing) — portaled, so they sit above everything ── */}
         <AppModal open={overlay === "settings"} onClose={() => setOverlay(null)} title="Settings" sub="Appearance, account, billing, and preferences." wide>
