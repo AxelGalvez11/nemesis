@@ -452,25 +452,29 @@ interface ComposerProps {
 // those features ship — same honest "coming soon" treatment as the non-live modes.
 function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error }: ComposerProps) {
   const activeMode = MODES.find((m) => m.id === mode)!;
-  // Cycle the example questions through the placeholder so suggestions live in the chat bar itself.
+  // Cycle example questions through an animated overlay placeholder (reveals in from the left, fades
+  // out) so suggestions live in the chat bar without a hard text swap.
   const [phIdx, setPhIdx] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setPhIdx((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length), 3500);
+    const id = setInterval(() => setPhIdx((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length), 4000);
     return () => clearInterval(id);
   }, []);
   return (
     <div className="composer">
       <div className="box">
-        <textarea
-          ref={taRef}
-          rows={1}
-          value={question}
-          maxLength={500}
-          aria-label="Ask a question about a drug, dose, interaction, or monograph"
-          placeholder={PLACEHOLDER_EXAMPLES[phIdx]}
-          onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
-        />
+        <div className="ta-wrap">
+          <textarea
+            ref={taRef}
+            rows={1}
+            value={question}
+            maxLength={500}
+            aria-label="Ask a question about a drug, dose, interaction, or monograph"
+            placeholder=""
+            onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
+          />
+          {question ? null : <span className="ph-anim" key={phIdx} aria-hidden="true">{PLACEHOLDER_EXAMPLES[phIdx]}</span>}
+        </div>
         <div className="tools">
           <button className="tool" type="button" title="Attach — coming soon" aria-label="Attach" disabled>
             <Icon name="plus" size={18} />

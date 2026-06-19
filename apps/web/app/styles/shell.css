@@ -119,9 +119,12 @@
 }
 .icon-btn {
   width: 34px; height: 34px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--text-2);
-  display: grid; place-items: center; cursor: pointer; transition: background 0.15s, color 0.15s; flex: none;
+  display: grid; place-items: center; padding: 0; cursor: pointer; transition: background 0.15s, color 0.15s; flex: none;
 }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+/* icons sit dead-center: zero the inherited global button padding (9px 16px) so place-items has room
+   to center, and render the svg as a block to drop the inline-baseline descender gap. */
+.icon-btn svg { display: block; }
 .thread-title { font-weight: 600; font-size: 14.5px; }
 .thread-sub { color: var(--text-3); font-size: 12px; }
 .pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 12.5px; color: var(--text-2); background: var(--surface); cursor: pointer; }
@@ -242,8 +245,27 @@
 .box:focus-within { border-color: var(--line-2); box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.18); }
 /* composer affordance icons sit dead-center in their buttons (svg as block removes baseline drift) */
 .box .tools svg { display: block; }
-.box textarea { width: 100%; background: none; border: none; color: var(--text); font-family: var(--font); font-size: 15.5px; resize: none; outline: none; min-height: 24px; max-height: 200px; padding: 0; }
+.box textarea { width: 100%; background: none; border: none; color: var(--text); font-family: var(--font); font-size: 15.5px; line-height: 24px; resize: none; outline: none; min-height: 24px; max-height: 200px; padding: 0; }
 .box textarea::placeholder { color: var(--text-3); }
+/* Animated cycling placeholder: a non-interactive overlay (shown only when the field is empty) that
+   wipes in left-to-right then fades out, so the example questions live in the chat bar without a
+   hard text switch. Sits exactly over the textarea's first line (matched font-size + line-height). */
+.ta-wrap { position: relative; }
+.ph-anim {
+  position: absolute; top: 0; left: 0; right: 0; pointer-events: none;
+  color: var(--text-3); font-size: 15.5px; line-height: 24px;
+  white-space: nowrap; overflow: hidden; text-overflow: clip;
+  animation: phReveal 4s ease forwards;
+}
+@keyframes phReveal {
+  0%   { opacity: 0; clip-path: inset(0 100% 0 0); }
+  12%  { opacity: 1; clip-path: inset(0 0 0 0); }
+  80%  { opacity: 1; clip-path: inset(0 0 0 0); }
+  100% { opacity: 0; clip-path: inset(0 0 0 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ph-anim { animation: none; opacity: 0.85; clip-path: none; }
+}
 /* Kill the global green focus glow (legacy.css `input, textarea:focus` box-shadow) on the
    composer — the bar uses the calm border-tint focus above, not an acid ring. Keyboard
    focus-visible outline (the separate `outline` rule below) is unaffected. */
