@@ -939,6 +939,20 @@ export async function createWatch(input: CreateWatchInput): Promise<CreateWatchR
   return data && typeof data.id === "string" ? { ok: true, id: data.id } : { ok: false, reason: "unknown" };
 }
 
+/** Delete a watch (cascades to its events + known-sources). RLS (ew_owner, FOR ALL) scopes to the owner. */
+export async function deleteWatch(id: string): Promise<void> {
+  if (isPreviewMode) return;
+  const { error } = await supabase.from("evidence_watches").delete().eq("id", id);
+  if (error) throw new Error(`delete watch failed: ${error.message}`);
+}
+
+/** Pause / resume a watch — the scheduler only checks 'active' watches. RLS scopes to the owner. */
+export async function setWatchStatus(id: string, status: "active" | "paused"): Promise<void> {
+  if (isPreviewMode) return;
+  const { error } = await supabase.from("evidence_watches").update({ status }).eq("id", id);
+  if (error) throw new Error(`update watch failed: ${error.message}`);
+}
+
 /** Download a saved report as .docx/.pptx. Fetches the Node route WITH the user's bearer token
  *  (a plain <a download> can't set Authorization), then triggers a browser download of the blob. */
 export async function downloadReportExport(

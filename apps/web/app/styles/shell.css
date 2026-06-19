@@ -715,3 +715,21 @@
 .watch-usage { text-align: center; font-family: var(--mono); font-size: 11px; color: var(--text-3); margin: -2px 0 18px; }
 .watch-usage a { color: var(--acid-dim); text-decoration: none; }
 .watch-usage a:hover { text-decoration: underline; }
+
+/* "Monitor a new topic" box — start a watch from the Monitoring page. Calm border-tint focus (no
+   acid glow), matching the composer/search. */
+.watch-add { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; padding: 9px 13px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); transition: border-color 0.15s; }
+.watch-add:focus-within { border-color: var(--line-2); }
+.watch-add > svg { color: var(--text-3); flex: none; }
+.watch-add-input { flex: 1; min-width: 0; background: none; border: none; outline: none; box-shadow: none; color: var(--text); font-family: var(--font); font-size: 14.5px; }
+.watch-add-input::placeholder { color: var(--text-3); }
+.watch-add-btn { flex: none; }
+.watch-add-error { font-size: 12.5px; color: var(--warn); margin: -2px 0 10px; }
+.watch-add-error a { color: var(--acid-dim); }
+
+/* Watch detail header manage controls (pause/resume + inline two-step delete). */
+.watch-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.watch-confirm-label { font-size: 13px; color: var(--text-2); }
+.watch-delete:hover { border-color: var(--danger); color: var(--danger); }
+.watch-delete-confirm { color: #fff; background: var(--danger); border-color: var(--danger); }
+.watch-delete-confirm:hover { filter: brightness(1.07); }
