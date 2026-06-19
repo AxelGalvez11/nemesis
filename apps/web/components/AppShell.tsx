@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
 import { Orb } from "./Orb";
-import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, renameConversation, type ConversationSummary } from "@/lib/api";
+import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, pinConversation, renameConversation, type ConversationSummary } from "@/lib/api";
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
 import { SettingsSurface } from "./SettingsSurface";
@@ -135,6 +135,21 @@ export function AppShell({ children }: { children: ReactNode }) {
     setRenamingId(null);
     void handleRenameChat(id, renameDraft);
   }, [handleRenameChat, renameDraft]);
+
+  // Pin / unpin a chat: optimistically flip `pinned` and re-sort the rail (pinned first, then
+  // most-recent — mirrors the server order), then persist (RLS-scoped). Resync on failure.
+  const handlePinChat = useCallback(async (id: string, pinned: boolean) => {
+    setChats((prev) =>
+      prev
+        .map((c) => (c.id === id ? { ...c, pinned } : c))
+        .sort((a, b) => (a.pinned === b.pinned ? b.updated_at.localeCompare(a.updated_at) : a.pinned ? -1 : 1)),
+    );
+    try {
+      await pinConversation(id, pinned);
+    } catch {
+      setChatsVersion((v) => v + 1); // resync from the server
+    }
+  }, []);
 
   // Open the ⋯ menu anchored to the kebab button, clamped to the viewport (toggles if already open).
   const openRowMenu = useCallback((id: string, btn: HTMLElement) => {
@@ -357,7 +372,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                   ) : (
                     <>
                       <Link href={`/app/ask?c=${c.id}`} className="hist" title={c.title}>
-                        <Icon name="message" className="hist-ic" />
+                        {/* pinned chats lead with a pin glyph (and sort to the top) */}
+                        <Icon name={c.pinned ? "pin" : "message"} className="hist-ic" />
                         <span>{c.title}</span>
                       </Link>
                       <button
@@ -441,9 +457,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               <button role="menuitem" onClick={() => { setRowMenu(null); setRenamingId(c.id); setRenameDraft(c.title); }}>
                 <Icon name="pencil" size={15} />Rename
               </button>
-              {/* Pin needs a `pinned` column (owner-gated migration); Add to project waits on Projects.
-                  Shown honestly as disabled "Soon" rather than wired to nothing. */}
-              <button role="menuitem" disabled><Icon name="pin" size={15} />Pin chat<small>Soon</small></button>
+              <button role="menuitem" onClick={() => { setRowMenu(null); void handlePinChat(c.id, !c.pinned); }}>
+                <Icon name="pin" size={15} />{c.pinned ? "Unpin chat" : "Pin chat"}
+              </button>
+              {/* Add to project waits on Projects (not built yet) — shown honestly as disabled "Soon". */}
               <button role="menuitem" disabled><Icon name="folder" size={15} />Add to project<small>Soon</small></button>
               <div className="sep" />
               <button role="menuitem" className="danger" onClick={() => { setRowMenu(null); setConfirmDelete({ id: c.id, title: c.title }); }}>

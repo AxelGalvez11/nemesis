@@ -484,6 +484,7 @@ export interface ConversationSummary {
   id: string;
   title: string;
   updated_at: string;
+  pinned: boolean;
 }
 
 /** A reconstructed deep-research card (persisted on completion) — links to the finished report. */
@@ -506,11 +507,16 @@ export async function fetchConversations(): Promise<ConversationSummary[]> {
   if (isPreviewMode) return [];
   const { data, error } = await supabase
     .from("conversations")
-    .select("id,title,updated_at")
-    .order("updated_at", { ascending: false })
+    .select("id,title,updated_at,pinned")
+    .order("pinned", { ascending: false }) // pinned chats first…
+    .order("updated_at", { ascending: false }) // …then most-recent
     .limit(50);
   if (error) throw new Error(`conversations failed: ${error.message}`);
-  return rows(data, (r) => (typeof r.id === "string" && typeof r.title === "string" ? (r as unknown as ConversationSummary) : null));
+  return rows(data, (r) =>
+    typeof r.id === "string" && typeof r.title === "string"
+      ? { id: r.id, title: r.title, updated_at: String(r.updated_at ?? ""), pinned: r.pinned === true }
+      : null,
+  );
 }
 
 /** Create a chat (title = first question, trimmed); returns its id. */
@@ -543,6 +549,13 @@ export async function renameConversation(conversationId: string, title: string):
   if (!clean) return;
   const { error } = await supabase.from("conversations").update({ title: clean }).eq("id", conversationId);
   if (error) throw new Error(`rename chat failed: ${error.message}`);
+}
+
+/** Pin / unpin a chat (sorts it to the top of the rail). RLS scopes the update to the owner. */
+export async function pinConversation(conversationId: string, pinned: boolean): Promise<void> {
+  if (isPreviewMode) return;
+  const { error } = await supabase.from("conversations").update({ pinned }).eq("id", conversationId);
+  if (error) throw new Error(`pin chat failed: ${error.message}`);
 }
 
 /** Persist one turn (question + cited answer) at the given ordinal base, and bump the chat's
