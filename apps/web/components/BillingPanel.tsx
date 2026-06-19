@@ -87,7 +87,7 @@ export function BillingPanel() {
             <span className="muted" style={{ fontSize: 13 }}> / month</span>
           </p>
           <ul style={billingList}>
-            <li style={{ ...billingItem, color: "var(--text-3)", fontWeight: 600, fontSize: 12.5 }}>Everything in Plus, plus:</li>
+            <li style={{ ...billingItem, color: "var(--text-2)", fontWeight: 600, fontSize: 12.5 }}>Everything in Plus, plus:</li>
             <li style={billingItem}><span style={billingTick}>✓</span><span><strong>Deep Research</strong> — 3 multi-step cited reports per day</span></li>
             <li style={billingItem}><span style={billingTick}>✓</span>250 Ask questions per day · 100 watchlist follows</li>
             <li style={billingItem}><span style={billingTick}>✓</span>Literature review &amp; meta-analysis as they roll out</li>

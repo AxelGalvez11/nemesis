@@ -25,7 +25,7 @@ textarea { min-height: 130px; resize: vertical; }
 .page-header { margin-bottom: 22px; }
 .page-header h1 { color: var(--text); font-size: 34px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; margin: 0; }
 .page-header p { color: var(--text-2); max-width: 760px; }
-.eyebrow { color: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.eyebrow { color: var(--text-2); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
 
 .grid { display: grid; gap: 16px; }
 .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }

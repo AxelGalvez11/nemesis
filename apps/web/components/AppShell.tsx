@@ -292,7 +292,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <button onClick={() => void signOut().then(() => router.replace("/sign-in"))}><Icon name="logout" size={15} />Sign out</button>
               </div>
             ) : null}
-            <button className="acct-btn" onClick={() => setMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={menuOpen} aria-label="Account menu">
+            <button className="acct-btn" onClick={() => setMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={menuOpen}>
               <span className="av">{initials}</span>
               <span className="acct-meta">
                 <b>{email.split("@")[0]}</b>
