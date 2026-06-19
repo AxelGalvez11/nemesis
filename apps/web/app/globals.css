@@ -41,7 +41,7 @@
   /* The page chrome is flat (ChatGPT feel; the body's ambient accent gradient is removed). --glow now
      drives ONLY the brand Orb's soft halo — kept modest so the mark stays alive without a page wash. */
   --glow: 0.12;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px -4px rgba(0, 0, 0, 0.07);
   --shadow-acid: 0 6px 22px -8px rgba(98, 176, 0, 0.4);
 
   /* legacy aliases (pre-existing pages reference these) */
@@ -76,7 +76,7 @@
   --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
 
   --glow: 0;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 6px 18px -6px rgba(0, 0, 0, 0.38);
   --shadow-acid: 0 8px 28px -8px rgba(140, 220, 40, 0.5);
   --line-acid: rgba(188, 255, 60, 0.28);
 
@@ -106,7 +106,7 @@
   --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
 
   --glow: 0;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px -6px rgba(0, 0, 0, 0.6);
   --shadow-acid: 0 8px 28px -8px rgba(140, 220, 40, 0.5);
   --line-acid: rgba(188, 255, 60, 0.28);
 

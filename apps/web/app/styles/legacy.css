@@ -73,8 +73,8 @@ button.danger-button { background: var(--surface); border: 1px solid rgba(255, 9
 .filter-item.active { background: var(--surface-2); border-color: var(--line); color: var(--text); font-weight: 600; }
 .filter-dot { border-radius: 99px; height: 7px; width: 7px; }
 .drug-grid { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 28px; }
-.drug-tile { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; cursor: pointer; transition: border-color 0.15s; }
-.drug-tile:hover { border-color: var(--line-2); }
+.drug-tile { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
+.drug-tile:hover { border-color: var(--line-2); transform: translateY(-2px); }
 .drug-tile-art { align-items: center; color: var(--text-3); display: flex; font-size: 32px; font-weight: 700; height: 76px; justify-content: center; background: var(--surface-2); }
 .drug-tile-body { padding: 11px 13px; }
 .status-line { align-items: center; display: flex; font-size: 10px; font-weight: 600; gap: 5px; }

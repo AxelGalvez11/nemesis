@@ -237,9 +237,9 @@
 /* ── composer ── */
 .composer-wrap { padding: 10px 0 22px; background: linear-gradient(0deg, var(--bg) 60%, transparent); flex: none; }
 .composer { max-width: 620px; margin: 0 auto; padding: 0 28px; }
-.box { border: 1px solid var(--line-2); background: var(--surface); border-radius: 20px; padding: 12px 12px 10px; transition: border-color 0.2s; }
-/* Calm focus: a subtle border tint, no acid glow ring (the bar no longer "lights up" on focus). */
-.box:focus-within { border-color: var(--line-2); }
+.box { border: 1px solid var(--line-2); background: var(--surface); border-radius: 20px; padding: 12px 12px 10px; box-shadow: var(--shadow); transition: border-color 0.2s, box-shadow 0.2s; }
+/* Calm focus: a subtle border tint + a touch more lift, no acid glow ring (the bar no longer "lights up"). */
+.box:focus-within { border-color: var(--line-2); box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.18); }
 /* composer affordance icons sit dead-center in their buttons (svg as block removes baseline drift) */
 .box .tools svg { display: block; }
 .box textarea { width: 100%; background: none; border: none; color: var(--text); font-family: var(--font); font-size: 15.5px; resize: none; outline: none; min-height: 24px; max-height: 200px; padding: 0; }
