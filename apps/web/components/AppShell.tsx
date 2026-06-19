@@ -9,11 +9,9 @@ import { Orb } from "./Orb";
 import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, type ConversationSummary } from "@/lib/api";
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
-import { SettingsPanel } from "./SettingsPanel";
-import { ProfilePanel } from "./ProfilePanel";
-import { BillingPanel } from "./BillingPanel";
+import { SettingsSurface } from "./SettingsSurface";
 
-type Overlay = "settings" | "profile" | "billing" | null;
+type Overlay = "settings" | null;
 
 /* ── chrome context: pages inject their evidence panel + topbar title here ── */
 interface AppChromeValue {
@@ -253,14 +251,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             {/* Projects (group chats, sources & deliverables) is not built yet — inert placeholder,
                 NOT a link. It previously pointed at /app/settings (wrong page); /app/projects does
                 not exist, so a real href would 404. */}
-            <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }} aria-disabled="true">
+            <div className="hist" style={{ color: "var(--text-2)", cursor: "default" }} aria-disabled="true">
               <Icon name="folder" className="hist-ic" />
               <span style={{ fontSize: 12 }}>Projects — coming soon</span>
             </div>
 
             <div className="r-label">Recent chats</div>
             {chats.length === 0 ? (
-              <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }}>
+              <div className="hist" style={{ color: "var(--text-2)", cursor: "default" }}>
                 <span style={{ fontSize: 12 }}>Your saved chats appear here</span>
               </div>
             ) : (
@@ -286,8 +284,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             {menuOpen ? (
               <div className="acct-menu" role="menu">
                 <button onClick={() => { setOverlay("settings"); setMenuOpen(false); }}><Icon name="settings" size={15} />Settings</button>
-                <button onClick={() => { setOverlay("profile"); setMenuOpen(false); }}><Icon name="user" size={15} />Profile</button>
-                <button onClick={() => { setOverlay("billing"); setMenuOpen(false); }}><Icon name="card" size={15} />Billing · {plan.plan}</button>
                 <div className="sep" />
                 <button onClick={() => void signOut().then(() => router.replace("/sign-in"))}><Icon name="logout" size={15} />Sign out</button>
               </div>
@@ -339,14 +335,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         ) : null}
 
         {/* ── account overlays (Settings / Profile / Billing) — portaled, so they sit above everything ── */}
-        <AppModal open={overlay === "settings"} onClose={() => setOverlay(null)} title="Settings" sub="Appearance, account, and answer preferences.">
-          <SettingsPanel onNavigate={(t) => setOverlay(t)} />
-        </AppModal>
-        <AppModal open={overlay === "profile"} onClose={() => setOverlay(null)} title="Profile" sub="Your account, plan, and data.">
-          <ProfilePanel />
-        </AppModal>
-        <AppModal open={overlay === "billing"} onClose={() => setOverlay(null)} title="Billing" sub="Plus unlocks more cited questions; Pro adds Deep Research.">
-          <BillingPanel />
+        <AppModal open={overlay === "settings"} onClose={() => setOverlay(null)} title="Settings" sub="Appearance, account, billing, and preferences." wide>
+          <SettingsSurface />
         </AppModal>
       </div>
     </AppChromeContext.Provider>

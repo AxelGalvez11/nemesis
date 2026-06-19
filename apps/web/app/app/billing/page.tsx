@@ -1,16 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { PageHeader } from "@/components/ui";
-import { BillingPanel } from "@/components/BillingPanel";
-
-// Full-page Billing (direct URL). The same BillingPanel also renders inside the account-menu overlay.
+// Billing is now the "Billing" section of the consolidated Settings surface — keep the old URL working.
 export default function BillingPage() {
-  return (
-    <>
-      <PageHeader title="Billing" eyebrow="Plans">
-        Plus unlocks more cited questions; Pro adds Deep Research — multi-step, fully cited reports.
-      </PageHeader>
-      <BillingPanel />
-    </>
-  );
+  redirect("/app/settings?section=billing");
 }
