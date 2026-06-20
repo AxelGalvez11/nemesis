@@ -827,8 +827,24 @@ export async function fetchWatches(): Promise<WatchSummary[]> {
     : null));
 }
 
+// Preview-mode demo so the watch detail UI is viewable without a real backend (mirrors the
+// searchEntities / demoDrug preview mocks). Timestamps are relative to now so the "last checked"
+// label reads realistically; events stay empty (fetchWatchEvents) — the fresh-watch state where the
+// "see the current evidence" view earns its keep.
+function demoWatch(id: string): WatchSummary {
+  const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
+  return {
+    id: id || "demo",
+    title: "Semaglutide",
+    cadence: "daily",
+    status: "active",
+    last_checked_at: iso(3 * 60 * 60 * 1000), // 3h ago
+    baselined_at: iso(26 * 60 * 60 * 1000), // baselined ~1d ago
+  };
+}
+
 export async function fetchWatch(id: string): Promise<WatchSummary | null> {
-  if (isPreviewMode) return null;
+  if (isPreviewMode) return demoWatch(id);
   const { data, error } = await supabase
     .from("evidence_watches")
     .select("id,title,cadence,status,last_checked_at,baselined_at")

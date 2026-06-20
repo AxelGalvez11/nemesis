@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { partitionWatchEvents, type WatchEvent } from "@pharmabro/shared";
 import { Icon } from "@/components/icons";
 import { safeHref } from "@/lib/url";
@@ -47,11 +48,14 @@ function fmtDate(iso: string | null): string {
 }
 
 interface WatchDetailProps {
-  watch: { title: string; cadence: string; baselined: boolean };
+  watch: { title: string; cadence: string; baselined: boolean; lastCheckedLabel?: string | null };
   events: WatchEvent[];
+  // In-app link that pre-fills Ask with this watch's topic (reads the evidence that exists NOW).
+  // Null hides the link entirely.
+  currentEvidenceHref?: string | null;
 }
 
-export function WatchDetail({ watch, events }: WatchDetailProps) {
+export function WatchDetail({ watch, events, currentEvidenceHref }: WatchDetailProps) {
   const { alerts, feed, news, unreadAlertCount } = partitionWatchEvents(events);
 
   return (
@@ -60,13 +64,26 @@ export function WatchDetail({ watch, events }: WatchDetailProps) {
         <div>
           <h2 className="watch-title">{watch.title}</h2>
           <p className="watch-sub">
-            <Icon name="bell" size={13} /> Checked {watch.cadence} · {watch.baselined ? "monitoring" : "setting up"}
+            <Icon name="bell" size={13} /> Checked {watch.cadence}
+            {watch.lastCheckedLabel ? <> · last checked {watch.lastCheckedLabel}</> : null}
+            {" · "}{watch.baselined ? "monitoring" : "setting up"}
           </p>
         </div>
         {unreadAlertCount > 0 ? (
           <span className="watch-unread">{unreadAlertCount} new alert{unreadAlertCount > 1 ? "s" : ""}</span>
         ) : null}
       </header>
+
+      {currentEvidenceHref ? (
+        <div className="watch-current">
+          <p className="watch-current-text">
+            Monitoring flags only what changes from here on. To read the evidence that exists right now:
+          </p>
+          <Link className="chip-action watch-current-link" href={currentEvidenceHref}>
+            See the current evidence →
+          </Link>
+        </div>
+      ) : null}
 
       <section className="watch-section">
         <h3 className="watch-section-h">
@@ -89,8 +106,8 @@ export function WatchDetail({ watch, events }: WatchDetailProps) {
         {feed.length === 0 ? (
           <p className="watch-empty">
             {watch.baselined
-              ? "Nothing new since the last check."
-              : "Your first check baselines quietly — new sources after that show up here."}
+              ? "Nothing new since the last check — you're up to date."
+              : "Your first check baselines quietly: it records everything already published, then flags anything new here afterward."}
           </p>
         ) : (
           feed.map((e) => <FeedCard key={e.id} e={e} />)

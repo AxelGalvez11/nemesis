@@ -59,6 +59,7 @@ function AskPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const cParam = searchParams.get("c"); // the conversation to load, if the URL deep-links one
+  const qParam = searchParams.get("q"); // a pre-filled question (e.g. the "See current evidence" link on a watch)
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loadingChat, setLoadingChat] = useState(false); // true while a saved chat's turns are loading
   const [chatLoadError, setChatLoadError] = useState<string | null>(null); // a failed reopen is shown, not swallowed
@@ -124,6 +125,20 @@ function AskPage() {
       .finally(() => { if (alive) setLoadingChat(false); });
     return () => { alive = false; };
   }, [cParam]);
+
+  // Pre-fill the composer from ?q= (the "See current evidence" link on a watch). We ONLY fill the box —
+  // never auto-submit; the user reviews and presses send (so it counts as a normal, user-initiated ask).
+  // Applied once per arrival, then ?q= is stripped from the URL (keeping ?c= if present) so a later edit
+  // isn't clobbered on a re-render or refresh. Coexists with the ?c= loader above: filling the input is
+  // independent of loading a saved chat's turns.
+  const appliedQRef = useRef(false);
+  useEffect(() => {
+    const q = (qParam ?? "").trim();
+    if (!q || appliedQRef.current) return;
+    appliedQRef.current = true;
+    setQuestion(qParam ?? "");
+    router.replace(cParam ? `/app/ask?c=${cParam}` : "/app/ask");
+  }, [qParam, cParam, router]);
 
   // Persist a completed turn — best-effort, so a save failure never breaks the chat. On the first
   // message it creates the conversation, points the URL at it (refresh / deep-link works), and tells

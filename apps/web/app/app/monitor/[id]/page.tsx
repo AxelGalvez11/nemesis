@@ -7,6 +7,7 @@ import type { WatchEvent } from "@pharmabro/shared";
 import { deleteWatch, fetchWatch, fetchWatchEvents, setWatchStatus, type WatchSummary } from "@/lib/api";
 import { WatchDetail } from "@/components/WatchDetail";
 import { Icon } from "@/components/icons";
+import { askHrefForWatch, relativeTime } from "@/lib/watch-format";
 
 // One watch, opened from the Monitoring section. Loads the watch (for the header) + its events (the
 // three channels) and hands them to WatchDetail — the same renderer the static-mock was verified
@@ -96,8 +97,14 @@ export default function WatchDetailPage() {
       {err ? <p className="tmpl-note">{err}</p> : null}
       {watch ? (
         <WatchDetail
-          watch={{ title: watch.title, cadence: watch.cadence, baselined: watch.baselined_at !== null }}
+          watch={{
+            title: watch.title,
+            cadence: watch.cadence,
+            baselined: watch.baselined_at !== null,
+            lastCheckedLabel: relativeTime(watch.last_checked_at, Date.now()),
+          }}
           events={events}
+          currentEvidenceHref={askHrefForWatch(watch.title)}
         />
       ) : null}
     </div>
