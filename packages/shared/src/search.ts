@@ -29,6 +29,23 @@ export interface SearchResult {
   score: number;
 }
 
+/** The universal entity kind a monitoring watch can resolve to. Distinct from the in-house catalog
+ *  EntityType: this is the medical-thing taxonomy that (in Slice B) gates which catalyst feeds apply.
+ *  'topic' is the free-text fallback when nothing resolves. */
+export type SuggestKind = "drug" | "device" | "condition" | "procedure" | "topic";
+
+/** One row in the universal picker — either an in-house catalog hit (brand→generic, fetchDrug works on
+ *  `id`) or a MeSH-resolved entity (`id` is the MeSH UI). `kind` drives the type chip + later catalyst
+ *  gating; `source` lets the picker know whether a drug-brand lookup applies. */
+export interface EntitySuggestion {
+  kind: SuggestKind;
+  source: "catalog" | "mesh";
+  id: string; // catalog entity id, or the MeSH UI
+  name: string; // canonical display name
+  subtitle: string | null; // brand alias (catalog) or lead synonyms (MeSH)
+  score: number; // ranking weight for the merge
+}
+
 /** A cited Layer-A source row as surfaced by the read RPCs. */
 export interface SourceRef {
   source_id: string;
