@@ -497,7 +497,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
           {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{PLACEHOLDER_EXAMPLES[phIdx]}</span> : null}
         </div>
         <div className="tools">
-          <button className="tool" type="button" title="Attach — coming soon" aria-label="Attach" disabled>
+          <button className="tool" type="button" data-tip="Attach — coming soon" aria-label="Attach" disabled>
             <Icon name="plus" size={18} />
           </button>
           <div className="mode-wrap" style={{ position: "relative" }}>
@@ -528,10 +528,10 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             ) : null}
           </div>
           <div className="spacer" />
-          <button className="tool" type="button" title="Voice — coming soon" aria-label="Voice input" disabled>
+          <button className="tool" type="button" data-tip="Voice — coming soon" aria-label="Voice input" disabled>
             <Icon name="mic" size={18} />
           </button>
-          <button className="send" title="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
+          <button className="send" data-tip="Send" aria-label="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
             <Icon name="send" size={18} />
           </button>
         </div>
@@ -757,7 +757,7 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
       ) : null}
 
       <div className="msg-actions">
-        <button className="icon-btn" title="Copy" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
+        <button className="icon-btn" data-tip="Copy answer" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
       </div>
     </div>
   );

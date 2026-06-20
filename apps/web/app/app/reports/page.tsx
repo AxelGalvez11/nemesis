@@ -5,6 +5,7 @@ import Link from "next/link";
 import { fetchResearchReports, type ResearchReportSummary } from "@/lib/api";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
+import { SkeletonRows } from "@/components/Skeleton";
 
 // The Reports library: every deep-research / structured-review report the user has generated.
 // Reports persist as their own saved_reports rows (kind='deep_research'); this lists them and links
@@ -30,7 +31,7 @@ export default function ReportsPage() {
       </div>
 
       {err ? <p className="tmpl-note">{err}</p> : null}
-      {reports === null && !err ? <p className="muted" style={{ fontSize: 14 }}>Loading reports…</p> : null}
+      {reports === null && !err ? <SkeletonRows count={3} label="Loading your reports…" /> : null}
 
       {reports && reports.length === 0 ? (
         <p className="welcome-sub">No reports yet. Start one from <Link href="/app/ask">Ask</Link> — choose Deep research or Structured review.</p>

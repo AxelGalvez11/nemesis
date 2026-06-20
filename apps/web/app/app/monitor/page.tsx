@@ -9,6 +9,7 @@ import { isCatalogDrug, watchFieldsFromEntity } from "@/lib/entity";
 import { EntityPicker } from "@/components/EntityPicker";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
+import { SkeletonRows } from "@/components/Skeleton";
 
 // The Monitoring section: the topics and saved questions the user is watching. Each watch re-checks
 // the live evidence on a schedule; this lists them and links to the detail view (/app/monitor/[id]),
@@ -138,7 +139,7 @@ export default function MonitorPage() {
       ) : null}
 
       {err ? <p className="tmpl-note">{err}</p> : null}
-      {watches === null && !err ? <p className="muted" style={{ fontSize: 14 }}>Loading watches…</p> : null}
+      {watches === null && !err ? <SkeletonRows count={3} label="Loading your watches…" /> : null}
 
       {watches && watches.length === 0 ? (
         <p className="welcome-sub">

@@ -8,6 +8,7 @@ import { deleteWatch, fetchWatch, fetchWatchEvents, setWatchStatus, type WatchSu
 import { WatchDetail } from "@/components/WatchDetail";
 import { Icon } from "@/components/icons";
 import { askHrefForWatch, relativeTime } from "@/lib/watch-format";
+import { SkeletonRows } from "@/components/Skeleton";
 
 // One watch, opened from the Monitoring section. Loads the watch (for the header) + its events (the
 // three channels) and hands them to WatchDetail — the same renderer the static-mock was verified
@@ -93,7 +94,7 @@ export default function WatchDetailPage() {
           </div>
         ) : null}
       </div>
-      {loading ? <p className="muted" style={{ fontSize: 14 }}>Loading…</p> : null}
+      {loading ? <SkeletonRows count={3} label="Loading this watch…" /> : null}
       {err ? <p className="tmpl-note">{err}</p> : null}
       {watch ? (
         <WatchDetail

@@ -7,6 +7,7 @@ import type { CitationStyle, ResearchReport } from "@pharmabro/shared";
 import { fetchResearchReport } from "@/lib/api";
 import { ResearchReportView } from "@/components/ResearchReportView";
 import { WatchButton } from "@/components/WatchButton";
+import { SkeletonRows } from "@/components/Skeleton";
 
 // A single saved report, opened from the Reports library (or, later, a chat's "Report ready" card).
 // Reuses ResearchReportView verbatim — the same renderer the live run uses — so a saved report reads
@@ -39,7 +40,7 @@ export default function ReportDetailPage() {
         {/* Monitor this report's question for new evidence (saved-question watch). */}
         {report ? <WatchButton kind="saved_question" question={report.question} savedReportId={id} /> : null}
       </div>
-      {loading ? <p className="muted" style={{ fontSize: 14 }}>Loading report…</p> : null}
+      {loading ? <SkeletonRows count={4} label="Loading report…" /> : null}
       {err ? <p className="tmpl-note">{err}</p> : null}
       {report ? <ResearchReportView report={report} reportId={id} style={citeStyle} onStyleChange={setCiteStyle} /> : null}
     </div>

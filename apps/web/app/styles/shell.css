@@ -150,6 +150,29 @@
 /* icons sit dead-center: zero the inherited global button padding (9px 16px) so place-items has room
    to center, and render the svg as a block to drop the inline-baseline descender gap. */
 .icon-btn svg { display: block; }
+
+/* Fast, styled tooltip — a quicker, on-brand replacement for the slow native `title` bubble. Add
+   `data-tip="…"` to any control (keep an aria-label for screen readers). Inverts in every theme:
+   the bubble uses --text as bg + --surface as ink, which are contrasting by construction. Sits BELOW
+   the control so top-bar buttons never clip above the viewport. CSS-only, pointer-events:none. */
+[data-tip] { position: relative; }
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%) translateY(-3px);
+  background: var(--text); color: var(--surface); font-size: 11px; font-weight: 500; line-height: 1.3;
+  white-space: nowrap; padding: 4px 8px; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  pointer-events: none; opacity: 0; transition: opacity 0.12s ease, transform 0.12s ease; z-index: 60;
+}
+[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+@media (hover: none) { [data-tip]::after { display: none; } } /* no hover target on touch */
+
+/* Skeleton loaders — layout helpers for the shimmer placeholders shown while a list/page loads instead
+   of a bare "Loading…". The `.skeleton` shimmer itself is the existing one in legacy.css; here we only
+   add list spacing + a default row shape, and an a11y reduced-motion stop. */
+.skel-list { display: flex; flex-direction: column; gap: 10px; }
+.skel-row { height: 62px; border-radius: 10px; }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
 .thread-title { font-weight: 600; font-size: 14.5px; }
 .thread-sub { color: var(--text-3); font-size: 12px; }
 .pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 12.5px; color: var(--text-2); background: var(--surface); cursor: pointer; }

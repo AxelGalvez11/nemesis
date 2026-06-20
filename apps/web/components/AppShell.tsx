@@ -418,7 +418,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* ── main ── */}
         <main className="main">
           <div className="topbar">
-            <button className="icon-btn" onClick={toggleRail} title="Toggle sidebar" aria-label="Toggle sidebar" aria-controls="app-rail" aria-expanded={mobileNavOpen}>
+            <button className="icon-btn" onClick={toggleRail} data-tip="Toggle sidebar" aria-label="Toggle sidebar" aria-controls="app-rail" aria-expanded={mobileNavOpen}>
               <Icon name="menu" />
             </button>
             {topbar ?? (
@@ -428,11 +428,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             )}
             <div className="spacer" />
-            <button className="icon-btn" onClick={toggleTheme} title="Switch theme (light · grey · dark)">
+            <button className="icon-btn" onClick={toggleTheme} data-tip="Switch theme" aria-label="Switch theme (light, grey, dark)">
               <Icon name={theme === "light" ? "moon" : "sun"} />
             </button>
             {hasEvidence ? (
-              <button className="icon-btn" onClick={toggleEvidence} title="Toggle evidence" aria-label="Toggle evidence" aria-controls="app-evidence" aria-expanded={mobileEvidenceOpen}>
+              <button className="icon-btn" onClick={toggleEvidence} data-tip="Show the evidence behind the answer" aria-label="Toggle evidence" aria-controls="app-evidence" aria-expanded={mobileEvidenceOpen}>
                 <Icon name="panel" />
               </button>
             ) : null}
