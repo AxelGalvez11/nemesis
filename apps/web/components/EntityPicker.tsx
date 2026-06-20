@@ -1,38 +1,37 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import type { SearchResult } from "@pharmabro/shared";
-import { searchEntities } from "@/lib/api";
+import type { EntitySuggestion, SuggestKind } from "@pharmabro/shared";
+import { suggestEntities } from "@/lib/api";
 
-// Typeahead for the Monitor box: as you type it suggests real catalog entities (drugs, supplements,
-// peptides, biologics, classes) from the same `search_entities` source the Explore page uses, with
-// brand→generic resolution. Picking one creates a PRECISE, scoped watch (via watchFieldsFromEntity);
+// Typeahead for the Monitor box: as you type it resolves what you mean to a real medical thing — a drug
+// (brand→generic, from the in-house catalog) or a MeSH-resolved condition / device / procedure — and shows
+// WHICH kind with a colored chip. Picking one creates a PRECISE, scoped watch (via watchFieldsFromEntity);
 // typing a free phrase and pressing Enter / Monitor still creates a plain topic watch (the fallback).
 // Presentation + keyboard nav only — the parent owns what "pick" and "submit" actually do.
 
-const TYPE_LABEL: Record<string, string> = {
+const KIND_LABEL: Record<SuggestKind, string> = {
   drug: "Drug",
-  supplement: "Supplement",
-  peptide: "Peptide",
-  biologic: "Biologic",
-  class: "Class",
-  company: "Company",
+  device: "Device",
+  condition: "Condition",
+  procedure: "Procedure",
+  topic: "Topic",
 };
 
-// Mirrors the Explore status palette so the chip color reads the same across the app.
-const STATUS_COLOR: Record<string, string> = {
-  approved: "#1a8c5c",
-  investigational: "#0278c0",
-  research_use: "#c97b06",
-  supplement: "#6d28d9",
-  unknown: "#6b7280",
+// Distinct, readable chip color per universal kind.
+const KIND_COLOR: Record<SuggestKind, string> = {
+  drug: "#1a8c5c", // green
+  condition: "#b45309", // amber-brown
+  device: "#0278c0", // blue
+  procedure: "#7c3aed", // violet
+  topic: "#6b7280", // gray
 };
 
 interface EntityPickerProps {
   value: string;
   onChange: (v: string) => void;
   /** A suggestion was chosen → create a precise, scoped watch. */
-  onPickEntity: (e: SearchResult) => void;
+  onPickEntity: (e: EntitySuggestion) => void;
   /** Enter / Monitor with no suggestion chosen → create a free-text topic watch. */
   onSubmitText: () => void;
   placeholder?: string;
@@ -49,7 +48,7 @@ export function EntityPicker({
   ariaLabel,
   disabled,
 }: EntityPickerProps) {
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [results, setResults] = useState<EntitySuggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const reqId = useRef(0);
@@ -68,11 +67,11 @@ export function EntityPicker({
     }
     const id = ++reqId.current;
     const t = setTimeout(() => {
-      searchEntities(q)
+      suggestEntities(q)
         .then((r) => {
           if (id !== reqId.current) return;
           const sliced = r.slice(0, 8);
-          const key = sliced.map((x) => `${x.type}:${x.id}`).join("|");
+          const key = sliced.map((x) => `${x.source}:${x.id}`).join("|");
           setResults(sliced);
           // Only clear the highlighted row when the list actually CHANGES. A trailing debounce that
           // returns the same matches must NOT reset the user's arrow-selection — otherwise pressing
@@ -95,7 +94,7 @@ export function EntityPicker({
   // Cancel a pending blur-close on unmount so setState never fires on an unmounted component.
   useEffect(() => () => { if (blurTimer.current) clearTimeout(blurTimer.current); }, []);
 
-  function pick(e: SearchResult) {
+  function pick(e: EntitySuggestion) {
     if (blurTimer.current) clearTimeout(blurTimer.current);
     setOpen(false);
     setResults([]);
@@ -150,7 +149,7 @@ export function EntityPicker({
         <ul className="entity-menu" id="entity-picker-list" role="listbox" aria-label="Suggestions">
           {results.map((r, i) => (
             <li
-              key={`${r.type}:${r.id}`}
+              key={`${r.source}:${r.id}`}
               id={`entity-option-${i}`}
               role="option"
               aria-selected={i === active}
@@ -165,9 +164,9 @@ export function EntityPicker({
                 <span className="entity-option-name">{r.name}</span>
                 {r.subtitle ? <span className="entity-option-sub">{r.subtitle}</span> : null}
               </span>
-              <span className="entity-type-chip" style={{ color: STATUS_COLOR[r.status] ?? STATUS_COLOR.unknown }}>
-                <span className="entity-type-dot" style={{ background: STATUS_COLOR[r.status] ?? STATUS_COLOR.unknown }} />
-                {TYPE_LABEL[r.type] ?? r.type}
+              <span className="entity-type-chip" style={{ color: KIND_COLOR[r.kind] }}>
+                <span className="entity-type-dot" style={{ background: KIND_COLOR[r.kind] }} />
+                {KIND_LABEL[r.kind]}
               </span>
             </li>
           ))}

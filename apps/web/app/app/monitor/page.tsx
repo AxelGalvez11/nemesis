@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { EntitlementSnapshot, SearchResult } from "@pharmabro/shared";
+import type { EntitlementSnapshot, EntitySuggestion } from "@pharmabro/shared";
 import { watchEntitlement, watchUsageLabel, watchTitleFromQuestion } from "@pharmabro/shared";
 import { createWatch, fetchDrug, fetchEntitlements, fetchWatches, type WatchSummary } from "@/lib/api";
-import { isDrugLikeEntity, watchFieldsFromEntity } from "@/lib/entity";
+import { isCatalogDrug, watchFieldsFromEntity } from "@/lib/entity";
 import { EntityPicker } from "@/components/EntityPicker";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
@@ -71,16 +71,17 @@ export default function MonitorPage() {
     }
   }
 
-  // A picked catalog entity → a precise, scoped watch (brand→generic; openFDA name-scope set via mentions).
-  async function addEntity(entity: SearchResult) {
+  // A picked suggestion → a precise, scoped watch. A catalog drug resolves brand→generic with an openFDA
+  // name-scope (mentions); a MeSH condition/device/procedure becomes a canonical-term evidence+news watch.
+  async function addEntity(entity: EntitySuggestion) {
     if (adding) return;
     setAdding(true);
     setAddError(null);
     try {
-      // search_entities returns only ONE brand alias (its subtitle), so pull the full brand list on pick
-      // and scope the openFDA watch to EVERY brand (e.g. Ozempic AND Wegovy AND Rybelsus). Best-effort: a
-      // failed/absent fetch falls back to the single-alias subtitle inside watchFieldsFromEntity.
-      const drug = isDrugLikeEntity(entity.type) ? await fetchDrug(entity.id).catch(() => null) : null;
+      // Only an in-house catalog drug gets the full brand list (search returns one alias; get_drug returns
+      // all, e.g. Ozempic AND Wegovy AND Rybelsus). A MeSH entity skips the fetch — no openFDA name-scope.
+      // Best-effort: a failed/absent fetch falls back to the subtitle alias inside watchFieldsFromEntity.
+      const drug = isCatalogDrug(entity) ? await fetchDrug(entity.id).catch(() => null) : null;
       const f = watchFieldsFromEntity(entity, drug?.brand_names);
       const res = await createWatch({ kind: "topic", title: f.title, topic: f.topic, query_terms: f.query_terms, mentions: f.mentions });
       if (res.ok) {

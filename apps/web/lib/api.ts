@@ -5,6 +5,7 @@ import type {
   Digest,
   DrugOverview,
   EntitlementSnapshot,
+  EntitySuggestion,
   QuotaExceededError,
   ReportMode,
   ResearchProgressStep,
@@ -19,6 +20,7 @@ import type {
   WatchItemType,
 } from "@pharmabro/shared";
 import { resolveWatchCadence, watchEntitlement } from "@pharmabro/shared";
+import { mergeSuggestions, type MeshTerm } from "./mesh";
 import { supabase } from "./supabase";
 import { isPreviewMode, supabaseAnonKey, supabaseUrl } from "./env";
 
@@ -273,6 +275,42 @@ export async function searchEntities(q: string): Promise<SearchResult[]> {
   const { data, error } = await supabase.rpc("search_entities", { q: query });
   if (error) throw new Error(`search failed: ${error.message}`);
   return rows(data, (r) => typeof r.id === "string" && typeof r.name === "string" ? r as unknown as SearchResult : null);
+}
+
+// A couple of fixed suggestions for preview mode (drug + condition + device) so the universal picker is
+// exercisable without a backend — mirrors the searchEntities / demoDrug preview mocks.
+function demoSuggestions(): EntitySuggestion[] {
+  return [
+    { kind: "drug", source: "catalog", id: "semaglutide", name: "Semaglutide", subtitle: "Ozempic, Wegovy, Rybelsus", score: 1 },
+    { kind: "condition", source: "mesh", id: "68003920", name: "Diabetes Mellitus", subtitle: "Diabetes", score: 0.9 },
+    { kind: "device", source: "mesh", id: "68068098", name: "Insulin Infusion Systems", subtitle: "Insulin Pump", score: 0.8 },
+  ];
+}
+
+// The MeSH half of the picker — hits our server route (which proxies NCBI). Failures degrade to [] so an
+// NCBI hiccup never hides the drug results; the route URL is relative (same-origin) so it works in the app.
+async function fetchMeshTerms(q: string): Promise<MeshTerm[]> {
+  try {
+    const res = await fetch(`/api/entities/suggest?q=${encodeURIComponent(q)}`);
+    if (!res.ok) return [];
+    const body = (await res.json()) as { terms?: MeshTerm[] };
+    return Array.isArray(body.terms) ? body.terms : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The universal picker source: in-house drug catalog (brand→generic) MERGED with MeSH-resolved
+ *  conditions/devices/procedures. The two sources run concurrently and independently — a failure of one
+ *  never sinks the other (allSettled), so the drug catalog still suggests even if NCBI is down. */
+export async function suggestEntities(q: string): Promise<EntitySuggestion[]> {
+  const query = q.trim();
+  if (query.length < 2) return [];
+  if (isPreviewMode) return demoSuggestions();
+  const [drugsR, meshR] = await Promise.allSettled([searchEntities(query), fetchMeshTerms(query)]);
+  const drugs = drugsR.status === "fulfilled" ? drugsR.value : [];
+  const mesh = meshR.status === "fulfilled" ? meshR.value : [];
+  return mergeSuggestions(drugs, mesh);
 }
 
 export async function fetchDrug(id: string): Promise<DrugOverview | null> {
