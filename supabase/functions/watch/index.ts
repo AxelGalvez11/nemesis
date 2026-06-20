@@ -19,6 +19,7 @@
 // is enforced in planPersistence + the schema CHECK); per-watch fetch is time-bounded + fault-tolerant.
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { acceptedCallerKeys } from "./auth-keys.ts";
 import { gatherDatedCandidates, windowSince, withTimeout } from "./dated-sources.ts";
 import type { WatchSource } from "../../../packages/shared/src/watch-detect.ts";
 import { fetchGoogleNews } from "../news/news-source.ts";
@@ -33,6 +34,12 @@ import {
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+// Callers this internal cron path accepts: the legacy service-role key (still auto-injected) OR any
+// new-format secret key (sb_secret_…) from SUPABASE_SECRET_KEYS. Accepting a named secret key lets the
+// scheduler use a stable key we set explicitly on both sides, instead of matching the brittle auto-injected
+// legacy value. DB writes below still use SERVICE_KEY (legacy keys remain valid through 2026); this only
+// widens who may TRIGGER a cycle. (Logic is pure + unit-tested in auth-keys.test.ts.)
+const ACCEPTED_CALLER_KEYS = acceptedCallerKeys(SERVICE_KEY, Deno.env.get("SUPABASE_SECRET_KEYS"));
 const NCBI_API_KEY = Deno.env.get("NCBI_API_KEY") ?? undefined;
 const OPENFDA_API_KEY = Deno.env.get("OPENFDA_API_KEY") ?? undefined;
 const RECHECK_TIMEOUT_MS = 6000; // bound the retraction recheck like a dated source — never sink the cycle
@@ -62,9 +69,10 @@ serve(async (req) => {
   if (!SB_URL || !SERVICE_KEY) return json({ error: "server not configured" }, 500, req);
 
   // SERVICE-ROLE only: this is the cron/internal path. The watch_known_sources + watch_events INSERT
-  // policies are service-role-only by design, so the caller must present the service key.
+  // policies are service-role-only by design, so the caller must present a service-role-privileged key
+  // (the legacy service-role key or a new-format secret key — see ACCEPTED_CALLER_KEYS).
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (!token || token !== SERVICE_KEY) return json({ error: "service role required" }, 401, req);
+  if (!token || !ACCEPTED_CALLER_KEYS.has(token)) return json({ error: "service role required" }, 401, req);
 
   let body: { watch_id?: string };
   try {
