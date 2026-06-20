@@ -1,7 +1,7 @@
 // npx tsx lib/mesh.test.ts
 import assert from "node:assert/strict";
 import type { SearchResult } from "@pharmabro/shared";
-import { classifyMeshTree, parseMeshEfetch, meshToSuggestion, catalogToSuggestion, mergeSuggestions } from "./mesh.ts";
+import { classifyMeshTree, parseMeshEfetch, meshToSuggestion, catalogToSuggestion, mergeSuggestions, isMeshTerm } from "./mesh.ts";
 
 // A faithful 2-record efetch sample (real db=mesh retmode=text shape): a device with an Entry Terms
 // block FOLLOWED by the indented "All MeSH Categories" visual tree (the synonym parser must stop at the
@@ -66,6 +66,14 @@ assert.equal(classifyMeshTree(["C18.452.394.750", "C19.246"]), "condition"); // 
 assert.equal(classifyMeshTree(["F03.900"]), "condition"); // mental disorder
 assert.equal(classifyMeshTree(["A02.835.232"]), "topic"); // anatomy → not trackable
 assert.equal(classifyMeshTree([]), "topic");
+assert.equal(classifyMeshTree(undefined as unknown as string[]), "topic"); // schema-drift guard: no throw
+
+// --- isMeshTerm (untrusted route-response shape guard) ---
+assert.equal(isMeshTerm({ ui: "1", name: "X", treeNumbers: [], synonyms: [] }), true);
+assert.equal(isMeshTerm({ name: "X", treeNumbers: [] }), false); // missing fields
+assert.equal(isMeshTerm({ ui: "1", name: "X", treeNumbers: "C1", synonyms: [] }), false); // wrong type
+assert.equal(isMeshTerm(null), false);
+assert.equal(isMeshTerm("nope"), false);
 
 // --- meshToSuggestion ---
 const sugPump = meshToSuggestion(pump, 5);

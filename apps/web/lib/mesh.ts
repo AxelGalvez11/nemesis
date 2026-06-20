@@ -20,11 +20,22 @@ const CATALOG_DRUG_LIKE = new Set(["drug", "supplement", "peptide", "biologic"])
  *  (e.g. an insulin pump is both equipment E07 and a therapeutic procedure E02), and we want the most
  *  actionable kind for catalyst routing — device before procedure before drug before condition. */
 export function classifyMeshTree(trees: readonly string[]): SuggestKind {
-  if (trees.some((t) => t.startsWith("E07"))) return "device"; // Equipment & Supplies
-  if (trees.some((t) => /^E0[1-6]/.test(t))) return "procedure"; // Diagnosis/Therapeutics/Procedures
-  if (trees.some((t) => t.startsWith("D"))) return "drug"; // Chemicals & Drugs
-  if (trees.some((t) => t.startsWith("C") || t.startsWith("F03"))) return "condition"; // Diseases + mental disorders
+  const t = trees ?? []; // tolerate a missing list (schema drift) rather than throwing mid-merge
+  if (t.some((x) => x.startsWith("E07"))) return "device"; // Equipment & Supplies
+  if (t.some((x) => /^E0[1-6]/.test(x))) return "procedure"; // Diagnosis/Therapeutics/Procedures
+  if (t.some((x) => x.startsWith("D"))) return "drug"; // Chemicals & Drugs
+  if (t.some((x) => x.startsWith("C") || x.startsWith("F03"))) return "condition"; // Diseases + mental disorders
   return "topic";
+}
+
+/** Runtime shape guard for an untrusted MeshTerm (the /api/entities/suggest response). Filtering with
+ *  this keeps a future route-schema drift from throwing inside mergeSuggestions — which runs OUTSIDE the
+ *  suggestEntities allSettled boundary, so an unguarded throw there would discard the drug results too. */
+export function isMeshTerm(x: unknown): x is MeshTerm {
+  const t = x as MeshTerm;
+  return !!x && typeof x === "object"
+    && typeof t.ui === "string" && typeof t.name === "string"
+    && Array.isArray(t.treeNumbers) && Array.isArray(t.synonyms);
 }
 
 /** Parse `efetch.fcgi?db=mesh&retmode=text` output into MeSH terms, zipped to the requested UIDs (efetch

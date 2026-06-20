@@ -20,7 +20,7 @@ import type {
   WatchItemType,
 } from "@pharmabro/shared";
 import { resolveWatchCadence, watchEntitlement } from "@pharmabro/shared";
-import { mergeSuggestions, type MeshTerm } from "./mesh";
+import { isMeshTerm, mergeSuggestions, type MeshTerm } from "./mesh";
 import { supabase } from "./supabase";
 import { isPreviewMode, supabaseAnonKey, supabaseUrl } from "./env";
 
@@ -293,8 +293,10 @@ async function fetchMeshTerms(q: string): Promise<MeshTerm[]> {
   try {
     const res = await fetch(`/api/entities/suggest?q=${encodeURIComponent(q)}`);
     if (!res.ok) return [];
-    const body = (await res.json()) as { terms?: MeshTerm[] };
-    return Array.isArray(body.terms) ? body.terms : [];
+    const body = (await res.json()) as { terms?: unknown };
+    // Validate element shape, not just that it's an array: a malformed term must never reach
+    // mergeSuggestions (which runs outside the allSettled boundary and would otherwise discard drugs too).
+    return Array.isArray(body.terms) ? body.terms.filter(isMeshTerm) : [];
   } catch {
     return [];
   }
