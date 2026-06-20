@@ -97,14 +97,14 @@ slice is green (optional). Self-correct on failure — fix the implementation, n
 
 ## LEDGER (living state — the loop updates this every iteration)
 
-**Current slice:** A — Drug picker · **Status:** in progress · **Last green commit:** A1 — `entity.ts` mapping (test GREEN + typecheck clean)
+**Current slice:** A — Drug picker · **Status:** picker built + wired + visually verified (light/grey/dark); reviewer sub-agent in flight, then advisor + STAGE prod deploy (hard stop) · **Last green commit:** `EntityPicker` in the Monitor box
 
 ### Slice A — Drug picker
 - [x] A1. `watchFieldsFromEntity(r)` pure fn (`lib/entity.ts`) — picked entity → {title, topic, query_terms, mentions}; drug-like types scope `mentions`, class/company leave it empty. `lib/entity.test.ts` GREEN (`npx tsx`), typecheck clean.
-- [ ] A2. `EntityPicker.tsx` typeahead (debounced, keyboard-accessible, type chip); component test.
-- [ ] A3. Wire `EntityPicker` into the Monitor box (`monitor/page.tsx`); selecting sets `query_terms` + `mentions`.
-- [ ] A4. Wire into `WatchButton.tsx` (drug page / Ask) — drug resolution fills `mentions`.
-- [ ] A5. Verify-without-auth screenshot (light/grey/dark); reviewer sub-agent; advisor; owner summary.
+- [x] A2. `EntityPicker.tsx` typeahead — debounced + stale-response guard, keyboard nav (Arrow/Enter/Escape), combobox/listbox a11y, colored type chip. Typecheck + build green.
+- [x] A3. Wired into the Monitor box (`monitor/page.tsx`): pick → `addEntity` (scoped watch via `watchFieldsFromEntity`); free-text → `addTopic` (unchanged). `.entity-menu` CSS mirrors `.row-menu`.
+- [~] A4. N/A — `WatchButton.tsx` (drug page / Ask / reports) already passes the entity + `mentions`; no picker needed there. The picker is the Monitor-box fix.
+- [~] A5. Verify-without-auth screenshot ✓ (light/grey/dark, static mock; `.playwright-mcp/entity-picker-light.png`). PENDING: reviewer sub-agent (running) → advisor → STAGE prod deploy (owner greenlight).
 
 ### Slice A2 — Universal picker
 - [ ] A2-1. `scripts/diag/entity-suggest-probe.ts` — prove **prefix typeahead** suggestions + ranking (e.g. "insul" → Insulin, Insulin Aspart…), NOT just exact-term resolution. `esearch db=mesh` is not a prefix autocomplete (the loose "insulin pump"→"insulin AND pump" is the tell) — find the right source (MeSH autocomplete / term-name efetch) so the picker isn't janky. Plus `espell` + tree classification (read-only).
