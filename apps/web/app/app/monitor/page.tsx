@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { EntitlementSnapshot } from "@pharmabro/shared";
+import type { EntitlementSnapshot, SearchResult } from "@pharmabro/shared";
 import { watchEntitlement, watchUsageLabel, watchTitleFromQuestion } from "@pharmabro/shared";
 import { createWatch, fetchEntitlements, fetchWatches, type WatchSummary } from "@/lib/api";
+import { watchFieldsFromEntity } from "@/lib/entity";
+import { EntityPicker } from "@/components/EntityPicker";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 
@@ -66,6 +68,22 @@ export default function MonitorPage() {
     setAdding(false);
   }
 
+  // A picked catalog entity → a precise, scoped watch (brand→generic; openFDA name-scope set via mentions).
+  async function addEntity(entity: SearchResult) {
+    if (adding) return;
+    setAdding(true);
+    setAddError(null);
+    const f = watchFieldsFromEntity(entity);
+    const res = await createWatch({ kind: "topic", title: f.title, topic: f.topic, query_terms: f.query_terms, mentions: f.mentions });
+    if (res.ok) {
+      setTopic("");
+      await loadWatches();
+    } else {
+      setAddError(ADD_ERROR_COPY[res.reason]);
+    }
+    setAdding(false);
+  }
+
   return (
     <div className="research-wrap">
       <div className="research-intro">
@@ -79,14 +97,14 @@ export default function MonitorPage() {
 
       <div className="watch-add">
         <Icon name="bell" size={16} />
-        <input
-          className="watch-add-input"
+        <EntityPicker
           value={topic}
-          maxLength={200}
-          placeholder="Monitor a new topic — e.g. tirzepatide cardiovascular outcomes"
-          aria-label="Monitor a new topic"
-          onChange={(e) => { setTopic(e.target.value); if (addError) setAddError(null); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addTopic(); } }}
+          onChange={(v) => { setTopic(v); if (addError) setAddError(null); }}
+          onPickEntity={(e) => void addEntity(e)}
+          onSubmitText={() => void addTopic()}
+          placeholder="Search a drug to monitor — or type any topic"
+          ariaLabel="Monitor a new topic"
+          disabled={adding}
         />
         <button type="button" className="mode watch-add-btn" onClick={() => void addTopic()} disabled={adding || !topic.trim()}>
           {adding ? "Starting…" : "Monitor"}
