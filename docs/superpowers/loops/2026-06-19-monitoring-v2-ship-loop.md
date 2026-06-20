@@ -97,10 +97,10 @@ slice is green (optional). Self-correct on failure — fix the implementation, n
 
 ## LEDGER (living state — the loop updates this every iteration)
 
-**Current slice:** A — Drug picker · **Status:** not started · **Last green commit:** _(none yet)_
+**Current slice:** A — Drug picker · **Status:** in progress · **Last green commit:** A1 — `entity.ts` mapping (test GREEN + typecheck clean)
 
 ### Slice A — Drug picker
-- [ ] A1. `suggestEntities(q)` in `lib/api.ts` (drug-only via `search_entities`); test.
+- [x] A1. `watchFieldsFromEntity(r)` pure fn (`lib/entity.ts`) — picked entity → {title, topic, query_terms, mentions}; drug-like types scope `mentions`, class/company leave it empty. `lib/entity.test.ts` GREEN (`npx tsx`), typecheck clean.
 - [ ] A2. `EntityPicker.tsx` typeahead (debounced, keyboard-accessible, type chip); component test.
 - [ ] A3. Wire `EntityPicker` into the Monitor box (`monitor/page.tsx`); selecting sets `query_terms` + `mentions`.
 - [ ] A4. Wire into `WatchButton.tsx` (drug page / Ask) — drug resolution fills `mentions`.
