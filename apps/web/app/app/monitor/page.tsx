@@ -6,6 +6,7 @@ import type { EntitlementSnapshot, EntitySuggestion } from "@pharmabro/shared";
 import { watchEntitlement, watchUsageLabel, watchTitleFromQuestion } from "@pharmabro/shared";
 import { createWatch, fetchDrug, fetchEntitlements, fetchWatches, type WatchSummary } from "@/lib/api";
 import { isCatalogDrug, watchFieldsFromEntity } from "@/lib/entity";
+import { getCached, setCached } from "@/lib/cache";
 import { EntityPicker } from "@/components/EntityPicker";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
@@ -23,8 +24,10 @@ const ADD_ERROR_COPY: Record<"not_enabled" | "limit" | "auth" | "unknown", strin
 };
 
 export default function MonitorPage() {
-  const [watches, setWatches] = useState<WatchSummary[] | null>(null);
-  const [ent, setEnt] = useState<EntitlementSnapshot | null>(null);
+  // Seed from the session cache so a return visit paints the list instantly (no skeleton), then
+  // revalidate below. Both watches AND ent are cached because the list render gates on both.
+  const [watches, setWatches] = useState<WatchSummary[] | null>(() => getCached<WatchSummary[]>("watches") ?? null);
+  const [ent, setEnt] = useState<EntitlementSnapshot | null>(() => getCached<EntitlementSnapshot>("watch-ent") ?? null);
   const [err, setErr] = useState<string | null>(null);
 
   // "Monitor a new topic" box.
@@ -35,7 +38,7 @@ export default function MonitorPage() {
   const loadWatches = useCallback(
     () =>
       fetchWatches()
-        .then((w) => setWatches(w))
+        .then((w) => { setWatches(w); setCached("watches", w); })
         .catch((e) => setErr(e instanceof Error ? e.message : "Could not load your watches.")),
     [],
   );
@@ -43,10 +46,10 @@ export default function MonitorPage() {
   useEffect(() => {
     let alive = true;
     fetchWatches()
-      .then((w) => { if (alive) setWatches(w); })
+      .then((w) => { if (alive) { setWatches(w); setCached("watches", w); } })
       .catch((e) => { if (alive) setErr(e instanceof Error ? e.message : "Could not load your watches."); });
     // entitlements are best-effort: a failure just hides the usage line, never blocks the list
-    fetchEntitlements().then((e) => { if (alive) setEnt(e); }).catch(() => {});
+    fetchEntitlements().then((e) => { if (alive) { setEnt(e); setCached("watch-ent", e); } }).catch(() => {});
     return () => { alive = false; };
   }, []);
 

@@ -6,18 +6,20 @@ import { fetchResearchReports, type ResearchReportSummary } from "@/lib/api";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { SkeletonRows } from "@/components/Skeleton";
+import { getCached, setCached } from "@/lib/cache";
 
 // The Reports library: every deep-research / structured-review report the user has generated.
 // Reports persist as their own saved_reports rows (kind='deep_research'); this lists them and links
 // to the full report at /app/reports/[id], where they can be read, restyled, and exported.
 export default function ReportsPage() {
-  const [reports, setReports] = useState<ResearchReportSummary[] | null>(null);
+  // Seed from the session cache so a return visit paints instantly (no skeleton), then revalidate.
+  const [reports, setReports] = useState<ResearchReportSummary[] | null>(() => getCached<ResearchReportSummary[]>("reports") ?? null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     fetchResearchReports()
-      .then((r) => { if (alive) setReports(r); })
+      .then((r) => { if (alive) { setReports(r); setCached("reports", r); } })
       .catch((e) => { if (alive) setErr(e instanceof Error ? e.message : "Could not load reports."); });
     return () => { alive = false; };
   }, []);
