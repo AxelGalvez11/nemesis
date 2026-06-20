@@ -25,6 +25,7 @@ import { citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk
 import { attachSupport } from "./support-span.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
+import { balanceCitedSlice } from "./cite-balance.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
@@ -386,8 +387,10 @@ async function augmentWithLive(
       console.error("ask live rerank failed; using dense library order:", (e as Error).message);
       return fallback;
     }
-    // Keep the top MATCH_COUNT in reranked order and retag 1..N for the generator + citation layer.
-    const top = ordered.slice(0, MATCH_COUNT).map((c, i) => ({ ...c, tag: String(i + 1) }));
+    // Take the cited slice with the label-family cap (so primary research isn't crowded out by long
+    // FDA-label chunks that out-score short abstracts on the reranker), then retag 1..N for the
+    // generator + citation layer. Reorder/select only — the fabrication guard still runs on `pool`.
+    const top = balanceCitedSlice(ordered, MATCH_COUNT).map((c, i) => ({ ...c, tag: String(i + 1) }));
     return { pool: ordered, top };
   } catch (e) {
     console.error("ask live augmentation failed; using library only:", (e as Error).message);
