@@ -58,14 +58,17 @@ export default function MonitorPage() {
     if (!q || adding) return;
     setAdding(true);
     setAddError(null);
-    const res = await createWatch({ kind: "topic", title: watchTitleFromQuestion(q), topic: q, query_terms: q });
-    if (res.ok) {
-      setTopic("");
-      await loadWatches(); // the new watch appears at the top of the list
-    } else {
-      setAddError(ADD_ERROR_COPY[res.reason]);
+    try {
+      const res = await createWatch({ kind: "topic", title: watchTitleFromQuestion(q), topic: q, query_terms: q });
+      if (res.ok) {
+        setTopic("");
+        await loadWatches(); // the new watch appears at the top of the list
+      } else {
+        setAddError(ADD_ERROR_COPY[res.reason]);
+      }
+    } finally {
+      setAdding(false); // never leave the box stuck on "Starting…" if createWatch throws unexpectedly
     }
-    setAdding(false);
   }
 
   // A picked catalog entity → a precise, scoped watch (brand→generic; openFDA name-scope set via mentions).
@@ -73,15 +76,18 @@ export default function MonitorPage() {
     if (adding) return;
     setAdding(true);
     setAddError(null);
-    const f = watchFieldsFromEntity(entity);
-    const res = await createWatch({ kind: "topic", title: f.title, topic: f.topic, query_terms: f.query_terms, mentions: f.mentions });
-    if (res.ok) {
-      setTopic("");
-      await loadWatches();
-    } else {
-      setAddError(ADD_ERROR_COPY[res.reason]);
+    try {
+      const f = watchFieldsFromEntity(entity);
+      const res = await createWatch({ kind: "topic", title: f.title, topic: f.topic, query_terms: f.query_terms, mentions: f.mentions });
+      if (res.ok) {
+        setTopic("");
+        await loadWatches();
+      } else {
+        setAddError(ADD_ERROR_COPY[res.reason]);
+      }
+    } finally {
+      setAdding(false); // never leave the box stuck on "Starting…" if createWatch throws unexpectedly
     }
-    setAdding(false);
   }
 
   return (

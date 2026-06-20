@@ -53,6 +53,7 @@ export function EntityPicker({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const reqId = useRef(0);
+  const resultsKey = useRef("");
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounced suggest (~200ms). A slower response for an earlier keystroke is dropped via reqId so the
@@ -62,6 +63,7 @@ export function EntityPicker({
     if (q.length < 2) {
       setResults([]);
       setActive(-1);
+      resultsKey.current = "";
       return;
     }
     const id = ++reqId.current;
@@ -69,15 +71,29 @@ export function EntityPicker({
       searchEntities(q)
         .then((r) => {
           if (id !== reqId.current) return;
-          setResults(r.slice(0, 8));
-          setActive(-1);
+          const sliced = r.slice(0, 8);
+          const key = sliced.map((x) => `${x.type}:${x.id}`).join("|");
+          setResults(sliced);
+          // Only clear the highlighted row when the list actually CHANGES. A trailing debounce that
+          // returns the same matches must NOT reset the user's arrow-selection — otherwise pressing
+          // Enter would silently submit a free-text watch instead of the entity they had highlighted.
+          if (key !== resultsKey.current) {
+            setActive(-1);
+            resultsKey.current = key;
+          }
         })
         .catch(() => {
-          if (id === reqId.current) setResults([]);
+          if (id === reqId.current) {
+            setResults([]);
+            resultsKey.current = "";
+          }
         });
     }, 200);
     return () => clearTimeout(t);
   }, [value]);
+
+  // Cancel a pending blur-close on unmount so setState never fires on an unmounted component.
+  useEffect(() => () => { if (blurTimer.current) clearTimeout(blurTimer.current); }, []);
 
   function pick(e: SearchResult) {
     if (blurTimer.current) clearTimeout(blurTimer.current);
@@ -116,6 +132,7 @@ export function EntityPicker({
         role="combobox"
         aria-expanded={showMenu}
         aria-controls="entity-picker-list"
+        aria-activedescendant={showMenu && active >= 0 ? `entity-option-${active}` : undefined}
         aria-autocomplete="list"
         autoComplete="off"
         disabled={disabled}
@@ -134,6 +151,7 @@ export function EntityPicker({
           {results.map((r, i) => (
             <li
               key={`${r.type}:${r.id}`}
+              id={`entity-option-${i}`}
               role="option"
               aria-selected={i === active}
               className={i === active ? "entity-option active" : "entity-option"}
