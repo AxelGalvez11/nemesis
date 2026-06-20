@@ -1,17 +1,21 @@
 {
   "expo": {
-    "name": "PharmaBro",
+    "name": "PharmaOrb",
     "slug": "pharmabro",
-    "version": "0.0.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "pharmabro",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pharmaorb.app",
+      "buildNumber": "1"
     },
     "android": {
+      "package": "com.pharmaorb.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#0B1220",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
