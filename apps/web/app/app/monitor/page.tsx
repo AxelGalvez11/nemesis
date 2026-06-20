@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { EntitlementSnapshot, SearchResult } from "@pharmabro/shared";
 import { watchEntitlement, watchUsageLabel, watchTitleFromQuestion } from "@pharmabro/shared";
-import { createWatch, fetchEntitlements, fetchWatches, type WatchSummary } from "@/lib/api";
-import { watchFieldsFromEntity } from "@/lib/entity";
+import { createWatch, fetchDrug, fetchEntitlements, fetchWatches, type WatchSummary } from "@/lib/api";
+import { isDrugLikeEntity, watchFieldsFromEntity } from "@/lib/entity";
 import { EntityPicker } from "@/components/EntityPicker";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
@@ -77,7 +77,11 @@ export default function MonitorPage() {
     setAdding(true);
     setAddError(null);
     try {
-      const f = watchFieldsFromEntity(entity);
+      // search_entities returns only ONE brand alias (its subtitle), so pull the full brand list on pick
+      // and scope the openFDA watch to EVERY brand (e.g. Ozempic AND Wegovy AND Rybelsus). Best-effort: a
+      // failed/absent fetch falls back to the single-alias subtitle inside watchFieldsFromEntity.
+      const drug = isDrugLikeEntity(entity.type) ? await fetchDrug(entity.id).catch(() => null) : null;
+      const f = watchFieldsFromEntity(entity, drug?.brand_names);
       const res = await createWatch({ kind: "topic", title: f.title, topic: f.topic, query_terms: f.query_terms, mentions: f.mentions });
       if (res.ok) {
         setTopic("");
