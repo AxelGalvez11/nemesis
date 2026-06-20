@@ -18,10 +18,16 @@ export interface NcbiOpts {
 }
 
 async function eutils(path: string, opts: NcbiOpts): Promise<string> {
-  let url = `${EUTILS}/${path}&tool=${TOOL}`;
-  if (opts.apiKey) url += `&api_key=${encodeURIComponent(opts.apiKey)}`;
+  const base = `${EUTILS}/${path}&tool=${TOOL}`;
   const f = opts.fetchImpl ?? fetch;
-  const res = await f(url, { signal: opts.signal });
+  const url = opts.apiKey ? `${base}&api_key=${encodeURIComponent(opts.apiKey)}` : base;
+  let res = await f(url, { signal: opts.signal });
+  // A bad/expired/mis-pasted key must never be WORSE than no key: NCBI 400s an invalid api_key
+  // ("API key invalid"), which would otherwise sink every lookup. On a non-OK response WHILE a key
+  // was sent, retry once unauthenticated — that succeeds (just throttled to the shared-IP rate).
+  if (!res.ok && opts.apiKey) {
+    res = await f(base, { signal: opts.signal });
+  }
   if (!res.ok) throw new Error(`eutils ${path.split("?")[0]} → ${res.status}`);
   return res.text();
 }

@@ -75,6 +75,22 @@ async function run() {
     assert.equal(called, false, "no NCBI call for a <2 char query");
   }
 
+  // a BAD api_key (NCBI 400 "API key invalid") must degrade to an unauthenticated retry, not sink the
+  // lookup — a mis-pasted key should never be worse than no key. The stub 400s any request carrying
+  // api_key=, and 200s the same request once it's dropped.
+  {
+    const keyAware = (async (url: string) => {
+      const u = String(url);
+      if (u.includes("api_key=")) return { ok: false, status: 400, text: async () => '{"error":"API key invalid"}' } as Response;
+      const body = u.includes("espell") ? ESPELL("insulin pump") : u.includes("esearch") ? ESEARCH(["1", "2"]) : u.includes("efetch") ? EFETCH : undefined;
+      if (body === undefined) return { ok: false, status: 404, text: async () => "" } as Response;
+      return { ok: true, status: 200, text: async () => body } as Response;
+    }) as unknown as typeof fetch;
+    const terms = await fetchMeshSuggestions("insulin pum", { fetchImpl: keyAware, apiKey: "DEADBEEFbad" });
+    assert.equal(terms.length, 2, "a bad api_key must fall back to unauthenticated, not sink the lookup");
+    assert.equal(terms[0]?.name, "Insulin Infusion Systems");
+  }
+
   console.log("ncbi-suggest.test.ts OK");
 }
 
