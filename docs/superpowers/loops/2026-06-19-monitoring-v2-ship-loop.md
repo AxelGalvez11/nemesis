@@ -104,7 +104,7 @@ slice is green (optional). Self-correct on failure — fix the implementation, n
 - [x] A2. `EntityPicker.tsx` typeahead — debounced + stale-response guard, keyboard nav (Arrow/Enter/Escape), combobox/listbox a11y, colored type chip. Typecheck + build green.
 - [x] A3. Wired into the Monitor box (`monitor/page.tsx`): pick → `addEntity` (scoped watch via `watchFieldsFromEntity`); free-text → `addTopic` (unchanged). `.entity-menu` CSS mirrors `.row-menu`.
 - [~] A4. N/A — `WatchButton.tsx` (drug page / Ask / reports) already passes the entity + `mentions`; no picker needed there. The picker is the Monitor-box fix.
-- [~] A5. Verify-without-auth screenshot ✓ (light/grey/dark, static mock; `.playwright-mcp/entity-picker-light.png`). PENDING: reviewer sub-agent (running) → advisor → STAGE prod deploy (owner greenlight).
+- [~] A5. Verify ✓ (3 themes; `.playwright-mcp/entity-picker-light.png`). Reviewer ✓ — returned BLOCK (1 HIGH + 3 MED), ALL fixed in `4d0af74`: try/finally stuck-state guard (addEntity + addTopic), preserve arrow-selection on same-list re-fetch, blur-timer unmount cleanup, `aria-activedescendant`. typecheck + build green. PENDING: advisor → STAGE prod deploy (owner greenlight = the hard stop).
 
 ### Slice A2 — Universal picker
 - [ ] A2-1. `scripts/diag/entity-suggest-probe.ts` — prove **prefix typeahead** suggestions + ranking (e.g. "insul" → Insulin, Insulin Aspart…), NOT just exact-term resolution. `esearch db=mesh` is not a prefix autocomplete (the loose "insulin pump"→"insulin AND pump" is the tell) — find the right source (MeSH autocomplete / term-name efetch) so the picker isn't janky. Plus `espell` + tree classification (read-only).
