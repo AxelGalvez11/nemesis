@@ -37,7 +37,7 @@ Ship in this order; a slice is done only when **all** its checks are green.
 ## THE LOOP (per task — maker side)
 
 1. **Orient.** Read the spec section + LEDGER. Pick the next unchecked task.
-2. **RED.** Write the failing test first (pure modules → `deno test`; web → component/route test).
+2. **RED.** Write the failing test first. Pure modules → `deno test`. Web *pure logic* (`lib/*`, classify/merge/rank) → `node:assert` + `npx tsx <file>.test.ts` (the `lib/cite.test.ts` convention — **apps/web has NO component runner**). React wiring (EntityPicker, lanes) is gated by the verify-without-auth screenshots, not a component test.
 3. **GREEN.** Minimal implementation to pass. Match surrounding style; small focused files.
 4. **REFACTOR.** Clean up; keep it green.
 5. **GATE.** Run the full quality gate (below). A red gate **halts the loop** — fix forward, never weaken the test.
@@ -51,6 +51,8 @@ Ship in this order; a slice is done only when **all** its checks are green.
 - `pnpm --filter @pharmaorb/web typecheck` — clean.
 - `pnpm --filter @pharmaorb/web build` — succeeds (for any web change).
 - `deno test` — green for every touched pure module (`supabase/functions/watch/*`, `packages/shared/*`).
+- Web pure logic → `npx tsx <file>.test.ts` (`node:assert`, per `lib/cite.test.ts`). apps/web has no
+  component runner; React wiring is gated by verify-without-auth, not unit tests.
 - Lint — clean; no `console.log`, no hardcoded secrets.
 - **Reviewer sub-agent** (`typescript-reviewer` for TS, `code-reviewer` for logic, `security-reviewer` when
   touching input handling / API routes / DB): run on the diff; **no CRITICAL/HIGH left unaddressed.** This is
@@ -105,12 +107,13 @@ slice is green (optional). Self-correct on failure — fix the implementation, n
 - [ ] A5. Verify-without-auth screenshot (light/grey/dark); reviewer sub-agent; advisor; owner summary.
 
 ### Slice A2 — Universal picker
-- [ ] A2-1. `scripts/diag/entity-suggest-probe.ts` — prove MeSH term lookup + `espell` + tree classification (read-only).
+- [ ] A2-1. `scripts/diag/entity-suggest-probe.ts` — prove **prefix typeahead** suggestions + ranking (e.g. "insul" → Insulin, Insulin Aspart…), NOT just exact-term resolution. `esearch db=mesh` is not a prefix autocomplete (the loose "insulin pump"→"insulin AND pump" is the tell) — find the right source (MeSH autocomplete / term-name efetch) so the picker isn't janky. Plus `espell` + tree classification (read-only).
 - [ ] A2-2. `app/api/entities/suggest/route.ts` — merge drugs + MeSH/espell; classify; rank; cache/debounce.
 - [ ] A2-3. `suggestEntities` → call the route; `EntityPicker` shows type chips; free-text fallback.
 - [ ] A2-4. Tests (route + classification pure fn); gates; reviewer; advisor; owner summary.
 
 ### Slice B — Catalysts lane (HARD STOPS inside)
+- [ ] **B0. PREREQUISITE (owner homework): Vault `watch_service_role_key` synced + scheduler 401→200 confirmed.** Slice B emits events *through the scheduler*, which is 401-dead today — a diag probe proves the FDA/CT.gov query shapes but NOT that a catalyst lands in a watch until this is green. Nudge the owner to run the snippet before B is end-to-end verifiable.
 - [ ] B1. Migration FILE (channel→+catalyst on `watch_events`/`watch_known_sources`; `evidence_watches` +`entity_type`/`entity_ref`/`include_catalysts`; keep news-never-alerts). **STAGE — owner-gated.**
 - [ ] B2. `scripts/diag/watch-catalyst-probe.ts` — prove openFDA drug `drugsfda`+`enforcement`, device `510k`/`pma`/`enforcement`, CT.gov status/results shapes (read-only).
 - [ ] B3. `packages/shared/src/watch-catalyst-detect.ts` — pure delta + alert classification; tests.
