@@ -40,7 +40,7 @@ See Also:
 const terms = parseMeshEfetch(EFETCH, ["68068098", "68003920"]);
 assert.equal(terms.length, 2, "two records parsed");
 
-const pump = terms[0];
+const pump = terms[0]!;
 assert.equal(pump.ui, "68068098");
 assert.equal(pump.name, "Insulin Infusion Systems");
 assert.deepEqual(pump.treeNumbers, ["E02.319.300.508", "E07.505.508", "E07.858.082.505.508"]);
@@ -48,7 +48,7 @@ assert.deepEqual(pump.treeNumbers, ["E02.319.300.508", "E07.505.508", "E07.858.0
 assert.deepEqual(pump.synonyms, ["Infusion System, Insulin", "Infusion Systems, Insulin", "Insulin Infusion System"]);
 assert.ok(!pump.synonyms.some((s) => s.includes("MeSH Categories")), "visual tree not slurped as a synonym");
 
-const dm = terms[1];
+const dm = terms[1]!;
 assert.equal(dm.ui, "68003920");
 assert.equal(dm.name, "Diabetes Mellitus");
 assert.deepEqual(dm.treeNumbers, ["C18.452.394.750", "C19.246"]);
@@ -94,10 +94,10 @@ const merged = mergeSuggestions(
   ],
 );
 assert.equal(merged.length, 2, "the duplicate Semaglutide collapses to one");
-assert.equal(merged[0].name, "Semaglutide");
-assert.equal(merged[0].source, "catalog", "catalog wins the dedupe");
-assert.equal(merged[1].name, "Insulin Infusion Systems");
-assert.equal(merged[1].kind, "device");
+assert.equal(merged[0]?.name, "Semaglutide");
+assert.equal(merged[0]?.source, "catalog", "catalog wins the dedupe");
+assert.equal(merged[1]?.name, "Insulin Infusion Systems");
+assert.equal(merged[1]?.kind, "device");
 
 // cap honored
 const many = mergeSuggestions([], Array.from({ length: 12 }, (_, i) => ({ ui: `u${i}`, name: `Term ${i}`, treeNumbers: ["C1"], synonyms: [] })), 8);

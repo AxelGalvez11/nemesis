@@ -38,13 +38,13 @@ export function parseMeshEfetch(text: string, uids: readonly string[]): MeshTerm
     const lines = block.split("\n");
     const name = (lines[0] ?? "").trim();
     const treeMatch = block.match(/Tree Number\(s\):[ \t]*(.+)/);
-    const treeNumbers = treeMatch ? treeMatch[1].split(",").map((t) => t.trim()).filter(Boolean) : [];
+    const treeNumbers = (treeMatch?.[1] ?? "").split(",").map((t) => t.trim()).filter(Boolean);
 
     const synonyms: string[] = [];
     const etIdx = lines.findIndex((l) => /^[ \t]*Entry Terms:/.test(l));
     if (etIdx >= 0) {
       for (let j = etIdx + 1; j < lines.length; j++) {
-        const raw = lines[j];
+        const raw = lines[j] ?? "";
         if (raw.trim() === "") break; // blank line closes the Entry Terms block (visual tree follows)
         if (/^\S/.test(raw)) break; // a non-indented line is the next top-level section
         synonyms.push(raw.trim());
