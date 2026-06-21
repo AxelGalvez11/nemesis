@@ -8,7 +8,8 @@ import { useAuth } from "@/auth/AuthProvider";
 import { ErrorState, GuestState, LoadingState } from "@/components/states";
 import { Card } from "@/components/ui";
 import { HEALTH_CONTEXT_CONSENT } from "@/lib/legal";
-import { common } from "@/theme/common";
+import { common, PLACEHOLDER } from "@/theme/common";
+import { c, space } from "@/theme/tokens";
 
 // My Health Context (doc-06 Profile · doc-18 consent-gated). A REAL owner-scoped write
 // path (user_health_context) — read / edit / independent delete. The consent toggle is
@@ -134,7 +135,7 @@ function Field({ label, value, onChange, placeholder, testID }: { label: string;
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput testID={testID} style={common.input} value={value} onChangeText={onChange} placeholder={placeholder} autoCapitalize="none" />
+      <TextInput testID={testID} style={common.input} value={value} onChangeText={onChange} placeholder={placeholder} placeholderTextColor={PLACEHOLDER} autoCapitalize="none" />
     </View>
   );
 }
@@ -155,22 +156,22 @@ function Segmented({ label, value, onChange, testID }: { label: string; value: O
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 20, gap: 12 },
-  consent: { fontSize: 13, lineHeight: 19, color: "#4a5562" },
-  field: { gap: 6 },
-  label: { fontSize: 13, fontWeight: "600", color: "#6b7686" },
-  segments: { flexDirection: "row", gap: 8 },
-  segment: { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: "#d4dae2", alignItems: "center" },
-  segmentOn: { backgroundColor: "#208AEF", borderColor: "#208AEF" },
-  segmentText: { fontSize: 14, color: "#3a4451", textTransform: "capitalize" },
-  segmentTextOn: { color: "#fff", fontWeight: "700" },
-  consentRow: { flexDirection: "row", gap: 10, alignItems: "flex-start", paddingVertical: 4 },
-  checkbox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: "#208AEF", alignItems: "center", justifyContent: "center" },
-  checkboxOn: { backgroundColor: "#208AEF" },
-  check: { color: "#fff", fontSize: 14, fontWeight: "900" },
-  consentLabel: { flex: 1, fontSize: 13, lineHeight: 19, color: "#3a4451" },
-  saved: { color: "#1c7d4d", fontWeight: "700", textAlign: "center" },
+  body: { padding: space(5), gap: space(3), backgroundColor: c.bg, flexGrow: 1 },
+  consent: { fontSize: 13, lineHeight: 19, color: c.text2 },
+  field: { gap: space(1.5) },
+  label: { fontSize: 13, fontWeight: "600", color: c.text3 },
+  segments: { flexDirection: "row", gap: space(2) },
+  segment: { flex: 1, paddingVertical: space(2.5), borderRadius: 8, borderWidth: 1, borderColor: c.line2, alignItems: "center" },
+  segmentOn: { backgroundColor: c.acid, borderColor: c.acid },
+  segmentText: { fontSize: 14, color: c.text2, textTransform: "capitalize" },
+  segmentTextOn: { color: c.onAcid, fontWeight: "700" },
+  consentRow: { flexDirection: "row", gap: space(2.5), alignItems: "flex-start", paddingVertical: space(1) },
+  checkbox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: c.acid, alignItems: "center", justifyContent: "center" },
+  checkboxOn: { backgroundColor: c.acid },
+  check: { color: c.onAcid, fontSize: 14, fontWeight: "900" },
+  consentLabel: { flex: 1, fontSize: 13, lineHeight: 19, color: c.text2 },
+  saved: { color: c.good, fontWeight: "700", textAlign: "center" },
   disabled: { opacity: 0.5 },
-  deleteBtn: { paddingVertical: 12, alignItems: "center" },
-  deleteText: { color: "#c0392b", fontSize: 15, fontWeight: "700" },
+  deleteBtn: { paddingVertical: space(3), alignItems: "center" },
+  deleteText: { color: c.danger, fontSize: 15, fontWeight: "700" },
 });

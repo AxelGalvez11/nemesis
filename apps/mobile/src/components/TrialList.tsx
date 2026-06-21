@@ -3,6 +3,7 @@ import type { DrugTrial } from "@/api/types";
 import { EmptyState } from "./states";
 import { Badge, Card, SectionHeader } from "./ui";
 import { SourceLink } from "./SourceLink";
+import { c, space } from "@/theme/tokens";
 
 // AC5: trial drugs show ClinicalTrials.gov studies, each cited (source_id -> Source
 // Viewer). We render the scalar fields we trust (title/phase/status/sponsor/nct);
@@ -35,9 +36,9 @@ export function TrialList({ trials }: { trials: DrugTrial[] }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: 8 },
-  title: { fontSize: 15, fontWeight: "600", color: "#1f2933", lineHeight: 20 },
-  meta: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 4 },
-  metaText: { fontSize: 13, color: "#4a5562" },
-  sponsor: { fontSize: 13, color: "#6b7686", marginTop: 2 },
+  wrap: { gap: space(2) },
+  title: { fontSize: 15, fontWeight: "600", color: c.text, lineHeight: 20 },
+  meta: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: space(2), marginTop: space(1) },
+  metaText: { fontSize: 13, color: c.text2 },
+  sponsor: { fontSize: 13, color: c.text3, marginTop: 2 },
 });

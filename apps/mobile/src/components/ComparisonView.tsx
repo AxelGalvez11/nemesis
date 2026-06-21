@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from "react-native";
 import type { Comparison } from "@pharmabro/shared";
 import { Card, SectionHeader } from "./ui";
 import { SourceLink } from "./SourceLink";
+import { c, space } from "@/theme/tokens";
 
 // AC8-adjacent: the doc-11 side-by-side. Six section groups + the union of both
 // entities' cited sources (each opening the Source Viewer). The edge fn does the
@@ -77,15 +78,15 @@ export function ComparisonView({ comparison }: { comparison: Comparison }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: 12 },
-  header: { flexDirection: "row", alignItems: "center", gap: 10 },
-  side: { flex: 1, fontSize: 18, fontWeight: "700", color: "#1f2933" },
+  wrap: { gap: space(3) },
+  header: { flexDirection: "row", alignItems: "center", gap: space(2.5) },
+  side: { flex: 1, fontSize: 18, fontWeight: "700", color: c.text },
   right: { textAlign: "right" },
-  vs: { fontSize: 13, color: "#6b7686" },
-  section: { gap: 6 },
-  label: { fontSize: 13, fontWeight: "700", color: "#6b7686", textTransform: "uppercase", letterSpacing: 0.4 },
-  pair: { flexDirection: "row", gap: 12 },
-  cell: { flex: 1, fontSize: 14, lineHeight: 20, color: "#27313d" },
+  vs: { fontSize: 13, color: c.text3 },
+  section: { gap: space(1.5) },
+  label: { fontSize: 13, fontWeight: "700", color: c.text3, textTransform: "uppercase", letterSpacing: 0.4 },
+  pair: { flexDirection: "row", gap: space(3) },
+  cell: { flex: 1, fontSize: 14, lineHeight: 20, color: c.text },
   cellRight: { textAlign: "right" },
-  srcTitle: { fontSize: 14, fontWeight: "600", color: "#1f2933" },
+  srcTitle: { fontSize: 14, fontWeight: "600", color: c.text },
 });

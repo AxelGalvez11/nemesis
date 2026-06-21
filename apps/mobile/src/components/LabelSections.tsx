@@ -3,6 +3,7 @@ import type { LabelDoc } from "@/api/types";
 import { EmptyState } from "./states";
 import { Card, SectionHeader } from "./ui";
 import { SourceLink } from "./SourceLink";
+import { c, space } from "@/theme/tokens";
 
 // AC4: approved drugs show FDA/DailyMed label sections. extracted_sections is a flat
 // key->prose map (verified against openFDA). We render the clinically-ordered keys
@@ -71,9 +72,9 @@ export function LabelSections({ labels }: { labels: LabelDoc[] }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: 8 },
-  provider: { fontSize: 12, fontWeight: "700", color: "#6b7686", letterSpacing: 0.5 },
-  section: { gap: 2, marginTop: 6 },
-  secTitle: { fontSize: 15, fontWeight: "700", color: "#1f2933" },
-  secBody: { fontSize: 14, lineHeight: 20, color: "#3a4451" },
+  wrap: { gap: space(2) },
+  provider: { fontSize: 12, fontWeight: "700", color: c.text3, letterSpacing: 0.5 },
+  section: { gap: 2, marginTop: space(1.5) },
+  secTitle: { fontSize: 15, fontWeight: "700", color: c.text },
+  secBody: { fontSize: 14, lineHeight: 20, color: c.text2 },
 });

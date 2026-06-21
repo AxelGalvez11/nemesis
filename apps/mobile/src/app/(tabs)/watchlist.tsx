@@ -15,6 +15,7 @@ import { SourceLink } from "@/components/SourceLink";
 import { FREE_WATCHLIST_LIMIT } from "@/lib/limits";
 import type { WatchlistItem } from "@pharmabro/shared";
 import { common } from "@/theme/common";
+import { c, space } from "@/theme/tokens";
 
 // AC7 (follow ≥3) + AC8 (weekly digest). Three owner-scoped reads: the follows
 // (watchlist_items), the live update feed (get_watchlist_updates), and the latest
@@ -35,7 +36,7 @@ export default function WatchlistTab() {
   if (!session) {
     return (
       <View style={common.screen} testID="tab-watchlist">
-        <Text style={common.h1}>Watchlist</Text>
+        <Text style={common.h1}>Live Monitoring</Text>
         <GuestState body="Sign in to follow items and get a weekly digest." />
       </View>
     );
@@ -48,7 +49,7 @@ export default function WatchlistTab() {
       <Text style={common.h1}>Watchlist</Text>
 
       {follows.isLoading ? (
-        <ActivityIndicator testID="watchlist-loading" />
+        <ActivityIndicator testID="watchlist-loading" color={c.acid} />
       ) : follows.isError ? (
         <ErrorState testID="watchlist-error" body={(follows.error as Error).message} />
       ) : items.length === 0 ? (
@@ -75,8 +76,8 @@ export default function WatchlistTab() {
       <View style={styles.section}>
         <SectionHeader title="Latest weekly digest" testID="watchlist-digest" />
         {digest.isLoading ? (
-          <ActivityIndicator />
-        ) : digest.isError ? (
+          <ActivityIndicator color={c.acid} />
+        ) :digest.isError ? (
           <ErrorState testID="digest-error" body={(digest.error as Error).message} />
         ) : digest.data && digest.data.items.length > 0 ? (
           <Card>
@@ -98,8 +99,8 @@ export default function WatchlistTab() {
       <View style={styles.section}>
         <SectionHeader title="What's new" testID="watchlist-updates" />
         {updates.isLoading ? (
-          <ActivityIndicator />
-        ) : updates.isError ? (
+          <ActivityIndicator color={c.acid} />
+        ) :updates.isError ? (
           <ErrorState testID="updates-error" body={(updates.error as Error).message} />
         ) : updates.data && updates.data.length > 0 ? (
           updates.data.slice(0, 20).map((u, i) => (
@@ -157,18 +158,18 @@ function FollowRow({
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 20, gap: 16 },
-  section: { gap: 8 },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  body: { padding: space(5), gap: space(4), backgroundColor: c.bg, flexGrow: 1 },
+  section: { gap: space(2) },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(3) },
   rowMain: { flex: 1, gap: 2 },
-  itemName: { fontSize: 16, fontWeight: "600", color: "#1f2933" },
-  itemType: { fontSize: 12, color: "#6b7686", textTransform: "capitalize" },
-  unfollow: { paddingHorizontal: 12, paddingVertical: 6 },
-  unfollowText: { color: "#b04632", fontSize: 13, fontWeight: "600" },
-  paywall: { fontSize: 13, color: "#7a5c12", fontStyle: "italic" },
-  digestMeta: { fontSize: 13, color: "#6b7686", marginBottom: 4 },
-  digestItem: { fontSize: 14, lineHeight: 20, color: "#3a4451" },
-  updateTitle: { fontSize: 14, fontWeight: "600", color: "#1f2933", lineHeight: 20 },
-  updateMeta: { fontSize: 12, color: "#6b7686", textTransform: "capitalize" },
-  muted: { fontSize: 14, color: "#6b7686" },
+  itemName: { fontSize: 16, fontWeight: "600", color: c.text },
+  itemType: { fontSize: 12, color: c.text3, textTransform: "capitalize" },
+  unfollow: { paddingHorizontal: space(3), paddingVertical: space(1.5) },
+  unfollowText: { color: c.danger, fontSize: 13, fontWeight: "600" },
+  paywall: { fontSize: 13, color: c.warn, fontStyle: "italic" },
+  digestMeta: { fontSize: 13, color: c.text3, marginBottom: 4 },
+  digestItem: { fontSize: 14, lineHeight: 20, color: c.text2 },
+  updateTitle: { fontSize: 14, fontWeight: "600", color: c.text, lineHeight: 20 },
+  updateMeta: { fontSize: 12, color: c.text3, textTransform: "capitalize" },
+  muted: { fontSize: 14, color: c.text2 },
 });

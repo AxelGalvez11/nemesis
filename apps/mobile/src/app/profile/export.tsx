@@ -4,6 +4,7 @@ import { exportMyData, type ExportBundle } from "@/api/account";
 import { ErrorState } from "@/components/states";
 import { Card } from "@/components/ui";
 import { common } from "@/theme/common";
+import { c, space } from "@/theme/tokens";
 
 // Data export (AC10 / doc-18) — REAL: the export_my_data RPC returns the caller's own
 // rows (auth.uid()-scoped). We show a summary + offer a JSON download (web) / the raw
@@ -70,8 +71,8 @@ function download(bundle: ExportBundle): void {
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 20, gap: 14 },
+  body: { padding: space(5), gap: space(3.5), backgroundColor: c.bg, flexGrow: 1 },
   disabled: { opacity: 0.5 },
-  readyTitle: { fontSize: 16, fontWeight: "700", color: "#1f2933", marginBottom: 6 },
-  downloadBtn: { marginTop: 12, alignSelf: "flex-start" },
+  readyTitle: { fontSize: 16, fontWeight: "700", color: c.text, marginBottom: space(1.5) },
+  downloadBtn: { marginTop: space(3), alignSelf: "flex-start" },
 });

@@ -8,6 +8,7 @@ import {
   TERMS_SECTIONS,
 } from "@/lib/legal";
 import { common } from "@/theme/common";
+import { c, space } from "@/theme/tokens";
 
 // Privacy / Terms / Educational-disclaimer — the three AC10 legal screens, one
 // parameterized route (?doc=). Distinct + deep-linkable; content from lib/legal.ts so
@@ -47,9 +48,9 @@ export default function LegalScreen() {
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 20, gap: 12 },
-  section: { gap: 4 },
-  heading: { fontSize: 15, fontWeight: "700", color: "#1f2933" },
-  para: { fontSize: 14, lineHeight: 21, color: "#3a4451" },
-  note: { fontSize: 13, lineHeight: 19, color: "#7a4a1e", fontStyle: "italic" },
+  body: { padding: space(5), gap: space(3), backgroundColor: c.bg, flexGrow: 1 },
+  section: { gap: space(1) },
+  heading: { fontSize: 15, fontWeight: "700", color: c.text },
+  para: { fontSize: 14, lineHeight: 21, color: c.text2 },
+  note: { fontSize: 13, lineHeight: 19, color: c.warn, fontStyle: "italic" },
 });
