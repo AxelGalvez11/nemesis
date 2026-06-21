@@ -26,6 +26,7 @@ import { attachSupport } from "./support-span.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
 import { balanceCitedSlice } from "./cite-balance.ts";
+import { extractSearchTerms } from "./search-query.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
@@ -376,7 +377,12 @@ async function augmentWithLive(
     // literal mentions when present — a real-but-new drug (retatrutide) is found by name; a fabricated
     // one returns nothing. Fall back to the question for general/non-drug queries.
     const term = entityMentions.length ? entityMentions.join(" ") : question;
-    const live = await gatherLiveCandidates({ query: term, mentions: entityMentions, perSourceMax: LIVE_PER_SOURCE_MAX });
+    // Research sources (PubMed/Europe PMC/OpenAlex/MedlinePlus) search the user's QUESTION (conversational
+    // scaffolding stripped) so "<drug> side effects" / "<drug> mechanism" retrieves on-topic research
+    // instead of generic drug papers; the field-scoped + adverse-event sources (openFDA/FAERS/trials)
+    // keep the literal drug `term`. This is the lever behind the side-effects/interaction/mechanism gap.
+    const researchQuery = extractSearchTerms(question) || question;
+    const live = await gatherLiveCandidates({ query: term, mentions: entityMentions, researchQuery, perSourceMax: LIVE_PER_SOURCE_MAX });
     if (live.length === 0) return fallback;
 
     const combined = [...libChunks, ...live.map((c, i) => liveToChunk(c, String(i + 1)))];
