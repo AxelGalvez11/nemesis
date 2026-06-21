@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { c, radius, space, type } from "@/theme/tokens";
 
-// Small presentational primitives shared across the drug page + source viewer. The
-// full doc-13 design system (tokens, dark mode, type scale) is fleshed out in 6b-5;
-// these keep 6b-2 cohesive without scattering inline styles.
+// Small presentational primitives shared across the chat answer, drug page + source viewer.
+// Dark theme (PharmaOrb tokens) — ported to match the web app.
 
 export function Card({ children, testID }: { children: ReactNode; testID?: string }) {
   return (
@@ -13,8 +13,7 @@ export function Card({ children, testID }: { children: ReactNode; testID?: strin
   );
 }
 
-/** Full-screen centered container for the load/auth/not-found states (shared by the
- * id-keyed screens so the doc-06 state shells aren't duplicated). */
+/** Full-screen centered container for the load/auth/not-found states. */
 export function Centered({ children, testID }: { children: ReactNode; testID: string }) {
   return (
     <View style={styles.centered} testID={testID}>
@@ -43,39 +42,40 @@ type BadgeTone = "neutral" | "strong" | "moderate" | "weak";
 
 export function Badge({ label, tone = "neutral", testID }: { label: string; tone?: BadgeTone; testID?: string }) {
   return (
-    <View style={[styles.badge, TONE[tone]]} testID={testID}>
-      <Text style={styles.badgeText}>{label}</Text>
+    <View style={[styles.badge, TONE[tone].box]} testID={testID}>
+      <Text style={[styles.badgeText, TONE[tone].text]}>{label}</Text>
     </View>
   );
 }
 
-const TONE: Record<BadgeTone, { backgroundColor: string }> = {
-  neutral: { backgroundColor: "#5b6470" },
-  strong: { backgroundColor: "#1f8b4c" },
-  moderate: { backgroundColor: "#b8860b" },
-  weak: { backgroundColor: "#b04632" },
+// Tinted, low-saturation chips that read on near-black (vs the old solid fills).
+const TONE: Record<BadgeTone, { box: object; text: object }> = {
+  neutral: { box: { backgroundColor: c.surface2, borderColor: c.line2 }, text: { color: c.text2 } },
+  strong: { box: { backgroundColor: "rgba(126,224,129,0.12)", borderColor: "rgba(126,224,129,0.4)" }, text: { color: c.good } },
+  moderate: { box: { backgroundColor: c.warnFaint, borderColor: c.warnLine }, text: { color: c.warn } },
+  weak: { box: { backgroundColor: c.dangerFaint, borderColor: c.dangerLine }, text: { color: c.danger } },
 };
 
 const styles = StyleSheet.create({
-  centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), backgroundColor: c.bg },
   card: {
     borderWidth: 1,
-    borderColor: "#dfe3e8",
-    borderRadius: 12,
-    padding: 16,
-    gap: 8,
-    backgroundColor: "#fbfcfd",
+    borderColor: c.line,
+    borderRadius: radius.md,
+    padding: space(4),
+    gap: space(2),
+    backgroundColor: c.surface,
   },
-  sectionHeader: { fontSize: 20, fontWeight: "700", marginTop: 8 },
+  sectionHeader: { ...type.title, color: c.text, marginTop: space(2) },
   chip: {
     borderWidth: 1,
-    borderColor: "#c7d0da",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    backgroundColor: "#eef2f6",
+    borderColor: c.line2,
+    borderRadius: radius.pill,
+    paddingHorizontal: space(3),
+    paddingVertical: space(1.25),
+    backgroundColor: c.surface2,
   },
-  chipText: { fontSize: 13, color: "#33404f" },
-  badge: { borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4, alignSelf: "flex-start" },
-  badgeText: { color: "#fff", fontSize: 13, fontWeight: "700", textTransform: "capitalize" },
+  chipText: { ...type.small, color: c.text2 },
+  badge: { borderRadius: 7, borderWidth: 1, paddingHorizontal: space(2.5), paddingVertical: space(1), alignSelf: "flex-start" },
+  badgeText: { fontSize: 12.5, fontWeight: "700", textTransform: "capitalize" },
 });

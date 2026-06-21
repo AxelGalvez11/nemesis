@@ -6,6 +6,7 @@ import { reportAnswer } from "@/api/report";
 import { Badge, Card, SectionHeader } from "./ui";
 import { SafetyBanner } from "./SafetyBanner";
 import { SourceLink } from "./SourceLink";
+import { c, radius, space, type } from "@/theme/tokens";
 
 // Renders a frozen AskResponse (§8): the doc-20 structured answer, or a deterministic
 // safety/refusal template. The render shape is chosen by the pure, unit-tested
@@ -176,19 +177,19 @@ function ReportAnswer({ answerId }: { answerId: string }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: 12 },
-  section: { gap: 6 },
-  bottomLine: { fontSize: 16, lineHeight: 23, color: "#1f2933", fontWeight: "500" },
-  refused: { fontSize: 14, color: "#7a4a1e", fontStyle: "italic" },
-  freshness: { backgroundColor: "#fff6e5", borderRadius: 8, padding: 10 },
-  freshnessText: { fontSize: 13, lineHeight: 19, color: "#7a4a1e" },
-  point: { fontSize: 14, lineHeight: 21, color: "#3a4451" },
-  followUp: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#eceff3" },
-  followUpText: { fontSize: 14, color: "#208AEF", fontWeight: "600" },
-  citeTitle: { fontSize: 14, fontWeight: "600", color: "#1f2933" },
-  citeMeta: { fontSize: 12, color: "#6b7686" },
-  reportBtn: { paddingVertical: 10, alignSelf: "flex-start" },
-  reportText: { fontSize: 13, color: "#6b7686", fontWeight: "600" },
-  reportDone: { fontSize: 13, color: "#1c7d4d", fontWeight: "600", paddingVertical: 10 },
-  reportErr: { fontSize: 13, color: "#c0392b", fontWeight: "600", paddingVertical: 10 },
+  wrap: { gap: space(3) },
+  section: { gap: space(1.5) },
+  bottomLine: { fontSize: 16, lineHeight: 24, color: c.text, fontWeight: "500" },
+  refused: { ...type.small, color: c.text3, fontStyle: "italic" },
+  freshness: { backgroundColor: c.warnFaint, borderWidth: 1, borderColor: c.warnLine, borderRadius: radius.sm, padding: space(2.5) },
+  freshnessText: { fontSize: 13, lineHeight: 19, color: c.warn },
+  point: { fontSize: 14.5, lineHeight: 22, color: c.text2 },
+  followUp: { paddingVertical: space(2), borderBottomWidth: 1, borderBottomColor: c.line },
+  followUpText: { fontSize: 14, color: c.acidDim, fontWeight: "600" },
+  citeTitle: { fontSize: 14, fontWeight: "600", color: c.text },
+  citeMeta: { fontSize: 12, color: c.text3 },
+  reportBtn: { paddingVertical: space(2.5), alignSelf: "flex-start" },
+  reportText: { fontSize: 13, color: c.text3, fontWeight: "600" },
+  reportDone: { fontSize: 13, color: c.good, fontWeight: "600", paddingVertical: space(2.5) },
+  reportErr: { fontSize: 13, color: c.danger, fontWeight: "600", paddingVertical: space(2.5) },
 });

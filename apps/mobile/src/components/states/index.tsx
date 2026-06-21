@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { c, space, type } from "@/theme/tokens";
 
 // The doc-06 8-state matrix as reusable primitives. Screens compose these so every
 // state (load/empty/error/no-source/outdated/paywall/guest/offline) has one source
@@ -29,7 +30,7 @@ function StateBox({
 export function LoadingState({ testID = "state-loading" }: { testID?: string }) {
   return (
     <View style={styles.box} testID={testID}>
-      <ActivityIndicator />
+      <ActivityIndicator color={c.acid} />
     </View>
   );
 }
@@ -113,7 +114,7 @@ export function OfflineState({
 }
 
 const styles = StyleSheet.create({
-  box: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 8 },
-  title: { fontSize: 18, fontWeight: "700", textAlign: "center" },
-  body: { fontSize: 14, opacity: 0.75, textAlign: "center", maxWidth: 360 },
+  box: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(2) },
+  title: { ...type.h2, color: c.text, textAlign: "center" },
+  body: { ...type.small, color: c.text2, textAlign: "center", maxWidth: 360 },
 });
