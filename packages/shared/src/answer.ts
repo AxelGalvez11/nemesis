@@ -171,6 +171,11 @@ export interface AskResponse {
    *  molecule image. Absent for non-drug/zero-entity questions and on older saved chats; the renderer
    *  404-hides the image for anything PubChem can't depict, so it is safe to set loosely. */
   primary_drug?: string;
+  /** A DailyMed product-photo (pill/packaging) URL for the primary drug, resolved SERVER-SIDE (DailyMed's
+   *  JSON API has no CORS, so the browser can't do the lookup) and shown as a plain <img> beside the
+   *  molecule image. Public-domain FDA-label media. Absent when DailyMed has no product image for the
+   *  drug (biologics, brand-new investigational drugs), on a miss/timeout, and on older saved chats. */
+  product_image_url?: string;
 }
 
 /** Which canned template produced the answer, when one did. */

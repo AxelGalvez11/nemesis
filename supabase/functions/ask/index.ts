@@ -32,6 +32,7 @@ import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts
 import { hasLlmKey, llmApiKey } from "./llm.ts";
 import { PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
+import { resolveProductImageUrl } from "./product-image.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
@@ -174,6 +175,17 @@ async function runAsk(
   const entities = await resolveEntities(cls.entity_mentions, SB_URL, SERVICE_KEY);
   const resolvedIds = entities.map((e) => e.entity_id).filter((id): id is string => !!id);
   const scopeId = resolvedIds.length === 1 ? resolvedIds[0] : null; // 2+ entities -> broad
+
+  // Kick off the DailyMed product-image lookup NOW (not awaited) so its two server-side round-trips
+  // overlap retrieval + rerank + generation — by assembly it's almost always already resolved, so it
+  // adds ~no wall-clock to the answer. The drug name is the first resolved canonical name, else the
+  // first literal mention (same key as the molecule image / primary_drug below). Un-sinkable: it
+  // resolves to null on any failure or timeout, and we only await it at assembly. Skipped entirely
+  // when there's no drug name to look up.
+  const primaryDrug = entities.find((e) => e.canonical_name)?.canonical_name ?? cls.entity_mentions[0];
+  const productImagePromise: Promise<string | null> = primaryDrug
+    ? resolveProductImageUrl(primaryDrug)
+    : Promise.resolve(null);
 
   // ---- 3. retrieve ----
   const priority = providerPriorityForIntent(cls.intent);
@@ -326,10 +338,11 @@ async function runAsk(
     ...enf.answer_sections,
     safety_notes: withProfessionalRouting(enf.answer_sections.safety_notes, cls.intent),
   }, ret.chunks);
-  // A resolved drug name for the answer header's molecule image (PubChem renders by name). First
-  // resolved canonical name, else the first literal mention; absent when nothing resolved. The web
-  // <img> 404-hides for anything PubChem can't depict (e.g. a condition), so setting it loosely is safe.
-  const primaryDrug = entities.find((e) => e.canonical_name)?.canonical_name ?? cls.entity_mentions[0];
+  // primaryDrug (computed at entity-resolution above) keys the answer header's molecule image (PubChem
+  // renders by name; the web <img> 404-hides anything it can't depict). Await the DailyMed product-image
+  // lookup fired back then — it has overlapped retrieval + generation, so it's ~free here; null on any
+  // miss/timeout, in which case the field is simply omitted.
+  const productImageUrl = await productImagePromise;
   const resp: AskResponse = {
     answer_id: answerId,
     intent: cls.intent,
@@ -341,6 +354,7 @@ async function runAsk(
     refused_unsupported: false,
     oldest_source_date: enf.oldest_source_date,
     ...(primaryDrug ? { primary_drug: primaryDrug } : {}),
+    ...(productImageUrl ? { product_image_url: productImageUrl } : {}),
   };
 
   // ---- 8. trace store ----

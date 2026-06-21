@@ -721,6 +721,23 @@ function MoleculeImage({ drug }: { drug: string }) {
   );
 }
 
+// The actual FDA product photo (pill / packaging) for the primary drug. The URL is resolved SERVER-SIDE
+// (answer.product_image_url) because DailyMed's JSON API has no CORS, so the browser can't do the two-hop
+// lookup itself; the image itself is a plain cross-origin <img> (image loads are CORS-exempt). DailyMed
+// media is public-domain FDA-label content (no key/attribution). Absent when DailyMed has no product
+// photo for the drug (biologics, brand-new investigational drugs) or on older saved chats; self-hides via
+// onError if the resolved URL ever fails to load. Most useful for marketed small-molecule pills.
+function ProductImage({ url, drug }: { url: string; drug: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <figure className="mol-fig">
+      <img src={url} alt={`Product photo of ${drug}`} loading="lazy" onError={() => setFailed(true)} />
+      <figcaption>{drug} · product</figcaption>
+    </figure>
+  );
+}
+
 function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -753,7 +770,15 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
         {/* "Watch this" — only on a real answer (not an emergency/refusal/no-source template). */}
         {!answer.template && !answer.refused_unsupported ? <WatchButton kind="topic" question={question} /> : null}
       </div>
-      {answer.primary_drug && !answer.template && !answer.refused_unsupported ? <MoleculeImage drug={answer.primary_drug} /> : null}
+      {/* Media column: chemical structure (PubChem) + real product photo (DailyMed), each hides itself
+          independently. Floated as one stack so they don't fight for the float; nothing shows if neither
+          resolves. Only on a real drug answer (not a template/refusal/small-talk reply). */}
+      {answer.primary_drug && !answer.template && !answer.refused_unsupported ? (
+        <div className="media-col">
+          <MoleculeImage drug={answer.primary_drug} />
+          {answer.product_image_url ? <ProductImage url={answer.product_image_url} drug={answer.primary_drug} /> : null}
+        </div>
+      ) : null}
       {answer.plain_english_summary ? <p className="lead">{renderInline(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
 
