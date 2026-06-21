@@ -17,7 +17,58 @@ import type { CoreSourceLicense } from "../license.ts";
 
 const ESEARCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi";
 const EFETCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi";
+const ESPELL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/espell.fcgi";
 const REQUEST_DELAY_MS = 350;
+
+export interface EspellOpts {
+  /** Injected for tests; defaults to global fetch. */
+  fetchImpl?: typeof fetch;
+  /** Defaults to NCBI_API_KEY env. Pass "" to force the unauthenticated path. */
+  apiKey?: string;
+  /** Hard ceiling so a slow/hung NCBI never stalls the ask path. */
+  timeoutMs?: number;
+}
+
+/**
+ * NCBI espell (db=pubmed) spelling correction for a free-text research query. Best-effort and
+ * SAFE-BY-DESIGN: it only ever rewrites the *research* search string (which PubMed/EuropePMC/OpenAlex
+ * abstracts to surface), never a literal drug term or the entity mentions the fabrication guard checks.
+ * Returns the original query unchanged on anything unexpected — too-short input, empty/echoed
+ * correction, HTTP error, timeout, or network failure — so it can never sink an answer or invent a term.
+ */
+export async function espellCorrect(query: string, opts: EspellOpts = {}): Promise<string> {
+  const q = query.trim();
+  // Too short to typo-correct usefully (and avoids spending an NCBI call on a stray token).
+  if (q.length < 3) return query;
+
+  const f = opts.fetchImpl ?? fetch;
+  const apiKey = opts.apiKey ?? Deno.env.get("NCBI_API_KEY") ?? "";
+  const timeoutMs = opts.timeoutMs ?? 3000;
+
+  const base = `${ESPELL}?db=pubmed&term=${encodeURIComponent(q)}&tool=pharmaorb`;
+  const url = apiKey ? `${base}&api_key=${encodeURIComponent(apiKey)}` : base;
+  const headers = { "User-Agent": "AscendBot/1.0 (axel@ascend.app)" };
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    let res = await f(url, { headers, signal: ctrl.signal });
+    // A mis-pasted/expired api_key 400s ("API key invalid"). Retry once unauthenticated so a bad key
+    // is never WORSE than no key (it just falls back to the shared-IP rate). Mirrors ncbi-suggest.ts.
+    if (!res.ok && apiKey) {
+      res = await f(base, { headers, signal: ctrl.signal });
+    }
+    if (!res.ok) return query;
+    const xml = await res.text();
+    const m = xml.match(/<CorrectedQuery>([\s\S]*?)<\/CorrectedQuery>/);
+    const corrected = (m?.[1] ?? "").trim();
+    return corrected && corrected.toLowerCase() !== q.toLowerCase() ? corrected : query;
+  } catch {
+    return query; // timeout / abort / network — best-effort
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export interface PubMedFetchOpts {
   /** Query (e.g. "metformin AND lactic acidosis"). */

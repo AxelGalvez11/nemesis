@@ -27,6 +27,7 @@ import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
 import { balanceCitedSlice } from "./cite-balance.ts";
 import { extractSearchTerms } from "./search-query.ts";
+import { espellCorrect } from "../core-source-sync/providers/pubmed.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
@@ -414,7 +415,15 @@ async function augmentWithLive(
     // scaffolding stripped) so "<drug> side effects" / "<drug> mechanism" retrieves on-topic research
     // instead of generic drug papers; the field-scoped + adverse-event sources (openFDA/FAERS/trials)
     // keep the literal drug `term`. This is the lever behind the side-effects/interaction/mechanism gap.
-    const researchQuery = extractSearchTerms(question) || question;
+    let researchQuery = extractSearchTerms(question) || question;
+    // Typo-correct the research string ONLY on the no-drug path (general/benign topics like
+    // "metfromin and the livr"). When classify pulled a literal drug mention we leave the query alone —
+    // espell only ever rewrites the research search string, never the literal `term`/entityMentions the
+    // fabrication guard checks, so a real-but-new drug is still found by name and a fabricated one still
+    // finds nothing. Best-effort: espellCorrect returns the query unchanged on any failure.
+    if (entityMentions.length === 0) {
+      researchQuery = await espellCorrect(researchQuery);
+    }
     const live = await gatherLiveCandidates({ query: term, mentions: entityMentions, researchQuery, perSourceMax });
     if (live.length === 0) return fallback;
 
