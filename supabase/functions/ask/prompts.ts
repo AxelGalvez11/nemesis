@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v7-2026-06-21"; // v7: per-mode answer register — Fast=plain (general-public override, the web default), Thorough=technical/fuller. Register variation lives ONLY in generateSystem()'s appended style block; BASE_GENERATE_SYSTEM (and so Deep Research) is byte-for-byte unchanged.
+export const PROMPT_VERSION = "ask-v8-2026-06-21"; // v8: REGISTER_SAFETY block appended for BOTH live registers (plain+thorough) — bans bare reassurance/safe-claims/cure-synonyms/imperative-dosing/peptide-injection wording and mandates preserving source hedges/scope/caveats (the fast-follow from the plain-register safety audit). BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -280,9 +280,54 @@ const THOROUGH_STYLE = [
   "  [n] tags that directly support it.",
 ].join("\n");
 
-/** Full system prompt for a generation = base + (optional) register style + intent-specific guidance. */
+// Register-safety floor. Appended to BOTH live registers (plain + thorough) — NOT to the absent/Deep-Research
+// register, so BASE_GENERATE_SYSTEM and synthesize.ts stay byte-for-byte unchanged. This is the prompt half of
+// the plain-register safety audit: the deterministic scanner (safety.ts) catches forbidden lexemes, but half the
+// audited failure modes (negated-hazard reassurance, hedge-stripping, relative-vs-absolute flattening) CANNOT be
+// regex'd without punishing faithful source-reporting — so they are enforced here. The plain register's "lead
+// with the takeaway / be concise" pressure raises the odds of these phrasings, so the floor is restated loudly.
+const REGISTER_SAFETY = [
+  "ANSWER-SAFETY FLOOR (applies to THIS answer in addition to the HARD RULES and PHRASING rules above — being",
+  "concise or plain NEVER licenses any of the following):",
+  "- NO BARE REASSURANCE / ABSENCE-OF-HARM VERDICT as your takeaway. Banned leads include: \"it is fine / OK / no",
+  '  problem to combine\", \"there is no risk / no danger to you (or your baby)\", \"it won\'t harm\", \"it\'s low-risk\",',
+  '  \"compatible with breastfeeding\", \"they are commonly used together\". Instead state the specific risk the',
+  "  source reports, KEEP its caveats, and route the personal decision to a clinician. Absence of evidence is NOT",
+  "  evidence of safety — \"no data on use while breastfeeding\" must NOT become \"likely fine while breastfeeding\".",
+  "- NEVER call a drug/supplement/peptide \"safe\", \"a safe …\", \"considered/regarded as/found to be safe\", \"the",
+  "  safest/safer option\", or describe its \"safety profile\" as good/excellent — in your own voice or as a flat",
+  "  verdict. Report tolerability STRICTLY as the cited source states it, attributed: \"was reported as generally",
+  "  well-tolerated in the cited studies [n]\", \"no serious adverse events were reported over the short follow-up",
+  "  [n]\". Attributed, hedged SOURCE language is fine (\"the guide describes it as possibly safe for short-term use",
+  "  [n]\") — it is the bare, unattributed verdict that is banned.",
+  "- NEVER state a cure-synonym as a flat outcome: not \"cures / clears / eradicates / resolves / reverses / gets",
+  "  rid of\" a disease. Use the attributed forms (\"is used to treat Y [n]\", \"in the cited trial achieved",
+  "  microbiologic eradication in most patients [n]\") and keep the recurrence / resistance / relapse caveats.",
+  "- DOSING appears ONLY as an attributed label/study FACT in NOUN form (\"the label lists a 2.5 mg starting dosage,",
+  "  increasing to 5 mg after 4 weeks [n]\"), NEVER as an imperative or titration instruction to the reader — no",
+  '  \"start at\", \"increase to\", \"work up to\", \"go up by\", \"take\", \"inject\". The prescriber sets the personal dose.',
+  "- RESEARCH-USE PEPTIDES: give NO self-injection, reconstitution, route, frequency, or technique in ANY words —",
+  "  even with no number, even phrased as a report (\"reconstitute with bacteriostatic water then inject subq\" is",
+  "  banned). State it is an unapproved research compound with no established human protocol; separate animal from",
+  "  human evidence; a per-kilogram ANIMAL dose (e.g. 10 µg/kg in rats) is NOT a human dose and must not be",
+  "  converted into one; route the decision to a licensed clinician.",
+  "- FAITHFULNESS — brevity must NOT drop the source's qualifiers. Preserve (a) hedges and study grade: keep",
+  '  \"may / suggests\" and \"small / open-label / underpowered / not statistically significant\" when the source has',
+  "  them; do not upgrade \"associated with\" to \"causes\" or \"prevents\". (b) Population / eligibility scope: keep",
+  '  \"only in adults with established heart disease\", \"do not use under age 2\", \"in rodent models\". (c) Relative-vs-',
+  "  absolute framing: say \"relative\" and give the absolute figures when the source distinguishes them. If a",
+  "  qualifier will not fit the lead, keep it as its own what_we_know point rather than cutting it.",
+  "- SEPARATE the safety verdict/caveat from the positive finding — never fuse \"it works and it's safe\" or \"it's",
+  "  generally safe though rare harm has been reported\" into one sentence. Lead with the caveat as its own point",
+  "  (\"rare serious liver injury has been reported [n]\") and omit the bare \"is safe\" entirely.",
+].join("\n");
+
+/** Full system prompt for a generation = base + (optional) register style + register-safety floor + intent guidance. */
 export function generateSystem(intent: Intent, style?: AnswerStyle): string {
   const styleBlock = style === "plain" ? PLAIN_STYLE : style === "thorough" ? THOROUGH_STYLE : "";
+  // The register-safety floor rides with EITHER live register, never the absent one (Deep Research / legacy
+  // replays keep BASE_GENERATE_SYSTEM verbatim).
+  const safetyBlock = style ? REGISTER_SAFETY : "";
   const extra = INTENT_GUIDANCE[intent];
-  return [BASE_GENERATE_SYSTEM, styleBlock, extra].filter(Boolean).join("\n\n");
+  return [BASE_GENERATE_SYSTEM, styleBlock, safetyBlock, extra].filter(Boolean).join("\n\n");
 }

@@ -157,6 +157,28 @@ const RULES: Rule[] = [
     name: "dosing_instruction",
     re: /\b(take|takes|taking|apply|applies|applying|administer|administers|swallow|swallows|spray|sprays)\s+(about\s+|approximately\s+|around\s+|up to\s+)?(\d+(\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|half|a)\s*(mg|mcg|ug|ml|g|grams?|units?|iu|tablets?|pills?|capsules?|caps?|drops?|puffs?|sprays?|doses?)\b/i,
   },
+  // Dose-ESCALATION imperative: a BASE-FORM titration verb + preposition + quantity +
+  // unit ("start at 0.25 mg", "increase to 0.5 mg", "go up by 2.5 mg", "work up to 500
+  // mcg"). Base form ONLY is the precision lever — the imperative the plain register
+  // reaches for uses the bare verb, while the FAITHFUL label report uses the -ing/-s/-ed
+  // forms ("a STARTING dosage of 0.25 mg, INCREASING to 0.5 mg", "weekly 500 mg
+  // INCREASES up to 2000 mg"), none of which \bstart\b / \bincrease\b can match, so the
+  // noun-form label canaries stay clean. The negative look-behind drops "a step up to 5
+  // mg" — an article before the verb makes it a noun phrase, not an instruction.
+  {
+    name: "dosing_instruction",
+    re: /(?<!\b(?:a|an|the|each|every|another|further|gradual|stepwise|initial|recommended|maintenance|target|maximum|of)\s)\b(start|begin|initiate|titrate|increase|escalate|step\s+up|work\s+up|go\s+up|ramp\s+up|bump\s+up|move\s+up)\s+(at|to|by|up\s+to)\s+(about\s+|approximately\s+|around\s+)?(\d+(\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|half)\s*(mg|mcg|ug|µg|ml|cc|g|grams?|units?|iu|tablets?|pills?|capsules?|caps?|drops?|puffs?|sprays?|doses?)\b/i,
+  },
+  // Injection slang/peptide-community verbs (or literal "inject"/"self-inject") +
+  // quantity + an injectable unit: "pin 250 mcg", "jab 0.5 ml", "inject two units".
+  // Unit-anchored so a common word like "pin"/"shoot" only trips on a real dose. No
+  // negation guard — an injection instruction is categorically refused (research-use
+  // compounds). Quantity-FREE technique ("reconstitute then inject subq") is prompt-only
+  // by design (the audit's call), since a unit-free "inject" rule would catch everything.
+  {
+    name: "dosing_instruction",
+    re: /\b(pin|pins|pinning|jab|jabs|jabbing|shoot|shoots|shooting|slam|slams|subq|sub-?q|microdose|microdoses|microdosing|inject|injects|injecting|self-?inject(s|ed|ing)?)\s+(about\s+|approximately\s+|around\s+|up\s+to\s+)?(\d+(\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|half)\s*(mg|mcg|ug|µg|iu|units?|ml|cc)\b/i,
+  },
   // "This peptide is safe." — bare safety claim. Excused only by a genuine
   // negation ("is not safe" fails the regex itself; a far-placed "we do not yet
   // know whether it is safe" is caught by the wide window) OR by an interrogative
@@ -165,7 +187,37 @@ const RULES: Rule[] = [
   // CLAIM_GUARD's comma anchor still catches "When used correctly, it is safe".
   {
     name: "unsupported_safety_claim",
-    re: /\b(is|are|it'?s|seems?|appears?|stays?|remains?)\s+(completely\s+|perfectly\s+|totally\s+|entirely\s+|very\s+|generally\s+|quite\s+|relatively\s+)?safe\b/i,
+    re: /\b(is|are|was|were|it'?s|seems?|appears?|stays?|remains?|has been|have been|had been)\s+(completely\s+|perfectly\s+|totally\s+|entirely\s+|very\s+|generally\s+|quite\s+|relatively\s+|a\s+|an\s+)?safe(r|st)?\b(?!-)/i,
+    guard: CLAIM_GUARD,
+    guardWindow: 40,
+  },
+  // Connector / participle forms the copula rule can't see: "considered safe",
+  // "regarded as safe", "deemed safe", "found to be safe", "proven safe". Same
+  // CLAIM_GUARD, so "not considered safe" / "whether it is regarded as safe" pass.
+  // ("described/regarded AS POSSIBLY safe" — an attributed, hedged source paraphrase —
+  // is intentionally NOT matched: only these specific verdict connectors are.)
+  {
+    name: "unsupported_safety_claim",
+    re: /\b(considered|regarded\s+as|deemed|found\s+to\s+be|proven|proved|viewed\s+as|established\s+as)\s+(completely\s+|perfectly\s+|totally\s+|entirely\s+|very\s+|generally\s+|quite\s+|relatively\s+)?safe(r|st)?\b(?!-)/i,
+    guard: CLAIM_GUARD,
+    guardWindow: 40,
+  },
+  // Bare superlative "the safest" / "one of the safest" — a stronger endorsement than
+  // "is safe", with no copula for the rule above to anchor on. (Bare comparative "safer"
+  // is deliberately NOT here — too often a faithful "a safer alternative per the review";
+  // only the copula form "is safer" above is caught.)
+  {
+    name: "unsupported_safety_claim",
+    re: /\bsafest\b/i,
+    guard: CLAIM_GUARD,
+    guardWindow: 40,
+  },
+  // Safety verdict in noun-phrase form: "excellent / good / strong … safety profile
+  // (or record / margin)". CLAIM_GUARD lets "no good safety profile" / "unknown safety
+  // record" pass.
+  {
+    name: "unsupported_safety_claim",
+    re: /\b(excellent|great|good|strong|solid|reassuring|favou?rable|clean|impeccable|pristine|outstanding|proven)\s+safety\s+(profile|record|margin|track\s+record)\b/i,
     guard: CLAIM_GUARD,
     guardWindow: 40,
   },
