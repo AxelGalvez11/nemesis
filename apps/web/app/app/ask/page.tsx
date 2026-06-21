@@ -8,6 +8,7 @@ import { scienceState } from "@pharmabro/shared";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
+import { pubchemMoleculeUrl } from "@/lib/molecule";
 import { phCapture } from "@/lib/posthog";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
@@ -710,8 +711,8 @@ function scienceBasis(s: ScienceStateSignal): string {
 // itself when PubChem has no structure for the name (a condition, a biologic, a typo) via onError → null.
 function MoleculeImage({ drug }: { drug: string }) {
   const [failed, setFailed] = useState(false);
-  if (failed) return null;
-  const src = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(drug)}/PNG?image_size=large`;
+  const src = pubchemMoleculeUrl(drug); // null for biologics/peptides — their 2D depiction is a useless tangle
+  if (!src || failed) return null;
   return (
     <figure className="mol-fig">
       <img src={src} alt={`Chemical structure of ${drug}`} loading="lazy" onError={() => setFailed(true)} />
