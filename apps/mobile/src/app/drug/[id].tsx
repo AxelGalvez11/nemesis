@@ -12,6 +12,7 @@ import { FollowButton } from "@/components/FollowButton";
 import { ErrorState } from "@/components/states";
 import { Badge, Centered, Chip, SectionHeader } from "@/components/ui";
 import { UUID_RE } from "@/lib/validation";
+import { c, space } from "@/theme/tokens";
 
 // The drug page (AC1 destination + AC4 label + AC5 trials + AC6 pubmed + AC9
 // evidence). Four §8 reads run in parallel; the overview gates the page shell, the
@@ -46,19 +47,19 @@ export default function DrugScreen() {
     enabled,
   });
 
-  if (authLoading) return <Centered testID="drug-auth-loading"><ActivityIndicator /></Centered>;
+  if (authLoading) return <Centered testID="drug-auth-loading"><ActivityIndicator color={c.acid} /></Centered>;
   if (!session) {
     return (
       <Centered testID="drug-auth-required">
-        <Text>Sign in to view this drug.</Text>
+        <Text style={styles.gate}>Sign in to view this drug.</Text>
       </Centered>
     );
   }
-  if (overview.isLoading) return <Centered testID="drug-query-loading"><ActivityIndicator /></Centered>;
+  if (overview.isLoading) return <Centered testID="drug-query-loading"><ActivityIndicator color={c.acid} /></Centered>;
   if (overview.isError) {
     return (
       <Centered testID="drug-error">
-        <Text>{(overview.error as Error).message}</Text>
+        <Text style={styles.gate}>{(overview.error as Error).message}</Text>
       </Centered>
     );
   }
@@ -66,7 +67,7 @@ export default function DrugScreen() {
   if (!drug) {
     return (
       <Centered testID="drug-empty">
-        <Text>No drug found for this id.</Text>
+        <Text style={styles.gate}>No drug found for this id.</Text>
       </Centered>
     );
   }
@@ -142,7 +143,7 @@ function Section<T>({
   if (query.isLoading) {
     return (
       <View style={styles.sectionLoading} testID={`${label}-loading`}>
-        <ActivityIndicator />
+        <ActivityIndicator color={c.acid} />
       </View>
     );
   }
@@ -153,14 +154,15 @@ function Section<T>({
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 20, gap: 12 },
-  name: { fontSize: 28, fontWeight: "700" },
-  mechanism: { fontSize: 15, lineHeight: 21, color: "#3a4451" },
-  block: { gap: 8 },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  muted: { fontSize: 14, color: "#6b7686" },
-  sectionLoading: { paddingVertical: 16, alignItems: "center" },
-  actions: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 16 },
-  compareLink: { paddingVertical: 8 },
-  compareText: { color: "#208AEF", fontSize: 14, fontWeight: "600" },
+  body: { padding: space(5), gap: space(3), backgroundColor: c.bg, flexGrow: 1 },
+  gate: { color: c.text },
+  name: { fontSize: 28, fontWeight: "700", color: c.text },
+  mechanism: { fontSize: 15, lineHeight: 21, color: c.text2 },
+  block: { gap: space(2) },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: space(2) },
+  muted: { fontSize: 14, color: c.text3 },
+  sectionLoading: { paddingVertical: space(4), alignItems: "center" },
+  actions: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: space(4) },
+  compareLink: { paddingVertical: space(2) },
+  compareText: { color: c.acidDim, fontSize: 14, fontWeight: "600" },
 });

@@ -4,7 +4,7 @@
 /* ── ORB: halftone dot lattice (largest at center), a pulse rippling outward from the core.
    Dots + falloff are generated in components/Orb.tsx; all motion is here. ── */
 .orb { position: relative; display: inline-block; flex: none; line-height: 0; }
-.orb svg { display: block; overflow: visible; filter: drop-shadow(0 0 1.5px rgba(188, 255, 60, calc(var(--glow) * 0.85))); transition: filter 0.45s ease; }
+.orb svg { display: block; overflow: visible; filter: drop-shadow(0 0 1.5px rgba(var(--acid-rgb), calc(var(--glow) * 0.85))); transition: filter 0.45s ease; }
 .orb .hd {
   fill: var(--acid);
   transform-box: fill-box; transform-origin: center;
@@ -13,7 +13,7 @@
 /* soft halo — breathes slowly at rest (out of phase with the dot pulse) so the mark feels alive */
 .orb::after {
   content: ""; position: absolute; inset: 16%; border-radius: 50%;
-  background: radial-gradient(circle, rgba(188, 255, 60, 0.32), transparent 70%);
+  background: radial-gradient(circle, rgba(var(--acid-rgb), 0.32), transparent 70%);
   opacity: var(--glow); pointer-events: none;
   animation: orbglow 4.2s ease-in-out infinite;
 }
@@ -24,14 +24,14 @@
 }
 
 /* ── thinking: faster ripple, brighter core, a looping sonar pulse + quicker halo ── */
-.orb.busy svg { filter: drop-shadow(0 0 3px rgba(188, 255, 60, 0.95)); }
+.orb.busy svg { filter: drop-shadow(0 0 3px rgba(var(--acid-rgb), 0.95)); }
 .orb.busy .hd { animation-duration: 1.05s; }
 .orb.busy::before { animation: orbsonar 1.5s ease-out infinite; }
 .orb.busy::after { animation-duration: 1.6s; }
 
 /* ── completion bloom: a one-shot flare the moment an answer lands ── */
 .orb.bloom { animation: orbbloom 0.7s ease-out; }
-.orb.bloom svg { filter: drop-shadow(0 0 5px rgba(188, 255, 60, 1)); }
+.orb.bloom svg { filter: drop-shadow(0 0 5px rgba(var(--acid-rgb), 1)); }
 
 @keyframes orbpulse { 0%, 100% { opacity: 0.74; transform: scale(0.96); } 45% { opacity: 1; transform: scale(1.05); } }
 @keyframes orbglow { 0%, 100% { opacity: calc(var(--glow) * 0.62); } 50% { opacity: var(--glow); } }
@@ -58,70 +58,125 @@
 .app.no-evidence { grid-template-columns: var(--rail) 1fr; }
 .app.no-evidence.rail-collapsed { grid-template-columns: var(--rail-collapsed) 1fr; }
 
-/* ── left rail ── */
+/* ── left rail (ChatGPT-style: tinted sidebar surface, calm hover/active, no accent glow) ── */
 .rail { background: var(--bg-2); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 .rail-backdrop, .evidence-backdrop { display: none; }
 /* scoped to .rail so it can't deform a legacy page that also uses a `.brand` element */
-.rail .brand { display: flex; align-items: center; gap: 12px; padding: 18px 18px 14px; }
+.rail .brand { display: flex; align-items: center; gap: 11px; padding: 16px 16px 12px; }
 .rail .brand .orb { width: 28px; height: 28px; }
-.wordmark { font-weight: 700; font-size: 16px; letter-spacing: -0.02em; white-space: nowrap; }
+.wordmark { font-weight: 600; font-size: 16px; letter-spacing: -0.02em; white-space: nowrap; }
 .rail-collapsed .wordmark, .rail-collapsed .r-label, .rail-collapsed .new-txt,
 .rail-collapsed .search input, .rail-collapsed .acct-meta { display: none; }
-.rail-collapsed .brand { padding: 18px 0; justify-content: center; }
+.rail-collapsed .brand { padding: 16px 0; justify-content: center; }
+/* New chat: a prominent but calm full-width row (ChatGPT moved away from a solid-fill button) —
+   subtle surface, thin border, gentle hover. No accent fill, no glow. */
 .new {
-  margin: 4px 12px 10px; display: flex; align-items: center; gap: 9px; padding: 10px 12px;
-  border-radius: var(--radius-sm); background: var(--acid); color: var(--on-acid); font-weight: 600;
-  cursor: pointer; border: none; white-space: nowrap; box-shadow: 0 6px 20px -8px rgba(140, 220, 40, 0.6);
-  transition: filter 0.15s; width: calc(100% - 24px); font-family: var(--font); font-size: 14px;
+  margin: 4px 12px 8px; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-weight: 600;
+  cursor: pointer; border: 1px solid var(--line); white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s; width: calc(100% - 24px); font-family: var(--font); font-size: 14px;
 }
-.new:hover { filter: brightness(1.06); }
+.new:hover { background: var(--surface-2); border-color: var(--line-2); }
 .rail-collapsed .new { justify-content: center; padding: 10px 0; }
 .search {
-  margin: 0 12px 14px; display: flex; align-items: center; gap: 8px; padding: 8px 11px;
-  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface);
+  margin: 0 12px 12px; display: flex; align-items: center; gap: 8px; padding: 8px 11px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg);
+  transition: border-color 0.15s;
 }
+/* Calm focus: the wrapper tints its border (like the composer), instead of an acid glow/ring. */
+.search:focus-within { border-color: var(--line-2); }
 .search input { background: none; border: none; color: var(--text); font-family: var(--font); font-size: 13px; width: 100%; outline: none; padding: 0; }
 .search input::placeholder { color: var(--text-3); }
-.nav { flex: 1; overflow-y: auto; padding: 2px 10px 10px; }
-.r-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-3); padding: 14px 8px 7px; font-weight: 600; }
+/* Kill the global green focus glow (legacy.css `input:focus` box-shadow) on the sidebar search —
+   the .search wrapper shows focus via its own border, not an acid ring. The keyboard focus-visible
+   outline (the rule near the bottom of this file) is separate and stays. */
+.search input:focus { box-shadow: none; }
+.nav { flex: 1; overflow-y: auto; padding: 2px 8px 10px; }
+.r-label { font-size: 11px; letter-spacing: 0.02em; color: var(--text-2); padding: 14px 10px 6px; font-weight: 600; }
 .hist {
-  display: flex; align-items: center; gap: 10px; padding: 8px 9px; border-radius: 9px; color: var(--text-2);
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text-2);
   cursor: pointer; position: relative; white-space: nowrap; overflow: hidden; width: 100%; background: none; border: none; text-align: left; font-family: var(--font); font-size: 14px;
+  transition: background 0.12s, color 0.12s;
 }
 .hist span { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
-.hist:hover { background: var(--surface); color: var(--text); }
-.hist.active { background: var(--surface-2); color: var(--text); }
-.hist.active::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 2.5px; border-radius: 2px; background: var(--acid); box-shadow: 0 0 10px rgba(140, 220, 40, 0.7); }
-.hist-ic { width: 15px; height: 15px; flex: none; opacity: 0.7; }
+.hist:hover { background: var(--surface-2); color: var(--text); }
+/* Active nav = a plain subtle fill, no accent bar, no glow (ChatGPT-style). */
+.hist.active { background: var(--surface-2); color: var(--text); font-weight: 500; }
+.hist-ic { width: 16px; height: 16px; flex: none; opacity: 0.75; }
 /* A chat row = the link + a hover-revealed delete control. */
 .hist-row { display: flex; align-items: center; position: relative; }
 .hist-row .hist { flex: 1; min-width: 0; }
-.hist-del { flex: none; width: 22px; height: 22px; margin-right: 4px; border: none; background: none; color: var(--text-3); border-radius: 6px; cursor: pointer; font-size: 16px; line-height: 1; opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s; }
-.hist-row:hover .hist-del, .hist-del:focus-visible { opacity: 1; }
-.hist-del:hover { color: var(--danger); background: var(--surface); }
+/* per-chat ⋯ (overflow) button — centered glyph, revealed on row hover / when its menu is open */
+.hist-more { flex: none; width: 26px; height: 26px; margin-right: 4px; display: grid; place-items: center; padding: 0; border: none; background: none; color: var(--text-3); border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s; }
+.hist-more svg { display: block; }
+.hist-row:hover .hist-more, .hist-more:focus-visible, .hist-row.menu-open .hist-more { opacity: 1; }
+.hist-more:hover, .hist-row.menu-open .hist-more { color: var(--text); background: var(--surface); }
+/* touch devices have no hover state — keep the affordance visible so it's discoverable */
+@media (hover: none) { .hist-more { opacity: 1; } }
+/* inline rename: the title becomes this editable field in place of the link, matched to the row.
+   Acid border marks the live edit; box-shadow:none kills the global green focus glow (legacy.css). */
+.hist-rename { flex: 1; min-width: 0; margin: 0; padding: 7px 10px; border: 1px solid var(--acid); border-radius: 8px; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; outline: none; box-shadow: none; }
+/* the per-chat menu — fixed-positioned (coords set inline) so the scrolling rail can't clip it */
+.row-menu { position: fixed; width: 200px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.28); padding: 6px; z-index: 60; animation: fade 0.16s both; }
+.row-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; text-align: left; }
+.row-menu button svg { display: block; flex: none; }
+.row-menu button:hover { background: var(--surface-2); color: var(--text); }
+.row-menu button:disabled { opacity: 0.55; cursor: default; }
+.row-menu button:disabled:hover { background: none; color: var(--text-2); }
+.row-menu button:disabled small { margin-left: auto; text-transform: uppercase; letter-spacing: 0.04em; font-family: var(--mono); font-size: 9.5px; }
+.row-menu .danger { color: var(--danger); }
+.row-menu .danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.row-menu .sep { height: 1px; background: var(--line); margin: 5px 2px; }
 .rail-collapsed .hist { justify-content: center; padding: 9px 0; }
-.rail-collapsed .hist span, .rail-collapsed .hist-del { display: none; }
+.rail-collapsed .hist span, .rail-collapsed .hist-more { display: none; }
 .acct { border-top: 1px solid var(--line); padding: 12px; display: flex; align-items: center; gap: 10px; }
-.av { width: 30px; height: 30px; border-radius: 50%; flex: none; background: linear-gradient(135deg, var(--surface-2), var(--raised)); display: grid; place-items: center; font-weight: 600; font-size: 12px; color: var(--text-2); border: 1px solid var(--line); }
+.av { width: 30px; height: 30px; border-radius: 50%; flex: none; background: var(--surface-2); display: grid; place-items: center; font-weight: 600; font-size: 12px; color: var(--text-2); border: 1px solid var(--line); }
 .acct-meta b { font-size: 13px; font-weight: 600; display: block; }
-.acct-meta small { font-size: 11px; color: var(--text-3); }
+.acct-meta small { font-size: 11px; color: var(--text-2); }
 .rail-collapsed .acct { justify-content: center; }
 
 /* ── main column ── */
 .main { display: flex; flex-direction: column; min-width: 0; background: var(--bg); overflow: hidden; }
+/* Topbar: clean and flat (ChatGPT has a minimal top area) — solid page surface, hairline rule, no heavy blur. */
 .topbar {
-  height: 56px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 18px;
-  border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(12px);
+  height: 56px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 16px;
+  border-bottom: 1px solid var(--line); background: var(--bg);
 }
 .icon-btn {
-  width: 34px; height: 34px; border-radius: 9px; border: 1px solid transparent; background: none; color: var(--text-2);
-  display: grid; place-items: center; cursor: pointer; transition: 0.15s; flex: none;
+  width: 34px; height: 34px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--text-2);
+  display: grid; place-items: center; padding: 0; cursor: pointer; transition: background 0.15s, color 0.15s; flex: none;
 }
-.icon-btn:hover { background: var(--surface); color: var(--text); border-color: var(--line); }
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+/* icons sit dead-center: zero the inherited global button padding (9px 16px) so place-items has room
+   to center, and render the svg as a block to drop the inline-baseline descender gap. */
+.icon-btn svg { display: block; }
+
+/* Fast, styled tooltip — a quicker, on-brand replacement for the slow native `title` bubble. Add
+   `data-tip="…"` to any control (keep an aria-label for screen readers). Inverts in every theme:
+   the bubble uses --text as bg + --surface as ink, which are contrasting by construction. Sits BELOW
+   the control so top-bar buttons never clip above the viewport. CSS-only, pointer-events:none. */
+[data-tip] { position: relative; }
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%) translateY(-3px);
+  background: var(--text); color: var(--surface); font-size: 11px; font-weight: 500; line-height: 1.3;
+  white-space: nowrap; padding: 4px 8px; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  pointer-events: none; opacity: 0; transition: opacity 0.12s ease, transform 0.12s ease; z-index: 60;
+}
+[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+@media (hover: none) { [data-tip]::after { display: none; } } /* no hover target on touch */
+
+/* Skeleton loaders — layout helpers for the shimmer placeholders shown while a list/page loads instead
+   of a bare "Loading…". The `.skeleton` shimmer itself is the existing one in legacy.css; here we only
+   add list spacing + a default row shape, and an a11y reduced-motion stop. */
+.skel-list { display: flex; flex-direction: column; gap: 10px; }
+.skel-row { height: 62px; border-radius: 10px; }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
 .thread-title { font-weight: 600; font-size: 14.5px; }
 .thread-sub { color: var(--text-3); font-size: 12px; }
-.pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid var(--line-2); border-radius: 999px; font-size: 12.5px; color: var(--text-2); background: var(--surface); cursor: pointer; }
-.pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 8px var(--acid); }
+.pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 12.5px; color: var(--text-2); background: var(--surface); cursor: pointer; }
+.pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--acid); }
 .spacer { flex: 1; }
 
 /* page content host inside .main. The chat manages its own scroll (thread scrolls, composer pinned),
@@ -133,11 +188,11 @@
 
 /* account menu (rail footer) */
 .acct-wrap { position: relative; border-top: 1px solid var(--line); }
-.acct-btn { width: 100%; background: none; border: none; padding: 12px; display: flex; align-items: center; gap: 10px; cursor: pointer; color: inherit; font-family: var(--font); text-align: left; }
-.acct-btn:hover { background: var(--surface); }
-.acct-menu { position: absolute; bottom: calc(100% - 2px); left: 12px; right: 12px; background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius-sm); box-shadow: 0 12px 40px -8px rgba(0, 0, 0, 0.6); padding: 6px; z-index: 40; animation: fade 0.16s both; }
+.acct-btn { width: 100%; background: none; border: none; padding: 10px 12px; border-radius: var(--radius-sm); display: flex; align-items: center; gap: 10px; cursor: pointer; color: inherit; font-family: var(--font); text-align: left; transition: background 0.15s; }
+.acct-btn:hover { background: var(--surface-2); }
+.acct-menu { position: absolute; bottom: calc(100% - 2px); left: 12px; right: 12px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.25); padding: 6px; z-index: 40; animation: fade 0.16s both; }
 .acct-menu a, .acct-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); cursor: pointer; text-align: left; font-weight: 500; }
-.acct-menu a:hover, .acct-menu button:hover { background: var(--surface); color: var(--text); }
+.acct-menu a:hover, .acct-menu button:hover { background: var(--surface-2); color: var(--text); }
 .acct-menu button:disabled { opacity: 0.5; cursor: default; }
 .acct-menu button:disabled:hover { background: none; color: var(--text-2); }
 .acct-menu button:disabled small { text-transform: uppercase; letter-spacing: 0.04em; font-family: var(--mono); font-size: 9.5px; }
@@ -160,10 +215,18 @@
 .ai-body section h5 { font-size: 18px; text-transform: none; letter-spacing: -0.01em; color: var(--text); font-weight: 700; margin: 2px 0 9px; }
 .ai-body ul { margin: 0 0 4px; padding-left: 18px; }
 .ai-body li { margin: 0 0 7px; font-size: 16px; line-height: 1.62; }
+/* Molecule structure thumbnail (PubChem) at the top of a drug answer — floated so the text wraps around
+   it. The PNG is black line-art on a transparent ground, so it sits on a FIXED white card to stay
+   visible in every theme (incl. dark). It self-hides (onError) when PubChem has no structure. */
+.mol-fig { float: right; width: 132px; margin: 2px 0 12px 18px; text-align: center; }
+.mol-fig img { display: block; width: 132px; height: 132px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+.mol-fig figcaption { font-size: 11px; color: var(--text-3); margin-top: 5px; text-transform: capitalize; }
+@media (max-width: 560px) { .mol-fig { float: none; width: 120px; margin: 2px auto 14px; } .mol-fig img { width: 120px; height: 120px; } }
 
-/* ── answer body: flowing prose + callouts (replaces the rigid labeled-section form that read as
-   "robotic"). what-we-know becomes the prose body; safety stays a prominent callout; uncertainty
-   is de-emphasized; questions are a clear light block. ── */
+/* ── answer body: a prose lead + skimmable points + callouts (replaces the rigid labeled-section
+   form that read as "robotic"). The lead summary stays flowing prose; the supporting points bullet
+   when there are several (see .ai-list below); safety stays a prominent callout; uncertainty is
+   de-emphasized; questions are a clear light numbered block. ── */
 .ai-para { margin: 0 0 16px; font-size: 16px; line-height: 1.72; }
 /* Safety: a clear, visible bordered callout — kept prominent (conservative medical app), never muted. */
 .ai-safety { border: 1px solid var(--line-2); border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 5%, var(--surface)); border-radius: 12px; padding: 13px 15px 3px; margin: 16px 0; }
@@ -174,11 +237,27 @@
 .ai-unclear { margin: 16px 0; }
 .ai-unclear p { color: var(--text-2); font-size: 15px; line-height: 1.6; margin: 0 0 8px; }
 .muted-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); font-weight: 600; margin-bottom: 6px; }
-/* Questions: a clear, light block (actionable), not a heavy form section. */
+/* Questions: a clear, light block (actionable), not a heavy form section. Numbered (an ordered
+   list) so it reads as a checklist you can take to an appointment ("ask #2"). */
 .ai-questions { margin: 16px 0 4px; }
 .ai-block-label { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 9px; }
-.ai-questions ul { margin: 0; padding-left: 18px; }
+.ai-questions ul, .ai-questions ol { margin: 0; padding-left: 20px; }
 .ai-questions li { font-size: 15.5px; color: var(--text-2); margin: 0 0 6px; line-height: 1.55; }
+.ai-questions ol li::marker { color: var(--text-3); font-family: var(--mono); font-weight: 600; }
+/* Answer-body point lists: when a section has several discrete points they render as scannable
+   bullets (the lead summary above stays flowing prose, so the answer keeps a human top-line and
+   gains a skimmable body — not the old rigid "filled-in form"). A lone point stays a paragraph, so
+   a single bullet never appears. Scoped under .ai-body so they win over the generic .ai-body ul/li. */
+.ai-body .ai-list { margin: 6px 0 16px; padding-left: 22px; }
+.ai-body .ai-list li { font-size: 16px; line-height: 1.7; margin: 0 0 9px; padding-left: 3px; }
+.ai-body .ai-list li:last-child { margin-bottom: 0; }
+.ai-body .ai-list li::marker { color: var(--text-3); }
+/* Safety + uncertainty lists inherit their block's quieter sizing/color (placed after the base so
+   equal-specificity source order lets them win). */
+.ai-safety .ai-list { margin: 4px 0 6px; }
+.ai-safety .ai-list li { font-size: 15.5px; }
+.ai-unclear .ai-list { margin: 6px 0 0; }
+.ai-unclear .ai-list li { color: var(--text-2); font-size: 15px; line-height: 1.6; }
 /* Inline emphasis surfaced by lib/inline-md from the model's own markdown. */
 .ai-body strong { font-weight: 700; color: var(--text); }
 .ai-body em { font-style: italic; }
@@ -187,11 +266,17 @@
 @keyframes blink { 50% { opacity: 0; } }
 /* Inline citation chip. It is a <button>, so reset the global acid button styling (legacy.css) back
    to an inline text chip: no background, inherited line-height, baseline-aligned. */
-.cite { display: inline; font-family: var(--mono); font-size: 11px; font-weight: 500; line-height: inherit; color: var(--text-2); background: none; border: 1px solid var(--line-2); border-radius: 5px; padding: 0 4px; margin: 0 1px; cursor: pointer; vertical-align: 1px; transition: 0.15s; }
-.cite:hover { border-color: var(--acid); color: var(--acid); }
+.cite { position: relative; display: inline; background: none; border: none; padding: 0; margin: 0 0.5px; cursor: pointer; font: inherit; line-height: inherit; }
+.cite .cite-n { font-family: var(--mono); font-size: 0.72em; font-weight: 700; color: var(--acid-dim); vertical-align: super; transition: color 0.15s; }
+.cite:hover .cite-n, .cite:focus-visible .cite-n { color: var(--acid); }
+/* Hover-preview card: the source label + title (footnote-style chip → ChatGPT/Claude feel). */
+.cite-pop { position: absolute; top: calc(100% + 7px); left: 50%; transform: translateX(-50%); z-index: 40; width: max-content; max-width: 250px; display: none; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line-2); border-radius: 9px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3); text-align: left; pointer-events: none; }
+.cite:hover .cite-pop, .cite:focus-visible .cite-pop { display: block; }
+.cite-pop-label { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); margin-bottom: 3px; }
+.cite-pop-title { display: block; font-size: 12px; line-height: 1.4; color: var(--text); font-weight: 500; }
 .num { font-family: var(--mono); color: var(--text); font-weight: 500; }
 .grade-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.grade { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--acid-dim); border: 1px solid rgba(140, 220, 40, 0.3); border-radius: 999px; padding: 2px 8px; }
+.grade { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px; }
 .safety-flag { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--warn); border: 1px solid rgba(245, 178, 59, 0.32); border-radius: 999px; padding: 2px 8px; }
 .tmpl-note { color: var(--warn); font-size: 12px; }
 
@@ -206,7 +291,7 @@
 .qchip .tick svg { width: 10px; height: 10px; stroke: var(--on-acid); opacity: 0; transition: 0.2s; }
 .qchip .cnt { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-left: auto; }
 .qchip.done { opacity: 1; color: var(--text); }
-.qchip.done .tick { background: var(--acid); border-color: var(--acid); box-shadow: 0 0 10px rgba(140, 220, 40, 0.5); }
+.qchip.done .tick { background: var(--acid); border-color: var(--acid); box-shadow: 0 0 10px rgba(var(--acid-rgb), 0.5); }
 .qchip.done .tick svg { opacity: 1; }
 .qchip.done .cnt { color: var(--acid-dim); }
 /* the in-progress step: full opacity + a live spinner ring (done = filled check, upcoming = faded) */
@@ -233,13 +318,34 @@
 /* ── composer ── */
 .composer-wrap { padding: 10px 0 22px; background: linear-gradient(0deg, var(--bg) 60%, transparent); flex: none; }
 .composer { max-width: 620px; margin: 0 auto; padding: 0 28px; }
-.box { border: 1px solid var(--line-2); background: var(--surface); border-radius: 20px; padding: 12px 12px 10px; transition: border-color 0.2s; }
-/* Calm focus: a subtle border tint, no acid glow ring (the bar no longer "lights up" on focus). */
-.box:focus-within { border-color: var(--line-2); }
+.box { border: 1px solid var(--line-2); background: var(--surface); border-radius: 20px; padding: 12px 12px 10px; box-shadow: var(--shadow); transition: border-color 0.2s, box-shadow 0.2s; }
+/* Calm focus: a subtle border tint + a touch more lift, no acid glow ring (the bar no longer "lights up"). */
+.box:focus-within { border-color: var(--line-2); box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.18); }
 /* composer affordance icons sit dead-center in their buttons (svg as block removes baseline drift) */
 .box .tools svg { display: block; }
-.box textarea { width: 100%; background: none; border: none; color: var(--text); font-family: var(--font); font-size: 15.5px; resize: none; outline: none; min-height: 24px; max-height: 200px; padding: 0; }
+.box textarea { width: 100%; background: none; border: none; color: var(--text); font-family: var(--font); font-size: 15.5px; line-height: 24px; text-align: left; resize: none; outline: none; min-height: 24px; max-height: 200px; padding: 0; }
 .box textarea::placeholder { color: var(--text-3); }
+/* Animated cycling placeholder: a non-interactive overlay (shown only when the field is empty) that
+   wipes in left-to-right then fades out, so the example questions live in the chat bar without a
+   hard text switch. Sits exactly over the textarea's first line (matched font-size + line-height). */
+.ta-wrap { position: relative; }
+.ph-anim {
+  position: absolute; top: 0; left: 0; right: 0; pointer-events: none;
+  color: var(--text-3); font-size: 15.5px; line-height: 24px; text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: clip;
+  animation: phReveal 5s ease-in-out forwards;
+}
+/* Slow, graceful reveal: wipe in left→right over the first ~1.5s, hold, then fade out over the last
+   ~0.75s (no hard switch). Paired with the 5s remount interval in the Ask composer. */
+@keyframes phReveal {
+  0%   { opacity: 0; clip-path: inset(0 100% 0 0); }
+  30%  { opacity: 1; clip-path: inset(0 0 0 0); }
+  85%  { opacity: 1; clip-path: inset(0 0 0 0); }
+  100% { opacity: 0; clip-path: inset(0 0 0 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ph-anim { animation: none; opacity: 0.85; clip-path: none; }
+}
 /* Kill the global green focus glow (legacy.css `input, textarea:focus` box-shadow) on the
    composer — the bar uses the calm border-tint focus above, not an acid ring. Keyboard
    focus-visible outline (the separate `outline` rule below) is unaffected. */
@@ -253,7 +359,7 @@
    centered icon off. With padding:0 the 18px icon centers cleanly in the full 32/36px button. */
 .tool { width: 32px; height: 32px; padding: 0; border-radius: 9px; border: 1px solid var(--line); background: var(--bg-2); color: var(--text-2); display: grid; place-items: center; cursor: pointer; }
 .tool:hover { color: var(--text); border-color: var(--line-2); }
-.send { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: none; background: var(--acid); color: var(--on-acid); display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 9px -5px rgba(140, 220, 40, 0.45); }
+.send { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: none; background: var(--acid); color: var(--on-acid); display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 9px -5px rgba(var(--acid-rgb), 0.45); }
 .send:hover { filter: brightness(1.07); }
 .send:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(0.3); }
 .composer .hint { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 9px; font-family: var(--mono); }
@@ -279,18 +385,29 @@
 .app.evidence-collapsed .evidence { border-left: none; }
 .ev-head { height: 56px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--line); }
 .ev-head b { font-size: 13px; font-weight: 600; }
-.live { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--acid-dim); border: 1px solid rgba(140, 220, 40, 0.3); border-radius: 999px; padding: 2px 8px; }
+.live { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px; }
 .live .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 8px var(--acid); animation: pulse 1.8s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .ev-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); }
 .ev-tab { font-size: 12.5px; color: var(--text-3); padding: 9px 11px; cursor: pointer; position: relative; font-weight: 500; background: none; border: none; font-family: var(--font); }
 .ev-tab.active { color: var(--text); }
 .ev-tab.active::after { content: ""; position: absolute; left: 11px; right: 11px; bottom: -1px; height: 2px; background: var(--acid); border-radius: 2px; box-shadow: 0 0 8px var(--acid); }
+/* Breadth header: the full reach of the search ("18 sources · 9 PubMed · 4 trials · 3 FDA"), so an
+   answer that cites a few FDA labels still reads as broadly sourced. Sits under the panel head. */
+.ev-breakdown { flex: none; padding: 9px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--text-2); line-height: 1.4; }
+.ev-breakdown b { color: var(--text); font-weight: 700; }
+.ev-breakdown-by { color: var(--text-3); }
+/* Section labels splitting "Cited in this answer" from "Also reviewed". */
+.ev-section-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); margin: 2px 2px 9px; }
+.ev-section-label.muted { color: var(--text-3); margin-top: 16px; }
 .ev-body { flex: 1; overflow-y: auto; padding: 14px 14px 20px; }
 .src { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 12px 13px; margin-bottom: 10px; cursor: pointer; transition: 0.16s; position: relative; display: block; width: 100%; text-align: left; color: inherit; }
 .src:hover { border-color: var(--line-2); transform: translateY(-1px); }
 /* Highlight the card a clicked citation scrolled to. */
-.src.active { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid), 0 0 18px rgba(140, 220, 40, 0.18); }
+.src.active { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid), 0 0 18px rgba(var(--acid-rgb), 0.18); }
+/* "Also reviewed" cards: searched + ranked but not cited — dimmer + flatter so the cited set leads. */
+.src.reviewed { opacity: 0.68; background: var(--bg); }
+.src.reviewed:hover { opacity: 1; }
 .src .badge-src { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: var(--text-3); text-transform: uppercase; }
 .src .badge-src .sq { width: 7px; height: 7px; border-radius: 2px; background: var(--text-3); }
 .src.openfda .sq, .src.dailymed .sq { background: #7fb2ff; }
@@ -298,6 +415,7 @@
 .src.clinicaltrials .sq, .src.trial .sq { background: #ff9f7f; }
 .src.faers .sq { background: #ff5c4d; }
 .src.openalex .sq { background: #5ad1c5; }
+.src.medlineplus .sq { background: #e3b341; } /* amber — the plain-language NLM/NIH guidance source */
 /* DOAJ vetted-journal pill: a calm positive credibility signal (presence = good; absence is neutral). */
 .doaj-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.01em; color: #3fae8f; border: 1px solid color-mix(in srgb, #3fae8f 38%, transparent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
 /* Study-design pill: NEUTRAL descriptive metadata (study type), not a quality judgment. A calm slate-indigo
@@ -314,7 +432,7 @@
 .src .cidx { position: absolute; top: 11px; right: 12px; font-family: var(--mono); font-size: 10px; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 5px; padding: 0 5px; }
 .src .since { color: var(--acid-dim); }
 .relv { height: 3px; border-radius: 2px; background: var(--line-2); margin-top: 9px; overflow: hidden; }
-.relv i { display: block; height: 100%; background: var(--acid); box-shadow: 0 0 8px rgba(140, 220, 40, 0.6); }
+.relv i { display: block; height: 100%; background: var(--acid); box-shadow: 0 0 8px rgba(var(--acid-rgb), 0.6); }
 .ref-cite-line { font-size: 10.5px; font-family: var(--mono); color: var(--text-3); margin: 4px 0 0; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 /* The verbatim sentence in this source that backs the clicked claim — shown only on the active card. */
 .src .src-support { margin: 9px 0 2px; padding: 8px 10px; background: color-mix(in srgb, var(--acid) 9%, transparent); border-left: 2px solid var(--acid); border-radius: 0 8px 8px 0; }
@@ -338,7 +456,7 @@
     position: fixed; top: 0; bottom: 0; right: 0; width: min(var(--evidence), 86vw);
     z-index: 60; transform: translateX(100%); transition: transform 0.25s ease;
   }
-  .app.mobile-evidence-open .evidence { transform: none; box-shadow: 0 0 60px rgba(0, 0, 0, 0.6); }
+  .app.mobile-evidence-open .evidence { transform: none; box-shadow: -8px 0 40px rgba(0, 0, 0, 0.18); }
   .app.mobile-evidence-open .evidence-backdrop {
     display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.5); border: none;
   }
@@ -362,7 +480,7 @@
     position: fixed; top: 0; bottom: 0; left: 0; width: var(--rail); z-index: 60;
     transform: translateX(-100%); transition: transform 0.25s ease; display: flex;
   }
-  .app.mobile-open .rail { transform: none; box-shadow: 0 0 60px rgba(0, 0, 0, 0.6); }
+  .app.mobile-open .rail { transform: none; box-shadow: 8px 0 40px rgba(0, 0, 0, 0.18); }
   .app.mobile-open .rail-backdrop { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.5); border: none; }
   /* the drawer is always full — neutralize any desktop rail-collapsed shrinking */
   .app.mobile-open .wordmark, .app.mobile-open .acct-meta, .app.mobile-open .r-label { display: block; }
@@ -371,13 +489,14 @@
   .app.mobile-open .new, .app.mobile-open .hist { justify-content: flex-start; }
 }
 
-/* keyboard focus ring for the custom (non-shadcn) interactive elements. NOTE: the composer
-   textarea is deliberately EXCLUDED — text fields match :focus-visible even on a mouse click, so
-   an acid outline here read as the "green glow on the chat bar". Its focus is shown by the calm
-   .box:focus-within border tint instead (legacy.css already sets outline:none on textarea:focus). */
+/* keyboard focus ring for the custom (non-shadcn) interactive elements. NOTE: the composer textarea
+   AND the rail search input are deliberately EXCLUDED — text fields match :focus-visible even on a
+   mouse click, so an acid outline here read as a "green glow" on the box. Their focus is shown by a
+   calm border tint instead (.box:focus-within / .search:focus-within; legacy.css already sets
+   outline:none on the inputs themselves). */
 .icon-btn:focus-visible, .hist:focus-visible, .new:focus-visible, .mode:focus-visible, .send:focus-visible,
 .tool:focus-visible, .ev-tab:focus-visible, .chip-action:focus-visible, .acct-btn:focus-visible, .src:focus-visible,
-.cite:focus-visible, .search input:focus-visible {
+.cite:focus-visible {
   outline: 2px solid var(--acid-dim); outline-offset: 2px;
 }
 
@@ -429,11 +548,15 @@
 /* Evidence gaps */
 .research-gaps { margin: 10px 0; }
 .research-gaps .ai-para { color: var(--text-2); font-size: 15px; }
+
+/* Lab-draft unvalidated-draft notice — amber banner shown at the top of every lab_draft report */
+.lab-draft-notice { display: flex; align-items: flex-start; gap: 8px; background: color-mix(in srgb, var(--warn) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); border-left: 3px solid var(--warn); border-radius: 10px; padding: 11px 14px; margin: 12px 0 18px; font-size: 14px; line-height: 1.55; color: var(--text-2); }
+.lab-draft-notice svg { flex-shrink: 0; margin-top: 2px; color: var(--warn); }
 .gap-trials { color: var(--text-3); font-style: italic; }
 
 /* verification pill in the grade row */
 .verify-pill { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 999px; padding: 2px 8px; }
-.verify-pill.ok { color: var(--acid-dim); border: 1px solid rgba(140, 220, 40, 0.3); }
+.verify-pill.ok { color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.3); }
 .verify-pill.warn { color: var(--warn); border: 1px solid rgba(245, 178, 59, 0.32); }
 
 /* sources list */
@@ -500,6 +623,20 @@
    would fight the centering). Reuses the app tokens so it matches cards + the account menu. */
 @keyframes app-modal-in { from { opacity: 0; } to { opacity: 1; } }
 .app-modal-overlay { position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, 0.46); backdrop-filter: blur(2px); animation: app-modal-in 0.15s both; }
+
+/* ── confirm dialog (destructive actions, e.g. delete chat) — a compact centered modal above the
+   rail/drawers/row-menu/settings overlay. Reuses the app tokens + the modal fade-in. ── */
+.confirm-overlay { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, 0.46); backdrop-filter: blur(2px); display: grid; place-items: center; padding: 20px; animation: app-modal-in 0.15s both; }
+.confirm-card { width: min(400px, 100%); background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.6); padding: 20px 20px 16px; animation: app-modal-in 0.15s both; }
+.confirm-title { font-size: 16px; font-weight: 650; color: var(--text); margin: 0 0 8px; }
+.confirm-body { font-size: 14px; line-height: 1.55; color: var(--text-2); margin: 0 0 18px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 9px; }
+.confirm-actions button { padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; font-family: var(--font); cursor: pointer; border: 1px solid var(--line); transition: background 0.15s, border-color 0.15s, color 0.15s, filter 0.15s; }
+.confirm-cancel { background: var(--surface); color: var(--text-2); }
+.confirm-cancel:hover { background: var(--surface-2); color: var(--text); }
+.confirm-del { background: var(--danger); border-color: var(--danger); color: #fff; }
+.confirm-del:hover { filter: brightness(1.07); }
+.confirm-actions button:focus-visible { outline: 2px solid var(--acid-dim); outline-offset: 2px; }
 .app-modal {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 71;
   width: min(560px, calc(100vw - 32px)); max-height: min(86vh, 760px); display: flex; flex-direction: column;
@@ -520,3 +657,144 @@
 .app-modal-body .card + .card { border-top: 1px solid var(--line); padding-top: 14px; }
 /* Profile/Billing use a 2-/3-col grid full-page; stack them single-column in the narrow overlay. */
 .app-modal-body .grid.two, .app-modal-body .grid.three { grid-template-columns: 1fr; }
+/* The Settings sections ARE real cards — undo the generic modal card-flatten above for them, which had
+   stripped their padding so text (Account / email / etc.) hugged the left edge. Match the full-page look. */
+.app-modal-body .settings-body .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; }
+.app-modal-body .settings-body .card.acid { border-color: var(--line-acid); }
+.app-modal-body .settings-body .card + .card { padding-top: 18px; }
+
+/* ── Consolidated Settings surface (Anthropic-style: left section nav + content) ──────────────── */
+.settings-surface { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 24px; align-items: start; }
+.settings-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; }
+.settings-nav button {
+  display: flex; align-items: center; gap: 10px; width: 100%; justify-content: flex-start;
+  padding: 9px 11px; border-radius: var(--radius-sm); background: transparent; border: 1px solid transparent;
+  color: var(--text-2); font-size: 14px; font-weight: 500; font-family: var(--font); cursor: pointer; text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+.settings-nav button:hover { background: var(--surface-2); color: var(--text); }
+.settings-nav button.active { background: var(--surface-2); color: var(--text); font-weight: 600; }
+/* min-height keeps short sections (General/About) from collapsing smaller than the tall ones
+   (Account/Billing) on the full page, so switching sections doesn't jump the layout. */
+.settings-body { display: grid; gap: 16px; min-width: 0; min-height: 440px; align-content: start; }
+
+/* Appearance — visual theme-preview cards (a mini app per theme: rail + page + accent dot). */
+.theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.theme-card { display: flex; flex-direction: column; gap: 8px; padding: 7px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); cursor: pointer; font-family: var(--font); text-align: left; transition: border-color .12s, box-shadow .12s, transform .12s; }
+.theme-card:hover { border-color: var(--line-2); transform: translateY(-1px); }
+.theme-card.active { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid); }
+.theme-swatch { display: flex; height: 56px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(127, 127, 127, 0.18); }
+.theme-swatch .tp-rail { width: 32%; }
+.theme-swatch .tp-page { flex: 1; position: relative; padding: 9px; display: flex; flex-direction: column; gap: 5px; }
+.theme-swatch .tp-line { height: 4px; width: 72%; border-radius: 2px; background: currentColor; opacity: 0.22; }
+.theme-swatch .tp-line.short { width: 46%; }
+.theme-swatch .tp-dot { position: absolute; right: 9px; bottom: 9px; width: 13px; height: 13px; border-radius: 50%; }
+.theme-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); padding: 0 2px; }
+.theme-card-foot svg { color: var(--acid); }
+[data-theme-preview="light"] { color: #0d0d0d; }
+[data-theme-preview="light"] .tp-rail { background: #f0f0f1; }
+[data-theme-preview="light"] .tp-page { background: #ffffff; }
+[data-theme-preview="light"] .tp-dot { background: #62b000; }
+[data-theme-preview="grey"] { color: #ececec; }
+[data-theme-preview="grey"] .tp-rail { background: #171717; }
+[data-theme-preview="grey"] .tp-page { background: #212121; }
+[data-theme-preview="grey"] .tp-dot { background: #bcff3c; }
+[data-theme-preview="dark"] { color: #f4f4f5; }
+[data-theme-preview="dark"] .tp-rail { background: #0e0e10; }
+[data-theme-preview="dark"] .tp-page { background: #0a0a0b; }
+[data-theme-preview="dark"] .tp-dot { background: #bcff3c; }
+/* the consolidated Settings modal is wider so the left nav + content sit comfortably side by side */
+.app-modal-wide { width: min(840px, calc(100vw - 32px)); height: min(86vh, 580px); }
+/* FIXED height + the body scrolls within → switching sections never resizes/re-centers the modal;
+   the left nav stays put (position: sticky). Short sections just leave whitespace below. */
+.app-modal-wide .app-modal-body { flex: 1; min-height: 0; }
+@media (max-width: 680px) {
+  .settings-surface { grid-template-columns: 1fr; gap: 14px; }
+  .settings-nav { flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .settings-nav button { width: auto; flex-shrink: 0; }
+}
+
+/* ── Live monitoring — watch detail (WS-D) ──────────────────────────────────────────────────────
+   Three deliberately-distinct lanes: LOUD alerts (acid-tinted), the QUIET "what's new" feed (plain
+   .src cards), and the WALLED-OFF news list (no card chrome, muted, explicit "not verified" label —
+   the styling reinforces that news is never citable evidence). */
+.watch-detail { max-width: 780px; margin: 0 auto; padding: 22px 22px 80px; }
+.watch-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 8px; }
+.watch-title { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; margin: 0; }
+.watch-sub { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--text-3); margin: 5px 0 0; text-transform: lowercase; }
+.watch-unread { flex-shrink: 0; font-size: 11px; font-weight: 700; color: var(--on-acid); background: var(--acid); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+
+/* Current-evidence invite: a calm card under the header. Monitoring surfaces future changes; this
+   points the user at the evidence that already exists (a normal Ask), so a fresh watch never looks
+   empty. Deliberately quiet — not an alert. */
+.watch-current { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-top: 14px; padding: 12px 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.watch-current-text { font-size: 13px; line-height: 1.5; color: var(--text-2); margin: 0; flex: 1 1 280px; }
+.watch-current-link { flex: none; white-space: nowrap; border-color: color-mix(in srgb, var(--acid) 45%, var(--line)); color: var(--text); font-weight: 600; }
+.watch-current-link:hover { border-color: var(--acid); background: color-mix(in srgb, var(--acid) 12%, var(--surface)); }
+
+.watch-section { margin-top: 26px; }
+.watch-section-h { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); margin: 0 0 12px; }
+.watch-section-h small { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.02em; text-transform: none; color: var(--text-3); }
+.watch-empty { font-size: 13.5px; line-height: 1.55; color: var(--text-3); margin: 0; padding: 2px 0; }
+
+/* LOUD alert card: emphasized over a plain .src — acid left rail + faint acid wash so it reads as
+   "this moves the conclusion". (A retraction swaps to the danger color via .retraction below.) */
+.watch-alert { border-left: 3px solid var(--acid); background: color-mix(in srgb, var(--acid) 6%, var(--surface)); cursor: default; }
+.watch-alert:hover { transform: none; border-color: var(--line); border-left-color: var(--acid); }
+.watch-alert-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 2px; }
+.watch-alert-reason { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; border-radius: 999px; padding: 2px 9px; }
+.watch-alert-reason.study { color: var(--acid-deep); background: color-mix(in srgb, var(--acid) 16%, transparent); border: 1px solid color-mix(in srgb, var(--acid) 36%, transparent); }
+.watch-alert-reason.retraction { color: var(--danger); background: color-mix(in srgb, var(--danger) 13%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 38%, transparent); }
+.watch-alert.faers, .watch-alert { } /* keep the provider .sq color from .src.<provider> intact */
+.watch-summary { font-size: 13px; line-height: 1.55; color: var(--text-2); margin: 6px 0 2px; }
+
+/* WALLED-OFF news: separated by a rule + heading color, and rendered as plain rows (NOT .src cards)
+   with a neutral-gray left tick — visibly NOT the vetted, citable evidence above. */
+.watch-news-section { margin-top: 34px; border-top: 1px dashed var(--line-2); padding-top: 18px; }
+.watch-news-h { color: var(--text-3); }
+.watch-news-h small { color: var(--warn); }
+.watch-news-disclaimer { font-size: 12px; line-height: 1.5; color: var(--text-3); font-style: italic; margin: -4px 0 14px; }
+.watch-news-item { border-left: 2px solid var(--line-2); padding: 4px 0 4px 12px; margin-bottom: 12px; }
+.watch-news-item h5 { font-size: 13.5px; font-weight: 550; line-height: 1.4; margin: 0; color: var(--text-2); }
+.watch-news-item h5 a { color: var(--text-2); text-decoration: none; }
+.watch-news-item h5 a:hover { color: var(--text); text-decoration: underline; }
+.watch-news-meta { display: flex; gap: 9px; font-family: var(--mono); font-size: 10px; color: var(--text-3); margin-top: 4px; }
+
+/* "Watch this" affordance — sits at the right end of the answer grade-row (reuses .chip-action). */
+.watch-this { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.watch-this-btn { white-space: nowrap; }
+.watch-this-note { font-size: 11px; color: var(--warn); }
+.watch-this-note a { color: var(--warn); font-weight: 600; }
+
+/* Monitoring page: the "3 of 10 watches used · checked daily" tier line under the intro. */
+.watch-usage { text-align: center; font-family: var(--mono); font-size: 11px; color: var(--text-3); margin: -2px 0 18px; }
+.watch-usage a { color: var(--acid-dim); text-decoration: none; }
+.watch-usage a:hover { text-decoration: underline; }
+
+/* "Monitor a new topic" box — start a watch from the Monitoring page. Calm border-tint focus (no
+   acid glow), matching the composer/search. */
+.watch-add { position: relative; display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; padding: 9px 13px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); transition: border-color 0.15s; }
+.watch-add:focus-within { border-color: var(--line-2); }
+/* Entity picker dropdown — typeahead suggestions under the Monitor box. Mirrors the .row-menu surface
+   (raised bg, hairline, soft shadow) so it reads as a native menu across all three themes. */
+.entity-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40; margin: 0; padding: 6px; list-style: none; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.28); max-height: 320px; overflow-y: auto; animation: fade 0.16s both; }
+.entity-option { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.entity-option.active { background: var(--surface-2); }
+.entity-option-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.entity-option-name { font-size: 14px; font-weight: 500; color: var(--text); }
+.entity-option-sub { font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.entity-type-chip { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: 11.5px; font-weight: 600; }
+.entity-type-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.watch-add > svg { color: var(--text-3); flex: none; }
+.watch-add-input { flex: 1; min-width: 0; background: none; border: none; outline: none; box-shadow: none; color: var(--text); font-family: var(--font); font-size: 14.5px; }
+.watch-add-input::placeholder { color: var(--text-3); }
+.watch-add-btn { flex: none; }
+.watch-add-error { font-size: 12.5px; color: var(--warn); margin: -2px 0 10px; }
+.watch-add-error a { color: var(--acid-dim); }
+
+/* Watch detail header manage controls (pause/resume + inline two-step delete). */
+.watch-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.watch-confirm-label { font-size: 13px; color: var(--text-2); }
+.watch-delete:hover { border-color: var(--danger); color: var(--danger); }
+.watch-delete-confirm { color: #fff; background: var(--danger); border-color: var(--danger); }
+.watch-delete-confirm:hover { filter: brightness(1.07); }

@@ -50,11 +50,20 @@ export type EvidenceGrade =
   | "unknown"
   | "not_applicable"; // emergency / sourcing-refusal answers carry no grade
 
+/** Speed/depth dial for a single (non-research) answer:
+ *  - "fast"     — plain-English register for a general reader, concise (the web default).
+ *  - "thorough" — technical register for a clinician/researcher; fuller, casts a wider candidate net per source.
+ *  Absent → current behavior (standard register, current retrieval), so older clients, the mobile app, and
+ *  saved-chat replays are byte-for-byte unchanged. Deep research / meta-analysis use the research endpoint. */
+export type AskMode = "fast" | "thorough";
+
 /** POST /ask request body (§8). */
 export interface AskRequest {
   question: string;
   use_health_context?: boolean;
   conversation_id?: string;
+  /** Speed/depth dial; see AskMode. Optional — absent preserves current behavior. */
+  mode?: AskMode;
 }
 
 /** One narrative bullet that carries the source chunk_ids backing it. */
@@ -167,6 +176,14 @@ export interface AskResponse {
   /** Per-citation verbatim source text, present ONLY when the request set `include_source_text=true`
    *  (a verification/eval aid). Omitted from normal answers and the stored trace to keep them small. */
   source_texts?: SourceText[];
+  /** The resolved primary drug name (canonical, else the literal mention) for the answer header's
+   *  molecule image. Absent for non-drug/zero-entity questions and on older saved chats; the renderer
+   *  404-hides the image for anything PubChem can't depict, so it is safe to set loosely. */
+  primary_drug?: string;
+  /** The reranked sources the engine REVIEWED for this answer but the text didn't cite — surfaced in
+   *  the evidence panel as "also reviewed" so the full breadth of the search is visible (e.g. the
+   *  PubMed / trial sources behind an FDA-label-cited answer). Additive; absent on older saved chats. */
+  reviewed_sources?: Citation[];
 }
 
 /** Which canned template produced the answer, when one did. */
@@ -175,7 +192,10 @@ export type AnswerTemplate =
   | "sourcing_refusal"
   | "no_source"
   /** A generation tripped the post-filter (doc-20 forbidden pattern) and was discarded. */
-  | "safety_fallback";
+  | "safety_fallback"
+  /** A lab_draft request whose SCOPE was hazardous (chemical-synthesis/production, weaponization, or
+   *  pathogen gain-of-function) — declined before any retrieval by the lab-draft scope guard. */
+  | "lab_draft_refused";
 
 /** Detected-entity record stored on the trace + echoed for the app. */
 export interface DetectedEntity {

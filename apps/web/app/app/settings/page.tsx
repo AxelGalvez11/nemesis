@@ -1,19 +1,19 @@
-"use client";
+import { PageHeader } from "@/components/ui";
+import { SettingsSurface, type SettingsSection } from "@/components/SettingsSurface";
 
-import { useRouter } from "next/navigation";
-import { SettingsPanel } from "@/components/SettingsPanel";
+const SECTIONS = ["general", "account", "billing", "about"] as const;
 
-// Full-page Settings (direct URL). The same SettingsPanel also renders inside the account-menu overlay
-// (AppShell); here cross-links route, in the overlay they switch overlays.
-export default function SettingsPage() {
-  const router = useRouter();
+// One consolidated Settings surface (Anthropic-style left section nav). The old /app/profile and
+// /app/billing routes now redirect here with ?section=, so direct URLs still land on the right place.
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ section?: string; checkout?: string }> }) {
+  const { section, checkout } = await searchParams;
+  const initial: SettingsSection = (SECTIONS as readonly string[]).includes(section ?? "")
+    ? (section as SettingsSection)
+    : "general";
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", display: "grid", gap: 16 }}>
-      <div className="page-header" style={{ marginBottom: 4 }}>
-        <h1>Settings</h1>
-        <p>Appearance, account, and answer preferences.</p>
-      </div>
-      <SettingsPanel onNavigate={(t) => router.push(`/app/${t}`)} />
+    <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gap: 18 }}>
+      <PageHeader title="Settings">Appearance, account, billing, and answer preferences.</PageHeader>
+      <SettingsSurface initialSection={initial} checkoutStatus={checkout} />
     </div>
   );
 }

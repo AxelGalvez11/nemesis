@@ -44,8 +44,8 @@ export async function POST(req: Request) {
       customer: customerId,
       client_reference_id: user.id,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${appUrl}/app/billing?checkout=success`,
-      cancel_url: `${appUrl}/app/billing?checkout=cancelled`,
+      success_url: `${appUrl}/app/settings?section=billing&checkout=success`,
+      cancel_url: `${appUrl}/app/settings?section=billing&checkout=cancelled`,
       subscription_data: { metadata: { user_id: user.id, plan } },
       metadata: { user_id: user.id, plan },
     });

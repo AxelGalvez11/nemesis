@@ -5,10 +5,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as SecureStore from "expo-secure-store";
+import * as SystemUI from "expo-system-ui";
 import { AuthProvider } from "@/auth/AuthProvider";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { bootstrapAnalytics } from "@/lib/analyticsBootstrap";
 import { flushAnalytics } from "@/lib/analytics";
+import { c } from "@/theme/tokens";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -22,6 +24,8 @@ export default function RootLayout() {
       posthogKey: process.env.EXPO_PUBLIC_POSTHOG_KEY,
       posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST,
     });
+    // Paint the OS background near-black so there's no white flash behind the dark UI.
+    void SystemUI.setBackgroundColorAsync(c.bg);
   }, []);
 
   // Flush batched analytics when the app leaves the foreground (events would
@@ -37,9 +41,9 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <SafeAreaProvider>
-          <Stack screenOptions={{ headerShown: false }} />
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }} />
           <OfflineBanner />
-          <StatusBar style="auto" />
+          <StatusBar style="light" />
         </SafeAreaProvider>
       </AuthProvider>
     </QueryClientProvider>

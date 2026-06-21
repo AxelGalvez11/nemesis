@@ -2,18 +2,16 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
 import { Orb } from "./Orb";
-import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, type ConversationSummary } from "@/lib/api";
+import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, pinConversation, renameConversation, type ConversationSummary } from "@/lib/api";
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
-import { SettingsPanel } from "./SettingsPanel";
-import { ProfilePanel } from "./ProfilePanel";
-import { BillingPanel } from "./BillingPanel";
+import { SettingsSurface } from "./SettingsSurface";
 
-type Overlay = "settings" | "profile" | "billing" | null;
+type Overlay = "settings" | null;
 
 /* ── chrome context: pages inject their evidence panel + topbar title here ── */
 interface AppChromeValue {
@@ -41,8 +39,10 @@ export const useAppChrome = () => useContext(AppChromeContext);
 const workspace = [
   { href: "/app/ask", label: "Ask", icon: "message" as const },
   { href: "/app/reports", label: "Reports", icon: "doc" as const },
+  { href: "/app/monitor", label: "Monitoring", icon: "bell" as const },
   // Explore is deferred (mostly mockup) — hidden from the nav until it's real. The route still exists.
-  { href: "/app/watchlist", label: "Watchlist", icon: "bell" as const },
+  // (The old "Watchlist" feature was retired 2026-06-18, superseded by Monitoring above. Its empty DB
+  // tables stay dormant for now; the drug-page "Follow" now creates a Monitoring watch.)
 ];
 
 function isActive(path: string, href: string) {
@@ -52,8 +52,8 @@ function titleForPath(path: string): { title: string; sub?: string } {
   if (path.startsWith("/app/ask")) return { title: "Ask", sub: "live evidence · cited" };
   if (path.startsWith("/app/research")) return { title: "Deep research", sub: "multi-step cited report" };
   if (path.startsWith("/app/reports")) return { title: "Reports", sub: "your saved evidence reports" };
+  if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };
   if (path.startsWith("/app/explore")) return { title: "Explore" };
-  if (path.startsWith("/app/watchlist")) return { title: "Watchlist" };
   if (path.startsWith("/app/billing")) return { title: "Billing" };
   if (path.startsWith("/app/profile")) return { title: "Profile" };
   if (path.startsWith("/app/settings")) return { title: "Settings" };
@@ -62,7 +62,7 @@ function titleForPath(path: string): { title: string; sub?: string } {
   return { title: "PharmaOrb" };
 }
 
-const FULL_BLEED = ["/app/ask", "/app/research", "/app/reports", "/app/explore", "/app/drugs/"];
+const FULL_BLEED = ["/app/ask", "/app/research", "/app/reports", "/app/monitor", "/app/explore", "/app/drugs/"];
 
 // Client-only breakpoint probe (clicks are client-side, so window is always defined here).
 const mqMatch = (q: string) =>
@@ -89,6 +89,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [plan, setPlan] = useState<{ plan: string; used: number; limit: number }>({ plan: "free", used: 0, limit: 10 });
   const [chats, setChats] = useState<ConversationSummary[]>([]);
   const [chatsVersion, setChatsVersion] = useState(0);
+  // Per-chat overflow (⋯) menu: which chat's menu is open + the fixed viewport coords to render it at
+  // (fixed-positioned so the scrolling rail can't clip it).
+  const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  // Delete confirmation: the chat awaiting a styled confirm dialog (replaces window.confirm). null = closed.
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null);
+  // Inline rename: the chat whose title is being edited in-row (replaces window.prompt) + the draft text.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  // Escape sets this so the input's blur handler cancels instead of saving — Enter and click-away both
+  // blur the field (the single commit path), and this flag tells that path it was a cancel.
+  const cancelRenameRef = useRef(false);
   // Lets the chat page refresh the rail history the moment it creates a new conversation.
   const bumpChats = useCallback(() => setChatsVersion((v) => v + 1), []);
 
@@ -105,6 +116,52 @@ export function AppShell({ children }: { children: ReactNode }) {
       setChatsVersion((v) => v + 1); // resync from the server
     }
   }, [path, router]);
+
+  // Rename a chat: optimistic title swap in the rail, then persist (RLS-scoped). Resync on failure.
+  const handleRenameChat = useCallback(async (id: string, title: string) => {
+    const clean = title.trim().slice(0, 120);
+    if (!clean) return;
+    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, title: clean } : c)));
+    try {
+      await renameConversation(id, clean);
+    } catch {
+      setChatsVersion((v) => v + 1); // resync from the server
+    }
+  }, []);
+
+  // Commit the inline rename: close the editor and persist the draft (handleRenameChat trims, caps,
+  // and no-ops a blank). Single commit path — Enter and click-away both blur the field; Escape cancels.
+  const commitRename = useCallback((id: string) => {
+    setRenamingId(null);
+    void handleRenameChat(id, renameDraft);
+  }, [handleRenameChat, renameDraft]);
+
+  // Pin / unpin a chat: optimistically flip `pinned` and re-sort the rail (pinned first, then
+  // most-recent — mirrors the server order), then persist (RLS-scoped). Resync on failure.
+  const handlePinChat = useCallback(async (id: string, pinned: boolean) => {
+    setChats((prev) =>
+      prev
+        .map((c) => (c.id === id ? { ...c, pinned } : c))
+        .sort((a, b) => (a.pinned === b.pinned ? b.updated_at.localeCompare(a.updated_at) : a.pinned ? -1 : 1)),
+    );
+    try {
+      await pinConversation(id, pinned);
+    } catch {
+      setChatsVersion((v) => v + 1); // resync from the server
+    }
+  }, []);
+
+  // Open the ⋯ menu anchored to the kebab button, clamped to the viewport (toggles if already open).
+  const openRowMenu = useCallback((id: string, btn: HTMLElement) => {
+    setRowMenu((cur) => {
+      if (cur?.id === id) return null;
+      const r = btn.getBoundingClientRect();
+      const W = 200, H = 184;
+      const x = Math.max(8, Math.min(r.right - W, window.innerWidth - W - 8));
+      const y = r.bottom + 4 + H > window.innerHeight ? Math.max(8, r.top - 4 - H) : r.bottom + 4;
+      return { id, x, y };
+    });
+  }, []);
 
   // Stable setters so child effects don't loop.
   const setEvidence = useCallback((node: ReactNode | null) => setEvidenceNode(node), []);
@@ -171,8 +228,36 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
   }, [menuOpen]);
 
-  // Close both mobile drawers + any account overlay on route change.
-  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setOverlay(null); }, [path]);
+  // Close the per-chat ⋯ menu on outside click / Escape, and (since it's fixed-positioned and won't
+  // track the rail) on scroll or resize.
+  useEffect(() => {
+    if (!rowMenu) return;
+    const close = () => setRowMenu(null);
+    const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".row-menu, .hist-more")) setRowMenu(null); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setRowMenu(null); };
+    const nav = document.querySelector(".nav");
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    nav?.addEventListener("scroll", close, { passive: true });
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+      nav?.removeEventListener("scroll", close);
+      window.removeEventListener("resize", close);
+    };
+  }, [rowMenu]);
+
+  // Close both mobile drawers + any account overlay + the row menu / its dialogs on route change.
+  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setOverlay(null); setRowMenu(null); setConfirmDelete(null); setRenamingId(null); }, [path]);
+
+  // Close the delete-confirm dialog on Escape.
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setConfirmDelete(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [confirmDelete]);
 
   // Close the open drawer on Escape.
   useEffect(() => {
@@ -251,30 +336,59 @@ export function AppShell({ children }: { children: ReactNode }) {
             {/* Projects (group chats, sources & deliverables) is not built yet — inert placeholder,
                 NOT a link. It previously pointed at /app/settings (wrong page); /app/projects does
                 not exist, so a real href would 404. */}
-            <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }} aria-disabled="true">
+            <div className="hist" style={{ color: "var(--text-2)", cursor: "default" }} aria-disabled="true">
               <Icon name="folder" className="hist-ic" />
               <span style={{ fontSize: 12 }}>Projects — coming soon</span>
             </div>
 
             <div className="r-label">Recent chats</div>
             {chats.length === 0 ? (
-              <div className="hist" style={{ color: "var(--text-3)", cursor: "default" }}>
+              <div className="hist" style={{ color: "var(--text-2)", cursor: "default" }}>
                 <span style={{ fontSize: 12 }}>Your saved chats appear here</span>
               </div>
             ) : (
               chats.map((c) => (
-                <div key={c.id} className="hist-row">
-                  <Link href={`/app/ask?c=${c.id}`} className="hist" title={c.title}>
-                    <Icon name="message" className="hist-ic" />
-                    <span>{c.title}</span>
-                  </Link>
-                  <button
-                    type="button"
-                    className="hist-del"
-                    aria-label={`Delete chat ${c.title}`}
-                    title="Delete chat"
-                    onClick={() => { if (window.confirm(`Delete "${c.title}"? This can't be undone.`)) void handleDeleteChat(c.id); }}
-                  >×</button>
+                <div key={c.id} className={`hist-row${rowMenu?.id === c.id ? " menu-open" : ""}`}>
+                  {renamingId === c.id ? (
+                    // Inline rename: the title becomes an editable field. Enter or click-away saves;
+                    // Escape cancels (both route through blur — the single commit path).
+                    <input
+                      className="hist-rename"
+                      value={renameDraft}
+                      autoFocus
+                      maxLength={120}
+                      aria-label={`Rename chat ${c.title}`}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+                        else if (e.key === "Escape") { e.preventDefault(); cancelRenameRef.current = true; e.currentTarget.blur(); }
+                      }}
+                      onBlur={() => {
+                        if (cancelRenameRef.current) { cancelRenameRef.current = false; setRenamingId(null); return; }
+                        commitRename(c.id);
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <Link href={`/app/ask?c=${c.id}`} className="hist" title={c.title}>
+                        {/* pinned chats lead with a pin glyph (and sort to the top) */}
+                        <Icon name={c.pinned ? "pin" : "message"} className="hist-ic" />
+                        <span>{c.title}</span>
+                      </Link>
+                      <button
+                        type="button"
+                        className="hist-more"
+                        aria-label={`Options for chat ${c.title}`}
+                        aria-haspopup="menu"
+                        aria-expanded={rowMenu?.id === c.id}
+                        title="Chat options"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); openRowMenu(c.id, e.currentTarget); }}
+                      >
+                        <Icon name="more" size={16} />
+                      </button>
+                    </>
+                  )}
                 </div>
               ))
             )}
@@ -284,13 +398,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             {menuOpen ? (
               <div className="acct-menu" role="menu">
                 <button onClick={() => { setOverlay("settings"); setMenuOpen(false); }}><Icon name="settings" size={15} />Settings</button>
-                <button onClick={() => { setOverlay("profile"); setMenuOpen(false); }}><Icon name="user" size={15} />Profile</button>
-                <button onClick={() => { setOverlay("billing"); setMenuOpen(false); }}><Icon name="card" size={15} />Billing · {plan.plan}</button>
                 <div className="sep" />
                 <button onClick={() => void signOut().then(() => router.replace("/sign-in"))}><Icon name="logout" size={15} />Sign out</button>
               </div>
             ) : null}
-            <button className="acct-btn" onClick={() => setMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={menuOpen} aria-label="Account menu">
+            <button className="acct-btn" onClick={() => setMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={menuOpen}>
               <span className="av">{initials}</span>
               <span className="acct-meta">
                 <b>{email.split("@")[0]}</b>
@@ -306,7 +418,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* ── main ── */}
         <main className="main">
           <div className="topbar">
-            <button className="icon-btn" onClick={toggleRail} title="Toggle sidebar" aria-label="Toggle sidebar" aria-controls="app-rail" aria-expanded={mobileNavOpen}>
+            <button className="icon-btn" onClick={toggleRail} data-tip="Toggle sidebar" aria-label="Toggle sidebar" aria-controls="app-rail" aria-expanded={mobileNavOpen}>
               <Icon name="menu" />
             </button>
             {topbar ?? (
@@ -316,11 +428,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             )}
             <div className="spacer" />
-            <button className="icon-btn" onClick={toggleTheme} title="Toggle light/dark">
-              <Icon name={theme === "dark" ? "sun" : "moon"} />
+            <button className="icon-btn" onClick={toggleTheme} data-tip="Switch theme" aria-label="Switch theme (light, grey, dark)">
+              <Icon name={theme === "light" ? "moon" : "sun"} />
             </button>
             {hasEvidence ? (
-              <button className="icon-btn" onClick={toggleEvidence} title="Toggle evidence" aria-label="Toggle evidence" aria-controls="app-evidence" aria-expanded={mobileEvidenceOpen}>
+              <button className="icon-btn" onClick={toggleEvidence} data-tip="Show the evidence behind the answer" aria-label="Toggle evidence" aria-controls="app-evidence" aria-expanded={mobileEvidenceOpen}>
                 <Icon name="panel" />
               </button>
             ) : null}
@@ -336,15 +448,55 @@ export function AppShell({ children }: { children: ReactNode }) {
           </>
         ) : null}
 
+        {/* ── per-chat ⋯ menu (fixed-positioned so the scrolling rail can't clip it) ── */}
+        {rowMenu && (() => {
+          const c = chats.find((x) => x.id === rowMenu.id);
+          if (!c) return null;
+          return (
+            <div className="row-menu" role="menu" style={{ left: rowMenu.x, top: rowMenu.y }}>
+              <button role="menuitem" onClick={() => { setRowMenu(null); setRenamingId(c.id); setRenameDraft(c.title); }}>
+                <Icon name="pencil" size={15} />Rename
+              </button>
+              <button role="menuitem" onClick={() => { setRowMenu(null); void handlePinChat(c.id, !c.pinned); }}>
+                <Icon name="pin" size={15} />{c.pinned ? "Unpin chat" : "Pin chat"}
+              </button>
+              {/* Add to project waits on Projects (not built yet) — shown honestly as disabled "Soon". */}
+              <button role="menuitem" disabled><Icon name="folder" size={15} />Add to project<small>Soon</small></button>
+              <div className="sep" />
+              <button role="menuitem" className="danger" onClick={() => { setRowMenu(null); setConfirmDelete({ id: c.id, title: c.title }); }}>
+                <Icon name="trash" size={15} />Delete chat
+              </button>
+            </div>
+          );
+        })()}
+
+        {/* ── delete-confirm dialog (styled in-app; replaces the native window.confirm) ── */}
+        {confirmDelete && (
+          <div className="confirm-overlay" role="presentation" onClick={() => setConfirmDelete(null)}>
+            <div
+              className="confirm-card"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="confirm-del-title"
+              aria-describedby="confirm-del-body"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="confirm-del-title" className="confirm-title">Delete this chat?</h3>
+              <p id="confirm-del-body" className="confirm-body">
+                “{confirmDelete.title}” will be permanently deleted. This can’t be undone.
+              </p>
+              <div className="confirm-actions">
+                {/* Cancel is the autofocused default — the safe choice for a destructive action. */}
+                <button type="button" className="confirm-cancel" autoFocus onClick={() => setConfirmDelete(null)}>Cancel</button>
+                <button type="button" className="confirm-del" onClick={() => { const id = confirmDelete.id; setConfirmDelete(null); void handleDeleteChat(id); }}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── account overlays (Settings / Profile / Billing) — portaled, so they sit above everything ── */}
-        <AppModal open={overlay === "settings"} onClose={() => setOverlay(null)} title="Settings" sub="Appearance, account, and answer preferences.">
-          <SettingsPanel onNavigate={(t) => setOverlay(t)} />
-        </AppModal>
-        <AppModal open={overlay === "profile"} onClose={() => setOverlay(null)} title="Profile" sub="Your account, plan, and data.">
-          <ProfilePanel />
-        </AppModal>
-        <AppModal open={overlay === "billing"} onClose={() => setOverlay(null)} title="Billing" sub="Plus unlocks more cited questions; Pro adds Deep Research.">
-          <BillingPanel />
+        <AppModal open={overlay === "settings"} onClose={() => setOverlay(null)} title="Settings" sub="Appearance, account, billing, and preferences." wide>
+          <SettingsSurface />
         </AppModal>
       </div>
     </AppChromeContext.Provider>

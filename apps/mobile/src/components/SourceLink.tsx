@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text } from "react-native";
 import { router } from "expo-router";
+import { c, space } from "@/theme/tokens";
 
 // The "cited" affordance. The Phase-2 acceptance is "renders label/trials/PubMed,
 // all cited" — every evidence row carries a source_id, and this opens that row's
@@ -27,6 +28,6 @@ export function SourceLink({
 }
 
 const styles = StyleSheet.create({
-  link: { paddingVertical: 4, alignSelf: "flex-start" },
-  linkText: { color: "#208AEF", fontSize: 13, fontWeight: "600" },
+  link: { paddingVertical: space(1), alignSelf: "flex-start" },
+  linkText: { color: c.acidDim, fontSize: 13, fontWeight: "600" },
 });

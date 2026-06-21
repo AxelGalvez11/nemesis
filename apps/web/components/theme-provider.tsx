@@ -1,9 +1,11 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 
-type Theme = "dark" | "light";
+type Theme = "light" | "grey" | "dark";
 const STORAGE_KEY = "pharmaorb-theme";
+
+const isTheme = (v: unknown): v is Theme => v === "light" || v === "grey" || v === "dark";
 
 interface ThemeContextValue {
   theme: Theme;
@@ -12,20 +14,20 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: "dark",
+  theme: "light",
   setTheme: () => {},
   toggle: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Default dark; the inline no-flash script in layout.tsx already applied the stored theme to
+  // Default light; the inline no-flash script in layout.tsx already resolved stored→OS→light onto
   // <html data-theme> before paint, so we read it back on mount to sync React state.
-  const [theme, setThemeState] = useState<Theme>("dark");
+  const [theme, setThemeState] = useState<Theme>("light");
 
   useEffect(() => {
-    const fromDom = document.documentElement.dataset.theme as Theme | undefined;
-    const stored = (typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null) as Theme | null;
-    setThemeState(stored ?? fromDom ?? "dark");
+    const fromDom = document.documentElement.dataset.theme;
+    const stored = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+    setThemeState(isTheme(stored) ? stored : isTheme(fromDom) ? fromDom : "light");
   }, []);
 
   const setTheme = (t: Theme) => {
@@ -38,7 +40,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const toggle = () => setTheme(theme === "dark" ? "light" : "dark");
+  // The topbar button cycles light → grey → dark → light; Settings offers the three explicitly.
+  const toggle = () => setTheme(theme === "light" ? "grey" : theme === "grey" ? "dark" : "light");
 
   return <ThemeContext.Provider value={{ theme, setTheme, toggle }}>{children}</ThemeContext.Provider>;
 }

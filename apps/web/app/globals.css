@@ -1,73 +1,124 @@
-@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ──────────────────────────────────────────────────────────────────────────
-   PharmaOrb design tokens — "clinical terminal": near-black + single acid accent.
-   Dark is the default; [data-theme="light"] flips it. The mockup hex tokens drive
-   the custom shell/chat CSS; the shadcn HSL triplets (same colors) drive the
-   shadcn primitives so both render the same theme. Legacy aliases keep pre-existing
-   pages styled (and dark) until each is rebuilt.
+   PharmaOrb design tokens — ChatGPT-style: calm neutral grayscale + PharmaOrb's
+   own accent (acid green) reserved for primary actions and links only.
+
+   LIGHT is the default (bare :root); [data-theme="dark"] flips it. The inline
+   no-flash script in layout.tsx resolves stored→OS preference→light into an
+   explicit data-theme before paint, so prefers-color-scheme is honored without
+   cloning the whole token set here.
+
+   The mockup hex tokens drive the custom shell/chat CSS; the shadcn HSL triplets
+   (same colors) drive the shadcn primitives so both render the same theme. The
+   token NAMES are a stable contract — screens read var(--bg)/--surface/--text/
+   --acid, so they re-skin coherently for free. Never rename a token.
    ────────────────────────────────────────────────────────────────────────── */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* mockup palette (hex) */
-  --bg: #0a0a0b; --bg-2: #0e0e10; --surface: #141417; --surface-2: #1a1a1e; --raised: #1f1f24;
-  --line: #242428; --line-2: #2e2e34;
-  --text: #f4f4f5; --text-2: #a6a6ad; --text-3: #8c8c95;
-  --acid: #bcff3c; --acid-dim: #9bd92e; --acid-deep: #74a81e; --on-acid: #0a0a0b;
-  --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
+  /* surfaces & lines (ChatGPT light neutrals)
+     page #ffffff · sidebar/raised surface #f7f7f8 · user-bubble #f4f4f5 · border #e5e5e7 */
+  --bg: #ffffff; --bg-2: #f7f7f8; --surface: #f7f7f8; --surface-2: #f4f4f5; --raised: #ffffff;
+  --line: #e5e5e7; --line-2: #d9d9dd;
+  --text: #0d0d0d; --text-2: #6e6e80; --text-3: #8e8ea0;
+
+  /* PharmaOrb accent — PRESERVED (was #62b000 light). Reserved for primary actions/links. */
+  --acid: #62b000; --acid-dim: #74a81e; --acid-deep: #4c8200; --on-acid: #ffffff;
+  /* accent as raw RGB channels — lets the Orb's halo/sonar/glow build rgba()s that track the accent
+     per theme (the dots already use var(--acid); this fixes the surrounding glow's hue in light). */
+  --acid-rgb: 98, 176, 0;
+  --warn: #b5760a; --danger: #cc3322; --info: #0278c0;
 
   /* layout + type */
   --radius: 14px; --radius-sm: 10px; --rail: 264px; --rail-collapsed: 64px; --evidence: 344px;
-  --font: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
-  --glow: 0.55;
-  --shadow: 0 1px 8px rgba(0, 0, 0, 0.28);
-  --shadow-acid: 0 8px 28px -8px rgba(140, 220, 40, 0.5);
+  /* The page chrome is flat (ChatGPT feel; the body's ambient accent gradient is removed). --glow now
+     drives ONLY the brand Orb's soft halo — kept modest so the mark stays alive without a page wash. */
+  --glow: 0.12;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px -4px rgba(0, 0, 0, 0.07);
+  --shadow-acid: 0 6px 22px -8px rgba(98, 176, 0, 0.4);
 
   /* legacy aliases (pre-existing pages reference these) */
   --muted: var(--text-2); --muted-2: var(--text-3);
   --accent: var(--acid); --accent-2: var(--acid-dim); --accent-mid: var(--acid-deep); --accent-dark: var(--acid-dim);
-  --line-acid: rgba(188, 255, 60, 0.28); --placeholder: var(--text-3); --button-text: var(--on-acid);
+  --line-acid: rgba(98, 176, 0, 0.24); --placeholder: var(--text-3); --button-text: var(--on-acid);
 
   /* shadcn HSL triplets (same colors as the hex tokens above) */
-  --background: 240 5% 4%; --foreground: 240 5% 96%;
-  --card: 240 7% 8%; --card-foreground: 240 5% 96%;
-  --popover: 240 7% 8%; --popover-foreground: 240 5% 96%;
-  --primary: 81 100% 62%; --primary-foreground: 240 5% 4%;
-  --secondary: 240 7% 11%; --secondary-foreground: 240 5% 96%;
-  --muted-shadcn: 240 7% 11%; --muted-foreground: 240 4% 66%;
-  --accent-shadcn: 240 7% 13%; --accent-foreground: 240 5% 96%;
-  --destructive: 5 100% 65%; --destructive-foreground: 240 5% 4%;
-  --border: 240 5% 15%; --input: 240 6% 19%; --ring: 81 100% 62%;
+  --background: 0 0% 100%; --foreground: 0 0% 5%;
+  --card: 0 0% 100%; --card-foreground: 0 0% 5%;
+  --popover: 0 0% 100%; --popover-foreground: 0 0% 5%;
+  --primary: 87 100% 35%; --primary-foreground: 0 0% 100%;
+  --secondary: 240 5% 96%; --secondary-foreground: 0 0% 5%;
+  --muted-shadcn: 240 6% 97%; --muted-foreground: 240 6% 47%;
+  --accent-shadcn: 240 5% 96%; --accent-foreground: 0 0% 5%;
+  --destructive: 5 75% 47%; --destructive-foreground: 0 0% 100%;
+  --border: 240 5% 90%; --input: 240 5% 86%; --ring: 87 100% 35%;
   --shadcn-radius: 14px;
 }
 
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #fbfbf9; --bg-2: #f4f4f1; --surface: #ffffff; --surface-2: #f8f8f5; --raised: #ffffff;
-  --line: #e8e8e2; --line-2: #dbdbd3;
-  --text: #0d0d0f; --text-2: #5c5c63; --text-3: #6e6e77;
-  --acid: #62b000; --acid-dim: #74a81e; --acid-deep: #4c8200; --on-acid: #ffffff;
-  --warn: #b5760a; --danger: #cc3322; --info: #0278c0;
-  --glow: 0.18;
-  --shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
-  --shadow-acid: 0 6px 22px -8px rgba(98, 176, 0, 0.4);
-  --line-acid: rgba(98, 176, 0, 0.24);
+:root[data-theme="grey"] {
+  color-scheme: dark;
 
-  --background: 60 20% 98%; --foreground: 240 7% 5%;
-  --card: 0 0% 100%; --card-foreground: 240 7% 5%;
-  --popover: 0 0% 100%; --popover-foreground: 240 7% 5%;
-  --primary: 87 100% 35%; --primary-foreground: 0 0% 100%;
-  --secondary: 60 18% 97%; --secondary-foreground: 240 7% 5%;
-  --muted-shadcn: 60 12% 95%; --muted-foreground: 240 4% 37%;
-  --accent-shadcn: 60 18% 97%; --accent-foreground: 85 100% 25%;
-  --destructive: 5 75% 47%; --destructive-foreground: 0 0% 100%;
-  --border: 60 12% 90%; --input: 60 10% 84%; --ring: 87 100% 35%;
+  /* GREY (soft dim — the ChatGPT-style dark): page #212121 · sidebar #171717 · user-bubble #2f2f33 */
+  --bg: #212121; --bg-2: #171717; --surface: #2a2a2c; --surface-2: #2f2f33; --raised: #2a2a2c;
+  --line: #2f2f33; --line-2: #3a3a40;
+  --text: #ececec; --text-2: #a9a9b3; --text-3: #8e8e9a;
+
+  /* PharmaOrb accent — PRESERVED (was #bcff3c dark; contrast-tuned per theme). */
+  --acid: #bcff3c; --acid-dim: #9bd92e; --acid-deep: #74a81e; --on-acid: #0d0d0d;
+  --acid-rgb: 188, 255, 60;
+  --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
+
+  --glow: 0;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 6px 18px -6px rgba(0, 0, 0, 0.38);
+  --shadow-acid: 0 8px 28px -8px rgba(140, 220, 40, 0.5);
+  --line-acid: rgba(188, 255, 60, 0.28);
+
+  --background: 0 0% 13%; --foreground: 0 0% 93%;
+  --card: 240 2% 16%; --card-foreground: 0 0% 93%;
+  --popover: 240 2% 16%; --popover-foreground: 0 0% 93%;
+  --primary: 81 100% 62%; --primary-foreground: 0 0% 5%;
+  --secondary: 240 4% 18%; --secondary-foreground: 0 0% 93%;
+  --muted-shadcn: 240 4% 18%; --muted-foreground: 240 4% 66%;
+  --accent-shadcn: 240 4% 18%; --accent-foreground: 0 0% 93%;
+  --destructive: 5 100% 65%; --destructive-foreground: 0 0% 5%;
+  --border: 240 4% 19%; --input: 240 4% 24%; --ring: 81 100% 62%;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* DARK ("complete dark") — true near-black; PharmaOrb's pre-overhaul dark, restored.
+     page #0a0a0b · sidebar #0e0e10 · surface #141417 · raised #1f1f24 */
+  --bg: #0a0a0b; --bg-2: #0e0e10; --surface: #141417; --surface-2: #1a1a1e; --raised: #1f1f24;
+  --line: #232329; --line-2: #2c2c33;
+  --text: #f4f4f5; --text-2: #a6a6ad; --text-3: #8c8c95;
+
+  /* PharmaOrb accent — lime on near-black (same accent as grey). */
+  --acid: #bcff3c; --acid-dim: #9bd92e; --acid-deep: #74a81e; --on-acid: #0a0a0b;
+  --acid-rgb: 188, 255, 60;
+  --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
+
+  --glow: 0;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px -6px rgba(0, 0, 0, 0.6);
+  --shadow-acid: 0 8px 28px -8px rgba(140, 220, 40, 0.5);
+  --line-acid: rgba(188, 255, 60, 0.28);
+
+  --background: 240 7% 4%; --foreground: 0 0% 96%;
+  --card: 240 6% 8%; --card-foreground: 0 0% 96%;
+  --popover: 240 6% 8%; --popover-foreground: 0 0% 96%;
+  --primary: 81 100% 62%; --primary-foreground: 0 0% 4%;
+  --secondary: 240 6% 11%; --secondary-foreground: 0 0% 96%;
+  --muted-shadcn: 240 5% 11%; --muted-foreground: 240 5% 64%;
+  --accent-shadcn: 240 6% 11%; --accent-foreground: 0 0% 96%;
+  --destructive: 5 100% 65%; --destructive-foreground: 0 0% 5%;
+  --border: 240 6% 13%; --input: 240 6% 16%; --ring: 81 100% 62%;
 }
 
 * { box-sizing: border-box; }
@@ -75,32 +126,30 @@ html, body { height: 100%; }
 body {
   margin: 0;
   font-family: var(--font);
-  font-size: 14.5px;
-  line-height: 1.55;
-  letter-spacing: -0.01em;
+  font-size: 15.5px;
+  line-height: 1.6;
+  letter-spacing: -0.005em;
   color: var(--text);
   background: var(--bg);
-  background-image:
-    radial-gradient(900px 500px at 78% -8%, rgba(140, 220, 40, calc(var(--glow) * 0.12)), transparent 60%),
-    radial-gradient(700px 600px at -5% 110%, rgba(140, 220, 40, calc(var(--glow) * 0.07)), transparent 55%);
-  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
-  transition: background-color 0.4s, color 0.4s;
+  transition: background-color 0.3s, color 0.3s;
 }
 a { color: inherit; text-decoration: none; }
-::selection { background: var(--acid); color: var(--on-acid); }
+::selection { background: color-mix(in srgb, var(--acid) 28%, transparent); color: var(--text); }
 .mono { font-family: var(--mono); font-feature-settings: "tnum" 1; letter-spacing: 0; }
 .muted { color: var(--text-2); }
 
-/* SVG icon defaults (the mockup's hand-drawn stroke icons) */
+/* SVG icon defaults (the hand-drawn stroke icons) */
 .ic-stroke svg, svg.ic-stroke {
   width: 17px; height: 17px; stroke: currentColor; stroke-width: 1.7; fill: none;
   stroke-linecap: round; stroke-linejoin: round;
 }
 
-::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 9px; border: 2px solid var(--bg-2); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 10px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
 ::-webkit-scrollbar-track { background: transparent; }
 
 @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-.fade { animation: fade 0.5s both; }
+.fade { animation: fade 0.4s both; }
+@media (prefers-reduced-motion: reduce) { .fade { animation: none; } }

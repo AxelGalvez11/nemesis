@@ -3,17 +3,19 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
+import type { AskMode, AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { scienceState } from "@pharmabro/shared";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
+import { pubchemMoleculeUrl } from "@/lib/molecule";
 import { phCapture } from "@/lib/posthog";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { ResearchProgress } from "@/components/ResearchProgress";
+import { WatchButton } from "@/components/WatchButton";
 
 function isQuotaError(e: unknown): e is AskQuotaError {
   return e instanceof Error && "quota" in e;
@@ -22,17 +24,24 @@ function isQuotaError(e: unknown): e is AskQuotaError {
 // Honest pipeline stages (classify → retrieve → rerank → generate), animated while the request runs.
 const STAGES = ["Reading the question", "Searching the evidence library", "Ranking the strongest sources", "Composing a cited answer"];
 
+// The speed/depth dial. fast/thorough are single cited answers (the /ask engine, free); deep/meta are the
+// multi-step research reports (the research endpoint, Pro). Fast is the default: plain-English + concise.
+// Thorough thinks longer — a wider source pull and a fuller, more technical write-up for clinicians/researchers.
 const MODES = [
-  { id: "evidence", label: "Quick answer", live: true, pro: false, hint: "Cited answer from the library + live sources" },
+  { id: "fast", label: "Fast", live: true, pro: false, hint: "Quick, plain-English answer — cited from the library + live sources" },
+  { id: "thorough", label: "Thorough", live: true, pro: false, hint: "Thinks longer: a wider source pull and a fuller, more technical answer" },
   { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report that documents its method (Pro)" },
   { id: "meta", label: "Meta-analysis", live: true, pro: true, hint: "Pools comparable studies into a computed estimate, when the evidence supports it (Pro)" },
+  { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
 ] as const;
 
-const SUGGESTIONS = [
-  { text: "What are the major warnings for semaglutide?", icon: "doc" as const },
-  { text: "Metformin dosing when eGFR is 40?", icon: "calc" as const },
-  { text: "Compare semaglutide and tirzepatide safety evidence", icon: "sparkle" as const },
-  { text: "Is lisinopril safe with spironolactone?", icon: "search" as const },
+// Example questions that cycle through the composer placeholder (the "chat bar") as live prompts,
+// instead of static suggestion chips under the welcome.
+const PLACEHOLDER_EXAMPLES = [
+  "What are the major warnings for semaglutide?",
+  "Metformin dosing when eGFR is 40?",
+  "Compare semaglutide and tirzepatide safety evidence",
+  "Is lisinopril safe with spironolactone?",
 ];
 
 const PROVIDER_ABBR: Record<string, string> = { openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", clinicaltrials: "NCT", faers: "FAERS", openalex: "OA" };
@@ -55,6 +64,7 @@ function AskPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const cParam = searchParams.get("c"); // the conversation to load, if the URL deep-links one
+  const qParam = searchParams.get("q"); // a pre-filled question (e.g. the "See current evidence" link on a watch)
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loadingChat, setLoadingChat] = useState(false); // true while a saved chat's turns are loading
   const [chatLoadError, setChatLoadError] = useState<string | null>(null); // a failed reopen is shown, not swallowed
@@ -67,7 +77,7 @@ function AskPage() {
   const [busy, setBusy] = useState(false);
   const [bloom, setBloom] = useState(false);
   const [stage, setStage] = useState(0);
-  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("evidence");
+  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("fast");
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   // The verbatim source sentence backing the claim whose citation was just clicked, shown highlighted
@@ -121,6 +131,20 @@ function AskPage() {
     return () => { alive = false; };
   }, [cParam]);
 
+  // Pre-fill the composer from ?q= (the "See current evidence" link on a watch). We ONLY fill the box —
+  // never auto-submit; the user reviews and presses send (so it counts as a normal, user-initiated ask).
+  // Applied once per arrival, then ?q= is stripped from the URL (keeping ?c= if present) so a later edit
+  // isn't clobbered on a re-render or refresh. Coexists with the ?c= loader above: filling the input is
+  // independent of loading a saved chat's turns.
+  const appliedQRef = useRef(false);
+  useEffect(() => {
+    const q = (qParam ?? "").trim();
+    if (!q || appliedQRef.current) return;
+    appliedQRef.current = true;
+    setQuestion(qParam ?? "");
+    router.replace(cParam ? `/app/ask?c=${cParam}` : "/app/ask");
+  }, [qParam, cParam, router]);
+
   // Persist a completed turn — best-effort, so a save failure never breaks the chat. On the first
   // message it creates the conversation, points the URL at it (refresh / deep-link works), and tells
   // the rail to refresh so the new chat appears in history.
@@ -147,7 +171,7 @@ function AskPage() {
     try {
       const convId = await ensureConversation(q);
       if (convId) await saveTurn(convId, idx * 2, q, answer);
-    } catch { /* best-effort persistence */ }
+    } catch (e) { console.error("chat persist failed (best-effort):", e); }
   }, [ensureConversation]);
 
   // Persist a completed deep-research turn so its "Report ready" card survives a reopen.
@@ -155,7 +179,7 @@ function AskPage() {
     try {
       const convId = await ensureConversation(q);
       if (convId) await saveResearchTurn(convId, idx * 2, q, { mode, savedReportId: result.savedReportId, title: q, citationCount: result.sources });
-    } catch { /* best-effort persistence */ }
+    } catch (e) { console.error("research persist failed (best-effort):", e); }
   }, [ensureConversation]);
 
   // Turn slot `idx` into a running research card and kick off the run. `searchQ` may be enriched with
@@ -204,11 +228,11 @@ function AskPage() {
   // The panel shows the PINNED answer (a citation the user clicked) if set, else the latest answer.
   const panelAnswer = activeAnswer ?? lastAnswered;
   useEffect(() => {
-    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />);
+    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} reviewed={panelAnswer?.reviewed_sources} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />);
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
-        <div className="thread-sub">{panelAnswer && panelAnswer.intent !== "smalltalk" ? `${panelAnswer.citations.length} sources · ${panelAnswer.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
+        <div className="thread-sub">{panelAnswer && panelAnswer.intent !== "smalltalk" ? `${panelAnswer.citations.length + (panelAnswer.reviewed_sources?.length ?? 0)} sources · ${panelAnswer.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
       </div>,
     );
     return () => {
@@ -267,10 +291,11 @@ function AskPage() {
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
     // can keep chatting while it works.
-    if (mode === "deep" || mode === "meta") {
+    if (mode === "deep" || mode === "meta" || mode === "lab_draft") {
       // Deep research documents its method (engine's structured_review); meta-analysis additionally
-      // pools comparable studies into a computed estimate when the evidence supports it.
-      const runMode: ReportMode = mode === "meta" ? "meta" : "structured_review";
+      // pools comparable studies into a computed estimate when the evidence supports it; lab_draft
+      // produces a study-design scaffold (not a runnable protocol).
+      const runMode: ReportMode = mode === "meta" ? "meta" : mode === "lab_draft" ? "lab_draft" : "structured_review";
       phCapture("research_started", { mode: runMode });
       const ridx = turns.length;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
@@ -297,7 +322,9 @@ function AskPage() {
     const setLast = (patch: Partial<Turn>) =>
       setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
     try {
-      const res = await askQuestion(text);
+      // Only fast/thorough reach here — deep/meta/lab_draft returned above via the research branch.
+      const askMode: AskMode = mode === "thorough" ? "thorough" : "fast";
+      const res = await askQuestion(text, askMode);
       setLast({ a: res });
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
       void fetchUsage().catch(() => {});
@@ -319,6 +346,7 @@ function AskPage() {
       question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
       submit={submit} busy={busy} mode={mode} setMode={setMode}
       modeOpen={modeOpen} setModeOpen={setModeOpen} error={latest?.err ?? null}
+      welcome={!hasThread}
     />
   );
 
@@ -352,17 +380,10 @@ function AskPage() {
         <div className="welcome">
           <Orb size={56} />
           <h2 className="welcome-title">{reopenedEmpty ? "This chat has no saved messages" : "What can I help you research?"}</h2>
-          <p className="welcome-sub">{reopenedEmpty
-            ? "Its earlier turns didn’t save (a now-fixed bug). Ask below to continue in this chat, or start a new one."
-            : "Every medical claim is source-backed. Ask about a drug, dose, interaction, or monograph for a cited answer."}</p>
+          {reopenedEmpty ? (
+            <p className="welcome-sub">Its earlier turns didn’t save (a now-fixed bug). Ask below to continue in this chat, or start a new one.</p>
+          ) : null}
           {composer}
-          <div className="chip-row welcome-chips">
-            {SUGGESTIONS.map((s) => (
-              <button key={s.text} className="chip-action" onClick={() => submit(s.text)}>
-                <Icon name={s.icon} size={14} />{s.text}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
     );
@@ -386,7 +407,7 @@ function AskPage() {
                   ) : t.research ? (
                     <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
                   ) : t.a ? (
-                    <Answer answer={t.a} onCite={onCite} />
+                    <Answer answer={t.a} onCite={onCite} question={t.q} />
                   ) : isLast && busy ? <Thinking stage={stage} /> : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
@@ -447,28 +468,43 @@ interface ComposerProps {
   modeOpen: boolean;
   setModeOpen: Dispatch<SetStateAction<boolean>>;
   error: string | null;
+  // true only on the empty welcome screen — drives the cycling example placeholders. In an active
+  // chat (thread) it's false, so the box shows a calm static "Ask a follow-up…" instead.
+  welcome: boolean;
 }
 
 // The input pill, shared between the centered welcome screen and the pinned bottom bar. A leading
 // "+" (attachments) and a "mic" (voice) are shown as ChatGPT-style affordances but disabled until
 // those features ship — same honest "coming soon" treatment as the non-live modes.
-function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error }: ComposerProps) {
+function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error, welcome }: ComposerProps) {
   const activeMode = MODES.find((m) => m.id === mode)!;
+  // On the welcome screen, cycle example questions through an animated overlay placeholder (reveals
+  // in from the left, fades out) so suggestions live in the chat bar without a hard text swap. Once a
+  // chat is active the suggestions stop — the box shows a calm static placeholder instead.
+  const [phIdx, setPhIdx] = useState(0);
+  useEffect(() => {
+    if (!welcome) return;
+    const id = setInterval(() => setPhIdx((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length), 5000);
+    return () => clearInterval(id);
+  }, [welcome]);
   return (
     <div className="composer">
       <div className="box">
-        <textarea
-          ref={taRef}
-          rows={1}
-          value={question}
-          maxLength={500}
-          aria-label="Ask a question about a drug, dose, interaction, or monograph"
-          placeholder="Ask anything about a drug, dose, interaction, or monograph…"
-          onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
-        />
+        <div className="ta-wrap">
+          <textarea
+            ref={taRef}
+            rows={1}
+            value={question}
+            maxLength={500}
+            aria-label="Ask a question about a drug, dose, interaction, or monograph"
+            placeholder={welcome ? "" : "Ask a follow-up…"}
+            onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
+          />
+          {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{PLACEHOLDER_EXAMPLES[phIdx]}</span> : null}
+        </div>
         <div className="tools">
-          <button className="tool" type="button" title="Attach — coming soon" aria-label="Attach" disabled>
+          <button className="tool" type="button" data-tip="Attach — coming soon" aria-label="Attach" disabled>
             <Icon name="plus" size={18} />
           </button>
           <div className="mode-wrap" style={{ position: "relative" }}>
@@ -478,7 +514,10 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             </button>
             {modeOpen ? (
               <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
-                {MODES.map((m) => (
+                {/* lab_draft (beta) deploy is owner-gated separately and its engine (research fn) isn't
+                    live yet — keep it out of the selectable modes for the monitoring release. Re-enable
+                    by removing this filter once the lab_draft engine is deployed. */}
+                {MODES.filter((m) => m.id !== "lab_draft").map((m) => (
                   <button
                     key={m.id}
                     type="button"
@@ -496,15 +535,15 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             ) : null}
           </div>
           <div className="spacer" />
-          <button className="tool" type="button" title="Voice — coming soon" aria-label="Voice input" disabled>
+          <button className="tool" type="button" data-tip="Voice — coming soon" aria-label="Voice input" disabled>
             <Icon name="mic" size={18} />
           </button>
-          <button className="send" title="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
+          <button className="send" data-tip="Send" aria-label="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
             <Icon name="send" size={18} />
           </button>
         </div>
       </div>
-      {error ? <div className="err">{error}</div> : <div className="hint">⏎ to send · Shift+⏎ for a new line · answers are cited</div>}
+      {error ? <div className="err">{error}</div> : null}
     </div>
   );
 }
@@ -637,7 +676,7 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
     return () => { alive = false; clearTimeout(timer); };
   }, [card.runId, card.error, card.completed, card.title, done]);
 
-  const modeLabel = "Deep research"; // one Pro research mode now
+  const modeLabel = card.mode === "meta" ? "Meta-analysis" : card.mode === "lab_draft" ? "Lab draft (beta)" : "Deep research";
 
   if (err) {
     return (
@@ -673,10 +712,25 @@ function scienceBasis(s: ScienceStateSignal): string {
     : `Cited evidence is early-stage — ${s.earlyStage} early-phase trial/preprint of ${n}`;
 }
 
-function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void }) {
+// A chemical-structure thumbnail for the answer's primary drug, hot-linked from PubChem (renders a PNG
+// by compound name — no key, public-domain depiction; cross-origin <img> needs no CORS/proxy). Hides
+// itself when PubChem has no structure for the name (a condition, a biologic, a typo) via onError → null.
+function MoleculeImage({ drug }: { drug: string }) {
+  const [failed, setFailed] = useState(false);
+  const src = pubchemMoleculeUrl(drug); // null for biologics/peptides — their 2D depiction is a useless tangle
+  if (!src || failed) return null;
+  return (
+    <figure className="mol-fig">
+      <img src={src} alt={`Chemical structure of ${drug}`} loading="lazy" onError={() => setFailed(true)} />
+      <figcaption>{drug} · structure</figcaption>
+    </figure>
+  );
+}
+
+function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string }) {
   const citeMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const c of answer.citations) m.set(normTag(c.chunk_tag), abbr(c.source_type));
+    const m = new Map<string, CiteInfo>();
+    for (const c of answer.citations) m.set(normTag(c.chunk_tag), { label: abbr(c.source_type), title: c.title ?? c.source_type });
     return m;
   }, [answer.citations]);
 
@@ -702,11 +756,15 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskR
           </span>
         ) : null}
         {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
+        {/* "Watch this" — only on a real answer (not an emergency/refusal/no-source template). */}
+        {!answer.template && !answer.refused_unsupported ? <WatchButton kind="topic" question={question} /> : null}
       </div>
+      {answer.primary_drug && !answer.template && !answer.refused_unsupported ? <MoleculeImage drug={answer.primary_drug} /> : null}
       {answer.plain_english_summary ? <p className="lead">{renderInline(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
 
-      {/* Main explanation: flowing prose, no rigid "What we know" labeled-section scaffold. */}
+      {/* Main explanation, under a quiet section heading (owner wants clearer structure) over the cited body. */}
+      {s.what_we_know?.length ? <div className="ai-block-label">What the evidence shows</div> : null}
       <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} />
 
       {/* Safety stays prominent — a clear bordered callout (conservative medical app), not a muted aside. */}
@@ -718,36 +776,46 @@ function Answer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskR
       {s.questions_to_ask?.length ? (
         <div className="ai-questions">
           <div className="ai-block-label">Worth asking your clinician</div>
-          <ul>{s.questions_to_ask.map((q, i) => <li key={i}>{renderInline(q)}</li>)}</ul>
+          <ol>{s.questions_to_ask.map((q, i) => <li key={i}>{renderInline(q)}</li>)}</ol>
         </div>
       ) : null}
 
       <div className="msg-actions">
-        <button className="icon-btn" title="Copy" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
+        <button className="icon-btn" data-tip="Copy answer" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
       </div>
     </div>
   );
 }
 
+// Per-citation metadata for the inline chips: the short source label + title, shown in the
+// hover-preview card (footnote-style chips — the ChatGPT/Claude feel).
+type CiteInfo = { label: string; title: string };
+
 interface PointBlockProps {
   points: Array<{ text: string; citation_ids?: string[]; support?: ClaimSupport[] }>;
-  citeMap: Map<string, string>;
+  citeMap: Map<string, CiteInfo>;
   onCite: (tag: string, quote?: string) => void;
 }
 
 // Inline [n] citation chips trailing a point's text. `support` carries the verbatim source sentence(s)
 // this point cited; clicking a chip passes that source's supporting line so the evidence card can
 // highlight exactly what backs the claim.
-function CiteChips({ ids, support, citeMap, onCite }: { ids?: string[]; support?: ClaimSupport[]; citeMap: Map<string, string>; onCite: (tag: string, quote?: string) => void }) {
+function CiteChips({ ids, support, citeMap, onCite }: { ids?: string[]; support?: ClaimSupport[]; citeMap: Map<string, CiteInfo>; onCite: (tag: string, quote?: string) => void }) {
   if (!ids?.length) return null;
   return (
     <>
-      {" "}
       {ids.map((id) => {
         const t = normTag(id);
+        const info = citeMap.get(t);
         return (
-          <button key={id} type="button" className="cite" onClick={() => onCite(t, supportQuoteFor(support, t))} title="Show source" aria-label={`Show source ${t}`}>
-            {citeMap.get(t) ?? "REF"}&nbsp;{t}
+          <button key={id} type="button" className="cite" onClick={() => onCite(t, supportQuoteFor(support, t))} aria-label={info ? `Source ${t}: ${info.label} — ${info.title}` : `Show source ${t}`}>
+            <sup className="cite-n">{t}</sup>
+            {info ? (
+              <span className="cite-pop" aria-hidden="true">
+                <span className="cite-pop-label">{info.label}</span>
+                <span className="cite-pop-title">{info.title}</span>
+              </span>
+            ) : null}
           </button>
         );
       })}
@@ -755,17 +823,34 @@ function CiteChips({ ids, support, citeMap, onCite }: { ids?: string[]; support?
   );
 }
 
-// The answer body: each point a flowing paragraph (no section heading, no bullets) so the answer
-// reads like an explanation, not a filled-in form.
-function Prose({ points, citeMap, onCite }: PointBlockProps) {
-  if (!points?.length) return null;
+// Render a section's points: several discrete points become scannable bullets; a lone point stays a
+// flowing paragraph (a single bullet reads oddly). Citation chips trail each point either way.
+// `paraClass` styles the single-point paragraph form per block (safety/uncertainty are quieter).
+function PointItems({ points, citeMap, onCite, paraClass = "ai-para" }: PointBlockProps & { paraClass?: string }) {
+  if (points.length >= 2) {
+    return (
+      <ul className="ai-list">
+        {points.map((p, i) => (
+          <li key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></li>
+        ))}
+      </ul>
+    );
+  }
   return (
     <>
       {points.map((p, i) => (
-        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
+        <p className={paraClass} key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
       ))}
     </>
   );
+}
+
+// The answer body: a prose lead (rendered by Answer) followed by the supporting points. Several
+// points read as scannable bullets; a lone point stays a paragraph — so the answer keeps a human
+// top-line and gains a skimmable body, without the old rigid "filled-in form" feel.
+function Prose({ points, citeMap, onCite }: PointBlockProps) {
+  if (!points?.length) return null;
+  return <PointItems points={points} citeMap={citeMap} onCite={onCite} />;
 }
 
 // Safety: kept visibly prominent (conservative medical app) as a bordered callout — never muted.
@@ -774,9 +859,7 @@ function SafetyBlock({ points, citeMap, onCite }: PointBlockProps) {
   return (
     <div className="ai-safety">
       <div className="ai-safety-label"><Icon name="shield" size={14} />Safety</div>
-      {points.map((p, i) => (
-        <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
-      ))}
+      <PointItems points={points} citeMap={citeMap} onCite={onCite} />
     </div>
   );
 }
@@ -787,9 +870,7 @@ function UnclearBlock({ points, citeMap, onCite }: PointBlockProps) {
   return (
     <div className="ai-unclear">
       <div className="muted-label">Still uncertain</div>
-      {points.map((p, i) => (
-        <p key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} /></p>
-      ))}
+      <PointItems points={points} citeMap={citeMap} onCite={onCite} paraClass="" />
     </div>
   );
 }

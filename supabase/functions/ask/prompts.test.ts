@@ -6,7 +6,7 @@
 // These lock that contract so a future edit can't silently drop the safety floor
 // or re-introduce the rigid template. Run: deno test supabase/functions/ask/
 import { assert, assertArrayIncludes, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { generateTool, PROMPT_VERSION } from "./prompts.ts";
+import { BASE_GENERATE_SYSTEM, generateSystem, generateTool, PROMPT_VERSION } from "./prompts.ts";
 import type { Intent } from "../../../packages/shared/src/answer.ts";
 
 const ALL_INTENTS: Intent[] = [
@@ -92,4 +92,37 @@ Deno.test("PROMPT_VERSION follows ask-vN-DATE and is past the rigid-format v1", 
   const v = String(PROMPT_VERSION);
   assert(/^ask-v\d+-\d{4}-\d{2}-\d{2}$/.test(v), `unexpected PROMPT_VERSION shape: ${v}`);
   assert(v !== "ask-v1-2026-06-03", "bump PROMPT_VERSION when the prompt contract changes");
+});
+
+// ---------------------------------------------------------------------------
+// Per-mode answer register (Fast=plain / Thorough=technical). The register varies
+// the WORDING only; the safety core must never vary by mode, and Deep Research —
+// which builds its prompt from BASE_GENERATE_SYSTEM directly — must stay untouched.
+// ---------------------------------------------------------------------------
+
+Deno.test("the frozen base prompt carries NO per-mode style text (Deep Research stays unaffected)", () => {
+  // Deep Research synthesis = BASE_GENERATE_SYSTEM + its own guidance. Keeping the style addendums OUT of
+  // the base is what makes "Deep Research register is unchanged" provable rather than hopeful: the Fast/
+  // Thorough variation lives only in generateSystem()'s appended block.
+  assertEquals(BASE_GENERATE_SYSTEM.includes("ANSWER STYLE"), false);
+});
+
+Deno.test("GROUNDING + HARD RULES survive in BOTH registers (safety core is mode-invariant)", () => {
+  for (const style of ["plain", "thorough"] as const) {
+    const sys = generateSystem("drug_interaction", style);
+    assert(sys.includes("GROUNDING (absolute)"), `GROUNDING missing in ${style}`);
+    assert(sys.includes("HARD RULES"), `HARD RULES missing in ${style}`);
+    assert(sys.includes("PHRASING"), `PHRASING rules missing in ${style}`);
+  }
+});
+
+Deno.test("register selection: plain overrides, thorough is technical, absent == current behavior", () => {
+  const plain = generateSystem("drug_overview", "plain");
+  const thorough = generateSystem("drug_overview", "thorough");
+  const def = generateSystem("drug_overview");
+  assert(plain.includes("ANSWER STYLE — PLAIN"), "plain register must carry the plain override block");
+  assert(plain.includes("OVERRIDE"), "plain register must explicitly OVERRIDE the base register");
+  assert(thorough.includes("ANSWER STYLE — THOROUGH"), "thorough register must carry the thorough block");
+  // No style => byte-for-byte the pre-modes behavior (base + intent guidance, no style block).
+  assertEquals(def.includes("ANSWER STYLE"), false, "absent mode must not inject a style block");
 });

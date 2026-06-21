@@ -12,7 +12,7 @@ import { downloadReportExport } from "@/lib/api";
 
 const PROVIDER_ABBR: Record<string, string> = {
   openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", europepmc: "PMID",
-  clinicaltrials: "NCT", faers: "FAERS", rxnorm: "RxNorm",
+  clinicaltrials: "NCT", faers: "FAERS", rxnorm: "RxNorm", medlineplus: "NLM",
 };
 function abbr(t: string): string {
   const k = Object.keys(PROVIDER_ABBR).find((p) => t.toLowerCase().includes(p));
@@ -159,6 +159,11 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
   };
 
   const flags = (report.safety_flags ?? []).filter((f) => f !== "no_sources_found");
+  const isLabDraft = report.mode === "lab_draft";
+  // For lab_draft reports the first safety note IS the disclaimer banner — pull it out so it renders
+  // as a prominent notice at the top, not buried in the safety block with drug-interaction warnings.
+  const labDraftDisclaimer = isLabDraft ? report.safety_notes[0]?.text ?? null : null;
+  const remainingSafetyNotes = isLabDraft ? report.safety_notes.slice(1) : report.safety_notes;
   // A meta report opens with a journal-style structured abstract (Results computed from the pool, not
   // narrated). When present it carries the bottom line, so the plain lead paragraph is omitted.
   const abstract = buildMetaAbstract(report);
@@ -201,6 +206,13 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
           <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pptx", style)}>
             <Icon name="doc" size={14} />PowerPoint
           </button>
+        </div>
+      ) : null}
+
+      {labDraftDisclaimer ? (
+        <div className="lab-draft-notice">
+          <Icon name="shield" size={14} />
+          <span>{labDraftDisclaimer}</span>
         </div>
       ) : null}
 
@@ -253,10 +265,10 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
         sectionEls
       )}
 
-      {report.safety_notes.length ? (
+      {remainingSafetyNotes.length ? (
         <div className="ai-safety">
           <div className="ai-safety-label"><Icon name="shield" size={14} />Safety</div>
-          {report.safety_notes.map((p, i) => (
+          {remainingSafetyNotes.map((p, i) => (
             <p className="ai-para" key={i}>{renderInline(p.text)}<CiteChips ids={p.citation_ids} citeMap={citeMap} onCite={onCite} /></p>
           ))}
         </div>

@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { useAuth } from "@/auth/AuthProvider";
 import { SectionHeader } from "@/components/ui";
 import { common } from "@/theme/common";
+import { c, space } from "@/theme/tokens";
 
 // Profile hub (doc-06 Profile/Settings · §12). Account identity + the AC10 affordances:
 // My Health Context (real CRUD), subscription, the three legal screens, data export +
@@ -20,7 +21,7 @@ export default function ProfileTab() {
   if (!session) {
     return (
       <View style={common.screen} testID="tab-profile">
-        <Text style={common.h1}>Profile</Text>
+        <Text style={common.h1}>Settings</Text>
         <Text testID="profile-guest" style={common.body}>Browsing as guest.</Text>
         <Pressable testID="goto-signin" style={common.btn} onPress={() => router.replace("/sign-in")}>
           <Text style={common.btnText}>Sign in</Text>
@@ -75,11 +76,11 @@ function Group({ title, rows }: { title: string; rows: NavRow[] }) {
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 20, gap: 8 },
-  email: { fontSize: 15, color: "#4a5562", marginBottom: 8 },
-  group: { gap: 2, marginTop: 8 },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#eceff3" },
-  rowLabel: { fontSize: 16, color: "#1f2933" },
-  chevron: { fontSize: 22, color: "#9aa4b2" },
-  signout: { alignSelf: "stretch", alignItems: "center", marginTop: 20 },
+  body: { padding: space(5), gap: space(2), backgroundColor: c.bg, flexGrow: 1 },
+  email: { fontSize: 15, color: c.text2, marginBottom: space(2) },
+  group: { gap: 2, marginTop: space(2) },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: space(3.5), borderBottomWidth: 1, borderBottomColor: c.line },
+  rowLabel: { fontSize: 16, color: c.text },
+  chevron: { fontSize: 22, color: c.text3 },
+  signout: { alignSelf: "stretch", alignItems: "center", marginTop: space(5) },
 });

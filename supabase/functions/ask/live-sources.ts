@@ -17,6 +17,8 @@ import { fetchOpenFdaLabels } from "../core-source-sync/providers/openfda.ts";
 import { fetchEuropePmc } from "../core-source-sync/providers/europepmc.ts";
 import { fetchFaersReactions } from "../core-source-sync/providers/faers.ts";
 import { fetchOpenAlex } from "../core-source-sync/providers/openalex.ts";
+import { fetchMedlinePlus } from "../core-source-sync/providers/medlineplus.ts";
+import { extractSearchTerms } from "./search-query.ts";
 
 /** One live result, normalized for the reranker + citation layer; `source` is the full
  *  record, so a candidate the reranker keeps can be persisted via read-through-ingest. */
@@ -85,14 +87,18 @@ export function liveToChunk(c: LiveCandidate, tag: string): RetrievedChunk {
 // drug was named). Field-scoped providers (openFDA) MUST use mentions, not the free-text query.
 interface LiveSourceDef {
   origin: string;
-  fetch: (query: string, max: number, mentions: string[]) => Promise<NormalizedSource[]>;
+  // `query` = the drug-centric term (mentions joined / raw) for field-scoped + adverse-event sources;
+  // `researchQuery` = the user's actual question, for free-text RESEARCH sources (PubMed/Europe PMC/
+  // OpenAlex/MedlinePlus) so "<drug> side effects" retrieves on-topic papers, not generic drug papers.
+  // researchQuery defaults to query for callers that don't differentiate (monograph, deep research).
+  fetch: (query: string, max: number, mentions: string[], researchQuery: string) => Promise<NormalizedSource[]>;
 }
 
 // THE REGISTRY. Add a source = one line. (DailyMed is intentionally omitted: it returns the same
 // FDA labels as openFDA, the preferred label source — redundant, not additive.)
 const LIVE_SOURCES: LiveSourceDef[] = [
-  { origin: "pubmed", fetch: (q, n) => fetchPubMedOA({ query: q, retmax: n }) },
-  { origin: "europepmc", fetch: (q, n) => fetchEuropePmc({ query: q, retmax: n }) },
+  { origin: "pubmed", fetch: (_q, n, _m, rq) => fetchPubMedOA({ query: rq, retmax: n }) },
+  { origin: "europepmc", fetch: (_q, n, _m, rq) => fetchEuropePmc({ query: rq, retmax: n }) },
   { origin: "clinicaltrials", fetch: (q, n) => fetchClinicalTrials({ query: q, pageSize: n }) },
   // openFDA: field-scope to the named drug (generic OR brand name). A bare full-text search matched
   // FRAUDULENT OTC products that merely name-drop a trendy drug in their marketing copy — e.g.
@@ -111,7 +117,13 @@ const LIVE_SOURCES: LiveSourceDef[] = [
   // OpenAlex LAST: the union is deduped first-wins by (provider, provider_id). A work carrying a PMID
   // normalizes to pubmed_oa:<pmid> and collapses into the PubMed/Europe PMC hit above; only OpenAlex's
   // non-PMID long tail (provider "openalex") survives as net-new breadth.
-  { origin: "openalex", fetch: (q, n) => fetchOpenAlex({ query: q, retmax: n }) },
+  { origin: "openalex", fetch: (_q, n, _m, rq) => fetchOpenAlex({ query: rq, retmax: n }) },
+  // MedlinePlus: NLM/NIH consumer-health topic pages — mainstream "general guidance" register that the
+  // research sources lack. Distinct namespace (provider "medlineplus"), so no dedupe collision; it
+  // self-limits (only ~1k topics, returns nothing for a specific drug-pharmacology query) and the
+  // reranker orders it, so it adds an authoritative plain-language hit for benign/everyday questions
+  // without crowding technical ones.
+  { origin: "medlineplus", fetch: (_q, n, _m, rq) => fetchMedlinePlus({ query: rq, retmax: n }) },
 ];
 
 /**
@@ -138,6 +150,9 @@ export interface GatherLiveOpts {
   query: string;
   /** Literal drug names the classifier extracted, for field-scoped providers (openFDA). */
   mentions?: string[];
+  /** Free-text query for the RESEARCH sources (PubMed/Europe PMC/OpenAlex/MedlinePlus) — the user's
+   *  actual question. Defaults to `query` when omitted, so existing callers are unchanged. */
+  researchQuery?: string;
   perSourceMax?: number;
   timeoutMs?: number;
 }
@@ -152,10 +167,33 @@ const LIVE_TIMEOUT_MS = 4000;
 export async function gatherLiveCandidates(opts: GatherLiveOpts): Promise<LiveCandidate[]> {
   const perSourceMax = opts.perSourceMax ?? PER_SOURCE_MAX;
   const timeoutMs = opts.timeoutMs ?? LIVE_TIMEOUT_MS;
-
   const mentions = opts.mentions ?? [];
+  const researchQuery = opts.researchQuery ?? opts.query; // research sources search this; defaults to query
+
+  const primary = await fanOut(opts.query, researchQuery, perSourceMax, timeoutMs, mentions);
+
+  // Retry-on-empty for benign, no-drug questions. Conversational phrasing
+  // ("how do i get rid of heartburn fast?") matches NOTHING in PubMed term-mapping, while the bare
+  // topic ("heartburn") retrieves well. This fires ONLY when the primary fan-out returned nothing
+  // AND no drug was named — so it can never dilute a query that already retrieved (the benign
+  // questions that already work never reach here). When a drug WAS named, the term is the literal
+  // drug list already, so simplification is moot.
+  if (primary.length > 0 || mentions.length > 0) return primary;
+  const cleaned = extractSearchTerms(opts.query);
+  if (!cleaned || cleaned === opts.query) return primary;
+  return await fanOut(cleaned, cleaned, perSourceMax, timeoutMs, mentions);
+}
+
+/** One concurrent, fault-tolerant pass over every live source, deduped by (provider, provider_id). */
+async function fanOut(
+  query: string,
+  researchQuery: string,
+  perSourceMax: number,
+  timeoutMs: number,
+  mentions: string[],
+): Promise<LiveCandidate[]> {
   const batches = await Promise.all(
-    LIVE_SOURCES.map((def) => withTimeout(fetchOne(def, opts.query, perSourceMax, mentions), timeoutMs, def.origin)),
+    LIVE_SOURCES.map((def) => withTimeout(fetchOne(def, query, researchQuery, perSourceMax, mentions), timeoutMs, def.origin)),
   );
   // Dedupe the union by (provider, provider_id): e.g. PubMed and Europe PMC both returning the
   // same PMID collapse to one candidate (first wins). Keeps the rerank set clean.
@@ -166,8 +204,8 @@ export async function gatherLiveCandidates(opts: GatherLiveOpts): Promise<LiveCa
   });
 }
 
-async function fetchOne(def: LiveSourceDef, query: string, max: number, mentions: string[]): Promise<LiveCandidate[]> {
-  const sources = await def.fetch(query, max, mentions);
+async function fetchOne(def: LiveSourceDef, query: string, researchQuery: string, max: number, mentions: string[]): Promise<LiveCandidate[]> {
+  const sources = await def.fetch(query, max, mentions, researchQuery);
   return sources.map((s) => ({
     origin: def.origin,
     provider: s.provider,

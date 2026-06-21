@@ -48,6 +48,24 @@ export const GREETING_COPY =
   "mechanism, or what the research says about a treatment, and I'll pull the sources. What would " +
   "you like to look into?";
 
+/** lab_draft hazardous-scope refusal — the request's PURPOSE was producing a dangerous substance,
+ *  a weapon, or making a pathogen more dangerous. Refuse the scope, redirect to legitimate design.
+ *  Fixed copy (never model output); not run through detectViolations. */
+export const LAB_DRAFT_REFUSAL_COPY =
+  "I can't help design a study whose aim is making or extracting a controlled or hazardous substance, " +
+  "building a weapon, or making a pathogen more dangerous. I can help design legitimate research — for " +
+  "example a clinical trial, a pharmacokinetic study, or a detection assay — where the goal is to " +
+  "measure, compare, or observe. Please rephrase around what you want to study.";
+
+/** Fixed disclaimer carried on every lab_draft scaffold. Honest, code-authored (rides the one safety
+ *  scan as a safety note); the UI also surfaces it as a prominent banner. It is a study-DESIGN draft,
+ *  not a validated protocol and not instructions to execute. */
+export const LAB_DRAFT_DISCLAIMER =
+  "Unvalidated draft for discussion only — not a protocol to execute. Any study must be reviewed and " +
+  "approved by your principal investigator and the relevant oversight board (IRB / IACUC / IBC) before " +
+  "any work begins. Doses, materials, and procedures here are illustrative, drawn from published " +
+  "literature, and must be independently verified.";
+
 export const STANDARD_QUESTIONS = [
   "Is this appropriate for me given my health history?",
   "Are there interactions with my current medications?",

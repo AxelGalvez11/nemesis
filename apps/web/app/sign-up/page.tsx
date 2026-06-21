@@ -2,10 +2,26 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { CSSProperties, FormEvent, useState } from "react";
 import { ErrorText } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
 import { isPreviewMode } from "@/lib/env";
+
+const cardStyle: CSSProperties = { padding: "36px 32px", textAlign: "center" };
+const eyebrowStyle: CSSProperties = { marginBottom: 18 };
+const titleStyle: CSSProperties = {
+  fontSize: 27,
+  fontWeight: 600,
+  letterSpacing: "-0.025em",
+  lineHeight: 1.15,
+  margin: "0 0 8px",
+  color: "var(--text)",
+};
+const subStyle: CSSProperties = { margin: "0 auto 24px", maxWidth: 380 };
+const formStyle: CSSProperties = { gap: 14, textAlign: "left" };
+const submitStyle: CSSProperties = { width: "100%", marginTop: 2, minHeight: 44 };
+const footStyle: CSSProperties = { marginTop: 20 };
+const linkActionStyle: CSSProperties = { display: "inline-block", marginTop: 8 };
 
 export default function SignUpPage() {
   const { signUp } = useAuth();
@@ -38,12 +54,12 @@ export default function SignUpPage() {
   if (submittedEmail) {
     return (
       <main className="centered">
-        <section className="auth-card">
-          <p className="eyebrow">PharmaOrb beta</p>
-          <h1>Check your email</h1>
-          <p className="muted">We sent a confirmation link to {submittedEmail}. Open it to finish creating your account.</p>
-          <p className="muted">After confirming, sign in with the same email and password.</p>
-          <Link className="source-link" href="/sign-in">Go to sign in</Link>
+        <section className="auth-card" style={cardStyle}>
+          <p className="eyebrow" style={eyebrowStyle}>PharmaOrb beta</p>
+          <h1 style={titleStyle}>Check your email</h1>
+          <p className="muted" style={{ ...subStyle, marginBottom: 8 }}>We sent a confirmation link to {submittedEmail}. Open it to finish creating your account.</p>
+          <p className="muted" style={subStyle}>After confirming, sign in with the same email and password.</p>
+          <Link className="source-link" href="/sign-in" style={linkActionStyle}>Go to sign in</Link>
         </section>
       </main>
     );
@@ -51,18 +67,18 @@ export default function SignUpPage() {
 
   return (
     <main className="centered">
-      <section className="auth-card">
-        <p className="eyebrow">PharmaOrb beta</p>
-        <h1>Create account</h1>
-        <p className="muted">Educational information only. PharmaOrb does not diagnose, treat, prescribe, or replace a healthcare professional.</p>
-        {isPreviewMode ? <p className="muted">Preview mode: no account will be created.</p> : null}
-        <form onSubmit={onSubmit}>
+      <section className="auth-card" style={cardStyle}>
+        <p className="eyebrow" style={eyebrowStyle}>PharmaOrb beta</p>
+        <h1 style={titleStyle}>Create account</h1>
+        <p className="muted" style={subStyle}>Educational information only. PharmaOrb does not diagnose, treat, prescribe, or replace a healthcare professional.</p>
+        {isPreviewMode ? <p className="muted" style={subStyle}>Preview mode: no account will be created.</p> : null}
+        <form onSubmit={onSubmit} style={formStyle}>
           <input type="email" autoComplete="email" required={!isPreviewMode} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input type="password" autoComplete="new-password" required={!isPreviewMode} minLength={isPreviewMode ? undefined : 8} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <button disabled={busy} type="submit">{busy ? "Creating…" : isPreviewMode ? "Enter preview app" : "Create account"}</button>
+          <button disabled={busy} type="submit" style={submitStyle}>{busy ? "Creating…" : isPreviewMode ? "Enter preview app" : "Create account"}</button>
         </form>
         {error ? <ErrorText>{error}</ErrorText> : null}
-        <p className="muted">Already have an account? <Link className="source-link" href="/sign-in">Sign in</Link></p>
+        <p className="muted" style={footStyle}>Already have an account? <Link className="source-link" href="/sign-in">Sign in</Link></p>
       </section>
     </main>
   );

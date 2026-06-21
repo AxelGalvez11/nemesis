@@ -21,19 +21,22 @@ import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
 import { generate } from "./generate.ts";
-import { citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { chunkToCitation, citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
 import { attachSupport } from "./support-span.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
+import { balanceCitedSlice } from "./cite-balance.ts";
+import { extractSearchTerms } from "./search-query.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
-import { PROMPT_VERSION } from "./prompts.ts";
+import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
   GREETING_COPY,
+  LAB_DRAFT_REFUSAL_COPY,
   NO_SOURCE_COPY,
   providerPriorityForIntent,
   SOURCING_COPY,
@@ -41,6 +44,7 @@ import {
 } from "./templates.ts";
 import type {
   AnswerTemplate,
+  AskMode,
   AskResponse,
   Citation,
   DetectedEntity,
@@ -80,6 +84,10 @@ const MATCH_COUNT = 12;
 // the dense-only behavior the gate/guardrail suite locks in. The owner flips LIVE_SOURCES=on to enable.
 const LIVE_SOURCES_ON = Deno.env.get("LIVE_SOURCES") === "on";
 const LIVE_PER_SOURCE_MAX = 8; // how many candidates to pull per live source before the merge/rerank
+// Thorough mode's wider net: more candidates per live source feed the SAME rerank and the SAME MATCH_COUNT
+// cited slice, so a deeper search can surface better top sources without changing how many are shown or the
+// label-cap ratio. Fast/default keep LIVE_PER_SOURCE_MAX (today's breadth) so the default never looks thinner.
+const THOROUGH_LIVE_PER_SOURCE_MAX = 12;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
@@ -96,6 +104,9 @@ serve(async (req) => {
     question?: string;
     use_health_context?: boolean;
     conversation_id?: string;
+    // Speed/depth dial (see AskMode): "fast" = plain + concise, "thorough" = technical + wider net.
+    // Validated below; anything else (incl. absent) falls through to current behavior.
+    mode?: string;
     // Verification opt-in: echo the verbatim source text behind each citation tag in the response
     // (a benchmark/judge aid — see SourceText). Default false → normal answers are byte-for-byte
     // unchanged. The sources are the public databases the answer already cites.
@@ -108,9 +119,12 @@ serve(async (req) => {
   }
   const question = (body.question ?? "").trim();
   if (!question) return json({ error: "question required" }, 400, req);
+  // Validate the speed/depth dial at the boundary: only the two known modes pass through; an unknown
+  // or absent value becomes undefined → current behavior (mobile / older clients / saved-chat replays).
+  const mode: AskMode | undefined = body.mode === "fast" || body.mode === "thorough" ? body.mode : undefined;
 
   try {
-    const resp = await runAsk(question, !!body.use_health_context, userId, !!body.include_source_text);
+    const resp = await runAsk(question, !!body.use_health_context, userId, !!body.include_source_text, mode);
     return json(resp, 200, req);
   } catch (e) {
     if (e instanceof QuotaExceeded) return json(e.payload, 429, req);
@@ -126,9 +140,17 @@ async function runAsk(
   useHealthContext: boolean,
   userId: string,
   includeSourceText = false,
+  mode?: AskMode,
 ): Promise<AskResponse> {
   const answerId = crypto.randomUUID();
   const apiKey = llmApiKey();
+  // Map the request mode onto the two levers it controls. Both default to current behavior when mode is
+  // absent: undefined style → the standard register; the base per-source net → today's retrieval breadth.
+  //  - register: Fast writes plain, Thorough writes technical (see generateSystem / AnswerStyle).
+  //  - perSourceMax: Thorough casts a WIDER candidate net per live source into the SAME rerank + the SAME
+  //    MATCH_COUNT cited slice — a safe depth lever that never touches the tuned label-cap ratio.
+  const style: AnswerStyle | undefined = mode === "fast" ? "plain" : mode === "thorough" ? "thorough" : undefined;
+  const perSourceMax = mode === "thorough" ? THOROUGH_LIVE_PER_SOURCE_MAX : LIVE_PER_SOURCE_MAX;
 
   // ---- 0. deterministic pre-screen (no LLM) ----
   const pre = preScreen(question);
@@ -208,7 +230,7 @@ async function runAsk(
   // union (for the fabrication guard); `top` is the MATCH_COUNT slice shown to the generator.
   let guardPool: RetrievedChunk[] = ret.chunks;
   if (LIVE_SOURCES_ON) {
-    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks);
+    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax);
     guardPool = aug.pool;
     ret = { ...ret, chunks: aug.top };
   }
@@ -222,13 +244,21 @@ async function runAsk(
   // ---- 3c. fabrication guard (answer-layer entity check; flag-gated) ----
   // Live sources move the fabricated-drug refusal OFF the dense floor: a class-plausible fake
   // ("florizagliflozin") pulls REAL class-sibling evidence that ranks high on both cosine and the
-  // reranker. Refuse when a drug the user literally named appears NOWHERE in the retrieved pool
-  // (the fabricated-drug signature — all the support is about its real neighbors). The guard runs on
-  // the FULL reranked pool, not the top-N slice, so a real drug named only lower down isn't refused.
+  // reranker. The guard fires when a drug the user literally named appears NOWHERE in the retrieved
+  // pool — the fabricated-drug signature. It STAYS strict (no typo/edit-distance tolerance: a 1-char
+  // slip "tesamorein"→"tesamorelin" is indistinguishable from a fake near-miss "BPC-158"→"BPC-157", so
+  // loosening it would re-admit fakes — see fabrication.test.ts).
+  //
+  // BUT when it fires we have, by construction, a NON-EMPTY pool (the empty case returned above). A flat
+  // "no reliable source" is then misleading — we DID retrieve relevant evidence, just not the literal
+  // token (a typo, a colloquial abbreviation like "HGH", or a genuine fake). So degrade to the
+  // conservative fallback: SHOW the sources we found (no claim) rather than denying them. This NEVER runs
+  // the generator, so the anti-fabrication guarantee is fully intact — it only turns a dead-end refusal
+  // into "here's the most relevant evidence I found" + sources + good questions. ("unverified_entity"
+  // tags the trace for analytics without a new SafetyFlag.)
   if (LIVE_SOURCES_ON && isFabricatedDrugQuery(cls.entity_mentions, guardPool)) {
     return await finalizeTemplate(answerId, question, cls.intent,
-      unique<SafetyFlag>([...flags, "no_sources_found"]), entities, userId,
-      "no_source", cls.model, true);
+      flags, entities, userId, "safety_fallback", `${cls.model}|unverified_entity`, true, ret.chunks);
   }
 
   // ---- 4. health context (verified-user-scoped) ----
@@ -244,6 +274,7 @@ async function runAsk(
       chunks: ret.chunks,
       healthContext,
       apiKey,
+      style,
     });
   } catch (e) {
     console.error("ask generate failed after retries:", (e as Error).message);
@@ -315,6 +346,16 @@ async function runAsk(
     ...enf.answer_sections,
     safety_notes: withProfessionalRouting(enf.answer_sections.safety_notes, cls.intent),
   }, ret.chunks);
+  // A resolved drug name for the answer header's molecule image (PubChem renders by name). First
+  // resolved canonical name, else the first literal mention; absent when nothing resolved. The web
+  // <img> 404-hides for anything PubChem can't depict (e.g. a condition), so setting it loosely is safe.
+  const primaryDrug = entities.find((e) => e.canonical_name)?.canonical_name ?? cls.entity_mentions[0];
+  // The full evidence base for the panel: the reranked sources the generator reviewed but the answer
+  // didn't end up citing. Surfaced as "also reviewed" so the breadth (e.g. 9 PubMed + 4 trials) stays
+  // visible even when the answer text leans on a few — additive DISPLAY only; never affects the answer,
+  // the cited set, or citation enforcement.
+  const citedTags = new Set(enf.citations.map((c) => c.chunk_tag));
+  const reviewedSources = ret.chunks.filter((c) => !citedTags.has(c.tag)).map(chunkToCitation);
   const resp: AskResponse = {
     answer_id: answerId,
     intent: cls.intent,
@@ -325,6 +366,8 @@ async function runAsk(
     safety_flags: flags,
     refused_unsupported: false,
     oldest_source_date: enf.oldest_source_date,
+    ...(primaryDrug ? { primary_drug: primaryDrug } : {}),
+    ...(reviewedSources.length ? { reviewed_sources: reviewedSources } : {}),
   };
 
   // ---- 8. trace store ----
@@ -359,6 +402,7 @@ async function augmentWithLive(
   question: string,
   entityMentions: string[],
   libChunks: RetrievedChunk[],
+  perSourceMax: number = LIVE_PER_SOURCE_MAX,
 ): Promise<{ pool: RetrievedChunk[]; top: RetrievedChunk[] }> {
   const fallback = { pool: libChunks, top: libChunks };
   try {
@@ -366,7 +410,12 @@ async function augmentWithLive(
     // literal mentions when present — a real-but-new drug (retatrutide) is found by name; a fabricated
     // one returns nothing. Fall back to the question for general/non-drug queries.
     const term = entityMentions.length ? entityMentions.join(" ") : question;
-    const live = await gatherLiveCandidates({ query: term, mentions: entityMentions, perSourceMax: LIVE_PER_SOURCE_MAX });
+    // Research sources (PubMed/Europe PMC/OpenAlex/MedlinePlus) search the user's QUESTION (conversational
+    // scaffolding stripped) so "<drug> side effects" / "<drug> mechanism" retrieves on-topic research
+    // instead of generic drug papers; the field-scoped + adverse-event sources (openFDA/FAERS/trials)
+    // keep the literal drug `term`. This is the lever behind the side-effects/interaction/mechanism gap.
+    const researchQuery = extractSearchTerms(question) || question;
+    const live = await gatherLiveCandidates({ query: term, mentions: entityMentions, researchQuery, perSourceMax });
     if (live.length === 0) return fallback;
 
     const combined = [...libChunks, ...live.map((c, i) => liveToChunk(c, String(i + 1)))];
@@ -377,8 +426,10 @@ async function augmentWithLive(
       console.error("ask live rerank failed; using dense library order:", (e as Error).message);
       return fallback;
     }
-    // Keep the top MATCH_COUNT in reranked order and retag 1..N for the generator + citation layer.
-    const top = ordered.slice(0, MATCH_COUNT).map((c, i) => ({ ...c, tag: String(i + 1) }));
+    // Take the cited slice with the label-family cap (so primary research isn't crowded out by long
+    // FDA-label chunks that out-score short abstracts on the reranker), then retag 1..N for the
+    // generator + citation layer. Reorder/select only — the fabrication guard still runs on `pool`.
+    const top = balanceCitedSlice(ordered, MATCH_COUNT).map((c, i) => ({ ...c, tag: String(i + 1) }));
     return { pool: ordered, top };
   } catch (e) {
     console.error("ask live augmentation failed; using library only:", (e as Error).message);
@@ -439,6 +490,9 @@ function templateCopy(t: AnswerTemplate): string {
     case "sourcing_refusal": return SOURCING_COPY;
     case "no_source": return NO_SOURCE_COPY;
     case "safety_fallback": return CONSERVATIVE_FALLBACK_COPY;
+    // index.ts never emits lab_draft_refused (that path lives in the lab_draft handler), but
+    // AnswerTemplate includes it — handle it for exhaustiveness so this switch type-checks cleanly.
+    case "lab_draft_refused": return LAB_DRAFT_REFUSAL_COPY;
   }
 }
 

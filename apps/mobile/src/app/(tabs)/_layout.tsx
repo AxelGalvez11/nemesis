@@ -1,31 +1,40 @@
-import { Redirect, Tabs } from "expo-router";
+import { Redirect, Slot } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@/auth/AuthProvider";
+import { DrawerProvider } from "@/components/AppDrawer";
+import { TopBar } from "@/components/TopBar";
+import { c } from "@/theme/tokens";
 
-// The 4-tab MVP shell (§12). Guarded: an un-authenticated, non-guest visitor is
-// redirected to sign-in. A guest (browse-only) is allowed in; screens render guest
-// affordances where a real session is required.
-export default function TabsLayout() {
+// The app shell (§12, redesigned): chat-first with a slide-out drawer instead of a bottom tab bar
+// (the ChatGPT/Claude pattern). The shared TopBar + drawer wrap every screen; the active route renders
+// in <Slot/>. Guarded: an un-authenticated, non-guest visitor is redirected to sign-in; a guest is let
+// in and screens render guest affordances where a real session is required.
+export default function AppShellLayout() {
   const { session, isGuest, loading } = useAuth();
 
   if (loading) {
     return (
-      <View
-        testID="auth-loading"
-        style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
-      >
-        <ActivityIndicator />
+      <View testID="auth-loading" style={styles.loading}>
+        <ActivityIndicator color={c.acid} />
       </View>
     );
   }
   if (!session && !isGuest) return <Redirect href="/sign-in" />;
 
   return (
-    <Tabs screenOptions={{ headerShown: false }}>
-      <Tabs.Screen name="index" options={{ title: "Ask" }} />
-      <Tabs.Screen name="explore" options={{ title: "Explore" }} />
-      <Tabs.Screen name="watchlist" options={{ title: "Watchlist" }} />
-      <Tabs.Screen name="profile" options={{ title: "Profile" }} />
-    </Tabs>
+    <DrawerProvider>
+      <View style={styles.shell}>
+        <TopBar />
+        <View style={styles.body}>
+          <Slot />
+        </View>
+      </View>
+    </DrawerProvider>
   );
 }
+
+const styles = {
+  loading: { flex: 1, alignItems: "center" as const, justifyContent: "center" as const, backgroundColor: c.bg },
+  shell: { flex: 1, backgroundColor: c.bg },
+  body: { flex: 1 },
+};

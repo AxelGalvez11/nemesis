@@ -19,18 +19,20 @@ export function AppModal({
   title,
   sub,
   children,
+  wide = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   sub?: string;
   children: ReactNode;
+  wide?: boolean;
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="app-modal-overlay" />
-        <DialogPrimitive.Content className="app-modal" aria-describedby={undefined}>
+        <DialogPrimitive.Content className={`app-modal${wide ? " app-modal-wide" : ""}`} aria-describedby={undefined}>
           <div className="app-modal-head">
             <div>
               <DialogPrimitive.Title className="app-modal-title">{title}</DialogPrimitive.Title>

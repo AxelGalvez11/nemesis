@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { c, radius, space, type } from "@/theme/tokens";
 
 // The doc-20 safety surface. `emergency` is the deterministic urgent-care routing
 // (call-911 copy from the ask pre-screen); `caution` flags a sensitive class
@@ -14,10 +15,11 @@ export function SafetyBanner({
   body?: string;
   testID?: string;
 }) {
+  const em = tone === "emergency";
   return (
-    <View style={[styles.banner, tone === "emergency" ? styles.emergency : styles.caution]} testID={testID}>
-      <Text style={[styles.title, tone === "emergency" ? styles.titleEmergency : styles.titleCaution]}>
-        {title}
+    <View style={[styles.banner, em ? styles.emergency : styles.caution]} testID={testID}>
+      <Text style={[styles.title, em ? styles.titleEmergency : styles.titleCaution]}>
+        {em ? "● " : "⚠ "}{title}
       </Text>
       {body ? <Text style={styles.body}>{body}</Text> : null}
     </View>
@@ -25,11 +27,11 @@ export function SafetyBanner({
 }
 
 const styles = StyleSheet.create({
-  banner: { borderRadius: 12, padding: 16, gap: 6, borderWidth: 1 },
-  emergency: { backgroundColor: "#fdecea", borderColor: "#e0573e" },
-  caution: { backgroundColor: "#fdf6e3", borderColor: "#d8b24a" },
-  title: { fontSize: 16, fontWeight: "800" },
-  titleEmergency: { color: "#b02a16" },
-  titleCaution: { color: "#7a5c12" },
-  body: { fontSize: 14, lineHeight: 20, color: "#3a4451" },
+  banner: { borderRadius: radius.md, padding: space(3.25), gap: space(1.5), borderWidth: 1, borderLeftWidth: 3 },
+  emergency: { backgroundColor: c.dangerFaint, borderColor: c.dangerLine, borderLeftColor: c.danger },
+  caution: { backgroundColor: c.warnFaint, borderColor: c.warnLine, borderLeftColor: c.warn },
+  title: { ...type.title, fontWeight: "700" },
+  titleEmergency: { color: c.danger },
+  titleCaution: { color: c.warn },
+  body: { ...type.small, color: c.text2 },
 });

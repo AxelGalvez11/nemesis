@@ -1,10 +1,12 @@
 "use client";
 
 import type {
+  AskMode,
   AskResponse,
   Digest,
   DrugOverview,
   EntitlementSnapshot,
+  EntitySuggestion,
   QuotaExceededError,
   ReportMode,
   ResearchProgressStep,
@@ -13,10 +15,13 @@ import type {
   SearchResult,
   SourceDetail,
   UsageSnapshot,
+  WatchEvent,
   WatchlistItem,
   WatchlistUpdate,
   WatchItemType,
 } from "@pharmabro/shared";
+import { resolveWatchCadence, watchEntitlement } from "@pharmabro/shared";
+import { isMeshTerm, mergeSuggestions, type MeshTerm } from "./mesh";
 import { supabase } from "./supabase";
 import { isPreviewMode, supabaseAnonKey, supabaseUrl } from "./env";
 
@@ -174,7 +179,7 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
   return (isObj(data) ? data : { plan: "free", counters: {} }) as unknown as UsageSnapshot;
 }
 
-export async function askQuestion(question: string): Promise<AskResponse> {
+export async function askQuestion(question: string, mode?: AskMode): Promise<AskResponse> {
   if (isPreviewMode) {
     return {
       answer_id: "preview-answer",
@@ -247,7 +252,7 @@ export async function askQuestion(question: string): Promise<AskResponse> {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ question, use_health_context: false }),
+    body: JSON.stringify({ question, use_health_context: false, ...(mode ? { mode } : {}) }),
   });
   const body = await res.json().catch(() => null);
   if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
@@ -271,6 +276,44 @@ export async function searchEntities(q: string): Promise<SearchResult[]> {
   const { data, error } = await supabase.rpc("search_entities", { q: query });
   if (error) throw new Error(`search failed: ${error.message}`);
   return rows(data, (r) => typeof r.id === "string" && typeof r.name === "string" ? r as unknown as SearchResult : null);
+}
+
+// A couple of fixed suggestions for preview mode (drug + condition + device) so the universal picker is
+// exercisable without a backend — mirrors the searchEntities / demoDrug preview mocks.
+function demoSuggestions(): EntitySuggestion[] {
+  return [
+    { kind: "drug", source: "catalog", id: "semaglutide", name: "Semaglutide", subtitle: "Ozempic, Wegovy, Rybelsus", score: 1 },
+    { kind: "condition", source: "mesh", id: "68003920", name: "Diabetes Mellitus", subtitle: "Diabetes", score: 0.9 },
+    { kind: "device", source: "mesh", id: "68068098", name: "Insulin Infusion Systems", subtitle: "Insulin Pump", score: 0.8 },
+  ];
+}
+
+// The MeSH half of the picker — hits our server route (which proxies NCBI). Failures degrade to [] so an
+// NCBI hiccup never hides the drug results; the route URL is relative (same-origin) so it works in the app.
+async function fetchMeshTerms(q: string): Promise<MeshTerm[]> {
+  try {
+    const res = await fetch(`/api/entities/suggest?q=${encodeURIComponent(q)}`);
+    if (!res.ok) return [];
+    const body = (await res.json()) as { terms?: unknown };
+    // Validate element shape, not just that it's an array: a malformed term must never reach
+    // mergeSuggestions (which runs outside the allSettled boundary and would otherwise discard drugs too).
+    return Array.isArray(body.terms) ? body.terms.filter(isMeshTerm) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The universal picker source: in-house drug catalog (brand→generic) MERGED with MeSH-resolved
+ *  conditions/devices/procedures. The two sources run concurrently and independently — a failure of one
+ *  never sinks the other (allSettled), so the drug catalog still suggests even if NCBI is down. */
+export async function suggestEntities(q: string): Promise<EntitySuggestion[]> {
+  const query = q.trim();
+  if (query.length < 2) return [];
+  if (isPreviewMode) return demoSuggestions();
+  const [drugsR, meshR] = await Promise.allSettled([searchEntities(query), fetchMeshTerms(query)]);
+  const drugs = drugsR.status === "fulfilled" ? drugsR.value : [];
+  const mesh = meshR.status === "fulfilled" ? meshR.value : [];
+  return mergeSuggestions(drugs, mesh);
 }
 
 export async function fetchDrug(id: string): Promise<DrugOverview | null> {
@@ -482,6 +525,7 @@ export interface ConversationSummary {
   id: string;
   title: string;
   updated_at: string;
+  pinned: boolean;
 }
 
 /** A reconstructed deep-research card (persisted on completion) — links to the finished report. */
@@ -504,11 +548,16 @@ export async function fetchConversations(): Promise<ConversationSummary[]> {
   if (isPreviewMode) return [];
   const { data, error } = await supabase
     .from("conversations")
-    .select("id,title,updated_at")
-    .order("updated_at", { ascending: false })
+    .select("id,title,updated_at,pinned")
+    .order("pinned", { ascending: false }) // pinned chats first…
+    .order("updated_at", { ascending: false }) // …then most-recent
     .limit(50);
   if (error) throw new Error(`conversations failed: ${error.message}`);
-  return rows(data, (r) => (typeof r.id === "string" && typeof r.title === "string" ? (r as unknown as ConversationSummary) : null));
+  return rows(data, (r) =>
+    typeof r.id === "string" && typeof r.title === "string"
+      ? { id: r.id, title: r.title, updated_at: String(r.updated_at ?? ""), pinned: r.pinned === true }
+      : null,
+  );
 }
 
 /** Create a chat (title = first question, trimmed); returns its id. */
@@ -534,6 +583,22 @@ export async function deleteConversation(conversationId: string): Promise<void> 
   if (error) throw new Error(`delete chat failed: ${error.message}`);
 }
 
+/** Rename a chat (title only; trimmed/capped). RLS scopes the update to the owner. No-op if blank. */
+export async function renameConversation(conversationId: string, title: string): Promise<void> {
+  if (isPreviewMode) return;
+  const clean = title.trim().slice(0, 120);
+  if (!clean) return;
+  const { error } = await supabase.from("conversations").update({ title: clean }).eq("id", conversationId);
+  if (error) throw new Error(`rename chat failed: ${error.message}`);
+}
+
+/** Pin / unpin a chat (sorts it to the top of the rail). RLS scopes the update to the owner. */
+export async function pinConversation(conversationId: string, pinned: boolean): Promise<void> {
+  if (isPreviewMode) return;
+  const { error } = await supabase.from("conversations").update({ pinned }).eq("id", conversationId);
+  if (error) throw new Error(`pin chat failed: ${error.message}`);
+}
+
 /** Persist one turn (question + cited answer) at the given ordinal base, and bump the chat's
  *  updated_at so it sorts to the top of the history. */
 export async function saveTurn(conversationId: string, ordinalBase: number, question: string, answer: AskResponse): Promise<void> {
@@ -542,7 +607,11 @@ export async function saveTurn(conversationId: string, ordinalBase: number, ques
   const userId = sess.session?.user.id;
   if (!userId) return;
   const { error } = await supabase.from("conversation_messages").insert([
-    { conversation_id: conversationId, user_id: userId, role: "user", ordinal: ordinalBase, content: question },
+    // Both rows MUST carry the SAME keys: supabase-js sends the UNION of keys as PostgREST's `columns`
+    // param, and a row missing a listed column is inserted as NULL — the column DEFAULT is NOT applied. So
+    // omitting payload/citations on the user row made it violate their NOT NULL and 400'd the WHOLE insert,
+    // silently losing every chat (conversation created, zero messages). Keep both rows' keys in sync.
+    { conversation_id: conversationId, user_id: userId, role: "user", ordinal: ordinalBase, content: question, payload: {}, citations: [] },
     {
       conversation_id: conversationId,
       user_id: userId,
@@ -570,7 +639,9 @@ export async function saveResearchTurn(conversationId: string, ordinalBase: numb
   const userId = sess.session?.user.id;
   if (!userId) return;
   const { error } = await supabase.from("conversation_messages").insert([
-    { conversation_id: conversationId, user_id: userId, role: "user", ordinal: ordinalBase, content: question },
+    // Keep both rows' keys in sync (see saveTurn): a key on one row but missing on the other inserts NULL
+    // (default NOT applied) and 400s the whole insert. The assistant row sets payload, so the user row must.
+    { conversation_id: conversationId, user_id: userId, role: "user", ordinal: ordinalBase, content: question, payload: {} },
     {
       conversation_id: conversationId,
       user_id: userId,
@@ -750,6 +821,193 @@ export async function fetchResearchReports(): Promise<ResearchReportSummary[]> {
       citation_count: typeof r.citation_count === "number" ? r.citation_count : 0,
     } as ResearchReportSummary)
     : null));
+}
+
+// ── Live monitoring (WS-D) — read-only fetches for the Monitoring section ────────────────────────
+// These read the owner-scoped evidence_watches / watch_events tables directly (RLS). Until the
+// monitoring migration is applied + the feature deployed (owner-gated), those tables don't exist:
+// a "relation does not exist" (Postgres 42P01) is EXPECTED pre-deploy and degrades to empty so the
+// pages show their normal empty states rather than a scary DB error. Any other error still surfaces.
+export interface WatchSummary {
+  id: string;
+  title: string;
+  cadence: string; // 'weekly' | 'daily'
+  status: string; // 'active' | 'paused'
+  last_checked_at: string | null;
+  baselined_at: string | null;
+}
+
+function isMissingRelation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  // supabase-js talks to PostgREST, NOT Postgres directly, so a missing table surfaces as PGRST205
+  // (schema-cache miss) — never Postgres 42P01. PGRST205 is the definitive pre-deploy signal; a broader
+  // "does not exist" match would also wrongly swallow a post-deploy column/function error as "empty".
+  return error.code === "PGRST205";
+}
+
+export async function fetchWatches(): Promise<WatchSummary[]> {
+  if (isPreviewMode) return [];
+  const { data, error } = await supabase
+    .from("evidence_watches")
+    .select("id,title,cadence,status,last_checked_at,baselined_at")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) {
+    if (isMissingRelation(error)) return []; // monitoring not deployed yet
+    throw new Error(`watches failed: ${error.message}`);
+  }
+  return rows(data, (r) => (typeof r.id === "string" && typeof r.title === "string"
+    ? ({
+      id: r.id,
+      title: r.title,
+      cadence: typeof r.cadence === "string" ? r.cadence : "weekly",
+      status: typeof r.status === "string" ? r.status : "active",
+      last_checked_at: typeof r.last_checked_at === "string" ? r.last_checked_at : null,
+      baselined_at: typeof r.baselined_at === "string" ? r.baselined_at : null,
+    } as WatchSummary)
+    : null));
+}
+
+// Preview-mode demo so the watch detail UI is viewable without a real backend (mirrors the
+// searchEntities / demoDrug preview mocks). Timestamps are relative to now so the "last checked"
+// label reads realistically; events stay empty (fetchWatchEvents) — the fresh-watch state where the
+// "see the current evidence" view earns its keep.
+function demoWatch(id: string): WatchSummary {
+  const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
+  return {
+    id: id || "demo",
+    title: "Semaglutide",
+    cadence: "daily",
+    status: "active",
+    last_checked_at: iso(3 * 60 * 60 * 1000), // 3h ago
+    baselined_at: iso(26 * 60 * 60 * 1000), // baselined ~1d ago
+  };
+}
+
+export async function fetchWatch(id: string): Promise<WatchSummary | null> {
+  if (isPreviewMode) return demoWatch(id);
+  const { data, error } = await supabase
+    .from("evidence_watches")
+    .select("id,title,cadence,status,last_checked_at,baselined_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) {
+    if (isMissingRelation(error)) return null;
+    throw new Error(`watch failed: ${error.message}`);
+  }
+  if (!data || typeof data.id !== "string") return null;
+  return {
+    id: data.id,
+    title: typeof data.title === "string" ? data.title : "Watch",
+    cadence: typeof data.cadence === "string" ? data.cadence : "weekly",
+    status: typeof data.status === "string" ? data.status : "active",
+    last_checked_at: typeof data.last_checked_at === "string" ? data.last_checked_at : null,
+    baselined_at: typeof data.baselined_at === "string" ? data.baselined_at : null,
+  };
+}
+
+export async function fetchWatchEvents(watchId: string): Promise<WatchEvent[]> {
+  if (isPreviewMode) return [];
+  const { data, error } = await supabase
+    .from("watch_events")
+    .select("id,channel,source_key,is_alert,alert_reason,title,url,provider,study_type,published_date,summary,detected_at,read_at")
+    .eq("watch_id", watchId)
+    .order("detected_at", { ascending: false })
+    .limit(200);
+  if (error) {
+    if (isMissingRelation(error)) return [];
+    throw new Error(`watch events failed: ${error.message}`);
+  }
+  return rows(data, (r) => (typeof r.id === "string"
+    ? ({
+      id: r.id,
+      channel: r.channel === "news" ? "news" : "evidence",
+      source_key: typeof r.source_key === "string" ? r.source_key : "",
+      is_alert: r.is_alert === true,
+      alert_reason: r.alert_reason === "new_high_tier_study" || r.alert_reason === "retraction" ? r.alert_reason : null,
+      title: typeof r.title === "string" ? r.title : "",
+      url: typeof r.url === "string" ? r.url : null,
+      provider: typeof r.provider === "string" ? r.provider : null,
+      study_type: typeof r.study_type === "string" ? r.study_type : null,
+      published_date: typeof r.published_date === "string" ? r.published_date : null,
+      summary: typeof r.summary === "string" ? r.summary : null,
+      detected_at: typeof r.detected_at === "string" ? r.detected_at : "",
+      read_at: typeof r.read_at === "string" ? r.read_at : null,
+    } as WatchEvent)
+    : null));
+}
+
+interface CreateWatchCommon {
+  title: string;
+  query_terms: string;
+  mentions?: string[];
+  include_news?: boolean;
+  cadence?: "weekly" | "daily";
+}
+// A watch is either a typed TOPIC or a saved REPORT's question — they differ only in where the terms
+// come from (the kind_ref CHECK in the migration requires topic for 'topic', saved_report_id for the other).
+export type CreateWatchInput =
+  | (CreateWatchCommon & { kind: "topic"; topic: string })
+  | (CreateWatchCommon & { kind: "saved_question"; saved_report_id: string });
+
+export type CreateWatchResult =
+  | { ok: true; id: string }
+  | { ok: false; reason: "not_enabled" | "limit" | "auth" | "unknown" };
+
+/** Create a watch — a typed topic or a saved report's question (the "Watch this" affordances). user_id
+ *  is set explicitly from the session and
+ *  validated by the evidence_watches RLS WITH CHECK (auth.uid() = user_id), so a client can't insert
+ *  for someone else. The per-plan limit is enforced by the enforce_watch_limit DB trigger, surfaced
+ *  here as reason:"limit". Pre-deploy the table is absent (PGRST205) → reason:"not_enabled", so the
+ *  button reports "monitoring isn't on yet" instead of crashing. */
+export async function createWatch(input: CreateWatchInput): Promise<CreateWatchResult> {
+  if (isPreviewMode) return { ok: false, reason: "not_enabled" };
+  const { data: sess } = await supabase.auth.getSession();
+  const userId = sess.session?.user?.id;
+  if (!userId) return { ok: false, reason: "auth" };
+  // Tier-gate the cadence: a free user can't create/persist a daily watch (the scheduler enforces which
+  // watches are actually due; this is the client-side gate). Defensive read — a failed entitlement fetch
+  // falls back to the free floor (weekly), never silently grants daily.
+  const ent = watchEntitlement(await fetchEntitlements().catch(() => null));
+  const cadence = resolveWatchCadence(input.cadence, ent.dailyEnabled);
+  // One object shape (not a union) so supabase-js's excess-property check stays happy. Both topic and
+  // saved_report_id are nullable; exactly one is set per kind, which satisfies the kind_ref CHECK.
+  const row = {
+    user_id: userId,
+    kind: input.kind,
+    title: input.title,
+    query_terms: input.query_terms,
+    mentions: input.mentions ?? [],
+    include_news: input.include_news ?? true,
+    cadence,
+    topic: input.kind === "topic" ? input.topic : null,
+    saved_report_id: input.kind === "saved_question" ? input.saved_report_id : null,
+  };
+  const { data, error } = await supabase
+    .from("evidence_watches")
+    .insert(row)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    if (isMissingRelation(error)) return { ok: false, reason: "not_enabled" };
+    if (/watch_limit_exceeded/i.test(error.message ?? "")) return { ok: false, reason: "limit" };
+    return { ok: false, reason: "unknown" };
+  }
+  return data && typeof data.id === "string" ? { ok: true, id: data.id } : { ok: false, reason: "unknown" };
+}
+
+/** Delete a watch (cascades to its events + known-sources). RLS (ew_owner, FOR ALL) scopes to the owner. */
+export async function deleteWatch(id: string): Promise<void> {
+  if (isPreviewMode) return;
+  const { error } = await supabase.from("evidence_watches").delete().eq("id", id);
+  if (error) throw new Error(`delete watch failed: ${error.message}`);
+}
+
+/** Pause / resume a watch — the scheduler only checks 'active' watches. RLS scopes to the owner. */
+export async function setWatchStatus(id: string, status: "active" | "paused"): Promise<void> {
+  if (isPreviewMode) return;
+  const { error } = await supabase.from("evidence_watches").update({ status }).eq("id", id);
+  if (error) throw new Error(`update watch failed: ${error.message}`);
 }
 
 /** Download a saved report as .docx/.pptx. Fetches the Node route WITH the user's bearer token

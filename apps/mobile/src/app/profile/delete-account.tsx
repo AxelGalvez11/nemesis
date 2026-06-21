@@ -6,6 +6,7 @@ import { deleteAccount } from "@/api/account";
 import { useAuth } from "@/auth/AuthProvider";
 import { ErrorState } from "@/components/states";
 import { common } from "@/theme/common";
+import { c, space } from "@/theme/tokens";
 
 // Account deletion (AC10 / §11 "deletion must work") — REAL and irreversible. A confirm
 // gate, then the account-delete edge fn service-role-deletes auth.users(uid); every owned
@@ -51,13 +52,13 @@ export default function DeleteAccountScreen() {
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 20, gap: 16 },
-  confirmRow: { flexDirection: "row", gap: 10, alignItems: "flex-start", paddingVertical: 4 },
-  checkbox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: "#c0392b", alignItems: "center", justifyContent: "center" },
-  checkboxOn: { backgroundColor: "#c0392b" },
-  check: { color: "#fff", fontSize: 14, fontWeight: "900" },
-  confirmLabel: { flex: 1, fontSize: 14, lineHeight: 20, color: "#3a4451" },
-  dangerBtn: { backgroundColor: "#c0392b", paddingVertical: 14, borderRadius: 10, alignItems: "center" },
-  dangerText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  body: { padding: space(5), gap: space(4), backgroundColor: c.bg, flexGrow: 1 },
+  confirmRow: { flexDirection: "row", gap: space(2.5), alignItems: "flex-start", paddingVertical: space(1) },
+  checkbox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: c.danger, alignItems: "center", justifyContent: "center" },
+  checkboxOn: { backgroundColor: c.danger },
+  check: { color: "#fff", fontSize: 14, fontWeight: "900" }, // white on danger fill
+  confirmLabel: { flex: 1, fontSize: 14, lineHeight: 20, color: c.text2 },
+  dangerBtn: { backgroundColor: c.danger, paddingVertical: space(3.5), borderRadius: 10, alignItems: "center" },
+  dangerText: { color: "#fff", fontSize: 16, fontWeight: "700" }, // white on danger fill
   disabled: { opacity: 0.5 },
 });

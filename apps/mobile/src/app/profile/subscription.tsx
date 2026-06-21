@@ -2,6 +2,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Card } from "@/components/ui";
 import { FREE_WATCHLIST_LIMIT } from "@/lib/limits";
 import { common } from "@/theme/common";
+import { c, space } from "@/theme/tokens";
 
 // Subscription (doc-06 Profile). A stub: real entitlements (RevenueCat) are Phase 8.
 // Shows the current free plan + what Pro unlocks, so the paywall affordance (6b-4) has
@@ -35,9 +36,9 @@ export default function SubscriptionScreen() {
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 20, gap: 12 },
-  plan: { fontSize: 16, fontWeight: "700", color: "#1f2933" },
-  heading: { fontSize: 15, fontWeight: "700", color: "#1f2933", marginTop: 8 },
-  row: { flexDirection: "row", gap: 8 },
-  bullet: { fontSize: 15, color: "#208AEF" },
+  body: { padding: space(5), gap: space(3), backgroundColor: c.bg, flexGrow: 1 },
+  plan: { fontSize: 16, fontWeight: "700", color: c.text },
+  heading: { fontSize: 15, fontWeight: "700", color: c.text, marginTop: space(2) },
+  row: { flexDirection: "row", gap: space(2) },
+  bullet: { fontSize: 15, color: c.acidDim },
 });

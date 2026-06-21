@@ -99,8 +99,10 @@ export interface ResearchProgressStep {
 
 /** Report rigor mode. 'standard' = today's Deep Research; 'structured_review' = the
  *  honest, method-documenting "structured / PRISMA-informed evidence review"; 'meta' = adds a
- *  code-computed pooled estimate (risk ratio) when ≥2 comparable studies report extractable counts. */
-export type ReportMode = "standard" | "structured_review" | "meta";
+ *  code-computed pooled estimate (risk ratio) when ≥2 comparable studies report extractable counts;
+ *  'lab_draft' = a literature-grounded study-DESIGN scaffold (objective/arms/controls/endpoints/assays/
+ *  sample-size/pitfalls) — never an executable protocol or synthesis route. Beta, hazardous-scope-gated. */
+export type ReportMode = "standard" | "structured_review" | "meta" | "lab_draft";
 
 /** The fixed comparison a meta-analysis run pools around (PICO), parsed from the question BEFORE the
  *  corpus is read so the contrast can never be inferred post-hoc across mismatched studies. */

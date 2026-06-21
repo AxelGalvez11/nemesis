@@ -1,16 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { PageHeader } from "@/components/ui";
-import { ProfilePanel } from "@/components/ProfilePanel";
-
-// Full-page Profile (direct URL). The same ProfilePanel also renders inside the account-menu overlay.
+// Profile is now the "Account" section of the consolidated Settings surface — keep the old URL working.
 export default function ProfilePage() {
-  return (
-    <>
-      <PageHeader title="Profile" eyebrow="Account">
-        Your signed-in beta account and current entitlement snapshot.
-      </PageHeader>
-      <ProfilePanel />
-    </>
-  );
+  redirect("/app/settings?section=account");
 }

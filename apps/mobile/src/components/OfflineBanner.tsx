@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { useOnline } from "@/lib/useOnline";
+import { c, space } from "@/theme/tokens";
 
 // The doc-06 "offline" state, surfaced globally so it satisfies the §12 matrix on every
 // key screen at once (Ask/Drug/Source/Search/Watchlist all show ●) rather than five
@@ -20,11 +21,11 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#3a4451",
+    backgroundColor: c.raised,
     paddingTop: 44,
-    paddingBottom: 10,
-    paddingHorizontal: 16,
+    paddingBottom: space(2.5),
+    paddingHorizontal: space(4),
     zIndex: 1000,
   },
-  text: { color: "#fff", fontSize: 13, fontWeight: "600", textAlign: "center" },
+  text: { color: c.text, fontSize: 13, fontWeight: "600", textAlign: "center" },
 });

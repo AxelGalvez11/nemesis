@@ -6,7 +6,8 @@ import { searchEntities } from "@/api/search";
 import { useAuth } from "@/auth/AuthProvider";
 import { EmptyState, ErrorState, GuestState } from "@/components/states";
 import { Badge } from "@/components/ui";
-import { common } from "@/theme/common";
+import { common, PLACEHOLDER } from "@/theme/common";
+import { c, space } from "@/theme/tokens";
 
 // AC1: search a drug. "ozempic" (a brand alias) resolves to Semaglutide. Debounced so
 // each keystroke does not fire an RPC. Authenticated-only (search_entities is anon
@@ -52,6 +53,7 @@ export default function ExploreTab() {
         testID="search-input"
         style={common.input}
         placeholder="Search a drug, e.g. ozempic"
+        placeholderTextColor={PLACEHOLDER}
         autoCapitalize="none"
         autoCorrect={false}
         value={q}
@@ -64,7 +66,7 @@ export default function ExploreTab() {
         </Text>
       ) : isLoading ? (
         <View style={styles.loading} testID="search-loading">
-          <ActivityIndicator />
+          <ActivityIndicator color={c.acid} />
         </View>
       ) : isError ? (
         <ErrorState testID="search-error" body={(error as Error).message} />
@@ -95,17 +97,17 @@ export default function ExploreTab() {
 }
 
 const styles = StyleSheet.create({
-  loading: { paddingVertical: 24, alignItems: "center" },
+  loading: { paddingVertical: space(6), alignItems: "center" },
   row: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
-    paddingVertical: 14,
+    gap: space(3),
+    paddingVertical: space(3.5),
     borderBottomWidth: 1,
-    borderBottomColor: "#eceff3",
+    borderBottomColor: c.line,
   },
   rowMain: { flex: 1, gap: 2 },
-  rowName: { fontSize: 16, fontWeight: "600", color: "#1f2933" },
-  rowSub: { fontSize: 13, color: "#6b7686" },
+  rowName: { fontSize: 16, fontWeight: "600", color: c.text },
+  rowSub: { fontSize: 13, color: c.text3 },
 });

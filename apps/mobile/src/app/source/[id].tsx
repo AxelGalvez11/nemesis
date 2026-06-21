@@ -7,6 +7,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { ErrorState, NoSourceState, OutdatedState } from "@/components/states";
 import { Card, Centered, Chip, SectionHeader } from "@/components/ui";
 import { UUID_RE } from "@/lib/validation";
+import { c, space } from "@/theme/tokens";
 
 // The doc-12 Source Viewer (get_source). Reached from any citation (label / trial /
 // pubmed "View source"). The doc-06 outdated state fires on !is_current — proven
@@ -24,12 +25,12 @@ export default function SourceScreen() {
   });
 
   if (authLoading) {
-    return <Centered testID="source-auth-loading"><ActivityIndicator /></Centered>;
+    return <Centered testID="source-auth-loading"><ActivityIndicator color={c.acid} /></Centered>;
   }
   if (!session) {
     return (
       <Centered testID="source-auth-required">
-        <Text>Sign in to view this source.</Text>
+        <Text style={styles.gate}>Sign in to view this source.</Text>
       </Centered>
     );
   }
@@ -37,7 +38,7 @@ export default function SourceScreen() {
     return <NoSourceState testID="source-not-found" body="That source id is not valid." />;
   }
   if (isLoading) {
-    return <Centered testID="source-loading"><ActivityIndicator /></Centered>;
+    return <Centered testID="source-loading"><ActivityIndicator color={c.acid} /></Centered>;
   }
   if (isError) {
     return <ErrorState testID="source-error" body={(error as Error).message} />;
@@ -108,15 +109,16 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 20, gap: 12 },
-  provider: { fontSize: 12, fontWeight: "700", color: "#6b7686", letterSpacing: 0.5 },
-  title: { fontSize: 22, fontWeight: "700", color: "#1f2933" },
-  subtitle: { fontSize: 15, color: "#4a5562" },
-  block: { gap: 8 },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  row: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
-  rowLabel: { fontSize: 14, color: "#6b7686" },
-  rowValue: { fontSize: 14, color: "#27313d", fontWeight: "600" },
-  urlBtn: { paddingVertical: 10 },
-  urlText: { color: "#208AEF", fontSize: 14, fontWeight: "600" },
+  body: { padding: space(5), gap: space(3), backgroundColor: c.bg, flexGrow: 1 },
+  gate: { color: c.text },
+  provider: { fontSize: 12, fontWeight: "700", color: c.text3, letterSpacing: 0.5 },
+  title: { fontSize: 22, fontWeight: "700", color: c.text },
+  subtitle: { fontSize: 15, color: c.text2 },
+  block: { gap: space(2) },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: space(2) },
+  row: { flexDirection: "row", justifyContent: "space-between", gap: space(3) },
+  rowLabel: { fontSize: 14, color: c.text3 },
+  rowValue: { fontSize: 14, color: c.text, fontWeight: "600" },
+  urlBtn: { paddingVertical: space(2.5) },
+  urlText: { color: c.acidDim, fontSize: 14, fontWeight: "600" },
 });

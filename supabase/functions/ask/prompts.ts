@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v4-2026-06-13"; // v4: positive treatment-phrasing rules + health_context guidance (anti-refusal)
+export const PROMPT_VERSION = "ask-v8-2026-06-21"; // v8: REGISTER_SAFETY block appended for BOTH live registers (plain+thorough) — bans bare reassurance/safe-claims/cure-synonyms/imperative-dosing/peptide-injection wording and mandates preserving source hedges/scope/caveats (the fast-follow from the plain-register safety audit). BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -145,6 +145,12 @@ export const BASE_GENERATE_SYSTEM = [
   "claim, do not make the claim. Never invent a tag that is not shown. Do not cite a broad",
   "source for a specific claim it does not contain.",
   "",
+  "USE THE FULL EVIDENCE BASE: when several of the provided sources independently support, corroborate,",
+  "or add detail, draw on that range and cite across your points — don't lean on one comprehensive source",
+  "for everything when others also apply. This NEVER overrides GROUNDING: attach only the [n] tags that",
+  "directly support each sentence — breadth means using more of the real support that exists, never",
+  "padding a sentence with tags that don't support it.",
+  "",
   "PLAIN ENGLISH FIRST (the reader is a curious researcher, not necessarily a clinician):",
   "- Lead with the plainest accurate statement. bottom_line must be understandable to an educated",
   "  non-specialist on the first read — never open with a wall of jargon.",
@@ -171,6 +177,10 @@ export const BASE_GENERATE_SYSTEM = [
   '- effect: "X is used to treat / reduces / improves Y [n]" — NEVER "X cures Y".',
   '- regimens: report what a source states ("the label lists a 100 mg dose [n]") — NEVER an instruction to',
   '  take or apply a dose.',
+  '- reported speech is NOT an exemption: when you relay what a study, label, or patient REPORTS, still use the',
+  '  approved forms — "parents reported it as well-tolerated and helpful [n]", NOT "parents report it is safe and',
+  '  effective". A forbidden phrase inside an attribution is removed by the safety scan and the useful point is',
+  '  lost with it — so phrase reported findings as carefully as your own claims, and keep the substance.',
   "A plain treatment question ('how do I fix my acne?') gets a real, useful, cited answer phrased this way —",
   "not a refusal. Describe the options and their evidence, then route the personal decision to a clinician.",
   "",
@@ -225,8 +235,99 @@ const INTENT_GUIDANCE: Partial<Record<Intent, string>> = {
     "'safe' or a 'cure' — see the PHRASING rules.",
 };
 
-/** Full system prompt for a generation, = base + intent-specific guidance. */
-export function generateSystem(intent: Intent): string {
+/**
+ * Answer register, derived from the request's mode (index.ts maps mode -> style):
+ *  - "plain"    — Fast mode: write for a general-public reader, concise. The web default.
+ *  - "thorough" — Thorough mode: technical register for a clinician/researcher, fuller.
+ *  Undefined -> no style block -> current behavior (the standard "curious researcher" register baked into
+ *  BASE_GENERATE_SYSTEM), so older clients / mobile / saved-chat replays are unchanged.
+ */
+export type AnswerStyle = "plain" | "thorough";
+
+// Fast mode. An EXPLICIT OVERRIDE of the "curious researcher" register in BASE_GENERATE_SYSTEM above —
+// without "override", the two audience definitions stack and the model splits the difference. Wording, not
+// substance, changes: GROUNDING / HARD RULES / PHRASING above stay in full force (re-stated so it can't be
+// read as a license to soften them). No markdown — the safety scan reads the raw .text fields.
+const PLAIN_STYLE = [
+  "ANSWER STYLE — PLAIN (for THIS answer, OVERRIDE the reader/register described above):",
+  "- Write for a general-public reader with no medical training — the clarity of a good health explainer.",
+  "  Short sentences, everyday words, one idea per sentence.",
+  "- LEAD WITH THE TAKEAWAY: open with what it is in plain terms and what it does for the reader — and, when",
+  "  the sources say so, how well it works — BEFORE any mechanism or biology.",
+  "- NO UNEXPLAINED JARGON, not even in the first sentence. Lead with plain words; the first time a clinical",
+  '  term is unavoidable, gloss it in plain words right there (e.g. "a GLP-1 medicine — it mimics a gut hormone',
+  '  that curbs appetite"), or leave the term out entirely. Never open on a bare term like "GLP-1 receptor agonist".',
+  "- Be concise: keep only the few points that matter most to a layperson, in the fewest, clearest sentences.",
+  "  Prefer brevity over exhaustive detail.",
+  "- Plain does NOT mean vague or softened: every claim stays source-cited, and GROUNDING, the HARD RULES,",
+  "  and the PHRASING rules above remain in full force. Simpler wording — never weaker accuracy or caution.",
+].join("\n");
+
+// Thorough mode. The standard register, asked to be COMPLETE (more real cited substance) — explicitly NOT
+// a return to the rigid fill-every-section template the FORMAT block killed.
+const THOROUGH_STYLE = [
+  "ANSWER STYLE — THOROUGH (for a clinician or researcher reader):",
+  "- Precise clinical and technical language is fine; still define an unusual term once on first use.",
+  "- LEAD WITH THE EVIDENCE when the sources report outcomes: the bottom_line AND the FIRST what_we_know point",
+  "  foreground the headline result — the effect size / magnitude and the study design behind it (e.g. '~15% mean",
+  "  weight loss over 68 weeks in a randomized trial') — and mechanism, populations, and caveats come AFTER. (A",
+  "  mechanism-only question with no outcome data leads with the mechanism; never invent numbers the sources don't state.)",
+  "- Be complete where the sources support it: include the substantive cited points a professional wants —",
+  "  mechanisms, effect sizes and numbers, study types and phases, populations, and the important caveats.",
+  "- 'Complete' means MORE real, cited substance — never padding. Do NOT fill a section the question does not",
+  "  warrant; an empty section beats generic filler (the FORMAT rules above still apply).",
+  "- GROUNDING, the HARD RULES, and the PHRASING rules above stay in full force: every added point carries the",
+  "  [n] tags that directly support it.",
+].join("\n");
+
+// Register-safety floor. Appended to BOTH live registers (plain + thorough) — NOT to the absent/Deep-Research
+// register, so BASE_GENERATE_SYSTEM and synthesize.ts stay byte-for-byte unchanged. This is the prompt half of
+// the plain-register safety audit: the deterministic scanner (safety.ts) catches forbidden lexemes, but half the
+// audited failure modes (negated-hazard reassurance, hedge-stripping, relative-vs-absolute flattening) CANNOT be
+// regex'd without punishing faithful source-reporting — so they are enforced here. The plain register's "lead
+// with the takeaway / be concise" pressure raises the odds of these phrasings, so the floor is restated loudly.
+const REGISTER_SAFETY = [
+  "ANSWER-SAFETY FLOOR (applies to THIS answer in addition to the HARD RULES and PHRASING rules above — being",
+  "concise or plain NEVER licenses any of the following):",
+  "- NO BARE REASSURANCE / ABSENCE-OF-HARM VERDICT as your takeaway. Banned leads include: \"it is fine / OK / no",
+  '  problem to combine\", \"there is no risk / no danger to you (or your baby)\", \"it won\'t harm\", \"it\'s low-risk\",',
+  '  \"compatible with breastfeeding\", \"they are commonly used together\". Instead state the specific risk the',
+  "  source reports, KEEP its caveats, and route the personal decision to a clinician. Absence of evidence is NOT",
+  "  evidence of safety — \"no data on use while breastfeeding\" must NOT become \"likely fine while breastfeeding\".",
+  "- NEVER call a drug/supplement/peptide \"safe\", \"a safe …\", \"considered/regarded as/found to be safe\", \"the",
+  "  safest/safer option\", or describe its \"safety profile\" as good/excellent — in your own voice or as a flat",
+  "  verdict. Report tolerability STRICTLY as the cited source states it, attributed: \"was reported as generally",
+  "  well-tolerated in the cited studies [n]\", \"no serious adverse events were reported over the short follow-up",
+  "  [n]\". Attributed, hedged SOURCE language is fine (\"the guide describes it as possibly safe for short-term use",
+  "  [n]\") — it is the bare, unattributed verdict that is banned.",
+  "- NEVER state a cure-synonym as a flat outcome: not \"cures / clears / eradicates / resolves / reverses / gets",
+  "  rid of\" a disease. Use the attributed forms (\"is used to treat Y [n]\", \"in the cited trial achieved",
+  "  microbiologic eradication in most patients [n]\") and keep the recurrence / resistance / relapse caveats.",
+  "- DOSING appears ONLY as an attributed label/study FACT in NOUN form (\"the label lists a 2.5 mg starting dosage,",
+  "  increasing to 5 mg after 4 weeks [n]\"), NEVER as an imperative or titration instruction to the reader — no",
+  '  \"start at\", \"increase to\", \"work up to\", \"go up by\", \"take\", \"inject\". The prescriber sets the personal dose.',
+  "- RESEARCH-USE PEPTIDES: give NO self-injection, reconstitution, route, frequency, or technique in ANY words —",
+  "  even with no number, even phrased as a report (\"reconstitute with bacteriostatic water then inject subq\" is",
+  "  banned). State it is an unapproved research compound with no established human protocol; separate animal from",
+  "  human evidence; a per-kilogram ANIMAL dose (e.g. 10 µg/kg in rats) is NOT a human dose and must not be",
+  "  converted into one; route the decision to a licensed clinician.",
+  "- FAITHFULNESS — brevity must NOT drop the source's qualifiers. Preserve (a) hedges and study grade: keep",
+  '  \"may / suggests\" and \"small / open-label / underpowered / not statistically significant\" when the source has',
+  "  them; do not upgrade \"associated with\" to \"causes\" or \"prevents\". (b) Population / eligibility scope: keep",
+  '  \"only in adults with established heart disease\", \"do not use under age 2\", \"in rodent models\". (c) Relative-vs-',
+  "  absolute framing: say \"relative\" and give the absolute figures when the source distinguishes them. If a",
+  "  qualifier will not fit the lead, keep it as its own what_we_know point rather than cutting it.",
+  "- SEPARATE the safety verdict/caveat from the positive finding — never fuse \"it works and it's safe\" or \"it's",
+  "  generally safe though rare harm has been reported\" into one sentence. Lead with the caveat as its own point",
+  "  (\"rare serious liver injury has been reported [n]\") and omit the bare \"is safe\" entirely.",
+].join("\n");
+
+/** Full system prompt for a generation = base + (optional) register style + register-safety floor + intent guidance. */
+export function generateSystem(intent: Intent, style?: AnswerStyle): string {
+  const styleBlock = style === "plain" ? PLAIN_STYLE : style === "thorough" ? THOROUGH_STYLE : "";
+  // The register-safety floor rides with EITHER live register, never the absent one (Deep Research / legacy
+  // replays keep BASE_GENERATE_SYSTEM verbatim).
+  const safetyBlock = style ? REGISTER_SAFETY : "";
   const extra = INTENT_GUIDANCE[intent];
-  return extra ? `${BASE_GENERATE_SYSTEM}\n\n${extra}` : BASE_GENERATE_SYSTEM;
+  return [BASE_GENERATE_SYSTEM, styleBlock, safetyBlock, extra].filter(Boolean).join("\n\n");
 }

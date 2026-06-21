@@ -2,20 +2,20 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { DrugOverview, EntitlementSnapshot, WatchlistItem } from "@pharmabro/shared";
+import type { DrugOverview } from "@pharmabro/shared";
 import {
   fetchDrug,
   fetchDrugLabel,
   fetchDrugPubmed,
   fetchDrugTrials,
-  fetchEntitlements,
-  fetchWatchlist,
-  followItem,
+  fetchWatches,
   type DrugPubmed,
   type DrugTrial,
   type LabelDoc,
+  type WatchSummary,
 } from "@/lib/api";
 import { Badge, Card, ErrorText, PageHeader, SourceAnchor } from "@/components/ui";
+import { WatchButton } from "@/components/WatchButton";
 
 export default function DrugPage() {
   const { id } = useParams<{ id: string }>();
@@ -23,10 +23,8 @@ export default function DrugPage() {
   const [labels, setLabels] = useState<LabelDoc[]>([]);
   const [trials, setTrials] = useState<DrugTrial[]>([]);
   const [pubmed, setPubmed] = useState<DrugPubmed[]>([]);
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
-  const [ent, setEnt] = useState<EntitlementSnapshot | null>(null);
+  const [watches, setWatches] = useState<WatchSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [followError, setFollowError] = useState<string | null>(null);
   const [shared, setShared] = useState(false);
 
   useEffect(() => {
@@ -36,20 +34,15 @@ export default function DrugPage() {
       fetchDrugLabel(id),
       fetchDrugTrials(id),
       fetchDrugPubmed(id),
-      fetchWatchlist(),
-      fetchEntitlements(),
-    ]).then(([d, l, t, p, w, e]) => {
+      fetchWatches(),
+    ]).then(([d, l, t, p, w]) => {
       setDrug(d);
       setLabels(l);
       setTrials(t);
       setPubmed(p);
-      setWatchlist(w);
-      setEnt(e);
+      setWatches(w);
     }).catch((e) => setError(e instanceof Error ? e.message : "Failed to load drug"));
   }, [id]);
-
-  const followed = watchlist.some((w) => w.item_type === "drug" && w.item_ref === id);
-  const limit = Number(ent?.entitlements.watchlist_limit ?? 3);
 
   function onShare() {
     if (typeof window === "undefined") return;
@@ -58,34 +51,36 @@ export default function DrugPage() {
       .catch(() => {});
   }
 
-  async function onFollow() {
-    setFollowError(null);
-    try {
-      await followItem("drug", id);
-      setWatchlist(await fetchWatchlist());
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Follow failed";
-      setFollowError(msg.includes("watchlist_limit_exceeded") ? `Watchlist limit reached (${watchlist.length}/${limit}). Upgrade to Plus for 50 follows.` : msg);
-    }
-  }
-
   if (error) return <ErrorText>{error}</ErrorText>;
   if (!drug) return <main>Loading drug…</main>;
+
+  // A topic-watch on this drug is created with title === canonical_name (below), so a returning user's
+  // existing watch is matched by title — flipping the button to "Watching" instead of minting a duplicate.
+  const existingWatch = watches.find((w) => w.title === drug.canonical_name);
 
   return (
     <div className="drug-page-layout">
       <section className="drug-main">
+        {/* Inner column caps line length for calm, readable prose (the .drug-main column is wide on
+            large screens). Left-anchored to the padding edge so it aligns with the title and doesn't
+            float against the right rail. Layout-only; reuses the foundation-restyled classes inside. */}
+        <div style={{ maxWidth: 720, width: "100%" }}>
         <h1 className="drug-title">{drug.canonical_name}</h1>
-        <div className="quick-chips">
+        <div className="quick-chips" style={{ marginBottom: 10 }}>
           <Badge>{drug.approved_status}</Badge>
           {drug.primary_class ? <span className="chip">{drug.primary_class.name}</span> : null}
         </div>
         <div className="quick-chips">
-          <button disabled={followed} onClick={onFollow}>{followed ? "Following" : "Follow"}</button>
+          <WatchButton
+            kind="topic"
+            question={drug.canonical_name}
+            title={drug.canonical_name}
+            mentions={[drug.canonical_name, ...drug.brand_names]}
+            label="Watch this drug"
+            existingWatchId={existingWatch?.id}
+          />
           <button className="secondary" type="button" onClick={onShare}>{shared ? "Link copied" : "Share"}</button>
         </div>
-        {followError ? <ErrorText>{followError}</ErrorText> : null}
-        <p className="muted">Plan follow limit: {watchlist.length}/{limit}</p>
 
         {drug.evidence_score ? (
           <Card className="acid">
@@ -142,15 +137,31 @@ export default function DrugPage() {
             </Card>
           ))}
         </Section>
+        </div>
       </section>
 
       <aside className="right-rail">
-        {drug.brand_names.length ? (
-          <div className="answer-section">
-            <div className="eyebrow">Brand names</div>
+        <div className="answer-section">
+          <div className="eyebrow">Products &amp; pricing</div>
+          {drug.brand_names.length ? (
             <div className="quick-chips">{drug.brand_names.map((b) => <span className="chip" key={b}>{b}</span>)}</div>
-          </div>
-        ) : null}
+          ) : (
+            <p className="muted" style={{ fontSize: 13 }}>No brand-name products on file (often available as a generic).</p>
+          )}
+          <a
+            className="chip-action"
+            href={goodRxUrl(drug.canonical_name)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ marginTop: 8, display: "inline-flex" }}
+            title="Opens GoodRx price comparison in a new tab"
+          >
+            Check prices on GoodRx ↗
+          </a>
+          <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+            Third-party pricing (US). PharmaOrb doesn&apos;t set or verify prices.
+          </p>
+        </div>
         {drug.classes.length ? (
           <div className="answer-section">
             <div className="eyebrow">Drug classes</div>
@@ -177,6 +188,13 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="muted">{label}</p>
     </div>
   );
+}
+
+// GoodRx drug pages live at goodrx.com/<slug> (e.g. goodrx.com/tretinoin). Slug the canonical name; a
+// wrong slug still lands on GoodRx's own search, so this degrades gracefully rather than 404ing.
+function goodRxUrl(name: string): string {
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `https://www.goodrx.com/${encodeURIComponent(slug)}`;
 }
 
 function Section({ title, empty, children }: { title: string; empty: string; children: React.ReactNode[] }) {

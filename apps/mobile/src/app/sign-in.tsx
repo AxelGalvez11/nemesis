@@ -3,7 +3,9 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Link, router } from "expo-router";
 import { useAuth } from "@/auth/AuthProvider";
 import { AGE_TOS_ACK } from "@/lib/legal";
-import { common } from "@/theme/common";
+import { common, PLACEHOLDER } from "@/theme/common";
+import { c, space } from "@/theme/tokens";
+import { Orb } from "@/components/TopBar";
 
 // Sign-in screen. We drive real email/password sign-IN (never UI signup — that would
 // hang on email confirmation). "Continue as guest" enters the app in browse-only mode.
@@ -20,12 +22,14 @@ export default function SignIn() {
 
   return (
     <View style={common.center} testID="signin-screen">
-      <Text style={common.h1}>PharmaBro</Text>
+      <Orb size={44} />
+      <Text style={common.h1}>PharmaOrb</Text>
       <Text style={common.sub}>Educational use only — not medical advice.</Text>
       <TextInput
         testID="email"
         style={common.input}
         placeholder="Email"
+        placeholderTextColor={PLACEHOLDER}
         autoCapitalize="none"
         keyboardType="email-address"
         value={email}
@@ -35,6 +39,7 @@ export default function SignIn() {
         testID="password"
         style={common.input}
         placeholder="Password"
+        placeholderTextColor={PLACEHOLDER}
         secureTextEntry
         value={password}
         onChangeText={setPassword}
@@ -98,20 +103,20 @@ export default function SignIn() {
 }
 
 const styles = StyleSheet.create({
-  ackRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8, maxWidth: 320 },
+  ackRow: { flexDirection: "row", alignItems: "center", gap: space(2.5), marginTop: space(2), maxWidth: 320 },
   box: {
     width: 22,
     height: 22,
     borderRadius: 5,
     borderWidth: 1.5,
-    borderColor: "#9aa5b1",
+    borderColor: c.line2,
     alignItems: "center",
     justifyContent: "center",
   },
-  boxOn: { backgroundColor: "#1f6feb", borderColor: "#1f6feb" },
-  tick: { color: "#fff", fontSize: 14, fontWeight: "700", lineHeight: 16 },
-  ackText: { flex: 1, fontSize: 13, lineHeight: 18, color: "#3a4451" },
-  links: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 },
-  dot: { color: "#9aa5b1" },
+  boxOn: { backgroundColor: c.acid, borderColor: c.acid },
+  tick: { color: c.onAcid, fontSize: 14, fontWeight: "700", lineHeight: 16 },
+  ackText: { flex: 1, fontSize: 13, lineHeight: 18, color: c.text2 },
+  links: { flexDirection: "row", alignItems: "center", gap: space(2), marginTop: space(1.5) },
+  dot: { color: c.text3 },
   disabled: { opacity: 0.45 },
 });

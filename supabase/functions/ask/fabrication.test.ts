@@ -95,6 +95,24 @@ Deno.test("ultra-short mentions are ignored (treated as no specific drug)", () =
   assertEquals(isFabricatedDrugQuery(["d3"], chunks), false); // "d3" filtered (<3 chars after norm? len 2) → no-op
 });
 
+// DELIBERATE: the guard stays STRICT on typos and colloquial abbreviations. It is tempting to add
+// edit-distance "typo tolerance" so a 1-char slip like "tesamorein"→"tesamorelin" clears — but that is
+// UNSAFE and must not be done here: a real typo (edit-distance 1) is indistinguishable from a fabricated
+// near-miss (e.g. "BPC-158"→"BPC-157", also edit-distance 1, asserted above). Loosening the guard would
+// re-admit the very fakes it exists to stop. The user-facing fix for typos/abbreviations lives DOWNSTREAM
+// (index.ts §3c): when the guard fires but a non-empty pool was retrieved, show those sources via the
+// conservative fallback instead of a flat "no source" — without ever running the generator. These two
+// tests lock that decision in.
+Deno.test("typo of a real drug is STILL treated as unverified (no edit-distance tolerance)", () => {
+  const chunks = [chunk({ title: "EGRIFTA SV label", chunk_text: "tesamorelin for injection reduces visceral adipose tissue" })];
+  assertEquals(isFabricatedDrugQuery(["tesamorein"], chunks), true); // "tesamorein" ≠ "tesamorelin" (the 'l') → unverified
+});
+
+Deno.test("colloquial class abbreviation absent from the literature → guard stays strict", () => {
+  const chunks = [chunk({ chunk_text: "tesamorelin stimulates endogenous growth hormone (GH) secretion" })];
+  assertEquals(isFabricatedDrugQuery(["HGH"], chunks), true); // literature says "growth hormone"/"GH", not "HGH"
+});
+
 // Note: liveToChunk now lives in live-sources.ts (next to LiveCandidate). It is intentionally NOT
 // unit-tested here — importing live-sources.ts drags the supabase-js dependency into the ask-units
 // type-check graph (CI lacks node_modules). It is covered by typecheck + eval/live-pipeline-safety.ts.

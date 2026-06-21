@@ -9,7 +9,8 @@ import { ComparisonView } from "@/components/ComparisonView";
 import { EmptyState, ErrorState } from "@/components/states";
 import { Centered } from "@/components/ui";
 import { UUID_RE } from "@/lib/validation";
-import { common } from "@/theme/common";
+import { common, PLACEHOLDER } from "@/theme/common";
+import { c, space } from "@/theme/tokens";
 
 // Compare screen (doc-11). Deep-linkable as /compare?left&right (the drug page passes
 // left); the missing side is picked via search. Authenticated-only (the compare fn
@@ -29,11 +30,11 @@ export default function CompareScreen() {
     enabled: !!session && bothValid,
   });
 
-  if (loading) return <Centered testID="compare-auth-loading"><ActivityIndicator /></Centered>;
+  if (loading) return <Centered testID="compare-auth-loading"><ActivityIndicator color={c.acid} /></Centered>;
   if (!session) {
     return (
       <Centered testID="compare-auth-required">
-        <Text>Sign in to compare drugs.</Text>
+        <Text style={styles.gate}>Sign in to compare drugs.</Text>
       </Centered>
     );
   }
@@ -57,7 +58,7 @@ export default function CompareScreen() {
       {!bothValid ? (
         <Picker onPick={pick} />
       ) : comparison.isLoading ? (
-        <View style={styles.loading} testID="compare-loading"><ActivityIndicator /></View>
+        <View style={styles.loading} testID="compare-loading"><ActivityIndicator color={c.acid} /></View>
       ) : comparison.isError ? (
         <ErrorState testID="compare-error" body={(comparison.error as Error).message} />
       ) : !comparison.data ? (
@@ -83,13 +84,14 @@ function Picker({ onPick }: { onPick: (id: string) => void }) {
         testID="compare-search"
         style={common.input}
         placeholder="Search a drug to add"
+        placeholderTextColor={PLACEHOLDER}
         autoCapitalize="none"
         autoCorrect={false}
         value={q}
         onChangeText={setQ}
       />
       {isLoading ? (
-        <ActivityIndicator />
+        <ActivityIndicator color={c.acid} />
       ) : (
         (data ?? []).map((r, i) => (
           <Pressable key={r.id} testID={`compare-result-${i}`} style={styles.result} onPress={() => onPick(r.id)}>
@@ -103,10 +105,11 @@ function Picker({ onPick }: { onPick: (id: string) => void }) {
 }
 
 const styles = StyleSheet.create({
-  body: { padding: 20, gap: 12 },
-  loading: { paddingVertical: 24, alignItems: "center" },
-  picker: { gap: 6 },
-  result: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#eceff3" },
-  resultName: { fontSize: 16, fontWeight: "600", color: "#1f2933" },
-  resultSub: { fontSize: 13, color: "#6b7686" },
+  body: { padding: space(5), gap: space(3), backgroundColor: c.bg, flexGrow: 1 },
+  gate: { color: c.text },
+  loading: { paddingVertical: space(6), alignItems: "center" },
+  picker: { gap: space(1.5) },
+  result: { paddingVertical: space(3), borderBottomWidth: 1, borderBottomColor: c.line },
+  resultName: { fontSize: 16, fontWeight: "600", color: c.text },
+  resultSub: { fontSize: 13, color: c.text3 },
 });
