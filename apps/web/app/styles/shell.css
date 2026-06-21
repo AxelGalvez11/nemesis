@@ -266,8 +266,14 @@
 @keyframes blink { 50% { opacity: 0; } }
 /* Inline citation chip. It is a <button>, so reset the global acid button styling (legacy.css) back
    to an inline text chip: no background, inherited line-height, baseline-aligned. */
-.cite { display: inline; font-family: var(--mono); font-size: 11px; font-weight: 500; line-height: inherit; color: var(--text-2); background: none; border: 1px solid var(--line-2); border-radius: 5px; padding: 0 4px; margin: 0 1px; cursor: pointer; vertical-align: 1px; transition: 0.15s; }
-.cite:hover { border-color: var(--acid); color: var(--acid); }
+.cite { position: relative; display: inline; background: none; border: none; padding: 0; margin: 0 0.5px; cursor: pointer; font: inherit; line-height: inherit; }
+.cite .cite-n { font-family: var(--mono); font-size: 0.72em; font-weight: 700; color: var(--acid-dim); vertical-align: super; transition: color 0.15s; }
+.cite:hover .cite-n, .cite:focus-visible .cite-n { color: var(--acid); }
+/* Hover-preview card: the source label + title (footnote-style chip → ChatGPT/Claude feel). */
+.cite-pop { position: absolute; top: calc(100% + 7px); left: 50%; transform: translateX(-50%); z-index: 40; width: max-content; max-width: 250px; display: none; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line-2); border-radius: 9px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3); text-align: left; pointer-events: none; }
+.cite:hover .cite-pop, .cite:focus-visible .cite-pop { display: block; }
+.cite-pop-label { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); margin-bottom: 3px; }
+.cite-pop-title { display: block; font-size: 12px; line-height: 1.4; color: var(--text); font-weight: 500; }
 .num { font-family: var(--mono); color: var(--text); font-weight: 500; }
 .grade-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .grade { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px; }

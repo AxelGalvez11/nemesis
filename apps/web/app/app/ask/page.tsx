@@ -723,8 +723,8 @@ function MoleculeImage({ drug }: { drug: string }) {
 
 function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string }) {
   const citeMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const c of answer.citations) m.set(normTag(c.chunk_tag), abbr(c.source_type));
+    const m = new Map<string, CiteInfo>();
+    for (const c of answer.citations) m.set(normTag(c.chunk_tag), { label: abbr(c.source_type), title: c.title ?? c.source_type });
     return m;
   }, [answer.citations]);
 
@@ -781,25 +781,35 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
   );
 }
 
+// Per-citation metadata for the inline chips: the short source label + title, shown in the
+// hover-preview card (footnote-style chips — the ChatGPT/Claude feel).
+type CiteInfo = { label: string; title: string };
+
 interface PointBlockProps {
   points: Array<{ text: string; citation_ids?: string[]; support?: ClaimSupport[] }>;
-  citeMap: Map<string, string>;
+  citeMap: Map<string, CiteInfo>;
   onCite: (tag: string, quote?: string) => void;
 }
 
 // Inline [n] citation chips trailing a point's text. `support` carries the verbatim source sentence(s)
 // this point cited; clicking a chip passes that source's supporting line so the evidence card can
 // highlight exactly what backs the claim.
-function CiteChips({ ids, support, citeMap, onCite }: { ids?: string[]; support?: ClaimSupport[]; citeMap: Map<string, string>; onCite: (tag: string, quote?: string) => void }) {
+function CiteChips({ ids, support, citeMap, onCite }: { ids?: string[]; support?: ClaimSupport[]; citeMap: Map<string, CiteInfo>; onCite: (tag: string, quote?: string) => void }) {
   if (!ids?.length) return null;
   return (
     <>
-      {" "}
       {ids.map((id) => {
         const t = normTag(id);
+        const info = citeMap.get(t);
         return (
-          <button key={id} type="button" className="cite" onClick={() => onCite(t, supportQuoteFor(support, t))} title="Show source" aria-label={`Show source ${t}`}>
-            {citeMap.get(t) ?? "REF"}&nbsp;{t}
+          <button key={id} type="button" className="cite" onClick={() => onCite(t, supportQuoteFor(support, t))} aria-label={info ? `Source ${t}: ${info.label} — ${info.title}` : `Show source ${t}`}>
+            <sup className="cite-n">{t}</sup>
+            {info ? (
+              <span className="cite-pop" aria-hidden="true">
+                <span className="cite-pop-label">{info.label}</span>
+                <span className="cite-pop-title">{info.title}</span>
+              </span>
+            ) : null}
           </button>
         );
       })}
