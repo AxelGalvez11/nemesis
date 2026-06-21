@@ -326,6 +326,10 @@ async function runAsk(
     ...enf.answer_sections,
     safety_notes: withProfessionalRouting(enf.answer_sections.safety_notes, cls.intent),
   }, ret.chunks);
+  // A resolved drug name for the answer header's molecule image (PubChem renders by name). First
+  // resolved canonical name, else the first literal mention; absent when nothing resolved. The web
+  // <img> 404-hides for anything PubChem can't depict (e.g. a condition), so setting it loosely is safe.
+  const primaryDrug = entities.find((e) => e.canonical_name)?.canonical_name ?? cls.entity_mentions[0];
   const resp: AskResponse = {
     answer_id: answerId,
     intent: cls.intent,
@@ -336,6 +340,7 @@ async function runAsk(
     safety_flags: flags,
     refused_unsupported: false,
     oldest_source_date: enf.oldest_source_date,
+    ...(primaryDrug ? { primary_drug: primaryDrug } : {}),
   };
 
   // ---- 8. trace store ----

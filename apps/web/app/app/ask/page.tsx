@@ -705,6 +705,21 @@ function scienceBasis(s: ScienceStateSignal): string {
     : `Cited evidence is early-stage — ${s.earlyStage} early-phase trial/preprint of ${n}`;
 }
 
+// A chemical-structure thumbnail for the answer's primary drug, hot-linked from PubChem (renders a PNG
+// by compound name — no key, public-domain depiction; cross-origin <img> needs no CORS/proxy). Hides
+// itself when PubChem has no structure for the name (a condition, a biologic, a typo) via onError → null.
+function MoleculeImage({ drug }: { drug: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  const src = `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/${encodeURIComponent(drug)}/PNG?image_size=large`;
+  return (
+    <figure className="mol-fig">
+      <img src={src} alt={`Chemical structure of ${drug}`} loading="lazy" onError={() => setFailed(true)} />
+      <figcaption>{drug} · structure</figcaption>
+    </figure>
+  );
+}
+
 function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -737,10 +752,12 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
         {/* "Watch this" — only on a real answer (not an emergency/refusal/no-source template). */}
         {!answer.template && !answer.refused_unsupported ? <WatchButton kind="topic" question={question} /> : null}
       </div>
+      {answer.primary_drug && !answer.template && !answer.refused_unsupported ? <MoleculeImage drug={answer.primary_drug} /> : null}
       {answer.plain_english_summary ? <p className="lead">{renderInline(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
 
-      {/* Main explanation: flowing prose, no rigid "What we know" labeled-section scaffold. */}
+      {/* Main explanation, under a quiet section heading (owner wants clearer structure) over the cited body. */}
+      {s.what_we_know?.length ? <div className="ai-block-label">What the evidence shows</div> : null}
       <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} />
 
       {/* Safety stays prominent — a clear bordered callout (conservative medical app), not a muted aside. */}

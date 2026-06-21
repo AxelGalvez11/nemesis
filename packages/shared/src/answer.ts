@@ -167,6 +167,10 @@ export interface AskResponse {
   /** Per-citation verbatim source text, present ONLY when the request set `include_source_text=true`
    *  (a verification/eval aid). Omitted from normal answers and the stored trace to keep them small. */
   source_texts?: SourceText[];
+  /** The resolved primary drug name (canonical, else the literal mention) for the answer header's
+   *  molecule image. Absent for non-drug/zero-entity questions and on older saved chats; the renderer
+   *  404-hides the image for anything PubChem can't depict, so it is safe to set loosely. */
+  primary_drug?: string;
 }
 
 /** Which canned template produced the answer, when one did. */
