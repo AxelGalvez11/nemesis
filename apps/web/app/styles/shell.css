@@ -215,25 +215,13 @@
 .ai-body section h5 { font-size: 18px; text-transform: none; letter-spacing: -0.01em; color: var(--text); font-weight: 700; margin: 2px 0 9px; }
 .ai-body ul { margin: 0 0 4px; padding-left: 18px; }
 .ai-body li { margin: 0 0 7px; font-size: 16px; line-height: 1.62; }
-/* Media column at the top of a drug answer: the chemical structure (PubChem) stacked over the real
-   product photo (DailyMed). Floated as ONE column so the body text wraps around the pair; each figure
-   self-hides independently (onError / no result), and the whole column collapses to nothing when neither
-   resolves. Both images sit on a FIXED white card so the black line-art structure and the photo stay
-   visible in every theme (incl. dark). */
-.media-col { float: right; width: 132px; margin: 2px 0 12px 18px; }
-/* Both figures can resolve to null (a biologic with no PubChem structure AND no DailyMed photo). A
-   live :empty match then collapses the floated wrapper so it never indents the answer text for nothing
-   — and re-matches if MoleculeImage's onError removes the node after load. */
-.media-col:empty { display: none; }
-.mol-fig { width: 132px; text-align: center; margin: 0 0 12px; }
-.mol-fig:last-child { margin-bottom: 0; }
+/* Molecule structure thumbnail (PubChem) at the top of a drug answer — floated so the text wraps around
+   it. The PNG is black line-art on a transparent ground, so it sits on a FIXED white card to stay
+   visible in every theme (incl. dark). It self-hides (onError) when PubChem has no structure. */
+.mol-fig { float: right; width: 132px; margin: 2px 0 12px 18px; text-align: center; }
 .mol-fig img { display: block; width: 132px; height: 132px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
 .mol-fig figcaption { font-size: 11px; color: var(--text-3); margin-top: 5px; text-transform: capitalize; }
-@media (max-width: 560px) {
-  .media-col { float: none; width: 120px; margin: 2px auto 14px; }
-  .mol-fig { width: 120px; }
-  .mol-fig img { width: 120px; height: 120px; }
-}
+@media (max-width: 560px) { .mol-fig { float: none; width: 120px; margin: 2px auto 14px; } .mol-fig img { width: 120px; height: 120px; } }
 
 /* ── answer body: a prose lead + skimmable points + callouts (replaces the rigid labeled-section
    form that read as "robotic"). The lead summary stays flowing prose; the supporting points bullet
