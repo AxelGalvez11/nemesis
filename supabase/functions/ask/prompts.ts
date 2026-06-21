@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v6-2026-06-18"; // v6: "USE THE FULL EVIDENCE BASE" nudge — draw on/cite multiple independent sources (strictly subordinate to GROUNDING) so a single comprehensive source no longer under-cites the breadth available
+export const PROMPT_VERSION = "ask-v7-2026-06-21"; // v7: per-mode answer register — Fast=plain (general-public override, the web default), Thorough=technical/fuller. Register variation lives ONLY in generateSystem()'s appended style block; BASE_GENERATE_SYSTEM (and so Deep Research) is byte-for-byte unchanged.
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -235,8 +235,47 @@ const INTENT_GUIDANCE: Partial<Record<Intent, string>> = {
     "'safe' or a 'cure' — see the PHRASING rules.",
 };
 
-/** Full system prompt for a generation, = base + intent-specific guidance. */
-export function generateSystem(intent: Intent): string {
+/**
+ * Answer register, derived from the request's mode (index.ts maps mode -> style):
+ *  - "plain"    — Fast mode: write for a general-public reader, concise. The web default.
+ *  - "thorough" — Thorough mode: technical register for a clinician/researcher, fuller.
+ *  Undefined -> no style block -> current behavior (the standard "curious researcher" register baked into
+ *  BASE_GENERATE_SYSTEM), so older clients / mobile / saved-chat replays are unchanged.
+ */
+export type AnswerStyle = "plain" | "thorough";
+
+// Fast mode. An EXPLICIT OVERRIDE of the "curious researcher" register in BASE_GENERATE_SYSTEM above —
+// without "override", the two audience definitions stack and the model splits the difference. Wording, not
+// substance, changes: GROUNDING / HARD RULES / PHRASING above stay in full force (re-stated so it can't be
+// read as a license to soften them). No markdown — the safety scan reads the raw .text fields.
+const PLAIN_STYLE = [
+  "ANSWER STYLE — PLAIN (for THIS answer, OVERRIDE the reader/register described above):",
+  "- Write for a general-public reader with no medical training — the clarity of a good health explainer.",
+  "  Short sentences, everyday words, one idea per sentence.",
+  "- Define EVERY technical or clinical term in plain words the first time it appears, or avoid the term",
+  "  entirely when a plain phrase will do.",
+  "- Be concise: lead with the direct answer, then only the few points that matter most to a layperson.",
+  "  Prefer fewer, clearer points over exhaustive detail.",
+  "- Plain does NOT mean vague or softened: every claim stays source-cited, and GROUNDING, the HARD RULES,",
+  "  and the PHRASING rules above remain in full force. Simpler wording — never weaker accuracy or caution.",
+].join("\n");
+
+// Thorough mode. The standard register, asked to be COMPLETE (more real cited substance) — explicitly NOT
+// a return to the rigid fill-every-section template the FORMAT block killed.
+const THOROUGH_STYLE = [
+  "ANSWER STYLE — THOROUGH (for a clinician or researcher reader):",
+  "- Precise clinical and technical language is fine; still define an unusual term once on first use.",
+  "- Be complete where the sources support it: include the substantive cited points a professional wants —",
+  "  mechanisms, effect sizes and numbers, study types and phases, populations, and the important caveats.",
+  "- 'Complete' means MORE real, cited substance — never padding. Do NOT fill a section the question does not",
+  "  warrant; an empty section beats generic filler (the FORMAT rules above still apply).",
+  "- GROUNDING, the HARD RULES, and the PHRASING rules above stay in full force: every added point carries the",
+  "  [n] tags that directly support it.",
+].join("\n");
+
+/** Full system prompt for a generation = base + (optional) register style + intent-specific guidance. */
+export function generateSystem(intent: Intent, style?: AnswerStyle): string {
+  const styleBlock = style === "plain" ? PLAIN_STYLE : style === "thorough" ? THOROUGH_STYLE : "";
   const extra = INTENT_GUIDANCE[intent];
-  return extra ? `${BASE_GENERATE_SYSTEM}\n\n${extra}` : BASE_GENERATE_SYSTEM;
+  return [BASE_GENERATE_SYSTEM, styleBlock, extra].filter(Boolean).join("\n\n");
 }

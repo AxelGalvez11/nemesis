@@ -2,7 +2,7 @@
 // retrieved chunks are the ONLY grounding; the model cites them by [n] tag.
 
 import { callTool } from "./llm.ts";
-import { generateSystem, generateTool } from "./prompts.ts";
+import { type AnswerStyle, generateSystem, generateTool } from "./prompts.ts";
 import type { EvidenceGrade, Intent } from "../../../packages/shared/src/answer.ts";
 import type { RetrievedChunk } from "./citation.ts";
 
@@ -33,6 +33,8 @@ export interface GenerateOpts {
   chunks: RetrievedChunk[];
   healthContext: string | null;
   apiKey: string;
+  /** Answer register (Fast=plain / Thorough=technical). Undefined keeps the current default register. */
+  style?: AnswerStyle;
 }
 
 export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
@@ -63,7 +65,7 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
       // Deterministic generation: more reliable structured output + reproducible
       // answers for a medical app (and lower malformed-JSON rate from DeepSeek).
       temperature: 0,
-      system: generateSystem(opts.intent),
+      system: generateSystem(opts.intent, opts.style),
       tools: [generateTool(opts.intent)],
       messages: [{ role: "user", content: userContent }],
     },

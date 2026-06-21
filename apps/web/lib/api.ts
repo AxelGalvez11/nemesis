@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  AskMode,
   AskResponse,
   Digest,
   DrugOverview,
@@ -178,7 +179,7 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
   return (isObj(data) ? data : { plan: "free", counters: {} }) as unknown as UsageSnapshot;
 }
 
-export async function askQuestion(question: string): Promise<AskResponse> {
+export async function askQuestion(question: string, mode?: AskMode): Promise<AskResponse> {
   if (isPreviewMode) {
     return {
       answer_id: "preview-answer",
@@ -251,7 +252,7 @@ export async function askQuestion(question: string): Promise<AskResponse> {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ question, use_health_context: false }),
+    body: JSON.stringify({ question, use_health_context: false, ...(mode ? { mode } : {}) }),
   });
   const body = await res.json().catch(() => null);
   if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {

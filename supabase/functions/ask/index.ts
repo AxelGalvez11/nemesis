@@ -30,7 +30,7 @@ import { extractSearchTerms } from "./search-query.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
-import { PROMPT_VERSION } from "./prompts.ts";
+import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
@@ -44,6 +44,7 @@ import {
 } from "./templates.ts";
 import type {
   AnswerTemplate,
+  AskMode,
   AskResponse,
   Citation,
   DetectedEntity,
@@ -83,6 +84,10 @@ const MATCH_COUNT = 12;
 // the dense-only behavior the gate/guardrail suite locks in. The owner flips LIVE_SOURCES=on to enable.
 const LIVE_SOURCES_ON = Deno.env.get("LIVE_SOURCES") === "on";
 const LIVE_PER_SOURCE_MAX = 8; // how many candidates to pull per live source before the merge/rerank
+// Thorough mode's wider net: more candidates per live source feed the SAME rerank and the SAME MATCH_COUNT
+// cited slice, so a deeper search can surface better top sources without changing how many are shown or the
+// label-cap ratio. Fast/default keep LIVE_PER_SOURCE_MAX (today's breadth) so the default never looks thinner.
+const THOROUGH_LIVE_PER_SOURCE_MAX = 12;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
@@ -99,6 +104,9 @@ serve(async (req) => {
     question?: string;
     use_health_context?: boolean;
     conversation_id?: string;
+    // Speed/depth dial (see AskMode): "fast" = plain + concise, "thorough" = technical + wider net.
+    // Validated below; anything else (incl. absent) falls through to current behavior.
+    mode?: string;
     // Verification opt-in: echo the verbatim source text behind each citation tag in the response
     // (a benchmark/judge aid — see SourceText). Default false → normal answers are byte-for-byte
     // unchanged. The sources are the public databases the answer already cites.
@@ -111,9 +119,12 @@ serve(async (req) => {
   }
   const question = (body.question ?? "").trim();
   if (!question) return json({ error: "question required" }, 400, req);
+  // Validate the speed/depth dial at the boundary: only the two known modes pass through; an unknown
+  // or absent value becomes undefined → current behavior (mobile / older clients / saved-chat replays).
+  const mode: AskMode | undefined = body.mode === "fast" || body.mode === "thorough" ? body.mode : undefined;
 
   try {
-    const resp = await runAsk(question, !!body.use_health_context, userId, !!body.include_source_text);
+    const resp = await runAsk(question, !!body.use_health_context, userId, !!body.include_source_text, mode);
     return json(resp, 200, req);
   } catch (e) {
     if (e instanceof QuotaExceeded) return json(e.payload, 429, req);
@@ -129,9 +140,17 @@ async function runAsk(
   useHealthContext: boolean,
   userId: string,
   includeSourceText = false,
+  mode?: AskMode,
 ): Promise<AskResponse> {
   const answerId = crypto.randomUUID();
   const apiKey = llmApiKey();
+  // Map the request mode onto the two levers it controls. Both default to current behavior when mode is
+  // absent: undefined style → the standard register; the base per-source net → today's retrieval breadth.
+  //  - register: Fast writes plain, Thorough writes technical (see generateSystem / AnswerStyle).
+  //  - perSourceMax: Thorough casts a WIDER candidate net per live source into the SAME rerank + the SAME
+  //    MATCH_COUNT cited slice — a safe depth lever that never touches the tuned label-cap ratio.
+  const style: AnswerStyle | undefined = mode === "fast" ? "plain" : mode === "thorough" ? "thorough" : undefined;
+  const perSourceMax = mode === "thorough" ? THOROUGH_LIVE_PER_SOURCE_MAX : LIVE_PER_SOURCE_MAX;
 
   // ---- 0. deterministic pre-screen (no LLM) ----
   const pre = preScreen(question);
@@ -211,7 +230,7 @@ async function runAsk(
   // union (for the fabrication guard); `top` is the MATCH_COUNT slice shown to the generator.
   let guardPool: RetrievedChunk[] = ret.chunks;
   if (LIVE_SOURCES_ON) {
-    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks);
+    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax);
     guardPool = aug.pool;
     ret = { ...ret, chunks: aug.top };
   }
@@ -255,6 +274,7 @@ async function runAsk(
       chunks: ret.chunks,
       healthContext,
       apiKey,
+      style,
     });
   } catch (e) {
     console.error("ask generate failed after retries:", (e as Error).message);
@@ -382,6 +402,7 @@ async function augmentWithLive(
   question: string,
   entityMentions: string[],
   libChunks: RetrievedChunk[],
+  perSourceMax: number = LIVE_PER_SOURCE_MAX,
 ): Promise<{ pool: RetrievedChunk[]; top: RetrievedChunk[] }> {
   const fallback = { pool: libChunks, top: libChunks };
   try {
@@ -394,7 +415,7 @@ async function augmentWithLive(
     // instead of generic drug papers; the field-scoped + adverse-event sources (openFDA/FAERS/trials)
     // keep the literal drug `term`. This is the lever behind the side-effects/interaction/mechanism gap.
     const researchQuery = extractSearchTerms(question) || question;
-    const live = await gatherLiveCandidates({ query: term, mentions: entityMentions, researchQuery, perSourceMax: LIVE_PER_SOURCE_MAX });
+    const live = await gatherLiveCandidates({ query: term, mentions: entityMentions, researchQuery, perSourceMax });
     if (live.length === 0) return fallback;
 
     const combined = [...libChunks, ...live.map((c, i) => liveToChunk(c, String(i + 1)))];

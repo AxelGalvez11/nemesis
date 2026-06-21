@@ -50,11 +50,20 @@ export type EvidenceGrade =
   | "unknown"
   | "not_applicable"; // emergency / sourcing-refusal answers carry no grade
 
+/** Speed/depth dial for a single (non-research) answer:
+ *  - "fast"     — plain-English register for a general reader, concise (the web default).
+ *  - "thorough" — technical register for a clinician/researcher; fuller, casts a wider candidate net per source.
+ *  Absent → current behavior (standard register, current retrieval), so older clients, the mobile app, and
+ *  saved-chat replays are byte-for-byte unchanged. Deep research / meta-analysis use the research endpoint. */
+export type AskMode = "fast" | "thorough";
+
 /** POST /ask request body (§8). */
 export interface AskRequest {
   question: string;
   use_health_context?: boolean;
   conversation_id?: string;
+  /** Speed/depth dial; see AskMode. Optional — absent preserves current behavior. */
+  mode?: AskMode;
 }
 
 /** One narrative bullet that carries the source chunk_ids backing it. */

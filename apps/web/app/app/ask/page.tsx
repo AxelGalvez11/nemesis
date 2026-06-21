@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
+import type { AskMode, AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { scienceState } from "@pharmabro/shared";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
@@ -24,8 +24,12 @@ function isQuotaError(e: unknown): e is AskQuotaError {
 // Honest pipeline stages (classify → retrieve → rerank → generate), animated while the request runs.
 const STAGES = ["Reading the question", "Searching the evidence library", "Ranking the strongest sources", "Composing a cited answer"];
 
+// The speed/depth dial. fast/thorough are single cited answers (the /ask engine, free); deep/meta are the
+// multi-step research reports (the research endpoint, Pro). Fast is the default: plain-English + concise.
+// Thorough thinks longer — a wider source pull and a fuller, more technical write-up for clinicians/researchers.
 const MODES = [
-  { id: "evidence", label: "Quick answer", live: true, pro: false, hint: "Cited answer from the library + live sources" },
+  { id: "fast", label: "Fast", live: true, pro: false, hint: "Quick, plain-English answer — cited from the library + live sources" },
+  { id: "thorough", label: "Thorough", live: true, pro: false, hint: "Thinks longer: a wider source pull and a fuller, more technical answer" },
   { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report that documents its method (Pro)" },
   { id: "meta", label: "Meta-analysis", live: true, pro: true, hint: "Pools comparable studies into a computed estimate, when the evidence supports it (Pro)" },
   { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
@@ -73,7 +77,7 @@ function AskPage() {
   const [busy, setBusy] = useState(false);
   const [bloom, setBloom] = useState(false);
   const [stage, setStage] = useState(0);
-  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("evidence");
+  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("fast");
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   // The verbatim source sentence backing the claim whose citation was just clicked, shown highlighted
@@ -318,7 +322,9 @@ function AskPage() {
     const setLast = (patch: Partial<Turn>) =>
       setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
     try {
-      const res = await askQuestion(text);
+      // Only fast/thorough reach here — deep/meta/lab_draft returned above via the research branch.
+      const askMode: AskMode = mode === "thorough" ? "thorough" : "fast";
+      const res = await askQuestion(text, askMode);
       setLast({ a: res });
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
       void fetchUsage().catch(() => {});
