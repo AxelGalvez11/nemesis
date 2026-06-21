@@ -70,6 +70,23 @@ export function citationMeta(c: RetrievedChunk): Pick<Citation, "authors" | "jou
   };
 }
 
+/** Map a retrieved chunk to a resolved Citation (the §8 citations[] shape). Used for both the cited
+ *  set and the "also reviewed" breadth set surfaced in the evidence panel. PURE. */
+export function chunkToCitation(c: RetrievedChunk): Citation {
+  return {
+    chunk_tag: c.tag,
+    source_id: c.source_id,
+    source_type: c.provider,
+    title: c.title,
+    section: c.section,
+    url: c.url,
+    license: c.license,
+    published_date: c.published_date,
+    retrieved_at: c.retrieved_at,
+    ...citationMeta(c),
+  };
+}
+
 interface RawPoint {
   text: string;
   citations: string[];
@@ -159,21 +176,7 @@ export function enforceCitations(input: EnforceInput): EnforceResult {
   ]);
   const citations: Citation[] = [...used]
     .sort((a, b) => Number(a) - Number(b))
-    .map((tag) => {
-      const c = byTag.get(tag)!;
-      return {
-        chunk_tag: tag,
-        source_id: c.source_id,
-        source_type: c.provider,
-        title: c.title,
-        section: c.section,
-        url: c.url,
-        license: c.license,
-        published_date: c.published_date,
-        retrieved_at: c.retrieved_at,
-        ...citationMeta(c),
-      };
-    });
+    .map((tag) => chunkToCitation(byTag.get(tag)!));
 
   const oldest_source_date = oldestDate(citations);
 

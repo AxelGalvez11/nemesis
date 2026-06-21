@@ -224,11 +224,11 @@ function AskPage() {
   // The panel shows the PINNED answer (a citation the user clicked) if set, else the latest answer.
   const panelAnswer = activeAnswer ?? lastAnswered;
   useEffect(() => {
-    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />);
+    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} reviewed={panelAnswer?.reviewed_sources} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />);
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
-        <div className="thread-sub">{panelAnswer && panelAnswer.intent !== "smalltalk" ? `${panelAnswer.citations.length} sources · ${panelAnswer.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
+        <div className="thread-sub">{panelAnswer && panelAnswer.intent !== "smalltalk" ? `${panelAnswer.citations.length + (panelAnswer.reviewed_sources?.length ?? 0)} sources · ${panelAnswer.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
       </div>,
     );
     return () => {

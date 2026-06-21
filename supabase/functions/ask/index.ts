@@ -21,7 +21,7 @@ import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
 import { generate } from "./generate.ts";
-import { citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { chunkToCitation, citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
 import { attachSupport } from "./support-span.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
@@ -330,6 +330,12 @@ async function runAsk(
   // resolved canonical name, else the first literal mention; absent when nothing resolved. The web
   // <img> 404-hides for anything PubChem can't depict (e.g. a condition), so setting it loosely is safe.
   const primaryDrug = entities.find((e) => e.canonical_name)?.canonical_name ?? cls.entity_mentions[0];
+  // The full evidence base for the panel: the reranked sources the generator reviewed but the answer
+  // didn't end up citing. Surfaced as "also reviewed" so the breadth (e.g. 9 PubMed + 4 trials) stays
+  // visible even when the answer text leans on a few — additive DISPLAY only; never affects the answer,
+  // the cited set, or citation enforcement.
+  const citedTags = new Set(enf.citations.map((c) => c.chunk_tag));
+  const reviewedSources = ret.chunks.filter((c) => !citedTags.has(c.tag)).map(chunkToCitation);
   const resp: AskResponse = {
     answer_id: answerId,
     intent: cls.intent,
@@ -341,6 +347,7 @@ async function runAsk(
     refused_unsupported: false,
     oldest_source_date: enf.oldest_source_date,
     ...(primaryDrug ? { primary_drug: primaryDrug } : {}),
+    ...(reviewedSources.length ? { reviewed_sources: reviewedSources } : {}),
   };
 
   // ---- 8. trace store ----

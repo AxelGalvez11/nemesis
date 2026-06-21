@@ -171,6 +171,10 @@ export interface AskResponse {
    *  molecule image. Absent for non-drug/zero-entity questions and on older saved chats; the renderer
    *  404-hides the image for anything PubChem can't depict, so it is safe to set loosely. */
   primary_drug?: string;
+  /** The reranked sources the engine REVIEWED for this answer but the text didn't cite — surfaced in
+   *  the evidence panel as "also reviewed" so the full breadth of the search is visible (e.g. the
+   *  PubMed / trial sources behind an FDA-label-cited answer). Additive; absent on older saved chats. */
+  reviewed_sources?: Citation[];
 }
 
 /** Which canned template produced the answer, when one did. */
