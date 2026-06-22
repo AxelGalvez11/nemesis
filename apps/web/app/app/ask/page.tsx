@@ -767,8 +767,10 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
       {s.what_we_know?.length ? <div className="ai-block-label">What the evidence shows</div> : null}
       <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} />
 
-      {/* Safety stays prominent — a clear bordered callout (conservative medical app), not a muted aside. */}
-      <SafetyBlock points={s.safety_notes} citeMap={citeMap} onCite={cite} />
+      {/* Safety block intentionally NOT rendered in the answer body (owner 2026-06-21: it "reads like
+          fluff" and breaks the natural-conversation feel). RENDER-ONLY: safety_notes are still generated,
+          safety-scanned server-side, and stored in the trace; the emergency 911 routing and the class-
+          caution banner are untouched. Restore the <SafetyBlock> render from git to bring it back. */}
 
       {/* Uncertainty, de-emphasized. */}
       <UnclearBlock points={s.what_we_do_not_know} citeMap={citeMap} onCite={cite} />
@@ -918,17 +920,6 @@ function Prose({ points, citeMap, onCite }: PointBlockProps) {
         </Fragment>
       ))}
     </p>
-  );
-}
-
-// Safety: kept visibly prominent (conservative medical app) as a bordered callout — never muted.
-function SafetyBlock({ points, citeMap, onCite }: PointBlockProps) {
-  if (!points?.length) return null;
-  return (
-    <div className="ai-safety">
-      <div className="ai-safety-label"><Icon name="shield" size={14} />Safety</div>
-      <PointItems points={points} citeMap={citeMap} onCite={onCite} />
-    </div>
   );
 }
 

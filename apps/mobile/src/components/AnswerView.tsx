@@ -161,7 +161,9 @@ export function AnswerView({
 
       <ProseBody points={sections.what_we_know} tagToSource={tagToSource} />
       <PointList title="What we don't know" points={sections.what_we_do_not_know} testID="answer-section-unknown" />
-      <PointList title="Safety notes" points={sections.safety_notes} testID="answer-section-safety_notes" />
+      {/* Safety notes block intentionally NOT rendered (owner 2026-06-21: "reads like fluff"). RENDER-ONLY:
+          safety_notes are still safety-scanned server-side and stored; the emergency 911 routing and the
+          class-caution banner (above) stay. Restore this PointList from git to bring it back. */}
 
       {followUps.length > 0 ? (
         <View style={styles.section} testID="answer-followups">
