@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { AskMode, AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
@@ -899,12 +899,26 @@ function PointItems({ points, citeMap, onCite, paraClass = "ai-para" }: PointBlo
   );
 }
 
-// The answer body: a prose lead (rendered by Answer) followed by the supporting points. Several
-// points read as scannable bullets; a lone point stays a paragraph — so the answer keeps a human
-// top-line and gains a skimmable body, without the old rigid "filled-in form" feel.
+// The answer body (what_we_know): the supporting points run together as ONE flowing paragraph — each
+// point's sentence followed by its citation chips inline as superscripts — instead of a bullet list.
+// This is the ChatGPT/Claude "natural prose" feel the owner asked for, and it is a PURE DISPLAY JOIN:
+// the model still emits discrete, individually-cited points, so per-sentence citation grounding AND
+// per-sentence safety-salvage granularity are preserved upstream (citation.ts / safety.ts). Safety and
+// uncertainty deliberately do NOT join — they keep their own scannable blocks so cautions stand out
+// rather than dissolving into prose.
 function Prose({ points, citeMap, onCite }: PointBlockProps) {
   if (!points?.length) return null;
-  return <PointItems points={points} citeMap={citeMap} onCite={onCite} />;
+  return (
+    <p className="ai-para">
+      {points.map((p, i) => (
+        <Fragment key={i}>
+          {i > 0 ? " " : null}
+          {renderInline(p.text)}
+          <CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} />
+        </Fragment>
+      ))}
+    </p>
+  );
 }
 
 // Safety: kept visibly prominent (conservative medical app) as a bordered callout — never muted.
