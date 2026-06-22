@@ -157,6 +157,18 @@ export interface SourceText {
   text: string;
 }
 
+/** One walled "In the news — not verified evidence" headline attached to an answer. Deliberately a
+ *  DISTINCT, minimal shape (no provider/license/grounding fields): a news item can NEVER be mistaken
+ *  for, or coerced into, a Citation/evidence source. Mirrors the engine-side NewsItem. */
+export interface AnswerNewsItem {
+  title: string;
+  url: string;
+  /** Outlet name (e.g. "Reuters"); "" when the feed omits it. */
+  source: string;
+  /** ISO 8601, or null when the feed date was unparseable. */
+  published_at: string | null;
+}
+
 /** Frozen POST /ask response (doc-11 / §7 / §8 superset). */
 export interface AskResponse {
   answer_id: string;
@@ -184,6 +196,15 @@ export interface AskResponse {
    *  the evidence panel as "also reviewed" so the full breadth of the search is visible (e.g. the
    *  PubMed / trial sources behind an FDA-label-cited answer). Additive; absent on older saved chats. */
   reviewed_sources?: Citation[];
+  /** Walled "In the news — not verified evidence" headlines for this question. A PAID surface
+   *  (Plus/Pro). These are feed metadata ONLY — never grounded, cited, counted as evidence, or mixed
+   *  into citations/reviewed_sources. Absent for free users (see news_locked), non-drug questions,
+   *  and older saved chats. The UI renders them in a clearly-labeled, separate panel. */
+  news?: AnswerNewsItem[];
+  /** True when the user's plan can't see the news panel (free tier) but the panel WOULD have shown
+   *  (a drug question) — the UI shows a locked upgrade teaser instead. Absent/false for paid users and
+   *  where no panel would appear anyway. */
+  news_locked?: boolean;
 }
 
 /** Which canned template produced the answer, when one did. */
