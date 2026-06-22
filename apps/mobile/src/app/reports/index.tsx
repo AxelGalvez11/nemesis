@@ -1,9 +1,10 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { fetchResearchReports, type ResearchReportSummary } from "@/api/reports";
 import { useAuth } from "@/auth/AuthProvider";
 import { EmptyState, ErrorState, GuestState } from "@/components/states";
+import { SkeletonList } from "@/components/Skeleton";
 import { Card, SectionHeader } from "@/components/ui";
 import { common } from "@/theme/common";
 import { c, space } from "@/theme/tokens";
@@ -31,7 +32,7 @@ export default function ReportsScreen() {
       <Text style={common.h1}>Reports</Text>
 
       {reports.isLoading ? (
-        <ActivityIndicator testID="reports-loading" color={c.acid} />
+        <SkeletonList count={3} testID="reports-loading" />
       ) : reports.isError ? (
         <ErrorState testID="reports-error" body={(reports.error as Error).message} />
       ) : items.length === 0 ? (

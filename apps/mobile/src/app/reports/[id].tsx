@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchResearchReport } from "@/api/reports";
 import { useAuth } from "@/auth/AuthProvider";
 import { ErrorState } from "@/components/states";
+import { Skeleton, SkeletonCard } from "@/components/Skeleton";
 import { Badge, Card, Centered, SectionHeader } from "@/components/ui";
 import { SourceLink } from "@/components/SourceLink";
 import type { AnswerPoint } from "@pharmabro/shared";
@@ -47,7 +48,12 @@ export default function ReportDetailScreen() {
       </Pressable>
 
       {report.isLoading ? (
-        <ActivityIndicator color={c.acid} testID="report-loading" />
+        <View style={{ gap: space(3) }} testID="report-loading">
+          <Skeleton width="85%" height={22} />
+          <Skeleton width="50%" height={14} />
+          <SkeletonCard lines={3} />
+          <SkeletonCard lines={4} />
+        </View>
       ) : report.isError ? (
         <ErrorState testID="report-error" body={(report.error as Error).message} />
       ) : !r ? (

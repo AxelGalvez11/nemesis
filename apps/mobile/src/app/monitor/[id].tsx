@@ -21,6 +21,7 @@ import {
 } from "@/api/monitor";
 import { useAuth } from "@/auth/AuthProvider";
 import { ErrorState } from "@/components/states";
+import { Skeleton, SkeletonList } from "@/components/Skeleton";
 import { Badge, Card, Centered, SectionHeader } from "@/components/ui";
 import { UUID_RE } from "@/lib/validation";
 import { partitionWatchEvents, type WatchEvent } from "@pharmabro/shared";
@@ -92,7 +93,10 @@ export default function WatchDetailScreen() {
       </Pressable>
 
       {watch.isLoading ? (
-        <ActivityIndicator color={c.acid} testID="watch-loading" />
+        <View style={{ gap: space(2) }} testID="watch-loading">
+          <Skeleton width="65%" height={24} />
+          <Skeleton width="40%" height={14} />
+        </View>
       ) : watch.isError ? (
         <ErrorState testID="watch-error" body={(watch.error as Error).message} />
       ) : !w ? (
@@ -121,7 +125,7 @@ export default function WatchDetailScreen() {
           </View>
 
           {events.isLoading ? (
-            <ActivityIndicator color={c.acid} testID="watch-events-loading" />
+            <SkeletonList count={3} testID="watch-events-loading" />
           ) : events.isError ? (
             <ErrorState testID="watch-events-error" body={(events.error as Error).message} />
           ) : (

@@ -1,9 +1,10 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { fetchEntitlements, fetchWatches, relativeTime, type WatchSummary } from "@/api/monitor";
 import { useAuth } from "@/auth/AuthProvider";
 import { EmptyState, ErrorState, GuestState } from "@/components/states";
+import { SkeletonList } from "@/components/Skeleton";
 import { Badge, Card, SectionHeader } from "@/components/ui";
 import { watchEntitlement, watchUsageLabel } from "@pharmabro/shared";
 import { common } from "@/theme/common";
@@ -35,7 +36,7 @@ export default function MonitoringTab() {
       <Text style={common.h1}>Live Monitoring</Text>
 
       {watches.isLoading ? (
-        <ActivityIndicator testID="watches-loading" color={c.acid} />
+        <SkeletonList count={3} testID="watches-loading" />
       ) : watches.isError ? (
         <ErrorState testID="watches-error" body={(watches.error as Error).message} />
       ) : items.length === 0 ? (

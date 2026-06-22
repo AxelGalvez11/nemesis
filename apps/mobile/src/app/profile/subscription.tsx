@@ -1,8 +1,9 @@
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { fetchEntitlements, fetchUsage } from "@/api/billing";
 import { useAuth } from "@/auth/AuthProvider";
 import { ErrorState } from "@/components/states";
+import { Skeleton, SkeletonCard } from "@/components/Skeleton";
 import { Badge, Card } from "@/components/ui";
 import { common } from "@/theme/common";
 import { c, space } from "@/theme/tokens";
@@ -33,9 +34,13 @@ export default function SubscriptionScreen() {
 
   if (ent.isLoading) {
     return (
-      <View style={common.screen} testID="subscription-screen">
+      <View style={[common.screen, styles.loadingGap]} testID="subscription-screen">
         <Text style={common.h1}>Subscription</Text>
-        <ActivityIndicator color={c.acid} testID="subscription-loading" />
+        <View testID="subscription-loading" style={styles.loadingGap}>
+          <SkeletonCard lines={2} />
+          <Skeleton width="40%" height={15} />
+          <SkeletonCard lines={3} />
+        </View>
       </View>
     );
   }
@@ -109,6 +114,7 @@ export default function SubscriptionScreen() {
 
 const styles = StyleSheet.create({
   body: { padding: space(5), gap: space(3), backgroundColor: c.bg, flexGrow: 1 },
+  loadingGap: { gap: space(3) },
   planRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   plan: { fontSize: 16, fontWeight: "700", color: c.text },
   heading: { fontSize: 15, fontWeight: "700", color: c.text, marginTop: space(2) },
