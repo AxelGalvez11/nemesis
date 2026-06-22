@@ -57,6 +57,16 @@ Deno.test("does NOT append for informational / non-personal intents", () => {
   }
 });
 
+Deno.test("health_context routes (v10): the fail-safe remap target must carry the routing backstop", () => {
+  // The v9 guardrail caught a [fast] miss on "should I stop my sertraline?": its out-of-union
+  // intent is remapped to health_context (classify.ts), which MUST then get the deterministic
+  // routing note — otherwise the terse register can still omit the clinician steer.
+  assert(ROUTE_TO_PROFESSIONAL_INTENTS.has("health_context"), "health_context must be in the route set");
+  const out = withProfessionalRouting([], "health_context");
+  assertEquals(out.length, 1);
+  assertEquals(out[0].text, PROFESSIONAL_ROUTING_NOTE);
+});
+
 Deno.test("preserves existing safety notes and appends after them", () => {
   const existing: AnswerPoint[] = [{ text: "NSAIDs may raise blood pressure.", citation_ids: ["2"] }];
   const out = withProfessionalRouting(existing, "drug_interaction");

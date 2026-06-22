@@ -5,17 +5,21 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v9-2026-06-22"; // v9: Fast vs Thorough now differ in DEPTH, not just vocabulary (they were near-identical) — PLAIN_STYLE made genuinely terse (a quick gist: bottom_line + <=3 points, what_we_do_not_know/questions left empty unless a real decision, but the safety_notes floor preserved in full), THOROUGH_STYLE given an EXPLICIT OVERRIDE of the FORMAT "match length to the question / empty beats filler" rules so it stops collapsing to the lean default (full what_we_know + what_we_do_not_know; anti-padding guard kept). All safety (GROUNDING/HARD RULES/PHRASING/REGISTER_SAFETY) intact. v8: REGISTER_SAFETY block appended for BOTH live registers — bans bare reassurance/safe-claims/cure-synonyms/imperative-dosing/peptide-injection wording, mandates preserving source hedges/scope/caveats. BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
+export const PROMPT_VERSION = "ask-v10-2026-06-22"; // v10: SAFETY FIX after v9's guardrail caught a [fast] miss — a med-change question ("should I stop my sertraline?") classified to the out-of-union intent "medication_change_request" (a SafetyFlag value the model put in the intent field, bypassing the enum), which NO intent-keyed safety set recognized → no required safety floor, no professional-routing backstop → terse Fast intermittently omitted routing. Fix is in classify.ts (normalizeClassification: an unrecognized intent is preserved as a flag and remapped to health_context, fail-safe) + routing.ts (health_context now in ROUTE_TO_PROFESSIONAL_INTENTS — also closes the documented health_context routing hole). DETERMINISTIC + register-invariant; no prompt TEXT changed from v9. v9: Fast vs Thorough differ in DEPTH not vocabulary (PLAIN_STYLE terse; THOROUGH_STYLE explicit OVERRIDE of FORMAT leanness). v8: REGISTER_SAFETY block on both live registers. BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
-const INTENTS: Intent[] = [
+// Exported so classify.ts can VALIDATE the model's output against them: the
+// provider does not always enforce the tool-arg enum, so an out-of-union intent
+// (e.g. a SafetyFlag value leaking into the intent field) can slip through and
+// be silently unrecognized by every intent-keyed safety set. See normalizeClassification().
+export const INTENTS: Intent[] = [
   "drug_overview", "drug_interaction", "side_effects", "label_summary",
   "comparison", "mechanism", "trial_lookup", "evidence_for_claim",
   "supplement_peptide", "dosing", "emergency_overdose", "pregnancy_pediatrics",
   "health_context", "drug_sourcing", "investment",
 ];
-const SAFETY_FLAGS: SafetyFlag[] = [
+export const SAFETY_FLAGS: SafetyFlag[] = [
   "emergency_possible", "overdose_possible", "self_harm", "pregnancy",
   "pediatric", "medication_change_request", "controlled_substance",
   "psychiatric_medication", "anticoagulant", "insulin", "immunosuppressant",
@@ -87,8 +91,10 @@ const GENERATE_BASE_REQUIRED = ["bottom_line", "evidence_grade"];
 // Pure-informational intents (overview, mechanism, comparison, trial_lookup, …)
 // carry no floor, so a benign question gets a lean, question-specific answer.
 // health_context is included: an answer applied to the user's own stored profile
-// is inherently personal and must carry a caution. (routing.ts does not yet append
-// its routing note for health_context — a separate, pre-existing follow-up.)
+// is inherently personal and must carry a caution. routing.ts now ALSO appends its
+// professional-routing note for health_context (v10) — it is the fail-safe remap
+// target for an unrecognized/out-of-union intent, so it must carry both the floor
+// AND the routing backstop.
 const SAFETY_FLOOR_INTENTS: ReadonlySet<Intent> = new Set<Intent>([
   "drug_interaction", "supplement_peptide", "dosing", "pregnancy_pediatrics",
   "side_effects", "health_context",
