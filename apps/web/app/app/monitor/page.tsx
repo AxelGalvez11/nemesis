@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { EntitlementSnapshot, EntitySuggestion } from "@pharmabro/shared";
-import { watchEntitlement, watchUsageLabel, watchTitleFromQuestion } from "@pharmabro/shared";
+import type { BrowseTopic, EntitlementSnapshot, EntitySuggestion } from "@pharmabro/shared";
+import { watchEntitlement, watchUsageLabel, watchTitleFromQuestion, watchFieldsFromBrowseTopic } from "@pharmabro/shared";
 import { createWatch, fetchDrug, fetchEntitlements, fetchWatches, type WatchSummary } from "@/lib/api";
 import { isCatalogDrug, watchFieldsFromEntity } from "@/lib/entity";
 import { getCached, setCached } from "@/lib/cache";
+import { BrowseTopics } from "@/components/BrowseTopics";
 import { EntityPicker } from "@/components/EntityPicker";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
@@ -99,6 +100,22 @@ export default function MonitorPage() {
     }
   }
 
+  // Tapping a curated "browse" chip → a watch, via the SAME builder shape as the autocomplete path
+  // (a drug carries its brand/generic mentions for the openFDA name-scope; a condition/class doesn't).
+  async function addBrowseTopic(t: BrowseTopic) {
+    if (adding) return;
+    setAdding(true);
+    setAddError(null);
+    try {
+      const f = watchFieldsFromBrowseTopic(t);
+      const res = await createWatch({ kind: "topic", title: f.title, topic: f.topic, query_terms: f.query_terms, mentions: f.mentions });
+      if (res.ok) await loadWatches();
+      else setAddError(ADD_ERROR_COPY[res.reason]);
+    } finally {
+      setAdding(false);
+    }
+  }
+
   return (
     <div className="research-wrap">
       <div className="research-intro">
@@ -164,6 +181,10 @@ export default function MonitorPage() {
           </div>
         </div>
       ) : null}
+
+      {/* Tappable starting points — complements the search box above. One tap starts a watch. Shown
+          once the page has settled (with the list or the empty state) so it never races the skeleton. */}
+      {watches !== null ? <BrowseTopics onPick={(t) => void addBrowseTopic(t)} busy={adding} /> : null}
     </div>
   );
 }

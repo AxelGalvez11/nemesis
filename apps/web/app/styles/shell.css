@@ -805,6 +805,17 @@
 .watch-add-error { font-size: 12.5px; color: var(--warn); margin: -2px 0 10px; }
 .watch-add-error a { color: var(--acid-dim); }
 
+/* "Browse popular topics": tappable starting points (drugs/conditions/classes). One tap starts a
+   watch. Quieter than the primary search box — it's a discovery aid, not the main action. */
+.browse-topics { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--line); }
+.browse-topics-head { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 14px; }
+.browse-group { margin-bottom: 16px; }
+.browse-group-label { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); margin-bottom: 8px; }
+.browse-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.browse-chip { font-family: var(--font); font-size: 13.5px; color: var(--text-2); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 6px 13px; cursor: pointer; transition: 0.15s; }
+.browse-chip:hover:not(:disabled) { border-color: var(--acid); color: var(--text); background: var(--surface-2); }
+.browse-chip:disabled { opacity: 0.5; cursor: default; }
+
 /* Watch detail header manage controls (pause/resume + inline two-step delete). */
 .watch-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .watch-confirm-label { font-size: 13px; color: var(--text-2); }
