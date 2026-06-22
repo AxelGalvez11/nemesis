@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v8-2026-06-21"; // v8: REGISTER_SAFETY block appended for BOTH live registers (plain+thorough) — bans bare reassurance/safe-claims/cure-synonyms/imperative-dosing/peptide-injection wording and mandates preserving source hedges/scope/caveats (the fast-follow from the plain-register safety audit). BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
+export const PROMPT_VERSION = "ask-v9-2026-06-22"; // v9: Fast vs Thorough now differ in DEPTH, not just vocabulary (they were near-identical) — PLAIN_STYLE made genuinely terse (a quick gist: bottom_line + <=3 points, what_we_do_not_know/questions left empty unless a real decision, but the safety_notes floor preserved in full), THOROUGH_STYLE given an EXPLICIT OVERRIDE of the FORMAT "match length to the question / empty beats filler" rules so it stops collapsing to the lean default (full what_we_know + what_we_do_not_know; anti-padding guard kept). All safety (GROUNDING/HARD RULES/PHRASING/REGISTER_SAFETY) intact. v8: REGISTER_SAFETY block appended for BOTH live registers — bans bare reassurance/safe-claims/cure-synonyms/imperative-dosing/peptide-injection wording, mandates preserving source hedges/scope/caveats. BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -249,16 +249,24 @@ export type AnswerStyle = "plain" | "thorough";
 // substance, changes: GROUNDING / HARD RULES / PHRASING above stay in full force (re-stated so it can't be
 // read as a license to soften them). No markdown — the safety scan reads the raw .text fields.
 const PLAIN_STYLE = [
-  "ANSWER STYLE — PLAIN (for THIS answer, OVERRIDE the reader/register described above):",
+  "ANSWER STYLE — FAST / PLAIN (for THIS answer, OVERRIDE the reader/register described above):",
   "- Write for a general-public reader with no medical training — the clarity of a good health explainer.",
-  "  Short sentences, everyday words, one idea per sentence.",
+  "  Short sentences, everyday words.",
   "- LEAD WITH THE TAKEAWAY: open with what it is in plain terms and what it does for the reader — and, when",
   "  the sources say so, how well it works — BEFORE any mechanism or biology.",
   "- NO UNEXPLAINED JARGON, not even in the first sentence. Lead with plain words; the first time a clinical",
   '  term is unavoidable, gloss it in plain words right there (e.g. "a GLP-1 medicine — it mimics a gut hormone',
   '  that curbs appetite"), or leave the term out entirely. Never open on a bare term like "GLP-1 receptor agonist".',
-  "- Be concise: keep only the few points that matter most to a layperson, in the fewest, clearest sentences.",
-  "  Prefer brevity over exhaustive detail.",
+  "- KEEP IT GENUINELY SHORT — this is the QUICK-answer mode (its counterpart, THOROUGH, is for depth). Give the",
+  "  bottom_line plus AT MOST 2 what_we_know points (often just one): only the essentials a layperson needs — the",
+  "  gist they can read in a few seconds, a glance, NOT a briefing. Do NOT exhaustively list the sources; pick the",
+  "  one or two facts that matter most. Leave what_we_do_not_know and questions_to_ask EMPTY unless the question",
+  "  raises a real personal decision.",
+  "- Still grade the evidence (evidence_grade) by the ACTUAL strength of the sources, exactly as the THOROUGH mode",
+  "  would — being brief never lowers the grade.",
+  "- SAFETY IS NEVER TRIMMED FOR BREVITY: when the question involves a personal-safety decision (an interaction,",
+  "  dosing, pregnancy, a research-use peptide), STILL give the SPECIFIC safety_notes caution in full. Brevity",
+  "  drops background detail, never a required caution.",
   "- Plain does NOT mean vague or softened: every claim stays source-cited, and GROUNDING, the HARD RULES,",
   "  and the PHRASING rules above remain in full force. Simpler wording — never weaker accuracy or caution.",
 ].join("\n");
@@ -266,16 +274,24 @@ const PLAIN_STYLE = [
 // Thorough mode. The standard register, asked to be COMPLETE (more real cited substance) — explicitly NOT
 // a return to the rigid fill-every-section template the FORMAT block killed.
 const THOROUGH_STYLE = [
-  "ANSWER STYLE — THOROUGH (for a clinician or researcher reader):",
+  "ANSWER STYLE — THOROUGH (for THIS answer, for a clinician/researcher who CHOSE the fuller answer — OVERRIDE",
+  "the FORMAT block's leanness rules above: ignore \"match the answer's length to the question\", \"a plain 'what",
+  "is X' needs only bottom_line + what_we_know\", and \"an empty section beats filler\" here. This is the DEPTH",
+  "mode; the reader asked for more, so give a fuller answer than the quick register would):",
   "- Precise clinical and technical language is fine; still define an unusual term once on first use.",
   "- LEAD WITH THE EVIDENCE when the sources report outcomes: the bottom_line AND the FIRST what_we_know point",
   "  foreground the headline result — the effect size / magnitude and the study design behind it (e.g. '~15% mean",
   "  weight loss over 68 weeks in a randomized trial') — and mechanism, populations, and caveats come AFTER. (A",
   "  mechanism-only question with no outcome data leads with the mechanism; never invent numbers the sources don't state.)",
-  "- Be complete where the sources support it: include the substantive cited points a professional wants —",
-  "  mechanisms, effect sizes and numbers, study types and phases, populations, and the important caveats.",
-  "- 'Complete' means MORE real, cited substance — never padding. Do NOT fill a section the question does not",
-  "  warrant; an empty section beats generic filler (the FORMAT rules above still apply).",
+  "- BE GENUINELY COMPLETE: draw on AS MANY of the provided sources as genuinely apply — not just the few best —",
+  "  and give a FULL what_we_know: the mechanism, the effect sizes and numbers, the study types/phases and",
+  "  populations, the relevant comparisons, and the important caveats a professional wants. More real cited points",
+  "  is the goal here, not fewer.",
+  "- ALSO surface what_we_do_not_know whenever the evidence has real limits, gaps, or open questions — it usually",
+  "  does, and this is the mode where those honest limits belong. Do not omit it just to stay short.",
+  "- 'Complete' means MORE real, cited substance — NEVER padding, repetition, or restating the bottom_line in",
+  "  other words. Every point must add NEW, source-supported information; a section with genuinely nothing to add",
+  "  stays empty (this anti-filler rule is the ONE part of the FORMAT block still in force here).",
   "- GROUNDING, the HARD RULES, and the PHRASING rules above stay in full force: every added point carries the",
   "  [n] tags that directly support it.",
 ].join("\n");

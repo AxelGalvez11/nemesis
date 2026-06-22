@@ -120,9 +120,15 @@ Deno.test("register selection: plain overrides, thorough is technical, absent ==
   const plain = generateSystem("drug_overview", "plain");
   const thorough = generateSystem("drug_overview", "thorough");
   const def = generateSystem("drug_overview");
-  assert(plain.includes("ANSWER STYLE — PLAIN"), "plain register must carry the plain override block");
+  // Fast/plain is the quick-gist register; it OVERRIDES the base register and instructs a genuinely short answer.
+  assert(plain.includes("ANSWER STYLE — FAST / PLAIN"), "plain register must carry the fast/plain override block");
   assert(plain.includes("OVERRIDE"), "plain register must explicitly OVERRIDE the base register");
+  assert(plain.includes("KEEP IT GENUINELY SHORT"), "fast register must instruct a genuinely short answer");
+  // Thorough is the depth register; it must EXPLICITLY OVERRIDE the base FORMAT leanness rules (else it
+  // collapses back to the lean default and reads identical to Fast) and instruct a fuller answer.
   assert(thorough.includes("ANSWER STYLE — THOROUGH"), "thorough register must carry the thorough block");
+  assert(thorough.includes("OVERRIDE"), "thorough register must explicitly OVERRIDE the base leanness rules");
+  assert(thorough.includes("BE GENUINELY COMPLETE"), "thorough register must instruct a fuller answer");
   // No style => byte-for-byte the pre-modes behavior (base + intent guidance, no style block).
   assertEquals(def.includes("ANSWER STYLE"), false, "absent mode must not inject a style block");
 });
