@@ -27,6 +27,9 @@ import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
 import { balanceCitedSlice } from "./cite-balance.ts";
 import { extractSearchTerms } from "./search-query.ts";
+import { espellCorrect } from "../core-source-sync/providers/pubmed.ts";
+import { decideNewsGate } from "./news-gate.ts";
+import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
@@ -43,6 +46,7 @@ import {
   STANDARD_QUESTIONS,
 } from "./templates.ts";
 import type {
+  AnswerNewsItem,
   AnswerTemplate,
   AskMode,
   AskResponse,
@@ -179,6 +183,20 @@ async function runAsk(
   // ---- 1. classify ----
   const cls = await classify(question, apiKey);
   const flags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
+
+  // ---- 1b. news lane (paid-only walled panel) ----
+  // Kicked off HERE so its fetch overlaps retrieve + live-augment + generate (latency hidden behind the
+  // LLM step); awaited only at assembly. Paid users see news on ANY question (owner widened from
+  // drug-only); the search string is the named drug(s) when present, else the extracted topic. THE WALL:
+  // the result attaches to resp.news ONLY — it is never converted to a chunk/citation, never grounded,
+  // never reranked into the evidence pool. fetchGoogleNews is fault-tolerant (never throws), so a
+  // dangling promise on an early template return (emergency/sourcing/no-source/fabrication) is harmless
+  // — and correct: a refusal or a possibly-fabricated drug must NOT carry hype headlines.
+  const newsSearch = cls.entity_mentions.length ? cls.entity_mentions.join(" ") : (extractSearchTerms(question) || question);
+  const newsGate = decideNewsGate({ plan: quota.plan, query: newsSearch, liveSourcesOn: LIVE_SOURCES_ON });
+  const newsPromise: Promise<AnswerNewsItem[]> = newsGate.fetch
+    ? fetchGoogleNews({ query: newsGate.query }).then(toAnswerNews).catch(() => [])
+    : Promise.resolve([]);
 
   if (flags.some((f) => f === "emergency_possible" || f === "overdose_possible" || f === "self_harm")) {
     return await finalizeTemplate(answerId, question, "emergency_overdose", flags, [], userId,
@@ -356,6 +374,9 @@ async function runAsk(
   // the cited set, or citation enforcement.
   const citedTags = new Set(enf.citations.map((c) => c.chunk_tag));
   const reviewedSources = ret.chunks.filter((c) => !citedTags.has(c.tag)).map(chunkToCitation);
+  // Walled news (paid) / locked teaser (free). Resolved here so its fetch overlapped the work above.
+  // It is attached as a SEPARATE field — never folded into citations/reviewed_sources/the chunk pool.
+  const news = await newsPromise;
   const resp: AskResponse = {
     answer_id: answerId,
     intent: cls.intent,
@@ -368,6 +389,8 @@ async function runAsk(
     oldest_source_date: enf.oldest_source_date,
     ...(primaryDrug ? { primary_drug: primaryDrug } : {}),
     ...(reviewedSources.length ? { reviewed_sources: reviewedSources } : {}),
+    ...(news.length ? { news } : {}),
+    ...(newsGate.locked ? { news_locked: true } : {}),
   };
 
   // ---- 8. trace store ----
@@ -414,7 +437,15 @@ async function augmentWithLive(
     // scaffolding stripped) so "<drug> side effects" / "<drug> mechanism" retrieves on-topic research
     // instead of generic drug papers; the field-scoped + adverse-event sources (openFDA/FAERS/trials)
     // keep the literal drug `term`. This is the lever behind the side-effects/interaction/mechanism gap.
-    const researchQuery = extractSearchTerms(question) || question;
+    let researchQuery = extractSearchTerms(question) || question;
+    // Typo-correct the research string ONLY on the no-drug path (general/benign topics like
+    // "metfromin and the livr"). When classify pulled a literal drug mention we leave the query alone —
+    // espell only ever rewrites the research search string, never the literal `term`/entityMentions the
+    // fabrication guard checks, so a real-but-new drug is still found by name and a fabricated one still
+    // finds nothing. Best-effort: espellCorrect returns the query unchanged on any failure.
+    if (entityMentions.length === 0) {
+      researchQuery = await espellCorrect(researchQuery);
+    }
     const live = await gatherLiveCandidates({ query: term, mentions: entityMentions, researchQuery, perSourceMax });
     if (live.length === 0) return fallback;
 
@@ -435,6 +466,17 @@ async function augmentWithLive(
     console.error("ask live augmentation failed; using library only:", (e as Error).message);
     return fallback;
   }
+}
+
+/** Map engine NewsItems to the client-facing AnswerNewsItem and cap the panel size. A plain field
+ *  copy across the wall's type boundary — a NewsItem is never carried into the evidence path. */
+function toAnswerNews(items: NewsItem[]): AnswerNewsItem[] {
+  return items.slice(0, 6).map((n) => ({
+    title: n.title,
+    url: n.url,
+    source: n.source,
+    published_at: n.published_at,
+  }));
 }
 
 // ---------------------------------------------------------------------------

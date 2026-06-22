@@ -71,6 +71,10 @@ export * from "./watch-detect.ts";
 // re-enforced here defensively).
 export * from "./watch-events.ts";
 
+// Monitoring "browse popular topics": the curated, hand-vetted catalog (drugs/conditions/classes) +
+// the PURE watch-field builder. The tappable starting points that complement the autocomplete.
+export * from "./browse-topics.ts";
+
 // Live-monitoring tier gating: PURE read of the per-plan watch entitlements (limit / daily / email)
 // + the allowed-cadence resolver. Defaults to the free-tier floor when keys are absent.
 export * from "./watch-entitlements.ts";

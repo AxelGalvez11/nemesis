@@ -780,11 +780,65 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
         </div>
       ) : null}
 
+      {/* Walled "In the news" panel — paid users see headlines, free users see a locked teaser. NEVER
+          evidence: these never feed the answer above. Suppressed on templates/refusals (backend won't
+          set the fields there; guarded here too). */}
+      {!answer.template && !answer.refused_unsupported ? <NewsPanel news={answer.news} locked={answer.news_locked} /> : null}
+
       <div className="msg-actions">
         <button className="icon-btn" data-tip="Copy answer" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
       </div>
     </div>
   );
+}
+
+// Short, locale-stable news date ("Jun 21"). Null/garbage → "" (we just drop it from the meta line).
+function fmtNewsDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// The walled "In the news — not verified evidence" panel. THE WALL (UI side): these headlines link OUT
+// and are never citations — they carry no [n], never open the evidence drawer, and sit visually apart
+// from the cited answer. Paid (Plus/Pro) users get the list; free users get a locked upgrade teaser
+// where the panel would be (the backend gates which one via answer.news / answer.news_locked).
+function NewsPanel({ news, locked }: { news?: AskResponse["news"]; locked?: boolean }) {
+  if (news?.length) {
+    return (
+      <div className="ai-news" role="group" aria-label="In the news — not verified evidence">
+        <div className="ai-block-label ai-news-head">
+          <Icon name="bell" size={14} /> In the news
+          <span className="ai-news-tag">not verified evidence</span>
+        </div>
+        <ul className="ai-news-list">
+          {news.map((n, i) => {
+            const meta = [n.source, fmtNewsDate(n.published_at)].filter(Boolean).join(" · ");
+            return (
+              <li key={i}>
+                <a href={n.url} target="_blank" rel="noopener noreferrer nofollow">{n.title}</a>
+                {meta ? <span className="ai-news-meta">{meta}</span> : null}
+              </li>
+            );
+          })}
+        </ul>
+        <p className="ai-news-foot">Headlines for context only — never used as evidence in the answer above.</p>
+      </div>
+    );
+  }
+  if (locked) {
+    return (
+      <div className="ai-news ai-news-locked" role="group" aria-label="In the news — available on Plus and Pro">
+        <div className="ai-block-label ai-news-head">
+          <Icon name="lock" size={14} /> In the news
+          <span className="ai-news-tag">not verified evidence</span>
+        </div>
+        <p className="ai-news-foot">See what’s being said about this drug in the news — kept clearly separate from the cited evidence. Available on Plus and Pro.</p>
+        <Link href="/app/billing" className="chip-action"><Icon name="card" size={14} />See plans</Link>
+      </div>
+    );
+  }
+  return null;
 }
 
 // Per-citation metadata for the inline chips: the short source label + title, shown in the
