@@ -127,6 +127,11 @@ serve(async (req) => {
   }
   const question = (body.question ?? "").trim();
   if (!question) return json({ error: "question required" }, 400, req);
+  // Hard length cap. The per-user quota counts CALLS, not tokens, so without this an
+  // authenticated user could push very large strings into the embed + classify + generate
+  // calls and amplify cost well beyond one quota unit. 2000 chars covers any legitimate
+  // question with context.
+  if (question.length > 2000) return json({ error: "question too long (max 2000 characters)" }, 400, req);
   // Validate the speed/depth dial at the boundary: only the two known modes pass through; an unknown
   // or absent value becomes undefined → current behavior (mobile / older clients / saved-chat replays).
   const mode: AskMode | undefined = body.mode === "fast" || body.mode === "thorough" ? body.mode : undefined;
