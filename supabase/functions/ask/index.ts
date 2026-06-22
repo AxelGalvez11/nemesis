@@ -186,12 +186,14 @@ async function runAsk(
 
   // ---- 1b. news lane (paid-only walled panel) ----
   // Kicked off HERE so its fetch overlaps retrieve + live-augment + generate (latency hidden behind the
-  // LLM step); awaited only at assembly. Gated to Plus/Pro + a named drug (decideNewsGate). THE WALL:
+  // LLM step); awaited only at assembly. Paid users see news on ANY question (owner widened from
+  // drug-only); the search string is the named drug(s) when present, else the extracted topic. THE WALL:
   // the result attaches to resp.news ONLY — it is never converted to a chunk/citation, never grounded,
   // never reranked into the evidence pool. fetchGoogleNews is fault-tolerant (never throws), so a
   // dangling promise on an early template return (emergency/sourcing/no-source/fabrication) is harmless
   // — and correct: a refusal or a possibly-fabricated drug must NOT carry hype headlines.
-  const newsGate = decideNewsGate({ plan: quota.plan, entityMentions: cls.entity_mentions, liveSourcesOn: LIVE_SOURCES_ON });
+  const newsSearch = cls.entity_mentions.length ? cls.entity_mentions.join(" ") : (extractSearchTerms(question) || question);
+  const newsGate = decideNewsGate({ plan: quota.plan, query: newsSearch, liveSourcesOn: LIVE_SOURCES_ON });
   const newsPromise: Promise<AnswerNewsItem[]> = newsGate.fetch
     ? fetchGoogleNews({ query: newsGate.query }).then(toAnswerNews).catch(() => [])
     : Promise.resolve([]);
