@@ -18,8 +18,21 @@ Deno.test("decideNewsGate: Free on a drug question → locked upgrade teaser, ne
   assertEquals(d, { fetch: false, locked: true, query: "ozempic" });
 });
 
+Deno.test("decideNewsGate: ALL non-free DB plan tiers are paid (not just plus/pro)", () => {
+  // resolve_user_plan returns subscriptions.plan, CHECK-constrained to these tiers (migration 0122).
+  // professional/enterprise are HIGHER than pro — they must see news, not the upgrade teaser.
+  for (const plan of ["plus", "pro", "student", "professional", "enterprise"]) {
+    const d = decideNewsGate({ ...base, plan, entityMentions: ["ozempic"] });
+    assertEquals(d.fetch, true, `${plan} should fetch news`);
+    assertEquals(d.locked, false, `${plan} should not be locked`);
+  }
+  // free is the ONLY tier that sees the teaser.
+  assertEquals(decideNewsGate({ ...base, plan: "free", entityMentions: ["ozempic"] }).locked, true);
+});
+
 Deno.test("decideNewsGate: an unknown/blank plan is treated as unpaid (locked, never fetch)", () => {
-  // Safe default: anything not explicitly plus/pro must not get the paid panel.
+  // Safe default: anything not a known paid tier (incl. "", garbage, or a leaked status string) must
+  // not get the paid panel — fail CLOSED so the paid feature is never given away by accident.
   assertEquals(decideNewsGate({ ...base, plan: "", entityMentions: ["metformin"] }).fetch, false);
   assertEquals(decideNewsGate({ ...base, plan: "trialing", entityMentions: ["metformin"] }).locked, true);
 });

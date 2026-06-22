@@ -11,7 +11,8 @@
 // ../news/news-source.ts; the wiring in index.ts.
 
 export interface NewsGateInput {
-  /** The user's billing plan, from consume_usage ("free" | "plus" | "pro" | …). */
+  /** The user's billing plan, from consume_usage's `plan` (resolve_user_plan → subscriptions.plan,
+   *  CHECK-constrained to free|plus|pro|student|professional|enterprise; defaults to "free"). */
   plan: string;
   /** classify's verbatim drug/compound mentions — news is scoped to a named drug (generic Google News
    *  for a non-drug question is noise), so an empty list means "no panel for anyone". */
@@ -29,7 +30,11 @@ export interface NewsGateDecision {
   query: string;
 }
 
-const PAID_PLANS = new Set(["plus", "pro"]);
+// EVERY non-free DB tier is "paid" for news — the owner's "Plus/Pro only" means "paid, not free", and
+// professional/enterprise are HIGHER tiers than pro (locking them out would silently break the feature
+// for the biggest customers). An explicit allow-list of the known paid tiers (not `!== "free"`) so an
+// empty/garbage/leaked-status value fails CLOSED — unpaid → teaser, never giving the feature away.
+const PAID_PLANS = new Set(["plus", "pro", "student", "professional", "enterprise"]);
 
 /** Decide news fetching + teaser for one answer. Pure. */
 export function decideNewsGate(input: NewsGateInput): NewsGateDecision {
@@ -37,7 +42,6 @@ export function decideNewsGate(input: NewsGateInput): NewsGateDecision {
   // Eligible = the panel COULD show here: live sources on and a specific drug was named.
   const eligible = input.liveSourcesOn && query.length > 0;
   if (!eligible) return { fetch: false, locked: false, query };
-  // Explicit allow-list: anything not plus/pro (incl. "free", "", or an unexpected status) is unpaid.
   const paid = PAID_PLANS.has(input.plan);
   return { fetch: paid, locked: !paid, query };
 }
