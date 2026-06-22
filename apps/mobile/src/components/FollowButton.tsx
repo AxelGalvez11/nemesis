@@ -1,67 +1,88 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchWatchlist, followItem, unfollowItem } from "@/api/watchlist";
+import { createWatch, fetchWatches } from "@/api/monitor";
 import { useAuth } from "@/auth/AuthProvider";
-import { FREE_WATCHLIST_LIMIT } from "@/lib/limits";
 import { c, space } from "@/theme/tokens";
 
-// AC7 affordance: follow/unfollow a drug. Free tier caps at FREE_WATCHLIST_LIMIT —
-// past it the button becomes the doc-06 paywall stub (real purchases = Phase 8).
-export function FollowButton({ drugId }: { drugId: string }) {
+// "Watch this" affordance on the drug page. Creates a topic watch in the LIVE evidence_watches system
+// (the same one web uses + the Monitoring tab reads) — NOT the retired watchlist_items spine the old
+// Follow button wrote, which made a phone "follow" diverge from web. If the drug is already watched we
+// link straight to its monitor feed so a returning user can't silently create a duplicate (and burn
+// their plan limit). The per-plan cap is enforced server-side; "limit" surfaces an upgrade hint.
+const ERROR_COPY: Record<"not_enabled" | "limit" | "auth" | "unknown", string> = {
+  not_enabled: "Monitoring isn’t switched on yet.",
+  limit: "You’ve reached your plan’s watch limit.",
+  auth: "Sign in to start watching.",
+  unknown: "Couldn’t start watching — try again.",
+};
+
+export function FollowButton({ drugId, drugName }: { drugId: string; drugName: string }) {
   const { session } = useAuth();
   const qc = useQueryClient();
-  const { data: items = [], isLoading } = useQuery({
-    queryKey: ["watchlist"],
-    queryFn: fetchWatchlist,
+  const { data: watches = [], isLoading } = useQuery({
+    queryKey: ["watches"],
+    queryFn: fetchWatches,
     enabled: !!session,
   });
-  const followed = items.find((i) => i.item_type === "drug" && i.item_ref === drugId);
-  const atLimit = !followed && items.length >= FREE_WATCHLIST_LIMIT;
+  // The topic watch this button creates uses the drug name as both title and topic (the (user_id, topic)
+  // uniqueness key), so an existing watch with the same title is "already watching this drug".
+  const existing = watches.find((w) => w.title === drugName);
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["watchlist"] });
-  const follow = useMutation({ mutationFn: () => followItem("drug", drugId), onSuccess: invalidate });
-  const unfollow = useMutation({
-    mutationFn: () => unfollowItem(followed!.id),
-    onSuccess: invalidate,
+  const create = useMutation({
+    mutationFn: () =>
+      createWatch({ kind: "topic", title: drugName, topic: drugName, query_terms: drugName, mentions: [drugName] }),
+    onSuccess: (res) => {
+      if (res.ok) {
+        qc.invalidateQueries({ queryKey: ["watches"] });
+        router.push(`/monitor/${res.id}`);
+      }
+    },
   });
 
   if (!session) return null;
   if (isLoading) return <ActivityIndicator testID="follow-loading" color={c.acid} />;
 
-  const busy = follow.isPending || unfollow.isPending;
-
-  if (atLimit) {
+  if (existing) {
     return (
       <Pressable
-        testID="follow-paywall"
-        style={[styles.btn, styles.paywall]}
-        disabled // inert stub — the RevenueCat upgrade flow wires here in Phase 8
+        testID="watching-btn"
+        style={[styles.btn, styles.following]}
+        onPress={() => router.push(`/monitor/${existing.id}`)}
       >
-        <Text style={styles.paywallText}>Upgrade to follow more than {FREE_WATCHLIST_LIMIT}</Text>
+        <Text style={styles.followingText}>Watching ✓</Text>
       </Pressable>
     );
   }
 
+  const res = create.data;
+  const errReason = res && !res.ok ? res.reason : null;
+
   return (
-    <Pressable
-      testID={followed ? "unfollow-btn" : "follow-btn"}
-      style={[styles.btn, followed ? styles.following : styles.follow]}
-      disabled={busy}
-      onPress={() => (followed ? unfollow.mutate() : follow.mutate())}
-    >
-      <Text style={followed ? styles.followingText : styles.followText}>
-        {busy ? "…" : followed ? "Following ✓" : "+ Follow"}
-      </Text>
-    </Pressable>
+    <View style={styles.wrap}>
+      <Pressable
+        testID="follow-btn"
+        style={[styles.btn, styles.follow]}
+        disabled={create.isPending}
+        onPress={() => create.mutate()}
+      >
+        <Text style={styles.followText}>{create.isPending ? "Starting…" : "+ Watch this"}</Text>
+      </Pressable>
+      {errReason ? (
+        <Text style={styles.note} testID="follow-note">
+          {ERROR_COPY[errReason]}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrap: { alignSelf: "flex-start", gap: space(1.5) },
   btn: { paddingHorizontal: space(4.5), paddingVertical: space(2.5), borderRadius: 8, alignSelf: "flex-start" },
   follow: { backgroundColor: c.acid },
   followText: { color: c.onAcid, fontWeight: "700", fontSize: 15 },
   following: { backgroundColor: c.acidFaint, borderWidth: 1, borderColor: c.acidLine },
   followingText: { color: c.acidDim, fontWeight: "700", fontSize: 15 },
-  paywall: { backgroundColor: c.warnFaint, borderWidth: 1, borderColor: c.warnLine, opacity: 0.9 },
-  paywallText: { color: c.warn, fontWeight: "700", fontSize: 14 },
+  note: { fontSize: 12, color: c.warn },
 });

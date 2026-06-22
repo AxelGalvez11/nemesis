@@ -80,7 +80,7 @@ export default function DrugScreen() {
       <Badge label={(drug.approved_status ?? "").replace(/_/g, " ")} tone="neutral" testID="drug-status" />
 
       <View style={styles.actions}>
-        <FollowButton drugId={drug.id} />
+        <FollowButton drugId={drug.id} drugName={drug.canonical_name} />
         <Pressable
           testID="drug-compare"
           style={styles.compareLink}

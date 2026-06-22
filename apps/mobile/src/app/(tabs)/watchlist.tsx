@@ -1,159 +1,84 @@
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  fetchLatestDigest,
-  fetchWatchlist,
-  fetchWatchlistUpdates,
-  unfollowItem,
-} from "@/api/watchlist";
-import { fetchDrug } from "@/api/drugs";
+import { useQuery } from "@tanstack/react-query";
+import { fetchEntitlements, fetchWatches, relativeTime, type WatchSummary } from "@/api/monitor";
 import { useAuth } from "@/auth/AuthProvider";
 import { EmptyState, ErrorState, GuestState } from "@/components/states";
-import { Card, SectionHeader } from "@/components/ui";
-import { SourceLink } from "@/components/SourceLink";
-import { FREE_WATCHLIST_LIMIT } from "@/lib/limits";
-import type { WatchlistItem } from "@pharmabro/shared";
+import { Badge, Card, SectionHeader } from "@/components/ui";
+import { watchEntitlement, watchUsageLabel } from "@pharmabro/shared";
 import { common } from "@/theme/common";
 import { c, space } from "@/theme/tokens";
 
-// AC7 (follow ≥3) + AC8 (weekly digest). Three owner-scoped reads: the follows
-// (watchlist_items), the live update feed (get_watchlist_updates), and the latest
-// digest snapshot (digests). All RLS-scoped to the signed-in user.
-export default function WatchlistTab() {
+// Live Monitoring (WS-D) — the caller's evidence watches. Each row opens the watch's three-lane feed
+// (Alerts / What's new / In the news). Reads evidence_watches + get_my_entitlements (for the usage line
+// + the free-tier follow cap), all RLS-scoped to the signed-in user. Replaces the legacy watchlist_items
+// view; mobile now monitors the SAME watches as web.
+export default function MonitoringTab() {
   const { session } = useAuth();
-  const qc = useQueryClient();
-
-  const follows = useQuery({ queryKey: ["watchlist"], queryFn: fetchWatchlist, enabled: !!session });
-  const updates = useQuery({ queryKey: ["watchlist-updates"], queryFn: fetchWatchlistUpdates, enabled: !!session });
-  const digest = useQuery({ queryKey: ["digest"], queryFn: fetchLatestDigest, enabled: !!session });
-
-  const unfollow = useMutation({
-    mutationFn: (id: string) => unfollowItem(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["watchlist"] }),
-  });
+  const watches = useQuery({ queryKey: ["watches"], queryFn: fetchWatches, enabled: !!session });
+  const ent = useQuery({ queryKey: ["entitlements"], queryFn: fetchEntitlements, enabled: !!session });
 
   if (!session) {
     return (
       <View style={common.screen} testID="tab-watchlist">
         <Text style={common.h1}>Live Monitoring</Text>
-        <GuestState body="Sign in to follow items and get a weekly digest." />
+        <GuestState body="Sign in to watch a drug or topic and get alerted when the evidence changes." />
       </View>
     );
   }
 
-  const items = follows.data ?? [];
+  const items = watches.data ?? [];
+  const limits = watchEntitlement(ent.data ?? null);
 
   return (
     <ScrollView contentContainerStyle={styles.body} testID="tab-watchlist">
-      <Text style={common.h1}>Watchlist</Text>
+      <Text style={common.h1}>Live Monitoring</Text>
 
-      {follows.isLoading ? (
-        <ActivityIndicator testID="watchlist-loading" color={c.acid} />
-      ) : follows.isError ? (
-        <ErrorState testID="watchlist-error" body={(follows.error as Error).message} />
+      {watches.isLoading ? (
+        <ActivityIndicator testID="watches-loading" color={c.acid} />
+      ) : watches.isError ? (
+        <ErrorState testID="watches-error" body={(watches.error as Error).message} />
       ) : items.length === 0 ? (
         <EmptyState
-          testID="watchlist-empty"
-          title="No follows yet"
-          body="Follow drugs, clinical trials, medication classes, or PubMed keywords. PharmaBro will notify you when something important changes."
+          testID="watches-empty"
+          title="Nothing watched yet"
+          body="Tap “Watch this” on any answer or drug page. We re-check the evidence on a schedule and alert you when a new high-quality study, retraction, or label change lands."
         />
       ) : (
         <View style={styles.section}>
-          <SectionHeader title={`Following (${items.length})`} testID="watchlist-following" />
-          {items.map((it, i) => (
-            <FollowRow key={it.id} item={it} index={i} onUnfollow={() => unfollow.mutate(it.id)} busy={unfollow.isPending} />
+          <SectionHeader title={`Watching (${items.length})`} testID="watches-list" />
+          {items.map((w, i) => (
+            <WatchRow key={w.id} watch={w} index={i} />
           ))}
-          {items.length >= FREE_WATCHLIST_LIMIT ? (
-            <Text style={styles.paywall} testID="watchlist-paywall">
-              Free plan: {FREE_WATCHLIST_LIMIT} follows. Upgrade to follow more.
-            </Text>
-          ) : null}
+          <Text style={styles.usage} testID="watches-usage">
+            {watchUsageLabel(items.length, limits.limit)}
+            {!limits.dailyEnabled ? " · weekly checks (upgrade for daily)" : ""}
+          </Text>
         </View>
       )}
-
-      {/* AC8 — latest weekly digest snapshot */}
-      <View style={styles.section}>
-        <SectionHeader title="Latest weekly digest" testID="watchlist-digest" />
-        {digest.isLoading ? (
-          <ActivityIndicator color={c.acid} />
-        ) :digest.isError ? (
-          <ErrorState testID="digest-error" body={(digest.error as Error).message} />
-        ) : digest.data && digest.data.items.length > 0 ? (
-          <Card>
-            <Text style={styles.digestMeta}>
-              {digest.data.update_count} update(s) · {digest.data.period_start?.slice(0, 10)}
-            </Text>
-            {digest.data.items.slice(0, 10).map((d, i) => (
-              <Text key={d.id} style={styles.digestItem} testID={`digest-item-${i}`} numberOfLines={2}>
-                • {d.title}
-              </Text>
-            ))}
-          </Card>
-        ) : (
-          <Text style={styles.muted} testID="digest-empty">No digest generated yet.</Text>
-        )}
-      </View>
-
-      {/* Live update feed */}
-      <View style={styles.section}>
-        <SectionHeader title="What's new" testID="watchlist-updates" />
-        {updates.isLoading ? (
-          <ActivityIndicator color={c.acid} />
-        ) :updates.isError ? (
-          <ErrorState testID="updates-error" body={(updates.error as Error).message} />
-        ) : updates.data && updates.data.length > 0 ? (
-          updates.data.slice(0, 20).map((u, i) => (
-            <Card key={u.id} testID={`update-${i}`}>
-              <Text style={styles.updateTitle} numberOfLines={2}>{u.title}</Text>
-              <Text style={styles.updateMeta}>{u.update_type.replace(/_/g, " ")}</Text>
-              <SourceLink sourceId={u.source_id} testID={`update-cite-${i}`} />
-            </Card>
-          ))
-        ) : (
-          <Text style={styles.muted} testID="updates-empty">No updates for your follows yet.</Text>
-        )}
-      </View>
     </ScrollView>
   );
 }
 
-function FollowRow({
-  item,
-  index,
-  onUnfollow,
-  busy,
-}: {
-  item: WatchlistItem;
-  index: number;
-  onUnfollow: () => void;
-  busy: boolean;
-}) {
-  // Resolve a drug follow's name (item_ref is the entity uuid); other types show the ref.
-  const isDrug = item.item_type === "drug";
-  const name = useQuery({
-    queryKey: ["drug-name", item.item_ref],
-    queryFn: () => fetchDrug(item.item_ref),
-    enabled: isDrug,
-  });
-  const label = isDrug ? name.data?.canonical_name ?? "…" : item.item_ref;
-
+function WatchRow({ watch, index }: { watch: WatchSummary; index: number }) {
+  const paused = watch.status === "paused";
   return (
-    <Card testID={`watchlist-item-${index}`}>
-      <View style={styles.row}>
-        <Pressable
-          style={styles.rowMain}
-          disabled={!isDrug}
-          onPress={() => isDrug && router.push(`/drug/${item.item_ref}`)}
-        >
-          <Text style={styles.itemName} testID={`watchlist-item-name-${index}`}>{label}</Text>
-          <Text style={styles.itemType}>{item.item_type}</Text>
-        </Pressable>
-        <Pressable testID={`unfollow-${index}`} style={styles.unfollow} disabled={busy} onPress={onUnfollow}>
-          <Text style={styles.unfollowText}>Unfollow</Text>
-        </Pressable>
-      </View>
-    </Card>
+    <Pressable testID={`watch-${index}`} onPress={() => router.push(`/monitor/${watch.id}`)}>
+      <Card testID={`watch-card-${index}`}>
+        <View style={styles.row}>
+          <View style={styles.rowMain}>
+            <Text style={styles.title} numberOfLines={2} testID={`watch-title-${index}`}>
+              {watch.title}
+            </Text>
+            <Text style={styles.meta}>Last checked {relativeTime(watch.last_checked_at)}</Text>
+          </View>
+          <View style={styles.badges}>
+            <Badge label={watch.cadence === "daily" ? "Daily" : "Weekly"} tone="neutral" />
+            {paused ? <Badge label="Paused" tone="moderate" /> : null}
+          </View>
+        </View>
+      </Card>
+    </Pressable>
   );
 }
 
@@ -161,15 +86,9 @@ const styles = StyleSheet.create({
   body: { padding: space(5), gap: space(4), backgroundColor: c.bg, flexGrow: 1 },
   section: { gap: space(2) },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(3) },
-  rowMain: { flex: 1, gap: 2 },
-  itemName: { fontSize: 16, fontWeight: "600", color: c.text },
-  itemType: { fontSize: 12, color: c.text3, textTransform: "capitalize" },
-  unfollow: { paddingHorizontal: space(3), paddingVertical: space(1.5) },
-  unfollowText: { color: c.danger, fontSize: 13, fontWeight: "600" },
-  paywall: { fontSize: 13, color: c.warn, fontStyle: "italic" },
-  digestMeta: { fontSize: 13, color: c.text3, marginBottom: 4 },
-  digestItem: { fontSize: 14, lineHeight: 20, color: c.text2 },
-  updateTitle: { fontSize: 14, fontWeight: "600", color: c.text, lineHeight: 20 },
-  updateMeta: { fontSize: 12, color: c.text3, textTransform: "capitalize" },
-  muted: { fontSize: 14, color: c.text2 },
+  rowMain: { flex: 1, gap: 3 },
+  title: { fontSize: 16, fontWeight: "600", color: c.text, lineHeight: 21 },
+  meta: { fontSize: 12, color: c.text3 },
+  badges: { flexDirection: "row", gap: space(1.5), alignItems: "center" },
+  usage: { fontSize: 13, color: c.text3, fontStyle: "italic", marginTop: space(1) },
 });
