@@ -17,6 +17,19 @@ import { SourceLink } from "@/components/SourceLink";
 import type { AnswerPoint } from "@pharmabro/shared";
 import { c, space } from "@/theme/tokens";
 
+// Pretty provider labels for citations (raw source_type codes read poorly — "pubmed_oa", "openfda").
+const PROVIDER_LABEL: Record<string, string> = {
+  pubmed: "PubMed",
+  pubmed_oa: "PubMed",
+  europepmc: "Europe PMC",
+  clinicaltrials: "ClinicalTrials.gov",
+  openfda: "FDA label",
+  faers: "FAERS",
+};
+const providerLabel = (t: string | null): string => (t ? PROVIDER_LABEL[t] ?? t : "");
+// Turn an enum-ish grade ("not_applicable") into prose ("not applicable"); the Badge capitalizes.
+const prettyGrade = (g: string): string => g.replace(/_/g, " ");
+
 // Read-only Deep Research report view (the saved ResearchReport payload). Mirrors the web report:
 // bottom-line summary, what it researched, themed sections, honest uncertainties, prominent safety
 // notes, and the full citation list (each tappable into the Source Viewer). Generation + .docx/.pptx
@@ -62,7 +75,7 @@ export default function ReportDetailScreen() {
         <>
           <Text style={styles.question} testID="report-question">{r.question}</Text>
           <View style={styles.badgeRow}>
-            {r.evidence_grade ? <Badge label={`Evidence: ${r.evidence_grade}`} tone="neutral" /> : null}
+            {r.evidence_grade ? <Badge label={`Evidence: ${prettyGrade(r.evidence_grade)}`} tone="neutral" /> : null}
             <Badge label={r.claims_verified ? "Claims verified" : "Partly verified"} tone={r.claims_verified ? "strong" : "moderate"} />
           </View>
 
@@ -117,7 +130,7 @@ export default function ReportDetailScreen() {
               {r.citations.map((cit, i) => (
                 <Card key={`${cit.source_id}-${i}`} testID={`citation-${i}`}>
                   <Text style={styles.citTitle} numberOfLines={3}>{cit.title ?? "(untitled source)"}</Text>
-                  <Text style={styles.citMeta}>{[cit.source_type, cit.published_date?.slice(0, 10)].filter(Boolean).join(" · ")}</Text>
+                  <Text style={styles.citMeta}>{[providerLabel(cit.source_type), cit.published_date?.slice(0, 10)].filter(Boolean).join(" · ")}</Text>
                   <SourceLink sourceId={cit.source_id} testID={`citation-link-${i}`} />
                 </Card>
               ))}
