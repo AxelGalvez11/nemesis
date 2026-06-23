@@ -27,6 +27,12 @@ function srcLabel(t: string): string {
   return t || "source";
 }
 
+// Some source titles carry inline HTML (e.g. PubMed's "Mounjaro<sup>™</sup>"); strip tags so the raw
+// markup never reaches the screen, then collapse the whitespace the removed tags may leave behind.
+function cleanTitle(s: string): string {
+  return s.replace(/<\/?[^>]+>/g, "").replace(/\s+/g, " ").trim();
+}
+
 type LoadState = "idle" | "loading" | "done" | "error";
 
 export function WatchCurrentEvidence({ query }: { query: string }) {
@@ -85,7 +91,7 @@ function EvidenceResult({ answer, query }: { answer: AskResponse; query: string 
           {sources.map((c, i) => {
             const href = safeHref(c.oa_url ?? c.url ?? undefined);
             const label = srcLabel(c.source_type);
-            const title = c.title || label;
+            const title = cleanTitle(c.title ?? "") || label;
             return (
               <li key={i}>
                 <span className="watch-evidence-srclabel">{label}</span>
