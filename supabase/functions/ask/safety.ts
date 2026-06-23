@@ -70,8 +70,17 @@ export function preScreen(question: string): PreScreenResult {
 // lisinopril safe?") falls through to the full pipeline untouched. Intentionally narrow: no drug,
 // dose, or clinical token can appear. It is checked AFTER preScreen (index.ts), so an
 // emergency/overdose/self-harm/sourcing message is hard-routed first and never reaches here.
-const SMALL_TALK =
-  /^\s*(?:(?:hi+|hey+|hello+|hiya|heya|yo|howdy|greetings)(?:\s+there)?|sup|wassup|what'?s up|good\s*(?:morning|afternoon|evening|day)|how\s*(?:are|r)\s*(?:you|u|ya)(?:\s*doing|\s*going)?|how'?s\s*it\s*going|how\s*are\s*things|thanks?(?:\s*(?:you|u|so much|a lot|a ton))?|thank\s*(?:you|u)|thx|ty|tysm|cheers|much appreciated|appreciate it|ok(?:ay)?(?:\s*(?:thanks?|cool|got it))?|cool|nice|awesome|great|perfect|got it|gotcha|makes sense|sounds good|bye+|goodbye|see\s*(?:ya|you)(?:\s*later)?|good\s*night|gn|take care|who\s*(?:are|r)\s*(?:you|u)|what\s*(?:are|r)\s*(?:you|u)|what\s*(?:can|do)\s*(?:you|u)\s*do|what\s*is\s*this)\s*[!.?,…]*\s*$/i;
+// One greeting/thanks/farewell/capability phrase. Reused below so the matcher can accept a SEQUENCE
+// of them (a combined greeting is still pure small-talk).
+const GREETING_PHRASE =
+  "(?:hi+|hey+|hello+|hiya|heya|yo|howdy|greetings)(?:\\s+there)?|sup|wassup|what'?s up|good\\s*(?:morning|afternoon|evening|day)|how\\s*(?:are|r)\\s*(?:you|u|ya)(?:\\s*doing|\\s*going)?|how'?s\\s*it\\s*going|how\\s*are\\s*things|thanks?(?:\\s*(?:you|u|so much|a lot|a ton))?|thank\\s*(?:you|u)|thx|ty|tysm|cheers|much appreciated|appreciate it|ok(?:ay)?(?:\\s*(?:thanks?|cool|got it))?|cool|nice|awesome|great|perfect|got it|gotcha|makes sense|sounds good|bye+|goodbye|see\\s*(?:ya|you)(?:\\s*later)?|good\\s*night|gn|take care|who\\s*(?:are|r)\\s*(?:you|u)|what\\s*(?:are|r)\\s*(?:you|u)|what\\s*(?:can|do)\\s*(?:you|u)\\s*do|what\\s*is\\s*this";
+// Match ONE greeting phrase, then ANY NUMBER more separated by space/comma — so "hi how are you" and
+// "hey there, thanks" are pure small-talk. A real question stacked after a greeting ("hi what is
+// metformin") still FALLS THROUGH: its non-greeting part matches no phrase, so the anchored ^…$ fails.
+const SMALL_TALK = new RegExp(
+  `^\\s*(?:${GREETING_PHRASE})(?:[\\s,]+(?:${GREETING_PHRASE}))*\\s*[!.?,…]*\\s*$`,
+  "i",
+);
 // NOTE: a bare "help" is intentionally NOT small-talk. In a medical app it can be a distress
 // signal, so it falls through to the full pipeline where the classifier can flag self_harm from
 // context — never answered with a canned greeting.

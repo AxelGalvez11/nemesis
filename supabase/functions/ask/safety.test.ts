@@ -15,6 +15,22 @@ Deno.test("detectSmallTalk: bare greetings match", () => {
   }
 });
 
+Deno.test("detectSmallTalk: STACKED greetings match (the reported 'hi how are you' miss)", () => {
+  // A combined greeting is still pure small-talk — it must NOT fall through to the clinical fallback.
+  for (
+    const q of [
+      "hi how are you",
+      "hi how are you?",
+      "hey there how's it going",
+      "hello thanks",
+      "hey, how are you doing",
+      "good morning how are you",
+    ]
+  ) {
+    assert(detectSmallTalk(q), `expected small-talk: ${JSON.stringify(q)}`);
+  }
+});
+
 Deno.test("detectSmallTalk: thanks / farewell / acknowledgements match", () => {
   for (const q of ["thanks", "thank you", "thx", "ty", "ok thanks", "got it", "cool", "bye", "see ya", "sounds good"]) {
     assert(detectSmallTalk(q), `expected small-talk: ${JSON.stringify(q)}`);
