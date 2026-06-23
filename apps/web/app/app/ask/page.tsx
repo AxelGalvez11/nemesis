@@ -786,8 +786,6 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
           </span>
         ) : null}
         {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
-        {/* "Watch this" — only on a real answer (not an emergency/refusal/no-source template). */}
-        {!answer.template && !answer.refused_unsupported ? <WatchButton kind="topic" question={question} /> : null}
       </div>
       {answer.primary_drug && !answer.template && !answer.refused_unsupported ? <MoleculeImage drug={answer.primary_drug} /> : null}
       {answer.plain_english_summary ? <p className="lead">{rt(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
@@ -808,12 +806,10 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
         {/* Uncertainty, de-emphasized. */}
         <UnclearBlock points={s.what_we_do_not_know} citeMap={citeMap} onCite={cite} />
 
-        {s.questions_to_ask?.length ? (
-          <div className="ai-questions">
-            <div className="ai-block-label">Worth asking your clinician</div>
-            <ol>{s.questions_to_ask.map((q, i) => <li key={i}>{renderInline(q)}</li>)}</ol>
-          </div>
-        ) : null}
+        {/* "Worth asking your clinician" (questions_to_ask) intentionally NOT rendered (owner 2026-06-23:
+            it reads like a patient intake form and breaks the natural-conversation feel — same call as the
+            Safety block). RENDER-ONLY: the engine still generates questions_to_ask, safety-scans, and stores
+            them in the trace; nothing server-side changed. Restore this block from git to bring it back. */}
 
         {/* Walled "In the news" panel — paid users see headlines, free users see a locked teaser. NEVER
             evidence: these never feed the answer above. Suppressed on templates/refusals (backend won't
@@ -935,29 +931,26 @@ function PointItems({ points, citeMap, onCite, paraClass = "ai-para" }: PointBlo
   );
 }
 
-// The answer body (what_we_know): the supporting points run together as ONE flowing paragraph — each
-// point's sentence followed by its citation chips inline as superscripts — instead of a bullet list.
-// This is the ChatGPT/Claude "natural prose" feel the owner asked for, and it is a PURE DISPLAY JOIN:
-// the model still emits discrete, individually-cited points, so per-sentence citation grounding AND
-// per-sentence safety-salvage granularity are preserved upstream (citation.ts / safety.ts). Safety and
-// uncertainty deliberately do NOT join — they keep their own scannable blocks so cautions stand out
-// rather than dissolving into prose.
+// The answer body (what_we_know): each supporting point is its OWN short paragraph (the ChatGPT/Claude
+// feel), each ending with its citation chips — NOT a bullet list, and NOT one giant joined block (the
+// owner found a single run-on paragraph a "fact dump"). The model still emits discrete, individually-
+// cited points, so per-sentence citation grounding AND per-sentence safety-salvage granularity are
+// preserved upstream (citation.ts / safety.ts); this is purely how they're laid out.
 function Prose({ points, citeMap, onCite, ctx = null }: PointBlockProps & { ctx?: RevealCtx | null }) {
   if (!points?.length) return null;
   return (
-    <p className="ai-para">
+    <>
       {points.map((p, i) => {
         const chips = <CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} />;
         return (
-          <Fragment key={i}>
-            {i > 0 ? " " : null}
+          <p className="ai-para" key={i}>
             {ctx ? wrapWords(renderInline(p.text), ctx) : renderInline(p.text)}
             {/* delay the chips so a citation number never appears before the sentence it backs */}
             {ctx ? <span className="rv-w" style={{ animationDelay: `${revealDelay(ctx)}ms` }}>{chips}</span> : chips}
-          </Fragment>
+          </p>
         );
       })}
-    </p>
+    </>
   );
 }
 

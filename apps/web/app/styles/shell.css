@@ -209,7 +209,7 @@
 .ai-body h4 { font-size: 20px; font-weight: 700; margin: 2px 0 9px; letter-spacing: -0.01em; }
 .ai-body p { color: var(--text); font-size: 16px; margin: 0 0 12px; line-height: 1.62; }
 /* Lead paragraph: the bottom-line summary, promoted so it anchors the answer. */
-.ai-body p.lead { font-size: 18px; line-height: 1.66; font-weight: 500; color: var(--text); margin: 10px 0 18px; }
+.ai-body p.lead { font-size: 20px; line-height: 1.7; font-weight: 500; color: var(--text); margin: 10px 0 18px; }
 .ai-body section { margin: 0 0 16px; }
 /* Section headers read as real headings (sentence-case, brighter, bolder) instead of tiny grey labels. */
 .ai-body section h5 { font-size: 18px; text-transform: none; letter-spacing: -0.01em; color: var(--text); font-weight: 700; margin: 2px 0 9px; }
@@ -227,7 +227,7 @@
    form that read as "robotic"). The lead summary stays flowing prose; the supporting points bullet
    when there are several (see .ai-list below); safety stays a prominent callout; uncertainty is
    de-emphasized; questions are a clear light numbered block. ── */
-.ai-para { margin: 0 0 16px; font-size: 16px; line-height: 1.72; }
+.ai-para { margin: 0 0 15px; font-size: 18px; line-height: 1.78; }
 /* Safety: a clear, visible bordered callout — kept prominent (conservative medical app), never muted. */
 .ai-safety { border: 1px solid var(--line-2); border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 5%, var(--surface)); border-radius: 12px; padding: 13px 15px 3px; margin: 16px 0; }
 .ai-safety-label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 9px; }
@@ -240,7 +240,7 @@
 /* Questions: a clear, light block (actionable), not a heavy form section. Numbered (an ordered
    list) so it reads as a checklist you can take to an appointment ("ask #2"). */
 .ai-questions { margin: 16px 0 4px; }
-.ai-block-label { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 9px; }
+.ai-block-label { font-size: 16px; font-weight: 700; color: var(--text); margin: 20px 0 8px; }
 .ai-questions ul, .ai-questions ol { margin: 0; padding-left: 20px; }
 .ai-questions li { font-size: 15.5px; color: var(--text-2); margin: 0 0 6px; line-height: 1.55; }
 .ai-questions ol li::marker { color: var(--text-3); font-family: var(--mono); font-weight: 600; }
