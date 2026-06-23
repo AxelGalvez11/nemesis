@@ -77,6 +77,7 @@ function AskPage() {
   const [busy, setBusy] = useState(false);
   const [bloom, setBloom] = useState(false);
   const [stage, setStage] = useState(0);
+  const [showThinking, setShowThinking] = useState(false); // gate: only show the thinking animation once a request has run long enough to be a real wait (instant small-talk replies never trigger it)
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("fast");
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -253,6 +254,17 @@ function AskPage() {
     return () => timers.forEach(clearTimeout);
   }, [busy]);
 
+  // Gate the thinking animation behind a short delay so instant replies (small-talk short-circuit,
+  // cache hits) never flash the staged "Searching the evidence library…" sequence. 550ms sits
+  // comfortably above small-talk round-trip latency (~200–400ms), so only real evidence lookups
+  // — the ones that genuinely take a beat — ever surface the animation. ChatGPT does the same:
+  // no thinking indicator unless the reply is actually slow enough to warrant one.
+  useEffect(() => {
+    if (!busy) { setShowThinking(false); return; }
+    const t = setTimeout(() => setShowThinking(true), 550);
+    return () => clearTimeout(t);
+  }, [busy]);
+
   // One-shot "bloom" flare on the orb the moment the newest answer lands.
   useEffect(() => {
     if (!latest?.a) return;
@@ -408,7 +420,7 @@ function AskPage() {
                     <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
                   ) : t.a ? (
                     <Answer answer={t.a} onCite={onCite} question={t.q} />
-                  ) : isLast && busy ? <Thinking stage={stage} /> : null}
+                  ) : isLast && busy && showThinking ? <Thinking stage={stage} /> : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
               </div>
