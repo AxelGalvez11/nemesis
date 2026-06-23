@@ -599,6 +599,22 @@
 .research-card-title { flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .research-card small { color: var(--text-3); font-family: var(--mono); font-size: 11px; flex: none; }
 
+/* Modern watch cards (Monitoring list): status dot + two-row layout (title over cadence/last-checked) +
+   a soft hover-lift. Replaces the flat .research-card row so the page reads less generic. */
+.watch-card-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.watch-card { display: flex; align-items: center; gap: 13px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); text-decoration: none; transition: transform 0.16s ease, border-color 0.16s, box-shadow 0.16s, background 0.16s; }
+.watch-card:hover { border-color: color-mix(in srgb, var(--acid) 32%, var(--line)); background: var(--surface-2); transform: translateY(-1px); box-shadow: 0 10px 26px -14px rgba(0, 0, 0, 0.35); }
+.watch-card-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.watch-card-dot.active { background: var(--acid); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acid) 20%, transparent); }
+.watch-card-dot.paused { background: var(--text-3); }
+.watch-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.watch-card-title { font-size: 15px; font-weight: 550; line-height: 1.3; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watch-card-meta { display: flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+.watch-card-pill { font-family: var(--font); font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-2); color: var(--text-2); }
+.watch-card-pill.daily { color: var(--acid-deep); background: color-mix(in srgb, var(--acid) 13%, transparent); border-color: color-mix(in srgb, var(--acid) 30%, transparent); }
+.watch-card-chev { flex: none; color: var(--text-3); font-size: 20px; line-height: 1; transition: transform 0.16s, color 0.16s; }
+.watch-card:hover .watch-card-chev { color: var(--acid-dim); transform: translateX(2px); }
+
 /* Inline deep-research run card + clarifying-question (scope) card in the Ask thread. */
 .research-run-card { margin: 8px 0; }
 .research-run-card .ai-block-label { margin-bottom: 8px; }

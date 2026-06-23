@@ -24,6 +24,19 @@ const ADD_ERROR_COPY: Record<"not_enabled" | "limit" | "auth" | "unknown", strin
   unknown: "Couldn’t start monitoring — try again.",
 };
 
+/** "3h ago" / "2d ago" — a compact last-checked label for the watch cards. */
+function relTime(iso: string | null): string {
+  if (!iso) return "not yet";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "—";
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
+
 export default function MonitorPage() {
   // Seed from the session cache so a return visit paints the list instantly (no skeleton), then
   // revalidate below. Both watches AND ent are cached because the list render gates on both.
@@ -170,14 +183,25 @@ export default function MonitorPage() {
 
       {watches && watches.length > 0 ? (
         <div className="research-history">
-          <div className="research-history-list">
-            {watches.map((w) => (
-              <Link key={w.id} href={`/app/monitor/${w.id}`} className="research-card" title={w.title}>
-                <Icon name="bell" size={15} />
-                <span className="research-card-title">{w.title}</span>
-                <small>{w.cadence}{w.status === "paused" ? " · paused" : ""}</small>
-              </Link>
-            ))}
+          <div className="watch-card-list">
+            {watches.map((w) => {
+              const paused = w.status === "paused";
+              return (
+                <Link key={w.id} href={`/app/monitor/${w.id}`} className="watch-card" title={w.title}>
+                  <span className={`watch-card-dot ${paused ? "paused" : "active"}`} aria-hidden />
+                  <span className="watch-card-main">
+                    <span className="watch-card-title">{w.title}</span>
+                    <span className="watch-card-meta">
+                      <span className={`watch-card-pill ${w.cadence === "daily" ? "daily" : ""}`}>
+                        {w.cadence === "daily" ? "Daily" : "Weekly"}
+                      </span>
+                      <span>{paused ? "Paused" : `Checked ${relTime(w.last_checked_at)}`}</span>
+                    </span>
+                  </span>
+                  <span className="watch-card-chev" aria-hidden>›</span>
+                </Link>
+              );
+            })}
           </div>
         </div>
       ) : null}
