@@ -31,6 +31,7 @@ import { espellCorrect } from "../core-source-sync/providers/pubmed.ts";
 import { decideNewsGate } from "./news-gate.ts";
 import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
+import { assumptionNote, findTypoCorrections } from "./typo-correct.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
 import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
@@ -286,9 +287,25 @@ async function runAsk(
   // the generator, so the anti-fabrication guarantee is fully intact — it only turns a dead-end refusal
   // into "here's the most relevant evidence I found" + sources + good questions. ("unverified_entity"
   // tags the trace for analytics without a new SafetyFlag.)
+  // When the guard fires, distinguish a genuine TYPO of a real drug we DO have evidence for (assume &
+  // answer, ChatGPT-style, with the assumption STATED) from a real fabricated drug (keep refusing).
+  // findTypoCorrections is adversarially unit-tested (typo-correct.test.ts): every class-plausible fake
+  // returns null → falls through to the conservative refusal below. The fabrication guard is untouched.
+  let assumption = "";
+  let genQuestion = question;
   if (LIVE_SOURCES_ON && isFabricatedDrugQuery(cls.entity_mentions, guardPool)) {
-    return await finalizeTemplate(answerId, question, cls.intent,
-      flags, entities, userId, "safety_fallback", `${cls.model}|unverified_entity`, true, ret.chunks);
+    const corrections = findTypoCorrections(cls.entity_mentions, entities, guardPool);
+    if (!corrections) {
+      return await finalizeTemplate(answerId, question, cls.intent,
+        flags, entities, userId, "safety_fallback", `${cls.model}|unverified_entity`, true, ret.chunks);
+    }
+    assumption = assumptionNote(corrections);
+    for (const corr of corrections) {
+      // Rewrite the typo'd token to the assumed real drug for generation, so the answer grounds cleanly
+      // on the evidence we already retrieved for it (word-boundary, case-insensitive).
+      const esc = corr.mention.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      genQuestion = genQuestion.replace(new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`, "gi"), corr.corrected);
+    }
   }
 
   // ---- 4. health context (verified-user-scoped) ----
@@ -299,7 +316,7 @@ async function runAsk(
   let gen: Awaited<ReturnType<typeof generate>>;
   try {
     gen = await generate({
-      question,
+      question: genQuestion,
       intent: cls.intent,
       chunks: ret.chunks,
       healthContext,
@@ -392,7 +409,9 @@ async function runAsk(
   const resp: AskResponse = {
     answer_id: answerId,
     intent: cls.intent,
-    plain_english_summary: enf.plain_english_summary,
+    // State the typo assumption up front ("Assuming you mean tesamorelin") when we recovered a typo'd
+    // drug name — transparent, never silent. Empty for normal answers.
+    plain_english_summary: assumption ? `${assumption}. ${enf.plain_english_summary}` : enf.plain_english_summary,
     evidence_grade: finalGrade,
     answer_sections,
     citations: enf.citations,
