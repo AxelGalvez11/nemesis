@@ -62,9 +62,13 @@ export default function WatchDetailScreen() {
     mutationFn: () => deleteWatch(watchId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["watches"] });
-      router.back();
+      goBackToMonitoring();
     },
   });
+
+  // Go back if there's history, else fall back to the list. A direct/deep-link open has no history,
+  // where router.back() dead-ends with a "GO_BACK was not handled" error (caught in QA).
+  const goBackToMonitoring = () => (router.canGoBack() ? router.back() : router.replace("/watchlist"));
 
   if (authLoading) {
     return <Centered testID="watch-auth-loading"><ActivityIndicator color={c.acid} /></Centered>;
@@ -88,7 +92,7 @@ export default function WatchDetailScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.body} testID="watch-detail">
-      <Pressable testID="watch-back" onPress={() => router.back()} style={styles.back}>
+      <Pressable testID="watch-back" onPress={goBackToMonitoring} style={styles.back}>
         <Text style={styles.backText}>‹ Monitoring</Text>
       </Pressable>
 

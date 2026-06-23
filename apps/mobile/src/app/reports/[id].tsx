@@ -56,7 +56,11 @@ export default function ReportDetailScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.body} testID="report-detail">
-      <Pressable testID="report-back" onPress={() => router.back()} style={styles.back}>
+      <Pressable
+        testID="report-back"
+        onPress={() => (router.canGoBack() ? router.back() : router.replace("/reports"))}
+        style={styles.back}
+      >
         <Text style={styles.backText}>‹ Reports</Text>
       </Pressable>
 
