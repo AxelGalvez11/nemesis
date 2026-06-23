@@ -6,9 +6,9 @@ import { suggestEntities } from "@/lib/api";
 
 // Typeahead for the Monitor box: as you type it resolves what you mean to a real medical thing — a drug
 // (brand→generic, from the in-house catalog) or a MeSH-resolved condition / device / procedure — and shows
-// WHICH kind with a colored chip. Picking one creates a PRECISE, scoped watch (via watchFieldsFromEntity);
-// typing a free phrase and pressing Enter / Monitor still creates a plain topic watch (the fallback).
-// Presentation + keyboard nav only — the parent owns what "pick" and "submit" actually do.
+// WHICH kind with a colored chip. Picking one creates a PRECISE, scoped watch (via watchFieldsFromEntity).
+// Presentation + keyboard nav only — the parent owns what "pick" and "submit" actually do (the Monitor
+// box, for one, no longer turns raw typed text into a watch; submit-without-pick just shows a hint).
 
 const KIND_LABEL: Record<SuggestKind, string> = {
   drug: "Drug",

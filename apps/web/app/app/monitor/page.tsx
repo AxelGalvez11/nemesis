@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { BrowseTopic, EntitlementSnapshot, EntitySuggestion } from "@pharmabro/shared";
-import { watchEntitlement, watchUsageLabel, watchTitleFromQuestion, watchFieldsFromBrowseTopic } from "@pharmabro/shared";
+import { watchEntitlement, watchUsageLabel, watchFieldsFromBrowseTopic } from "@pharmabro/shared";
 import { createWatch, fetchDrug, fetchEntitlements, fetchWatches, type WatchSummary } from "@/lib/api";
 import { isCatalogDrug, watchFieldsFromEntity } from "@/lib/entity";
 import { getCached, setCached } from "@/lib/cache";
@@ -69,24 +69,13 @@ export default function MonitorPage() {
 
   const tier = watchEntitlement(ent);
 
-  // Start a new topic watch from the box. The per-plan limit is enforced server-side (createWatch
-  // returns reason:"limit"); we surface that with an upgrade link rather than pre-disabling the input.
-  async function addTopic() {
-    const q = topic.trim();
-    if (!q || adding) return;
-    setAdding(true);
-    setAddError(null);
-    try {
-      const res = await createWatch({ kind: "topic", title: watchTitleFromQuestion(q), topic: q, query_terms: q });
-      if (res.ok) {
-        setTopic("");
-        await loadWatches(); // the new watch appears at the top of the list
-      } else {
-        setAddError(ADD_ERROR_COPY[res.reason]);
-      }
-    } finally {
-      setAdding(false); // never leave the box stuck on "Starting…" if createWatch throws unexpectedly
-    }
+  // Submitting raw typed text no longer creates a watch. Free-text questions produced messy,
+  // unscoped watches (e.g. "what does the literature say on hgh and tesamorelin?") whose title WAS
+  // the whole sentence and whose search terms were noise. Watches now come only from a resolved
+  // entity (an autocomplete pick) or a curated browse chip — both scoped and clean. Pressing Enter
+  // without picking just nudges the user to choose a real drug/condition.
+  function hintPickEntity() {
+    setAddError("Pick a drug or condition from the suggestions to start monitoring it.");
   }
 
   // A picked suggestion → a precise, scoped watch. A catalog drug resolves brand→generic with an openFDA
@@ -146,14 +135,12 @@ export default function MonitorPage() {
           value={topic}
           onChange={(v) => { setTopic(v); if (addError) setAddError(null); }}
           onPickEntity={(e) => void addEntity(e)}
-          onSubmitText={() => void addTopic()}
-          placeholder="Search a drug to monitor — or type any topic"
+          onSubmitText={hintPickEntity}
+          placeholder="Search a drug or condition to monitor"
           ariaLabel="Monitor a new topic"
           disabled={adding}
         />
-        <button type="button" className="mode watch-add-btn" onClick={() => void addTopic()} disabled={adding || !topic.trim()}>
-          {adding ? "Starting…" : "Monitor"}
-        </button>
+        {adding ? <span className="watch-add-status">Starting…</span> : null}
       </div>
       {addError ? (
         <p className="watch-add-error">
@@ -176,8 +163,8 @@ export default function MonitorPage() {
 
       {watches && watches.length === 0 ? (
         <p className="welcome-sub">
-          No watches yet. Type a topic above to start monitoring it — or open an answer in{" "}
-          <Link href="/app/ask">Ask</Link> and choose &ldquo;Watch this&rdquo;.
+          No watches yet. Search a drug or condition above, or pick one from the popular topics below — or
+          open an answer in <Link href="/app/ask">Ask</Link> and choose &ldquo;Watch this&rdquo;.
         </p>
       ) : null}
 

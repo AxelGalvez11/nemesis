@@ -54,6 +54,16 @@ export const BROWSE_TOPICS: BrowseTopic[] = [
   drug("Omeprazole", "omeprazole", ["Prilosec"]),
   drug("Sertraline", "sertraline", ["Zoloft"]),
   drug("Prednisone", "prednisone", []),
+  drug("Trulicity", "dulaglutide", []),
+  drug("Farxiga", "dapagliflozin", ["Forxiga"]),
+  drug("Synthroid", "levothyroxine", ["Levoxyl", "Euthyrox"]),
+  drug("Norvasc", "amlodipine", []),
+  drug("Crestor", "rosuvastatin", []),
+  drug("Xarelto", "rivaroxaban", []),
+  drug("Lexapro", "escitalopram", []),
+  drug("Plavix", "clopidogrel", []),
+  drug("Gabapentin", "gabapentin", ["Neurontin"]),
+  drug("Humira", "adalimumab", []),
 
   // Conditions (MeSH-style term; no openFDA name-scope).
   { label: "Type 2 diabetes", category: "condition", query_terms: "type 2 diabetes" },
@@ -63,6 +73,13 @@ export const BROWSE_TOPICS: BrowseTopic[] = [
   { label: "Depression", category: "condition", query_terms: "major depressive disorder" },
   { label: "High cholesterol", category: "condition", query_terms: "hyperlipidemia" },
   { label: "Chronic kidney disease", category: "condition", query_terms: "chronic kidney disease" },
+  { label: "Asthma", category: "condition", query_terms: "asthma" },
+  { label: "COPD", category: "condition", query_terms: "chronic obstructive pulmonary disease" },
+  { label: "Heart failure", category: "condition", query_terms: "heart failure" },
+  { label: "Anxiety", category: "condition", query_terms: "generalized anxiety disorder" },
+  { label: "Hypothyroidism", category: "condition", query_terms: "hypothyroidism" },
+  { label: "Osteoporosis", category: "condition", query_terms: "osteoporosis" },
+  { label: "Rheumatoid arthritis", category: "condition", query_terms: "rheumatoid arthritis" },
 
   // Drug classes (class term; no single-drug scope).
   { label: "GLP-1 receptor agonists", category: "class", query_terms: "GLP-1 receptor agonists" },
@@ -71,6 +88,12 @@ export const BROWSE_TOPICS: BrowseTopic[] = [
   { label: "Direct oral anticoagulants", category: "class", query_terms: "direct oral anticoagulants" },
   { label: "SSRIs", category: "class", query_terms: "selective serotonin reuptake inhibitors" },
   { label: "Proton pump inhibitors", category: "class", query_terms: "proton pump inhibitors" },
+  { label: "ACE inhibitors", category: "class", query_terms: "ACE inhibitors" },
+  { label: "ARBs", category: "class", query_terms: "angiotensin receptor blockers" },
+  { label: "Beta blockers", category: "class", query_terms: "beta blockers" },
+  { label: "Calcium channel blockers", category: "class", query_terms: "calcium channel blockers" },
+  { label: "NSAIDs", category: "class", query_terms: "nonsteroidal anti-inflammatory drugs" },
+  { label: "Benzodiazepines", category: "class", query_terms: "benzodiazepines" },
 ];
 
 /** Build the watch fields for a tapped browse topic. Pure. Drugs get deduped (case-insensitive)

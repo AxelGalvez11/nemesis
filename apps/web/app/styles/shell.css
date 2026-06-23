@@ -844,6 +844,7 @@
 .watch-add-input { flex: 1; min-width: 0; background: none; border: none; outline: none; box-shadow: none; color: var(--text); font-family: var(--font); font-size: 14.5px; }
 .watch-add-input::placeholder { color: var(--text-3); }
 .watch-add-btn { flex: none; }
+.watch-add-status { flex: none; font-size: 13px; color: var(--text-3); }
 .watch-add-error { font-size: 12.5px; color: var(--warn); margin: -2px 0 10px; }
 .watch-add-error a { color: var(--acid-dim); }
 
