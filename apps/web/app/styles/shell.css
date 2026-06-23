@@ -786,6 +786,20 @@
 .watch-current-text { font-size: 13px; line-height: 1.5; color: var(--text-2); margin: 0; flex: 1 1 280px; }
 .watch-current-link { flex: none; white-space: nowrap; border-color: color-mix(in srgb, var(--acid) 45%, var(--line)); color: var(--text); font-weight: 600; }
 .watch-current-link:hover { border-color: var(--acid); background: color-mix(in srgb, var(--acid) 12%, var(--surface)); }
+.watch-current-loading, .watch-current-err { flex: 1 1 100%; font-size: 13px; color: var(--text-2); margin: 4px 0 0; }
+.watch-current-err { color: var(--warn); }
+.linklike { background: none; border: none; padding: 0; font: inherit; color: var(--acid-dim); cursor: pointer; text-decoration: underline; }
+/* The inline current-evidence digest (loaded on demand) — a compact grade + bottom line + top sources. */
+.watch-evidence { flex: 1 1 100%; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--line); }
+.watch-evidence .grade-row { margin-bottom: 8px; }
+.watch-evidence .ai-para { font-size: 15px; line-height: 1.65; color: var(--text); margin: 0 0 12px; }
+.watch-evidence-src { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.watch-evidence-src li { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; line-height: 1.45; }
+.watch-evidence-srclabel { flex: none; font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-3); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+.watch-evidence-src a { color: var(--text-2); text-decoration: none; }
+.watch-evidence-src a:hover { color: var(--text); text-decoration: underline; }
+.watch-evidence-more { display: inline-block; font-size: 13px; color: var(--acid-dim); font-weight: 600; }
+.watch-evidence-more:hover { text-decoration: underline; }
 
 .watch-section { margin-top: 26px; }
 .watch-section-h { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); margin: 0 0 12px; }

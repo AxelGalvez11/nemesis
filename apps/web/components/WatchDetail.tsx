@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { partitionWatchEvents, type WatchEvent } from "@pharmabro/shared";
 import { Icon } from "@/components/icons";
 import { safeHref } from "@/lib/url";
+import { WatchCurrentEvidence } from "@/components/WatchCurrentEvidence";
 
 // The watch detail view: the three channels of one live-monitoring watch, rendered from the pure
 // partition in @pharmabro/shared. The lanes are visually distinct ON PURPOSE:
@@ -50,12 +50,12 @@ function fmtDate(iso: string | null): string {
 interface WatchDetailProps {
   watch: { title: string; cadence: string; baselined: boolean; lastCheckedLabel?: string | null };
   events: WatchEvent[];
-  // In-app link that pre-fills Ask with this watch's topic (reads the evidence that exists NOW).
-  // Null hides the link entirely.
-  currentEvidenceHref?: string | null;
+  // The watch's topic/title, used to load the current cited evidence INLINE (on demand) instead of
+  // sending the user to the chat page. Null hides the current-evidence block entirely.
+  currentEvidenceQuery?: string | null;
 }
 
-export function WatchDetail({ watch, events, currentEvidenceHref }: WatchDetailProps) {
+export function WatchDetail({ watch, events, currentEvidenceQuery }: WatchDetailProps) {
   const { alerts, feed, news, unreadAlertCount } = partitionWatchEvents(events);
 
   return (
@@ -74,16 +74,7 @@ export function WatchDetail({ watch, events, currentEvidenceHref }: WatchDetailP
         ) : null}
       </header>
 
-      {currentEvidenceHref ? (
-        <div className="watch-current">
-          <p className="watch-current-text">
-            Monitoring flags only what changes from here on. To read the evidence that exists right now:
-          </p>
-          <Link className="chip-action watch-current-link" href={currentEvidenceHref}>
-            See the current evidence →
-          </Link>
-        </div>
-      ) : null}
+      {currentEvidenceQuery ? <WatchCurrentEvidence query={currentEvidenceQuery} /> : null}
 
       <section className="watch-section">
         <h3 className="watch-section-h">
