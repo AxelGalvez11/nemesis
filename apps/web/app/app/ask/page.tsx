@@ -8,7 +8,7 @@ import { scienceState } from "@pharmabro/shared";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
-import { newRevealCtx, revealDelay, wrapWords, type RevealCtx } from "@/lib/reveal-text";
+import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
 import { pubchemMoleculeUrl } from "@/lib/molecule";
 import { phCapture } from "@/lib/posthog";
 import { useAppChrome } from "@/components/AppShell";
@@ -770,6 +770,12 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
   // study-type metadata (well_studied / emerging, or nothing). Never an LLM guess.
   const science = scienceState(answer.citations);
   const cite = (tag: string, quote?: string) => onCite(answer, tag, quote); // bind every [n] click to THIS answer's sources + the clicked claim's supporting line
+  // When revealing, fade the trailing sections (uncertainty / questions / news / actions) in just AFTER
+  // the lead + prose finish typing, so they don't sit there fully-formed while the top types. The word
+  // counter is mutated inside <Prose>, so we estimate the head's reveal span up front (+1 slot per prose
+  // point for its citation chip, +150ms breathing room).
+  const headSlots = ctx ? countWords(answer.plain_english_summary) + (s.what_we_know ?? []).reduce((n, p) => n + countWords(p.text) + 1, 0) : 0;
+  const tailDelayMs = REVEAL_BASE + headSlots * REVEAL_STEP + 150;
   return (
     <div className={`answer${fadeClass}`}>
       <div className="grade-row">
@@ -796,23 +802,27 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
           safety-scanned server-side, and stored in the trace; the emergency 911 routing and the class-
           caution banner are untouched. Restore the <SafetyBlock> render from git to bring it back. */}
 
-      {/* Uncertainty, de-emphasized. */}
-      <UnclearBlock points={s.what_we_do_not_know} citeMap={citeMap} onCite={cite} />
+      {/* Trailing sections fade in together just after the lead + prose finish typing (rv-tail), so they
+          don't pop in fully-formed while the top is still revealing. Instant when not revealing. */}
+      <div className={ctx ? "rv-tail" : undefined} style={ctx ? { animationDelay: `${tailDelayMs}ms` } : undefined}>
+        {/* Uncertainty, de-emphasized. */}
+        <UnclearBlock points={s.what_we_do_not_know} citeMap={citeMap} onCite={cite} />
 
-      {s.questions_to_ask?.length ? (
-        <div className="ai-questions">
-          <div className="ai-block-label">Worth asking your clinician</div>
-          <ol>{s.questions_to_ask.map((q, i) => <li key={i}>{renderInline(q)}</li>)}</ol>
+        {s.questions_to_ask?.length ? (
+          <div className="ai-questions">
+            <div className="ai-block-label">Worth asking your clinician</div>
+            <ol>{s.questions_to_ask.map((q, i) => <li key={i}>{renderInline(q)}</li>)}</ol>
+          </div>
+        ) : null}
+
+        {/* Walled "In the news" panel — paid users see headlines, free users see a locked teaser. NEVER
+            evidence: these never feed the answer above. Suppressed on templates/refusals (backend won't
+            set the fields there; guarded here too). */}
+        {!answer.template && !answer.refused_unsupported ? <NewsPanel news={answer.news} locked={answer.news_locked} /> : null}
+
+        <div className="msg-actions">
+          <button className="icon-btn" data-tip="Copy answer" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
         </div>
-      ) : null}
-
-      {/* Walled "In the news" panel — paid users see headlines, free users see a locked teaser. NEVER
-          evidence: these never feed the answer above. Suppressed on templates/refusals (backend won't
-          set the fields there; guarded here too). */}
-      {!answer.template && !answer.refused_unsupported ? <NewsPanel news={answer.news} locked={answer.news_locked} /> : null}
-
-      <div className="msg-actions">
-        <button className="icon-btn" data-tip="Copy answer" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
       </div>
     </div>
   );

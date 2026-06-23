@@ -25,10 +25,22 @@ export interface RevealCtx {
   step: number;
 }
 
-/** A fresh counter for one answer. base/step tuned so a typical answer reads as a brisk, smooth
- *  type-in (~55 words/sec) without dragging on long answers. */
-export function newRevealCtx(base = 40, step = 18): RevealCtx {
+// base/step tuned so a typical answer reads as a brisk, smooth type-in (~55 words/sec) without
+// dragging on long answers. Exported so the Answer can time its trailing sections to fade in just
+// after the lead + prose finish typing (rather than popping in fully-formed while the top types).
+export const REVEAL_BASE = 40; // ms before the first word
+export const REVEAL_STEP = 18; // ms between consecutive words/chips
+
+/** A fresh counter for one answer. */
+export function newRevealCtx(base = REVEAL_BASE, step = REVEAL_STEP): RevealCtx {
   return { i: 0, base, step };
+}
+
+/** Whitespace-delimited word count — used to estimate when the head (lead + prose) finishes
+ *  revealing. The timing counter itself is mutated inside child components (Prose), so it can't be
+ *  read back in the parent before the tail renders; this lets the parent compute the tail delay. */
+export function countWords(s: string | null | undefined): number {
+  return s ? s.trim().split(/\s+/).filter(Boolean).length : 0;
 }
 
 /** The next sequential delay (ms), then advance the counter. Used for words AND citation chips so

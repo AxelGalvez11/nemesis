@@ -159,3 +159,7 @@ a { color: inherit; text-decoration: none; }
 @keyframes rvWord { from { opacity: 0; transform: translateY(0.14em); } to { opacity: 1; transform: none; } }
 .rv-w { display: inline-block; opacity: 0; animation: rvWord 0.3s ease-out both; }
 @media (prefers-reduced-motion: reduce) { .rv-w { animation: none; opacity: 1; transform: none; } }
+/* The answer's trailing sections fade in (with an inline animation-delay) just after the lead + prose
+   finish typing, so they don't sit fully-formed while the top reveals. */
+.rv-tail { animation: fade 0.45s both; }
+@media (prefers-reduced-motion: reduce) { .rv-tail { animation: none; } }
