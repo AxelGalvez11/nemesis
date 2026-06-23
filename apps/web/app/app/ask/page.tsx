@@ -8,6 +8,7 @@ import { scienceState } from "@pharmabro/shared";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
+import { newRevealCtx, revealDelay, wrapWords, type RevealCtx } from "@/lib/reveal-text";
 import { pubchemMoleculeUrl } from "@/lib/molecule";
 import { phCapture } from "@/lib/posthog";
 import { useAppChrome } from "@/components/AppShell";
@@ -78,6 +79,7 @@ function AskPage() {
   const [bloom, setBloom] = useState(false);
   const [stage, setStage] = useState(0);
   const [showThinking, setShowThinking] = useState(false); // gate: only show the thinking animation once a request has run long enough to be a real wait (instant small-talk replies never trigger it)
+  const [revealIdx, setRevealIdx] = useState<number | null>(null); // the turn whose answer should type itself in (only the just-arrived one — never reopened/saved turns)
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("fast");
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -122,6 +124,7 @@ function AskPage() {
     // submit mid-load would compute the wrong ordinal (from the old turns) and the insert would
     // collide with this chat's existing rows (UNIQUE(conversation_id, ordinal)) and be lost.
     setTurns([]);
+    setRevealIdx(null); // loaded turns render instantly — only a freshly-asked turn types itself in
     setChatLoadError(null);
     setLoadingChat(true);
     let alive = true;
@@ -338,6 +341,7 @@ function AskPage() {
       const askMode: AskMode = mode === "thorough" ? "thorough" : "fast";
       const res = await askQuestion(text, askMode);
       setLast({ a: res });
+      setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
       void fetchUsage().catch(() => {});
       void persistTurn(idx, text, res); // save the question + cited answer to chat history
@@ -419,7 +423,7 @@ function AskPage() {
                   ) : t.research ? (
                     <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
                   ) : t.a ? (
-                    <Answer answer={t.a} onCite={onCite} question={t.q} />
+                    <Answer answer={t.a} onCite={onCite} question={t.q} reveal={i === revealIdx} />
                   ) : isLast && busy && showThinking ? <Thinking stage={stage} /> : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
@@ -739,17 +743,25 @@ function MoleculeImage({ drug }: { drug: string }) {
   );
 }
 
-function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string }) {
+function Answer({ answer, onCite, question, reveal = false }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string; reveal?: boolean }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, CiteInfo>();
     for (const c of answer.citations) m.set(normTag(c.chunk_tag), { label: abbr(c.source_type), title: c.title ?? c.source_type });
     return m;
   }, [answer.citations]);
 
+  // When this is the just-arrived turn, reveal the answer text word-by-word (see lib/reveal-text).
+  // One shared counter spans the lead + the prose so the whole thing types in as one continuous
+  // stream; null when not revealing (loaded/historical turns render instantly). `fade` (the one-shot
+  // block fade) is dropped while revealing so the word stagger isn't fighting a container fade.
+  const ctx: RevealCtx | null = reveal ? newRevealCtx() : null;
+  const rt = (text: string) => (ctx ? wrapWords(renderInline(text), ctx) : renderInline(text));
+  const fadeClass = reveal ? "" : " fade";
+
   // Small-talk (a greeting / thanks / "what can you do") is a plain conversational reply — no
   // evidence grade, no sources, no clinical sections. Render just the friendly line.
   if (answer.intent === "smalltalk") {
-    return <div className="answer fade"><p className="lead">{renderInline(answer.plain_english_summary)}</p></div>;
+    return <div className={`answer${fadeClass}`}><p className="lead">{rt(answer.plain_english_summary)}</p></div>;
   }
 
   const s = answer.answer_sections;
@@ -759,7 +771,7 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
   const science = scienceState(answer.citations);
   const cite = (tag: string, quote?: string) => onCite(answer, tag, quote); // bind every [n] click to THIS answer's sources + the clicked claim's supporting line
   return (
-    <div className="answer fade">
+    <div className={`answer${fadeClass}`}>
       <div className="grade-row">
         <span className="grade">{answer.evidence_grade.replace(/_/g, " ")}</span>
         {science ? (
@@ -772,12 +784,12 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
         {!answer.template && !answer.refused_unsupported ? <WatchButton kind="topic" question={question} /> : null}
       </div>
       {answer.primary_drug && !answer.template && !answer.refused_unsupported ? <MoleculeImage drug={answer.primary_drug} /> : null}
-      {answer.plain_english_summary ? <p className="lead">{renderInline(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
+      {answer.plain_english_summary ? <p className="lead">{rt(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
 
       {/* Main explanation, under a quiet section heading (owner wants clearer structure) over the cited body. */}
       {s.what_we_know?.length ? <div className="ai-block-label">What the evidence shows</div> : null}
-      <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} />
+      <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} ctx={ctx} />
 
       {/* Safety block intentionally NOT rendered in the answer body (owner 2026-06-21: it "reads like
           fluff" and breaks the natural-conversation feel). RENDER-ONLY: safety_notes are still generated,
@@ -920,17 +932,21 @@ function PointItems({ points, citeMap, onCite, paraClass = "ai-para" }: PointBlo
 // per-sentence safety-salvage granularity are preserved upstream (citation.ts / safety.ts). Safety and
 // uncertainty deliberately do NOT join — they keep their own scannable blocks so cautions stand out
 // rather than dissolving into prose.
-function Prose({ points, citeMap, onCite }: PointBlockProps) {
+function Prose({ points, citeMap, onCite, ctx = null }: PointBlockProps & { ctx?: RevealCtx | null }) {
   if (!points?.length) return null;
   return (
     <p className="ai-para">
-      {points.map((p, i) => (
-        <Fragment key={i}>
-          {i > 0 ? " " : null}
-          {renderInline(p.text)}
-          <CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} />
-        </Fragment>
-      ))}
+      {points.map((p, i) => {
+        const chips = <CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} />;
+        return (
+          <Fragment key={i}>
+            {i > 0 ? " " : null}
+            {ctx ? wrapWords(renderInline(p.text), ctx) : renderInline(p.text)}
+            {/* delay the chips so a citation number never appears before the sentence it backs */}
+            {ctx ? <span className="rv-w" style={{ animationDelay: `${revealDelay(ctx)}ms` }}>{chips}</span> : chips}
+          </Fragment>
+        );
+      })}
     </p>
   );
 }

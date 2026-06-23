@@ -153,3 +153,9 @@ a { color: inherit; text-decoration: none; }
 @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .fade { animation: fade 0.4s both; }
 @media (prefers-reduced-motion: reduce) { .fade { animation: none; } }
+
+/* Word-by-word answer reveal (lib/reveal-text.tsx): each word/citation-chip is an inline-block span
+   with a staggered animation-delay, so a freshly-arrived answer types itself in left-to-right. */
+@keyframes rvWord { from { opacity: 0; transform: translateY(0.14em); } to { opacity: 1; transform: none; } }
+.rv-w { display: inline-block; opacity: 0; animation: rvWord 0.3s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .rv-w { animation: none; opacity: 1; transform: none; } }
