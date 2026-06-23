@@ -333,13 +333,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
 
             <div className="r-label">Projects</div>
-            {/* Projects (group chats, sources & deliverables) is not built yet — inert placeholder,
-                NOT a link. It previously pointed at /app/settings (wrong page); /app/projects does
-                not exist, so a real href would 404. */}
-            <div className="hist" style={{ color: "var(--text-2)", cursor: "default" }} aria-disabled="true">
+            {/* Projects workspaces (group chats + reports + watches). Lives on its own pages
+                (/app/projects + /app/projects/[id]) rather than inline in the rail. */}
+            <Link href="/app/projects" className="hist">
               <Icon name="folder" className="hist-ic" />
-              <span style={{ fontSize: 12 }}>Projects — coming soon</span>
-            </div>
+              <span style={{ fontSize: 12 }}>Projects</span>
+            </Link>
 
             <div className="r-label">Recent chats</div>
             {chats.length === 0 ? (

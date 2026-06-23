@@ -615,6 +615,32 @@
 .watch-card-chev { flex: none; color: var(--text-3); font-size: 20px; line-height: 1; transition: transform 0.16s, color 0.16s; }
 .watch-card:hover .watch-card-chev { color: var(--acid-dim); transform: translateX(2px); }
 
+/* Projects (workspaces): list reuses .watch-card; the workspace page groups items into sections with an
+   inline "add unassigned items" picker + a per-item remove. */
+.proj-back { display: inline-block; font-size: 12px; color: var(--text-3); text-decoration: none; margin-bottom: 2px; }
+.proj-back:hover { color: var(--text); }
+.proj-section { margin-top: 26px; }
+.proj-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.proj-section-head h3 { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); margin: 0; }
+.proj-section-head h3 small { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--text-3); }
+.proj-add-btn { font-size: 12.5px; font-weight: 600; color: var(--text-2); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 13px; cursor: pointer; transition: 0.15s; }
+.proj-add-btn:hover:not(:disabled) { border-color: var(--acid); color: var(--text); }
+.proj-picker { display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; padding: 8px; border: 1px dashed var(--line-2); border-radius: 12px; background: var(--surface-2); max-height: 280px; overflow-y: auto; }
+.proj-pick-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 11px; border: none; border-radius: 8px; background: none; color: var(--text-2); font-family: var(--font); font-size: 13.5px; text-align: left; cursor: pointer; }
+.proj-pick-row:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+.proj-pick-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-pick-add { flex: none; font-size: 11px; font-weight: 700; color: var(--acid-deep); }
+.proj-empty { font-size: 13.5px; color: var(--text-3); margin: 2px 0 6px; }
+.proj-item { gap: 0; }
+.proj-item-link { display: flex; flex: 1; min-width: 0; text-decoration: none; }
+.proj-remove { flex: none; font-size: 12px; color: var(--text-3); background: none; border: none; cursor: pointer; padding: 5px 9px; border-radius: 7px; transition: 0.15s; }
+.proj-remove:hover:not(:disabled) { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+
+/* Reports library grouped by kind: section headers appear only when 2+ report types exist. */
+.report-group { margin-top: 20px; }
+.report-group:first-child { margin-top: 12px; }
+.report-group-h { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); margin-bottom: 8px; }
+
 /* Inline deep-research run card + clarifying-question (scope) card in the Ask thread. */
 .research-run-card { margin: 8px 0; }
 .research-run-card .ai-block-label { margin-bottom: 8px; }
