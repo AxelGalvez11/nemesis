@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Hanken_Grotesk, JetBrains_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
 
-// Match the app's type system (apps/web): Hanken Grotesk for everything, JetBrains Mono for
-// code/accent. Both are variable fonts, so the full wght axis loads and the CSS's
-// `font-weight:800` headings render at true 800 (Space Grotesk capped at 700). next/font
-// self-hosts them and exposes --font-hanken / --font-jetbrains, which globals.css feeds --f / --mono.
+// Type system: Hanken Grotesk for body/UI, JetBrains Mono for labels/accent, and a
+// high-contrast Didone serif (Playfair Display) for the editorial display headings and the
+// giant wordmark — the look adapted from Hermes Agent's landing. All three are variable
+// fonts (full wght axis loads), self-hosted by next/font, exposed as CSS variables that
+// globals.css feeds into --f / --mono / --serif.
 const hanken = Hanken_Grotesk({
   subsets: ["latin"],
   variable: "--font-hanken",
@@ -16,15 +17,20 @@ const jetbrains = JetBrains_Mono({
   variable: "--font-jetbrains",
   display: "swap",
 });
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  variable: "--font-playfair",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "PharmaOrb — Drug information that shows its work",
+  title: "PharmaOrb: Drug information that shows its work",
   description:
-    "Plain-English answers about any medication or supplement — every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Not medical advice. Join the waitlist.",
+    "Plain-English answers about any medication or supplement, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Not medical advice. Join the waitlist.",
   openGraph: {
-    title: "PharmaOrb — Drug information that shows its work",
+    title: "PharmaOrb: Drug information that shows its work",
     description:
-      "Plain-English answers about medications — every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Join the waitlist.",
+      "Plain-English answers about medications, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Join the waitlist.",
     type: "website",
   },
   robots: { index: true, follow: true },
@@ -36,7 +42,11 @@ export default function RootLayout({
   return (
     // suppressHydrationWarning: the theme effect may add `class="light"` to <html> after
     // mount (read from localStorage), which would otherwise trip React's attribute check.
-    <html lang="en" className={`${hanken.variable} ${jetbrains.variable}`} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${hanken.variable} ${jetbrains.variable} ${playfair.variable}`}
+      suppressHydrationWarning
+    >
       <body>{children}</body>
     </html>
   );
