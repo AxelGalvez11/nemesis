@@ -248,12 +248,37 @@ const RULES: Rule[] = [
 ];
 
 /**
+ * Strip markdown SYNTAX (not content) so the deterministic scan sees the real phrase even when the
+ * answer is formatted — "do not **stop** taking" must scan as "do not stop taking", "is s**a**fe" as
+ * "is safe", "**inject** 250mcg" as "inject 250mcg". This makes the scan ROBUST to markdown-based
+ * evasion: it only ever REVEALS a banned phrase, never hides one (a banned span split by emphasis
+ * markers gets re-joined). Applied ONLY in the scan path below — the stored/rendered answer keeps its
+ * markdown. Line-start list/quote/header markers are removed; hyphens mid-word ("non-scarring") are NOT
+ * a marker and are left untouched.
+ */
+export function stripMarkdownForScan(text: string): string {
+  return text
+    .replace(/`([^`]*)`/g, "$1")             // `inline code`
+    .replace(/\*\*([^*]+)\*\*/g, "$1")       // **bold**
+    .replace(/__([^_]+)__/g, "$1")           // __bold__
+    .replace(/\*([^*]+)\*/g, "$1")           // *italic*
+    .replace(/(^|[\s(])_([^_]+)_(?=[\s).,!?:;]|$)/g, "$1$2") // _italic_ (word-bounded, not mid-token underscores)
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // [text](url) -> text
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")    // ## headers
+    .replace(/^[ \t]*>[ \t]?/gm, "")          // > blockquotes
+    .replace(/^[ \t]*[-*+][ \t]+/gm, "")      // - / * / + bullet markers (line start only)
+    .replace(/^[ \t]*\d+\.[ \t]+/gm, "");     // 1. numbered markers (line start only)
+}
+
+/**
  * Returns every doc-20 forbidden pattern found in the answer text. Empty array
  * means the text is clear. The orchestrator treats a non-empty result as a
  * failed generation and substitutes a conservative template — this is what makes
- * the forbidden strings "impossible to produce".
+ * the forbidden strings "impossible to produce". The text is markdown-stripped
+ * first (stripMarkdownForScan) so formatting can never split a banned phrase past a rule.
  */
 export function detectViolations(answerText: string): Violation[] {
+  answerText = stripMarkdownForScan(answerText);
   const out: Violation[] = [];
   for (const rule of RULES) {
     const flags = rule.re.flags.includes("g") ? rule.re.flags : rule.re.flags + "g";

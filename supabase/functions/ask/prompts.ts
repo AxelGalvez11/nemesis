@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v12-2026-06-23"; // v12: CONVERSATIONAL VOICE — a live-register-only block (CONVERSATIONAL_VOICE, plain+thorough; Deep Research/BASE untouched) that makes the answer ADDRESS the person and open with a direct, source-grounded answer instead of a detached textbook fact (the owner's "fact dump, not a conversation" complaint). VOICE/opener only; subordinate to and reasserts the HARD RULES + PHRASING + REGISTER_SAFETY. SAFETY-CRITICAL carve-out: the direct "Yes/No" opener is for INFORMATIONAL questions only — interaction/dosing/pregnancy/peptide/health_context/safety-flagged questions still open on the specific risk + route to a clinician, never a verdict (else a "lead direct" nudge manufactures reassurance leads — the v9 failure). Gate = 48-check all-modes guardrail post-deploy, instant rollback on any breach. v11: TYPO "assume & answer" — when the fabrication guard fires on a drug name absent from the evidence, recover a genuine TYPO of a real drug (AUTHORITATIVE entity-table canonical + OSA edit-distance ≤1 + present in the evidence) by answering it and STATING the assumption ("Assuming you mean tesamorelin"), instead of the patronizing safety_fallback. index.ts wires findTypoCorrections (typo-correct.ts) at the guard; adversarially unit-tested so every class-plausible fake (florizagliflozin/maglutide/gliflozin/…) STILL refuses; the fabrication guard + its tests are untouched. Fixes the owner's "treats me like a patient / can't handle typos" complaint at the root. v10: SAFETY FIX after v9's guardrail caught a [fast] miss — a med-change question ("should I stop my sertraline?") classified to the out-of-union intent "medication_change_request" (a SafetyFlag value the model put in the intent field, bypassing the enum), which NO intent-keyed safety set recognized → no required safety floor, no professional-routing backstop → terse Fast intermittently omitted routing. Fix is in classify.ts (normalizeClassification: an unrecognized intent is preserved as a flag and remapped to health_context, fail-safe) + routing.ts (health_context now in ROUTE_TO_PROFESSIONAL_INTENTS — also closes the documented health_context routing hole). DETERMINISTIC + register-invariant; no prompt TEXT changed from v9. v9: Fast vs Thorough differ in DEPTH not vocabulary (PLAIN_STYLE terse; THOROUGH_STYLE explicit OVERRIDE of FORMAT leanness). v8: REGISTER_SAFETY block on both live registers. BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
+export const PROMPT_VERSION = "ask-v13-2026-06-23"; // v13: SAFE MARKDOWN — a live-register-only MARKDOWN_FORMAT block lets the model emit **bold** emphasis for scannability (the "feel like ChatGPT" ask); bold-ONLY (headers/lists banned, schema owns structure). SAFE because detectViolations now markdown-STRIPS before scanning (safety.ts stripMarkdownForScan), so emphasis can never split a banned phrase past a rule — a scan ROBUSTNESS improvement, adversarially unit-tested. Deep Research/BASE stay markdown-free. Gate = 48-check guardrail. (Conversational-writing push is a SEPARATE later version, NOT bundled — so a guardrail failure is never ambiguous.) v12: CONVERSATIONAL VOICE — a live-register-only block (CONVERSATIONAL_VOICE, plain+thorough; Deep Research/BASE untouched) that makes the answer ADDRESS the person and open with a direct, source-grounded answer instead of a detached textbook fact (the owner's "fact dump, not a conversation" complaint). VOICE/opener only; subordinate to and reasserts the HARD RULES + PHRASING + REGISTER_SAFETY. SAFETY-CRITICAL carve-out: the direct "Yes/No" opener is for INFORMATIONAL questions only — interaction/dosing/pregnancy/peptide/health_context/safety-flagged questions still open on the specific risk + route to a clinician, never a verdict (else a "lead direct" nudge manufactures reassurance leads — the v9 failure). Gate = 48-check all-modes guardrail post-deploy, instant rollback on any breach. v11: TYPO "assume & answer" — when the fabrication guard fires on a drug name absent from the evidence, recover a genuine TYPO of a real drug (AUTHORITATIVE entity-table canonical + OSA edit-distance ≤1 + present in the evidence) by answering it and STATING the assumption ("Assuming you mean tesamorelin"), instead of the patronizing safety_fallback. index.ts wires findTypoCorrections (typo-correct.ts) at the guard; adversarially unit-tested so every class-plausible fake (florizagliflozin/maglutide/gliflozin/…) STILL refuses; the fabrication guard + its tests are untouched. Fixes the owner's "treats me like a patient / can't handle typos" complaint at the root. v10: SAFETY FIX after v9's guardrail caught a [fast] miss — a med-change question ("should I stop my sertraline?") classified to the out-of-union intent "medication_change_request" (a SafetyFlag value the model put in the intent field, bypassing the enum), which NO intent-keyed safety set recognized → no required safety floor, no professional-routing backstop → terse Fast intermittently omitted routing. Fix is in classify.ts (normalizeClassification: an unrecognized intent is preserved as a flag and remapped to health_context, fail-safe) + routing.ts (health_context now in ROUTE_TO_PROFESSIONAL_INTENTS — also closes the documented health_context routing hole). DETERMINISTIC + register-invariant; no prompt TEXT changed from v9. v9: Fast vs Thorough differ in DEPTH not vocabulary (PLAIN_STYLE terse; THOROUGH_STYLE explicit OVERRIDE of FORMAT leanness). v8: REGISTER_SAFETY block on both live registers. BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -253,7 +253,8 @@ export type AnswerStyle = "plain" | "thorough";
 // Fast mode. An EXPLICIT OVERRIDE of the "curious researcher" register in BASE_GENERATE_SYSTEM above —
 // without "override", the two audience definitions stack and the model splits the difference. Wording, not
 // substance, changes: GROUNDING / HARD RULES / PHRASING above stay in full force (re-stated so it can't be
-// read as a license to soften them). No markdown — the safety scan reads the raw .text fields.
+// read as a license to soften them). Light markdown emphasis (**bold**) is allowed as of v13 — see
+// MARKDOWN_FORMAT below; the safety scan markdown-strips first (stripMarkdownForScan) so it stays robust.
 const PLAIN_STYLE = [
   "ANSWER STYLE — FAST / PLAIN (for THIS answer, OVERRIDE the reader/register described above):",
   "- Write for a general-public reader with no medical training — the clarity of a good health explainer.",
@@ -374,14 +375,31 @@ const CONVERSATIONAL_VOICE = [
   "  Every sentence stays source-cited; keep all hedges and qualifiers. Sound human; stay conservative and grounded.",
 ].join("\n");
 
-/** Full system prompt for a generation = base + (optional) register style + conversational voice + register-safety floor + intent guidance. */
+// Formatting (v13). Lets the model emit light markdown EMPHASIS (**bold**) for scannability, like a good
+// explainer — the owner's "feel like ChatGPT/Claude" ask. Deliberately bold-ONLY: headers and lists are
+// banned because the app's schema already provides structure (section headers + per-point paragraphs), so
+// model-authored blocks would duplicate it and break layout. SAFE because detectViolations now strips
+// markdown before scanning (stripMarkdownForScan), so emphasis can't split a banned phrase past a rule.
+// Rides with the live registers only; Deep Research / BASE stay markdown-free.
+const MARKDOWN_FORMAT = [
+  "FORMATTING (presentation only — NEVER changes which claims you make, your grounding, or how you phrase",
+  "safety):",
+  "- Use **bold** (double asterisks) to emphasize the few MOST important terms — the drug name on first",
+  "  mention, the headline finding, a key number — the way a good explainer bolds what matters. Sparingly:",
+  "  a couple of bolded terms per point, never whole sentences, and never to dress up a caution.",
+  "- Do NOT use headers (#), bullet or numbered lists, tables, or links. The app already lays the answer out",
+  "  in clean sections and short paragraphs — write the words, not the layout.",
+].join("\n");
+
+/** Full system prompt for a generation = base + (optional) register style + conversational voice + formatting + register-safety floor + intent guidance. */
 export function generateSystem(intent: Intent, style?: AnswerStyle): string {
   const styleBlock = style === "plain" ? PLAIN_STYLE : style === "thorough" ? THOROUGH_STYLE : "";
-  // Conversational voice + the register-safety floor ride with EITHER live register, never the absent one
+  // Voice + formatting + the register-safety floor ride with EITHER live register, never the absent one
   // (Deep Research / legacy replays keep BASE_GENERATE_SYSTEM verbatim). Order is deliberate: the safety
-  // floor and the intent guidance come AFTER the voice block, so safety has the last (most emphasized) word.
+  // floor and the intent guidance come AFTER, so safety has the last (most emphasized) word.
   const voiceBlock = style ? CONVERSATIONAL_VOICE : "";
+  const formatBlock = style ? MARKDOWN_FORMAT : "";
   const safetyBlock = style ? REGISTER_SAFETY : "";
   const extra = INTENT_GUIDANCE[intent];
-  return [BASE_GENERATE_SYSTEM, styleBlock, voiceBlock, safetyBlock, extra].filter(Boolean).join("\n\n");
+  return [BASE_GENERATE_SYSTEM, styleBlock, voiceBlock, formatBlock, safetyBlock, extra].filter(Boolean).join("\n\n");
 }
