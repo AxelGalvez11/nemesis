@@ -83,3 +83,44 @@ export function useScrollReveal(): void {
     return () => observer.disconnect();
   }, []);
 }
+
+/**
+ * Parallax for the full-bleed section artwork: each `[data-parallax]` image is translated as its
+ * section moves through the viewport, so the art appears to sit behind the section like a window.
+ * rAF-throttled, passive scroll, and disabled when the user prefers reduced motion.
+ */
+export function useParallax(): void {
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const els = Array.from(document.querySelectorAll<HTMLElement>("[data-parallax]"));
+    if (!els.length) return;
+
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const vh = window.innerHeight;
+      for (const el of els) {
+        const section = el.closest("section");
+        if (!section) continue;
+        const rect = section.getBoundingClientRect();
+        if (rect.bottom < -200 || rect.top > vh + 200) continue; // skip off-screen
+        const sectionCenter = rect.top + rect.height / 2;
+        const fromCenter = sectionCenter - vh / 2; // px from viewport center
+        const shift = Math.max(-80, Math.min(80, fromCenter * -0.14));
+        el.style.transform = `translate3d(0, ${shift.toFixed(1)}px, 0)`;
+      }
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(update);
+    };
+
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+}

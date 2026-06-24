@@ -6,7 +6,7 @@ const COUNTERS = [
   { target: 12, suffix: "M+", label: ["Drug records indexed", "across all sources"] },
   { target: 500, suffix: "K+", label: ["PubMed studies", "continuously monitored"] },
   { target: 5, suffix: "", label: ["Authoritative public", "data sources"] },
-  { target: 6, suffix: "", label: ["Evidence tiers —", "never a black box"] },
+  { target: 6, suffix: "", label: ["Evidence tiers", "never a black box"] },
 ] as const;
 
 export function Stats() {

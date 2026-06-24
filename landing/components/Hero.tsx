@@ -16,17 +16,16 @@ export function Hero() {
       <HeroCanvas />
       <div className="hero-overlay" />
       <div className="hero-content">
-        <div className="hero-badge">
+        <div className="eyebrow hero-eyebrow">
           <span className="bdot" />
           Beta · Coming soon
         </div>
         <h1 className="hero-h1">
-          Drug information that
-          <br />
-          actually shows its <em>work.</em>
+          Evidence<br />
+          <em>engine</em>
         </h1>
         <p className="hero-sub">
-          Plain-English answers about any medication or supplement — every claim traced to FDA
+          Plain-English answers about any medication or supplement, with every claim traced to FDA
           labels, PubMed, and ClinicalTrials.gov.
         </p>
         <div className="waitlist-wrap" id="waitlist-area">
@@ -35,7 +34,7 @@ export function Hero() {
         <p style={{ marginTop: "28px", fontSize: "13px", color: "var(--t35)" }}>
           or{" "}
           <a
-            href="#demo"
+            href="#reel"
             style={{
               color: "var(--teal)",
               fontWeight: 600,
@@ -43,7 +42,7 @@ export function Hero() {
               textUnderlineOffset: "3px",
             }}
           >
-            try a live query ↓
+            watch the 30-second tour ↓
           </a>
         </p>
       </div>
