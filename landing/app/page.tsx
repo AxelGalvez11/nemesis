@@ -5,24 +5,30 @@ import { Hero } from "@/components/Hero";
 import { VideoShowcase } from "@/components/VideoShowcase";
 import { Stats } from "@/components/Stats";
 import {
+  Manifesto,
   Sources,
   HowItWorks,
   Evidence,
   Features,
   CallToAction,
+  Wordmark,
   SiteFooter,
 } from "@/components/Sections";
-import { useScrollReveal, useTheme } from "@/lib/useLandingEffects";
+import { useParallax, useScrollReveal, useTheme } from "@/lib/useLandingEffects";
 
 export default function Home() {
   const { theme, toggle } = useTheme();
   // Wire the design's scroll-reveal IntersectionObserver across all `.reveal` elements.
   useScrollReveal();
+  // Parallax the full-bleed section artwork (the "window" effect).
+  useParallax();
 
   return (
     <>
       <Nav theme={theme} onToggleTheme={toggle} />
       <Hero />
+      <hr className="rule" />
+      <Manifesto />
       <hr className="rule" />
       <VideoShowcase />
       <Stats />
@@ -36,6 +42,7 @@ export default function Home() {
       <Features />
       <hr className="rule" />
       <CallToAction />
+      <Wordmark />
       <SiteFooter />
     </>
   );
