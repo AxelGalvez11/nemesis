@@ -562,6 +562,19 @@ html.light .footer-copy { color:rgba(13,13,15,.20); }
   .ev-card{padding:18px 16px}
 }
 
+/* HERO readability on phones/narrow tablets: below the 980px split the orb is
+   full-bleed behind centered, top-anchored text. The base overlay only darkens
+   the bottom, leaving the headline over bright wireframe. Push the darkening up
+   the whole hero and add a soft halo behind the text so it always reads. */
+@media(max-width:979px) {
+  .hero-overlay { background: linear-gradient(to top, var(--bg) 30%, rgba(8,9,10,.82) 66%, rgba(8,9,10,.5) 100%); }
+  html.light .hero-overlay { background: linear-gradient(to top, var(--bg) 30%, rgba(251,251,249,.85) 66%, rgba(251,251,249,.58) 100%); }
+  .hero-h1 { text-shadow: 0 1px 24px rgba(8,9,10,.6); }
+  .hero-sub { text-shadow: 0 1px 16px rgba(8,9,10,.5); }
+  html.light .hero-h1 { text-shadow: 0 1px 22px rgba(251,251,249,.8); }
+  html.light .hero-sub { text-shadow: 0 1px 14px rgba(251,251,249,.7); }
+}
+
 /* ─── HERO: split layout on wide screens (copy left, orb right) ───
    Phones/tablets keep the centered stack above; from 980px up the hero
    becomes two columns: left-aligned copy on the left, the 3D orb pinned
