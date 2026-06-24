@@ -6,14 +6,19 @@
 // land safely and the DeepSeek-V4 cutover stays a separate, deliberate env change
 // gated on a faithfulness/citation re-validation run.
 //
-// When enabled, it maps the product's three registers onto DeepSeek V4:
-//   Fast (plain)      -> v4-flash, non-thinking      (quick gist, lowest latency/cost)
-//   Thorough          -> v4-flash, thinking          (deeper register, CoT before answer)
-//   Deep Research     -> v4-pro,   thinking          (hardest multi-doc reasoning, 1M ctx)
-//   classify + light  -> v4-flash, non-thinking      (function-calling, fast)
-// Every model id + effort is env-overridable so we can retune without a deploy.
-// Thinking mode is toggled per the DeepSeek API: body {"thinking":{"type":...}} +
-// optional reasoning_effort (see llm.ts). deepseek-chat/-reasoner deprecate 2026-07-24.
+// When enabled, it maps the product's registers onto DeepSeek V4:
+//   Fast (plain)      -> v4-flash, non-thinking
+//   Thorough          -> v4-flash, non-thinking   (deeper via prompt + wider retrieval, same tier)
+//   Deep Research     -> v4-pro,   non-thinking   (stronger model + 1M context for long reports)
+//   classify + light  -> v4-flash, non-thinking
+//
+// WHY NON-THINKING EVERYWHERE (verified 2026-06-24 against the live API): the engine gets structured
+// output by FORCING a tool call (callTool -> tool_choice:{function}), and DeepSeek V4 thinking mode
+// REJECTS a forced tool_choice — HTTP 400 "Thinking mode does not support this tool_choice". V4 also
+// defaults thinking ON, so every call MUST send {"thinking":{"type":"disabled"}} or it 400s. Unlocking
+// real chain-of-thought would require switching these sites to tool_choice:"auto" + a no-tool-call
+// fallback (the model CAN reason+call a tool when not forced) — separate future work. Model ids are
+// env-overridable (ROUTE_*). deepseek-chat/-reasoner deprecate 2026-07-24.
 
 export type ThinkingMode = "enabled" | "disabled";
 
@@ -49,22 +54,17 @@ function env(name: string, fallback: string): string {
 export function routeModel(role: Role, opts: { style?: GenStyle; legacyModel: string }): ModelChoice {
   if (!modelRoutingEnabled()) return { model: opts.legacyModel };
 
+  // All call sites force a tool call for guaranteed structured output, so thinking MUST be disabled
+  // (forced tool_choice + thinking = HTTP 400). The register depth difference is carried by the
+  // prompt + retrieval breadth, and Deep Research additionally steps up to the stronger pro model.
   switch (role) {
     case "classify":
       return { model: env("ROUTE_CLASSIFY_MODEL", FLASH), thinking: "disabled" };
     case "research":
-      return {
-        model: env("ROUTE_RESEARCH_MODEL", PRO),
-        thinking: "enabled",
-        reasoningEffort: env("ROUTE_RESEARCH_EFFORT", "high"),
-      };
+      return { model: env("ROUTE_RESEARCH_MODEL", PRO), thinking: "disabled" };
     case "generate":
       if (opts.style === "thorough") {
-        return {
-          model: env("ROUTE_GENERATE_THOROUGH_MODEL", FLASH),
-          thinking: "enabled",
-          reasoningEffort: env("ROUTE_THOROUGH_EFFORT", "high"),
-        };
+        return { model: env("ROUTE_GENERATE_THOROUGH_MODEL", FLASH), thinking: "disabled" };
       }
       // Fast (plain) and the standard/default register both use the quick non-thinking path.
       return { model: env("ROUTE_GENERATE_FAST_MODEL", FLASH), thinking: "disabled" };
