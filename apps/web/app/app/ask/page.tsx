@@ -811,10 +811,10 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
             Safety block). RENDER-ONLY: the engine still generates questions_to_ask, safety-scans, and stores
             them in the trace; nothing server-side changed. Restore this block from git to bring it back. */}
 
-        {/* Walled "In the news" panel — paid users see headlines, free users see a locked teaser. NEVER
-            evidence: these never feed the answer above. Suppressed on templates/refusals (backend won't
-            set the fields there; guarded here too). */}
-        {!answer.template && !answer.refused_unsupported ? <NewsPanel news={answer.news} locked={answer.news_locked} /> : null}
+        {/* "In the news" panel intentionally NOT rendered in the chat answer (owner 2026-06-23: a news box
+            under a cited medical answer is clutter that fights the clean conversation feel). It lives in
+            Monitoring instead, where tracking a topic over time makes its news relevant. RENDER-ONLY: the
+            engine still returns answer.news; the walled NewsPanel still ships in WatchDetail. */}
 
         <div className="msg-actions">
           <button className="icon-btn" data-tip="Copy answer" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
