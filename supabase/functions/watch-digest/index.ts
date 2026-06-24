@@ -192,7 +192,10 @@ function authHeaders(): Record<string, string> {
 
 // ── responses ─────────────────────────────────────────────────────────────────────────────────────
 function cors(): Record<string, string> {
-  return { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, GET, OPTIONS" };
+  // Not a browser-XHR endpoint: POST is service-role (pg_cron) and the unsubscribe link is a
+  // top-level navigation from email (CORS does not gate navigations). So a fixed canonical origin
+  // is sufficient — the wildcard "*" served no purpose and is removed.
+  return { "Access-Control-Allow-Origin": "https://app.pharmaorb.app", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, GET, OPTIONS" };
 }
 function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { ...cors(), "Content-Type": "application/json" } });

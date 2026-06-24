@@ -14,25 +14,49 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// CORS: reflect only allowlisted app origins (was wildcard "*"). This is a browser-XHR
+// target (the settings page calls it cross-origin), so the real origin is reflected for
+// prod + local dev. Auth is still the bearer token; the allowlist is defense-in-depth.
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://app.pharmaorb.app",
+  "https://pharmaorb.app",
+  "https://www.pharmaorb.app",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:8081",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3001",
+  "http://127.0.0.1:8081",
+];
+
+function isAllowedOrigin(origin: string): boolean {
+  if (DEFAULT_ALLOWED_ORIGINS.includes(origin)) return true;
+  return /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
+}
+
+function corsHeaders(req?: Request): Record<string, string> {
+  const origin = req?.headers.get("origin") ?? "";
+  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.pharmaorb.app";
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
-  if (!SB_URL || !SERVICE_KEY || !ANON_KEY) return json({ error: "function not configured" }, 500);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405, req);
+  if (!SB_URL || !SERVICE_KEY || !ANON_KEY) return json({ error: "function not configured" }, 500, req);
 
   // ---- verify caller (authenticated, non-anonymous) ----
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   const userId = await verifyUser(token);
-  if (!userId) return json({ error: "authentication required" }, 401);
+  if (!userId) return json({ error: "authentication required" }, 401, req);
 
   // ---- explicit confirmation (irreversible) ----
   let body: { confirm?: unknown };
@@ -42,7 +66,7 @@ serve(async (req) => {
     body = {};
   }
   if (body?.confirm !== true) {
-    return json({ error: "confirmation required: pass { confirm: true }" }, 400);
+    return json({ error: "confirmation required: pass { confirm: true }" }, 400, req);
   }
 
   // ---- service-role admin delete -> FK cascade / anonymize ----
@@ -53,10 +77,10 @@ serve(async (req) => {
   if (!res.ok) {
     const detail = (await res.text()).slice(0, 200);
     console.error("account-delete admin DELETE failed:", res.status, detail);
-    return json({ error: "account deletion failed" }, 502);
+    return json({ error: "account deletion failed" }, 502, req);
   }
 
-  return json({ deleted: true });
+  return json({ deleted: true }, 200, req);
 });
 
 // Verify the bearer token against the auth server and return the caller's uid.
@@ -76,9 +100,9 @@ async function verifyUser(token: string): Promise<string | null> {
   }
 }
 
-function json(payload: unknown, status = 200): Response {
+function json(payload: unknown, status = 200, req?: Request): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(req), "Content-Type": "application/json" },
   });
 }

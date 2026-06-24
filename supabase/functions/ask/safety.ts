@@ -70,8 +70,17 @@ export function preScreen(question: string): PreScreenResult {
 // lisinopril safe?") falls through to the full pipeline untouched. Intentionally narrow: no drug,
 // dose, or clinical token can appear. It is checked AFTER preScreen (index.ts), so an
 // emergency/overdose/self-harm/sourcing message is hard-routed first and never reaches here.
-const SMALL_TALK =
-  /^\s*(?:(?:hi+|hey+|hello+|hiya|heya|yo|howdy|greetings)(?:\s+there)?|sup|wassup|what'?s up|good\s*(?:morning|afternoon|evening|day)|how\s*(?:are|r)\s*(?:you|u|ya)(?:\s*doing|\s*going)?|how'?s\s*it\s*going|how\s*are\s*things|thanks?(?:\s*(?:you|u|so much|a lot|a ton))?|thank\s*(?:you|u)|thx|ty|tysm|cheers|much appreciated|appreciate it|ok(?:ay)?(?:\s*(?:thanks?|cool|got it))?|cool|nice|awesome|great|perfect|got it|gotcha|makes sense|sounds good|bye+|goodbye|see\s*(?:ya|you)(?:\s*later)?|good\s*night|gn|take care|who\s*(?:are|r)\s*(?:you|u)|what\s*(?:are|r)\s*(?:you|u)|what\s*(?:can|do)\s*(?:you|u)\s*do|what\s*is\s*this)\s*[!.?,…]*\s*$/i;
+// One greeting/thanks/farewell/capability phrase. Reused below so the matcher can accept a SEQUENCE
+// of them (a combined greeting is still pure small-talk).
+const GREETING_PHRASE =
+  "(?:hi+|hey+|hello+|hiya|heya|yo|howdy|greetings)(?:\\s+there)?|sup|wassup|what'?s up|good\\s*(?:morning|afternoon|evening|day)|how\\s*(?:are|r)\\s*(?:you|u|ya)(?:\\s*doing|\\s*going)?|how'?s\\s*it\\s*going|how\\s*are\\s*things|thanks?(?:\\s*(?:you|u|so much|a lot|a ton))?|thank\\s*(?:you|u)|thx|ty|tysm|cheers|much appreciated|appreciate it|ok(?:ay)?(?:\\s*(?:thanks?|cool|got it))?|cool|nice|awesome|great|perfect|got it|gotcha|makes sense|sounds good|bye+|goodbye|see\\s*(?:ya|you)(?:\\s*later)?|good\\s*night|gn|take care|who\\s*(?:are|r)\\s*(?:you|u)|what\\s*(?:are|r)\\s*(?:you|u)|what\\s*(?:can|do)\\s*(?:you|u)\\s*do|what\\s*is\\s*this";
+// Match ONE greeting phrase, then ANY NUMBER more separated by space/comma — so "hi how are you" and
+// "hey there, thanks" are pure small-talk. A real question stacked after a greeting ("hi what is
+// metformin") still FALLS THROUGH: its non-greeting part matches no phrase, so the anchored ^…$ fails.
+const SMALL_TALK = new RegExp(
+  `^\\s*(?:${GREETING_PHRASE})(?:[\\s,]+(?:${GREETING_PHRASE}))*\\s*[!.?,…]*\\s*$`,
+  "i",
+);
 // NOTE: a bare "help" is intentionally NOT small-talk. In a medical app it can be a distress
 // signal, so it falls through to the full pipeline where the classifier can flag self_harm from
 // context — never answered with a canned greeting.
@@ -239,12 +248,37 @@ const RULES: Rule[] = [
 ];
 
 /**
+ * Strip markdown SYNTAX (not content) so the deterministic scan sees the real phrase even when the
+ * answer is formatted — "do not **stop** taking" must scan as "do not stop taking", "is s**a**fe" as
+ * "is safe", "**inject** 250mcg" as "inject 250mcg". This makes the scan ROBUST to markdown-based
+ * evasion: it only ever REVEALS a banned phrase, never hides one (a banned span split by emphasis
+ * markers gets re-joined). Applied ONLY in the scan path below — the stored/rendered answer keeps its
+ * markdown. Line-start list/quote/header markers are removed; hyphens mid-word ("non-scarring") are NOT
+ * a marker and are left untouched.
+ */
+export function stripMarkdownForScan(text: string): string {
+  return text
+    .replace(/`([^`]*)`/g, "$1")             // `inline code`
+    .replace(/\*\*([^*]+)\*\*/g, "$1")       // **bold**
+    .replace(/__([^_]+)__/g, "$1")           // __bold__
+    .replace(/\*([^*]+)\*/g, "$1")           // *italic*
+    .replace(/(^|[\s(])_([^_]+)_(?=[\s).,!?:;]|$)/g, "$1$2") // _italic_ (word-bounded, not mid-token underscores)
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1") // [text](url) -> text
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")    // ## headers
+    .replace(/^[ \t]*>[ \t]?/gm, "")          // > blockquotes
+    .replace(/^[ \t]*[-*+][ \t]+/gm, "")      // - / * / + bullet markers (line start only)
+    .replace(/^[ \t]*\d+\.[ \t]+/gm, "");     // 1. numbered markers (line start only)
+}
+
+/**
  * Returns every doc-20 forbidden pattern found in the answer text. Empty array
  * means the text is clear. The orchestrator treats a non-empty result as a
  * failed generation and substitutes a conservative template — this is what makes
- * the forbidden strings "impossible to produce".
+ * the forbidden strings "impossible to produce". The text is markdown-stripped
+ * first (stripMarkdownForScan) so formatting can never split a banned phrase past a rule.
  */
 export function detectViolations(answerText: string): Violation[] {
+  answerText = stripMarkdownForScan(answerText);
   const out: Violation[] = [];
   for (const rule of RULES) {
     const flags = rule.re.flags.includes("g") ? rule.re.flags : rule.re.flags + "g";

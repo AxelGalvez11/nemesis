@@ -59,9 +59,11 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
   const { input, model } = await callTool<Record<string, unknown>>(
     {
       model: GENERATE_MODEL,
-      // Multi-point cited answers can be long; 2048 truncated the JSON mid-string
-      // (DeepSeek then returned malformed tool arguments). 4096 leaves headroom.
-      max_tokens: 4096,
+      // Multi-point cited answers can be long; 2048 truncated the JSON mid-string (DeepSeek then
+      // returned malformed tool arguments). 4096 leaves headroom for Fast/standard; THOROUGH is
+      // explicitly fuller (more what_we_know points + what_we_do_not_know), so give it more room to
+      // avoid truncated tool-call JSON on a long answer.
+      max_tokens: opts.style === "thorough" ? 6144 : 4096,
       // Deterministic generation: more reliable structured output + reproducible
       // answers for a medical app (and lower malformed-JSON rate from DeepSeek).
       temperature: 0,

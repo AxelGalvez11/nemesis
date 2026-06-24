@@ -31,6 +31,7 @@ import { espellCorrect } from "../core-source-sync/providers/pubmed.ts";
 import { decideNewsGate } from "./news-gate.ts";
 import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
+import { assumptionNote, findTypoCorrections } from "./typo-correct.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
 import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
@@ -82,15 +83,19 @@ const ASK_MATCH_THRESHOLD = 0.5;
 // reaches the answer. The fabrication guard runs over the full retrieved `pool`, not this slice, so a
 // wider slice never weakens it.
 const MATCH_COUNT = 12;
+// Thorough mode's DEPTH lever: a bigger cited slice shown to the generator, so the fuller answer has more real
+// sources to draw on. The label family is still capped at LABEL_SLICE_CAP, so the extra slots go to research /
+// trials, never more label prose. Fast/default keep MATCH_COUNT (today's breadth) so the quick answer never thins.
+const THOROUGH_MATCH_COUNT = 18;
 
 // Live evidence sources (PubMed / Europe PMC / ClinicalTrials / openFDA / FAERS) are gated behind a
 // flag so deploying this code is non-breaking: with LIVE_SOURCES unset the pipeline is byte-for-byte
 // the dense-only behavior the gate/guardrail suite locks in. The owner flips LIVE_SOURCES=on to enable.
 const LIVE_SOURCES_ON = Deno.env.get("LIVE_SOURCES") === "on";
 const LIVE_PER_SOURCE_MAX = 8; // how many candidates to pull per live source before the merge/rerank
-// Thorough mode's wider net: more candidates per live source feed the SAME rerank and the SAME MATCH_COUNT
-// cited slice, so a deeper search can surface better top sources without changing how many are shown or the
-// label-cap ratio. Fast/default keep LIVE_PER_SOURCE_MAX (today's breadth) so the default never looks thinner.
+// Thorough mode also casts a WIDER candidate net per live source (more abstracts/trials feed the rerank),
+// which — paired with the bigger THOROUGH_MATCH_COUNT slice above — lets the deeper search surface AND show
+// more of the real evidence. Fast/default keep LIVE_PER_SOURCE_MAX so the quick answer never looks thinner.
 const THOROUGH_LIVE_PER_SOURCE_MAX = 12;
 
 serve(async (req) => {
@@ -123,6 +128,11 @@ serve(async (req) => {
   }
   const question = (body.question ?? "").trim();
   if (!question) return json({ error: "question required" }, 400, req);
+  // Hard length cap. The per-user quota counts CALLS, not tokens, so without this an
+  // authenticated user could push very large strings into the embed + classify + generate
+  // calls and amplify cost well beyond one quota unit. 2000 chars covers any legitimate
+  // question with context.
+  if (question.length > 2000) return json({ error: "question too long (max 2000 characters)" }, 400, req);
   // Validate the speed/depth dial at the boundary: only the two known modes pass through; an unknown
   // or absent value becomes undefined → current behavior (mobile / older clients / saved-chat replays).
   const mode: AskMode | undefined = body.mode === "fast" || body.mode === "thorough" ? body.mode : undefined;
@@ -148,13 +158,16 @@ async function runAsk(
 ): Promise<AskResponse> {
   const answerId = crypto.randomUUID();
   const apiKey = llmApiKey();
-  // Map the request mode onto the two levers it controls. Both default to current behavior when mode is
-  // absent: undefined style → the standard register; the base per-source net → today's retrieval breadth.
-  //  - register: Fast writes plain, Thorough writes technical (see generateSystem / AnswerStyle).
-  //  - perSourceMax: Thorough casts a WIDER candidate net per live source into the SAME rerank + the SAME
-  //    MATCH_COUNT cited slice — a safe depth lever that never touches the tuned label-cap ratio.
+  // Map the request mode onto the three levers it controls. All default to current behavior when mode is
+  // absent: undefined style → the standard register; the base per-source net + base cited slice → today's
+  // retrieval breadth. Fast=plain is the web default; the differences make Fast a quick gist and Thorough deep.
+  //  - register: Fast writes a short plain gist, Thorough writes a fuller technical answer (generateSystem / AnswerStyle).
+  //  - perSourceMax: Thorough casts a WIDER candidate net per live source into the rerank.
+  //  - matchCount: Thorough shows a BIGGER cited slice (THOROUGH_MATCH_COUNT) so the fuller answer has more
+  //    real sources to draw on; the label family stays capped, so the extra slots are research/trials.
   const style: AnswerStyle | undefined = mode === "fast" ? "plain" : mode === "thorough" ? "thorough" : undefined;
   const perSourceMax = mode === "thorough" ? THOROUGH_LIVE_PER_SOURCE_MAX : LIVE_PER_SOURCE_MAX;
+  const matchCount = mode === "thorough" ? THOROUGH_MATCH_COUNT : MATCH_COUNT;
 
   // ---- 0. deterministic pre-screen (no LLM) ----
   const pre = preScreen(question);
@@ -219,7 +232,7 @@ async function runAsk(
     providers: priority,
     entityId: scopeId,
     threshold: ASK_MATCH_THRESHOLD,
-    matchCount: MATCH_COUNT,
+    matchCount,
     sbUrl: SB_URL,
     serviceKey: SERVICE_KEY,
   });
@@ -234,7 +247,7 @@ async function runAsk(
       providers: null,
       entityId: null,
       threshold: ASK_MATCH_THRESHOLD,
-      matchCount: MATCH_COUNT,
+      matchCount,
       sbUrl: SB_URL,
       serviceKey: SERVICE_KEY,
     });
@@ -248,7 +261,7 @@ async function runAsk(
   // union (for the fabrication guard); `top` is the MATCH_COUNT slice shown to the generator.
   let guardPool: RetrievedChunk[] = ret.chunks;
   if (LIVE_SOURCES_ON) {
-    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax);
+    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount);
     guardPool = aug.pool;
     ret = { ...ret, chunks: aug.top };
   }
@@ -274,9 +287,25 @@ async function runAsk(
   // the generator, so the anti-fabrication guarantee is fully intact — it only turns a dead-end refusal
   // into "here's the most relevant evidence I found" + sources + good questions. ("unverified_entity"
   // tags the trace for analytics without a new SafetyFlag.)
+  // When the guard fires, distinguish a genuine TYPO of a real drug we DO have evidence for (assume &
+  // answer, ChatGPT-style, with the assumption STATED) from a real fabricated drug (keep refusing).
+  // findTypoCorrections is adversarially unit-tested (typo-correct.test.ts): every class-plausible fake
+  // returns null → falls through to the conservative refusal below. The fabrication guard is untouched.
+  let assumption = "";
+  let genQuestion = question;
   if (LIVE_SOURCES_ON && isFabricatedDrugQuery(cls.entity_mentions, guardPool)) {
-    return await finalizeTemplate(answerId, question, cls.intent,
-      flags, entities, userId, "safety_fallback", `${cls.model}|unverified_entity`, true, ret.chunks);
+    const corrections = findTypoCorrections(cls.entity_mentions, entities, guardPool);
+    if (!corrections) {
+      return await finalizeTemplate(answerId, question, cls.intent,
+        flags, entities, userId, "safety_fallback", `${cls.model}|unverified_entity`, true, ret.chunks);
+    }
+    assumption = assumptionNote(corrections);
+    for (const corr of corrections) {
+      // Rewrite the typo'd token to the assumed real drug for generation, so the answer grounds cleanly
+      // on the evidence we already retrieved for it (word-boundary, case-insensitive).
+      const esc = corr.mention.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      genQuestion = genQuestion.replace(new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`, "gi"), corr.corrected);
+    }
   }
 
   // ---- 4. health context (verified-user-scoped) ----
@@ -287,7 +316,7 @@ async function runAsk(
   let gen: Awaited<ReturnType<typeof generate>>;
   try {
     gen = await generate({
-      question,
+      question: genQuestion,
       intent: cls.intent,
       chunks: ret.chunks,
       healthContext,
@@ -380,7 +409,9 @@ async function runAsk(
   const resp: AskResponse = {
     answer_id: answerId,
     intent: cls.intent,
-    plain_english_summary: enf.plain_english_summary,
+    // State the typo assumption up front ("Assuming you mean tesamorelin") when we recovered a typo'd
+    // drug name — transparent, never silent. Empty for normal answers.
+    plain_english_summary: assumption ? `${assumption}. ${enf.plain_english_summary}` : enf.plain_english_summary,
     evidence_grade: finalGrade,
     answer_sections,
     citations: enf.citations,
@@ -426,6 +457,7 @@ async function augmentWithLive(
   entityMentions: string[],
   libChunks: RetrievedChunk[],
   perSourceMax: number = LIVE_PER_SOURCE_MAX,
+  matchCount: number = MATCH_COUNT,
 ): Promise<{ pool: RetrievedChunk[]; top: RetrievedChunk[] }> {
   const fallback = { pool: libChunks, top: libChunks };
   try {
@@ -460,7 +492,7 @@ async function augmentWithLive(
     // Take the cited slice with the label-family cap (so primary research isn't crowded out by long
     // FDA-label chunks that out-score short abstracts on the reranker), then retag 1..N for the
     // generator + citation layer. Reorder/select only — the fabrication guard still runs on `pool`.
-    const top = balanceCitedSlice(ordered, MATCH_COUNT).map((c, i) => ({ ...c, tag: String(i + 1) }));
+    const top = balanceCitedSlice(ordered, matchCount).map((c, i) => ({ ...c, tag: String(i + 1) }));
     return { pool: ordered, top };
   } catch (e) {
     console.error("ask live augmentation failed; using library only:", (e as Error).message);
