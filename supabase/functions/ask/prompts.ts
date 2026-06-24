@@ -72,6 +72,15 @@ const POINT_SCHEMA = {
       description: "The [n] source tags that DIRECTLY support this sentence. " +
         "Use only tags shown in the sources block. Empty if no source supports it.",
     },
+    // OPTIONAL provenance field (additive — not in `required`, so OpenAI/ungrounded paths are
+    // unaffected). When the GROUNDING block is active (generateSystem grounded=true), the model
+    // copies the verbatim source sentence here; this both forces grounding at generation time and
+    // gives us the supporting span directly (vs computing it post-hoc in support-span.ts).
+    source_quote: {
+      type: "string",
+      description: "The VERBATIM sentence(s) copied from the cited source [n] that state this claim. " +
+        "Leave empty unless asked to ground.",
+    },
   },
   required: ["text", "citations"],
 };
@@ -397,15 +406,28 @@ const MARKDOWN_FORMAT = [
   "  in clean sections and short paragraphs — write the words, not the layout.",
 ].join("\n");
 
-/** Full system prompt for a generation = base + (optional) register style + conversational voice + formatting + register-safety floor + intent guidance. */
-export function generateSystem(intent: Intent, style?: AnswerStyle): string {
+// Quote-as-you-cite grounding (Phase 1). Rides ONLY when grounding is enabled (DeepSeek path / the
+// experiment) — kept out of the default OpenAI prompt so prod is unchanged until the cutover. Validated
+// to lift DeepSeek citation hold-up to ~100% (scripts/diag/deepseek-citation-grounding.ts) and the voice
+// held. Placed BEFORE the safety floor so REGISTER_SAFETY still has the last word.
+const GROUNDING_DISCIPLINE = [
+  "GROUNDING DISCIPLINE (strict): For EVERY cited point, FIRST find the single sentence in the cited source",
+  "[n] that states the claim, copy it VERBATIM into `source_quote`, and write `text` as a faithful",
+  "restatement of ONLY that quote. Cite [n] ONLY when that source DIRECTLY states the claim — never on a",
+  "general, combined, or inferred statement — and do not over-cite. Prefer fewer, tightly-grounded points.",
+].join("\n");
+
+/** Full system prompt for a generation = base + (optional) register style + conversational voice + formatting + grounding + register-safety floor + intent guidance. */
+export function generateSystem(intent: Intent, style?: AnswerStyle, grounded?: boolean): string {
   const styleBlock = style === "plain" ? PLAIN_STYLE : style === "thorough" ? THOROUGH_STYLE : "";
-  // Voice + formatting + the register-safety floor ride with EITHER live register, never the absent one
-  // (Deep Research / legacy replays keep BASE_GENERATE_SYSTEM verbatim). Order is deliberate: the safety
-  // floor and the intent guidance come AFTER, so safety has the last (most emphasized) word.
+  // Voice + formatting + grounding + the register-safety floor ride with EITHER live register, never the
+  // absent one (Deep Research / legacy replays keep BASE_GENERATE_SYSTEM verbatim). Order is deliberate:
+  // grounding then the safety floor and intent guidance come AFTER, so safety has the last (most
+  // emphasized) word. `grounded` defaults off, so callers that don't pass it are byte-for-byte unchanged.
   const voiceBlock = style ? CONVERSATIONAL_VOICE : "";
   const formatBlock = style ? MARKDOWN_FORMAT : "";
+  const groundBlock = grounded ? GROUNDING_DISCIPLINE : "";
   const safetyBlock = style ? REGISTER_SAFETY : "";
   const extra = INTENT_GUIDANCE[intent];
-  return [BASE_GENERATE_SYSTEM, styleBlock, voiceBlock, formatBlock, safetyBlock, extra].filter(Boolean).join("\n\n");
+  return [BASE_GENERATE_SYSTEM, styleBlock, voiceBlock, formatBlock, groundBlock, safetyBlock, extra].filter(Boolean).join("\n\n");
 }

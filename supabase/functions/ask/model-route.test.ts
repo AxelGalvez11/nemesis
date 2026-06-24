@@ -3,10 +3,11 @@
 // field, so production behavior is byte-identical until the routing is switched on.
 // Run: deno test supabase/functions/ask/model-route.test.ts
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { modelRoutingEnabled, routeModel } from "./model-route.ts";
+import { groundingEnabled, modelRoutingEnabled, routeModel } from "./model-route.ts";
 
 const ROUTING_ENV = [
   "MODEL_ROUTING_ENABLED",
+  "GROUNDING_ENABLED",
   "ROUTE_CLASSIFY_MODEL",
   "ROUTE_GENERATE_FAST_MODEL",
   "ROUTE_GENERATE_THOROUGH_MODEL",
@@ -58,6 +59,14 @@ Deno.test("modelRoutingEnabled: accepts 1/true (case-insensitive), rejects other
   }
   clearEnv();
   assert(!modelRoutingEnabled(), "unset stays off");
+});
+
+Deno.test("groundingEnabled: off by default; follows MODEL_ROUTING_ENABLED; independently overridable", () => {
+  clearEnv();
+  assert(!groundingEnabled(), "off by default — prod prompt unchanged");
+  withEnv({ MODEL_ROUTING_ENABLED: "1" }, () => assert(groundingEnabled(), "rides with the DeepSeek routing experiment"));
+  withEnv({ GROUNDING_ENABLED: "1" }, () => assert(groundingEnabled(), "can be forced on alone (e.g. OpenAI A/B)"));
+  withEnv({ MODEL_ROUTING_ENABLED: "1", GROUNDING_ENABLED: "0" }, () => assert(!groundingEnabled(), "GROUNDING_ENABLED=0 overrides routing-on"));
 });
 
 // ---- ENABLED: the three modes ----

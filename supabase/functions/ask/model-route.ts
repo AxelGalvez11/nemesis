@@ -40,6 +40,16 @@ export function modelRoutingEnabled(): boolean {
   return v === "1" || v === "true";
 }
 
+/** Quote-as-you-cite grounding toggle (Phase 1). Defaults to following MODEL_ROUTING_ENABLED — grounding
+ *  rides with the DeepSeek experiment — but can be forced on/off independently via GROUNDING_ENABLED
+ *  (e.g. to A/B grounding on the current OpenAI engine). Off by default, so prod is unchanged. */
+export function groundingEnabled(): boolean {
+  const v = (Deno.env.get("GROUNDING_ENABLED") ?? "").trim().toLowerCase();
+  if (v === "1" || v === "true") return true;
+  if (v === "0" || v === "false") return false;
+  return modelRoutingEnabled();
+}
+
 function env(name: string, fallback: string): string {
   const v = Deno.env.get(name);
   return v && v.length > 0 ? v : fallback;

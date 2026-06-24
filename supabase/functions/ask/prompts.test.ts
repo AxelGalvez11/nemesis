@@ -116,6 +116,29 @@ Deno.test("GROUNDING + HARD RULES survive in BOTH registers (safety core is mode
   }
 });
 
+Deno.test("grounding block rides ONLY when grounded=true (default off keeps the prod prompt unchanged)", () => {
+  const plain = generateSystem("drug_overview", "plain");
+  const grounded = generateSystem("drug_overview", "plain", true);
+  assert(!plain.includes("GROUNDING DISCIPLINE"), "default call (grounded omitted) carries no grounding block");
+  assertEquals(generateSystem("drug_overview", "plain", false), plain, "grounded=false is byte-identical to the default");
+  assert(grounded.includes("GROUNDING DISCIPLINE"), "grounded=true appends the grounding block");
+  assert(grounded.includes("source_quote"), "grounding block tells the model to fill source_quote");
+  // Safety floor must still survive AND keep the last word (grounding is inserted before it).
+  assert(grounded.includes("GROUNDING (absolute)") && grounded.includes("HARD RULES"), "safety core intact under grounding");
+});
+
+// source_quote is an OPTIONAL provenance field — present in the schema but never forced (so OpenAI/
+// ungrounded paths are unaffected).
+Deno.test("compose_answer point schema offers optional source_quote, never required", () => {
+  const tool = generateTool("drug_overview");
+  // deno-lint-ignore no-explicit-any
+  const props = (tool.parameters as any).properties.what_we_know.items.properties;
+  assert("source_quote" in props, "point schema exposes source_quote");
+  // deno-lint-ignore no-explicit-any
+  const req = (tool.parameters as any).properties.what_we_know.items.required as string[];
+  assert(!req.includes("source_quote"), "source_quote stays OPTIONAL (not forced on ungrounded paths)");
+});
+
 Deno.test("register selection: plain overrides, thorough is technical, absent == current behavior", () => {
   const plain = generateSystem("drug_overview", "plain");
   const thorough = generateSystem("drug_overview", "thorough");
