@@ -79,21 +79,21 @@ Deno.test("routeModel: default register (undefined style) -> flash NON-thinking"
   });
 });
 
-Deno.test("routeModel: Thorough -> flash NON-thinking (forced tool_choice rules out thinking)", () => {
+Deno.test("routeModel: Thorough -> flash THINKING high (callTool runs it via auto + fallback)", () => {
   withEnv({ MODEL_ROUTING_ENABLED: "1" }, () => {
     const c = routeModel("generate", { legacyModel: "x", style: "thorough" });
     assertEquals(c.model, "deepseek-v4-flash");
-    assertEquals(c.thinking, "disabled");
-    assertEquals(c.reasoningEffort, undefined);
+    assertEquals(c.thinking, "enabled");
+    assertEquals(c.reasoningEffort, "high");
   });
 });
 
-Deno.test("routeModel: Deep Research -> pro NON-thinking (stronger model, forced tool_choice)", () => {
+Deno.test("routeModel: Deep Research -> pro THINKING high (strongest tier, auto + fallback)", () => {
   withEnv({ MODEL_ROUTING_ENABLED: "1" }, () => {
     const c = routeModel("research", { legacyModel: "x" });
     assertEquals(c.model, "deepseek-v4-pro");
-    assertEquals(c.thinking, "disabled");
-    assertEquals(c.reasoningEffort, undefined);
+    assertEquals(c.thinking, "enabled");
+    assertEquals(c.reasoningEffort, "high");
   });
 });
 
@@ -107,17 +107,23 @@ Deno.test("routeModel: classify -> flash NON-thinking", () => {
 
 // ---- ENABLED: env overrides (tune models/effort without a code change) ----
 
-Deno.test("routeModel: per-role model overrides are honored", () => {
+Deno.test("routeModel: per-role model + effort overrides are honored", () => {
   withEnv({
     MODEL_ROUTING_ENABLED: "1",
     ROUTE_CLASSIFY_MODEL: "classify-x",
     ROUTE_GENERATE_FAST_MODEL: "fast-x",
     ROUTE_GENERATE_THOROUGH_MODEL: "thorough-x",
     ROUTE_RESEARCH_MODEL: "research-x",
+    ROUTE_THOROUGH_EFFORT: "max",
+    ROUTE_RESEARCH_EFFORT: "max",
   }, () => {
     assertEquals(routeModel("classify", { legacyModel: "x" }).model, "classify-x");
     assertEquals(routeModel("generate", { legacyModel: "x", style: "plain" }).model, "fast-x");
-    assertEquals(routeModel("generate", { legacyModel: "x", style: "thorough" }).model, "thorough-x");
-    assertEquals(routeModel("research", { legacyModel: "x" }).model, "research-x");
+    const thorough = routeModel("generate", { legacyModel: "x", style: "thorough" });
+    assertEquals(thorough.model, "thorough-x");
+    assertEquals(thorough.reasoningEffort, "max");
+    const research = routeModel("research", { legacyModel: "x" });
+    assertEquals(research.model, "research-x");
+    assertEquals(research.reasoningEffort, "max");
   });
 });

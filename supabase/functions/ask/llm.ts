@@ -58,7 +58,7 @@ export interface Usage {
   prompt_cache_hit_tokens?: number;
 }
 
-interface ChatResponse {
+export interface ChatResponse {
   model: string;
   choices: Array<{
     message: {
@@ -124,11 +124,53 @@ export async function chat(params: ChatParams, apiKey: string): Promise<ChatResp
   throw new Error(lastErr);
 }
 
+export type ToolExtract<T> = { ok: true; input: T } | { ok: false; err: string };
+
+/** Find `toolName`'s call in a response and parse its JSON arguments. Pure, so the callTool
+ *  orchestration (which path ran, when we fall back) is unit-testable without the network. */
+export function extractToolInput<T>(res: ChatResponse, toolName: string): ToolExtract<T> {
+  const call = res.choices[0]?.message.tool_calls?.find((c) => c.function.name === toolName);
+  if (!call) return { ok: false, err: `no tool call (finish_reason=${res.choices[0]?.finish_reason})` };
+  try {
+    return { ok: true, input: parseToolArguments(call.function.arguments) as T };
+  } catch {
+    return { ok: false, err: `invalid JSON (len=${String(call.function.arguments ?? "").length})` };
+  }
+}
+
+/** Params for the RELIABLE forced path. DeepSeek V4 thinking mode rejects a forced tool_choice
+ *  (HTTP 400), so a thinking request is coerced to non-thinking here — this is the guaranteed-
+ *  structured-output fallback (a safety property: a medical answer must never come back as
+ *  unparseable prose). Non-thinking / OpenAI params keep their thinking value untouched
+ *  (undefined -> the field is never sent, so the OpenAI request shape is unchanged). */
+export function forcedToolParams(params: ChatParams, toolName: string): ChatParams {
+  return {
+    ...params,
+    thinking: params.thinking === "enabled" ? "disabled" : params.thinking,
+    tool_choice: { type: "function", function: { name: toolName } },
+  };
+}
+
+/** Params for the THINKING path: tool_choice "auto" (forcing is rejected in thinking mode), thinking
+ *  left enabled so the model reasons before choosing to call the tool. */
+export function autoThinkingParams(params: ChatParams): ChatParams {
+  return { ...params, tool_choice: "auto" };
+}
+
+const THINKING_TRIES = 2;
+const FORCED_TRIES = 5;
+
 /**
- * Force `toolName` and return its parsed arguments as T. DeepSeek's structured
- * output is INTERMITTENTLY malformed on complex nested schemas (~some fraction
- * of calls), so we retry the whole generation on a no-tool-call / invalid-JSON
- * result — an independent re-roll almost always succeeds.
+ * Get structured output by calling `toolName` and parsing its arguments as T.
+ *
+ * Non-thinking (OpenAI + DeepSeek non-thinking): FORCES the tool — guaranteed structured output.
+ * DeepSeek's complex-schema output is INTERMITTENTLY malformed, so we retry the whole generation
+ * on a no-call / invalid-JSON result; an independent re-roll almost always succeeds.
+ *
+ * Thinking (DeepSeek V4): a forced tool_choice is rejected, so we first try a few attempts with
+ * tool_choice:"auto" (the model reasons, then chooses to call the tool). If those don't yield clean
+ * structured output, we DROP to the forced non-thinking path above — so a thinking request can never
+ * cost us the structured-output guarantee; at worst it loses the chain-of-thought for that call.
  */
 export async function callTool<T>(
   params: ChatParams,
@@ -136,23 +178,26 @@ export async function callTool<T>(
   apiKey: string,
 ): Promise<{ input: T; model: string; usage?: Usage }> {
   let lastErr = "no attempts";
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const res = await chat(
-      { ...params, tool_choice: { type: "function", function: { name: toolName } } },
-      apiKey,
-    );
-    const call = res.choices[0]?.message.tool_calls?.find((c) => c.function.name === toolName);
-    if (!call) {
-      lastErr = `no tool call (finish_reason=${res.choices[0]?.finish_reason})`;
-      continue;
+
+  if (params.thinking === "enabled") {
+    const thinkParams = autoThinkingParams(params);
+    for (let attempt = 0; attempt < THINKING_TRIES; attempt++) {
+      const res = await chat(thinkParams, apiKey);
+      const r = extractToolInput<T>(res, toolName);
+      if (r.ok) return { input: r.input, model: res.model, usage: res.usage };
+      lastErr = `thinking/auto: ${r.err}`;
     }
-    try {
-      const input = parseToolArguments(call.function.arguments) as T;
-      return { input, model: res.model, usage: res.usage };
-    } catch {
-      const raw = String(call.function.arguments ?? "");
-      lastErr = `invalid JSON (len=${raw.length})`;
-      console.error(`tool '${toolName}' ${lastErr} attempt ${attempt + 1}: ${raw.slice(0, 300)}`);
+    // thinking did not produce structured output -> fall through to the guaranteed forced path
+  }
+
+  const forced = forcedToolParams(params, toolName);
+  for (let attempt = 0; attempt < FORCED_TRIES; attempt++) {
+    const res = await chat(forced, apiKey);
+    const r = extractToolInput<T>(res, toolName);
+    if (r.ok) return { input: r.input, model: res.model, usage: res.usage };
+    lastErr = r.err;
+    if (r.err.startsWith("invalid JSON")) {
+      console.error(`tool '${toolName}' ${r.err} attempt ${attempt + 1}`);
     }
   }
   throw new Error(`tool '${toolName}' failed after retries: ${lastErr}`);

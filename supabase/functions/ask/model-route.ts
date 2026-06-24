@@ -7,18 +7,17 @@
 // gated on a faithfulness/citation re-validation run.
 //
 // When enabled, it maps the product's registers onto DeepSeek V4:
-//   Fast (plain)      -> v4-flash, non-thinking
-//   Thorough          -> v4-flash, non-thinking   (deeper via prompt + wider retrieval, same tier)
-//   Deep Research     -> v4-pro,   non-thinking   (stronger model + 1M context for long reports)
-//   classify + light  -> v4-flash, non-thinking
+//   Fast (plain)      -> v4-flash, non-thinking   (quick gist, lowest latency)
+//   Thorough          -> v4-flash, thinking       (reasons before answering)
+//   Deep Research     -> v4-pro,   thinking       (strongest model for long multi-paper reports)
+//   classify + light  -> v4-flash, non-thinking   (fast, structured)
 //
-// WHY NON-THINKING EVERYWHERE (verified 2026-06-24 against the live API): the engine gets structured
-// output by FORCING a tool call (callTool -> tool_choice:{function}), and DeepSeek V4 thinking mode
-// REJECTS a forced tool_choice — HTTP 400 "Thinking mode does not support this tool_choice". V4 also
-// defaults thinking ON, so every call MUST send {"thinking":{"type":"disabled"}} or it 400s. Unlocking
-// real chain-of-thought would require switching these sites to tool_choice:"auto" + a no-tool-call
-// fallback (the model CAN reason+call a tool when not forced) — separate future work. Model ids are
-// env-overridable (ROUTE_*). deepseek-chat/-reasoner deprecate 2026-07-24.
+// THINKING vs OUR FORCED STRUCTURED OUTPUT (verified 2026-06-24 against the live API): a FORCED
+// tool_choice is REJECTED in thinking mode (HTTP 400). callTool (llm.ts) resolves this — it runs the
+// thinking registers with tool_choice:"auto" (the model reasons, then chooses to call the form) and
+// FALLS BACK to the forced non-thinking path if a call doesn't materialize, so the structured-output
+// guarantee always holds. V4 defaults thinking ON, so non-thinking roles must send "disabled"
+// explicitly. Model ids + efforts are env-overridable (ROUTE_*). deepseek-chat/-reasoner deprecate 2026-07-24.
 
 export type ThinkingMode = "enabled" | "disabled";
 
@@ -54,17 +53,25 @@ function env(name: string, fallback: string): string {
 export function routeModel(role: Role, opts: { style?: GenStyle; legacyModel: string }): ModelChoice {
   if (!modelRoutingEnabled()) return { model: opts.legacyModel };
 
-  // All call sites force a tool call for guaranteed structured output, so thinking MUST be disabled
-  // (forced tool_choice + thinking = HTTP 400). The register depth difference is carried by the
-  // prompt + retrieval breadth, and Deep Research additionally steps up to the stronger pro model.
+  // Thinking is safe here because callTool runs it via tool_choice:"auto" and falls back to the
+  // forced non-thinking path if a call doesn't materialize (llm.ts) — the structured-output guarantee
+  // holds. Fast + classify stay non-thinking for latency; Thorough + Deep Research reason first.
   switch (role) {
     case "classify":
       return { model: env("ROUTE_CLASSIFY_MODEL", FLASH), thinking: "disabled" };
     case "research":
-      return { model: env("ROUTE_RESEARCH_MODEL", PRO), thinking: "disabled" };
+      return {
+        model: env("ROUTE_RESEARCH_MODEL", PRO),
+        thinking: "enabled",
+        reasoningEffort: env("ROUTE_RESEARCH_EFFORT", "high"),
+      };
     case "generate":
       if (opts.style === "thorough") {
-        return { model: env("ROUTE_GENERATE_THOROUGH_MODEL", FLASH), thinking: "disabled" };
+        return {
+          model: env("ROUTE_GENERATE_THOROUGH_MODEL", FLASH),
+          thinking: "enabled",
+          reasoningEffort: env("ROUTE_THOROUGH_EFFORT", "high"),
+        };
       }
       // Fast (plain) and the standard/default register both use the quick non-thinking path.
       return { model: env("ROUTE_GENERATE_FAST_MODEL", FLASH), thinking: "disabled" };
