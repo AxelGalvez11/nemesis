@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { BrandMark } from "@/components/icons";
 import { SiteFooter } from "@/components/Sections";
 
 /**
@@ -13,7 +12,6 @@ export function LegalShell({ children }: { children: ReactNode }) {
       <header className="legal-top">
         <div className="container">
           <Link href="/" className="nav-brand" style={{ fontSize: "18px" }}>
-            <BrandMark size={24} />
             Pharma<span>Orb</span>
           </Link>
           <Link href="/" className="legal-back">
