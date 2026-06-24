@@ -715,6 +715,8 @@ export interface ResearchReportSummary {
   title: string;
   created_at: string;
   citation_count: number;
+  /** Report sub-type for grouping: 'standard' | 'meta' | 'structured_review' | 'lab_draft'. */
+  mode: string;
 }
 
 /** Start a deep-research run. Returns the run id to poll. Throws AskQuotaError on the Pro gate /
@@ -808,7 +810,7 @@ export async function fetchResearchReports(): Promise<ResearchReportSummary[]> {
   if (isPreviewMode) return [];
   const { data, error } = await supabase
     .from("saved_reports")
-    .select("id,title,created_at,citation_count")
+    .select("id,title,created_at,citation_count,mode")
     .eq("kind", "deep_research")
     .order("created_at", { ascending: false })
     .limit(50);
@@ -819,6 +821,7 @@ export async function fetchResearchReports(): Promise<ResearchReportSummary[]> {
       title: r.title,
       created_at: typeof r.created_at === "string" ? r.created_at : "",
       citation_count: typeof r.citation_count === "number" ? r.citation_count : 0,
+      mode: typeof r.mode === "string" ? r.mode : "standard",
     } as ResearchReportSummary)
     : null));
 }
@@ -1035,4 +1038,102 @@ export async function downloadReportExport(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+// ── Projects (workspaces) — group a user's chats + reports + watches into one named space. Direct
+//    PostgREST writes; RLS is the enforcement (projects is owner-scoped; the project_id columns inherit
+//    each item table's existing owner policy). Pre-migration the table is absent (PGRST205) → empty.
+export interface Project { id: string; name: string; description: string | null; created_at: string; }
+export interface ProjectChat { id: string; title: string; }
+export interface ProjectContents { chats: ProjectChat[]; reports: ResearchReportSummary[]; watches: WatchSummary[]; }
+export type ProjectItemKind = "conversation" | "report" | "watch";
+
+const PROJECT_ITEM_TABLE: Record<ProjectItemKind, string> = {
+  conversation: "conversations",
+  report: "saved_reports",
+  watch: "evidence_watches",
+};
+
+function toReportSummary(r: Record<string, unknown>): ResearchReportSummary | null {
+  return typeof r.id === "string" && typeof r.title === "string"
+    ? {
+      id: r.id,
+      title: r.title,
+      created_at: typeof r.created_at === "string" ? r.created_at : "",
+      citation_count: typeof r.citation_count === "number" ? r.citation_count : 0,
+      mode: typeof r.mode === "string" ? r.mode : "standard",
+    } as ResearchReportSummary
+    : null;
+}
+function toWatchSummaryRow(r: Record<string, unknown>): WatchSummary | null {
+  return typeof r.id === "string" && typeof r.title === "string"
+    ? {
+      id: r.id,
+      title: r.title,
+      cadence: typeof r.cadence === "string" ? r.cadence : "weekly",
+      status: typeof r.status === "string" ? r.status : "active",
+      last_checked_at: typeof r.last_checked_at === "string" ? r.last_checked_at : null,
+      baselined_at: typeof r.baselined_at === "string" ? r.baselined_at : null,
+    } as WatchSummary
+    : null;
+}
+
+export async function fetchProjects(): Promise<Project[]> {
+  if (isPreviewMode) return [];
+  const { data, error } = await supabase
+    .from("projects").select("id,name,description,created_at").order("created_at", { ascending: false });
+  if (error) { if (isMissingRelation(error)) return []; throw new Error(`projects failed: ${error.message}`); }
+  return rows(data, (r) => (typeof r.id === "string" && typeof r.name === "string"
+    ? ({ id: r.id, name: r.name, description: typeof r.description === "string" ? r.description : null, created_at: typeof r.created_at === "string" ? r.created_at : "" } as Project)
+    : null));
+}
+
+export async function createProject(name: string): Promise<Project | null> {
+  if (isPreviewMode) return null;
+  const { data: sess } = await supabase.auth.getSession();
+  const userId = sess.session?.user?.id;
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from("projects").insert({ user_id: userId, name: name.trim() }).select("id,name,description,created_at").maybeSingle();
+  if (error || !data || typeof data.id !== "string") return null;
+  return { id: data.id, name: data.name as string, description: (data.description as string) ?? null, created_at: (data.created_at as string) ?? "" };
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const { error } = await supabase.from("projects").delete().eq("id", id);
+  if (error) throw new Error(`delete project failed: ${error.message}`);
+}
+
+/** A project's contents — the chats, reports, and watches assigned to it. */
+export async function fetchProjectContents(projectId: string): Promise<ProjectContents> {
+  const [c, r, w] = await Promise.all([
+    supabase.from("conversations").select("id,title").eq("project_id", projectId).order("updated_at", { ascending: false }),
+    supabase.from("saved_reports").select("id,title,created_at,citation_count,mode").eq("project_id", projectId).eq("kind", "deep_research").order("created_at", { ascending: false }),
+    supabase.from("evidence_watches").select("id,title,cadence,status,last_checked_at,baselined_at").eq("project_id", projectId).order("created_at", { ascending: false }),
+  ]);
+  return {
+    chats: rows(c.data, (x) => (typeof x.id === "string" ? ({ id: x.id, title: typeof x.title === "string" ? x.title : "Untitled" } as ProjectChat) : null)),
+    reports: rows(r.data, toReportSummary),
+    watches: rows(w.data, toWatchSummaryRow),
+  };
+}
+
+/** The user's items NOT yet in any project — the pool the workspace "add" pickers draw from. */
+export async function fetchUnassignedItems(): Promise<ProjectContents> {
+  const [c, r, w] = await Promise.all([
+    supabase.from("conversations").select("id,title").is("project_id", null).order("updated_at", { ascending: false }).limit(100),
+    supabase.from("saved_reports").select("id,title,created_at,citation_count,mode").is("project_id", null).eq("kind", "deep_research").order("created_at", { ascending: false }).limit(100),
+    supabase.from("evidence_watches").select("id,title,cadence,status,last_checked_at,baselined_at").is("project_id", null).order("created_at", { ascending: false }).limit(100),
+  ]);
+  return {
+    chats: rows(c.data, (x) => (typeof x.id === "string" ? ({ id: x.id, title: typeof x.title === "string" ? x.title : "Untitled" } as ProjectChat) : null)),
+    reports: rows(r.data, toReportSummary),
+    watches: rows(w.data, toWatchSummaryRow),
+  };
+}
+
+/** Assign an item to a project (or pass null to remove it). RLS scopes the update to the caller. */
+export async function setItemProject(kind: ProjectItemKind, id: string, projectId: string | null): Promise<void> {
+  const { error } = await supabase.from(PROJECT_ITEM_TABLE[kind]).update({ project_id: projectId }).eq("id", id);
+  if (error) throw new Error(`assign to project failed: ${error.message}`);
 }

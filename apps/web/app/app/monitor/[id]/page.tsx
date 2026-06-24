@@ -7,7 +7,7 @@ import type { WatchEvent } from "@pharmabro/shared";
 import { deleteWatch, fetchWatch, fetchWatchEvents, setWatchStatus, type WatchSummary } from "@/lib/api";
 import { WatchDetail } from "@/components/WatchDetail";
 import { Icon } from "@/components/icons";
-import { askHrefForWatch, relativeTime } from "@/lib/watch-format";
+import { relativeTime } from "@/lib/watch-format";
 import { SkeletonRows } from "@/components/Skeleton";
 
 // One watch, opened from the Monitoring section. Loads the watch (for the header) + its events (the
@@ -105,7 +105,7 @@ export default function WatchDetailPage() {
             lastCheckedLabel: relativeTime(watch.last_checked_at, Date.now()),
           }}
           events={events}
-          currentEvidenceHref={askHrefForWatch(watch.title)}
+          currentEvidenceQuery={watch.title}
         />
       ) : null}
     </div>

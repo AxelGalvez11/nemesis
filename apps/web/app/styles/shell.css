@@ -209,7 +209,7 @@
 .ai-body h4 { font-size: 20px; font-weight: 700; margin: 2px 0 9px; letter-spacing: -0.01em; }
 .ai-body p { color: var(--text); font-size: 16px; margin: 0 0 12px; line-height: 1.62; }
 /* Lead paragraph: the bottom-line summary, promoted so it anchors the answer. */
-.ai-body p.lead { font-size: 18px; line-height: 1.66; font-weight: 500; color: var(--text); margin: 10px 0 18px; }
+.ai-body p.lead { font-size: 20px; line-height: 1.7; font-weight: 500; color: var(--text); margin: 10px 0 18px; }
 .ai-body section { margin: 0 0 16px; }
 /* Section headers read as real headings (sentence-case, brighter, bolder) instead of tiny grey labels. */
 .ai-body section h5 { font-size: 18px; text-transform: none; letter-spacing: -0.01em; color: var(--text); font-weight: 700; margin: 2px 0 9px; }
@@ -227,7 +227,7 @@
    form that read as "robotic"). The lead summary stays flowing prose; the supporting points bullet
    when there are several (see .ai-list below); safety stays a prominent callout; uncertainty is
    de-emphasized; questions are a clear light numbered block. ── */
-.ai-para { margin: 0 0 16px; font-size: 16px; line-height: 1.72; }
+.ai-para { margin: 0 0 15px; font-size: 18px; line-height: 1.78; }
 /* Safety: a clear, visible bordered callout — kept prominent (conservative medical app), never muted. */
 .ai-safety { border: 1px solid var(--line-2); border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 5%, var(--surface)); border-radius: 12px; padding: 13px 15px 3px; margin: 16px 0; }
 .ai-safety-label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 9px; }
@@ -240,7 +240,7 @@
 /* Questions: a clear, light block (actionable), not a heavy form section. Numbered (an ordered
    list) so it reads as a checklist you can take to an appointment ("ask #2"). */
 .ai-questions { margin: 16px 0 4px; }
-.ai-block-label { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 9px; }
+.ai-block-label { font-size: 16px; font-weight: 700; color: var(--text); margin: 20px 0 8px; }
 .ai-questions ul, .ai-questions ol { margin: 0; padding-left: 20px; }
 .ai-questions li { font-size: 15.5px; color: var(--text-2); margin: 0 0 6px; line-height: 1.55; }
 .ai-questions ol li::marker { color: var(--text-3); font-family: var(--mono); font-weight: 600; }
@@ -599,6 +599,48 @@
 .research-card-title { flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .research-card small { color: var(--text-3); font-family: var(--mono); font-size: 11px; flex: none; }
 
+/* Modern watch cards (Monitoring list): status dot + two-row layout (title over cadence/last-checked) +
+   a soft hover-lift. Replaces the flat .research-card row so the page reads less generic. */
+.watch-card-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.watch-card { display: flex; align-items: center; gap: 13px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); text-decoration: none; transition: transform 0.16s ease, border-color 0.16s, box-shadow 0.16s, background 0.16s; }
+.watch-card:hover { border-color: color-mix(in srgb, var(--acid) 32%, var(--line)); background: var(--surface-2); transform: translateY(-1px); box-shadow: 0 10px 26px -14px rgba(0, 0, 0, 0.35); }
+.watch-card-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.watch-card-dot.active { background: var(--acid); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acid) 20%, transparent); }
+.watch-card-dot.paused { background: var(--text-3); }
+.watch-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.watch-card-title { font-size: 15px; font-weight: 550; line-height: 1.3; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watch-card-meta { display: flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+.watch-card-pill { font-family: var(--font); font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-2); color: var(--text-2); }
+.watch-card-pill.daily { color: var(--acid-deep); background: color-mix(in srgb, var(--acid) 13%, transparent); border-color: color-mix(in srgb, var(--acid) 30%, transparent); }
+.watch-card-chev { flex: none; color: var(--text-3); font-size: 20px; line-height: 1; transition: transform 0.16s, color 0.16s; }
+.watch-card:hover .watch-card-chev { color: var(--acid-dim); transform: translateX(2px); }
+
+/* Projects (workspaces): list reuses .watch-card; the workspace page groups items into sections with an
+   inline "add unassigned items" picker + a per-item remove. */
+.proj-back { display: inline-block; font-size: 12px; color: var(--text-3); text-decoration: none; margin-bottom: 2px; }
+.proj-back:hover { color: var(--text); }
+.proj-section { margin-top: 26px; }
+.proj-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.proj-section-head h3 { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); margin: 0; }
+.proj-section-head h3 small { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--text-3); }
+.proj-add-btn { font-size: 12.5px; font-weight: 600; color: var(--text-2); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 13px; cursor: pointer; transition: 0.15s; }
+.proj-add-btn:hover:not(:disabled) { border-color: var(--acid); color: var(--text); }
+.proj-picker { display: flex; flex-direction: column; gap: 3px; margin-bottom: 12px; padding: 8px; border: 1px dashed var(--line-2); border-radius: 12px; background: var(--surface-2); max-height: 280px; overflow-y: auto; }
+.proj-pick-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 11px; border: none; border-radius: 8px; background: none; color: var(--text-2); font-family: var(--font); font-size: 13.5px; text-align: left; cursor: pointer; }
+.proj-pick-row:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+.proj-pick-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-pick-add { flex: none; font-size: 11px; font-weight: 700; color: var(--acid-deep); }
+.proj-empty { font-size: 13.5px; color: var(--text-3); margin: 2px 0 6px; }
+.proj-item { gap: 0; }
+.proj-item-link { display: flex; flex: 1; min-width: 0; text-decoration: none; }
+.proj-remove { flex: none; font-size: 12px; color: var(--text-3); background: none; border: none; cursor: pointer; padding: 5px 9px; border-radius: 7px; transition: 0.15s; }
+.proj-remove:hover:not(:disabled) { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+
+/* Reports library grouped by kind: section headers appear only when 2+ report types exist. */
+.report-group { margin-top: 20px; }
+.report-group:first-child { margin-top: 12px; }
+.report-group-h { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); margin-bottom: 8px; }
+
 /* Inline deep-research run card + clarifying-question (scope) card in the Ask thread. */
 .research-run-card { margin: 8px 0; }
 .research-run-card .ai-block-label { margin-bottom: 8px; }
@@ -744,6 +786,20 @@
 .watch-current-text { font-size: 13px; line-height: 1.5; color: var(--text-2); margin: 0; flex: 1 1 280px; }
 .watch-current-link { flex: none; white-space: nowrap; border-color: color-mix(in srgb, var(--acid) 45%, var(--line)); color: var(--text); font-weight: 600; }
 .watch-current-link:hover { border-color: var(--acid); background: color-mix(in srgb, var(--acid) 12%, var(--surface)); }
+.watch-current-loading, .watch-current-err { flex: 1 1 100%; font-size: 13px; color: var(--text-2); margin: 4px 0 0; }
+.watch-current-err { color: var(--warn); }
+.linklike { background: none; border: none; padding: 0; font: inherit; color: var(--acid-dim); cursor: pointer; text-decoration: underline; }
+/* The inline current-evidence digest (loaded on demand) — a compact grade + bottom line + top sources. */
+.watch-evidence { flex: 1 1 100%; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--line); }
+.watch-evidence .grade-row { margin-bottom: 8px; }
+.watch-evidence .ai-para { font-size: 15px; line-height: 1.65; color: var(--text); margin: 0 0 12px; }
+.watch-evidence-src { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.watch-evidence-src li { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; line-height: 1.45; }
+.watch-evidence-srclabel { flex: none; font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-3); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+.watch-evidence-src a { color: var(--text-2); text-decoration: none; }
+.watch-evidence-src a:hover { color: var(--text); text-decoration: underline; }
+.watch-evidence-more { display: inline-block; font-size: 13px; color: var(--acid-dim); font-weight: 600; }
+.watch-evidence-more:hover { text-decoration: underline; }
 
 .watch-section { margin-top: 26px; }
 .watch-section-h { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); margin: 0 0 12px; }
@@ -802,6 +858,7 @@
 .watch-add-input { flex: 1; min-width: 0; background: none; border: none; outline: none; box-shadow: none; color: var(--text); font-family: var(--font); font-size: 14.5px; }
 .watch-add-input::placeholder { color: var(--text-3); }
 .watch-add-btn { flex: none; }
+.watch-add-status { flex: none; font-size: 13px; color: var(--text-3); }
 .watch-add-error { font-size: 12.5px; color: var(--warn); margin: -2px 0 10px; }
 .watch-add-error a { color: var(--acid-dim); }
 

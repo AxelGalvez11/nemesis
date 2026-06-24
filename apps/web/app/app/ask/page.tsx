@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { AskMode, AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
@@ -8,6 +8,7 @@ import { scienceState } from "@pharmabro/shared";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
+import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
 import { pubchemMoleculeUrl } from "@/lib/molecule";
 import { phCapture } from "@/lib/posthog";
 import { useAppChrome } from "@/components/AppShell";
@@ -77,6 +78,8 @@ function AskPage() {
   const [busy, setBusy] = useState(false);
   const [bloom, setBloom] = useState(false);
   const [stage, setStage] = useState(0);
+  const [showThinking, setShowThinking] = useState(false); // gate: only show the thinking animation once a request has run long enough to be a real wait (instant small-talk replies never trigger it)
+  const [revealIdx, setRevealIdx] = useState<number | null>(null); // the turn whose answer should type itself in (only the just-arrived one — never reopened/saved turns)
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("fast");
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -121,6 +124,7 @@ function AskPage() {
     // submit mid-load would compute the wrong ordinal (from the old turns) and the insert would
     // collide with this chat's existing rows (UNIQUE(conversation_id, ordinal)) and be lost.
     setTurns([]);
+    setRevealIdx(null); // loaded turns render instantly — only a freshly-asked turn types itself in
     setChatLoadError(null);
     setLoadingChat(true);
     let alive = true;
@@ -253,6 +257,17 @@ function AskPage() {
     return () => timers.forEach(clearTimeout);
   }, [busy]);
 
+  // Gate the thinking animation behind a short delay so instant replies (small-talk short-circuit,
+  // cache hits) never flash the staged "Searching the evidence library…" sequence. 550ms sits
+  // comfortably above small-talk round-trip latency (~200–400ms), so only real evidence lookups
+  // — the ones that genuinely take a beat — ever surface the animation. ChatGPT does the same:
+  // no thinking indicator unless the reply is actually slow enough to warrant one.
+  useEffect(() => {
+    if (!busy) { setShowThinking(false); return; }
+    const t = setTimeout(() => setShowThinking(true), 550);
+    return () => clearTimeout(t);
+  }, [busy]);
+
   // One-shot "bloom" flare on the orb the moment the newest answer lands.
   useEffect(() => {
     if (!latest?.a) return;
@@ -326,6 +341,7 @@ function AskPage() {
       const askMode: AskMode = mode === "thorough" ? "thorough" : "fast";
       const res = await askQuestion(text, askMode);
       setLast({ a: res });
+      setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
       void fetchUsage().catch(() => {});
       void persistTurn(idx, text, res); // save the question + cited answer to chat history
@@ -407,8 +423,8 @@ function AskPage() {
                   ) : t.research ? (
                     <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
                   ) : t.a ? (
-                    <Answer answer={t.a} onCite={onCite} question={t.q} />
-                  ) : isLast && busy ? <Thinking stage={stage} /> : null}
+                    <Answer answer={t.a} onCite={onCite} question={t.q} reveal={i === revealIdx} />
+                  ) : isLast && busy && showThinking ? <Thinking stage={stage} /> : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
               </div>
@@ -727,17 +743,25 @@ function MoleculeImage({ drug }: { drug: string }) {
   );
 }
 
-function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string }) {
+function Answer({ answer, onCite, question, reveal = false }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string; reveal?: boolean }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, CiteInfo>();
     for (const c of answer.citations) m.set(normTag(c.chunk_tag), { label: abbr(c.source_type), title: c.title ?? c.source_type });
     return m;
   }, [answer.citations]);
 
+  // When this is the just-arrived turn, reveal the answer text word-by-word (see lib/reveal-text).
+  // One shared counter spans the lead + the prose so the whole thing types in as one continuous
+  // stream; null when not revealing (loaded/historical turns render instantly). `fade` (the one-shot
+  // block fade) is dropped while revealing so the word stagger isn't fighting a container fade.
+  const ctx: RevealCtx | null = reveal ? newRevealCtx() : null;
+  const rt = (text: string) => (ctx ? wrapWords(renderInline(text), ctx) : renderInline(text));
+  const fadeClass = reveal ? "" : " fade";
+
   // Small-talk (a greeting / thanks / "what can you do") is a plain conversational reply — no
   // evidence grade, no sources, no clinical sections. Render just the friendly line.
   if (answer.intent === "smalltalk") {
-    return <div className="answer fade"><p className="lead">{renderInline(answer.plain_english_summary)}</p></div>;
+    return <div className={`answer${fadeClass}`}><p className="lead">{rt(answer.plain_english_summary)}</p></div>;
   }
 
   const s = answer.answer_sections;
@@ -746,8 +770,14 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
   // study-type metadata (well_studied / emerging, or nothing). Never an LLM guess.
   const science = scienceState(answer.citations);
   const cite = (tag: string, quote?: string) => onCite(answer, tag, quote); // bind every [n] click to THIS answer's sources + the clicked claim's supporting line
+  // When revealing, fade the trailing sections (uncertainty / questions / news / actions) in just AFTER
+  // the lead + prose finish typing, so they don't sit there fully-formed while the top types. The word
+  // counter is mutated inside <Prose>, so we estimate the head's reveal span up front (+1 slot per prose
+  // point for its citation chip, +150ms breathing room).
+  const headSlots = ctx ? countWords(answer.plain_english_summary) + (s.what_we_know ?? []).reduce((n, p) => n + countWords(p.text) + 1, 0) : 0;
+  const tailDelayMs = REVEAL_BASE + headSlots * REVEAL_STEP + 150;
   return (
-    <div className="answer fade">
+    <div className={`answer${fadeClass}`}>
       <div className="grade-row">
         <span className="grade">{answer.evidence_grade.replace(/_/g, " ")}</span>
         {science ? (
@@ -756,37 +786,39 @@ function Answer({ answer, onCite, question }: { answer: AskResponse; onCite: (an
           </span>
         ) : null}
         {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
-        {/* "Watch this" — only on a real answer (not an emergency/refusal/no-source template). */}
-        {!answer.template && !answer.refused_unsupported ? <WatchButton kind="topic" question={question} /> : null}
       </div>
       {answer.primary_drug && !answer.template && !answer.refused_unsupported ? <MoleculeImage drug={answer.primary_drug} /> : null}
-      {answer.plain_english_summary ? <p className="lead">{renderInline(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
+      {answer.plain_english_summary ? <p className="lead">{rt(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
 
       {/* Main explanation, under a quiet section heading (owner wants clearer structure) over the cited body. */}
       {s.what_we_know?.length ? <div className="ai-block-label">What the evidence shows</div> : null}
-      <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} />
+      <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} ctx={ctx} />
 
-      {/* Safety stays prominent — a clear bordered callout (conservative medical app), not a muted aside. */}
-      <SafetyBlock points={s.safety_notes} citeMap={citeMap} onCite={cite} />
+      {/* Safety block intentionally NOT rendered in the answer body (owner 2026-06-21: it "reads like
+          fluff" and breaks the natural-conversation feel). RENDER-ONLY: safety_notes are still generated,
+          safety-scanned server-side, and stored in the trace; the emergency 911 routing and the class-
+          caution banner are untouched. Restore the <SafetyBlock> render from git to bring it back. */}
 
-      {/* Uncertainty, de-emphasized. */}
-      <UnclearBlock points={s.what_we_do_not_know} citeMap={citeMap} onCite={cite} />
+      {/* Trailing sections fade in together just after the lead + prose finish typing (rv-tail), so they
+          don't pop in fully-formed while the top is still revealing. Instant when not revealing. */}
+      <div className={ctx ? "rv-tail" : undefined} style={ctx ? { animationDelay: `${tailDelayMs}ms` } : undefined}>
+        {/* Uncertainty, de-emphasized. */}
+        <UnclearBlock points={s.what_we_do_not_know} citeMap={citeMap} onCite={cite} />
 
-      {s.questions_to_ask?.length ? (
-        <div className="ai-questions">
-          <div className="ai-block-label">Worth asking your clinician</div>
-          <ol>{s.questions_to_ask.map((q, i) => <li key={i}>{renderInline(q)}</li>)}</ol>
+        {/* "Worth asking your clinician" (questions_to_ask) intentionally NOT rendered (owner 2026-06-23:
+            it reads like a patient intake form and breaks the natural-conversation feel — same call as the
+            Safety block). RENDER-ONLY: the engine still generates questions_to_ask, safety-scans, and stores
+            them in the trace; nothing server-side changed. Restore this block from git to bring it back. */}
+
+        {/* "In the news" panel intentionally NOT rendered in the chat answer (owner 2026-06-23: a news box
+            under a cited medical answer is clutter that fights the clean conversation feel). It lives in
+            Monitoring instead, where tracking a topic over time makes its news relevant. RENDER-ONLY: the
+            engine still returns answer.news; the walled NewsPanel still ships in WatchDetail. */}
+
+        <div className="msg-actions">
+          <button className="icon-btn" data-tip="Copy answer" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
         </div>
-      ) : null}
-
-      {/* Walled "In the news" panel — paid users see headlines, free users see a locked teaser. NEVER
-          evidence: these never feed the answer above. Suppressed on templates/refusals (backend won't
-          set the fields there; guarded here too). */}
-      {!answer.template && !answer.refused_unsupported ? <NewsPanel news={answer.news} locked={answer.news_locked} /> : null}
-
-      <div className="msg-actions">
-        <button className="icon-btn" data-tip="Copy answer" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
       </div>
     </div>
   );
@@ -899,22 +931,26 @@ function PointItems({ points, citeMap, onCite, paraClass = "ai-para" }: PointBlo
   );
 }
 
-// The answer body: a prose lead (rendered by Answer) followed by the supporting points. Several
-// points read as scannable bullets; a lone point stays a paragraph — so the answer keeps a human
-// top-line and gains a skimmable body, without the old rigid "filled-in form" feel.
-function Prose({ points, citeMap, onCite }: PointBlockProps) {
-  if (!points?.length) return null;
-  return <PointItems points={points} citeMap={citeMap} onCite={onCite} />;
-}
-
-// Safety: kept visibly prominent (conservative medical app) as a bordered callout — never muted.
-function SafetyBlock({ points, citeMap, onCite }: PointBlockProps) {
+// The answer body (what_we_know): each supporting point is its OWN short paragraph (the ChatGPT/Claude
+// feel), each ending with its citation chips — NOT a bullet list, and NOT one giant joined block (the
+// owner found a single run-on paragraph a "fact dump"). The model still emits discrete, individually-
+// cited points, so per-sentence citation grounding AND per-sentence safety-salvage granularity are
+// preserved upstream (citation.ts / safety.ts); this is purely how they're laid out.
+function Prose({ points, citeMap, onCite, ctx = null }: PointBlockProps & { ctx?: RevealCtx | null }) {
   if (!points?.length) return null;
   return (
-    <div className="ai-safety">
-      <div className="ai-safety-label"><Icon name="shield" size={14} />Safety</div>
-      <PointItems points={points} citeMap={citeMap} onCite={onCite} />
-    </div>
+    <>
+      {points.map((p, i) => {
+        const chips = <CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} />;
+        return (
+          <p className="ai-para" key={i}>
+            {ctx ? wrapWords(renderInline(p.text), ctx) : renderInline(p.text)}
+            {/* delay the chips so a citation number never appears before the sentence it backs */}
+            {ctx ? <span className="rv-w" style={{ animationDelay: `${revealDelay(ctx)}ms` }}>{chips}</span> : chips}
+          </p>
+        );
+      })}
+    </>
   );
 }
 

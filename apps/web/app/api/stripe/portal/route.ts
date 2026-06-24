@@ -23,12 +23,12 @@ export async function POST(req: Request) {
 
     return json({ url: session.url });
   } catch (error) {
-    const detail = stripeFailureDetail(error);
-    console.error("stripe_portal_failed", detail);
+    // Log Stripe error detail server-side only — never echo it to the client (avoids
+    // leaking Stripe config: test-vs-live mode, valid price IDs, internal codes).
+    console.error("stripe_portal_failed", stripeFailureDetail(error));
     return json({
       error: "stripe_portal_failed",
       message: "Stripe billing portal is not configured correctly.",
-      detail,
     }, 500);
   }
 }
