@@ -52,12 +52,12 @@ export async function POST(req: Request) {
 
     return json({ url: session.url });
   } catch (error) {
-    const detail = stripeFailureDetail(error);
-    console.error("stripe_checkout_failed", detail);
+    // Log Stripe error type/code/requestId server-side only — do NOT return it to the client
+    // (it can fingerprint Stripe config: test-vs-live mode, valid price IDs, etc.).
+    console.error("stripe_checkout_failed", stripeFailureDetail(error));
     return json({
       error: "stripe_checkout_failed",
       message: "Stripe checkout is not configured correctly.",
-      detail,
     }, 500);
   }
 }

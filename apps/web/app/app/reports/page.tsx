@@ -8,6 +8,17 @@ import { Icon } from "@/components/icons";
 import { SkeletonRows } from "@/components/Skeleton";
 import { getCached, setCached } from "@/lib/cache";
 
+// Report sub-types, for grouping the library "by kind". Headers only appear once there are 2+ types
+// (a single-type library stays a clean flat list).
+const MODE_LABEL: Record<string, string> = {
+  standard: "Deep research",
+  meta: "Meta-analyses",
+  structured_review: "Structured reviews",
+  lab_draft: "Lab drafts",
+  other: "Other",
+};
+const MODE_ORDER = ["standard", "meta", "structured_review", "lab_draft"];
+
 // The Reports library: every deep-research / structured-review report the user has generated.
 // Reports persist as their own saved_reports rows (kind='deep_research'); this lists them and links
 // to the full report at /app/reports/[id], where they can be read, restyled, and exported.
@@ -41,15 +52,29 @@ export default function ReportsPage() {
 
       {reports && reports.length > 0 ? (
         <div className="research-history">
-          <div className="research-history-list">
-            {reports.map((r) => (
-              <Link key={r.id} href={`/app/reports/${r.id}`} className="research-card" title={r.title}>
-                <Icon name="doc" size={15} />
-                <span className="research-card-title">{r.title}</span>
-                <small>{r.citation_count} sources</small>
-              </Link>
-            ))}
-          </div>
+          {(() => {
+            const known = new Set(MODE_ORDER);
+            const groups = MODE_ORDER
+              .map((m) => ({ mode: m, items: reports.filter((r) => (r.mode || "standard") === m) }))
+              .filter((g) => g.items.length > 0);
+            const others = reports.filter((r) => !known.has(r.mode || "standard"));
+            if (others.length) groups.push({ mode: "other", items: others });
+            const showHeaders = groups.length > 1; // only group visually once there are 2+ kinds
+            return groups.map((g) => (
+              <div key={g.mode} className="report-group">
+                {showHeaders ? <div className="report-group-h">{MODE_LABEL[g.mode] ?? "Other"}</div> : null}
+                <div className="research-history-list">
+                  {g.items.map((r) => (
+                    <Link key={r.id} href={`/app/reports/${r.id}`} className="research-card" title={r.title}>
+                      <Icon name="doc" size={15} />
+                      <span className="research-card-title">{r.title}</span>
+                      <small>{r.citation_count} sources</small>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ));
+          })()}
         </div>
       ) : null}
     </div>

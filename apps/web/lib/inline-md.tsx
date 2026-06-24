@@ -13,9 +13,24 @@ import { Fragment, type ReactNode } from "react";
 // matched before `*italic*` so double-stars never get mis-parsed as italic.
 const TOKEN = /(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|_[^_\s][^_]*_|`[^`]+`)/g;
 
+// Safety net for v13 (light markdown). The model is told to use **bold** ONLY — no headers/lists — but
+// models occasionally slip. Strip any LINE-LEADING block marker (#, >, -, *, +, 1.) so a stray one never
+// reaches the screen as a literal "## " or "- ". Inline emphasis is untouched: a leading "* " bullet has a
+// space after the marker, whereas "*italic*" does not, so the bullet rule can't eat real emphasis.
+function stripBlockMarkers(text: string): string {
+  if (!/[#>\-*+]|^\s*\d+\./m.test(text)) return text;
+  return text
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
+    .replace(/^[ \t]*>[ \t]?/gm, "")
+    .replace(/^[ \t]*[-*+][ \t]+/gm, "")
+    .replace(/^[ \t]*\d+\.[ \t]+/gm, "");
+}
+
 export function renderInline(text: string): ReactNode {
+  if (!text) return text;
+  text = stripBlockMarkers(text);
   // Fast path: nothing to do if there are no emphasis markers at all.
-  if (!text || (!text.includes("*") && !text.includes("_") && !text.includes("`"))) return text;
+  if (!text.includes("*") && !text.includes("_") && !text.includes("`")) return text;
 
   // String.split with a capturing group keeps the delimiters, so `parts` interleaves
   // plain text and matched tokens. (split is not stateful, so the /g regex is safe to reuse.)
