@@ -37,19 +37,42 @@ export interface RetrieveResult {
   maxSimilarity: number;
 }
 
-export async function retrieve(opts: RetrieveOpts): Promise<RetrieveResult> {
-  const embeddings = await embedCoreTexts([opts.question], "query");
-  const queryEmbedding = embeddings[0];
-  if (!queryEmbedding) throw new Error("query embedding failed");
+/** Hybrid retrieval (Phase 3): dense + keyword candidates fused by RRF via hybrid_match_core_source_chunks
+ *  (already in the DB; it KEEPS the dense similarity floor, so the AC3 relevance gate is preserved while
+ *  keyword search adds recall). OFF by default so production retrieval is byte-identical until validated +
+ *  flipped. Provider-independent — it helps whichever model generates. */
+function hybridRetrievalEnabled(): boolean {
+  const v = (Deno.env.get("HYBRID_RETRIEVAL_ENABLED") ?? "").trim().toLowerCase();
+  return v === "1" || v === "true";
+}
 
-  const rows = await rpc<MatchRow[]>(opts.sbUrl, opts.serviceKey, "match_core_source_chunks", {
+/** Pure: pick the match RPC + params. Dense (today) vs hybrid (adds query_text for the keyword arm).
+ *  Both return the SAME columns, so the row mapping below is unchanged. Exported for unit tests. */
+export function matchCall(
+  opts: RetrieveOpts,
+  queryEmbedding: number[],
+  hybrid: boolean,
+): { fn: string; params: Record<string, unknown> } {
+  const base = {
     query_embedding: queryEmbedding,
     match_count: opts.matchCount,
     match_threshold: opts.threshold,
     filter_providers: opts.providers,
     filter_section: null,
     filter_drug_entity: opts.entityId,
-  });
+  };
+  return hybrid
+    ? { fn: "hybrid_match_core_source_chunks", params: { ...base, query_text: opts.question } }
+    : { fn: "match_core_source_chunks", params: base };
+}
+
+export async function retrieve(opts: RetrieveOpts): Promise<RetrieveResult> {
+  const embeddings = await embedCoreTexts([opts.question], "query");
+  const queryEmbedding = embeddings[0];
+  if (!queryEmbedding) throw new Error("query embedding failed");
+
+  const { fn, params } = matchCall(opts, queryEmbedding, hybridRetrievalEnabled());
+  const rows = await rpc<MatchRow[]>(opts.sbUrl, opts.serviceKey, fn, params);
 
   if (rows.length === 0) return { chunks: [], maxSimilarity: 0 };
 
