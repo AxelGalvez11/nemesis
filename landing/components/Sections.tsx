@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 import { WaitlistForm } from "@/components/WaitlistForm";
-import { BrandMark } from "@/components/icons";
 
 const SOURCES = [
   {
@@ -391,7 +390,6 @@ export function SiteFooter() {
     <footer>
       <div className="container footer-in">
         <div className="footer-brand">
-          <BrandMark size={20} />
           Pharma<span>Orb</span>
         </div>
         <div className="footer-links">
