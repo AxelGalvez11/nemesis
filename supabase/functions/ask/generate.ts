@@ -2,6 +2,7 @@
 // retrieved chunks are the ONLY grounding; the model cites them by [n] tag.
 
 import { callTool } from "./llm.ts";
+import { routeModel } from "./model-route.ts";
 import { type AnswerStyle, generateSystem, generateTool } from "./prompts.ts";
 import type { EvidenceGrade, Intent } from "../../../packages/shared/src/answer.ts";
 import type { RetrievedChunk } from "./citation.ts";
@@ -56,9 +57,13 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
     healthBlock +
     `\n\nCompose the answer using compose_answer. Every factual sentence must carry the [n] tag(s) that support it.`;
 
+  // Fast (plain)/standard -> non-thinking; Thorough -> thinking. No-op vs GENERATE_MODEL until routed.
+  const route = routeModel("generate", { style: opts.style, legacyModel: GENERATE_MODEL });
   const { input, model } = await callTool<Record<string, unknown>>(
     {
-      model: GENERATE_MODEL,
+      model: route.model,
+      thinking: route.thinking,
+      reasoningEffort: route.reasoningEffort,
       // Multi-point cited answers can be long; 2048 truncated the JSON mid-string (DeepSeek then
       // returned malformed tool arguments). 4096 leaves headroom for Fast/standard; THOROUGH is
       // explicitly fuller (more what_we_know points + what_we_do_not_know), so give it more room to

@@ -12,6 +12,7 @@
 // large max_tokens leaves headroom so the bigger report JSON does not truncate mid-string.
 
 import { callTool, type Tool } from "../llm.ts";
+import { routeModel } from "../model-route.ts";
 import { BASE_GENERATE_SYSTEM } from "../prompts.ts";
 import type { EvidenceGrade } from "../../../../packages/shared/src/answer.ts";
 import type { ReportMode, ResearchSection } from "../../../../packages/shared/src/research.ts";
@@ -211,9 +212,13 @@ export async function synthesizeReport(opts: SynthesizeOpts): Promise<Synthesize
     `Sources (cite by [n]; use ONLY these — do not use outside knowledge):\n${sourcesBlock}\n\n` +
     closing;
 
+  // Deep Research synthesis -> the deepest reasoning tier (pro, thinking). No-op until routed.
+  const route = routeModel("research", { legacyModel: SYNTH_MODEL });
   const { input, model } = await callTool<Record<string, unknown>>(
     {
-      model: SYNTH_MODEL,
+      model: route.model,
+      thinking: route.thinking,
+      reasoningEffort: route.reasoningEffort,
       max_tokens: SYNTH_MAX_TOKENS,
       temperature: 0,
       system: synthesisSystemForMode(opts.mode),

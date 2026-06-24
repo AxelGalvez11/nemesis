@@ -43,6 +43,13 @@ export interface ChatParams {
   tools?: Tool[];
   tool_choice?: { type: "function"; function: { name: string } } | "auto" | "none";
   temperature?: number;
+  /**
+   * DeepSeek-V4 thinking-mode toggle. Left undefined by the router when routing is off,
+   * so the body carries no `thinking` field and the OpenAI request shape is unchanged.
+   */
+  thinking?: "enabled" | "disabled";
+  /** DeepSeek reasoning_effort ("high"/"max"); only meaningful with thinking enabled. */
+  reasoningEffort?: string;
 }
 
 export interface Usage {
@@ -63,7 +70,12 @@ interface ChatResponse {
   usage?: Usage;
 }
 
-export async function chat(params: ChatParams, apiKey: string): Promise<ChatResponse> {
+/**
+ * Build the chat/completions request body. Pure + exported so the request shape is unit-testable.
+ * The `thinking`/`reasoning_effort` fields are emitted ONLY when the router set them (DeepSeek
+ * thinking registers); with routing off they are absent, so the OpenAI request is byte-identical.
+ */
+export function buildChatBody(params: ChatParams): Record<string, unknown> {
   const messages = [
     ...(params.system ? [{ role: "system" as const, content: params.system }] : []),
     ...params.messages,
@@ -81,6 +93,15 @@ export async function chat(params: ChatParams, apiKey: string): Promise<ChatResp
     }));
   }
   if (params.tool_choice) body.tool_choice = params.tool_choice;
+  // DeepSeek thinking-mode controls (see model-route.ts). Absent unless explicitly routed,
+  // so OpenAI / legacy requests are unaffected. Thinking mode ignores temperature server-side.
+  if (params.thinking) body.thinking = { type: params.thinking };
+  if (params.reasoningEffort) body.reasoning_effort = params.reasoningEffort;
+  return body;
+}
+
+export async function chat(params: ChatParams, apiKey: string): Promise<ChatResponse> {
+  const body = buildChatBody(params);
 
   // Retry transient rate-limit / 5xx (DeepSeek can 429 under bursty traffic).
   let lastErr = "";

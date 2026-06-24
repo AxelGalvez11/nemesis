@@ -6,6 +6,7 @@
 // blocks a run, asserts no facts, and consumes no deep-research quota.
 
 import { callTool, type Tool } from "../llm.ts";
+import { routeModel } from "../model-route.ts";
 import type { ScopeQuestion, ScopeResult } from "../../../../packages/shared/src/research.ts";
 
 const SCOPE_MODEL = Deno.env.get("LLM_CLASSIFY_MODEL") ?? "gpt-4o-mini";
@@ -96,9 +97,12 @@ export function normalizeScope(rawNeeds: unknown, rawQuestions: unknown): ScopeR
  */
 export async function scopeQuestion(question: string, apiKey: string): Promise<ScopeResult> {
   try {
+    const route = routeModel("classify", { legacyModel: SCOPE_MODEL });
     const { input } = await callTool<{ needs_clarification?: unknown; questions?: unknown }>(
       {
-        model: SCOPE_MODEL,
+        model: route.model,
+        thinking: route.thinking,
+        reasoningEffort: route.reasoningEffort,
         max_tokens: 1024,
         temperature: 0,
         system: SCOPE_SYSTEM,

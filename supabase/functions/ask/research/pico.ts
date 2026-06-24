@@ -10,6 +10,7 @@
 // (and shows no pooled number). It NEVER blocks a run and asserts no facts.
 
 import { callTool, type Tool } from "../llm.ts";
+import { routeModel } from "../model-route.ts";
 import type { Pico } from "../../../../packages/shared/src/research.ts";
 
 const PICO_MODEL = Deno.env.get("LLM_CLASSIFY_MODEL") ?? "gpt-4o-mini";
@@ -70,9 +71,12 @@ export function normalizePico(raw: unknown): Pico | null {
  */
 export async function parsePico(question: string, apiKey: string): Promise<Pico | null> {
   try {
+    const route = routeModel("classify", { legacyModel: PICO_MODEL });
     const { input } = await callTool<{ intervention?: unknown; comparator?: unknown; outcome?: unknown }>(
       {
-        model: PICO_MODEL,
+        model: route.model,
+        thinking: route.thinking,
+        reasoningEffort: route.reasoningEffort,
         max_tokens: 512,
         temperature: 0,
         system: PICO_SYSTEM,

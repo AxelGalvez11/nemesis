@@ -2,6 +2,7 @@
 // tool_use -> guaranteed structured). Cheap + fast; the heavy reasoning is in generate.
 
 import { callTool } from "./llm.ts";
+import { routeModel } from "./model-route.ts";
 import { CLASSIFY_SYSTEM, CLASSIFY_TOOL, INTENTS, SAFETY_FLAGS } from "./prompts.ts";
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 
@@ -51,9 +52,13 @@ export function normalizeClassification(
 }
 
 export async function classify(question: string, apiKey: string): Promise<Classification> {
+  // Classification stays on the fast non-thinking path. No-op vs CLASSIFY_MODEL until routed.
+  const route = routeModel("classify", { legacyModel: CLASSIFY_MODEL });
   const { input, model } = await callTool<ClassifyToolInput>(
     {
-      model: CLASSIFY_MODEL,
+      model: route.model,
+      thinking: route.thinking,
+      reasoningEffort: route.reasoningEffort,
       max_tokens: 512,
       temperature: 0,
       system: CLASSIFY_SYSTEM,

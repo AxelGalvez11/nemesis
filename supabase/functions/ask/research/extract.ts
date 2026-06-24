@@ -10,6 +10,7 @@
 // BEST-EFFORT: any failure returns [] → no studies → "not poolable" (honest), never a crash.
 
 import { callTool, type Tool } from "../llm.ts";
+import { routeModel } from "../model-route.ts";
 import type { Pico } from "../../../../packages/shared/src/research.ts";
 import type { RetrievedChunk } from "../citation.ts";
 
@@ -134,9 +135,12 @@ export async function extractStudyArms(question: string, pico: Pico, chunks: Ret
         return `${head}\n${c.chunk_text ?? ""}`.trim();
       })
       .join("\n\n");
+    const route = routeModel("research", { legacyModel: EXTRACT_MODEL });
     const { input } = await callTool<{ studies?: unknown }>(
       {
-        model: EXTRACT_MODEL,
+        model: route.model,
+        thinking: route.thinking,
+        reasoningEffort: route.reasoningEffort,
         max_tokens: EXTRACT_MAX_TOKENS,
         temperature: 0,
         system: extractSystem(pico),
