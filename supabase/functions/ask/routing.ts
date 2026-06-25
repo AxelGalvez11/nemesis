@@ -18,10 +18,15 @@
 import type { AnswerPoint, Intent } from "../../../packages/shared/src/answer.ts";
 
 // Intents that imply a personal therapeutic decision (combine? dose? use? while
-// pregnant?). Pure-informational intents (mechanism, comparison, trial_lookup,
+// pregnant? stop?). Pure-informational intents (mechanism, comparison, trial_lookup,
 // investment, …) are excluded — a "talk to your prescriber" line there is a
 // non-sequitur. drug_overview is included so a classifier that labels a
 // borderline personal question as an overview still gets the guarantee.
+// health_context is included (v10): it is BOTH inherently personal (the answer is
+// applied to the user's own situation) AND the fail-safe remap target for an
+// unrecognized/out-of-union intent (classify.ts normalizeClassification). Without
+// it, a med-change question that classified to the out-of-union "medication_change_request"
+// got no routing backstop and a terse Fast answer could omit the steer entirely.
 export const ROUTE_TO_PROFESSIONAL_INTENTS: ReadonlySet<Intent> = new Set<Intent>([
   "drug_overview",
   "drug_interaction",
@@ -29,6 +34,7 @@ export const ROUTE_TO_PROFESSIONAL_INTENTS: ReadonlySet<Intent> = new Set<Intent
   "supplement_peptide",
   "dosing",
   "pregnancy_pediatrics",
+  "health_context",
 ]);
 
 // INVARIANT: this text MUST pass detectViolations() (zero forbidden patterns).

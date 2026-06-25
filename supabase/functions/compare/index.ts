@@ -13,11 +13,35 @@ import { buildComparison, type CompareSideInput } from "./build.ts";
 import type { SourceRef } from "../../../packages/shared/src/search.ts";
 import type { EvidenceTier } from "../../../packages/shared/src/evidence.ts";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-};
+// CORS: reflect only allowlisted app origins (was wildcard "*"). This is a browser-XHR
+// target (the app calls it cross-origin), so the real origin is reflected for prod + local
+// dev. Auth is still the bearer token; the allowlist is defense-in-depth.
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://app.pharmaorb.app",
+  "https://pharmaorb.app",
+  "https://www.pharmaorb.app",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:8081",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3001",
+  "http://127.0.0.1:8081",
+];
+
+function isAllowedOrigin(origin: string): boolean {
+  if (DEFAULT_ALLOWED_ORIGINS.includes(origin)) return true;
+  return /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
+}
+
+function corsHeaders(req?: Request): Record<string, string> {
+  const origin = req?.headers.get("origin") ?? "";
+  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.pharmaorb.app";
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+  };
+}
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -27,28 +51,28 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SECTION_MAX = 500; // truncate label section prose — compare is a summary view
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  if (req.method !== "GET") return json({ error: "method not allowed" }, 405);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
+  if (req.method !== "GET") return json({ error: "method not allowed" }, 405, req);
 
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   const userId = await verifyUser(token);
-  if (!userId) return json({ error: "authentication required" }, 401);
+  if (!userId) return json({ error: "authentication required" }, 401, req);
 
   const params = new URL(req.url).searchParams;
   const left = params.get("left") ?? "";
   const right = params.get("right") ?? "";
   if (!UUID_RE.test(left) || !UUID_RE.test(right)) {
-    return json({ error: "left and right must be entity uuids" }, 400);
+    return json({ error: "left and right must be entity uuids" }, 400, req);
   }
-  if (left === right) return json({ error: "left and right must differ" }, 400);
+  if (left === right) return json({ error: "left and right must differ" }, 400, req);
 
   try {
     const [ls, rs] = await Promise.all([sideInput(left), sideInput(right)]);
-    if (!ls || !rs) return json({ error: "entity not found" }, 404);
-    return json(buildComparison(ls, rs));
+    if (!ls || !rs) return json({ error: "entity not found" }, 404, req);
+    return json(buildComparison(ls, rs), 200, req);
   } catch (e) {
     console.error("compare error:", (e as Error).message);
-    return json({ error: "compare failed" }, 500);
+    return json({ error: "compare failed" }, 500, req);
   }
 });
 
@@ -141,9 +165,9 @@ async function verifyUser(token: string): Promise<string | null> {
   }
 }
 
-function json(payload: unknown, status = 200): Response {
+function json(payload: unknown, status = 200, req?: Request): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(req), "Content-Type": "application/json" },
   });
 }

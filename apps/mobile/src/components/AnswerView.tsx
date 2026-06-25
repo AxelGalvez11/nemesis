@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
 import { useMutation } from "@tanstack/react-query";
 import type { AnswerPoint, AskResponse, EvidenceGrade, SafetyFlag } from "@pharmabro/shared";
 import { ANSWER_STALE_YEARS, answerFreshness, answerKind } from "@/api/derive";
@@ -50,6 +51,46 @@ function PointList({ title, points, testID }: { title: string; points: AnswerPoi
   );
 }
 
+// "What we know" as flowing prose, NOT a • fact dump: every point runs together in one paragraph, each
+// claim followed by its source number(s) inline as a tappable marker that opens the Source Viewer — the
+// "natural conversation with sources" the owner asked for (parity with the web superscript chips). This
+// is a PURE DISPLAY change: the engine still emits discrete, individually-cited points, so per-sentence
+// citation grounding and per-sentence safety-salvage granularity are unchanged. Safety + uncertainty
+// deliberately stay their own bulleted blocks (PointList) so cautions don't dissolve into the prose.
+function ProseBody({ points, tagToSource }: { points: AnswerPoint[]; tagToSource: Map<string, string> }) {
+  if (!points?.length) return null;
+  return (
+    <View style={styles.section} testID="answer-section-what_we_know">
+      <SectionHeader title="What we know" />
+      <Text style={styles.prose} testID="answer-prose-what_we_know">
+        {points.map((p, pi) => (
+          <Text key={pi}>
+            {pi > 0 ? "  " : ""}
+            {p.text}
+            {(p.citation_ids ?? []).map((id) => {
+              const tag = id.replace(/[[\]\s]/g, "");
+              const sourceId = tagToSource.get(tag);
+              if (!sourceId) return null; // unresolved tag → no dead tap (enforced tags always resolve)
+              return (
+                <Text
+                  key={id}
+                  style={styles.cite}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Source ${tag}`}
+                  testID={`answer-cite-inline-${tag}`}
+                  onPress={() => router.push(`/source/${encodeURIComponent(sourceId)}`)}
+                >
+                  {` ${tag}`}
+                </Text>
+              );
+            })}
+          </Text>
+        ))}
+      </Text>
+    </View>
+  );
+}
+
 export function AnswerView({
   answer,
   onAskFollowUp,
@@ -75,6 +116,9 @@ export function AnswerView({
 
   const cautionFlags = answer.safety_flags.filter((f) => CAUTION_LABELS[f]);
   const sections = answer.answer_sections;
+  // Each [n] tag -> its source row, so an inline citation marker opens that source. Built from the
+  // enforced citations, so every kept point's tag resolves (an unknown tag renders as plain text).
+  const tagToSource = new Map(answer.citations.map((cit) => [cit.chunk_tag, cit.source_id] as const));
   const followUps = sections.questions_to_ask ?? [];
   const freshness = answerFreshness(answer, new Date());
 
@@ -115,9 +159,11 @@ export function AnswerView({
         </Text>
       ) : null}
 
-      <PointList title="What we know" points={sections.what_we_know} testID="answer-section-what_we_know" />
+      <ProseBody points={sections.what_we_know} tagToSource={tagToSource} />
       <PointList title="What we don't know" points={sections.what_we_do_not_know} testID="answer-section-unknown" />
-      <PointList title="Safety notes" points={sections.safety_notes} testID="answer-section-safety_notes" />
+      {/* Safety notes block intentionally NOT rendered (owner 2026-06-21: "reads like fluff"). RENDER-ONLY:
+          safety_notes are still safety-scanned server-side and stored; the emergency 911 routing and the
+          class-caution banner (above) stay. Restore this PointList from git to bring it back. */}
 
       {followUps.length > 0 ? (
         <View style={styles.section} testID="answer-followups">
@@ -184,6 +230,8 @@ const styles = StyleSheet.create({
   freshness: { backgroundColor: c.warnFaint, borderWidth: 1, borderColor: c.warnLine, borderRadius: radius.sm, padding: space(2.5) },
   freshnessText: { fontSize: 13, lineHeight: 19, color: c.warn },
   point: { fontSize: 14.5, lineHeight: 22, color: c.text2 },
+  prose: { fontSize: 15, lineHeight: 23, color: c.text2 },
+  cite: { fontSize: 11, lineHeight: 23, color: c.acidDim, fontWeight: "700" },
   followUp: { paddingVertical: space(2), borderBottomWidth: 1, borderBottomColor: c.line },
   followUpText: { fontSize: 14, color: c.acidDim, fontWeight: "600" },
   citeTitle: { fontSize: 14, fontWeight: "600", color: c.text },

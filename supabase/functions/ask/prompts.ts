@@ -5,17 +5,21 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v8-2026-06-21"; // v8: REGISTER_SAFETY block appended for BOTH live registers (plain+thorough) — bans bare reassurance/safe-claims/cure-synonyms/imperative-dosing/peptide-injection wording and mandates preserving source hedges/scope/caveats (the fast-follow from the plain-register safety audit). BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
+export const PROMPT_VERSION = "ask-v14-2026-06-23"; // v14: CONVERSATIONAL PUSH — sharpens CONVERSATIONAL_VOICE so the bottom_line MUST OPEN by directly answering the question (yes/no question → "Yes —"/"No —"/"Not exactly —"/"It depends —"; "what is X" → a plain one-liner), with explicit BAD→GOOD transformation examples, instead of a detached textbook fact (v12's softer "lead direct" landed modest because the attribution framing dominated). The safety CARVE-OUT now EXPLICITLY OVERRIDES the "open with Yes/No" rule: interaction/dosing/pregnancy/peptide/health_context/safety-flagged questions still open on the specific risk + route to a clinician, never a verdict. Live-registers only; deep research/BASE untouched. Gate = 48-check guardrail. If this STILL lands modest, the ceiling is architectural (the grounding/attribution rules), not one more prompt. v13: SAFE MARKDOWN — a live-register-only MARKDOWN_FORMAT block lets the model emit **bold** emphasis for scannability (the "feel like ChatGPT" ask); bold-ONLY (headers/lists banned, schema owns structure). SAFE because detectViolations now markdown-STRIPS before scanning (safety.ts stripMarkdownForScan), so emphasis can never split a banned phrase past a rule — a scan ROBUSTNESS improvement, adversarially unit-tested. Deep Research/BASE stay markdown-free. Gate = 48-check guardrail. (Conversational-writing push is a SEPARATE later version, NOT bundled — so a guardrail failure is never ambiguous.) v12: CONVERSATIONAL VOICE — a live-register-only block (CONVERSATIONAL_VOICE, plain+thorough; Deep Research/BASE untouched) that makes the answer ADDRESS the person and open with a direct, source-grounded answer instead of a detached textbook fact (the owner's "fact dump, not a conversation" complaint). VOICE/opener only; subordinate to and reasserts the HARD RULES + PHRASING + REGISTER_SAFETY. SAFETY-CRITICAL carve-out: the direct "Yes/No" opener is for INFORMATIONAL questions only — interaction/dosing/pregnancy/peptide/health_context/safety-flagged questions still open on the specific risk + route to a clinician, never a verdict (else a "lead direct" nudge manufactures reassurance leads — the v9 failure). Gate = 48-check all-modes guardrail post-deploy, instant rollback on any breach. v11: TYPO "assume & answer" — when the fabrication guard fires on a drug name absent from the evidence, recover a genuine TYPO of a real drug (AUTHORITATIVE entity-table canonical + OSA edit-distance ≤1 + present in the evidence) by answering it and STATING the assumption ("Assuming you mean tesamorelin"), instead of the patronizing safety_fallback. index.ts wires findTypoCorrections (typo-correct.ts) at the guard; adversarially unit-tested so every class-plausible fake (florizagliflozin/maglutide/gliflozin/…) STILL refuses; the fabrication guard + its tests are untouched. Fixes the owner's "treats me like a patient / can't handle typos" complaint at the root. v10: SAFETY FIX after v9's guardrail caught a [fast] miss — a med-change question ("should I stop my sertraline?") classified to the out-of-union intent "medication_change_request" (a SafetyFlag value the model put in the intent field, bypassing the enum), which NO intent-keyed safety set recognized → no required safety floor, no professional-routing backstop → terse Fast intermittently omitted routing. Fix is in classify.ts (normalizeClassification: an unrecognized intent is preserved as a flag and remapped to health_context, fail-safe) + routing.ts (health_context now in ROUTE_TO_PROFESSIONAL_INTENTS — also closes the documented health_context routing hole). DETERMINISTIC + register-invariant; no prompt TEXT changed from v9. v9: Fast vs Thorough differ in DEPTH not vocabulary (PLAIN_STYLE terse; THOROUGH_STYLE explicit OVERRIDE of FORMAT leanness). v8: REGISTER_SAFETY block on both live registers. BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
-const INTENTS: Intent[] = [
+// Exported so classify.ts can VALIDATE the model's output against them: the
+// provider does not always enforce the tool-arg enum, so an out-of-union intent
+// (e.g. a SafetyFlag value leaking into the intent field) can slip through and
+// be silently unrecognized by every intent-keyed safety set. See normalizeClassification().
+export const INTENTS: Intent[] = [
   "drug_overview", "drug_interaction", "side_effects", "label_summary",
   "comparison", "mechanism", "trial_lookup", "evidence_for_claim",
   "supplement_peptide", "dosing", "emergency_overdose", "pregnancy_pediatrics",
   "health_context", "drug_sourcing", "investment",
 ];
-const SAFETY_FLAGS: SafetyFlag[] = [
+export const SAFETY_FLAGS: SafetyFlag[] = [
   "emergency_possible", "overdose_possible", "self_harm", "pregnancy",
   "pediatric", "medication_change_request", "controlled_substance",
   "psychiatric_medication", "anticoagulant", "insulin", "immunosuppressant",
@@ -87,8 +91,10 @@ const GENERATE_BASE_REQUIRED = ["bottom_line", "evidence_grade"];
 // Pure-informational intents (overview, mechanism, comparison, trial_lookup, …)
 // carry no floor, so a benign question gets a lean, question-specific answer.
 // health_context is included: an answer applied to the user's own stored profile
-// is inherently personal and must carry a caution. (routing.ts does not yet append
-// its routing note for health_context — a separate, pre-existing follow-up.)
+// is inherently personal and must carry a caution. routing.ts now ALSO appends its
+// professional-routing note for health_context (v10) — it is the fail-safe remap
+// target for an unrecognized/out-of-union intent, so it must carry both the floor
+// AND the routing backstop.
 const SAFETY_FLOOR_INTENTS: ReadonlySet<Intent> = new Set<Intent>([
   "drug_interaction", "supplement_peptide", "dosing", "pregnancy_pediatrics",
   "side_effects", "health_context",
@@ -247,18 +253,27 @@ export type AnswerStyle = "plain" | "thorough";
 // Fast mode. An EXPLICIT OVERRIDE of the "curious researcher" register in BASE_GENERATE_SYSTEM above —
 // without "override", the two audience definitions stack and the model splits the difference. Wording, not
 // substance, changes: GROUNDING / HARD RULES / PHRASING above stay in full force (re-stated so it can't be
-// read as a license to soften them). No markdown — the safety scan reads the raw .text fields.
+// read as a license to soften them). Light markdown emphasis (**bold**) is allowed as of v13 — see
+// MARKDOWN_FORMAT below; the safety scan markdown-strips first (stripMarkdownForScan) so it stays robust.
 const PLAIN_STYLE = [
-  "ANSWER STYLE — PLAIN (for THIS answer, OVERRIDE the reader/register described above):",
+  "ANSWER STYLE — FAST / PLAIN (for THIS answer, OVERRIDE the reader/register described above):",
   "- Write for a general-public reader with no medical training — the clarity of a good health explainer.",
-  "  Short sentences, everyday words, one idea per sentence.",
+  "  Short sentences, everyday words.",
   "- LEAD WITH THE TAKEAWAY: open with what it is in plain terms and what it does for the reader — and, when",
   "  the sources say so, how well it works — BEFORE any mechanism or biology.",
   "- NO UNEXPLAINED JARGON, not even in the first sentence. Lead with plain words; the first time a clinical",
   '  term is unavoidable, gloss it in plain words right there (e.g. "a GLP-1 medicine — it mimics a gut hormone',
   '  that curbs appetite"), or leave the term out entirely. Never open on a bare term like "GLP-1 receptor agonist".',
-  "- Be concise: keep only the few points that matter most to a layperson, in the fewest, clearest sentences.",
-  "  Prefer brevity over exhaustive detail.",
+  "- KEEP IT GENUINELY SHORT — this is the QUICK-answer mode (its counterpart, THOROUGH, is for depth). Give the",
+  "  bottom_line plus AT MOST 2 what_we_know points (often just one): only the essentials a layperson needs — the",
+  "  gist they can read in a few seconds, a glance, NOT a briefing. Do NOT exhaustively list the sources; pick the",
+  "  one or two facts that matter most. Leave what_we_do_not_know and questions_to_ask EMPTY unless the question",
+  "  raises a real personal decision.",
+  "- Still grade the evidence (evidence_grade) by the ACTUAL strength of the sources, exactly as the THOROUGH mode",
+  "  would — being brief never lowers the grade.",
+  "- SAFETY IS NEVER TRIMMED FOR BREVITY: when the question involves a personal-safety decision (an interaction,",
+  "  dosing, pregnancy, a research-use peptide), STILL give the SPECIFIC safety_notes caution in full. Brevity",
+  "  drops background detail, never a required caution.",
   "- Plain does NOT mean vague or softened: every claim stays source-cited, and GROUNDING, the HARD RULES,",
   "  and the PHRASING rules above remain in full force. Simpler wording — never weaker accuracy or caution.",
 ].join("\n");
@@ -266,16 +281,24 @@ const PLAIN_STYLE = [
 // Thorough mode. The standard register, asked to be COMPLETE (more real cited substance) — explicitly NOT
 // a return to the rigid fill-every-section template the FORMAT block killed.
 const THOROUGH_STYLE = [
-  "ANSWER STYLE — THOROUGH (for a clinician or researcher reader):",
+  "ANSWER STYLE — THOROUGH (for THIS answer, for a clinician/researcher who CHOSE the fuller answer — OVERRIDE",
+  "the FORMAT block's leanness rules above: ignore \"match the answer's length to the question\", \"a plain 'what",
+  "is X' needs only bottom_line + what_we_know\", and \"an empty section beats filler\" here. This is the DEPTH",
+  "mode; the reader asked for more, so give a fuller answer than the quick register would):",
   "- Precise clinical and technical language is fine; still define an unusual term once on first use.",
   "- LEAD WITH THE EVIDENCE when the sources report outcomes: the bottom_line AND the FIRST what_we_know point",
   "  foreground the headline result — the effect size / magnitude and the study design behind it (e.g. '~15% mean",
   "  weight loss over 68 weeks in a randomized trial') — and mechanism, populations, and caveats come AFTER. (A",
   "  mechanism-only question with no outcome data leads with the mechanism; never invent numbers the sources don't state.)",
-  "- Be complete where the sources support it: include the substantive cited points a professional wants —",
-  "  mechanisms, effect sizes and numbers, study types and phases, populations, and the important caveats.",
-  "- 'Complete' means MORE real, cited substance — never padding. Do NOT fill a section the question does not",
-  "  warrant; an empty section beats generic filler (the FORMAT rules above still apply).",
+  "- BE GENUINELY COMPLETE: draw on AS MANY of the provided sources as genuinely apply — not just the few best —",
+  "  and give a FULL what_we_know: the mechanism, the effect sizes and numbers, the study types/phases and",
+  "  populations, the relevant comparisons, and the important caveats a professional wants. More real cited points",
+  "  is the goal here, not fewer.",
+  "- ALSO surface what_we_do_not_know whenever the evidence has real limits, gaps, or open questions — it usually",
+  "  does, and this is the mode where those honest limits belong. Do not omit it just to stay short.",
+  "- 'Complete' means MORE real, cited substance — NEVER padding, repetition, or restating the bottom_line in",
+  "  other words. Every point must add NEW, source-supported information; a section with genuinely nothing to add",
+  "  stays empty (this anti-filler rule is the ONE part of the FORMAT block still in force here).",
   "- GROUNDING, the HARD RULES, and the PHRASING rules above stay in full force: every added point carries the",
   "  [n] tags that directly support it.",
 ].join("\n");
@@ -322,12 +345,67 @@ const REGISTER_SAFETY = [
   "  (\"rare serious liver injury has been reported [n]\") and omit the bare \"is safe\" entirely.",
 ].join("\n");
 
-/** Full system prompt for a generation = base + (optional) register style + register-safety floor + intent guidance. */
+// Conversational voice (v12). The owner's chat feedback: a correct answer that opens with a detached
+// textbook fact ("Ozempic, a GLP-1 receptor agonist, has been associated with hair loss…") reads like a
+// fact dump, not a conversation. This changes only the VOICE and the OPENER — it is explicitly subordinate
+// to, and reasserts, every rule above. Rides with the live registers ONLY (plain + thorough), so Deep
+// Research / legacy replays keep BASE_GENERATE_SYSTEM byte-for-byte. The CARVE-OUT is the safety-critical
+// part: a warm "direct answer" opener is for INFORMATIONAL questions; a personal-decision / interaction /
+// dosing / pregnancy / safety-flagged question still opens on the specific risk and routes to a clinician —
+// never a verdict — because a "be conversational, lead direct" nudge would otherwise stack with the caution
+// guidance and manufacture reassurance leads (the failure the guardrail caught at v9).
+const CONVERSATIONAL_VOICE = [
+  "CONVERSATIONAL VOICE (how to PHRASE this answer — wording and opener only; every rule above stays in",
+  "full force and OUTRANKS this block):",
+  "- The bottom_line MUST OPEN by directly answering the question asked, the way a knowledgeable friend would —",
+  "  NOT with a detached textbook definition. This is the single most important style rule. Then attach the",
+  "  citation and the detail.",
+  "- For a plain INFORMATIONAL question, the FIRST words answer it head-on:",
+  "    • a yes/no question → start with \"Yes — …\", \"No — …\", \"Not exactly — …\", or \"It depends — …\"",
+  "    • a \"what is X\" question → start with a plain one-line take on what it IS and does.",
+  "  TRANSFORM, don't recite:",
+  "    BAD:  \"Ozempic, a GLP-1 receptor agonist, has been associated with hair loss.\"",
+  "    GOOD: \"Yes — hair loss has been reported with Ozempic [n], though it's not a common side effect.\"",
+  "    BAD:  \"Metformin is a biguanide antihyperglycemic agent indicated for type 2 diabetes.\"",
+  "    GOOD: \"Metformin is the usual first-choice pill for type 2 diabetes [n] — it mainly lowers blood sugar by …\"",
+  "- WARM, NATURAL register: plain connective prose, varied sentence length, second person is fine (\"if you're",
+  "  taking X, the thing the studies flag is …\"). Avoid a clipped, comma-spliced data-readout.",
+  "- CARVE-OUT (safety-critical — this OVERRIDES the 'open with Yes/No' rule above): a personal-decision question",
+  "  gets NO verdict opener. For anything about taking a drug yourself, an interaction, dosing, pregnancy, a",
+  "  research-use peptide, or your own situation (and any safety-flagged question), the opener STILL leads with the",
+  "  SPECIFIC risk the source reports and routes the personal decision to a clinician — NEVER \"yes you can\", \"it's",
+  "  usually fine\", \"it's safe\", or any reassurance or instruction. Warm in TONE, never in safety. e.g. \"Combining",
+  "  those is worth clearing with your pharmacist first — the cited studies flag <specific risk> [n].\"",
+  "- VOICE NEVER OVERRIDES SAFETY OR GROUNDING. The HARD RULES, PHRASING, and the ANSWER-SAFETY FLOOR above are",
+  "  absolute. A friendly opener that reassures, advises, or makes an unsupported claim is WORSE than a dry one.",
+  "  Every sentence stays source-cited; keep all hedges and qualifiers. Sound human; stay conservative and grounded.",
+].join("\n");
+
+// Formatting (v13). Lets the model emit light markdown EMPHASIS (**bold**) for scannability, like a good
+// explainer — the owner's "feel like ChatGPT/Claude" ask. Deliberately bold-ONLY: headers and lists are
+// banned because the app's schema already provides structure (section headers + per-point paragraphs), so
+// model-authored blocks would duplicate it and break layout. SAFE because detectViolations now strips
+// markdown before scanning (stripMarkdownForScan), so emphasis can't split a banned phrase past a rule.
+// Rides with the live registers only; Deep Research / BASE stay markdown-free.
+const MARKDOWN_FORMAT = [
+  "FORMATTING (presentation only — NEVER changes which claims you make, your grounding, or how you phrase",
+  "safety):",
+  "- Use **bold** (double asterisks) to emphasize the few MOST important terms — the drug name on first",
+  "  mention, the headline finding, a key number — the way a good explainer bolds what matters. Sparingly:",
+  "  a couple of bolded terms per point, never whole sentences, and never to dress up a caution.",
+  "- Do NOT use headers (#), bullet or numbered lists, tables, or links. The app already lays the answer out",
+  "  in clean sections and short paragraphs — write the words, not the layout.",
+].join("\n");
+
+/** Full system prompt for a generation = base + (optional) register style + conversational voice + formatting + register-safety floor + intent guidance. */
 export function generateSystem(intent: Intent, style?: AnswerStyle): string {
   const styleBlock = style === "plain" ? PLAIN_STYLE : style === "thorough" ? THOROUGH_STYLE : "";
-  // The register-safety floor rides with EITHER live register, never the absent one (Deep Research / legacy
-  // replays keep BASE_GENERATE_SYSTEM verbatim).
+  // Voice + formatting + the register-safety floor ride with EITHER live register, never the absent one
+  // (Deep Research / legacy replays keep BASE_GENERATE_SYSTEM verbatim). Order is deliberate: the safety
+  // floor and the intent guidance come AFTER, so safety has the last (most emphasized) word.
+  const voiceBlock = style ? CONVERSATIONAL_VOICE : "";
+  const formatBlock = style ? MARKDOWN_FORMAT : "";
   const safetyBlock = style ? REGISTER_SAFETY : "";
   const extra = INTENT_GUIDANCE[intent];
-  return [BASE_GENERATE_SYSTEM, styleBlock, safetyBlock, extra].filter(Boolean).join("\n\n");
+  return [BASE_GENERATE_SYSTEM, styleBlock, voiceBlock, formatBlock, safetyBlock, extra].filter(Boolean).join("\n\n");
 }

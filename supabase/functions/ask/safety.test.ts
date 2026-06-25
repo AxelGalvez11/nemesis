@@ -3,7 +3,7 @@
 // gates the generated text AFTER, so a forbidden doc-20 string can never reach
 // the user even if the model emits it. Run: deno test supabase/functions/ask/
 import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { preScreen, detectViolations, detectSmallTalk } from "./safety.ts";
+import { preScreen, detectViolations, detectSmallTalk, stripMarkdownForScan } from "./safety.ts";
 
 // ---------------------------------------------------------------------------
 // detectSmallTalk — pure greeting/thanks/capability messages only
@@ -11,6 +11,22 @@ import { preScreen, detectViolations, detectSmallTalk } from "./safety.ts";
 
 Deno.test("detectSmallTalk: bare greetings match", () => {
   for (const q of ["hi", "Hi!", "hello", "hey there", "yo", "good morning", "howdy", "  hii  "]) {
+    assert(detectSmallTalk(q), `expected small-talk: ${JSON.stringify(q)}`);
+  }
+});
+
+Deno.test("detectSmallTalk: STACKED greetings match (the reported 'hi how are you' miss)", () => {
+  // A combined greeting is still pure small-talk — it must NOT fall through to the clinical fallback.
+  for (
+    const q of [
+      "hi how are you",
+      "hi how are you?",
+      "hey there how's it going",
+      "hello thanks",
+      "hey, how are you doing",
+      "good morning how are you",
+    ]
+  ) {
     assert(detectSmallTalk(q), `expected small-talk: ${JSON.stringify(q)}`);
   }
 });
@@ -398,5 +414,49 @@ Deno.test("injection rule: non-dose mentions of pin/shoot do not false-positive"
     ]
   ) {
     assertEquals(detectViolations(s).length, 0, `must stay clean: ${JSON.stringify(s)}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Markdown-aware scanning (v13): once the model is allowed to format with **bold** etc., the scanner
+// must strip the SYNTAX before scanning so emphasis can never split a banned phrase past a rule.
+// stripMarkdownForScan only ever REVEALS a banned phrase (re-joins it), never hides one.
+// ---------------------------------------------------------------------------
+
+Deno.test("stripMarkdownForScan: removes syntax, keeps content + mid-word hyphens", () => {
+  assertEquals(stripMarkdownForScan("is s**a**fe"), "is safe");
+  assertEquals(stripMarkdownForScan("do not **stop** taking"), "do not stop taking");
+  assertEquals(stripMarkdownForScan("`code`"), "code");
+  assertEquals(stripMarkdownForScan("*italic*"), "italic");
+  assertEquals(stripMarkdownForScan("## Header text"), "Header text");
+  assertEquals(stripMarkdownForScan("- bullet item"), "bullet item");
+  assertEquals(stripMarkdownForScan("1. numbered item"), "numbered item");
+  assertEquals(stripMarkdownForScan("[the label](http://x.com)"), "the label");
+  // hyphens inside words are NOT markdown and must survive untouched
+  assertEquals(stripMarkdownForScan("non-scarring and reversible"), "non-scarring and reversible");
+});
+
+Deno.test("detectViolations: markdown can NOT smuggle a banned phrase past a rule", () => {
+  // emphasis splitting the banned span must still be caught
+  for (const s of [
+    "It **is safe** to combine these.",
+    "This is s**a**fe for everyone.",
+    "Just **inject** 250 mcg under the skin.",
+    "You can in*ject* 250mcg weekly.",
+    "It will [cure](http://x.com) the cancer.",
+  ]) {
+    assert(detectViolations(s).length > 0, `markdown-wrapped violation must be caught: ${JSON.stringify(s)}`);
+  }
+});
+
+Deno.test("detectViolations: stripping does NOT create false positives on safe formatted text", () => {
+  // bolding benign terms, and the ALLOWED 'do not stop taking' form, must stay clean after stripping
+  for (const s of [
+    "**Mounjaro** is a once-weekly injectable medicine for type 2 diabetes.",
+    "Talk to your doctor — **do not stop taking** your medication on your own.",
+    "The label lists a **2.5 mg** starting dosage in noun form.",
+    "- It was reported as generally well-tolerated in the cited studies.",
+  ]) {
+    assertEquals(detectViolations(s).length, 0, `safe formatted text must stay clean: ${JSON.stringify(s)}`);
   }
 });

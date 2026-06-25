@@ -97,8 +97,10 @@ import {
   type PricingFetchOpts,
 } from "./providers/pricing.ts";
 
+// Service-role-only ingest endpoint — never called from a browser. A fixed canonical
+// origin is sufficient; the wildcard "*" served no purpose and is removed.
 const CORS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://app.pharmaorb.app",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -138,34 +140,36 @@ interface SyncResult {
 }
 
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const PROJECT_REF =
-  Deno.env.get("SUPABASE_URL")?.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] ??
-  "";
+
+// Accepted service-role caller keys: the legacy SUPABASE_SERVICE_ROLE_KEY plus any named
+// secret keys Supabase injects via SUPABASE_SECRET_KEYS (sb_secret_…). Same posture as
+// watch/auth-keys.ts. Empty/non-string values are dropped so an unset key never becomes a
+// credential.
+function acceptedKeys(): Set<string> {
+  const fromSecret: unknown[] = (() => {
+    try {
+      const dict = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}");
+      return dict && typeof dict === "object" && !Array.isArray(dict) ? Object.values(dict) : [];
+    } catch {
+      return [];
+    }
+  })();
+  return new Set(
+    [SERVICE_KEY, ...fromSecret].filter((v): v is string => typeof v === "string" && v.length > 0),
+  );
+}
 
 /**
- * Accept either: (a) exact match of SUPABASE_SERVICE_ROLE_KEY env (handles
- * both legacy JWT and new sb_secret_* formats), or (b) a structurally-valid
- * service-role JWT issued for this project (legacy fallback when env holds
- * the new format but caller has the legacy JWT).
+ * Service-role gate. EXACT match against the accepted key set only.
+ *
+ * The previous fallback decoded the token's JWT payload and trusted role/iss WITHOUT
+ * verifying the signature — a hand-forged unsigned token ({"alg":"none"}, role=service_role)
+ * would have passed had this function ever run with verify_jwt=false (as watch/watch-digest do).
+ * It is backstopped today by the platform gateway (verify_jwt=true), but decode-and-trust is a
+ * footgun, so it is removed. Legacy-vs-new key formats are handled by acceptedKeys() instead.
  */
 function authorize(token: string): boolean {
-  if (!token) return false;
-  if (SERVICE_KEY && token === SERVICE_KEY) return true;
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return false;
-    const padded = parts[1] + "=".repeat((4 - (parts[1].length % 4)) % 4);
-    const payload = JSON.parse(
-      atob(padded.replace(/-/g, "+").replace(/_/g, "/")),
-    );
-    if (payload.role !== "service_role") return false;
-    if (payload.iss !== "supabase") return false;
-    if (PROJECT_REF && payload.ref && payload.ref !== PROJECT_REF) return false;
-    if (payload.exp && payload.exp * 1000 < Date.now()) return false;
-    return true;
-  } catch {
-    return false;
-  }
+  return Boolean(token) && acceptedKeys().has(token);
 }
 
 serve(async (req) => {
