@@ -12,9 +12,19 @@ import type {
   SourceEvidenceRole,
   SourceSupportLevel,
 } from "../../../packages/shared/src/answer.ts";
+import type { ClaimRelation } from "../../../packages/shared/src/claim-relation.ts";
 import type { RetrievedChunk } from "./citation.ts";
 
-type RatingFields = Pick<Citation, "support_level" | "support_score" | "evidence_role" | "evidence_weight" | "support_reason">;
+type RatingFields = Pick<
+  Citation,
+  | "support_level"
+  | "support_score"
+  | "evidence_role"
+  | "evidence_weight"
+  | "support_reason"
+  | "claim_relation"
+  | "relation_reason"
+>;
 
 const STOP = new Set([
   "the", "a", "an", "of", "in", "on", "and", "or", "to", "for", "with", "was", "were", "is", "are",
@@ -94,6 +104,13 @@ function supportLevel(score: number, cited: boolean): SourceSupportLevel {
   return "background";
 }
 
+export function relationForSupport(level: SourceSupportLevel | undefined): ClaimRelation {
+  if (level === "direct") return "supports";
+  if (level === "partial") return "partial";
+  if (level === "weak" || level === "background") return "mentions";
+  return "reviewed";
+}
+
 export function rateSourceSupport(
   chunks: readonly RetrievedChunk[],
   sections: AnswerSections,
@@ -123,6 +140,8 @@ export function rateSourceSupport(
       evidence_role: role.role,
       evidence_weight: role.weight,
       support_reason: reason,
+      claim_relation: relationForSupport(level),
+      relation_reason: reason,
     });
   }
   return out;

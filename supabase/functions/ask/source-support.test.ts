@@ -1,7 +1,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { AnswerSections } from "../../../packages/shared/src/answer.ts";
 import type { RetrievedChunk } from "./citation.ts";
-import { evidenceRole, rateSourceSupport } from "./source-support.ts";
+import { evidenceRole, rateSourceSupport, relationForSupport } from "./source-support.ts";
 
 const sections: AnswerSections = {
   what_we_know: [
@@ -55,6 +55,7 @@ Deno.test("rateSourceSupport gives direct support when a verbatim support quote 
   ], sections);
   const r = ratings.get("1")!;
   assertEquals(r.support_level, "direct");
+  assertEquals(r.claim_relation, "supports");
   assertEquals(r.evidence_role, "official_label");
 });
 
@@ -64,5 +65,14 @@ Deno.test("rateSourceSupport labels uncited reranked sources as reviewed", () =>
   ], sections);
   const r = ratings.get("3")!;
   assertEquals(r.support_level, "reviewed");
+  assertEquals(r.claim_relation, "reviewed");
   assertEquals(r.evidence_role, "consumer_health");
+});
+
+Deno.test("relationForSupport maps legacy support levels into claim relations", () => {
+  assertEquals(relationForSupport("direct"), "supports");
+  assertEquals(relationForSupport("partial"), "partial");
+  assertEquals(relationForSupport("weak"), "mentions");
+  assertEquals(relationForSupport("background"), "mentions");
+  assertEquals(relationForSupport(undefined), "reviewed");
 });

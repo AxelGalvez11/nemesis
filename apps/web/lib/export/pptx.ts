@@ -63,6 +63,7 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
       { text: `Search date: ${m.search_date}`, options: { bullet: true, breakLine: true } },
       { text: m.inclusion_notes, options: { bullet: true, breakLine: true } },
       { text: m.exclusion_notes, options: { bullet: true, breakLine: true } },
+      { text: "Automated bounded review; not an exhaustive census or formal systematic review.", options: { bullet: true, breakLine: true } },
     ]);
   }
 

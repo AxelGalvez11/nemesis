@@ -18,6 +18,7 @@ import { retrieve } from "../retrieve.ts";
 import { rerankChunks } from "../rerank.ts";
 import { gatherLiveCandidates, liveToChunk } from "../live-sources.ts";
 import { citationMeta, type RetrievedChunk } from "../citation.ts";
+import { modelFor } from "../model-router.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
@@ -36,6 +37,7 @@ import type {
 } from "../../../../packages/shared/src/answer.ts";
 import type {
   GapStatement,
+  ModelSlotMap,
   ReportMode,
   ResearchProgressStep,
   ResearchReport,
@@ -197,6 +199,8 @@ export function assembleReport(args: {
   designPoints?: RawReportPoint[];
   /** The computed pooled result the forest table renders (meta mode). */
   metaAnalysis?: MetaAnalysisResult;
+  /** Optional audit map of configured model slots used by this report. */
+  modelSlots?: ModelSlotMap;
 }): ResearchReport {
   const { enforced, chunks } = args;
   // Merge the uncited design proposals (lab_draft) with the cited body in ONE assembleSections pass so a
@@ -248,6 +252,7 @@ export function assembleReport(args: {
     search_method: args.searchMethod,
     citation_style: "vancouver",
     meta_analysis: args.metaAnalysis,
+    model_slots: args.modelSlots,
   };
 }
 
@@ -546,6 +551,12 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
     searchMethod,
     metaPoints,
     metaAnalysis: metaResult,
+    modelSlots: {
+      classify: cls.model,
+      scope: modelFor("scope"),
+      research: synth.model,
+      verify: modelFor("verify"),
+    },
   });
   emit("done", "Report ready", report.citations.length);
   return report;

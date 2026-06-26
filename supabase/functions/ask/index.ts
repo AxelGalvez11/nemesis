@@ -34,9 +34,11 @@ import { isFabricatedDrugQuery } from "./fabrication.ts";
 import { assumptionNote, findTypoCorrections } from "./typo-correct.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
+import { modelFor } from "./model-router.ts";
 import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
-import { understandQuery } from "./query-understanding.ts";
+import { applyReconToUnderstanding, understandQuery } from "./query-understanding.ts";
+import { runWebRecon, type WebReconResult } from "./web-recon.ts";
 import { rateSourceSupport } from "./source-support.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
@@ -205,7 +207,11 @@ async function runAsk(
   // a flag the LLM added.
   const rawFlags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
   const flags = suppressEmergencyForGeneralToxicity(question, rawFlags);
-  const queryUnderstanding = understandQuery(question, cls.entity_mentions);
+  const webRecon = await runWebRecon(question);
+  const queryUnderstanding = applyReconToUnderstanding(
+    understandQuery(question, cls.entity_mentions),
+    webRecon,
+  );
   // Observability for a SAFETY RELAXATION: a backstop that quietly downgrades an emergency must leave
   // an audit trail. Logs only when the carve-out actually fired (emergency_possible was present, now isn't).
   if (rawFlags.includes("emergency_possible") && !flags.includes("emergency_possible")) {
@@ -276,7 +282,7 @@ async function runAsk(
   // union (for the fabrication guard); `top` is the MATCH_COUNT slice shown to the generator.
   let guardPool: RetrievedChunk[] = ret.chunks;
   if (LIVE_SOURCES_ON) {
-    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount);
+    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount, webRecon);
     guardPool = aug.pool;
     ret = { ...ret, chunks: aug.top };
   }
@@ -483,11 +489,14 @@ async function augmentWithLive(
   libChunks: RetrievedChunk[],
   perSourceMax: number = LIVE_PER_SOURCE_MAX,
   matchCount: number = MATCH_COUNT,
+  webRecon?: WebReconResult,
 ): Promise<{ pool: RetrievedChunk[]; top: RetrievedChunk[] }> {
   const fallback = { pool: libChunks, top: libChunks };
   try {
     const baseResearchQuery = extractSearchTerms(question) || question;
-    const understood = understandQuery(question, entityMentions, baseResearchQuery);
+    const understood = webRecon
+      ? applyReconToUnderstanding(understandQuery(question, entityMentions, baseResearchQuery), webRecon)
+      : understandQuery(question, entityMentions, baseResearchQuery);
     // openFDA/FAERS/ClinicalTrials want a drug TERM, not a sentence (a raw question 400s). Use the
     // literal mentions when present — a real-but-new drug (retatrutide) is found by name; a fabricated
     // one returns nothing. Fall back to the question for general/non-drug queries.
@@ -798,6 +807,10 @@ async function consumeAskQuota(userId: string): Promise<ConsumeUsageResult> {
 
 async function storeTrace(row: TraceRow): Promise<void> {
   try {
+    const traceRow = {
+      ...row,
+      model_name: modelNameWithSlots(row.model_name),
+    };
     const res = await fetch(`${SB_URL}/rest/v1/generated_answers`, {
       method: "POST",
       headers: {
@@ -806,7 +819,7 @@ async function storeTrace(row: TraceRow): Promise<void> {
         "Content-Type": "application/json",
         Prefer: "return=minimal",
       },
-      body: JSON.stringify(row),
+      body: JSON.stringify(traceRow),
     });
     // fetch resolves on HTTP 4xx/5xx (only network errors throw), so the status MUST be checked — an
     // un-inspected reject silently loses the trace AND breaks the answer_id FK on the saved chat message.
@@ -818,6 +831,11 @@ async function storeTrace(row: TraceRow): Promise<void> {
     // visible — a dropped emergency/self-harm trace is a lost safety audit record.
     console.error("storeTrace failed (trace lost):", (e as Error).message);
   }
+}
+
+function modelNameWithSlots(modelName: string): string {
+  if (modelName.startsWith("deterministic-") || modelName.includes("|slots(")) return modelName;
+  return `${modelName}|slots(classify=${modelFor("classify")};generate=${modelFor("generate")};verify=${modelFor("verify")})`;
 }
 
 function unique<T>(arr: T[]): T[] {

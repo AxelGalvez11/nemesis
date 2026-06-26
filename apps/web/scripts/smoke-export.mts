@@ -4,6 +4,7 @@
 import { strFromU8, unzipSync } from "fflate";
 import type { ResearchReport } from "@pharmabro/shared";
 import { reportToDocx } from "../lib/export/docx.ts";
+import { reportToPdf } from "../lib/export/pdf.ts";
 import { reportToPptx } from "../lib/export/pptx.ts";
 
 const fixtureReport: ResearchReport = {
@@ -48,6 +49,12 @@ assertPkZip(docxBuf, "reportToDocx");
 
 const pptxBuf = await reportToPptx(fixtureReport, "ama");
 assertPkZip(pptxBuf, "reportToPptx");
+
+const pdfBuf = reportToPdf(fixtureReport, "vancouver");
+if (!(pdfBuf[0] === 0x25 && pdfBuf[1] === 0x50 && pdfBuf[2] === 0x44 && pdfBuf[3] === 0x46)) {
+  throw new Error("reportToPdf: not a PDF file");
+}
+console.log(`✓ reportToPdf: ${pdfBuf.length} bytes, PDF header OK`);
 
 // Fixture 2: structured_review — verifies honesty signals appear in the generated XML.
 const structuredReport: ResearchReport = {
@@ -131,5 +138,12 @@ if (!slideXml.includes("Evidence base (1 sources)")) {
   throw new Error("evidence-base table missing from pptx slides");
 }
 console.log("✓ structured pptx carries the evidence-base table");
+
+const pdfBuf2 = reportToPdf(structuredReport, "ama");
+const pdfText = pdfBuf2.toString("latin1");
+for (const needle of ["%PDF", "Methods", "not an exhaustive census", "References"]) {
+  if (!pdfText.includes(needle)) throw new Error(`honesty signal missing from pdf: ${needle}`);
+}
+console.log("✓ structured pdf carries honesty signals");
 
 console.log("export smoke: PASS");

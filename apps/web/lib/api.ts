@@ -1031,11 +1031,11 @@ export async function setWatchStatus(id: string, status: "active" | "paused"): P
   if (error) throw new Error(`update watch failed: ${error.message}`);
 }
 
-/** Download a saved report as .docx/.pptx. Fetches the Node route WITH the user's bearer token
+/** Download a saved report as .pdf/.docx/.pptx. Fetches the Node route WITH the user's bearer token
  *  (a plain <a download> can't set Authorization), then triggers a browser download of the blob. */
 export async function downloadReportExport(
   reportId: string,
-  format: "docx" | "pptx",
+  format: "pdf" | "docx" | "pptx",
   style: "vancouver" | "ama",
 ): Promise<void> {
   if (isPreviewMode) throw new Error("Export needs a live connection (not available in preview).");

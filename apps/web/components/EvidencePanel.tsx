@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { Citation } from "@pharmabro/shared";
-import { formatReference, studyTypeLabel } from "@pharmabro/shared";
+import { CLAIM_RELATION_LABEL, formatReference, studyTypeLabel } from "@pharmabro/shared";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
 
@@ -10,6 +10,7 @@ import { safeHref } from "@/lib/url";
 function providerClass(t: string): string {
   const p = t.toLowerCase();
   if (p.includes("openfda") || p.includes("dailymed") || p.includes("label")) return "openfda";
+  if (p.includes("fda_safety") || p.includes("enforcement")) return "faers";
   if (p.includes("openalex")) return "openalex";
   if (p.includes("medlineplus")) return "medlineplus";
   if (p.includes("pubmed") || p.includes("europepmc")) return "pubmed";
@@ -20,6 +21,7 @@ function providerClass(t: string): string {
 function providerLabel(t: string): string {
   const p = t.toLowerCase();
   if (p.includes("openfda")) return "FDA label";
+  if (p.includes("fda_safety") || p.includes("enforcement")) return "FDA safety";
   if (p.includes("dailymed")) return "DailyMed label";
   // OpenAlex: the non-PMID long tail (PMID-bearing works dedupe into the PubMed bucket upstream).
   if (p.includes("openalex")) return "OpenAlex · live";
@@ -41,7 +43,7 @@ function sourceFamily(t: string): string {
   const p = t.toLowerCase();
   if (p.includes("pubmed") || p.includes("europepmc") || p.includes("openalex")) return "PubMed";
   if (p.includes("trial") || p.includes("nct")) return "trials";
-  if (p.includes("openfda") || p.includes("dailymed") || p.includes("faers")) return "FDA";
+  if (p.includes("openfda") || p.includes("dailymed") || p.includes("faers") || p.includes("fda_safety")) return "FDA";
   if (p.includes("medlineplus")) return "guidance";
   return "other";
 }
@@ -71,6 +73,15 @@ function evidenceRoleLabel(role?: Citation["evidence_role"]): string | null {
   return role.replace(/_/g, " ");
 }
 
+function relationForCitation(c: Citation): Citation["claim_relation"] | undefined {
+  if (c.claim_relation) return c.claim_relation;
+  if (c.support_level === "direct") return "supports";
+  if (c.support_level === "partial") return "partial";
+  if (c.support_level === "weak" || c.support_level === "background") return "mentions";
+  if (c.support_level === "reviewed") return "reviewed";
+  return undefined;
+}
+
 // Append a Chrome text-fragment so an external source opens scrolled to the exact supporting
 // sentence (https://wicg.github.io/scroll-to-text-fragment/). Best-effort: if the destination HTML
 // doesn't contain the text verbatim the browser simply lands at the top, so it never breaks the link.
@@ -95,6 +106,7 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
   const studyType = studyTypeLabel(c);
   const support = supportLabel(c);
   const role = evidenceRoleLabel(c.evidence_role);
+  const relation = relationForCitation(c);
   // The supporting sentence belongs to the clicked claim, so it shows only on the active card.
   const activeSupportQuote = active && activeQuote ? activeQuote : null;
   const inner = (
@@ -103,6 +115,14 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
       <div className="badge-src"><span className="sq" />{providerLabel(c.source_type)}</div>
       <h5 title={refText}>{c.title || c.source_type}</h5>
       <div className="meta">
+        {relation ? (
+          <span
+            className={`relation-pill ${relation}`}
+            title={c.relation_reason ?? c.support_reason ?? "How this source relates to the claim"}
+          >
+            {CLAIM_RELATION_LABEL[relation]}
+          </span>
+        ) : null}
         {support ? (
           <span
             className={`support-pill ${c.support_level}`}

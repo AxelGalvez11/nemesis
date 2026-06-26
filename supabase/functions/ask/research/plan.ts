@@ -7,9 +7,8 @@
 // assert facts — so any failure degrades to the single original question rather than failing the run.
 
 import { callTool, type Tool } from "../llm.ts";
+import { modelFor } from "../model-router.ts";
 import type { ReportMode } from "../../../../packages/shared/src/research.ts";
-
-const PLAN_MODEL = Deno.env.get("LLM_CLASSIFY_MODEL") ?? "gpt-4o-mini";
 
 const MIN_SUB_QUESTIONS = 3;
 const MAX_SUB_QUESTIONS = 6;
@@ -100,7 +99,7 @@ export async function planSubQuestions(question: string, apiKey: string, mode: R
     const system = mode === "structured_review" || mode === "meta" ? PLAN_SYSTEM + STRUCTURED_SUFFIX : PLAN_SYSTEM;
     const { input } = await callTool<{ sub_questions?: unknown }>(
       {
-        model: PLAN_MODEL,
+        model: modelFor("scope"),
         max_tokens: 1024,
         temperature: 0,
         system,

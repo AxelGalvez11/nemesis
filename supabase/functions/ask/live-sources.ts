@@ -18,6 +18,8 @@ import { fetchEuropePmc } from "../core-source-sync/providers/europepmc.ts";
 import { fetchFaersReactions } from "../core-source-sync/providers/faers.ts";
 import { fetchOpenAlex } from "../core-source-sync/providers/openalex.ts";
 import { fetchMedlinePlus } from "../core-source-sync/providers/medlineplus.ts";
+import { fetchOpenFdaEnforcement } from "../core-source-sync/providers/enforcement.ts";
+import { fetchToxicologyReference } from "../core-source-sync/providers/toxicology.ts";
 import { extractSearchTerms } from "./search-query.ts";
 
 /** One live result, normalized for the reranker + citation layer; `source` is the full
@@ -114,6 +116,18 @@ const LIVE_SOURCES: LiveSourceDef[] = [
     return scoped === null ? Promise.resolve([]) : fetchOpenFdaLabels({ query: scoped, limit: n });
   } },
   { origin: "faers", fetch: (q, n) => fetchFaersReactions({ query: q, retmax: n }) },
+  {
+    origin: "fda_enforcement",
+    fetch: (q, n, _m, rq) =>
+      isSafetyCriticalQuery(`${q} ${rq}`) ? fetchOpenFdaEnforcement({ query: q || rq, limit: n }) : Promise.resolve([]),
+  },
+  {
+    origin: "toxicology",
+    fetch: (q, n, _m, rq) =>
+      isSafetyCriticalQuery(`${q} ${rq}`)
+        ? fetchToxicologyReference({ query: q || rq, limit: n })
+        : Promise.resolve([]),
+  },
   // OpenAlex LAST: the union is deduped first-wins by (provider, provider_id). A work carrying a PMID
   // normalizes to pubmed_oa:<pmid> and collapses into the PubMed/Europe PMC hit above; only OpenAlex's
   // non-PMID long tail (provider "openalex") survives as net-new breadth.
@@ -144,6 +158,11 @@ export function openFdaSearch(_rawQuery: string, mentions: string[]): string | n
       return `openfda.generic_name:${q} OR openfda.brand_name:${q}`;
     })
     .join(" OR ");
+}
+
+export function isSafetyCriticalQuery(query: string): boolean {
+  return /\b(lethal|fatal|death|deadly|toxic|toxicity|poison(?:ing)?|overdose|overdosed|recall(?:ed)?|withdrawn|contaminat(?:ed|ion)|adulterat(?:ed|ion)|arrhythmia|cardiac arrest|heart attack)\b/i
+    .test(query);
 }
 
 export interface GatherLiveOpts {

@@ -1,5 +1,7 @@
 // Answer-spec types (doc-20 / §7 / §8). The /ask request + frozen response.
 
+import type { ClaimRelation } from "./claim-relation.ts";
+
 /** doc-20 intent categories (the 15 the classifier maps to). `smalltalk` is NOT one the
  *  classifier emits — it is set deterministically by the small-talk short-circuit (safety.ts /
  *  index.ts) for a pure greeting/thanks/capability message, answered conversationally without
@@ -180,6 +182,10 @@ export interface Citation {
   evidence_weight?: number;
   /** Short human-readable reason for the support/source rating. */
   support_reason?: string;
+  /** Claim relation label for the citation UI: support direction, not model confidence. */
+  claim_relation?: ClaimRelation;
+  /** Short human-readable reason for the claim relation. */
+  relation_reason?: string;
 }
 
 /** Verbatim retrieved text behind one citation tag — the verification payload. Returned ONLY when the
