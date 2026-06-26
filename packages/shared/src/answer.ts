@@ -50,6 +50,31 @@ export type EvidenceGrade =
   | "unknown"
   | "not_applicable"; // emergency / sourcing-refusal answers carry no grade
 
+/** How directly a source supports the answer text that cited it. Optional/additive:
+ *  older saved answers simply omit it. This is deterministic metadata from the
+ *  citation/support layer, not the model's own confidence. */
+export type SourceSupportLevel =
+  | "direct"
+  | "partial"
+  | "weak"
+  | "background"
+  | "reviewed";
+
+/** Coarse evidence role derived from provider/publication metadata. It describes
+ *  what kind of source this is, not whether its conclusion is favorable. */
+export type SourceEvidenceRole =
+  | "official_label"
+  | "systematic_review"
+  | "randomized_trial"
+  | "clinical_trial"
+  | "observational_study"
+  | "case_report"
+  | "review_article"
+  | "consumer_health"
+  | "adverse_event_signal"
+  | "research_article"
+  | "background";
+
 /** Speed/depth dial for a single (non-research) answer:
  *  - "fast"     — plain-English register for a general reader, concise (the web default).
  *  - "thorough" — technical register for a clinician/researcher; fuller, casts a wider candidate net per source.
@@ -144,6 +169,17 @@ export interface Citation {
    *  (OpenAlex `best_oa_location`/`open_access`, Europe PMC `fullTextUrlList`); absent otherwise and
    *  on older saved chats/reports. The UI shows it as a distinct "Read full text (free)" affordance. */
   oa_url?: string;
+  /** Claim-support rating: how directly this retrieved source backs the answer claim(s) that cited it.
+   *  `reviewed` means the engine searched/ranked the source but the final answer did not cite it. */
+  support_level?: SourceSupportLevel;
+  /** Approximate 0..100 support signal computed from source type + citation/support overlap. */
+  support_score?: number;
+  /** Coarse source role from deterministic metadata, e.g. official_label, randomized_trial. */
+  evidence_role?: SourceEvidenceRole;
+  /** Approximate 0..100 source-quality/role score, independent of whether the result supports the claim. */
+  evidence_weight?: number;
+  /** Short human-readable reason for the support/source rating. */
+  support_reason?: string;
 }
 
 /** Verbatim retrieved text behind one citation tag — the verification payload. Returned ONLY when the

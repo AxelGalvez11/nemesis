@@ -612,6 +612,14 @@
 .src.medlineplus .sq { background: #e3b341; } /* amber — the plain-language NLM/NIH guidance source */
 /* DOAJ vetted-journal pill: a calm positive credibility signal (presence = good; absence is neutral). */
 .doaj-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.01em; color: #3fae8f; border: 1px solid color-mix(in srgb, #3fae8f 38%, transparent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+/* Source support: claim-support rating computed server-side from source type + cited-support passages.
+   This is not model confidence; it tells the reader how the card was used by the answer. */
+.support-pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 700; letter-spacing: 0.01em; border-radius: 999px; padding: 1px 7px; white-space: nowrap; text-transform: none; }
+.support-pill.direct { color: var(--acid-deep); background: color-mix(in srgb, var(--acid) 16%, transparent); border: 1px solid color-mix(in srgb, var(--acid) 36%, transparent); }
+.support-pill.partial { color: #5aa2e0; background: color-mix(in srgb, #5aa2e0 12%, transparent); border: 1px solid color-mix(in srgb, #5aa2e0 32%, transparent); }
+.support-pill.weak { color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); }
+.support-pill.background, .support-pill.reviewed { color: var(--text-3); background: var(--surface-2); border: 1px solid var(--line-2); }
+.evidence-role-pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.01em; color: var(--text-3); background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; white-space: nowrap; text-transform: capitalize; }
 /* Study-design pill: NEUTRAL descriptive metadata (study type), not a quality judgment. A calm slate-indigo
    so it reads as informational and stays distinct from the green DOAJ credibility pill. */
 .study-type-pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.01em; color: #8b93c4; background: color-mix(in srgb, #8b93c4 12%, transparent); border: 1px solid color-mix(in srgb, #8b93c4 32%, transparent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
