@@ -181,6 +181,9 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
 
 export async function askQuestion(question: string, mode?: AskMode): Promise<AskResponse> {
   if (isPreviewMode) {
+    // Keep local demos honest: preview answers are static, but the UI should still exercise the
+    // same thinking/progress state users see while the real evidence engine is working.
+    await new Promise((resolve) => setTimeout(resolve, 1250));
     return {
       answer_id: "preview-answer",
       intent: "drug_overview",

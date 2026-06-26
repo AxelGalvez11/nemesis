@@ -567,23 +567,40 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
 }
 
 function Thinking({ stage }: { stage: number }) {
+  const activeStage = STAGES[Math.min(stage, STAGES.length - 1)];
   return (
-    <div className="thinking">
-      <div className="think-row"><span className="shimmer">{STAGES[Math.min(stage, STAGES.length - 1)]}…</span></div>
-      <div className="qsearch">
+    <details className="thinking engine-preview engine-preview-compact" open>
+      <summary className="engine-preview-head">
+        <Orb size={26} busy />
+        <span className="engine-preview-titleblock">
+          <span className="engine-preview-title">
+            Thinking
+            <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>
+          </span>
+          <span className="engine-preview-subtitle">Evidence search · source ranking · cited answer</span>
+        </span>
+      </summary>
+      <div className="engine-live-line" aria-live="polite">
+        <span className="engine-live-dot" aria-hidden="true" />
+        <span>{activeStage}</span>
+      </div>
+      <div className="engine-step-list compact">
         {STAGES.map((label, i) => {
           // done = ✓, active = live spinner, upcoming = faded. The active step is the one the
           // pipeline is on right now, so it reads as honest in-progress work, not a finished list.
-          const state = i < stage ? "done" : i === stage ? "active" : "";
+          const state = i < stage ? "done" : i === stage ? "active" : "pending";
           return (
-            <div key={label} className={`qchip ${state}`.trimEnd()}>
-              <span className="tick"><Icon name="check" size={10} /></span>
-              {label}
+            <div key={label} className={`engine-step ${state}`}>
+              <span className="engine-step-icon"><Icon name="check" size={11} /></span>
+              <span className="engine-step-copy">
+                <span className="engine-step-label">{label}</span>
+              </span>
             </div>
           );
         })}
       </div>
-    </div>
+      <p className="research-progress-note">Showing engine activity while the answer is grounded in sources.</p>
+    </details>
   );
 }
 
