@@ -62,6 +62,61 @@ export function preScreen(question: string): PreScreenResult {
 }
 
 // ---------------------------------------------------------------------------
+// Educational-toxicity carve-out (deterministic, post-classify)
+// ---------------------------------------------------------------------------
+//
+// preScreen has NO "lethal"/"toxic" pattern, so "is celsius lethal" passes it clean — the
+// emergency_possible on such a question is added by the LLM classifier, whose system prompt is
+// told to "err toward flagging…any hint of…too-much-taken". A THIRD-PERSON "is X lethal/toxic/
+// dangerous" question is an educational toxicity query, not a caller in distress, and answering
+// it (with the standard safety framing + clinician routing) is correct. This relaxes ONLY that
+// specific over-route. It mirrors preScreen's existing RESEARCH_FRAMING/FIRST_PERSON_DISTRESS
+// symptom carve-out — but it must live HERE (after classify) because the preScreen carve-out can
+// only suppress preScreen's OWN flag, never one the classifier adds downstream.
+
+// Danger/toxicity predicates a general "is X …?" inquiry uses. "safe"/"unsafe" are deliberately
+// excluded — they rarely trigger emergency and broadening here buys nothing (the relax is keyed
+// to the danger words that actually cause the over-route).
+const TOXICITY_DANGER =
+  /\b(lethal|toxic|toxicity|deadly|fatal|poison|poisonous|harmful|dangerous|carcinogenic|hepatotoxic|nephrotoxic|cardiotoxic)\b/i;
+// Asking for a lethal AMOUNT — "lethal dose of X", "how much/many X is fatal" — is harm-adjacent
+// (overdose/self-harm territory), so it is NEVER treated as a benign educational inquiry even
+// though it shares the danger vocabulary.
+const LETHAL_AMOUNT =
+  /\b(lethal|toxic|fatal|deadly)\s+(dose|dosage|amount|level|quantity|concentration)\b|\bhow\s+(much|many)\b/i;
+
+/**
+ * True when the question is a general, third-person toxicity/danger inquiry ("is X lethal/toxic/
+ * dangerous?") — educational, not an active emergency. False the moment it looks like distress: a
+ * first-person report, an acute emergency symptom, an overdose/self-harm phrasing, or a request for
+ * a lethal AMOUNT. PURE.
+ */
+export function isGeneralToxicityQuestion(question: string): boolean {
+  return TOXICITY_DANGER.test(question) &&
+    !FIRST_PERSON_DISTRESS.test(question) &&
+    !EMERGENCY_SYMPTOM.test(question) &&
+    !OVERDOSE.test(question) &&
+    !SELF_HARM.test(question) &&
+    !LETHAL_AMOUNT.test(question);
+}
+
+/**
+ * Relax the classifier's over-eager emergency_possible on a general toxicity inquiry. STRICT and
+ * fail-safe: returns the flags UNCHANGED unless the question is an educational toxicity question
+ * AND emergency_possible is the only emergency-family flag present. A co-flagged overdose_possible
+ * or self_harm (the classifier saw something worse) keeps the FULL emergency routing untouched, and
+ * only emergency_possible is ever removed — overdose_possible / self_harm are never stripped. PURE.
+ */
+export function suppressEmergencyForGeneralToxicity(
+  question: string,
+  flags: readonly SafetyFlag[],
+): SafetyFlag[] {
+  if (flags.includes("overdose_possible") || flags.includes("self_harm")) return [...flags];
+  if (!isGeneralToxicityQuestion(question)) return [...flags];
+  return flags.filter((f) => f !== "emergency_possible");
+}
+
+// ---------------------------------------------------------------------------
 // Small-talk detector (deterministic, no LLM)
 // ---------------------------------------------------------------------------
 

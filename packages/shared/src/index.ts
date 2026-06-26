@@ -82,3 +82,11 @@ export * from "./watch-entitlements.ts";
 // Live-monitoring email digest: PURE builder of the same-day digest of LOUD alerts (alerts-only; the
 // quiet feed + walled news are never emailed). The send/schedule is owner-gated; this is the content core.
 export * from "./watch-digest.ts";
+
+// Score feature ("Percentile Engine" / Strava-for-longevity): two PURE, non-diagnostic primitives.
+//   • percentile.ts — places a raw biomarker value on a reference-population percentile (NOT a clinical
+//     threshold). Seed reference data is ILLUSTRATIVE pending real NHANES/cohort ingestion (see file).
+//   • health-score.ts — rolls metric percentiles up into pillar scores + one composite rank, with an
+//     evidence-weight hook the "living score" turns. Wellness framings only; never a disease label.
+export * from "./percentile.ts";
+export * from "./health-score.ts";

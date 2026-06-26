@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v14-2026-06-23"; // v14: CONVERSATIONAL PUSH — sharpens CONVERSATIONAL_VOICE so the bottom_line MUST OPEN by directly answering the question (yes/no question → "Yes —"/"No —"/"Not exactly —"/"It depends —"; "what is X" → a plain one-liner), with explicit BAD→GOOD transformation examples, instead of a detached textbook fact (v12's softer "lead direct" landed modest because the attribution framing dominated). The safety CARVE-OUT now EXPLICITLY OVERRIDES the "open with Yes/No" rule: interaction/dosing/pregnancy/peptide/health_context/safety-flagged questions still open on the specific risk + route to a clinician, never a verdict. Live-registers only; deep research/BASE untouched. Gate = 48-check guardrail. If this STILL lands modest, the ceiling is architectural (the grounding/attribution rules), not one more prompt. v13: SAFE MARKDOWN — a live-register-only MARKDOWN_FORMAT block lets the model emit **bold** emphasis for scannability (the "feel like ChatGPT" ask); bold-ONLY (headers/lists banned, schema owns structure). SAFE because detectViolations now markdown-STRIPS before scanning (safety.ts stripMarkdownForScan), so emphasis can never split a banned phrase past a rule — a scan ROBUSTNESS improvement, adversarially unit-tested. Deep Research/BASE stay markdown-free. Gate = 48-check guardrail. (Conversational-writing push is a SEPARATE later version, NOT bundled — so a guardrail failure is never ambiguous.) v12: CONVERSATIONAL VOICE — a live-register-only block (CONVERSATIONAL_VOICE, plain+thorough; Deep Research/BASE untouched) that makes the answer ADDRESS the person and open with a direct, source-grounded answer instead of a detached textbook fact (the owner's "fact dump, not a conversation" complaint). VOICE/opener only; subordinate to and reasserts the HARD RULES + PHRASING + REGISTER_SAFETY. SAFETY-CRITICAL carve-out: the direct "Yes/No" opener is for INFORMATIONAL questions only — interaction/dosing/pregnancy/peptide/health_context/safety-flagged questions still open on the specific risk + route to a clinician, never a verdict (else a "lead direct" nudge manufactures reassurance leads — the v9 failure). Gate = 48-check all-modes guardrail post-deploy, instant rollback on any breach. v11: TYPO "assume & answer" — when the fabrication guard fires on a drug name absent from the evidence, recover a genuine TYPO of a real drug (AUTHORITATIVE entity-table canonical + OSA edit-distance ≤1 + present in the evidence) by answering it and STATING the assumption ("Assuming you mean tesamorelin"), instead of the patronizing safety_fallback. index.ts wires findTypoCorrections (typo-correct.ts) at the guard; adversarially unit-tested so every class-plausible fake (florizagliflozin/maglutide/gliflozin/…) STILL refuses; the fabrication guard + its tests are untouched. Fixes the owner's "treats me like a patient / can't handle typos" complaint at the root. v10: SAFETY FIX after v9's guardrail caught a [fast] miss — a med-change question ("should I stop my sertraline?") classified to the out-of-union intent "medication_change_request" (a SafetyFlag value the model put in the intent field, bypassing the enum), which NO intent-keyed safety set recognized → no required safety floor, no professional-routing backstop → terse Fast intermittently omitted routing. Fix is in classify.ts (normalizeClassification: an unrecognized intent is preserved as a flag and remapped to health_context, fail-safe) + routing.ts (health_context now in ROUTE_TO_PROFESSIONAL_INTENTS — also closes the documented health_context routing hole). DETERMINISTIC + register-invariant; no prompt TEXT changed from v9. v9: Fast vs Thorough differ in DEPTH not vocabulary (PLAIN_STYLE terse; THOROUGH_STYLE explicit OVERRIDE of FORMAT leanness). v8: REGISTER_SAFETY block on both live registers. BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
+export const PROMPT_VERSION = "ask-v15-2026-06-25"; // v15: RESEARCH-TOOL POSITIONING — removed the clinician-routing STEER from the generate prompt (owner decision: PharmaOrb is an evidence/research tool, not personal medical advice). Every "point/route/defer the personal decision to a doctor/pharmacist/clinician" instruction was replaced with "state the specific risk + give NO personal verdict". ALL no-verdict safety RULES are untouched (HARD RULES, ANSWER-SAFETY FLOOR, PHRASING, GROUNDING) and detectViolations (safety.ts) is unchanged, so the failure mode stays safe (a slipped verdict is still discarded → fallback). Pairs with the deterministic routing-note removal (routing.ts) + signup consent gate (web). The 48-check guardrail's "safe" definition is updated to states-risk-no-verdict (a clinician reference is no longer required). MUST be validated on the live 48-check at deploy, rollback-ready. v14: CONVERSATIONAL PUSH — sharpens CONVERSATIONAL_VOICE so the bottom_line MUST OPEN by directly answering the question (yes/no question → "Yes —"/"No —"/"Not exactly —"/"It depends —"; "what is X" → a plain one-liner), with explicit BAD→GOOD transformation examples, instead of a detached textbook fact (v12's softer "lead direct" landed modest because the attribution framing dominated). The safety CARVE-OUT now EXPLICITLY OVERRIDES the "open with Yes/No" rule: interaction/dosing/pregnancy/peptide/health_context/safety-flagged questions still open on the specific risk + route to a clinician, never a verdict. Live-registers only; deep research/BASE untouched. Gate = 48-check guardrail. If this STILL lands modest, the ceiling is architectural (the grounding/attribution rules), not one more prompt. v13: SAFE MARKDOWN — a live-register-only MARKDOWN_FORMAT block lets the model emit **bold** emphasis for scannability (the "feel like ChatGPT" ask); bold-ONLY (headers/lists banned, schema owns structure). SAFE because detectViolations now markdown-STRIPS before scanning (safety.ts stripMarkdownForScan), so emphasis can never split a banned phrase past a rule — a scan ROBUSTNESS improvement, adversarially unit-tested. Deep Research/BASE stay markdown-free. Gate = 48-check guardrail. (Conversational-writing push is a SEPARATE later version, NOT bundled — so a guardrail failure is never ambiguous.) v12: CONVERSATIONAL VOICE — a live-register-only block (CONVERSATIONAL_VOICE, plain+thorough; Deep Research/BASE untouched) that makes the answer ADDRESS the person and open with a direct, source-grounded answer instead of a detached textbook fact (the owner's "fact dump, not a conversation" complaint). VOICE/opener only; subordinate to and reasserts the HARD RULES + PHRASING + REGISTER_SAFETY. SAFETY-CRITICAL carve-out: the direct "Yes/No" opener is for INFORMATIONAL questions only — interaction/dosing/pregnancy/peptide/health_context/safety-flagged questions still open on the specific risk + route to a clinician, never a verdict (else a "lead direct" nudge manufactures reassurance leads — the v9 failure). Gate = 48-check all-modes guardrail post-deploy, instant rollback on any breach. v11: TYPO "assume & answer" — when the fabrication guard fires on a drug name absent from the evidence, recover a genuine TYPO of a real drug (AUTHORITATIVE entity-table canonical + OSA edit-distance ≤1 + present in the evidence) by answering it and STATING the assumption ("Assuming you mean tesamorelin"), instead of the patronizing safety_fallback. index.ts wires findTypoCorrections (typo-correct.ts) at the guard; adversarially unit-tested so every class-plausible fake (florizagliflozin/maglutide/gliflozin/…) STILL refuses; the fabrication guard + its tests are untouched. Fixes the owner's "treats me like a patient / can't handle typos" complaint at the root. v10: SAFETY FIX after v9's guardrail caught a [fast] miss — a med-change question ("should I stop my sertraline?") classified to the out-of-union intent "medication_change_request" (a SafetyFlag value the model put in the intent field, bypassing the enum), which NO intent-keyed safety set recognized → no required safety floor, no professional-routing backstop → terse Fast intermittently omitted routing. Fix is in classify.ts (normalizeClassification: an unrecognized intent is preserved as a flag and remapped to health_context, fail-safe) + routing.ts (health_context now in ROUTE_TO_PROFESSIONAL_INTENTS — also closes the documented health_context routing hole). DETERMINISTIC + register-invariant; no prompt TEXT changed from v9. v9: Fast vs Thorough differ in DEPTH not vocabulary (PLAIN_STYLE terse; THOROUGH_STYLE explicit OVERRIDE of FORMAT leanness). v8: REGISTER_SAFETY block on both live registers. BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -173,7 +173,9 @@ export const BASE_GENERATE_SYSTEM = [
   '- a dose or injection instruction (e.g. "inject 250 mcg")',
   '- "[X] is safe" as a bare claim, or any cure claim',
   '- "you do not need to ask a doctor"',
-  "Always point the user to a licensed professional for personal decisions.",
+  "State what the evidence shows and STOP SHORT of a personal recommendation: describe the facts and the",
+  "specific risks, and never tell the reader what to do. (This is a research tool — it does not add a generic",
+  "'consult your doctor/pharmacist' steer; it simply declines to make the personal decision.)",
   "",
   "PHRASING — describe what the evidence says; do NOT instruct or reassure. This is how you answer",
   "treatment/condition questions WITHOUT crossing into advice (attribute every claim to a source):",
@@ -188,7 +190,7 @@ export const BASE_GENERATE_SYSTEM = [
   '  effective". A forbidden phrase inside an attribution is removed by the safety scan and the useful point is',
   '  lost with it — so phrase reported findings as carefully as your own claims, and keep the substance.',
   "A plain treatment question ('how do I fix my acne?') gets a real, useful, cited answer phrased this way —",
-  "not a refusal. Describe the options and their evidence, then route the personal decision to a clinician.",
+  "not a refusal. Describe the options and their evidence, and stop short of telling the reader which to choose.",
   "",
   "FORMAT — answer the SPECIFIC question; do NOT pad a fixed template:",
   "- bottom_line MUST be source-cited. Put the real substance in what_we_know, each point cited.",
@@ -198,7 +200,7 @@ export const BASE_GENERATE_SYSTEM = [
   "  bottom_line + what_we_know. Do NOT add what_we_do_not_know, safety_notes, or questions_to_ask",
   "  unless the question or the sources genuinely raise a limitation, caution, or personal decision.",
   "- Use safety_notes for REAL cautions (interactions, personal use, dosing, pregnancy, side effects),",
-  "  and questions_to_ask only when the user faces a decision a clinician should weigh in on.",
+  "  and questions_to_ask only when the user faces a genuine personal decision with open questions worth weighing.",
   "- Match the answer's length to the question: a simple question gets a short, direct answer.",
 ].join("\n");
 
@@ -214,7 +216,7 @@ const INTENT_GUIDANCE: Partial<Record<Intent, string>> = {
   drug_interaction:
     "INTENT=interaction. Do NOT say whether it is personally safe. Frame as 'this combination " +
     "may require caution', describe the mechanism/risk and what affects personal risk (dose, " +
-    "duration, kidney/liver function, other meds, age), and route the decision to a pharmacist/prescriber.",
+    "duration, kidney/liver function, other meds, age), and give NO personal safe/unsafe verdict.",
   supplement_peptide:
     "INTENT=supplement/peptide. Separate human vs animal vs mechanistic evidence explicitly. Never " +
     "call it 'safe'. Refuse any usage/injection instructions. State that product quality, long-term " +
@@ -228,16 +230,16 @@ const INTENT_GUIDANCE: Partial<Record<Intent, string>> = {
   side_effects:
     "INTENT=side effects. Prefer the FDA label's adverse-reactions / warnings sections. Do not imply completeness.",
   pregnancy_pediatrics:
-    "INTENT=pregnancy/pediatrics. Be especially conservative; surface label pregnancy/lactation language and " +
-    "defer strongly to a clinician.",
+    "INTENT=pregnancy/pediatrics. Be especially conservative; surface label pregnancy/lactation language, keep " +
+    "every caveat, and make NO personal recommendation.",
   dosing:
     "INTENT=dosing. You may describe what a label REPORTS as approved dosing as a fact, but never instruct the " +
-    "user on what to take. Redirect personal dosing to their prescriber.",
+    "user on what to take, and never turn a reported dosage into a personal recommendation.",
   health_context:
     "INTENT=personal/condition. The user describes a personal situation or asks how to manage/treat a condition " +
     "('how do I fix my acne?'). Give a REAL, useful, source-grounded answer — never a refusal. Describe the " +
-    "options the literature reports and their evidence, attribute each to a source, and route the personal " +
-    "decision to a clinician. Do not tell the user what to take, apply, start, or stop, and do not call anything " +
+    "options the literature reports and their evidence, attribute each to a source, and stop short of making the " +
+    "personal decision for them. Do not tell the user what to take, apply, start, or stop, and do not call anything " +
     "'safe' or a 'cure' — see the PHRASING rules.",
 };
 
@@ -315,7 +317,7 @@ const REGISTER_SAFETY = [
   "- NO BARE REASSURANCE / ABSENCE-OF-HARM VERDICT as your takeaway. Banned leads include: \"it is fine / OK / no",
   '  problem to combine\", \"there is no risk / no danger to you (or your baby)\", \"it won\'t harm\", \"it\'s low-risk\",',
   '  \"compatible with breastfeeding\", \"they are commonly used together\". Instead state the specific risk the',
-  "  source reports, KEEP its caveats, and route the personal decision to a clinician. Absence of evidence is NOT",
+  "  source reports and KEEP its caveats, without turning it into a personal go-ahead. Absence of evidence is NOT",
   "  evidence of safety — \"no data on use while breastfeeding\" must NOT become \"likely fine while breastfeeding\".",
   "- NEVER call a drug/supplement/peptide \"safe\", \"a safe …\", \"considered/regarded as/found to be safe\", \"the",
   "  safest/safer option\", or describe its \"safety profile\" as good/excellent — in your own voice or as a flat",
@@ -328,12 +330,12 @@ const REGISTER_SAFETY = [
   "  microbiologic eradication in most patients [n]\") and keep the recurrence / resistance / relapse caveats.",
   "- DOSING appears ONLY as an attributed label/study FACT in NOUN form (\"the label lists a 2.5 mg starting dosage,",
   "  increasing to 5 mg after 4 weeks [n]\"), NEVER as an imperative or titration instruction to the reader — no",
-  '  \"start at\", \"increase to\", \"work up to\", \"go up by\", \"take\", \"inject\". The prescriber sets the personal dose.',
+  '  \"start at\", \"increase to\", \"work up to\", \"go up by\", \"take\", \"inject\". This tool never sets a personal dose.',
   "- RESEARCH-USE PEPTIDES: give NO self-injection, reconstitution, route, frequency, or technique in ANY words —",
   "  even with no number, even phrased as a report (\"reconstitute with bacteriostatic water then inject subq\" is",
   "  banned). State it is an unapproved research compound with no established human protocol; separate animal from",
   "  human evidence; a per-kilogram ANIMAL dose (e.g. 10 µg/kg in rats) is NOT a human dose and must not be",
-  "  converted into one; route the decision to a licensed clinician.",
+  "  converted into one; give no personal protocol.",
   "- FAITHFULNESS — brevity must NOT drop the source's qualifiers. Preserve (a) hedges and study grade: keep",
   '  \"may / suggests\" and \"small / open-label / underpowered / not statistically significant\" when the source has',
   "  them; do not upgrade \"associated with\" to \"causes\" or \"prevents\". (b) Population / eligibility scope: keep",
@@ -351,8 +353,9 @@ const REGISTER_SAFETY = [
 // to, and reasserts, every rule above. Rides with the live registers ONLY (plain + thorough), so Deep
 // Research / legacy replays keep BASE_GENERATE_SYSTEM byte-for-byte. The CARVE-OUT is the safety-critical
 // part: a warm "direct answer" opener is for INFORMATIONAL questions; a personal-decision / interaction /
-// dosing / pregnancy / safety-flagged question still opens on the specific risk and routes to a clinician —
-// never a verdict — because a "be conversational, lead direct" nudge would otherwise stack with the caution
+// dosing / pregnancy / safety-flagged question still opens on the specific risk and gives no personal verdict
+// (research-tool positioning, 2026-06-25: no clinician steer) — because a "be conversational, lead direct" nudge
+// would otherwise stack with the caution
 // guidance and manufacture reassurance leads (the failure the guardrail caught at v9).
 const CONVERSATIONAL_VOICE = [
   "CONVERSATIONAL VOICE (how to PHRASE this answer — wording and opener only; every rule above stays in",
@@ -373,9 +376,9 @@ const CONVERSATIONAL_VOICE = [
   "- CARVE-OUT (safety-critical — this OVERRIDES the 'open with Yes/No' rule above): a personal-decision question",
   "  gets NO verdict opener. For anything about taking a drug yourself, an interaction, dosing, pregnancy, a",
   "  research-use peptide, or your own situation (and any safety-flagged question), the opener STILL leads with the",
-  "  SPECIFIC risk the source reports and routes the personal decision to a clinician — NEVER \"yes you can\", \"it's",
-  "  usually fine\", \"it's safe\", or any reassurance or instruction. Warm in TONE, never in safety. e.g. \"Combining",
-  "  those is worth clearing with your pharmacist first — the cited studies flag <specific risk> [n].\"",
+  "  SPECIFIC risk the source reports and gives NO personal verdict — NEVER \"yes you can\", \"it's",
+  "  usually fine\", \"it's safe\", or any reassurance or instruction. Warm in TONE, never in safety. e.g. \"The thing",
+  "  the cited studies flag about combining those is <specific risk> [n].\"",
   "- VOICE NEVER OVERRIDES SAFETY OR GROUNDING. The HARD RULES, PHRASING, and the ANSWER-SAFETY FLOOR above are",
   "  absolute. A friendly opener that reassures, advises, or makes an unsupported claim is WORSE than a dry one.",
   "  Every sentence stays source-cited; keep all hedges and qualifiers. Sound human; stay conservative and grounded.",

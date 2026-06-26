@@ -15,7 +15,7 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
-import { detectSmallTalk, preScreen } from "./safety.ts";
+import { detectSmallTalk, preScreen, suppressEmergencyForGeneralToxicity } from "./safety.ts";
 import { isBenignSalvageable, resolveSafety } from "./sanitize.ts";
 import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
@@ -195,7 +195,19 @@ async function runAsk(
 
   // ---- 1. classify ----
   const cls = await classify(question, apiKey);
-  const flags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
+  // Relax the classifier's over-eager emergency_possible on a general "is X lethal/toxic/dangerous"
+  // inquiry (the reported "is celsius lethal" over-route). Deterministic + fail-safe: only a SOLO
+  // emergency_possible on a third-person educational toxicity question is dropped; first-person
+  // distress, lethal-amount, overdose_possible, and self_harm all keep full emergency routing. See
+  // safety.ts. preScreen's emergency family already short-circuited above, so this only ever acts on
+  // a flag the LLM added.
+  const rawFlags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
+  const flags = suppressEmergencyForGeneralToxicity(question, rawFlags);
+  // Observability for a SAFETY RELAXATION: a backstop that quietly downgrades an emergency must leave
+  // an audit trail. Logs only when the carve-out actually fired (emergency_possible was present, now isn't).
+  if (rawFlags.includes("emergency_possible") && !flags.includes("emergency_possible")) {
+    console.warn(`ask toxicity carve-out — relaxed classifier emergency_possible on educational toxicity question: ${JSON.stringify(question.slice(0, 120))}`);
+  }
 
   // ---- 1b. news lane (paid-only walled panel) ----
   // Kicked off HERE so its fetch overlaps retrieve + live-augment + generate (latency hidden behind the
