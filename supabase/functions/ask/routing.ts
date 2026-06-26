@@ -1,4 +1,8 @@
-// Deterministic professional-routing guarantee (post-citation-enforcement).
+// Deterministic professional-routing backstop (post-citation-enforcement).
+//
+// CURRENTLY DISABLED (research-tool positioning, 2026-06-25): ROUTE_TO_PROFESSIONAL_INTENTS is empty,
+// so withProfessionalRouting() is a no-op and no answer carries the clinician-steer note. The history
+// below is kept because the mechanism is intentionally reversible (re-add intents to re-enable).
 //
 // The generate system prompt instructs the model to route personal decisions to
 // a licensed professional, but generation models (especially smaller ones)
@@ -17,25 +21,21 @@
 
 import type { AnswerPoint, Intent } from "../../../packages/shared/src/answer.ts";
 
-// Intents that imply a personal therapeutic decision (combine? dose? use? while
-// pregnant? stop?). Pure-informational intents (mechanism, comparison, trial_lookup,
-// investment, …) are excluded — a "talk to your prescriber" line there is a
-// non-sequitur. drug_overview is included so a classifier that labels a
-// borderline personal question as an overview still gets the guarantee.
-// health_context is included (v10): it is BOTH inherently personal (the answer is
-// applied to the user's own situation) AND the fail-safe remap target for an
-// unrecognized/out-of-union intent (classify.ts normalizeClassification). Without
-// it, a med-change question that classified to the out-of-union "medication_change_request"
-// got no routing backstop and a terse Fast answer could omit the steer entirely.
-export const ROUTE_TO_PROFESSIONAL_INTENTS: ReadonlySet<Intent> = new Set<Intent>([
-  "drug_overview",
-  "drug_interaction",
-  "side_effects",
-  "supplement_peptide",
-  "dosing",
-  "pregnancy_pediatrics",
-  "health_context",
-]);
+// DISABLED — research-tool positioning (owner decision, 2026-06-25).
+//
+// This set was the intents that got a deterministic "talk to your pharmacist/prescriber" note.
+// It is now EMPTY: PharmaOrb is an evidence/research tool, not a personal-medical-advice app, so
+// the clinician-steer boilerplate is removed from every answer (the "doctor-gpt" tell). Liability
+// cover moves to a one-time Terms-of-Service acceptance at signup + a light standing in-product
+// disclaimer (separate work), not a per-answer line.
+//
+// IMPORTANT — what this does NOT remove: the "no dangerous verdicts" floor is a SEPARATE mechanism
+// (detectViolations() in safety.ts) that still discards any "yes you can take them together",
+// dosing instruction, or "X is safe" claim before it can reach the user. Removing the steer note
+// does not weaken that — it only drops the advisory pointer, not the deterministic refusal teeth.
+//
+// REVERSIBLE: re-add intents here to restore the backstop for those question types.
+export const ROUTE_TO_PROFESSIONAL_INTENTS: ReadonlySet<Intent> = new Set<Intent>([]);
 
 // INVARIANT: this text MUST pass detectViolations() (zero forbidden patterns).
 // It is appended post-enforcement, after the runtime safety scan (index.ts ~§6a),

@@ -7,7 +7,7 @@
 // fail-safe behavior that closes that gap. Run: deno test supabase/functions/ask/
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { normalizeClassification } from "./classify.ts";
-import { ROUTE_TO_PROFESSIONAL_INTENTS } from "./routing.ts";
+import { generateTool } from "./prompts.ts";
 import type { SafetyFlag } from "../../../packages/shared/src/answer.ts";
 
 Deno.test("a valid intent passes through unchanged", () => {
@@ -23,11 +23,18 @@ Deno.test("the observed leak: 'medication_change_request' in the intent field re
   assert(out.safety_flags.includes("medication_change_request"), "the leaked signal must be preserved as a flag");
 });
 
-Deno.test("the remap target is wired to route (the fix holds end-to-end)", () => {
+Deno.test("the remap target still carries the SAFETY FLOOR end-to-end (clinician-routing intentionally disabled, 2026-06-25)", () => {
+  // The remap keeps a leaked/out-of-union intent inside the safety machinery. The professional-routing
+  // NOTE was removed app-wide (research-tool positioning — routing.ts ROUTE_TO_PROFESSIONAL_INTENTS is
+  // now empty), so the guarantee that now matters is the SAFETY FLOOR: the remapped intent
+  // (health_context) must force substantive safety_notes — the SPECIFIC caution — which generateTool
+  // encodes as a REQUIRED field. This is the stronger half of the v10 fix and is unaffected by the
+  // routing removal; the detectViolations() teeth (no "yes you can" / dose / "is safe") are separate again.
   const out = normalizeClassification("medication_change_request", []);
+  const required = (generateTool(out.intent).parameters as { required: string[] }).required;
   assert(
-    ROUTE_TO_PROFESSIONAL_INTENTS.has(out.intent),
-    "the remapped intent MUST be in the routing set, else the backstop still does not fire",
+    required.includes("safety_notes"),
+    "the remapped intent MUST carry the safety-notes floor, else the leaked med-change signal loses its caution",
   );
 });
 
