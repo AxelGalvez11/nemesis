@@ -377,6 +377,7 @@
 .send:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(0.3); }
 .composer .hint { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 9px; font-family: var(--mono); }
 .composer .err { text-align: center; color: var(--danger); font-size: 12px; margin-top: 8px; }
+.composer-disclaimer { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 9px; letter-spacing: 0.01em; }
 /* composer affordance buttons (+ attach, mic) — disabled until those features ship */
 .tool:disabled { opacity: 0.4; cursor: not-allowed; }
 

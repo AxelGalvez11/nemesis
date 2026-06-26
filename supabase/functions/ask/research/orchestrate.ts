@@ -13,7 +13,7 @@
 // Pro gating, and the research_report_runs migration are a SEPARATE, owner-gated deploy.
 
 import { classify } from "../classify.ts";
-import { detectViolations, preScreen } from "../safety.ts";
+import { detectViolations, preScreen, suppressEmergencyForGeneralToxicity } from "../safety.ts";
 import { retrieve } from "../retrieve.ts";
 import { rerankChunks } from "../rerank.ts";
 import { gatherLiveCandidates, liveToChunk } from "../live-sources.ts";
@@ -385,7 +385,13 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
 
   // ---- 1. classify (frozen LLM safety routing, mirrors /ask) ----
   const cls = await classify(question, cfg.apiKey);
-  const flags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
+  // Same educational-toxicity relax as /ask (shared safety machinery): drop a SOLO, classifier-added
+  // emergency_possible on a general "is X lethal/toxic" inquiry; everything worse keeps full routing.
+  const rawFlags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
+  const flags = suppressEmergencyForGeneralToxicity(question, rawFlags);
+  if (rawFlags.includes("emergency_possible") && !flags.includes("emergency_possible")) {
+    console.warn(`research toxicity carve-out — relaxed classifier emergency_possible on educational toxicity question: ${JSON.stringify(question.slice(0, 120))}`);
+  }
   if (flags.some((f) => f === "emergency_possible" || f === "overdose_possible" || f === "self_harm")) {
     return templateReport(question, "emergency_routing", EMERGENCY_COPY, flags);
   }

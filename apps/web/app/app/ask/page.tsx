@@ -11,6 +11,7 @@ import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
 import { pubchemMoleculeUrl } from "@/lib/molecule";
 import { phCapture } from "@/lib/posthog";
+import { POINT_OF_USE_DISCLAIMER } from "@/lib/legal";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
@@ -560,6 +561,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
         </div>
       </div>
       {error ? <div className="err">{error}</div> : null}
+      <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
     </div>
   );
 }

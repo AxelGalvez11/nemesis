@@ -11,11 +11,17 @@ export interface SignUpResult {
   needsEmailConfirmation: boolean;
 }
 
+/** Consent captured at signup. Recorded in auth user_metadata so we know which Terms/Disclaimer
+ *  version the user accepted; the account's server-side created_at is the authoritative time. */
+export interface SignUpConsent {
+  tosVersion: string;
+}
+
 interface AuthContextValue {
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
-  signUp: (email: string, password: string) => Promise<SignUpResult>;
+  signUp: (email: string, password: string, consent?: SignUpConsent) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
 }
 
@@ -78,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return error?.message ?? null;
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string) => {
+  const signUp = useCallback(async (email: string, password: string, consent?: SignUpConsent) => {
     if (isPreviewMode) {
       setSession(previewSession);
       return { error: null, needsEmailConfirmation: false };
@@ -88,6 +94,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password,
       options: {
         emailRedirectTo: `${appUrl}/app`,
+        // Record the accepted Terms/Disclaimer version on the user (the signup consent gate). The
+        // account's created_at is the authoritative acceptance time; we add a client stamp for context.
+        ...(consent
+          ? { data: { tos_version: consent.tosVersion, tos_accepted_at: new Date().toISOString() } }
+          : {}),
       },
     });
     if (error) return { error: error.message, needsEmailConfirmation: false };
