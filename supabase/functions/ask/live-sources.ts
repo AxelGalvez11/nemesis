@@ -96,12 +96,28 @@ interface LiveSourceDef {
   fetch: (query: string, max: number, mentions: string[], researchQuery: string) => Promise<NormalizedSource[]>;
 }
 
+export function shouldFetchClinicalTrials(
+  query: string,
+  mentions: string[],
+  researchQuery = query,
+): boolean {
+  if (mentions.some((mention) => mention.trim().length > 0)) return true;
+  const haystack = `${query} ${researchQuery}`.toLowerCase();
+  return !/\b(?:energy drink|celsius energy drink|red bull|monster energy|prime energy)\b/.test(haystack);
+}
+
 // THE REGISTRY. Add a source = one line. (DailyMed is intentionally omitted: it returns the same
 // FDA labels as openFDA, the preferred label source — redundant, not additive.)
 const LIVE_SOURCES: LiveSourceDef[] = [
   { origin: "pubmed", fetch: (_q, n, _m, rq) => fetchPubMedOA({ query: rq, retmax: n }) },
   { origin: "europepmc", fetch: (_q, n, _m, rq) => fetchEuropePmc({ query: rq, retmax: n }) },
-  { origin: "clinicaltrials", fetch: (q, n) => fetchClinicalTrials({ query: q, pageSize: n }) },
+  {
+    origin: "clinicaltrials",
+    fetch: (q, n, mentions, rq) =>
+      shouldFetchClinicalTrials(q, mentions, rq)
+        ? fetchClinicalTrials({ query: q, pageSize: n })
+        : Promise.resolve([]),
+  },
   // openFDA: field-scope to the named drug (generic OR brand name). A bare full-text search matched
   // FRAUDULENT OTC products that merely name-drop a trendy drug in their marketing copy — e.g.
   // "slimming patches" returned for the investigational retatrutide, which the model then grounded
