@@ -6,10 +6,9 @@ import type { Intent } from "../../../packages/shared/src/answer.ts";
 
 /** doc-18 medical disclaimer — rides on every answer. */
 export const MEDICAL_DISCLAIMER =
-  "PharmaBro provides educational information from public sources such as FDA labels, " +
-  "DailyMed, PubMed, and ClinicalTrials.gov. It does not provide medical advice, diagnosis, " +
-  "treatment, or prescribing decisions. Always consult a qualified healthcare professional " +
-  "for personal medical decisions.";
+  "PharmaOrb provides cited biomedical research from public sources such as FDA labels, " +
+  "DailyMed, PubMed, and ClinicalTrials.gov. It does not diagnose, prescribe, or make " +
+  "personal treatment decisions.";
 
 /** doc-18 / doc-20 emergency routing — verbatim. */
 export const EMERGENCY_COPY =
@@ -20,24 +19,22 @@ export const EMERGENCY_COPY =
 /** doc-20 drug-sourcing refusal — refuse to source, offer education only. */
 export const SOURCING_COPY =
   "I can't help with finding, buying, or sourcing medications or research compounds. " +
-  "I can share educational information about what a compound is, what the evidence says, " +
-  "and questions to ask a licensed healthcare professional.";
+  "I can summarize what a compound is, what the evidence says, its regulatory context, " +
+  "and source-backed safety signals.";
 
-/** doc-20 no-source refusal — disclaimer-forward + professional pointer (doc-20: always point to a
- *  doctor/pharmacist). Helpful tone: it's general information, not a refusal to engage. */
+/** doc-20 no-source refusal — evidence-gap forward. Helpful tone: it's general information, not a refusal to engage. */
 export const NO_SOURCE_COPY =
   "I couldn't find a reliable public source for that specific point, so I won't present it as " +
-  "established evidence. This is general information, not medical advice — please ask your doctor " +
-  "or pharmacist about your specific situation.";
+  "established evidence. I can still show adjacent sources, explain what is known, or help narrow " +
+  "the research question.";
 
 /** Used when a generation tripped the post-filter — sources existed, but the synthesized answer was
  *  discarded. Lead with the disclaimer and still be USEFUL (offer the sources + good questions),
  *  rather than a flat "I can't answer". */
 export const CONSERVATIVE_FALLBACK_COPY =
-  "This is general information from public sources — not medical advice, and no substitute for a " +
-  "clinician who knows your history. I couldn't put together a fully source-backed direct answer " +
-  "here, but the most relevant public sources are below, with good questions to bring to a " +
-  "healthcare professional.";
+  "I found related public sources, but I couldn't assemble a fully source-backed direct answer " +
+  "without overclaiming. The most relevant public sources are below, along with research angles " +
+  "that would make the question easier to evaluate.";
 
 /** Conversational reply for a pure greeting / thanks / "what can you do" message. Fixed copy
  *  (never model output), so — like EMERGENCY_COPY / SOURCING_COPY — it is not run through the
@@ -67,9 +64,9 @@ export const LAB_DRAFT_DISCLAIMER =
   "literature, and must be independently verified.";
 
 export const STANDARD_QUESTIONS = [
-  "Is this appropriate for me given my health history?",
-  "Are there interactions with my current medications?",
-  "What monitoring or follow-up would I need?",
+  "What population, dose range, or outcome should we narrow the evidence to?",
+  "Which source type should carry the most weight: FDA labels, trials, reviews, or safety reports?",
+  "Should I compare this with another drug, supplement, compound, or intervention?",
 ];
 
 /**

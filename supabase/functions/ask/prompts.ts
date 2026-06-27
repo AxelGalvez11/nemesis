@@ -5,7 +5,7 @@
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import type { Tool } from "./llm.ts";
 
-export const PROMPT_VERSION = "ask-v15-2026-06-25"; // v15: RESEARCH-TOOL POSITIONING — removed the clinician-routing STEER from the generate prompt (owner decision: PharmaOrb is an evidence/research tool, not personal medical advice). Every "point/route/defer the personal decision to a doctor/pharmacist/clinician" instruction was replaced with "state the specific risk + give NO personal verdict". ALL no-verdict safety RULES are untouched (HARD RULES, ANSWER-SAFETY FLOOR, PHRASING, GROUNDING) and detectViolations (safety.ts) is unchanged, so the failure mode stays safe (a slipped verdict is still discarded → fallback). Pairs with the deterministic routing-note removal (routing.ts) + signup consent gate (web). The 48-check guardrail's "safe" definition is updated to states-risk-no-verdict (a clinician reference is no longer required). MUST be validated on the live 48-check at deploy, rollback-ready. v14: CONVERSATIONAL PUSH — sharpens CONVERSATIONAL_VOICE so the bottom_line MUST OPEN by directly answering the question (yes/no question → "Yes —"/"No —"/"Not exactly —"/"It depends —"; "what is X" → a plain one-liner), with explicit BAD→GOOD transformation examples, instead of a detached textbook fact (v12's softer "lead direct" landed modest because the attribution framing dominated). The safety CARVE-OUT now EXPLICITLY OVERRIDES the "open with Yes/No" rule: interaction/dosing/pregnancy/peptide/health_context/safety-flagged questions still open on the specific risk + route to a clinician, never a verdict. Live-registers only; deep research/BASE untouched. Gate = 48-check guardrail. If this STILL lands modest, the ceiling is architectural (the grounding/attribution rules), not one more prompt. v13: SAFE MARKDOWN — a live-register-only MARKDOWN_FORMAT block lets the model emit **bold** emphasis for scannability (the "feel like ChatGPT" ask); bold-ONLY (headers/lists banned, schema owns structure). SAFE because detectViolations now markdown-STRIPS before scanning (safety.ts stripMarkdownForScan), so emphasis can never split a banned phrase past a rule — a scan ROBUSTNESS improvement, adversarially unit-tested. Deep Research/BASE stay markdown-free. Gate = 48-check guardrail. (Conversational-writing push is a SEPARATE later version, NOT bundled — so a guardrail failure is never ambiguous.) v12: CONVERSATIONAL VOICE — a live-register-only block (CONVERSATIONAL_VOICE, plain+thorough; Deep Research/BASE untouched) that makes the answer ADDRESS the person and open with a direct, source-grounded answer instead of a detached textbook fact (the owner's "fact dump, not a conversation" complaint). VOICE/opener only; subordinate to and reasserts the HARD RULES + PHRASING + REGISTER_SAFETY. SAFETY-CRITICAL carve-out: the direct "Yes/No" opener is for INFORMATIONAL questions only — interaction/dosing/pregnancy/peptide/health_context/safety-flagged questions still open on the specific risk + route to a clinician, never a verdict (else a "lead direct" nudge manufactures reassurance leads — the v9 failure). Gate = 48-check all-modes guardrail post-deploy, instant rollback on any breach. v11: TYPO "assume & answer" — when the fabrication guard fires on a drug name absent from the evidence, recover a genuine TYPO of a real drug (AUTHORITATIVE entity-table canonical + OSA edit-distance ≤1 + present in the evidence) by answering it and STATING the assumption ("Assuming you mean tesamorelin"), instead of the patronizing safety_fallback. index.ts wires findTypoCorrections (typo-correct.ts) at the guard; adversarially unit-tested so every class-plausible fake (florizagliflozin/maglutide/gliflozin/…) STILL refuses; the fabrication guard + its tests are untouched. Fixes the owner's "treats me like a patient / can't handle typos" complaint at the root. v10: SAFETY FIX after v9's guardrail caught a [fast] miss — a med-change question ("should I stop my sertraline?") classified to the out-of-union intent "medication_change_request" (a SafetyFlag value the model put in the intent field, bypassing the enum), which NO intent-keyed safety set recognized → no required safety floor, no professional-routing backstop → terse Fast intermittently omitted routing. Fix is in classify.ts (normalizeClassification: an unrecognized intent is preserved as a flag and remapped to health_context, fail-safe) + routing.ts (health_context now in ROUTE_TO_PROFESSIONAL_INTENTS — also closes the documented health_context routing hole). DETERMINISTIC + register-invariant; no prompt TEXT changed from v9. v9: Fast vs Thorough differ in DEPTH not vocabulary (PLAIN_STYLE terse; THOROUGH_STYLE explicit OVERRIDE of FORMAT leanness). v8: REGISTER_SAFETY block on both live registers. BASE_GENERATE_SYSTEM (and so Deep Research) stays byte-for-byte unchanged.
+export const PROMPT_VERSION = "ask-v16-2026-06-27"; // v16: research-first product voice. Generator and deterministic fallbacks frame PharmaOrb as a biomedical evidence engine, not doctor-bot triage copy. Guardrails are unchanged: no diagnosis, prescribing, personal dosing, therapy-change instructions, or unsupported safety verdicts.
 
 // Runtime enum lists. Typed as the shared unions so a drift between this file
 // and the frozen contract is a COMPILE error, not a silent classifier gap.
@@ -32,7 +32,7 @@ export const SAFETY_FLAGS: SafetyFlag[] = [
 
 export const CLASSIFY_SYSTEM =
   "You triage medication, supplement, peptide, and clinical-trial questions for a " +
-  "conservative, source-grounded medical-information app. Classify the question. " +
+  "conservative, source-grounded biomedical evidence app. Classify the question. " +
   "Extract every drug/supplement/peptide/compound name mentioned, verbatim as written " +
   "(do not normalize spelling). Flag safety aggressively and err toward flagging: set " +
   "emergency_possible / overdose_possible / self_harm for any hint of a current emergency, " +
@@ -141,9 +141,9 @@ export function generateTool(intent: Intent): Tool {
 // HARD RULES, with no drift. This is an `export` only — the prompt text is unchanged, so PROMPT_VERSION
 // stays put and /ask generation is byte-for-byte identical.
 export const BASE_GENERATE_SYSTEM = [
-  "You are PharmaBro's answer engine: a conservative, educational medical-information",
-  "assistant. You are NOT a doctor and must never diagnose, prescribe, give dosing, or",
-  "tell anyone to start, stop, or change a therapy.",
+  "You are PharmaOrb's answer engine: a source-backed biomedical evidence engine.",
+  "It does not diagnose, prescribe, give dosing, or tell anyone to start, stop,",
+  "or change a therapy.",
   "",
   "GROUNDING (absolute): Answer ONLY from the numbered sources provided in the user",
   "message. Each source is tagged [n]. For every factual sentence, put the [n] tags that",
@@ -174,8 +174,8 @@ export const BASE_GENERATE_SYSTEM = [
   '- "[X] is safe" as a bare claim, or any cure claim',
   '- "you do not need to ask a doctor"',
   "State what the evidence shows and STOP SHORT of a personal recommendation: describe the facts and the",
-  "specific risks, and never tell the reader what to do. (This is a research tool — it does not add a generic",
-  "'consult your doctor/pharmacist' steer; it simply declines to make the personal decision.)",
+  "specific risks, and never tell the reader what to do. (This is a research tool — it does not add generic",
+  "personal-care handoff boilerplate; it simply declines to make the personal decision.)",
   "",
   "PHRASING — describe what the evidence says; do NOT instruct or reassure. This is how you answer",
   "treatment/condition questions WITHOUT crossing into advice (attribute every claim to a source):",
@@ -245,8 +245,8 @@ const INTENT_GUIDANCE: Partial<Record<Intent, string>> = {
 
 /**
  * Answer register, derived from the request's mode (index.ts maps mode -> style):
- *  - "plain"    — Fast mode: write for a general-public reader, concise. The web default.
- *  - "thorough" — Thorough mode: technical register for a clinician/researcher, fuller.
+ *  - "plain"    — Fast mode: write a concise research brief for a curious general reader. The web default.
+ *  - "thorough" — Thorough mode: technical research register, fuller.
  *  Undefined -> no style block -> current behavior (the standard "curious researcher" register baked into
  *  BASE_GENERATE_SYSTEM), so older clients / mobile / saved-chat replays are unchanged.
  */
@@ -259,7 +259,7 @@ export type AnswerStyle = "plain" | "thorough";
 // MARKDOWN_FORMAT below; the safety scan markdown-strips first (stripMarkdownForScan) so it stays robust.
 const PLAIN_STYLE = [
   "ANSWER STYLE — FAST / PLAIN (for THIS answer, OVERRIDE the reader/register described above):",
-  "- Write for a general-public reader with no medical training — the clarity of a good health explainer.",
+  "- Write a concise research brief for a curious general reader — clear, plain, and source-focused.",
   "  Short sentences, everyday words.",
   "- LEAD WITH THE TAKEAWAY: open with what it is in plain terms and what it does for the reader — and, when",
   "  the sources say so, how well it works — BEFORE any mechanism or biology.",
@@ -283,7 +283,7 @@ const PLAIN_STYLE = [
 // Thorough mode. The standard register, asked to be COMPLETE (more real cited substance) — explicitly NOT
 // a return to the rigid fill-every-section template the FORMAT block killed.
 const THOROUGH_STYLE = [
-  "ANSWER STYLE — THOROUGH (for THIS answer, for a clinician/researcher who CHOSE the fuller answer — OVERRIDE",
+  "ANSWER STYLE — THOROUGH (for THIS answer, for a technical research reader who CHOSE the fuller answer — OVERRIDE",
   "the FORMAT block's leanness rules above: ignore \"match the answer's length to the question\", \"a plain 'what",
   "is X' needs only bottom_line + what_we_know\", and \"an empty section beats filler\" here. This is the DEPTH",
   "mode; the reader asked for more, so give a fuller answer than the quick register would):",

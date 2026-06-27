@@ -45,8 +45,8 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
     .join("\n\n");
 
   const healthBlock = opts.healthContext
-    ? `\n\nPersonal health context (use ONLY to add caution categories and questions to ask a ` +
-      `professional — never to diagnose, dose, or tell the user to change therapy):\n${opts.healthContext}`
+    ? `\n\nPersonal health context (use ONLY to identify risk categories, evidence gaps, and ` +
+      `research caveats — never to diagnose, dose, or tell the user to change therapy):\n${opts.healthContext}`
     : "";
 
   const userContent =

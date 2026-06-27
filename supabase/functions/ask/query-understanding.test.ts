@@ -65,6 +65,25 @@ Deno.test("understandQuery treats white flakes as a non-drug scalp topic", () =>
   assertEquals(isKnownNonDrugOnlyQuery(q), true);
 });
 
+Deno.test("understandQuery treats dry flakes as a non-drug scalp topic", () => {
+  const q = understandQuery(
+    "why do I have dry flakes in my hair",
+    [],
+    "dry flakes hair",
+  );
+  assertEquals(q.sourceQuery, "dandruff / scalp flaking");
+  assertEquals(q.fieldMentions, []);
+  assertEquals(q.normalizedTerms, ["dandruff / scalp flaking"]);
+  assertEquals(q.assumptions, [
+    'Interpreting "dry flakes" as dandruff / scalp flaking.',
+  ]);
+  assertEquals(q.researchQuery.includes("dandruff"), true);
+  assertEquals(q.researchQuery.includes("dry"), true);
+  assertEquals(q.researchQuery.includes("scalp"), true);
+  assertEquals(q.hasKnownNonDrugTopic, true);
+  assertEquals(isKnownNonDrugOnlyQuery(q), true);
+});
+
 Deno.test("understandQuery keeps drug mentions when a scalp topic is medication-related", () => {
   const q = understandQuery(
     "can isotretinoin cause white flakes in my hair?",

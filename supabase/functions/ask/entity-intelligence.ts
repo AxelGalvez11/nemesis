@@ -40,9 +40,15 @@ const KNOWN_ENTITIES: readonly KnownEntity[] = [
       "white flakes",
       "white flake",
       "white flaked",
+      "dry flakes",
+      "dry flake",
+      "dry flaky scalp",
+      "dry scalp flakes",
       "flaky scalp",
+      "flaking scalp",
       "scalp flakes",
       "scalp flaking",
+      "flakes in hair",
       "hair flakes",
       "dandruff",
       "seborrheic dermatitis",
@@ -52,6 +58,7 @@ const KNOWN_ENTITIES: readonly KnownEntity[] = [
       "dandruff",
       "seborrheic dermatitis",
       "scalp flaking",
+      "dry scalp",
       "Malassezia",
       "antifungal shampoo",
       "ketoconazole",
@@ -135,12 +142,15 @@ function hasWord(haystack: string, needle: string): boolean {
 }
 
 function toCandidate(entity: KnownEntity, raw: string): EntityCandidate {
+  const label = entity.kind === "consumer_product"
+    ? entity.display_alias
+    : raw || entity.display_alias;
   return {
     raw,
     normalized: entity.normalized,
     kind: entity.kind,
     assumptions: [
-      `Interpreting "${entity.display_alias}" as ${entity.normalized}.`,
+      `Interpreting "${label}" as ${entity.normalized}.`,
     ],
     biomedical_terms: [...entity.biomedical_terms],
     use_drug_label_lane: entity.use_drug_label_lane,

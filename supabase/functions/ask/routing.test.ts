@@ -1,8 +1,8 @@
-// Tests for the deterministic professional-routing guarantee. The routing note
-// is a fixed constant injected into safety_notes for personal-decision intents;
-// these lock its scope, immutability, and — critically — that the constant text
-// trips ZERO forbidden patterns in the frozen detectViolations() detector and
-// satisfies the phase3 professional-routing check. Run: deno test supabase/functions/ask/
+// Tests for the deterministic routing guarantee. The routing note used to be a
+// fixed professional-handoff note injected into safety_notes for personal-decision
+// intents. PharmaOrb is now positioned as a research/evidence engine, so the note
+// is a reversible no-op and the constant itself must not reintroduce doctor-bot
+// phrasing. Run: deno test supabase/functions/ask/
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   PROFESSIONAL_ROUTING_NOTE,
@@ -23,8 +23,9 @@ const ALL_INTENTS: Intent[] = [
 // The constant itself — the load-bearing safety invariants
 // ---------------------------------------------------------------------------
 
-Deno.test("routing note satisfies the phase3 professional-routing regex", () => {
-  assert(/pharmacist|prescriber|doctor|professional/i.test(PROFESSIONAL_ROUTING_NOTE));
+Deno.test("routing note is research-tool framing, not doctor routing", () => {
+  assert(/research|source-backed|personal treatment decision/i.test(PROFESSIONAL_ROUTING_NOTE));
+  assert(!/pharmacist|prescriber|doctor|clinician|professional/i.test(PROFESSIONAL_ROUTING_NOTE));
 });
 
 Deno.test("routing note trips ZERO detectViolations (clean against the frozen detector)", () => {

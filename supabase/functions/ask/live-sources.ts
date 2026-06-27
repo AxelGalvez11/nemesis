@@ -229,7 +229,7 @@ export function shouldFetchOpenAlex(
   if (mentions.length > 0) return true;
   const haystack = `${query} ${researchQuery}`.toLowerCase();
   if (
-    /\b(?:white flakes?|white flaked|hair flakes?|flaky scalp|scalp flakes?|scalp flaking|dandruff|seborrheic dermatitis)\b/
+    /\b(?:white flakes?|white flaked|dry flakes?|dry flaky scalp|dry scalp flakes?|flakes in hair|hair flakes?|flaky scalp|flaking scalp|scalp flakes?|scalp flaking|dandruff|seborrheic dermatitis)\b/
       .test(haystack)
   ) {
     return false;

@@ -34,6 +34,19 @@ Deno.test("resolveKnownEntities normalizes white flakes into a scalp-flaking top
   );
 });
 
+Deno.test("resolveKnownEntities normalizes dry flakes and preserves the user's wording in the assumption", () => {
+  const entities = resolveKnownEntities(
+    "why do I have dry flakes in my hair",
+    [],
+  );
+  assertEquals(entities.map((e) => e.normalized), ["dandruff / scalp flaking"]);
+  assertEquals(entities[0]?.kind, "condition");
+  assertEquals(entities[0]?.use_drug_label_lane, false);
+  assertEquals(entities[0]?.assumptions, [
+    'Interpreting "dry flakes" as dandruff / scalp flaking.',
+  ]);
+});
+
 Deno.test("resolveKnownEntities does not swallow real drug mentions", () => {
   const entities = resolveKnownEntities(
     "is lisinopril safe with spironolactone",

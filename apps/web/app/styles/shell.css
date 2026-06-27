@@ -870,6 +870,22 @@
 .scope-actions { display: flex; gap: 8px; margin-top: 14px; }
 .chip-action.active { border-color: var(--acid); color: var(--text); background: color-mix(in srgb, var(--acid) 12%, var(--surface)); }
 
+/* Evidence map: force-directed claim/source network in a deep-research report. */
+.evidence-graph { border: 1px solid var(--line); border-radius: var(--radius); background: color-mix(in srgb, var(--surface) 74%, #0f140b); padding: 12px; overflow: hidden; }
+.evidence-graph-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.evidence-graph-head .research-heading { margin-bottom: 3px; }
+.evidence-graph-hint { flex: none; font-family: var(--mono); font-size: 10px; line-height: 1.3; text-transform: uppercase; letter-spacing: 0.04em; color: var(--acid); border: 1px solid var(--line-acid); border-radius: 999px; padding: 5px 8px; background: color-mix(in srgb, var(--acid) 10%, transparent); white-space: nowrap; }
+.evidence-graph-canvas { position: relative; height: clamp(300px, 42vw, 460px); min-height: 300px; border: 1px solid color-mix(in srgb, var(--line) 72%, var(--acid)); border-radius: var(--radius-sm); background: radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--acid) 10%, transparent), transparent 30%), linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 82%, #0d120a), color-mix(in srgb, var(--bg) 88%, #0e130b)); overflow: hidden; }
+.evidence-graph-canvas span { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-3); font-size: 13px; pointer-events: none; }
+.evidence-graph-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 9px; color: var(--text-3); font-size: 11.5px; }
+.evidence-graph-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.evidence-graph-legend i { width: 10px; height: 10px; border-radius: 999px; display: inline-block; border: 1px solid var(--line-2); background: var(--surface-2); }
+.evidence-graph-legend .legend-report { background: var(--acid); border-color: var(--acid); }
+.evidence-graph-legend .legend-claim { background: #171a18; border-color: #566050; border-radius: 3px; }
+.evidence-graph-legend .legend-source { background: #111310; border-color: #8ea672; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+.evidence-graph-legend .legend-label { background: #111310; border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid); }
+.evidence-graph-legend .legend-trial { background: #111310; border-color: #71e8ff; box-shadow: 0 0 0 1px #71e8ff; }
+
 /* Evidence-base table in a deep-research report (rendered from the citation list). */
 .evidence-table-wrap { overflow-x: auto; margin: 6px 0 8px; }
 .evidence-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -980,6 +996,10 @@
    the left nav stays put (position: sticky). Short sections just leave whitespace below. */
 .app-modal-wide .app-modal-body { flex: 1; min-height: 0; }
 @media (max-width: 680px) {
+  .evidence-graph { padding: 10px; }
+  .evidence-graph-head { flex-direction: column; gap: 8px; }
+  .evidence-graph-hint { white-space: normal; }
+  .evidence-graph-canvas { height: 340px; }
   .settings-surface { grid-template-columns: 1fr; gap: 14px; }
   .settings-nav { flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
   .settings-nav button { width: auto; flex-shrink: 0; }

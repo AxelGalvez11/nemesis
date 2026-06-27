@@ -4,12 +4,10 @@
 // so withProfessionalRouting() is a no-op and no answer carries the clinician-steer note. The history
 // below is kept because the mechanism is intentionally reversible (re-add intents to re-enable).
 //
-// The generate system prompt instructs the model to route personal decisions to
-// a licensed professional, but generation models (especially smaller ones)
-// under-emit that line — phase3-validate caught gpt-4.1-mini answering a drug
-// interaction without it. For the intents that squarely imply a personal
-// medication decision, GUARANTEE a routing safety note instead of trusting the
-// model: a template-style backstop, keyed on the classified intent.
+// Older versions used this hook to append a professional handoff when a question
+// implied a personal medication decision. That made answers read like a triage
+// chatbot. The product voice is now source-backed research: state evidence,
+// uncertainty, and risk categories without making a personal verdict.
 //
 // WHY post-enforcement: an uncited safety note is dropped by enforceCitations()
 // (citation.ts keepCited filters citation_ids.length > 0), so the note is added
@@ -42,8 +40,8 @@ export const ROUTE_TO_PROFESSIONAL_INTENTS: ReadonlySet<Intent> = new Set<Intent
 // so it is NEVER scanned at request time — routing.test.ts is its only guard, and
 // unit.yml keeps that test in CI. Keep both if you edit this string.
 export const PROFESSIONAL_ROUTING_NOTE =
-  "For your specific situation, talk to your pharmacist or prescriber. This is " +
-  "educational information from public sources, not personal medical advice.";
+  "This is source-backed research context only; it does not diagnose, prescribe, " +
+  "or make a personal treatment decision.";
 
 /**
  * Guarantee a professional-routing safety note for personal-decision intents.

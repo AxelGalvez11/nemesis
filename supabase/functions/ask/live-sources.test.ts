@@ -196,6 +196,14 @@ Deno.test("OpenAlex is skipped for everyday scalp-flaking clarification queries"
   );
   assertEquals(
     shouldFetchOpenAlex(
+      "dandruff / scalp flaking",
+      [],
+      "dry flakes hair dry scalp dandruff seborrheic dermatitis",
+    ),
+    false,
+  );
+  assertEquals(
+    shouldFetchOpenAlex(
       "semaglutide",
       ["semaglutide"],
       "semaglutide cardiovascular outcomes",

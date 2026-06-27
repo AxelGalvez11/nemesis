@@ -8,6 +8,7 @@ import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
 import { Icon } from "./icons";
 import { ForestPlot } from "./ForestPlot";
+import { EvidenceGraph } from "./EvidenceGraph";
 import { downloadReportExport } from "@/lib/api";
 
 const PROVIDER_ABBR: Record<string, string> = {
@@ -255,6 +256,7 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
         </details>
       ) : null}
 
+      {!report.template && report.citations.length ? <EvidenceGraph report={report} onCite={onCite} /> : null}
       {!report.template && report.citations.length ? <EvidenceTable citations={report.citations} onCite={onCite} /> : null}
 
       {isMeta ? (
