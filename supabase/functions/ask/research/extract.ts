@@ -10,10 +10,10 @@
 // BEST-EFFORT: any failure returns [] → no studies → "not poolable" (honest), never a crash.
 
 import { callTool, type Tool } from "../llm.ts";
+import { modelFor } from "../model-router.ts";
 import type { Pico } from "../../../../packages/shared/src/research.ts";
 import type { RetrievedChunk } from "../citation.ts";
 
-const EXTRACT_MODEL = Deno.env.get("LLM_GENERATE_MODEL") ?? "gpt-4.1-mini";
 const EXTRACT_MAX_TOKENS = 2048;
 
 /** A raw extracted 2x2 as the model returned it — UNTRUSTED until ground.ts verifies it. */
@@ -136,7 +136,7 @@ export async function extractStudyArms(question: string, pico: Pico, chunks: Ret
       .join("\n\n");
     const { input } = await callTool<{ studies?: unknown }>(
       {
-        model: EXTRACT_MODEL,
+        model: modelFor("research"),
         max_tokens: EXTRACT_MAX_TOKENS,
         temperature: 0,
         system: extractSystem(pico),

@@ -462,3 +462,24 @@ Deno.test("assembleReport output carries mode in payload, never a kind field", (
   // so a stray kind here would cause structured_review reports to appear in the deep-research list.
   assertEquals("kind" in report, false);
 });
+
+Deno.test("assembleReport carries model slot metadata when provided", () => {
+  const report = assembleReport({
+    question: "q",
+    subQuestions: ["q"],
+    enforced: {
+      summary: "s",
+      body: [{ section: "X", text: "t", citation_ids: ["1"] }],
+      safety_notes: [],
+      uncertainties: [],
+    },
+    chunks: [chunk("1")],
+    evidenceGrade: "moderate",
+    safetyFlags: [],
+    claimsVerified: true,
+    gaps: [],
+    counts: { per_provider: {}, total_retrieved: 0, per_search_cap: 6, n_searches: 1, retrieved_at: null },
+    modelSlots: { classify: "cheap", research: "strong", verify: "judge" },
+  });
+  assertEquals(report.model_slots?.research, "strong");
+});

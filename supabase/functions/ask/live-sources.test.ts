@@ -3,7 +3,7 @@
 // retatrutide); field-scoping to generic/brand NAME excludes them. These lock that behavior.
 // Run: deno test supabase/functions/ask/
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { liveToChunk, openFdaSearch, type LiveCandidate } from "./live-sources.ts";
+import { isSafetyCriticalQuery, liveToChunk, openFdaSearch, type LiveCandidate } from "./live-sources.ts";
 
 Deno.test("liveToChunk carries PubMed bibliographic metadata onto the chunk", () => {
   const c: LiveCandidate = {
@@ -89,4 +89,10 @@ Deno.test("no mentions → null (caller SKIPS openFDA; no bare free-text fallbac
 
 Deno.test("blank/whitespace mentions are ignored → null (skip openFDA)", () => {
   assertEquals(openFdaSearch("raw q", ["", "   "]), null);
+});
+
+Deno.test("isSafetyCriticalQuery routes toxic/lethal/recall questions to safety lanes", () => {
+  assertEquals(isSafetyCriticalQuery("is celsius lethal"), true);
+  assertEquals(isSafetyCriticalQuery("was semaglutide recalled?"), true);
+  assertEquals(isSafetyCriticalQuery("what are common metformin side effects?"), false);
 });

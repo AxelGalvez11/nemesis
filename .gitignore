@@ -9,6 +9,7 @@ dist/
 build/
 *.tsbuildinfo
 .playwright-mcp/
+.superpowers/
 
 # Expo / React Native
 .expo/
@@ -32,3 +33,7 @@ supabase/.branches/
 *.log
 .idea/
 .vscode/
+.vercel
+
+# Hermes design reference (local only)
+.hermes-ref/

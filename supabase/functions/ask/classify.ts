@@ -2,13 +2,12 @@
 // tool_use -> guaranteed structured). Cheap + fast; the heavy reasoning is in generate.
 
 import { callTool } from "./llm.ts";
+import { modelFor } from "./model-router.ts";
 import { CLASSIFY_SYSTEM, CLASSIFY_TOOL, INTENTS, SAFETY_FLAGS } from "./prompts.ts";
 import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts";
 
 // DeepSeek-V3 (deepseek-chat) supports function calling; the reasoner (R1) does
 // not, so both steps use deepseek-chat. Swap via LLM_BASE_URL + this id.
-const CLASSIFY_MODEL = Deno.env.get("LLM_CLASSIFY_MODEL") ?? "deepseek-chat";
-
 export interface Classification {
   intent: Intent;
   entity_mentions: string[];
@@ -53,7 +52,7 @@ export function normalizeClassification(
 export async function classify(question: string, apiKey: string): Promise<Classification> {
   const { input, model } = await callTool<ClassifyToolInput>(
     {
-      model: CLASSIFY_MODEL,
+      model: modelFor("classify"),
       max_tokens: 512,
       temperature: 0,
       system: CLASSIFY_SYSTEM,

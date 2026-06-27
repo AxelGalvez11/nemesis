@@ -218,6 +218,35 @@ not match if drugs aren't in the FDA label corpus yet).
 
 ---
 
+## Live-Source Production Gate
+
+Before a public beta deploy, verify the Supabase Edge Function environment includes:
+
+- `LIVE_SOURCES=on`
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `VOYAGE_API_KEY`
+- `LLM_API_KEY` or `DEEPSEEK_API_KEY`
+
+Then run this smoke check against the deployed `ask` function:
+
+```bash
+deno run --allow-env --allow-net scripts/diag/live-sources-health.ts
+```
+
+Required local env for the smoke runner:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `TEST_USER_JWT`
+
+The gate passes when each smoke question returns citations and at least one response includes a
+`live:` source id. If it fails, check the Supabase function secrets first, then the `ask` Edge
+Function logs.
+
+---
+
 ## Step 8 — schedule periodic re-sync (pg_cron)
 
 ```sql

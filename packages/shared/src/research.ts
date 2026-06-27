@@ -10,6 +10,9 @@ import type { AnswerPoint, AnswerTemplate, Citation, EvidenceGrade, SafetyFlag }
 // Direct module import (NOT the ./index barrel) to avoid a barrel import cycle.
 import type { MetaAnalysisResult } from "./meta-analysis.ts";
 
+export type ModelSlot = "classify" | "scope" | "generate" | "research" | "verify";
+export type ModelSlotMap = Partial<Record<ModelSlot, string>>;
+
 // ── Clarifying-question scoping (Phase 2) ───────────────────────────────────
 // Before a deep-research run, a cheap scope step may return 1-3 clarifying questions to focus the
 // search. Best-effort: needs_clarification=false means "just run it" (no clarification).
@@ -81,6 +84,8 @@ export interface ResearchReport {
    * carries the structured per-study + pooled figures the forest table renders.
    */
   meta_analysis?: MetaAnalysisResult;
+  /** Optional audit metadata: which configured model slot handled each stage. */
+  model_slots?: ModelSlotMap;
 }
 
 /** Async run lifecycle (mirrors research_report_runs.status). */

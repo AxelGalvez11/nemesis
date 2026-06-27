@@ -34,8 +34,12 @@ import { isFabricatedDrugQuery } from "./fabrication.ts";
 import { assumptionNote, findTypoCorrections } from "./typo-correct.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
+import { modelFor } from "./model-router.ts";
 import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
+import { applyReconToUnderstanding, understandQuery } from "./query-understanding.ts";
+import { runWebRecon, type WebReconResult } from "./web-recon.ts";
+import { rateSourceSupport } from "./source-support.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
@@ -203,6 +207,11 @@ async function runAsk(
   // a flag the LLM added.
   const rawFlags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
   const flags = suppressEmergencyForGeneralToxicity(question, rawFlags);
+  const webRecon = await runWebRecon(question);
+  const queryUnderstanding = applyReconToUnderstanding(
+    understandQuery(question, cls.entity_mentions),
+    webRecon,
+  );
   // Observability for a SAFETY RELAXATION: a backstop that quietly downgrades an emergency must leave
   // an audit trail. Logs only when the carve-out actually fired (emergency_possible was present, now isn't).
   if (rawFlags.includes("emergency_possible") && !flags.includes("emergency_possible")) {
@@ -217,7 +226,7 @@ async function runAsk(
   // never reranked into the evidence pool. fetchGoogleNews is fault-tolerant (never throws), so a
   // dangling promise on an early template return (emergency/sourcing/no-source/fabrication) is harmless
   // — and correct: a refusal or a possibly-fabricated drug must NOT carry hype headlines.
-  const newsSearch = cls.entity_mentions.length ? cls.entity_mentions.join(" ") : (extractSearchTerms(question) || question);
+  const newsSearch = queryUnderstanding.sourceQuery || (extractSearchTerms(question) || question);
   const newsGate = decideNewsGate({ plan: quota.plan, query: newsSearch, liveSourcesOn: LIVE_SOURCES_ON });
   const newsPromise: Promise<AnswerNewsItem[]> = newsGate.fetch
     ? fetchGoogleNews({ query: newsGate.query }).then(toAnswerNews).catch(() => [])
@@ -233,7 +242,7 @@ async function runAsk(
   }
 
   // ---- 2. resolve entities ----
-  const entities = await resolveEntities(cls.entity_mentions, SB_URL, SERVICE_KEY);
+  const entities = await resolveEntities(queryUnderstanding.fieldMentions, SB_URL, SERVICE_KEY);
   const resolvedIds = entities.map((e) => e.entity_id).filter((id): id is string => !!id);
   const scopeId = resolvedIds.length === 1 ? resolvedIds[0] : null; // 2+ entities -> broad
 
@@ -273,7 +282,7 @@ async function runAsk(
   // union (for the fabrication guard); `top` is the MATCH_COUNT slice shown to the generator.
   let guardPool: RetrievedChunk[] = ret.chunks;
   if (LIVE_SOURCES_ON) {
-    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount);
+    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount, webRecon);
     guardPool = aug.pool;
     ret = { ...ret, chunks: aug.top };
   }
@@ -304,9 +313,11 @@ async function runAsk(
   // findTypoCorrections is adversarially unit-tested (typo-correct.test.ts): every class-plausible fake
   // returns null → falls through to the conservative refusal below. The fabrication guard is untouched.
   let assumption = "";
-  let genQuestion = question;
-  if (LIVE_SOURCES_ON && isFabricatedDrugQuery(cls.entity_mentions, guardPool)) {
-    const corrections = findTypoCorrections(cls.entity_mentions, entities, guardPool);
+  let genQuestion = queryUnderstanding.assumptions.length
+    ? `${question}\n\nAssumption: ${queryUnderstanding.assumptions.join(" ")}`
+    : question;
+  if (LIVE_SOURCES_ON && queryUnderstanding.fieldMentions.length > 0 && isFabricatedDrugQuery(queryUnderstanding.fieldMentions, guardPool)) {
+    const corrections = findTypoCorrections(queryUnderstanding.fieldMentions, entities, guardPool);
     if (!corrections) {
       return await finalizeTemplate(answerId, question, cls.intent,
         flags, entities, userId, "safety_fallback", `${cls.model}|unverified_entity`, true, ret.chunks);
@@ -405,6 +416,8 @@ async function runAsk(
     ...enf.answer_sections,
     safety_notes: withProfessionalRouting(enf.answer_sections.safety_notes, cls.intent),
   }, ret.chunks);
+  const supportRatings = rateSourceSupport(ret.chunks, answer_sections);
+  const ratedCitations = enf.citations.map((c) => ({ ...c, ...supportRatings.get(c.chunk_tag) }));
   // A resolved drug name for the answer header's molecule image (PubChem renders by name). First
   // resolved canonical name, else the first literal mention; absent when nothing resolved. The web
   // <img> 404-hides for anything PubChem can't depict (e.g. a condition), so setting it loosely is safe.
@@ -414,19 +427,25 @@ async function runAsk(
   // visible even when the answer text leans on a few — additive DISPLAY only; never affects the answer,
   // the cited set, or citation enforcement.
   const citedTags = new Set(enf.citations.map((c) => c.chunk_tag));
-  const reviewedSources = ret.chunks.filter((c) => !citedTags.has(c.tag)).map(chunkToCitation);
+  const reviewedSources = ret.chunks
+    .filter((c) => !citedTags.has(c.tag))
+    .map((c) => ({ ...chunkToCitation(c), ...supportRatings.get(c.tag) }));
   // Walled news (paid) / locked teaser (free). Resolved here so its fetch overlapped the work above.
   // It is attached as a SEPARATE field — never folded into citations/reviewed_sources/the chunk pool.
   const news = await newsPromise;
+  const surfacedAssumption = [
+    assumption ? `${assumption}.` : "",
+    ...queryUnderstanding.assumptions,
+  ].filter(Boolean).join(" ");
   const resp: AskResponse = {
     answer_id: answerId,
     intent: cls.intent,
     // State the typo assumption up front ("Assuming you mean tesamorelin") when we recovered a typo'd
     // drug name — transparent, never silent. Empty for normal answers.
-    plain_english_summary: assumption ? `${assumption}. ${enf.plain_english_summary}` : enf.plain_english_summary,
+    plain_english_summary: surfacedAssumption ? `${surfacedAssumption} ${enf.plain_english_summary}` : enf.plain_english_summary,
     evidence_grade: finalGrade,
     answer_sections,
-    citations: enf.citations,
+    citations: ratedCitations,
     safety_flags: flags,
     refused_unsupported: false,
     oldest_source_date: enf.oldest_source_date,
@@ -445,7 +464,7 @@ async function runAsk(
     detected_entities: entities,
     answer: resp,
     evidence_grade: finalGrade,
-    source_ids: unique(enf.citations.map((c) => c.source_id)),
+    source_ids: unique(ratedCitations.map((c) => c.source_id)),
     retrieval_scores: ret.chunks.map((c) => ({ chunk_id: c.chunk_id, similarity: c.similarity })),
     model_name: modelName,
     prompt_version: PROMPT_VERSION,
@@ -470,27 +489,32 @@ async function augmentWithLive(
   libChunks: RetrievedChunk[],
   perSourceMax: number = LIVE_PER_SOURCE_MAX,
   matchCount: number = MATCH_COUNT,
+  webRecon?: WebReconResult,
 ): Promise<{ pool: RetrievedChunk[]; top: RetrievedChunk[] }> {
   const fallback = { pool: libChunks, top: libChunks };
   try {
+    const baseResearchQuery = extractSearchTerms(question) || question;
+    const understood = webRecon
+      ? applyReconToUnderstanding(understandQuery(question, entityMentions, baseResearchQuery), webRecon)
+      : understandQuery(question, entityMentions, baseResearchQuery);
     // openFDA/FAERS/ClinicalTrials want a drug TERM, not a sentence (a raw question 400s). Use the
     // literal mentions when present — a real-but-new drug (retatrutide) is found by name; a fabricated
     // one returns nothing. Fall back to the question for general/non-drug queries.
-    const term = entityMentions.length ? entityMentions.join(" ") : question;
+    const term = understood.sourceQuery;
     // Research sources (PubMed/Europe PMC/OpenAlex/MedlinePlus) search the user's QUESTION (conversational
     // scaffolding stripped) so "<drug> side effects" / "<drug> mechanism" retrieves on-topic research
     // instead of generic drug papers; the field-scoped + adverse-event sources (openFDA/FAERS/trials)
     // keep the literal drug `term`. This is the lever behind the side-effects/interaction/mechanism gap.
-    let researchQuery = extractSearchTerms(question) || question;
+    let researchQuery = understood.researchQuery;
     // Typo-correct the research string ONLY on the no-drug path (general/benign topics like
     // "metfromin and the livr"). When classify pulled a literal drug mention we leave the query alone —
     // espell only ever rewrites the research search string, never the literal `term`/entityMentions the
     // fabrication guard checks, so a real-but-new drug is still found by name and a fabricated one still
     // finds nothing. Best-effort: espellCorrect returns the query unchanged on any failure.
-    if (entityMentions.length === 0) {
+    if (understood.fieldMentions.length === 0) {
       researchQuery = await espellCorrect(researchQuery);
     }
-    const live = await gatherLiveCandidates({ query: term, mentions: entityMentions, researchQuery, perSourceMax });
+    const live = await gatherLiveCandidates({ query: term, mentions: understood.fieldMentions, researchQuery, perSourceMax });
     if (live.length === 0) return fallback;
 
     const combined = [...libChunks, ...live.map((c, i) => liveToChunk(c, String(i + 1)))];
@@ -783,6 +807,10 @@ async function consumeAskQuota(userId: string): Promise<ConsumeUsageResult> {
 
 async function storeTrace(row: TraceRow): Promise<void> {
   try {
+    const traceRow = {
+      ...row,
+      model_name: modelNameWithSlots(row.model_name),
+    };
     const res = await fetch(`${SB_URL}/rest/v1/generated_answers`, {
       method: "POST",
       headers: {
@@ -791,7 +819,7 @@ async function storeTrace(row: TraceRow): Promise<void> {
         "Content-Type": "application/json",
         Prefer: "return=minimal",
       },
-      body: JSON.stringify(row),
+      body: JSON.stringify(traceRow),
     });
     // fetch resolves on HTTP 4xx/5xx (only network errors throw), so the status MUST be checked — an
     // un-inspected reject silently loses the trace AND breaks the answer_id FK on the saved chat message.
@@ -803,6 +831,11 @@ async function storeTrace(row: TraceRow): Promise<void> {
     // visible — a dropped emergency/self-harm trace is a lost safety audit record.
     console.error("storeTrace failed (trace lost):", (e as Error).message);
   }
+}
+
+function modelNameWithSlots(modelName: string): string {
+  if (modelName.startsWith("deterministic-") || modelName.includes("|slots(")) return modelName;
+  return `${modelName}|slots(classify=${modelFor("classify")};generate=${modelFor("generate")};verify=${modelFor("verify")})`;
 }
 
 function unique<T>(arr: T[]): T[] {

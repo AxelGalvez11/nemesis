@@ -12,12 +12,12 @@
 // large max_tokens leaves headroom so the bigger report JSON does not truncate mid-string.
 
 import { callTool, type Tool } from "../llm.ts";
+import { modelFor } from "../model-router.ts";
 import { BASE_GENERATE_SYSTEM } from "../prompts.ts";
 import type { EvidenceGrade } from "../../../../packages/shared/src/answer.ts";
 import type { ReportMode, ResearchSection } from "../../../../packages/shared/src/research.ts";
 import type { RetrievedChunk } from "../citation.ts";
 
-const SYNTH_MODEL = Deno.env.get("LLM_GENERATE_MODEL") ?? "gpt-4.1-mini";
 // A report is summary + several cited sections + uncertainties + safety_notes — multiples of a single
 // /ask answer, whose own tool JSON truncated at 2048 and uses 4096. Give the report real headroom.
 const SYNTH_MAX_TOKENS = 8192;
@@ -213,7 +213,7 @@ export async function synthesizeReport(opts: SynthesizeOpts): Promise<Synthesize
 
   const { input, model } = await callTool<Record<string, unknown>>(
     {
-      model: SYNTH_MODEL,
+      model: modelFor("research"),
       max_tokens: SYNTH_MAX_TOKENS,
       temperature: 0,
       system: synthesisSystemForMode(opts.mode),

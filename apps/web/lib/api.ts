@@ -181,6 +181,9 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
 
 export async function askQuestion(question: string, mode?: AskMode): Promise<AskResponse> {
   if (isPreviewMode) {
+    // Keep local demos honest: preview answers are static, but the UI should still exercise the
+    // same thinking/progress state users see while the real evidence engine is working.
+    await new Promise((resolve) => setTimeout(resolve, 1250));
     return {
       answer_id: "preview-answer",
       intent: "drug_overview",
@@ -211,6 +214,11 @@ export async function askQuestion(question: string, mode?: AskMode): Promise<Ask
           license: "public-domain",
           published_date: "2025-01-01",
           retrieved_at: "2026-06-05T12:00:00Z",
+          support_level: "direct",
+          support_score: 96,
+          evidence_role: "official_label",
+          evidence_weight: 92,
+          support_reason: "Official label; cited claims have direct label support.",
         },
         {
           chunk_tag: "[2]",
@@ -222,6 +230,11 @@ export async function askQuestion(question: string, mode?: AskMode): Promise<Ask
           license: "abstract",
           published_date: "2024-06-01",
           retrieved_at: "2026-06-05T12:00:00Z",
+          support_level: "partial",
+          support_score: 66,
+          evidence_role: "research_article",
+          evidence_weight: 52,
+          support_reason: "Research article reviewed for outcome context; support is partial in preview mode.",
         },
         {
           chunk_tag: "[3]",
@@ -233,6 +246,11 @@ export async function askQuestion(question: string, mode?: AskMode): Promise<Ask
           license: "public-domain",
           published_date: "2023-11-15",
           retrieved_at: "2026-06-05T12:00:00Z",
+          support_level: "partial",
+          support_score: 70,
+          evidence_role: "clinical_trial",
+          evidence_weight: 74,
+          support_reason: "Trial record supports study context in preview mode.",
         },
       ],
       safety_flags: [],
@@ -1013,11 +1031,11 @@ export async function setWatchStatus(id: string, status: "active" | "paused"): P
   if (error) throw new Error(`update watch failed: ${error.message}`);
 }
 
-/** Download a saved report as .docx/.pptx. Fetches the Node route WITH the user's bearer token
+/** Download a saved report as .pdf/.docx/.pptx. Fetches the Node route WITH the user's bearer token
  *  (a plain <a download> can't set Authorization), then triggers a browser download of the blob. */
 export async function downloadReportExport(
   reportId: string,
-  format: "docx" | "pptx",
+  format: "pdf" | "docx" | "pptx",
   style: "vancouver" | "ama",
 ): Promise<void> {
   if (isPreviewMode) throw new Error("Export needs a live connection (not available in preview).");

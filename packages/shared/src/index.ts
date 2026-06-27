@@ -11,6 +11,7 @@
 // in Phase 6.
 
 export * from "./answer.ts";
+export * from "./claim-relation.ts";
 export * from "./search.ts";
 export * from "./evidence.ts";
 // Phase-4 evidence-scoring engine (§9): the deterministic tier core. Pure

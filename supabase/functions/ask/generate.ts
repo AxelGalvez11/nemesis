@@ -2,11 +2,10 @@
 // retrieved chunks are the ONLY grounding; the model cites them by [n] tag.
 
 import { callTool } from "./llm.ts";
+import { modelFor } from "./model-router.ts";
 import { type AnswerStyle, generateSystem, generateTool } from "./prompts.ts";
 import type { EvidenceGrade, Intent } from "../../../packages/shared/src/answer.ts";
 import type { RetrievedChunk } from "./citation.ts";
-
-const GENERATE_MODEL = Deno.env.get("LLM_GENERATE_MODEL") ?? "deepseek-chat";
 
 interface RawPoint {
   text: string;
@@ -58,7 +57,7 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
 
   const { input, model } = await callTool<Record<string, unknown>>(
     {
-      model: GENERATE_MODEL,
+      model: modelFor("generate"),
       // Multi-point cited answers can be long; 2048 truncated the JSON mid-string (DeepSeek then
       // returned malformed tool arguments). 4096 leaves headroom for Fast/standard; THOROUGH is
       // explicitly fuller (more what_we_know points + what_we_do_not_know), so give it more room to

@@ -313,6 +313,186 @@
 @media (prefers-reduced-motion: reduce) { .qchip.active .tick { animation: none; } }
 @keyframes qspin { to { transform: rotate(360deg); } }
 
+/* ChatGPT-style observable engine activity. This is intentionally process telemetry, not hidden
+   chain-of-thought: the user sees retrieval/checking status, sources, and claim-grounding progress. */
+.engine-preview {
+  width: min(650px, 100%);
+  border: 1px solid color-mix(in srgb, var(--line-2) 80%, var(--acid) 20%);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 0 0, color-mix(in srgb, var(--acid) 8%, transparent), transparent 35%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, var(--acid) 6%), var(--surface));
+  box-shadow: 0 18px 40px -32px rgba(0, 0, 0, 0.42);
+  padding: 12px;
+}
+.engine-preview-compact { width: min(560px, 100%); }
+.engine-preview summary::-webkit-details-marker { display: none; }
+.engine-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.engine-preview-head:focus-visible { outline: 2px solid var(--acid); outline-offset: 3px; border-radius: 12px; }
+.engine-preview-titleblock { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.engine-preview-title { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.2; }
+.engine-preview-subtitle { font-size: 12px; line-height: 1.35; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.engine-preview .src-count {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--acid-deep);
+  background: color-mix(in srgb, var(--acid) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--acid) 32%, transparent);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+.engine-dots { display: inline-flex; gap: 3px; align-items: center; }
+.engine-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--acid);
+  opacity: 0.35;
+  animation: engine-dot 1.05s ease-in-out infinite;
+}
+.engine-dots span:nth-child(2) { animation-delay: 0.14s; }
+.engine-dots span:nth-child(3) { animation-delay: 0.28s; }
+@keyframes engine-dot {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+  35% { transform: translateY(-2px); opacity: 1; }
+}
+.engine-live-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 12px 0 11px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 84%, var(--acid) 16%);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.engine-live-line.warn {
+  background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--warn) 32%, transparent);
+}
+.engine-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--acid);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--acid) 34%, transparent);
+  animation: engine-pulse 1.35s ease-out infinite;
+}
+@keyframes engine-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acid) 34%, transparent); }
+  80%, 100% { box-shadow: 0 0 0 8px transparent; }
+}
+.engine-step-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.engine-step {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--bg-2) 12%);
+  color: var(--text-2);
+  transition: border-color 0.2s, background 0.2s, opacity 0.2s;
+}
+.engine-step.pending { opacity: 0.48; }
+.engine-step.active {
+  opacity: 1;
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--acid) 45%, var(--line));
+  background: color-mix(in srgb, var(--acid) 8%, var(--surface));
+}
+.engine-step.done { opacity: 1; color: var(--text); }
+.engine-step-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-2);
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--on-acid);
+  margin-top: 1px;
+}
+.engine-step-icon svg { opacity: 0; }
+.engine-step.done .engine-step-icon {
+  background: var(--acid);
+  border-color: var(--acid);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acid) 15%, transparent);
+}
+.engine-step.done .engine-step-icon svg { opacity: 1; }
+.engine-step.active .engine-step-icon {
+  border-color: var(--acid);
+  border-top-color: transparent;
+  border-right-color: transparent;
+  animation: qspin 0.72s linear infinite;
+}
+.engine-step-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.engine-step-label { font-size: 12.5px; font-weight: 650; line-height: 1.25; color: var(--text); }
+.engine-step-desc { font-size: 11.5px; line-height: 1.35; color: var(--text-3); }
+.engine-step-list.compact .engine-step { padding: 8px 9px; }
+.engine-step-list.compact .engine-step-desc { display: none; }
+.engine-activity {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.engine-section-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+.engine-activity-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.engine-activity-row.muted { color: var(--text-3); }
+.engine-activity-time { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
+.engine-activity-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--acid-deep);
+  border: 1px solid color-mix(in srgb, var(--acid) 26%, transparent);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .engine-dots span, .engine-live-dot, .engine-step.active .engine-step-icon { animation: none; }
+}
+@media (max-width: 720px) {
+  .engine-step-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .engine-preview { border-radius: 14px; padding: 11px; }
+  .engine-preview-subtitle { white-space: normal; }
+  .engine-step-list { grid-template-columns: 1fr; }
+  .engine-activity-row { grid-template-columns: 44px minmax(0, 1fr); }
+  .engine-activity-count { display: none; }
+}
+
 /* ── compute card ── */
 .compute { border: 1px solid var(--line-2); border-radius: var(--radius); background: linear-gradient(180deg, var(--surface), var(--bg-2)); padding: 13px 15px; margin: 4px 0 14px; }
 .compute .ctop { display: flex; align-items: center; gap: 9px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); font-weight: 600; margin-bottom: 9px; }
@@ -432,6 +612,19 @@
 .src.medlineplus .sq { background: #e3b341; } /* amber — the plain-language NLM/NIH guidance source */
 /* DOAJ vetted-journal pill: a calm positive credibility signal (presence = good; absence is neutral). */
 .doaj-pill { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; letter-spacing: 0.01em; color: #3fae8f; border: 1px solid color-mix(in srgb, #3fae8f 38%, transparent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+/* Source support: claim-support rating computed server-side from source type + cited-support passages.
+   This is not model confidence; it tells the reader how the card was used by the answer. */
+.support-pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 700; letter-spacing: 0.01em; border-radius: 999px; padding: 1px 7px; white-space: nowrap; text-transform: none; }
+.support-pill.direct { color: var(--acid-deep); background: color-mix(in srgb, var(--acid) 16%, transparent); border: 1px solid color-mix(in srgb, var(--acid) 36%, transparent); }
+.support-pill.partial { color: #5aa2e0; background: color-mix(in srgb, #5aa2e0 12%, transparent); border: 1px solid color-mix(in srgb, #5aa2e0 32%, transparent); }
+.support-pill.weak { color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); }
+.support-pill.background, .support-pill.reviewed { color: var(--text-3); background: var(--surface-2); border: 1px solid var(--line-2); }
+.relation-pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 800; letter-spacing: 0.01em; border-radius: 999px; padding: 1px 7px; white-space: nowrap; text-transform: none; }
+.relation-pill.supports { color: var(--acid-deep); background: color-mix(in srgb, var(--acid) 18%, transparent); border: 1px solid color-mix(in srgb, var(--acid) 40%, transparent); }
+.relation-pill.partial { color: #5aa2e0; background: color-mix(in srgb, #5aa2e0 13%, transparent); border: 1px solid color-mix(in srgb, #5aa2e0 34%, transparent); }
+.relation-pill.mentions, .relation-pill.reviewed { color: var(--text-3); background: var(--surface-2); border: 1px solid var(--line-2); }
+.relation-pill.conflicts { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 34%, transparent); }
+.evidence-role-pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.01em; color: var(--text-3); background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; white-space: nowrap; text-transform: capitalize; }
 /* Study-design pill: NEUTRAL descriptive metadata (study type), not a quality judgment. A calm slate-indigo
    so it reads as informational and stays distinct from the green DOAJ credibility pill. */
 .study-type-pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.01em; color: #8b93c4; background: color-mix(in srgb, #8b93c4 12%, transparent); border: 1px solid color-mix(in srgb, #8b93c4 32%, transparent); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }

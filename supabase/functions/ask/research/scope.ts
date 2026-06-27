@@ -6,9 +6,9 @@
 // blocks a run, asserts no facts, and consumes no deep-research quota.
 
 import { callTool, type Tool } from "../llm.ts";
+import { modelFor } from "../model-router.ts";
 import type { ScopeQuestion, ScopeResult } from "../../../../packages/shared/src/research.ts";
 
-const SCOPE_MODEL = Deno.env.get("LLM_CLASSIFY_MODEL") ?? "gpt-4o-mini";
 const MAX_QUESTIONS = 3;
 const MAX_CHIPS = 5;
 
@@ -98,7 +98,7 @@ export async function scopeQuestion(question: string, apiKey: string): Promise<S
   try {
     const { input } = await callTool<{ needs_clarification?: unknown; questions?: unknown }>(
       {
-        model: SCOPE_MODEL,
+        model: modelFor("scope"),
         max_tokens: 1024,
         temperature: 0,
         system: SCOPE_SYSTEM,

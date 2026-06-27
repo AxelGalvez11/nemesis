@@ -200,6 +200,9 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
             <button type="button" className={style === "vancouver" ? "active" : ""} onClick={() => onStyleChange?.("vancouver")}>Vancouver</button>
             <button type="button" className={style === "ama" ? "active" : ""} onClick={() => onStyleChange?.("ama")}>AMA</button>
           </div>
+          <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pdf", style)}>
+            <Icon name="doc" size={14} />PDF
+          </button>
           <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "docx", style)}>
             <Icon name="doc" size={14} />Word
           </button>
@@ -241,6 +244,7 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
           <p className="ai-para">Search date: {report.search_method.search_date}.</p>
           <p className="ai-para">{report.search_method.inclusion_notes}</p>
           <p className="ai-para">{report.search_method.exclusion_notes}</p>
+          <p className="ai-para">Automated bounded review; not an exhaustive census or formal systematic review.</p>
         </section>
       ) : null}
 

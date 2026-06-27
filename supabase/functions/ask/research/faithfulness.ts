@@ -11,9 +11,8 @@
 // claims_verified=false and surfaces it, so an unverified report is never presented as fully checked.
 
 import { callTool, type Tool } from "../llm.ts";
+import { modelFor } from "../model-router.ts";
 import type { RetrievedChunk } from "../citation.ts";
-
-const FAITH_MODEL = Deno.env.get("LLM_CLASSIFY_MODEL") ?? "gpt-4o-mini";
 
 export interface EnforcedBodyPoint {
   section: string;
@@ -231,7 +230,7 @@ export async function checkFaithfulness(
   try {
     const { input } = await callTool<{ verdicts?: unknown }>(
       {
-        model: FAITH_MODEL,
+        model: modelFor("verify"),
         max_tokens: 2048,
         temperature: 0,
         system: FAITH_SYSTEM,

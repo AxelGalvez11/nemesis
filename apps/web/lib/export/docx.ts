@@ -77,6 +77,7 @@ export async function reportToDocx(report: ResearchReport, style: CitationStyle)
     children.push(para(`Search date: ${m.search_date}.`));
     children.push(para(m.inclusion_notes));
     children.push(para(m.exclusion_notes));
+    children.push(para("Automated bounded review; not an exhaustive census or formal systematic review."));
   }
 
   // "What we searched" counts (honest per-search cap disclosure; never "records identified").
