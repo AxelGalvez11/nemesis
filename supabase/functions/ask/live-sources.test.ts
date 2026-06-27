@@ -113,7 +113,19 @@ Deno.test("ClinicalTrials is skipped for consumer-product energy-drink safety qu
     false,
   );
   assertEquals(
+    shouldFetchClinicalTrials(
+      "caffeine",
+      ["caffeine"],
+      "Celsius energy drink caffeine toxicity arrhythmia",
+    ),
+    false,
+  );
+  assertEquals(
     shouldFetchClinicalTrials("lisinopril", ["lisinopril"], "lisinopril cough trial"),
+    true,
+  );
+  assertEquals(
+    shouldFetchClinicalTrials("caffeine", ["caffeine"], "caffeine alertness clinical trial"),
     true,
   );
 });

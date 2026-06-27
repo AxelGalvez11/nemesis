@@ -18,6 +18,8 @@ export interface QueryUnderstanding {
   assumptions: string[];
   /** Canonical product/topic names inferred from aliases. */
   normalizedTerms: string[];
+  /** True when a recognized consumer product shaped the query. */
+  hasConsumerProduct: boolean;
 }
 
 function norm(s: string): string {
@@ -53,7 +55,17 @@ export function understandQuery(
   baseResearchQuery: string = question,
 ): QueryUnderstanding {
   const knownEntities = resolveKnownEntities(question, entityMentions);
-  const fieldMentions = entityMentions.filter((m) => !isKnownEntityMention(m));
+  const hasConsumerProduct = knownEntities.some((e) => e.kind === "consumer_product");
+  const consumerResearchTerms = new Set(
+    knownEntities
+      .filter((e) => e.kind === "consumer_product")
+      .flatMap((e) => [e.normalized, ...e.biomedical_terms])
+      .map(norm),
+  );
+  const fieldMentions = entityMentions.filter((m) => {
+    if (isKnownEntityMention(m)) return false;
+    return !consumerResearchTerms.has(norm(m));
+  });
 
   if (knownEntities.length === 0) {
     return {
@@ -62,6 +74,7 @@ export function understandQuery(
       fieldMentions,
       assumptions: [],
       normalizedTerms: [],
+      hasConsumerProduct,
     };
   }
 
@@ -73,7 +86,12 @@ export function understandQuery(
     fieldMentions,
     assumptions: knownEntities.flatMap((e) => e.assumptions),
     normalizedTerms,
+    hasConsumerProduct,
   };
+}
+
+export function isConsumerProductOnlyQuery(understood: QueryUnderstanding): boolean {
+  return understood.hasConsumerProduct && understood.fieldMentions.length === 0;
 }
 
 export function applyReconToUnderstanding(
@@ -94,5 +112,6 @@ export function applyReconToUnderstanding(
     sourceQuery,
     assumptions,
     normalizedTerms,
+    hasConsumerProduct: understood.hasConsumerProduct,
   };
 }
