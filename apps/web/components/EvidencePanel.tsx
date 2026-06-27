@@ -85,6 +85,46 @@ function relationForCitation(c: Citation): Citation["claim_relation"] | undefine
   return undefined;
 }
 
+function evidenceStrengthScore(c: Citation): number {
+  const support = c.support_score ?? 0;
+  const weight = c.evidence_weight ?? 0;
+  const relation = relationForCitation(c);
+  const relationBonus = relation === "supports" ? 16 : relation === "partial" ? 9 : relation === "mentions" ? 2 : relation === "conflicts" ? 7 : 0;
+  const citedBonus = c.support_level === "reviewed" ? 0 : 8;
+  return Math.max(0, Math.min(100, Math.round(support * 0.58 + weight * 0.34 + relationBonus + citedBonus)));
+}
+
+function strengthLabel(score: number): string {
+  if (score >= 82) return "High";
+  if (score >= 64) return "Good";
+  if (score >= 45) return "Limited";
+  return "Context";
+}
+
+function rankedSources(items: Citation[]): Citation[] {
+  return [...items].sort((a, b) => {
+    const byStrength = evidenceStrengthScore(b) - evidenceStrengthScore(a);
+    if (byStrength !== 0) return byStrength;
+    const aTag = Number(normTag(a.chunk_tag));
+    const bTag = Number(normTag(b.chunk_tag));
+    return (Number.isFinite(aTag) ? aTag : 9999) - (Number.isFinite(bTag) ? bTag : 9999);
+  });
+}
+
+function relationCounts(items: Citation[]): { label: string; className: string; n: number }[] {
+  const counts = new Map<string, number>();
+  for (const c of items) {
+    const rel = relationForCitation(c) ?? "mentions";
+    counts.set(rel, (counts.get(rel) ?? 0) + 1);
+  }
+  return [
+    { label: "Supporting", className: "supports", n: counts.get("supports") ?? 0 },
+    { label: "Partial", className: "partial", n: counts.get("partial") ?? 0 },
+    { label: "Mentioning", className: "mentions", n: counts.get("mentions") ?? 0 },
+    { label: "Disputing", className: "conflicts", n: counts.get("conflicts") ?? 0 },
+  ].filter((x) => x.n > 0);
+}
+
 // Append a Chrome text-fragment so an external source opens scrolled to the exact supporting
 // sentence (https://wicg.github.io/scroll-to-text-fragment/). Best-effort: if the destination HTML
 // doesn't contain the text verbatim the browser simply lands at the top, so it never breaks the link.
@@ -110,14 +150,16 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
   const support = supportLabel(c);
   const role = evidenceRoleLabel(c.evidence_role);
   const relation = relationForCitation(c);
+  const strength = evidenceStrengthScore(c);
   // The supporting sentence belongs to the clicked claim, so it shows only on the active card.
   const activeSupportQuote = active && activeQuote ? activeQuote : null;
   const inner = (
     <>
-      {numbered ? <div className="cidx">{index + 1}</div> : null}
+      {numbered ? <div className="cidx">[{tag || index + 1}]</div> : null}
       <div className="badge-src"><span className="sq" />{providerLabel(c.source_type)}</div>
       <h5 title={refText}>{c.title || c.source_type}</h5>
       <div className="meta">
+        <span className="strength-pill" title="Ranked from support level, source type, and evidence metadata">{strengthLabel(strength)} evidence · {strength}</span>
         {relation ? (
           <span
             className={`relation-pill ${relation}`}
@@ -193,6 +235,10 @@ export function EvidencePanel({ answer, citations, reviewed, activeTag, activeQu
   const total = citations.length + rev.length;
   const fam = breakdown([...citations, ...rev]);
   const citedN = citations.length;
+  const allSources = useMemo(() => [...citations, ...rev], [citations, rev]);
+  const relations = useMemo(() => relationCounts(allSources), [allSources]);
+  const rankedCited = useMemo(() => rankedSources(citations), [citations]);
+  const rankedReviewed = useMemo(() => rankedSources(rev), [rev]);
   const graph = useMemo(() => answer ? buildAskEvidenceGraph(answer) : null, [answer]);
   const hasMap = Boolean(graph && graph.nodes.length >= 3);
 
@@ -211,16 +257,21 @@ export function EvidencePanel({ answer, citations, reviewed, activeTag, activeQu
   return (
     <>
       <div className="ev-head">
-        <b>Evidence</b>
+        <b>Activity</b>
         {total ? <span className="mono" style={{ color: "var(--text-3)", fontSize: 11 }}>{total}</span> : null}
         <div className="spacer" />
-        <span className="live"><span className="dot" />LIVE</span>
+        <span className="live"><span className="dot" />Live sources</span>
       </div>
 
       {total ? (
         <div className="ev-breakdown">
-          <b>{total}</b> source{total === 1 ? "" : "s"} searched
+          <b>{total}</b> source{total === 1 ? "" : "s"} searched · ranked by evidence strength
           {fam.length ? <span className="ev-breakdown-by"> · {fam.map((f) => `${f.n} ${f.label}`).join(" · ")}</span> : null}
+          {relations.length ? (
+            <div className="ev-relation-strip" aria-label="Evidence relationship counts">
+              {relations.map((r) => <span key={r.className} className={`ev-relation ${r.className}`}>{r.label} <b>{r.n}</b></span>)}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -248,18 +299,18 @@ export function EvidencePanel({ answer, citations, reviewed, activeTag, activeQu
         ) : (
           <>
             {rev.length > 0 && citedN > 0 ? <div className="ev-section-label">Cited in this answer</div> : null}
-            {citations.map((c, i) => (
+            {rankedCited.map((c, i) => (
               <SourceCard
                 key={`c-${c.source_id}-${c.chunk_tag}`}
                 c={c}
                 index={i}
-                rankPct={Math.max(34, Math.round(100 - (i / Math.max(1, citedN - 1)) * 60))}
+                rankPct={evidenceStrengthScore(c)}
                 active={normTag(c.chunk_tag) === activeTag}
                 activeQuote={activeQuote}
               />
             ))}
             {rev.length > 0 ? <div className="ev-section-label muted">Also reviewed · searched, not cited</div> : null}
-            {rev.map((c) => (
+            {rankedReviewed.map((c) => (
               <SourceCard
                 key={`r-${c.source_id}-${c.chunk_tag}`}
                 c={c}

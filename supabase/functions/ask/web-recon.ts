@@ -22,6 +22,12 @@ export interface WebReconResult {
 }
 
 const SEARCH_TIMEOUT_MS = 2500;
+const TRUSTED_CONTEXT_HOSTS = [
+  "mayoclinic.org",
+  "hopkinsmedicine.org",
+  "clevelandclinic.org",
+  "mskcc.org",
+];
 
 export function reconEnabled(): boolean {
   return Deno.env.get("WEB_RECON") === "on";
@@ -31,6 +37,7 @@ export function trustUrl(url: string): ReconTrust {
   try {
     const host = new URL(url).hostname.toLowerCase();
     if (host.endsWith(".gov") || host.endsWith(".nih.gov") || host.endsWith(".fda.gov")) return "authoritative_context";
+    if (TRUSTED_CONTEXT_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) return "authoritative_context";
     if (host.includes("wikipedia.org") || host.includes("wikidata.org")) return "entity_context";
     return "untrusted";
   } catch {

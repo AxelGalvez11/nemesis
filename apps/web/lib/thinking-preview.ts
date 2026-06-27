@@ -22,13 +22,13 @@ export const THINKING_STEPS: ThinkingStep[] = [
   },
   {
     label: "Search",
-    current: "Finding relevant sources",
-    detail: "Pull official labels, papers, and evidence context.",
+    current: "Browsing trusted medical sources",
+    detail: "Pull official labels, papers, trials, and health context.",
   },
   {
     label: "Rank",
     current: "Ranking the evidence",
-    detail: "Prefer direct, high-quality, recent sources.",
+    detail: "Prefer direct, high-quality, claim-relevant sources.",
   },
   {
     label: "Answer",
@@ -50,9 +50,9 @@ export function buildThinkingPreview(question: string, stage: number): ThinkingP
   const step = THINKING_STEPS[index] ?? THINKING_STEPS[0]!;
   const focus = summarizeQuestionFocus(question);
   const preview = [
-    `You are asking about "${focus}". This is a brief work preview, not private reasoning.`,
-    `Looking for official safety sources, medical literature, and source context that directly match "${focus}".`,
-    "Comparing source quality, recency, and direct support before any clinical claim appears.",
+    `You are asking about "${focus}", so I am first identifying the topic and likely meaning.`,
+    `Searching FDA, NIH/NLM, PubMed, trials, and trusted medical explainers for sources that match "${focus}".`,
+    "Comparing source strength, relevance, and whether each source supports, partially supports, or only mentions the claim.",
     "Drafting a concise answer and attaching citations only where the sources support the text.",
   ][index] ?? "Checking sources before writing the answer.";
 

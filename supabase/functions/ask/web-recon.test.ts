@@ -5,6 +5,11 @@ Deno.test("trustUrl labels .gov sources as authoritative context", () => {
   assertEquals(trustUrl("https://www.fda.gov/drugs/drug-safety-and-availability"), "authoritative_context");
 });
 
+Deno.test("trustUrl labels reputable medical explainers as authoritative context", () => {
+  assertEquals(trustUrl("https://www.mayoclinic.org/diseases-conditions/dandruff/symptoms-causes"), "authoritative_context");
+  assertEquals(trustUrl("https://www.hopkinsmedicine.org/health/conditions-and-diseases"), "authoritative_context");
+});
+
 Deno.test("trustUrl labels Wikipedia/Wikidata as entity context only", () => {
   assertEquals(trustUrl("https://en.wikipedia.org/wiki/Celsius_(drink)"), "entity_context");
   assertEquals(trustUrl("https://www.wikidata.org/wiki/Q123"), "entity_context");

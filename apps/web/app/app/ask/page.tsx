@@ -577,22 +577,19 @@ function Thinking({ stage, question, complete = false }: { stage: number; questi
     ? `I treated the question as "${question.trim() || "your question"}", checked source quality, and kept claims tied to citations.`
     : preview.preview;
   return (
-    <details className={`thinking engine-preview engine-preview-compact${complete ? " engine-preview-done" : ""}`} open>
+    <details className={`thinking engine-preview engine-preview-compact${complete ? " engine-preview-done" : ""}`} open={!complete}>
       <summary className="engine-preview-head">
-        <Orb size={26} busy={!complete} />
-        <span className="engine-preview-titleblock">
-          <span className="engine-preview-title">
-            {preview.title}
-            {complete ? null : <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>}
-          </span>
-          <span className="engine-preview-subtitle">{preview.subtitle}</span>
+        <span className="engine-preview-title">
+          {complete ? "Thought through evidence" : preview.title}
+          {complete ? null : <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>}
         </span>
+        {complete ? <span className="engine-preview-chevron" aria-hidden="true">›</span> : null}
       </summary>
-      <p className="engine-preview-note">{note}</p>
       <div className={`engine-live-line${complete ? " done" : ""}`} aria-live="polite">
         <span className="engine-live-dot" aria-hidden="true" />
         <span>{current}</span>
       </div>
+      <p className="engine-preview-note">{note}</p>
       <div className="engine-step-list compact">
         {preview.steps.map((step, i) => {
           // done = ✓, active = live spinner, upcoming = faded. The active step is the one the

@@ -100,25 +100,25 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 // no support and refuse (AC3). Tuned empirically in scripts/phase3-validate.ts
 // (real example questions clear it; a made-up compound returns zero).
 const ASK_MATCH_THRESHOLD = 0.5;
-// Sources shown to the generator (and surfaced as citations) after reranking. Raised 8 -> 12 alongside
-// the broadened PubMed retrieval (paywalled abstracts now eligible) so more of the strongest evidence
-// reaches the answer. The fabrication guard runs over the full retrieved `pool`, not this slice, so a
-// wider slice never weakens it.
-const MATCH_COUNT = 12;
+// Sources shown to the generator and surfaced in the Evidence panel after reranking. The target is a
+// ChatGPT-like research pass: enough ranked breadth that the side panel can show ~20 searched sources
+// while the generator still cites only claims it can support. The fabrication guard runs over the full
+// retrieved `pool`, not this slice, so a wider slice never weakens it.
+const MATCH_COUNT = 20;
 // Thorough mode's DEPTH lever: a bigger cited slice shown to the generator, so the fuller answer has more real
 // sources to draw on. The label family is still capped at LABEL_SLICE_CAP, so the extra slots go to research /
-// trials, never more label prose. Fast/default keep MATCH_COUNT (today's breadth) so the quick answer never thins.
-const THOROUGH_MATCH_COUNT = 18;
+// trials, never more label prose.
+const THOROUGH_MATCH_COUNT = 28;
 
 // Live evidence sources (PubMed / Europe PMC / ClinicalTrials / openFDA / FAERS) are gated behind a
 // flag so deploying this code is non-breaking: with LIVE_SOURCES unset the pipeline is byte-for-byte
 // the dense-only behavior the gate/guardrail suite locks in. The owner flips LIVE_SOURCES=on to enable.
 const LIVE_SOURCES_ON = Deno.env.get("LIVE_SOURCES") === "on";
-const LIVE_PER_SOURCE_MAX = 8; // how many candidates to pull per live source before the merge/rerank
+const LIVE_PER_SOURCE_MAX = 10; // how many candidates to pull per live source before the merge/rerank
 // Thorough mode also casts a WIDER candidate net per live source (more abstracts/trials feed the rerank),
 // which — paired with the bigger THOROUGH_MATCH_COUNT slice above — lets the deeper search surface AND show
 // more of the real evidence. Fast/default keep LIVE_PER_SOURCE_MAX so the quick answer never looks thinner.
-const THOROUGH_LIVE_PER_SOURCE_MAX = 12;
+const THOROUGH_LIVE_PER_SOURCE_MAX = 16;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
