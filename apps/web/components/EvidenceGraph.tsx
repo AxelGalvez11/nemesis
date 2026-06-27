@@ -3,11 +3,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Core, ElementDefinition, StylesheetJson } from "cytoscape";
 import type { ResearchReport } from "@pharmabro/shared";
-import { buildEvidenceGraph } from "@/lib/evidence-graph";
+import { buildEvidenceGraph, type EvidenceGraphModel } from "@/lib/evidence-graph";
 
 interface EvidenceGraphProps {
   report: ResearchReport;
   onCite: (tag: string) => void;
+}
+
+interface EvidenceGraphCanvasProps {
+  model: EvidenceGraphModel;
+  onCite: (tag: string) => void;
+  title?: string;
+  subtitle?: string;
+  hint?: string;
+  rootLabel?: string;
+  activeTag?: string;
+  compact?: boolean;
 }
 
 const GRAPH_STYLE: StylesheetJson = [
@@ -15,7 +26,7 @@ const GRAPH_STYLE: StylesheetJson = [
     selector: "node",
     style: {
       label: "data(label)",
-      "font-family": "var(--font)",
+      "font-family": "Inter, ui-sans-serif, system-ui, sans-serif",
       "font-size": 10,
       "text-wrap": "wrap",
       "text-max-width": "118px",
@@ -82,6 +93,14 @@ const GRAPH_STYLE: StylesheetJson = [
     style: { "border-color": "#71e8ff", "border-width": 2 },
   },
   {
+    selector: "node[active = 'true']",
+    style: {
+      "border-color": "#a8ff3e",
+      "border-width": 4,
+      "background-color": "#1f2b18",
+    },
+  },
+  {
     selector: "node[kind = 'safety']",
     style: {
       "background-color": "#3a241b",
@@ -119,6 +138,16 @@ const GRAPH_STYLE: StylesheetJson = [
     },
   },
   {
+    selector: "edge[kind = 'reviewed']",
+    style: {
+      width: 1,
+      "line-color": "#5b6157",
+      "target-arrow-color": "#5b6157",
+      "line-style": "dashed",
+      opacity: 0.55,
+    },
+  },
+  {
     selector: ".faded",
     style: { opacity: 0.16 },
   },
@@ -133,16 +162,34 @@ const GRAPH_STYLE: StylesheetJson = [
   },
 ];
 
-export function EvidenceGraph({ report, onCite }: EvidenceGraphProps) {
+function normTag(id: string | undefined): string {
+  return String(id ?? "").replace(/^\[/, "").replace(/\]$/, "").trim();
+}
+
+export function EvidenceGraphCanvas({
+  model,
+  onCite,
+  title = "Evidence map",
+  subtitle = "Claims, source support, and evidence gaps as a draggable network.",
+  hint = "Drag · zoom · tap source",
+  rootLabel = "Report",
+  activeTag,
+  compact = false,
+}: EvidenceGraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const graph = useMemo(() => buildEvidenceGraph(report), [report]);
+  const active = normTag(activeTag);
 
   const elements = useMemo<ElementDefinition[]>(() => [
-    ...graph.nodes.map((node) => ({ data: node })),
-    ...graph.edges.map((edge) => ({ data: edge })),
-  ], [graph]);
+    ...model.nodes.map((node) => ({
+      data: {
+        ...node,
+        active: node.tag && active && normTag(node.tag) === active ? "true" : "false",
+      },
+    })),
+    ...model.edges.map((edge) => ({ data: edge })),
+  ], [active, model]);
 
   useEffect(() => {
     if (!containerRef.current || elements.length < 3) return;
@@ -159,7 +206,6 @@ export function EvidenceGraph({ report, onCite }: EvidenceGraphProps) {
           style: GRAPH_STYLE,
           minZoom: 0.35,
           maxZoom: 2.4,
-          wheelSensitivity: 0.16,
           layout: {
             name: "cose",
             animate: true,
@@ -199,23 +245,23 @@ export function EvidenceGraph({ report, onCite }: EvidenceGraphProps) {
     };
   }, [elements, onCite]);
 
-  if (graph.nodes.length < 3) return null;
+  if (model.nodes.length < 3) return null;
 
   return (
-    <section className="research-section evidence-graph">
+    <section className={`research-section evidence-graph${compact ? " compact" : ""}`}>
       <div className="evidence-graph-head">
         <div>
-          <h4 className="research-heading">Evidence map</h4>
-          <p className="muted-note">Claims, source support, and evidence gaps as a draggable network.</p>
+          <h4 className="research-heading">{title}</h4>
+          <p className="muted-note">{subtitle}</p>
         </div>
-        <div className="evidence-graph-hint">Drag · zoom · tap source</div>
+        <div className="evidence-graph-hint">{hint}</div>
       </div>
       <div className="evidence-graph-canvas" ref={containerRef} aria-label="Evidence map">
         {status === "loading" ? <span>Mapping evidence...</span> : null}
         {status === "error" ? <span>Evidence map unavailable.</span> : null}
       </div>
       <div className="evidence-graph-legend" aria-label="Evidence map legend">
-        <span><i className="legend-report" />Report</span>
+        <span><i className="legend-report" />{rootLabel}</span>
         <span><i className="legend-claim" />Claim</span>
         <span><i className="legend-source" />Source</span>
         <span><i className="legend-label" />Official label</span>
@@ -223,4 +269,9 @@ export function EvidenceGraph({ report, onCite }: EvidenceGraphProps) {
       </div>
     </section>
   );
+}
+
+export function EvidenceGraph({ report, onCite }: EvidenceGraphProps) {
+  const graph = useMemo(() => buildEvidenceGraph(report), [report]);
+  return <EvidenceGraphCanvas model={graph} onCite={onCite} />;
 }

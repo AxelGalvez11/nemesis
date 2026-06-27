@@ -1,8 +1,8 @@
 // Ad hoc pure-graph test:
 //   pnpm --filter @pharmaorb/web exec tsx lib/evidence-graph.test.ts
 import assert from "node:assert/strict";
-import type { ResearchReport } from "@pharmabro/shared";
-import { buildEvidenceGraph } from "./evidence-graph";
+import type { AskResponse, ResearchReport } from "@pharmabro/shared";
+import { buildAskEvidenceGraph, buildEvidenceGraph } from "./evidence-graph";
 
 const report: ResearchReport = {
   question: "Does semaglutide cause muscle loss?",
@@ -116,5 +116,84 @@ assert.equal(
   1,
 );
 assert(graph.edges.some((e) => e.source === "safety-claim-0" && e.target === "source-3"));
+
+const ask: AskResponse = {
+  answer_id: "a1",
+  intent: "health_context",
+  plain_english_summary: "Dry flakes are often discussed as dandruff or scalp flaking.",
+  evidence_grade: "strong",
+  answer_sections: {
+    what_we_know: [
+      { text: "MedlinePlus describes dandruff as scalp flaking.", citation_ids: ["1"] },
+      { text: "A PubMed review discusses seborrheic dermatitis.", citation_ids: ["2", "2"] },
+    ],
+    what_we_do_not_know: [
+      { text: "This does not identify the user's exact cause.", citation_ids: [] },
+    ],
+    safety_notes: [],
+    questions_to_ask: [],
+  },
+  citations: [
+    {
+      chunk_tag: "1",
+      source_id: "a-s1",
+      source_type: "medlineplus",
+      title: "Dandruff",
+      section: null,
+      url: "https://medlineplus.gov/dandruff.html",
+      license: "public",
+      published_date: "2025-01-01",
+      retrieved_at: "2026-06-27",
+      support_level: "direct",
+      evidence_role: "consumer_health",
+    },
+    {
+      chunk_tag: "2",
+      source_id: "a-s2",
+      source_type: "pubmed_oa",
+      title: "Seborrheic dermatitis review",
+      section: null,
+      url: "https://pubmed.ncbi.nlm.nih.gov/2/",
+      license: "public",
+      published_date: "2024-01-01",
+      retrieved_at: "2026-06-27",
+      support_level: "partial",
+      evidence_role: "review_article",
+    },
+  ],
+  reviewed_sources: [
+    {
+      chunk_tag: "R1",
+      source_id: "a-s3",
+      source_type: "clinicaltrials",
+      title: "A reviewed trial",
+      section: null,
+      url: "https://clinicaltrials.gov/study/NCT1",
+      license: "public",
+      published_date: "2024-01-01",
+      retrieved_at: "2026-06-27",
+      support_level: "reviewed",
+      evidence_role: "clinical_trial",
+    },
+  ],
+  safety_flags: [],
+  refused_unsupported: false,
+  oldest_source_date: "2024-01-01",
+};
+
+const askGraph = buildAskEvidenceGraph(ask);
+
+assert(askGraph.nodes.some((n) => n.id === "report" && n.label === "Ask evidence"));
+assert(askGraph.nodes.some((n) => n.id === "section-cited" && n.label === "Cited claims"));
+assert(askGraph.nodes.some((n) => n.id === "claim-know-0"));
+assert(askGraph.nodes.some((n) => n.id === "source-1" && n.evidenceRole === "consumer_health"));
+assert(askGraph.edges.some((e) => e.source === "claim-know-0" && e.target === "source-1" && e.kind === "cites"));
+assert.equal(
+  askGraph.edges.filter((e) => e.source === "claim-know-1" && e.target === "source-2").length,
+  1,
+);
+assert(askGraph.nodes.some((n) => n.id === "section-reviewed" && n.label === "Also reviewed"));
+assert(askGraph.nodes.some((n) => n.id === "source-R1" && n.supportLevel === "reviewed"));
+assert(askGraph.edges.some((e) => e.source === "section-reviewed" && e.target === "source-R1" && e.kind === "reviewed"));
 
 console.log("evidence-graph.test.ts OK");

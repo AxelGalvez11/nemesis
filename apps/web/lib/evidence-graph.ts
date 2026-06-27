@@ -1,4 +1,4 @@
-import type { AnswerPoint, Citation, ResearchReport } from "@pharmabro/shared";
+import type { AnswerPoint, AskResponse, Citation, ResearchReport } from "@pharmabro/shared";
 
 export type EvidenceGraphNodeKind =
   | "report"
@@ -23,7 +23,7 @@ export interface EvidenceGraphEdge {
   id: string;
   source: string;
   target: string;
-  kind: "section" | "claim" | "cites";
+  kind: "section" | "claim" | "cites" | "reviewed";
 }
 
 export interface EvidenceGraphModel {
@@ -187,6 +187,157 @@ export function buildEvidenceGraph(report: ResearchReport): EvidenceGraphModel {
       evidenceWeight: citation.evidence_weight,
     });
   }
+
+  return model;
+}
+
+function addSourceNode(
+  model: EvidenceGraphModel,
+  citation: Citation,
+  sourceIds: Set<string>,
+): void {
+  const tag = normTag(citation.chunk_tag);
+  const sourceId = `source-${tag}`;
+  if (!tag || !sourceIds.has(sourceId) || model.nodes.some((n) => n.id === sourceId)) return;
+  model.nodes.push({
+    id: sourceId,
+    label: sourceLabel(citation),
+    kind: "source",
+    tag,
+    sourceType: citation.source_type,
+    evidenceRole: citation.evidence_role,
+    supportLevel: citation.support_level,
+    evidenceWeight: citation.evidence_weight,
+  });
+}
+
+function connectAskPoints(
+  model: EvidenceGraphModel,
+  points: AnswerPoint[],
+  parentId: string,
+  pointPrefix: string,
+  fallbackPrefix: string,
+  citationsByTag: Map<string, Citation>,
+  sourceIds: Set<string>,
+): void {
+  points.forEach((point, index) => {
+    if (!point.citation_ids?.length) return;
+    connectPoint(
+      model,
+      point,
+      parentId,
+      `${pointPrefix}-${index}`,
+      `${fallbackPrefix} ${index + 1}`,
+      citationsByTag,
+      sourceIds,
+    );
+  });
+}
+
+export function buildAskEvidenceGraph(answer: AskResponse): EvidenceGraphModel {
+  const model: EvidenceGraphModel = {
+    nodes: [{
+      id: "report",
+      label: "Ask evidence",
+      kind: "report",
+    }],
+    edges: [],
+  };
+
+  const citationsByTag = new Map<string, Citation>();
+  for (const citation of [...answer.citations, ...(answer.reviewed_sources ?? [])]) {
+    const tag = normTag(citation.chunk_tag);
+    if (!tag || citationsByTag.has(tag)) continue;
+    citationsByTag.set(tag, citation);
+  }
+
+  const sourceIds = new Set<string>();
+  const citedSectionId = "section-cited";
+  model.nodes.push({ id: citedSectionId, label: "Cited claims", kind: "section" });
+  model.edges.push({
+    id: `report->${citedSectionId}`,
+    source: "report",
+    target: citedSectionId,
+    kind: "section",
+  });
+
+  connectAskPoints(
+    model,
+    answer.answer_sections.what_we_know,
+    citedSectionId,
+    "claim-know",
+    "Claim",
+    citationsByTag,
+    sourceIds,
+  );
+
+  const uncertaintyPoints = answer.answer_sections.what_we_do_not_know.filter((p) => p.citation_ids?.length);
+  if (uncertaintyPoints.length) {
+    const uncertaintyId = "section-uncertain";
+    model.nodes.push({ id: uncertaintyId, label: "Uncertainties", kind: "gap" });
+    model.edges.push({
+      id: `report->${uncertaintyId}`,
+      source: "report",
+      target: uncertaintyId,
+      kind: "section",
+    });
+    connectAskPoints(
+      model,
+      uncertaintyPoints,
+      uncertaintyId,
+      "claim-uncertain",
+      "Uncertainty",
+      citationsByTag,
+      sourceIds,
+    );
+  }
+
+  const safetyPoints = answer.answer_sections.safety_notes.filter((p) => p.citation_ids?.length);
+  if (safetyPoints.length) {
+    const safetyId = "section-safety";
+    model.nodes.push({ id: safetyId, label: "Safety signals", kind: "safety" });
+    model.edges.push({
+      id: `report->${safetyId}`,
+      source: "report",
+      target: safetyId,
+      kind: "section",
+    });
+    connectAskPoints(
+      model,
+      safetyPoints,
+      safetyId,
+      "claim-safety",
+      "Safety note",
+      citationsByTag,
+      sourceIds,
+    );
+  }
+
+  const reviewed = answer.reviewed_sources ?? [];
+  if (reviewed.length) {
+    const reviewedId = "section-reviewed";
+    model.nodes.push({ id: reviewedId, label: "Also reviewed", kind: "section" });
+    model.edges.push({
+      id: `report->${reviewedId}`,
+      source: "report",
+      target: reviewedId,
+      kind: "section",
+    });
+    for (const citation of reviewed) {
+      const tag = normTag(citation.chunk_tag);
+      if (!tag) continue;
+      const sourceId = `source-${tag}`;
+      sourceIds.add(sourceId);
+      model.edges.push({
+        id: `${reviewedId}->${sourceId}`,
+        source: reviewedId,
+        target: sourceId,
+        kind: "reviewed",
+      });
+    }
+  }
+
+  for (const citation of citationsByTag.values()) addSourceNode(model, citation, sourceIds);
 
   return model;
 }

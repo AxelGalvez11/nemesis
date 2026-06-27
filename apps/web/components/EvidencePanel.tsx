@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import type { Citation } from "@pharmabro/shared";
+import { useCallback, useMemo, useState } from "react";
+import type { AskResponse, Citation } from "@pharmabro/shared";
 import { CLAIM_RELATION_LABEL, formatReference, studyTypeLabel } from "@pharmabro/shared";
 import { normTag } from "@/lib/cite";
+import { buildAskEvidenceGraph } from "@/lib/evidence-graph";
 import { safeHref } from "@/lib/url";
+import { EvidenceGraphCanvas } from "./EvidenceGraph";
 
 // Provider → the color-square class in shell.css (openfda blue, pubmed purple, trial orange, faers red).
 function providerClass(t: string): string {
@@ -184,11 +187,26 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
 // that LOOKS FDA-heavy from a few cites while ~15-20 sources were actually searched). activeTag is the
 // normalized chunk_tag of the citation just clicked; the matching card gets an `id` anchor + `active`
 // class. activeQuote is the verbatim source sentence backing that claim, highlighted on the active card.
-export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: { citations: Citation[]; reviewed?: Citation[]; activeTag?: string; activeQuote?: string }) {
+export function EvidencePanel({ answer, citations, reviewed, activeTag, activeQuote }: { answer?: AskResponse | null; citations: Citation[]; reviewed?: Citation[]; activeTag?: string; activeQuote?: string }) {
+  const [view, setView] = useState<"sources" | "map">("sources");
   const rev = reviewed ?? [];
   const total = citations.length + rev.length;
   const fam = breakdown([...citations, ...rev]);
   const citedN = citations.length;
+  const graph = useMemo(() => answer ? buildAskEvidenceGraph(answer) : null, [answer]);
+  const hasMap = Boolean(graph && graph.nodes.length >= 3);
+
+  const jumpToSource = useCallback((tag: string) => {
+    setView("sources");
+    requestAnimationFrame(() => {
+      const t = normTag(tag);
+      const el = document.getElementById(`ev-src-${t}`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("src-flash");
+      setTimeout(() => el.classList.remove("src-flash"), 1200);
+    });
+  }, []);
 
   return (
     <>
@@ -206,9 +224,27 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
         </div>
       ) : null}
 
+      {hasMap ? (
+        <div className="ev-tabs" role="tablist" aria-label="Evidence panel view">
+          <button type="button" role="tab" aria-selected={view === "sources"} className={`ev-tab${view === "sources" ? " active" : ""}`} onClick={() => setView("sources")}>Sources</button>
+          <button type="button" role="tab" aria-selected={view === "map"} className={`ev-tab${view === "map" ? " active" : ""}`} onClick={() => setView("map")}>Map</button>
+        </div>
+      ) : null}
+
       <div className="ev-body">
         {total === 0 ? (
           <div className="ev-empty">Ask a question to see the sources behind the answer.</div>
+        ) : view === "map" && graph ? (
+          <EvidenceGraphCanvas
+            model={graph}
+            onCite={jumpToSource}
+            activeTag={activeTag}
+            compact
+            title="Evidence map"
+            subtitle="Answer claims, cited support, and reviewed sources."
+            hint="Drag · zoom · tap"
+            rootLabel="Answer"
+          />
         ) : (
           <>
             {rev.length > 0 && citedN > 0 ? <div className="ev-section-label">Cited in this answer</div> : null}

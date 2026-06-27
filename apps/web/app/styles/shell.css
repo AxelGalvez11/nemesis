@@ -621,6 +621,7 @@
 .src:hover { border-color: var(--line-2); transform: translateY(-1px); }
 /* Highlight the card a clicked citation scrolled to. */
 .src.active { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid), 0 0 18px rgba(var(--acid-rgb), 0.18); }
+.src.src-flash { border-color: var(--acid); background: color-mix(in srgb, var(--acid) 12%, var(--surface)); }
 /* "Also reviewed" cards: searched + ranked but not cited — dimmer + flatter so the cited set leads. */
 .src.reviewed { opacity: 0.68; background: var(--bg); }
 .src.reviewed:hover { opacity: 1; }
@@ -885,6 +886,11 @@
 .evidence-graph-legend .legend-source { background: #111310; border-color: #8ea672; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
 .evidence-graph-legend .legend-label { background: #111310; border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid); }
 .evidence-graph-legend .legend-trial { background: #111310; border-color: #71e8ff; box-shadow: 0 0 0 1px #71e8ff; }
+.evidence-graph.compact { margin: 0; border-radius: 12px; padding: 10px; }
+.evidence-graph.compact .evidence-graph-head { flex-direction: column; gap: 7px; margin-bottom: 8px; }
+.evidence-graph.compact .evidence-graph-hint { white-space: normal; align-self: flex-start; }
+.evidence-graph.compact .evidence-graph-canvas { height: clamp(300px, 52vh, 410px); min-height: 300px; }
+.evidence-graph.compact .evidence-graph-legend { gap: 7px 9px; font-size: 11px; }
 
 /* Evidence-base table in a deep-research report (rendered from the citation list). */
 .evidence-table-wrap { overflow-x: auto; margin: 6px 0 8px; }
