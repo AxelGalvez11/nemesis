@@ -9,6 +9,7 @@ import { askQuestion, createConversation, fetchConversationTurns, fetchResearchR
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
+import { buildThinkingPreview } from "@/lib/thinking-preview";
 import { pubchemMoleculeUrl } from "@/lib/molecule";
 import { phCapture } from "@/lib/posthog";
 import { POINT_OF_USE_DISCLAIMER } from "@/lib/legal";
@@ -22,9 +23,6 @@ import { WatchButton } from "@/components/WatchButton";
 function isQuotaError(e: unknown): e is AskQuotaError {
   return e instanceof Error && "quota" in e;
 }
-
-// Honest pipeline stages (classify → retrieve → rerank → generate), animated while the request runs.
-const STAGES = ["Reading the question", "Searching the evidence library", "Ranking the strongest sources", "Composing a cited answer"];
 
 // The speed/depth dial. fast/thorough are single cited answers (the /ask engine, free); deep/meta are the
 // multi-step research reports (the research endpoint, Pro). Fast is the default: plain-English + concise.
@@ -51,6 +49,9 @@ function abbr(t: string): string {
   const k = Object.keys(PROVIDER_ABBR).find((p) => t.toLowerCase().includes(p));
   return (k ? PROVIDER_ABBR[k] : undefined) ?? "REF";
 }
+
+const MIN_THINKING_PREVIEW_MS = 650;
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function AskPageRoute() {
   // useSearchParams (for the ?c=<conversation> deep link) needs a Suspense boundary at build time.
@@ -79,7 +80,7 @@ function AskPage() {
   const [busy, setBusy] = useState(false);
   const [bloom, setBloom] = useState(false);
   const [stage, setStage] = useState(0);
-  const [showThinking, setShowThinking] = useState(false); // gate: only show the thinking animation once a request has run long enough to be a real wait (instant small-talk replies never trigger it)
+  const [showThinking, setShowThinking] = useState(false); // shown immediately while Ask runs, so users always see the engine preview before the answer lands
   const [revealIdx, setRevealIdx] = useState<number | null>(null); // the turn whose answer should type itself in (only the just-arrived one — never reopened/saved turns)
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("fast");
   const [modeOpen, setModeOpen] = useState(false);
@@ -258,15 +259,11 @@ function AskPage() {
     return () => timers.forEach(clearTimeout);
   }, [busy]);
 
-  // Gate the thinking animation behind a short delay so instant replies (small-talk short-circuit,
-  // cache hits) never flash the staged "Searching the evidence library…" sequence. 550ms sits
-  // comfortably above small-talk round-trip latency (~200–400ms), so only real evidence lookups
-  // — the ones that genuinely take a beat — ever surface the animation. ChatGPT does the same:
-  // no thinking indicator unless the reply is actually slow enough to warrant one.
+  // Show the engine preview immediately. The user should always get a brief "Thinking" state before
+  // the answer, even for fast cache/preview hits; the card is observable progress, not hidden reasoning.
   useEffect(() => {
     if (!busy) { setShowThinking(false); return; }
-    const t = setTimeout(() => setShowThinking(true), 550);
-    return () => clearTimeout(t);
+    setShowThinking(true);
   }, [busy]);
 
   // One-shot "bloom" flare on the orb the moment the newest answer lands.
@@ -327,6 +324,7 @@ function AskPage() {
       return;
     }
     setBusy(true);
+    setShowThinking(true);
     setBloom(false); // clear any prior flare so the next answer re-triggers it (and it can't stick across an "ask again")
     setActiveTag(null);
     setActiveQuote(null);
@@ -337,10 +335,12 @@ function AskPage() {
     if (taRef.current) taRef.current.style.height = "auto";
     const setLast = (patch: Partial<Turn>) =>
       setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
+    const minThinkingPreview = wait(MIN_THINKING_PREVIEW_MS);
     try {
       // Only fast/thorough reach here — deep/meta/lab_draft returned above via the research branch.
       const askMode: AskMode = mode === "thorough" ? "thorough" : "fast";
       const res = await askQuestion(text, askMode);
+      await minThinkingPreview;
       setLast({ a: res });
       setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
@@ -350,6 +350,7 @@ function AskPage() {
       const msg = isQuotaError(err)
         ? `Daily Ask limit reached (${err.quota.used}/${err.quota.limit}) on ${err.quota.plan}.`
         : err instanceof Error ? err.message : "Ask failed";
+      await minThinkingPreview;
       setLast({ err: msg });
       if (isQuotaError(err)) phCapture("ask_blocked", { mode, reason: "quota", plan: err.quota.plan });
     } finally {
@@ -424,8 +425,11 @@ function AskPage() {
                   ) : t.research ? (
                     <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
                   ) : t.a ? (
-                    <Answer answer={t.a} onCite={onCite} question={t.q} reveal={i === revealIdx} />
-                  ) : isLast && busy && showThinking ? <Thinking stage={stage} /> : null}
+                    <>
+                      {t.a.intent !== "smalltalk" ? <Thinking stage={3} question={t.q} complete /> : null}
+                      <Answer answer={t.a} onCite={onCite} question={t.q} reveal={i === revealIdx} />
+                    </>
+                  ) : isLast && busy && showThinking ? <Thinking stage={stage} question={t.q} /> : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
               </div>
@@ -566,34 +570,40 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   );
 }
 
-function Thinking({ stage }: { stage: number }) {
-  const activeStage = STAGES[Math.min(stage, STAGES.length - 1)];
+function Thinking({ stage, question, complete = false }: { stage: number; question: string; complete?: boolean }) {
+  const preview = buildThinkingPreview(question, stage);
+  const current = complete ? "Ready with a cited answer" : preview.current;
+  const note = complete
+    ? `I treated the question as "${question.trim() || "your question"}", checked source quality, and kept claims tied to citations.`
+    : preview.preview;
   return (
-    <details className="thinking engine-preview engine-preview-compact" open>
+    <details className={`thinking engine-preview engine-preview-compact${complete ? " engine-preview-done" : ""}`} open>
       <summary className="engine-preview-head">
-        <Orb size={26} busy />
+        <Orb size={26} busy={!complete} />
         <span className="engine-preview-titleblock">
           <span className="engine-preview-title">
-            Thinking
-            <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>
+            {preview.title}
+            {complete ? null : <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>}
           </span>
-          <span className="engine-preview-subtitle">Evidence search · source ranking · cited answer</span>
+          <span className="engine-preview-subtitle">{preview.subtitle}</span>
         </span>
       </summary>
-      <div className="engine-live-line" aria-live="polite">
+      <p className="engine-preview-note">{note}</p>
+      <div className={`engine-live-line${complete ? " done" : ""}`} aria-live="polite">
         <span className="engine-live-dot" aria-hidden="true" />
-        <span>{activeStage}</span>
+        <span>{current}</span>
       </div>
       <div className="engine-step-list compact">
-        {STAGES.map((label, i) => {
+        {preview.steps.map((step, i) => {
           // done = ✓, active = live spinner, upcoming = faded. The active step is the one the
           // pipeline is on right now, so it reads as honest in-progress work, not a finished list.
-          const state = i < stage ? "done" : i === stage ? "active" : "pending";
+          const state = complete || i < stage ? "done" : i === stage ? "active" : "pending";
           return (
-            <div key={label} className={`engine-step ${state}`}>
+            <div key={step.label} className={`engine-step ${state}`}>
               <span className="engine-step-icon"><Icon name="check" size={11} /></span>
               <span className="engine-step-copy">
-                <span className="engine-step-label">{label}</span>
+                <span className="engine-step-label">{step.label}</span>
+                <span className="engine-step-desc">{step.detail}</span>
               </span>
             </div>
           );

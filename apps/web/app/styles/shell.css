@@ -206,13 +206,13 @@
 .msg-ai { display: flex; gap: 14px; margin-top: 26px; }
 .msg-ai .orb { width: 28px; height: 28px; margin-top: 2px; }
 .ai-body { min-width: 0; flex: 1; }
-.ai-body h4 { font-size: 20px; font-weight: 700; margin: 2px 0 9px; letter-spacing: -0.01em; }
+.ai-body h4 { font-size: 16px; font-weight: 700; margin: 2px 0 9px; letter-spacing: 0; }
 .ai-body p { color: var(--text); font-size: 16px; margin: 0 0 12px; line-height: 1.62; }
-/* Lead paragraph: the bottom-line summary, promoted so it anchors the answer. */
-.ai-body p.lead { font-size: 20px; line-height: 1.7; font-weight: 500; color: var(--text); margin: 10px 0 18px; }
+/* Lead paragraph: the bottom-line summary, same reading scale as the prompt for a ChatGPT-like thread. */
+.ai-body p.lead { font-size: 16px; line-height: 1.62; font-weight: 500; color: var(--text); margin: 10px 0 16px; }
 .ai-body section { margin: 0 0 16px; }
 /* Section headers read as real headings (sentence-case, brighter, bolder) instead of tiny grey labels. */
-.ai-body section h5 { font-size: 18px; text-transform: none; letter-spacing: -0.01em; color: var(--text); font-weight: 700; margin: 2px 0 9px; }
+.ai-body section h5 { font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--text); font-weight: 700; margin: 2px 0 9px; }
 .ai-body ul { margin: 0 0 4px; padding-left: 18px; }
 .ai-body li { margin: 0 0 7px; font-size: 16px; line-height: 1.62; }
 /* Molecule structure thumbnail (PubChem) at the top of a drug answer — floated so the text wraps around
@@ -227,7 +227,7 @@
    form that read as "robotic"). The lead summary stays flowing prose; the supporting points bullet
    when there are several (see .ai-list below); safety stays a prominent callout; uncertainty is
    de-emphasized; questions are a clear light numbered block. ── */
-.ai-para { margin: 0 0 15px; font-size: 18px; line-height: 1.78; }
+.ai-para { margin: 0 0 14px; font-size: 16px; line-height: 1.66; }
 /* Safety: a clear, visible bordered callout — kept prominent (conservative medical app), never muted. */
 .ai-safety { border: 1px solid var(--line-2); border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 5%, var(--surface)); border-radius: 12px; padding: 13px 15px 3px; margin: 16px 0; }
 .ai-safety-label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 9px; }
@@ -326,6 +326,14 @@
   padding: 12px;
 }
 .engine-preview-compact { width: min(560px, 100%); }
+.engine-preview-done {
+  margin-bottom: 14px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--acid) 4%);
+}
+.engine-preview-done .engine-step-list,
+.engine-preview-done .research-progress-note {
+  display: none;
+}
 .engine-preview summary::-webkit-details-marker { display: none; }
 .engine-preview-head {
   display: flex;
@@ -378,9 +386,19 @@
   font-size: 13px;
   line-height: 1.4;
 }
+.engine-preview-note {
+  margin: 12px 0 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
 .engine-live-line.warn {
   background: color-mix(in srgb, var(--warn) 9%, var(--surface));
   border-color: color-mix(in srgb, var(--warn) 32%, transparent);
+}
+.engine-live-line.done {
+  margin-bottom: 0;
+  background: color-mix(in srgb, var(--surface-2) 90%, var(--acid) 10%);
 }
 .engine-live-dot {
   width: 7px;
@@ -390,6 +408,10 @@
   background: var(--acid);
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--acid) 34%, transparent);
   animation: engine-pulse 1.35s ease-out infinite;
+}
+.engine-live-line.done .engine-live-dot {
+  animation: none;
+  box-shadow: none;
 }
 @keyframes engine-pulse {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acid) 34%, transparent); }
