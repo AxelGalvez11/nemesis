@@ -4,7 +4,10 @@
 // consumer products / slang / aliases that should enrich free-text research search but must not be
 // sent through drug-label field-scoped providers.
 
-import { isKnownEntityMention, resolveKnownEntities } from "./entity-intelligence.ts";
+import {
+  isKnownEntityMention,
+  resolveKnownEntities,
+} from "./entity-intelligence.ts";
 import type { WebReconResult } from "./web-recon.ts";
 
 export interface QueryUnderstanding {
@@ -20,16 +23,21 @@ export interface QueryUnderstanding {
   normalizedTerms: string[];
   /** True when a recognized consumer product shaped the query. */
   hasConsumerProduct: boolean;
+  /** True when a recognized non-drug topic should shape research but avoid drug-label lanes. */
+  hasKnownNonDrugTopic: boolean;
 }
 
 function norm(s: string): string {
-  return s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  return s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ")
+    .trim();
 }
 
 function dedupeWords(parts: readonly string[]): string {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const part of parts.flatMap((p) => norm(p).split(/\s+/)).filter(Boolean)) {
+  for (
+    const part of parts.flatMap((p) => norm(p).split(/\s+/)).filter(Boolean)
+  ) {
     if (seen.has(part)) continue;
     seen.add(part);
     out.push(part);
@@ -55,16 +63,21 @@ export function understandQuery(
   baseResearchQuery: string = question,
 ): QueryUnderstanding {
   const knownEntities = resolveKnownEntities(question, entityMentions);
-  const hasConsumerProduct = knownEntities.some((e) => e.kind === "consumer_product");
-  const consumerResearchTerms = new Set(
+  const hasConsumerProduct = knownEntities.some((e) =>
+    e.kind === "consumer_product"
+  );
+  const hasKnownNonDrugTopic = knownEntities.some((e) =>
+    !e.use_drug_label_lane
+  );
+  const nonLabelResearchTerms = new Set(
     knownEntities
-      .filter((e) => e.kind === "consumer_product")
+      .filter((e) => !e.use_drug_label_lane)
       .flatMap((e) => [e.normalized, ...e.biomedical_terms])
       .map(norm),
   );
   const fieldMentions = entityMentions.filter((m) => {
     if (isKnownEntityMention(m)) return false;
-    return !consumerResearchTerms.has(norm(m));
+    return !nonLabelResearchTerms.has(norm(m));
   });
 
   if (knownEntities.length === 0) {
@@ -75,6 +88,7 @@ export function understandQuery(
       assumptions: [],
       normalizedTerms: [],
       hasConsumerProduct,
+      hasKnownNonDrugTopic,
     };
   }
 
@@ -82,24 +96,42 @@ export function understandQuery(
   const extraTerms = knownEntities.flatMap((e) => e.biomedical_terms);
   return {
     researchQuery: dedupeWords([baseResearchQuery, ...extraTerms]),
-    sourceQuery: fieldMentions.length ? fieldMentions.join(" ") : normalizedTerms.join(" "),
+    sourceQuery: fieldMentions.length
+      ? fieldMentions.join(" ")
+      : normalizedTerms.join(" "),
     fieldMentions,
     assumptions: knownEntities.flatMap((e) => e.assumptions),
     normalizedTerms,
     hasConsumerProduct,
+    hasKnownNonDrugTopic,
   };
 }
 
-export function isConsumerProductOnlyQuery(understood: QueryUnderstanding): boolean {
+export function isConsumerProductOnlyQuery(
+  understood: QueryUnderstanding,
+): boolean {
   return understood.hasConsumerProduct && understood.fieldMentions.length === 0;
+}
+
+export function isKnownNonDrugOnlyQuery(
+  understood: QueryUnderstanding,
+): boolean {
+  return understood.hasKnownNonDrugTopic &&
+    understood.fieldMentions.length === 0;
 }
 
 export function applyReconToUnderstanding(
   understood: QueryUnderstanding,
   recon: WebReconResult,
 ): QueryUnderstanding {
-  const normalizedTerms = uniqueStrings([...understood.normalizedTerms, ...recon.normalized_terms]);
-  const assumptions = uniqueStrings([...understood.assumptions, ...recon.assumptions]);
+  const normalizedTerms = uniqueStrings([
+    ...understood.normalizedTerms,
+    ...recon.normalized_terms,
+  ]);
+  const assumptions = uniqueStrings([
+    ...understood.assumptions,
+    ...recon.assumptions,
+  ]);
   const sourceQuery = understood.fieldMentions.length
     ? understood.sourceQuery
     : normalizedTerms.length
@@ -108,10 +140,15 @@ export function applyReconToUnderstanding(
 
   return {
     ...understood,
-    researchQuery: dedupeWords([understood.researchQuery, ...recon.normalized_terms, ...recon.biomedical_terms]),
+    researchQuery: dedupeWords([
+      understood.researchQuery,
+      ...recon.normalized_terms,
+      ...recon.biomedical_terms,
+    ]),
     sourceQuery,
     assumptions,
     normalizedTerms,
     hasConsumerProduct: understood.hasConsumerProduct,
+    hasKnownNonDrugTopic: understood.hasKnownNonDrugTopic,
   };
 }

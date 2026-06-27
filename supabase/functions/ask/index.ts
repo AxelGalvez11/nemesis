@@ -15,13 +15,23 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
-import { detectSmallTalk, preScreen, suppressEmergencyForGeneralToxicity } from "./safety.ts";
+import {
+  detectSmallTalk,
+  preScreen,
+  suppressEmergencyForGeneralToxicity,
+} from "./safety.ts";
 import { isBenignSalvageable, resolveSafety } from "./sanitize.ts";
 import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
 import { generate } from "./generate.ts";
-import { chunkToCitation, citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
+import {
+  chunkToCitation,
+  citationMeta,
+  collectSourceTexts,
+  enforceCitations,
+  type RetrievedChunk,
+} from "./citation.ts";
 import { attachSupport } from "./support-span.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
@@ -32,12 +42,20 @@ import { decideNewsGate } from "./news-gate.ts";
 import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
 import { assumptionNote, findTypoCorrections } from "./typo-correct.ts";
-import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
+import {
+  applyGradeCeiling,
+  fetchStoredEvidenceGrade,
+} from "./evidence-grade.ts";
 import { hasLlmKey, llmApiKey } from "./llm.ts";
 import { modelFor } from "./model-router.ts";
 import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
-import { applyReconToUnderstanding, isConsumerProductOnlyQuery, understandQuery } from "./query-understanding.ts";
+import {
+  applyReconToUnderstanding,
+  isConsumerProductOnlyQuery,
+  isKnownNonDrugOnlyQuery,
+  understandQuery,
+} from "./query-understanding.ts";
 import { runWebRecon, type WebReconResult } from "./web-recon.ts";
 import { rateSourceSupport } from "./source-support.ts";
 import {
@@ -103,13 +121,22 @@ const LIVE_PER_SOURCE_MAX = 8; // how many candidates to pull per live source be
 const THOROUGH_LIVE_PER_SOURCE_MAX = 12;
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
-  if (req.method !== "POST") return json({ error: "method not allowed" }, 405, req);
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders(req) });
+  }
+  if (req.method !== "POST") {
+    return json({ error: "method not allowed" }, 405, req);
+  }
 
-  if (!hasLlmKey()) return json({ error: "LLM API key not configured" }, 500, req);
+  if (!hasLlmKey()) {
+    return json({ error: "LLM API key not configured" }, 500, req);
+  }
 
   // ---- verify caller (authenticated-only) ----
-  const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const token = (req.headers.get("authorization") ?? "").replace(
+    /^Bearer\s+/i,
+    "",
+  );
   const userId = await verifyUser(token);
   if (!userId) return json({ error: "authentication required" }, 401, req);
 
@@ -136,13 +163,22 @@ serve(async (req) => {
   // authenticated user could push very large strings into the embed + classify + generate
   // calls and amplify cost well beyond one quota unit. 2000 chars covers any legitimate
   // question with context.
-  if (question.length > 2000) return json({ error: "question too long (max 2000 characters)" }, 400, req);
+  if (question.length > 2000) {
+    return json({ error: "question too long (max 2000 characters)" }, 400, req);
+  }
   // Validate the speed/depth dial at the boundary: only the two known modes pass through; an unknown
   // or absent value becomes undefined → current behavior (mobile / older clients / saved-chat replays).
-  const mode: AskMode | undefined = body.mode === "fast" || body.mode === "thorough" ? body.mode : undefined;
+  const mode: AskMode | undefined =
+    body.mode === "fast" || body.mode === "thorough" ? body.mode : undefined;
 
   try {
-    const resp = await runAsk(question, !!body.use_health_context, userId, !!body.include_source_text, mode);
+    const resp = await runAsk(
+      question,
+      !!body.use_health_context,
+      userId,
+      !!body.include_source_text,
+      mode,
+    );
     return json(resp, 200, req);
   } catch (e) {
     if (e instanceof QuotaExceeded) return json(e.payload, 429, req);
@@ -169,19 +205,43 @@ async function runAsk(
   //  - perSourceMax: Thorough casts a WIDER candidate net per live source into the rerank.
   //  - matchCount: Thorough shows a BIGGER cited slice (THOROUGH_MATCH_COUNT) so the fuller answer has more
   //    real sources to draw on; the label family stays capped, so the extra slots are research/trials.
-  const style: AnswerStyle | undefined = mode === "fast" ? "plain" : mode === "thorough" ? "thorough" : undefined;
-  const perSourceMax = mode === "thorough" ? THOROUGH_LIVE_PER_SOURCE_MAX : LIVE_PER_SOURCE_MAX;
+  const style: AnswerStyle | undefined = mode === "fast"
+    ? "plain"
+    : mode === "thorough"
+    ? "thorough"
+    : undefined;
+  const perSourceMax = mode === "thorough"
+    ? THOROUGH_LIVE_PER_SOURCE_MAX
+    : LIVE_PER_SOURCE_MAX;
   const matchCount = mode === "thorough" ? THOROUGH_MATCH_COUNT : MATCH_COUNT;
 
   // ---- 0. deterministic pre-screen (no LLM) ----
   const pre = preScreen(question);
   if (pre.shortCircuit === "emergency_routing") {
-    return await finalizeTemplate(answerId, question, "emergency_overdose", pre.flags, [], userId,
-      "emergency_routing", "deterministic-prescreen", false);
+    return await finalizeTemplate(
+      answerId,
+      question,
+      "emergency_overdose",
+      pre.flags,
+      [],
+      userId,
+      "emergency_routing",
+      "deterministic-prescreen",
+      false,
+    );
   }
   if (pre.shortCircuit === "sourcing_refusal") {
-    return await finalizeTemplate(answerId, question, "drug_sourcing", pre.flags, [], userId,
-      "sourcing_refusal", "deterministic-prescreen", false);
+    return await finalizeTemplate(
+      answerId,
+      question,
+      "drug_sourcing",
+      pre.flags,
+      [],
+      userId,
+      "sourcing_refusal",
+      "deterministic-prescreen",
+      false,
+    );
   }
 
   // ---- 0a. small-talk short-circuit (no LLM, no quota spend) ----
@@ -214,8 +274,15 @@ async function runAsk(
   );
   // Observability for a SAFETY RELAXATION: a backstop that quietly downgrades an emergency must leave
   // an audit trail. Logs only when the carve-out actually fired (emergency_possible was present, now isn't).
-  if (rawFlags.includes("emergency_possible") && !flags.includes("emergency_possible")) {
-    console.warn(`ask toxicity carve-out — relaxed classifier emergency_possible on educational toxicity question: ${JSON.stringify(question.slice(0, 120))}`);
+  if (
+    rawFlags.includes("emergency_possible") &&
+    !flags.includes("emergency_possible")
+  ) {
+    console.warn(
+      `ask toxicity carve-out — relaxed classifier emergency_possible on educational toxicity question: ${
+        JSON.stringify(question.slice(0, 120))
+      }`,
+    );
   }
 
   // ---- 1b. news lane (paid-only walled panel) ----
@@ -226,29 +293,70 @@ async function runAsk(
   // never reranked into the evidence pool. fetchGoogleNews is fault-tolerant (never throws), so a
   // dangling promise on an early template return (emergency/sourcing/no-source/fabrication) is harmless
   // — and correct: a refusal or a possibly-fabricated drug must NOT carry hype headlines.
-  const newsSearch = queryUnderstanding.sourceQuery || (extractSearchTerms(question) || question);
-  const newsGate = decideNewsGate({ plan: quota.plan, query: newsSearch, liveSourcesOn: LIVE_SOURCES_ON });
+  const newsSearch = queryUnderstanding.sourceQuery ||
+    (extractSearchTerms(question) || question);
+  const newsGate = decideNewsGate({
+    plan: quota.plan,
+    query: newsSearch,
+    liveSourcesOn: LIVE_SOURCES_ON,
+  });
   const newsPromise: Promise<AnswerNewsItem[]> = newsGate.fetch
-    ? fetchGoogleNews({ query: newsGate.query }).then(toAnswerNews).catch(() => [])
+    ? fetchGoogleNews({ query: newsGate.query }).then(toAnswerNews).catch(
+      () => [],
+    )
     : Promise.resolve([]);
 
-  if (flags.some((f) => f === "emergency_possible" || f === "overdose_possible" || f === "self_harm")) {
-    return await finalizeTemplate(answerId, question, "emergency_overdose", flags, [], userId,
-      "emergency_routing", cls.model, false);
+  if (
+    flags.some((f) =>
+      f === "emergency_possible" || f === "overdose_possible" ||
+      f === "self_harm"
+    )
+  ) {
+    return await finalizeTemplate(
+      answerId,
+      question,
+      "emergency_overdose",
+      flags,
+      [],
+      userId,
+      "emergency_routing",
+      cls.model,
+      false,
+    );
   }
   if (cls.intent === "drug_sourcing" || flags.includes("drug_sourcing")) {
-    return await finalizeTemplate(answerId, question, "drug_sourcing", flags, [], userId,
-      "sourcing_refusal", cls.model, false);
+    return await finalizeTemplate(
+      answerId,
+      question,
+      "drug_sourcing",
+      flags,
+      [],
+      userId,
+      "sourcing_refusal",
+      cls.model,
+      false,
+    );
   }
 
   // ---- 2. resolve entities ----
-  const entities = await resolveEntities(queryUnderstanding.fieldMentions, SB_URL, SERVICE_KEY);
-  const resolvedIds = entities.map((e) => e.entity_id).filter((id): id is string => !!id);
+  const entities = await resolveEntities(
+    queryUnderstanding.fieldMentions,
+    SB_URL,
+    SERVICE_KEY,
+  );
+  const resolvedIds = entities.map((e) => e.entity_id).filter((
+    id,
+  ): id is string => !!id);
   const scopeId = resolvedIds.length === 1 ? resolvedIds[0] : null; // 2+ entities -> broad
 
   // ---- 3. retrieve ----
   const consumerProductOnly = isConsumerProductOnlyQuery(queryUnderstanding);
-  const priority = consumerProductOnly ? ["pubmed_oa"] : providerPriorityForIntent(cls.intent);
+  const knownNonDrugOnly = isKnownNonDrugOnlyQuery(queryUnderstanding);
+  const priority = consumerProductOnly
+    ? ["pubmed_oa"]
+    : knownNonDrugOnly
+    ? ["pubmed_oa", "medlineplus"]
+    : providerPriorityForIntent(cls.intent);
   let ret = await retrieve({
     question,
     providers: priority,
@@ -263,7 +371,10 @@ async function runAsk(
   // bridged to its entity in Phase 2 (e.g. retatrutide, BPC-157 — their
   // trials/PubMed chunks exist but the drug_entity_sources link is sparse). Before
   // refusing, retry with NO provider AND NO entity filter (broad semantic search).
-  if (!consumerProductOnly && ret.chunks.length === 0 && (priority !== null || scopeId !== null)) {
+  if (
+    !consumerProductOnly && !knownNonDrugOnly && ret.chunks.length === 0 &&
+    (priority !== null || scopeId !== null)
+  ) {
     ret = await retrieve({
       question,
       providers: null,
@@ -283,15 +394,30 @@ async function runAsk(
   // union (for the fabrication guard); `top` is the MATCH_COUNT slice shown to the generator.
   let guardPool: RetrievedChunk[] = ret.chunks;
   if (LIVE_SOURCES_ON) {
-    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount, webRecon);
+    const aug = await augmentWithLive(
+      question,
+      cls.entity_mentions,
+      ret.chunks,
+      perSourceMax,
+      matchCount,
+      webRecon,
+    );
     guardPool = aug.pool;
     ret = { ...ret, chunks: aug.top };
   }
 
   if (ret.chunks.length === 0) {
-    return await finalizeTemplate(answerId, question, cls.intent,
-      unique<SafetyFlag>([...flags, "no_sources_found"]), entities, userId,
-      "no_source", cls.model, true);
+    return await finalizeTemplate(
+      answerId,
+      question,
+      cls.intent,
+      unique<SafetyFlag>([...flags, "no_sources_found"]),
+      entities,
+      userId,
+      "no_source",
+      cls.model,
+      true,
+    );
   }
 
   // ---- 3c. fabrication guard (answer-layer entity check; flag-gated) ----
@@ -317,23 +443,45 @@ async function runAsk(
   let genQuestion = queryUnderstanding.assumptions.length
     ? `${question}\n\nAssumption: ${queryUnderstanding.assumptions.join(" ")}`
     : question;
-  if (LIVE_SOURCES_ON && queryUnderstanding.fieldMentions.length > 0 && isFabricatedDrugQuery(queryUnderstanding.fieldMentions, guardPool)) {
-    const corrections = findTypoCorrections(queryUnderstanding.fieldMentions, entities, guardPool);
+  if (
+    LIVE_SOURCES_ON && queryUnderstanding.fieldMentions.length > 0 &&
+    isFabricatedDrugQuery(queryUnderstanding.fieldMentions, guardPool)
+  ) {
+    const corrections = findTypoCorrections(
+      queryUnderstanding.fieldMentions,
+      entities,
+      guardPool,
+    );
     if (!corrections) {
-      return await finalizeTemplate(answerId, question, cls.intent,
-        flags, entities, userId, "safety_fallback", `${cls.model}|unverified_entity`, true, ret.chunks);
+      return await finalizeTemplate(
+        answerId,
+        question,
+        cls.intent,
+        flags,
+        entities,
+        userId,
+        "safety_fallback",
+        `${cls.model}|unverified_entity`,
+        true,
+        ret.chunks,
+      );
     }
     assumption = assumptionNote(corrections);
     for (const corr of corrections) {
       // Rewrite the typo'd token to the assumed real drug for generation, so the answer grounds cleanly
       // on the evidence we already retrieved for it (word-boundary, case-insensitive).
       const esc = corr.mention.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      genQuestion = genQuestion.replace(new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`, "gi"), corr.corrected);
+      genQuestion = genQuestion.replace(
+        new RegExp(`(?<![a-z0-9])${esc}(?![a-z0-9])`, "gi"),
+        corr.corrected,
+      );
     }
   }
 
   // ---- 4. health context (verified-user-scoped) ----
-  const healthContext = useHealthContext ? await loadHealthContext(userId) : null;
+  const healthContext = useHealthContext
+    ? await loadHealthContext(userId)
+    : null;
 
   // ---- 5. generate (graceful: a total LLM failure degrades to a cited refusal,
   //         never a user-facing 500) ----
@@ -349,9 +497,18 @@ async function runAsk(
     });
   } catch (e) {
     console.error("ask generate failed after retries:", (e as Error).message);
-    return await finalizeTemplate(answerId, question, cls.intent,
-      unique<SafetyFlag>([...flags, "no_sources_found"]), entities, userId,
-      "no_source", `${cls.model}|generate_failed`, true, ret.chunks);
+    return await finalizeTemplate(
+      answerId,
+      question,
+      cls.intent,
+      unique<SafetyFlag>([...flags, "no_sources_found"]),
+      entities,
+      userId,
+      "no_source",
+      `${cls.model}|generate_failed`,
+      true,
+      ret.chunks,
+    );
   }
   const modelName = `${cls.model}|${gen.model}`;
 
@@ -368,14 +525,26 @@ async function runAsk(
   //               SENSITIVE class (peptide / dosing / high-risk drug) where one forbidden line still
   //               refuses the WHOLE answer, exactly as before. Conservative template + the sources.
   // LOG either way: a backstop that silently swallows a cited answer is not debuggable.
-  const resolution = resolveSafety(gen.raw, { salvageable: isBenignSalvageable(cls.intent, flags) });
+  const resolution = resolveSafety(gen.raw, {
+    salvageable: isBenignSalvageable(cls.intent, flags),
+  });
   if (resolution.kind === "fallback") {
     console.error(
       `ask safety_fallback — discarded generation (${resolution.reason}):`,
       JSON.stringify(resolution.violations),
     );
-    return await finalizeTemplate(answerId, question, cls.intent,
-      flags, entities, userId, "safety_fallback", modelName, true, ret.chunks);
+    return await finalizeTemplate(
+      answerId,
+      question,
+      cls.intent,
+      flags,
+      entities,
+      userId,
+      "safety_fallback",
+      modelName,
+      true,
+      ret.chunks,
+    );
   }
   if (resolution.kind === "salvaged") {
     console.warn(
@@ -388,9 +557,18 @@ async function runAsk(
   // ---- 6b. citation enforcement ----
   const enf = enforceCitations({ ...gen.raw, chunks: ret.chunks });
   if (enf.refusedUnsupported) {
-    return await finalizeTemplate(answerId, question, cls.intent,
-      unique<SafetyFlag>([...flags, "no_sources_found"]), entities, userId,
-      "no_source", modelName, true, ret.chunks);
+    return await finalizeTemplate(
+      answerId,
+      question,
+      cls.intent,
+      unique<SafetyFlag>([...flags, "no_sources_found"]),
+      entities,
+      userId,
+      "no_source",
+      modelName,
+      true,
+      ret.chunks,
+    );
   }
 
   // ---- 6c. deterministic evidence-grade ceiling ----
@@ -401,7 +579,11 @@ async function runAsk(
   // model grade untouched, so this is strictly non-degrading versus current behavior.
   let finalGrade: EvidenceGrade = gen.raw.evidence_grade;
   if (scopeId !== null) {
-    const storedTier = await fetchStoredEvidenceGrade(scopeId, SB_URL, SERVICE_KEY);
+    const storedTier = await fetchStoredEvidenceGrade(
+      scopeId,
+      SB_URL,
+      SERVICE_KEY,
+    );
     finalGrade = applyGradeCeiling(gen.raw.evidence_grade, storedTier);
   }
 
@@ -415,14 +597,21 @@ async function runAsk(
   // are verbatim source provenance, not assistant prose, so they do not alter the answer or its scan.
   const answer_sections = attachSupport({
     ...enf.answer_sections,
-    safety_notes: withProfessionalRouting(enf.answer_sections.safety_notes, cls.intent),
+    safety_notes: withProfessionalRouting(
+      enf.answer_sections.safety_notes,
+      cls.intent,
+    ),
   }, ret.chunks);
   const supportRatings = rateSourceSupport(ret.chunks, answer_sections);
-  const ratedCitations = enf.citations.map((c) => ({ ...c, ...supportRatings.get(c.chunk_tag) }));
+  const ratedCitations = enf.citations.map((c) => ({
+    ...c,
+    ...supportRatings.get(c.chunk_tag),
+  }));
   // A resolved drug name for the answer header's molecule image (PubChem renders by name). First
   // resolved canonical name, else the first literal mention; absent when nothing resolved. The web
   // <img> 404-hides for anything PubChem can't depict (e.g. a condition), so setting it loosely is safe.
-  const primaryDrug = entities.find((e) => e.canonical_name)?.canonical_name ?? cls.entity_mentions[0];
+  const primaryDrug = entities.find((e) => e.canonical_name)?.canonical_name ??
+    cls.entity_mentions[0];
   // The full evidence base for the panel: the reranked sources the generator reviewed but the answer
   // didn't end up citing. Surfaced as "also reviewed" so the breadth (e.g. 9 PubMed + 4 trials) stays
   // visible even when the answer text leans on a few — additive DISPLAY only; never affects the answer,
@@ -443,7 +632,9 @@ async function runAsk(
     intent: cls.intent,
     // State the typo assumption up front ("Assuming you mean tesamorelin") when we recovered a typo'd
     // drug name — transparent, never silent. Empty for normal answers.
-    plain_english_summary: surfacedAssumption ? `${surfacedAssumption} ${enf.plain_english_summary}` : enf.plain_english_summary,
+    plain_english_summary: surfacedAssumption
+      ? `${surfacedAssumption} ${enf.plain_english_summary}`
+      : enf.plain_english_summary,
     evidence_grade: finalGrade,
     answer_sections,
     citations: ratedCitations,
@@ -466,7 +657,10 @@ async function runAsk(
     answer: resp,
     evidence_grade: finalGrade,
     source_ids: unique(ratedCitations.map((c) => c.source_id)),
-    retrieval_scores: ret.chunks.map((c) => ({ chunk_id: c.chunk_id, similarity: c.similarity })),
+    retrieval_scores: ret.chunks.map((c) => ({
+      chunk_id: c.chunk_id,
+      similarity: c.similarity,
+    })),
     model_name: modelName,
     prompt_version: PROMPT_VERSION,
     safety_flags: flags,
@@ -476,7 +670,9 @@ async function runAsk(
   // Verification opt-in: attach the verbatim per-tag source text AFTER the trace write, so the stored
   // trace and every normal response stay lean. Built from the same reranked `ret.chunks` the answer was
   // generated and cited from, so a consumer can resolve each claim's [n] to the EXACT text it cited.
-  return includeSourceText ? { ...resp, source_texts: collectSourceTexts(ret.chunks) } : resp;
+  return includeSourceText
+    ? { ...resp, source_texts: collectSourceTexts(ret.chunks) }
+    : resp;
 }
 
 /**
@@ -496,7 +692,10 @@ async function augmentWithLive(
   try {
     const baseResearchQuery = extractSearchTerms(question) || question;
     const understood = webRecon
-      ? applyReconToUnderstanding(understandQuery(question, entityMentions, baseResearchQuery), webRecon)
+      ? applyReconToUnderstanding(
+        understandQuery(question, entityMentions, baseResearchQuery),
+        webRecon,
+      )
       : understandQuery(question, entityMentions, baseResearchQuery);
     // openFDA/FAERS/ClinicalTrials want a drug TERM, not a sentence (a raw question 400s). Use the
     // literal mentions when present — a real-but-new drug (retatrutide) is found by name; a fabricated
@@ -515,24 +714,41 @@ async function augmentWithLive(
     if (understood.fieldMentions.length === 0) {
       researchQuery = await espellCorrect(researchQuery);
     }
-    const live = await gatherLiveCandidates({ query: term, mentions: understood.fieldMentions, researchQuery, perSourceMax });
+    const live = await gatherLiveCandidates({
+      query: term,
+      mentions: understood.fieldMentions,
+      researchQuery,
+      perSourceMax,
+    });
     if (live.length === 0) return fallback;
 
-    const combined = [...libChunks, ...live.map((c, i) => liveToChunk(c, String(i + 1)))];
+    const combined = [
+      ...libChunks,
+      ...live.map((c, i) => liveToChunk(c, String(i + 1))),
+    ];
     let ordered: RetrievedChunk[];
     try {
       ordered = await rerankChunks(question, combined);
     } catch (e) {
-      console.error("ask live rerank failed; using dense library order:", (e as Error).message);
+      console.error(
+        "ask live rerank failed; using dense library order:",
+        (e as Error).message,
+      );
       return fallback;
     }
     // Take the cited slice with the label-family cap (so primary research isn't crowded out by long
     // FDA-label chunks that out-score short abstracts on the reranker), then retag 1..N for the
     // generator + citation layer. Reorder/select only — the fabrication guard still runs on `pool`.
-    const top = balanceCitedSlice(ordered, matchCount).map((c, i) => ({ ...c, tag: String(i + 1) }));
+    const top = balanceCitedSlice(ordered, matchCount).map((c, i) => ({
+      ...c,
+      tag: String(i + 1),
+    }));
     return { pool: ordered, top };
   } catch (e) {
-    console.error("ask live augmentation failed; using library only:", (e as Error).message);
+    console.error(
+      "ask live augmentation failed; using library only:",
+      (e as Error).message,
+    );
     return fallback;
   }
 }
@@ -565,7 +781,12 @@ async function finalizeSmallTalk(
     intent: "smalltalk",
     plain_english_summary: GREETING_COPY,
     evidence_grade: "not_applicable",
-    answer_sections: { what_we_know: [], what_we_do_not_know: [], safety_notes: [], questions_to_ask: [] },
+    answer_sections: {
+      what_we_know: [],
+      what_we_do_not_know: [],
+      safety_notes: [],
+      questions_to_ask: [],
+    },
     citations: [],
     safety_flags: [],
     refused_unsupported: false,
@@ -597,13 +818,18 @@ async function finalizeSmallTalk(
 
 function templateCopy(t: AnswerTemplate): string {
   switch (t) {
-    case "emergency_routing": return EMERGENCY_COPY;
-    case "sourcing_refusal": return SOURCING_COPY;
-    case "no_source": return NO_SOURCE_COPY;
-    case "safety_fallback": return CONSERVATIVE_FALLBACK_COPY;
+    case "emergency_routing":
+      return EMERGENCY_COPY;
+    case "sourcing_refusal":
+      return SOURCING_COPY;
+    case "no_source":
+      return NO_SOURCE_COPY;
+    case "safety_fallback":
+      return CONSERVATIVE_FALLBACK_COPY;
     // index.ts never emits lab_draft_refused (that path lives in the lab_draft handler), but
     // AnswerTemplate includes it — handle it for exhaustiveness so this switch type-checks cleanly.
-    case "lab_draft_refused": return LAB_DRAFT_REFUSAL_COPY;
+    case "lab_draft_refused":
+      return LAB_DRAFT_REFUSAL_COPY;
   }
 }
 
@@ -645,7 +871,9 @@ async function finalizeTemplate(
       what_we_know: [],
       what_we_do_not_know: [],
       safety_notes: [],
-      questions_to_ask: template === "emergency_routing" ? [] : STANDARD_QUESTIONS,
+      questions_to_ask: template === "emergency_routing"
+        ? []
+        : STANDARD_QUESTIONS,
     },
     citations,
     safety_flags: flags,
@@ -711,7 +939,8 @@ async function loadHealthContext(userId: string): Promise<string | null> {
     const row = rows[0];
     if (!row) return null;
     const parts: string[] = [];
-    const list = (v: unknown) => Array.isArray(v) && v.length ? (v as string[]).join(", ") : null;
+    const list = (v: unknown) =>
+      Array.isArray(v) && v.length ? (v as string[]).join(", ") : null;
     if (row.age_range) parts.push(`age range: ${row.age_range}`);
     if (row.sex) parts.push(`sex: ${row.sex}`);
     if (row.pregnancy_status) parts.push(`pregnancy: ${row.pregnancy_status}`);
@@ -800,7 +1029,9 @@ async function consumeAskQuota(userId: string): Promise<ConsumeUsageResult> {
     allowed: raw.allowed === true,
     reason: typeof raw.reason === "string" ? raw.reason : "unknown",
     plan: typeof raw.plan === "string" ? raw.plan : "free",
-    counter_key: typeof raw.counter_key === "string" ? raw.counter_key : "ask_daily",
+    counter_key: typeof raw.counter_key === "string"
+      ? raw.counter_key
+      : "ask_daily",
     used: typeof raw.used === "number" ? raw.used : 0,
     limit: typeof raw.limit === "number" ? raw.limit : 0,
   };
@@ -825,7 +1056,11 @@ async function storeTrace(row: TraceRow): Promise<void> {
     // fetch resolves on HTTP 4xx/5xx (only network errors throw), so the status MUST be checked — an
     // un-inspected reject silently loses the trace AND breaks the answer_id FK on the saved chat message.
     if (!res.ok) {
-      console.error(`storeTrace rejected (trace lost): ${res.status} ${(await res.text()).slice(0, 300)}`);
+      console.error(
+        `storeTrace rejected (trace lost): ${res.status} ${
+          (await res.text()).slice(0, 300)
+        }`,
+      );
     }
   } catch (e) {
     // A trace-write failure must not fail the user's answer, but it MUST be
@@ -835,8 +1070,12 @@ async function storeTrace(row: TraceRow): Promise<void> {
 }
 
 function modelNameWithSlots(modelName: string): string {
-  if (modelName.startsWith("deterministic-") || modelName.includes("|slots(")) return modelName;
-  return `${modelName}|slots(classify=${modelFor("classify")};generate=${modelFor("generate")};verify=${modelFor("verify")})`;
+  if (modelName.startsWith("deterministic-") || modelName.includes("|slots(")) {
+    return modelName;
+  }
+  return `${modelName}|slots(classify=${modelFor("classify")};generate=${
+    modelFor("generate")
+  };verify=${modelFor("verify")})`;
 }
 
 function unique<T>(arr: T[]): T[] {
@@ -859,10 +1098,13 @@ function isAllowedOrigin(origin: string): boolean {
 
 function corsHeaders(req?: Request): Record<string, string> {
   const origin = req?.headers.get("origin") ?? "";
-  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.pharmaorb.app";
+  const allowOrigin = origin && isAllowedOrigin(origin)
+    ? origin
+    : "https://app.pharmaorb.app";
   return {
     "Access-Control-Allow-Origin": allowOrigin,
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
   };
 }

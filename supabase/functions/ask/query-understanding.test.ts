@@ -1,12 +1,19 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { applyReconToUnderstanding, isConsumerProductOnlyQuery, understandQuery } from "./query-understanding.ts";
+import {
+  applyReconToUnderstanding,
+  isConsumerProductOnlyQuery,
+  isKnownNonDrugOnlyQuery,
+  understandQuery,
+} from "./query-understanding.ts";
 
 Deno.test("understandQuery contextualizes Celsius as an energy drink for research search", () => {
   const q = understandQuery("is celsius lethal", [], "celsius lethal");
   assertEquals(q.sourceQuery, "Celsius energy drink");
   assertEquals(q.fieldMentions, []);
   assertEquals(q.normalizedTerms, ["Celsius energy drink"]);
-  assertEquals(q.assumptions, ['Interpreting "Celsius" as Celsius energy drink.']);
+  assertEquals(q.assumptions, [
+    'Interpreting "Celsius" as Celsius energy drink.',
+  ]);
   assertEquals(q.researchQuery.includes("energy drink"), true);
   assertEquals(q.researchQuery.includes("caffeine"), true);
   assertEquals(q.researchQuery.includes("toxicity"), true);
@@ -31,10 +38,43 @@ Deno.test("understandQuery treats consumer-product ingredients as research terms
 });
 
 Deno.test("understandQuery leaves true drug mentions available for field-scoped providers", () => {
-  const q = understandQuery("is lisinopril safe with spironolactone", ["lisinopril", "spironolactone"], "lisinopril spironolactone");
+  const q = understandQuery("is lisinopril safe with spironolactone", [
+    "lisinopril",
+    "spironolactone",
+  ], "lisinopril spironolactone");
   assertEquals(q.fieldMentions, ["lisinopril", "spironolactone"]);
   assertEquals(q.sourceQuery, "lisinopril spironolactone");
   assertEquals(q.assumptions, []);
+});
+
+Deno.test("understandQuery treats white flakes as a non-drug scalp topic", () => {
+  const q = understandQuery(
+    "why do I have white flakes in my hair",
+    [],
+    "white flakes hair",
+  );
+  assertEquals(q.sourceQuery, "dandruff / scalp flaking");
+  assertEquals(q.fieldMentions, []);
+  assertEquals(q.normalizedTerms, ["dandruff / scalp flaking"]);
+  assertEquals(q.assumptions, [
+    'Interpreting "white flakes" as dandruff / scalp flaking.',
+  ]);
+  assertEquals(q.researchQuery.includes("dandruff"), true);
+  assertEquals(q.researchQuery.includes("seborrheic"), true);
+  assertEquals(q.hasKnownNonDrugTopic, true);
+  assertEquals(isKnownNonDrugOnlyQuery(q), true);
+});
+
+Deno.test("understandQuery keeps drug mentions when a scalp topic is medication-related", () => {
+  const q = understandQuery(
+    "can isotretinoin cause white flakes in my hair?",
+    ["isotretinoin"],
+    "isotretinoin white flakes hair",
+  );
+  assertEquals(q.fieldMentions, ["isotretinoin"]);
+  assertEquals(q.sourceQuery, "isotretinoin");
+  assertEquals(q.hasKnownNonDrugTopic, true);
+  assertEquals(isKnownNonDrugOnlyQuery(q), false);
 });
 
 Deno.test("understandQuery preserves true drug mentions inside a consumer-product question", () => {
@@ -57,7 +97,9 @@ Deno.test("applyReconToUnderstanding enriches research terms without duplicating
     biomedical_terms: ["energy drink", "caffeine", "toxicity", "arrhythmia"],
     sources: [],
   });
-  assertEquals(merged.assumptions, ['Interpreting "Celsius" as Celsius energy drink.']);
+  assertEquals(merged.assumptions, [
+    'Interpreting "Celsius" as Celsius energy drink.',
+  ]);
   assertEquals(merged.sourceQuery, "Celsius energy drink");
   assertEquals(merged.fieldMentions, []);
   assertEquals(merged.normalizedTerms, ["Celsius energy drink"]);

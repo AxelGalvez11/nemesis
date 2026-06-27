@@ -63,7 +63,9 @@ export function liveToChunk(c: LiveCandidate, tag: string): RetrievedChunk {
     section: null,
     url: c.url,
     license: c.source.license,
-    published_date: c.source.effective_at ? c.source.effective_at.slice(0, 10) : null,
+    published_date: c.source.effective_at
+      ? c.source.effective_at.slice(0, 10)
+      : null,
     retrieved_at: new Date().toISOString(),
     similarity: 0,
     // Bibliographic (PubMed/Europe PMC).
@@ -78,7 +80,9 @@ export function liveToChunk(c: LiveCandidate, tag: string): RetrievedChunk {
     // Study-type (ClinicalTrials).
     study_type: str(m.study_type),
     trial_status: str(m.status),
-    trial_phase: phases && phases.length ? phases[phases.length - 1] : undefined,
+    trial_phase: phases && phases.length
+      ? phases[phases.length - 1]
+      : undefined,
     // Free-to-read full-text link (OpenAlex/Europe PMC OA data — a link, not grounded text).
     oa_url: str(m.oa_url),
   };
@@ -93,7 +97,12 @@ interface LiveSourceDef {
   // `researchQuery` = the user's actual question, for free-text RESEARCH sources (PubMed/Europe PMC/
   // OpenAlex/MedlinePlus) so "<drug> side effects" retrieves on-topic papers, not generic drug papers.
   // researchQuery defaults to query for callers that don't differentiate (monograph, deep research).
-  fetch: (query: string, max: number, mentions: string[], researchQuery: string) => Promise<NormalizedSource[]>;
+  fetch: (
+    query: string,
+    max: number,
+    mentions: string[],
+    researchQuery: string,
+  ) => Promise<NormalizedSource[]>;
 }
 
 export function shouldFetchClinicalTrials(
@@ -102,15 +111,24 @@ export function shouldFetchClinicalTrials(
   researchQuery = query,
 ): boolean {
   const haystack = `${query} ${researchQuery}`.toLowerCase();
-  if (/\b(?:energy drink|celsius energy drink|red bull|monster energy|prime energy)\b/.test(haystack)) return false;
+  if (
+    /\b(?:energy drink|celsius energy drink|red bull|monster energy|prime energy)\b/
+      .test(haystack)
+  ) return false;
   return true;
 }
 
 // THE REGISTRY. Add a source = one line. (DailyMed is intentionally omitted: it returns the same
 // FDA labels as openFDA, the preferred label source — redundant, not additive.)
 const LIVE_SOURCES: LiveSourceDef[] = [
-  { origin: "pubmed", fetch: (_q, n, _m, rq) => fetchPubMedOA({ query: rq, retmax: n }) },
-  { origin: "europepmc", fetch: (_q, n, _m, rq) => fetchEuropePmc({ query: rq, retmax: n }) },
+  {
+    origin: "pubmed",
+    fetch: (_q, n, _m, rq) => fetchPubMedOA({ query: rq, retmax: n }),
+  },
+  {
+    origin: "europepmc",
+    fetch: (_q, n, _m, rq) => fetchEuropePmc({ query: rq, retmax: n }),
+  },
   {
     origin: "clinicaltrials",
     fetch: (q, n, mentions, rq) =>
@@ -127,15 +145,25 @@ const LIVE_SOURCES: LiveSourceDef[] = [
   // (openFdaSearch returns null): a bare free-text fallback is exactly the pattern that admitted the
   // name-drop products, and a general non-drug question needs no FDA label anyway. The other sources
   // handle free text safely, so only openFDA opts out when the classifier extracted no drug.
-  { origin: "openfda", fetch: (q, n, mentions) => {
-    const scoped = openFdaSearch(q, mentions);
-    return scoped === null ? Promise.resolve([]) : fetchOpenFdaLabels({ query: scoped, limit: n });
-  } },
-  { origin: "faers", fetch: (q, n) => fetchFaersReactions({ query: q, retmax: n }) },
+  {
+    origin: "openfda",
+    fetch: (q, n, mentions) => {
+      const scoped = openFdaSearch(q, mentions);
+      return scoped === null
+        ? Promise.resolve([])
+        : fetchOpenFdaLabels({ query: scoped, limit: n });
+    },
+  },
+  {
+    origin: "faers",
+    fetch: (q, n) => fetchFaersReactions({ query: q, retmax: n }),
+  },
   {
     origin: "fda_enforcement",
     fetch: (q, n, _m, rq) =>
-      isSafetyCriticalQuery(`${q} ${rq}`) ? fetchOpenFdaEnforcement({ query: q || rq, limit: n }) : Promise.resolve([]),
+      isSafetyCriticalQuery(`${q} ${rq}`)
+        ? fetchOpenFdaEnforcement({ query: q || rq, limit: n })
+        : Promise.resolve([]),
   },
   {
     origin: "toxicology",
@@ -147,13 +175,22 @@ const LIVE_SOURCES: LiveSourceDef[] = [
   // OpenAlex LAST: the union is deduped first-wins by (provider, provider_id). A work carrying a PMID
   // normalizes to pubmed_oa:<pmid> and collapses into the PubMed/Europe PMC hit above; only OpenAlex's
   // non-PMID long tail (provider "openalex") survives as net-new breadth.
-  { origin: "openalex", fetch: (_q, n, _m, rq) => fetchOpenAlex({ query: rq, retmax: n }) },
+  {
+    origin: "openalex",
+    fetch: (q, n, m, rq) =>
+      shouldFetchOpenAlex(q, m, rq)
+        ? fetchOpenAlex({ query: rq, retmax: n })
+        : Promise.resolve([]),
+  },
   // MedlinePlus: NLM/NIH consumer-health topic pages — mainstream "general guidance" register that the
   // research sources lack. Distinct namespace (provider "medlineplus"), so no dedupe collision; it
   // self-limits (only ~1k topics, returns nothing for a specific drug-pharmacology query) and the
   // reranker orders it, so it adds an authoritative plain-language hit for benign/everyday questions
   // without crowding technical ones.
-  { origin: "medlineplus", fetch: (_q, n, _m, rq) => fetchMedlinePlus({ query: rq, retmax: n }) },
+  {
+    origin: "medlineplus",
+    fetch: (_q, n, _m, rq) => fetchMedlinePlus({ query: rq, retmax: n }),
+  },
 ];
 
 /**
@@ -165,7 +202,10 @@ const LIVE_SOURCES: LiveSourceDef[] = [
  * rather than running a bare free-text search, which is the pattern that admitted fraudulent
  * name-drop products. The raw query is retained in the signature for symmetry with the other sources.
  */
-export function openFdaSearch(_rawQuery: string, mentions: string[]): string | null {
+export function openFdaSearch(
+  _rawQuery: string,
+  mentions: string[],
+): string | null {
   const names = mentions.map((m) => m.trim()).filter((m) => m.length > 0);
   if (names.length === 0) return null;
   return names
@@ -179,6 +219,22 @@ export function openFdaSearch(_rawQuery: string, mentions: string[]): string | n
 export function isSafetyCriticalQuery(query: string): boolean {
   return /\b(lethal|fatal|death|deadly|toxic|toxicity|poison(?:ing)?|overdose|overdosed|recall(?:ed)?|withdrawn|contaminat(?:ed|ion)|adulterat(?:ed|ion)|arrhythmia|cardiac arrest|heart attack)\b/i
     .test(query);
+}
+
+export function shouldFetchOpenAlex(
+  query: string,
+  mentions: string[],
+  researchQuery = query,
+): boolean {
+  if (mentions.length > 0) return true;
+  const haystack = `${query} ${researchQuery}`.toLowerCase();
+  if (
+    /\b(?:white flakes?|white flaked|hair flakes?|flaky scalp|scalp flakes?|scalp flaking|dandruff|seborrheic dermatitis)\b/
+      .test(haystack)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export interface GatherLiveOpts {
@@ -199,13 +255,21 @@ const LIVE_TIMEOUT_MS = 4000;
  * Fetch every registered live source concurrently. Never throws: a failed or slow source
  * yields [] for that source. Returns the union (reranker decides final order downstream).
  */
-export async function gatherLiveCandidates(opts: GatherLiveOpts): Promise<LiveCandidate[]> {
+export async function gatherLiveCandidates(
+  opts: GatherLiveOpts,
+): Promise<LiveCandidate[]> {
   const perSourceMax = opts.perSourceMax ?? PER_SOURCE_MAX;
   const timeoutMs = opts.timeoutMs ?? LIVE_TIMEOUT_MS;
   const mentions = opts.mentions ?? [];
   const researchQuery = opts.researchQuery ?? opts.query; // research sources search this; defaults to query
 
-  const primary = await fanOut(opts.query, researchQuery, perSourceMax, timeoutMs, mentions);
+  const primary = await fanOut(
+    opts.query,
+    researchQuery,
+    perSourceMax,
+    timeoutMs,
+    mentions,
+  );
 
   // Retry-on-empty for benign, no-drug questions. Conversational phrasing
   // ("how do i get rid of heartburn fast?") matches NOTHING in PubMed term-mapping, while the bare
@@ -228,7 +292,13 @@ async function fanOut(
   mentions: string[],
 ): Promise<LiveCandidate[]> {
   const batches = await Promise.all(
-    LIVE_SOURCES.map((def) => withTimeout(fetchOne(def, query, researchQuery, perSourceMax, mentions), timeoutMs, def.origin)),
+    LIVE_SOURCES.map((def) =>
+      withTimeout(
+        fetchOne(def, query, researchQuery, perSourceMax, mentions),
+        timeoutMs,
+        def.origin,
+      )
+    ),
   );
   // Dedupe the union by (provider, provider_id): e.g. PubMed and Europe PMC both returning the
   // same PMID collapse to one candidate (first wins). Keeps the rerank set clean.
@@ -239,7 +309,13 @@ async function fanOut(
   });
 }
 
-async function fetchOne(def: LiveSourceDef, query: string, researchQuery: string, max: number, mentions: string[]): Promise<LiveCandidate[]> {
+async function fetchOne(
+  def: LiveSourceDef,
+  query: string,
+  researchQuery: string,
+  max: number,
+  mentions: string[],
+): Promise<LiveCandidate[]> {
   const sources = await def.fetch(query, max, mentions, researchQuery);
   return sources.map((s) => ({
     origin: def.origin,
@@ -268,7 +344,10 @@ async function withTimeout(
   try {
     return await Promise.race([p, timeout]);
   } catch (err) {
-    console.error(`live source ${label} failed:`, err instanceof Error ? err.message : err);
+    console.error(
+      `live source ${label} failed:`,
+      err instanceof Error ? err.message : err,
+    );
     return [];
   } finally {
     if (timer !== undefined) clearTimeout(timer);

@@ -5,7 +5,13 @@
 // search terms without sending them through FDA-label/openFDA lanes. Keep this catalog conservative,
 // transparent, and easy to extend.
 
-export type EntityKind = "drug" | "supplement" | "peptide" | "consumer_product" | "condition" | "unknown";
+export type EntityKind =
+  | "drug"
+  | "supplement"
+  | "peptide"
+  | "consumer_product"
+  | "condition"
+  | "unknown";
 
 export interface EntityCandidate {
   /** The literal alias that matched user text or classifier mentions. */
@@ -28,6 +34,33 @@ interface KnownEntity {
 
 const KNOWN_ENTITIES: readonly KnownEntity[] = [
   {
+    normalized: "dandruff / scalp flaking",
+    kind: "condition",
+    aliases: [
+      "white flakes",
+      "white flake",
+      "white flaked",
+      "flaky scalp",
+      "scalp flakes",
+      "scalp flaking",
+      "hair flakes",
+      "dandruff",
+      "seborrheic dermatitis",
+    ],
+    display_alias: "white flakes",
+    biomedical_terms: [
+      "dandruff",
+      "seborrheic dermatitis",
+      "scalp flaking",
+      "Malassezia",
+      "antifungal shampoo",
+      "ketoconazole",
+      "zinc pyrithione",
+      "selenium sulfide",
+    ],
+    use_drug_label_lane: false,
+  },
+  {
     normalized: "Celsius energy drink",
     kind: "consumer_product",
     aliases: ["celsius", "celcius", "celsuis"],
@@ -49,7 +82,14 @@ const KNOWN_ENTITIES: readonly KnownEntity[] = [
     kind: "consumer_product",
     aliases: ["red bull", "redbull"],
     display_alias: "Red Bull",
-    biomedical_terms: ["energy drink", "caffeine", "taurine", "toxicity", "adverse effects", "arrhythmia"],
+    biomedical_terms: [
+      "energy drink",
+      "caffeine",
+      "taurine",
+      "toxicity",
+      "adverse effects",
+      "arrhythmia",
+    ],
     use_drug_label_lane: false,
   },
   {
@@ -57,7 +97,14 @@ const KNOWN_ENTITIES: readonly KnownEntity[] = [
     kind: "consumer_product",
     aliases: ["monster", "monster energy"],
     display_alias: "Monster",
-    biomedical_terms: ["energy drink", "caffeine", "taurine", "toxicity", "adverse effects", "arrhythmia"],
+    biomedical_terms: [
+      "energy drink",
+      "caffeine",
+      "taurine",
+      "toxicity",
+      "adverse effects",
+      "arrhythmia",
+    ],
     use_drug_label_lane: false,
   },
   {
@@ -65,13 +112,20 @@ const KNOWN_ENTITIES: readonly KnownEntity[] = [
     kind: "consumer_product",
     aliases: ["prime energy", "prime drink"],
     display_alias: "Prime Energy",
-    biomedical_terms: ["energy drink", "caffeine", "toxicity", "adverse effects", "arrhythmia"],
+    biomedical_terms: [
+      "energy drink",
+      "caffeine",
+      "toxicity",
+      "adverse effects",
+      "arrhythmia",
+    ],
     use_drug_label_lane: false,
   },
 ];
 
 function norm(s: string): string {
-  return s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+  return s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ")
+    .trim();
 }
 
 function hasWord(haystack: string, needle: string): boolean {
@@ -85,7 +139,9 @@ function toCandidate(entity: KnownEntity, raw: string): EntityCandidate {
     raw,
     normalized: entity.normalized,
     kind: entity.kind,
-    assumptions: [`Interpreting "${entity.display_alias}" as ${entity.normalized}.`],
+    assumptions: [
+      `Interpreting "${entity.display_alias}" as ${entity.normalized}.`,
+    ],
     biomedical_terms: [...entity.biomedical_terms],
     use_drug_label_lane: entity.use_drug_label_lane,
   };
@@ -101,7 +157,10 @@ export function resolveKnownEntity(raw: string): EntityCandidate | null {
   return null;
 }
 
-export function resolveKnownEntities(question: string, mentions: readonly string[]): EntityCandidate[] {
+export function resolveKnownEntities(
+  question: string,
+  mentions: readonly string[],
+): EntityCandidate[] {
   const out = new Map<string, EntityCandidate>();
   const q = norm(question);
 
