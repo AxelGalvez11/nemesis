@@ -2,7 +2,8 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { appUrl, isPreviewMode } from "@/lib/env";
+import { isPreviewMode } from "@/lib/env";
+import { resolveAuthRedirectUrl } from "@/lib/auth-redirect";
 import { supabase } from "@/lib/supabase";
 import { phCapture, phIdentify, phReset } from "@/lib/posthog";
 
@@ -93,7 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
-        emailRedirectTo: `${appUrl}/app`,
+        emailRedirectTo: resolveAuthRedirectUrl("/app"),
         // Record the accepted Terms/Disclaimer version on the user (the signup consent gate). The
         // account's created_at is the authoritative acceptance time; we add a client stamp for context.
         ...(consent
