@@ -101,9 +101,9 @@ export function shouldFetchClinicalTrials(
   mentions: string[],
   researchQuery = query,
 ): boolean {
-  if (mentions.some((mention) => mention.trim().length > 0)) return true;
   const haystack = `${query} ${researchQuery}`.toLowerCase();
-  return !/\b(?:energy drink|celsius energy drink|red bull|monster energy|prime energy)\b/.test(haystack);
+  if (/\b(?:energy drink|celsius energy drink|red bull|monster energy|prime energy)\b/.test(haystack)) return false;
+  return true;
 }
 
 // THE REGISTRY. Add a source = one line. (DailyMed is intentionally omitted: it returns the same
