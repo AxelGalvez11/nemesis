@@ -10,6 +10,7 @@ import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
 import { buildThinkingPreview } from "@/lib/thinking-preview";
+import { composerModeLabel } from "@/lib/ask-mode-label";
 import { pubchemMoleculeUrl } from "@/lib/molecule";
 import { phCapture } from "@/lib/posthog";
 import { POINT_OF_USE_DISCLAIMER } from "@/lib/legal";
@@ -498,8 +499,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
           </div>
           <div className="mode-wrap" style={{ position: "relative" }}>
             <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
-              <Icon name="sparkle" size={14} />
-              <b>{activeMode.label}</b><span className="mode-suffix">{activeMode.live ? (activeMode.pro ? " · Pro" : " · live") : " · soon"}</span>
+              <b>{composerModeLabel(activeMode)}</b>
             </button>
             {modeOpen ? (
               <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>

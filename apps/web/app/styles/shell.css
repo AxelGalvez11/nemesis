@@ -589,8 +589,6 @@
   .tools { gap: 5px; }
   .tool, .send { width: 32px; height: 32px; }
   .mode { min-height: 32px; padding: 4px 9px; font-size: 12px; }
-  .mode svg { display: none; }
-  .mode-suffix { display: none; }
 }
 
 /* ── evidence panel ── */
