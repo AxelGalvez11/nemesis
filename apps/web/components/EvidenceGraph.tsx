@@ -21,15 +21,21 @@ interface EvidenceGraphCanvasProps {
   compact?: boolean;
 }
 
+type GraphSelection = {
+  label: string;
+  fullLabel?: string;
+  kind?: string;
+};
+
 const GRAPH_STYLE: StylesheetJson = [
   {
     selector: "node",
     style: {
       label: "data(label)",
       "font-family": "Inter, ui-sans-serif, system-ui, sans-serif",
-      "font-size": 10,
+      "font-size": 9,
       "text-wrap": "wrap",
-      "text-max-width": "118px",
+      "text-max-width": "78px",
       color: "#d4d4d4",
       "text-outline-color": "#202020",
       "text-outline-width": 2,
@@ -181,6 +187,7 @@ export function EvidenceGraphCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [selection, setSelection] = useState<GraphSelection | null>(null);
   const active = normTag(activeTag);
 
   const elements = useMemo<ElementDefinition[]>(() => [
@@ -224,11 +231,23 @@ export function EvidenceGraphCanvas({
         cy.on("mouseover", "node", (event) => {
           const node = event.target;
           const neighborhood = node.closedNeighborhood();
+          setSelection({
+            label: String(node.data("label") ?? ""),
+            fullLabel: String(node.data("fullLabel") ?? node.data("label") ?? ""),
+            kind: String(node.data("kind") ?? ""),
+          });
           cy.elements().addClass("faded").removeClass("highlighted");
           neighborhood.removeClass("faded").addClass("highlighted");
         });
         cy.on("mouseout", "node", () => {
           cy.elements().removeClass("faded highlighted");
+        });
+        cy.on("tap", "node", (event) => {
+          setSelection({
+            label: String(event.target.data("label") ?? ""),
+            fullLabel: String(event.target.data("fullLabel") ?? event.target.data("label") ?? ""),
+            kind: String(event.target.data("kind") ?? ""),
+          });
         });
         cy.on("tap", "node[kind = 'source']", (event) => {
           const tag = String(event.target.data("tag") ?? "");
@@ -261,6 +280,16 @@ export function EvidenceGraphCanvas({
       <div className="evidence-graph-canvas" ref={containerRef} aria-label="Evidence map">
         {status === "loading" ? <span>Mapping evidence...</span> : null}
         {status === "error" ? <span>Evidence map unavailable.</span> : null}
+      </div>
+      <div className="evidence-graph-detail" aria-live="polite">
+        {selection ? (
+          <>
+            <b>{selection.label}</b>
+            <span>{selection.fullLabel || selection.kind}</span>
+          </>
+        ) : (
+          <span>Hover or tap a node to inspect it.</span>
+        )}
       </div>
       <div className="evidence-graph-legend" aria-label="Evidence map legend">
         <span><i className="legend-report" />{rootLabel}</span>

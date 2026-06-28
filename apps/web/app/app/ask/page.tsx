@@ -572,42 +572,14 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
 
 function Thinking({ stage, question, complete = false }: { stage: number; question: string; complete?: boolean }) {
   const preview = buildThinkingPreview(question, stage);
-  const current = complete ? "Ready with a cited answer" : preview.current;
-  const note = complete
-    ? `I treated the question as "${question.trim() || "your question"}", checked source quality, and kept claims tied to citations.`
-    : preview.preview;
+  const line = complete ? "Thought through evidence" : stage <= 0 ? "Thinking" : preview.current;
   return (
-    <details className={`thinking engine-preview engine-preview-compact${complete ? " engine-preview-done" : ""}`} open={!complete}>
-      <summary className="engine-preview-head">
-        <span className="engine-preview-title">
-          {complete ? "Thought through evidence" : preview.title}
-          {complete ? null : <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>}
-        </span>
-        {complete ? <span className="engine-preview-chevron" aria-hidden="true">›</span> : null}
-      </summary>
-      <div className={`engine-live-line${complete ? " done" : ""}`} aria-live="polite">
-        <span className="engine-live-dot" aria-hidden="true" />
-        <span>{current}</span>
-      </div>
-      <p className="engine-preview-note">{note}</p>
-      <div className="engine-step-list compact">
-        {preview.steps.map((step, i) => {
-          // done = ✓, active = live spinner, upcoming = faded. The active step is the one the
-          // pipeline is on right now, so it reads as honest in-progress work, not a finished list.
-          const state = complete || i < stage ? "done" : i === stage ? "active" : "pending";
-          return (
-            <div key={step.label} className={`engine-step ${state}`}>
-              <span className="engine-step-icon"><Icon name="check" size={11} /></span>
-              <span className="engine-step-copy">
-                <span className="engine-step-label">{step.label}</span>
-                <span className="engine-step-desc">{step.detail}</span>
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <p className="research-progress-note">Showing engine activity while the answer is grounded in sources.</p>
-    </details>
+    <div className={`thinking engine-preview engine-preview-compact${complete ? " engine-preview-done" : ""}`} aria-live={complete ? undefined : "polite"} title={complete ? undefined : preview.preview}>
+      <span className="engine-preview-title">
+        {line}
+        {complete ? <span className="engine-preview-chevron" aria-hidden="true">›</span> : <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>}
+      </span>
+    </div>
   );
 }
 
@@ -802,17 +774,19 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
   // point for its citation chip, +150ms breathing room).
   const headSlots = ctx ? countWords(answer.plain_english_summary) + (s.what_we_know ?? []).reduce((n, p) => n + countWords(p.text) + 1, 0) : 0;
   const tailDelayMs = REVEAL_BASE + headSlots * REVEAL_STEP + 150;
+  const hasAnswerChips = Boolean(science || flags.length);
   return (
     <div className={`answer${fadeClass}`}>
-      <div className="grade-row">
-        <span className="grade">{answer.evidence_grade.replace(/_/g, " ")}</span>
+      {hasAnswerChips ? (
+        <div className="grade-row">
         {science ? (
           <span className={`science-state ${science.state}`} title={scienceBasis(science)}>
             {science.state === "well_studied" ? "Well-studied" : "Emerging"}
           </span>
         ) : null}
         {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
-      </div>
+        </div>
+      ) : null}
       {answer.primary_drug && !answer.template && !answer.refused_unsupported ? <MoleculeImage drug={answer.primary_drug} /> : null}
       {answer.plain_english_summary ? <p className="lead">{rt(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}

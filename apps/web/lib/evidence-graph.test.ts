@@ -187,6 +187,8 @@ assert(askGraph.nodes.some((n) => n.id === "report" && n.label === "Ask evidence
 assert(askGraph.nodes.some((n) => n.id === "section-cited" && n.label === "Cited claims"));
 assert(askGraph.nodes.some((n) => n.id === "claim-know-0"));
 assert(askGraph.nodes.some((n) => n.id === "source-1" && n.evidenceRole === "consumer_health"));
+assert(askGraph.nodes.some((n) => n.id === "claim-know-0" && n.label === "Claim 1" && n.fullLabel === "MedlinePlus describes dandruff as scalp flaking."));
+assert(askGraph.nodes.some((n) => n.id === "source-2" && n.label === "PubMed [2]" && n.fullLabel === "Seborrheic dermatitis review"));
 assert(askGraph.edges.some((e) => e.source === "claim-know-0" && e.target === "source-1" && e.kind === "cites"));
 assert.equal(
   askGraph.edges.filter((e) => e.source === "claim-know-1" && e.target === "source-2").length,

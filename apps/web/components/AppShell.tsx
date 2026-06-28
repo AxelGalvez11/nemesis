@@ -20,6 +20,8 @@ interface AppChromeValue {
   evidenceCollapsed: boolean;
   toggleEvidence: () => void;
   openEvidence: () => void;
+  evidenceExpanded: boolean;
+  toggleEvidenceExpanded: () => void;
   setEvidence: (node: ReactNode | null) => void;
   setTopbar: (node: ReactNode | null) => void;
   bumpChats: () => void;
@@ -30,6 +32,8 @@ const AppChromeContext = createContext<AppChromeValue>({
   evidenceCollapsed: false,
   toggleEvidence: () => {},
   openEvidence: () => {},
+  evidenceExpanded: false,
+  toggleEvidenceExpanded: () => {},
   setEvidence: () => {},
   setTopbar: () => {},
   bumpChats: () => {},
@@ -81,6 +85,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Evidence panel starts COLLAPSED: the chat is the focus on entry. It opens on demand — the
   // topbar panel button, or a citation click (openEvidence) — so sources are one click away.
   const [evidenceCollapsed, setEvidenceCollapsed] = useState(true);
+  const [evidenceExpanded, setEvidenceExpanded] = useState(false);
   const [evidence, setEvidenceNode] = useState<ReactNode | null>(null);
   const [topbar, setTopbarNode] = useState<ReactNode | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -184,6 +189,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (mqMatch("(max-width: 1100px)")) setMobileEvidenceOpen((v) => !v);
     else setEvidenceCollapsed((v) => !v);
   }, []);
+  const toggleEvidenceExpanded = useCallback(() => {
+    setMobileNavOpen(false);
+    setEvidenceExpanded((v) => !v);
+    if (mqMatch("(max-width: 1100px)")) setMobileEvidenceOpen(true);
+    else setEvidenceCollapsed(false);
+  }, []);
   // Always-open command (used by citation clicks): opens the right place for the current breakpoint
   // and never toggles an already-open panel shut. Mirrors toggleEvidence's breakpoint split.
   const openEvidence = useCallback(() => {
@@ -284,8 +295,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const ctx = useMemo<AppChromeValue>(
-    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats }),
-    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats],
+    () => ({
+      railCollapsed,
+      toggleRail,
+      evidenceCollapsed,
+      toggleEvidence,
+      openEvidence,
+      evidenceExpanded,
+      toggleEvidenceExpanded,
+      setEvidence,
+      setTopbar,
+      bumpChats,
+    }),
+    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, evidenceExpanded, toggleEvidenceExpanded, setEvidence, setTopbar, bumpChats],
   );
 
   // Hooks are all above this line — only conditional returns below (Rules of Hooks).
@@ -301,6 +323,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     railCollapsed && "rail-collapsed",
     mobileNavOpen && "mobile-open",
     hasEvidence && mobileEvidenceOpen && "mobile-evidence-open",
+    hasEvidence && evidenceExpanded && "evidence-expanded",
     hasEvidence ? evidenceCollapsed && "evidence-collapsed" : "no-evidence",
   ]
     .filter(Boolean)

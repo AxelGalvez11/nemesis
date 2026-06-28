@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AskResponse, Citation } from "@pharmabro/shared";
 import { CLAIM_RELATION_LABEL, formatReference, studyTypeLabel } from "@pharmabro/shared";
+import { useAppChrome } from "./AppShell";
 import { normTag } from "@/lib/cite";
 import { buildAskEvidenceGraph } from "@/lib/evidence-graph";
 import { safeHref } from "@/lib/url";
@@ -111,20 +112,6 @@ function rankedSources(items: Citation[]): Citation[] {
   });
 }
 
-function relationCounts(items: Citation[]): { label: string; className: string; n: number }[] {
-  const counts = new Map<string, number>();
-  for (const c of items) {
-    const rel = relationForCitation(c) ?? "mentions";
-    counts.set(rel, (counts.get(rel) ?? 0) + 1);
-  }
-  return [
-    { label: "Supporting", className: "supports", n: counts.get("supports") ?? 0 },
-    { label: "Partial", className: "partial", n: counts.get("partial") ?? 0 },
-    { label: "Mentioning", className: "mentions", n: counts.get("mentions") ?? 0 },
-    { label: "Disputing", className: "conflicts", n: counts.get("conflicts") ?? 0 },
-  ].filter((x) => x.n > 0);
-}
-
 // Append a Chrome text-fragment so an external source opens scrolled to the exact supporting
 // sentence (https://wicg.github.io/scroll-to-text-fragment/). Best-effort: if the destination HTML
 // doesn't contain the text verbatim the browser simply lands at the top, so it never breaks the link.
@@ -140,6 +127,7 @@ function withTextFragment(href: string, quote: string): string {
 // One source card. Cited cards are numbered + carry a rank bar; "also reviewed" cards are dimmer and
 // unnumbered (they were searched + ranked but the answer didn't lean on them). `rankPct` undefined => no bar.
 function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; index: number; rankPct?: number; active: boolean; activeQuote?: string }) {
+  const [open, setOpen] = useState(active || (rankPct !== undefined && index === 0));
   const cls = providerClass(c.source_type);
   const tag = normTag(c.chunk_tag);
   const anchorId = `ev-src-${tag}`;
@@ -153,12 +141,44 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
   const strength = evidenceStrengthScore(c);
   // The supporting sentence belongs to the clicked claim, so it shows only on the active card.
   const activeSupportQuote = active && activeQuote ? activeQuote : null;
-  const inner = (
-    <>
-      {numbered ? <div className="cidx">[{tag || index + 1}]</div> : null}
+
+  useEffect(() => {
+    if (active) setOpen(true);
+  }, [active]);
+
+  const baseHref = safeHref(c.url);
+  // On the active card, deep-link the source to the supporting sentence (graceful no-op if absent).
+  const href = baseHref && activeSupportQuote ? withTextFragment(baseHref, activeSupportQuote) : baseHref;
+  // Free-to-read full-text link (open-access providers). A separate destination from the card's
+  // canonical source, shown only when it adds something (differs from the source url). A LINK to
+  // the free article — we still only grounded the abstract — so the copy says "read", not "verified".
+  const oaHref = c.oa_url && c.oa_url !== c.url ? safeHref(c.oa_url) : null;
+
+  return (
+    <details
+      id={anchorId}
+      className={`src-row ${klass}`}
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary className="src-summary">
+        {numbered ? <span className="cidx">[{tag || index + 1}]</span> : null}
       <div className="badge-src"><span className="sq" />{providerLabel(c.source_type)}</div>
       <h5 title={refText}>{c.title || c.source_type}</h5>
-      <div className="meta">
+        <div className="meta compact-meta">
+          <span className="strength-pill" title="Ranked from support level, source type, and evidence metadata">{strengthLabel(strength)} evidence · {strength}</span>
+          {relation ? (
+            <span
+              className={`relation-pill ${relation}`}
+              title={c.relation_reason ?? c.support_reason ?? "How this source relates to the claim"}
+            >
+              {CLAIM_RELATION_LABEL[relation]}
+            </span>
+          ) : null}
+        </div>
+      </summary>
+      <div className="src-details">
+        <div className="meta">
         <span className="strength-pill" title="Ranked from support level, source type, and evidence metadata">{strengthLabel(strength)} evidence · {strength}</span>
         {relation ? (
           <span
@@ -195,31 +215,22 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
         </blockquote>
       ) : null}
       <p className="ref-cite-line">{refText}</p>
+        <div className="src-actions">
+          {href ? (
+            <a className="src-action-link" href={href} target="_blank" rel="noreferrer">Open source</a>
+          ) : (
+            <Link className="src-action-link" href={`/app/source/${c.source_id}`}>Open source</Link>
+          )}
+          {oaHref ? (
+            <a className="src-action-link" href={oaHref} target="_blank" rel="noreferrer"
+              title="Open the free full text on the publisher or repository site (we grounded the abstract)">
+              Read full text
+            </a>
+          ) : null}
+        </div>
       {rankPct !== undefined ? <div className="relv"><i style={{ width: `${rankPct}%` }} /></div> : null}
-    </>
-  );
-  const baseHref = safeHref(c.url);
-  // On the active card, deep-link the source to the supporting sentence (graceful no-op if absent).
-  const href = baseHref && activeSupportQuote ? withTextFragment(baseHref, activeSupportQuote) : baseHref;
-  // Free-to-read full-text link (open-access providers). A separate destination from the card's
-  // canonical source, shown only when it adds something (differs from the source url). A LINK to
-  // the free article — we still only grounded the abstract — so the copy says "read", not "verified".
-  const oaHref = c.oa_url && c.oa_url !== c.url ? safeHref(c.oa_url) : null;
-  const card = href ? (
-    <a id={anchorId} className={klass} href={href} target="_blank" rel="noreferrer">{inner}</a>
-  ) : (
-    <Link id={anchorId} className={klass} href={`/app/source/${c.source_id}`}>{inner}</Link>
-  );
-  return (
-    <div className="src-row">
-      {card}
-      {oaHref ? (
-        <a className="oa-link" href={oaHref} target="_blank" rel="noreferrer"
-          title="Open the free full text on the publisher or repository site (we grounded the abstract)">
-          Read full text (free) ↗
-        </a>
-      ) : null}
-    </div>
+      </div>
+    </details>
   );
 }
 
@@ -231,12 +242,11 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
 // class. activeQuote is the verbatim source sentence backing that claim, highlighted on the active card.
 export function EvidencePanel({ answer, citations, reviewed, activeTag, activeQuote }: { answer?: AskResponse | null; citations: Citation[]; reviewed?: Citation[]; activeTag?: string; activeQuote?: string }) {
   const [view, setView] = useState<"sources" | "map">("sources");
+  const { evidenceExpanded, toggleEvidenceExpanded } = useAppChrome();
   const rev = reviewed ?? [];
   const total = citations.length + rev.length;
   const fam = breakdown([...citations, ...rev]);
   const citedN = citations.length;
-  const allSources = useMemo(() => [...citations, ...rev], [citations, rev]);
-  const relations = useMemo(() => relationCounts(allSources), [allSources]);
   const rankedCited = useMemo(() => rankedSources(citations), [citations]);
   const rankedReviewed = useMemo(() => rankedSources(rev), [rev]);
   const graph = useMemo(() => answer ? buildAskEvidenceGraph(answer) : null, [answer]);
@@ -261,17 +271,21 @@ export function EvidencePanel({ answer, citations, reviewed, activeTag, activeQu
         {total ? <span className="mono" style={{ color: "var(--text-3)", fontSize: 11 }}>{total}</span> : null}
         <div className="spacer" />
         <span className="live"><span className="dot" />Live sources</span>
+        <button
+          type="button"
+          className="ev-expand"
+          onClick={toggleEvidenceExpanded}
+          aria-pressed={evidenceExpanded}
+          aria-label={evidenceExpanded ? "Collapse evidence panel" : "Expand evidence panel"}
+        >
+          {evidenceExpanded ? "Normal" : "Expand"}
+        </button>
       </div>
 
       {total ? (
         <div className="ev-breakdown">
-          <b>{total}</b> source{total === 1 ? "" : "s"} searched · ranked by evidence strength
+          <b>{total}</b> source{total === 1 ? "" : "s"} · ranked by evidence strength
           {fam.length ? <span className="ev-breakdown-by"> · {fam.map((f) => `${f.n} ${f.label}`).join(" · ")}</span> : null}
-          {relations.length ? (
-            <div className="ev-relation-strip" aria-label="Evidence relationship counts">
-              {relations.map((r) => <span key={r.className} className={`ev-relation ${r.className}`}>{r.label} <b>{r.n}</b></span>)}
-            </div>
-          ) : null}
         </div>
       ) : null}
 
@@ -290,7 +304,7 @@ export function EvidencePanel({ answer, citations, reviewed, activeTag, activeQu
             model={graph}
             onCite={jumpToSource}
             activeTag={activeTag}
-            compact
+            compact={!evidenceExpanded}
             title="Evidence map"
             subtitle="Answer claims, cited support, and reviewed sources."
             hint="Drag · zoom · tap"

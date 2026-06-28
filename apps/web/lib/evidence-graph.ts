@@ -11,6 +11,7 @@ export type EvidenceGraphNodeKind =
 export interface EvidenceGraphNode {
   id: string;
   label: string;
+  fullLabel?: string;
   kind: EvidenceGraphNodeKind;
   tag?: string;
   sourceType?: string;
@@ -40,10 +41,20 @@ function compact(text: string | null | undefined, fallback: string, max = 96): s
   return clean.length > max ? `${clean.slice(0, max - 1).trim()}...` : clean;
 }
 
+function sourceKindLabel(sourceType: string): string {
+  const p = sourceType.toLowerCase();
+  if (p.includes("openfda") || p.includes("dailymed") || p.includes("label")) return "FDA label";
+  if (p.includes("clinicaltrials") || p.includes("trial") || p.includes("nct")) return "Trial";
+  if (p.includes("medlineplus")) return "MedlinePlus";
+  if (p.includes("pubmed") || p.includes("europepmc")) return "PubMed";
+  if (p.includes("openalex")) return "OpenAlex";
+  if (p.includes("faers")) return "FAERS";
+  return sourceType.replace(/_/g, " ");
+}
+
 function sourceLabel(citation: Citation): string {
   const tag = normTag(citation.chunk_tag);
-  const type = citation.source_type.toUpperCase().replace(/_/g, " ");
-  return `${tag}. ${compact(citation.title, type, 76)}`;
+  return `${sourceKindLabel(citation.source_type)} [${tag}]`;
 }
 
 function connectPoint(
@@ -57,7 +68,8 @@ function connectPoint(
 ): void {
   model.nodes.push({
     id: pointId,
-    label: compact(point.text, fallbackLabel),
+    label: fallbackLabel,
+    fullLabel: compact(point.text, fallbackLabel, 180),
     kind: "claim",
   });
   model.edges.push({
@@ -179,6 +191,7 @@ export function buildEvidenceGraph(report: ResearchReport): EvidenceGraphModel {
     model.nodes.push({
       id: sourceId,
       label: sourceLabel(citation),
+      fullLabel: compact(citation.title, citation.source_type, 180),
       kind: "source",
       tag,
       sourceType: citation.source_type,
@@ -202,6 +215,7 @@ function addSourceNode(
   model.nodes.push({
     id: sourceId,
     label: sourceLabel(citation),
+    fullLabel: compact(citation.title, citation.source_type, 180),
     kind: "source",
     tag,
     sourceType: citation.source_type,
