@@ -15,7 +15,6 @@ import { phCapture } from "@/lib/posthog";
 import { POINT_OF_USE_DISCLAIMER } from "@/lib/legal";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
-import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { ResearchProgress } from "@/components/ResearchProgress";
 import { WatchButton } from "@/components/WatchButton";
@@ -34,15 +33,6 @@ const MODES = [
   { id: "meta", label: "Meta-analysis", live: true, pro: true, hint: "Pools comparable studies into a computed estimate, when the evidence supports it (Pro)" },
   { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
 ] as const;
-
-// Example questions that cycle through the composer placeholder (the "chat bar") as live prompts,
-// instead of static suggestion chips under the welcome.
-const PLACEHOLDER_EXAMPLES = [
-  "What are the major warnings for semaglutide?",
-  "Metformin dosing when eGFR is 40?",
-  "Compare semaglutide and tirzepatide safety evidence",
-  "Is lisinopril safe with spironolactone?",
-];
 
 const PROVIDER_ABBR: Record<string, string> = { openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", clinicaltrials: "NCT", faers: "FAERS", openalex: "OA" };
 function abbr(t: string): string {
@@ -78,7 +68,6 @@ function AskPage() {
   // so a second prompt no longer wipes the first.
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
-  const [bloom, setBloom] = useState(false);
   const [stage, setStage] = useState(0);
   const [showThinking, setShowThinking] = useState(false); // shown immediately while Ask runs, so users always see the engine preview before the answer lands
   const [revealIdx, setRevealIdx] = useState<number | null>(null); // the turn whose answer should type itself in (only the just-arrived one — never reopened/saved turns)
@@ -266,14 +255,6 @@ function AskPage() {
     setShowThinking(true);
   }, [busy]);
 
-  // One-shot "bloom" flare on the orb the moment the newest answer lands.
-  useEffect(() => {
-    if (!latest?.a) return;
-    setBloom(true);
-    const t = setTimeout(() => setBloom(false), 700);
-    return () => clearTimeout(t);
-  }, [latest?.a]);
-
   // Keep the newest turn in view as the conversation grows.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -325,7 +306,6 @@ function AskPage() {
     }
     setBusy(true);
     setShowThinking(true);
-    setBloom(false); // clear any prior flare so the next answer re-triggers it (and it can't stick across an "ask again")
     setActiveTag(null);
     setActiveQuote(null);
     setActiveAnswer(null); // unpin: the panel follows the new answer until a citation is clicked
@@ -396,7 +376,6 @@ function AskPage() {
     return (
       <div className="welcome-wrap">
         <div className="welcome">
-          <Orb size={56} />
           <h2 className="welcome-title">{reopenedEmpty ? "This chat has no saved messages" : "What can I help you research?"}</h2>
           {reopenedEmpty ? (
             <p className="welcome-sub">Its earlier turns didn’t save (a now-fixed bug). Ask below to continue in this chat, or start a new one.</p>
@@ -416,7 +395,6 @@ function AskPage() {
             <div className="turn" key={i}>
               <div className="msg-user"><div className="bubble">{t.q}</div></div>
               <div className="msg-ai">
-                <Orb size={28} busy={isLast && busy} bloom={isLast && bloom} className="" />
                 <div className="ai-body">
                   {t.scoping ? (
                     <div className="thinking"><div className="think-row"><span className="shimmer">Scoping your question…</span></div></div>
@@ -499,39 +477,29 @@ interface ComposerProps {
 // those features ship — same honest "coming soon" treatment as the non-live modes.
 function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error, welcome }: ComposerProps) {
   const activeMode = MODES.find((m) => m.id === mode)!;
-  // On the welcome screen, cycle example questions through an animated overlay placeholder (reveals
-  // in from the left, fades out) so suggestions live in the chat bar without a hard text swap. Once a
-  // chat is active the suggestions stop — the box shows a calm static placeholder instead.
-  const [phIdx, setPhIdx] = useState(0);
-  useEffect(() => {
-    if (!welcome) return;
-    const id = setInterval(() => setPhIdx((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length), 5000);
-    return () => clearInterval(id);
-  }, [welcome]);
   return (
     <div className="composer">
       <div className="box">
-        <div className="ta-wrap">
-          <textarea
-            ref={taRef}
-            rows={1}
-            value={question}
-            maxLength={500}
-            aria-label="Ask a question about a drug, dose, interaction, or monograph"
-            placeholder={welcome ? "" : "Ask a follow-up…"}
-            onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
-          />
-          {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{PLACEHOLDER_EXAMPLES[phIdx]}</span> : null}
-        </div>
         <div className="tools">
           <button className="tool" type="button" data-tip="Attach — coming soon" aria-label="Attach" disabled>
             <Icon name="plus" size={18} />
           </button>
+          <div className="ta-wrap">
+            <textarea
+              ref={taRef}
+              rows={1}
+              value={question}
+              maxLength={500}
+              aria-label="Ask a question about a drug, dose, interaction, or monograph"
+              placeholder={welcome ? "Ask anything" : "Ask a follow-up…"}
+              onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
+            />
+          </div>
           <div className="mode-wrap" style={{ position: "relative" }}>
             <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
               <Icon name="sparkle" size={14} />
-              <b>{activeMode.label}</b>{activeMode.live ? (activeMode.pro ? " · Pro" : " · live") : " · soon"}
+              <b>{activeMode.label}</b><span className="mode-suffix">{activeMode.live ? (activeMode.pro ? " · Pro" : " · live") : " · soon"}</span>
             </button>
             {modeOpen ? (
               <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
@@ -555,7 +523,6 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
               </div>
             ) : null}
           </div>
-          <div className="spacer" />
           <button className="tool" type="button" data-tip="Voice — coming soon" aria-label="Voice input" disabled>
             <Icon name="mic" size={18} />
           </button>

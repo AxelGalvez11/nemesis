@@ -139,6 +139,7 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
   const role = evidenceRoleLabel(c.evidence_role);
   const relation = relationForCitation(c);
   const strength = evidenceStrengthScore(c);
+  const hasDetailMeta = Boolean(support || role || studyType || c.section || c.published_date || c.doaj_vetted);
   // The supporting sentence belongs to the clicked claim, so it shows only on the active card.
   const activeSupportQuote = active && activeQuote ? activeQuote : null;
 
@@ -178,36 +179,29 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
         </div>
       </summary>
       <div className="src-details">
-        <div className="meta">
-        <span className="strength-pill" title="Ranked from support level, source type, and evidence metadata">{strengthLabel(strength)} evidence · {strength}</span>
-        {relation ? (
-          <span
-            className={`relation-pill ${relation}`}
-            title={c.relation_reason ?? c.support_reason ?? "How this source relates to the claim"}
-          >
-            {CLAIM_RELATION_LABEL[relation]}
-          </span>
+        {hasDetailMeta ? (
+          <div className="meta">
+            {support ? (
+              <span
+                className={`support-pill ${c.support_level}`}
+                title={c.support_reason ?? "Deterministic source-support rating"}
+              >
+                {support}{typeof c.support_score === "number" ? ` · ${c.support_score}` : ""}
+              </span>
+            ) : null}
+            {role ? (
+              <span className="evidence-role-pill" title="Source class derived from provider/publication metadata">{role}</span>
+            ) : null}
+            {studyType ? (
+              <span className="study-type-pill" title="Study design, derived from the source's publication-type metadata">{studyType}</span>
+            ) : null}
+            {c.section ? <span>{c.section}</span> : null}
+            {c.published_date ? <span className="mono">{c.published_date}</span> : null}
+            {c.doaj_vetted ? (
+              <span className="doaj-pill" title="Listed in the Directory of Open Access Journals — a vetted, anti-predatory open-access journal">✓ Vetted OA journal</span>
+            ) : null}
+          </div>
         ) : null}
-        {support ? (
-          <span
-            className={`support-pill ${c.support_level}`}
-            title={c.support_reason ?? "Deterministic source-support rating"}
-          >
-            {support}{typeof c.support_score === "number" ? ` · ${c.support_score}` : ""}
-          </span>
-        ) : null}
-        {role ? (
-          <span className="evidence-role-pill" title="Source class derived from provider/publication metadata">{role}</span>
-        ) : null}
-        {studyType ? (
-          <span className="study-type-pill" title="Study design, derived from the source's publication-type metadata">{studyType}</span>
-        ) : null}
-        {c.section ? <span>{c.section}</span> : null}
-        {c.published_date ? <span className="mono">{c.published_date}</span> : null}
-        {c.doaj_vetted ? (
-          <span className="doaj-pill" title="Listed in the Directory of Open Access Journals — a vetted, anti-predatory open-access journal">✓ Vetted OA journal</span>
-        ) : null}
-      </div>
       {activeSupportQuote ? (
         <blockquote className="src-support">
           <span className="src-support-label">Supports this claim</span>

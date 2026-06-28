@@ -203,6 +203,7 @@ export function EvidenceGraphCanvas({
   useEffect(() => {
     if (!containerRef.current || elements.length < 3) return;
     let cancelled = false;
+    let layout: { run: () => void; stop: () => void } | null = null;
 
     void import("cytoscape")
       .then((mod) => {
@@ -215,18 +216,20 @@ export function EvidenceGraphCanvas({
           style: GRAPH_STYLE,
           minZoom: 0.35,
           maxZoom: 2.4,
-          layout: {
-            name: "cose",
-            animate: true,
-            animationDuration: 450,
-            fit: true,
-            padding: 28,
-            idealEdgeLength: 92,
-            nodeRepulsion: 5200,
-            gravity: 0.22,
-            numIter: 900,
-          },
+          layout: { name: "preset" },
         });
+        layout = cy.layout({
+          name: "cose",
+          animate: true,
+          animationDuration: 450,
+          fit: true,
+          padding: 28,
+          idealEdgeLength: 92,
+          nodeRepulsion: 5200,
+          gravity: 0.22,
+          numIter: 900,
+        });
+        layout.run();
 
         cy.on("mouseover", "node", (event) => {
           const node = event.target;
@@ -257,10 +260,14 @@ export function EvidenceGraphCanvas({
         cyRef.current = cy;
         setStatus("ready");
       })
-      .catch(() => setStatus("error"));
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
 
     return () => {
       cancelled = true;
+      layout?.stop();
+      cyRef.current?.elements().stop(true, true);
       cyRef.current?.destroy();
       cyRef.current = null;
     };

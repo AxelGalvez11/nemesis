@@ -207,7 +207,7 @@
 .turn { max-width: 860px; margin: 0 auto; padding: 0 28px 30px; }
 .msg-user { display: flex; justify-content: flex-end; }
 .bubble { background: var(--surface-2); border: 1px solid var(--line); padding: 12px 16px; border-radius: 16px 16px 4px 16px; max-width: 80%; color: var(--text); font-size: 16px; line-height: 1.55; }
-.msg-ai { display: flex; gap: 14px; margin-top: 26px; }
+.msg-ai { display: block; margin-top: 26px; }
 .msg-ai .orb { width: 28px; height: 28px; margin-top: 2px; }
 .ai-body { min-width: 0; flex: 1; }
 .ai-body h4 { font-size: 16px; font-weight: 700; margin: 2px 0 9px; letter-spacing: 0; }
@@ -538,50 +538,30 @@
 .msg-actions .icon-btn { width: 30px; height: 30px; }
 
 /* ── composer ── */
-.composer-wrap { padding: 10px 0 22px; background: linear-gradient(0deg, var(--bg) 60%, transparent); flex: none; }
-.composer { max-width: 620px; margin: 0 auto; padding: 0 28px; }
-.box { border: 1px solid var(--line-2); background: var(--surface); border-radius: 20px; padding: 12px 12px 10px; box-shadow: var(--shadow); transition: border-color 0.2s, box-shadow 0.2s; }
+.composer-wrap { padding: 8px 0 18px; background: linear-gradient(0deg, var(--bg) 60%, transparent); flex: none; }
+.composer { max-width: 740px; margin: 0 auto; padding: 0 24px; }
+.box { border: 1px solid var(--line-2); background: var(--surface); border-radius: 28px; padding: 7px 8px; box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.38); transition: border-color 0.2s, box-shadow 0.2s; }
 /* Calm focus: a subtle border tint + a touch more lift, no acid glow ring (the bar no longer "lights up"). */
-.box:focus-within { border-color: var(--line-2); box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.18); }
+.box:focus-within { border-color: var(--line-2); box-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.42); }
 /* composer affordance icons sit dead-center in their buttons (svg as block removes baseline drift) */
 .box .tools svg { display: block; }
-.box textarea { width: 100%; background: none; border: none; color: var(--text); font-family: var(--font); font-size: 15.5px; line-height: 24px; text-align: left; resize: none; outline: none; min-height: 24px; max-height: 200px; padding: 0; }
+.box textarea { width: 100%; background: none; border: none; color: var(--text); font-family: var(--font); font-size: 15.5px; line-height: 22px; text-align: left; resize: none; outline: none; min-height: 28px; max-height: 150px; padding: 3px 0; }
 .box textarea::placeholder { color: var(--text-3); }
-/* Animated cycling placeholder: a non-interactive overlay (shown only when the field is empty) that
-   wipes in left-to-right then fades out, so the example questions live in the chat bar without a
-   hard text switch. Sits exactly over the textarea's first line (matched font-size + line-height). */
-.ta-wrap { position: relative; }
-.ph-anim {
-  position: absolute; top: 0; left: 0; right: 0; pointer-events: none;
-  color: var(--text-3); font-size: 15.5px; line-height: 24px; text-align: left;
-  white-space: nowrap; overflow: hidden; text-overflow: clip;
-  animation: phReveal 5s ease-in-out forwards;
-}
-/* Slow, graceful reveal: wipe in left→right over the first ~1.5s, hold, then fade out over the last
-   ~0.75s (no hard switch). Paired with the 5s remount interval in the Ask composer. */
-@keyframes phReveal {
-  0%   { opacity: 0; clip-path: inset(0 100% 0 0); }
-  30%  { opacity: 1; clip-path: inset(0 0 0 0); }
-  85%  { opacity: 1; clip-path: inset(0 0 0 0); }
-  100% { opacity: 0; clip-path: inset(0 0 0 0); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ph-anim { animation: none; opacity: 0.85; clip-path: none; }
-}
+.ta-wrap { position: relative; flex: 1; min-width: 80px; align-self: center; }
 /* Kill the global green focus glow (legacy.css `input, textarea:focus` box-shadow) on the
    composer — the bar uses the calm border-tint focus above, not an acid ring. Keyboard
    focus-visible outline (the separate `outline` rule below) is unaffected. */
 .box textarea:focus { box-shadow: none; }
-.tools { display: flex; align-items: center; gap: 7px; margin-top: 9px; }
-.mode { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 6px 12px; cursor: pointer; background: var(--bg-2); font-family: var(--font); }
+.tools { display: flex; align-items: flex-end; gap: 7px; margin-top: 0; }
+.mode { min-height: 34px; display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 5px 11px; cursor: pointer; background: var(--bg-2); font-family: var(--font); white-space: nowrap; }
 .mode b { color: var(--text); font-weight: 600; }
 .mode:hover { border-color: var(--acid-dim); }
 /* padding:0 overrides the global text-button padding (legacy.css `button { padding: 10px 14px }`),
    which these fixed-size icon buttons inherit — that shrinks the grid content box and pushes the
    centered icon off. With padding:0 the 18px icon centers cleanly in the full 32/36px button. */
-.tool { width: 32px; height: 32px; padding: 0; border-radius: 9px; border: 1px solid var(--line); background: var(--bg-2); color: var(--text-2); display: grid; place-items: center; cursor: pointer; }
+.tool { width: 34px; height: 34px; padding: 0; border-radius: 999px; border: 1px solid transparent; background: transparent; color: var(--text-2); display: grid; place-items: center; cursor: pointer; flex: none; }
 .tool:hover { color: var(--text); border-color: var(--line-2); }
-.send { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: none; background: var(--acid); color: var(--on-acid); display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 9px -5px rgba(var(--acid-rgb), 0.45); }
+.send { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: none; background: var(--acid); color: var(--on-acid); display: grid; place-items: center; cursor: pointer; box-shadow: 0 2px 9px -5px rgba(var(--acid-rgb), 0.45); flex: none; }
 .send:hover { filter: brightness(1.07); }
 .send:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(0.3); }
 .composer .hint { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 9px; font-family: var(--mono); }
@@ -602,6 +582,16 @@
 .chip-action { display: inline-flex; align-items: center; gap: 7px; }
 .chip-action svg { color: var(--text-3); flex: none; }
 @media (max-width: 480px) { .welcome-title { font-size: 23px; } }
+@media (max-width: 560px) {
+  .composer-wrap { padding-bottom: 14px; }
+  .composer { padding: 0 10px; }
+  .box { padding: 6px; border-radius: 24px; }
+  .tools { gap: 5px; }
+  .tool, .send { width: 32px; height: 32px; }
+  .mode { min-height: 32px; padding: 4px 9px; font-size: 12px; }
+  .mode svg { display: none; }
+  .mode-suffix { display: none; }
+}
 
 /* ── evidence panel ── */
 .evidence { background: var(--bg); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
