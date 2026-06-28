@@ -126,7 +126,12 @@ export interface EvidenceUpdateSummary {
   id: string;
   project_id: string;
   claim_id: string | null;
-  change_type: "new_source" | "new_conflict" | "grade_change" | "verdict_change" | "trial_status_change";
+  change_type:
+    | "new_source"
+    | "new_conflict"
+    | "grade_change"
+    | "verdict_change"
+    | "trial_status_change";
   summary: string;
   review_status: "pending" | "approved" | "rejected";
   created_at: string;
@@ -141,7 +146,9 @@ export function discoveryTitle(question: string): string {
   return cleaned.length <= 90 ? cleaned : `${cleaned.slice(0, 87)}...`;
 }
 
-export function claimEvidenceCounts(claim: DiscoveryClaim): Record<ClaimRelation, number> {
+export function claimEvidenceCounts(
+  claim: DiscoveryClaim,
+): Record<ClaimRelation, number> {
   const counts: Record<ClaimRelation, number> = {
     supports: 0,
     partial: 0,
@@ -158,7 +165,9 @@ export function citationToEvidenceLink(c: Citation): DiscoveryEvidenceLink {
     citation_tag: c.chunk_tag,
     source_id: c.source_id,
     relation: c.claim_relation ?? "reviewed",
-    evidence_weight: typeof c.evidence_weight === "number" ? c.evidence_weight : c.support_score ?? 0,
+    evidence_weight: typeof c.evidence_weight === "number"
+      ? c.evidence_weight
+      : c.support_score ?? 0,
     support_quote: undefined,
   };
 }
