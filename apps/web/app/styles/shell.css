@@ -1073,6 +1073,10 @@
 .theme-swatch .tp-dot { position: absolute; right: 9px; bottom: 9px; width: 13px; height: 13px; border-radius: 50%; }
 .theme-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); padding: 0 2px; }
 .theme-card-foot svg { color: var(--acid); }
+[data-theme-preview="system"] { color: #ececec; }
+[data-theme-preview="system"] .tp-rail { background: linear-gradient(90deg, #f0f0f1 0 50%, #171717 50% 100%); }
+[data-theme-preview="system"] .tp-page { background: linear-gradient(90deg, #ffffff 0 50%, #212121 50% 100%); }
+[data-theme-preview="system"] .tp-dot { background: #9bd92e; }
 [data-theme-preview="light"] { color: #0d0d0d; }
 [data-theme-preview="light"] .tp-rail { background: #f0f0f1; }
 [data-theme-preview="light"] .tp-page { background: #ffffff; }

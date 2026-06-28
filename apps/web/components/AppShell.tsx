@@ -49,7 +49,7 @@ function isActive(path: string, href: string) {
   return path === href || path.startsWith(`${href}/`);
 }
 function titleForPath(path: string): { title: string; sub?: string } {
-  if (path.startsWith("/app/ask")) return { title: "Ask", sub: "live evidence · cited" };
+  if (path.startsWith("/app/ask")) return { title: "Ask" };
   if (path.startsWith("/app/research")) return { title: "Deep research", sub: "multi-step cited report" };
   if (path.startsWith("/app/reports")) return { title: "Reports", sub: "your saved evidence reports" };
   if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };

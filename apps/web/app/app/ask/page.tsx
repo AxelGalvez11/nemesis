@@ -197,9 +197,10 @@ function AskPage() {
       setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
     } catch (e) {
       const proGate = isQuotaError(e) && Number(e.quota.limit) === 0;
+      const feature = runMode === "discovery" ? "Discovery" : runMode === "meta" ? "Meta-analysis" : runMode === "lab_draft" ? "Lab draft" : "Deep research";
       const msg = isQuotaError(e)
         ? (proGate
-          ? `Deep research is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
+          ? `${feature} is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
           : `Daily deep-research limit reached (${e.quota.used}/${e.quota.limit}) on ${e.quota.plan}.`)
         : (e instanceof Error ? e.message : "Could not start research.");
       setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, error: msg, proGate } } : t)));
@@ -238,7 +239,9 @@ function AskPage() {
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
-        <div className="thread-sub">{panelAnswer && panelAnswer.intent !== "smalltalk" ? `${panelAnswer.citations.length + (panelAnswer.reviewed_sources?.length ?? 0)} sources · ${panelAnswer.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
+        {panelAnswer && panelAnswer.intent !== "smalltalk" ? (
+          <div className="thread-sub">{panelAnswer.citations.length + (panelAnswer.reviewed_sources?.length ?? 0)} sources · {panelAnswer.evidence_grade.replace(/_/g, " ")}</div>
+        ) : null}
       </div>,
     );
     return () => {
