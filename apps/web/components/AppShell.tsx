@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
 import { Orb } from "./Orb";
@@ -10,6 +10,11 @@ import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, 
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
 import { SettingsSurface } from "./SettingsSurface";
+import {
+  DEFAULT_EVIDENCE_PANEL_WIDTH,
+  clampEvidencePanelWidth,
+  evidencePanelWidthStyle,
+} from "@/lib/evidence-panel-layout";
 
 type Overlay = "settings" | null;
 
@@ -22,6 +27,10 @@ interface AppChromeValue {
   openEvidence: () => void;
   evidenceExpanded: boolean;
   toggleEvidenceExpanded: () => void;
+  evidenceFullscreen: boolean;
+  toggleEvidenceFullscreen: () => void;
+  evidenceWidth: number;
+  setEvidenceWidth: (width: number) => void;
   setEvidence: (node: ReactNode | null) => void;
   setTopbar: (node: ReactNode | null) => void;
   bumpChats: () => void;
@@ -34,6 +43,10 @@ const AppChromeContext = createContext<AppChromeValue>({
   openEvidence: () => {},
   evidenceExpanded: false,
   toggleEvidenceExpanded: () => {},
+  evidenceFullscreen: false,
+  toggleEvidenceFullscreen: () => {},
+  evidenceWidth: DEFAULT_EVIDENCE_PANEL_WIDTH,
+  setEvidenceWidth: () => {},
   setEvidence: () => {},
   setTopbar: () => {},
   bumpChats: () => {},
@@ -55,7 +68,7 @@ function isActive(path: string, href: string) {
   return path === href || path.startsWith(`${href}/`);
 }
 function titleForPath(path: string): { title: string; sub?: string } {
-  if (path.startsWith("/app/ask")) return { title: "Ask", sub: "live evidence · cited" };
+  if (path.startsWith("/app/ask")) return { title: "Ask" };
   if (path.startsWith("/app/research")) return { title: "Deep research", sub: "multi-step cited report" };
   if (path.startsWith("/app/reports")) return { title: "Reports", sub: "your saved evidence reports" };
   if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };
@@ -75,9 +88,11 @@ const FULL_BLEED = ["/app/ask", "/app/research", "/app/reports", "/app/monitor",
 const mqMatch = (q: string) =>
   typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(q).matches;
 
+const EVIDENCE_WIDTH_STORAGE_KEY = "pharmaorb-evidence-panel-width";
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { session, loading, signOut } = useAuth();
-  const { theme, toggle: toggleTheme } = useTheme();
+  const { theme, resolvedTheme, toggle: toggleTheme } = useTheme();
   const router = useRouter();
   const path = usePathname();
 
@@ -86,6 +101,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   // topbar panel button, or a citation click (openEvidence) — so sources are one click away.
   const [evidenceCollapsed, setEvidenceCollapsed] = useState(true);
   const [evidenceExpanded, setEvidenceExpanded] = useState(false);
+  const [evidenceFullscreen, setEvidenceFullscreen] = useState(false);
+  const [evidenceWidth, setEvidenceWidthState] = useState(DEFAULT_EVIDENCE_PANEL_WIDTH);
   const [evidence, setEvidenceNode] = useState<ReactNode | null>(null);
   const [topbar, setTopbarNode] = useState<ReactNode | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -108,6 +125,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Escape sets this so the input's blur handler cancels instead of saving — Enter and click-away both
   // blur the field (the single commit path), and this flag tells that path it was a cancel.
   const cancelRenameRef = useRef(false);
+  const evidenceResizeActiveRef = useRef(false);
   // Lets the chat page refresh the rail history the moment it creates a new conversation.
   const bumpChats = useCallback(() => setChatsVersion((v) => v + 1), []);
 
@@ -174,6 +192,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Stable setters so child effects don't loop.
   const setEvidence = useCallback((node: ReactNode | null) => setEvidenceNode(node), []);
   const setTopbar = useCallback((node: ReactNode | null) => setTopbarNode(node), []);
+  const setEvidenceWidth = useCallback((width: number) => {
+    setEvidenceWidthState(clampEvidencePanelWidth(width, typeof window === "undefined" ? 1440 : window.innerWidth));
+  }, []);
   // The hamburger collapses the rail on desktop but toggles the off-canvas drawer at ≤720px; the
   // panel button collapses the evidence column on desktop but toggles its drawer at ≤1100px. We
   // gate on the live breakpoint so the *mobile* flags are only ever set at mobile widths — that
@@ -187,11 +208,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   const toggleEvidence = useCallback(() => {
     setMobileNavOpen(false);
     if (mqMatch("(max-width: 1100px)")) setMobileEvidenceOpen((v) => !v);
-    else setEvidenceCollapsed((v) => !v);
+    else {
+      setEvidenceFullscreen(false);
+      setEvidenceCollapsed((v) => !v);
+    }
   }, []);
   const toggleEvidenceExpanded = useCallback(() => {
     setMobileNavOpen(false);
+    setEvidenceFullscreen(false);
     setEvidenceExpanded((v) => !v);
+    if (mqMatch("(max-width: 1100px)")) setMobileEvidenceOpen(true);
+    else setEvidenceCollapsed(false);
+  }, []);
+  const toggleEvidenceFullscreen = useCallback(() => {
+    setMobileNavOpen(false);
+    setEvidenceFullscreen((v) => !v);
     if (mqMatch("(max-width: 1100px)")) setMobileEvidenceOpen(true);
     else setEvidenceCollapsed(false);
   }, []);
@@ -203,7 +234,56 @@ export function AppShell({ children }: { children: ReactNode }) {
     else setEvidenceCollapsed(false);
   }, []);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
-  const closeMobileEvidence = useCallback(() => setMobileEvidenceOpen(false), []);
+  const closeMobileEvidence = useCallback(() => { setMobileEvidenceOpen(false); setEvidenceFullscreen(false); }, []);
+
+  const beginEvidenceResize = useCallback((clientX: number) => {
+    if (mqMatch("(max-width: 720px)") || evidenceFullscreen || evidenceResizeActiveRef.current) return;
+    evidenceResizeActiveRef.current = true;
+    const startX = clientX;
+    const startWidth = evidenceWidth;
+    document.body.classList.add("resizing-evidence");
+
+    const onMove = (moveEvent: PointerEvent | MouseEvent) => {
+      setEvidenceWidth(startWidth + (startX - moveEvent.clientX));
+    };
+    const onUp = () => {
+      evidenceResizeActiveRef.current = false;
+      document.body.classList.remove("resizing-evidence");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [evidenceFullscreen, evidenceWidth, setEvidenceWidth]);
+  const handleEvidenceResizePointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    beginEvidenceResize(event.clientX);
+  }, [beginEvidenceResize]);
+  const handleEvidenceResizeMouseDown = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    beginEvidenceResize(event.clientX);
+  }, [beginEvidenceResize]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = Number(window.localStorage.getItem(EVIDENCE_WIDTH_STORAGE_KEY));
+    if (Number.isFinite(stored)) setEvidenceWidth(stored);
+  }, [setEvidenceWidth]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(EVIDENCE_WIDTH_STORAGE_KEY, String(evidenceWidth));
+    } catch {
+      /* private mode / storage disabled — resize still applies for the session */
+    }
+  }, [evidenceWidth]);
 
   useEffect(() => {
     if (!loading && !session) router.replace(`/sign-in?next=${encodeURIComponent(path)}`);
@@ -263,7 +343,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [rowMenu]);
 
   // Close both mobile drawers + any account overlay + the row menu / its dialogs on route change.
-  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setOverlay(null); setRowMenu(null); setConfirmDelete(null); setRenamingId(null); }, [path]);
+  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setEvidenceFullscreen(false); setOverlay(null); setRowMenu(null); setConfirmDelete(null); setRenamingId(null); }, [path]);
 
   // Close the delete-confirm dialog on Escape.
   useEffect(() => {
@@ -303,11 +383,15 @@ export function AppShell({ children }: { children: ReactNode }) {
       openEvidence,
       evidenceExpanded,
       toggleEvidenceExpanded,
+      evidenceFullscreen,
+      toggleEvidenceFullscreen,
+      evidenceWidth,
+      setEvidenceWidth,
       setEvidence,
       setTopbar,
       bumpChats,
     }),
-    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, evidenceExpanded, toggleEvidenceExpanded, setEvidence, setTopbar, bumpChats],
+    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, evidenceExpanded, toggleEvidenceExpanded, evidenceFullscreen, toggleEvidenceFullscreen, evidenceWidth, setEvidenceWidth, setEvidence, setTopbar, bumpChats],
   );
 
   // Hooks are all above this line — only conditional returns below (Rules of Hooks).
@@ -324,17 +408,21 @@ export function AppShell({ children }: { children: ReactNode }) {
     mobileNavOpen && "mobile-open",
     hasEvidence && mobileEvidenceOpen && "mobile-evidence-open",
     hasEvidence && evidenceExpanded && "evidence-expanded",
-    hasEvidence ? evidenceCollapsed && "evidence-collapsed" : "no-evidence",
+    hasEvidence && evidenceFullscreen && "evidence-fullscreen",
+    hasEvidence ? evidenceCollapsed && !mobileEvidenceOpen && "evidence-collapsed" : "no-evidence",
   ]
     .filter(Boolean)
     .join(" ");
   const defaultTitle = titleForPath(path);
   const email = session.user.email ?? "preview@pharmaorb.app";
   const initials = email.slice(0, 2).toUpperCase();
+  const appStyle = hasEvidence
+    ? ({ "--evidence-width": evidencePanelWidthStyle(evidenceWidth) } as CSSProperties)
+    : undefined;
 
   return (
     <AppChromeContext.Provider value={ctx}>
-      <div className={appClass}>
+      <div className={appClass} style={appStyle}>
         {/* ── rail ── */}
         <aside className="rail" id="app-rail">
           <div className="brand">
@@ -453,8 +541,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             )}
             <div className="spacer" />
-            <button className="icon-btn" onClick={toggleTheme} data-tip="Switch theme" aria-label="Switch theme (light, grey, dark)">
-              <Icon name={theme === "light" ? "moon" : "sun"} />
+            <button className="icon-btn" onClick={toggleTheme} data-tip="Switch theme" aria-label="Switch theme (system, light, grey, dark)">
+              <Icon name={resolvedTheme === "light" || theme === "system" ? "moon" : "sun"} />
             </button>
             {hasEvidence ? (
               <button className="icon-btn" onClick={toggleEvidence} data-tip="Show the evidence behind the answer" aria-label="Toggle evidence" aria-controls="app-evidence" aria-expanded={mobileEvidenceOpen}>
@@ -469,7 +557,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         {hasEvidence ? (
           <>
             <button className="evidence-backdrop" aria-label="Close evidence" onClick={closeMobileEvidence} tabIndex={-1} />
-            <aside className="evidence" id="app-evidence">{evidence}</aside>
+            <aside className="evidence" id="app-evidence">
+              <button
+                type="button"
+                className="evidence-resize-handle"
+                aria-label="Resize evidence panel"
+                onPointerDown={handleEvidenceResizePointerDown}
+                onMouseDown={handleEvidenceResizeMouseDown}
+                tabIndex={(evidenceCollapsed && !mobileEvidenceOpen) || evidenceFullscreen ? -1 : 0}
+              />
+              {evidence}
+            </aside>
           </>
         ) : null}
 

@@ -7,8 +7,10 @@ import { useTheme } from "@/components/theme-provider";
 import { Icon } from "@/components/icons";
 import { ProfilePanel } from "@/components/ProfilePanel";
 import { BillingPanel } from "@/components/BillingPanel";
+import type { ThemePreference } from "@/lib/theme-preference";
 
-const THEME_OPTIONS: { id: "light" | "grey" | "dark"; label: string }[] = [
+const THEME_OPTIONS: { id: ThemePreference; label: string }[] = [
+  { id: "system", label: "System" },
   { id: "light", label: "Light" },
   { id: "grey", label: "Grey" },
   { id: "dark", label: "Dark" },
@@ -57,7 +59,7 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
         {section === "general" ? (
           <section className="card">
             <h2 style={{ marginBottom: 4 }}>Appearance</h2>
-            <p className="muted" style={{ fontSize: 13, margin: "0 0 16px" }}>Choose how PharmaOrb looks. Saved on this device.</p>
+            <p className="muted" style={{ fontSize: 13, margin: "0 0 16px" }}>Choose how PharmaOrb looks. System follows this device.</p>
             <div className="theme-grid">
               {THEME_OPTIONS.map((t) => (
                 <button

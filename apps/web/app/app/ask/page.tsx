@@ -3,7 +3,7 @@
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskMode, AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
+import type { AskMode, AskResponse, CitationStyle, ClaimSupport, ReportMode, ResearchReport, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { scienceState } from "@pharmabro/shared";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
@@ -11,6 +11,8 @@ import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
 import { buildThinkingPreview } from "@/lib/thinking-preview";
 import { composerModeLabel } from "@/lib/ask-mode-label";
+import { askPlaceholderFor } from "@/lib/ask-examples";
+import { detectRequestedExportFormats, reportExportHref, type ExportFormat } from "@/lib/report-deliverable";
 import { pubchemMoleculeUrl } from "@/lib/molecule";
 import { phCapture } from "@/lib/posthog";
 import { POINT_OF_USE_DISCLAIMER } from "@/lib/legal";
@@ -82,6 +84,7 @@ function AskPage() {
   // citation inside an OLDER turn pins the panel to THAT answer's sources, so a newer answer no
   // longer clobbers the evidence you were looking at (each turn keeps its own sources).
   const [activeAnswer, setActiveAnswer] = useState<AskResponse | null>(null);
+  const [activeReportPanel, setActiveReportPanel] = useState<ReportPanelState | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -101,17 +104,32 @@ function AskPage() {
   // command from the shell that always OPENS (never toggles closed). The double rAF defers the
   // scroll until after React applies the open state and the drawer's slide-in begins laying out.
   const { setEvidence, setTopbar, openEvidence, bumpChats } = chrome;
+  const openReportPanel = useCallback((reportId: string, title: string, formats: ExportFormat[] = []) => {
+    setActiveReportPanel({ reportId, title, formats });
+    setActiveAnswer(null);
+    setActiveTag(null);
+    setActiveQuote(null);
+    openEvidence();
+  }, [openEvidence]);
 
   // Load a saved chat when the URL targets one (?c=<id>); reset to a blank chat when it doesn't.
   // loadedConvRef stops us re-fetching a conversation we just created in this session.
   useEffect(() => {
-    if (!cParam) { loadedConvRef.current = null; creatingConvRef.current = null; setConversationId(null); setTurns([]); return; }
+    if (!cParam) {
+      loadedConvRef.current = null;
+      creatingConvRef.current = null;
+      setConversationId(null);
+      setTurns([]);
+      setActiveReportPanel(null);
+      return;
+    }
     if (cParam === loadedConvRef.current) return;
     loadedConvRef.current = cParam;
     setConversationId(cParam);
     setActiveTag(null);
     setActiveQuote(null);
     setActiveAnswer(null);
+    setActiveReportPanel(null);
     // Clear the previous chat's turns and block sending until this one finishes loading — otherwise a
     // submit mid-load would compute the wrong ordinal (from the old turns) and the insert would
     // collide with this chat's existing rows (UNIQUE(conversation_id, ordinal)) and be lost.
@@ -180,8 +198,8 @@ function AskPage() {
 
   // Turn slot `idx` into a running research card and kick off the run. `searchQ` may be enriched with
   // clarifying answers, while `displayQ` stays the readable original (shown on the card + saved).
-  const launchResearch = useCallback(async (idx: number, displayQ: string, searchQ: string, runMode: ReportMode) => {
-    setTurns((prev) => prev.map((t, i) => (i === idx ? { q: displayQ, a: null, err: null, research: { runId: "", mode: runMode, title: displayQ, error: null, proGate: false } } : t)));
+  const launchResearch = useCallback(async (idx: number, displayQ: string, searchQ: string, runMode: ReportMode, requestedFormats: ExportFormat[] = []) => {
+    setTurns((prev) => prev.map((t, i) => (i === idx ? { q: displayQ, a: null, err: null, research: { runId: "", mode: runMode, title: displayQ, error: null, proGate: false, requestedFormats } } : t)));
     try {
       const runId = await startResearch(searchQ, runMode);
       setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
@@ -202,6 +220,7 @@ function AskPage() {
   // in that source supporting the specific claim clicked — derived from the click, not the tag, so the
   // same [n] cited by two claims highlights each claim's own supporting line.
   const onCite = useCallback((answer: AskResponse, tag: string, quote?: string) => {
+    setActiveReportPanel(null);
     setActiveAnswer(answer);
     setActiveQuote(quote ?? null);
     openEvidence();
@@ -223,19 +242,26 @@ function AskPage() {
   // render, so depending on it would re-run this effect in a loop as it sets shell state.
   // The panel shows the PINNED answer (a citation the user clicked) if set, else the latest answer.
   const panelAnswer = activeAnswer ?? lastAnswered;
+  const panelSourceCount = (panelAnswer?.citations.length ?? 0) + (panelAnswer?.reviewed_sources?.length ?? 0);
   useEffect(() => {
-    setEvidence(<EvidencePanel answer={panelAnswer} citations={panelAnswer?.citations ?? []} reviewed={panelAnswer?.reviewed_sources} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />);
+    setEvidence(activeReportPanel ? (
+      <ReportDeliverablePanel reportId={activeReportPanel.reportId} title={activeReportPanel.title} formats={activeReportPanel.formats} />
+    ) : (
+      <EvidencePanel answer={panelAnswer} citations={panelAnswer?.citations ?? []} reviewed={panelAnswer?.reviewed_sources} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />
+    ));
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
-        <div className="thread-sub">{panelAnswer && panelAnswer.intent !== "smalltalk" ? `${panelAnswer.citations.length + (panelAnswer.reviewed_sources?.length ?? 0)} sources · ${panelAnswer.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
+        {panelAnswer && panelAnswer.intent !== "smalltalk" ? (
+          <div className="thread-sub">{panelSourceCount} source{panelSourceCount === 1 ? "" : "s"}</div>
+        ) : null}
       </div>,
     );
     return () => {
       setEvidence(null);
       setTopbar(null);
     };
-  }, [panelAnswer, latest?.q, activeTag, activeQuote, setEvidence, setTopbar]);
+  }, [activeReportPanel, panelAnswer, panelSourceCount, latest?.q, activeTag, activeQuote, setEvidence, setTopbar]);
 
   // Thinking steps: a decelerating schedule that tracks the real pipeline (read the question fast,
   // then the slow library + live search, then ranking) and HOLDS on the final "composing" step until
@@ -281,27 +307,30 @@ function AskPage() {
   async function submit(q: string) {
     const text = q.trim();
     if (!text || busy || loadingChat) return;
-    phCapture("ask_submitted", { mode });
+    const requestedFormats = detectRequestedExportFormats(text);
+    const wantsDeliverable = requestedFormats.length > 0;
+    phCapture("ask_submitted", { mode, requested_exports: requestedFormats });
     // Deep research / structured review run INLINE in the thread: append a turn whose body is a
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
     // can keep chatting while it works.
-    if (mode === "deep" || mode === "meta" || mode === "lab_draft") {
+    if (wantsDeliverable || mode === "deep" || mode === "meta" || mode === "lab_draft") {
       // Deep research documents its method (engine's structured_review); meta-analysis additionally
       // pools comparable studies into a computed estimate when the evidence supports it; lab_draft
       // produces a study-design scaffold (not a runnable protocol).
       const runMode: ReportMode = mode === "meta" ? "meta" : mode === "lab_draft" ? "lab_draft" : "structured_review";
-      phCapture("research_started", { mode: runMode });
+      phCapture("research_started", { mode: runMode, requested_exports: requestedFormats });
       const ridx = turns.length;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
       setTurns((prev) => [...prev, { q: text, a: null, err: null, scoping: true }]);
+      setActiveReportPanel(null);
       setQuestion("");
       if (taRef.current) taRef.current.style.height = "auto";
       const scope = await scopeResearch(text); // best-effort; degrades to no-clarification on any failure
       if (scope.needs_clarification) {
-        setTurns((prev) => prev.map((t, i) => (i === ridx ? { q: text, a: null, err: null, scope: { question: text, runMode, questions: scope.questions } } : t)));
+        setTurns((prev) => prev.map((t, i) => (i === ridx ? { q: text, a: null, err: null, scope: { question: text, runMode, questions: scope.questions, requestedFormats } } : t)));
       } else {
-        void launchResearch(ridx, text, text, runMode);
+        void launchResearch(ridx, text, text, runMode, requestedFormats);
       }
       return;
     }
@@ -310,6 +339,7 @@ function AskPage() {
     setActiveTag(null);
     setActiveQuote(null);
     setActiveAnswer(null); // unpin: the panel follows the new answer until a citation is clicked
+    setActiveReportPanel(null);
     const idx = turns.length; // the index this turn will occupy — patch THIS turn, not "the last" (robust if the busy-guard ever loosens)
     setTurns((prev) => [...prev, { q: text, a: null, err: null }]); // append; previous turns stay on screen
     setQuestion("");
@@ -400,9 +430,17 @@ function AskPage() {
                   {t.scoping ? (
                     <div className="thinking"><div className="think-row"><span className="shimmer">Scoping your question…</span></div></div>
                   ) : t.scope ? (
-                    <ScopeTurn state={t.scope} onRun={(enriched) => void launchResearch(i, t.scope!.question, enriched, t.scope!.runMode)} />
+                    <ScopeTurn state={t.scope} onRun={(enriched) => void launchResearch(i, t.scope!.question, enriched, t.scope!.runMode, t.scope!.requestedFormats ?? [])} />
                   ) : t.research ? (
-                    <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
+                    <ResearchRunCard
+                      card={t.research}
+                      onOpenReport={openReportPanel}
+                      onComplete={(r) => {
+                        void persistResearchTurn(i, t.q, t.research!.mode, r);
+                        const formats = t.research?.requestedFormats ?? [];
+                        if (r.savedReportId && formats.length) openReportPanel(r.savedReportId, t.q, formats);
+                      }}
+                    />
                   ) : t.a ? (
                     <>
                       {t.a.intent !== "smalltalk" ? <Thinking stage={3} question={t.q} complete /> : null}
@@ -430,13 +468,14 @@ interface ResearchCard {
   title: string;
   error: string | null;
   proGate: boolean;
+  requestedFormats?: ExportFormat[];
   completed?: { savedReportId: string | null; sources: number }; // set when rehydrated from a saved chat
 }
 
 // A research card loaded from a saved chat is already complete — render the "Report ready" state
 // directly (no live run to poll).
 function rehydrateResearchCard(s: SavedResearchCard): ResearchCard {
-  return { runId: "", mode: s.mode, title: s.title, error: null, proGate: false, completed: { savedReportId: s.savedReportId, sources: s.citationCount } };
+  return { runId: "", mode: s.mode, title: s.title, error: null, proGate: false, requestedFormats: detectRequestedExportFormats(s.title), completed: { savedReportId: s.savedReportId, sources: s.citationCount } };
 }
 
 // A pending clarification turn: the scope step found the question ambiguous, so we collect answers
@@ -445,6 +484,13 @@ interface ScopeTurnState {
   question: string;
   runMode: ReportMode;
   questions: ScopeQuestion[];
+  requestedFormats?: ExportFormat[];
+}
+
+interface ReportPanelState {
+  reportId: string;
+  title: string;
+  formats: ExportFormat[];
 }
 
 interface Turn {
@@ -478,6 +524,13 @@ interface ComposerProps {
 // those features ship — same honest "coming soon" treatment as the non-live modes.
 function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error, welcome }: ComposerProps) {
   const activeMode = MODES.find((m) => m.id === mode)!;
+  const [exampleIndex, setExampleIndex] = useState(0);
+  useEffect(() => {
+    if (!welcome || question.trim()) return;
+    const timer = window.setInterval(() => setExampleIndex((i) => i + 1), 3200);
+    return () => window.clearInterval(timer);
+  }, [question, welcome]);
+  const placeholder = welcome ? askPlaceholderFor(exampleIndex) : "Ask a follow-up...";
   return (
     <div className="composer">
       <div className="box">
@@ -492,7 +545,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
               value={question}
               maxLength={500}
               aria-label="Ask a question about a drug, dose, interaction, or monograph"
-              placeholder={welcome ? "Ask anything" : "Ask a follow-up…"}
+              placeholder={placeholder}
               onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
             />
@@ -610,13 +663,22 @@ function ScopeTurn({ state, onRun }: { state: ScopeTurnState; onRun: (enrichedQu
 // The inline deep-research card. While the run is in flight it polls research_report_runs (RLS-scoped)
 // and shows live progress; on completion it becomes a "Report ready" card linking to the full report
 // in the Reports library. A start-time error (quota / Pro gate) is passed down on the card.
-function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?: (r: { savedReportId: string | null; sources: number }) => void }) {
+function ResearchRunCard({
+  card,
+  onComplete,
+  onOpenReport,
+}: {
+  card: ResearchCard;
+  onComplete?: (r: { savedReportId: string | null; sources: number }) => void;
+  onOpenReport?: (reportId: string, title: string, formats?: ExportFormat[]) => void;
+}) {
   const [run, setRun] = useState<ResearchRunRow | null>(null);
   // Rehydrated (saved) cards start already-done; live runs reach done via polling.
   const [done, setDone] = useState<{ id: string | null; sources: number; title: string } | null>(
     card.completed ? { id: card.completed.savedReportId, sources: card.completed.sources, title: card.title } : null,
   );
   const [err, setErr] = useState<string | null>(card.error);
+  const requestedFormats = card.requestedFormats?.length ? card.requestedFormats : detectRequestedExportFormats(card.title);
   // Hold the latest onComplete in a ref so it isn't a poll-effect dependency (which would restart polling).
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -669,17 +731,91 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
   }
   if (done) {
     return (
-      <Link href={done.id ? `/app/reports/${done.id}` : "/app/reports"} className="research-card" title={done.title}>
-        <Icon name="doc" size={15} />
-        <span className="research-card-title">Report ready: {done.title}</span>
-        <small>{done.sources} sources · {modeLabel}</small>
-      </Link>
+      <div className="research-card research-card-ready" title={done.title}>
+        <Link href={done.id ? `/app/reports/${done.id}` : "/app/reports"} className="research-card-mainlink">
+          <Icon name="doc" size={15} />
+          <span className="research-card-title">Report ready: {done.title}</span>
+          <small>{done.sources} sources · {modeLabel}</small>
+        </Link>
+        {done.id ? (
+          <div className="research-card-actions">
+            <button type="button" className="chip-action" onClick={() => onOpenReport?.(done.id!, done.title, requestedFormats)}>
+              <Icon name="panel" size={14} />Open in panel
+            </button>
+            {requestedFormats.map((format) => (
+              <a key={format} className="chip-action" href={reportExportHref(done.id!, format)} target="_blank" rel="noreferrer">
+                <Icon name="doc" size={14} />{format === "docx" ? "Word" : "PowerPoint"}
+              </a>
+            ))}
+          </div>
+        ) : null}
+      </div>
     );
   }
   return (
     <div className="research-run-card">
       <div className="ai-block-label"><Icon name="sparkle" size={14} /> {modeLabel} running…</div>
       <ResearchProgress steps={run?.progress ?? []} done={false} />
+    </div>
+  );
+}
+
+function ReportDeliverablePanel({ reportId, title, formats }: { reportId: string; title: string; formats: ExportFormat[] }) {
+  const [style, setStyle] = useState<CitationStyle>("vancouver");
+  const [report, setReport] = useState<ResearchReport | null | undefined>(undefined);
+  const exportFormats = formats.length ? formats : (["docx", "pptx"] as ExportFormat[]);
+
+  useEffect(() => {
+    let alive = true;
+    setReport(undefined);
+    void fetchResearchReport(reportId)
+      .then((r) => { if (alive) setReport(r); })
+      .catch(() => { if (alive) setReport(null); });
+    return () => { alive = false; };
+  }, [reportId]);
+
+  return (
+    <div className="report-panel">
+      <div className="ev-head report-panel-head">
+        <b>Deliverable</b>
+        <div className="spacer" />
+        <Link href={`/app/reports/${reportId}`} className="src-action-link">Open full report</Link>
+      </div>
+      <div className="report-panel-body">
+        <div className="report-panel-card">
+          <div className="muted-label">Evidence package</div>
+          <h3>{report?.question || title}</h3>
+          <p>{report === undefined ? "Loading the report preview..." : report?.summary || "The report is ready. Open it or export the requested document format."}</p>
+          <div className="cite-style-toggle" role="group" aria-label="Citation style">
+            <button type="button" className={style === "vancouver" ? "active" : ""} onClick={() => setStyle("vancouver")}>Vancouver</button>
+            <button type="button" className={style === "ama" ? "active" : ""} onClick={() => setStyle("ama")}>AMA</button>
+          </div>
+          <div className="report-panel-actions">
+            {exportFormats.map((format) => (
+              <a key={format} className="chip-action" href={reportExportHref(reportId, format, style)} target="_blank" rel="noreferrer">
+                <Icon name="doc" size={14} />{format === "docx" ? "Word document" : "PowerPoint"}
+              </a>
+            ))}
+          </div>
+        </div>
+
+        {report ? (
+          <div className="report-panel-card">
+            <div className="muted-label">Preview</div>
+            <p><b>{report.citations.length}</b> cited source{report.citations.length === 1 ? "" : "s"} · {report.evidence_grade.replace(/_/g, " ")}</p>
+            {report.sections.slice(0, 3).map((section) => (
+              <details key={section.heading} className="report-panel-section">
+                <summary>{section.heading}</summary>
+                {section.points.slice(0, 2).map((point, i) => <p key={i}>{point.text}</p>)}
+              </details>
+            ))}
+          </div>
+        ) : report === null ? (
+          <div className="report-panel-card">
+            <p>Could not load the report preview. The export links may still work if the report finished saving.</p>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

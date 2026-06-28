@@ -236,7 +236,7 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
 // class. activeQuote is the verbatim source sentence backing that claim, highlighted on the active card.
 export function EvidencePanel({ answer, citations, reviewed, activeTag, activeQuote }: { answer?: AskResponse | null; citations: Citation[]; reviewed?: Citation[]; activeTag?: string; activeQuote?: string }) {
   const [view, setView] = useState<"sources" | "map">("sources");
-  const { evidenceExpanded, toggleEvidenceExpanded } = useAppChrome();
+  const { evidenceExpanded, toggleEvidenceExpanded, evidenceFullscreen, toggleEvidenceFullscreen } = useAppChrome();
   const rev = reviewed ?? [];
   const total = citations.length + rev.length;
   const fam = breakdown([...citations, ...rev]);
@@ -265,15 +265,26 @@ export function EvidencePanel({ answer, citations, reviewed, activeTag, activeQu
         {total ? <span className="mono" style={{ color: "var(--text-3)", fontSize: 11 }}>{total}</span> : null}
         <div className="spacer" />
         <span className="live"><span className="dot" />Live sources</span>
-        <button
-          type="button"
-          className="ev-expand"
-          onClick={toggleEvidenceExpanded}
-          aria-pressed={evidenceExpanded}
-          aria-label={evidenceExpanded ? "Collapse evidence panel" : "Expand evidence panel"}
-        >
-          {evidenceExpanded ? "Normal" : "Expand"}
-        </button>
+        <div className="ev-panel-actions">
+          <button
+            type="button"
+            className="ev-expand"
+            onClick={toggleEvidenceExpanded}
+            aria-pressed={evidenceExpanded}
+            aria-label={evidenceExpanded ? "Use normal evidence panel width" : "Use wide evidence panel width"}
+          >
+            {evidenceExpanded ? "Normal" : "Wide"}
+          </button>
+          <button
+            type="button"
+            className="ev-expand"
+            onClick={toggleEvidenceFullscreen}
+            aria-pressed={evidenceFullscreen}
+            aria-label={evidenceFullscreen ? "Exit full screen evidence panel" : "Open evidence panel full screen"}
+          >
+            {evidenceFullscreen ? "Exit" : "Full screen"}
+          </button>
+        </div>
       </div>
 
       {total ? (
