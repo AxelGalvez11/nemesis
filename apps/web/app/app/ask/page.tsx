@@ -33,6 +33,7 @@ const MODES = [
   { id: "fast", label: "Fast", live: true, pro: false, hint: "Quick, plain-English answer — cited from the library + live sources" },
   { id: "thorough", label: "Thorough", live: true, pro: false, hint: "Thinks longer: a wider source pull and a fuller, more technical answer" },
   { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report that documents its method (Pro)" },
+  { id: "discovery", label: "Discovery", live: true, pro: true, hint: "Finds research gaps, claim cards, hypotheses, and next-study designs (Pro)" },
   { id: "meta", label: "Meta-analysis", live: true, pro: true, hint: "Pools comparable studies into a computed estimate, when the evidence supports it (Pro)" },
   { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
 ] as const;
@@ -307,11 +308,12 @@ function AskPage() {
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
     // can keep chatting while it works.
-    if (mode === "deep" || mode === "meta" || mode === "lab_draft") {
+    if (mode === "deep" || mode === "discovery" || mode === "meta" || mode === "lab_draft") {
       // Deep research documents its method (engine's structured_review); meta-analysis additionally
-      // pools comparable studies into a computed estimate when the evidence supports it; lab_draft
-      // produces a study-design scaffold (not a runnable protocol).
-      const runMode: ReportMode = mode === "meta" ? "meta" : mode === "lab_draft" ? "lab_draft" : "structured_review";
+      // pools comparable studies into a computed estimate when the evidence supports it; discovery
+      // adds claim cards, gap analysis, hypotheses, and a next-study design; lab_draft produces a
+      // study-design scaffold (not a runnable protocol).
+      const runMode: ReportMode = mode === "meta" ? "meta" : mode === "lab_draft" ? "lab_draft" : mode === "discovery" ? "discovery" : "structured_review";
       phCapture("research_started", { mode: runMode });
       const ridx = turns.length;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
@@ -338,7 +340,7 @@ function AskPage() {
     const setLast = (patch: Partial<Turn>) =>
       setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
     try {
-      // Only fast/thorough reach here — deep/meta/lab_draft returned above via the research branch.
+      // Only fast/thorough reach here — report modes returned above via the research branch.
       const askMode: AskMode = mode === "thorough" ? "thorough" : "fast";
       const res = await askQuestion(text, askMode);
       setLast({ a: res });
@@ -711,7 +713,13 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
     return () => { alive = false; clearTimeout(timer); };
   }, [card.runId, card.error, card.completed, card.title, done]);
 
-  const modeLabel = card.mode === "meta" ? "Meta-analysis" : card.mode === "lab_draft" ? "Lab draft (beta)" : "Deep research";
+  const modeLabel = card.mode === "meta"
+    ? "Meta-analysis"
+    : card.mode === "lab_draft"
+    ? "Lab draft (beta)"
+    : card.mode === "discovery"
+    ? "Discovery"
+    : "Deep research";
 
   if (err) {
     return (

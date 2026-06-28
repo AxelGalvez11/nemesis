@@ -866,6 +866,84 @@
 .meta-abstract { border-left: 2px solid var(--line-2); padding-left: 13px; }
 .meta-abstract .ai-para { margin: 5px 0; }
 
+/* Discovery reports: Level 4 research-gap + study-designer output. Neutral, dense, and report-like:
+   accent colors only encode support/conflict/priority; no decorative gradient or hero treatment. */
+.discovery-section { border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line); padding: 18px 0 20px; }
+.discovery-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 12px; }
+.discovery-head .muted-note { max-width: 720px; line-height: 1.55; }
+.discovery-meter {
+  flex: none; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+  border: 1px solid var(--line-2); border-radius: 999px; padding: 3px 9px; color: var(--text-2); background: var(--surface);
+}
+.discovery-stats { display: flex; flex-wrap: wrap; gap: 7px; margin: 8px 0 15px; }
+.discovery-stats span {
+  display: inline-flex; align-items: baseline; gap: 5px; padding: 5px 9px; border: 1px solid var(--line);
+  border-radius: 999px; color: var(--text-2); background: var(--surface); font-size: 12px;
+}
+.discovery-stats b { color: var(--text); font-family: var(--mono); font-size: 11px; }
+.discovery-block { margin-top: 16px; }
+.discovery-block h5 {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-2); margin: 0 0 9px;
+}
+.discovery-claim-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.discovery-card, .discovery-mini, .discovery-design {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 12px 13px;
+}
+.discovery-card-top { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-bottom: 8px; color: var(--text-3); font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.discovery-status, .gap-severity, .discovery-relation {
+  display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 7px; border: 1px solid var(--line-2);
+  color: var(--text-2); background: var(--raised); white-space: nowrap;
+}
+.discovery-status.likely, .discovery-relation.supports { color: #4ade80; border-color: color-mix(in srgb, #4ade80 45%, transparent); }
+.discovery-status.mixed, .discovery-relation.partial { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.discovery-status.unlikely, .discovery-relation.conflicts { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.discovery-status.unknown, .discovery-relation.mentions, .discovery-relation.reviewed { color: var(--text-3); }
+.discovery-claim-text { margin: 0 0 8px; color: var(--text); font-size: 14.5px; line-height: 1.5; font-weight: 560; }
+.discovery-card-note { color: var(--text-3); font-size: 12.5px; line-height: 1.45; margin: 0 0 9px; }
+.discovery-relations, .discovery-cites { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.discovery-relation { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+.discovery-cite {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--raised); color: var(--text-2); font-size: 11px; font-family: var(--font);
+}
+.discovery-cite:hover { border-color: var(--line-2); color: var(--text); background: var(--surface-2); filter: none; }
+.discovery-cite b { font-family: var(--mono); font-size: 10px; color: var(--text); }
+.discovery-study-table td b { color: var(--text); font-weight: 600; }
+.discovery-study-table td small { display: block; color: var(--text-3); margin-top: 4px; line-height: 1.35; }
+.discovery-two-col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.discovery-detail-list, .discovery-design-list { display: grid; gap: 8px; }
+.discovery-detail {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 0;
+}
+.discovery-detail summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px;
+  cursor: pointer; color: var(--text); font-weight: 600; font-size: 13.5px; list-style: none;
+}
+.discovery-detail summary::-webkit-details-marker { display: none; }
+.discovery-detail summary::before { content: "›"; color: var(--text-3); transform: rotate(0deg); transition: transform .12s; }
+.discovery-detail[open] summary::before { transform: rotate(90deg); }
+.discovery-detail p { margin: 0; padding: 0 12px 9px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.discovery-detail .discovery-cites { padding: 0 12px 11px; margin-top: 0; }
+.gap-severity.high { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.gap-severity.medium { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.gap-severity.low { color: var(--text-3); }
+.discovery-mini ul { margin: 6px 0 0; padding-left: 18px; color: var(--text-2); }
+.discovery-mini li { font-size: 12.5px; line-height: 1.45; margin-bottom: 4px; }
+.discovery-design dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 9px 0 10px; }
+.discovery-design dt { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); margin-bottom: 2px; }
+.discovery-design dd { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.4; }
+.discovery-monitor {
+  margin: 14px 0 0; padding-top: 10px; border-top: 1px dashed var(--line); color: var(--text-3);
+  font-size: 12.5px; line-height: 1.5;
+}
+.discovery-monitor span { color: var(--text-2); font-weight: 650; margin-right: 8px; }
+@media (max-width: 760px) {
+  .discovery-head, .discovery-two-col { display: block; }
+  .discovery-meter { display: inline-flex; margin-top: 7px; }
+  .discovery-claim-grid, .discovery-design dl { grid-template-columns: 1fr; }
+}
+
 /* ── App modal (Settings / Profile / Billing as overlays) — shell-styled, NOT the Tailwind dialog ──
    Sits above the rail (40), drawers (55–60), and topbar so an overlay is never occluded. The panel is
    transform-centered, so its entrance animation is OPACITY-ONLY (the `fade` keyframe sets transform and

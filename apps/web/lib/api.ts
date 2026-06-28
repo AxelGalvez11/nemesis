@@ -554,6 +554,12 @@ export interface SavedResearchCard {
   citationCount: number;
 }
 
+function parseReportMode(value: unknown): ReportMode {
+  return value === "structured_review" || value === "meta" || value === "lab_draft" || value === "discovery" || value === "standard"
+    ? value
+    : "standard";
+}
+
 /** One reconstructed turn: a cited chat answer, OR a deep-research card (when `research` is set). */
 export interface SavedTurn {
   q: string;
@@ -695,7 +701,7 @@ export async function fetchConversationTurns(conversationId: string): Promise<Sa
           q: pendingQ ?? "",
           a: null,
           research: {
-            mode: p.mode === "structured_review" ? "structured_review" : p.mode === "meta" ? "meta" : "standard",
+            mode: parseReportMode(p.mode),
             savedReportId: typeof p.saved_report_id === "string" ? p.saved_report_id : null,
             title: typeof p.title === "string" ? p.title : (pendingQ ?? ""),
             citationCount: typeof p.citation_count === "number" ? p.citation_count : 0,
@@ -733,7 +739,7 @@ export interface ResearchReportSummary {
   title: string;
   created_at: string;
   citation_count: number;
-  /** Report sub-type for grouping: 'standard' | 'meta' | 'structured_review' | 'lab_draft'. */
+  /** Report sub-type for grouping: 'standard' | 'meta' | 'structured_review' | 'lab_draft' | 'discovery'. */
   mode: string;
 }
 
