@@ -65,6 +65,8 @@ serve(async (req) => {
     ? "structured_review"
     : body.mode === "lab_draft"
     ? "lab_draft"
+    : body.mode === "discovery"
+    ? "discovery"
     : "standard";
 
   // ---- Scoping pre-step: return clarifying questions only. No quota consumed and no run started — the

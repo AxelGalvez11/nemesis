@@ -55,6 +55,7 @@ import { parsePico } from "./pico.ts";
 import { extractStudyArms } from "./extract.ts";
 import { groundStudies } from "./ground.ts";
 import { buildMetaProse, noComparisonProse } from "./meta-prose.ts";
+import { buildDiscoveryReport } from "./discovery.ts";
 import {
   checkFaithfulness,
   type EnforcedReport,
@@ -235,7 +236,7 @@ export function assembleReport(args: {
     ...safety_notes.flatMap((p) => p.citation_ids),
   ];
 
-  return {
+  const report: ResearchReport = {
     question: args.question,
     summary: enforced.summary,
     sub_questions: args.subQuestions,
@@ -254,6 +255,8 @@ export function assembleReport(args: {
     meta_analysis: args.metaAnalysis,
     model_slots: args.modelSlots,
   };
+  if (args.mode === "discovery") report.discovery = buildDiscoveryReport(report);
+  return report;
 }
 
 /** A report carries real synthesized content only if some load-bearing claim survived. PURE. */
