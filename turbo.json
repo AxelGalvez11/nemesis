@@ -11,7 +11,8 @@
     "STRIPE_PLUS_PRICE_ID",
     "STRIPE_PRO_PRICE_ID",
     "STRIPE_ALLOW_LIVE",
-    "NCBI_API_KEY"
+    "NCBI_API_KEY",
+    "UNPAYWALL_EMAIL"
   ],
   "tasks": {
     "build": {
