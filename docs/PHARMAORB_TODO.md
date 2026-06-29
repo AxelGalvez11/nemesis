@@ -2,6 +2,8 @@
 
 ## Product Ecosystem
 
+- Implementation plan: `docs/superpowers/plans/2026-06-29-pharmaorb-product-ecosystem.md`
+
 - [ ] **Position PharmaOrb as one evidence OS across three surfaces**
   - Brand promise: PharmaOrb is the AI evidence engine for health and science, available as a web workspace, mobile companion, and supervised research agent.
   - Keep one account, one evidence backend, one project/library model, one billing relationship.
