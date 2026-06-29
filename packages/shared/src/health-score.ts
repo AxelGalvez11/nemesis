@@ -1,3 +1,12 @@
+// Health-score engine — the deterministic roll-up from metric percentiles to pillar scores and
+// one composite rank. PURE, like the §9 evidence-tier core: it does math on numbers the percentile
+// layer produced; it never diagnoses, never names a disease, and never calls an LLM.
+//
+// The `weight` on each metric is the EVIDENCE WEIGHT — the hook the "living score" turns. When new
+// literature changes how strongly a metric (or an intervention behind it) matters, monitoring nudges
+// the weight and the affected pillar re-scores. That re-scoring is what powers the "your rank changed
+// because the science changed" notification — the moat. Here we just consume the weights.
+
 import type { MetricKey } from "./percentile.ts";
 
 export type Pillar =
@@ -7,11 +16,12 @@ export type Pillar =
   | "strength"
   | "pace_of_aging";
 
-export interface PillarSpec {
+// Wellness framings ONLY — never disease-named ("Diabetes Risk" / "Cardiac Risk" are device claims).
+export type PillarSpec = {
   readonly pillar: Pillar;
   readonly label: string;
   readonly metrics: readonly { readonly key: MetricKey; readonly weight: number }[];
-}
+};
 
 export const PILLARS: readonly PillarSpec[] = [
   {
@@ -48,12 +58,14 @@ export const PILLARS: readonly PillarSpec[] = [
     ],
   },
   {
+    // Pace of Aging stands alone (epigenetic clock); locked until the user adds that test.
     pillar: "pace_of_aging",
     label: "Pace of Aging",
     metrics: [],
   },
 ];
 
+// Wellness tiers — optimization language, never clinical ("normal/abnormal").
 export type Tier = "building" | "solid" | "strong" | "optimized" | "elite";
 
 export function tierFor(percentile: number): Tier {
@@ -72,27 +84,31 @@ export const TIER_LABEL: Readonly<Record<Tier, string>> = {
   elite: "Elite",
 };
 
-export interface MetricInput {
+// One metric's contribution: its already-oriented percentile (from percentile.ts) keyed by metric.
+export type MetricInput = {
   readonly key: MetricKey;
   readonly percentile: number;
-}
+};
 
-export interface PillarScore {
+export type PillarScore = {
   readonly pillar: Pillar;
   readonly label: string;
+  // null = locked (no contributing metric entered yet) — the "add data to unlock" state.
   readonly percentile: number | null;
   readonly tier: Tier | null;
   readonly contributing: readonly MetricKey[];
-}
+};
 
-export interface ScoreResult {
+export type ScoreResult = {
+  // null when nothing has been entered yet.
   readonly composite: number | null;
   readonly tier: Tier | null;
   readonly pillars: readonly PillarScore[];
-}
+};
 
 const round = (n: number): number => Math.round(n);
 
+/** Weighted average of available metric percentiles for one pillar; null if none are present. */
 function scorePillar(spec: PillarSpec, byKey: ReadonlyMap<MetricKey, number>): PillarScore {
   const present = spec.metrics.filter((m) => byKey.has(m.key));
   if (present.length === 0) {
@@ -110,12 +126,18 @@ function scorePillar(spec: PillarSpec, byKey: ReadonlyMap<MetricKey, number>): P
   };
 }
 
+/**
+ * Roll metric percentiles up into pillar scores and one composite rank. The composite is the
+ * simple average of the scored (non-locked) pillars, so adding a new pillar's data refines —
+ * never penalizes — the overall rank.
+ */
 export function scoreHealth(
   inputs: readonly MetricInput[],
   pillars: readonly PillarSpec[] = PILLARS,
 ): ScoreResult {
   const byKey = new Map<MetricKey, number>(inputs.map((i) => [i.key, i.percentile]));
   const pillarScores = pillars.map((spec) => scorePillar(spec, byKey));
+
   const scored = pillarScores.filter((p) => p.percentile !== null);
   if (scored.length === 0) {
     return { composite: null, tier: null, pillars: pillarScores };

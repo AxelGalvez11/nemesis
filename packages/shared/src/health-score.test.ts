@@ -10,6 +10,8 @@ Deno.test("tier bands map percentiles to wellness tiers", () => {
 });
 
 Deno.test("a pillar score is the weighted average of its present metrics", () => {
+  // cardiovascular: apob w1.0=90, hscrp w0.8=80, resting_hr w0.6=60
+  // weighted = (90*1 + 80*0.8 + 60*0.6) / (1 + 0.8 + 0.6) = 190 / 2.4 ≈ 79
   const inputs: MetricInput[] = [
     { key: "apob", percentile: 90 },
     { key: "hscrp", percentile: 80 },
@@ -22,16 +24,17 @@ Deno.test("a pillar score is the weighted average of its present metrics", () =>
   assertEquals(cardio?.contributing.length, 3);
 });
 
-Deno.test("a pillar with no entered metrics is locked", () => {
+Deno.test("a pillar with no entered metrics is locked (null), not zero", () => {
   const result = scoreHealth([{ key: "vo2max", percentile: 70 }]);
   const aging = result.pillars.find((p) => p.pillar === "pace_of_aging");
   assertEquals(aging?.percentile, null);
   assertEquals(aging?.tier, null);
   const strength = result.pillars.find((p) => p.pillar === "strength");
-  assertEquals(strength?.percentile, null);
+  assertEquals(strength?.percentile, null); // no grip/lean entered
 });
 
-Deno.test("composite averages only the scored pillars", () => {
+Deno.test("composite averages only the scored pillars — locked ones never drag it down", () => {
+  // Only metabolic gets data; composite should equal the metabolic pillar, not be diluted by zeros.
   const result = scoreHealth([
     { key: "vo2max", percentile: 80 },
     { key: "hba1c", percentile: 80 },
@@ -45,17 +48,19 @@ Deno.test("composite averages only the scored pillars", () => {
 Deno.test("adding a second pillar refines the composite as an average", () => {
   const result = scoreHealth([
     { key: "vo2max", percentile: 80 },
-    { key: "hba1c", percentile: 80 },
+    { key: "hba1c", percentile: 80 }, // metabolic = 80
     { key: "hrv", percentile: 90 },
-    { key: "sleep_efficiency", percentile: 90 },
+    { key: "sleep_efficiency", percentile: 90 }, // recovery = 90
   ]);
+  // composite = average of the two scored pillars = (80 + 90) / 2 = 85
   assertEquals(result.composite, 85);
 });
 
-Deno.test("empty input yields a null composite", () => {
+Deno.test("empty input yields a null composite, not a crash", () => {
   const result = scoreHealth([]);
   assertEquals(result.composite, null);
   assertEquals(result.tier, null);
+  // every pillar present in the result, all locked
   assertEquals(result.pillars.length, PILLARS.length);
   assert(result.pillars.every((p) => p.percentile === null));
 });
