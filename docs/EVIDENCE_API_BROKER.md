@@ -74,3 +74,20 @@ This becomes the evidence-broker layer underneath Ask, Evidence Map, Research Ga
 - PubMed abstracts when full text is unavailable,
 - metadata/citation graph when only metadata is available,
 - and explicit warnings when a source fails.
+
+## Next Layer: Claim Check And Discovery
+
+The broker is the search/access layer, not the full reasoning engine by itself. The next implementation layer should use broker results like this:
+
+```text
+Evidence broker
+  -> claim steelman / testable claim parser
+  -> support / contradiction / partial / mention classifier
+  -> study extraction
+  -> evidence grade
+  -> literature gap detector
+  -> wet-lab or study-design draft
+  -> living monitor
+```
+
+Wet Lab Draft Mode must generate planning artifacts only. It should not provide operational instructions for unsafe work, bypass ethics review, or imply IRB/IACUC/institutional approval.
