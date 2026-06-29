@@ -92,3 +92,8 @@ export * from "./watch-digest.ts";
 //     evidence-weight hook the "living score" turns. Wellness framings only; never a disease label.
 export * from "./percentile.ts";
 export * from "./health-score.ts";
+
+// Evidence distribution charts (study-design mix + publications-by-year): PURE, deterministic SVG-layout
+// builders over the report's real citation metadata (studyTypeLabel / citationYear). Null when the data is
+// too thin to be honest. Rendered behind NEXT_PUBLIC_ENGINE_VISUALS (default off).
+export * from "./evidence-charts.ts";

@@ -20,7 +20,9 @@ import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
 import { Icon } from "./icons";
 import { ForestPlot } from "./ForestPlot";
+import { EvidenceChartsSection } from "./EvidenceCharts";
 import { downloadReportExport } from "@/lib/api";
+import { engineVisualsEnabled } from "@/lib/env";
 
 const PROVIDER_ABBR: Record<string, string> = {
   openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", europepmc: "PMID",
@@ -476,6 +478,11 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
       ) : null}
 
       {!report.template && report.citations.length ? <EvidenceTable citations={report.citations} onCite={onCite} /> : null}
+      {/* Evidence-at-a-glance figures (study-design mix + publications-by-year) from the report's real cited
+          sources. Each self-suppresses when the data is too thin. Behind NEXT_PUBLIC_ENGINE_VISUALS (default off). */}
+      {engineVisualsEnabled && !report.template && report.citations.length ? (
+        <EvidenceChartsSection citations={report.citations} />
+      ) : null}
       {report.discovery ? <DiscoveryPanel discovery={report.discovery} citeMap={citeMap} onCite={onCite} /> : null}
 
       {isMeta ? (

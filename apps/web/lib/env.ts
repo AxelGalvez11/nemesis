@@ -4,6 +4,10 @@ export const isPreviewMode = !supabaseUrl || !supabaseAnonKey;
 export const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 export const landingUrl = process.env.NEXT_PUBLIC_LANDING_URL ?? "https://pharmaorb.app";
 
+// Engine data-visuals (study-design mix + publications-by-year on a research report) — DEFAULT OFF.
+// Computed from real citation metadata; shown only when the data warrants. Off ⇒ reports render as today.
+export const engineVisualsEnabled = process.env.NEXT_PUBLIC_ENGINE_VISUALS === "true";
+
 // PostHog product analytics. Public phc_ project key (write-only ingestion) + host — safe in the
 // browser bundle. Reads happen elsewhere with a personal API key.
 export const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
