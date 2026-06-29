@@ -1,5 +1,44 @@
 # PharmaOrb Product TODO
 
+## Product Ecosystem
+
+- [ ] **Position PharmaOrb as one evidence OS across three surfaces**
+  - Brand promise: PharmaOrb is the AI evidence engine for health and science, available as a web workspace, mobile companion, and supervised research agent.
+  - Keep one account, one evidence backend, one project/library model, one billing relationship.
+  - Do not market three separate products; market one ecosystem with specialized surfaces.
+
+- [ ] **PharmaOrb Web App: core research workspace**
+  - Prioritize evidence chat, evidence broker search, projects, saved chats, paper library, literature reviews, evidence tables, systematic review workflows, watchlists, reports, and team collaboration.
+  - Web is where users do serious work: review papers, compare evidence, build reports, generate deliverables, and manage research projects.
+  - Near-term build order: Ask + citations -> Projects -> Paper Library -> Evidence Tables -> Reports -> Team collaboration.
+
+- [ ] **PharmaOrb Mobile: capture, alerts, and quick answers**
+  - Use mobile for quick evidence questions, supplement/med/food label scanning, article/screenshot capture, voice-note research ideas, watchlist alerts, and short evidence summaries.
+  - Mobile should not try to be the full systematic review workspace.
+  - Mobile should create or update web projects: scanned label -> entity/topic -> evidence question -> watchlist/project.
+  - Add OCR/barcode capabilities when the mobile app is ready; use label scans as an input to the evidence engine, not as standalone medical advice.
+
+- [ ] **PharmaOrb Agent/Desktop: supervised research operator**
+  - Premium product for browser automation, portal imports, Google Drive organization, PDF downloading/summarization, Zotero organization, evidence table extraction, report drafting, and systematic review grunt work.
+  - Pitch as “does the boring research work while you supervise,” not “controls your computer.”
+  - Start with browser-agent workflows before full desktop control.
+  - Require user approval before consequential actions, file deletion, sending emails, submitting forms, purchases, or accessing sensitive portals.
+
+- [ ] **Product ladder**
+  - Free: limited evidence search and chat.
+  - Web Pro: projects, saved reports, watchlists, higher limits.
+  - Researcher: PDFs, literature matrices, systematic review tools, advanced reports.
+  - Agent: supervised browser/desktop research workflows and monthly agent hours.
+  - Teams/Labs: shared libraries, audit logs, team projects, admin controls.
+  - Enterprise: custom evidence infrastructure, compliance, SSO, private deployment, API/MCP scale.
+
+- [ ] **Ecosystem build order**
+  - Phase 1: Web app MVP with evidence chat, projects, citations, reports.
+  - Phase 2: Research workflows with paper library, watchlists, evidence tables, claim check, gap reports.
+  - Phase 3: Mobile companion with quick questions, scan labels, capture, alerts.
+  - Phase 4: Browser agent for web research, portal imports, and evidence extraction.
+  - Phase 5: Desktop agent for local PDFs, Zotero, spreadsheets, supervised computer-use.
+
 ## Next Evidence Engine Upgrades
 
 - [ ] **Claim Check mode**
