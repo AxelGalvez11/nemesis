@@ -30,6 +30,16 @@ export const engineVisualsEnabled = process.env.NEXT_PUBLIC_ENGINE_VISUALS === "
 // 6-mode dial, byte-identical. The Auto routing reuses the existing fast/thorough engine paths.
 export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "true";
 
+// Bot-protection CAPTCHA (Cloudflare Turnstile + Supabase native enforcement) — DEFAULT OFF.
+// When NEXT_PUBLIC_TURNSTILE_SITE_KEY is set, the sign-in/sign-up forms render a Turnstile widget
+// and pass its token to Supabase auth (options.captchaToken). Off (no key) ⇒ no widget, no token,
+// auth behaves exactly as today. SAFE ACTIVATION ORDER: (1) set this site key in Vercel + redeploy
+// so tokens start flowing while Supabase still ignores them; (2) THEN enable CAPTCHA enforcement in
+// the Supabase dashboard (Auth → Attack Protection → Turnstile + secret key). Never enable server
+// enforcement first, or every sign-in/up breaks until the client deploys.
+export const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+export const captchaEnabled = turnstileSiteKey.length > 0;
+
 // PostHog product analytics. Public phc_ project key (write-only ingestion) + host — safe in the
 // browser bundle. Reads happen elsewhere with a personal API key.
 export const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";

@@ -1,5 +1,4 @@
 import type { CSSProperties } from "react";
-import { WaitlistForm } from "@/components/WaitlistForm";
 
 const SOURCES = [
   {
@@ -356,19 +355,24 @@ export function CallToAction() {
     <section className="cta-sec" id="cta">
       <div style={{ position: "relative", zIndex: 1 }}>
         <div className="section-tag reveal" style={{ justifyContent: "center" }}>
-          Join the waitlist
+          Get started
         </div>
         <h2
           className="section-h2 reveal d1"
           style={{ maxWidth: "560px", margin: "0 auto 14px" }}
         >
-          Be first when the beta opens.
+          Ask your first question.
         </h2>
         <p className="section-p reveal d2" style={{ margin: "0 auto 36px" }}>
-          We&rsquo;ll email you, and nothing else.
+          Free to start. Every answer traced to the evidence.
         </p>
-        <div id="waitlist-area-2" className="reveal d3">
-          <WaitlistForm centered note="We'll email you when the beta opens. No spam." />
+        <div className="hero-cta-row reveal d3" style={{ justifyContent: "center" }}>
+          <a className="wbtn" href="https://app.pharmaorb.app/sign-up">
+            Get started — free
+          </a>
+          <a className="hero-ghost" href="https://app.pharmaorb.app/sign-in">
+            Sign in
+          </a>
         </div>
       </div>
     </section>

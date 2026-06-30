@@ -21,8 +21,8 @@ export interface SignUpConsent {
 interface AuthContextValue {
   session: Session | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<string | null>;
-  signUp: (email: string, password: string, consent?: SignUpConsent) => Promise<SignUpResult>;
+  signIn: (email: string, password: string, captchaToken?: string) => Promise<string | null>;
+  signUp: (email: string, password: string, consent?: SignUpConsent, captchaToken?: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
 }
 
@@ -76,16 +76,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string, captchaToken?: string) => {
     if (isPreviewMode) {
       setSession(previewSession);
       return null;
     }
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    // captchaToken is forwarded only when present; Supabase ignores it until CAPTCHA enforcement is
+    // enabled in the dashboard, so this is inert until activated.
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      ...(captchaToken ? { options: { captchaToken } } : {}),
+    });
     return error?.message ?? null;
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string, consent?: SignUpConsent) => {
+  const signUp = useCallback(async (email: string, password: string, consent?: SignUpConsent, captchaToken?: string) => {
     if (isPreviewMode) {
       setSession(previewSession);
       return { error: null, needsEmailConfirmation: false };
@@ -95,6 +101,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password,
       options: {
         emailRedirectTo: resolveAuthRedirectUrl("/app"),
+        // Forwarded only when present; Supabase ignores it until CAPTCHA enforcement is enabled.
+        ...(captchaToken ? { captchaToken } : {}),
         // Record the accepted Terms/Disclaimer version on the user (the signup consent gate). The
         // account's created_at is the authoritative acceptance time; we add a client stamp for context.
         ...(consent
