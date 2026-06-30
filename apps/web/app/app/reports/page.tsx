@@ -12,12 +12,13 @@ import { getCached, setCached } from "@/lib/cache";
 // (a single-type library stays a clean flat list).
 const MODE_LABEL: Record<string, string> = {
   standard: "Deep research",
+  discovery: "Discovery reports",
   meta: "Meta-analyses",
   structured_review: "Structured reviews",
   lab_draft: "Lab drafts",
   other: "Other",
 };
-const MODE_ORDER = ["standard", "meta", "structured_review", "lab_draft"];
+const MODE_ORDER = ["standard", "discovery", "meta", "structured_review", "lab_draft"];
 
 // The Reports library: every deep-research / structured-review report the user has generated.
 // Reports persist as their own saved_reports rows (kind='deep_research'); this lists them and links
@@ -47,7 +48,7 @@ export default function ReportsPage() {
       {reports === null && !err ? <SkeletonRows count={3} label="Loading your reports…" /> : null}
 
       {reports && reports.length === 0 ? (
-        <p className="welcome-sub">No reports yet. Start one from <Link href="/app/ask">Ask</Link> — choose Deep research or Structured review.</p>
+        <p className="welcome-sub">No reports yet. Start one from <Link href="/app/ask">Ask</Link> — choose Deep research, Discovery, or Meta-analysis.</p>
       ) : null}
 
       {reports && reports.length > 0 ? (

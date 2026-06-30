@@ -21,6 +21,15 @@ const defaultAppUrl = process.env.NODE_ENV === "development"
 export const appUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL) ?? defaultAppUrl;
 export const landingUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_LANDING_URL) ?? "https://pharmaorb.app";
 
+// Engine data-visuals (study-design mix + publications-by-year on a research report) — DEFAULT OFF.
+// Computed from real citation metadata; shown only when the data warrants. Off ⇒ reports render as today.
+export const engineVisualsEnabled = process.env.NEXT_PUBLIC_ENGINE_VISUALS === "true";
+
+// Simplified composer dial — DEFAULT OFF. When "true": Fast/Thorough collapse into one "Auto" mode
+// (auto-picks depth), and Meta-analysis drops off the dial (folded into Deep research). Off ⇒ today's
+// 6-mode dial, byte-identical. The Auto routing reuses the existing fast/thorough engine paths.
+export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "true";
+
 // PostHog product analytics. Public phc_ project key (write-only ingestion) + host — safe in the
 // browser bundle. Reads happen elsewhere with a personal API key.
 export const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";

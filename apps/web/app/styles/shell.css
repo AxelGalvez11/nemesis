@@ -575,9 +575,18 @@
 @media (max-width: 480px) { .welcome-title { font-size: 23px; } }
 
 /* ── evidence panel ── */
-.evidence { background: var(--bg-2); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.evidence { background: var(--bg-2); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; position: relative; }
 .app.evidence-collapsed .evidence { border-left: none; }
-.ev-head { height: 56px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+.evidence-resizer {
+  position: absolute; top: 0; bottom: 0; left: -5px; z-index: 4; width: 10px; padding: 0; border: none; border-radius: 0;
+  background: transparent; cursor: col-resize;
+}
+.evidence-resizer:hover, .resizing-evidence .evidence-resizer { background: color-mix(in srgb, var(--text) 8%, transparent); filter: none; }
+.evidence-fullscreen-toggle {
+  position: absolute; top: 11px; right: 12px; z-index: 5; width: 32px; height: 32px; background: var(--bg-2);
+  border-color: var(--line); box-shadow: 0 2px 10px rgba(0,0,0,0.14);
+}
+.ev-head { height: 56px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 58px 0 16px; border-bottom: 1px solid var(--line); }
 .ev-head b { font-size: 13px; font-weight: 600; }
 .live { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px; }
 .live .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 8px var(--acid); animation: pulse 1.8s infinite; }
@@ -585,7 +594,7 @@
 .ev-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); }
 .ev-tab { font-size: 12.5px; color: var(--text-3); padding: 9px 11px; cursor: pointer; position: relative; font-weight: 500; background: none; border: none; font-family: var(--font); }
 .ev-tab.active { color: var(--text); }
-.ev-tab.active::after { content: ""; position: absolute; left: 11px; right: 11px; bottom: -1px; height: 2px; background: var(--acid); border-radius: 2px; box-shadow: 0 0 8px var(--acid); }
+.ev-tab.active::after { content: ""; position: absolute; left: 11px; right: 11px; bottom: -1px; height: 2px; background: var(--text); border-radius: 2px; }
 /* Breadth header: the full reach of the search ("18 sources · 9 PubMed · 4 trials · 3 FDA"), so an
    answer that cites a few FDA labels still reads as broadly sourced. Sits under the panel head. */
 .ev-breakdown { flex: none; padding: 9px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--text-2); line-height: 1.4; }
@@ -595,10 +604,23 @@
 .ev-section-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); margin: 2px 2px 9px; }
 .ev-section-label.muted { color: var(--text-3); margin-top: 16px; }
 .ev-body { flex: 1; overflow-y: auto; padding: 14px 14px 20px; }
+.ev-source-group { margin: 0 0 12px; }
+.ev-source-group summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; list-style: none;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-2); margin: 2px 2px 9px;
+}
+.ev-source-group summary::-webkit-details-marker { display: none; }
+.ev-source-group summary::before { content: "›"; color: var(--text-3); transition: transform .12s; }
+.ev-source-group[open] summary::before { transform: rotate(90deg); }
+.ev-source-group summary span { flex: 1; }
+.ev-source-group summary b { color: var(--text-3); font-weight: 500; }
+.ev-source-group.muted summary { color: var(--text-3); margin-top: 16px; }
 .src { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 12px 13px; margin-bottom: 10px; cursor: pointer; transition: 0.16s; position: relative; display: block; width: 100%; text-align: left; color: inherit; }
 .src:hover { border-color: var(--line-2); transform: translateY(-1px); }
 /* Highlight the card a clicked citation scrolled to. */
 .src.active { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid), 0 0 18px rgba(var(--acid-rgb), 0.18); }
+.src.src-flash { background: color-mix(in srgb, var(--acid) 12%, var(--surface)); }
 /* "Also reviewed" cards: searched + ranked but not cited — dimmer + flatter so the cited set leads. */
 .src.reviewed { opacity: 0.68; background: var(--bg); }
 .src.reviewed:hover { opacity: 1; }
@@ -653,6 +675,24 @@
 .ev-empty { color: var(--text-3); font-size: 12.5px; text-align: center; padding: 40px 16px; }
 .ev-foot { flex: none; border-top: 1px solid var(--line); padding: 10px 14px; font-family: var(--mono); font-size: 11px; color: var(--text-3); display: flex; justify-content: space-between; }
 
+/* Obsidian/scite-inspired evidence map. Labels are short IDs only; detail lives below the canvas. */
+.ev-map-panel { min-height: 100%; display: flex; flex-direction: column; gap: 10px; }
+.ev-map-legend { display: flex; flex-wrap: wrap; gap: 8px; color: var(--text-3); font-size: 11px; }
+.ev-map-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+.legend-dot.supports { background: var(--acid); }
+.legend-dot.partial { background: var(--info); }
+.legend-dot.conflicts { background: var(--danger); }
+.legend-dot.reviewed { background: var(--text-3); opacity: .55; }
+.ev-map-canvas {
+  min-height: 430px; flex: 1; border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+  overflow: hidden;
+}
+.ev-map-help { font-family: var(--mono); font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; }
+.ev-map-selected { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 10px 11px; }
+.ev-map-selected span, .ev-map-selected small { display: block; font-family: var(--mono); font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
+.ev-map-selected b { display: block; margin: 5px 0 2px; font-size: 13px; line-height: 1.35; color: var(--text); }
+
 /* ── tablet & down (≤1100px): the evidence panel leaves the grid and becomes a right-side
    drawer toggled by the topbar panel button (fixes the phone bottom-stack AND the tablet
    dead-button: inline evidence was forced to width 0 across this whole band). ── */
@@ -667,6 +707,21 @@
   .app.mobile-evidence-open .evidence-backdrop {
     display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.5); border: none;
   }
+  .evidence-resizer { display: none; }
+}
+
+.app.evidence-fullscreen .evidence-backdrop {
+  display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.55); border: none;
+}
+.app.evidence-fullscreen .evidence {
+  position: fixed; top: 0; bottom: 0; right: 0; z-index: 60; width: min(960px, calc(100vw - 72px));
+  transform: none; box-shadow: -16px 0 60px rgba(0,0,0,0.36); border-left: 1px solid var(--line-2);
+}
+.app.evidence-fullscreen .evidence-resizer { display: none; }
+.app.evidence-fullscreen .ev-map-canvas { min-height: 620px; }
+@media (max-width: 760px) {
+  .app.evidence-fullscreen .evidence { left: 0; width: 100vw; }
+  .app.evidence-fullscreen .evidence-backdrop { display: none; }
 }
 
 /* ── tablet band only (721–1100px): the rail stays a 64px icon rail, so apply the collapsed
@@ -866,6 +921,84 @@
 .meta-abstract { border-left: 2px solid var(--line-2); padding-left: 13px; }
 .meta-abstract .ai-para { margin: 5px 0; }
 
+/* Discovery reports: Level 4 research-gap + study-designer output. Neutral, dense, and report-like:
+   accent colors only encode support/conflict/priority; no decorative gradient or hero treatment. */
+.discovery-section { border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line); padding: 18px 0 20px; }
+.discovery-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 12px; }
+.discovery-head .muted-note { max-width: 720px; line-height: 1.55; }
+.discovery-meter {
+  flex: none; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+  border: 1px solid var(--line-2); border-radius: 999px; padding: 3px 9px; color: var(--text-2); background: var(--surface);
+}
+.discovery-stats { display: flex; flex-wrap: wrap; gap: 7px; margin: 8px 0 15px; }
+.discovery-stats span {
+  display: inline-flex; align-items: baseline; gap: 5px; padding: 5px 9px; border: 1px solid var(--line);
+  border-radius: 999px; color: var(--text-2); background: var(--surface); font-size: 12px;
+}
+.discovery-stats b { color: var(--text); font-family: var(--mono); font-size: 11px; }
+.discovery-block { margin-top: 16px; }
+.discovery-block h5 {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-2); margin: 0 0 9px;
+}
+.discovery-claim-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.discovery-card, .discovery-mini, .discovery-design {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 12px 13px;
+}
+.discovery-card-top { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-bottom: 8px; color: var(--text-3); font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.discovery-status, .gap-severity, .discovery-relation {
+  display: inline-flex; align-items: center; border-radius: 999px; padding: 2px 7px; border: 1px solid var(--line-2);
+  color: var(--text-2); background: var(--raised); white-space: nowrap;
+}
+.discovery-status.likely, .discovery-relation.supports { color: #4ade80; border-color: color-mix(in srgb, #4ade80 45%, transparent); }
+.discovery-status.mixed, .discovery-relation.partial { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.discovery-status.unlikely, .discovery-relation.conflicts { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.discovery-status.unknown, .discovery-relation.mentions, .discovery-relation.reviewed { color: var(--text-3); }
+.discovery-claim-text { margin: 0 0 8px; color: var(--text); font-size: 14.5px; line-height: 1.5; font-weight: 560; }
+.discovery-card-note { color: var(--text-3); font-size: 12.5px; line-height: 1.45; margin: 0 0 9px; }
+.discovery-relations, .discovery-cites { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.discovery-relation { font-family: var(--mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+.discovery-cite {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--raised); color: var(--text-2); font-size: 11px; font-family: var(--font);
+}
+.discovery-cite:hover { border-color: var(--line-2); color: var(--text); background: var(--surface-2); filter: none; }
+.discovery-cite b { font-family: var(--mono); font-size: 10px; color: var(--text); }
+.discovery-study-table td b { color: var(--text); font-weight: 600; }
+.discovery-study-table td small { display: block; color: var(--text-3); margin-top: 4px; line-height: 1.35; }
+.discovery-two-col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.discovery-detail-list, .discovery-design-list { display: grid; gap: 8px; }
+.discovery-detail {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 0;
+}
+.discovery-detail summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px;
+  cursor: pointer; color: var(--text); font-weight: 600; font-size: 13.5px; list-style: none;
+}
+.discovery-detail summary::-webkit-details-marker { display: none; }
+.discovery-detail summary::before { content: "›"; color: var(--text-3); transform: rotate(0deg); transition: transform .12s; }
+.discovery-detail[open] summary::before { transform: rotate(90deg); }
+.discovery-detail p { margin: 0; padding: 0 12px 9px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.discovery-detail .discovery-cites { padding: 0 12px 11px; margin-top: 0; }
+.gap-severity.high { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.gap-severity.medium { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.gap-severity.low { color: var(--text-3); }
+.discovery-mini ul { margin: 6px 0 0; padding-left: 18px; color: var(--text-2); }
+.discovery-mini li { font-size: 12.5px; line-height: 1.45; margin-bottom: 4px; }
+.discovery-design dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 9px 0 10px; }
+.discovery-design dt { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); margin-bottom: 2px; }
+.discovery-design dd { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.4; }
+.discovery-monitor {
+  margin: 14px 0 0; padding-top: 10px; border-top: 1px dashed var(--line); color: var(--text-3);
+  font-size: 12.5px; line-height: 1.5;
+}
+.discovery-monitor span { color: var(--text-2); font-weight: 650; margin-right: 8px; }
+@media (max-width: 760px) {
+  .discovery-head, .discovery-two-col { display: block; }
+  .discovery-meter { display: inline-flex; margin-top: 7px; }
+  .discovery-claim-grid, .discovery-design dl { grid-template-columns: 1fr; }
+}
+
 /* ── App modal (Settings / Profile / Billing as overlays) — shell-styled, NOT the Tailwind dialog ──
    Sits above the rail (40), drawers (55–60), and topbar so an overlay is never occluded. The panel is
    transform-centered, so its entrance animation is OPACITY-ONLY (the `fade` keyframe sets transform and
@@ -940,6 +1073,10 @@
 .theme-swatch .tp-dot { position: absolute; right: 9px; bottom: 9px; width: 13px; height: 13px; border-radius: 50%; }
 .theme-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); padding: 0 2px; }
 .theme-card-foot svg { color: var(--acid); }
+[data-theme-preview="system"] { color: #ececec; }
+[data-theme-preview="system"] .tp-rail { background: linear-gradient(90deg, #f0f0f1 0 50%, #171717 50% 100%); }
+[data-theme-preview="system"] .tp-page { background: linear-gradient(90deg, #ffffff 0 50%, #212121 50% 100%); }
+[data-theme-preview="system"] .tp-dot { background: #9bd92e; }
 [data-theme-preview="light"] { color: #0d0d0d; }
 [data-theme-preview="light"] .tp-rail { background: #f0f0f1; }
 [data-theme-preview="light"] .tp-page { background: #ffffff; }

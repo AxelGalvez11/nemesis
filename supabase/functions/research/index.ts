@@ -18,6 +18,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { runResearch } from "../ask/research/orchestrate.ts";
 import { scopeQuestion } from "../ask/research/scope.ts";
 import { hasLlmKey, llmApiKey } from "../ask/llm.ts";
+import { persistDiscoveryProject } from "./discovery-persist.ts";
 import type { ReportMode, ResearchProgressStep, ResearchReport } from "../../../packages/shared/src/research.ts";
 
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -65,6 +66,8 @@ serve(async (req) => {
     ? "structured_review"
     : body.mode === "lab_draft"
     ? "lab_draft"
+    : body.mode === "discovery"
+    ? "discovery"
     : "standard";
 
   // ---- Scoping pre-step: return clarifying questions only. No quota consumed and no run started — the
@@ -135,11 +138,22 @@ async function executeRun(runId: string, userId: string, question: string, mode:
     });
 
     const savedReportId = await insertSavedReport(userId, question, report);
+    const discoveryProjectId = report.discovery
+      ? await persistDiscoveryProject({
+        sbUrl: SB_URL,
+        serviceKey: SERVICE_KEY,
+        userId,
+        runId,
+        savedReportId,
+        report,
+      })
+      : null;
     await patchRun(runId, userId, {
       status: "completed",
       progress: steps,
       saved_report_id: savedReportId,
       source_ids: report.citations.map((c) => c.source_id),
+      metadata: discoveryProjectId ? { report_mode: report.mode ?? mode, discovery_project_id: discoveryProjectId } : { report_mode: report.mode ?? mode },
       completed_at: new Date().toISOString(),
     });
   } catch (e) {
@@ -252,6 +266,7 @@ async function insertSavedReport(userId: string, question: string, report: Resea
         kind: "deep_research",
         report_depth: "deep",
         status: "completed",
+        mode: report.mode ?? "standard",
         payload: report,
         source_ids: report.citations.map((c) => c.source_id),
         citation_count: report.citations.length,

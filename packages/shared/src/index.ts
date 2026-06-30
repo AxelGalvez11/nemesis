@@ -12,6 +12,7 @@
 
 export * from "./answer.ts";
 export * from "./claim-relation.ts";
+export * from "./discovery.ts";
 export * from "./search.ts";
 export * from "./evidence.ts";
 // Phase-4 evidence-scoring engine (§9): the deterministic tier core. Pure
@@ -91,3 +92,35 @@ export * from "./watch-digest.ts";
 //     evidence-weight hook the "living score" turns. Wellness framings only; never a disease label.
 export * from "./percentile.ts";
 export * from "./health-score.ts";
+
+// Evidence distribution charts (study-design mix + publications-by-year): PURE, deterministic SVG-layout
+// builders over the report's real citation metadata (studyTypeLabel / citationYear). Null when the data is
+// too thin to be honest. Rendered behind NEXT_PUBLIC_ENGINE_VISUALS (default off).
+export * from "./evidence-charts.ts";
+
+// Gap test-runner (meta): the comparability gate between a gap's extracted studies and the meta engine
+// — clusters by outcome, pools comparable clusters via poolRiskRatio, abstains honestly otherwise.
+// PURE; reuses the computed-statistics engine (never LLM-guessed). Extraction + UI wiring are owner-gated.
+export * from "./gap-meta-test.ts";
+
+// Field-router (beyond-medicine prerequisite): PURE, deterministic classifier that maps a query to a
+// field (→ source-set + in-silico executability) and to the safety systems to engage. Safety is
+// signal-driven and additive — a health/drug signal keeps the medical floor on even inside a CS query.
+// Deterministic spine; an LLM classifier is the owner-gated refinement that feeds the same contract.
+export * from "./field-router.ts";
+
+// Auto-depth: PURE depth picker for the simplified "Auto" composer mode — fast vs thorough from the
+// query shape (length / multi-part / comparison markers). Deterministic; an LLM router refines later.
+export * from "./auto-depth.ts";
+
+// Real-World Signal (researcher-facing): PURE aggregation of patient-reported outcomes into descriptive
+// per-intervention COUNTS — never an effect estimate — graded at the lowest (anecdotal) tier and walled
+// from the cited evidence, abstaining below a minimum-reports floor. A hypothesis-generation / gap-detection
+// signal for researchers (feeds the discovery engine), not consumer advice. Safety pass over reported
+// stacks + sourcing are owner-gated follow-ups.
+export * from "./realworld-signal.ts";
+
+// Stack safety (Real-World Signal Phase B): PURE checker that flags WELL-ESTABLISHED dangerous drug/
+// supplement combinations in a reported regimen, for a researcher's review. A curated, conservative SEED
+// (clinical review + a licensed source pending) — a flag means a known danger; absence of a flag != safe.
+export * from "./stack-safety.ts";

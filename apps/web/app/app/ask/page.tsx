@@ -4,7 +4,8 @@ import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { AskMode, AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
-import { scienceState } from "@pharmabro/shared";
+import { autoDepth, scienceState } from "@pharmabro/shared";
+import { simplifiedModesEnabled } from "@/lib/env";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
@@ -30,9 +31,11 @@ const STAGES = ["Reading the question", "Searching the evidence library", "Ranki
 // multi-step research reports (the research endpoint, Pro). Fast is the default: plain-English + concise.
 // Thorough thinks longer — a wider source pull and a fuller, more technical write-up for clinicians/researchers.
 const MODES = [
+  { id: "auto", label: "Auto", live: true, pro: false, hint: "Picks the right depth for your question automatically" },
   { id: "fast", label: "Fast", live: true, pro: false, hint: "Quick, plain-English answer — cited from the library + live sources" },
   { id: "thorough", label: "Thorough", live: true, pro: false, hint: "Thinks longer: a wider source pull and a fuller, more technical answer" },
   { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report that documents its method (Pro)" },
+  { id: "discovery", label: "Discovery", live: true, pro: true, hint: "Finds research gaps, claim cards, hypotheses, and next-study designs (Pro)" },
   { id: "meta", label: "Meta-analysis", live: true, pro: true, hint: "Pools comparable studies into a computed estimate, when the evidence supports it (Pro)" },
   { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
 ] as const;
@@ -81,7 +84,7 @@ function AskPage() {
   const [stage, setStage] = useState(0);
   const [showThinking, setShowThinking] = useState(false); // gate: only show the thinking animation once a request has run long enough to be a real wait (instant small-talk replies never trigger it)
   const [revealIdx, setRevealIdx] = useState<number | null>(null); // the turn whose answer should type itself in (only the just-arrived one — never reopened/saved turns)
-  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("fast");
+  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>(simplifiedModesEnabled ? "auto" : "fast");
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   // The verbatim source sentence backing the claim whose citation was just clicked, shown highlighted
@@ -196,9 +199,10 @@ function AskPage() {
       setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
     } catch (e) {
       const proGate = isQuotaError(e) && Number(e.quota.limit) === 0;
+      const feature = runMode === "discovery" ? "Discovery" : runMode === "meta" ? "Meta-analysis" : runMode === "lab_draft" ? "Lab draft" : "Deep research";
       const msg = isQuotaError(e)
         ? (proGate
-          ? `Deep research is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
+          ? `${feature} is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
           : `Daily deep-research limit reached (${e.quota.used}/${e.quota.limit}) on ${e.quota.plan}.`)
         : (e instanceof Error ? e.message : "Could not start research.");
       setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, error: msg, proGate } } : t)));
@@ -237,7 +241,9 @@ function AskPage() {
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
-        <div className="thread-sub">{panelAnswer && panelAnswer.intent !== "smalltalk" ? `${panelAnswer.citations.length + (panelAnswer.reviewed_sources?.length ?? 0)} sources · ${panelAnswer.evidence_grade.replace(/_/g, " ")}` : "live evidence · cited"}</div>
+        {panelAnswer && panelAnswer.intent !== "smalltalk" ? (
+          <div className="thread-sub">{panelAnswer.citations.length + (panelAnswer.reviewed_sources?.length ?? 0)} sources · {panelAnswer.evidence_grade.replace(/_/g, " ")}</div>
+        ) : null}
       </div>,
     );
     return () => {
@@ -307,11 +313,12 @@ function AskPage() {
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
     // can keep chatting while it works.
-    if (mode === "deep" || mode === "meta" || mode === "lab_draft") {
+    if (mode === "deep" || mode === "discovery" || mode === "meta" || mode === "lab_draft") {
       // Deep research documents its method (engine's structured_review); meta-analysis additionally
-      // pools comparable studies into a computed estimate when the evidence supports it; lab_draft
-      // produces a study-design scaffold (not a runnable protocol).
-      const runMode: ReportMode = mode === "meta" ? "meta" : mode === "lab_draft" ? "lab_draft" : "structured_review";
+      // pools comparable studies into a computed estimate when the evidence supports it; discovery
+      // adds claim cards, gap analysis, hypotheses, and a next-study design; lab_draft produces a
+      // study-design scaffold (not a runnable protocol).
+      const runMode: ReportMode = mode === "meta" ? "meta" : mode === "lab_draft" ? "lab_draft" : mode === "discovery" ? "discovery" : "structured_review";
       phCapture("research_started", { mode: runMode });
       const ridx = turns.length;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
@@ -338,8 +345,9 @@ function AskPage() {
     const setLast = (patch: Partial<Turn>) =>
       setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
     try {
-      // Only fast/thorough reach here — deep/meta/lab_draft returned above via the research branch.
-      const askMode: AskMode = mode === "thorough" ? "thorough" : "fast";
+      // Only fast/thorough/auto reach here — report modes returned above via the research branch.
+      // Auto picks the depth from the question shape (reuses the same fast/thorough engine paths).
+      const askMode: AskMode = mode === "thorough" ? "thorough" : mode === "auto" ? autoDepth(text) : "fast";
       const res = await askQuestion(text, askMode);
       setLast({ a: res });
       setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
@@ -534,7 +542,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
                 {/* lab_draft (beta) deploy is owner-gated separately and its engine (research fn) isn't
                     live yet — keep it out of the selectable modes for the monitoring release. Re-enable
                     by removing this filter once the lab_draft engine is deployed. */}
-                {MODES.filter((m) => m.id !== "lab_draft").map((m) => (
+                {MODES.filter((m) => simplifiedModesEnabled ? (m.id === "auto" || m.id === "deep" || m.id === "discovery") : (m.id !== "lab_draft" && m.id !== "auto")).map((m) => (
                   <button
                     key={m.id}
                     type="button"
@@ -711,7 +719,13 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
     return () => { alive = false; clearTimeout(timer); };
   }, [card.runId, card.error, card.completed, card.title, done]);
 
-  const modeLabel = card.mode === "meta" ? "Meta-analysis" : card.mode === "lab_draft" ? "Lab draft (beta)" : "Deep research";
+  const modeLabel = card.mode === "meta"
+    ? "Meta-analysis"
+    : card.mode === "lab_draft"
+    ? "Lab draft (beta)"
+    : card.mode === "discovery"
+    ? "Discovery"
+    : "Deep research";
 
   if (err) {
     return (

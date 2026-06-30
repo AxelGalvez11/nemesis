@@ -1,10 +1,12 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import type { Citation } from "@pharmabro/shared";
 import { CLAIM_RELATION_LABEL, formatReference, studyTypeLabel } from "@pharmabro/shared";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
+import { EvidenceGraph } from "./EvidenceGraph";
 
 // Provider → the color-square class in shell.css (openfda blue, pubmed purple, trial orange, faers red).
 function providerClass(t: string): string {
@@ -189,6 +191,18 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
   const total = citations.length + rev.length;
   const fam = breakdown([...citations, ...rev]);
   const citedN = citations.length;
+  const [tab, setTab] = useState<"sources" | "map">("sources");
+  const scrollToSource = useCallback((tag: string) => {
+    const normalized = normTag(tag);
+    setTab("sources");
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`ev-src-${normalized}`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("src-flash");
+      setTimeout(() => el.classList.remove("src-flash"), 1200);
+    });
+  }, []);
 
   return (
     <>
@@ -206,32 +220,55 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
         </div>
       ) : null}
 
+      {total ? (
+        <div className="ev-tabs" role="tablist" aria-label="Evidence panel view">
+          <button type="button" role="tab" className={`ev-tab ${tab === "sources" ? "active" : ""}`} aria-selected={tab === "sources"} onClick={() => setTab("sources")}>Sources</button>
+          <button type="button" role="tab" className={`ev-tab ${tab === "map" ? "active" : ""}`} aria-selected={tab === "map"} onClick={() => setTab("map")}>Map</button>
+        </div>
+      ) : null}
+
       <div className="ev-body">
         {total === 0 ? (
           <div className="ev-empty">Ask a question to see the sources behind the answer.</div>
+        ) : tab === "map" ? (
+          <EvidenceGraph citations={citations} reviewed={rev} activeTag={activeTag} onCite={scrollToSource} />
         ) : (
           <>
-            {rev.length > 0 && citedN > 0 ? <div className="ev-section-label">Cited in this answer</div> : null}
-            {citations.map((c, i) => (
-              <SourceCard
-                key={`c-${c.source_id}-${c.chunk_tag}`}
-                c={c}
-                index={i}
-                rankPct={Math.max(34, Math.round(100 - (i / Math.max(1, citedN - 1)) * 60))}
-                active={normTag(c.chunk_tag) === activeTag}
-                activeQuote={activeQuote}
-              />
-            ))}
-            {rev.length > 0 ? <div className="ev-section-label muted">Also reviewed · searched, not cited</div> : null}
-            {rev.map((c) => (
-              <SourceCard
-                key={`r-${c.source_id}-${c.chunk_tag}`}
-                c={c}
-                index={0}
-                active={normTag(c.chunk_tag) === activeTag}
-                activeQuote={activeQuote}
-              />
-            ))}
+            {citations.length ? (
+              <details className="ev-source-group" open>
+                <summary>
+                  <span>Cited in this answer</span>
+                  <b>{citations.length}</b>
+                </summary>
+                {citations.map((c, i) => (
+                  <SourceCard
+                    key={`c-${c.source_id}-${c.chunk_tag}`}
+                    c={c}
+                    index={i}
+                    rankPct={Math.max(34, Math.round(100 - (i / Math.max(1, citedN - 1)) * 60))}
+                    active={normTag(c.chunk_tag) === activeTag}
+                    activeQuote={activeQuote}
+                  />
+                ))}
+              </details>
+            ) : null}
+            {rev.length > 0 ? (
+              <details className="ev-source-group muted">
+                <summary>
+                  <span>Also reviewed · searched, not cited</span>
+                  <b>{rev.length}</b>
+                </summary>
+                {rev.map((c) => (
+                  <SourceCard
+                    key={`r-${c.source_id}-${c.chunk_tag}`}
+                    c={c}
+                    index={0}
+                    active={normTag(c.chunk_tag) === activeTag}
+                    activeQuote={activeQuote}
+                  />
+                ))}
+              </details>
+            ) : null}
           </>
         )}
       </div>
