@@ -45,8 +45,11 @@ export default function SignInPage() {
       setError(err);
       return;
     }
-    const next = new URLSearchParams(window.location.search).get("next");
-    router.replace(next || "/app");
+    // Open-redirect guard: only follow a same-site RELATIVE path; reject absolute ("https://…") and
+    // protocol-relative ("//evil.com") targets so a crafted ?next= can't bounce a signed-in user offsite.
+    const rawNext = new URLSearchParams(window.location.search).get("next");
+    const safeNext = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/app";
+    router.replace(safeNext);
   }
 
   return (
