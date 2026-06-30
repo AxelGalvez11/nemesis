@@ -108,3 +108,7 @@ export * from "./gap-meta-test.ts";
 // signal-driven and additive — a health/drug signal keeps the medical floor on even inside a CS query.
 // Deterministic spine; an LLM classifier is the owner-gated refinement that feeds the same contract.
 export * from "./field-router.ts";
+
+// Auto-depth: PURE depth picker for the simplified "Auto" composer mode — fast vs thorough from the
+// query shape (length / multi-part / comparison markers). Deterministic; an LLM router refines later.
+export * from "./auto-depth.ts";
