@@ -97,3 +97,10 @@ export * from "./health-score.ts";
 // builders over the report's real citation metadata (studyTypeLabel / citationYear). Null when the data is
 // too thin to be honest. Rendered behind NEXT_PUBLIC_ENGINE_VISUALS (default off).
 export * from "./evidence-charts.ts";
+
+// Real-World Signal (researcher-facing): PURE aggregation of patient-reported outcomes into descriptive
+// per-intervention COUNTS — never an effect estimate — graded at the lowest (anecdotal) tier and walled
+// from the cited evidence, abstaining below a minimum-reports floor. A hypothesis-generation / gap-detection
+// signal for researchers (feeds the discovery engine), not consumer advice. Safety pass over reported
+// stacks + sourcing are owner-gated follow-ups.
+export * from "./realworld-signal.ts";
