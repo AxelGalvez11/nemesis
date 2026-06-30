@@ -97,3 +97,9 @@ export * from "./health-score.ts";
 // builders over the report's real citation metadata (studyTypeLabel / citationYear). Null when the data is
 // too thin to be honest. Rendered behind NEXT_PUBLIC_ENGINE_VISUALS (default off).
 export * from "./evidence-charts.ts";
+
+// Field-router (beyond-medicine prerequisite): PURE, deterministic classifier that maps a query to a
+// field (→ source-set + in-silico executability) and to the safety systems to engage. Safety is
+// signal-driven and additive — a health/drug signal keeps the medical floor on even inside a CS query.
+// Deterministic spine; an LLM classifier is the owner-gated refinement that feeds the same contract.
+export * from "./field-router.ts";
