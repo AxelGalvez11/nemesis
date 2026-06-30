@@ -102,3 +102,9 @@ export * from "./evidence-charts.ts";
 // — clusters by outcome, pools comparable clusters via poolRiskRatio, abstains honestly otherwise.
 // PURE; reuses the computed-statistics engine (never LLM-guessed). Extraction + UI wiring are owner-gated.
 export * from "./gap-meta-test.ts";
+
+// Field-router (beyond-medicine prerequisite): PURE, deterministic classifier that maps a query to a
+// field (→ source-set + in-silico executability) and to the safety systems to engage. Safety is
+// signal-driven and additive — a health/drug signal keeps the medical floor on even inside a CS query.
+// Deterministic spine; an LLM classifier is the owner-gated refinement that feeds the same contract.
+export * from "./field-router.ts";
