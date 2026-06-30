@@ -4,7 +4,8 @@ import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { AskMode, AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
-import { scienceState } from "@pharmabro/shared";
+import { autoDepth, scienceState } from "@pharmabro/shared";
+import { simplifiedModesEnabled } from "@/lib/env";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
@@ -30,6 +31,7 @@ const STAGES = ["Reading the question", "Searching the evidence library", "Ranki
 // multi-step research reports (the research endpoint, Pro). Fast is the default: plain-English + concise.
 // Thorough thinks longer — a wider source pull and a fuller, more technical write-up for clinicians/researchers.
 const MODES = [
+  { id: "auto", label: "Auto", live: true, pro: false, hint: "Picks the right depth for your question automatically" },
   { id: "fast", label: "Fast", live: true, pro: false, hint: "Quick, plain-English answer — cited from the library + live sources" },
   { id: "thorough", label: "Thorough", live: true, pro: false, hint: "Thinks longer: a wider source pull and a fuller, more technical answer" },
   { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report that documents its method (Pro)" },
@@ -82,7 +84,7 @@ function AskPage() {
   const [stage, setStage] = useState(0);
   const [showThinking, setShowThinking] = useState(false); // gate: only show the thinking animation once a request has run long enough to be a real wait (instant small-talk replies never trigger it)
   const [revealIdx, setRevealIdx] = useState<number | null>(null); // the turn whose answer should type itself in (only the just-arrived one — never reopened/saved turns)
-  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>("fast");
+  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>(simplifiedModesEnabled ? "auto" : "fast");
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   // The verbatim source sentence backing the claim whose citation was just clicked, shown highlighted
@@ -343,8 +345,9 @@ function AskPage() {
     const setLast = (patch: Partial<Turn>) =>
       setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
     try {
-      // Only fast/thorough reach here — report modes returned above via the research branch.
-      const askMode: AskMode = mode === "thorough" ? "thorough" : "fast";
+      // Only fast/thorough/auto reach here — report modes returned above via the research branch.
+      // Auto picks the depth from the question shape (reuses the same fast/thorough engine paths).
+      const askMode: AskMode = mode === "thorough" ? "thorough" : mode === "auto" ? autoDepth(text) : "fast";
       const res = await askQuestion(text, askMode);
       setLast({ a: res });
       setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
@@ -539,7 +542,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
                 {/* lab_draft (beta) deploy is owner-gated separately and its engine (research fn) isn't
                     live yet — keep it out of the selectable modes for the monitoring release. Re-enable
                     by removing this filter once the lab_draft engine is deployed. */}
-                {MODES.filter((m) => m.id !== "lab_draft").map((m) => (
+                {MODES.filter((m) => simplifiedModesEnabled ? (m.id === "auto" || m.id === "deep" || m.id === "discovery") : (m.id !== "lab_draft" && m.id !== "auto")).map((m) => (
                   <button
                     key={m.id}
                     type="button"

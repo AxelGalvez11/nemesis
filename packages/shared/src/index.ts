@@ -97,3 +97,7 @@ export * from "./health-score.ts";
 // builders over the report's real citation metadata (studyTypeLabel / citationYear). Null when the data is
 // too thin to be honest. Rendered behind NEXT_PUBLIC_ENGINE_VISUALS (default off).
 export * from "./evidence-charts.ts";
+
+// Auto-depth: PURE depth picker for the simplified "Auto" composer mode — fast vs thorough from the
+// query shape (length / multi-part / comparison markers). Deterministic; an LLM router refines later.
+export * from "./auto-depth.ts";
