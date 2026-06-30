@@ -104,3 +104,8 @@ export * from "./evidence-charts.ts";
 // signal for researchers (feeds the discovery engine), not consumer advice. Safety pass over reported
 // stacks + sourcing are owner-gated follow-ups.
 export * from "./realworld-signal.ts";
+
+// Stack safety (Real-World Signal Phase B): PURE checker that flags WELL-ESTABLISHED dangerous drug/
+// supplement combinations in a reported regimen, for a researcher's review. A curated, conservative SEED
+// (clinical review + a licensed source pending) — a flag means a known danger; absence of a flag != safe.
+export * from "./stack-safety.ts";
