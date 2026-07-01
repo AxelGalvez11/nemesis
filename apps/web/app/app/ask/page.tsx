@@ -777,15 +777,16 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
   const tailDelayMs = REVEAL_BASE + headSlots * REVEAL_STEP + 150;
   return (
     <div className={`answer${fadeClass}`}>
-      <div className="grade-row">
-        <span className="grade">{answer.evidence_grade.replace(/_/g, " ")}</span>
-        {science ? (
-          <span className={`science-state ${science.state}`} title={scienceBasis(science)}>
-            {science.state === "well_studied" ? "Well-studied" : "Emerging"}
-          </span>
-        ) : null}
-        {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
-      </div>
+      {(science || flags.length) ? (
+        <div className="grade-row">
+          {science ? (
+            <span className={`science-state ${science.state}`} title={scienceBasis(science)}>
+              {science.state === "well_studied" ? "Well-studied" : "Emerging"}
+            </span>
+          ) : null}
+          {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
+        </div>
+      ) : null}
       {answer.primary_drug && !answer.template && !answer.refused_unsupported ? <MoleculeImage drug={answer.primary_drug} /> : null}
       {answer.plain_english_summary ? <p className="lead">{rt(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
