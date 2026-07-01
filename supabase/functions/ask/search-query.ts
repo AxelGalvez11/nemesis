@@ -6,12 +6,15 @@
 // -> 27, "how do i get rid of heartburn fast?" -> 0). This strips the conversational scaffolding so
 // a 0-result benign query can be RETRIED with the term that actually matches.
 //
-// It runs ONLY on the retry path (the primary fan-out already returned 0 AND no drug was named), so
-// an imperfect strip can only ever turn "0 results" into "0 results" — it can NEVER dilute a query
-// that already retrieved. Deterministic + unit-tested (no LLM call): the ANSWER stays grounded in
-// whatever real sources the retry surfaces; only the SEARCH STRING is simplified here, never the
-// claims. Returns "" when there is nothing useful to retry with (no simplification possible, or the
-// residue is empty / too thin / a bare pronoun).
+// It builds the PRIMARY research search string (index.ts: `extractSearchTerms(question) || question`
+// -> researchQuery for the free-text research sources: MedlinePlus / PubMed / Europe PMC) AND is reused
+// on the retry-on-empty path. It only ever simplifies the free-text RESEARCH string — never the literal
+// drug `term`/mentions that the field-scoped sources (openFDA / FAERS / ClinicalTrials) and the
+// fabrication guard use — so an imperfect strip can change research recall but can NEVER fabricate a
+// source or change which drug is looked up. For a KNOWN entity, understandQuery may further rewrite the
+// research query, so this mainly shapes the no-drug / colloquial-claim path. Deterministic + unit-tested
+// (no LLM call). Returns "" when there is nothing worth simplifying (no prefix/filler matched, or the
+// residue is empty / too thin / a bare pronoun), in which case the caller falls back to the full question.
 
 // Leading conversational scaffolding. Longest match wins, so "how do i get rid of" is removed whole
 // rather than leaving "get rid of heartburn" behind. NOTE: keep generic interrogatives ("how to",
@@ -34,6 +37,19 @@ const LEADING_PREFIXES: readonly string[] = [
   "what should i do about",
   "what helps with",
   "what helps for",
+  // Cause / definition interrogatives — recover the topic from a colloquial claim so the primary
+  // research query matches a MedlinePlus/PubMed topic instead of sending the whole sentence:
+  // "what causes white flakes in hair" -> "white flakes in hair", "why do i have dandruff" -> "dandruff",
+  // "what is berberine" -> "berberine". (Longest-match-first keeps "what is the best way to" intact.)
+  "what causes",
+  "what is causing",
+  "whats causing",
+  "why do i have",
+  "why do i get",
+  "why do i keep getting",
+  "why am i getting",
+  "what is",
+  "what are",
   "what is the best way to",
   "what's the best way to",
   "whats the best way to",

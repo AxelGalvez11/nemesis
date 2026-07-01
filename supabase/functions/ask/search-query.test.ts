@@ -20,6 +20,26 @@ Deno.test("extractSearchTerms: 'what helps with X' yields the bare topic", () =>
   assertEquals(extractSearchTerms("what helps with mild acne?"), "mild acne");
 });
 
+// Cause/definition interrogatives (the consumer-claim retrieval fix): recover the topic so the primary
+// research query hits a MedlinePlus/PubMed topic instead of sending the whole conversational sentence.
+Deno.test("extractSearchTerms: 'what causes X' recovers the topic (the white-flakes case)", () => {
+  assertEquals(extractSearchTerms("what causes white flakes in hair?"), "white flakes in hair");
+});
+
+Deno.test("extractSearchTerms: 'why do i have X' / 'what is X' / 'what are X' recover the topic", () => {
+  assertEquals(extractSearchTerms("why do i have dandruff"), "dandruff");
+  assertEquals(extractSearchTerms("what is berberine?"), "berberine");
+  assertEquals(extractSearchTerms("what are seed oils"), "seed oils");
+});
+
+Deno.test("extractSearchTerms: longest-match-first keeps 'what is the best way to ...' intact (not just 'what is')", () => {
+  assertEquals(extractSearchTerms("what is the best way to lower cholesterol"), "lower cholesterol");
+});
+
+Deno.test("extractSearchTerms: 'what causes it?' -> '' (pronoun residue, nothing to search)", () => {
+  assertEquals(extractSearchTerms("what causes it?"), "");
+});
+
 Deno.test("extractSearchTerms: returns '' when nothing is simplified (retrying the same string is pointless)", () => {
   assertEquals(extractSearchTerms("heartburn remedies"), "");
   assertEquals(extractSearchTerms("lisinopril dosage"), "");
