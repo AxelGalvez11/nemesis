@@ -30,6 +30,13 @@ export const engineVisualsEnabled = process.env.NEXT_PUBLIC_ENGINE_VISUALS === "
 // 6-mode dial, byte-identical. The Auto routing reuses the existing fast/thorough engine paths.
 export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "true";
 
+// "Verify a claim" answer view — DEFAULT OFF. When "true", non-smalltalk answers render the claim-check
+// layout: a verdict lead, each claim with its own rigor-based Evidence meter + source pills, an honest
+// "limits / still uncertain" block, and the walled news lens. Off ⇒ today's answer, byte-identical. This
+// is a front-end reshape of data the engine ALREADY returns (per-claim meter derived from citation
+// study-type/evidence-role) — no engine/generation change. Preview-gate: set for a Vercel preview to review.
+export const verifyClaimEnabled = process.env.NEXT_PUBLIC_VERIFY_CLAIM === "true";
+
 // Bot-protection CAPTCHA (Cloudflare Turnstile + Supabase native enforcement) — DEFAULT OFF.
 // When NEXT_PUBLIC_TURNSTILE_SITE_KEY is set, the sign-in/sign-up forms render a Turnstile widget
 // and pass its token to Supabase auth (options.captchaToken). Off (no key) ⇒ no widget, no token,

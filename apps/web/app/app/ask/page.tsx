@@ -3,9 +3,9 @@
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskMode, AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
-import { autoDepth, scienceState } from "@pharmabro/shared";
-import { simplifiedModesEnabled } from "@/lib/env";
+import type { AnswerPoint, AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
+import { autoDepth, scienceState, claimMeter, claimStrengthLabel, type ClaimStrength } from "@pharmabro/shared";
+import { simplifiedModesEnabled, verifyClaimEnabled } from "@/lib/env";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
@@ -763,6 +763,14 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
     return <div className={`answer${fadeClass}`}><p className="lead">{rt(answer.plain_english_summary)}</p></div>;
   }
 
+  // Verify-a-claim view (preview flag, DEFAULT OFF): reshape the answer into a claim-check — a verdict
+  // lead, each claim with its own rigor-based Evidence meter + source pills, an honest "limits" block,
+  // and the walled news lens. Reuses data the engine already returns. Templates/refusals (conservative
+  // canned safety responses) keep the plain path. Off-flag ⇒ everything below is byte-identical to today.
+  if (verifyClaimEnabled && !answer.template && !answer.refused_unsupported) {
+    return <VerifyClaimAnswer answer={answer} onCite={onCite} />;
+  }
+
   const s = answer.answer_sections;
   const flags = (answer.safety_flags ?? []).filter((f) => f !== "no_sources_found");
   // "Where the science stands" — deterministic, positive-only signal from the cited sources'
@@ -821,6 +829,109 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Verify-a-claim view ────────────────────────────────────────────────────────────────────────
+// A claim-check reshape of the SAME answer data (behind verifyClaimEnabled): a verdict lead, each
+// "what we know" claim shown with its OWN rigor-based Evidence meter (claimMeter — derived from the
+// cited sources' study-type / evidence-role, NOT lexical support) and source pills; an honest
+// "Limits / still uncertain" block (uncertainty, NOT a counter-argument — the real steelman-vs-counter
+// axis needs a later engine change, so it is not faked here); and the walled news lens.
+function VerifyClaimAnswer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void }) {
+  const citeMap = useMemo(() => {
+    const m = new Map<string, CiteInfo>();
+    for (const c of answer.citations) m.set(normTag(c.chunk_tag), { label: abbr(c.source_type), title: c.title ?? c.source_type });
+    return m;
+  }, [answer.citations]);
+  // Resolve a claim's [n] tags back to full citations, for the per-claim Evidence meter + source pills.
+  const byTag = useMemo(() => {
+    const m = new Map<string, Citation>();
+    for (const c of answer.citations) m.set(normTag(c.chunk_tag), c);
+    return m;
+  }, [answer.citations]);
+  const citesFor = (ids?: string[]): Citation[] => (ids ?? []).map((id) => byTag.get(normTag(id))).filter((c): c is Citation => !!c);
+
+  const s = answer.answer_sections;
+  const cite = (tag: string, quote?: string) => onCite(answer, tag, quote);
+  const claims = s.what_we_know ?? [];
+  const limits = s.what_we_do_not_know ?? [];
+
+  return (
+    <div className="answer verify-claim fade">
+      {answer.plain_english_summary ? <p className="lead verdict">{renderInline(answer.plain_english_summary)}</p> : null}
+
+      {claims.length ? (
+        <div className="vc-section">
+          <div className="ai-block-label">Evidence for this</div>
+          {claims.map((p, i) => (
+            <ClaimRow key={i} point={p} cites={citesFor(p.citation_ids)} citeMap={citeMap} onCite={cite} />
+          ))}
+        </div>
+      ) : null}
+
+      {limits.length ? (
+        <div className="vc-section vc-limits">
+          <div className="ai-block-label">Limits / still uncertain</div>
+          <PointItems points={limits} citeMap={citeMap} onCite={cite} paraClass="ai-para" />
+        </div>
+      ) : null}
+
+      <NewsPanel news={answer.news} locked={answer.news_locked} />
+
+      <div className="msg-actions">
+        <button className="icon-btn" data-tip="Copy answer" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
+      </div>
+    </div>
+  );
+}
+
+// One claim in the Verify-a-claim view: the claim text + its inline [n] chips, then a foot line with the
+// claim's rigor Evidence meter and its source-type pills.
+function ClaimRow({ point, cites, citeMap, onCite }: { point: AnswerPoint; cites: Citation[]; citeMap: Map<string, CiteInfo>; onCite: (tag: string, quote?: string) => void }) {
+  const meter = claimMeter(cites);
+  return (
+    <div className="claim-row">
+      <p className="ai-para">
+        {renderInline(point.text)}
+        <CiteChips ids={point.citation_ids} support={point.support} citeMap={citeMap} onCite={onCite} />
+      </p>
+      {(meter || cites.length) ? (
+        <div className="claim-foot">
+          {meter ? (
+            <span className={`claim-meter ${meter.strength}`} title={meter.rationale}>
+              <span className="claim-meter-dot" aria-hidden="true" />
+              {claimStrengthLabel(meter.strength)}
+            </span>
+          ) : null}
+          <SourcePills cites={cites} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// Source-type → a short, friendly pill label. Source-type-aware (a "PubMed"/"Clinical trial"/"FDA label"
+// pill reads honestly, unlike forcing a publisher name onto a journal). Favicons/publisher names come in
+// a later pass; this is the register-accurate first step.
+function sourcePillLabel(t: string): string {
+  const p = (t || "").toLowerCase();
+  if (p.includes("openfda") || p.includes("dailymed") || p.includes("label")) return "FDA label";
+  if (p.includes("faers") || p.includes("fda_safety") || p.includes("enforcement")) return "FDA safety";
+  if (p.includes("medlineplus")) return "MedlinePlus";
+  if (p.includes("clinicaltrials") || p.includes("trial") || p.includes("nct")) return "Clinical trial";
+  if (p.includes("pubmed") || p.includes("europepmc") || p.includes("openalex")) return "PubMed";
+  if (p.includes("livertox")) return "LiverTox";
+  if (p.includes("lactmed")) return "LactMed";
+  return "Source";
+}
+function SourcePills({ cites }: { cites: Citation[] }) {
+  const labels = Array.from(new Set(cites.map((c) => sourcePillLabel(c.source_type))));
+  if (!labels.length) return null;
+  return (
+    <span className="source-pills">
+      {labels.map((l) => <span key={l} className="source-pill">{l}</span>)}
+    </span>
   );
 }
 
