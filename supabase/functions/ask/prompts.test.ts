@@ -165,3 +165,20 @@ Deno.test("claim-check: generateSystem appends the CLAIM-CHECK block ONLY when g
     "the ANSWER-SAFETY FLOOR must come AFTER the claim-check block",
   );
 });
+
+Deno.test("consumer-differential: appended ONLY for consumer intents with verifyClaim; safety floor still last", () => {
+  // Gate off => never present, even for a consumer intent.
+  assertEquals(generateSystem("general_health", "plain").includes("CONSUMER DIFFERENTIAL"), false);
+  // Gated on but a NON-consumer intent => absent (drug questions keep their shape).
+  assertEquals(generateSystem("drug_overview", "plain", { verifyClaim: true }).includes("CONSUMER DIFFERENTIAL"), false);
+  // Gated on + a consumer symptom/cause intent => present, overrides the brevity cap, and asks for red flags.
+  for (const intent of ["general_health", "health_context"] as const) {
+    const sys = generateSystem(intent, "plain", { verifyClaim: true });
+    assert(sys.includes("CONSUMER DIFFERENTIAL"), `consumer differential missing for ${intent}`);
+    assert(sys.includes("DIFFERENTIAL, not a single cause"), "must instruct a differential");
+    assert(sys.includes("OVERRIDE the \"at most 2 what_we_know points\" brevity cap"), "must override the Fast cap");
+    assert(sys.includes("RED-FLAG signs in safety_notes"), "must ask for when-to-see-a-clinician red flags");
+    // Safety has the last word: the register-safety floor still follows the consumer block.
+    assert(sys.indexOf("NO BARE REASSURANCE") > sys.indexOf("CONSUMER DIFFERENTIAL"), "safety floor must follow the consumer block");
+  }
+});

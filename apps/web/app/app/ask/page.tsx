@@ -895,6 +895,7 @@ function VerifyClaimAnswer({ answer, onCite, question }: { answer: AskResponse; 
   const claims = s.what_we_know ?? [];
   const against = s.what_contradicts ?? []; // the honest other side (gated claim-check); empty on a normal answer
   const limits = s.what_we_do_not_know ?? [];
+  const redFlags = s.safety_notes ?? []; // "when to see a clinician" — surfaced for consumer answers
   const firstTag = answer.citations[0]?.chunk_tag; // opens the evidence panel from the "Sources · N" chip
   const totalSources = answer.citations.length + (answer.reviewed_sources?.length ?? 0);
 
@@ -917,6 +918,13 @@ function VerifyClaimAnswer({ answer, onCite, question }: { answer: AskResponse; 
           {against.map((p, i) => (
             <ClaimRow key={i} point={p} cites={citesFor(p.citation_ids)} citeMap={citeMap} onCite={cite} />
           ))}
+        </div>
+      ) : null}
+
+      {redFlags.length ? (
+        <div className="vc-section vc-redflags">
+          <div className="ai-block-label">When to see a clinician</div>
+          <PointItems points={redFlags} citeMap={citeMap} onCite={cite} paraClass="ai-para" />
         </div>
       ) : null}
 
