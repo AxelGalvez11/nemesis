@@ -346,6 +346,11 @@
   font-size: 18px;
   line-height: 1;
 }
+/* Expandable "what I searched" trail (the completed thinking line). */
+.engine-preview-toggle { background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+.engine-preview-toggle:focus-visible { outline: 2px solid var(--acid); outline-offset: 3px; border-radius: 8px; }
+.engine-trail { margin-top: 6px; font-size: 13px; color: var(--text-3); }
+.engine-trail b { color: var(--text-2); font-weight: 700; }
 .engine-preview summary::-webkit-details-marker { display: none; }
 .engine-preview-head {
   display: flex;
@@ -647,6 +652,7 @@
 .src.reviewed:hover { opacity: 1; }
 .src .badge-src { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: var(--text-3); text-transform: uppercase; }
 .src .badge-src .sq { width: 7px; height: 7px; border-radius: 2px; background: var(--text-3); }
+.src-favicon { width: 14px; height: 14px; border-radius: 3px; object-fit: contain; flex: none; }
 .src.openfda .sq, .src.dailymed .sq { background: #7fb2ff; }
 .src.pubmed .sq, .src.pubmed_oa .sq { background: #c7a6ff; }
 .src.clinicaltrials .sq, .src.trial .sq { background: #ff9f7f; }
@@ -683,6 +689,9 @@
 .vc-section { margin-top: 14px; }
 .vc-limits .ai-para { color: var(--text-2); }
 .vc-against { border-left: 2px solid var(--line-2); padding-left: 14px; }
+.vc-sources-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.vc-sources-chip:hover { border-color: var(--line-2); color: var(--text); }
+.msg-actions .icon-btn.active { color: var(--acid); }
 .claim-row { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .claim-row:last-child { border-bottom: 0; }
 .claim-row .ai-para { margin: 0 0 8px; }

@@ -96,6 +96,28 @@ function withTextFragment(href: string, quote: string): string {
   return `${href}#:~:text=${encodeURIComponent(text).replace(/-/g, "%2D")}`;
 }
 
+// Favicon for a source card, from the source URL's own public domain via Google's favicon service — the
+// source's OWN icon (pubmed.ncbi.nlm.nih.gov, mayoclinic.org, fda.gov), never user data. null for
+// non-http/absent URLs; on load error the card falls back to the provider colored square only.
+function faviconUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(u.hostname)}&sz=32`;
+  } catch {
+    return null;
+  }
+}
+
+// A small source favicon that hides itself if the icon can't load (cross-origin <img>, no CORS needed).
+function Favicon({ url }: { url: string | null }) {
+  const [failed, setFailed] = useState(false);
+  const src = faviconUrl(url);
+  if (!src || failed) return null;
+  return <img className="src-favicon" src={src} alt="" aria-hidden="true" loading="lazy" width={14} height={14} onError={() => setFailed(true)} />;
+}
+
 // One source card. Cited cards are numbered + carry a rank bar; "also reviewed" cards are dimmer and
 // unnumbered (they were searched + ranked but the answer didn't lean on them). `rankPct` undefined => no bar.
 function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; index: number; rankPct?: number; active: boolean; activeQuote?: string }) {
@@ -114,7 +136,7 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
   const inner = (
     <>
       {numbered ? <div className="cidx">{index + 1}</div> : null}
-      <div className="badge-src"><span className="sq" />{providerLabel(c.source_type)}</div>
+      <div className="badge-src"><Favicon url={c.url} /><span className="sq" />{providerLabel(c.source_type)}</div>
       <h5 title={refText}>{c.title || c.source_type}</h5>
       <div className="meta">
         {relation ? (

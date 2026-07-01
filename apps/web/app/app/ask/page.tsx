@@ -414,7 +414,7 @@ function AskPage() {
                     <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
                   ) : t.a ? (
                     <>
-                      {t.a.intent !== "smalltalk" ? <Thinking stage={3} question={t.q} complete /> : null}
+                      {t.a.intent !== "smalltalk" ? <Thinking stage={3} question={t.q} complete answer={t.a} /> : null}
                       <Answer answer={t.a} onCite={onCite} question={t.q} reveal={i === revealIdx} />
                     </>
                   ) : isLast && busy && showThinking ? <Thinking stage={stage} question={t.q} /> : null}
@@ -557,9 +557,47 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   );
 }
 
-function Thinking({ stage, question, complete = false }: { stage: number; question: string; complete?: boolean }) {
+// Source-type → the coarse family used in the "what I searched" trail (mirrors the evidence panel's
+// breakdown so the trail and the panel agree at a glance).
+function sourceFamilyShort(t: string): string {
+  const p = (t || "").toLowerCase();
+  if (p.includes("pubmed") || p.includes("europepmc") || p.includes("openalex")) return "PubMed";
+  if (p.includes("trial") || p.includes("nct")) return "trials";
+  if (p.includes("openfda") || p.includes("dailymed") || p.includes("faers") || p.includes("fda_safety")) return "FDA";
+  if (p.includes("medlineplus")) return "guidance";
+  return "other";
+}
+// Compact "searched N sources — 5 PubMed · 4 trials · 3 guidance" summary from an answer's full searched
+// set (cited + reviewed). Deterministic, derived from real citation metadata — never model prose.
+function searchedSummary(answer: AskResponse): { total: number; line: string } {
+  const all: Citation[] = [...answer.citations, ...(answer.reviewed_sources ?? [])];
+  const order = ["PubMed", "trials", "FDA", "guidance", "other"];
+  const counts = new Map<string, number>();
+  for (const c of all) { const f = sourceFamilyShort(c.source_type); counts.set(f, (counts.get(f) ?? 0) + 1); }
+  const line = order.filter((f) => counts.has(f)).map((f) => `${counts.get(f)} ${f}`).join(" · ");
+  return { total: all.length, line };
+}
+
+function Thinking({ stage, question, complete = false, answer }: { stage: number; question: string; complete?: boolean; answer?: AskResponse }) {
+  const [open, setOpen] = useState(false);
   const preview = buildThinkingPreview(question, stage);
   const line = complete ? "Thought through evidence" : stage <= 0 ? "Thinking" : preview.current;
+  // When complete AND we have the answer's sources, the line becomes an expandable "what I searched"
+  // trail (the ChatGPT "Thought for Ns ›" pattern) — a deterministic summary of the real searched set.
+  const trail = complete && answer ? searchedSummary(answer) : null;
+  if (trail && trail.total > 0) {
+    return (
+      <div className="thinking engine-preview engine-preview-compact engine-preview-done">
+        <button type="button" className="engine-preview-title engine-preview-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          Thought through evidence
+          <span className="engine-preview-chevron" aria-hidden="true">{open ? "⌄" : "›"}</span>
+        </button>
+        {open ? (
+          <div className="engine-trail">Searched <b>{trail.total}</b> source{trail.total === 1 ? "" : "s"}{trail.line ? ` — ${trail.line}` : ""}</div>
+        ) : null}
+      </div>
+    );
+  }
   return (
     <div
       className={`thinking engine-preview engine-preview-compact${complete ? " engine-preview-done" : ""}`}
@@ -768,7 +806,7 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
   // and the walled news lens. Reuses data the engine already returns. Templates/refusals (conservative
   // canned safety responses) keep the plain path. Off-flag ⇒ everything below is byte-identical to today.
   if (verifyClaimEnabled && !answer.template && !answer.refused_unsupported) {
-    return <VerifyClaimAnswer answer={answer} onCite={onCite} />;
+    return <VerifyClaimAnswer answer={answer} onCite={onCite} question={question} />;
   }
 
   const s = answer.answer_sections;
@@ -838,7 +876,7 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
 // cited sources' study-type / evidence-role, NOT lexical support) and source pills; an honest
 // "Limits / still uncertain" block (uncertainty, NOT a counter-argument — the real steelman-vs-counter
 // axis needs a later engine change, so it is not faked here); and the walled news lens.
-function VerifyClaimAnswer({ answer, onCite }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void }) {
+function VerifyClaimAnswer({ answer, onCite, question }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, CiteInfo>();
     for (const c of answer.citations) m.set(normTag(c.chunk_tag), { label: abbr(c.source_type), title: c.title ?? c.source_type });
@@ -857,6 +895,8 @@ function VerifyClaimAnswer({ answer, onCite }: { answer: AskResponse; onCite: (a
   const claims = s.what_we_know ?? [];
   const against = s.what_contradicts ?? []; // the honest other side (gated claim-check); empty on a normal answer
   const limits = s.what_we_do_not_know ?? [];
+  const firstTag = answer.citations[0]?.chunk_tag; // opens the evidence panel from the "Sources · N" chip
+  const totalSources = answer.citations.length + (answer.reviewed_sources?.length ?? 0);
 
   return (
     <div className="answer verify-claim fade">
@@ -891,6 +931,14 @@ function VerifyClaimAnswer({ answer, onCite }: { answer: AskResponse; onCite: (a
 
       <div className="msg-actions">
         <button className="icon-btn" data-tip="Copy answer" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
+        <button className="icon-btn" data-tip="Copy as cited report" aria-label="Copy as cited report" onClick={() => navigator.clipboard?.writeText(answerToMarkdown(answer, question))}><Icon name="doc" size={15} /></button>
+        <FeedbackButtons answerId={answer.answer_id} />
+        <div className="spacer" />
+        {firstTag ? (
+          <button className="vc-sources-chip" type="button" onClick={() => cite(normTag(firstTag))} aria-label={`Show ${totalSources} sources`}>
+            <Icon name="doc" size={13} /> Sources · {totalSources}
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -942,6 +990,50 @@ function SourcePills({ cites }: { cites: Citation[] }) {
     <span className="source-pills">
       {labels.map((l) => <span key={l} className="source-pill">{l}</span>)}
     </span>
+  );
+}
+
+// L3 deliverable surfacing: turn an answer into a formatted, cited mini-paper (markdown) the user can
+// paste into a doc — the "generate a proper paper with formatted citations" job, done deterministically
+// from the answer data (no engine call, nothing fabricated).
+function answerToMarkdown(answer: AskResponse, question: string): string {
+  const out: string[] = [`# ${question}`, ""];
+  if (answer.plain_english_summary) out.push(answer.plain_english_summary, "");
+  const s = answer.answer_sections;
+  const section = (title: string, pts?: AnswerPoint[]) => {
+    if (!pts?.length) return;
+    out.push(`## ${title}`);
+    for (const p of pts) {
+      const cites = (p.citation_ids ?? []).map((t) => `[${normTag(t)}]`).join(" ");
+      out.push(`- ${p.text}${cites ? ` ${cites}` : ""}`);
+    }
+    out.push("");
+  };
+  section("What the evidence shows", s.what_we_know);
+  section("Evidence that argues the other way", s.what_contradicts);
+  section("Limits / still uncertain", s.what_we_do_not_know);
+  if (answer.citations.length) {
+    out.push("## References");
+    for (const c of answer.citations) out.push(`${normTag(c.chunk_tag)}. ${c.title ?? c.source_type}${c.url ? ` — ${c.url}` : ""}`);
+    out.push("");
+  }
+  out.push("_Educational research, not medical advice. Generated by PharmaOrb._");
+  return out.join("\n");
+}
+
+// Answer feedback (thumbs up/down) — a quick quality signal to PostHog, matching the ChatGPT footer.
+function FeedbackButtons({ answerId }: { answerId: string }) {
+  const [rating, setRating] = useState<"up" | "down" | null>(null);
+  const rate = (r: "up" | "down") => {
+    const next = rating === r ? null : r;
+    setRating(next);
+    if (next) phCapture("ask_feedback", { rating: next, answer_id: answerId });
+  };
+  return (
+    <>
+      <button type="button" className={`icon-btn${rating === "up" ? " active" : ""}`} data-tip="Helpful" aria-label="Helpful" aria-pressed={rating === "up"} onClick={() => rate("up")}><Icon name="thumbUp" size={15} /></button>
+      <button type="button" className={`icon-btn${rating === "down" ? " active" : ""}`} data-tip="Not helpful" aria-label="Not helpful" aria-pressed={rating === "down"} onClick={() => rate("down")}><Icon name="thumbDown" size={15} /></button>
+    </>
   );
 }
 
