@@ -325,7 +325,27 @@
   box-shadow: 0 18px 40px -32px rgba(0, 0, 0, 0.42);
   padding: 12px;
 }
-.engine-preview-compact { width: min(560px, 100%); }
+.engine-preview-compact {
+  width: min(560px, 100%);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+.engine-preview-compact .engine-preview-title {
+  color: var(--text-2);
+  font-size: 15px;
+  font-weight: 500;
+}
+.engine-preview-done {
+  margin: 0 0 12px;
+}
+.engine-preview-chevron {
+  color: var(--text-3);
+  font-size: 18px;
+  line-height: 1;
+}
 .engine-preview summary::-webkit-details-marker { display: none; }
 .engine-preview-head {
   display: flex;
@@ -487,6 +507,7 @@
 }
 @media (max-width: 520px) {
   .engine-preview { border-radius: 14px; padding: 11px; }
+  .engine-preview-compact { border-radius: 0; padding: 0; }
   .engine-preview-subtitle { white-space: normal; }
   .engine-step-list { grid-template-columns: 1fr; }
   .engine-activity-row { grid-template-columns: 44px minmax(0, 1fr); }
@@ -544,7 +565,7 @@
    focus-visible outline (the separate `outline` rule below) is unaffected. */
 .box textarea:focus { box-shadow: none; }
 .tools { display: flex; align-items: center; gap: 7px; margin-top: 9px; }
-.mode { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 6px 12px; cursor: pointer; background: var(--bg-2); font-family: var(--font); }
+.mode { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 92px; font-size: 12.5px; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 999px; padding: 6px 12px; cursor: pointer; background: var(--bg-2); font-family: var(--font); }
 .mode b { color: var(--text); font-weight: 600; }
 .mode:hover { border-color: var(--acid-dim); }
 /* padding:0 overrides the global text-button padding (legacy.css `button { padding: 10px 14px }`),

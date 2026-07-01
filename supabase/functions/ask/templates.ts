@@ -87,6 +87,8 @@ export function providerPriorityForIntent(intent: Intent): string[] | null {
     case "dosing":
     case "health_context":
       return ["openfda", "dailymed", "fda_safety", "rxnorm"];
+    case "general_health":
+      return ["medlineplus", "pubmed_oa", "europepmc", "clinicaltrials"];
     case "trial_lookup":
       return ["clinicaltrials"];
     case "evidence_for_claim":

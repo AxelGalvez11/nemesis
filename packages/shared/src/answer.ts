@@ -20,6 +20,7 @@ export type Intent =
   | "emergency_overdose"
   | "pregnancy_pediatrics"
   | "health_context"
+  | "general_health"
   | "drug_sourcing"
   | "investment"
   | "smalltalk";

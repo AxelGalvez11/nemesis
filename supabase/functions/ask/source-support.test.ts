@@ -49,6 +49,12 @@ Deno.test("evidenceRole marks randomized controlled trials from publication type
   assertEquals(role.role, "randomized_trial");
 });
 
+Deno.test("evidenceRole treats MedlinePlus as high-value consumer-health guidance", () => {
+  const role = evidenceRole(chunk({ provider: "medlineplus" }));
+  assertEquals(role.role, "consumer_health");
+  assertEquals(role.weight, 76);
+});
+
 Deno.test("rateSourceSupport gives direct support when a verbatim support quote exists", () => {
   const ratings = rateSourceSupport([
     chunk({ tag: "1", provider: "openfda" }),

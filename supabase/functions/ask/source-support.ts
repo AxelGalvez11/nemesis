@@ -85,7 +85,7 @@ export function evidenceRole(c: Pick<RetrievedChunk, "provider" | "publication_t
     return { role: "review_article", weight: 62, reason: "Narrative review/background synthesis." };
   }
   if (provider.includes("medlineplus")) {
-    return { role: "consumer_health", weight: 55, reason: "NLM consumer-health guidance." };
+    return { role: "consumer_health", weight: 76, reason: "NLM consumer-health guidance." };
   }
   if (provider.includes("faers")) {
     return { role: "adverse_event_signal", weight: 36, reason: "Adverse-event signal; useful for safety surveillance, not causality." };
