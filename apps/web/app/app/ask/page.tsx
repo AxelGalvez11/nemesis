@@ -877,12 +877,7 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
 // "Limits / still uncertain" block (uncertainty, NOT a counter-argument — the real steelman-vs-counter
 // axis needs a later engine change, so it is not faked here); and the walled news lens.
 function VerifyClaimAnswer({ answer, onCite, question }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string }) {
-  const citeMap = useMemo(() => {
-    const m = new Map<string, CiteInfo>();
-    for (const c of answer.citations) m.set(normTag(c.chunk_tag), { label: abbr(c.source_type), title: c.title ?? c.source_type });
-    return m;
-  }, [answer.citations]);
-  // Resolve a claim's [n] tags back to full citations, for the per-claim Evidence meter + source pills.
+  // Resolve a claim's [n] tags back to full citations, for the per-claim strength + source pills.
   const byTag = useMemo(() => {
     const m = new Map<string, Citation>();
     for (const c of answer.citations) m.set(normTag(c.chunk_tag), c);
@@ -900,39 +895,39 @@ function VerifyClaimAnswer({ answer, onCite, question }: { answer: AskResponse; 
   const totalSources = answer.citations.length + (answer.reviewed_sources?.length ?? 0);
 
   return (
-    <div className="answer verify-claim fade">
+    <div className="answer verify-claim clean fade">
       {answer.plain_english_summary ? <p className="lead verdict">{renderInline(answer.plain_english_summary)}</p> : null}
 
-      {claims.length ? (
-        <div className="vc-section">
-          <div className="ai-block-label">{against.length ? "Evidence for this" : "What the evidence shows"}</div>
-          {claims.map((p, i) => (
-            <ClaimRow key={i} point={p} cites={citesFor(p.citation_ids)} citeMap={citeMap} onCite={cite} />
-          ))}
-        </div>
-      ) : null}
+      {/* The answer flows as plain-English paragraphs — no section headers, no grade chip. Each claim ends
+          in a SUBTLE cite: a small strength dot + clickable source pills that open the evidence panel. */}
+      {claims.map((p, i) => (
+        <ClaimRow key={i} point={p} cites={citesFor(p.citation_ids)} onCite={cite} />
+      ))}
 
       {against.length ? (
-        <div className="vc-section vc-against">
-          <div className="ai-block-label">Evidence that argues the other way</div>
+        <div className="vc-block">
+          <div className="muted-label">The other side</div>
           {against.map((p, i) => (
-            <ClaimRow key={i} point={p} cites={citesFor(p.citation_ids)} citeMap={citeMap} onCite={cite} />
+            <ClaimRow key={i} point={p} cites={citesFor(p.citation_ids)} onCite={cite} />
           ))}
         </div>
       ) : null}
 
       {redFlags.length ? (
-        <div className="vc-section vc-redflags">
-          <div className="ai-block-label">When to see a clinician</div>
-          <PointItems points={redFlags} citeMap={citeMap} onCite={cite} paraClass="ai-para" />
+        <div className="vc-block vc-redflags">
+          <div className="muted-label">When to see a clinician</div>
+          {redFlags.map((p, i) => (
+            <ClaimRow key={i} point={p} cites={citesFor(p.citation_ids)} onCite={cite} />
+          ))}
         </div>
       ) : null}
 
       {limits.length ? (
-        <div className="vc-section vc-limits">
-          <div className="ai-block-label">Limits / still uncertain</div>
-          <PointItems points={limits} citeMap={citeMap} onCite={cite} paraClass="ai-para" />
-        </div>
+        <p className="ai-uncertain">
+          <span className="muted-inline">Still unclear</span> — {limits.map((p, i) => (
+            <Fragment key={i}>{renderInline(p.text)}{i < limits.length - 1 ? " " : ""}</Fragment>
+          ))}
+        </p>
       ) : null}
 
       <NewsPanel news={answer.news} locked={answer.news_locked} />
@@ -952,34 +947,34 @@ function VerifyClaimAnswer({ answer, onCite, question }: { answer: AskResponse; 
   );
 }
 
-// One claim in the Verify-a-claim view: the claim text + its inline [n] chips, then a foot line with the
-// claim's rigor Evidence meter and its source-type pills.
-function ClaimRow({ point, cites, citeMap, onCite }: { point: AnswerPoint; cites: Citation[]; citeMap: Map<string, CiteInfo>; onCite: (tag: string, quote?: string) => void }) {
+// One claim, ChatGPT-clean: a flowing plain-English sentence, then a SUBTLE cite — a small strength dot
+// (the per-claim rigor, folded in rather than a bordered meter chip) + clickable source-type pills that
+// open the evidence panel. No section headers, no grade chip: the structure stays under the hood.
+function ClaimRow({ point, cites, onCite }: { point: AnswerPoint; cites: Citation[]; onCite: (tag: string, quote?: string) => void }) {
   const meter = claimMeter(cites);
+  const firstTag = point.citation_ids?.[0];
+  const labels = Array.from(new Set(cites.map((c) => sourcePillLabel(c.source_type))));
   return (
-    <div className="claim-row">
-      <p className="ai-para">
-        {renderInline(point.text)}
-        <CiteChips ids={point.citation_ids} support={point.support} citeMap={citeMap} onCite={onCite} />
-      </p>
-      {(meter || cites.length) ? (
-        <div className="claim-foot">
-          {meter ? (
-            <span className={`claim-meter ${meter.strength}`} title={meter.rationale}>
-              <span className="claim-meter-dot" aria-hidden="true" />
-              {claimStrengthLabel(meter.strength)}
-            </span>
-          ) : null}
-          <SourcePills cites={cites} />
-        </div>
+    <p className="ai-para clean-claim">
+      {renderInline(point.text)}
+      {labels.length ? (
+        <button
+          type="button"
+          className="claim-cite"
+          onClick={() => { if (firstTag) onCite(normTag(firstTag)); }}
+          title={meter?.rationale}
+          aria-label={`Sources: ${labels.join(", ")}${meter ? ` — ${claimStrengthLabel(meter.strength)}` : ""}`}
+        >
+          {meter ? <span className={`str-dot ${meter.strength}`} aria-hidden="true" /> : null}
+          {labels.map((l) => <span key={l} className="source-pill">{l}</span>)}
+        </button>
       ) : null}
-    </div>
+    </p>
   );
 }
 
 // Source-type → a short, friendly pill label. Source-type-aware (a "PubMed"/"Clinical trial"/"FDA label"
-// pill reads honestly, unlike forcing a publisher name onto a journal). Favicons/publisher names come in
-// a later pass; this is the register-accurate first step.
+// pill reads honestly, unlike forcing a publisher name onto a journal).
 function sourcePillLabel(t: string): string {
   const p = (t || "").toLowerCase();
   if (p.includes("openfda") || p.includes("dailymed") || p.includes("label")) return "FDA label";
@@ -990,15 +985,6 @@ function sourcePillLabel(t: string): string {
   if (p.includes("livertox")) return "LiverTox";
   if (p.includes("lactmed")) return "LactMed";
   return "Source";
-}
-function SourcePills({ cites }: { cites: Citation[] }) {
-  const labels = Array.from(new Set(cites.map((c) => sourcePillLabel(c.source_type))));
-  if (!labels.length) return null;
-  return (
-    <span className="source-pills">
-      {labels.map((l) => <span key={l} className="source-pill">{l}</span>)}
-    </span>
-  );
 }
 
 // L3 deliverable surfacing: turn an answer into a formatted, cited mini-paper (markdown) the user can
