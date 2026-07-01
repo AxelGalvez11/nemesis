@@ -172,3 +172,24 @@ Deno.test("collectSourceTexts: at most one entry per tag (first non-empty wins)"
   ]);
   assertEquals(out, [{ tag: "1", text: "first" }]);
 });
+
+// ---- claim-check: the gated what_contradicts section is citation-enforced like what_we_know ----
+
+Deno.test("enforceCitations: a normal answer (no what_contradicts) OMITS the section (byte-identical shape)", () => {
+  assertEquals(enforceCitations(base()).answer_sections.what_contradicts, undefined);
+});
+
+Deno.test("enforceCitations: what_contradicts keeps only points with a real cite (uncited/hallucinated dropped)", () => {
+  const r = enforceCitations({
+    ...base(),
+    what_contradicts: [
+      { text: "A randomized trial found no significant effect on the endpoint.", citations: ["2"] }, // valid -> kept
+      { text: "An uncited counterpoint.", citations: [] }, // uncited -> dropped
+      { text: "A counterpoint citing a hallucinated tag.", citations: ["9"] }, // invalid tag -> dropped
+    ],
+  });
+  assertEquals(r.answer_sections.what_contradicts?.length, 1);
+  assertEquals(r.answer_sections.what_contradicts?.[0].citation_ids, ["2"]);
+  // The kept counter point's source is surfaced in citations[].
+  assert(r.citations.some((c) => c.chunk_tag === "2"));
+});

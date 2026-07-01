@@ -23,7 +23,7 @@ import type {
 import { resolveWatchCadence, watchEntitlement } from "@pharmabro/shared";
 import { isMeshTerm, mergeSuggestions, type MeshTerm } from "./mesh";
 import { supabase } from "./supabase";
-import { isPreviewMode, supabaseAnonKey, supabaseUrl } from "./env";
+import { isPreviewMode, supabaseAnonKey, supabaseUrl, verifyClaimEnabled } from "./env";
 
 export interface LabelDoc {
   label_id: string;
@@ -202,6 +202,11 @@ export async function askQuestion(question: string, mode?: AskMode): Promise<Ask
           { text: "Talk with a licensed clinician before changing any medication plan.", citation_ids: [] },
         ],
         questions_to_ask: ["Which product label applies to me?", "What warning signs should prompt urgent care?"],
+        // Preview only: exercises the gated claim-check "other side" render (a real engine populates this
+        // via the double-gated generation path). One counter point citing the trial source.
+        what_contradicts: [
+          { text: "One randomized trial reported a **smaller effect** in a subgroup than the headline result suggested.", citation_ids: ["[3]"] },
+        ],
       },
       citations: [
         {
@@ -256,6 +261,11 @@ export async function askQuestion(question: string, mode?: AskMode): Promise<Ask
       safety_flags: [],
       refused_unsupported: false,
       oldest_source_date: "2026-06-05T12:00:00Z",
+      // Preview only: exercises the walled "In the news" lens render (never evidence, never cited).
+      news: [
+        { title: "Regulators review updated weight-management label language", url: "https://example.com/news-1", source: "Reuters", published_at: "2026-06-28" },
+        { title: "Supply outlook for GLP-1 medicines improves", url: "https://example.com/news-2", source: "AP", published_at: "2026-06-25" },
+      ],
     };
   }
 
@@ -270,7 +280,9 @@ export async function askQuestion(question: string, mode?: AskMode): Promise<Ask
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ question, use_health_context: false, ...(mode ? { mode } : {}) }),
+    // verify_claim is sent only when the web flag is on; the engine ALSO requires its server env gate
+    // before it emits contradicting evidence, so this is inert until both are enabled.
+    body: JSON.stringify({ question, use_health_context: false, ...(mode ? { mode } : {}), ...(verifyClaimEnabled ? { verify_claim: true } : {}) }),
   });
   const body = await res.json().catch(() => null);
   if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {

@@ -167,5 +167,8 @@ export function attachSupport(
     what_we_know: withSupport(sections.what_we_know, byTag),
     what_we_do_not_know: withSupport(sections.what_we_do_not_know, byTag),
     safety_notes: withSupport(sections.safety_notes, byTag),
+    // Gated claim-check section: attach provenance highlights too when present. The spread above already
+    // preserves it when absent, so a normal answer is byte-identical.
+    ...(sections.what_contradicts ? { what_contradicts: withSupport(sections.what_contradicts, byTag) } : {}),
   };
 }

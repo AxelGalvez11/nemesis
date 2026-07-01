@@ -132,3 +132,36 @@ Deno.test("register selection: plain overrides, thorough is technical, absent ==
   // No style => byte-for-byte the pre-modes behavior (base + intent guidance, no style block).
   assertEquals(def.includes("ANSWER STYLE"), false, "absent mode must not inject a style block");
 });
+
+// ---------------------------------------------------------------------------
+// Claim-check (v16) — the gated counter-evidence path. It must be ADDITIVE and OFF
+// by default: the schema + system prompt are byte-identical unless verifyClaim is set,
+// and even then the safety floor still comes last.
+// ---------------------------------------------------------------------------
+
+Deno.test("claim-check: verifyClaim adds the what_contradicts property; default omits it, never requires it", () => {
+  const props = (opts?: { verifyClaim?: boolean }) =>
+    (generateTool("evidence_for_claim", opts).parameters as { properties: Record<string, unknown> }).properties;
+  assertEquals("what_contradicts" in props(), false);
+  assertEquals("what_contradicts" in props({ verifyClaim: false }), false);
+  assert("what_contradicts" in props({ verifyClaim: true }), "verifyClaim must add what_contradicts");
+  // Never forced — the model may leave it empty.
+  const req = (generateTool("evidence_for_claim", { verifyClaim: true }).parameters as { required: string[] }).required;
+  assertEquals(req.includes("what_contradicts"), false);
+});
+
+Deno.test("claim-check: generateSystem appends the CLAIM-CHECK block ONLY when gated; default is byte-identical", () => {
+  const base = generateSystem("evidence_for_claim", "plain");
+  assertEquals(base.includes("CLAIM-CHECK"), false);
+  // Gate off / absent => identical composition.
+  assertEquals(generateSystem("evidence_for_claim", "plain", { verifyClaim: false }), base);
+  assertEquals(generateSystem("evidence_for_claim", "plain", undefined), base);
+  const vc = generateSystem("evidence_for_claim", "plain", { verifyClaim: true });
+  assert(vc.includes("CLAIM-CHECK"), "verifyClaim must append the claim-check block");
+  assert(vc.includes("what_contradicts"), "claim-check must name the what_contradicts section");
+  // Safety has the last word: the register-safety floor still follows the claim-check block.
+  assert(
+    vc.indexOf("NO BARE REASSURANCE") > vc.indexOf("CLAIM-CHECK"),
+    "the ANSWER-SAFETY FLOOR must come AFTER the claim-check block",
+  );
+});

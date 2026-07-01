@@ -205,3 +205,65 @@ Deno.test("resolveSafety: clean bottom_line but EVERY body point trips => 'fallb
   assertEquals(r.kind, "fallback");
   if (r.kind === "fallback") assertEquals(r.reason, "empty_body");
 });
+
+// ---- claim-check: the gated what_contradicts section MUST be scanned + salvaged like every other
+//      declarative section (a "steelman/counter" point can never bypass the safety teeth). ----
+
+Deno.test("sanitizeAnswer scrubs an offending what_contradicts point (gated claim-check section is covered)", () => {
+  const a = answer({
+    what_we_know: [{ text: "The cited review reports berberine lowers fasting glucose.", citations: ["1"] }],
+    what_contradicts: [
+      { text: "A randomized trial found no significant reduction in visceral fat versus placebo.", citations: ["2"] }, // clean
+      { text: "Berberine is completely safe for everyone.", citations: ["3"] }, // unsupported_safety_claim — must drop
+    ],
+  });
+  const r = sanitizeAnswer(a);
+  assertEquals(r.droppedCount, 1);
+  assertEquals((r.raw.what_contradicts ?? []).map((p) => p.citations[0]), ["2"]); // the safety-claim point is gone
+});
+
+Deno.test("resolveSafety SCANS what_contradicts — a forbidden counter point cannot bypass the filter (salvaged)", () => {
+  const a = answer({
+    what_we_know: [{ text: "Berberine modestly improved lipid markers in the cited review.", citations: ["1"] }],
+    what_contradicts: [
+      { text: "A randomized trial reported only a small effect on liver fat.", citations: ["2"] }, // clean (no negation)
+      { text: "You can take berberine with your other medications.", citations: ["3"] }, // unsafe_reassurance — trips
+    ],
+  });
+  const r = resolveSafety(a, { salvageable: true });
+  assertEquals(r.kind, "salvaged");
+  if (r.kind === "salvaged") {
+    // GUARANTEE: nothing forbidden survives — INCLUDING in the claim-check section.
+    const survivors = [
+      r.raw.bottom_line.text,
+      ...r.raw.what_we_know.map((p) => p.text),
+      ...r.raw.safety_notes.map((p) => p.text),
+      ...r.raw.what_we_do_not_know.map((p) => p.text),
+      ...(r.raw.what_contradicts ?? []).map((p) => p.text),
+    ].join("  ");
+    assertEquals(detectViolations(survivors).length, 0);
+    assertEquals((r.raw.what_contradicts ?? []).map((p) => p.citations[0]), ["2"]); // reassurance dropped, evidence kept
+  }
+});
+
+Deno.test("resolveSafety: a clean what_contradicts survives (the honest other side is delivered)", () => {
+  const a = answer({
+    what_we_know: [{ text: "The review reports berberine lowers fasting glucose.", citations: ["1"] }],
+    what_contradicts: [
+      { text: "A later randomized trial found no significant effect on liver fat.", citations: ["2"] },
+    ],
+  });
+  assertEquals(resolveSafety(a, { salvageable: true }).kind, "clean");
+});
+
+Deno.test("resolveSafety: a forbidden what_contradicts line on a SENSITIVE class refuses the whole answer (no salvage)", () => {
+  const a = answer({
+    what_we_know: [{ text: "The peptide showed tendon-repair signals in animal studies.", citations: ["1"] }],
+    what_contradicts: [
+      { text: "Inject 250 mcg of the peptide to offset the effect.", citations: ["2"] }, // dosing_instruction — trips
+    ],
+  });
+  const r = resolveSafety(a, { salvageable: false });
+  assertEquals(r.kind, "fallback");
+  if (r.kind === "fallback") assertEquals(r.reason, "not_salvageable");
+});

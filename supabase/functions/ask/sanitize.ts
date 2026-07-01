@@ -17,13 +17,16 @@ import type { Intent, SafetyFlag } from "../../../packages/shared/src/answer.ts"
 
 type RawPoint = RawAnswer["what_we_know"][number];
 
-/** The model's declarative text, joined exactly as the post-filter scans it. */
+/** The model's declarative text, joined exactly as the post-filter scans it. what_contradicts (gated
+ *  claim-check) is included so a contradicting-evidence point CANNOT bypass detectViolations; it defaults
+ *  to [] so a normal answer's scanned text is byte-identical. */
 function assembleDeclarative(raw: RawAnswer): string {
   return [
     raw.bottom_line.text,
     ...raw.what_we_know.map((p) => p.text),
     ...raw.safety_notes.map((p) => p.text),
     ...raw.what_we_do_not_know.map((p) => p.text),
+    ...(raw.what_contradicts ?? []).map((p) => p.text),
   ].join("  ");
 }
 
@@ -55,6 +58,9 @@ export function sanitizeAnswer(raw: RawAnswer): SanitizeResult {
       what_we_know: keepClean(raw.what_we_know),
       safety_notes: keepClean(raw.safety_notes),
       what_we_do_not_know: keepClean(raw.what_we_do_not_know),
+      // Gated claim-check section — salvaged identically: an offending contradicting-evidence point is
+      // dropped, the clean ones kept. Undefined (a normal answer) stays effectively empty.
+      what_contradicts: keepClean(raw.what_contradicts ?? []),
     },
     droppedCount,
     bottomLineViolation: violates(raw.bottom_line.text),
@@ -138,7 +144,8 @@ export function resolveSafety(raw: RawAnswer, opts: { salvageable: boolean }): S
   // If scrubbing left only a bare headline, a one-line medical answer reads as an
   // unsupported assertion — refuse with sources instead of delivering something thin.
   const survivingBody =
-    san.raw.what_we_know.length + san.raw.safety_notes.length + san.raw.what_we_do_not_know.length;
+    san.raw.what_we_know.length + san.raw.safety_notes.length + san.raw.what_we_do_not_know.length +
+    (san.raw.what_contradicts?.length ?? 0);
   if (survivingBody === 0) return { kind: "fallback", reason: "empty_body", violations };
 
   return { kind: "salvaged", raw: san.raw, droppedCount: san.droppedCount, violations };

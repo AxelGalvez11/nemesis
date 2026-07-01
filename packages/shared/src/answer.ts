@@ -92,6 +92,10 @@ export interface AskRequest {
   conversation_id?: string;
   /** Speed/depth dial; see AskMode. Optional — absent preserves current behavior. */
   mode?: AskMode;
+  /** Verify-a-claim mode (gated). The web sends true ONLY when the verify-claim flag is on; the engine
+   *  additionally emits contradicting evidence (answer_sections.what_contradicts) only when this is true
+   *  AND the server's claim-check env is enabled. Absent/false ⇒ today's answer, byte-identical. */
+  verify_claim?: boolean;
 }
 
 /** One narrative bullet that carries the source chunk_ids backing it. */
@@ -128,6 +132,12 @@ export interface AnswerSections {
   /** doc-20 "Safety notes" — kept in the superset; §8's 3-array sketch dropped it. */
   safety_notes: AnswerPoint[];
   questions_to_ask: string[];
+  /** Verify-a-claim ONLY (gated): evidence from the cited sources that CONTRADICTS, fails to support,
+   *  or complicates the main claim — the honest "other side" of a claim-check. Distinct from
+   *  what_we_do_not_know (gaps/uncertainty). Absent on normal answers and older saved chats. Each point
+   *  is citation-enforced AND safety-scanned exactly like the other declarative sections; it is populated
+   *  only when the double-gated claim-check generation ran (never fabricated opposition). */
+  what_contradicts?: AnswerPoint[];
 }
 
 /** A resolved citation (§8 citations[] entry), joined back to core_sources. */

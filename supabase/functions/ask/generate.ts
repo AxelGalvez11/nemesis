@@ -19,6 +19,11 @@ export interface RawAnswer {
   safety_notes: RawPoint[];
   questions_to_ask: string[];
   evidence_grade: EvidenceGrade;
+  /** Verify-a-claim ONLY (gated): contradicting/complicating evidence. Optional in the TYPE (so existing
+   *  RawAnswer fixtures omit it), but generate() ALWAYS emits it (default []) so the safety scan + citation
+   *  enforcer cover it uniformly; only POPULATED when the gated claim-check schema asked for it. A default
+   *  answer leaves this [], so the scanned/assembled text is byte-identical. Consumers read `?? []`. */
+  what_contradicts?: RawPoint[];
 }
 
 export interface GenerateResult {
@@ -34,6 +39,10 @@ export interface GenerateOpts {
   apiKey: string;
   /** Answer register (Fast=plain / Thorough=technical). Undefined keeps the current default register. */
   style?: AnswerStyle;
+  /** Verify-a-claim mode (double-gated by the caller: request flag AND server env). When true, the
+   *  compose_answer schema/prompt additionally ask for contradicting evidence (what_contradicts).
+   *  Undefined/false ⇒ the schema + system prompt are byte-identical to today. */
+  verifyClaim?: boolean;
 }
 
 export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
@@ -66,8 +75,8 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
       // Deterministic generation: more reliable structured output + reproducible
       // answers for a medical app (and lower malformed-JSON rate from DeepSeek).
       temperature: 0,
-      system: generateSystem(opts.intent, opts.style),
-      tools: [generateTool(opts.intent)],
+      system: generateSystem(opts.intent, opts.style, { verifyClaim: opts.verifyClaim }),
+      tools: [generateTool(opts.intent, { verifyClaim: opts.verifyClaim })],
       messages: [{ role: "user", content: userContent }],
     },
     "compose_answer",
@@ -85,6 +94,9 @@ export async function generate(opts: GenerateOpts): Promise<GenerateResult> {
       safety_notes: normPoints(input.safety_notes),
       questions_to_ask: normStrings(input.questions_to_ask),
       evidence_grade: normGrade(input.evidence_grade),
+      // Always normalized (default [] when the model didn't emit it) so downstream scan/enforce cover it
+      // uniformly; only populated when the gated claim-check schema asked for contradicting evidence.
+      what_contradicts: normPoints(input.what_contradicts),
     },
     model,
   };

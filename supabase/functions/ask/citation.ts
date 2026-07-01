@@ -98,6 +98,9 @@ export interface EnforceInput {
   what_we_do_not_know: RawPoint[];
   safety_notes: RawPoint[];
   questions_to_ask: string[];
+  /** Verify-a-claim ONLY (gated): contradicting/complicating evidence. Load-bearing (asserts findings),
+   *  so citation-enforced like what_we_know. Optional/absent on normal answers. */
+  what_contradicts?: RawPoint[];
   chunks: RetrievedChunk[];
 }
 
@@ -141,6 +144,9 @@ export function enforceCitations(input: EnforceInput): EnforceResult {
 
   const what_we_know = keepCited(input.what_we_know);
   const safety_notes = keepCited(input.safety_notes);
+  // Gated claim-check section — load-bearing, so each kept point needs a real cite, exactly like
+  // what_we_know. Empty/absent on a normal answer.
+  const what_contradicts = keepCited(input.what_contradicts ?? []);
 
   // The bottom line is a SUMMARY of the body. Models routinely cite the detail
   // points and leave the summary bare, so requiring the bottom line to carry its
@@ -165,14 +171,17 @@ export function enforceCitations(input: EnforceInput): EnforceResult {
     what_we_do_not_know,
     safety_notes,
     questions_to_ask: input.questions_to_ask,
+    // Only present when the gated claim-check produced contradicting evidence — a normal answer omits the key.
+    ...(what_contradicts.length ? { what_contradicts } : {}),
   };
 
   // Build citations[] from the union of all surviving tags (bottom line + kept
-  // load-bearing points), in numeric tag order, deduped.
+  // load-bearing points, including any contradicting-evidence points), in numeric tag order, deduped.
   const used = new Set<string>([
     ...bottomTags,
     ...what_we_know.flatMap((p) => p.citation_ids),
     ...safety_notes.flatMap((p) => p.citation_ids),
+    ...what_contradicts.flatMap((p) => p.citation_ids),
   ]);
   const citations: Citation[] = [...used]
     .sort((a, b) => Number(a) - Number(b))

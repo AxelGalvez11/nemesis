@@ -855,6 +855,7 @@ function VerifyClaimAnswer({ answer, onCite }: { answer: AskResponse; onCite: (a
   const s = answer.answer_sections;
   const cite = (tag: string, quote?: string) => onCite(answer, tag, quote);
   const claims = s.what_we_know ?? [];
+  const against = s.what_contradicts ?? []; // the honest other side (gated claim-check); empty on a normal answer
   const limits = s.what_we_do_not_know ?? [];
 
   return (
@@ -863,8 +864,17 @@ function VerifyClaimAnswer({ answer, onCite }: { answer: AskResponse; onCite: (a
 
       {claims.length ? (
         <div className="vc-section">
-          <div className="ai-block-label">Evidence for this</div>
+          <div className="ai-block-label">{against.length ? "Evidence for this" : "What the evidence shows"}</div>
           {claims.map((p, i) => (
+            <ClaimRow key={i} point={p} cites={citesFor(p.citation_ids)} citeMap={citeMap} onCite={cite} />
+          ))}
+        </div>
+      ) : null}
+
+      {against.length ? (
+        <div className="vc-section vc-against">
+          <div className="ai-block-label">Evidence that argues the other way</div>
+          {against.map((p, i) => (
             <ClaimRow key={i} point={p} cites={citesFor(p.citation_ids)} citeMap={citeMap} onCite={cite} />
           ))}
         </div>

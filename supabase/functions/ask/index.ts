@@ -96,6 +96,11 @@ const THOROUGH_MATCH_COUNT = 18;
 // flag so deploying this code is non-breaking: with LIVE_SOURCES unset the pipeline is byte-for-byte
 // the dense-only behavior the gate/guardrail suite locks in. The owner flips LIVE_SOURCES=on to enable.
 const LIVE_SOURCES_ON = Deno.env.get("LIVE_SOURCES") === "on";
+// Verify-a-claim counter-evidence generation — DOUBLE-GATED and DEFAULT OFF. The web sends verify_claim
+// only when its flag is on; the engine emits contradicting evidence (what_contradicts) ONLY when that
+// request flag is set AND this server env is "on". Off ⇒ the generation schema/prompt are byte-identical
+// to today. Enable ONLY after the live 48-check passes on verify_claim requests; rollback = clear this env.
+const VERIFY_CLAIM_COUNTER = Deno.env.get("VERIFY_CLAIM_COUNTER") === "on";
 const LIVE_PER_SOURCE_MAX = 8; // how many candidates to pull per live source before the merge/rerank
 // Thorough mode also casts a WIDER candidate net per live source (more abstracts/trials feed the rerank),
 // which — paired with the bigger THOROUGH_MATCH_COUNT slice above — lets the deeper search surface AND show
@@ -124,6 +129,8 @@ serve(async (req) => {
     // (a benchmark/judge aid — see SourceText). Default false → normal answers are byte-for-byte
     // unchanged. The sources are the public databases the answer already cites.
     include_source_text?: boolean;
+    /** Verify-a-claim mode; counter-evidence generation additionally requires the server env gate. */
+    verify_claim?: boolean;
   };
   try {
     body = await req.json();
@@ -140,9 +147,11 @@ serve(async (req) => {
   // Validate the speed/depth dial at the boundary: only the two known modes pass through; an unknown
   // or absent value becomes undefined → current behavior (mobile / older clients / saved-chat replays).
   const mode: AskMode | undefined = body.mode === "fast" || body.mode === "thorough" ? body.mode : undefined;
+  // Double-gate: the request opts in AND the server env must be enabled. Off ⇒ today's answer.
+  const verifyClaim = !!body.verify_claim && VERIFY_CLAIM_COUNTER;
 
   try {
-    const resp = await runAsk(question, !!body.use_health_context, userId, !!body.include_source_text, mode);
+    const resp = await runAsk(question, !!body.use_health_context, userId, !!body.include_source_text, mode, verifyClaim);
     return json(resp, 200, req);
   } catch (e) {
     if (e instanceof QuotaExceeded) return json(e.payload, 429, req);
@@ -159,6 +168,7 @@ async function runAsk(
   userId: string,
   includeSourceText = false,
   mode?: AskMode,
+  verifyClaim = false,
 ): Promise<AskResponse> {
   const answerId = crypto.randomUUID();
   const apiKey = llmApiKey();
@@ -355,6 +365,7 @@ async function runAsk(
       healthContext,
       apiKey,
       style,
+      verifyClaim,
     });
   } catch (e) {
     console.error("ask generate failed after retries:", (e as Error).message);

@@ -50,7 +50,9 @@ function hasSupportQuote(point: AnswerPoint, tag: string): boolean {
 }
 
 function citedPointsForTag(sections: AnswerSections, tag: string): AnswerPoint[] {
-  const points = [...sections.what_we_know, ...sections.safety_notes];
+  // Include the gated claim-check section so contradicting-evidence sources get support ratings too
+  // (absent on a normal answer → unchanged).
+  const points = [...sections.what_we_know, ...sections.safety_notes, ...(sections.what_contradicts ?? [])];
   return points.filter((p) => p.citation_ids.includes(tag));
 }
 
