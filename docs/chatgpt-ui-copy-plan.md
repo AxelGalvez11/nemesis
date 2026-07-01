@@ -7,6 +7,40 @@ is in service of the mission below.
 
 ---
 
+## Build status — 2026-07-01 (branch `feat/verify-a-claim`)
+
+**Built, tested green** (511 ask + 204 shared Deno tests, web typecheck, eval metrics), previewed from the
+real component:
+- **L0** — query-cleaner fix: colloquial "what causes / why do I have / what is X" now reaches the
+  research sources as the topic keywords. ✅ `46cf427`.
+- **L1** — per-claim Evidence meter, source-type pills, expandable "what I searched" thinking trail,
+  source favicons, "Sources · N" chip, thumbs feedback. ✅ `c307d9c` + `bdc5368`.
+- **L2** — the both-sides claim-check (for + counter + limits + news lenses); gated `what_contradicts`
+  counter-evidence path (safety-scanned + citation-enforced + double-gated). ✅ `8ca890e`.
+- **L3** — "Copy as cited report" (formatted, cited markdown mini-paper) from any answer. ✅ `bdc5368`.
+
+**Deferred / NOT built** (honest ledger):
+- **L0** widening per-provider caps + down-ranking trials for consumer intent — NOT done (shipped only
+  the query-fix; kept the change surface small).
+- **L1** the `+` tools launcher — NOT built (still a disabled "Attach — coming soon").
+- **L3** PDF / Word / PPT surfacing from an *ask* answer — NOT built (markdown report only; the separate
+  research-report PDF/PPT pipeline already exists).
+- **L2** anecdotal lens ("what people report") — NOT built; the *source* is a product/safety DECISION for
+  the owner (Reddit/forums vs consumer-guidance-only vs skip). The walled news lens covers "what's being
+  said" for now.
+
+**Verification ceiling (read before deploy):** offline I can only verify Deno tests + typecheck + the
+CANNED-fixture render. The engine's REAL output is UNVERIFIED until deploy:
+- **L0 is an UNCONDITIONAL retrieval change on deploy (not gated)** — it changes the research query for
+  every colloquial question in prod. Safe (touches only the free-text research string, never the drug
+  `term`/fabrication guard) but its retrieval EFFECT ("what causes white flakes" actually pulling
+  MedlinePlus) is unverified — **validate on the `retrieval-eval` / guardrail CI at deploy.**
+- **L2 counter generation is DOUBLE-GATED OFF** (`NEXT_PUBLIC_VERIFY_CLAIM` web + `VERIFY_CLAIM_COUNTER`
+  server env). Its real output quality is unverified — **the owner MUST pass the live 48-check with
+  verify_claim requests BEFORE enabling `VERIFY_CLAIM_COUNTER`;** rollback = clear the env.
+
+---
+
 ## What the app IS (north star, owner's words)
 
 An **evidence engine**, not a clinical-advice bot. Every question — even personal-framed ones like
