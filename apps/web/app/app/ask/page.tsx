@@ -491,6 +491,9 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   return (
     <div className="composer">
       <div className="box">
+        <button className="tool" type="button" data-tip="Attach — coming soon" aria-label="Attach" disabled>
+          <Icon name="plus" size={18} />
+        </button>
         <div className="ta-wrap">
           <textarea
             ref={taRef}
@@ -498,50 +501,45 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             value={question}
             maxLength={500}
             aria-label="Ask a question about a drug, dose, interaction, or monograph"
-            placeholder={welcome ? "" : "Ask a follow-up…"}
+            placeholder={welcome ? "" : busy ? "Follow up" : "Ask anything"}
             onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
           />
           {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{askPlaceholderFor(phIdx)}</span> : null}
         </div>
-        <div className="tools">
-          <button className="tool" type="button" data-tip="Attach — coming soon" aria-label="Attach" disabled>
-            <Icon name="plus" size={18} />
+        <div className="mode-wrap" style={{ position: "relative" }}>
+          <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
+            <b>{composerModeLabel(activeMode)}</b>
+            <Icon name="chevron-down" size={14} />
           </button>
-          <div className="mode-wrap" style={{ position: "relative" }}>
-            <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
-              <b>{composerModeLabel(activeMode)}</b>
-            </button>
-            {modeOpen ? (
-              <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
-                {/* lab_draft (beta) deploy is owner-gated separately and its engine (research fn) isn't
-                    live yet — keep it out of the selectable modes for the monitoring release. Re-enable
-                    by removing this filter once the lab_draft engine is deployed. */}
-                {MODES.filter((m) => m.id !== "lab_draft").map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    role="menuitem"
-                    disabled={!m.live}
-                    onClick={() => { if (m.live) { setMode(m.id); setModeOpen(false); } }}
-                    title={m.hint}
-                  >
-                    <Icon name={m.live ? (m.id === mode ? "check" : "sparkle") : "lock"} size={14} />
-                    <span style={{ flex: 1 }}>{m.label}</span>
-                    {!m.live ? <small style={{ color: "var(--text-3)" }}>Soon</small> : m.pro ? <small style={{ color: "var(--text-3)" }}>Pro</small> : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className="spacer" />
-          <button className="tool" type="button" data-tip="Voice — coming soon" aria-label="Voice input" disabled>
-            <Icon name="mic" size={18} />
-          </button>
-          <button className="send" data-tip="Send" aria-label="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
-            <Icon name="send" size={18} />
-          </button>
+          {modeOpen ? (
+            <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
+              {/* lab_draft (beta) deploy is owner-gated separately and its engine (research fn) isn't
+                  live yet — keep it out of the selectable modes for the monitoring release. Re-enable
+                  by removing this filter once the lab_draft engine is deployed. */}
+              {MODES.filter((m) => m.id !== "lab_draft").map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="menuitem"
+                  disabled={!m.live}
+                  onClick={() => { if (m.live) { setMode(m.id); setModeOpen(false); } }}
+                  title={m.hint}
+                >
+                  <Icon name={m.live ? (m.id === mode ? "check" : "sparkle") : "lock"} size={14} />
+                  <span style={{ flex: 1 }}>{m.label}</span>
+                  {!m.live ? <small style={{ color: "var(--text-3)" }}>Soon</small> : m.pro ? <small style={{ color: "var(--text-3)" }}>Pro</small> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
+        <button className="tool" type="button" data-tip="Voice — coming soon" aria-label="Voice input" disabled>
+          <Icon name="mic" size={18} />
+        </button>
+        <button className="send" data-tip="Send" aria-label="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
+          <Icon name="send" size={18} />
+        </button>
       </div>
       {error ? <div className="err">{error}</div> : null}
       <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
