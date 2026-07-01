@@ -131,7 +131,9 @@ const LIVE_SOURCES: LiveSourceDef[] = [
     const scoped = openFdaSearch(q, mentions);
     return scoped === null ? Promise.resolve([]) : fetchOpenFdaLabels({ query: scoped, limit: n });
   } },
-  { origin: "faers", fetch: (q, n) => fetchFaersReactions({ query: q, retmax: n }) },
+  { origin: "faers", fetch: (q, n, mentions) =>
+    mentions.length === 0 ? Promise.resolve([]) : fetchFaersReactions({ query: q, retmax: n })
+  },
   {
     origin: "fda_enforcement",
     fetch: (q, n, _m, rq) =>

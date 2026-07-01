@@ -17,7 +17,7 @@ export const INTENTS: Intent[] = [
   "drug_overview", "drug_interaction", "side_effects", "label_summary",
   "comparison", "mechanism", "trial_lookup", "evidence_for_claim",
   "supplement_peptide", "dosing", "emergency_overdose", "pregnancy_pediatrics",
-  "health_context", "drug_sourcing", "investment",
+  "health_context", "general_health", "drug_sourcing", "investment",
 ];
 export const SAFETY_FLAGS: SafetyFlag[] = [
   "emergency_possible", "overdose_possible", "self_harm", "pregnancy",
@@ -38,7 +38,11 @@ export const CLASSIFY_SYSTEM =
   "emergency_possible / overdose_possible / self_harm for any hint of a current emergency, " +
   "too-much-taken, or self-harm; drug_sourcing for any request to find/buy/obtain; and the " +
   "drug-class flags (anticoagulant, insulin, psychiatric_medication, research_use_peptide, " +
-  "etc.) whenever such a substance is involved. You only classify — you never answer.";
+  "etc.) whenever such a substance is involved. Use intent general_health for common symptom " +
+  "or consumer-health questions when no medication, supplement, trial, or drug label is being " +
+  "asked about. Examples: dandruff, white flakes in hair, dry scalp, acne causes, heartburn, " +
+  "headache, rash. Do not force these into side_effects unless the user names a medication or " +
+  "asks whether a drug caused it. You only classify — you never answer.";
 
 export const CLASSIFY_TOOL: Tool = {
   name: "classify",
