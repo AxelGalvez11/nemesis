@@ -280,9 +280,15 @@
 .ai-body code { font-family: var(--mono); font-size: 0.92em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .caret { display: inline-block; width: 7px; height: 15px; background: var(--acid); vertical-align: -2px; margin-left: 2px; border-radius: 1px; animation: blink 1.05s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
-/* Inline citation chip. It is a <button>, so reset the global acid button styling (legacy.css) back
-   to an inline text chip: no background, inherited line-height, baseline-aligned. */
-.cite { position: relative; display: inline; background: none; border: none; padding: 0; margin: 0 0.5px; cursor: pointer; font: inherit; line-height: inherit; }
+/* Inline citation pill (ChatGPT-measured): a rounded surface chip at the end of the claim sentence —
+   favicon + short source name + "+N" for the point's folded extra sources. It is a <button>, so reset
+   the global acid button styling (legacy.css) back to an inline chip. */
+.cite { position: relative; display: inline-block; background: none; border: none; padding: 0; margin: 0 2px; cursor: pointer; font: inherit; line-height: inherit; vertical-align: 1px; }
+.cite-pill { display: inline-flex; align-items: center; gap: 5px; background: var(--surface-2); border-radius: 999px; padding: 2px 9px 2px 6px; font-size: 12px; font-weight: 500; line-height: 1.5; color: var(--text-2); white-space: nowrap; transition: background 0.15s, color 0.15s; }
+.cite:hover .cite-pill, .cite:focus-visible .cite-pill { background: var(--line-2); color: var(--text); }
+.cite-favicon { border-radius: 50%; flex: none; display: block; }
+.cite-extra { color: var(--text-3); font-size: 11px; }
+/* legacy numbered form (kept for any pre-pill render paths) */
 .cite .cite-n { font-family: var(--mono); font-size: 0.72em; font-weight: 700; color: var(--acid-dim); vertical-align: super; transition: color 0.15s; }
 .cite:hover .cite-n, .cite:focus-visible .cite-n { color: var(--acid); }
 /* Hover-preview card: the source label + title (footnote-style chip → ChatGPT/Claude feel). */
@@ -348,7 +354,23 @@
   color: var(--text-3);
   font-size: 18px;
   line-height: 1;
+  display: inline-block;
+  transition: transform 0.15s;
 }
+.engine-preview-chevron.open { transform: rotate(90deg); }
+/* completed-thought disclosure row ("Thought for 12s ›") — a bare text button, ChatGPT-style */
+.thought-toggle { background: none; border: none; padding: 0; cursor: pointer; font: inherit; text-align: left; }
+.thought-toggle:hover .engine-preview-title { color: var(--text); }
+/* expanded activity trail: the engine's pipeline steps down a quiet timeline rail, with the
+   searched-domain chips under the search step */
+.activity-trail { margin: 10px 0 4px 2px; padding-left: 14px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 13px; animation: fade 0.25s both; }
+.activity-step-title { font-size: 13.5px; font-weight: 600; color: var(--text); line-height: 1.4; }
+.activity-step-detail { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 1px; }
+/* searched-domain chips (favicon + hostname + "N more") — the ChatGPT Activity-panel chip pattern */
+.domain-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.domain-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border-radius: 999px; padding: 3px 10px 3px 6px; font-size: 12px; color: var(--text-2); line-height: 1.4; }
+.domain-chip img { border-radius: 50%; display: block; }
+.domain-chip-more { padding: 3px 10px; color: var(--text-3); }
 .engine-preview summary::-webkit-details-marker { display: none; }
 .engine-preview-head {
   display: flex;
@@ -529,8 +551,15 @@
 .chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .chip-action { font-size: 12.5px; color: var(--text-2); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 13px; cursor: pointer; transition: 0.15s; font-family: var(--font); }
 .chip-action:hover { border-color: var(--line-2); color: var(--text); background: var(--surface-2); }
-.msg-actions { display: flex; gap: 4px; margin-top: 8px; }
+.msg-actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
 .msg-actions .icon-btn { width: 30px; height: 30px; }
+/* "Sources" pill with stacked overlapping favicons (the ChatGPT answer-footer button) — opens the
+   evidence panel showing cited + also-reviewed sources. */
+.sources-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px 4px 6px; font-size: 12.5px; font-weight: 500; color: var(--text-2); cursor: pointer; font-family: var(--font); transition: background 0.15s, color 0.15s; }
+.sources-btn:hover { background: var(--surface-2); color: var(--text); }
+.sources-favs { display: inline-flex; align-items: center; }
+.sources-favs img { border-radius: 50%; border: 1.5px solid var(--bg); margin-left: -6px; display: block; }
+.sources-favs img:first-child { margin-left: 0; }
 
 /* ── composer ── */
 .composer-wrap { padding: 10px 0 22px; background: linear-gradient(0deg, var(--bg) 60%, transparent); flex: none; }
@@ -633,6 +662,9 @@
 .src.reviewed:hover { opacity: 1; }
 .src .badge-src { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: var(--text-3); text-transform: uppercase; }
 .src .badge-src .sq { width: 7px; height: 7px; border-radius: 2px; background: var(--text-3); }
+.src .badge-src .src-favicon { border-radius: 50%; display: block; }
+/* publisher hostname next to the provider label (ChatGPT source-card pattern) — lowercase, quiet */
+.src .badge-src .src-host { text-transform: none; letter-spacing: 0; color: var(--text-3); font-family: var(--font); font-size: 11px; }
 .src.openfda .sq, .src.dailymed .sq { background: #7fb2ff; }
 .src.pubmed .sq, .src.pubmed_oa .sq { background: #c7a6ff; }
 .src.clinicaltrials .sq, .src.trial .sq { background: #ff9f7f; }
