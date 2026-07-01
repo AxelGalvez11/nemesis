@@ -62,6 +62,17 @@ Deno.test("balanceCitedSlice: does not treat FAERS as a crowding label", () => {
   assertEquals(out.filter((c) => c.provider === "faers").length, 6);
 });
 
+Deno.test("balanceCitedSlice: labelCap 0 excludes labels when enough non-label evidence exists", () => {
+  const ordered = [
+    chunk("openfda", "L0"),
+    chunk("pubmed_oa", "P0"),
+    chunk("medlineplus", "M0"),
+    chunk("europepmc", "E0"),
+  ];
+  const out = balanceCitedSlice(ordered, 3, 0);
+  assertEquals(out.map((c) => c.provider), ["pubmed_oa", "medlineplus", "europepmc"]);
+});
+
 // The exported default is the value index.ts wires in; guard against an accidental edit.
 Deno.test("LABEL_SLICE_CAP default is 4", () => {
   assertEquals(LABEL_SLICE_CAP, 4);

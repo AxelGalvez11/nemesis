@@ -68,6 +68,14 @@ const KNOWN_ENTITIES: readonly KnownEntity[] = [
     biomedical_terms: ["energy drink", "caffeine", "toxicity", "adverse effects", "arrhythmia"],
     use_drug_label_lane: false,
   },
+  {
+    normalized: "dandruff",
+    kind: "condition",
+    aliases: ["white flakes", "flakes in my hair", "dry flakes", "flaky scalp", "white flakes in my hair"],
+    display_alias: "white flakes in my hair",
+    biomedical_terms: ["dandruff", "seborrheic dermatitis", "flaky scalp", "scalp scaling", "dry scalp"],
+    use_drug_label_lane: false,
+  },
 ];
 
 function norm(s: string): string {

@@ -13,6 +13,9 @@ import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_S
 import { pubchemMoleculeUrl } from "@/lib/molecule";
 import { phCapture } from "@/lib/posthog";
 import { POINT_OF_USE_DISCLAIMER } from "@/lib/legal";
+import { buildThinkingPreview } from "@/lib/thinking-preview";
+import { composerModeLabel } from "@/lib/ask-mode-label";
+import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
@@ -23,9 +26,6 @@ import { WatchButton } from "@/components/WatchButton";
 function isQuotaError(e: unknown): e is AskQuotaError {
   return e instanceof Error && "quota" in e;
 }
-
-// Honest pipeline stages (classify → retrieve → rerank → generate), animated while the request runs.
-const STAGES = ["Reading the question", "Searching the evidence library", "Ranking the strongest sources", "Composing a cited answer"];
 
 // The speed/depth dial. fast/thorough are single cited answers (the /ask engine, free); deep/meta are the
 // multi-step research reports (the research endpoint, Pro). Fast is the default: plain-English + concise.
@@ -40,14 +40,8 @@ const MODES = [
   { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
 ] as const;
 
-// Example questions that cycle through the composer placeholder (the "chat bar") as live prompts,
-// instead of static suggestion chips under the welcome.
-const PLACEHOLDER_EXAMPLES = [
-  "What are the major warnings for semaglutide?",
-  "Metformin dosing when eGFR is 40?",
-  "Compare semaglutide and tirzepatide safety evidence",
-  "Is lisinopril safe with spironolactone?",
-];
+const MIN_THINKING_PREVIEW_MS = 650;
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const PROVIDER_ABBR: Record<string, string> = { openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", clinicaltrials: "NCT", faers: "FAERS", openalex: "OA" };
 function abbr(t: string): string {
@@ -80,9 +74,8 @@ function AskPage() {
   // so a second prompt no longer wipes the first.
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
-  const [bloom, setBloom] = useState(false);
   const [stage, setStage] = useState(0);
-  const [showThinking, setShowThinking] = useState(false); // gate: only show the thinking animation once a request has run long enough to be a real wait (instant small-talk replies never trigger it)
+  const [showThinking, setShowThinking] = useState(false);
   const [revealIdx, setRevealIdx] = useState<number | null>(null); // the turn whose answer should type itself in (only the just-arrived one — never reopened/saved turns)
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>(simplifiedModesEnabled ? "auto" : "fast");
   const [modeOpen, setModeOpen] = useState(false);
@@ -264,24 +257,10 @@ function AskPage() {
     return () => timers.forEach(clearTimeout);
   }, [busy]);
 
-  // Gate the thinking animation behind a short delay so instant replies (small-talk short-circuit,
-  // cache hits) never flash the staged "Searching the evidence library…" sequence. 550ms sits
-  // comfortably above small-talk round-trip latency (~200–400ms), so only real evidence lookups
-  // — the ones that genuinely take a beat — ever surface the animation. ChatGPT does the same:
-  // no thinking indicator unless the reply is actually slow enough to warrant one.
   useEffect(() => {
     if (!busy) { setShowThinking(false); return; }
-    const t = setTimeout(() => setShowThinking(true), 550);
-    return () => clearTimeout(t);
+    setShowThinking(true);
   }, [busy]);
-
-  // One-shot "bloom" flare on the orb the moment the newest answer lands.
-  useEffect(() => {
-    if (!latest?.a) return;
-    setBloom(true);
-    const t = setTimeout(() => setBloom(false), 700);
-    return () => clearTimeout(t);
-  }, [latest?.a]);
 
   // Keep the newest turn in view as the conversation grows.
   useEffect(() => {
@@ -334,7 +313,7 @@ function AskPage() {
       return;
     }
     setBusy(true);
-    setBloom(false); // clear any prior flare so the next answer re-triggers it (and it can't stick across an "ask again")
+    setShowThinking(true);
     setActiveTag(null);
     setActiveQuote(null);
     setActiveAnswer(null); // unpin: the panel follows the new answer until a citation is clicked
@@ -344,11 +323,13 @@ function AskPage() {
     if (taRef.current) taRef.current.style.height = "auto";
     const setLast = (patch: Partial<Turn>) =>
       setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
+    const minThinkingPreview = wait(MIN_THINKING_PREVIEW_MS);
     try {
       // Only fast/thorough/auto reach here — report modes returned above via the research branch.
       // Auto picks the depth from the question shape (reuses the same fast/thorough engine paths).
       const askMode: AskMode = mode === "thorough" ? "thorough" : mode === "auto" ? autoDepth(text) : "fast";
       const res = await askQuestion(text, askMode);
+      await minThinkingPreview;
       setLast({ a: res });
       setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
@@ -358,6 +339,7 @@ function AskPage() {
       const msg = isQuotaError(err)
         ? `Daily Ask limit reached (${err.quota.used}/${err.quota.limit}) on ${err.quota.plan}.`
         : err instanceof Error ? err.message : "Ask failed";
+      await minThinkingPreview;
       setLast({ err: msg });
       if (isQuotaError(err)) phCapture("ask_blocked", { mode, reason: "quota", plan: err.quota.plan });
     } finally {
@@ -423,7 +405,6 @@ function AskPage() {
             <div className="turn" key={i}>
               <div className="msg-user"><div className="bubble">{t.q}</div></div>
               <div className="msg-ai">
-                <Orb size={28} busy={isLast && busy} bloom={isLast && bloom} className="" />
                 <div className="ai-body">
                   {t.scoping ? (
                     <div className="thinking"><div className="think-row"><span className="shimmer">Scoping your question…</span></div></div>
@@ -432,8 +413,11 @@ function AskPage() {
                   ) : t.research ? (
                     <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
                   ) : t.a ? (
-                    <Answer answer={t.a} onCite={onCite} question={t.q} reveal={i === revealIdx} />
-                  ) : isLast && busy && showThinking ? <Thinking stage={stage} /> : null}
+                    <>
+                      {t.a.intent !== "smalltalk" ? <Thinking stage={3} question={t.q} complete /> : null}
+                      <Answer answer={t.a} onCite={onCite} question={t.q} reveal={i === revealIdx} />
+                    </>
+                  ) : isLast && busy && showThinking ? <Thinking stage={stage} question={t.q} /> : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
               </div>
@@ -509,7 +493,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   const [phIdx, setPhIdx] = useState(0);
   useEffect(() => {
     if (!welcome) return;
-    const id = setInterval(() => setPhIdx((i) => (i + 1) % PLACEHOLDER_EXAMPLES.length), 5000);
+    const id = setInterval(() => setPhIdx((i) => (i + 1) % ASK_EXAMPLE_PROMPTS.length), 5000);
     return () => clearInterval(id);
   }, [welcome]);
   return (
@@ -526,7 +510,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
           />
-          {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{PLACEHOLDER_EXAMPLES[phIdx]}</span> : null}
+          {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{askPlaceholderFor(phIdx)}</span> : null}
         </div>
         <div className="tools">
           <button className="tool" type="button" data-tip="Attach — coming soon" aria-label="Attach" disabled>
@@ -534,8 +518,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
           </button>
           <div className="mode-wrap" style={{ position: "relative" }}>
             <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
-              <Icon name="sparkle" size={14} />
-              <b>{activeMode.label}</b>{activeMode.live ? (activeMode.pro ? " · Pro" : " · live") : " · soon"}
+              <b>{composerModeLabel(activeMode)}</b>
             </button>
             {modeOpen ? (
               <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
@@ -574,41 +557,24 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   );
 }
 
-function Thinking({ stage }: { stage: number }) {
-  const activeStage = STAGES[Math.min(stage, STAGES.length - 1)];
+function Thinking({ stage, question, complete = false }: { stage: number; question: string; complete?: boolean }) {
+  const preview = buildThinkingPreview(question, stage);
+  const line = complete ? "Thought through evidence" : stage <= 0 ? "Thinking" : preview.current;
   return (
-    <details className="thinking engine-preview engine-preview-compact" open>
-      <summary className="engine-preview-head">
-        <Orb size={26} busy />
-        <span className="engine-preview-titleblock">
-          <span className="engine-preview-title">
-            Thinking
-            <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>
-          </span>
-          <span className="engine-preview-subtitle">Evidence search · source ranking · cited answer</span>
-        </span>
-      </summary>
-      <div className="engine-live-line" aria-live="polite">
-        <span className="engine-live-dot" aria-hidden="true" />
-        <span>{activeStage}</span>
-      </div>
-      <div className="engine-step-list compact">
-        {STAGES.map((label, i) => {
-          // done = ✓, active = live spinner, upcoming = faded. The active step is the one the
-          // pipeline is on right now, so it reads as honest in-progress work, not a finished list.
-          const state = i < stage ? "done" : i === stage ? "active" : "pending";
-          return (
-            <div key={label} className={`engine-step ${state}`}>
-              <span className="engine-step-icon"><Icon name="check" size={11} /></span>
-              <span className="engine-step-copy">
-                <span className="engine-step-label">{label}</span>
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <p className="research-progress-note">Showing engine activity while the answer is grounded in sources.</p>
-    </details>
+    <div
+      className={`thinking engine-preview engine-preview-compact${complete ? " engine-preview-done" : ""}`}
+      aria-live={complete ? undefined : "polite"}
+      title={complete ? undefined : preview.preview}
+    >
+      <span className="engine-preview-title">
+        {line}
+        {complete ? (
+          <span className="engine-preview-chevron" aria-hidden="true">›</span>
+        ) : (
+          <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>
+        )}
+      </span>
+    </div>
   );
 }
 

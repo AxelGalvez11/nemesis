@@ -248,7 +248,15 @@ async function runAsk(
 
   // ---- 3. retrieve ----
   const consumerProductOnly = isConsumerProductOnlyQuery(queryUnderstanding);
-  const priority = consumerProductOnly ? ["pubmed_oa"] : providerPriorityForIntent(cls.intent);
+  // No-drug general-health/symptom questions ("why do I have white flakes in my hair?") route to
+  // consumer-health + literature sources (MedlinePlus/PubMed/EuropePMC), NOT FDA labels (#82).
+  const noDrugGeneralHealth =
+    queryUnderstanding.fieldMentions.length === 0 &&
+    (cls.intent === "general_health" || cls.intent === "health_context" || cls.intent === "side_effects");
+  const effectiveIntent = noDrugGeneralHealth ? "general_health" : cls.intent;
+  // Consumer-product-only queries (e.g. "Celsius") stay on pubmed_oa; everything else uses the
+  // intent-scoped priority (now symptom-aware via effectiveIntent).
+  const priority = consumerProductOnly ? ["pubmed_oa"] : providerPriorityForIntent(effectiveIntent);
   let ret = await retrieve({
     question,
     providers: priority,
@@ -283,7 +291,8 @@ async function runAsk(
   // union (for the fabrication guard); `top` is the MATCH_COUNT slice shown to the generator.
   let guardPool: RetrievedChunk[] = ret.chunks;
   if (LIVE_SOURCES_ON) {
-    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount, webRecon);
+    const labelCap = noDrugGeneralHealth ? 0 : undefined;
+    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount, webRecon, labelCap);
     guardPool = aug.pool;
     ret = { ...ret, chunks: aug.top };
   }
@@ -491,6 +500,7 @@ async function augmentWithLive(
   perSourceMax: number = LIVE_PER_SOURCE_MAX,
   matchCount: number = MATCH_COUNT,
   webRecon?: WebReconResult,
+  labelCap?: number,
 ): Promise<{ pool: RetrievedChunk[]; top: RetrievedChunk[] }> {
   const fallback = { pool: libChunks, top: libChunks };
   try {
@@ -529,7 +539,7 @@ async function augmentWithLive(
     // Take the cited slice with the label-family cap (so primary research isn't crowded out by long
     // FDA-label chunks that out-score short abstracts on the reranker), then retag 1..N for the
     // generator + citation layer. Reorder/select only — the fabrication guard still runs on `pool`.
-    const top = balanceCitedSlice(ordered, matchCount).map((c, i) => ({ ...c, tag: String(i + 1) }));
+    const top = balanceCitedSlice(ordered, matchCount, labelCap).map((c, i) => ({ ...c, tag: String(i + 1) }));
     return { pool: ordered, top };
   } catch (e) {
     console.error("ask live augmentation failed; using library only:", (e as Error).message);
