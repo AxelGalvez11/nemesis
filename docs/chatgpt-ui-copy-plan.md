@@ -18,6 +18,11 @@ real component:
 - **L2** — the both-sides claim-check (for + counter + limits + news lenses); gated `what_contradicts`
   counter-evidence path (safety-scanned + citation-enforced + double-gated). ✅ `8ca890e`.
 - **L3** — "Copy as cited report" (formatted, cited markdown mini-paper) from any answer. ✅ `bdc5368`.
+- **Consumer-answer shape** — for "why do I have / what causes X" questions, a gated **differential**
+  (several causes, each rigor-graded) + attributed practical **options** + a **"When to see a clinician"**
+  red-flag block (from safety_notes). Rides the same `verify_claim` gate; `general_health`/`health_context`
+  only; overrides the Fast 2-point cap for that class; no new schema field. ✅ `c249a53`. This closes the
+  breadth/actionability half of the ChatGPT gap the live head-to-head exposed.
 
 **Deferred / NOT built** (honest ledger):
 - **L0** widening per-provider caps + down-ranking trials for consumer intent — NOT done (shipped only
