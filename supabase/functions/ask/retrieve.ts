@@ -30,6 +30,18 @@ export interface RetrieveOpts {
   matchCount: number;
   sbUrl: string;
   serviceKey: string;
+  /**
+   * Deterministic sub-query strings (Task 1's buildSubQueries), run concurrently and merged
+   * into one pool. Optional — absent or length <= 1 reproduces today's single-embed/single-RPC
+   * behavior byte-for-byte (back-compat requirement).
+   */
+  subQueries?: string[];
+  /**
+   * Total merged rows to keep after dedup + rerank. Defaults to matchCount for back-compat.
+   * Only meaningful when subQueries has > 1 element; each sub-query's RPC call requests up to
+   * this many rows so the merge has enough candidates to choose from.
+   */
+  recallPool?: number;
 }
 
 export interface RetrieveResult {
@@ -37,19 +49,38 @@ export interface RetrieveResult {
   maxSimilarity: number;
 }
 
-export async function retrieve(opts: RetrieveOpts): Promise<RetrieveResult> {
-  const embeddings = await embedCoreTexts([opts.question], "query");
-  const queryEmbedding = embeddings[0];
-  if (!queryEmbedding) throw new Error("query embedding failed");
+// Bound on concurrent sub-query fan-out (cost control — global-constraints.md). buildSubQueries
+// already caps output at 4, so this is a defensive ceiling, not the primary limiter.
+const MAX_CONCURRENT_SUB_QUERIES = 4;
 
-  const rows = await rpc<MatchRow[]>(opts.sbUrl, opts.serviceKey, "match_core_source_chunks", {
-    query_embedding: queryEmbedding,
-    match_count: opts.matchCount,
-    match_threshold: opts.threshold,
-    filter_providers: opts.providers,
-    filter_section: null,
-    filter_drug_entity: opts.entityId,
-  });
+/**
+ * Pure merge step for multi-query recall: dedups rows across per-query result arrays by chunk
+ * id (`r.id`), keeping the row with the HIGHER similarity on a collision, sorts the merged set
+ * by similarity desc, and slices to `recallPool`. No network, no randomness — fully unit
+ * testable. A single-array input is returned in its original (already similarity-desc) order,
+ * subject only to the recallPool cap.
+ */
+export function mergeMatchRows(perQueryRows: MatchRow[][], recallPool: number): MatchRow[] {
+  const byId = new Map<string, MatchRow>();
+  for (const rows of perQueryRows) {
+    for (const row of rows) {
+      const existing = byId.get(row.id);
+      if (!existing || row.similarity > existing.similarity) {
+        byId.set(row.id, row);
+      }
+    }
+  }
+  const merged = [...byId.values()].sort((a, b) => b.similarity - a.similarity);
+  return merged.slice(0, recallPool);
+}
+
+export async function retrieve(opts: RetrieveOpts): Promise<RetrieveResult> {
+  const subQueries = opts.subQueries;
+  const recallPool = opts.recallPool ?? opts.matchCount;
+
+  const rows = subQueries && subQueries.length > 1
+    ? await retrieveMultiQuery(opts, subQueries, recallPool)
+    : await retrieveSingleQuery(opts);
 
   if (rows.length === 0) return { chunks: [], maxSimilarity: 0 };
 
@@ -91,6 +122,59 @@ export async function retrieve(opts: RetrieveOpts): Promise<RetrieveResult> {
   });
 
   return { chunks, maxSimilarity: Math.max(...rows.map((r) => r.similarity)) };
+}
+
+// Back-compat path: byte-identical to pre-Task-2 retrieve() — embed the single question, one
+// RPC call requesting opts.matchCount rows. Used whenever subQueries is absent or has <= 1
+// element, so any caller not yet passing subQueries sees no behavior change whatsoever.
+async function retrieveSingleQuery(opts: RetrieveOpts): Promise<MatchRow[]> {
+  const embeddings = await embedCoreTexts([opts.question], "query");
+  const queryEmbedding = embeddings[0];
+  if (!queryEmbedding) throw new Error("query embedding failed");
+
+  return await rpc<MatchRow[]>(opts.sbUrl, opts.serviceKey, "match_core_source_chunks", {
+    query_embedding: queryEmbedding,
+    match_count: opts.matchCount,
+    match_threshold: opts.threshold,
+    filter_providers: opts.providers,
+    filter_section: null,
+    filter_drug_entity: opts.entityId,
+  });
+}
+
+// Multi-query recall (Task 2): embed all sub-queries in one batched call, fan the match RPC out
+// concurrently (bounded), and merge into a single similarity-ranked pool. A single sub-query's
+// RPC failure degrades to "contributed nothing" (mirrors the best-effort fetch style elsewhere
+// in this module) rather than failing the whole request — only when EVERY sub-query fails does
+// this return [] (same shape as the "no rows" path already handled by the caller).
+async function retrieveMultiQuery(
+  opts: RetrieveOpts,
+  subQueries: string[],
+  recallPool: number,
+): Promise<MatchRow[]> {
+  const bounded = subQueries.slice(0, MAX_CONCURRENT_SUB_QUERIES);
+  const embeddings = await embedCoreTexts(bounded, "query");
+
+  const perQueryRows = await Promise.all(
+    embeddings.map(async (queryEmbedding) => {
+      if (!queryEmbedding) return [];
+      try {
+        return await rpc<MatchRow[]>(opts.sbUrl, opts.serviceKey, "match_core_source_chunks", {
+          query_embedding: queryEmbedding,
+          match_count: recallPool,
+          match_threshold: opts.threshold,
+          filter_providers: opts.providers,
+          filter_section: null,
+          filter_drug_entity: opts.entityId,
+        });
+      } catch (e) {
+        console.warn("sub-query RPC failed, contributing no rows:", (e as Error).message);
+        return [];
+      }
+    }),
+  );
+
+  return mergeMatchRows(perQueryRows, recallPool);
 }
 
 interface SourceMeta {
