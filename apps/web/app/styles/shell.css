@@ -918,6 +918,11 @@
 .ref-link { font-size: 11px; color: var(--text-3); margin-left: 5px; text-decoration: none; vertical-align: 1px; }
 .ref-link:hover { color: var(--acid); }
 
+/* source attribution footer (NotebookLM pattern: "Built from N sources · method · date") */
+.research-attribution { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.research-attribution .attribution-headline { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0 0 3px; }
+.research-attribution .muted-note { font-size: 12px; margin: 0 0 2px; }
+
 /* live progress */
 .research-progress { margin-top: 8px; }
 .research-progress .think-row { display: flex; align-items: center; gap: 10px; }

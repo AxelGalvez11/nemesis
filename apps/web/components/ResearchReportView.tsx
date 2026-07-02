@@ -14,7 +14,7 @@ import type {
   SuggestedStudyDesign,
   MetaAnalysisResult,
 } from "@pharmabro/shared";
-import { buildMetaAbstract, buildReferenceList, claimEvidenceCounts, evidenceRows } from "@pharmabro/shared";
+import { buildAttribution, buildMetaAbstract, buildReferenceList, claimEvidenceCounts, evidenceRows } from "@pharmabro/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
@@ -542,6 +542,7 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
       ) : null}
 
       {report.citations.length ? <Sources citations={report.citations} style={style} /> : null}
+      <ReportAttribution report={report} />
     </div>
   );
 }
@@ -560,6 +561,27 @@ function CiteChips({ ids, citeMap, onCite }: { ids?: AnswerPoint["citation_ids"]
         );
       })}
     </>
+  );
+}
+
+// NotebookLM-style "Built from N sources · method · date" footer — a quiet, honest recap of what the
+// report was actually built from. Pure buildAttribution() does the counting; this only renders it.
+// Additive: report.mode/search_method are optional, so older saved reports degrade to "standard" with
+// no date rather than erroring or showing a stale/fabricated timestamp.
+function ReportAttribution({ report }: { report: ResearchReport }) {
+  if (report.template || !report.citations.length) return null;
+  const attribution = buildAttribution({
+    citations: report.citations,
+    generatedAt: report.search_method?.search_date ?? "",
+    mode: (report.mode ?? "standard").replace(/_/g, " "),
+  });
+  return (
+    <div className="research-attribution">
+      <p className="attribution-headline">{attribution.headline}</p>
+      {attribution.lines.filter(Boolean).map((line, i) => (
+        <p className="muted-note" key={i}>{line}</p>
+      ))}
+    </div>
   );
 }
 
