@@ -768,9 +768,13 @@
 .ev-map-selected span, .ev-map-selected small { display: block; font-family: var(--mono); font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
 .ev-map-selected b { display: block; margin: 5px 0 2px; font-size: 13px; line-height: 1.35; color: var(--text); }
 
-/* ── evidence map (SVG scatter: year × evidence-strength) ── */
+/* ── evidence map (SVG scatter: year × evidence-strength) ──
+   The scatter draws in a fixed 320x240 viewBox, so its rendered width is capped: in the
+   960px fullscreen panel an uncapped width:100% would scale the 9px mono labels to
+   comically large text. (The .ev-map-canvas fullscreen rule below targets the reserved
+   graph feature, not this scatter.) */
 .ev-map { padding: 12px; }
-.ev-map svg { width: 100%; height: auto; }
+.ev-map svg { width: 100%; max-width: 460px; height: auto; display: block; margin: 0 auto; }
 .ev-map-axis { stroke: var(--line-2); stroke-width: 1; }
 .ev-map-label { fill: var(--text-3); font-size: 9px; font-family: var(--mono); }
 .ev-map-dot { fill: transparent; stroke: var(--text-3); stroke-width: 1.5; cursor: pointer; }
