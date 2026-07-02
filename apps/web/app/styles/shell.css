@@ -293,6 +293,15 @@
 .cite:hover .cite-pop, .cite:focus-visible .cite-pop { display: block; }
 .cite-pop-label { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); margin-bottom: 3px; }
 .cite-pop-title { display: block; font-size: 12px; line-height: 1.4; color: var(--text); font-weight: 500; }
+/* ── per-claim evidence meter ── */
+.meter-chip { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; vertical-align: 1px; background: var(--surface-2); border-radius: 999px; padding: 2px 9px 2px 7px; font-size: 10.5px; }
+.meter-chip i { display: inline-block; width: 34px; max-width: 34px; height: 4px; border-radius: 2px; background: var(--line-2); position: relative; overflow: hidden; }
+.meter-chip b { font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; font-size: 9.5px; }
+.meter-strong i { background: linear-gradient(90deg, var(--acid) var(--pct, 80%), var(--line-2) 0); }
+.meter-moderate i { background: linear-gradient(90deg, var(--warn) var(--pct, 55%), var(--line-2) 0); }
+.meter-limited i { background: linear-gradient(90deg, var(--text-3) var(--pct, 35%), var(--line-2) 0); }
+.meter-contested i { background: linear-gradient(90deg, var(--danger) var(--pct, 25%), var(--line-2) 0); }
+
 .num { font-family: var(--mono); color: var(--text); font-weight: 500; }
 .grade-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .grade { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px; }
@@ -716,6 +725,14 @@
 .science-state.emerging { color: #b07cf0; background: color-mix(in srgb, #b07cf0 12%, transparent); border: 1px solid color-mix(in srgb, #b07cf0 34%, transparent); }
 .src h5 { font-size: 13px; font-weight: 600; margin: 7px 0 5px; line-height: 1.35; }
 .src .meta { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); display: flex; gap: 9px; flex-wrap: wrap; }
+/* ── trust badges (enrichment) ── */
+.retracted-banner { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); border: 1px solid var(--danger); color: var(--danger); font-size: 11.5px; font-weight: 700; letter-spacing: 0.03em; border-radius: 8px; padding: 6px 9px; margin: 7px 0 2px; }
+.scite-badge { display: inline-flex; gap: 8px; align-items: center; background: var(--surface-2); border-radius: 999px; padding: 2px 9px; font-size: 11px; }
+.scite-badge i { font-style: normal; font-family: var(--mono); }
+.scite-sup { color: var(--acid-dim); }
+.scite-con { color: var(--danger); }
+.citedby-chip { font-size: 11px; color: var(--text-3); }
+.snapshot-line { font-size: 12px; color: var(--text-2); margin: 6px 0 0; }
 .src .cidx { position: absolute; top: 11px; right: 12px; font-family: var(--mono); font-size: 10px; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 5px; padding: 0 5px; }
 .src .since { color: var(--acid-dim); }
 .relv { height: 3px; border-radius: 2px; background: var(--line-2); margin-top: 9px; overflow: hidden; }
@@ -750,6 +767,20 @@
 .ev-map-selected { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 10px 11px; }
 .ev-map-selected span, .ev-map-selected small { display: block; font-family: var(--mono); font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
 .ev-map-selected b { display: block; margin: 5px 0 2px; font-size: 13px; line-height: 1.35; color: var(--text); }
+
+/* ── evidence map (SVG scatter: year × evidence-strength) ──
+   The scatter draws in a fixed 320x240 viewBox, so its rendered width is capped: in the
+   960px fullscreen panel an uncapped width:100% would scale the 9px mono labels to
+   comically large text. (The .ev-map-canvas fullscreen rule below targets the reserved
+   graph feature, not this scatter.) */
+.ev-map { padding: 12px; }
+.ev-map svg { width: 100%; max-width: 460px; height: auto; display: block; margin: 0 auto; }
+.ev-map-axis { stroke: var(--line-2); stroke-width: 1; }
+.ev-map-label { fill: var(--text-3); font-size: 9px; font-family: var(--mono); }
+.ev-map-dot { fill: transparent; stroke: var(--text-3); stroke-width: 1.5; cursor: pointer; }
+.ev-map-dot.cited { fill: var(--acid); fill-opacity: 0.75; stroke: var(--acid-deep); }
+.ev-map-dot:hover { stroke: var(--text); }
+.ev-map-hint { font-size: 11px; color: var(--text-3); margin: 8px 2px 0; line-height: 1.5; }
 
 /* ── tablet & down (≤1100px): the evidence panel leaves the grid and becomes a right-side
    drawer toggled by the topbar panel button (fixes the phone bottom-stack AND the tablet
@@ -829,11 +860,13 @@
 .research-error { margin-top: 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 
 /* report body */
+.report-export-bar-wrap { margin: 6px 0 12px; }
+.report-export-bar-wrap .muted-note { margin: 4px 0 0; }
 .report-export-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 6px 0 12px;
+  margin: 0;
 }
 .cite-style-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-right: 4px; }
 .cite-style-toggle button { font-size: 11.5px; font-family: var(--font); padding: 5px 11px; background: var(--surface); color: var(--text-2); border: none; cursor: pointer; transition: 0.15s; }
@@ -890,6 +923,11 @@
 .research-src.src-flash { background: color-mix(in srgb, var(--acid) 14%, transparent); }
 .ref-link { font-size: 11px; color: var(--text-3); margin-left: 5px; text-decoration: none; vertical-align: 1px; }
 .ref-link:hover { color: var(--acid); }
+
+/* source attribution footer (NotebookLM pattern: "Built from N sources · method · date") */
+.research-attribution { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.research-attribution .attribution-headline { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0 0 3px; }
+.research-attribution .muted-note { font-size: 12px; margin: 0 0 2px; }
 
 /* live progress */
 .research-progress { margin-top: 8px; }

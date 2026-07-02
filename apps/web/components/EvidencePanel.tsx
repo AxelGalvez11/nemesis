@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Citation } from "@pharmabro/shared";
-import { CLAIM_RELATION_LABEL, formatReference, studyTypeLabel } from "@pharmabro/shared";
+import { CLAIM_RELATION_LABEL, buildEvidenceMap, enrichmentKeyFor, formatReference, studyTypeLabel } from "@pharmabro/shared";
 import { normTag } from "@/lib/cite";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { safeHref } from "@/lib/url";
-import { EvidenceGraph } from "./EvidenceGraph";
+import { useEnrichment, type SourceEnrichment } from "@/lib/enrichment";
+import { EvidenceMapView } from "./EvidenceMapView";
 
 // Provider → the color-square class in shell.css (openfda blue, pubmed purple, trial orange, faers red).
 function providerClass(t: string): string {
@@ -99,7 +100,7 @@ function withTextFragment(href: string, quote: string): string {
 
 // One source card. Cited cards are numbered + carry a rank bar; "also reviewed" cards are dimmer and
 // unnumbered (they were searched + ranked but the answer didn't lean on them). `rankPct` undefined => no bar.
-function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; index: number; rankPct?: number; active: boolean; activeQuote?: string }) {
+function SourceCard({ c, index, rankPct, active, activeQuote, enrich }: { c: Citation; index: number; rankPct?: number; active: boolean; activeQuote?: string; enrich?: SourceEnrichment }) {
   const cls = providerClass(c.source_type);
   const tag = normTag(c.chunk_tag);
   const anchorId = `ev-src-${tag}`;
@@ -151,6 +152,32 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
           <span className="doaj-pill" title="Listed in the Directory of Open Access Journals — a vetted, anti-predatory open-access journal">✓ Vetted OA journal</span>
         ) : null}
       </div>
+      {enrich?.retracted ? (
+        <div className="retracted-banner" role="alert">
+          RETRACTED — this paper was withdrawn after publication. Treat its findings as unreliable.
+        </div>
+      ) : null}
+      {enrich?.tallies || enrich?.cited_by != null ? (
+        <div className="meta trust-row">
+          {enrich.tallies ? (
+            <span className="scite-badge" title={`How later papers cite this one (scite): ${enrich.tallies.supporting} supporting · ${enrich.tallies.contrasting} contrasting · ${enrich.tallies.mentioning} mentioning`}>
+              <i className="scite-sup">▲ {enrich.tallies.supporting}</i>
+              <i className="scite-con">▼ {enrich.tallies.contrasting}</i>
+            </span>
+          ) : null}
+          {enrich.cited_by != null ? <span className="citedby-chip">Cited by {enrich.cited_by}</span> : null}
+        </div>
+      ) : null}
+      {enrich?.snapshot && (enrich.snapshot.population || enrich.snapshot.sample_size || enrich.snapshot.design) ? (
+        <p className="snapshot-line">
+          {[
+            enrich.snapshot.design,
+            enrich.snapshot.sample_size ? `n=${enrich.snapshot.sample_size}` : null,
+            enrich.snapshot.population,
+            enrich.snapshot.duration,
+          ].filter(Boolean).join(" · ")}
+        </p>
+      ) : null}
       {activeSupportQuote ? (
         <blockquote className="src-support">
           <span className="src-support-label">Supports this claim</span>
@@ -197,13 +224,22 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
   const total = citations.length + rev.length;
   const fam = breakdown([...citations, ...rev]);
   const citedN = citations.length;
+  const enrichment = useEnrichment([...citations, ...rev]);
   const [tab, setTab] = useState<"sources" | "map">("sources");
+  // Additive: the map tab only offers itself when there are enough dated sources to plot
+  // (buildEvidenceMap's own >=3 threshold) — otherwise the panel behaves exactly as before.
+  const hasMap = useMemo(() => buildEvidenceMap(citations, rev, 320, 240) !== null, [citations, rev]);
   const scrollToSource = useCallback((tag: string) => {
     const normalized = normTag(tag);
     setTab("sources");
     requestAnimationFrame(() => {
       const el = document.getElementById(`ev-src-${normalized}`);
       if (!el) return;
+      // "Also reviewed" cards live inside a <details> rendered closed; scrolling to a
+      // card inside a closed <details> is a no-op, so open every closed ancestor first.
+      for (let node = el.parentElement; node; node = node.parentElement) {
+        if (node instanceof HTMLDetailsElement && !node.open) node.open = true;
+      }
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       el.classList.add("src-flash");
       setTimeout(() => el.classList.remove("src-flash"), 1200);
@@ -229,15 +265,17 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
       {total ? (
         <div className="ev-tabs" role="tablist" aria-label="Evidence panel view">
           <button type="button" role="tab" className={`ev-tab ${tab === "sources" ? "active" : ""}`} aria-selected={tab === "sources"} onClick={() => setTab("sources")}>Sources</button>
-          <button type="button" role="tab" className={`ev-tab ${tab === "map" ? "active" : ""}`} aria-selected={tab === "map"} onClick={() => setTab("map")}>Map</button>
+          {hasMap ? (
+            <button type="button" role="tab" className={`ev-tab ${tab === "map" ? "active" : ""}`} aria-selected={tab === "map"} onClick={() => setTab("map")}>Map</button>
+          ) : null}
         </div>
       ) : null}
 
       <div className="ev-body">
         {total === 0 ? (
           <div className="ev-empty">Ask a question to see the sources behind the answer.</div>
-        ) : tab === "map" ? (
-          <EvidenceGraph citations={citations} reviewed={rev} activeTag={activeTag} onCite={scrollToSource} />
+        ) : tab === "map" && hasMap ? (
+          <EvidenceMapView citations={citations} reviewed={rev} onSelect={scrollToSource} />
         ) : (
           <>
             {citations.length ? (
@@ -254,6 +292,7 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
                     rankPct={Math.max(34, Math.round(100 - (i / Math.max(1, citedN - 1)) * 60))}
                     active={normTag(c.chunk_tag) === activeTag}
                     activeQuote={activeQuote}
+                    enrich={enrichment[enrichmentKeyFor(c) ?? ""]}
                   />
                 ))}
               </details>
@@ -271,6 +310,7 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
                     index={0}
                     active={normTag(c.chunk_tag) === activeTag}
                     activeQuote={activeQuote}
+                    enrich={enrichment[enrichmentKeyFor(c) ?? ""]}
                   />
                 ))}
               </details>

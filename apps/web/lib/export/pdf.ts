@@ -1,7 +1,7 @@
 // Lightweight PDF formatter for a ResearchReport. It emits a simple text-first PDF with the same
 // honesty signals as the screen/docx/pptx exports. No browser or native PDF dependency needed.
 import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@pharmabro/shared";
-import { buildReferenceList, evidenceRows } from "@pharmabro/shared";
+import { buildAttribution, claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
 
 interface PdfLine {
   text: string;
@@ -69,9 +69,22 @@ function buildLines(report: ResearchReport, style: CitationStyle): PdfLine[] {
   }
   if (report.uncertainties.length) section(lines, "Still uncertain", report.uncertainties.map(pointText));
   if (report.citations.length) {
-    const refs = buildReferenceList(report.citations as Citation[], style);
-    section(lines, "References", refs.map((r) => `${r.n}. ${r.text}`));
+    const refs = referenceLines(report.citations as Citation[], style);
+    section(lines, "References", refs);
   }
+
+  // Closing attribution: what this PDF was actually built from, so it's never more authoritative
+  // than the screen it came from. Suppressed when there are no citations, matching the on-screen
+  // ReportAttribution (which returns null for a zero-citation report).
+  if (report.citations.length) {
+    const attribution = buildAttribution({
+      citations: report.citations,
+      generatedAt: new Date().toISOString().slice(0, 10),
+      mode: (report.mode ?? "standard").replace(/_/g, " "), // fallback matches on-screen ReportAttribution
+    });
+    section(lines, attribution.headline, attribution.lines.filter(Boolean));
+  }
+
   return lines;
 }
 
@@ -92,8 +105,7 @@ function evidenceSection(out: PdfLine[], rows: EvidenceRow[]): void {
 }
 
 function pointText(point: AnswerPoint): string {
-  const refs = point.citation_ids?.length ? ` [${point.citation_ids.join(", ")}]` : "";
-  return `${point.text}${refs}`;
+  return `${point.text}${claimRefMarker(point.citation_ids)}`;
 }
 
 function paginate(lines: PdfLine[]): string[] {

@@ -18,7 +18,7 @@ import {
   WidthType,
 } from "docx";
 import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@pharmabro/shared";
-import { buildReferenceList, evidenceRows } from "@pharmabro/shared";
+import { buildAttribution, claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
 
 function para(text: string): Paragraph {
   return new Paragraph({ children: [new TextRun(text)] });
@@ -27,7 +27,7 @@ function bullet(text: string): Paragraph {
   return new Paragraph({ text, bullet: { level: 0 } });
 }
 function points(ps: AnswerPoint[]): Paragraph[] {
-  return ps.map((p) => bullet(p.text));
+  return ps.map((p) => bullet(`${p.text}${claimRefMarker(p.citation_ids)}`));
 }
 
 // Evidence-base table (# · Type · Source · Year), mirroring the on-screen review. Rows come from the
@@ -122,8 +122,21 @@ export async function reportToDocx(report: ResearchReport, style: CitationStyle)
 
   if (report.citations.length) {
     children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("References")] }));
-    const refs = buildReferenceList(report.citations as Citation[], style);
-    children.push(...refs.map((r) => new Paragraph({ children: [new TextRun(`${r.n}. ${r.text}`)] })));
+    const refs = referenceLines(report.citations as Citation[], style);
+    children.push(...refs.map((r) => new Paragraph({ children: [new TextRun(r)] })));
+  }
+
+  // Closing attribution: what this document was actually built from, so it's never more
+  // authoritative than the screen it came from. Suppressed when there are no citations, matching
+  // the on-screen ReportAttribution (which returns null for a zero-citation report).
+  if (report.citations.length) {
+    const attribution = buildAttribution({
+      citations: report.citations,
+      generatedAt: new Date().toISOString().slice(0, 10),
+      mode: (report.mode ?? "standard").replace(/_/g, " "), // fallback matches on-screen ReportAttribution
+    });
+    children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(attribution.headline)] }));
+    children.push(...attribution.lines.filter(Boolean).map((line) => para(line)));
   }
 
   const doc = new Document({ sections: [{ children }] });

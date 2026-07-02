@@ -14,7 +14,7 @@ import type {
   SuggestedStudyDesign,
   MetaAnalysisResult,
 } from "@pharmabro/shared";
-import { buildMetaAbstract, buildReferenceList, claimEvidenceCounts, evidenceRows } from "@pharmabro/shared";
+import { buildAttribution, buildMetaAbstract, buildReferenceList, claimEvidenceCounts, evidenceRows } from "@pharmabro/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
@@ -417,20 +417,23 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
       </div>
 
       {reportId && !report.template ? (
-        <div className="report-export-bar">
-          <div className="cite-style-toggle" role="group" aria-label="Citation style">
-            <button type="button" className={style === "vancouver" ? "active" : ""} onClick={() => onStyleChange?.("vancouver")}>Vancouver</button>
-            <button type="button" className={style === "ama" ? "active" : ""} onClick={() => onStyleChange?.("ama")}>AMA</button>
+        <div className="report-export-bar-wrap">
+          <div className="report-export-bar">
+            <div className="cite-style-toggle" role="group" aria-label="Citation style">
+              <button type="button" className={style === "vancouver" ? "active" : ""} onClick={() => onStyleChange?.("vancouver")}>Vancouver</button>
+              <button type="button" className={style === "ama" ? "active" : ""} onClick={() => onStyleChange?.("ama")}>AMA</button>
+            </div>
+            <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pdf", style)}>
+              <Icon name="doc" size={14} />PDF (cited)
+            </button>
+            <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "docx", style)}>
+              <Icon name="doc" size={14} />Word (cited)
+            </button>
+            <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pptx", style)}>
+              <Icon name="doc" size={14} />PowerPoint (cited)
+            </button>
           </div>
-          <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pdf", style)}>
-            <Icon name="doc" size={14} />PDF
-          </button>
-          <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "docx", style)}>
-            <Icon name="doc" size={14} />Word
-          </button>
-          <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pptx", style)}>
-            <Icon name="doc" size={14} />PowerPoint
-          </button>
+          <p className="muted-note">Every claim carries its sources — the references and build method are inside the file.</p>
         </div>
       ) : null}
 
@@ -542,6 +545,7 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
       ) : null}
 
       {report.citations.length ? <Sources citations={report.citations} style={style} /> : null}
+      <ReportAttribution report={report} />
     </div>
   );
 }
@@ -560,6 +564,27 @@ function CiteChips({ ids, citeMap, onCite }: { ids?: AnswerPoint["citation_ids"]
         );
       })}
     </>
+  );
+}
+
+// NotebookLM-style "Built from N sources · method · date" footer — a quiet, honest recap of what the
+// report was actually built from. Pure buildAttribution() does the counting; this only renders it.
+// Additive: report.mode/search_method are optional, so older saved reports degrade to "standard" with
+// no date rather than erroring or showing a stale/fabricated timestamp.
+function ReportAttribution({ report }: { report: ResearchReport }) {
+  if (report.template || !report.citations.length) return null;
+  const attribution = buildAttribution({
+    citations: report.citations,
+    generatedAt: report.search_method?.search_date ?? "",
+    mode: (report.mode ?? "standard").replace(/_/g, " "),
+  });
+  return (
+    <div className="research-attribution">
+      <p className="attribution-headline">{attribution.headline}</p>
+      {attribution.lines.filter(Boolean).map((line, i) => (
+        <p className="muted-note" key={i}>{line}</p>
+      ))}
+    </div>
   );
 }
 
