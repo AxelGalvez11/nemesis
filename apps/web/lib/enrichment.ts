@@ -15,15 +15,24 @@ export interface SourceEnrichment {
 }
 
 const memo = new Map<string, SourceEnrichment>();
+// In-flight de-dup: a key already being fetched is awaited, not re-requested,
+// so two concurrent callers sharing a PMID don't fire duplicate network calls.
+const pending = new Map<string, Promise<void>>();
 
 async function fetchBatch(pmids: string[]): Promise<Record<string, SourceEnrichment>> {
-  const missing = pmids.filter((p) => !memo.has(`pmid:${p}`));
+  const missing = pmids.filter((p) => !memo.has(`pmid:${p}`) && !pending.has(`pmid:${p}`));
   if (missing.length) {
-    try {
-      const { data, error } = await supabase.functions.invoke("enrich-source", { body: { pmids: missing } });
-      if (!error && data?.results) for (const [k, v] of Object.entries(data.results)) memo.set(k, v as SourceEnrichment);
-    } catch { /* best-effort */ }
+    const request = (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("enrich-source", { body: { pmids: missing } });
+        if (!error && data?.results) for (const [k, v] of Object.entries(data.results)) memo.set(k, v as SourceEnrichment);
+      } catch { /* best-effort */ }
+    })();
+    for (const p of missing) pending.set(`pmid:${p}`, request);
+    request.finally(() => { for (const p of missing) pending.delete(`pmid:${p}`); });
   }
+  const awaiting = pmids.map((p) => pending.get(`pmid:${p}`)).filter((p): p is Promise<void> => !!p);
+  if (awaiting.length) await Promise.all(awaiting);
   const out: Record<string, SourceEnrichment> = {};
   for (const p of pmids) { const hit = memo.get(`pmid:${p}`); if (hit) out[`pmid:${p}`] = hit; }
   return out;
