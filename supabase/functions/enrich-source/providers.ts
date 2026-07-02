@@ -56,9 +56,9 @@ export function parseSciteTallies(json: unknown): SourceEnrichment["tallies"] {
 }
 
 /** One provider fetch's outcome. `ok` separates "the provider answered" from "the provider
- * was unreachable": a 4xx is a definitive answer about the record (ok, json null), while a
- * 5xx / network error / malformed body is an outage (not ok) — never a statement about the
- * record itself. Never throws. */
+ * was unreachable": 400/404/410 are definitive answers about the record (ok, json null),
+ * while 429/408, other 4xx, 5xx, network errors and malformed bodies are outages (not ok) —
+ * never a statement about the record itself. Never throws. */
 export interface FetchOutcome {
   ok: boolean;
   json: unknown;
@@ -71,7 +71,11 @@ async function getJson(url: string): Promise<FetchOutcome> {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (res.ok) return { ok: true, json: await res.json() };
-    return { ok: res.status < 500, json: null }; // 4xx = definitive "no data"; 5xx = outage
+    // Only these codes are the provider actually answering "no such record / bad request".
+    // Everything else — 429 rate limit, 408 timeout, other 4xx, all 5xx — is transient and
+    // must stay outage-class so it is never cached as an authoritative answer.
+    const definitive = res.status === 400 || res.status === 404 || res.status === 410;
+    return { ok: definitive, json: null };
   } catch {
     return { ok: false, json: null }; // network error / timeout = outage
   }

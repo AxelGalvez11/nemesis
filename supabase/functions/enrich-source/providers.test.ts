@@ -66,6 +66,24 @@ Deno.test("fetchEnrichmentBase: OpenAlex 404 is a definitive answer → fetched:
   assertEquals(r, { doi: null, retracted: false, cited_by: null, tallies: null, fetched: true });
 });
 
+Deno.test("fetchEnrichmentBase: OpenAlex 429 rate limit is an outage, not an answer → fetched:false", async () => {
+  const r = await withFetchStub(
+    // deno-lint-ignore require-await
+    (async () => jsonResponse({ error: "too many requests" }, 429)) as typeof fetch,
+    () => fetchEnrichmentBase("123"),
+  );
+  assertEquals(r, { doi: null, retracted: false, cited_by: null, tallies: null, fetched: false });
+});
+
+Deno.test("fetchEnrichmentBase: OpenAlex 408 request timeout is an outage → fetched:false", async () => {
+  const r = await withFetchStub(
+    // deno-lint-ignore require-await
+    (async () => jsonResponse({ error: "request timeout" }, 408)) as typeof fetch,
+    () => fetchEnrichmentBase("123"),
+  );
+  assertEquals(r, { doi: null, retracted: false, cited_by: null, tallies: null, fetched: false });
+});
+
 Deno.test("fetchEnrichmentBase: OpenAlex 5xx is an outage → fetched:false", async () => {
   const r = await withFetchStub(
     // deno-lint-ignore require-await
