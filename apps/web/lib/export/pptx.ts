@@ -3,11 +3,11 @@
 // briefing deck: title + honesty, summary, each section, safety, gaps, references.
 import pptxgen from "pptxgenjs";
 import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@pharmabro/shared";
-import { buildReferenceList, evidenceRows } from "@pharmabro/shared";
+import { claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
 
 type Run = { text: string; options: { bullet: boolean; breakLine: boolean } };
 function bullets(ps: AnswerPoint[]): Run[] {
-  return ps.map((p) => ({ text: p.text, options: { bullet: true, breakLine: true } }));
+  return ps.map((p) => ({ text: `${p.text}${claimRefMarker(p.citation_ids)}`, options: { bullet: true, breakLine: true } }));
 }
 
 function contentSlide(pptx: pptxgen, title: string, runs: Run[]): void {
@@ -89,8 +89,8 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
   if (report.uncertainties.length) contentSlide(pptx, "Still uncertain", bullets(report.uncertainties));
 
   if (report.citations.length) {
-    const refs = buildReferenceList(report.citations as Citation[], style);
-    contentSlide(pptx, "References", refs.map((r) => ({ text: `${r.n}. ${r.text}`, options: { bullet: false, breakLine: true } })));
+    const refs = referenceLines(report.citations as Citation[], style);
+    contentSlide(pptx, "References", refs.map((r) => ({ text: r, options: { bullet: false, breakLine: true } })));
   }
 
   const buf = (await pptx.write({ outputType: "nodebuffer" })) as Buffer;

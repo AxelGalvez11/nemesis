@@ -139,3 +139,8 @@ export * from "./stack-safety.ts";
 // capped corroboration bonus. Never vote-counted: one meta-analysis outscores any pile of weak
 // mentions. "contested" label is reserved for a future scite-contrast signal, not wired here.
 export * from "./claim-meter.ts";
+
+// Per-claim reference markers for deliverable exports (PPT/DOCX/PDF): claimRefMarker renders the
+// " [1,3]" tag a claim's bullet line carries; referenceLines renders the numbered reference list
+// (with URL/DOI) in the same chunk_tag digit order, so a marker always points at the right line.
+export * from "./claim-refs.ts";
