@@ -274,7 +274,9 @@ async function runAsk(
   // Multi-query dense recall — ONLY when live sources are on (see RECALL_POOL comment). With live off,
   // subQueries=undefined + recallPool=matchCount makes retrieve() a single-query matchCount call, i.e.
   // byte-identical to today's dense-only path (the gate/guardrail baseline).
-  const subQueries = LIVE_SOURCES_ON ? buildSubQueries(question, cls.entity_mentions, cls.intent) : undefined;
+  // effectiveIntent (not cls.intent) so a no-drug symptom/general-health question gets the general_health
+  // sub-query variant — exactly the thin-live case where the extra dense recall helps most.
+  const subQueries = LIVE_SOURCES_ON ? buildSubQueries(question, cls.entity_mentions, effectiveIntent) : undefined;
   const recallPool = LIVE_SOURCES_ON ? (mode === "thorough" ? THOROUGH_RECALL_POOL : RECALL_POOL) : matchCount;
   let ret = await retrieve({
     question,
