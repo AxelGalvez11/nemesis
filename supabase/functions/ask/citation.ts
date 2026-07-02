@@ -198,6 +198,13 @@ function oldestDate(citations: Citation[]): string | null {
   return dates.sort()[0];
 }
 
+/** The differentiated source-class badge fields for a reviewed card (e.g. "official label",
+ *  "randomized trial") — what the evidence panel reads as `Citation.evidence_role`. Deliberately
+ *  narrow: it does NOT include `support_level`/`claim_relation`, which are tag-keyed (relative to a
+ *  cited claim) and meaningless for a source no claim cited. Keeping this type narrow makes
+ *  reintroducing those fields on reviewed cards a type error, not just a lint nit. */
+export type ReviewedRating = Pick<Citation, "evidence_role" | "evidence_weight" | "support_reason">;
+
 /**
  * Task 3: the "also reviewed" breadth set — the full reranked pool minus what the answer actually
  * cited, relevance-floored and capped. PURE (no network, no sort — `pool` is expected to already be
@@ -208,6 +215,12 @@ function oldestDate(citations: Citation[]): string | null {
  * incorrectly drop or keep the wrong rows. Surviving rows are re-tagged `String(citedCount + i + 1)`
  * so their display tags start strictly after the cited namespace and the evidence-panel `ev-src-<tag>`
  * anchors never collide cited vs reviewed.
+ *
+ * `rate` is an OPTIONAL per-chunk rater (the caller wraps `evidenceRole()` from source-support.ts) that
+ * derives the differentiated evidence-role badge from the chunk's own provider/publication_types/
+ * study_type. It is called with the ORIGINAL chunk — never a tag, never a lookup keyed by
+ * `ret.chunks`/`supportRatings` — so it stays collision-safe with the cited-tag namespace by
+ * construction. Omit it and reviewed cards carry no evidence_role (today's behavior).
  */
 export function buildReviewedSet(
   pool: readonly (RetrievedChunk & { rerank_score?: number })[],
@@ -215,12 +228,16 @@ export function buildReviewedSet(
   citedCount: number,
   floor: number,
   cap: number,
+  rate?: (chunk: RetrievedChunk) => Partial<ReviewedRating>,
 ): Citation[] {
   return pool
     .filter((c) => !citedChunkIds.has(c.chunk_id))
     .filter((c) => (c.rerank_score ?? c.similarity ?? 0) >= floor)
     .slice(0, cap)
-    .map((c, i) => chunkToCitation({ ...c, tag: String(citedCount + i + 1) }));
+    .map((c, i) => {
+      const cite = chunkToCitation({ ...c, tag: String(citedCount + i + 1) });
+      return rate ? { ...cite, ...rate(c) } : cite;
+    });
 }
 
 /**

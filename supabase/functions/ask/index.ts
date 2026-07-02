@@ -39,7 +39,7 @@ import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
 import { applyReconToUnderstanding, isConsumerProductOnlyQuery, understandQuery } from "./query-understanding.ts";
 import { runWebRecon, type WebReconResult } from "./web-recon.ts";
-import { rateSourceSupport } from "./source-support.ts";
+import { evidenceRole, rateSourceSupport } from "./source-support.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
@@ -462,6 +462,13 @@ async function runAsk(
   );
   const reviewedSources = buildReviewedSet(
     guardPool, citedChunkIds, citedTags.size, REVIEWED_SCORE_FLOOR, REVIEWED_CAP,
+    // Restore the differentiated source-class badge on reviewed cards via the PURE per-chunk
+    // evidenceRole() — never the tag-keyed supportRatings (its "1".."N" keys collide with the
+    // re-tagged reviewed namespace). support_level/claim_relation stay omitted (flat for non-cited).
+    (c) => {
+      const er = evidenceRole(c);
+      return { evidence_role: er.role, evidence_weight: er.weight, support_reason: er.reason };
+    },
   );
   // Walled news (paid) / locked teaser (free). Resolved here so its fetch overlapped the work above.
   // It is attached as a SEPARATE field — never folded into citations/reviewed_sources/the chunk pool.

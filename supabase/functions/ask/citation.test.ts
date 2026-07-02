@@ -250,3 +250,29 @@ Deno.test("buildReviewedSet: order is preserved from the pool (pool is already r
   // No re-sort inside the helper — the caller passes an already-ranked pool.
   assertEquals(out.map((c) => c.source_id), ["s-c1", "s-c2"]);
 });
+
+Deno.test("buildReviewedSet: without a rater, reviewed sources carry NO tag-keyed support fields", () => {
+  // Guards against a future accidental re-merge of the tag-keyed supportRatings (which collide with
+  // the re-tagged reviewed namespace). Reviewed cards must not fabricate a flat "reviewed" support badge.
+  const out = buildReviewedSet([poolChunk("c1", { rerank_score: 0.9 })], new Set(), 0, 0.35, 34);
+  assertEquals(out[0].support_level, undefined);
+  assertEquals(out[0].claim_relation, undefined);
+  assertEquals(out[0].evidence_role, undefined); // no rater supplied -> no role either
+});
+
+Deno.test("buildReviewedSet: the pure rater restores the differentiated evidence_role (collision-safe)", () => {
+  const pool = [
+    poolChunk("c1", { provider: "openfda", rerank_score: 0.9 }),      // official_label
+    poolChunk("c2", { provider: "pubmed_oa", rerank_score: 0.8 }),    // research_article
+  ];
+  const out = buildReviewedSet(pool, new Set(), 0, 0.35, 34, (c) => {
+    // Stand-in for evidenceRole(): pure function of the chunk, no tag lookup.
+    const role = c.provider.includes("openfda") ? "official_label" : "research_article";
+    return { evidence_role: role, evidence_weight: role === "official_label" ? 92 : 52 };
+  });
+  assertEquals(out.map((c) => c.evidence_role), ["official_label", "research_article"]);
+  assertEquals(out.map((c) => c.evidence_weight), [92, 52]);
+  // Still no flat support_level / claim_relation — only the differentiated role is restored.
+  assertEquals(out[0].support_level, undefined);
+  assertEquals(out[0].claim_relation, undefined);
+});
