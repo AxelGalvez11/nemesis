@@ -18,7 +18,7 @@ import {
   WidthType,
 } from "docx";
 import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@pharmabro/shared";
-import { claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
+import { buildAttribution, claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
 
 function para(text: string): Paragraph {
   return new Paragraph({ children: [new TextRun(text)] });
@@ -125,6 +125,16 @@ export async function reportToDocx(report: ResearchReport, style: CitationStyle)
     const refs = referenceLines(report.citations as Citation[], style);
     children.push(...refs.map((r) => new Paragraph({ children: [new TextRun(r)] })));
   }
+
+  // Closing attribution: what this document was actually built from, so it's never more
+  // authoritative than the screen it came from.
+  const attribution = buildAttribution({
+    citations: report.citations,
+    generatedAt: new Date().toISOString().slice(0, 10),
+    mode: report.mode ?? "structured review",
+  });
+  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(attribution.headline)] }));
+  children.push(...attribution.lines.filter(Boolean).map((line) => para(line)));
 
   const doc = new Document({ sections: [{ children }] });
   return Packer.toBuffer(doc);

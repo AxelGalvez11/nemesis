@@ -856,11 +856,13 @@
 .research-error { margin-top: 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 
 /* report body */
+.report-export-bar-wrap { margin: 6px 0 12px; }
+.report-export-bar-wrap .muted-note { margin: 4px 0 0; }
 .report-export-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 6px 0 12px;
+  margin: 0;
 }
 .cite-style-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-right: 4px; }
 .cite-style-toggle button { font-size: 11.5px; font-family: var(--font); padding: 5px 11px; background: var(--surface); color: var(--text-2); border: none; cursor: pointer; transition: 0.15s; }

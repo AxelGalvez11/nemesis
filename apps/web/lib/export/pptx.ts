@@ -3,7 +3,7 @@
 // briefing deck: title + honesty, summary, each section, safety, gaps, references.
 import pptxgen from "pptxgenjs";
 import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@pharmabro/shared";
-import { claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
+import { buildAttribution, claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
 
 type Run = { text: string; options: { bullet: boolean; breakLine: boolean } };
 function bullets(ps: AnswerPoint[]): Run[] {
@@ -92,6 +92,17 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
     const refs = referenceLines(report.citations as Citation[], style);
     contentSlide(pptx, "References", refs.map((r) => ({ text: r, options: { bullet: false, breakLine: true } })));
   }
+
+  // Closing attribution slide: what this deck was actually built from, so it's never more
+  // authoritative than the screen it came from.
+  const attribution = buildAttribution({
+    citations: report.citations,
+    generatedAt: new Date().toISOString().slice(0, 10),
+    mode: report.mode ?? "structured review",
+  });
+  contentSlide(pptx, attribution.headline, attribution.lines.filter(Boolean).map((line) => ({
+    text: line, options: { bullet: false, breakLine: true },
+  })));
 
   const buf = (await pptx.write({ outputType: "nodebuffer" })) as Buffer;
   return buf;

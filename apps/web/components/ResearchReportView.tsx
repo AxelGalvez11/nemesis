@@ -417,20 +417,23 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
       </div>
 
       {reportId && !report.template ? (
-        <div className="report-export-bar">
-          <div className="cite-style-toggle" role="group" aria-label="Citation style">
-            <button type="button" className={style === "vancouver" ? "active" : ""} onClick={() => onStyleChange?.("vancouver")}>Vancouver</button>
-            <button type="button" className={style === "ama" ? "active" : ""} onClick={() => onStyleChange?.("ama")}>AMA</button>
+        <div className="report-export-bar-wrap">
+          <div className="report-export-bar">
+            <div className="cite-style-toggle" role="group" aria-label="Citation style">
+              <button type="button" className={style === "vancouver" ? "active" : ""} onClick={() => onStyleChange?.("vancouver")}>Vancouver</button>
+              <button type="button" className={style === "ama" ? "active" : ""} onClick={() => onStyleChange?.("ama")}>AMA</button>
+            </div>
+            <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pdf", style)}>
+              <Icon name="doc" size={14} />PDF (cited)
+            </button>
+            <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "docx", style)}>
+              <Icon name="doc" size={14} />Word (cited)
+            </button>
+            <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pptx", style)}>
+              <Icon name="doc" size={14} />PowerPoint (cited)
+            </button>
           </div>
-          <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pdf", style)}>
-            <Icon name="doc" size={14} />PDF
-          </button>
-          <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "docx", style)}>
-            <Icon name="doc" size={14} />Word
-          </button>
-          <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pptx", style)}>
-            <Icon name="doc" size={14} />PowerPoint
-          </button>
+          <p className="muted-note">Every claim carries its sources — the references and build method are inside the file.</p>
         </div>
       ) : null}
 

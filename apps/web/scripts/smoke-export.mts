@@ -127,6 +127,12 @@ for (const needle of ["Evidence base (1 sources)", "Study"]) {
 }
 console.log("✓ structured docx carries the evidence-base table");
 
+// Closing attribution slide/section: what the file was actually built from.
+for (const needle of ["Built from 1 source", "Method: structured_review"]) {
+  if (!xml.includes(needle)) throw new Error(`attribution block missing from docx: ${needle}`);
+}
+console.log("✓ structured docx carries the attribution block");
+
 const pptxBuf2 = await reportToPptx(structuredReport, "ama");
 assertPkZip(pptxBuf2, "structured pptx");
 const pptxFiles = unzipSync(new Uint8Array(pptxBuf2));
@@ -138,6 +144,10 @@ if (!slideXml.includes("Evidence base (1 sources)")) {
   throw new Error("evidence-base table missing from pptx slides");
 }
 console.log("✓ structured pptx carries the evidence-base table");
+if (!slideXml.includes("Built from 1 source")) {
+  throw new Error("attribution slide missing from pptx");
+}
+console.log("✓ structured pptx carries the attribution slide");
 
 const pdfBuf2 = reportToPdf(structuredReport, "ama");
 const pdfText = pdfBuf2.toString("latin1");
@@ -145,5 +155,9 @@ for (const needle of ["%PDF", "Methods", "not an exhaustive census", "References
   if (!pdfText.includes(needle)) throw new Error(`honesty signal missing from pdf: ${needle}`);
 }
 console.log("✓ structured pdf carries honesty signals");
+if (!pdfText.includes("Built from 1 source")) {
+  throw new Error("attribution block missing from pdf");
+}
+console.log("✓ structured pdf carries the attribution block");
 
 console.log("export smoke: PASS");

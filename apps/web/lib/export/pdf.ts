@@ -1,7 +1,7 @@
 // Lightweight PDF formatter for a ResearchReport. It emits a simple text-first PDF with the same
 // honesty signals as the screen/docx/pptx exports. No browser or native PDF dependency needed.
 import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@pharmabro/shared";
-import { claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
+import { buildAttribution, claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
 
 interface PdfLine {
   text: string;
@@ -72,6 +72,16 @@ function buildLines(report: ResearchReport, style: CitationStyle): PdfLine[] {
     const refs = referenceLines(report.citations as Citation[], style);
     section(lines, "References", refs);
   }
+
+  // Closing attribution: what this PDF was actually built from, so it's never more authoritative
+  // than the screen it came from.
+  const attribution = buildAttribution({
+    citations: report.citations,
+    generatedAt: new Date().toISOString().slice(0, 10),
+    mode: report.mode ?? "structured review",
+  });
+  section(lines, attribution.headline, attribution.lines.filter(Boolean));
+
   return lines;
 }
 
