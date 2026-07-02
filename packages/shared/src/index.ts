@@ -130,3 +130,9 @@ export * from "./realworld-signal.ts";
 // supplement combinations in a reported regimen, for a researcher's review. A curated, conservative SEED
 // (clinical review + a licensed source pending) — a flag means a known danger; absence of a flag != safe.
 export * from "./stack-safety.ts";
+
+// Per-claim Evidence Meter (trust layer): PURE, DETERMINISTIC, design-weighted score for a single
+// answer point's cited sources — score = design weight × support-level multiplier, plus a small
+// capped corroboration bonus. Never vote-counted: one meta-analysis outscores any pile of weak
+// mentions. "contested" label is reserved for a future scite-contrast signal, not wired here.
+export * from "./claim-meter.ts";
