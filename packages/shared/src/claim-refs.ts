@@ -17,17 +17,22 @@ const tagDigits = (t: string): string => t.replace(/\D/g, "");
 /** " [1,3]" style marker for a claim's cited chunk_tags, or "" when there are none. PURE. */
 export function claimRefMarker(citationIds: string[] | undefined): string {
   if (!citationIds?.length) return "";
-  const nums = citationIds.map(tagDigits).filter(Boolean);
+  const nums = [...new Set(citationIds.map(tagDigits).filter(Boolean))].sort(
+    (a, b) => Number(a) - Number(b),
+  );
   return nums.length ? ` [${nums.join(",")}]` : "";
 }
 
 /**
- * Numbered reference lines ("1. <formatted reference> — <url>") in chunk_tag digit order — the
- * same order/numbering as claimRefMarker and buildReferenceList — with the source URL/DOI appended
- * when present. PURE.
+ * Numbered reference lines ("<tag-digit>. <formatted reference> — <url>") in chunk_tag digit
+ * order. Lines are numbered by the tag digit itself (NOT array position), so a marker like
+ * " [1,3]" always points at reference lines that literally start with "1." and "3." — even when
+ * the surviving tag set is non-contiguous (e.g. {1,3,7}, the ordinary case once buildCitations
+ * keeps only the cited subset — see supabase/functions/ask/research/orchestrate.ts's
+ * buildCitations, which does not renumber). PURE.
  */
 export function referenceLines(citations: Citation[], style: CitationStyle): string[] {
   return [...citations]
     .sort((a, b) => Number(tagDigits(a.chunk_tag)) - Number(tagDigits(b.chunk_tag)))
-    .map((c, i) => `${i + 1}. ${formatReference(c, style)}${c.url ? ` — ${c.url}` : ""}`);
+    .map((c) => `${tagDigits(c.chunk_tag)}. ${formatReference(c, style)}${c.url ? ` — ${c.url}` : ""}`);
 }

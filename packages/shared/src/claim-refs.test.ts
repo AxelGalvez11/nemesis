@@ -8,6 +8,15 @@ Deno.test("claimRefMarker renders bracketed numeric tags", () => {
   assertEquals(claimRefMarker(undefined), "");
 });
 
+Deno.test("claimRefMarker sorts ids ascending regardless of input order", () => {
+  assertEquals(claimRefMarker(["3", "1"]), " [1,3]");
+  assertEquals(claimRefMarker(["S7", "S3", "S1"]), " [1,3,7]");
+});
+
+Deno.test("claimRefMarker dedupes repeated ids (defense-in-depth; upstream validTags already dedupes)", () => {
+  assertEquals(claimRefMarker(["1", "1", "3"]), " [1,3]");
+});
+
 const base: Omit<Citation, "chunk_tag" | "source_id" | "url"> = {
   source_type: "pubmed_oa",
   title: "A study",
@@ -33,6 +42,33 @@ Deno.test("referenceLines numbers by chunk_tag digit, not array position (citati
   assertEquals(lines[1]!.includes("Second source"), true);
   assertEquals(lines[2]!.startsWith("3."), true);
   assertEquals(lines[2]!.includes("Third source"), true);
+});
+
+Deno.test("referenceLines numbers by tag digit (not position) on a non-contiguous tag set, so a marker for a gapped tag matches its reference line", () => {
+  // Production ordinary case: buildCitations (supabase/functions/ask/research/orchestrate.ts)
+  // keeps only the cited SUBSET of retrieval tags without renumbering, so gaps like {1,3,7}
+  // are expected. Pass citations in scrambled (non-ascending) order to prove sort, not input
+  // order, drives numbering.
+  const citations: Citation[] = [
+    { ...base, chunk_tag: "S7", source_id: "live:pubmed_oa:7", url: "https://example.com/7", title: "Seventh source" },
+    { ...base, chunk_tag: "S1", source_id: "live:pubmed_oa:1", url: "https://example.com/1", title: "First source" },
+    { ...base, chunk_tag: "S3", source_id: "live:pubmed_oa:3", url: "https://example.com/3", title: "Third source" },
+  ];
+  const lines = referenceLines(citations, "vancouver");
+  assertEquals(lines.length, 3);
+  assertEquals(lines[0]!.startsWith("1."), true);
+  assertEquals(lines[0]!.includes("First source"), true);
+  assertEquals(lines[1]!.startsWith("3."), true);
+  assertEquals(lines[1]!.includes("Third source"), true);
+  assertEquals(lines[2]!.startsWith("7."), true);
+  assertEquals(lines[2]!.includes("Seventh source"), true);
+
+  // A point citing only tag "7" must render marker " [7]" — and that number must equal the
+  // leading number of the correct reference line (not a re-derived array position like "3.").
+  const marker = claimRefMarker(["S7"]);
+  assertEquals(marker, " [7]");
+  const referencedLine = lines.find((l) => l.startsWith(`${marker.trim().replace(/[[\]]/g, "")}.`));
+  assertEquals(referencedLine?.includes("Seventh source"), true);
 });
 
 Deno.test("referenceLines appends the URL when present", () => {
