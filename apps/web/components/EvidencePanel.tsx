@@ -3,10 +3,11 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import type { Citation } from "@pharmabro/shared";
-import { CLAIM_RELATION_LABEL, formatReference, studyTypeLabel } from "@pharmabro/shared";
+import { CLAIM_RELATION_LABEL, enrichmentKeyFor, formatReference, studyTypeLabel } from "@pharmabro/shared";
 import { normTag } from "@/lib/cite";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { safeHref } from "@/lib/url";
+import { useEnrichment, type SourceEnrichment } from "@/lib/enrichment";
 import { EvidenceGraph } from "./EvidenceGraph";
 
 // Provider → the color-square class in shell.css (openfda blue, pubmed purple, trial orange, faers red).
@@ -99,7 +100,7 @@ function withTextFragment(href: string, quote: string): string {
 
 // One source card. Cited cards are numbered + carry a rank bar; "also reviewed" cards are dimmer and
 // unnumbered (they were searched + ranked but the answer didn't lean on them). `rankPct` undefined => no bar.
-function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; index: number; rankPct?: number; active: boolean; activeQuote?: string }) {
+function SourceCard({ c, index, rankPct, active, activeQuote, enrich }: { c: Citation; index: number; rankPct?: number; active: boolean; activeQuote?: string; enrich?: SourceEnrichment }) {
   const cls = providerClass(c.source_type);
   const tag = normTag(c.chunk_tag);
   const anchorId = `ev-src-${tag}`;
@@ -151,6 +152,32 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
           <span className="doaj-pill" title="Listed in the Directory of Open Access Journals — a vetted, anti-predatory open-access journal">✓ Vetted OA journal</span>
         ) : null}
       </div>
+      {enrich?.retracted ? (
+        <div className="retracted-banner" role="alert">
+          RETRACTED — this paper was withdrawn after publication. Treat its findings as unreliable.
+        </div>
+      ) : null}
+      {enrich?.tallies || enrich?.cited_by != null ? (
+        <div className="meta trust-row">
+          {enrich.tallies ? (
+            <span className="scite-badge" title={`How later papers cite this one (scite): ${enrich.tallies.supporting} supporting · ${enrich.tallies.contrasting} contrasting · ${enrich.tallies.mentioning} mentioning`}>
+              <i className="scite-sup">▲ {enrich.tallies.supporting}</i>
+              <i className="scite-con">▼ {enrich.tallies.contrasting}</i>
+            </span>
+          ) : null}
+          {enrich.cited_by != null ? <span className="citedby-chip">Cited by {enrich.cited_by}</span> : null}
+        </div>
+      ) : null}
+      {enrich?.snapshot && (enrich.snapshot.population || enrich.snapshot.sample_size || enrich.snapshot.design) ? (
+        <p className="snapshot-line">
+          {[
+            enrich.snapshot.design,
+            enrich.snapshot.sample_size ? `n=${enrich.snapshot.sample_size}` : null,
+            enrich.snapshot.population,
+            enrich.snapshot.duration,
+          ].filter(Boolean).join(" · ")}
+        </p>
+      ) : null}
       {activeSupportQuote ? (
         <blockquote className="src-support">
           <span className="src-support-label">Supports this claim</span>
@@ -197,6 +224,7 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
   const total = citations.length + rev.length;
   const fam = breakdown([...citations, ...rev]);
   const citedN = citations.length;
+  const enrichment = useEnrichment([...citations, ...rev]);
   const [tab, setTab] = useState<"sources" | "map">("sources");
   const scrollToSource = useCallback((tag: string) => {
     const normalized = normTag(tag);
@@ -254,6 +282,7 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
                     rankPct={Math.max(34, Math.round(100 - (i / Math.max(1, citedN - 1)) * 60))}
                     active={normTag(c.chunk_tag) === activeTag}
                     activeQuote={activeQuote}
+                    enrich={enrichment[enrichmentKeyFor(c) ?? ""]}
                   />
                 ))}
               </details>
@@ -271,6 +300,7 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
                     index={0}
                     active={normTag(c.chunk_tag) === activeTag}
                     activeQuote={activeQuote}
+                    enrich={enrichment[enrichmentKeyFor(c) ?? ""]}
                   />
                 ))}
               </details>
