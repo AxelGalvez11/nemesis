@@ -46,6 +46,13 @@ function assertPkZip(buf: Buffer | Uint8Array, label: string): void {
 
 const docxBuf = await reportToDocx(fixtureReport, "vancouver");
 assertPkZip(docxBuf, "reportToDocx");
+// Fixture 1 has no `mode`: the exporter fallback must read "standard", matching the
+// on-screen ReportAttribution — a legacy report must not show two different Methods.
+const xmlLegacy = strFromU8(unzipSync(new Uint8Array(docxBuf))["word/document.xml"]);
+if (!xmlLegacy.includes("Method: standard")) {
+  throw new Error("mode-less report should fall back to 'Method: standard' (screen parity)");
+}
+console.log("✓ mode-less docx falls back to 'Method: standard'");
 
 const pptxBuf = await reportToPptx(fixtureReport, "ama");
 assertPkZip(pptxBuf, "reportToPptx");

@@ -133,7 +133,7 @@ export async function reportToDocx(report: ResearchReport, style: CitationStyle)
     const attribution = buildAttribution({
       citations: report.citations,
       generatedAt: new Date().toISOString().slice(0, 10),
-      mode: (report.mode ?? "structured review").replace(/_/g, " "),
+      mode: (report.mode ?? "standard").replace(/_/g, " "), // fallback matches on-screen ReportAttribution
     });
     children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(attribution.headline)] }));
     children.push(...attribution.lines.filter(Boolean).map((line) => para(line)));

@@ -80,7 +80,7 @@ function buildLines(report: ResearchReport, style: CitationStyle): PdfLine[] {
     const attribution = buildAttribution({
       citations: report.citations,
       generatedAt: new Date().toISOString().slice(0, 10),
-      mode: (report.mode ?? "structured review").replace(/_/g, " "),
+      mode: (report.mode ?? "standard").replace(/_/g, " "), // fallback matches on-screen ReportAttribution
     });
     section(lines, attribution.headline, attribution.lines.filter(Boolean));
   }

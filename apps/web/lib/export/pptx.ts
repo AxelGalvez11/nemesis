@@ -100,7 +100,7 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
     const attribution = buildAttribution({
       citations: report.citations,
       generatedAt: new Date().toISOString().slice(0, 10),
-      mode: (report.mode ?? "structured review").replace(/_/g, " "),
+      mode: (report.mode ?? "standard").replace(/_/g, " "), // fallback matches on-screen ReportAttribution
     });
     contentSlide(pptx, attribution.headline, attribution.lines.filter(Boolean).map((line) => ({
       text: line, options: { bullet: false, breakLine: true },
