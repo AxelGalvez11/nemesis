@@ -127,8 +127,9 @@ for (const needle of ["Evidence base (1 sources)", "Study"]) {
 }
 console.log("✓ structured docx carries the evidence-base table");
 
-// Closing attribution slide/section: what the file was actually built from.
-for (const needle of ["Built from 1 source", "Method: structured_review"]) {
+// Closing attribution slide/section: what the file was actually built from. Mode is humanized
+// (underscores → spaces) to match the on-screen ReportAttribution.
+for (const needle of ["Built from 1 source", "Method: structured review"]) {
   if (!xml.includes(needle)) throw new Error(`attribution block missing from docx: ${needle}`);
 }
 console.log("✓ structured docx carries the attribution block");
@@ -159,5 +160,45 @@ if (!pdfText.includes("Built from 1 source")) {
   throw new Error("attribution block missing from pdf");
 }
 console.log("✓ structured pdf carries the attribution block");
+
+// Fixture 3: zero citations — the attribution block ("Built from N sources") must be ABSENT from
+// all three exporters (matching the on-screen ReportAttribution, which returns null when
+// !report.citations.length), while generation still succeeds.
+const zeroCitationReport: ResearchReport = {
+  question: "Smoke: zero-citation report",
+  summary: "Bottom line for the zero-citation fixture.",
+  sub_questions: ["What happens with no sources?"],
+  sections: [{ heading: "What it is", points: [{ text: "A claim with no supporting source.", citation_ids: [] }] }],
+  uncertainties: [],
+  safety_notes: [],
+  citations: [],
+  evidence_grade: "unknown",
+  safety_flags: [],
+  claims_verified: false,
+};
+
+const docxBuf3 = await reportToDocx(zeroCitationReport, "vancouver");
+assertPkZip(docxBuf3, "zero-citation docx");
+const xml3 = strFromU8(unzipSync(new Uint8Array(docxBuf3))["word/document.xml"]);
+if (xml3.includes("Built from")) throw new Error("attribution block present in zero-citation docx");
+console.log("✓ zero-citation docx omits the attribution block");
+
+const pptxBuf3 = await reportToPptx(zeroCitationReport, "ama");
+assertPkZip(pptxBuf3, "zero-citation pptx");
+const pptxFiles3 = unzipSync(new Uint8Array(pptxBuf3));
+const slideXml3 = Object.entries(pptxFiles3)
+  .filter(([name]) => name.startsWith("ppt/slides/slide") && name.endsWith(".xml"))
+  .map(([, data]) => strFromU8(data))
+  .join("");
+if (slideXml3.includes("Built from")) throw new Error("attribution slide present in zero-citation pptx");
+console.log("✓ zero-citation pptx omits the attribution slide");
+
+const pdfBuf3 = reportToPdf(zeroCitationReport, "vancouver");
+if (!(pdfBuf3[0] === 0x25 && pdfBuf3[1] === 0x50 && pdfBuf3[2] === 0x44 && pdfBuf3[3] === 0x46)) {
+  throw new Error("reportToPdf (zero-citation): not a PDF file");
+}
+const pdfText3 = pdfBuf3.toString("latin1");
+if (pdfText3.includes("Built from")) throw new Error("attribution block present in zero-citation pdf");
+console.log("✓ zero-citation pdf omits the attribution block");
 
 console.log("export smoke: PASS");

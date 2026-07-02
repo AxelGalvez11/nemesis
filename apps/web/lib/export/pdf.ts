@@ -74,13 +74,16 @@ function buildLines(report: ResearchReport, style: CitationStyle): PdfLine[] {
   }
 
   // Closing attribution: what this PDF was actually built from, so it's never more authoritative
-  // than the screen it came from.
-  const attribution = buildAttribution({
-    citations: report.citations,
-    generatedAt: new Date().toISOString().slice(0, 10),
-    mode: report.mode ?? "structured review",
-  });
-  section(lines, attribution.headline, attribution.lines.filter(Boolean));
+  // than the screen it came from. Suppressed when there are no citations, matching the on-screen
+  // ReportAttribution (which returns null for a zero-citation report).
+  if (report.citations.length) {
+    const attribution = buildAttribution({
+      citations: report.citations,
+      generatedAt: new Date().toISOString().slice(0, 10),
+      mode: (report.mode ?? "structured review").replace(/_/g, " "),
+    });
+    section(lines, attribution.headline, attribution.lines.filter(Boolean));
+  }
 
   return lines;
 }

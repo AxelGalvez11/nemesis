@@ -127,14 +127,17 @@ export async function reportToDocx(report: ResearchReport, style: CitationStyle)
   }
 
   // Closing attribution: what this document was actually built from, so it's never more
-  // authoritative than the screen it came from.
-  const attribution = buildAttribution({
-    citations: report.citations,
-    generatedAt: new Date().toISOString().slice(0, 10),
-    mode: report.mode ?? "structured review",
-  });
-  children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(attribution.headline)] }));
-  children.push(...attribution.lines.filter(Boolean).map((line) => para(line)));
+  // authoritative than the screen it came from. Suppressed when there are no citations, matching
+  // the on-screen ReportAttribution (which returns null for a zero-citation report).
+  if (report.citations.length) {
+    const attribution = buildAttribution({
+      citations: report.citations,
+      generatedAt: new Date().toISOString().slice(0, 10),
+      mode: (report.mode ?? "structured review").replace(/_/g, " "),
+    });
+    children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun(attribution.headline)] }));
+    children.push(...attribution.lines.filter(Boolean).map((line) => para(line)));
+  }
 
   const doc = new Document({ sections: [{ children }] });
   return Packer.toBuffer(doc);

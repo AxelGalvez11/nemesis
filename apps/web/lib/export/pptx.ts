@@ -94,15 +94,18 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
   }
 
   // Closing attribution slide: what this deck was actually built from, so it's never more
-  // authoritative than the screen it came from.
-  const attribution = buildAttribution({
-    citations: report.citations,
-    generatedAt: new Date().toISOString().slice(0, 10),
-    mode: report.mode ?? "structured review",
-  });
-  contentSlide(pptx, attribution.headline, attribution.lines.filter(Boolean).map((line) => ({
-    text: line, options: { bullet: false, breakLine: true },
-  })));
+  // authoritative than the screen it came from. Suppressed when there are no citations, matching
+  // the on-screen ReportAttribution (which returns null for a zero-citation report).
+  if (report.citations.length) {
+    const attribution = buildAttribution({
+      citations: report.citations,
+      generatedAt: new Date().toISOString().slice(0, 10),
+      mode: (report.mode ?? "structured review").replace(/_/g, " "),
+    });
+    contentSlide(pptx, attribution.headline, attribution.lines.filter(Boolean).map((line) => ({
+      text: line, options: { bullet: false, breakLine: true },
+    })));
+  }
 
   const buf = (await pptx.write({ outputType: "nodebuffer" })) as Buffer;
   return buf;
