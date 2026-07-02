@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
 import { Orb } from "./Orb";
@@ -43,16 +43,19 @@ const workspace = [
   // Explore is deferred (mostly mockup) — hidden from the nav until it's real. The route still exists.
   // (The old "Watchlist" feature was retired 2026-06-18, superseded by Monitoring above. Its empty DB
   // tables stay dormant for now; the drug-page "Follow" now creates a Monitoring watch.)
+  // Score ("Percentile Engine") is an off-nav MVP — reachable at /app/score for review, hidden from
+  // users until the reference data + lab ingestion land. Add it here to surface it in the menu.
 ];
 
 function isActive(path: string, href: string) {
   return path === href || path.startsWith(`${href}/`);
 }
 function titleForPath(path: string): { title: string; sub?: string } {
-  if (path.startsWith("/app/ask")) return { title: "Ask", sub: "live evidence · cited" };
+  if (path.startsWith("/app/ask")) return { title: "Ask" };
   if (path.startsWith("/app/research")) return { title: "Deep research", sub: "multi-step cited report" };
   if (path.startsWith("/app/reports")) return { title: "Reports", sub: "your saved evidence reports" };
   if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };
+  if (path.startsWith("/app/score")) return { title: "Score", sub: "your longevity rank" };
   if (path.startsWith("/app/explore")) return { title: "Explore" };
   if (path.startsWith("/app/billing")) return { title: "Billing" };
   if (path.startsWith("/app/profile")) return { title: "Profile" };
@@ -62,7 +65,7 @@ function titleForPath(path: string): { title: string; sub?: string } {
   return { title: "PharmaOrb" };
 }
 
-const FULL_BLEED = ["/app/ask", "/app/research", "/app/reports", "/app/monitor", "/app/explore", "/app/drugs/"];
+const FULL_BLEED = ["/app/ask", "/app/research", "/app/reports", "/app/monitor", "/app/explore", "/app/drugs/", "/app/score"];
 
 // Client-only breakpoint probe (clicks are client-side, so window is always defined here).
 const mqMatch = (q: string) =>
@@ -78,6 +81,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Evidence panel starts COLLAPSED: the chat is the focus on entry. It opens on demand — the
   // topbar panel button, or a citation click (openEvidence) — so sources are one click away.
   const [evidenceCollapsed, setEvidenceCollapsed] = useState(true);
+  const [evidenceWidth, setEvidenceWidth] = useState(344);
+  const [evidenceFullscreen, setEvidenceFullscreen] = useState(false);
   const [evidence, setEvidenceNode] = useState<ReactNode | null>(null);
   const [topbar, setTopbarNode] = useState<ReactNode | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -189,7 +194,32 @@ export function AppShell({ children }: { children: ReactNode }) {
     else setEvidenceCollapsed(false);
   }, []);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
-  const closeMobileEvidence = useCallback(() => setMobileEvidenceOpen(false), []);
+  const closeMobileEvidence = useCallback(() => { setMobileEvidenceOpen(false); setEvidenceFullscreen(false); }, []);
+  const toggleEvidenceFullscreen = useCallback(() => {
+    setMobileNavOpen(false);
+    setMobileEvidenceOpen(false);
+    setEvidenceCollapsed(false);
+    setEvidenceFullscreen((v) => !v);
+  }, []);
+  const beginEvidenceResize = useCallback((e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (evidenceFullscreen || mqMatch("(max-width: 1100px)")) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = evidenceWidth;
+    const onMove = (ev: PointerEvent) => {
+      const max = Math.min(760, Math.max(344, window.innerWidth - (railCollapsed ? 96 : 296) - 420));
+      const next = Math.max(320, Math.min(max, startW + startX - ev.clientX));
+      setEvidenceWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.classList.remove("resizing-evidence");
+    };
+    document.body.classList.add("resizing-evidence");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+  }, [evidenceFullscreen, evidenceWidth, railCollapsed]);
 
   useEffect(() => {
     if (!loading && !session) router.replace(`/sign-in?next=${encodeURIComponent(path)}`);
@@ -249,7 +279,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [rowMenu]);
 
   // Close both mobile drawers + any account overlay + the row menu / its dialogs on route change.
-  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setOverlay(null); setRowMenu(null); setConfirmDelete(null); setRenamingId(null); }, [path]);
+  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setEvidenceFullscreen(false); setOverlay(null); setRowMenu(null); setConfirmDelete(null); setRenamingId(null); }, [path]);
 
   // Close the delete-confirm dialog on Escape.
   useEffect(() => {
@@ -262,7 +292,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Close the open drawer on Escape.
   useEffect(() => {
     if (!mobileNavOpen && !mobileEvidenceOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setMobileNavOpen(false); setMobileEvidenceOpen(false); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setMobileNavOpen(false); setMobileEvidenceOpen(false); setEvidenceFullscreen(false); } };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [mobileNavOpen, mobileEvidenceOpen]);
@@ -298,17 +328,19 @@ export function AppShell({ children }: { children: ReactNode }) {
     railCollapsed && "rail-collapsed",
     mobileNavOpen && "mobile-open",
     hasEvidence && mobileEvidenceOpen && "mobile-evidence-open",
+    hasEvidence && evidenceFullscreen && "evidence-fullscreen",
     hasEvidence ? evidenceCollapsed && "evidence-collapsed" : "no-evidence",
   ]
     .filter(Boolean)
     .join(" ");
+  const appStyle = hasEvidence ? ({ "--evidence": `${evidenceWidth}px` } as CSSProperties) : undefined;
   const defaultTitle = titleForPath(path);
   const email = session.user.email ?? "preview@pharmaorb.app";
   const initials = email.slice(0, 2).toUpperCase();
 
   return (
     <AppChromeContext.Provider value={ctx}>
-      <div className={appClass}>
+      <div className={appClass} style={appStyle}>
         {/* ── rail ── */}
         <aside className="rail" id="app-rail">
           <div className="brand">
@@ -443,7 +475,19 @@ export function AppShell({ children }: { children: ReactNode }) {
         {hasEvidence ? (
           <>
             <button className="evidence-backdrop" aria-label="Close evidence" onClick={closeMobileEvidence} tabIndex={-1} />
-            <aside className="evidence" id="app-evidence">{evidence}</aside>
+            <aside className="evidence" id="app-evidence">
+              <button className="evidence-resizer" type="button" aria-label="Resize evidence panel" onPointerDown={beginEvidenceResize} />
+              <button
+                className="evidence-fullscreen-toggle icon-btn"
+                type="button"
+                data-tip={evidenceFullscreen ? "Exit full screen evidence" : "Full screen evidence"}
+                aria-label={evidenceFullscreen ? "Exit full screen evidence" : "Full screen evidence"}
+                onClick={toggleEvidenceFullscreen}
+              >
+                <Icon name={evidenceFullscreen ? "panel" : "expand"} size={16} />
+              </button>
+              {evidence}
+            </aside>
           </>
         ) : null}
 

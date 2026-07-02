@@ -37,7 +37,7 @@ import { hasLlmKey, llmApiKey } from "./llm.ts";
 import { modelFor } from "./model-router.ts";
 import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
-import { applyReconToUnderstanding, understandQuery } from "./query-understanding.ts";
+import { applyReconToUnderstanding, isConsumerProductOnlyQuery, understandQuery } from "./query-understanding.ts";
 import { runWebRecon, type WebReconResult } from "./web-recon.ts";
 import { rateSourceSupport } from "./source-support.ts";
 import {
@@ -247,11 +247,16 @@ async function runAsk(
   const scopeId = resolvedIds.length === 1 ? resolvedIds[0] : null; // 2+ entities -> broad
 
   // ---- 3. retrieve ----
+  const consumerProductOnly = isConsumerProductOnlyQuery(queryUnderstanding);
+  // No-drug general-health/symptom questions ("why do I have white flakes in my hair?") route to
+  // consumer-health + literature sources (MedlinePlus/PubMed/EuropePMC), NOT FDA labels (#82).
   const noDrugGeneralHealth =
     queryUnderstanding.fieldMentions.length === 0 &&
     (cls.intent === "general_health" || cls.intent === "health_context" || cls.intent === "side_effects");
   const effectiveIntent = noDrugGeneralHealth ? "general_health" : cls.intent;
-  const priority = providerPriorityForIntent(effectiveIntent);
+  // Consumer-product-only queries (e.g. "Celsius") stay on pubmed_oa; everything else uses the
+  // intent-scoped priority (now symptom-aware via effectiveIntent).
+  const priority = consumerProductOnly ? ["pubmed_oa"] : providerPriorityForIntent(effectiveIntent);
   let ret = await retrieve({
     question,
     providers: priority,
@@ -266,7 +271,7 @@ async function runAsk(
   // bridged to its entity in Phase 2 (e.g. retatrutide, BPC-157 — their
   // trials/PubMed chunks exist but the drug_entity_sources link is sparse). Before
   // refusing, retry with NO provider AND NO entity filter (broad semantic search).
-  if (ret.chunks.length === 0 && (priority !== null || scopeId !== null)) {
+  if (!consumerProductOnly && ret.chunks.length === 0 && (priority !== null || scopeId !== null)) {
     ret = await retrieve({
       question,
       providers: null,

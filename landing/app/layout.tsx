@@ -26,11 +26,11 @@ const playfair = Playfair_Display({
 export const metadata: Metadata = {
   title: "PharmaOrb: Drug information that shows its work",
   description:
-    "Plain-English answers about any medication or supplement, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Not medical advice. Join the waitlist.",
+    "Plain-English answers about any medication or supplement, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Not medical advice. Sign up to start.",
   openGraph: {
     title: "PharmaOrb: Drug information that shows its work",
     description:
-      "Plain-English answers about medications, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Join the waitlist.",
+      "Plain-English answers about medications, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Sign up to start.",
     type: "website",
   },
   robots: { index: true, follow: true },

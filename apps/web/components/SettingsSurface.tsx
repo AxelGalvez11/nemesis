@@ -3,12 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
-import { useTheme } from "@/components/theme-provider";
+import { useTheme, type ThemePreference } from "@/components/theme-provider";
 import { Icon } from "@/components/icons";
 import { ProfilePanel } from "@/components/ProfilePanel";
 import { BillingPanel } from "@/components/BillingPanel";
 
-const THEME_OPTIONS: { id: "light" | "grey" | "dark"; label: string }[] = [
+const THEME_OPTIONS: { id: ThemePreference; label: string }[] = [
+  { id: "system", label: "System" },
   { id: "light", label: "Light" },
   { id: "grey", label: "Grey" },
   { id: "dark", label: "Dark" },
@@ -32,7 +33,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: string }[] = [
  */
 export function SettingsSurface({ initialSection = "general", checkoutStatus }: { initialSection?: SettingsSection; checkoutStatus?: string }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
-  const { theme, setTheme } = useTheme();
+  const { preference, setTheme } = useTheme();
   const { signOut } = useAuth();
   const router = useRouter();
 
@@ -63,9 +64,9 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
                 <button
                   key={t.id}
                   type="button"
-                  className={`theme-card${theme === t.id ? " active" : ""}`}
+                  className={`theme-card${preference === t.id ? " active" : ""}`}
                   onClick={() => setTheme(t.id)}
-                  aria-pressed={theme === t.id}
+                  aria-pressed={preference === t.id}
                 >
                   <span className="theme-swatch" data-theme-preview={t.id} aria-hidden="true">
                     <span className="tp-rail" />
@@ -73,7 +74,7 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
                   </span>
                   <span className="theme-card-foot">
                     {t.label}
-                    {theme === t.id ? <Icon name="check" size={14} /> : null}
+                    {preference === t.id ? <Icon name="check" size={14} /> : null}
                   </span>
                 </button>
               ))}

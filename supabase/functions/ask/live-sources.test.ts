@@ -3,7 +3,13 @@
 // retatrutide); field-scoping to generic/brand NAME excludes them. These lock that behavior.
 // Run: deno test supabase/functions/ask/
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { isSafetyCriticalQuery, liveToChunk, openFdaSearch, type LiveCandidate } from "./live-sources.ts";
+import {
+  isSafetyCriticalQuery,
+  liveToChunk,
+  openFdaSearch,
+  shouldFetchClinicalTrials,
+  type LiveCandidate,
+} from "./live-sources.ts";
 
 Deno.test("liveToChunk carries PubMed bibliographic metadata onto the chunk", () => {
   const c: LiveCandidate = {
@@ -95,4 +101,31 @@ Deno.test("isSafetyCriticalQuery routes toxic/lethal/recall questions to safety 
   assertEquals(isSafetyCriticalQuery("is celsius lethal"), true);
   assertEquals(isSafetyCriticalQuery("was semaglutide recalled?"), true);
   assertEquals(isSafetyCriticalQuery("what are common metformin side effects?"), false);
+});
+
+Deno.test("ClinicalTrials is skipped for consumer-product energy-drink safety queries", () => {
+  assertEquals(
+    shouldFetchClinicalTrials(
+      "Celsius energy drink",
+      [],
+      "is Celsius lethal energy drink caffeine toxicity arrhythmia",
+    ),
+    false,
+  );
+  assertEquals(
+    shouldFetchClinicalTrials(
+      "caffeine",
+      ["caffeine"],
+      "Celsius energy drink caffeine toxicity arrhythmia",
+    ),
+    false,
+  );
+  assertEquals(
+    shouldFetchClinicalTrials("lisinopril", ["lisinopril"], "lisinopril cough trial"),
+    true,
+  );
+  assertEquals(
+    shouldFetchClinicalTrials("caffeine", ["caffeine"], "caffeine alertness clinical trial"),
+    true,
+  );
 });

@@ -1,14 +1,28 @@
 "use client";
 
 import { useMemo } from "react";
-import type { AnswerPoint, Citation, CitationStyle, MetaAnalysisResult, ResearchReport } from "@pharmabro/shared";
-import { buildMetaAbstract, buildReferenceList, evidenceRows } from "@pharmabro/shared";
+import type {
+  AnswerPoint,
+  Citation,
+  CitationStyle,
+  DiscoveryClaim,
+  DiscoveryReport,
+  ResearchGap,
+  ResearchHypothesis,
+  ResearchReport,
+  StudyCharacteristic,
+  SuggestedStudyDesign,
+  MetaAnalysisResult,
+} from "@pharmabro/shared";
+import { buildMetaAbstract, buildReferenceList, claimEvidenceCounts, evidenceRows } from "@pharmabro/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";
 import { Icon } from "./icons";
 import { ForestPlot } from "./ForestPlot";
+import { EvidenceChartsSection } from "./EvidenceCharts";
 import { downloadReportExport } from "@/lib/api";
+import { engineVisualsEnabled } from "@/lib/env";
 
 const PROVIDER_ABBR: Record<string, string> = {
   openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", europepmc: "PMID",
@@ -17,6 +31,25 @@ const PROVIDER_ABBR: Record<string, string> = {
 function abbr(t: string): string {
   const k = Object.keys(PROVIDER_ABBR).find((p) => t.toLowerCase().includes(p));
   return (k ? PROVIDER_ABBR[k] : undefined) ?? "REF";
+}
+
+function humanize(value: string): string {
+  return value.replace(/_/g, " ");
+}
+
+function shortText(value: string, max = 140): string {
+  const clean = value.trim().replace(/\s+/g, " ");
+  return clean.length <= max ? clean : `${clean.slice(0, max - 1).trim()}…`;
+}
+
+function EvidenceLinkButton({ tag, label, onCite }: { tag: string; label: string; onCite: (tag: string) => void }) {
+  const normalized = normTag(tag);
+  return (
+    <button type="button" className="discovery-cite" onClick={() => onCite(normalized)} aria-label={`Show source ${normalized}`}>
+      <span>{label}</span>
+      <b>{normalized}</b>
+    </button>
+  );
 }
 
 // A study/evidence-characteristics table — the at-a-glance "body of evidence" a review opens with.
@@ -140,6 +173,195 @@ function MetaStudyCharacteristics({ meta, onCite }: { meta: MetaAnalysisResult; 
   );
 }
 
+function DiscoveryPanel({ discovery, citeMap, onCite }: { discovery: DiscoveryReport; citeMap: Map<string, string>; onCite: (tag: string) => void }) {
+  const topClaims = discovery.claims.slice(0, 4);
+  const topStudies = discovery.study_characteristics.slice(0, 5);
+  const topGaps = discovery.research_gaps.slice(0, 5);
+  const topHypotheses = discovery.hypotheses.slice(0, 4);
+  const topDesigns = discovery.study_designs.slice(0, 2);
+  return (
+    <section className="research-section discovery-section">
+      <div className="discovery-head">
+        <div>
+          <div className="muted-label">Discovery engine</div>
+          <h4 className="research-heading">Research gaps and next-study map</h4>
+          <p className="muted-note">{discovery.summary}</p>
+        </div>
+        <span className="discovery-meter">{humanize(discovery.evidence_meter)}</span>
+      </div>
+
+      <div className="discovery-stats" aria-label="Discovery report summary">
+        <span><b>{discovery.claims.length}</b> claims</span>
+        <span><b>{discovery.study_characteristics.length}</b> extracted studies</span>
+        <span><b>{discovery.research_gaps.length}</b> gaps</span>
+        <span><b>{discovery.study_designs.length}</b> study designs</span>
+      </div>
+
+      {topClaims.length ? <DiscoveryClaims claims={topClaims} citeMap={citeMap} onCite={onCite} /> : null}
+      {topStudies.length ? <DiscoveryStudyTable studies={topStudies} onCite={onCite} /> : null}
+
+      <div className="discovery-two-col">
+        {topGaps.length ? <DiscoveryGaps gaps={topGaps} citeMap={citeMap} onCite={onCite} /> : null}
+        {topHypotheses.length ? <DiscoveryHypotheses hypotheses={topHypotheses} /> : null}
+      </div>
+
+      {topDesigns.length ? <DiscoveryStudyDesigns designs={topDesigns} /> : null}
+      {discovery.monitor_terms.length ? (
+        <p className="discovery-monitor">
+          <span>Monitor terms</span>
+          {discovery.monitor_terms.slice(0, 10).join(" · ")}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function DiscoveryClaims({ claims, citeMap, onCite }: { claims: DiscoveryClaim[]; citeMap: Map<string, string>; onCite: (tag: string) => void }) {
+  return (
+    <div className="discovery-block">
+      <h5>Claim cards</h5>
+      <div className="discovery-claim-grid">
+        {claims.map((claim) => {
+          const counts = claimEvidenceCounts(claim);
+          return (
+            <article className="discovery-card" key={claim.id}>
+              <div className="discovery-card-top">
+                <span className={`discovery-status ${claim.verdict}`}>{humanize(claim.verdict)}</span>
+                <span>{humanize(claim.confidence)} confidence</span>
+              </div>
+              <p className="discovery-claim-text">{claim.claim_text}</p>
+              {claim.rationale ? <p className="discovery-card-note">{claim.rationale}</p> : null}
+              <div className="discovery-relations" aria-label="Evidence relation counts">
+                {Object.entries(counts).filter(([, n]) => n > 0).map(([relation, n]) => (
+                  <span className={`discovery-relation ${relation}`} key={relation}>{humanize(relation)} {n}</span>
+                ))}
+              </div>
+              {claim.evidence.length ? (
+                <div className="discovery-cites">
+                  {claim.evidence.slice(0, 3).map((ev) => (
+                    <EvidenceLinkButton
+                      key={`${claim.id}-${ev.citation_tag}`}
+                      tag={ev.citation_tag}
+                      label={`${citeMap.get(normTag(ev.citation_tag)) ?? "REF"} · ${humanize(ev.relation)}`}
+                      onCite={onCite}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DiscoveryStudyTable({ studies, onCite }: { studies: StudyCharacteristic[]; onCite: (tag: string) => void }) {
+  return (
+    <div className="discovery-block">
+      <h5>Evidence extraction</h5>
+      <div className="evidence-table-wrap">
+        <table className="evidence-table discovery-study-table">
+          <thead>
+            <tr><th>#</th><th>Design</th><th>Population</th><th>Outcomes / limits</th></tr>
+          </thead>
+          <tbody>
+            {studies.map((s) => (
+              <tr key={`${s.source_id}-${s.citation_tag}`}>
+                <td><button type="button" className="cite" onClick={() => onCite(normTag(s.citation_tag))} aria-label={`Show source ${s.citation_tag}`}>{normTag(s.citation_tag)}</button></td>
+                <td><b>{s.study_type}</b><br /><span>{shortText(s.title, 80)}</span></td>
+                <td>{s.population ? shortText(s.population, 70) : "Not specified"}</td>
+                <td>
+                  {s.outcomes.length ? <span>{s.outcomes.slice(0, 3).join(", ")}</span> : <span>No outcome extracted</span>}
+                  {s.limitations.length ? <small>{s.limitations.slice(0, 2).join("; ")}</small> : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function DiscoveryGaps({ gaps, citeMap, onCite }: { gaps: ResearchGap[]; citeMap: Map<string, string>; onCite: (tag: string) => void }) {
+  return (
+    <div className="discovery-block">
+      <h5>Research gaps</h5>
+      <div className="discovery-detail-list">
+        {gaps.map((gap, i) => (
+          <details className="discovery-detail" key={gap.id} open={i === 0}>
+            <summary>
+              <span>{humanize(gap.dimension)}</span>
+              <b className={`gap-severity ${gap.severity}`}>{gap.severity}</b>
+            </summary>
+            <p>{gap.description}</p>
+            <p className="discovery-card-note">{gap.rationale}</p>
+            {gap.source_tags.length ? (
+              <div className="discovery-cites">
+                {gap.source_tags.slice(0, 3).map((tag) => (
+                  <EvidenceLinkButton key={`${gap.id}-${tag}`} tag={tag} label={citeMap.get(normTag(tag)) ?? "REF"} onCite={onCite} />
+                ))}
+              </div>
+            ) : null}
+          </details>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DiscoveryHypotheses({ hypotheses }: { hypotheses: ResearchHypothesis[] }) {
+  return (
+    <div className="discovery-block">
+      <h5>Hypotheses</h5>
+      <div className="discovery-detail-list">
+        {hypotheses.map((h) => (
+          <article className="discovery-mini" key={h.id}>
+            <div className="discovery-card-top">
+              <span className={`gap-severity ${h.priority}`}>{h.priority} priority</span>
+            </div>
+            <p className="discovery-claim-text">{h.hypothesis}</p>
+            <p className="discovery-card-note">{h.uncertainty}</p>
+            {h.why_plausible.length ? (
+              <ul>
+                {h.why_plausible.slice(0, 3).map((why) => <li key={why}>{why}</li>)}
+              </ul>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DiscoveryStudyDesigns({ designs }: { designs: SuggestedStudyDesign[] }) {
+  return (
+    <div className="discovery-block">
+      <h5>Suggested next study</h5>
+      <div className="discovery-design-list">
+        {designs.map((d) => (
+          <article className="discovery-design" key={d.id}>
+            <div className="discovery-card-top">
+              <span>{humanize(d.design_type)}</span>
+              <b>{d.feasibility} feasibility</b>
+            </div>
+            <p className="discovery-claim-text">{d.research_question}</p>
+            <dl>
+              <div><dt>Population</dt><dd>{d.population}</dd></div>
+              <div><dt>Intervention</dt><dd>{d.intervention}</dd></div>
+              <div><dt>Comparator</dt><dd>{d.comparator}</dd></div>
+              <div><dt>Primary endpoint</dt><dd>{d.primary_endpoint}</dd></div>
+              <div><dt>Duration</dt><dd>{d.duration}</dd></div>
+            </dl>
+            <p className="discovery-card-note">{d.sample_size_notes}</p>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Renders a finished Deep Research report: summary, verification state, themed cited sections,
  *  prominent safety, honest uncertainties, and a numbered sources list. Citation chips scroll to the
  *  matching source. Visual language matches the /ask Answer (same classes) so it feels like one app. */
@@ -256,6 +478,12 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
       ) : null}
 
       {!report.template && report.citations.length ? <EvidenceTable citations={report.citations} onCite={onCite} /> : null}
+      {/* Evidence-at-a-glance figures (study-design mix + publications-by-year) from the report's real cited
+          sources. Each self-suppresses when the data is too thin. Behind NEXT_PUBLIC_ENGINE_VISUALS (default off). */}
+      {engineVisualsEnabled && !report.template && report.citations.length ? (
+        <EvidenceChartsSection citations={report.citations} />
+      ) : null}
+      {report.discovery ? <DiscoveryPanel discovery={report.discovery} citeMap={citeMap} onCite={onCite} /> : null}
 
       {isMeta ? (
         <>
