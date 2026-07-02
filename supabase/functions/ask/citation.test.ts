@@ -197,7 +197,7 @@ Deno.test("buildReviewedSet: excludes cited chunks by chunk_id, not by tag", () 
     poolChunk("c2", { tag: "1", rerank_score: 0.8 }),
     poolChunk("c3", { tag: "2", rerank_score: 0.7 }),
   ];
-  const out = buildReviewedSet(pool, new Set(["c1"]), 1, 0.35, 34);
+  const out = buildReviewedSet(pool, new Set(["c1"]), new Set(["1"]), 0.35, 34);
   assertEquals(out.map((c) => c.source_id), ["s-c2", "s-c3"]);
 });
 
@@ -207,25 +207,36 @@ Deno.test("buildReviewedSet: drops chunks below the relevance floor", () => {
     poolChunk("c2", { rerank_score: 0.34 }), // just under a 0.35 floor
     poolChunk("c3", { rerank_score: 0.35 }), // exactly at the floor -> kept
   ];
-  const out = buildReviewedSet(pool, new Set(), 0, 0.35, 34);
+  const out = buildReviewedSet(pool, new Set(), new Set(), 0.35, 34);
   assertEquals(out.map((c) => c.source_id), ["s-c1", "s-c3"]);
 });
 
 Deno.test("buildReviewedSet: caps at REVIEWED_CAP", () => {
   const pool = Array.from({ length: 40 }, (_, i) => poolChunk(`c${i}`, { rerank_score: 0.9 - i * 0.001 }));
-  const out = buildReviewedSet(pool, new Set(), 0, 0.35, 5);
+  const out = buildReviewedSet(pool, new Set(), new Set(), 0.35, 5);
   assertEquals(out.length, 5);
   assertEquals(out.map((c) => c.source_id), ["s-c0", "s-c1", "s-c2", "s-c3", "s-c4"]);
 });
 
-Deno.test("buildReviewedSet: tags start at citedCount+1 with no collision with cited tags", () => {
+Deno.test("buildReviewedSet: reviewed tags start above max(citedTags), not the count — SPARSE cited set", () => {
   const pool = [
     poolChunk("c1", { rerank_score: 0.9 }),
     poolChunk("c2", { rerank_score: 0.8 }),
+    poolChunk("c3", { rerank_score: 0.7 }),
   ];
-  // citedCount = 4 (cited tags "1".."4" already used) -> reviewed tags must start at "5"
-  const out = buildReviewedSet(pool, new Set(), 4, 0.35, 34);
-  assertEquals(out.map((c) => c.chunk_tag), ["5", "6"]);
+  // The generator cited a SPARSE subset {1,2,5,9,18} — count is 5 but the HIGHEST tag is 18. Reviewed
+  // tags must start at 19, never re-emit a live cited tag (9 or 18) which would mis-paint a support
+  // highlight on a non-cited source. Offsetting by the count (5) would produce "6","7","8" then collide.
+  const citedTags = new Set(["1", "2", "5", "9", "18"]);
+  const out = buildReviewedSet(pool, new Set(), citedTags, 0.35, 34);
+  assertEquals(out.map((c) => c.chunk_tag), ["19", "20", "21"]);
+  // Hard invariant: no reviewed tag equals any cited tag.
+  for (const c of out) assertEquals(citedTags.has(c.chunk_tag), false);
+});
+
+Deno.test("buildReviewedSet: empty cited set -> reviewed tags start at 1", () => {
+  const out = buildReviewedSet([poolChunk("c1", { rerank_score: 0.9 })], new Set(), new Set(), 0.35, 34);
+  assertEquals(out.map((c) => c.chunk_tag), ["1"]);
 });
 
 Deno.test("buildReviewedSet: uses similarity when rerank_score is absent (dense/LIVE-off pool)", () => {
@@ -233,12 +244,12 @@ Deno.test("buildReviewedSet: uses similarity when rerank_score is absent (dense/
     poolChunk("c1", { similarity: 0.6 }), // no rerank_score -> falls back to similarity
     poolChunk("c2", { similarity: 0.1 }), // below floor via similarity fallback -> dropped
   ];
-  const out = buildReviewedSet(pool, new Set(), 0, 0.35, 34);
+  const out = buildReviewedSet(pool, new Set(), new Set(), 0.35, 34);
   assertEquals(out.map((c) => c.source_id), ["s-c1"]);
 });
 
 Deno.test("buildReviewedSet: empty pool returns []", () => {
-  assertEquals(buildReviewedSet([], new Set(), 0, 0.35, 34), []);
+  assertEquals(buildReviewedSet([], new Set(), new Set(), 0.35, 34), []);
 });
 
 Deno.test("buildReviewedSet: order is preserved from the pool (pool is already rank-ordered)", () => {
@@ -246,7 +257,7 @@ Deno.test("buildReviewedSet: order is preserved from the pool (pool is already r
     poolChunk("c1", { rerank_score: 0.4 }),
     poolChunk("c2", { rerank_score: 0.9 }),
   ];
-  const out = buildReviewedSet(pool, new Set(), 0, 0.35, 34);
+  const out = buildReviewedSet(pool, new Set(), new Set(), 0.35, 34);
   // No re-sort inside the helper — the caller passes an already-ranked pool.
   assertEquals(out.map((c) => c.source_id), ["s-c1", "s-c2"]);
 });
@@ -254,7 +265,7 @@ Deno.test("buildReviewedSet: order is preserved from the pool (pool is already r
 Deno.test("buildReviewedSet: without a rater, reviewed sources carry NO tag-keyed support fields", () => {
   // Guards against a future accidental re-merge of the tag-keyed supportRatings (which collide with
   // the re-tagged reviewed namespace). Reviewed cards must not fabricate a flat "reviewed" support badge.
-  const out = buildReviewedSet([poolChunk("c1", { rerank_score: 0.9 })], new Set(), 0, 0.35, 34);
+  const out = buildReviewedSet([poolChunk("c1", { rerank_score: 0.9 })], new Set(), new Set(), 0.35, 34);
   assertEquals(out[0].support_level, undefined);
   assertEquals(out[0].claim_relation, undefined);
   assertEquals(out[0].evidence_role, undefined); // no rater supplied -> no role either
@@ -265,7 +276,7 @@ Deno.test("buildReviewedSet: the pure rater restores the differentiated evidence
     poolChunk("c1", { provider: "openfda", rerank_score: 0.9 }),      // official_label
     poolChunk("c2", { provider: "pubmed_oa", rerank_score: 0.8 }),    // research_article
   ];
-  const out = buildReviewedSet(pool, new Set(), 0, 0.35, 34, (c) => {
+  const out = buildReviewedSet(pool, new Set(), new Set(), 0.35, 34, (c) => {
     // Stand-in for evidenceRole(): pure function of the chunk, no tag lookup.
     const role = c.provider.includes("openfda") ? "official_label" : "research_article";
     return { evidence_role: role, evidence_weight: role === "official_label" ? 92 : 52 };

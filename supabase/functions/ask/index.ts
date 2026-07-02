@@ -479,7 +479,10 @@ async function runAsk(
     ret.chunks.filter((c) => citedTags.has(c.tag)).map((c) => c.chunk_id),
   );
   const reviewedSources = buildReviewedSet(
-    guardPool, citedChunkIds, citedTags.size, REVIEWED_SCORE_FLOOR, REVIEWED_CAP,
+    // Pass the cited-tag SET (not its size): reviewed tags must start above max(citedTags), because the
+    // generator cites a SPARSE subset of 1..matchCount — offsetting by the count would collide with
+    // higher cited tags and mis-paint a "Supports this claim" highlight on a non-cited source.
+    guardPool, citedChunkIds, citedTags, REVIEWED_SCORE_FLOOR, REVIEWED_CAP,
     // Restore the differentiated source-class badge on reviewed cards via the PURE per-chunk
     // evidenceRole() — never the tag-keyed supportRatings (its "1".."N" keys collide with the
     // re-tagged reviewed namespace). support_level/claim_relation stay omitted (flat for non-cited).
