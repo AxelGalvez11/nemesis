@@ -26,7 +26,7 @@ import { attachSupport } from "./support-span.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
 import { balanceCitedSlice } from "./cite-balance.ts";
-import { extractSearchTerms } from "./search-query.ts";
+import { buildSubQueries, extractSearchTerms } from "./search-query.ts";
 import { espellCorrect } from "../core-source-sync/providers/pubmed.ts";
 import { decideNewsGate } from "./news-gate.ts";
 import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
@@ -98,6 +98,13 @@ const THOROUGH_MATCH_COUNT = 18;
 // leftovers of the cited slice — display-only, does not touch ret.chunks or the generator.
 const REVIEWED_CAP = 34; // max "also reviewed" sources shown (total shown ~= cited ~6 + reviewed <=34 ~= 40)
 const REVIEWED_SCORE_FLOOR = 0.35; // min relevance (rerank_score, else dense similarity) to be shown as reviewed
+// Task 3b: parallel multi-query DENSE recall. A single dense query under-retrieves the library side of the
+// pool (esp. thin-live consumer questions). We fan the question into a few deterministic sub-queries
+// (buildSubQueries) and keep a bigger merged dense pool that then feeds augmentWithLive's rerank. This is
+// GATED behind LIVE_SOURCES_ON so the dense-only path stays byte-for-byte the behavior the gate locks in:
+// with live off we pass no sub-queries and recallPool == matchCount, i.e. today's single-query retrieve.
+const RECALL_POOL = 28; // merged dense candidates kept (fast/default) when live sources are on
+const THOROUGH_RECALL_POOL = 40; // merged dense candidates kept (thorough) when live sources are on
 
 // Live evidence sources (PubMed / Europe PMC / ClinicalTrials / openFDA / FAERS) are gated behind a
 // flag so deploying this code is non-breaking: with LIVE_SOURCES unset the pipeline is byte-for-byte
@@ -264,12 +271,19 @@ async function runAsk(
   // Consumer-product-only queries (e.g. "Celsius") stay on pubmed_oa; everything else uses the
   // intent-scoped priority (now symptom-aware via effectiveIntent).
   const priority = consumerProductOnly ? ["pubmed_oa"] : providerPriorityForIntent(effectiveIntent);
+  // Multi-query dense recall — ONLY when live sources are on (see RECALL_POOL comment). With live off,
+  // subQueries=undefined + recallPool=matchCount makes retrieve() a single-query matchCount call, i.e.
+  // byte-identical to today's dense-only path (the gate/guardrail baseline).
+  const subQueries = LIVE_SOURCES_ON ? buildSubQueries(question, cls.entity_mentions, cls.intent) : undefined;
+  const recallPool = LIVE_SOURCES_ON ? (mode === "thorough" ? THOROUGH_RECALL_POOL : RECALL_POOL) : matchCount;
   let ret = await retrieve({
     question,
     providers: priority,
     entityId: scopeId,
     threshold: ASK_MATCH_THRESHOLD,
     matchCount,
+    subQueries,
+    recallPool,
     sbUrl: SB_URL,
     serviceKey: SERVICE_KEY,
   });
@@ -285,6 +299,8 @@ async function runAsk(
       entityId: null,
       threshold: ASK_MATCH_THRESHOLD,
       matchCount,
+      subQueries,
+      recallPool,
       sbUrl: SB_URL,
       serviceKey: SERVICE_KEY,
     });
@@ -532,7 +548,11 @@ async function augmentWithLive(
   webRecon?: WebReconResult,
   labelCap?: number,
 ): Promise<{ pool: RetrievedChunk[]; top: RetrievedChunk[] }> {
-  const fallback = { pool: libChunks, top: libChunks };
+  // top feeds the generator and must stay matchCount-sized even when augmentation fails and even when
+  // libChunks is now a bigger multi-query recall pool (Task 3b) — otherwise the generator would see the
+  // full pool. pool keeps all of libChunks for the fabrication guard + reviewed breadth. When libChunks
+  // is already <= matchCount (today's dense-only path), slice is a no-op, so this stays byte-identical.
+  const fallback = { pool: libChunks, top: libChunks.slice(0, matchCount) };
   try {
     const baseResearchQuery = extractSearchTerms(question) || question;
     const understood = webRecon
