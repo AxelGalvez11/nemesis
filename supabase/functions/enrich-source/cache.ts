@@ -25,3 +25,12 @@ export function isFresh(fetchedAt: string, now: number, ttlDays: number): boolea
   const cutoff = now - ttlDays * 24 * 3600 * 1000;
   return new Date(fetchedAt).getTime() > cutoff;
 }
+
+// Total-row count from a PostgREST `Content-Range` response header:
+// "0-0/57" → 57, "*/0" → 0. Returns null when the header is absent or carries
+// no exact count (e.g. "0-24/*") — callers must treat null as "count
+// unavailable", never as zero.
+export function parseContentRangeCount(header: string | null): number | null {
+  const m = /\/(\d+)\s*$/.exec(header ?? "");
+  return m ? Number(m[1]) : null;
+}

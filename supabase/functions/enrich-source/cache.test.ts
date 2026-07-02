@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { isFresh, parsePmids } from "./cache.ts";
+import { isFresh, parseContentRangeCount, parsePmids } from "./cache.ts";
 
 Deno.test("isFresh: within TTL is fresh", () => {
   const now = Date.parse("2026-07-02T00:00:00Z");
@@ -34,4 +34,17 @@ Deno.test("parsePmids: returns empty array for non-array input", () => {
 Deno.test("parsePmids: caps batch size at max", () => {
   const ids = Array.from({ length: 30 }, (_, i) => String(i + 1));
   assertEquals(parsePmids(ids, 24).length, 24);
+});
+
+Deno.test("parseContentRangeCount: reads the exact total from a PostgREST header", () => {
+  assertEquals(parseContentRangeCount("0-0/57"), 57);
+  assertEquals(parseContentRangeCount("*/0"), 0);
+  assertEquals(parseContentRangeCount("0-24/3573"), 3573);
+});
+
+Deno.test("parseContentRangeCount: null (never zero) when the count is unavailable", () => {
+  assertEquals(parseContentRangeCount(null), null);
+  assertEquals(parseContentRangeCount(""), null);
+  assertEquals(parseContentRangeCount("0-24/*"), null); // count=exact not honored
+  assertEquals(parseContentRangeCount("garbage"), null);
 });

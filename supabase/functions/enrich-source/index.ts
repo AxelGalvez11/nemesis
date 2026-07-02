@@ -13,10 +13,21 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 import { fetchEnrichmentBase, type SourceEnrichment } from "./providers.ts";
 import { extractSnapshot } from "./snapshot.ts";
-import { isFresh, parsePmids } from "./cache.ts";
+import { isFresh, parseContentRangeCount, parsePmids } from "./cache.ts";
 
 const TTL_DAYS = 30;
 const MAX_BATCH = 24;
+// ── Per-user daily quota: cost-amplification guard, mirroring ask ──
+// ask/index.ts meters every authenticated request through the consume_usage RPC
+// (ask_daily); without a meter here, one authenticated user can fire up to MAX_BATCH
+// paid LLM calls per request on the SAME LLM key ask uses, and pollute the cache
+// across a ~10^9 junk-PMID keyspace. consume_usage keys its limit on a per-plan
+// `<counter>_limit` entitlement row, which doesn't exist for enrichment (adding one
+// is a migration), so this is a flat per-user daily cap instead: one cache-miss
+// BATCH = 1 unit, ledgered in usage_events (the same table consume_usage writes)
+// via the service-role client. Cache-hit-only requests are free.
+const ENRICH_COUNTER_KEY = "enrich_daily";
+const ENRICH_DAILY_BATCH_CAP = 150;
 // scite's public tallies endpoint is throttled to <=5 req/s (carry-forward constraint
 // from the Task 3 review). Misses are resolved SEQUENTIALLY (one pmid's OpenAlex+scite+
 // snapshot chain at a time) rather than fanned out with Promise.all, so at most one
@@ -117,6 +128,56 @@ async function upsertCacheRow(key: string, payload: SourceEnrichment): Promise<v
   }
 }
 
+/** Today's consumed enrich batches for a user, or null when the count is unavailable. */
+async function countTodayEnrichBatches(userId: string, day: string): Promise<number | null> {
+  try {
+    const url = new URL(`${SB_URL}/rest/v1/usage_events`);
+    url.searchParams.set("select", "id");
+    url.searchParams.set("user_id", `eq.${userId}`);
+    url.searchParams.set("counter_key", `eq.${ENRICH_COUNTER_KEY}`);
+    url.searchParams.set("period_start", `eq.${day}`);
+    const res = await fetch(url, {
+      method: "HEAD",
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        Prefer: "count=exact",
+        Range: "0-0",
+      },
+    });
+    if (!res.ok) return null;
+    return parseContentRangeCount(res.headers.get("content-range"));
+  } catch {
+    return null;
+  }
+}
+
+/** Ledger one cache-miss batch (1 unit) in usage_events. Best-effort: the cap is an
+ * abuse bound, not billing, so a failed write must not fail the request. */
+async function recordEnrichBatch(userId: string, day: string, misses: number): Promise<void> {
+  try {
+    await fetch(`${SB_URL}/rest/v1/usage_events`, {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        event_type: ENRICH_COUNTER_KEY,
+        counter_key: ENRICH_COUNTER_KEY,
+        cost_credits: 1,
+        metadata: { surface: "enrich-source", misses },
+        period_start: day,
+      }),
+    });
+  } catch {
+    // Best-effort ledger write (see docstring).
+  }
+}
+
 /** Resolve one cache-missed pmid's full enrichment (OpenAlex + scite + snapshot). Never throws.
  * `cacheable` is true only when OpenAlex actually ANSWERED (data, or a definitive 4xx "no
  * such record"); an outage-class failure (network error, timeout, 5xx) must not be cached —
@@ -160,6 +221,25 @@ serve(async (req) => {
   }
 
   const misses = pmids.filter((p) => !fresh.has(`pmid:${p}`));
+  if (misses.length > 0) {
+    // Quota gate (see the cost-amplification note at the top). Only a batch that will
+    // actually hit providers/LLM consumes a unit; the client degrades a 429 to "no
+    // enrichment" silently (useEnrichment treats any non-ok response as best-effort miss).
+    const day = new Date().toISOString().slice(0, 10);
+    const used = await countTodayEnrichBatches(userId, day);
+    if (used !== null && used >= ENRICH_DAILY_BATCH_CAP) {
+      return json(
+        { error: "quota_exceeded", counter_key: ENRICH_COUNTER_KEY, used, limit: ENRICH_DAILY_BATCH_CAP },
+        429,
+        req,
+      );
+    }
+    // used === null (count unavailable) fails OPEN: enrichment is best-effort decoration,
+    // the check runs against our own REST API with the service key, and an attacker can't
+    // induce that failure selectively — while failing closed would strip trust badges for
+    // every user during any transient DB blip.
+    await recordEnrichBatch(userId, day, misses.length);
+  }
   // Sequential on purpose (see the scite rate-limit note above): each iteration completes
   // its OpenAlex+scite+snapshot chain — and its cache write — before the next pmid starts.
   for (const pmid of misses) {
