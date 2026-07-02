@@ -2,6 +2,10 @@
 //  - OpenAlex (CC0): DOI resolution, is_retracted, cited_by_count.
 //  - scite public tallies (per DOI): supporting / contrasting / mentioning counts.
 // Both are best-effort: any HTTP/shape failure degrades to nulls, never throws to the caller.
+// The OpenAlex outcome additionally distinguishes "provider answered" (data, or a definitive
+// 4xx "no such record") from "provider outage" (network error, timeout, 5xx) via the
+// `fetched` flag, so the caller can decide whether a null-heavy result is authoritative
+// enough to cache — a transient outage must never pin retracted:false for the TTL window.
 
 import { normalizeDoi } from "../../../packages/shared/src/source-ids.ts";
 
@@ -18,6 +22,13 @@ export interface SourceEnrichment {
   cited_by: number | null;
   tallies: { supporting: number; contrasting: number; mentioning: number } | null;
   snapshot: StudySnapshot | null;
+}
+
+/** Enrichment base plus provenance: `fetched` is true only when OpenAlex ANSWERED
+ * (2xx with data, or a definitive 4xx "no such record"). False means outage-class
+ * failure (network error, timeout, 5xx) — the nulls are NOT authoritative. */
+export interface EnrichmentBase extends Omit<SourceEnrichment, "snapshot"> {
+  fetched: boolean;
 }
 
 const OPENALEX_MAILTO = "engineering@pharmaorb.app";
@@ -40,22 +51,34 @@ export function parseSciteTallies(json: unknown): SourceEnrichment["tallies"] {
   return { supporting: t.supporting, contrasting, mentioning: t.mentioning };
 }
 
-async function getJson(url: string): Promise<unknown> {
+/** One provider fetch's outcome. `ok` separates "the provider answered" from "the provider
+ * was unreachable": a 4xx is a definitive answer about the record (ok, json null), while a
+ * 5xx / network error / malformed body is an outage (not ok) — never a statement about the
+ * record itself. Never throws. */
+export interface FetchOutcome {
+  ok: boolean;
+  json: unknown;
+}
+
+async function getJson(url: string): Promise<FetchOutcome> {
   try {
     const res = await fetch(url, { headers: { accept: "application/json" } });
-    if (!res.ok) return null; // 4xx/5xx = "no data", by design
-    return await res.json();
+    if (res.ok) return { ok: true, json: await res.json() };
+    return { ok: res.status < 500, json: null }; // 4xx = definitive "no data"; 5xx = outage
   } catch {
-    return null;
+    return { ok: false, json: null }; // network error / timeout = outage
   }
 }
 
-export async function fetchEnrichmentBase(pmid: string): Promise<Omit<SourceEnrichment, "snapshot">> {
-  const work = parseOpenAlexWork(
-    await getJson(`https://api.openalex.org/works/pmid:${pmid}?mailto=${OPENALEX_MAILTO}&select=ids,is_retracted,cited_by_count`),
+export async function fetchEnrichmentBase(pmid: string): Promise<EnrichmentBase> {
+  const openAlex = await getJson(
+    `https://api.openalex.org/works/pmid:${pmid}?mailto=${OPENALEX_MAILTO}&select=ids,is_retracted,cited_by_count`,
   );
+  const work = parseOpenAlexWork(openAlex.json);
+  // scite is decoration on top of the OpenAlex base: its failure (outage or no tallies)
+  // degrades to tallies:null and does NOT poison `fetched` — partial success stays cacheable.
   const tallies = work.doi
-    ? parseSciteTallies(await getJson(`https://api.scite.ai/tallies/${encodeURIComponent(work.doi)}`))
+    ? parseSciteTallies((await getJson(`https://api.scite.ai/tallies/${encodeURIComponent(work.doi)}`)).json)
     : null;
-  return { ...work, tallies };
+  return { ...work, tallies, fetched: openAlex.ok };
 }

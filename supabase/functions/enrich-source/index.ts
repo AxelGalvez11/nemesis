@@ -117,11 +117,16 @@ async function upsertCacheRow(key: string, payload: SourceEnrichment): Promise<v
   }
 }
 
-/** Resolve one cache-missed pmid's full enrichment (OpenAlex + scite + snapshot). Never throws. */
-async function resolveMiss(pmid: string): Promise<SourceEnrichment> {
-  const base = await fetchEnrichmentBase(pmid);
+/** Resolve one cache-missed pmid's full enrichment (OpenAlex + scite + snapshot). Never throws.
+ * `cacheable` is true only when OpenAlex actually ANSWERED (data, or a definitive 4xx "no
+ * such record"); an outage-class failure (network error, timeout, 5xx) must not be cached —
+ * its nulls (notably retracted:false) are not authoritative, and writing them would both
+ * hide a retraction banner for the whole TTL and overwrite a stale-but-correct row. Partial
+ * success (OpenAlex ok, scite/snapshot failed) still caches. */
+async function resolveMiss(pmid: string): Promise<{ payload: SourceEnrichment; cacheable: boolean }> {
+  const { fetched, ...base } = await fetchEnrichmentBase(pmid);
   const snapshot = await extractSnapshot(pmid);
-  return { ...base, snapshot };
+  return { payload: { ...base, snapshot }, cacheable: fetched };
 }
 
 serve(async (req) => {
@@ -158,9 +163,11 @@ serve(async (req) => {
   // Sequential on purpose (see the scite rate-limit note above): each iteration completes
   // its OpenAlex+scite+snapshot chain — and its cache write — before the next pmid starts.
   for (const pmid of misses) {
-    const payload = await resolveMiss(pmid);
+    const { payload, cacheable } = await resolveMiss(pmid);
     results[`pmid:${pmid}`] = payload;
-    await upsertCacheRow(`pmid:${pmid}`, payload);
+    // Outage-class provider failures are served best-effort but NOT cached: the next
+    // request refetches live (same recovery path as a failed cache write below).
+    if (cacheable) await upsertCacheRow(`pmid:${pmid}`, payload);
   }
 
   return json({ results }, 200, req);
