@@ -45,6 +45,10 @@ const MODES = [
   { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
 ] as const;
 
+// Where the dial rests when no tool is armed — and what an armed tool resets to after its run
+// launches (tools are single-shot, the ChatGPT behavior; see submit()).
+const DEFAULT_DEPTH: (typeof MODES)[number]["id"] = simplifiedModesEnabled ? "auto" : "fast";
+
 const MIN_THINKING_PREVIEW_MS = 650;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -89,7 +93,7 @@ function AskPage() {
   const [stage, setStage] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
   const [revealIdx, setRevealIdx] = useState<number | null>(null); // the turn whose answer should type itself in (only the just-arrived one — never reopened/saved turns)
-  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>(simplifiedModesEnabled ? "auto" : "fast");
+  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>(DEFAULT_DEPTH);
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   // The verbatim source sentence backing the claim whose citation was just clicked, shown highlighted
@@ -319,6 +323,9 @@ function AskPage() {
       setTurns((prev) => [...prev, { q: text, a: null, err: null, scoping: true }]);
       setQuestion("");
       if (taRef.current) taRef.current.style.height = "auto";
+      // Tools are SINGLE-SHOT (the ChatGPT behavior): this run is launched, so the composer returns
+      // to a normal ask — a follow-up question won't silently burn another Pro report run.
+      setMode(DEFAULT_DEPTH);
       const scope = await scopeResearch(text); // best-effort; degrades to no-clarification on any failure
       if (scope.needs_clarification) {
         setTurns((prev) => prev.map((t, i) => (i === ridx ? { q: text, a: null, err: null, scope: { question: text, runMode, questions: scope.questions } } : t)));
@@ -539,15 +546,18 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
           </button>
           {plusOpen ? (
             <div className="acct-menu tools-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 280 }}>
-              {/* Tools: each arms a report mode (or prefills the box) for the NEXT send — the ChatGPT
-                  "+" pattern. Deep research includes the pooled meta-analysis when studies allow it. */}
+              {/* Tools: each arms a report mode (or prefills the box) for the next send, and the
+                  armed mode resets to the default depth once that run launches (single-shot — see
+                  submit()). Deep research includes the pooled meta-analysis when studies allow it. */}
               <button type="button" role="menuitem" onClick={() => { setMode("deep"); setPlusOpen(false); taRef.current?.focus(); }}>
                 <Icon name="doc" size={14} /><span style={{ flex: 1 }}>Deep research</span><small style={{ color: "var(--text-3)" }}>cited report + pooled stats</small>
               </button>
               <button type="button" role="menuitem" onClick={() => { setMode("discovery"); setPlusOpen(false); taRef.current?.focus(); }}>
                 <Icon name="sparkle" size={14} /><span style={{ flex: 1 }}>Discovery</span><small style={{ color: "var(--text-3)" }}>gaps &amp; hypotheses</small>
               </button>
-              <button type="button" role="menuitem" onClick={() => { setQuestion("Is it true that "); setPlusOpen(false); taRef.current?.focus(); }}>
+              {/* Verify is a quick cited check by design — it also DISARMS any armed report tool,
+                  so "Deep research → actually, verify this" can't accidentally fire a Pro run. */}
+              <button type="button" role="menuitem" onClick={() => { setMode(DEFAULT_DEPTH); setQuestion("Is it true that "); setPlusOpen(false); taRef.current?.focus(); }}>
                 <Icon name="check" size={14} /><span style={{ flex: 1 }}>Verify a claim</span><small style={{ color: "var(--text-3)" }}>check it against evidence</small>
               </button>
               <button
@@ -555,8 +565,9 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
                 role="menuitem"
                 onClick={() => {
                   // Hand the typed topic to Monitoring's "Monitor a new topic" box via the in-memory
-                  // session cache (client-side nav keeps module state; nothing hits the URL).
-                  if (question.trim()) setCached("monitor-prefill", question.trim());
+                  // session cache (client-side nav keeps module state; nothing hits the URL). Capped
+                  // to the picker's own 200-char input limit, which programmatic values would bypass.
+                  if (question.trim()) setCached("monitor-prefill", question.trim().slice(0, 200));
                   setPlusOpen(false);
                   router.push("/app/monitor");
                 }}
@@ -568,7 +579,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
                   class (news-only; community chatter from Reddit/X walled off from cited evidence). */}
               <div className="menu-label" aria-hidden="true">Search filters</div>
               <button type="button" role="menuitem" disabled>
-                <Icon name="bell" size={14} /><span style={{ flex: 1 }}>News only</span><small style={{ color: "var(--text-3)" }}>Soon</small>
+                <Icon name="message" size={14} /><span style={{ flex: 1 }}>News only</span><small style={{ color: "var(--text-3)" }}>Soon</small>
               </button>
               <button type="button" role="menuitem" disabled>
                 <Icon name="search" size={14} /><span style={{ flex: 1 }}>Communities — Reddit &amp; X</span><small style={{ color: "var(--text-3)" }}>Soon</small>
