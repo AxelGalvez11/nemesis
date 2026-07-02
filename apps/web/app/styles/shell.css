@@ -759,6 +759,16 @@
 .ev-map-selected span, .ev-map-selected small { display: block; font-family: var(--mono); font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
 .ev-map-selected b { display: block; margin: 5px 0 2px; font-size: 13px; line-height: 1.35; color: var(--text); }
 
+/* ── evidence map (SVG scatter: year × evidence-strength) ── */
+.ev-map { padding: 12px; }
+.ev-map svg { width: 100%; height: auto; }
+.ev-map-axis { stroke: var(--line-2); stroke-width: 1; }
+.ev-map-label { fill: var(--text-3); font-size: 9px; font-family: var(--mono); }
+.ev-map-dot { fill: transparent; stroke: var(--text-3); stroke-width: 1.5; cursor: pointer; }
+.ev-map-dot.cited { fill: var(--acid); fill-opacity: 0.75; stroke: var(--acid-deep); }
+.ev-map-dot:hover { stroke: var(--text); }
+.ev-map-hint { font-size: 11px; color: var(--text-3); margin: 8px 2px 0; line-height: 1.5; }
+
 /* ── tablet & down (≤1100px): the evidence panel leaves the grid and becomes a right-side
    drawer toggled by the topbar panel button (fixes the phone bottom-stack AND the tablet
    dead-button: inline evidence was forced to width 0 across this whole band). ── */

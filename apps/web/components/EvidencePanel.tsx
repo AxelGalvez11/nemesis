@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Citation } from "@pharmabro/shared";
-import { CLAIM_RELATION_LABEL, enrichmentKeyFor, formatReference, studyTypeLabel } from "@pharmabro/shared";
+import { CLAIM_RELATION_LABEL, buildEvidenceMap, enrichmentKeyFor, formatReference, studyTypeLabel } from "@pharmabro/shared";
 import { normTag } from "@/lib/cite";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { safeHref } from "@/lib/url";
 import { useEnrichment, type SourceEnrichment } from "@/lib/enrichment";
-import { EvidenceGraph } from "./EvidenceGraph";
+import { EvidenceMapView } from "./EvidenceMapView";
 
 // Provider → the color-square class in shell.css (openfda blue, pubmed purple, trial orange, faers red).
 function providerClass(t: string): string {
@@ -226,6 +226,9 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
   const citedN = citations.length;
   const enrichment = useEnrichment([...citations, ...rev]);
   const [tab, setTab] = useState<"sources" | "map">("sources");
+  // Additive: the map tab only offers itself when there are enough dated sources to plot
+  // (buildEvidenceMap's own >=3 threshold) — otherwise the panel behaves exactly as before.
+  const hasMap = useMemo(() => buildEvidenceMap(citations, rev, 320, 240) !== null, [citations, rev]);
   const scrollToSource = useCallback((tag: string) => {
     const normalized = normTag(tag);
     setTab("sources");
@@ -257,15 +260,17 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
       {total ? (
         <div className="ev-tabs" role="tablist" aria-label="Evidence panel view">
           <button type="button" role="tab" className={`ev-tab ${tab === "sources" ? "active" : ""}`} aria-selected={tab === "sources"} onClick={() => setTab("sources")}>Sources</button>
-          <button type="button" role="tab" className={`ev-tab ${tab === "map" ? "active" : ""}`} aria-selected={tab === "map"} onClick={() => setTab("map")}>Map</button>
+          {hasMap ? (
+            <button type="button" role="tab" className={`ev-tab ${tab === "map" ? "active" : ""}`} aria-selected={tab === "map"} onClick={() => setTab("map")}>Map</button>
+          ) : null}
         </div>
       ) : null}
 
       <div className="ev-body">
         {total === 0 ? (
           <div className="ev-empty">Ask a question to see the sources behind the answer.</div>
-        ) : tab === "map" ? (
-          <EvidenceGraph citations={citations} reviewed={rev} activeTag={activeTag} onCite={scrollToSource} />
+        ) : tab === "map" && hasMap ? (
+          <EvidenceMapView citations={citations} reviewed={rev} onSelect={scrollToSource} />
         ) : (
           <>
             {citations.length ? (
