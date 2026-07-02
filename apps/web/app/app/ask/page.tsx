@@ -1064,9 +1064,9 @@ function Prose({ points, citeMap, onCite, citations = [], ctx = null }: PointBlo
         return (
           <p className="ai-para" key={i}>
             {ctx ? wrapWords(renderInline(p.text), ctx) : renderInline(p.text)}
-            {/* delay the chips so a citation number never appears before the sentence it backs */}
-            {ctx ? <span className="rv-w" style={{ animationDelay: `${revealDelay(ctx)}ms` }}>{chips}</span> : chips}
-            {meter}
+            {/* delay the chips (and the meter, sharing the same slot) so neither appears before the
+                sentence it backs — keeps the single reveal-timeline slot-per-point that headSlots assumes. */}
+            {ctx ? <span className="rv-w" style={{ animationDelay: `${revealDelay(ctx)}ms` }}>{chips}{meter}</span> : <>{chips}{meter}</>}
           </p>
         );
       })}
