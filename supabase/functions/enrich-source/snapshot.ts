@@ -22,6 +22,26 @@ export const SNAPSHOT_TOOL: Tool = {
 
 const NON_ANSWERS = /^(|not stated|unknown|n\/a|none|unclear)$/i;
 
+// Upstream timeouts: misses resolve sequentially, so one stuck socket (NCBI) or a hung
+// LLM call would stall the whole batch until the edge runtime kills it. Timeouts resolve
+// into the existing "no data" (null) paths — never a thrown error. The snapshot is
+// decoration on an otherwise-cacheable row (cacheability is keyed on the OpenAlex
+// outcome; see resolveMiss in index.ts).
+const ABSTRACT_TIMEOUT_MS = 8_000;
+const LLM_TIMEOUT_MS = 20_000;
+
+/** Resolve `p`, or null after `ms`. A rejection of `p` — even one that loses the race and
+ * settles later — also maps to null, so no unhandled rejection can escape. Never throws. */
+export function resolveWithin<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      () => { clearTimeout(timer); resolve(null); },
+    );
+  });
+}
+
 export function sanitizeSnapshot(raw: unknown): StudySnapshot | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
@@ -39,6 +59,7 @@ export async function fetchAbstract(pmid: string): Promise<string | null> {
     const res = await fetch(
       `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${pmid}&rettype=abstract&retmode=text` +
         (Deno.env.get("NCBI_API_KEY") ? `&api_key=${Deno.env.get("NCBI_API_KEY")}` : ""),
+      { signal: AbortSignal.timeout(ABSTRACT_TIMEOUT_MS) },
     );
     if (!res.ok) return null;
     const text = (await res.text()).trim();
@@ -55,8 +76,10 @@ export async function extractSnapshot(pmid: string): Promise<StudySnapshot | nul
   if (!hasLlmKey()) return null;
   const abstract = await fetchAbstract(pmid);
   if (!abstract) return null;
-  try {
-    const { input } = await callTool<Record<string, unknown>>(
+  // resolveWithin caps a hung LLM call at LLM_TIMEOUT_MS and maps any rejection to null,
+  // so this can neither stall the sequential miss loop nor throw to the caller.
+  const result = await resolveWithin(
+    callTool<Record<string, unknown>>(
       {
         model: modelFor("generate"),
         max_tokens: 512,
@@ -67,9 +90,8 @@ export async function extractSnapshot(pmid: string): Promise<StudySnapshot | nul
       },
       SNAPSHOT_TOOL.name,
       llmApiKey(),
-    );
-    return sanitizeSnapshot(input);
-  } catch {
-    return null;
-  }
+    ),
+    LLM_TIMEOUT_MS,
+  );
+  return result ? sanitizeSnapshot(result.input) : null;
 }

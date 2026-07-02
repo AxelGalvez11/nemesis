@@ -32,6 +32,10 @@ export interface EnrichmentBase extends Omit<SourceEnrichment, "snapshot"> {
 }
 
 const OPENALEX_MAILTO = "engineering@pharmaorb.app";
+// Per-call upstream timeout. Misses resolve SEQUENTIALLY (scite rate-limit constraint),
+// so one stuck socket would otherwise hang the whole batch until the edge runtime kills
+// it. A timeout aborts into the catch below = outage-class (ok:false) — never cached.
+const FETCH_TIMEOUT_MS = 8_000;
 
 export function parseOpenAlexWork(json: unknown): { doi: string | null; retracted: boolean; cited_by: number | null } {
   const w = (json ?? {}) as Record<string, unknown>;
@@ -62,7 +66,10 @@ export interface FetchOutcome {
 
 async function getJson(url: string): Promise<FetchOutcome> {
   try {
-    const res = await fetch(url, { headers: { accept: "application/json" } });
+    const res = await fetch(url, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     if (res.ok) return { ok: true, json: await res.json() };
     return { ok: res.status < 500, json: null }; // 4xx = definitive "no data"; 5xx = outage
   } catch {
