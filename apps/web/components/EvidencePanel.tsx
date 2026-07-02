@@ -235,6 +235,11 @@ export function EvidencePanel({ citations, reviewed, activeTag, activeQuote }: {
     requestAnimationFrame(() => {
       const el = document.getElementById(`ev-src-${normalized}`);
       if (!el) return;
+      // "Also reviewed" cards live inside a <details> rendered closed; scrolling to a
+      // card inside a closed <details> is a no-op, so open every closed ancestor first.
+      for (let node = el.parentElement; node; node = node.parentElement) {
+        if (node instanceof HTMLDetailsElement && !node.open) node.open = true;
+      }
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       el.classList.add("src-flash");
       setTimeout(() => el.classList.remove("src-flash"), 1200);
