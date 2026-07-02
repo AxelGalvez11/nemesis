@@ -21,7 +21,7 @@ import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
 import { generate } from "./generate.ts";
-import { chunkToCitation, citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { buildReviewedSet, citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
 import { attachSupport } from "./support-span.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
@@ -91,6 +91,13 @@ const MATCH_COUNT = 12;
 // sources to draw on. The label family is still capped at LABEL_SLICE_CAP, so the extra slots go to research /
 // trials, never more label prose. Fast/default keep MATCH_COUNT (today's breadth) so the quick answer never thins.
 const THOROUGH_MATCH_COUNT = 18;
+// Task 3: "also reviewed" breadth. The reranker already returns the WHOLE reranked union
+// (guardPool, e.g. 31-67 chunks) without truncating; only the cited slice (MATCH_COUNT /
+// THOROUGH_MATCH_COUNT) was ever surfaced to the reader as "reviewed". These two constants
+// let the panel show much more of that real, already-retrieved pool instead of the ~18-item
+// leftovers of the cited slice — display-only, does not touch ret.chunks or the generator.
+const REVIEWED_CAP = 34; // max "also reviewed" sources shown (total shown ~= cited ~6 + reviewed <=34 ~= 40)
+const REVIEWED_SCORE_FLOOR = 0.35; // min relevance (rerank_score, else dense similarity) to be shown as reviewed
 
 // Live evidence sources (PubMed / Europe PMC / ClinicalTrials / openFDA / FAERS) are gated behind a
 // flag so deploying this code is non-breaking: with LIVE_SOURCES unset the pipeline is byte-for-byte
@@ -436,10 +443,26 @@ async function runAsk(
   // didn't end up citing. Surfaced as "also reviewed" so the breadth (e.g. 9 PubMed + 4 trials) stays
   // visible even when the answer text leans on a few — additive DISPLAY only; never affects the answer,
   // the cited set, or citation enforcement.
+  //
+  // Task 3: derive this from `guardPool` (the FULL reranked union — aug.pool when LIVE_SOURCES is on,
+  // ret.chunks otherwise), not from `ret.chunks` (the ~12-18 item cited slice fed to the generator).
+  // guardPool tags are pool-local and collide with the cited slice's retagged "1".."N" tags, so cited
+  // chunks are excluded by their stable `chunk_id` instead. buildReviewedSet re-tags survivors starting
+  // at citedCount+1 so reviewed tags never collide with the cited namespace; ret.chunks/generate()/the
+  // fabrication guard are untouched by this — it only changes what the panel surfaces as "reviewed".
+  //
+  // No support-rating lookup here: `supportRatings` is keyed by `ret.chunks` tags ("1".."N", the cited
+  // slice's namespace), and guardPool's re-tagged reviewed tags (citedCount+1, citedCount+2, ...) can
+  // land inside that SAME numeric range, so a `supportRatings.get(reviewedTag)` would attach an
+  // unrelated cited chunk's rating instead of returning undefined. A reviewed source never had a claim
+  // cited against it, so it correctly carries no support rating.
   const citedTags = new Set(enf.citations.map((c) => c.chunk_tag));
-  const reviewedSources = ret.chunks
-    .filter((c) => !citedTags.has(c.tag))
-    .map((c) => ({ ...chunkToCitation(c), ...supportRatings.get(c.tag) }));
+  const citedChunkIds = new Set(
+    ret.chunks.filter((c) => citedTags.has(c.tag)).map((c) => c.chunk_id),
+  );
+  const reviewedSources = buildReviewedSet(
+    guardPool, citedChunkIds, citedTags.size, REVIEWED_SCORE_FLOOR, REVIEWED_CAP,
+  );
   // Walled news (paid) / locked teaser (free). Resolved here so its fetch overlapped the work above.
   // It is attached as a SEPARATE field — never folded into citations/reviewed_sources/the chunk pool.
   const news = await newsPromise;

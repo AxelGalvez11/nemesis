@@ -199,6 +199,31 @@ function oldestDate(citations: Citation[]): string | null {
 }
 
 /**
+ * Task 3: the "also reviewed" breadth set — the full reranked pool minus what the answer actually
+ * cited, relevance-floored and capped. PURE (no network, no sort — `pool` is expected to already be
+ * rank-ordered, e.g. the reranker's output or dense-similarity order).
+ *
+ * Exclusion is by `chunk_id` (stable identity), NOT by `tag`: `pool` (guardPool) carries pool-local
+ * tags that can collide with the cited slice's retagged "1".."N" tags, so tag-based exclusion would
+ * incorrectly drop or keep the wrong rows. Surviving rows are re-tagged `String(citedCount + i + 1)`
+ * so their display tags start strictly after the cited namespace and the evidence-panel `ev-src-<tag>`
+ * anchors never collide cited vs reviewed.
+ */
+export function buildReviewedSet(
+  pool: readonly (RetrievedChunk & { rerank_score?: number })[],
+  citedChunkIds: ReadonlySet<string>,
+  citedCount: number,
+  floor: number,
+  cap: number,
+): Citation[] {
+  return pool
+    .filter((c) => !citedChunkIds.has(c.chunk_id))
+    .filter((c) => (c.rerank_score ?? c.similarity ?? 0) >= floor)
+    .slice(0, cap)
+    .map((c, i) => chunkToCitation({ ...c, tag: String(citedCount + i + 1) }));
+}
+
+/**
  * Verbatim per-tag source text for the `include_source_text` verification payload. At most one entry
  * per tag (first non-empty wins); a chunk with no usable body text is skipped — there is nothing to
  * verify a claim against. PURE. The tags returned match Citation.chunk_tag, so a consumer can resolve

@@ -3,7 +3,7 @@
 // drop tags that don't map to a real chunk, refuse when the bottom line has no
 // valid support (AC3), and build the citations[] from survivors.
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { buildReviewedSet, citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
 
 function metaChunk(extra: Partial<RetrievedChunk>): RetrievedChunk {
   return { tag: "1", chunk_id: "c", source_id: "s", provider: "pubmed_oa", title: "t", section: null, url: null, license: null, published_date: null, retrieved_at: null, similarity: 0, ...extra };
@@ -171,4 +171,82 @@ Deno.test("collectSourceTexts: at most one entry per tag (first non-empty wins)"
     { tag: "1", chunk_text: "dup" },
   ]);
   assertEquals(out, [{ tag: "1", text: "first" }]);
+});
+
+// ---------------------------------------------------------------------------
+// buildReviewedSet — Task 3: surface the full reranked pool as "also reviewed"
+// breadth, excluding cited chunks by chunk_id, floored + capped, re-tagged so
+// reviewed tags never collide with the cited 1..N namespace. PURE.
+// ---------------------------------------------------------------------------
+
+/** A guardPool chunk. Tags are pre-retag "pool-local" tags (may collide with cited 1..N —
+ *  that is exactly why chunk_id, not tag, is used to exclude cited chunks in the real pool). */
+function poolChunk(chunk_id: string, extra: Partial<RetrievedChunk> & { rerank_score?: number } = {}): RetrievedChunk & { rerank_score?: number } {
+  return {
+    tag: "x", chunk_id, source_id: `s-${chunk_id}`, provider: "pubmed_oa", title: `title-${chunk_id}`,
+    section: null, url: null, license: null, published_date: null, retrieved_at: null, similarity: 0,
+    ...extra,
+  };
+}
+
+Deno.test("buildReviewedSet: excludes cited chunks by chunk_id, not by tag", () => {
+  // c1 is cited; give it the SAME pool-local tag ("1") as an uncited pool chunk to prove
+  // exclusion is chunk_id-based, not tag-based (guardPool tags collide with cited 1..N).
+  const pool = [
+    poolChunk("c1", { tag: "1", rerank_score: 0.9 }),
+    poolChunk("c2", { tag: "1", rerank_score: 0.8 }),
+    poolChunk("c3", { tag: "2", rerank_score: 0.7 }),
+  ];
+  const out = buildReviewedSet(pool, new Set(["c1"]), 1, 0.35, 34);
+  assertEquals(out.map((c) => c.source_id), ["s-c2", "s-c3"]);
+});
+
+Deno.test("buildReviewedSet: drops chunks below the relevance floor", () => {
+  const pool = [
+    poolChunk("c1", { rerank_score: 0.5 }),
+    poolChunk("c2", { rerank_score: 0.34 }), // just under a 0.35 floor
+    poolChunk("c3", { rerank_score: 0.35 }), // exactly at the floor -> kept
+  ];
+  const out = buildReviewedSet(pool, new Set(), 0, 0.35, 34);
+  assertEquals(out.map((c) => c.source_id), ["s-c1", "s-c3"]);
+});
+
+Deno.test("buildReviewedSet: caps at REVIEWED_CAP", () => {
+  const pool = Array.from({ length: 40 }, (_, i) => poolChunk(`c${i}`, { rerank_score: 0.9 - i * 0.001 }));
+  const out = buildReviewedSet(pool, new Set(), 0, 0.35, 5);
+  assertEquals(out.length, 5);
+  assertEquals(out.map((c) => c.source_id), ["s-c0", "s-c1", "s-c2", "s-c3", "s-c4"]);
+});
+
+Deno.test("buildReviewedSet: tags start at citedCount+1 with no collision with cited tags", () => {
+  const pool = [
+    poolChunk("c1", { rerank_score: 0.9 }),
+    poolChunk("c2", { rerank_score: 0.8 }),
+  ];
+  // citedCount = 4 (cited tags "1".."4" already used) -> reviewed tags must start at "5"
+  const out = buildReviewedSet(pool, new Set(), 4, 0.35, 34);
+  assertEquals(out.map((c) => c.chunk_tag), ["5", "6"]);
+});
+
+Deno.test("buildReviewedSet: uses similarity when rerank_score is absent (dense/LIVE-off pool)", () => {
+  const pool = [
+    poolChunk("c1", { similarity: 0.6 }), // no rerank_score -> falls back to similarity
+    poolChunk("c2", { similarity: 0.1 }), // below floor via similarity fallback -> dropped
+  ];
+  const out = buildReviewedSet(pool, new Set(), 0, 0.35, 34);
+  assertEquals(out.map((c) => c.source_id), ["s-c1"]);
+});
+
+Deno.test("buildReviewedSet: empty pool returns []", () => {
+  assertEquals(buildReviewedSet([], new Set(), 0, 0.35, 34), []);
+});
+
+Deno.test("buildReviewedSet: order is preserved from the pool (pool is already rank-ordered)", () => {
+  const pool = [
+    poolChunk("c1", { rerank_score: 0.4 }),
+    poolChunk("c2", { rerank_score: 0.9 }),
+  ];
+  const out = buildReviewedSet(pool, new Set(), 0, 0.35, 34);
+  // No re-sort inside the helper — the caller passes an already-ranked pool.
+  assertEquals(out.map((c) => c.source_id), ["s-c1", "s-c2"]);
 });
