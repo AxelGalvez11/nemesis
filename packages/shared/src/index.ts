@@ -100,6 +100,10 @@ export * from "./health-score.ts";
 // too thin to be honest. Rendered behind NEXT_PUBLIC_ENGINE_VISUALS (default off).
 export * from "./evidence-charts.ts";
 
+// Evidence map points (Litmaps scatter plot): x = publication year, y = evidence weight, r = support score.
+// Pure geometry module for rendering citation sources on a 2D plane.
+export * from "./evidence-map-points.ts";
+
 // Gap test-runner (meta): the comparability gate between a gap's extracted studies and the meta engine
 // — clusters by outcome, pools comparable clusters via poolRiskRatio, abstains honestly otherwise.
 // PURE; reuses the computed-statistics engine (never LLM-guessed). Extraction + UI wiring are owner-gated.
