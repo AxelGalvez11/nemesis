@@ -1,10 +1,10 @@
 "use client";
 
-import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskMode, AskResponse, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
-import { autoDepth, scienceState } from "@pharmabro/shared";
+import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
+import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
 import { simplifiedModesEnabled } from "@/lib/env";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
@@ -875,7 +875,7 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
 
       {/* Main explanation, under a quiet section heading (owner wants clearer structure) over the cited body. */}
       {s.what_we_know?.length ? <div className="ai-block-label">What the evidence shows</div> : null}
-      <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} ctx={ctx} />
+      <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} citations={answer.citations} ctx={ctx} />
 
       {/* Safety block intentionally NOT rendered in the answer body (owner 2026-06-21: it "reads like
           fluff" and breaks the natural-conversation feel). RENDER-ONLY: safety_notes are still generated,
@@ -1039,17 +1039,34 @@ function PointItems({ points, citeMap, onCite, paraClass = "ai-para" }: PointBlo
 // owner found a single run-on paragraph a "fact dump"). The model still emits discrete, individually-
 // cited points, so per-sentence citation grounding AND per-sentence safety-salvage granularity are
 // preserved upstream (citation.ts / safety.ts); this is purely how they're laid out.
-function Prose({ points, citeMap, onCite, ctx = null }: PointBlockProps & { ctx?: RevealCtx | null }) {
+function Prose({ points, citeMap, onCite, citations = [], ctx = null }: PointBlockProps & { citations?: Citation[]; ctx?: RevealCtx | null }) {
   if (!points?.length) return null;
   return (
     <>
       {points.map((p, i) => {
         const chips = <CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} />;
+        // Per-claim Evidence Meter chip — deterministic, design-weighted (never vote-counted, see
+        // packages/shared/src/claim-meter.ts). Additive: null when the point has no usable citations,
+        // so the answer renders exactly as before.
+        const meter = (() => {
+          const m = meterForPoint(p.citation_ids, citations);
+          return m ? (
+            <span
+              className={`meter-chip meter-${m.label}`}
+              style={{ "--pct": `${m.score}%` } as CSSProperties}
+              title={`Evidence for this point: ${m.basis}`}
+            >
+              <i />
+              <b>{m.label}</b>
+            </span>
+          ) : null;
+        })();
         return (
           <p className="ai-para" key={i}>
             {ctx ? wrapWords(renderInline(p.text), ctx) : renderInline(p.text)}
             {/* delay the chips so a citation number never appears before the sentence it backs */}
             {ctx ? <span className="rv-w" style={{ animationDelay: `${revealDelay(ctx)}ms` }}>{chips}</span> : chips}
+            {meter}
           </p>
         );
       })}
