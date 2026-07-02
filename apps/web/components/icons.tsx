@@ -4,6 +4,7 @@ import type { SVGProps } from "react";
 
 const PATHS: Record<string, React.ReactNode> = {
   plus: <path d="M12 5v14M5 12h14" />,
+  "chevron-down": <path d="m6 9 6 6 6-6" />,
   menu: <path d="M3 5h18M3 12h18M3 19h18" />,
   search: (<><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>),
   message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,

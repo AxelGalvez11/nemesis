@@ -14,6 +14,7 @@ import { pubchemMoleculeUrl } from "@/lib/molecule";
 import { phCapture } from "@/lib/posthog";
 import { POINT_OF_USE_DISCLAIMER } from "@/lib/legal";
 import { buildThinkingPreview } from "@/lib/thinking-preview";
+import { citationDomains, faviconUrl, hostnameOf, SEARCH_DOMAINS } from "@/lib/favicon";
 import { composerModeLabel } from "@/lib/ask-mode-label";
 import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
 import { useAppChrome } from "@/components/AppShell";
@@ -47,6 +48,13 @@ const PROVIDER_ABBR: Record<string, string> = { openfda: "FDA", dailymed: "DM", 
 function abbr(t: string): string {
   const k = Object.keys(PROVIDER_ABBR).find((p) => t.toLowerCase().includes(p));
   return (k ? PROVIDER_ABBR[k] : undefined) ?? "REF";
+}
+// Friendly source name for the inline citation pill (favicon + name, ChatGPT-style) — the terse
+// abbr() codes stay for the hover-preview label where space is tight.
+const PROVIDER_PILL: Record<string, string> = { openfda: "FDA", dailymed: "DailyMed", pubmed: "PubMed", europepmc: "PubMed", clinicaltrials: "ClinicalTrials", faers: "FAERS", openalex: "OpenAlex", medlineplus: "MedlinePlus" };
+function pillName(t: string): string {
+  const k = Object.keys(PROVIDER_PILL).find((p) => t.toLowerCase().includes(p));
+  return (k ? PROVIDER_PILL[k] : undefined) ?? "Source";
 }
 
 export default function AskPageRoute() {
@@ -324,13 +332,14 @@ function AskPage() {
     const setLast = (patch: Partial<Turn>) =>
       setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
     const minThinkingPreview = wait(MIN_THINKING_PREVIEW_MS);
+    const t0 = Date.now();
     try {
       // Only fast/thorough/auto reach here — report modes returned above via the research branch.
       // Auto picks the depth from the question shape (reuses the same fast/thorough engine paths).
       const askMode: AskMode = mode === "thorough" ? "thorough" : mode === "auto" ? autoDepth(text) : "fast";
       const res = await askQuestion(text, askMode);
       await minThinkingPreview;
-      setLast({ a: res });
+      setLast({ a: res, thinkSecs: Math.max(1, Math.round((Date.now() - t0) / 1000)) });
       setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
       void fetchUsage().catch(() => {});
@@ -391,6 +400,19 @@ function AskPage() {
             <p className="welcome-sub">Its earlier turns didn’t save (a now-fixed bug). Ask below to continue in this chat, or start a new one.</p>
           ) : null}
           {composer}
+          {!reopenedEmpty ? (
+            <div className="chip-row welcome-chips">
+              <button type="button" className="chip-action" onClick={() => { setQuestion("Is it true that "); taRef.current?.focus(); }}>
+                <Icon name="check" size={14} />Verify a claim
+              </button>
+              <button type="button" className="chip-action" onClick={() => { setMode("deep"); taRef.current?.focus(); }}>
+                <Icon name="doc" size={14} />Deep research
+              </button>
+              <button type="button" className="chip-action" onClick={() => { setQuestion("Is creatine good for me?"); taRef.current?.focus(); }}>
+                <Icon name="search" size={14} />Is this good for me?
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     );
@@ -414,7 +436,9 @@ function AskPage() {
                     <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
                   ) : t.a ? (
                     <>
-                      {t.a.intent !== "smalltalk" ? <Thinking stage={3} question={t.q} complete /> : null}
+                      {t.a.intent !== "smalltalk" ? (
+                        <Thinking stage={3} question={t.q} complete secs={t.thinkSecs} domains={citationDomains(t.a.citations, t.a.reviewed_sources)} />
+                      ) : null}
                       <Answer answer={t.a} onCite={onCite} question={t.q} reveal={i === revealIdx} />
                     </>
                   ) : isLast && busy && showThinking ? <Thinking stage={stage} question={t.q} /> : null}
@@ -463,6 +487,7 @@ interface Turn {
   research?: ResearchCard; // present when this turn is a deep-research run instead of a chat answer
   scope?: ScopeTurnState;  // present while clarifying questions await answers
   scoping?: boolean;       // brief: the scope step is running before we know if clarification is needed
+  thinkSecs?: number;      // wall-clock seconds the engine spent before this turn's answer arrived ("Thought for Xs")
 }
 
 interface ComposerProps {
@@ -491,6 +516,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   // in from the left, fades out) so suggestions live in the chat bar without a hard text swap. Once a
   // chat is active the suggestions stop — the box shows a calm static placeholder instead.
   const [phIdx, setPhIdx] = useState(0);
+  const [plusOpen, setPlusOpen] = useState(false); // the "+" tools launcher popover
   useEffect(() => {
     if (!welcome) return;
     const id = setInterval(() => setPhIdx((i) => (i + 1) % ASK_EXAMPLE_PROMPTS.length), 5000);
@@ -499,6 +525,27 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   return (
     <div className="composer">
       <div className="box">
+        <div className="mode-wrap" style={{ position: "relative" }}>
+          <button className="tool" type="button" data-tip="Tools" aria-label="Tools" aria-haspopup="menu" aria-expanded={plusOpen} onClick={() => setPlusOpen((v) => !v)}>
+            <Icon name="plus" size={18} />
+          </button>
+          {plusOpen ? (
+            <div className="acct-menu tools-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 270 }}>
+              <button type="button" role="menuitem" onClick={() => { setQuestion("Is it true that "); setPlusOpen(false); taRef.current?.focus(); }}>
+                <Icon name="check" size={14} /><span style={{ flex: 1 }}>Verify a claim</span><small style={{ color: "var(--text-3)" }}>check it against evidence</small>
+              </button>
+              <button type="button" role="menuitem" onClick={() => { setMode("deep"); setPlusOpen(false); taRef.current?.focus(); }}>
+                <Icon name="doc" size={14} /><span style={{ flex: 1 }}>Deep research</span><small style={{ color: "var(--text-3)" }}>full cited report</small>
+              </button>
+              <button type="button" role="menuitem" onClick={() => { setMode("meta"); setPlusOpen(false); taRef.current?.focus(); }}>
+                <Icon name="sparkle" size={14} /><span style={{ flex: 1 }}>Meta-analysis</span><small style={{ color: "var(--text-3)" }}>Pro</small>
+              </button>
+              <button type="button" role="menuitem" disabled>
+                <Icon name="plus" size={14} /><span style={{ flex: 1 }}>Add photos &amp; files</span><small style={{ color: "var(--text-3)" }}>Soon</small>
+              </button>
+            </div>
+          ) : null}
+        </div>
         <div className="ta-wrap">
           <textarea
             ref={taRef}
@@ -506,50 +553,45 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             value={question}
             maxLength={500}
             aria-label="Ask a question about a drug, dose, interaction, or monograph"
-            placeholder={welcome ? "" : "Ask a follow-up…"}
+            placeholder={welcome ? "" : busy ? "Follow up" : "Ask anything"}
             onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
           />
           {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{askPlaceholderFor(phIdx)}</span> : null}
         </div>
-        <div className="tools">
-          <button className="tool" type="button" data-tip="Attach — coming soon" aria-label="Attach" disabled>
-            <Icon name="plus" size={18} />
+        <div className="mode-wrap" style={{ position: "relative" }}>
+          <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
+            <b>{composerModeLabel(activeMode)}</b>
+            <Icon name="chevron-down" size={14} />
           </button>
-          <div className="mode-wrap" style={{ position: "relative" }}>
-            <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
-              <b>{composerModeLabel(activeMode)}</b>
-            </button>
-            {modeOpen ? (
-              <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
-                {/* lab_draft (beta) deploy is owner-gated separately and its engine (research fn) isn't
-                    live yet — keep it out of the selectable modes for the monitoring release. Re-enable
-                    by removing this filter once the lab_draft engine is deployed. */}
-                {MODES.filter((m) => simplifiedModesEnabled ? (m.id === "auto" || m.id === "deep" || m.id === "discovery") : (m.id !== "lab_draft" && m.id !== "auto")).map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    role="menuitem"
-                    disabled={!m.live}
-                    onClick={() => { if (m.live) { setMode(m.id); setModeOpen(false); } }}
-                    title={m.hint}
-                  >
-                    <Icon name={m.live ? (m.id === mode ? "check" : "sparkle") : "lock"} size={14} />
-                    <span style={{ flex: 1 }}>{m.label}</span>
-                    {!m.live ? <small style={{ color: "var(--text-3)" }}>Soon</small> : m.pro ? <small style={{ color: "var(--text-3)" }}>Pro</small> : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className="spacer" />
-          <button className="tool" type="button" data-tip="Voice — coming soon" aria-label="Voice input" disabled>
-            <Icon name="mic" size={18} />
-          </button>
-          <button className="send" data-tip="Send" aria-label="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
-            <Icon name="send" size={18} />
-          </button>
+          {modeOpen ? (
+            <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
+              {/* lab_draft (beta) deploy is owner-gated separately and its engine (research fn) isn't
+                  live yet — keep it out of the selectable modes for the monitoring release. Re-enable
+                  by removing this filter once the lab_draft engine is deployed. */}
+              {MODES.filter((m) => simplifiedModesEnabled ? (m.id === "auto" || m.id === "deep" || m.id === "discovery") : (m.id !== "lab_draft" && m.id !== "auto")).map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="menuitem"
+                  disabled={!m.live}
+                  onClick={() => { if (m.live) { setMode(m.id); setModeOpen(false); } }}
+                  title={m.hint}
+                >
+                  <Icon name={m.live ? (m.id === mode ? "check" : "sparkle") : "lock"} size={14} />
+                  <span style={{ flex: 1 }}>{m.label}</span>
+                  {!m.live ? <small style={{ color: "var(--text-3)" }}>Soon</small> : m.pro ? <small style={{ color: "var(--text-3)" }}>Pro</small> : null}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
+        <button className="tool" type="button" data-tip="Voice — coming soon" aria-label="Voice input" disabled>
+          <Icon name="mic" size={18} />
+        </button>
+        <button className="send" data-tip="Send" aria-label="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
+          <Icon name="send" size={18} />
+        </button>
       </div>
       {error ? <div className="err">{error}</div> : null}
       <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
@@ -557,23 +599,64 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   );
 }
 
-function Thinking({ stage, question, complete = false }: { stage: number; question: string; complete?: boolean }) {
-  const preview = buildThinkingPreview(question, stage);
-  const line = complete ? "Thought through evidence" : stage <= 0 ? "Thinking" : preview.current;
+// Rounded chips naming the domains the engine searched (favicon + hostname), with an overflow count —
+// the ChatGPT Activity-panel pattern. While a search runs we show the fixed search surface; once the
+// answer lands the chips become the REAL hostnames its citations came from.
+function DomainChips({ domains, max = 6 }: { domains: string[]; max?: number }) {
+  if (!domains.length) return null;
+  const shown = domains.slice(0, max);
+  const extra = domains.length - shown.length;
   return (
-    <div
-      className={`thinking engine-preview engine-preview-compact${complete ? " engine-preview-done" : ""}`}
-      aria-live={complete ? undefined : "polite"}
-      title={complete ? undefined : preview.preview}
-    >
-      <span className="engine-preview-title">
-        {line}
-        {complete ? (
-          <span className="engine-preview-chevron" aria-hidden="true">›</span>
-        ) : (
+    <div className="domain-chips">
+      {shown.map((d) => (
+        <span className="domain-chip" key={d}>
+          <img src={faviconUrl(d)} alt="" width={14} height={14} loading="lazy" />
+          {d}
+        </span>
+      ))}
+      {extra > 0 ? <span className="domain-chip domain-chip-more">{extra} more</span> : null}
+    </div>
+  );
+}
+
+// The thinking header over an answer. Live: shimmer stage line + the search-surface chips. Complete:
+// a "Thought for Xs ›" disclosure (ChatGPT's collapsed-thought row) that expands into the activity
+// trail — the engine's real pipeline steps with the searched-domain chips under the search step.
+function Thinking({ stage, question, complete = false, secs, domains }: { stage: number; question: string; complete?: boolean; secs?: number; domains?: string[] }) {
+  const preview = buildThinkingPreview(question, stage);
+  const [open, setOpen] = useState(false);
+  if (!complete) {
+    const line = stage <= 0 ? "Thinking" : preview.current;
+    return (
+      <div className="thinking engine-preview engine-preview-compact" aria-live="polite" title={preview.preview}>
+        <span className="engine-preview-title">
+          {line}
           <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>
-        )}
-      </span>
+        </span>
+        {stage >= 1 && stage <= 2 ? <DomainChips domains={SEARCH_DOMAINS} max={4} /> : null}
+      </div>
+    );
+  }
+  const chips = domains?.length ? domains : SEARCH_DOMAINS;
+  return (
+    <div className="thinking engine-preview engine-preview-compact engine-preview-done">
+      <button type="button" className="thought-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="engine-preview-title">
+          {secs ? `Thought for ${secs}s` : "Thought through evidence"}
+          <span className={`engine-preview-chevron${open ? " open" : ""}`} aria-hidden="true">›</span>
+        </span>
+      </button>
+      {open ? (
+        <div className="activity-trail">
+          {preview.steps.map((s, i) => (
+            <div className="activity-step" key={s.label}>
+              <div className="activity-step-title">{s.current}</div>
+              <div className="activity-step-detail">{s.detail}</div>
+              {i === 1 ? <DomainChips domains={chips} /> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -745,7 +828,7 @@ function MoleculeImage({ drug }: { drug: string }) {
 function Answer({ answer, onCite, question, reveal = false }: { answer: AskResponse; onCite: (answer: AskResponse, tag: string, quote?: string) => void; question: string; reveal?: boolean }) {
   const citeMap = useMemo(() => {
     const m = new Map<string, CiteInfo>();
-    for (const c of answer.citations) m.set(normTag(c.chunk_tag), { label: abbr(c.source_type), title: c.title ?? c.source_type });
+    for (const c of answer.citations) m.set(normTag(c.chunk_tag), { label: abbr(c.source_type), name: pillName(c.source_type), title: c.title ?? c.source_type, domain: hostnameOf(c.url) });
     return m;
   }, [answer.citations]);
 
@@ -817,6 +900,21 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
 
         <div className="msg-actions">
           <button className="icon-btn" data-tip="Copy answer" aria-label="Copy answer" onClick={() => navigator.clipboard?.writeText(answer.plain_english_summary ?? "")}><Icon name="copy" size={15} /></button>
+          {answer.citations.length ? (
+            <button
+              type="button"
+              className="sources-btn"
+              aria-label="Show the sources behind this answer"
+              onClick={() => cite(normTag(answer.citations[0]!.chunk_tag))}
+            >
+              <span className="sources-favs" aria-hidden="true">
+                {citationDomains(answer.citations, answer.reviewed_sources).slice(0, 3).map((d) => (
+                  <img key={d} src={faviconUrl(d)} alt="" width={16} height={16} loading="lazy" />
+                ))}
+              </span>
+              Sources
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -874,7 +972,7 @@ function NewsPanel({ news, locked }: { news?: AskResponse["news"]; locked?: bool
 
 // Per-citation metadata for the inline chips: the short source label + title, shown in the
 // hover-preview card (footnote-style chips — the ChatGPT/Claude feel).
-type CiteInfo = { label: string; title: string };
+type CiteInfo = { label: string; name: string; title: string; domain: string | null };
 
 interface PointBlockProps {
   points: Array<{ text: string; citation_ids?: string[]; support?: ClaimSupport[] }>;
@@ -882,29 +980,35 @@ interface PointBlockProps {
   onCite: (tag: string, quote?: string) => void;
 }
 
-// Inline [n] citation chips trailing a point's text. `support` carries the verbatim source sentence(s)
-// this point cited; clicking a chip passes that source's supporting line so the evidence card can
-// highlight exactly what backs the claim.
+// One ChatGPT-style citation pill trailing a point's text: favicon + source name + a "+N" count that
+// folds this point's extra sources into the same pill (the measured "PubMed +1" pattern). Clicking
+// opens the evidence panel at the point's primary source with the verbatim supporting line highlighted;
+// the folded sources are one scroll away in the same panel.
 function CiteChips({ ids, support, citeMap, onCite }: { ids?: string[]; support?: ClaimSupport[]; citeMap: Map<string, CiteInfo>; onCite: (tag: string, quote?: string) => void }) {
   if (!ids?.length) return null;
+  const tags = ids.map(normTag);
+  const first = tags[0]!;
+  const info = citeMap.get(first);
+  const extra = tags.length - 1;
   return (
-    <>
-      {ids.map((id) => {
-        const t = normTag(id);
-        const info = citeMap.get(t);
-        return (
-          <button key={id} type="button" className="cite" onClick={() => onCite(t, supportQuoteFor(support, t))} aria-label={info ? `Source ${t}: ${info.label} — ${info.title}` : `Show source ${t}`}>
-            <sup className="cite-n">{t}</sup>
-            {info ? (
-              <span className="cite-pop" aria-hidden="true">
-                <span className="cite-pop-label">{info.label}</span>
-                <span className="cite-pop-title">{info.title}</span>
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
-    </>
+    <button
+      type="button"
+      className="cite"
+      onClick={() => onCite(first, supportQuoteFor(support, first))}
+      aria-label={info ? `Source: ${info.name} — ${info.title}${extra > 0 ? ` and ${extra} more` : ""}` : `Show source ${first}`}
+    >
+      <span className="cite-pill">
+        {info?.domain ? <img className="cite-favicon" src={faviconUrl(info.domain)} alt="" width={14} height={14} loading="lazy" /> : null}
+        {info?.name ?? first}
+        {extra > 0 ? <span className="cite-extra">+{extra}</span> : null}
+      </span>
+      {info ? (
+        <span className="cite-pop" aria-hidden="true">
+          <span className="cite-pop-label">{info.label}</span>
+          <span className="cite-pop-title">{info.title}</span>
+        </span>
+      ) : null}
+    </button>
   );
 }
 

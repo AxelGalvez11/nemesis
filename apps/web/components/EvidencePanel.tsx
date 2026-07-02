@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Citation } from "@pharmabro/shared";
 import { CLAIM_RELATION_LABEL, formatReference, studyTypeLabel } from "@pharmabro/shared";
 import { normTag } from "@/lib/cite";
+import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { safeHref } from "@/lib/url";
 import { EvidenceGraph } from "./EvidenceGraph";
 
@@ -111,10 +112,15 @@ function SourceCard({ c, index, rankPct, active, activeQuote }: { c: Citation; i
   const relation = relationForCitation(c);
   // The supporting sentence belongs to the clicked claim, so it shows only on the active card.
   const activeSupportQuote = active && activeQuote ? activeQuote : null;
+  const host = hostnameOf(c.url);
   const inner = (
     <>
       {numbered ? <div className="cidx">{index + 1}</div> : null}
-      <div className="badge-src"><span className="sq" />{providerLabel(c.source_type)}</div>
+      <div className="badge-src">
+        {host ? <img className="src-favicon" src={faviconUrl(host)} alt="" width={14} height={14} loading="lazy" /> : <span className="sq" />}
+        {providerLabel(c.source_type)}
+        {host ? <span className="src-host">{host}</span> : null}
+      </div>
       <h5 title={refText}>{c.title || c.source_type}</h5>
       <div className="meta">
         {relation ? (
