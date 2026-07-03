@@ -20,6 +20,9 @@ import { scopeQuestion } from "../ask/research/scope.ts";
 import { hasLlmKey, llmApiKey } from "../ask/llm.ts";
 import { persistDiscoveryProject } from "./discovery-persist.ts";
 import type { ReportMode, ResearchProgressStep, ResearchReport } from "../../../packages/shared/src/research.ts";
+import { nextRunAt, type MissionCadence } from "../../../packages/shared/src/missions.ts";
+import { buildMissionEmail } from "../../../packages/shared/src/mission-email.ts";
+import { sendEmail } from "./resend.ts";
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://app.pharmaorb.app",
@@ -47,16 +50,27 @@ serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405, req);
   if (!hasLlmKey()) return json({ error: "LLM API key not configured" }, 500, req);
 
-  const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const userId = await verifyUser(token);
-  if (!userId) return json({ error: "authentication required" }, 401, req);
-
-  let body: { question?: string; mode?: string; action?: string };
+  // Parse the body FIRST: the mission_run action authenticates with the service key (cron caller),
+  // not a user JWT, so it must branch before user verification.
+  let body: { question?: string; mode?: string; action?: string; mission_id?: string; sub_questions?: unknown };
   try {
     body = await req.json();
   } catch {
     return json({ error: "invalid json" }, 400, req);
   }
+  const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+
+  // ---- Mission run (service-role only; fired by pg_cron run_due_missions) ----
+  if (body.action === "mission_run") {
+    if (!token || token !== SERVICE_KEY) return json({ error: "service role required" }, 401, req);
+    const missionId = typeof body.mission_id === "string" ? body.mission_id : "";
+    if (!missionId) return json({ error: "mission_id required" }, 400, req);
+    return await handleMissionRun(missionId, req);
+  }
+
+  const userId = await verifyUser(token);
+  if (!userId) return json({ error: "authentication required" }, 401, req);
+
   const question = (body.question ?? "").trim();
   if (!question) return json({ error: "question required" }, 400, req);
   if (question.length > 1000) return json({ error: "question too long" }, 400, req);
@@ -167,6 +181,151 @@ async function executeRun(runId: string, userId: string, question: string, mode:
       completed_at: new Date().toISOString(),
     }).catch(() => {});
   }
+}
+
+// ---------------------------------------------------------------------------
+// Missions (service-role): load the due mission, bill the owner's quota, run the normal pipeline,
+// advance the cursor, optionally email. The mission cursor ALWAYS advances (even on skip/failure)
+// so a broken mission can't hot-loop the scheduler.
+// ---------------------------------------------------------------------------
+
+interface MissionRow {
+  id: string;
+  user_id: string;
+  question: string;
+  report_mode: ReportMode;
+  cadence: MissionCadence;
+  deliver: "in_app" | "email";
+  status: "active" | "paused";
+}
+
+async function handleMissionRun(missionId: string, req: Request): Promise<Response> {
+  const mission = await fetchMission(missionId);
+  if (!mission) return json({ error: "mission not found" }, 404, req);
+  if (mission.status !== "active") return json({ ok: true, skipped: "inactive" }, 200, req);
+
+  const next = nextRunAt(mission.cadence, new Date()).toISOString();
+
+  const quota = await consumeQuota(mission.user_id);
+  if (!quota.allowed) {
+    await patchMission(mission.id, {
+      last_run_at: new Date().toISOString(),
+      last_run_status: "skipped_quota",
+      next_run_at: next,
+      updated_at: new Date().toISOString(),
+    }).catch((e) => console.error("mission skip patch failed:", (e as Error).message));
+    return json({ ok: true, skipped: "quota" }, 200, req);
+  }
+
+  let runId: string;
+  try {
+    runId = await insertRun(mission.user_id, mission.question, quota.plan);
+  } catch (e) {
+    console.error("mission insertRun failed:", (e as Error).message);
+    await patchMission(mission.id, {
+      last_run_at: new Date().toISOString(),
+      last_run_status: "failed",
+      next_run_at: next,
+      updated_at: new Date().toISOString(),
+    }).catch(() => {});
+    return json({ error: "could not start mission run" }, 500, req);
+  }
+
+  const job = executeMissionRun(mission, runId, next);
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(job);
+  else void job;
+  return json({ ok: true, run_id: runId }, 202, req);
+}
+
+/** The normal executeRun, then mission bookkeeping + optional email. Never rejects. */
+async function executeMissionRun(mission: MissionRow, runId: string, nextIso: string): Promise<void> {
+  await executeRun(runId, mission.user_id, mission.question, mission.report_mode);
+  // Read the finished run row to learn the outcome (executeRun never rejects).
+  const run = await fetchRunRow(runId, mission.user_id).catch(() => null);
+  const completed = run?.status === "completed";
+  await patchMission(mission.id, {
+    last_run_at: new Date().toISOString(),
+    last_run_status: completed ? "completed" : "failed",
+    last_saved_report_id: completed ? run?.saved_report_id ?? null : null,
+    next_run_at: nextIso,
+    updated_at: new Date().toISOString(),
+  }).catch((e) => console.error("mission complete patch failed:", (e as Error).message));
+
+  if (completed && mission.deliver === "email" && run?.saved_report_id) {
+    await sendMissionEmail(mission, run.saved_report_id).catch((e) =>
+      console.error("mission email failed:", (e as Error).message)
+    );
+  }
+}
+
+async function fetchMission(id: string): Promise<MissionRow | null> {
+  const url = new URL(`${SB_URL}/rest/v1/research_missions`);
+  url.searchParams.set("id", `eq.${id}`);
+  url.searchParams.set("select", "id,user_id,question,report_mode,cadence,deliver,status");
+  const res = await fetch(url, { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } });
+  if (!res.ok) return null;
+  const rows = await res.json() as MissionRow[];
+  return rows[0] ?? null;
+}
+
+async function patchMission(id: string, fields: Record<string, unknown>): Promise<void> {
+  const url = new URL(`${SB_URL}/rest/v1/research_missions`);
+  url.searchParams.set("id", `eq.${id}`);
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`patch mission failed (${res.status})`);
+}
+
+async function fetchRunRow(runId: string, userId: string): Promise<{ status: string; saved_report_id: string | null } | null> {
+  const url = new URL(`${SB_URL}/rest/v1/research_report_runs`);
+  url.searchParams.set("id", `eq.${runId}`);
+  url.searchParams.set("user_id", `eq.${userId}`);
+  url.searchParams.set("select", "status,saved_report_id");
+  const res = await fetch(url, { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } });
+  if (!res.ok) return null;
+  const rows = await res.json() as Array<{ status: string; saved_report_id: string | null }>;
+  return rows[0] ?? null;
+}
+
+/** DORMANT without RESEND_API_KEY/RESEND_FROM (watch-digest posture): skip silently, run still succeeds. */
+async function sendMissionEmail(mission: MissionRow, savedReportId: string): Promise<void> {
+  const apiKey = Deno.env.get("RESEND_API_KEY") ?? "";
+  const from = Deno.env.get("RESEND_FROM") ?? "";
+  if (!apiKey || !from) return;
+  const appUrl = Deno.env.get("APP_URL") ?? "https://app.pharmaorb.app";
+
+  // Owner's email via GoTrue admin (service key).
+  const uRes = await fetch(`${SB_URL}/auth/v1/admin/users/${mission.user_id}`, {
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+  });
+  if (!uRes.ok) return;
+  const user = await uRes.json() as { email?: string };
+  if (!user.email) return;
+
+  // Report title + count for the email body.
+  const rUrl = new URL(`${SB_URL}/rest/v1/saved_reports`);
+  rUrl.searchParams.set("id", `eq.${savedReportId}`);
+  rUrl.searchParams.set("select", "title,citation_count");
+  const rRes = await fetch(rUrl, { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } });
+  const report = rRes.ok ? (await rRes.json() as Array<{ title: string; citation_count: number }>)[0] : undefined;
+
+  const content = buildMissionEmail({
+    question: mission.question,
+    cadence: mission.cadence,
+    reportTitle: report?.title ?? mission.question,
+    sources: report?.citation_count ?? 0,
+    reportUrl: `${appUrl}/app/reports/${savedReportId}`,
+    manageUrl: `${appUrl}/app/monitor`,
+  });
+  await sendEmail({ apiKey, from, to: user.email, ...content });
 }
 
 // ---------------------------------------------------------------------------
