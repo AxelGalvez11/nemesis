@@ -32,6 +32,9 @@ export * from "./entitlements.ts";
 // Missions (scheduled background deep-research runs): types + cadence math + entitlement + labels (pure).
 // The cadence math is here so the edge function and mobile clients can advance next_run_at identically.
 export * from "./missions.ts";
+// Mission "report ready" email: PURE content builder for scheduled research completion notifications.
+// The send I/O lives in the research edge function; this module builds user-visible email content.
+export * from "./mission-email.ts";
 // Deep Research report contract (research-modes): the multi-step, cited REPORT
 // produced by plan -> gather -> synthesize -> faithfulness. Additive, optional.
 export * from "./research.ts";
