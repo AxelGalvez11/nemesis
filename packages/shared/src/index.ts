@@ -29,6 +29,9 @@ export * from "./health-context.ts";
 export * from "./compare.ts";
 // MVP web-beta entitlements + usage snapshots (0122).
 export * from "./entitlements.ts";
+// Missions (scheduled background deep-research runs): types + cadence math + entitlement + labels (pure).
+// The cadence math is here so the edge function and mobile clients can advance next_run_at identically.
+export * from "./missions.ts";
 // Deep Research report contract (research-modes): the multi-step, cited REPORT
 // produced by plan -> gather -> synthesize -> faithfulness. Additive, optional.
 export * from "./research.ts";
