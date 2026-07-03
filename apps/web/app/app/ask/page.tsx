@@ -18,6 +18,7 @@ import { citationDomains, faviconUrl, hostnameOf, SEARCH_DOMAINS } from "@/lib/f
 import { composerModeLabel } from "@/lib/ask-mode-label";
 import { setCached } from "@/lib/cache";
 import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
+import { PLAYBOOKS } from "@/lib/playbooks";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
@@ -418,17 +419,27 @@ function AskPage() {
           ) : null}
           {composer}
           {!reopenedEmpty ? (
-            <div className="chip-row welcome-chips">
-              <button type="button" className="chip-action" onClick={() => { setQuestion("Is it true that "); taRef.current?.focus(); }}>
-                <Icon name="check" size={14} />Verify a claim
-              </button>
-              <button type="button" className="chip-action" onClick={() => { setMode("deep"); taRef.current?.focus(); }}>
-                <Icon name="doc" size={14} />Deep research
-              </button>
-              <button type="button" className="chip-action" onClick={() => { setQuestion("Is creatine good for me?"); taRef.current?.focus(); }}>
-                <Icon name="search" size={14} />Is this good for me?
-              </button>
-            </div>
+            <>
+              <div className="chip-row welcome-chips">
+                <button type="button" className="chip-action" onClick={() => { setQuestion("Is it true that "); taRef.current?.focus(); }}>
+                  <Icon name="check" size={14} />Verify a claim
+                </button>
+                <button type="button" className="chip-action" onClick={() => { setMode("deep"); taRef.current?.focus(); }}>
+                  <Icon name="doc" size={14} />Deep research
+                </button>
+                <button type="button" className="chip-action" onClick={() => { setQuestion("Is creatine good for me?"); taRef.current?.focus(); }}>
+                  <Icon name="search" size={14} />Is this good for me?
+                </button>
+              </div>
+              <div className="chip-row welcome-chips" aria-label="Playbooks — one-click research recipes">
+                {PLAYBOOKS.map((p) => (
+                  <button key={p.id} type="button" className="chip-action" title={p.question}
+                    onClick={() => { setMode(p.tool); setQuestion(p.question); taRef.current?.focus(); }}>
+                    <Icon name="doc" size={14} />{p.title}
+                  </button>
+                ))}
+              </div>
+            </>
           ) : null}
         </div>
       </div>
