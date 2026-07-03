@@ -3,7 +3,7 @@
 // PubMed-family sources in an answer. One batched call per unique PMID set; module-level
 // cache so panel re-renders and repeat questions don't refetch. Best-effort: errors → {}.
 import { useEffect, useState } from "react";
-import type { Citation } from "@pharmabro/shared";
+import type { Citation, JournalTier } from "@pharmabro/shared";
 import { pmidFromUrl } from "@pharmabro/shared";
 import { supabase } from "@/lib/supabase";
 
@@ -12,6 +12,13 @@ export interface SourceEnrichment {
   doi: string | null; retracted: boolean; cited_by: number | null;
   tallies: { supporting: number; contrasting: number; mentioning: number } | null;
   snapshot: StudySnapshot | null;
+  // ── Per-paper journal-quality (WS-1). Mirrors enrich-source/providers.ts's SourceEnrichment.
+  //    Optional: older cached responses / a pre-deploy enrich-source won't carry these yet, so the
+  //    client must not assume presence. "unranked" (not a guessed tier) when no venue metric was
+  //    available or the server-side WS1_PER_PAPER flag is off. ──
+  journal_tier?: JournalTier;
+  mean_citedness_2yr?: number | null;
+  is_in_doaj?: boolean;
 }
 
 const memo = new Map<string, SourceEnrichment>();

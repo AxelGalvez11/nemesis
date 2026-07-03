@@ -150,3 +150,9 @@ export * from "./claim-meter.ts";
 // " [1,3]" tag a claim's bullet line carries; referenceLines renders the numbered reference list
 // (with URL/DOI) in the same chunk_tag digit order, so a marker always points at the right line.
 export * from "./claim-refs.ts";
+
+// Per-paper journal-quality tier (WS-1): PURE, DETERMINISTIC Q1–Q4 tier from OpenAlex venue
+// 2yr_mean_citedness, with DOAJ/OA as positive-only display modifiers that never move the tier.
+// DISPLAY-ONLY — never imported by supabase/functions/ask/ (would shift the cited set → break
+// /ask byte-identity). Computed in the enrich-source side channel + rendered in the web layer.
+export * from "./paper-quality.ts";

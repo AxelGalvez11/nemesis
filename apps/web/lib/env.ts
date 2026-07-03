@@ -34,13 +34,13 @@ export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "
 // Missions on their own top-level "Scheduled" page (Manus-style "your scheduled research agents"),
 // elevating the "Scheduled research" section that lives inside Monitoring today. Off ⇒ no nav item,
 // route unreachable from the shell, app byte-identical.
-export const scheduledPageEnabled = process.env.NEXT_PUBLIC_WS10_SCHEDULED === "true";
+export const scheduledPageEnabled = process.env.NEXT_PUBLIC_WS10_SCHEDULED !== "false"; // DEMO BRANCH: default ON
 
 // Composer tools parity (WS-9) — DEFAULT OFF. When "true", the Ask composer gains the new controls
 // (Corpus switcher, quality filters, Project-as-context) alongside the existing "+" launcher + mode
 // dial. Controls whose retrieval backend (WS-3) isn't live render as disabled "Soon" — never silently
 // active. Off ⇒ composer byte-identical to today. The composer never changes the safety scan or grade.
-export const composerToolsEnabled = process.env.NEXT_PUBLIC_WS9_COMPOSER === "true";
+export const composerToolsEnabled = process.env.NEXT_PUBLIC_WS9_COMPOSER !== "false"; // DEMO BRANCH: default ON
 
 // Bot-protection CAPTCHA (Cloudflare Turnstile + Supabase native enforcement) — DEFAULT OFF.
 // When NEXT_PUBLIC_TURNSTILE_SITE_KEY is set, the sign-in/sign-up forms render a Turnstile widget
@@ -51,6 +51,13 @@ export const composerToolsEnabled = process.env.NEXT_PUBLIC_WS9_COMPOSER === "tr
 // enforcement first, or every sign-in/up breaks until the client deploys.
 export const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 export const captchaEnabled = turnstileSiteKey.length > 0;
+
+// Per-paper journal-quality tier badge + per-paper supporting-quote expander (WS-1 slice B) —
+// DEFAULT OFF. When "true": EvidencePanel renders a Q1-Q4 tier pill (from enrich-source's
+// journal_tier) and a read-only "supporting quote" expander per source card. Off ⇒ EvidencePanel
+// renders exactly as today. Server-side counterpart is WS1_PER_PAPER ("on") in enrich-source; this
+// is the separate client-side gate for the new render (note: "true" here, "on" server-side).
+export const ws1PerPaperEnabled = process.env.NEXT_PUBLIC_WS1_PER_PAPER !== "false"; // DEMO BRANCH: default ON
 
 // PostHog product analytics. Public phc_ project key (write-only ingestion) + host — safe in the
 // browser bundle. Reads happen elsewhere with a personal API key.
