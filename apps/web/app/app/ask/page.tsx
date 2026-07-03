@@ -6,7 +6,7 @@ import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
 import { simplifiedModesEnabled } from "@/lib/env";
-import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
+import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
@@ -202,10 +202,10 @@ function AskPage() {
 
   // Turn slot `idx` into a running research card and kick off the run. `searchQ` may be enriched with
   // clarifying answers, while `displayQ` stays the readable original (shown on the card + saved).
-  const launchResearch = useCallback(async (idx: number, displayQ: string, searchQ: string, runMode: ReportMode) => {
+  const launchResearch = useCallback(async (idx: number, displayQ: string, searchQ: string, runMode: ReportMode, subQuestions?: string[]) => {
     setTurns((prev) => prev.map((t, i) => (i === idx ? { q: displayQ, a: null, err: null, research: { runId: "", mode: runMode, title: displayQ, error: null, proGate: false } } : t)));
     try {
-      const runId = await startResearch(searchQ, runMode);
+      const runId = await startResearch(searchQ, runMode, subQuestions);
       setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
     } catch (e) {
       const proGate = isQuotaError(e) && Number(e.quota.limit) === 0;
@@ -327,9 +327,11 @@ function AskPage() {
       // Tools are SINGLE-SHOT (the ChatGPT behavior): this run is launched, so the composer returns
       // to a normal ask — a follow-up question won't silently burn another Pro report run.
       setMode(DEFAULT_DEPTH);
-      const scope = await scopeResearch(text); // best-effort; degrades to no-clarification on any failure
-      if (scope.needs_clarification) {
-        setTurns((prev) => prev.map((t, i) => (i === ridx ? { q: text, a: null, err: null, scope: { question: text, runMode, questions: scope.questions } } : t)));
+      // Scope (clarifying questions) and the pre-run plan (editable sub-questions) are independent,
+      // best-effort steps — fetch both in parallel so the "scoping…" wait isn't doubled.
+      const [scope, plan] = await Promise.all([scopeResearch(text), planResearchPreview(text, runMode)]);
+      if (scope.needs_clarification || plan.length) {
+        setTurns((prev) => prev.map((t, i) => (i === ridx ? { q: text, a: null, err: null, scope: { question: text, runMode, questions: scope.questions, plan } } : t)));
       } else {
         void launchResearch(ridx, text, text, runMode);
       }
@@ -446,7 +448,7 @@ function AskPage() {
                   {t.scoping ? (
                     <div className="thinking"><div className="think-row"><span className="shimmer">Scoping your question…</span></div></div>
                   ) : t.scope ? (
-                    <ScopeTurn state={t.scope} onRun={(enriched) => void launchResearch(i, t.scope!.question, enriched, t.scope!.runMode)} />
+                    <ScopeTurn state={t.scope} onRun={(enriched, subQuestions) => void launchResearch(i, t.scope!.question, enriched, t.scope!.runMode, subQuestions)} />
                   ) : t.research ? (
                     <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
                   ) : t.a ? (
@@ -493,6 +495,8 @@ interface ScopeTurnState {
   question: string;
   runMode: ReportMode;
   questions: ScopeQuestion[];
+  /** The engine's planned sub-questions (3-6), shown as editable rows above the run actions. May be empty. */
+  plan: string[];
 }
 
 interface Turn {
@@ -708,11 +712,15 @@ function Thinking({ stage, question, complete = false, secs, domains }: { stage:
   );
 }
 
-// The clarifying-question turn: shown when the scope step found the question ambiguous. Each question
-// offers quick-pick chips (which fill the matching free-text box) plus a free-text answer. "Run with
-// answers" folds the answers into the question; "Just run it" runs the original unchanged.
-function ScopeTurn({ state, onRun }: { state: ScopeTurnState; onRun: (enrichedQuestion: string) => void }) {
+// The clarifying-question turn: shown when the scope step found the question ambiguous, or when the
+// engine has a pre-run plan (or both). Each clarifying question offers quick-pick chips (which fill the
+// matching free-text box) plus a free-text answer; the plan (when present) shows as editable rows the
+// user can tweak before the run starts. "Run with answers" folds the answers into the question AND
+// passes the (trimmed, non-empty) edited plan; "Just run it" runs the original question with NO
+// sub-questions override, so the engine plans it itself.
+function ScopeTurn({ state, onRun }: { state: ScopeTurnState; onRun: (enrichedQuestion: string, subQuestions?: string[]) => void }) {
   const [answers, setAnswers] = useState<string[]>(() => state.questions.map(() => ""));
+  const [planDraft, setPlanDraft] = useState<string[]>(() => [...state.plan]);
   const [submitted, setSubmitted] = useState(false);
   const setAnswer = (i: number, v: string) => setAnswers((prev) => prev.map((a, j) => (j === i ? v : a)));
 
@@ -724,7 +732,9 @@ function ScopeTurn({ state, onRun }: { state: ScopeTurnState; onRun: (enrichedQu
       .map((q, i) => ({ q: q.text, a: (answers[i] ?? "").trim() }))
       .filter((x) => x.a)
       .map((x) => `${x.q} ${x.a}`);
-    onRun(parts.length ? `${state.question}\n\nFocus: ${parts.join("; ")}` : state.question);
+    const enriched = parts.length ? `${state.question}\n\nFocus: ${parts.join("; ")}` : state.question;
+    const editedPlan = planDraft.map((p) => p.trim()).filter(Boolean);
+    onRun(enriched, editedPlan.length ? editedPlan : undefined);
   };
 
   return (
@@ -757,6 +767,15 @@ function ScopeTurn({ state, onRun }: { state: ScopeTurnState; onRun: (enrichedQu
           />
         </div>
       ))}
+      {planDraft.length ? (
+        <div className="scope-q">
+          <div className="scope-q-text">The research plan — edit any line before it runs:</div>
+          {planDraft.map((p, i) => (
+            <input key={i} className="scope-input" value={p} aria-label={`Planned sub-question ${i + 1}`}
+              onChange={(e) => setPlanDraft((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))} />
+          ))}
+        </div>
+      ) : null}
       <div className="scope-actions">
         <button className="chip-action" onClick={() => run(true)} disabled={submitted}><Icon name="send" size={14} />Run with answers</button>
         <button className="chip-action" onClick={() => run(false)} disabled={submitted}>Just run it</button>

@@ -17,6 +17,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 import { runResearch } from "../ask/research/orchestrate.ts";
 import { scopeQuestion } from "../ask/research/scope.ts";
+import { planSubQuestions } from "../ask/research/plan.ts";
 import { hasLlmKey, llmApiKey } from "../ask/llm.ts";
 import { persistDiscoveryProject } from "./discovery-persist.ts";
 import type { ReportMode, ResearchProgressStep, ResearchReport } from "../../../packages/shared/src/research.ts";
@@ -92,6 +93,17 @@ serve(async (req) => {
     return json(scope, 200, req);
   }
 
+  // ---- Plan pre-step: return the 3-6 planned sub-questions for user review/edit. No quota consumed,
+  // no run started. Best-effort: any failure returns an empty list and the UI just runs without a plan.
+  if (body.action === "plan") {
+    try {
+      const subQuestions = await planSubQuestions(question, llmApiKey(), mode);
+      return json({ sub_questions: subQuestions }, 200, req);
+    } catch {
+      return json({ sub_questions: [] }, 200, req);
+    }
+  }
+
   // ---- Pro gate + daily limit (one call): deep_research_daily_limit is 0 for free/plus, 3 for pro ----
   const quota = await consumeQuota(userId);
   if (!quota.allowed) {
@@ -120,8 +132,13 @@ serve(async (req) => {
     }
   }
 
+  // Optional user-edited plan (from action:"plan"): only well-formed, bounded strings pass.
+  const subQuestions = Array.isArray(body.sub_questions)
+    ? body.sub_questions.filter((s): s is string => typeof s === "string" && s.trim().length > 0 && s.length <= 300).slice(0, 8)
+    : undefined;
+
   // ---- execute in the background; respond immediately with the run id ----
-  const job = executeRun(runId, userId, question, mode);
+  const job = executeRun(runId, userId, question, mode, subQuestions);
   if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
     EdgeRuntime.waitUntil(job);
   } else {
@@ -133,7 +150,7 @@ serve(async (req) => {
 });
 
 /** Run the engine, streaming progress to the run row, then persist the report. Never rejects. */
-async function executeRun(runId: string, userId: string, question: string, mode: ReportMode): Promise<void> {
+async function executeRun(runId: string, userId: string, question: string, mode: ReportMode, subQuestions?: string[]): Promise<void> {
   const steps: ResearchProgressStep[] = [];
   try {
     const report = await runResearch(question, {
@@ -142,6 +159,7 @@ async function executeRun(runId: string, userId: string, question: string, mode:
       serviceKey: SERVICE_KEY,
       liveOn: LIVE_SOURCES_ON,
       mode,
+      subQuestions,
       onProgress: (step) => {
         steps.push(step);
         // Best-effort live update; a dropped progress patch must not fail the run.

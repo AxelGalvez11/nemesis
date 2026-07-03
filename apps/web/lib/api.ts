@@ -747,8 +747,9 @@ export interface ResearchReportSummary {
 }
 
 /** Start a deep-research run. Returns the run id to poll. Throws AskQuotaError on the Pro gate /
- *  daily-limit 429 (deep_research_daily_limit is 0 for free/plus). */
-export async function startResearch(question: string, mode: ReportMode = "standard"): Promise<string> {
+ *  daily-limit 429 (deep_research_daily_limit is 0 for free/plus). `subQuestions`, when provided (a
+ *  user-edited plan from `planResearchPreview`), tells the engine to skip its own planning call. */
+export async function startResearch(question: string, mode: ReportMode = "standard", subQuestions?: string[]): Promise<string> {
   if (isPreviewMode) throw new Error("Deep research needs a live connection (not available in preview).");
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -761,7 +762,7 @@ export async function startResearch(question: string, mode: ReportMode = "standa
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ question, mode }),
+    body: JSON.stringify({ question, mode, ...(subQuestions?.length ? { sub_questions: subQuestions } : {}) }),
   });
   const body = await res.json().catch(() => null);
   if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
@@ -796,6 +797,28 @@ export async function scopeResearch(question: string): Promise<ScopeResult> {
     return body as unknown as ScopeResult;
   } catch {
     return none;
+  }
+}
+
+/** Preview the research plan (3-6 sub-questions) for user review. Best-effort: [] on any failure. */
+export async function planResearchPreview(question: string, mode: ReportMode): Promise<string[]> {
+  if (isPreviewMode) return [];
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return [];
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/research`, {
+      method: "POST",
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ question, mode, action: "plan" }),
+    });
+    if (!res.ok) return [];
+    const body = await res.json().catch(() => null);
+    return isObj(body) && Array.isArray(body.sub_questions)
+      ? body.sub_questions.filter((s: unknown): s is string => typeof s === "string").slice(0, 8)
+      : [];
+  } catch {
+    return [];
   }
 }
 

@@ -48,7 +48,7 @@ import type {
 import { detectForbiddenPhrases } from "../../../../packages/shared/src/forbidden-phrases.ts";
 import { poolRiskRatio } from "../../../../packages/shared/src/meta-analysis.ts";
 import type { MetaAnalysisResult } from "../../../../packages/shared/src/meta-analysis.ts";
-import { planSubQuestions } from "./plan.ts";
+import { planSubQuestions, resolveSubQuestions } from "./plan.ts";
 import { deriveGaps } from "./gaps.ts";
 import { assembleSections, type RawReportPoint, synthesizeReport } from "./synthesize.ts";
 import { parsePico } from "./pico.ts";
@@ -114,6 +114,8 @@ export interface OrchestrateConfig {
   mode?: ReportMode;
   /** Optional progress sink for the future async/Realtime layer. Best-effort; never affects the run. */
   onProgress?: (step: ResearchProgressStep) => void;
+  /** Pre-approved sub-questions from the user's edited plan (research fn action:"plan" → user edit). Non-empty ⇒ the plan step is skipped and these are used verbatim (already validated at the fn boundary). */
+  subQuestions?: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -414,7 +416,10 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
 
   // ---- 2. plan ----
   emit("planning", "Breaking the question into focused sub-questions");
-  const subQuestions = await planSubQuestions(question, cfg.apiKey, cfg.mode ?? "standard");
+  const subQuestions = await resolveSubQuestions(
+    cfg.subQuestions,
+    () => planSubQuestions(question, cfg.apiKey, cfg.mode ?? "standard"),
+  );
   if (subQuestions.length === 0) {
     return templateReport(question, "no_source", NO_SOURCE_COPY, unique<SafetyFlag>([...flags, "no_sources_found"]));
   }
