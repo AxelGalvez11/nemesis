@@ -40,6 +40,7 @@ const workspace = [
   { href: "/app/ask", label: "Ask", icon: "message" as const },
   { href: "/app/reports", label: "Reports", icon: "doc" as const },
   { href: "/app/monitor", label: "Monitoring", icon: "bell" as const },
+  { href: "/app/scheduled", label: "Scheduled", icon: "clock" as const },
   // Explore is deferred (mostly mockup) — hidden from the nav until it's real. The route still exists.
   // (The old "Watchlist" feature was retired 2026-06-18, superseded by Monitoring above. Its empty DB
   // tables stay dormant for now; the drug-page "Follow" now creates a Monitoring watch.)
@@ -55,6 +56,7 @@ function titleForPath(path: string): { title: string; sub?: string } {
   if (path.startsWith("/app/research")) return { title: "Deep research", sub: "multi-step cited report" };
   if (path.startsWith("/app/reports")) return { title: "Reports", sub: "your saved evidence reports" };
   if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };
+  if (path.startsWith("/app/scheduled")) return { title: "Scheduled", sub: "recurring research + monitors" };
   if (path.startsWith("/app/score")) return { title: "Score", sub: "your longevity rank" };
   if (path.startsWith("/app/explore")) return { title: "Explore" };
   if (path.startsWith("/app/billing")) return { title: "Billing" };
@@ -65,7 +67,7 @@ function titleForPath(path: string): { title: string; sub?: string } {
   return { title: "PharmaOrb" };
 }
 
-const FULL_BLEED = ["/app/ask", "/app/research", "/app/reports", "/app/monitor", "/app/explore", "/app/drugs/", "/app/score"];
+const FULL_BLEED = ["/app/ask", "/app/research", "/app/reports", "/app/monitor", "/app/scheduled", "/app/explore", "/app/drugs/", "/app/score"];
 
 // Client-only breakpoint probe (clicks are client-side, so window is always defined here).
 const mqMatch = (q: string) =>

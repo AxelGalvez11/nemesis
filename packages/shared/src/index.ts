@@ -154,3 +154,6 @@ export * from "./claim-refs.ts";
 // Report title cleanup: strip the Ask flow's "\n\nFocus: …" scoping suffix, normalize + cap for the
 // Library / workspace rows. PURE, display-only.
 export * from "./report-title.ts";
+
+// Relative "time until" ("in 2 h" / "in 3 d" / "due now") for the Scheduled surface. PURE.
+export * from "./relative-time.ts";
