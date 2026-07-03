@@ -587,16 +587,19 @@ export async function fetchConversations(): Promise<ConversationSummary[]> {
   );
 }
 
-/** Create a chat (title = first question, trimmed); returns its id. */
-export async function createConversation(title: string): Promise<string | null> {
+/** Create a chat (title = first question, trimmed); returns its id. Pass `projectId` to file the new
+ *  chat directly into a project workspace (used by the project→Ask "New chat in {name}" flow). */
+export async function createConversation(title: string, projectId?: string | null): Promise<string | null> {
   if (isPreviewMode) return null;
   const { data: sess } = await supabase.auth.getSession();
   const userId = sess.session?.user.id;
   if (!userId) throw new Error("Sign in to save chats");
   const clean = title.trim().slice(0, 120) || "New chat";
+  const row: Record<string, unknown> = { user_id: userId, title: clean };
+  if (projectId) row.project_id = projectId;
   const { data, error } = await supabase
     .from("conversations")
-    .insert({ user_id: userId, title: clean })
+    .insert(row)
     .select("id")
     .single();
   if (error) throw new Error(`create chat failed: ${error.message}`);
@@ -1169,8 +1172,8 @@ export async function downloadReportExport(
 // ── Projects (workspaces) — group a user's chats + reports + watches into one named space. Direct
 //    PostgREST writes; RLS is the enforcement (projects is owner-scoped; the project_id columns inherit
 //    each item table's existing owner policy). Pre-migration the table is absent (PGRST205) → empty.
-export interface Project { id: string; name: string; description: string | null; created_at: string; }
-export interface ProjectChat { id: string; title: string; }
+export interface Project { id: string; name: string; description: string | null; created_at: string; instructions?: string | null; }
+export interface ProjectChat { id: string; title: string; created_at?: string; }
 export interface ProjectContents { chats: ProjectChat[]; reports: ResearchReportSummary[]; watches: WatchSummary[]; }
 export type ProjectItemKind = "conversation" | "report" | "watch";
 
@@ -1230,15 +1233,58 @@ export async function deleteProject(id: string): Promise<void> {
   if (error) throw new Error(`delete project failed: ${error.message}`);
 }
 
+/** One project by id (RLS-scoped). Includes `instructions` when the column exists; before the
+ *  20260703120000 migration is applied that column is absent (Postgres 42703, a PostgREST 400 — NOT the
+ *  PGRST205 that isMissingRelation catches), so we retry with the base columns and return instructions:null.
+ *  Returns null if the project isn't found or the table itself is absent (pre-Projects deploy). */
+export async function fetchProject(id: string): Promise<Project | null> {
+  if (isPreviewMode) return null;
+  const withInstr = await supabase
+    .from("projects").select("id,name,description,created_at,instructions").eq("id", id).maybeSingle();
+  if (!withInstr.error) {
+    const d = withInstr.data;
+    return d && typeof d.id === "string"
+      ? { id: d.id, name: String(d.name ?? ""), description: (d.description as string) ?? null, created_at: (d.created_at as string) ?? "", instructions: (d.instructions as string) ?? null }
+      : null;
+  }
+  // Missing table → treat as "no project" (pre-Projects deploy). Missing column (42703) → retry base.
+  if (isMissingRelation(withInstr.error)) return null;
+  const base = await supabase
+    .from("projects").select("id,name,description,created_at").eq("id", id).maybeSingle();
+  if (base.error || !base.data || typeof base.data.id !== "string") return null;
+  const d = base.data;
+  return { id: d.id, name: String(d.name ?? ""), description: (d.description as string) ?? null, created_at: (d.created_at as string) ?? "", instructions: null };
+}
+
+/** Update a project's editable fields (RLS-scoped). Only the provided keys are written. `instructions`
+ *  writes only when the column exists; before the migration it fails silently (best-effort, so the rest
+ *  of the save — name/description — still lands). */
+export async function updateProject(id: string, patch: { name?: string; description?: string | null; instructions?: string | null }): Promise<void> {
+  if (isPreviewMode) return;
+  // Split so a missing `instructions` column (pre-migration 42703) can't fail the name/description write.
+  const base: Record<string, unknown> = {};
+  if (patch.name !== undefined) base.name = patch.name.trim().slice(0, 200);
+  if (patch.description !== undefined) base.description = patch.description;
+  if (Object.keys(base).length) {
+    const { error } = await supabase.from("projects").update(base).eq("id", id);
+    if (error) throw new Error(`update project failed: ${error.message}`);
+  }
+  if (patch.instructions !== undefined) {
+    const { error } = await supabase.from("projects").update({ instructions: patch.instructions }).eq("id", id);
+    // Swallow ONLY the pre-migration column-missing case; surface anything else.
+    if (error && error.code !== "42703") throw new Error(`update project failed: ${error.message}`);
+  }
+}
+
 /** A project's contents — the chats, reports, and watches assigned to it. */
 export async function fetchProjectContents(projectId: string): Promise<ProjectContents> {
   const [c, r, w] = await Promise.all([
-    supabase.from("conversations").select("id,title").eq("project_id", projectId).order("updated_at", { ascending: false }),
+    supabase.from("conversations").select("id,title,created_at").eq("project_id", projectId).order("updated_at", { ascending: false }),
     supabase.from("saved_reports").select("id,title,created_at,citation_count,mode").eq("project_id", projectId).eq("kind", "deep_research").order("created_at", { ascending: false }),
     supabase.from("evidence_watches").select("id,title,cadence,status,last_checked_at,baselined_at").eq("project_id", projectId).order("created_at", { ascending: false }),
   ]);
   return {
-    chats: rows(c.data, (x) => (typeof x.id === "string" ? ({ id: x.id, title: typeof x.title === "string" ? x.title : "Untitled" } as ProjectChat) : null)),
+    chats: rows(c.data, (x) => (typeof x.id === "string" ? ({ id: x.id, title: typeof x.title === "string" ? x.title : "Untitled", created_at: typeof x.created_at === "string" ? x.created_at : undefined } as ProjectChat) : null)),
     reports: rows(r.data, toReportSummary),
     watches: rows(w.data, toWatchSummaryRow),
   };
