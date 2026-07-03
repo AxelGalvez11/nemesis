@@ -15,7 +15,7 @@ const OUTCOME_COPY: Record<string, string> = {
   unknown: "Couldn’t schedule this — try again.",
 };
 
-/** "Repeat this research" — the clock-icon sheet (ChatGPT agent's schedule affordance, our engine).
+/** "Repeat this research" — the clock-icon sheet (ChatGPT agent’s schedule affordance, our engine).
  *  Creates a research_missions row; the cron takes it from there. */
 export function MissionSheet({ question, reportMode, onClose }: { question: string; reportMode: string; onClose: () => void }) {
   const [cadence, setCadence] = useState<MissionCadence>("weekly");
@@ -24,6 +24,7 @@ export function MissionSheet({ question, reportMode, onClose }: { question: stri
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null); // copy shown after attempt
   const [created, setCreated] = useState(false);
+  const [batch, setBatch] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -38,12 +39,20 @@ export function MissionSheet({ question, reportMode, onClose }: { question: stri
     setBusy(true);
     setOutcome(null);
     try {
-      const res = await createMission({ question, report_mode: reportMode, cadence, deliver });
-      if (res.ok) {
+      const questions = [question, ...batch.split("\n").map((s) => s.trim()).filter(Boolean)].slice(0, 10);
+      let okCount = 0;
+      let firstError: string | null = null;
+      for (const q of questions) {
+        const res = await createMission({ question: q, report_mode: reportMode, cadence, deliver });
+        if (res.ok) okCount++;
+        else if (res.reason === "limit") { firstError = OUTCOME_COPY.limit as string; break; } // cap reached — stop, don’t spam errors
+        else if (!firstError) firstError = (OUTCOME_COPY[res.reason] ?? OUTCOME_COPY.unknown) as string;
+      }
+      if (okCount > 0) {
         setCreated(true);
-        setOutcome(`Scheduled. A fresh report will land ${cadence === "daily" ? "every day" : cadence === "weekly" ? "every week" : "every month"} under Reports${deliver === "email" ? " — and in your inbox" : ""}.`);
+        setOutcome(`Scheduled ${okCount} ${okCount === 1 ? "run" : "runs"}.${firstError ? ` ${firstError}` : ""}`);
       } else {
-        setOutcome(OUTCOME_COPY[res.reason] ?? "Couldn’t schedule this — try again.");
+        setOutcome((firstError ?? OUTCOME_COPY.unknown) as string);
       }
     } finally {
       setBusy(false);
@@ -75,6 +84,18 @@ export function MissionSheet({ question, reportMode, onClose }: { question: stri
             <button type="button" className={`chip-action${deliver === "in_app" ? " active" : ""}`} onClick={() => setDeliver("in_app")}>In-app only</button>
             <button type="button" className={`chip-action${deliver === "email" ? " active" : ""}`} onClick={() => setDeliver("email")}>Email me the report</button>
           </div>
+          <details className="mission-batch">
+            <summary className="muted-label" style={{ cursor: "pointer" }}>Schedule several at once</summary>
+            <p className="tmpl-note">One question per line — each becomes its own scheduled research run (same cadence and delivery).</p>
+            <textarea
+              className="scope-input"
+              rows={3}
+              value={batch}
+              aria-label="Additional questions to schedule, one per line"
+              onChange={(e) => setBatch(e.target.value)}
+              placeholder={"How does semaglutide compare with tirzepatide for weight loss?\nWhat is the current evidence on berberine for blood sugar?"}
+            />
+          </details>
           {outcome ? <p className="tmpl-note">{outcome}</p> : null}
           <div className="scope-actions">
             {created ? (

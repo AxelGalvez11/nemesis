@@ -309,6 +309,7 @@
 .grade { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px; }
 .safety-flag { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--warn); border: 1px solid rgba(245, 178, 59, 0.32); border-radius: 999px; padding: 2px 8px; }
 .tmpl-note { color: var(--warn); font-size: 12px; }
+.mission-batch { margin-top: 6px; }
 
 /* ── thinking state ── */
 .thinking { display: block; animation: fade 0.4s both; }
