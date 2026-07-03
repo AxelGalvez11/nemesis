@@ -90,6 +90,21 @@ export function normalizeSubQuestions(raw: unknown, original: string): string[] 
 }
 
 /**
+ * Resolve the sub-questions to run: a user-edited plan (from the research fn's action:"plan" step)
+ * wins verbatim over the engine's own planning call — it is already validated (trimmed, bounded,
+ * capped) at the fn boundary, so this does NOT re-normalize it. `planned` is a thunk (not a value) so
+ * that when a valid plan is provided, the LLM planning call is never made. PURE aside from the thunk
+ * it is handed: no I/O of its own, fully unit-testable.
+ */
+export async function resolveSubQuestions(
+  provided: readonly string[] | undefined,
+  planned: () => Promise<string[]>,
+): Promise<string[]> {
+  if (provided?.length) return [...provided];
+  return planned();
+}
+
+/**
  * Plan the research: one cheap LLM call returning 3-6 sub-questions, normalized. Degrades to
  * `[question]` on ANY failure (no key, model error, malformed output) — planning is best-effort.
  */

@@ -172,6 +172,8 @@ the one Ask chat, not a separate dashboard.** ChatGPT's agent then validated the
 grammar: invoked from the tools menu, narrates while it works, interruptible, produces editable
 deliverables, and **a finished run gets a clock icon → repeat daily/weekly/monthly.**
 
+**Status 2026-07-02:** Missions v1 is implemented on feat/missions-v1 — pending the owner-gated migration apply + research-function deploy.
+
 **Manus is the purest comp** (the revenue leader in deliverable-producing agents, ~$90M+ ARR) and
 its grammar is worth copying deliberately:
 - **Plan-before-execute:** the agent shows its step plan up front so the user can intervene — the
@@ -297,11 +299,11 @@ agents, MCP is the standard to speak — same protocol ChatGPT apps use.)
 
 | # | What | Size | Why now |
 |---|---|---|---|
-| 1 | **Missions v1** (§5: table + cron + clock-icon + Monitoring section + email) | M | The owner's stated idea; every hard piece already exists; nothing else in this doc compounds like a subscription to your own research |
-| 2 | Fullscreen report viewer (TOC + sources rail + activity trail) | S | Cheap parity; makes every report (incl. mission output) feel premium |
+| 1 | **Missions v1** (§5: table + cron + clock-icon + Monitoring section + email) | M | The owner's stated idea; every hard piece already exists; nothing else in this doc compounds like a subscription to your own research — built on feat/missions-v1 (awaiting owner-gated migration apply + research-fn deploy) |
+| 2 | Fullscreen report viewer (TOC + sources rail + activity trail) | S | Cheap parity; makes every report (incl. mission output) feel premium. Activity trail part built on feat/missions-v1 (awaiting owner-gated migration apply + research-fn deploy) |
 | 3 | Extraction-table deliverable (Elicit's flagship, our trust badges) | M | The §7 gap; reuses the meta pipeline's grounding; adds the one citation-rendering mode we lack |
 | 4 | Project instructions | S | High value, engine-safe |
-| 5 | Editable pre-run research plan (also Manus's plan-before-execute) | M | Trust + steerability for deep research |
+| 5 | Editable pre-run research plan (also Manus's plan-before-execute) | M | Trust + steerability for deep research — built on feat/missions-v1 (awaiting owner-gated migration apply + research-fn deploy) |
 | 6 | Armed-tool chip + placeholder swap in composer | S | Closes the §1 polish gap |
 | 7 | News-only filter ("+" menu goes fully live) | S–M | Owner-gated engine change; completes the tools menu |
 | 8 | Research Map v1 (project-level graph) | M–L | Now unblocked by Projects; the wow surface |

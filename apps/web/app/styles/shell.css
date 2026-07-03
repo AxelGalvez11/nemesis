@@ -309,6 +309,7 @@
 .grade { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px; }
 .safety-flag { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--warn); border: 1px solid rgba(245, 178, 59, 0.32); border-radius: 999px; padding: 2px 8px; }
 .tmpl-note { color: var(--warn); font-size: 12px; }
+.mission-batch { margin-top: 6px; }
 
 /* ── thinking state ── */
 .thinking { display: block; animation: fade 0.4s both; }
@@ -937,6 +938,9 @@
 .research-progress .src-count { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-left: auto; }
 .research-progress-note { font-size: 12px; color: var(--text-3); margin-top: 12px; line-height: 1.5; }
 
+/* activity trail on finished reports */
+.report-activity { margin: 10px 0 4px; }
+
 /* report history */
 .research-history { margin-top: 28px; }
 .research-history-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
@@ -945,6 +949,8 @@
 .research-card svg { color: var(--text-3); flex: none; }
 .research-card-title { flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .research-card small { color: var(--text-3); font-family: var(--mono); font-size: 11px; flex: none; }
+.research-done { display: flex; flex-direction: column; gap: 8px; }
+.mission-sheet { margin-top: 4px; }
 
 /* Modern watch cards (Monitoring list): status dot + two-row layout (title over cadence/last-checked) +
    a soft hover-lift. Replaces the flat .research-card row so the page reads less generic. */

@@ -7,6 +7,9 @@ import type {
   DrugOverview,
   EntitlementSnapshot,
   EntitySuggestion,
+  MissionCadence,
+  MissionDeliver,
+  MissionSummary,
   QuotaExceededError,
   ReportMode,
   ResearchProgressStep,
@@ -744,8 +747,9 @@ export interface ResearchReportSummary {
 }
 
 /** Start a deep-research run. Returns the run id to poll. Throws AskQuotaError on the Pro gate /
- *  daily-limit 429 (deep_research_daily_limit is 0 for free/plus). */
-export async function startResearch(question: string, mode: ReportMode = "standard"): Promise<string> {
+ *  daily-limit 429 (deep_research_daily_limit is 0 for free/plus). `subQuestions`, when provided (a
+ *  user-edited plan from `planResearchPreview`), tells the engine to skip its own planning call. */
+export async function startResearch(question: string, mode: ReportMode = "standard", subQuestions?: string[]): Promise<string> {
   if (isPreviewMode) throw new Error("Deep research needs a live connection (not available in preview).");
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -758,7 +762,7 @@ export async function startResearch(question: string, mode: ReportMode = "standa
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ question, mode }),
+    body: JSON.stringify({ question, mode, ...(subQuestions?.length ? { sub_questions: subQuestions } : {}) }),
   });
   const body = await res.json().catch(() => null);
   if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
@@ -793,6 +797,28 @@ export async function scopeResearch(question: string): Promise<ScopeResult> {
     return body as unknown as ScopeResult;
   } catch {
     return none;
+  }
+}
+
+/** Preview the research plan (3-6 sub-questions) for user review. Best-effort: [] on any failure. */
+export async function planResearchPreview(question: string, mode: ReportMode): Promise<string[]> {
+  if (isPreviewMode) return [];
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return [];
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/research`, {
+      method: "POST",
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ question, mode, action: "plan" }),
+    });
+    if (!res.ok) return [];
+    const body = await res.json().catch(() => null);
+    return isObj(body) && Array.isArray(body.sub_questions)
+      ? body.sub_questions.filter((s: unknown): s is string => typeof s === "string").slice(0, 8)
+      : [];
+  } catch {
+    return [];
   }
 }
 
@@ -1035,6 +1061,82 @@ export async function setWatchStatus(id: string, status: "active" | "paused"): P
   if (isPreviewMode) return;
   const { error } = await supabase.from("evidence_watches").update({ status }).eq("id", id);
   if (error) throw new Error(`update watch failed: ${error.message}`);
+}
+
+// ── Missions: scheduled background research runs (research_missions, RLS owner-scoped) ────────
+
+export async function fetchMissions(): Promise<MissionSummary[]> {
+  if (isPreviewMode) return [];
+  const { data, error } = await supabase
+    .from("research_missions")
+    .select("id,question,report_mode,cadence,deliver,status,next_run_at,last_run_at,last_run_status,last_saved_report_id")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) {
+    if (isMissingRelation(error)) return []; // pre-migration: section renders empty, no crash
+    throw new Error(`missions failed: ${error.message}`);
+  }
+  return (data ?? []) as unknown as MissionSummary[];
+}
+
+export type CreateMissionResult = { ok: true; id: string } | { ok: false; reason: "not_enabled" | "limit" | "duplicate" | "auth" | "unknown" };
+
+export async function createMission(input: { question: string; report_mode: string; cadence: MissionCadence; deliver: MissionDeliver }): Promise<CreateMissionResult> {
+  if (isPreviewMode) return { ok: false, reason: "not_enabled" };
+  const { data: sess } = await supabase.auth.getSession();
+  const userId = sess.session?.user?.id;
+  if (!userId) return { ok: false, reason: "auth" };
+  const { data, error } = await supabase
+    .from("research_missions")
+    .insert({
+      user_id: userId,
+      question: input.question.slice(0, 1000),
+      report_mode: input.report_mode,
+      cadence: input.cadence,
+      deliver: input.deliver,
+    })
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    if (isMissingRelation(error)) return { ok: false, reason: "not_enabled" };
+    if (/mission_limit_exceeded/i.test(error.message ?? "")) return { ok: false, reason: "limit" };
+    if (error.code === "23505" || /research_missions_user_question_uniq/i.test(error.message ?? "")) {
+      return { ok: false, reason: "duplicate" };
+    }
+    return { ok: false, reason: "unknown" };
+  }
+  return data && typeof data.id === "string" ? { ok: true, id: data.id } : { ok: false, reason: "unknown" };
+}
+
+export async function setMissionStatus(id: string, status: "active" | "paused"): Promise<void> {
+  if (isPreviewMode) return;
+  const { error } = await supabase.from("research_missions").update({ status }).eq("id", id);
+  if (error) throw new Error(`update mission failed: ${error.message}`);
+}
+
+export async function deleteMission(id: string): Promise<void> {
+  if (isPreviewMode) return;
+  const { error } = await supabase.from("research_missions").delete().eq("id", id);
+  if (error) throw new Error(`delete mission failed: ${error.message}`);
+}
+
+/** The run row that produced a saved report (RLS-scoped) — powers the report's activity trail. */
+export async function fetchRunForReport(savedReportId: string): Promise<ResearchRunRow | null> {
+  if (isPreviewMode) return null;
+  const { data, error } = await supabase
+    .from("research_report_runs")
+    .select("id,status,question,progress,saved_report_id,error")
+    .eq("saved_report_id", savedReportId)
+    .maybeSingle();
+  if (error || !isObj(data) || typeof data.id !== "string") return null;
+  return {
+    id: data.id,
+    status: (typeof data.status === "string" ? data.status : "completed") as ResearchRunStatusValue,
+    question: typeof data.question === "string" ? data.question : "",
+    progress: Array.isArray(data.progress) ? (data.progress as unknown as ResearchProgressStep[]) : [],
+    saved_report_id: typeof data.saved_report_id === "string" ? data.saved_report_id : null,
+    error: typeof data.error === "string" ? data.error : null,
+  };
 }
 
 /** Download a saved report as .pdf/.docx/.pptx. Fetches the Node route WITH the user's bearer token
