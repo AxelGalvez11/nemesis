@@ -7,7 +7,7 @@ import { missionEntitlement } from "@pharmabro/shared";
 import { createMission, fetchEntitlements } from "@/lib/api";
 import { Icon } from "@/components/icons";
 
-const OUTCOME_COPY: Record<string, string> = {
+const OUTCOME_COPY: Record<"not_enabled" | "limit" | "duplicate" | "auth" | "unknown", string> = {
   not_enabled: "Scheduled research isn’t switched on yet.",
   limit: "You’ve reached your plan’s scheduled-research limit.",
   duplicate: "This research is already scheduled — manage it under Monitoring.",
@@ -45,14 +45,20 @@ export function MissionSheet({ question, reportMode, onClose }: { question: stri
       for (const q of questions) {
         const res = await createMission({ question: q, report_mode: reportMode, cadence, deliver });
         if (res.ok) okCount++;
-        else if (res.reason === "limit") { firstError = OUTCOME_COPY.limit as string; break; } // cap reached — stop, don’t spam errors
-        else if (!firstError) firstError = (OUTCOME_COPY[res.reason] ?? OUTCOME_COPY.unknown) as string;
+        else if (res.reason === "limit") { firstError = OUTCOME_COPY.limit; break; } // cap reached — stop, don’t spam errors
+        else if (!firstError) firstError = OUTCOME_COPY[res.reason];
       }
       if (okCount > 0) {
         setCreated(true);
-        setOutcome(`Scheduled ${okCount} ${okCount === 1 ? "run" : "runs"}.${firstError ? ` ${firstError}` : ""}`);
+        // Single question: restore rich confirmation aware of cadence and delivery
+        if (questions.length === 1 && okCount === 1) {
+          setOutcome(`Scheduled. A fresh report will land ${cadence === "daily" ? "every day" : cadence === "weekly" ? "every week" : "every month"} under Reports${deliver === "email" ? " — and in your inbox" : ""}.`);
+        } else {
+          // Batch: show count + error (if any)
+          setOutcome(`Scheduled ${okCount} ${okCount === 1 ? "run" : "runs"}.${firstError ? ` ${firstError}` : ""}`);
+        }
       } else {
-        setOutcome((firstError ?? OUTCOME_COPY.unknown) as string);
+        setOutcome(firstError ?? OUTCOME_COPY.unknown);
       }
     } finally {
       setBusy(false);
