@@ -591,6 +591,22 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
                 <Icon name="bell" size={14} /><span style={{ flex: 1 }}>Monitor this topic</span><small style={{ color: "var(--text-3)" }}>alerts on new evidence</small>
               </button>
               <div className="sep" role="separator" />
+              {/* Playbooks (WS-9): the one-click research recipes that seed a proven question AND arm the
+                  right tool — reachable here mid-thread, not just on the empty welcome screen. Same data
+                  (PLAYBOOKS) and same setMode+setQuestion behavior as the welcome chips; no engine change. */}
+              <div className="menu-label" aria-hidden="true">Playbooks</div>
+              {PLAYBOOKS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="menuitem"
+                  title={p.question}
+                  onClick={() => { setMode(p.tool); setQuestion(p.question); setPlusOpen(false); taRef.current?.focus(); }}
+                >
+                  <Icon name="doc" size={14} /><span style={{ flex: 1 }}>{p.title}</span>
+                </button>
+              ))}
+              <div className="sep" role="separator" />
               {/* Source filters: honest coming-soon until the engine can scope a run to one source
                   class (news-only; community chatter from Reddit/X walled off from cited evidence). */}
               <div className="menu-label" aria-hidden="true">Search filters</div>
