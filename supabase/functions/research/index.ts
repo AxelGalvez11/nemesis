@@ -235,18 +235,24 @@ async function handleMissionRun(missionId: string, req: Request): Promise<Respon
     return json({ ok: true, skipped: "quota" }, 200, req);
   }
 
+  // Retry once before failing: the quota unit was already consumed (consume_usage is committed and has
+  // no rollback RPC), so a transient PostgREST blip should not silently cost a Pro user a daily run.
   let runId: string;
   try {
-    runId = await insertRun(mission.user_id, mission.question, quota.plan);
-  } catch (e) {
-    console.error("mission insertRun failed:", (e as Error).message);
-    await patchMission(mission.id, {
-      last_run_at: new Date().toISOString(),
-      last_run_status: "failed",
-      next_run_at: next,
-      updated_at: new Date().toISOString(),
-    }).catch(() => {});
-    return json({ error: "could not start mission run" }, 500, req);
+    runId = await insertRun(mission.user_id, mission.question, quota.plan, mission.id);
+  } catch {
+    try {
+      runId = await insertRun(mission.user_id, mission.question, quota.plan, mission.id);
+    } catch (e) {
+      console.error("mission insertRun failed after retry:", (e as Error).message);
+      await patchMission(mission.id, {
+        last_run_at: new Date().toISOString(),
+        last_run_status: "failed",
+        next_run_at: next,
+        updated_at: new Date().toISOString(),
+      }).catch(() => {});
+      return json({ error: "could not start mission run" }, 500, req);
+    }
   }
 
   const job = executeMissionRun(mission, runId, next);
@@ -399,7 +405,7 @@ async function consumeQuota(userId: string): Promise<QuotaResult> {
   };
 }
 
-async function insertRun(userId: string, question: string, plan: string): Promise<string> {
+async function insertRun(userId: string, question: string, plan: string, missionId?: string): Promise<string> {
   const res = await fetch(`${SB_URL}/rest/v1/research_report_runs`, {
     method: "POST",
     headers: {
@@ -417,6 +423,7 @@ async function insertRun(userId: string, question: string, plan: string): Promis
       plan,
       counter_key: "deep_research_daily",
       progress: [],
+      ...(missionId ? { mission_id: missionId } : {}),
     }),
   });
   if (!res.ok) throw new Error(`insert run failed (${res.status}): ${(await res.text()).slice(0, 200)}`);

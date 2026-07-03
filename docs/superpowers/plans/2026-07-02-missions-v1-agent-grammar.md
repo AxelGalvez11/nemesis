@@ -1288,7 +1288,7 @@ git commit -m "feat(web): batch mission creation — schedule several research q
 
 1. Full verification: `deno test packages/shared/src/ supabase/functions/ask/research/`; `deno check supabase/functions/research/index.ts`; `pnpm typecheck && pnpm build` in apps/web.
 2. Final whole-branch review (most capable model) with the branch diff package.
-3. Push branch, open PR. Frontend is SAFE to merge before the migration (missing table → `not_enabled` copy everywhere).
+3. Push branch, open PR. **DEPLOY ORDER IS BINDING: the research function must be deployed to prod BEFORE (or atomically with) the web merge** — the new web client sends action:"plan" on every deep-research start, and the currently-deployed fn treats an unknown action as a REAL run (double quota burn + a phantom report per question). The MIGRATION alone is safe to defer (missing table degrades to not_enabled everywhere); the fn deploy is not.
 4. **OWNER-GATED (explicit fresh ask, all three):** apply `20260703000000_research_missions.sql` via MCP apply_migration → deploy the `research` function (`supabase functions deploy research --project-ref qyjmivntajbigjswhahb --use-api`) → owner later sets the `mission_run_url` Vault secret to activate the cron (documented in the migration header).
 5. Post-deploy: create one real mission on the owner account, manually invoke `select public.run_due_missions();` (or wait a tick), verify a report lands + mission cursor advances; run the guardrail suite (research fn shares the ask engine's modules — required after any deploy touching them).
 6. Merge PR; update memory.

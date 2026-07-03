@@ -150,3 +150,8 @@ select cron.schedule('mission-run-due-hourly', '30 * * * *', $$ select public.ru
 -- ── report → run back-lookup for the report activity trail (Task 7b) ────────────────────────
 CREATE INDEX IF NOT EXISTS research_report_runs_saved_report_idx
   ON research_report_runs (saved_report_id) WHERE saved_report_id IS NOT NULL;
+
+-- Mission provenance on runs (nullable; manual runs leave it NULL). Enables the future
+-- in-flight/idempotency guard and ops visibility without a second migration.
+ALTER TABLE research_report_runs ADD COLUMN IF NOT EXISTS mission_id uuid REFERENCES research_missions(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS research_report_runs_mission_idx ON research_report_runs (mission_id) WHERE mission_id IS NOT NULL;
