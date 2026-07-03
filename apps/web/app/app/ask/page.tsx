@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
-import { simplifiedModesEnabled } from "@/lib/env";
+import { simplifiedModesEnabled, composerToolsEnabled } from "@/lib/env";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
@@ -548,6 +548,10 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   // chat is active the suggestions stop — the box shows a calm static placeholder instead.
   const [phIdx, setPhIdx] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false); // the "+" tools launcher popover
+  // Corpus switcher (WS-9). Only "all" is selectable today (= current behavior); Medical / My Library
+  // are shown as honest "Soon" until the retrieval backend (WS-3) can scope a run to a corpus. Gated
+  // on composerToolsEnabled so the composer is byte-identical when the flag is off.
+  const [corpusOpen, setCorpusOpen] = useState(false);
   useEffect(() => {
     if (!welcome) return;
     const id = setInterval(() => setPhIdx((i) => (i + 1) % ASK_EXAMPLE_PROMPTS.length), 5000);
@@ -623,6 +627,31 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             </div>
           ) : null}
         </div>
+        {composerToolsEnabled ? (
+          <div className="mode-wrap" style={{ position: "relative" }}>
+            <button className="mode" onClick={() => setCorpusOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={corpusOpen} data-tip="Corpus" aria-label="Corpus">
+              <b>All sources</b>
+              <Icon name="chevron-down" size={14} />
+            </button>
+            {corpusOpen ? (
+              <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 246 }}>
+                {/* Corpus scope (WS-9). "All literature" = today's behavior. "Medical journals" and
+                    "My Library" need the WS-3 retrieval scoping (and, for My Library, a saved-papers
+                    store) — shown as honest disabled "Soon", never silently active. */}
+                <div className="menu-label" aria-hidden="true">Search across</div>
+                <button type="button" role="menuitem" onClick={() => setCorpusOpen(false)}>
+                  <Icon name="check" size={14} /><span style={{ flex: 1 }}>All literature</span>
+                </button>
+                <button type="button" role="menuitem" disabled>
+                  <Icon name="shield" size={14} /><span style={{ flex: 1 }}>Medical journals only</span><small style={{ color: "var(--text-3)" }}>Soon</small>
+                </button>
+                <button type="button" role="menuitem" disabled>
+                  <Icon name="folder" size={14} /><span style={{ flex: 1 }}>My Library</span><small style={{ color: "var(--text-3)" }}>Soon</small>
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="ta-wrap">
           <textarea
             ref={taRef}

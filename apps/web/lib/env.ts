@@ -36,6 +36,12 @@ export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "
 // route unreachable from the shell, app byte-identical.
 export const scheduledPageEnabled = process.env.NEXT_PUBLIC_WS10_SCHEDULED === "true";
 
+// Composer tools parity (WS-9) — DEFAULT OFF. When "true", the Ask composer gains the new controls
+// (Corpus switcher, quality filters, Project-as-context) alongside the existing "+" launcher + mode
+// dial. Controls whose retrieval backend (WS-3) isn't live render as disabled "Soon" — never silently
+// active. Off ⇒ composer byte-identical to today. The composer never changes the safety scan or grade.
+export const composerToolsEnabled = process.env.NEXT_PUBLIC_WS9_COMPOSER === "true";
+
 // Bot-protection CAPTCHA (Cloudflare Turnstile + Supabase native enforcement) — DEFAULT OFF.
 // When NEXT_PUBLIC_TURNSTILE_SITE_KEY is set, the sign-in/sign-up forms render a Turnstile widget
 // and pass its token to Supabase auth (options.captchaToken). Off (no key) ⇒ no widget, no token,
