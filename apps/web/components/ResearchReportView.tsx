@@ -14,6 +14,7 @@ import type {
   SuggestedStudyDesign,
   MetaAnalysisResult,
 } from "@pharmabro/shared";
+import type { ResearchRunRow } from "@/lib/api";
 import { buildAttribution, buildMetaAbstract, buildReferenceList, claimEvidenceCounts, evidenceRows } from "@pharmabro/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
@@ -24,6 +25,7 @@ import { EvidenceChartsSection } from "./EvidenceCharts";
 import { downloadReportExport } from "@/lib/api";
 import { engineVisualsEnabled } from "@/lib/env";
 import { MissionSheet } from "@/components/MissionSheet";
+import { ResearchProgress } from "./ResearchProgress";
 
 const PROVIDER_ABBR: Record<string, string> = {
   openfda: "FDA", dailymed: "DM", pubmed: "PMID", pubmed_oa: "PMID", europepmc: "PMID",
@@ -366,7 +368,7 @@ function DiscoveryStudyDesigns({ designs }: { designs: SuggestedStudyDesign[] })
 /** Renders a finished Deep Research report: summary, verification state, themed cited sections,
  *  prominent safety, honest uncertainties, and a numbered sources list. Citation chips scroll to the
  *  matching source. Visual language matches the /ask Answer (same classes) so it feels like one app. */
-export function ResearchReportView({ report, reportId, style = "vancouver", onStyleChange }: { report: ResearchReport; reportId?: string; style?: CitationStyle; onStyleChange?: (s: CitationStyle) => void }) {
+export function ResearchReportView({ report, reportId, run, style = "vancouver", onStyleChange }: { report: ResearchReport; reportId?: string; run?: ResearchRunRow | null; style?: CitationStyle; onStyleChange?: (s: CitationStyle) => void }) {
   const [showMission, setShowMission] = useState(false);
   const citeMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -441,6 +443,15 @@ export function ResearchReportView({ report, reportId, style = "vancouver", onSt
           <p className="muted-note">Every claim carries its sources — the references and build method are inside the file.</p>
           {showMission ? (
             <MissionSheet question={report.question} reportMode={report.mode ?? "standard"} onClose={() => setShowMission(false)} />
+          ) : null}
+
+          {run?.progress?.length ? (
+            <details className="report-activity">
+              <summary className="ai-block-label" style={{ cursor: "pointer" }}>
+                <Icon name="sparkle" size={14} /> How this report was researched
+              </summary>
+              <ResearchProgress steps={run.progress} done />
+            </details>
           ) : null}
         </div>
       ) : null}

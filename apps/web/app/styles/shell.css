@@ -937,6 +937,9 @@
 .research-progress .src-count { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-left: auto; }
 .research-progress-note { font-size: 12px; color: var(--text-3); margin-top: 12px; line-height: 1.5; }
 
+/* activity trail on finished reports */
+.report-activity { margin: 10px 0 4px; }
+
 /* report history */
 .research-history { margin-top: 28px; }
 .research-history-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
