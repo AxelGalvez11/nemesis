@@ -538,12 +538,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                   ) : projects.length === 0 ? (
                     <button role="menuitem" disabled><Icon name="folder" size={15} />No projects yet</button>
                   ) : (
-                    projects.map((p) => (
-                      <button key={p.id} role="menuitem" disabled={p.id === c.project_id}
-                        onClick={() => void handleAssignChat(c.id, p.id)} title={p.name}>
-                        <Icon name={p.id === c.project_id ? "check" : "folder"} size={15} />{p.name}
-                      </button>
-                    ))
+                    <div className="row-menu-scroll">
+                      {projects.map((p) => (
+                        <button key={p.id} role="menuitem" disabled={p.id === c.project_id}
+                          onClick={() => void handleAssignChat(c.id, p.id)} title={p.name}>
+                          <Icon name={p.id === c.project_id ? "check" : "folder"} size={15} />{p.name}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </>
               ) : (

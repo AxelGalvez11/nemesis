@@ -1258,10 +1258,11 @@ export async function fetchProject(id: string): Promise<Project | null> {
 }
 
 /** Update a project's editable fields (RLS-scoped). Only the provided keys are written. `instructions`
- *  writes only when the column exists; before the migration it fails silently (best-effort, so the rest
- *  of the save — name/description — still lands). */
-export async function updateProject(id: string, patch: { name?: string; description?: string | null; instructions?: string | null }): Promise<void> {
-  if (isPreviewMode) return;
+ *  writes only when the column exists; before the 20260703120000 migration is applied, that write fails
+ *  with Postgres 42703 (missing column) — reported back via `instructionsPersisted: false` so callers can
+ *  tell the user honestly rather than pretending the save succeeded. Name/description are unaffected. */
+export async function updateProject(id: string, patch: { name?: string; description?: string | null; instructions?: string | null }): Promise<{ instructionsPersisted: boolean }> {
+  if (isPreviewMode) return { instructionsPersisted: true };
   // Split so a missing `instructions` column (pre-migration 42703) can't fail the name/description write.
   const base: Record<string, unknown> = {};
   if (patch.name !== undefined) base.name = patch.name.trim().slice(0, 200);
@@ -1272,9 +1273,13 @@ export async function updateProject(id: string, patch: { name?: string; descript
   }
   if (patch.instructions !== undefined) {
     const { error } = await supabase.from("projects").update({ instructions: patch.instructions }).eq("id", id);
-    // Swallow ONLY the pre-migration column-missing case; surface anything else.
-    if (error && error.code !== "42703") throw new Error(`update project failed: ${error.message}`);
+    if (error) {
+      // Swallow ONLY the pre-migration column-missing case; surface anything else.
+      if (error.code !== "42703") throw new Error(`update project failed: ${error.message}`);
+      return { instructionsPersisted: false };
+    }
   }
+  return { instructionsPersisted: true };
 }
 
 /** A project's contents — the chats, reports, and watches assigned to it. */

@@ -198,6 +198,7 @@ export default function ProjectWorkspacePage() {
           project={project}
           onClose={() => setSettingsOpen(false)}
           onSaved={(next) => { setProject(next); setSettingsOpen(false); }}
+          onPartialSave={(next) => setProject(next)}
           onDeleted={() => { setSettingsOpen(false); router.push("/app/projects"); }}
         />
       ) : null}
@@ -214,12 +215,13 @@ function shortDate(iso: string): string {
 }
 
 // Settings modal: rename, description, per-project instructions, delete. Instructions persist only once
-// the 20260703120000 migration is applied (updateProject swallows the pre-migration column-missing case),
-// so the field is always editable but silently no-ops until then — honest, no error.
-function ProjectSettings({ project, onClose, onSaved, onDeleted }: {
+// the 20260703120000 migration is applied; before then updateProject() reports back instructionsPersisted:
+// false and the modal stays open with an honest note instead of closing as if everything saved.
+function ProjectSettings({ project, onClose, onSaved, onPartialSave, onDeleted }: {
   project: Project;
   onClose: () => void;
   onSaved: (next: Project) => void;
+  onPartialSave: (next: Project) => void;
   onDeleted: () => void;
 }) {
   const [name, setName] = useState(project.name);
@@ -233,9 +235,22 @@ function ProjectSettings({ project, onClose, onSaved, onDeleted }: {
     if (saving || !name.trim()) return;
     setSaving(true);
     setErr(null);
+    const trimmedName = name.trim();
+    const trimmedDescription = description.trim() || null;
+    const trimmedInstructions = instructions.trim() || null;
+    const instructionsChanged = trimmedInstructions !== (project.instructions ?? null);
     try {
-      await updateProject(project.id, { name: name.trim(), description: description.trim() || null, instructions: instructions.trim() || null });
-      onSaved({ ...project, name: name.trim(), description: description.trim() || null, instructions: instructions.trim() || null });
+      const { instructionsPersisted } = await updateProject(project.id, { name: trimmedName, description: trimmedDescription, instructions: trimmedInstructions });
+      if (instructionsChanged && !instructionsPersisted) {
+        // Migration not applied yet: name/description landed, but instructions did not. Keep the modal
+        // open and say so honestly instead of closing as if everything saved. Do NOT propagate the
+        // unpersisted instructions to parent state as if they were saved.
+        setErr("Saved — but project instructions aren't active yet on your account. They'll start working after the next upgrade.");
+        onPartialSave({ ...project, name: trimmedName, description: trimmedDescription });
+        setSaving(false);
+        return;
+      }
+      onSaved({ ...project, name: trimmedName, description: trimmedDescription, instructions: trimmedInstructions });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Couldn’t save.");
     } finally {

@@ -91,20 +91,41 @@ export default function ScheduledPage() {
   }
 
   async function toggleMission(m: MissionSummary) {
-    const next = m.status === "active" ? "paused" : "active";
-    setMissions((prev) => (prev ?? []).map((x) => (x.id === m.id ? { ...x, status: next } : x)));
-    try { await setMissionStatus(m.id, next); } catch { const fresh = await fetchMissions().catch(() => null); if (fresh) setMissions(fresh); }
+    const next: "active" | "paused" = m.status === "active" ? "paused" : "active";
+    const optimistic = (missions ?? []).map((x) => (x.id === m.id ? { ...x, status: next } : x));
+    setMissions(optimistic);
+    setCached("scheduled-missions", optimistic);
+    try {
+      await setMissionStatus(m.id, next);
+    } catch {
+      const fresh = await fetchMissions().catch(() => null);
+      if (fresh) { setMissions(fresh); setCached("scheduled-missions", fresh); }
+    }
   }
 
   async function removeMission(id: string) {
-    setMissions((prev) => (prev ?? []).filter((x) => x.id !== id));
-    try { await deleteMission(id); } catch { const fresh = await fetchMissions().catch(() => null); if (fresh) setMissions(fresh); }
+    const optimistic = (missions ?? []).filter((x) => x.id !== id);
+    setMissions(optimistic);
+    setCached("scheduled-missions", optimistic);
+    try {
+      await deleteMission(id);
+    } catch {
+      const fresh = await fetchMissions().catch(() => null);
+      if (fresh) { setMissions(fresh); setCached("scheduled-missions", fresh); }
+    }
   }
 
   async function toggleWatch(w: WatchSummary) {
     const next = w.status === "active" ? "paused" : "active";
-    setWatches((prev) => (prev ?? []).map((x) => (x.id === w.id ? { ...x, status: next } : x)));
-    try { await setWatchStatus(w.id, next as "active" | "paused"); } catch { const fresh = await fetchWatches().catch(() => null); if (fresh) setWatches(fresh); }
+    const optimistic = (watches ?? []).map((x) => (x.id === w.id ? { ...x, status: next } : x));
+    setWatches(optimistic);
+    setCached("scheduled-watches", optimistic);
+    try {
+      await setWatchStatus(w.id, next as "active" | "paused");
+    } catch {
+      const fresh = await fetchWatches().catch(() => null);
+      if (fresh) { setWatches(fresh); setCached("scheduled-watches", fresh); }
+    }
   }
 
   const loading = missions === null && watches === null && !err;
