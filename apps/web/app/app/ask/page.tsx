@@ -5,9 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
-import { simplifiedModesEnabled } from "@/lib/env";
+import { simplifiedModesEnabled, ws1PerPaperEnabled } from "@/lib/env";
 import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
-import { normTag, supportQuoteFor } from "@/lib/cite";
+import { normTag, supportQuoteFor, supportQuotesByTag } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
 import { pubchemMoleculeUrl } from "@/lib/molecule";
@@ -247,8 +247,32 @@ function AskPage() {
   // render, so depending on it would re-run this effect in a loop as it sets shell state.
   // The panel shows the PINNED answer (a citation the user clicked) if set, else the latest answer.
   const panelAnswer = activeAnswer ?? lastAnswered;
+  // WS-1 slice B: stamp each paper's OWN verbatim supporting quote onto its citation (display-only,
+  // client-derived from answer_sections already in the response — /ask itself writes nothing).
+  // Immutable: builds new citation objects rather than mutating panelAnswer's. No-op (identical
+  // arrays) when the flag is off, so EvidencePanel renders exactly as before.
+  const panelCitations = useMemo(() => {
+    const cites = panelAnswer?.citations ?? [];
+    if (!ws1PerPaperEnabled) return cites;
+    const quotesByTag = supportQuotesByTag(panelAnswer?.answer_sections);
+    if (!quotesByTag.size) return cites;
+    return cites.map((c) => {
+      const q = quotesByTag.get(normTag(c.chunk_tag));
+      return q ? { ...c, support_quote: q } : c;
+    });
+  }, [panelAnswer]);
+  const panelReviewed = useMemo(() => {
+    const rev = panelAnswer?.reviewed_sources;
+    if (!rev || !ws1PerPaperEnabled) return rev;
+    const quotesByTag = supportQuotesByTag(panelAnswer?.answer_sections);
+    if (!quotesByTag.size) return rev;
+    return rev.map((c) => {
+      const q = quotesByTag.get(normTag(c.chunk_tag));
+      return q ? { ...c, support_quote: q } : c;
+    });
+  }, [panelAnswer]);
   useEffect(() => {
-    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} reviewed={panelAnswer?.reviewed_sources} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />);
+    setEvidence(<EvidencePanel citations={panelCitations} reviewed={panelReviewed} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />);
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
@@ -261,7 +285,7 @@ function AskPage() {
       setEvidence(null);
       setTopbar(null);
     };
-  }, [panelAnswer, latest?.q, activeTag, activeQuote, setEvidence, setTopbar]);
+  }, [panelAnswer, panelCitations, panelReviewed, latest?.q, activeTag, activeQuote, setEvidence, setTopbar]);
 
   // Thinking steps: a decelerating schedule that tracks the real pipeline (read the question fast,
   // then the slow library + live search, then ranking) and HOLDS on the final "composing" step until

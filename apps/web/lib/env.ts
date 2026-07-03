@@ -40,6 +40,13 @@ export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "
 export const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 export const captchaEnabled = turnstileSiteKey.length > 0;
 
+// Per-paper journal-quality tier badge + per-paper supporting-quote expander (WS-1 slice B) —
+// DEFAULT OFF. When "true": EvidencePanel renders a Q1-Q4 tier pill (from enrich-source's
+// journal_tier) and a read-only "supporting quote" expander per source card. Off ⇒ EvidencePanel
+// renders exactly as today. Server-side counterpart is WS1_PER_PAPER ("on") in enrich-source; this
+// is the separate client-side gate for the new render (note: "true" here, "on" server-side).
+export const ws1PerPaperEnabled = process.env.NEXT_PUBLIC_WS1_PER_PAPER === "true";
+
 // PostHog product analytics. Public phc_ project key (write-only ingestion) + host — safe in the
 // browser bundle. Reads happen elsewhere with a personal API key.
 export const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";

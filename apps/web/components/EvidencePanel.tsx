@@ -8,6 +8,7 @@ import { normTag } from "@/lib/cite";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { safeHref } from "@/lib/url";
 import { useEnrichment, type SourceEnrichment } from "@/lib/enrichment";
+import { ws1PerPaperEnabled } from "@/lib/env";
 import { EvidenceMapView } from "./EvidenceMapView";
 
 // Provider → the color-square class in shell.css (openfda blue, pubmed purple, trial orange, faers red).
@@ -77,6 +78,15 @@ function evidenceRoleLabel(role?: Citation["evidence_role"]): string | null {
   return role.replace(/_/g, " ");
 }
 
+// WS-1: the journal-quality tier badge label. "unranked" and absent both render nothing — the tier
+// is positive-only signal, never a claim of low quality when the metric wasn't available. Truthiness
+// check (not `!== "unranked"` alone) so a pre-deploy enrich-source payload that omits the field
+// entirely also degrades to no badge, never a broken pill.
+function journalTierLabel(tier: SourceEnrichment["journal_tier"]): string | null {
+  if (!tier || tier === "unranked") return null;
+  return tier.toUpperCase();
+}
+
 function relationForCitation(c: Citation): Citation["claim_relation"] | undefined {
   if (c.claim_relation) return c.claim_relation;
   if (c.support_level === "direct") return "supports";
@@ -113,6 +123,10 @@ function SourceCard({ c, index, rankPct, active, activeQuote, enrich }: { c: Cit
   const relation = relationForCitation(c);
   // The supporting sentence belongs to the clicked claim, so it shows only on the active card.
   const activeSupportQuote = active && activeQuote ? activeQuote : null;
+  // WS-1 (flag-gated): this paper's OWN verbatim supporting quote, shown on non-active cards via a
+  // read-only expander so it never competes with the active card's highlighted claim quote above.
+  const ownSupportQuote = ws1PerPaperEnabled && !active ? c.support_quote : undefined;
+  const tierLabel = ws1PerPaperEnabled ? journalTierLabel(enrich?.journal_tier) : null;
   const host = hostnameOf(c.url);
   const inner = (
     <>
@@ -157,15 +171,23 @@ function SourceCard({ c, index, rankPct, active, activeQuote, enrich }: { c: Cit
           RETRACTED — this paper was withdrawn after publication. Treat its findings as unreliable.
         </div>
       ) : null}
-      {enrich?.tallies || enrich?.cited_by != null ? (
+      {enrich?.tallies || enrich?.cited_by != null || tierLabel ? (
         <div className="meta trust-row">
-          {enrich.tallies ? (
+          {tierLabel ? (
+            <span
+              className={`journal-tier-pill ${tierLabel.toLowerCase()}`}
+              title={`Journal-quality tier from OpenAlex venue metrics (2yr mean citedness${enrich?.mean_citedness_2yr != null ? `: ${enrich.mean_citedness_2yr}` : ""}). Deterministic, not an LLM judgment.`}
+            >
+              {tierLabel}
+            </span>
+          ) : null}
+          {enrich?.tallies ? (
             <span className="scite-badge" title={`How later papers cite this one (scite): ${enrich.tallies.supporting} supporting · ${enrich.tallies.contrasting} contrasting · ${enrich.tallies.mentioning} mentioning`}>
               <i className="scite-sup">▲ {enrich.tallies.supporting}</i>
               <i className="scite-con">▼ {enrich.tallies.contrasting}</i>
             </span>
           ) : null}
-          {enrich.cited_by != null ? <span className="citedby-chip">Cited by {enrich.cited_by}</span> : null}
+          {enrich?.cited_by != null ? <span className="citedby-chip">Cited by {enrich.cited_by}</span> : null}
         </div>
       ) : null}
       {enrich?.snapshot && (enrich.snapshot.population || enrich.snapshot.sample_size || enrich.snapshot.design) ? (
@@ -203,6 +225,17 @@ function SourceCard({ c, index, rankPct, active, activeQuote, enrich }: { c: Cit
   return (
     <div className="src-row">
       {card}
+      {ownSupportQuote ? (
+        // WS-1: read-only, closed-by-default expander for this paper's own verbatim quote — a
+        // SIBLING of the card `<a>/<Link>`, not nested inside it (interactive content can't nest
+        // inside an anchor; nesting it would also trigger navigation on toggle). Shown only on
+        // non-active cards (the active card already surfaces its quote above, highlighted).
+        // Verbatim text only, never transformed/paraphrased.
+        <details className="src-quote-expander">
+          <summary>Supporting quote</summary>
+          <blockquote className="src-support">{ownSupportQuote}</blockquote>
+        </details>
+      ) : null}
       {oaHref ? (
         <a className="oa-link" href={oaHref} target="_blank" rel="noreferrer"
           title="Open the free full text on the publisher or repository site (we grounded the abstract)">
