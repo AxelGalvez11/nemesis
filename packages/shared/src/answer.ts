@@ -1,6 +1,9 @@
 // Answer-spec types (doc-20 / §7 / §8). The /ask request + frozen response.
 
 import type { ClaimRelation } from "./claim-relation.ts";
+// Type-only import (erased at compile) — WS-1's per-paper tier. Importing only the TYPE keeps
+// paper-quality.ts's runtime logic out of the answer path; /ask never populates these fields.
+import type { JournalTier } from "./paper-quality.ts";
 
 /** doc-20 intent categories (the 15 the classifier maps to). `smalltalk` is NOT one the
  *  classifier emits — it is set deterministically by the small-talk short-circuit (safety.ts /
@@ -187,6 +190,19 @@ export interface Citation {
   claim_relation?: ClaimRelation;
   /** Short human-readable reason for the claim relation. */
   relation_reason?: string;
+  // ── Per-paper journal-quality signals (WS-1). All additive/optional. Populated CLIENT-SIDE
+  //    from the enrich-source response (PMID-keyed, arriving after render) or derived from the
+  //    answer_sections quotes — NEVER written by /ask, so the /ask trace stays byte-identical.
+  //    Absent on non-paper sources (labels/trials) and older saved chats. ──
+  /** Deterministic journal-quality tier from OpenAlex venue metrics (WS-1). Positive-only:
+   *  absence never means "low quality" — it means no venue metric was available. */
+  journal_tier?: JournalTier;
+  /** The paper's OpenAlex cited_by_count at enrichment time (WS-1). */
+  cited_by_count?: number;
+  /** The verbatim supporting sentence for THIS paper (WS-1 per-paper render), derived client-side
+   *  from answer_sections[].support[]. Verbatim source text, never LLM prose. Absent when no span
+   *  cleared support-span.ts's threshold. */
+  support_quote?: string;
 }
 
 /** Verbatim retrieved text behind one citation tag — the verification payload. Returned ONLY when the
