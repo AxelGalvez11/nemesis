@@ -10,6 +10,7 @@ import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, 
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
 import { SettingsSurface } from "./SettingsSurface";
+import { scheduledPageEnabled } from "@/lib/env";
 
 type Overlay = "settings" | null;
 
@@ -40,6 +41,10 @@ const workspace = [
   { href: "/app/ask", label: "Ask", icon: "message" as const },
   { href: "/app/reports", label: "Reports", icon: "doc" as const },
   { href: "/app/monitor", label: "Monitoring", icon: "bell" as const },
+  // Scheduled (WS-10 slice 1) — the background-research Missions as a top-level Manus-style page.
+  // Flag-gated: when NEXT_PUBLIC_WS10_SCHEDULED isn't "true" the item is absent (no dead link); the
+  // same Missions still appear in the "Scheduled research" section inside Monitoring.
+  ...(scheduledPageEnabled ? [{ href: "/app/scheduled", label: "Scheduled", icon: "replay" as const }] : []),
   // Explore is deferred (mostly mockup) — hidden from the nav until it's real. The route still exists.
   // (The old "Watchlist" feature was retired 2026-06-18, superseded by Monitoring above. Its empty DB
   // tables stay dormant for now; the drug-page "Follow" now creates a Monitoring watch.)
@@ -55,6 +60,7 @@ function titleForPath(path: string): { title: string; sub?: string } {
   if (path.startsWith("/app/research")) return { title: "Deep research", sub: "multi-step cited report" };
   if (path.startsWith("/app/reports")) return { title: "Reports", sub: "your saved evidence reports" };
   if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };
+  if (path.startsWith("/app/scheduled")) return { title: "Scheduled", sub: "your background research agents" };
   if (path.startsWith("/app/score")) return { title: "Score", sub: "your longevity rank" };
   if (path.startsWith("/app/explore")) return { title: "Explore" };
   if (path.startsWith("/app/billing")) return { title: "Billing" };

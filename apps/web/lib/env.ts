@@ -30,6 +30,12 @@ export const engineVisualsEnabled = process.env.NEXT_PUBLIC_ENGINE_VISUALS === "
 // 6-mode dial, byte-identical. The Auto routing reuses the existing fast/thorough engine paths.
 export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "true";
 
+// Scheduled page (WS-10 slice 1) — DEFAULT OFF. When "true", surfaces the existing background-research
+// Missions on their own top-level "Scheduled" page (Manus-style "your scheduled research agents"),
+// elevating the "Scheduled research" section that lives inside Monitoring today. Off ⇒ no nav item,
+// route unreachable from the shell, app byte-identical.
+export const scheduledPageEnabled = process.env.NEXT_PUBLIC_WS10_SCHEDULED === "true";
+
 // Bot-protection CAPTCHA (Cloudflare Turnstile + Supabase native enforcement) — DEFAULT OFF.
 // When NEXT_PUBLIC_TURNSTILE_SITE_KEY is set, the sign-in/sign-up forms render a Turnstile widget
 // and pass its token to Supabase auth (options.captchaToken). Off (no key) ⇒ no widget, no token,
