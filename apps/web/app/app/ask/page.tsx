@@ -23,6 +23,7 @@ import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
+import { DataSourcesPanel } from "@/components/DataSourcesPanel";
 import { MissionSheet } from "@/components/MissionSheet";
 import { ResearchProgress } from "@/components/ResearchProgress";
 import { WatchButton } from "@/components/WatchButton";
@@ -614,6 +615,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   // chat is active the suggestions stop — the box shows a calm static placeholder instead.
   const [phIdx, setPhIdx] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false); // the "+" tools launcher popover
+  const [sourcesOpen, setSourcesOpen] = useState(false); // the "Data sources" modal
   useEffect(() => {
     if (!welcome) return;
     const id = setInterval(() => setPhIdx((i) => (i + 1) % ASK_EXAMPLE_PROMPTS.length), 5000);
@@ -670,6 +672,10 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
               <button type="button" role="menuitem" disabled>
                 <Icon name="plus" size={14} /><span style={{ flex: 1 }}>Add photos &amp; files</span><small style={{ color: "var(--text-3)" }}>Soon</small>
               </button>
+              <div className="sep" role="separator" />
+              <button type="button" role="menuitem" onClick={() => { setSourcesOpen(true); setPlusOpen(false); }}>
+                <Icon name="shield" size={14} /><span style={{ flex: 1 }}>Data sources</span><small style={{ color: "var(--text-3)" }}>see what powers answers</small>
+              </button>
             </div>
           ) : null}
         </div>
@@ -723,6 +729,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
       </div>
       {error ? <div className="err">{error}</div> : null}
       <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
+      <DataSourcesPanel open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
     </div>
   );
 }
