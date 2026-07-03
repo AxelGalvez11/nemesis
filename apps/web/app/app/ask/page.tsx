@@ -16,6 +16,7 @@ import { POINT_OF_USE_DISCLAIMER } from "@/lib/legal";
 import { buildThinkingPreview } from "@/lib/thinking-preview";
 import { citationDomains, faviconUrl, hostnameOf, SEARCH_DOMAINS } from "@/lib/favicon";
 import { composerModeLabel } from "@/lib/ask-mode-label";
+import { setCached } from "@/lib/cache";
 import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
@@ -28,18 +29,25 @@ function isQuotaError(e: unknown): e is AskQuotaError {
   return e instanceof Error && "quota" in e;
 }
 
-// The speed/depth dial. fast/thorough are single cited answers (the /ask engine, free); deep/meta are the
-// multi-step research reports (the research endpoint, Pro). Fast is the default: plain-English + concise.
-// Thorough thinks longer — a wider source pull and a fuller, more technical write-up for clinicians/researchers.
+// Two composer surfaces (the ChatGPT split): the RIGHT dial is the answer-depth dial (auto/fast/
+// thorough — single cited answers on the /ask engine, free); the LEFT "+" launcher holds the TOOLS
+// (deep research / discovery — multi-step Pro report runs on the research endpoint). A tool is still
+// a `mode` under the hood so submit() routing is unchanged; it just isn't offered in the depth dial.
+// "Meta-analysis" is no longer a separate user-facing tool: Deep research runs the meta pipeline,
+// which ALWAYS produces the full structured review and ADDS a computed pooled estimate only when the
+// studies are genuinely comparable (engine degrades to an honest "no pooled estimate" note otherwise).
 const MODES = [
   { id: "auto", label: "Auto", live: true, pro: false, hint: "Picks the right depth for your question automatically" },
   { id: "fast", label: "Fast", live: true, pro: false, hint: "Quick, plain-English answer — cited from the library + live sources" },
   { id: "thorough", label: "Thorough", live: true, pro: false, hint: "Thinks longer: a wider source pull and a fuller, more technical answer" },
-  { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report that documents its method (Pro)" },
+  { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report — pools comparable studies into a computed estimate when the evidence supports it (Pro)" },
   { id: "discovery", label: "Discovery", live: true, pro: true, hint: "Finds research gaps, claim cards, hypotheses, and next-study designs (Pro)" },
-  { id: "meta", label: "Meta-analysis", live: true, pro: true, hint: "Pools comparable studies into a computed estimate, when the evidence supports it (Pro)" },
   { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
 ] as const;
+
+// Where the dial rests when no tool is armed — and what an armed tool resets to after its run
+// launches (tools are single-shot, the ChatGPT behavior; see submit()).
+const DEFAULT_DEPTH: (typeof MODES)[number]["id"] = simplifiedModesEnabled ? "auto" : "fast";
 
 const MIN_THINKING_PREVIEW_MS = 650;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -85,7 +93,7 @@ function AskPage() {
   const [stage, setStage] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
   const [revealIdx, setRevealIdx] = useState<number | null>(null); // the turn whose answer should type itself in (only the just-arrived one — never reopened/saved turns)
-  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>(simplifiedModesEnabled ? "auto" : "fast");
+  const [mode, setMode] = useState<(typeof MODES)[number]["id"]>(DEFAULT_DEPTH);
   const [modeOpen, setModeOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   // The verbatim source sentence backing the claim whose citation was just clicked, shown highlighted
@@ -200,7 +208,7 @@ function AskPage() {
       setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
     } catch (e) {
       const proGate = isQuotaError(e) && Number(e.quota.limit) === 0;
-      const feature = runMode === "discovery" ? "Discovery" : runMode === "meta" ? "Meta-analysis" : runMode === "lab_draft" ? "Lab draft" : "Deep research";
+      const feature = runMode === "discovery" ? "Discovery" : runMode === "lab_draft" ? "Lab draft" : "Deep research";
       const msg = isQuotaError(e)
         ? (proGate
           ? `${feature} is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
@@ -300,18 +308,24 @@ function AskPage() {
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
     // can keep chatting while it works.
-    if (mode === "deep" || mode === "discovery" || mode === "meta" || mode === "lab_draft") {
-      // Deep research documents its method (engine's structured_review); meta-analysis additionally
-      // pools comparable studies into a computed estimate when the evidence supports it; discovery
-      // adds claim cards, gap analysis, hypotheses, and a next-study design; lab_draft produces a
-      // study-design scaffold (not a runnable protocol).
-      const runMode: ReportMode = mode === "meta" ? "meta" : mode === "lab_draft" ? "lab_draft" : mode === "discovery" ? "discovery" : "structured_review";
+    if (mode === "deep" || mode === "discovery" || mode === "lab_draft") {
+      // Deep research runs the engine's "meta" pipeline: the full structured review (documented
+      // method, cited sections) PLUS a code-computed pooled estimate when the studies are genuinely
+      // comparable — and an honest "no pooled estimate could be computed" note when they aren't
+      // (meta-prose.ts degrades gracefully; parsePico → null skips pooling entirely). One tool, not
+      // two: the old separate "Meta-analysis" mode is folded in. Discovery adds claim cards, gap
+      // analysis, hypotheses, and a next-study design; lab_draft produces a study-design scaffold
+      // (not a runnable protocol).
+      const runMode: ReportMode = mode === "lab_draft" ? "lab_draft" : mode === "discovery" ? "discovery" : "meta";
       phCapture("research_started", { mode: runMode });
       const ridx = turns.length;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
       setTurns((prev) => [...prev, { q: text, a: null, err: null, scoping: true }]);
       setQuestion("");
       if (taRef.current) taRef.current.style.height = "auto";
+      // Tools are SINGLE-SHOT (the ChatGPT behavior): this run is launched, so the composer returns
+      // to a normal ask — a follow-up question won't silently burn another Pro report run.
+      setMode(DEFAULT_DEPTH);
       const scope = await scopeResearch(text); // best-effort; degrades to no-clarification on any failure
       if (scope.needs_clarification) {
         setTurns((prev) => prev.map((t, i) => (i === ridx ? { q: text, a: null, err: null, scope: { question: text, runMode, questions: scope.questions } } : t)));
@@ -511,6 +525,7 @@ interface ComposerProps {
 // "+" (attachments) and a "mic" (voice) are shown as ChatGPT-style affordances but disabled until
 // those features ship — same honest "coming soon" treatment as the non-live modes.
 function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error, welcome }: ComposerProps) {
+  const router = useRouter(); // "Monitor this topic" hops to /app/monitor with the typed topic pre-filled
   const activeMode = MODES.find((m) => m.id === mode)!;
   // On the welcome screen, cycle example questions through an animated overlay placeholder (reveals
   // in from the left, fades out) so suggestions live in the chat bar without a hard text swap. Once a
@@ -530,16 +545,46 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             <Icon name="plus" size={18} />
           </button>
           {plusOpen ? (
-            <div className="acct-menu tools-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 270 }}>
-              <button type="button" role="menuitem" onClick={() => { setQuestion("Is it true that "); setPlusOpen(false); taRef.current?.focus(); }}>
+            <div className="acct-menu tools-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 280 }}>
+              {/* Tools: each arms a report mode (or prefills the box) for the next send, and the
+                  armed mode resets to the default depth once that run launches (single-shot — see
+                  submit()). Deep research includes the pooled meta-analysis when studies allow it. */}
+              <button type="button" role="menuitem" onClick={() => { setMode("deep"); setPlusOpen(false); taRef.current?.focus(); }}>
+                <Icon name="doc" size={14} /><span style={{ flex: 1 }}>Deep research</span><small style={{ color: "var(--text-3)" }}>cited report + pooled stats</small>
+              </button>
+              <button type="button" role="menuitem" onClick={() => { setMode("discovery"); setPlusOpen(false); taRef.current?.focus(); }}>
+                <Icon name="sparkle" size={14} /><span style={{ flex: 1 }}>Discovery</span><small style={{ color: "var(--text-3)" }}>gaps &amp; hypotheses</small>
+              </button>
+              {/* Verify is a quick cited check by design — it also DISARMS any armed report tool,
+                  so "Deep research → actually, verify this" can't accidentally fire a Pro run. */}
+              <button type="button" role="menuitem" onClick={() => { setMode(DEFAULT_DEPTH); setQuestion("Is it true that "); setPlusOpen(false); taRef.current?.focus(); }}>
                 <Icon name="check" size={14} /><span style={{ flex: 1 }}>Verify a claim</span><small style={{ color: "var(--text-3)" }}>check it against evidence</small>
               </button>
-              <button type="button" role="menuitem" onClick={() => { setMode("deep"); setPlusOpen(false); taRef.current?.focus(); }}>
-                <Icon name="doc" size={14} /><span style={{ flex: 1 }}>Deep research</span><small style={{ color: "var(--text-3)" }}>full cited report</small>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  // Hand the typed topic to Monitoring's "Monitor a new topic" box via the in-memory
+                  // session cache (client-side nav keeps module state; nothing hits the URL). Capped
+                  // to the picker's own 200-char input limit, which programmatic values would bypass.
+                  if (question.trim()) setCached("monitor-prefill", question.trim().slice(0, 200));
+                  setPlusOpen(false);
+                  router.push("/app/monitor");
+                }}
+              >
+                <Icon name="bell" size={14} /><span style={{ flex: 1 }}>Monitor this topic</span><small style={{ color: "var(--text-3)" }}>alerts on new evidence</small>
               </button>
-              <button type="button" role="menuitem" onClick={() => { setMode("meta"); setPlusOpen(false); taRef.current?.focus(); }}>
-                <Icon name="sparkle" size={14} /><span style={{ flex: 1 }}>Meta-analysis</span><small style={{ color: "var(--text-3)" }}>Pro</small>
+              <div className="sep" role="separator" />
+              {/* Source filters: honest coming-soon until the engine can scope a run to one source
+                  class (news-only; community chatter from Reddit/X walled off from cited evidence). */}
+              <div className="menu-label" aria-hidden="true">Search filters</div>
+              <button type="button" role="menuitem" disabled>
+                <Icon name="message" size={14} /><span style={{ flex: 1 }}>News only</span><small style={{ color: "var(--text-3)" }}>Soon</small>
               </button>
+              <button type="button" role="menuitem" disabled>
+                <Icon name="search" size={14} /><span style={{ flex: 1 }}>Communities — Reddit &amp; X</span><small style={{ color: "var(--text-3)" }}>Soon</small>
+              </button>
+              <div className="sep" role="separator" />
               <button type="button" role="menuitem" disabled>
                 <Icon name="plus" size={14} /><span style={{ flex: 1 }}>Add photos &amp; files</span><small style={{ color: "var(--text-3)" }}>Soon</small>
               </button>
@@ -566,10 +611,11 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
           </button>
           {modeOpen ? (
             <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
-              {/* lab_draft (beta) deploy is owner-gated separately and its engine (research fn) isn't
-                  live yet — keep it out of the selectable modes for the monitoring release. Re-enable
-                  by removing this filter once the lab_draft engine is deployed. */}
-              {MODES.filter((m) => simplifiedModesEnabled ? (m.id === "auto" || m.id === "deep" || m.id === "discovery") : (m.id !== "lab_draft" && m.id !== "auto")).map((m) => (
+              {/* Depth ONLY — the Pro report tools (Deep research / Discovery) moved to the "+"
+                  launcher on the left, so this dial reads as speed/depth (the ChatGPT split). When a
+                  tool is armed, the dial button shows its name; picking a depth here disarms it.
+                  lab_draft stays out until its engine deploy is owner-gated live. */}
+              {MODES.filter((m) => simplifiedModesEnabled ? m.id === "auto" : (m.id === "fast" || m.id === "thorough")).map((m) => (
                 <button
                   key={m.id}
                   type="button"
@@ -768,9 +814,9 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
     return () => { alive = false; clearTimeout(timer); };
   }, [card.runId, card.error, card.completed, card.title, done]);
 
-  const modeLabel = card.mode === "meta"
-    ? "Meta-analysis"
-    : card.mode === "lab_draft"
+  // "meta", "structured_review", and "standard" are ALL user-facing "Deep research" now (the pooled
+  // pipeline is folded into the one tool) — old saved cards relabel too, by design.
+  const modeLabel = card.mode === "lab_draft"
     ? "Lab draft (beta)"
     : card.mode === "discovery"
     ? "Discovery"

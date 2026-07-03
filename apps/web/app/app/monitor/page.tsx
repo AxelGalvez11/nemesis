@@ -44,8 +44,11 @@ export default function MonitorPage() {
   const [ent, setEnt] = useState<EntitlementSnapshot | null>(() => getCached<EntitlementSnapshot>("watch-ent") ?? null);
   const [err, setErr] = useState<string | null>(null);
 
-  // "Monitor a new topic" box.
-  const [topic, setTopic] = useState("");
+  // "Monitor a new topic" box. Seeded once from the Ask composer's "+ → Monitor this topic" handoff
+  // (the typed question is stowed in the in-memory session cache), so the picker immediately searches
+  // for it here; cleared on mount so later visits start blank.
+  const [topic, setTopic] = useState(() => getCached<string>("monitor-prefill") ?? "");
+  useEffect(() => { setCached("monitor-prefill", ""); }, []);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
