@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
 import { Orb } from "./Orb";
-import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, pinConversation, renameConversation, type ConversationSummary } from "@/lib/api";
+import { deleteConversation, fetchConversations, fetchEntitlements, fetchProjects, fetchUsage, pinConversation, renameConversation, setItemProject, type ConversationSummary, type Project } from "@/lib/api";
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
 import { SettingsSurface } from "./SettingsSurface";
@@ -97,6 +97,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Per-chat overflow (⋯) menu: which chat's menu is open + the fixed viewport coords to render it at
   // (fixed-positioned so the scrolling rail can't clip it).
   const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  // The per-chat ⋯ menu can swap into a "pick a project" list in place (no nested flyout). `projMenuFor`
+  // is the chat id whose project picker is showing; `projects` is lazily loaded on first open.
+  const [projMenuFor, setProjMenuFor] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[] | null>(null);
   // Delete confirmation: the chat awaiting a styled confirm dialog (replaces window.confirm). null = closed.
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null);
   // Inline rename: the chat whose title is being edited in-row (replaces window.prompt) + the draft text.
@@ -155,6 +159,25 @@ export function AppShell({ children }: { children: ReactNode }) {
       setChatsVersion((v) => v + 1); // resync from the server
     }
   }, []);
+
+  // Assign / unassign a chat to a project from the rail. Optimistically updates the row's project_id,
+  // closes the menu, then resyncs from the server (matching handlePinChat's pattern).
+  const handleAssignChat = useCallback(async (id: string, projectId: string | null) => {
+    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, project_id: projectId } : c)));
+    setRowMenu(null);
+    setProjMenuFor(null);
+    try {
+      await setItemProject("conversation", id, projectId);
+    } catch {
+      setChatsVersion((v) => v + 1); // resync from the server on failure
+    }
+  }, []);
+
+  // Open the in-place project picker for a chat; lazy-load the project list the first time.
+  const openProjMenu = useCallback((id: string) => {
+    setProjMenuFor(id);
+    if (projects === null) void fetchProjects().then(setProjects).catch(() => setProjects([]));
+  }, [projects]);
 
   // Open the ⋯ menu anchored to the kebab button, clamped to the viewport (toggles if already open).
   const openRowMenu = useCallback((id: string, btn: HTMLElement) => {
@@ -262,9 +285,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   // track the rail) on scroll or resize.
   useEffect(() => {
     if (!rowMenu) return;
-    const close = () => setRowMenu(null);
-    const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".row-menu, .hist-more")) setRowMenu(null); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setRowMenu(null); };
+    const close = () => { setRowMenu(null); setProjMenuFor(null); };
+    const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".row-menu, .hist-more")) close(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
     const nav = document.querySelector(".nav");
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
@@ -279,7 +302,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [rowMenu]);
 
   // Close both mobile drawers + any account overlay + the row menu / its dialogs on route change.
-  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setEvidenceFullscreen(false); setOverlay(null); setRowMenu(null); setConfirmDelete(null); setRenamingId(null); }, [path]);
+  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setEvidenceFullscreen(false); setOverlay(null); setRowMenu(null); setProjMenuFor(null); setConfirmDelete(null); setRenamingId(null); }, [path]);
 
   // Close the delete-confirm dialog on Escape.
   useEffect(() => {
@@ -497,18 +520,47 @@ export function AppShell({ children }: { children: ReactNode }) {
           if (!c) return null;
           return (
             <div className="row-menu" role="menu" style={{ left: rowMenu.x, top: rowMenu.y }}>
-              <button role="menuitem" onClick={() => { setRowMenu(null); setRenamingId(c.id); setRenameDraft(c.title); }}>
-                <Icon name="pencil" size={15} />Rename
-              </button>
-              <button role="menuitem" onClick={() => { setRowMenu(null); void handlePinChat(c.id, !c.pinned); }}>
-                <Icon name="pin" size={15} />{c.pinned ? "Unpin chat" : "Pin chat"}
-              </button>
-              {/* Add to project waits on Projects (not built yet) — shown honestly as disabled "Soon". */}
-              <button role="menuitem" disabled><Icon name="folder" size={15} />Add to project<small>Soon</small></button>
-              <div className="sep" />
-              <button role="menuitem" className="danger" onClick={() => { setRowMenu(null); setConfirmDelete({ id: c.id, title: c.title }); }}>
-                <Icon name="trash" size={15} />Delete chat
-              </button>
+              {projMenuFor === c.id ? (
+                <>
+                  <button role="menuitem" onClick={() => setProjMenuFor(null)}>
+                    <Icon name="chevron-down" size={15} style={{ transform: "rotate(90deg)" }} />Back
+                  </button>
+                  <div className="sep" />
+                  {c.project_id ? (
+                    <button role="menuitem" onClick={() => void handleAssignChat(c.id, null)}>
+                      <Icon name="folder" size={15} />Remove from project
+                    </button>
+                  ) : null}
+                  {projects === null ? (
+                    <button role="menuitem" disabled><Icon name="folder" size={15} />Loading projects…</button>
+                  ) : projects.length === 0 ? (
+                    <button role="menuitem" disabled><Icon name="folder" size={15} />No projects yet</button>
+                  ) : (
+                    projects.map((p) => (
+                      <button key={p.id} role="menuitem" disabled={p.id === c.project_id}
+                        onClick={() => void handleAssignChat(c.id, p.id)} title={p.name}>
+                        <Icon name={p.id === c.project_id ? "check" : "folder"} size={15} />{p.name}
+                      </button>
+                    ))
+                  )}
+                </>
+              ) : (
+                <>
+                  <button role="menuitem" onClick={() => { setRowMenu(null); setRenamingId(c.id); setRenameDraft(c.title); }}>
+                    <Icon name="pencil" size={15} />Rename
+                  </button>
+                  <button role="menuitem" onClick={() => { setRowMenu(null); void handlePinChat(c.id, !c.pinned); }}>
+                    <Icon name="pin" size={15} />{c.pinned ? "Unpin chat" : "Pin chat"}
+                  </button>
+                  <button role="menuitem" onClick={() => openProjMenu(c.id)}>
+                    <Icon name="folder" size={15} />{c.project_id ? "Move to project" : "Add to project"}
+                  </button>
+                  <div className="sep" />
+                  <button role="menuitem" className="danger" onClick={() => { setRowMenu(null); setConfirmDelete({ id: c.id, title: c.title }); }}>
+                    <Icon name="trash" size={15} />Delete chat
+                  </button>
+                </>
+              )}
             </div>
           );
         })()}

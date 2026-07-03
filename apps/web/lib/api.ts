@@ -547,6 +547,7 @@ export interface ConversationSummary {
   title: string;
   updated_at: string;
   pinned: boolean;
+  project_id: string | null;
 }
 
 /** A reconstructed deep-research card (persisted on completion) — links to the finished report. */
@@ -575,14 +576,14 @@ export async function fetchConversations(): Promise<ConversationSummary[]> {
   if (isPreviewMode) return [];
   const { data, error } = await supabase
     .from("conversations")
-    .select("id,title,updated_at,pinned")
+    .select("id,title,updated_at,pinned,project_id")
     .order("pinned", { ascending: false }) // pinned chats first…
     .order("updated_at", { ascending: false }) // …then most-recent
     .limit(50);
   if (error) throw new Error(`conversations failed: ${error.message}`);
   return rows(data, (r) =>
     typeof r.id === "string" && typeof r.title === "string"
-      ? { id: r.id, title: r.title, updated_at: String(r.updated_at ?? ""), pinned: r.pinned === true }
+      ? { id: r.id, title: r.title, updated_at: String(r.updated_at ?? ""), pinned: r.pinned === true, project_id: typeof r.project_id === "string" ? r.project_id : null }
       : null,
   );
 }
