@@ -945,6 +945,8 @@
 .research-card svg { color: var(--text-3); flex: none; }
 .research-card-title { flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .research-card small { color: var(--text-3); font-family: var(--mono); font-size: 11px; flex: none; }
+.research-done { display: flex; flex-direction: column; gap: 8px; }
+.mission-sheet { margin-top: 4px; }
 
 /* Modern watch cards (Monitoring list): status dot + two-row layout (title over cadence/last-checked) +
    a soft hover-lift. Replaces the flat .research-card row so the page reads less generic. */

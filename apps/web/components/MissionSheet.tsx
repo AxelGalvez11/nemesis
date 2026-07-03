@@ -1,0 +1,93 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import type { MissionCadence, MissionDeliver } from "@pharmabro/shared";
+import { missionEntitlement } from "@pharmabro/shared";
+import { createMission, fetchEntitlements } from "@/lib/api";
+import { Icon } from "@/components/icons";
+
+const OUTCOME_COPY: Record<string, string> = {
+  not_enabled: "Scheduled research isn’t switched on yet.",
+  limit: "You’ve reached your plan’s scheduled-research limit.",
+  duplicate: "This research is already scheduled — manage it under Monitoring.",
+  auth: "Sign in to schedule research.",
+  unknown: "Couldn’t schedule this — try again.",
+};
+
+/** "Repeat this research" — the clock-icon sheet (ChatGPT agent's schedule affordance, our engine).
+ *  Creates a research_missions row; the cron takes it from there. */
+export function MissionSheet({ question, reportMode, onClose }: { question: string; reportMode: string; onClose: () => void }) {
+  const [cadence, setCadence] = useState<MissionCadence>("weekly");
+  const [deliver, setDeliver] = useState<MissionDeliver>("in_app");
+  const [limit, setLimit] = useState<number | null>(null); // null = still loading entitlements
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<string | null>(null); // copy shown after attempt
+  const [created, setCreated] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchEntitlements()
+      .then((e) => { if (alive) setLimit(missionEntitlement(e).limit); })
+      .catch(() => { if (alive) setLimit(0); });
+    return () => { alive = false; };
+  }, []);
+
+  async function schedule() {
+    if (busy) return;
+    setBusy(true);
+    setOutcome(null);
+    try {
+      const res = await createMission({ question, report_mode: reportMode, cadence, deliver });
+      if (res.ok) {
+        setCreated(true);
+        setOutcome(`Scheduled. A fresh report will land ${cadence === "daily" ? "every day" : cadence === "weekly" ? "every week" : "every month"} under Reports${deliver === "email" ? " — and in your inbox" : ""}.`);
+      } else {
+        setOutcome(OUTCOME_COPY[res.reason] ?? "Couldn’t schedule this — try again.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const proGated = limit === 0;
+  return (
+    <div className="scope-card mission-sheet" role="dialog" aria-label="Repeat this research on a schedule">
+      <div className="ai-block-label"><Icon name="sparkle" size={14} /> Repeat this research</div>
+      {proGated ? (
+        <>
+          <p className="tmpl-note">Scheduled research is a Pro feature — reports re-run automatically and land in your library.</p>
+          <div className="scope-actions">
+            <Link href="/app/billing" className="chip-action"><Icon name="card" size={14} />See Pro plans</Link>
+            <button type="button" className="chip-action" onClick={onClose}>Close</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="chip-row">
+            {(["daily", "weekly", "monthly"] as const).map((c) => (
+              <button key={c} type="button" className={`chip-action${cadence === c ? " active" : ""}`} onClick={() => setCadence(c)}>
+                {c === "daily" ? "Daily" : c === "weekly" ? "Weekly" : "Monthly"}
+              </button>
+            ))}
+          </div>
+          <div className="chip-row">
+            <button type="button" className={`chip-action${deliver === "in_app" ? " active" : ""}`} onClick={() => setDeliver("in_app")}>In-app only</button>
+            <button type="button" className={`chip-action${deliver === "email" ? " active" : ""}`} onClick={() => setDeliver("email")}>Email me the report</button>
+          </div>
+          {outcome ? <p className="tmpl-note">{outcome}</p> : null}
+          <div className="scope-actions">
+            {created ? (
+              <Link href="/app/monitor" className="chip-action"><Icon name="bell" size={14} />Manage in Monitoring</Link>
+            ) : (
+              <button type="button" className="chip-action" onClick={() => void schedule()} disabled={busy || limit === null}>
+                <Icon name="send" size={14} />{busy ? "Scheduling…" : "Schedule"}
+              </button>
+            )}
+            <button type="button" className="chip-action" onClick={onClose}>{created ? "Done" : "Cancel"}</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

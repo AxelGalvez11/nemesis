@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { BrowseTopic, EntitlementSnapshot, EntitySuggestion } from "@pharmabro/shared";
-import { watchEntitlement, watchUsageLabel, watchFieldsFromBrowseTopic } from "@pharmabro/shared";
-import { createWatch, fetchDrug, fetchEntitlements, fetchWatches, type WatchSummary } from "@/lib/api";
+import type { BrowseTopic, EntitlementSnapshot, EntitySuggestion, MissionSummary } from "@pharmabro/shared";
+import { watchEntitlement, watchUsageLabel, watchFieldsFromBrowseTopic, cadenceLabel } from "@pharmabro/shared";
+import { createWatch, deleteMission, fetchDrug, fetchEntitlements, fetchMissions, fetchWatches, setMissionStatus, type WatchSummary } from "@/lib/api";
 import { isCatalogDrug, watchFieldsFromEntity } from "@/lib/entity";
 import { getCached, setCached } from "@/lib/cache";
 import { BrowseTopics } from "@/components/BrowseTopics";
@@ -37,12 +37,25 @@ function relTime(iso: string | null): string {
   return `${Math.round(hrs / 24)}d ago`;
 }
 
+/** "in 3h" / "in 2d" — a compact next-run label for scheduled research cards (future timestamps,
+ *  unlike relTime's past-tense "…ago" for watches). */
+function relNext(iso: string): string {
+  const mins = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
+  if (!Number.isFinite(mins)) return "—";
+  if (mins <= 0) return "due now";
+  if (mins < 60) return `in ${mins}m`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `in ${hrs}h`;
+  return `in ${Math.round(hrs / 24)}d`;
+}
+
 export default function MonitorPage() {
   // Seed from the session cache so a return visit paints the list instantly (no skeleton), then
   // revalidate below. Both watches AND ent are cached because the list render gates on both.
   const [watches, setWatches] = useState<WatchSummary[] | null>(() => getCached<WatchSummary[]>("watches") ?? null);
   const [ent, setEnt] = useState<EntitlementSnapshot | null>(() => getCached<EntitlementSnapshot>("watch-ent") ?? null);
   const [err, setErr] = useState<string | null>(null);
+  const [missions, setMissions] = useState<MissionSummary[] | null>(() => getCached<MissionSummary[]>("missions") ?? null);
 
   // "Monitor a new topic" box. Seeded once from the Ask composer's "+ → Monitor this topic" handoff
   // (the typed question is stowed in the in-memory session cache), so the picker immediately searches
@@ -67,8 +80,23 @@ export default function MonitorPage() {
       .catch((e) => { if (alive) setErr(e instanceof Error ? e.message : "Could not load your watches."); });
     // entitlements are best-effort: a failure just hides the usage line, never blocks the list
     fetchEntitlements().then((e) => { if (alive) { setEnt(e); setCached("watch-ent", e); } }).catch(() => {});
+    fetchMissions().then((m) => { if (alive) { setMissions(m); setCached("missions", m); } }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  async function toggleMission(m: MissionSummary) {
+    const status: "active" | "paused" = m.status === "active" ? "paused" : "active";
+    await setMissionStatus(m.id, status).catch(() => {});
+    const next = (missions ?? []).map((x) => (x.id === m.id ? { ...x, status } : x));
+    setMissions(next);
+    setCached("missions", next);
+  }
+  async function removeMission(id: string) {
+    await deleteMission(id).catch(() => {});
+    const next = (missions ?? []).filter((x) => x.id !== id);
+    setMissions(next);
+    setCached("missions", next);
+  }
 
   const tier = watchEntitlement(ent);
 
@@ -195,6 +223,41 @@ export default function MonitorPage() {
           </div>
         </div>
       ) : null}
+
+      <section className="watch-section" style={{ marginTop: 28 }}>
+        <h3 className="watch-section-h"><Icon name="doc" size={14} /> Scheduled research</h3>
+        {missions === null ? null : missions.length === 0 ? (
+          <p className="watch-empty">
+            Nothing scheduled. Run a Deep research report from <Link href="/app/ask">Ask</Link>, then press
+            “Repeat this research” on the finished report to get a fresh one on a schedule.
+          </p>
+        ) : (
+          <div className="watch-card-list">
+            {missions.map((m) => (
+              <div key={m.id} className="watch-card" title={m.question}>
+                <span className={`watch-card-dot${m.status === "active" ? " active" : ""}`} aria-hidden />
+                <span className="watch-card-main">
+                  <span className="watch-card-title">{m.question}</span>
+                  <span className="watch-card-meta">
+                    {cadenceLabel(m.cadence)} · next {relNext(m.next_run_at)}
+                    {m.last_run_status === "skipped_quota" ? " · last run skipped (daily limit)" : ""}
+                    {m.last_run_status === "failed" ? " · last run failed" : ""}
+                  </span>
+                </span>
+                {m.last_saved_report_id ? (
+                  <Link href={`/app/reports/${m.last_saved_report_id}`} className="chip-action">Latest report</Link>
+                ) : null}
+                <button type="button" className="chip-action" onClick={() => void toggleMission(m)}>
+                  {m.status === "active" ? "Pause" : "Resume"}
+                </button>
+                <button type="button" className="chip-action" onClick={() => void removeMission(m.id)} aria-label={`Delete scheduled research: ${m.question}`}>
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Tappable starting points — complements the search box above. One tap starts a watch. Shown
           once the page has settled (with the list or the empty state) so it never races the skeleton. */}

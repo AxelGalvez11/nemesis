@@ -22,6 +22,7 @@ import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
+import { MissionSheet } from "@/components/MissionSheet";
 import { ResearchProgress } from "@/components/ResearchProgress";
 import { WatchButton } from "@/components/WatchButton";
 
@@ -778,6 +779,7 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
   const firedRef = useRef(false);
+  const [showMission, setShowMission] = useState(false);
 
   useEffect(() => { if (card.error) setErr(card.error); }, [card.error]);
 
@@ -832,11 +834,19 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
   }
   if (done) {
     return (
-      <Link href={done.id ? `/app/reports/${done.id}` : "/app/reports"} className="research-card" title={done.title}>
-        <Icon name="doc" size={15} />
-        <span className="research-card-title">Report ready: {done.title}</span>
-        <small>{done.sources} sources · {modeLabel}</small>
-      </Link>
+      <div className="research-done">
+        <Link href={done.id ? `/app/reports/${done.id}` : "/app/reports"} className="research-card" title={done.title}>
+          <Icon name="doc" size={15} />
+          <span className="research-card-title">Report ready: {done.title}</span>
+          <small>{done.sources} sources · {modeLabel}</small>
+        </Link>
+        <div className="msg-actions">
+          <button type="button" className="chip-action" onClick={() => setShowMission((v) => !v)} aria-expanded={showMission}>
+            <Icon name="bell" size={14} />Repeat this research
+          </button>
+        </div>
+        {showMission ? <MissionSheet question={card.title} reportMode={card.mode} onClose={() => setShowMission(false)} /> : null}
+      </div>
     );
   }
   return (
