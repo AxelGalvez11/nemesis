@@ -1,7 +1,13 @@
 import { assert, assertEquals, assertFalse } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { normalizeAppraisal, titleRequiresRefusal, verbatimQuote, withEffectiveTruncation } from "./appraise.ts";
-import { preScreen } from "../ask/safety.ts";
-import type { PaperMeta } from "../../../packages/shared/src/research.ts";
+import {
+  appraisalProse,
+  normalizeAppraisal,
+  titleRequiresRefusal,
+  verbatimQuote,
+  withEffectiveTruncation,
+} from "./appraise.ts";
+import { detectViolations, preScreen } from "../ask/safety.ts";
+import type { AppraisalInput, PaperMeta } from "../../../packages/shared/src/research.ts";
 
 const PAPER = "This was a double-blind, placebo-controlled randomized trial. The primary endpoint was all-cause mortality at 12 months. 402 patients were enrolled.";
 const META: PaperMeta = { title: "A Trial", pages: 10, truncated: false };
@@ -142,4 +148,57 @@ Deno.test("withEffectiveTruncation sets truncated when the paper exceeds the app
 Deno.test("withEffectiveTruncation preserves an already-true extractor truncation flag", () => {
   const out = withEffectiveTruncation({ ...META, truncated: true }, "short paper text");
   assertEquals(out.truncated, true);
+});
+
+// ---------------------------------------------------------------------------
+// Dimension `heading` must be scanned by detectViolations (Finding: unscanned-output gap).
+// `heading` is model-generated free text (asStr(dd.heading) in normalizeAppraisal — no cap, no
+// enum) that reaches the user via shapeAppraisalReport's section title and sub_questions entry, so
+// a forbidden directive planted ONLY in a heading must still be caught. The trigger phrase below
+// ("you can take it") matches safety.ts's `unsafe_reassurance` rule
+// (/\byou (can|may) (take|use|combine|mix)\b/i) and has no negation word in its 40-char guard
+// window, so REASSURE_GUARD does not suppress it. Every OTHER scanned field (bottom_line,
+// limitations, questions, point.text) is deliberately benign, so a hit can only come from the
+// heading — proving this test would fail against the pre-fix appraisalProse.
+// ---------------------------------------------------------------------------
+
+function appraisalInputWithHeading(heading: string): AppraisalInput {
+  return {
+    paper_meta: META,
+    bottom_line: "This was a small single-center trial with modest effect sizes.",
+    dimensions: [
+      {
+        key: "design",
+        heading,
+        verdict: "adequate",
+        points: [{ text: "The trial was double-blind and placebo-controlled.", quote: null }],
+      },
+    ],
+    limitations: ["Single center; short follow-up."],
+    questions: ["Would the effect hold in a multi-center cohort?"],
+    evidence_grade: "moderate",
+    safety_flags: [],
+    claims_verified: true,
+  };
+}
+
+Deno.test("appraisalProse includes each dimension's heading text", () => {
+  const input = appraisalInputWithHeading("Statistical validity");
+  assert(appraisalProse(input).includes("Statistical validity"));
+});
+
+Deno.test("appraisalProse scans a forbidden directive planted ONLY in a dimension heading", () => {
+  const planted = "You can take it with your other medications";
+  const clean = appraisalInputWithHeading("Statistical validity");
+  const withInjectedHeading = appraisalInputWithHeading(planted);
+
+  // Negative control: the otherwise-identical clean input has no violations, pinning any hit on
+  // the injected version specifically to the heading text.
+  assertEquals(detectViolations(appraisalProse(clean)).length, 0);
+
+  const prose = appraisalProse(withInjectedHeading);
+  assert(prose.includes(planted), "heading text must flow into the scanned prose");
+  const violations = detectViolations(prose);
+  assert(violations.length > 0, "detectViolations must catch a forbidden directive planted in a heading");
+  assert(violations.some((v) => v.rule === "unsafe_reassurance"));
 });

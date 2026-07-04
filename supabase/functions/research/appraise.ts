@@ -218,10 +218,20 @@ export function withEffectiveTruncation(meta: PaperMeta, paperText: string): Pap
   return { ...meta, truncated: meta.truncated || paperText.length > APPRAISAL_TEXT_BUDGET };
 }
 
-/** Concatenate the appraisal's user-visible prose so detectViolations can scan it in one pass. */
-function appraisalProse(input: AppraisalInput): string {
+/**
+ * Concatenate the appraisal's user-visible prose so detectViolations can scan it in one pass.
+ * Includes each dimension's `heading` — it is model-generated free text (asStr(dd.heading) in
+ * normalizeAppraisal, no cap/enum) and reaches the user via shapeAppraisalReport's section title
+ * and sub_questions, so it must be scanned like every other user-visible field. Mirrors the frozen
+ * deep-research sibling (../ask/research/orchestrate.ts buildScanInput), which scans its section
+ * labels the same way. Exported so the regression test can assert on it directly without a live LLM call.
+ */
+export function appraisalProse(input: AppraisalInput): string {
   const parts: string[] = [input.bottom_line, ...input.limitations, ...input.questions];
-  for (const d of input.dimensions) for (const p of d.points) parts.push(p.text);
+  for (const d of input.dimensions) {
+    parts.push(d.heading);
+    for (const p of d.points) parts.push(p.text);
+  }
   return parts.join("\n");
 }
 
