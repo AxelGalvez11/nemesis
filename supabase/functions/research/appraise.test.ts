@@ -1,5 +1,6 @@
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { normalizeAppraisal, verbatimQuote } from "./appraise.ts";
+import { assert, assertEquals, assertFalse } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { normalizeAppraisal, titleRequiresRefusal, verbatimQuote, withEffectiveTruncation } from "./appraise.ts";
+import { preScreen } from "../ask/safety.ts";
 import type { PaperMeta } from "../../../packages/shared/src/research.ts";
 
 const PAPER = "This was a double-blind, placebo-controlled randomized trial. The primary endpoint was all-cause mortality at 12 months. 402 patients were enrolled.";
@@ -65,4 +66,57 @@ Deno.test("normalizeAppraisal only accepts the six known dimension keys and four
   const input = normalizeAppraisal(raw, META, PAPER);
   assertEquals(input.dimensions.map((d) => d.key), ["design", "statistics"]);
   assertEquals(input.dimensions[1].verdict, "unclear"); // bad verdict clamped to unclear
+});
+
+// ---------------------------------------------------------------------------
+// Title safety gate — clinical/toxicology titles must NOT be blanket-refused;
+// genuine first-person self-harm intent still refuses. Runs the REAL frozen
+// preScreen (not hand-built flags) so this proves the actual integration.
+// ---------------------------------------------------------------------------
+
+Deno.test("titleRequiresRefusal passes legitimate emergency/toxicology journal-club titles", () => {
+  const titles = [
+    "Naloxone for opioid overdose: an RCT",
+    "Levetiracetam for seizure prophylaxis after craniotomy",
+    "Management of chest pain in the emergency department",
+    "A case of suicide attempt via acetaminophen overdose",
+    "Predictors of suicide risk in adolescents: a cohort study",
+  ];
+  for (const title of titles) {
+    const { flags } = preScreen(title);
+    assertFalse(titleRequiresRefusal(flags), `expected "${title}" to pass (flags: ${flags.join(",")})`);
+  }
+});
+
+Deno.test("titleRequiresRefusal still refuses genuine first-person self-harm intent", () => {
+  const titles = [
+    "I want to die and don't know what to do",
+    "help, I am going to kill myself tonight",
+  ];
+  for (const title of titles) {
+    const { flags } = preScreen(title);
+    assert(titleRequiresRefusal(flags), `expected "${title}" to refuse (flags: ${flags.join(",")})`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Honest truncation flag (Finding 2): meta.truncated only reflects the extractor's 200KB cap; a
+// 120-200KB paper must still report truncated:true once this pipeline's smaller APPRAISAL_TEXT_BUDGET
+// (120,000 chars) is factored in.
+// ---------------------------------------------------------------------------
+
+Deno.test("withEffectiveTruncation leaves a short, untruncated paper alone", () => {
+  const out = withEffectiveTruncation(META, PAPER);
+  assertEquals(out.truncated, false);
+});
+
+Deno.test("withEffectiveTruncation sets truncated when the paper exceeds the appraisal text budget, even if the extractor did not truncate it", () => {
+  const longPaper = "x".repeat(150_000); // over APPRAISAL_TEXT_BUDGET (120,000), under the extractor's 200KB cap
+  const out = withEffectiveTruncation({ ...META, truncated: false }, longPaper);
+  assertEquals(out.truncated, true);
+});
+
+Deno.test("withEffectiveTruncation preserves an already-true extractor truncation flag", () => {
+  const out = withEffectiveTruncation({ ...META, truncated: true }, "short paper text");
+  assertEquals(out.truncated, true);
 });

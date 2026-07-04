@@ -8,6 +8,7 @@
 import { callTool, type Tool } from "../ask/llm.ts";
 import { modelFor } from "../ask/model-router.ts";
 import { detectViolations, preScreen } from "../ask/safety.ts";
+import type { SafetyFlag } from "../../../packages/shared/src/answer.ts";
 import { shapeAppraisalReport } from "../../../packages/shared/src/appraisal-report.ts";
 import type {
   AppraisalDimension,
@@ -173,6 +174,37 @@ export function normalizeAppraisal(raw: unknown, meta: PaperMeta, paperText: str
   };
 }
 
+// ---------------------------------------------------------------------------
+// Title safety gate (narrowed — see runAppraisal)
+// ---------------------------------------------------------------------------
+//
+// A paper TITLE is a third-person research subject ("Naloxone for opioid overdose: an RCT"), not a
+// first-person distress signal. preScreen's emergency_possible/overdose_possible flags key on topic
+// NOUNS (symptom names, "overdose") that a title routinely contains as its subject matter, not as a
+// caller's own action — verified false-blocks: "Naloxone for opioid overdose: an RCT", "Levetiracetam
+// for seizure prophylaxis after craniotomy", "Management of chest pain in the emergency department".
+// Notably, preScreen's OVERDOSE pattern's first alternative is a BARE noun ("overdose") with no
+// research-framing suppression (RESEARCH_FRAMING only guards emergency_possible), so keying refusal on
+// overdose_possible would still re-block the naloxone example above — confirmed empirically. self_harm
+// is the one flag whose regex is exclusively first-person INTENT phrasing ("kill myself", "want to
+// die", "end my life" — never a bare topic noun a title would use to describe its subject), so it is
+// the only flag from preScreen that can distinguish a genuine distress signal from a research title.
+// detectViolations on the ASSEMBLED prose (below, unchanged) remains the real backstop for anything
+// this narrower gate lets through.
+export function titleRequiresRefusal(flags: readonly SafetyFlag[]): boolean {
+  return flags.includes("self_harm");
+}
+
+/**
+ * Honest truncation flag: meta.truncated only reflects the extractor's 200KB cap, but this pipeline's
+ * own APPRAISAL_TEXT_BUDGET (120,000 chars) is smaller — a 120–200KB paper would otherwise report
+ * truncated:false while the model only ever saw its prefix. OR the two so paper_meta.truncated always
+ * reflects what was actually appraised. PURE.
+ */
+export function withEffectiveTruncation(meta: PaperMeta, paperText: string): PaperMeta {
+  return { ...meta, truncated: meta.truncated || paperText.length > APPRAISAL_TEXT_BUDGET };
+}
+
 /** Concatenate the appraisal's user-visible prose so detectViolations can scan it in one pass. */
 function appraisalProse(input: AppraisalInput): string {
   const parts: string[] = [input.bottom_line, ...input.limitations, ...input.questions];
@@ -188,11 +220,17 @@ function appraisalProse(input: AppraisalInput): string {
 export async function runAppraisal(paperText: string, meta: PaperMeta, apiKey: string): Promise<ResearchReport> {
   const title = meta.title ?? "the uploaded paper";
 
-  // Frozen safety on the SHORT line only. If the title itself trips the deterministic gate, refuse.
+  // Honest truncation: fold in this pipeline's own text budget, not just the extractor's cap.
+  const effMeta: PaperMeta = withEffectiveTruncation(meta, paperText);
+
+  // Frozen safety on the SHORT line only. A title is third-person research context, not a distress
+  // signal — refuse ONLY on genuine self-harm intent phrasing, not on emergency/overdose topic nouns
+  // (see titleRequiresRefusal above). The assembled-prose detectViolations scan below is the real
+  // backstop for anything this narrower gate lets through.
   const screen = preScreen(title);
-  if (screen.shortCircuit) {
+  if (titleRequiresRefusal(screen.flags)) {
     return shapeAppraisalReport({
-      paper_meta: meta,
+      paper_meta: effMeta,
       bottom_line: "This upload could not be appraised.",
       dimensions: [],
       limitations: ["The paper's title triggered a safety route; upload a research paper for appraisal."],
@@ -217,13 +255,13 @@ export async function runAppraisal(paperText: string, meta: PaperMeta, apiKey: s
     apiKey,
   );
 
-  const input = normalizeAppraisal(raw, meta, budget);
+  const input = normalizeAppraisal(raw, effMeta, budget);
 
   // Load-bearing frozen-safety check on the ASSEMBLED prose (same posture as deep-research synthesis).
   const violations = detectViolations(appraisalProse(input));
   if (violations.length > 0) {
     return shapeAppraisalReport({
-      paper_meta: meta,
+      paper_meta: effMeta,
       bottom_line: "The appraisal was withheld because it contained unsafe wording.",
       dimensions: [],
       limitations: ["The generated appraisal did not clear the safety check and was discarded."],
