@@ -86,6 +86,11 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
       options: { bullet: true, breakLine: true },
     })));
   }
+  if (report.appraisal_questions?.length) {
+    contentSlide(pptx, "Discussion questions", report.appraisal_questions.map((q) => ({
+      text: q, options: { bullet: true, breakLine: true },
+    })));
+  }
   if (report.uncertainties.length) contentSlide(pptx, "Still uncertain", bullets(report.uncertainties));
 
   if (report.citations.length) {
