@@ -17,9 +17,10 @@ const MODE_LABEL: Record<string, string> = {
   standard: "Deep research",
   discovery: "Discovery reports",
   lab_draft: "Lab drafts",
+  appraisal: "Journal club appraisals",
   other: "Other",
 };
-const MODE_ORDER = ["standard", "discovery", "lab_draft"];
+const MODE_ORDER = ["standard", "discovery", "lab_draft", "appraisal"];
 const normalizeMode = (m: string | null | undefined): string =>
   !m || m === "meta" || m === "structured_review" ? "standard" : m;
 

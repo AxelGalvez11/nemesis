@@ -1345,3 +1345,9 @@
 .credits-bar > span { display: block; height: 100%; background: var(--acid); border-radius: 999px; }
 .credits-foot { font-size: 12px; color: var(--text-3); line-height: 1.6; margin-top: 14px; }
 .credits-foot a { color: var(--acid-dim); }
+
+/* Journal-club appraisal report view */
+.appraisal-paper-line { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.research-questions { margin-top: 18px; }
+.research-questions ol { margin: 6px 0 0 18px; }
+.research-questions li { margin-bottom: 6px; }
