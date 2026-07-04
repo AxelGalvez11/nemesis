@@ -44,6 +44,7 @@ const MODES = [
   { id: "fast", label: "Fast", live: true, pro: false, hint: "Quick, plain-English answer — cited from the library + live sources" },
   { id: "thorough", label: "Thorough", live: true, pro: false, hint: "Thinks longer: a wider source pull and a fuller, more technical answer" },
   { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report — pools comparable studies into a computed estimate when the evidence supports it (Pro)" },
+  { id: "structured_review", label: "Systematic review", live: true, pro: true, hint: "A documented-method evidence review: what was searched, what was included, and cited findings in tables (Pro)" },
   { id: "discovery", label: "Discovery", live: true, pro: true, hint: "Finds research gaps, claim cards, hypotheses, and next-study designs (Pro)" },
   { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
 ] as const;
@@ -258,7 +259,7 @@ function AskPage() {
       setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
     } catch (e) {
       const proGate = isQuotaError(e) && Number(e.quota.limit) === 0;
-      const feature = runMode === "discovery" ? "Discovery" : runMode === "lab_draft" ? "Lab draft" : "Deep research";
+      const feature = runMode === "discovery" ? "Discovery" : runMode === "lab_draft" ? "Lab draft" : runMode === "structured_review" ? "Systematic review" : "Deep research";
       const msg = isQuotaError(e)
         ? (proGate
           ? `${feature} is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
@@ -358,7 +359,7 @@ function AskPage() {
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
     // can keep chatting while it works.
-    if (mode === "deep" || mode === "discovery" || mode === "lab_draft") {
+    if (mode === "deep" || mode === "structured_review" || mode === "discovery" || mode === "lab_draft") {
       // Deep research runs the engine's "meta" pipeline: the full structured review (documented
       // method, cited sections) PLUS a code-computed pooled estimate when the studies are genuinely
       // comparable — and an honest "no pooled estimate could be computed" note when they aren't
@@ -366,7 +367,7 @@ function AskPage() {
       // two: the old separate "Meta-analysis" mode is folded in. Discovery adds claim cards, gap
       // analysis, hypotheses, and a next-study design; lab_draft produces a study-design scaffold
       // (not a runnable protocol).
-      const runMode: ReportMode = mode === "lab_draft" ? "lab_draft" : mode === "discovery" ? "discovery" : "meta";
+      const runMode: ReportMode = mode === "lab_draft" ? "lab_draft" : mode === "discovery" ? "discovery" : mode === "structured_review" ? "structured_review" : "meta";
       phCapture("research_started", { mode: runMode });
       const ridx = turns.length;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
@@ -428,10 +429,8 @@ function AskPage() {
     }
   }
 
-  // Skill: Systematic review — arm the documented-method report mode (Task 2 flips this to
-  // "structured_review" once that mode id exists in MODES; kept as "deep" here only so Task 1
-  // typechecks standalone — flagged adaptation, resolved in the very next commit).
-  const armSystematicReview = useCallback(() => { setMode("deep"); }, []);
+  // Skill: Systematic review — arm the documented-method report mode.
+  const armSystematicReview = useCallback(() => { setMode("structured_review"); }, []);
   // Skill: Slides — arm Deep research (Task 3 adds the slides-export intent alongside this).
   const armSlides = useCallback(() => { setMode("deep"); }, []);
 
@@ -964,6 +963,8 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
     ? "Lab draft (beta)"
     : card.mode === "discovery"
     ? "Discovery"
+    : card.mode === "structured_review"
+    ? "Systematic review"
     : "Deep research";
 
   if (err) {
