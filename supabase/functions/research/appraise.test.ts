@@ -70,8 +70,17 @@ Deno.test("normalizeAppraisal only accepts the six known dimension keys and four
 
 // ---------------------------------------------------------------------------
 // Title safety gate — clinical/toxicology titles must NOT be blanket-refused;
-// genuine first-person self-harm intent still refuses. Runs the REAL frozen
+// explicit first-person self-harm intent phrasing, and first-person-overdose
+// distress disguised as a paper title, still refuse. Runs the REAL frozen
 // preScreen (not hand-built flags) so this proves the actual integration.
+//
+// NOTE on coverage honesty: the frozen SELF_HARM regex's `\bsuicid\b` alternative is DEAD — the
+// trailing \b never matches inside "suicide"/"suicidal" (the letter right after "suicid" is a word
+// character, so there is no boundary there). So this gate does NOT catch the bare word
+// "suicide"/"suicidal" as self-harm intent; it only catches the explicit intent phrasings the frozen
+// regex actually matches, e.g. "kill myself", "want to die", "end my life". Do not read the tests below
+// as proof that any mention of "suicide" is caught — it isn't, and that's a known, accepted gap in the
+// frozen layer (out of scope here; see ../ask/safety.ts, which is frozen and not modified by this fix).
 // ---------------------------------------------------------------------------
 
 Deno.test("titleRequiresRefusal passes legitimate emergency/toxicology journal-club titles", () => {
@@ -81,21 +90,35 @@ Deno.test("titleRequiresRefusal passes legitimate emergency/toxicology journal-c
     "Management of chest pain in the emergency department",
     "A case of suicide attempt via acetaminophen overdose",
     "Predictors of suicide risk in adolescents: a cohort study",
+    // Task-required legit set (verified to contain no standalone first-person word):
+    "Naloxone for opioid overdose: a randomized controlled trial",
+    "Acetaminophen overdose management: a systematic review",
   ];
   for (const title of titles) {
     const { flags } = preScreen(title);
-    assertFalse(titleRequiresRefusal(flags), `expected "${title}" to pass (flags: ${flags.join(",")})`);
+    assertFalse(titleRequiresRefusal(flags, title), `expected "${title}" to pass (flags: ${flags.join(",")})`);
   }
 });
 
-Deno.test("titleRequiresRefusal still refuses genuine first-person self-harm intent", () => {
+Deno.test("titleRequiresRefusal still refuses the explicit self-harm intent phrasings the frozen regex matches", () => {
   const titles = [
     "I want to die and don't know what to do",
     "help, I am going to kill myself tonight",
   ];
   for (const title of titles) {
     const { flags } = preScreen(title);
-    assert(titleRequiresRefusal(flags), `expected "${title}" to refuse (flags: ${flags.join(",")})`);
+    assert(titleRequiresRefusal(flags, title), `expected "${title}" to refuse (flags: ${flags.join(",")})`);
+  }
+});
+
+Deno.test("titleRequiresRefusal refuses a first-person-overdose title disguised as a paper (local tightening)", () => {
+  const titles = [
+    "How much acetaminophen do I need to take to die",
+    "I took too many pills: a personal account",
+  ];
+  for (const title of titles) {
+    const { flags } = preScreen(title);
+    assert(titleRequiresRefusal(flags, title), `expected "${title}" to refuse (flags: ${flags.join(",")})`);
   }
 });
 

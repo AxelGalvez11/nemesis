@@ -184,15 +184,28 @@ export function normalizeAppraisal(raw: unknown, meta: PaperMeta, paperText: str
 // caller's own action — verified false-blocks: "Naloxone for opioid overdose: an RCT", "Levetiracetam
 // for seizure prophylaxis after craniotomy", "Management of chest pain in the emergency department".
 // Notably, preScreen's OVERDOSE pattern's first alternative is a BARE noun ("overdose") with no
-// research-framing suppression (RESEARCH_FRAMING only guards emergency_possible), so keying refusal on
-// overdose_possible would still re-block the naloxone example above — confirmed empirically. self_harm
-// is the one flag whose regex is exclusively first-person INTENT phrasing ("kill myself", "want to
-// die", "end my life" — never a bare topic noun a title would use to describe its subject), so it is
-// the only flag from preScreen that can distinguish a genuine distress signal from a research title.
-// detectViolations on the ASSEMBLED prose (below, unchanged) remains the real backstop for anything
-// this narrower gate lets through.
-export function titleRequiresRefusal(flags: readonly SafetyFlag[]): boolean {
-  return flags.includes("self_harm");
+// research-framing suppression (RESEARCH_FRAMING only guards emergency_possible), so overdose_possible
+// ALONE still lets the naloxone/acetaminophen-review examples above through, unchanged — confirmed
+// empirically. self_harm is the one frozen flag whose regex is exclusively first-person INTENT
+// phrasing ("kill myself", "want to die", "end my life" — never a bare topic noun a title would use to
+// describe its subject), so on its own it already distinguishes a genuine distress signal from a
+// research title.
+//
+// Belt-and-suspenders local tightening: a first-person-overdose TITLE ("How much acetaminophen do I
+// need to take to die") emits only overdose_possible, not self_harm, and used to pass this gate — a
+// real gap the frozen preScreen doesn't close, because OVERDOSE's bare-noun alternative has no
+// first-person requirement built in. So refuse ALSO when overdose_possible fires AND the title itself
+// carries a first-person marker (LOCAL regex, not the frozen layer) — that combination is what turns a
+// third-person research subject into first-person intent. A title with overdose_possible but no
+// first-person marker (e.g. "Acetaminophen overdose management: a systematic review", or the
+// third-person "A case of suicide attempt via acetaminophen overdose") still passes, matching the
+// verified-safe set above. detectViolations on the ASSEMBLED prose (below, unchanged) remains the real
+// backstop for anything this still lets through.
+const FIRST_PERSON_MARKER = /\b(i|i'm|i am|my|me|myself)\b/i;
+
+export function titleRequiresRefusal(flags: readonly SafetyFlag[], title: string): boolean {
+  if (flags.includes("self_harm")) return true;
+  return flags.includes("overdose_possible") && FIRST_PERSON_MARKER.test(title);
 }
 
 /**
@@ -224,11 +237,11 @@ export async function runAppraisal(paperText: string, meta: PaperMeta, apiKey: s
   const effMeta: PaperMeta = withEffectiveTruncation(meta, paperText);
 
   // Frozen safety on the SHORT line only. A title is third-person research context, not a distress
-  // signal — refuse ONLY on genuine self-harm intent phrasing, not on emergency/overdose topic nouns
-  // (see titleRequiresRefusal above). The assembled-prose detectViolations scan below is the real
-  // backstop for anything this narrower gate lets through.
+  // signal — refuse on genuine self-harm intent phrasing, or on an overdose topic combined with a
+  // first-person marker in the title (see titleRequiresRefusal above). The assembled-prose
+  // detectViolations scan below is the real backstop for anything this narrower gate lets through.
   const screen = preScreen(title);
-  if (titleRequiresRefusal(screen.flags)) {
+  if (titleRequiresRefusal(screen.flags, title)) {
     return shapeAppraisalReport({
       paper_meta: effMeta,
       bottom_line: "This upload could not be appraised.",
