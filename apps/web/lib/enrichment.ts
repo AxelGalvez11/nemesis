@@ -38,10 +38,12 @@ async function fetchBatch(pmids: string[]): Promise<Record<string, SourceEnrichm
   return out;
 }
 
-export function useEnrichment(citations: Citation[]): Record<string, SourceEnrichment> {
+/** Trust enrichment for an explicit set of `pmid:N`-derived PMIDs. The single fetch path is shared
+ *  with useEnrichment (same module-level memo + in-flight de-dup). Returned keys are `pmid:N`. */
+export function useEnrichmentByPmids(pmids: string[]): Record<string, SourceEnrichment> {
   const [map, setMap] = useState<Record<string, SourceEnrichment>>({});
-  const pmids = [...new Set(citations.map((c) => pmidFromUrl(c.url)).filter((p): p is string => !!p))];
-  const sig = pmids.join(",");
+  const unique = [...new Set(pmids)];
+  const sig = unique.join(",");
   useEffect(() => {
     if (!sig) return;
     let alive = true;
@@ -49,4 +51,9 @@ export function useEnrichment(citations: Citation[]): Record<string, SourceEnric
     return () => { alive = false; };
   }, [sig]);
   return map;
+}
+
+export function useEnrichment(citations: Citation[]): Record<string, SourceEnrichment> {
+  const pmids = citations.map((c) => pmidFromUrl(c.url)).filter((p): p is string => !!p);
+  return useEnrichmentByPmids(pmids);
 }

@@ -1315,3 +1315,33 @@ export async function setItemProject(kind: ProjectItemKind, id: string, projectI
   const { error } = await supabase.from(PROJECT_ITEM_TABLE[kind]).update({ project_id: projectId }).eq("id", id);
   if (error) throw new Error(`assign to project failed: ${error.message}`);
 }
+
+// ── Research Map: OpenAlex-backed "explore related papers" (calls the auth-gated /api/v1/graph/expand
+//    Next.js route). Client-only — the returned works become ghost nodes in the map, never persisted. ──
+export interface GraphExpandWork {
+  /** Short OpenAlex id (e.g. "W2125065061"). */
+  id: string;
+  title: string | null;
+  year: string | null;
+  pmid: string | null;
+}
+
+export interface GraphExpand {
+  work: GraphExpandWork;
+  cites: GraphExpandWork[];
+  cited_by: GraphExpandWork[];
+  similar: GraphExpandWork[];
+}
+
+/** Fetch cites / cited-by / similar papers for a PMID via the auth-gated proxy. Throws on failure so
+ *  the caller can show an honest "couldn't load" message (never fabricates results). */
+export async function fetchGraphExpand(pmid: string): Promise<GraphExpand> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to explore related papers");
+  const res = await fetch(`/api/v1/graph/expand?pmid=${encodeURIComponent(pmid)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`graph expand failed (${res.status})`);
+  return (await res.json()) as GraphExpand;
+}
