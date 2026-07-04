@@ -14,7 +14,6 @@ import {
 } from "@/lib/api";
 import { cadenceLabel, timeUntil, type MissionCadence, type MissionSummary } from "@pharmabro/shared";
 import { getCached, setCached } from "@/lib/cache";
-import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { SkeletonRows } from "@/components/Skeleton";
 
@@ -133,7 +132,6 @@ export default function ScheduledPage() {
   return (
     <div className="research-wrap">
       <div className="research-intro">
-        <Orb size={52} />
         <h2 className="welcome-title">Scheduled</h2>
         <p className="welcome-sub">Set research to run on a schedule and monitors to watch for new evidence — the results land here and in your reports.</p>
       </div>

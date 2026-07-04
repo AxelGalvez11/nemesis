@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createProject, fetchProjects, type Project } from "@/lib/api";
-import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { SkeletonRows } from "@/components/Skeleton";
 import { getCached, setCached } from "@/lib/cache";
@@ -46,7 +45,6 @@ export default function ProjectsPage() {
   return (
     <div className="research-wrap">
       <div className="research-intro">
-        <Orb size={52} />
         <h2 className="welcome-title">Projects</h2>
         <p className="welcome-sub">
           Group related chats, Deep Research reports, and monitoring watches into one workspace.

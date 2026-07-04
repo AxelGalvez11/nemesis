@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fetchResearchReports, type ResearchReportSummary } from "@/lib/api";
 import { displayReportTitle } from "@pharmabro/shared";
-import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { SkeletonRows } from "@/components/Skeleton";
 import { getCached, setCached } from "@/lib/cache";
@@ -58,7 +57,6 @@ export default function ReportsPage() {
   return (
     <div className="research-wrap">
       <div className="research-intro">
-        <Orb size={52} />
         <h2 className="welcome-title">Library</h2>
         <p className="welcome-sub">Every deep-research report you’ve generated. Open one to read it, switch citation styles, or export to Word or PowerPoint.</p>
         <button type="button" className="mode watch-add-btn" style={{ marginTop: 6 }} onClick={() => router.push("/app/ask")}>

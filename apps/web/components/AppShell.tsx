@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
-import { Orb } from "./Orb";
 import { deleteConversation, fetchConversations, fetchEntitlements, fetchProjects, fetchUsage, pinConversation, renameConversation, setItemProject, type ConversationSummary, type Project } from "@/lib/api";
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
@@ -397,7 +396,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* ── rail ── */}
         <aside className="rail" id="app-rail">
           <div className="brand">
-            <Orb size={28} />
             <div className="wordmark">PharmaOrb</div>
           </div>
           <button className="new" onClick={() => router.push("/app/ask")} aria-label="New chat">

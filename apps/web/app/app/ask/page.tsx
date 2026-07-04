@@ -21,7 +21,6 @@ import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
 import { PLAYBOOKS, SKILLS } from "@/lib/playbooks";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
-import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { DataSourcesPanel } from "@/components/DataSourcesPanel";
 import { MissionSheet } from "@/components/MissionSheet";
@@ -583,7 +582,6 @@ function AskPage() {
     return (
       <div className="welcome-wrap">
         <div className="welcome">
-          <Orb size={56} />
           <h2 className="welcome-title">{reopenedEmpty ? "This chat has no saved messages" : "What can I help you research?"}</h2>
           {reopenedEmpty ? (
             <p className="welcome-sub">Its earlier turns didn’t save (a now-fixed bug). Ask below to continue in this chat, or start a new one.</p>
