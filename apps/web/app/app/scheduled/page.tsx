@@ -195,10 +195,14 @@ export default function ScheduledPage() {
         </section>
       ) : null}
 
-      {/* Watches */}
+      {/* Watches. Monitoring left the sidebar (Scheduled is the one automation surface), so this
+          section carries the create entry point into the monitor picker. */}
       {watches && watches.length > 0 ? (
         <section className="proj-section">
-          <div className="proj-section-head"><h3><Icon name="bell" size={14} /> Monitors <small>{watches.length}</small></h3></div>
+          <div className="proj-section-head">
+            <h3><Icon name="bell" size={14} /> Monitors <small>{watches.length}</small></h3>
+            <Link href="/app/monitor" className="chip-action">+ New monitor</Link>
+          </div>
           <div className="watch-card-list">
             {watches.map((w) => (
               <div key={w.id} className="watch-card proj-item">
@@ -218,7 +222,7 @@ export default function ScheduledPage() {
       ) : null}
 
       {!loading && missions && missions.length === 0 && watches && watches.length === 0 ? (
-        <p className="welcome-sub">Nothing scheduled yet. Describe research above, or start a monitor from <Link href="/app/monitor">Monitoring</Link>.</p>
+        <p className="welcome-sub">Nothing scheduled yet. Describe research above, or <Link href="/app/monitor">start a monitor</Link>.</p>
       ) : null}
     </div>
   );

@@ -485,28 +485,21 @@ function AskPage() {
             <p className="welcome-sub">Its earlier turns didn’t save (a now-fixed bug). Ask below to continue in this chat, or start a new one.</p>
           ) : null}
           {composer}
+          {/* ChatGPT-style calm landing: greeting + composer + ONE row of at most three ghost chips.
+              Everything else (Discovery, Monitor, Playbooks, filters, Data sources) lives in the "+"
+              launcher — one front door, no chip wall. */}
           {!reopenedEmpty ? (
-            <>
-              <div className="chip-row welcome-chips">
-                <button type="button" className="chip-action" onClick={() => { setQuestion("Is it true that "); taRef.current?.focus(); }}>
-                  <Icon name="check" size={14} />Verify a claim
-                </button>
-                <button type="button" className="chip-action" onClick={() => { setMode("deep"); taRef.current?.focus(); }}>
-                  <Icon name="doc" size={14} />Deep research
-                </button>
-                <button type="button" className="chip-action" onClick={() => { setQuestion("Is creatine good for me?"); taRef.current?.focus(); }}>
-                  <Icon name="search" size={14} />Is this good for me?
-                </button>
-              </div>
-              <div className="chip-row welcome-chips" aria-label="Playbooks — one-click research recipes">
-                {PLAYBOOKS.map((p) => (
-                  <button key={p.id} type="button" className="chip-action" title={p.question}
-                    onClick={() => { setMode(p.tool); setQuestion(p.question); taRef.current?.focus(); }}>
-                    <Icon name="doc" size={14} />{p.title}
-                  </button>
-                ))}
-              </div>
-            </>
+            <div className="chip-row welcome-chips">
+              <button type="button" className="chip-action" onClick={() => { setQuestion("Is it true that "); taRef.current?.focus(); }}>
+                <Icon name="check" size={14} />Verify a claim
+              </button>
+              <button type="button" className="chip-action" onClick={() => { setMode("deep"); taRef.current?.focus(); }}>
+                <Icon name="doc" size={14} />Deep research
+              </button>
+              <button type="button" className="chip-action" onClick={() => { setQuestion("Is creatine good for me?"); taRef.current?.focus(); }}>
+                <Icon name="search" size={14} />Is this good for me?
+              </button>
+            </div>
           ) : null}
         </div>
       </div>
@@ -658,6 +651,16 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
               >
                 <Icon name="bell" size={14} /><span style={{ flex: 1 }}>Monitor this topic</span><small style={{ color: "var(--text-3)" }}>alerts on new evidence</small>
               </button>
+              <div className="sep" role="separator" />
+              {/* Playbooks (the Manus pattern): curated one-click recipes — seed the question AND arm
+                  the right tool. Moved here from the welcome screen so the landing stays calm. */}
+              <div className="menu-label" aria-hidden="true">Playbooks</div>
+              {PLAYBOOKS.map((p) => (
+                <button key={p.id} type="button" role="menuitem" title={p.question}
+                  onClick={() => { setMode(p.tool); setQuestion(p.question); setPlusOpen(false); taRef.current?.focus(); }}>
+                  <Icon name="doc" size={14} /><span style={{ flex: 1 }}>{p.title}</span>
+                </button>
+              ))}
               <div className="sep" role="separator" />
               {/* Source filters: honest coming-soon until the engine can scope a run to one source
                   class (news-only; community chatter from Reddit/X walled off from cited evidence). */}
