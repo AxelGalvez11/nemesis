@@ -559,7 +559,12 @@ export interface SavedResearchCard {
 }
 
 function parseReportMode(value: unknown): ReportMode {
-  return value === "structured_review" || value === "meta" || value === "lab_draft" || value === "discovery" || value === "standard"
+  return value === "structured_review" ||
+      value === "meta" ||
+      value === "lab_draft" ||
+      value === "discovery" ||
+      value === "appraisal" ||
+      value === "standard"
     ? value
     : "standard";
 }
