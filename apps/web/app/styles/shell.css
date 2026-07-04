@@ -1321,3 +1321,21 @@
 .watch-delete:hover { border-color: var(--danger); color: var(--danger); }
 .watch-delete-confirm { color: #fff; background: var(--danger); border-color: var(--danger); }
 .watch-delete-confirm:hover { filter: brightness(1.07); }
+
+/* Visible credits: the topbar chip (a Manus-style "N left" pill) + the modal/Settings breakdown rows.
+   Display-only — a calm, quiet surface, never an upsell scream. */
+.credits-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--text-2); font-family: var(--font); font-size: 13px; cursor: pointer; transition: border-color 0.15s, color 0.15s; }
+.credits-chip:hover { border-color: var(--line-2); color: var(--text); }
+.credits-chip svg { color: var(--acid); flex: none; }
+.credits-chip b { font-weight: 600; color: var(--text); }
+.credits-group { margin-top: 14px; }
+.credits-group-label { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); margin-bottom: 8px; }
+.credits-row { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 12px; padding: 7px 0; }
+.credits-row + .credits-row { border-top: 1px solid var(--line); }
+.credits-row-label { font-size: 13.5px; color: var(--text); }
+.credits-row-note { font-size: 12px; color: var(--text-3); margin-left: 8px; }
+.credits-row-count { font-family: var(--mono); font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+.credits-bar { grid-column: 1 / -1; height: 4px; margin-top: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.credits-bar > span { display: block; height: 100%; background: var(--acid); border-radius: 999px; }
+.credits-foot { font-size: 12px; color: var(--text-3); line-height: 1.6; margin-top: 14px; }
+.credits-foot a { color: var(--acid-dim); }

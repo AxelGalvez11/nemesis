@@ -10,6 +10,7 @@ import { deleteConversation, fetchConversations, fetchEntitlements, fetchProject
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
 import { SettingsSurface } from "./SettingsSurface";
+import { CreditsPanel } from "./CreditsPanel";
 
 type Overlay = "settings" | null;
 
@@ -23,6 +24,7 @@ interface AppChromeValue {
   setEvidence: (node: ReactNode | null) => void;
   setTopbar: (node: ReactNode | null) => void;
   bumpChats: () => void;
+  bumpUsage: () => void;
 }
 const AppChromeContext = createContext<AppChromeValue>({
   railCollapsed: false,
@@ -33,6 +35,7 @@ const AppChromeContext = createContext<AppChromeValue>({
   setEvidence: () => {},
   setTopbar: () => {},
   bumpChats: () => {},
+  bumpUsage: () => {},
 });
 export const useAppChrome = () => useContext(AppChromeContext);
 
@@ -105,6 +108,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   // this searches saved chats only, not the drug catalog.
   const [chatQuery, setChatQuery] = useState("");
   const [chatsVersion, setChatsVersion] = useState(0);
+  // Bumped after each ask so the account footer + credits chip re-read usage (they'd otherwise go stale —
+  // AppShell reads usage once on mount). Private local state; only bumpUsage() is exposed on the context.
+  const [usageVersion, setUsageVersion] = useState(0);
+  // Whether the credits modal (opened from the topbar chip) is showing.
+  const [creditsOpen, setCreditsOpen] = useState(false);
   // Per-chat overflow (⋯) menu: which chat's menu is open + the fixed viewport coords to render it at
   // (fixed-positioned so the scrolling rail can't clip it).
   const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -122,6 +130,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const cancelRenameRef = useRef(false);
   // Lets the chat page refresh the rail history the moment it creates a new conversation.
   const bumpChats = useCallback(() => setChatsVersion((v) => v + 1), []);
+  const bumpUsage = useCallback(() => setUsageVersion((v) => v + 1), []);
 
   // Delete a chat: optimistically drop it from the rail, then delete server-side (RLS-scoped). If we
   // were viewing it, return to a blank chat. Re-fetch on failure so the rail reflects the real state.
@@ -277,7 +286,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [session]);
+  }, [session, usageVersion]);
 
   // Load the rail's saved-chat history (refreshes when the chat page bumps after creating one).
   useEffect(() => {
@@ -350,8 +359,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const ctx = useMemo<AppChromeValue>(
-    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats }),
-    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats],
+    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage }),
+    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage],
   );
 
   // Hooks are all above this line — only conditional returns below (Rules of Hooks).
@@ -510,6 +519,15 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             )}
             <div className="spacer" />
+            <button
+              className="credits-chip"
+              onClick={() => setCreditsOpen(true)}
+              data-tip="Your credits"
+              aria-label={`Your credits — ${Math.max(0, plan.limit - plan.used)} asks left today`}
+            >
+              <Icon name="sparkle" size={15} />
+              <b>{Math.max(0, plan.limit - plan.used)}</b>
+            </button>
             <button className="icon-btn" onClick={toggleTheme} data-tip="Switch theme" aria-label="Switch theme (light, grey, dark)">
               <Icon name={theme === "light" ? "moon" : "sun"} />
             </button>
@@ -521,6 +539,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className={pageClass}>{children}</div>
         </main>
+
+        <CreditsPanel open={creditsOpen} onClose={() => setCreditsOpen(false)} />
 
         {/* ── evidence (page-injected) — a right-side drawer at ≤1100px ── */}
         {hasEvidence ? (

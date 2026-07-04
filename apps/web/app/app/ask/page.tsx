@@ -132,7 +132,7 @@ function AskPage() {
   // ≤1100px drawer) and scrolls to / highlights the matching source card. openEvidence is a stable
   // command from the shell that always OPENS (never toggles closed). The double rAF defers the
   // scroll until after React applies the open state and the drawer's slide-in begins laying out.
-  const { setEvidence, setTopbar, openEvidence, bumpChats } = chrome;
+  const { setEvidence, setTopbar, openEvidence, bumpChats, bumpUsage } = chrome;
 
   // Load a saved chat when the URL targets one (?c=<id>); reset to a blank chat when it doesn't.
   // loadedConvRef stops us re-fetching a conversation we just created in this session.
@@ -415,6 +415,7 @@ function AskPage() {
       setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
       void fetchUsage().catch(() => {});
+      bumpUsage(); // refresh the shell's account footer + credits chip after this ask consumed a unit
       void persistTurn(idx, text, res); // save the question + cited answer to chat history
     } catch (err) {
       const msg = isQuotaError(err)
