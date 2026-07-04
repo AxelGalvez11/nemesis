@@ -634,6 +634,12 @@
 .composer-disclaimer { text-align: center; color: var(--text-3); font-size: 11px; margin-top: 9px; letter-spacing: 0.01em; }
 /* composer affordance buttons (+ attach, mic) — disabled until those features ship */
 .tool:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Dictation recording state: the mic button glows danger-red with a soft pulse while listening, so
+   it reads as clearly "live" without a separate indicator. Uses the same tokens as other alerts. */
+.tool.rec { color: var(--danger); background: rgba(var(--acid-rgb), 0.08); }
+.tool.rec svg { animation: dot-pulse 1.15s ease-in-out infinite; }
+@keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .tool.rec svg { animation: none; } }
 
 /* ── centered welcome (empty state), ChatGPT-style: orb + headline + composer + chips, vertically centered ── */
 .welcome-wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 24px 20px 40px; }
