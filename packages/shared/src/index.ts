@@ -157,3 +157,7 @@ export * from "./report-title.ts";
 
 // Relative "time until" ("in 2 h" / "in 3 d" / "due now") for the Scheduled surface. PURE.
 export * from "./relative-time.ts";
+
+// Visible credits (Manus-style usage surface): PURE display model over the existing entitlement + usage
+// + watch/mission counts. Display-only — reads what the backend reports, never enforces or charges.
+export * from "./credits.ts";
