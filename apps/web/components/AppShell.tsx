@@ -10,6 +10,7 @@ import { deleteConversation, fetchConversations, fetchEntitlements, fetchProject
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
 import { SettingsSurface } from "./SettingsSurface";
+import { CreditsPanel } from "./CreditsPanel";
 
 type Overlay = "settings" | null;
 
@@ -23,6 +24,7 @@ interface AppChromeValue {
   setEvidence: (node: ReactNode | null) => void;
   setTopbar: (node: ReactNode | null) => void;
   bumpChats: () => void;
+  bumpUsage: () => void;
 }
 const AppChromeContext = createContext<AppChromeValue>({
   railCollapsed: false,
@@ -33,6 +35,7 @@ const AppChromeContext = createContext<AppChromeValue>({
   setEvidence: () => {},
   setTopbar: () => {},
   bumpChats: () => {},
+  bumpUsage: () => {},
 });
 export const useAppChrome = () => useContext(AppChromeContext);
 
@@ -80,7 +83,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const path = usePathname();
 
+  // Persisted across reloads so the sidebar stays where the user left it (ChatGPT/Manus behavior).
+  // Starts deterministic (expanded) and reconciles from localStorage after mount — same pattern as
+  // theme-provider — because reading storage in the initializer makes SSR and client render different
+  // markup (hydration mismatch + flash for collapsed-sidebar users).
   const [railCollapsed, setRailCollapsed] = useState(false);
+  useEffect(() => {
+    if (window.localStorage.getItem("rail-collapsed") === "1") setRailCollapsed(true);
+  }, []);
   // Evidence panel starts COLLAPSED: the chat is the focus on entry. It opens on demand — the
   // topbar panel button, or a citation click (openEvidence) — so sources are one click away.
   const [evidenceCollapsed, setEvidenceCollapsed] = useState(true);
@@ -96,7 +106,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
   const [plan, setPlan] = useState<{ plan: string; used: number; limit: number }>({ plan: "free", used: 0, limit: 10 });
   const [chats, setChats] = useState<ConversationSummary[]>([]);
+  // Sidebar search: a client-side filter over the loaded Recent chats (title substring). Honest scope —
+  // this searches saved chats only, not the drug catalog.
+  const [chatQuery, setChatQuery] = useState("");
   const [chatsVersion, setChatsVersion] = useState(0);
+  // Bumped after each ask so the account footer + credits chip re-read usage (they'd otherwise go stale —
+  // AppShell reads usage once on mount). Private local state; only bumpUsage() is exposed on the context.
+  const [usageVersion, setUsageVersion] = useState(0);
+  // Whether the credits modal (opened from the topbar chip) is showing.
+  const [creditsOpen, setCreditsOpen] = useState(false);
   // Per-chat overflow (⋯) menu: which chat's menu is open + the fixed viewport coords to render it at
   // (fixed-positioned so the scrolling rail can't clip it).
   const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -114,6 +132,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const cancelRenameRef = useRef(false);
   // Lets the chat page refresh the rail history the moment it creates a new conversation.
   const bumpChats = useCallback(() => setChatsVersion((v) => v + 1), []);
+  const bumpUsage = useCallback(() => setUsageVersion((v) => v + 1), []);
 
   // Delete a chat: optimistically drop it from the rail, then delete server-side (RLS-scoped). If we
   // were viewing it, return to a blank chat. Re-fetch on failure so the rail reflects the real state.
@@ -205,7 +224,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const toggleRail = useCallback(() => {
     setMobileEvidenceOpen(false);
     if (mqMatch("(max-width: 720px)")) setMobileNavOpen((v) => !v);
-    else setRailCollapsed((v) => !v);
+    else
+      setRailCollapsed((v) => {
+        const next = !v;
+        if (typeof window !== "undefined") window.localStorage.setItem("rail-collapsed", next ? "1" : "0");
+        return next;
+      });
   }, []);
   const toggleEvidence = useCallback(() => {
     setMobileNavOpen(false);
@@ -264,7 +288,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [session]);
+  }, [session, usageVersion]);
 
   // Load the rail's saved-chat history (refreshes when the chat page bumps after creating one).
   useEffect(() => {
@@ -337,8 +361,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const ctx = useMemo<AppChromeValue>(
-    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats }),
-    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats],
+    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage }),
+    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage],
   );
 
   // Hooks are all above this line — only conditional returns below (Rules of Hooks).
@@ -363,6 +387,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const defaultTitle = titleForPath(path);
   const email = session.user.email ?? "preview@pharmaorb.app";
   const initials = email.slice(0, 2).toUpperCase();
+  // Filter Recent chats by title (case-insensitive substring). Empty query → the full list.
+  const q = chatQuery.trim().toLowerCase();
+  const visibleChats = q ? chats.filter((c) => c.title.toLowerCase().includes(q)) : chats;
 
   return (
     <AppChromeContext.Provider value={ctx}>
@@ -379,7 +406,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
           <div className="search">
             <Icon name="search" size={15} />
-            <input placeholder="Search chats & drugs" aria-label="Search chats and drugs" />
+            <input
+              value={chatQuery}
+              onChange={(e) => setChatQuery(e.target.value)}
+              placeholder="Search chats"
+              aria-label="Search chats"
+            />
           </div>
           <nav className="nav">
             <div className="r-label">Workspace</div>
@@ -403,8 +435,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="hist" style={{ color: "var(--text-2)", cursor: "default" }}>
                 <span style={{ fontSize: 12 }}>Your saved chats appear here</span>
               </div>
+            ) : visibleChats.length === 0 ? (
+              <div className="r-label" style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                No chats match
+              </div>
             ) : (
-              chats.map((c) => (
+              visibleChats.map((c) => (
                 <div key={c.id} className={`hist-row${rowMenu?.id === c.id ? " menu-open" : ""}`}>
                   {renamingId === c.id ? (
                     // Inline rename: the title becomes an editable field. Enter or click-away saves;
@@ -485,6 +521,15 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             )}
             <div className="spacer" />
+            <button
+              className="credits-chip"
+              onClick={() => setCreditsOpen(true)}
+              data-tip="Your credits"
+              aria-label={`Your credits — ${Math.max(0, plan.limit - plan.used)} asks left today`}
+            >
+              <Icon name="sparkle" size={15} />
+              <b>{Math.max(0, plan.limit - plan.used)}</b>
+            </button>
             <button className="icon-btn" onClick={toggleTheme} data-tip="Switch theme" aria-label="Switch theme (light, grey, dark)">
               <Icon name={theme === "light" ? "moon" : "sun"} />
             </button>
@@ -496,6 +541,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className={pageClass}>{children}</div>
         </main>
+
+        <CreditsPanel open={creditsOpen} onClose={() => setCreditsOpen(false)} />
 
         {/* ── evidence (page-injected) — a right-side drawer at ≤1100px ── */}
         {hasEvidence ? (

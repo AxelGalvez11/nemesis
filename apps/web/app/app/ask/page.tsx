@@ -6,7 +6,7 @@ import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
 import { simplifiedModesEnabled } from "@/lib/env";
-import { askQuestion, createConversation, fetchConversationTurns, fetchProject, fetchResearchReport, fetchResearchRun, fetchUsage, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
+import { askQuestion, createConversation, fetchConversationTurns, fetchProject, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
@@ -132,7 +132,7 @@ function AskPage() {
   // ≤1100px drawer) and scrolls to / highlights the matching source card. openEvidence is a stable
   // command from the shell that always OPENS (never toggles closed). The double rAF defers the
   // scroll until after React applies the open state and the drawer's slide-in begins laying out.
-  const { setEvidence, setTopbar, openEvidence, bumpChats } = chrome;
+  const { setEvidence, setTopbar, openEvidence, bumpChats, bumpUsage } = chrome;
 
   // Load a saved chat when the URL targets one (?c=<id>); reset to a blank chat when it doesn't.
   // loadedConvRef stops us re-fetching a conversation we just created in this session.
@@ -414,7 +414,7 @@ function AskPage() {
       setLast({ a: res, thinkSecs: Math.max(1, Math.round((Date.now() - t0) / 1000)) });
       setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
-      void fetchUsage().catch(() => {});
+      bumpUsage(); // refresh the shell's account footer + credits chip after this ask consumed a unit
       void persistTurn(idx, text, res); // save the question + cited answer to chat history
     } catch (err) {
       const msg = isQuotaError(err)
