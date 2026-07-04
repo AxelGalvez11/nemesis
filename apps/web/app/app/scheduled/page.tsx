@@ -139,7 +139,7 @@ export default function ScheduledPage() {
       </div>
 
       {/* Compose a new scheduled mission */}
-      <div className="watch-add" style={{ flexWrap: "wrap" }}>
+      <div className="watch-add">
         <Icon name="clock" size={16} />
         <input
           className="watch-add-input"

@@ -80,7 +80,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const path = usePathname();
 
-  const [railCollapsed, setRailCollapsed] = useState(false);
+  // Persisted across reloads so the sidebar stays where the user left it (ChatGPT/Manus behavior).
+  // Lazy initializer so we read localStorage exactly once, and only in the browser (SSR-safe).
+  const [railCollapsed, setRailCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("rail-collapsed") === "1";
+  });
   // Evidence panel starts COLLAPSED: the chat is the focus on entry. It opens on demand — the
   // topbar panel button, or a citation click (openEvidence) — so sources are one click away.
   const [evidenceCollapsed, setEvidenceCollapsed] = useState(true);
@@ -205,7 +210,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const toggleRail = useCallback(() => {
     setMobileEvidenceOpen(false);
     if (mqMatch("(max-width: 720px)")) setMobileNavOpen((v) => !v);
-    else setRailCollapsed((v) => !v);
+    else
+      setRailCollapsed((v) => {
+        const next = !v;
+        if (typeof window !== "undefined") window.localStorage.setItem("rail-collapsed", next ? "1" : "0");
+        return next;
+      });
   }, []);
   const toggleEvidence = useCallback(() => {
     setMobileNavOpen(false);
