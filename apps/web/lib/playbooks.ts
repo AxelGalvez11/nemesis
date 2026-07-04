@@ -34,3 +34,37 @@ export const PLAYBOOKS: readonly Playbook[] = [
     tool: "discovery",
   },
 ] as const;
+
+// Skills — the same "one click seeds a proven recipe" idea as Playbooks, but a Skill produces a
+// DELIVERABLE (a slide deck, a systematic-review report) rather than only seeding a question. Pure
+// data: `action` is a tag the composer switches on; there is no function here, no fetch. "soon" is an
+// honest not-yet-built entry (disabled in the menu), matching the app's other coming-soon rows.
+export type SkillAction = "slides" | "structured_review" | "soon";
+
+export interface Skill {
+  id: string;
+  title: string; // menu row label
+  desc: string;  // short right-aligned hint
+  action: SkillAction;
+}
+
+export const SKILLS: readonly Skill[] = [
+  {
+    id: "slides",
+    title: "Slides",
+    desc: "deep research → PowerPoint",
+    action: "slides",
+  },
+  {
+    id: "systematic-review",
+    title: "Systematic review",
+    desc: "documented method + tables",
+    action: "structured_review",
+  },
+  {
+    id: "journal-club",
+    title: "Journal club",
+    desc: "Soon",
+    action: "soon",
+  },
+] as const;

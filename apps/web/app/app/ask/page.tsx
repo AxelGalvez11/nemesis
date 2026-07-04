@@ -18,7 +18,7 @@ import { citationDomains, faviconUrl, hostnameOf, SEARCH_DOMAINS } from "@/lib/f
 import { composerModeLabel } from "@/lib/ask-mode-label";
 import { getCached, setCached } from "@/lib/cache";
 import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
-import { PLAYBOOKS } from "@/lib/playbooks";
+import { PLAYBOOKS, SKILLS } from "@/lib/playbooks";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
@@ -428,6 +428,13 @@ function AskPage() {
     }
   }
 
+  // Skill: Systematic review — arm the documented-method report mode (Task 2 flips this to
+  // "structured_review" once that mode id exists in MODES; kept as "deep" here only so Task 1
+  // typechecks standalone — flagged adaptation, resolved in the very next commit).
+  const armSystematicReview = useCallback(() => { setMode("deep"); }, []);
+  // Skill: Slides — arm Deep research (Task 3 adds the slides-export intent alongside this).
+  const armSlides = useCallback(() => { setMode("deep"); }, []);
+
   const hasThread = turns.length > 0;
   const composer = (
     <>
@@ -445,7 +452,9 @@ function AskPage() {
       <Composer
         question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
         submit={submit} busy={busy} mode={mode} setMode={setMode}
-        modeOpen={modeOpen} setModeOpen={setModeOpen} error={latest?.err ?? null}
+        modeOpen={modeOpen} setModeOpen={setModeOpen}
+        armSlides={armSlides} armSystematicReview={armSystematicReview}
+        error={latest?.err ?? null}
         welcome={!hasThread}
       />
     </>
@@ -591,6 +600,10 @@ interface ComposerProps {
   setMode: Dispatch<SetStateAction<(typeof MODES)[number]["id"]>>;
   modeOpen: boolean;
   setModeOpen: Dispatch<SetStateAction<boolean>>;
+  // A Skill click arms a deliverable recipe. Kept as callbacks (not raw setMode) because arming
+  // Slides / Systematic review touches refs on the page, not just the mode — see Tasks 2 and 3.
+  armSlides: () => void;
+  armSystematicReview: () => void;
   error: string | null;
   // true only on the empty welcome screen — drives the cycling example placeholders. In an active
   // chat (thread) it's false, so the box shows a calm static "Ask a follow-up…" instead.
@@ -600,7 +613,7 @@ interface ComposerProps {
 // The input pill, shared between the centered welcome screen and the pinned bottom bar. A leading
 // "+" (attachments) and a "mic" (voice) are shown as ChatGPT-style affordances but disabled until
 // those features ship — same honest "coming soon" treatment as the non-live modes.
-function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error, welcome }: ComposerProps) {
+function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, armSlides, armSystematicReview, error, welcome }: ComposerProps) {
   const router = useRouter(); // "Monitor this topic" hops to /app/monitor with the typed topic pre-filled
   const activeMode = MODES.find((m) => m.id === mode)!;
   // On the welcome screen, cycle example questions through an animated overlay placeholder (reveals
@@ -652,8 +665,31 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
                 <Icon name="bell" size={14} /><span style={{ flex: 1 }}>Monitor this topic</span><small style={{ color: "var(--text-3)" }}>alerts on new evidence</small>
               </button>
               <div className="sep" role="separator" />
+              {/* Skills: one-click DELIVERABLE recipes. Slides arms Deep research + a slides-export
+                  intent (auto-exports the finished report to PowerPoint — see submit()/ResearchRunCard).
+                  Systematic review arms the documented-method report mode. "soon" entries are honest
+                  disabled rows (same treatment as the search filters below). */}
+              <div className="menu-label" aria-hidden="true">Skills</div>
+              {SKILLS.map((s) => (
+                s.action === "soon" ? (
+                  <button key={s.id} type="button" role="menuitem" disabled>
+                    <Icon name="message" size={14} /><span style={{ flex: 1 }}>{s.title}</span><small style={{ color: "var(--text-3)" }}>{s.desc}</small>
+                  </button>
+                ) : (
+                  <button key={s.id} type="button" role="menuitem"
+                    onClick={() => {
+                      if (s.action === "slides") armSlides();
+                      else armSystematicReview();
+                      setPlusOpen(false);
+                      taRef.current?.focus();
+                    }}>
+                    <Icon name="doc" size={14} /><span style={{ flex: 1 }}>{s.title}</span><small style={{ color: "var(--text-3)" }}>{s.desc}</small>
+                  </button>
+                )
+              ))}
+              <div className="sep" role="separator" />
               {/* Playbooks (the Manus pattern): curated one-click recipes — seed the question AND arm
-                  the right tool. Moved here from the welcome screen so the landing stays calm. */}
+                  the right tool. */}
               <div className="menu-label" aria-hidden="true">Playbooks</div>
               {PLAYBOOKS.map((p) => (
                 <button key={p.id} type="button" role="menuitem" title={p.question}
