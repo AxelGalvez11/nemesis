@@ -428,6 +428,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span style={{ fontSize: 12 }}>Projects</span>
             </Link>
 
+            <div className="rail-recents">
             <div className="r-label">Recent chats</div>
             {chats.length === 0 ? (
               <div className="hist" style={{ color: "var(--text-2)", cursor: "default" }}>
@@ -483,6 +484,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               ))
             )}
+            </div>
           </nav>
 
           <div className="acct-wrap">

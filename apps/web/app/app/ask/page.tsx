@@ -739,21 +739,57 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   const [phIdx, setPhIdx] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false); // the "+" tools launcher popover
   const [sourcesOpen, setSourcesOpen] = useState(false); // the "Data sources" modal
+  // The tall "+" tools menu flips up/down and caps its height to the free space on that side, so its
+  // Skills/Playbooks list is never pushed past the window edge — the welcome composer sits low (little
+  // room above) while a thread composer sits at the bottom (little room below).
+  const plusBtnRef = useRef<HTMLButtonElement>(null);
+  const [plusMenuStyle, setPlusMenuStyle] = useState<CSSProperties>({ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 280, maxHeight: 460 });
   const dictation = useDictation(setQuestion, () => question);
   useEffect(() => {
     if (!welcome) return;
     const id = setInterval(() => setPhIdx((i) => (i + 1) % ASK_EXAMPLE_PROMPTS.length), 5000);
     return () => clearInterval(id);
   }, [welcome]);
+  // Place the tools menu when it opens (and keep it placed on resize/scroll): open on whichever side of
+  // the "+" button has more room, and cap the menu to that side's height so the whole list always fits.
+  useEffect(() => {
+    if (!plusOpen) return;
+    const place = () => {
+      const btn = plusBtnRef.current;
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      const gap = 12;
+      // The upward menu must clear the fixed topbar, so the usable space above is measured from the
+      // topbar's bottom edge (not the window top). This also biases the choice toward whichever side
+      // genuinely has more room, so a low welcome composer flips the menu downward instead of clipping.
+      const topbarH = (document.querySelector(".topbar") as HTMLElement | null)?.getBoundingClientRect().height ?? 56;
+      const above = r.top - topbarH - gap;
+      const below = window.innerHeight - r.bottom - gap;
+      const openUp = above >= below;
+      const maxHeight = Math.max(200, Math.min(460, Math.round(openUp ? above : below)));
+      setPlusMenuStyle(
+        openUp
+          ? { bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 280, maxHeight }
+          : { top: "calc(100% + 6px)", bottom: "auto", left: 0, right: "auto", width: 280, maxHeight },
+      );
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [plusOpen]);
   return (
     <div className="composer">
       <div className="box">
         <div className="mode-wrap" style={{ position: "relative" }}>
-          <button className="tool" type="button" data-tip="Tools" aria-label="Tools" aria-haspopup="menu" aria-expanded={plusOpen} onClick={() => setPlusOpen((v) => !v)}>
+          <button ref={plusBtnRef} className="tool" type="button" data-tip="Tools" aria-label="Tools" aria-haspopup="menu" aria-expanded={plusOpen} onClick={() => setPlusOpen((v) => !v)}>
             <Icon name="plus" size={18} />
           </button>
           {plusOpen ? (
-            <div className="acct-menu tools-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 280 }}>
+            <div className="acct-menu tools-menu" role="menu" style={plusMenuStyle}>
               {/* Tools: each arms a report mode (or prefills the box) for the next send, and the
                   armed mode resets to the default depth once that run launches (single-shot — see
                   submit()). Deep research includes the pooled meta-analysis when studies allow it. */}

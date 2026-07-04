@@ -142,6 +142,9 @@
 .row-menu-scroll { max-height: 260px; overflow-y: auto; }
 .rail-collapsed .hist { justify-content: center; padding: 9px 0; }
 .rail-collapsed .hist span, .rail-collapsed .hist-more { display: none; }
+/* Collapsed rail = icon nav only. The Recent-chats list would otherwise render as a column of
+   identical message icons (one per chat) — visual noise — so hide the whole section when collapsed. */
+.rail-collapsed .rail-recents { display: none; }
 .acct { border-top: 1px solid var(--line); padding: 12px; display: flex; align-items: center; gap: 10px; }
 .av { width: 30px; height: 30px; border-radius: 50%; flex: none; background: var(--surface-2); display: grid; place-items: center; font-weight: 600; font-size: 12px; color: var(--text-2); border: 1px solid var(--line); }
 .acct-meta b { font-size: 13px; font-weight: 600; display: block; }
@@ -856,6 +859,7 @@
   .rail .new { justify-content: center; padding: 10px 0; }
   .rail .hist { justify-content: center; padding: 9px 0; }
   .rail .hist span { display: none; }
+  .rail .rail-recents { display: none; }
   .rail .acct-btn { justify-content: center; }
 }
 @media (max-width: 720px) {
@@ -869,6 +873,8 @@
   .app.mobile-open .rail-backdrop { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.5); border: none; }
   /* the drawer is always full — neutralize any desktop rail-collapsed shrinking */
   .app.mobile-open .wordmark, .app.mobile-open .acct-meta, .app.mobile-open .r-label { display: block; }
+  /* the drawer shows the full Recent-chats list even if the rail was left collapsed on desktop */
+  .app.mobile-open .rail-recents { display: block; }
   .app.mobile-open .new-txt, .app.mobile-open .hist span { display: inline; }
   .app.mobile-open .search input { display: block; }
   .app.mobile-open .new, .app.mobile-open .hist { justify-content: flex-start; }
