@@ -43,6 +43,8 @@ export * from "./forbidden-phrases.ts";
 export * from "./citation-format.ts";
 // Source enrichment: PMID/DOI extraction for source trust badges and cache keying.
 export * from "./source-ids.ts";
+// Research Map (per-project connection graph): pure node/edge aggregation from saved-item citations.
+export * from "./research-map.ts";
 // Evidence-base table helpers (publishable-reports): pure citation -> row mapping shared by the
 // on-screen report and the docx/pptx exports so both render the same body-of-evidence summary.
 export * from "./citation-meta.ts";
