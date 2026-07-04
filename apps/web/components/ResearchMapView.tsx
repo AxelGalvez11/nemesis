@@ -6,7 +6,7 @@
 // OpenAlex "related papers" as CLIENT-ONLY ghost nodes (never persisted, never fed back to the
 // aggregator). Only the top 24 source nodes are enrichment-decorated (respects the trust-cache quota).
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Core, ElementDefinition, NodeSingular } from "cytoscape";
+import type { Core, ElementDefinition, LayoutOptions, NodeSingular } from "cytoscape";
 import { pmidFromUrl, type MapNode, type ResearchMap } from "@pharmabro/shared";
 import { useEnrichmentByPmids, type SourceEnrichment } from "@/lib/enrichment";
 import { fetchGraphExpand, type GraphExpandWork } from "@/lib/api";
@@ -78,19 +78,26 @@ function buildBaseElements(map: ResearchMap, topPmids: Set<string>, enrich: Reco
 
 function ghostElements(ghosts: Ghost[]): ElementDefinition[] {
   const els: ElementDefinition[] = [];
-  const seen = new Set<string>();
+  const seenNodes = new Set<string>();
+  const seenEdges = new Set<string>();
   for (const g of ghosts) {
-    if (!seen.has(g.id)) {
-      seen.add(g.id);
+    // Only a `ghost:`-prefixed id needs a synthetic node — an id that resolves to an existing real map
+    // node (`pmid:{n}`) already has one, so we just draw the related-edge to it (finding 4).
+    if (g.id.startsWith("ghost:") && !seenNodes.has(g.id)) {
+      seenNodes.add(g.id);
       els.push({
         data: { id: g.id, label: g.label.length > 40 ? `${g.label.slice(0, 39)}…` : g.label, kind: "source", weight: 15, ghostPmid: g.pmid },
         classes: "source ghost",
       });
     }
-    els.push({
-      data: { id: `related:${g.parentPmid}->${g.id}`, source: `pmid:${g.parentPmid}`, target: g.id, weight: 1 },
-      classes: "related-edge",
-    });
+    const edgeId = `related:${g.parentPmid}->${g.id}`;
+    if (!seenEdges.has(edgeId)) {
+      seenEdges.add(edgeId);
+      els.push({
+        data: { id: edgeId, source: `pmid:${g.parentPmid}`, target: g.id, weight: 1 },
+        classes: "related-edge",
+      });
+    }
   }
   return els;
 }
@@ -98,10 +105,17 @@ function ghostElements(ghosts: Ghost[]): ElementDefinition[] {
 export function ResearchMapView({ map, loading, error, skipped, onOpenItem }: ResearchMapViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
+  const [cyReady, setCyReady] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
   const [expanding, setExpanding] = useState(false);
   const [expandErr, setExpandErr] = useState<string | null>(null);
+  // pmids already expanded via "Explore related" — prevents duplicate ghost fan-out on repeat clicks.
+  const expandedRef = useRef<Set<string>>(new Set());
+  // Always-current onOpenItem so the create-once effect never has to depend on it (avoids rebuilding
+  // the instance whenever the parent passes a fresh inline callback).
+  const onOpenItemRef = useRef(onOpenItem);
+  useEffect(() => { onOpenItemRef.current = onOpenItem; }, [onOpenItem]);
 
   // Top-24 source PMIDs by refCount (map.nodes source order already reflects the cap sort in Task 1).
   const topPmids = useMemo(() => {
@@ -123,15 +137,22 @@ export function ResearchMapView({ map, loading, error, skipped, onOpenItem }: Re
   const selectedNode = selectedId ? nodeById.get(selectedId) ?? null : null;
   const selectedPmid = selectedNode && selectedNode.kind === "source" ? pmidOfSource(selectedNode) : null;
   const selectedEnr = selectedPmid ? enrich[`pmid:${selectedPmid}`] : undefined;
+  const alreadyExpanded = selectedPmid ? expandedRef.current.has(selectedPmid) : false;
 
-  const elements = useMemo(() => {
-    if (!map) return [];
-    return [...buildBaseElements(map, topPmids, enrich), ...ghostElements(ghosts)];
-  }, [map, topPmids, enrich, ghosts]);
+  // Reset per-map transient state: ghosts and expand-tracking reference node ids from the OLD map and
+  // would otherwise dangle (cytoscape errors) once a new map/instance is built.
+  useEffect(() => {
+    setGhosts([]);
+    expandedRef.current.clear();
+    setSelectedId(null);
+  }, [map]);
 
+  // Create the cytoscape instance ONCE per `map` identity. Built with structural data only (no
+  // enrichment, no ghosts) — those are applied incrementally by the effects below so that neither
+  // enrichment arriving nor "Explore related" clicks ever destroy/rebuild/re-randomize the instance.
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || !elements.length) return;
+    if (!el || !map) return;
     let destroyed = false;
     let cy: Core | null = null;
     (async () => {
@@ -147,9 +168,10 @@ export function ResearchMapView({ map, loading, error, skipped, onOpenItem }: Re
       const info = cssVar("--info", "#7fb2ff");
       const warn = cssVar("--warn", "#f5b23b");
       const danger = cssVar("--danger", "#ff5c4d");
+      const initialElements = buildBaseElements(map, new Set(), {});
       cy = mod.default({
         container: el,
-        elements,
+        elements: initialElements,
         minZoom: 0.3,
         maxZoom: 2.4,
         wheelSensitivity: 0.18,
@@ -184,22 +206,70 @@ export function ResearchMapView({ map, loading, error, skipped, onOpenItem }: Re
         } else {
           // item node → open its page (id form is `chat:...` / `report:...` / `watch:...`)
           const [k, ...rest] = id.split(":");
-          if (k === "chat" || k === "report" || k === "watch") onOpenItem(k, rest.join(":"));
+          if (k === "chat" || k === "report" || k === "watch") onOpenItemRef.current(k, rest.join(":"));
         }
       });
+      setCyReady(true);
     })();
-    return () => { destroyed = true; cy?.destroy(); cyRef.current = null; };
-  }, [elements, onOpenItem]);
+    return () => {
+      destroyed = true;
+      cy?.destroy();
+      cyRef.current = null;
+      setCyReady(false);
+    };
+  }, [map]);
 
+  // Incremental enrichment decoration: once citation-tally/retraction data arrives, patch the existing
+  // live nodes in place (data + class toggles) instead of rebuilding the graph. Never touches layout.
   useEffect(() => {
     const cy = cyRef.current;
-    if (!cy) return;
+    if (!cy || !cyReady || !map) return;
+    cy.batch(() => {
+      for (const n of map.nodes) {
+        if (n.kind !== "source") continue;
+        const pmid = pmidOfSource(n);
+        const enr = pmid && topPmids.has(pmid) ? enrich[`pmid:${pmid}`] : undefined;
+        const node = cy.getElementById(n.id);
+        if (node.empty()) continue;
+        node.data("citedBy", enr?.cited_by ?? null);
+        node.toggleClass("retracted", enr?.retracted === true);
+      }
+    });
+  }, [map, topPmids, enrich, cyReady]);
+
+  // Incrementally add ghost nodes/edges from "Explore related" onto the live instance, then run a
+  // non-destructive layout (no randomize, no fit) so existing pan/zoom/positions survive.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !cyReady) return;
+    const toAdd = ghostElements(ghosts).filter((el) => {
+      const id = el.data.id as string;
+      return cy.getElementById(id).empty();
+    });
+    if (!toAdd.length) return;
+    cy.batch(() => {
+      cy.add(toAdd);
+    });
+    // Only rerun the layout when a NEW node was actually added — an edge-only addition (finding 4's
+    // "link to existing node" case) has nothing new to place, so skip it to avoid nudging endpoints.
+    const addedNewNode = toAdd.some((el) => el.data.source === undefined);
+    if (addedNewNode) {
+      const ghostLayout: LayoutOptions = { name: "cose", animate: false, randomize: false, fit: false, nodeRepulsion: 7800, idealEdgeLength: 92, edgeElasticity: 80, numIter: 400 };
+      cy.layout(ghostLayout).run();
+    }
+  }, [ghosts, cyReady]);
+
+  // Re-apply the selection highlight after (re)creation and on every selection change — never lost to
+  // the async cytoscape-import race because this depends on cyReady, not just selectedId.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !cyReady) return;
     cy.nodes().removeClass("selected");
     if (selectedId) cy.getElementById(selectedId).addClass("selected");
-  }, [selectedId, elements]);
+  }, [selectedId, cyReady]);
 
   async function exploreRelated() {
-    if (!selectedPmid || expanding) return;
+    if (!selectedPmid || expanding || alreadyExpanded) return;
     setExpanding(true);
     setExpandErr(null);
     try {
@@ -207,7 +277,10 @@ export function ResearchMapView({ map, loading, error, skipped, onOpenItem }: Re
       const next: Ghost[] = [];
       const add = (works: GraphExpandWork[], relation: Ghost["relation"]) => {
         for (const w of works) {
-          const id = w.pmid ? `ghost:pmid:${w.pmid}` : `ghost:${w.id}`;
+          // If this work already exists as a real map node (`pmid:{n}`), link to it directly instead
+          // of adding a dashed ghost duplicate.
+          const existingId = w.pmid ? `pmid:${w.pmid}` : null;
+          const id = existingId && nodeById.has(existingId) ? existingId : w.pmid ? `ghost:pmid:${w.pmid}` : `ghost:${w.id}`;
           next.push({ id, parentPmid: selectedPmid, label: w.title ?? id, year: w.year, pmid: w.pmid ?? null, relation });
         }
       };
@@ -215,6 +288,7 @@ export function ResearchMapView({ map, loading, error, skipped, onOpenItem }: Re
       add(res.cited_by, "cited_by");
       add(res.similar, "similar");
       setGhosts((prev) => [...prev, ...next]);
+      expandedRef.current.add(selectedPmid);
     } catch {
       setExpandErr("Couldn’t load related papers right now. Try again in a moment.");
     } finally {
@@ -257,7 +331,11 @@ export function ResearchMapView({ map, loading, error, skipped, onOpenItem }: Re
           ) : null}
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
             {selectedNode.meta.url ? <a href={selectedNode.meta.url} target="_blank" rel="noreferrer" className="mode">Open source</a> : null}
-            {selectedPmid ? <button type="button" className="mode" onClick={() => void exploreRelated()} disabled={expanding}>{expanding ? "Loading…" : "Explore related"}</button> : null}
+            {selectedPmid ? (
+              <button type="button" className="mode" onClick={() => void exploreRelated()} disabled={expanding || alreadyExpanded}>
+                {expanding ? "Loading…" : alreadyExpanded ? "Related shown" : "Explore related"}
+              </button>
+            ) : null}
           </div>
           {expandErr ? <small className="tmpl-note">{expandErr}</small> : null}
         </div>
