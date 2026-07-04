@@ -10,6 +10,7 @@ import type {
   MissionCadence,
   MissionDeliver,
   MissionSummary,
+  PaperMeta,
   QuotaExceededError,
   ReportMode,
   ResearchProgressStep,
@@ -781,6 +782,65 @@ export async function startResearch(question: string, mode: ReportMode = "standa
   }
   if (!res.ok || !isObj(body) || typeof body.run_id !== "string") {
     throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `research failed (${res.status})`);
+  }
+  return body.run_id;
+}
+
+/** Extract text from a PDF via the Node route (auth + rate-limit + size guard live server-side). Throws
+ *  a message-bearing Error on any non-2xx so the upload sheet can show the specific reason. */
+export async function extractPaper(file: File): Promise<{ text: string; meta: PaperMeta }> {
+  if (isPreviewMode) throw new Error("Uploading a paper needs a live connection (not available in preview).");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to appraise a paper");
+
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/v1/papers/extract", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !isObj(body) || typeof body.text !== "string") {
+    throw new Error(isObj(body) && typeof body.message === "string" ? body.message : `Extraction failed (${res.status})`);
+  }
+  const meta: Record<string, unknown> = isObj(body.meta) ? body.meta : {};
+  return {
+    text: body.text,
+    meta: {
+      title: typeof meta.title === "string" ? meta.title : null,
+      pages: typeof meta.pages === "number" ? meta.pages : 0,
+      truncated: meta.truncated === true,
+    },
+  };
+}
+
+/** Start a journal-club appraisal run. Same Pro gate + 429 quota shape as startResearch; returns the run
+ *  id to poll. The extracted paper text + meta ride the request (no storage bucket). */
+export async function startAppraisal(paperText: string, paperMeta: PaperMeta): Promise<string> {
+  if (isPreviewMode) throw new Error("Appraisal needs a live connection (not available in preview).");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to appraise a paper");
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/research`, {
+    method: "POST",
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ mode: "appraisal", paper_text: paperText, paper_meta: paperMeta }),
+  });
+  const body = await res.json().catch(() => null);
+  if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
+    const err = new Error("quota_exceeded") as AskQuotaError;
+    err.quota = body as unknown as QuotaExceededError;
+    throw err;
+  }
+  if (!res.ok || !isObj(body) || typeof body.run_id !== "string") {
+    throw new Error(isObj(body) && typeof body.message === "string" ? body.message : isObj(body) && typeof body.error === "string" ? body.error : `appraisal failed (${res.status})`);
   }
   return body.run_id;
 }
