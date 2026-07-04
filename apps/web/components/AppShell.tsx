@@ -38,8 +38,9 @@ export const useAppChrome = () => useContext(AppChromeContext);
 
 const workspace = [
   { href: "/app/ask", label: "Ask", icon: "message" as const },
-  { href: "/app/reports", label: "Reports", icon: "doc" as const },
-  { href: "/app/monitor", label: "Monitoring", icon: "bell" as const },
+  { href: "/app/reports", label: "Library", icon: "doc" as const },
+  // Monitoring's nav entry folded into Scheduled 2026-07-03 (one automation surface, ChatGPT-style).
+  // /app/monitor routes still exist — reached from Scheduled's monitor rows and its "New monitor" link.
   { href: "/app/scheduled", label: "Scheduled", icon: "clock" as const },
   // Explore is deferred (mostly mockup) — hidden from the nav until it's real. The route still exists.
   // (The old "Watchlist" feature was retired 2026-06-18, superseded by Monitoring above. Its empty DB
@@ -54,7 +55,7 @@ function isActive(path: string, href: string) {
 function titleForPath(path: string): { title: string; sub?: string } {
   if (path.startsWith("/app/ask")) return { title: "Ask" };
   if (path.startsWith("/app/research")) return { title: "Deep research", sub: "multi-step cited report" };
-  if (path.startsWith("/app/reports")) return { title: "Reports", sub: "your saved evidence reports" };
+  if (path.startsWith("/app/reports")) return { title: "Library", sub: "everything you've generated" };
   if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };
   if (path.startsWith("/app/scheduled")) return { title: "Scheduled", sub: "recurring research + monitors" };
   if (path.startsWith("/app/score")) return { title: "Score", sub: "your longevity rank" };
