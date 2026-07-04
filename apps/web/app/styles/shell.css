@@ -1530,3 +1530,44 @@
   .lib-controls { width: 100%; }
   .lib-search { flex: 1; min-width: 0; }
 }
+
+/* ── Scheduled (Manus tabs + calendar) ── */
+/* Header tabs reuse the app's .ev-tab segmented look (see .ev-tabs above); this wrapper just seats them
+   under the "Scheduled" title with the icon+label pair centered. */
+.sched-tabs { display: flex; gap: 4px; margin: 4px 0 18px; border-bottom: 1px solid var(--line); }
+.sched-tabs .ev-tab { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; padding: 10px 4px; margin-right: 14px; }
+.sched-tabs .ev-tab svg { color: var(--text-3); }
+.sched-tabs .ev-tab.active svg { color: var(--text-2); }
+.sched-tabs .ev-tab.active::after { left: 0; right: 0; }
+
+.sched-cal { margin-top: 4px; }
+.sched-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.sched-cal-month { font-size: 16px; font-weight: 600; color: var(--text); }
+.sched-cal-nav { display: flex; align-items: center; gap: 6px; }
+.sched-cal-btn { width: 30px; height: 30px; display: grid; place-items: center; font-size: 18px; line-height: 1; color: var(--text-2); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; font-family: var(--font); transition: background 0.15s, border-color 0.15s, color 0.15s; }
+.sched-cal-btn:hover { background: var(--fill-hover); border-color: var(--line-2); color: var(--text); }
+.sched-cal-today { height: 30px; padding: 0 12px; font-size: 12.5px; font-weight: 500; color: var(--text-2); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; font-family: var(--font); transition: background 0.15s, border-color 0.15s, color 0.15s; }
+.sched-cal-today:hover { background: var(--fill-hover); border-color: var(--line-2); color: var(--text); }
+
+.sched-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.sched-cal-dow { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); text-align: center; padding: 2px 0 6px; }
+.sched-cal-cell { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-height: 78px; padding: 7px 8px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; font-family: var(--font); color: var(--text); transition: background 0.15s, border-color 0.15s; }
+.sched-cal-cell:hover { background: var(--fill-hover); border-color: var(--line-2); }
+.sched-cal-cell.muted { color: var(--text-3); background: none; }
+.sched-cal-cell.muted .sched-cal-num { color: var(--text-3); }
+.sched-cal-cell.today { border-color: var(--acid); }
+.sched-cal-cell.selected { border-color: var(--acid); background: color-mix(in srgb, var(--acid) 10%, var(--surface)); }
+.sched-cal-num { font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+.sched-cal-cell.today .sched-cal-num { color: var(--acid-deep); font-weight: 700; }
+.sched-cal-marks { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sched-cal-mark { font-size: 10.5px; line-height: 1.25; color: var(--text); background: color-mix(in srgb, var(--acid) 14%, transparent); border-radius: 5px; padding: 2px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sched-cal-more { font-family: var(--mono); font-size: 9.5px; color: var(--text-3); padding-left: 2px; }
+
+.sched-cal-day { margin-top: 22px; }
+.sched-cal-day-head { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); margin: 0 0 4px; }
+.sched-cal-empty { color: var(--text-3); font-size: 13.5px; text-align: center; padding: 26px 4px 6px; }
+
+@media (max-width: 640px) {
+  .sched-cal-cell { min-height: 62px; padding: 5px 5px; }
+  .sched-cal-mark { font-size: 9.5px; padding: 1px 4px; }
+}

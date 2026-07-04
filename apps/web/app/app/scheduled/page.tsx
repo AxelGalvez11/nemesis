@@ -12,7 +12,7 @@ import {
   setWatchStatus,
   type WatchSummary,
 } from "@/lib/api";
-import { cadenceLabel, timeUntil, type MissionCadence, type MissionSummary } from "@pharmabro/shared";
+import { cadenceLabel, nextRunAt, timeUntil, type MissionCadence, type MissionSummary } from "@pharmabro/shared";
 import { getCached, setCached } from "@/lib/cache";
 import { Icon } from "@/components/icons";
 import { SkeletonRows } from "@/components/Skeleton";
@@ -34,6 +34,59 @@ const CREATE_ERROR: Record<string, string> = {
   unknown: "Couldn’t schedule that — try again.",
 };
 
+type ScheduledTab = "tasks" | "calendar";
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// A concrete day a mission is projected to run, and which mission it belongs to. Built forward-only from
+// each active mission's next_run_at (never backward — we have no record it ran before then).
+interface DayHit { mission: MissionSummary; date: Date; }
+
+// Local-day bucket key so grid cells and projected runs are compared in the same (local) frame.
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+// Project active missions across the visible grid window [gridStart, gridEnd]. Steps by real cadence math
+// (nextRunAt — the same function the scheduler uses) so projected days match what would actually run.
+function projectMissions(missions: MissionSummary[], gridStart: Date, gridEnd: Date): Map<string, DayHit[]> {
+  const byDay = new Map<string, DayHit[]>();
+  const endMs = gridEnd.getTime();
+  for (const m of missions) {
+    if (m.status !== "active") continue;
+    let cur = new Date(m.next_run_at);
+    if (Number.isNaN(cur.getTime())) continue;
+    // Walk forward from next_run_at; bounded by the last visible cell (+ a safety cap on iterations).
+    for (let i = 0; i < 400 && cur.getTime() <= endMs; i++) {
+      if (cur.getTime() >= gridStart.getTime()) {
+        const key = dayKey(cur);
+        const list = byDay.get(key) ?? [];
+        list.push({ mission: m, date: new Date(cur) });
+        byDay.set(key, list);
+      }
+      cur = nextRunAt(m.cadence, cur);
+    }
+  }
+  return byDay;
+}
+
+// The 6-week (42-cell) grid covering the given month, Sunday-first. Cells are local Dates; start/end are
+// returned alongside so the projection window is derived without indexing a possibly-undefined element.
+function buildMonthGrid(viewMonth: Date): { cells: Date[]; start: Date; end: Date } {
+  const firstOfMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
+  const start = new Date(firstOfMonth);
+  start.setDate(1 - firstOfMonth.getDay()); // back up to the Sunday on/before the 1st
+  const cells: Date[] = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    cells.push(d);
+  }
+  const end = new Date(start);
+  end.setDate(start.getDate() + 41);
+  return { cells, start, end };
+}
+
 // Scheduled: one surface for everything that runs on a timer — background research MISSIONS (scheduled
 // deep-research → cited reports) and evidence WATCHES (monitors that alert on new studies). Compose a new
 // mission up top; below, missions and watches list together with their next-run / last-checked timing.
@@ -46,6 +99,13 @@ export default function ScheduledPage() {
   const [cadence, setCadence] = useState<MissionCadence>("weekly");
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // Tabs default to "tasks" on both server and first client render (avoids a hydration flip); the saved
+  // preference is applied in an effect below.
+  const [tab, setTab] = useState<ScheduledTab>("tasks");
+  // Calendar: which month the grid shows, and which day (if any) the user has selected. viewMonth is a
+  // day-1 anchor; selectedDay is a local-day key.
+  const [viewMonth, setViewMonth] = useState<Date>(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1); });
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -53,6 +113,19 @@ export default function ScheduledPage() {
     void fetchWatches().then((w) => { if (alive) { setWatches(w); setCached("scheduled-watches", w); } }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // Restore the saved tab after mount (reading localStorage during render would desync SSR/CSR).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("scheduled-tab");
+      if (saved === "calendar" || saved === "tasks") setTab(saved);
+    } catch { /* localStorage unavailable — keep default */ }
+  }, []);
+
+  function selectTab(next: ScheduledTab) {
+    setTab(next);
+    try { localStorage.setItem("scheduled-tab", next); } catch { /* ignore persistence failure */ }
+  }
 
   async function schedule() {
     const q = question.trim();
@@ -129,6 +202,14 @@ export default function ScheduledPage() {
 
   const loading = missions === null && watches === null && !err;
 
+  // Calendar projection (Calendar tab only): the visible 6-week grid + active missions projected onto it.
+  const { cells: gridCells, start: gridStart, end: gridEnd } = buildMonthGrid(viewMonth);
+  const hitsByDay = projectMissions(missions ?? [], gridStart, gridEnd);
+  const todayKey = dayKey(new Date());
+  const monthHasHits = hitsByDay.size > 0;
+  const selectedHits = selectedDay ? (hitsByDay.get(selectedDay) ?? []) : [];
+  const selectedFirst = selectedHits[0] ?? null;
+
   return (
     <div className="research-wrap">
       <div className="research-intro">
@@ -136,6 +217,18 @@ export default function ScheduledPage() {
         <p className="welcome-sub">Set research to run on a schedule and monitors to watch for new evidence — the results land here and in your reports.</p>
       </div>
 
+      {/* Manus-style header tabs: Tasks (the live compose + lists) / Calendar (month grid of upcoming runs). */}
+      <div className="sched-tabs" role="tablist" aria-label="Scheduled views">
+        <button type="button" role="tab" aria-selected={tab === "tasks"} className={`ev-tab${tab === "tasks" ? " active" : ""}`} onClick={() => selectTab("tasks")}>
+          <Icon name="clock" size={14} /> Tasks
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "calendar"} className={`ev-tab${tab === "calendar" ? " active" : ""}`} onClick={() => selectTab("calendar")}>
+          <Icon name="calendar" size={14} /> Calendar
+        </button>
+      </div>
+
+      {tab === "tasks" ? (
+      <>
       {/* Compose a new scheduled mission */}
       <div className="watch-add">
         <Icon name="clock" size={16} />
@@ -222,6 +315,73 @@ export default function ScheduledPage() {
       {!loading && missions && missions.length === 0 && watches && watches.length === 0 ? (
         <p className="welcome-sub">Nothing scheduled yet. Describe research above, or <Link href="/app/monitor">start a monitor</Link>.</p>
       ) : null}
+      </>
+      ) : (
+      /* Calendar tab: a month grid of when active missions next run. Markers are projected forward from
+         each mission's next_run_at by its real cadence — built from live data, never fabricated. */
+      <div className="sched-cal">
+        <div className="sched-cal-head">
+          <span className="sched-cal-month">{MONTH_NAMES[viewMonth.getMonth()]} {viewMonth.getFullYear()}</span>
+          <div className="sched-cal-nav">
+            <button type="button" className="sched-cal-btn" aria-label="Previous month" onClick={() => { setSelectedDay(null); setViewMonth((v) => new Date(v.getFullYear(), v.getMonth() - 1, 1)); }}>‹</button>
+            <button type="button" className="sched-cal-today" onClick={() => { const n = new Date(); setSelectedDay(null); setViewMonth(new Date(n.getFullYear(), n.getMonth(), 1)); }}>Today</button>
+            <button type="button" className="sched-cal-btn" aria-label="Next month" onClick={() => { setSelectedDay(null); setViewMonth((v) => new Date(v.getFullYear(), v.getMonth() + 1, 1)); }}>›</button>
+          </div>
+        </div>
+
+        <div className="sched-cal-grid" role="grid">
+          {WEEKDAY_LABELS.map((w) => (
+            <div key={w} className="sched-cal-dow" role="columnheader">{w}</div>
+          ))}
+          {gridCells.map((cell) => {
+            const key = dayKey(cell);
+            const hits = hitsByDay.get(key) ?? [];
+            const inMonth = cell.getMonth() === viewMonth.getMonth();
+            const isToday = key === todayKey;
+            const isSelected = key === selectedDay;
+            const cls = ["sched-cal-cell", inMonth ? "" : "muted", isToday ? "today" : "", isSelected ? "selected" : "", hits.length ? "has-hits" : ""].filter(Boolean).join(" ");
+            return (
+              <button
+                key={key}
+                type="button"
+                role="gridcell"
+                className={cls}
+                aria-label={`${cell.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}${hits.length ? ` — ${hits.length} scheduled` : ""}`}
+                onClick={() => setSelectedDay((cur) => (cur === key ? null : key))}
+              >
+                <span className="sched-cal-num">{cell.getDate()}</span>
+                {hits.length > 0 ? (
+                  <span className="sched-cal-marks">
+                    {hits.slice(0, 2).map((h, i) => (
+                      <span key={`${h.mission.id}-${i}`} className="sched-cal-mark" title={h.mission.question}>{h.mission.question}</span>
+                    ))}
+                    {hits.length > 2 ? <span className="sched-cal-more">+{hits.length - 2} more</span> : null}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+
+        {selectedFirst ? (
+          <div className="sched-cal-day">
+            <h3 className="sched-cal-day-head">{new Date(selectedFirst.date).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</h3>
+            <div className="watch-card-list">
+              {selectedHits.map((h, i) => (
+                <div key={`${h.mission.id}-${i}`} className="watch-card proj-item">
+                  <span className="watch-card-main" style={{ flex: 1 }}>
+                    <span className="watch-card-title">{h.mission.question}</span>
+                    <span className="watch-card-meta">{cadenceLabel(h.mission.cadence)}{h.mission.last_saved_report_id ? <> · <Link href={`/app/reports/${h.mission.last_saved_report_id}`}>latest report</Link></> : null}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {!monthHasHits ? <p className="sched-cal-empty">Nothing scheduled this month.</p> : null}
+      </div>
+      )}
     </div>
   );
 }
