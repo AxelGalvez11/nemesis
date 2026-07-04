@@ -69,7 +69,8 @@ export async function POST(req: NextRequest) {
       );
     }
     return NextResponse.json(result, { status: 200 });
-  } catch {
+  } catch (err) {
+    console.error("[papers/extract]", err);
     return NextResponse.json(
       { error: "extract_failed", message: "That PDF could not be read. It may be corrupt or password-protected." },
       { status: 422 },

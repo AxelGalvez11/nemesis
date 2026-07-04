@@ -36,7 +36,12 @@ export function guessTitle(text: string): string | null {
  *  route turns that into a specific "no text layer" error). */
 export async function extractPdfText(bytes: Uint8Array): Promise<ExtractResult> {
   const pdf = await getDocumentProxy(bytes);
-  const { totalPages, text } = await extractText(pdf, { mergePages: true });
+  // mergePages defaults to false: unpdf returns one string per page (each already newline-separated
+  // via its own per-line hasEOL markers). Do NOT pass mergePages: true — that path runs
+  // `texts.join("\n").replace(/\s+/g, " ")` internally, which collapses every newline (including the
+  // ones between lines within a page) before guessTitle() ever sees the text. Joining the per-page
+  // array ourselves keeps line structure intact for guessTitle's `\r?\n` split.
+  const { totalPages, text } = await extractText(pdf);
   const joined = Array.isArray(text) ? text.join("\n") : text;
   // Collapse horizontal whitespace/control-character noise (repeated spaces/tabs, stray control bytes)
   // while preserving newlines — guessTitle() depends on line structure via a \r?\n split.
