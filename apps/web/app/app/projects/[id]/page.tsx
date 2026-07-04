@@ -19,9 +19,11 @@ import { setCached } from "@/lib/cache";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { SkeletonRows } from "@/components/Skeleton";
+import { useResearchMapData } from "@/lib/research-map-data";
+import { ResearchMapView } from "@/components/ResearchMapView";
 
 const EMPTY: ProjectContents = { chats: [], reports: [], watches: [] };
-type Tab = "conversation" | "report" | "watch";
+type Tab = "conversation" | "report" | "watch" | "map";
 
 // A project workspace (ChatGPT-Projects style): a "New chat in this project" composer, tabbed contents
 // (Chats / Reports / Monitoring) with the inline add-from-unassigned picker + per-item remove, and a
@@ -39,6 +41,9 @@ export default function ProjectWorkspacePage() {
   const [busy, setBusy] = useState(false);
   const [newChat, setNewChat] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mapActivated, setMapActivated] = useState(false);
+  // Lazy: the map's per-item citation fetch only runs once the user opens the Map tab.
+  const mapData = useResearchMapData(projectId, mapActivated ? contents : null);
 
   const load = useCallback(async () => {
     try {
@@ -96,7 +101,9 @@ export default function ProjectWorkspacePage() {
     : tab === "report"
     ? pool.reports.map((r) => ({ id: r.id, title: displayReportTitle(r.title) }))
     : pool.watches.map((w) => ({ id: w.id, title: w.title }));
-  const kind: ProjectItemKind = tab;
+  // "map" isn't a ProjectItemKind (it has no item list); the item section doesn't render when tab
+  // is "map", so this fallback value is never actually used in that case.
+  const kind: ProjectItemKind = tab === "map" ? "conversation" : tab;
   const heading = tab === "conversation" ? "Chats" : tab === "report" ? "Reports" : "Monitoring";
 
   return (
@@ -145,8 +152,27 @@ export default function ProjectWorkspacePage() {
                 </button>
               );
             })}
+            <button type="button" role="tab" aria-selected={tab === "map"}
+              className={`chip-action${tab === "map" ? " active" : ""}`}
+              onClick={() => { setTab("map"); setOpenPicker(false); setMapActivated(true); }}>
+              Map
+            </button>
           </div>
 
+          {tab === "map" ? (
+            <section className="proj-section">
+              <div className="proj-section-head">
+                <h3><Icon name="doc" size={14} /> Map</h3>
+              </div>
+              <ResearchMapView
+                map={mapData.map}
+                loading={mapData.loading}
+                error={mapData.error}
+                skipped={mapData.skipped}
+                onOpenItem={(kind, id) => router.push(linkFor(kind === "chat" ? "conversation" : kind, id))}
+              />
+            </section>
+          ) : (
           <section className="proj-section">
             <div className="proj-section-head">
               <h3><Icon name={tab === "conversation" ? "message" : tab === "report" ? "doc" : "bell"} size={14} /> {heading} <small>{items.length}</small></h3>
@@ -190,6 +216,7 @@ export default function ProjectWorkspacePage() {
               </div>
             )}
           </section>
+          )}
         </>
       ) : null}
 
