@@ -617,6 +617,13 @@ function AskPage() {
             <div className="turn" key={i}>
               <div className="msg-user"><div className="bubble">{t.q}</div></div>
               <div className="msg-ai">
+                {/* Manus-style agent turn header: a quiet monogram avatar + the product name above each
+                    AI answer (Manus shows "🌱 manus"). The decorative Orb was removed by owner direction,
+                    so this is a simple token-tinted "P" square, not <Orb/>. Purely presentational. */}
+                <div className="agent-head" aria-hidden="true">
+                  <span className="agent-avatar">P</span>
+                  <span className="agent-name">PharmaOrb</span>
+                </div>
                 <div className="ai-body">
                   {t.scoping ? (
                     <div className="thinking"><div className="think-row"><span className="shimmer">Scoping your question…</span></div></div>
@@ -879,10 +886,19 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             value={question}
             maxLength={500}
             aria-label="Ask a question about a drug, dose, interaction, or monograph"
-            placeholder={welcome ? "" : busy ? "Follow up" : "Ask anything"}
+            placeholder={welcome ? "Ask anything, or type / for more" : busy ? "Follow up" : "Ask anything"}
             onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
+            onKeyDown={(e) => {
+              // Manus's slash affordance: on an empty box, "/" opens the existing "+" tools launcher
+              // instead of typing a literal slash. Any non-empty box types "/" normally.
+              if (e.key === "/" && !question) { e.preventDefault(); setPlusOpen(true); return; }
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); }
+            }}
           />
+          {/* The standing "/ for more" affordance lives in the textarea PLACEHOLDER (short, static, never
+              clips). This overlay only rotates the example prompts on top of it — it has an opaque
+              background so it cleanly occludes the placeholder while shown, then fades to reveal the
+              standing "/ for more" hint again. Best of both: rotating examples AND a persistent slash hint. */}
           {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{askPlaceholderFor(phIdx)}</span> : null}
         </div>
         <div className="mode-wrap" style={{ position: "relative" }}>
@@ -1158,6 +1174,10 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
   }
   return (
     <div className="research-run-card">
+      {/* Manus-style one-line acknowledgement, shown only for a real research run (this branch renders
+          solely while a deep-research / systematic-review / discovery / lab-draft run is live) — an
+          honest "I'm on it" before the progress steps. Plain fast asks never reach here. */}
+      <p className="agent-ack">Researching this now — gathering and citing sources.</p>
       <div className="ai-block-label"><Icon name="sparkle" size={14} /> {modeLabel} running…</div>
       <ResearchProgress steps={run?.progress ?? []} done={false} />
     </div>

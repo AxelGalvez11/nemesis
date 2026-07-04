@@ -229,7 +229,9 @@
 .turn { max-width: 738px; margin: 0 auto; padding: 0 28px 30px; }
 .msg-user { display: flex; justify-content: flex-end; }
 .bubble { background: var(--surface-2); padding: 10px 16px; border-radius: 22px; max-width: 70%; color: var(--text); font-size: 16px; line-height: 1.6; }
-.msg-ai { display: flex; gap: 14px; margin-top: 26px; }
+/* Column layout so the Manus-style agent header (avatar + name) sits ABOVE the answer body, not
+   beside it. (The decorative Orb is no longer rendered, so the old avatar-left row is retired.) */
+.msg-ai { display: flex; flex-direction: column; gap: 8px; margin-top: 26px; }
 .msg-ai .orb { width: 28px; height: 28px; margin-top: 2px; }
 .ai-body { min-width: 0; flex: 1; }
 .ai-body h4 { font-size: 20px; font-weight: 700; margin: 2px 0 9px; letter-spacing: -0.01em; }
@@ -614,6 +616,9 @@
   position: absolute; top: 6px; left: 6px; right: 6px; pointer-events: none;
   color: var(--text-3); font-size: 16px; line-height: 24px; text-align: left;
   white-space: nowrap; overflow: hidden; text-overflow: clip;
+  /* Opaque fill so the rotating example cleanly occludes the static "Ask anything, or type / for more"
+     placeholder underneath — when the overlay fades out, that standing "/ for more" hint shows through. */
+  background: var(--raised);
   animation: phReveal 5s ease-in-out forwards;
 }
 /* Slow, graceful reveal: wipe in left→right over the first ~1.5s, hold, then fade out over the last
@@ -1606,3 +1611,17 @@
   .sched-cal-cell { min-height: 62px; padding: 5px 5px; }
   .sched-cal-mark { font-size: 9.5px; padding: 1px 4px; }
 }
+
+/* ── Agent turn header + ack ── */
+/* Manus's quiet agent-run framing: a small monogram avatar + product name above each AI answer
+   (Manus shows "🌱 manus"). Subtle by design — token-tinted, no shadow, muted name. */
+.agent-head { display: flex; align-items: center; gap: 8px; }
+.agent-avatar {
+  width: 22px; height: 22px; flex: none; border-radius: var(--radius-sm);
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--acid) 16%, transparent);
+  color: var(--acid); font-size: 12px; font-weight: 700; line-height: 1;
+}
+.agent-name { font-size: 13px; font-weight: 500; color: var(--text-2); letter-spacing: -0.01em; }
+/* One-line acknowledgement before a research run's progress steps — honest "I'm on it" prose. */
+.agent-ack { font-size: 14px; line-height: 22px; color: var(--text-2); margin: 0 0 10px; }
