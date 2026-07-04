@@ -6,7 +6,7 @@ import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
 import { simplifiedModesEnabled } from "@/lib/env";
-import { askQuestion, createConversation, fetchConversationTurns, fetchProject, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
+import { askQuestion, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
@@ -18,7 +18,7 @@ import { citationDomains, faviconUrl, hostnameOf, SEARCH_DOMAINS } from "@/lib/f
 import { composerModeLabel } from "@/lib/ask-mode-label";
 import { getCached, setCached } from "@/lib/cache";
 import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
-import { PLAYBOOKS } from "@/lib/playbooks";
+import { PLAYBOOKS, SKILLS } from "@/lib/playbooks";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
@@ -44,6 +44,7 @@ const MODES = [
   { id: "fast", label: "Fast", live: true, pro: false, hint: "Quick, plain-English answer — cited from the library + live sources" },
   { id: "thorough", label: "Thorough", live: true, pro: false, hint: "Thinks longer: a wider source pull and a fuller, more technical answer" },
   { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report — pools comparable studies into a computed estimate when the evidence supports it (Pro)" },
+  { id: "structured_review", label: "Systematic review", live: true, pro: true, hint: "A documented-method evidence review: what was searched, what was included, and cited findings in tables (Pro)" },
   { id: "discovery", label: "Discovery", live: true, pro: true, hint: "Finds research gaps, claim cards, hypotheses, and next-study designs (Pro)" },
   { id: "lab_draft", label: "Lab draft (beta)", live: true, pro: true, hint: "Study-design scaffold for a clinical or pharmacokinetic study — unvalidated draft, not a protocol (Pro, beta)" },
 ] as const;
@@ -66,6 +67,89 @@ const PROVIDER_PILL: Record<string, string> = { openfda: "FDA", dailymed: "Daily
 function pillName(t: string): string {
   const k = Object.keys(PROVIDER_PILL).find((p) => t.toLowerCase().includes(p));
   return (k ? PROVIDER_PILL[k] : undefined) ?? "Source";
+}
+
+// ── Dictation (Web Speech API) ────────────────────────────────────────────────────────────────────
+// SpeechRecognition isn't in the TS DOM lib, so we declare the minimal surface we use. No `any`.
+interface SpeechRecognitionAlternativeLike { readonly transcript: string; }
+interface SpeechRecognitionResultLike { readonly isFinal: boolean; readonly length: number; readonly [index: number]: SpeechRecognitionAlternativeLike; }
+interface SpeechRecognitionResultListLike { readonly length: number; readonly [index: number]: SpeechRecognitionResultLike; }
+interface SpeechRecognitionEventLike { readonly resultIndex: number; readonly results: SpeechRecognitionResultListLike; }
+interface SpeechRecognitionErrorEventLike { readonly error: string; }
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((e: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+// Dictation hook: feature-detected on the client (init `false` so SSR and first client render agree —
+// no hydration mismatch). `toggle` starts/stops recognition; finals accumulate onto the text present
+// when recording began (`getBaseText`), and the live interim is shown appended. Permission errors
+// surface as an honest note. The recognizer is aborted on unmount.
+function useDictation(setQuestion: Dispatch<SetStateAction<string>>, getBaseText: () => string) {
+  const [supported, setSupported] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const recRef = useRef<SpeechRecognitionLike | null>(null);
+  const baseRef = useRef("");     // textarea text captured when recording started
+  const finalsRef = useRef("");   // finalized transcript accumulated this session
+
+  useEffect(() => { setSupported(getSpeechRecognitionCtor() !== null); }, []);
+
+  useEffect(() => () => { recRef.current?.abort(); }, []); // stop cleanly if we unmount mid-dictation
+
+  const toggle = useCallback(() => {
+    if (listening) { recRef.current?.stop(); return; }
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) { setError("Dictation isn’t supported in this browser."); return; }
+    const rec = new Ctor();
+    rec.lang = "en-US";
+    rec.interimResults = true;
+    rec.continuous = true;
+    baseRef.current = getBaseText();
+    finalsRef.current = "";
+    rec.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (!r) continue; // noUncheckedIndexedAccess: index access on the results list is optional
+        const text = r[0]?.transcript ?? "";
+        if (r.isFinal) finalsRef.current += text;
+        else interim += text;
+      }
+      const base = baseRef.current;
+      const joiner = base && !/\s$/.test(base) ? " " : "";
+      setQuestion(`${base}${joiner}${finalsRef.current}${interim}`.trimStart());
+    };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        setError("Microphone access is blocked — allow it in your browser to dictate.");
+      } else if (e.error === "no-speech") {
+        setError(null); // benign: user just didn't speak
+      } else {
+        setError("Dictation stopped unexpectedly. Try again.");
+      }
+    };
+    rec.onend = () => { setListening(false); recRef.current = null; };
+    recRef.current = rec;
+    setError(null);
+    try { rec.start(); setListening(true); }
+    catch { setError("Couldn’t start dictation. Try again."); setListening(false); recRef.current = null; }
+  }, [listening, setQuestion, getBaseText]);
+
+  return { supported, listening, error, toggle };
 }
 
 export default function AskPageRoute() {
@@ -116,6 +200,12 @@ function AskPage() {
   const [activeAnswer, setActiveAnswer] = useState<AskResponse | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Slides skill: `slidesArmedRef` is set when the user clicks Skills → Slides but hasn't sent yet.
+  // On the next submit we consume it and, for a research run, record THAT turn's index in
+  // `slidesIntentRef` so the completed report auto-exports to PowerPoint. Keyed by index (not a single
+  // boolean) so two concurrent runs — the research branch never sets `busy` — don't cross wires.
+  const slidesArmedRef = useRef(false);
+  const slidesIntentRef = useRef<Set<number>>(new Set());
 
   const latest = turns[turns.length - 1];
   // The most recent COMPLETED answer drives the evidence panel + topbar, so the panel doesn't blank
@@ -258,7 +348,7 @@ function AskPage() {
       setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
     } catch (e) {
       const proGate = isQuotaError(e) && Number(e.quota.limit) === 0;
-      const feature = runMode === "discovery" ? "Discovery" : runMode === "lab_draft" ? "Lab draft" : "Deep research";
+      const feature = runMode === "discovery" ? "Discovery" : runMode === "lab_draft" ? "Lab draft" : runMode === "structured_review" ? "Systematic review" : "Deep research";
       const msg = isQuotaError(e)
         ? (proGate
           ? `${feature} is a Pro feature — your ${e.quota.plan} plan doesn't include it yet.`
@@ -353,12 +443,16 @@ function AskPage() {
   async function submit(q: string) {
     const text = q.trim();
     if (!text || busy || loadingChat) return;
+    // Consume the Slides arm on every submit (so it can't go stale across sends). Only a research run
+    // records it below; a plain ask clears it and moves on.
+    const wantSlides = slidesArmedRef.current;
+    slidesArmedRef.current = false;
     phCapture("ask_submitted", { mode });
     // Deep research / structured review run INLINE in the thread: append a turn whose body is a
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
     // can keep chatting while it works.
-    if (mode === "deep" || mode === "discovery" || mode === "lab_draft") {
+    if (mode === "deep" || mode === "structured_review" || mode === "discovery" || mode === "lab_draft") {
       // Deep research runs the engine's "meta" pipeline: the full structured review (documented
       // method, cited sections) PLUS a code-computed pooled estimate when the studies are genuinely
       // comparable — and an honest "no pooled estimate could be computed" note when they aren't
@@ -366,9 +460,10 @@ function AskPage() {
       // two: the old separate "Meta-analysis" mode is folded in. Discovery adds claim cards, gap
       // analysis, hypotheses, and a next-study design; lab_draft produces a study-design scaffold
       // (not a runnable protocol).
-      const runMode: ReportMode = mode === "lab_draft" ? "lab_draft" : mode === "discovery" ? "discovery" : "meta";
+      const runMode: ReportMode = mode === "lab_draft" ? "lab_draft" : mode === "discovery" ? "discovery" : mode === "structured_review" ? "structured_review" : "meta";
       phCapture("research_started", { mode: runMode });
       const ridx = turns.length;
+      if (wantSlides) slidesIntentRef.current.add(ridx);
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
       setTurns((prev) => [...prev, { q: text, a: null, err: null, scoping: true }]);
       setQuestion("");
@@ -428,6 +523,13 @@ function AskPage() {
     }
   }
 
+  // Skill: Systematic review — arm the documented-method report mode.
+  const armSystematicReview = useCallback(() => { setMode("structured_review"); }, []);
+  // Skill: Slides — arm Deep research AND flag "export this run's report to PowerPoint when it's done".
+  // Consumed on the next submit (see submit()); if the user instead picks a plain depth, the flag is
+  // still cleared on that submit, so it never leaks into an unrelated run.
+  const armSlides = useCallback(() => { setMode("deep"); slidesArmedRef.current = true; }, []);
+
   const hasThread = turns.length > 0;
   const composer = (
     <>
@@ -445,7 +547,9 @@ function AskPage() {
       <Composer
         question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
         submit={submit} busy={busy} mode={mode} setMode={setMode}
-        modeOpen={modeOpen} setModeOpen={setModeOpen} error={latest?.err ?? null}
+        modeOpen={modeOpen} setModeOpen={setModeOpen}
+        armSlides={armSlides} armSystematicReview={armSystematicReview}
+        error={latest?.err ?? null}
         welcome={!hasThread}
       />
     </>
@@ -521,7 +625,30 @@ function AskPage() {
                   ) : t.scope ? (
                     <ScopeTurn state={t.scope} onRun={(enriched, subQuestions) => void launchResearch(i, t.scope!.question, enriched, t.scope!.runMode, subQuestions)} />
                   ) : t.research ? (
-                    <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
+                    <>
+                      <ResearchRunCard
+                        card={t.research}
+                        onComplete={(r) => {
+                          void persistResearchTurn(i, t.q, t.research!.mode, r);
+                          // Slides skill: if THIS turn asked for slides, export its report to PowerPoint
+                          // once. `downloadReportExport` needs the saved report id; if it's missing (no
+                          // report row) or the download throws, show a neutral fallback — the report is
+                          // already saved and the "Report ready" card links to it for a manual export.
+                          if (slidesIntentRef.current.has(i)) {
+                            slidesIntentRef.current.delete(i);
+                            if (r.savedReportId) {
+                              setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: "Opening your slides — check your downloads." } : x)));
+                              void downloadReportExport(r.savedReportId, "pptx", "vancouver").catch(() => {
+                                setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: "Couldn’t export slides automatically — open the report to download." } : x)));
+                              });
+                            } else {
+                              setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: "Couldn’t export slides automatically — open the report to download." } : x)));
+                            }
+                          }
+                        }}
+                      />
+                      {t.slidesNote ? <p className="tmpl-note">{t.slidesNote}</p> : null}
+                    </>
                   ) : t.a ? (
                     <>
                       {t.a.intent !== "smalltalk" ? (
@@ -578,6 +705,7 @@ interface Turn {
   scope?: ScopeTurnState;  // present while clarifying questions await answers
   scoping?: boolean;       // brief: the scope step is running before we know if clarification is needed
   thinkSecs?: number;      // wall-clock seconds the engine spent before this turn's answer arrived ("Thought for Xs")
+  slidesNote?: string;     // set when a Slides-skill run finished: either a "opening PowerPoint" note or a neutral fallback
 }
 
 interface ComposerProps {
@@ -591,6 +719,10 @@ interface ComposerProps {
   setMode: Dispatch<SetStateAction<(typeof MODES)[number]["id"]>>;
   modeOpen: boolean;
   setModeOpen: Dispatch<SetStateAction<boolean>>;
+  // A Skill click arms a deliverable recipe. Kept as callbacks (not raw setMode) because arming
+  // Slides / Systematic review touches refs on the page, not just the mode — see Tasks 2 and 3.
+  armSlides: () => void;
+  armSystematicReview: () => void;
   error: string | null;
   // true only on the empty welcome screen — drives the cycling example placeholders. In an active
   // chat (thread) it's false, so the box shows a calm static "Ask a follow-up…" instead.
@@ -600,7 +732,7 @@ interface ComposerProps {
 // The input pill, shared between the centered welcome screen and the pinned bottom bar. A leading
 // "+" (attachments) and a "mic" (voice) are shown as ChatGPT-style affordances but disabled until
 // those features ship — same honest "coming soon" treatment as the non-live modes.
-function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error, welcome }: ComposerProps) {
+function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, armSlides, armSystematicReview, error, welcome }: ComposerProps) {
   const router = useRouter(); // "Monitor this topic" hops to /app/monitor with the typed topic pre-filled
   const activeMode = MODES.find((m) => m.id === mode)!;
   // On the welcome screen, cycle example questions through an animated overlay placeholder (reveals
@@ -609,6 +741,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   const [phIdx, setPhIdx] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false); // the "+" tools launcher popover
   const [sourcesOpen, setSourcesOpen] = useState(false); // the "Data sources" modal
+  const dictation = useDictation(setQuestion, () => question);
   useEffect(() => {
     if (!welcome) return;
     const id = setInterval(() => setPhIdx((i) => (i + 1) % ASK_EXAMPLE_PROMPTS.length), 5000);
@@ -652,8 +785,31 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
                 <Icon name="bell" size={14} /><span style={{ flex: 1 }}>Monitor this topic</span><small style={{ color: "var(--text-3)" }}>alerts on new evidence</small>
               </button>
               <div className="sep" role="separator" />
+              {/* Skills: one-click DELIVERABLE recipes. Slides arms Deep research + a slides-export
+                  intent (auto-exports the finished report to PowerPoint — see submit()/ResearchRunCard).
+                  Systematic review arms the documented-method report mode. "soon" entries are honest
+                  disabled rows (same treatment as the search filters below). */}
+              <div className="menu-label" aria-hidden="true">Skills</div>
+              {SKILLS.map((s) => (
+                s.action === "soon" ? (
+                  <button key={s.id} type="button" role="menuitem" disabled>
+                    <Icon name="message" size={14} /><span style={{ flex: 1 }}>{s.title}</span><small style={{ color: "var(--text-3)" }}>{s.desc}</small>
+                  </button>
+                ) : (
+                  <button key={s.id} type="button" role="menuitem"
+                    onClick={() => {
+                      if (s.action === "slides") armSlides();
+                      else armSystematicReview();
+                      setPlusOpen(false);
+                      taRef.current?.focus();
+                    }}>
+                    <Icon name="doc" size={14} /><span style={{ flex: 1 }}>{s.title}</span><small style={{ color: "var(--text-3)" }}>{s.desc}</small>
+                  </button>
+                )
+              ))}
+              <div className="sep" role="separator" />
               {/* Playbooks (the Manus pattern): curated one-click recipes — seed the question AND arm
-                  the right tool. Moved here from the welcome screen so the landing stays calm. */}
+                  the right tool. */}
               <div className="menu-label" aria-hidden="true">Playbooks</div>
               {PLAYBOOKS.map((p) => (
                 <button key={p.id} type="button" role="menuitem" title={p.question}
@@ -723,7 +879,15 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             </div>
           ) : null}
         </div>
-        <button className="tool" type="button" data-tip="Voice — coming soon" aria-label="Voice input" disabled>
+        <button
+          className={`tool${dictation.listening ? " rec" : ""}`}
+          type="button"
+          data-tip={dictation.supported ? (dictation.listening ? "Stop dictation" : "Dictate") : "Dictation not supported in this browser"}
+          aria-label={dictation.listening ? "Stop dictation" : "Dictate"}
+          aria-pressed={dictation.listening}
+          disabled={!dictation.supported}
+          onClick={dictation.toggle}
+        >
           <Icon name="mic" size={18} />
         </button>
         <button className="send" data-tip="Send" aria-label="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
@@ -731,6 +895,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
         </button>
       </div>
       {error ? <div className="err">{error}</div> : null}
+      {dictation.error ? <div className="err">{dictation.error}</div> : null}
       <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
       <DataSourcesPanel open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
     </div>
@@ -928,6 +1093,8 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
     ? "Lab draft (beta)"
     : card.mode === "discovery"
     ? "Discovery"
+    : card.mode === "structured_review"
+    ? "Systematic review"
     : "Deep research";
 
   if (err) {
