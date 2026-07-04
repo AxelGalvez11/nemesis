@@ -6,7 +6,7 @@ import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
 import { simplifiedModesEnabled } from "@/lib/env";
-import { askQuestion, createConversation, fetchConversationTurns, fetchProject, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
+import { askQuestion, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
@@ -117,6 +117,12 @@ function AskPage() {
   const [activeAnswer, setActiveAnswer] = useState<AskResponse | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Slides skill: `slidesArmedRef` is set when the user clicks Skills → Slides but hasn't sent yet.
+  // On the next submit we consume it and, for a research run, record THAT turn's index in
+  // `slidesIntentRef` so the completed report auto-exports to PowerPoint. Keyed by index (not a single
+  // boolean) so two concurrent runs — the research branch never sets `busy` — don't cross wires.
+  const slidesArmedRef = useRef(false);
+  const slidesIntentRef = useRef<Set<number>>(new Set());
 
   const latest = turns[turns.length - 1];
   // The most recent COMPLETED answer drives the evidence panel + topbar, so the panel doesn't blank
@@ -354,6 +360,10 @@ function AskPage() {
   async function submit(q: string) {
     const text = q.trim();
     if (!text || busy || loadingChat) return;
+    // Consume the Slides arm on every submit (so it can't go stale across sends). Only a research run
+    // records it below; a plain ask clears it and moves on.
+    const wantSlides = slidesArmedRef.current;
+    slidesArmedRef.current = false;
     phCapture("ask_submitted", { mode });
     // Deep research / structured review run INLINE in the thread: append a turn whose body is a
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
@@ -370,6 +380,7 @@ function AskPage() {
       const runMode: ReportMode = mode === "lab_draft" ? "lab_draft" : mode === "discovery" ? "discovery" : mode === "structured_review" ? "structured_review" : "meta";
       phCapture("research_started", { mode: runMode });
       const ridx = turns.length;
+      if (wantSlides) slidesIntentRef.current.add(ridx);
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
       setTurns((prev) => [...prev, { q: text, a: null, err: null, scoping: true }]);
       setQuestion("");
@@ -431,8 +442,10 @@ function AskPage() {
 
   // Skill: Systematic review — arm the documented-method report mode.
   const armSystematicReview = useCallback(() => { setMode("structured_review"); }, []);
-  // Skill: Slides — arm Deep research (Task 3 adds the slides-export intent alongside this).
-  const armSlides = useCallback(() => { setMode("deep"); }, []);
+  // Skill: Slides — arm Deep research AND flag "export this run's report to PowerPoint when it's done".
+  // Consumed on the next submit (see submit()); if the user instead picks a plain depth, the flag is
+  // still cleared on that submit, so it never leaks into an unrelated run.
+  const armSlides = useCallback(() => { setMode("deep"); slidesArmedRef.current = true; }, []);
 
   const hasThread = turns.length > 0;
   const composer = (
@@ -529,7 +542,30 @@ function AskPage() {
                   ) : t.scope ? (
                     <ScopeTurn state={t.scope} onRun={(enriched, subQuestions) => void launchResearch(i, t.scope!.question, enriched, t.scope!.runMode, subQuestions)} />
                   ) : t.research ? (
-                    <ResearchRunCard card={t.research} onComplete={(r) => void persistResearchTurn(i, t.q, t.research!.mode, r)} />
+                    <>
+                      <ResearchRunCard
+                        card={t.research}
+                        onComplete={(r) => {
+                          void persistResearchTurn(i, t.q, t.research!.mode, r);
+                          // Slides skill: if THIS turn asked for slides, export its report to PowerPoint
+                          // once. `downloadReportExport` needs the saved report id; if it's missing (no
+                          // report row) or the download throws, show a neutral fallback — the report is
+                          // already saved and the "Report ready" card links to it for a manual export.
+                          if (slidesIntentRef.current.has(i)) {
+                            slidesIntentRef.current.delete(i);
+                            if (r.savedReportId) {
+                              setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: "Opening your slides — check your downloads." } : x)));
+                              void downloadReportExport(r.savedReportId, "pptx", "vancouver").catch(() => {
+                                setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: "Couldn’t export slides automatically — open the report to download." } : x)));
+                              });
+                            } else {
+                              setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: "Couldn’t export slides automatically — open the report to download." } : x)));
+                            }
+                          }
+                        }}
+                      />
+                      {t.slidesNote ? <p className="tmpl-note">{t.slidesNote}</p> : null}
+                    </>
                   ) : t.a ? (
                     <>
                       {t.a.intent !== "smalltalk" ? (
@@ -586,6 +622,7 @@ interface Turn {
   scope?: ScopeTurnState;  // present while clarifying questions await answers
   scoping?: boolean;       // brief: the scope step is running before we know if clarification is needed
   thinkSecs?: number;      // wall-clock seconds the engine spent before this turn's answer arrived ("Thought for Xs")
+  slidesNote?: string;     // set when a Slides-skill run finished: either a "opening PowerPoint" note or a neutral fallback
 }
 
 interface ComposerProps {
