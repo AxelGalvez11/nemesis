@@ -1531,6 +1531,41 @@
   .lib-search { flex: 1; min-width: 0; }
 }
 
+/* ── Projects (Manus grid) ── */
+/* Projects reuses Library's card grid (.lib-grid / .lib-card / .lib-card-link / .lib-card-icon /
+   .lib-card-title / .lib-card-meta) verbatim — same hairline border, --radius corners, and the
+   distinctive card-hover = opacity 0.8. The ONLY page-specific chrome is the header row (title + sub
+   on the left, an inline "New project" create control on the right) and the multi-line card description.
+   Keeping the create control always visible (the existing createProject flow) avoids a toggle; the same
+   control is reused inside the empty state. */
+.proj-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
+.proj-head-text { min-width: 0; }
+.proj-sub { margin: 4px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--text-3); max-width: 46ch; }
+
+/* Inline create control: filled (borderless) container with a folder glyph + input + "New project"
+   button — mirrors Manus's search-fill treatment (var(--fill-hover), the same fill Library's search uses,
+   at --radius-sm). */
+.proj-create { display: flex; align-items: center; gap: 8px; flex: none; height: 40px; padding: 0 6px 0 12px; border-radius: var(--radius-sm); background: var(--fill-hover); border: 1px solid var(--line); transition: border-color 0.15s; }
+.proj-create:focus-within { border-color: var(--line-2); }
+.proj-create > svg { color: var(--text-3); flex: none; }
+.proj-create-input { flex: 1; min-width: 200px; background: none; border: none; outline: none; box-shadow: none; color: var(--text); font-family: var(--font); font-size: 14px; }
+.proj-create-input::placeholder { color: var(--text-3); }
+.proj-create-btn { flex: none; height: 30px; }
+
+/* Card description: quiet second line under the title, clamped to 2 lines (the card meta line sits below). */
+.proj-card-desc { font-size: 12.5px; line-height: 1.45; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Empty-state create affordance: re-seat the same inline control, centered under the message. */
+.proj-empty-create { margin-top: 12px; }
+.proj-empty-create .proj-create { height: 42px; }
+.proj-empty-create .proj-create-input { min-width: 220px; }
+
+@media (max-width: 640px) {
+  .proj-head { gap: 14px; }
+  .proj-create { width: 100%; }
+  .proj-create-input { min-width: 0; }
+}
+
 /* ── Scheduled (Manus tabs + calendar) ── */
 /* Header tabs reuse the app's .ev-tab segmented look (see .ev-tabs above); this wrapper just seats them
    under the "Scheduled" title with the icon+label pair centered. */
