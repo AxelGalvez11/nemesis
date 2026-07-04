@@ -2,36 +2,38 @@
    Drives AppShell (rail | main | evidence) and the chat page. Uses the tokens in globals.css. */
 
 /* ── ORB: halftone dot lattice (largest at center), a pulse rippling outward from the core.
-   Dots + falloff are generated in components/Orb.tsx; all motion is here. ── */
+   Dots + falloff are generated in components/Orb.tsx; all motion is here.
+   Uses --orb-color/--orb-rgb (PINNED to PharmaOrb green), NOT --acid — the brand mark is the one
+   element the Manus skin explicitly keeps, so it doesn't follow the blue accent retune. ── */
 .orb { position: relative; display: inline-block; flex: none; line-height: 0; }
-.orb svg { display: block; overflow: visible; filter: drop-shadow(0 0 1.5px rgba(var(--acid-rgb), calc(var(--glow) * 0.85))); transition: filter 0.45s ease; }
+.orb svg { display: block; overflow: visible; filter: drop-shadow(0 0 1.5px rgba(var(--orb-rgb), calc(var(--glow) * 0.85))); transition: filter 0.45s ease; }
 .orb .hd {
-  fill: var(--acid);
+  fill: var(--orb-color);
   transform-box: fill-box; transform-origin: center;
   animation: orbpulse 2.6s ease-in-out infinite;
 }
 /* soft halo — breathes slowly at rest (out of phase with the dot pulse) so the mark feels alive */
 .orb::after {
   content: ""; position: absolute; inset: 16%; border-radius: 50%;
-  background: radial-gradient(circle, rgba(var(--acid-rgb), 0.32), transparent 70%);
+  background: radial-gradient(circle, rgba(var(--orb-rgb), 0.32), transparent 70%);
   opacity: var(--glow); pointer-events: none;
   animation: orbglow 4.2s ease-in-out infinite;
 }
 /* sonar ring — invisible at rest, emanates outward only while thinking (echoes the answer ripple) */
 .orb::before {
   content: ""; position: absolute; inset: 0; border-radius: 50%;
-  border: 1px solid var(--acid); opacity: 0; transform: scale(0.55); pointer-events: none;
+  border: 1px solid var(--orb-color); opacity: 0; transform: scale(0.55); pointer-events: none;
 }
 
 /* ── thinking: faster ripple, brighter core, a looping sonar pulse + quicker halo ── */
-.orb.busy svg { filter: drop-shadow(0 0 3px rgba(var(--acid-rgb), 0.95)); }
+.orb.busy svg { filter: drop-shadow(0 0 3px rgba(var(--orb-rgb), 0.95)); }
 .orb.busy .hd { animation-duration: 1.05s; }
 .orb.busy::before { animation: orbsonar 1.5s ease-out infinite; }
 .orb.busy::after { animation-duration: 1.6s; }
 
 /* ── completion bloom: a one-shot flare the moment an answer lands ── */
 .orb.bloom { animation: orbbloom 0.7s ease-out; }
-.orb.bloom svg { filter: drop-shadow(0 0 5px rgba(var(--acid-rgb), 1)); }
+.orb.bloom svg { filter: drop-shadow(0 0 5px rgba(var(--orb-rgb), 1)); }
 
 @keyframes orbpulse { 0%, 100% { opacity: 0.74; transform: scale(0.96); } 45% { opacity: 1; transform: scale(1.05); } }
 @keyframes orbglow { 0%, 100% { opacity: calc(var(--glow) * 0.62); } 50% { opacity: var(--glow); } }
@@ -58,8 +60,10 @@
 .app.no-evidence { grid-template-columns: var(--rail) 1fr; }
 .app.no-evidence.rail-collapsed { grid-template-columns: var(--rail-collapsed) 1fr; }
 
-/* ── left rail (ChatGPT-style: tinted sidebar surface, calm hover/active, no accent glow) ── */
-.rail { background: var(--bg-2); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+/* ── left rail (Manus-style: tinted sidebar surface, calm hover/active, no accent glow).
+   Rendered from the dedicated --rail-bg token (light #f0f0f0, dark #1f1f1f) — neither --surface-2
+   nor --bg-2 lands on Manus's sidebar color in BOTH themes, see globals.css --rail-bg comment. ── */
+.rail { background: var(--rail-bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 .rail-backdrop, .evidence-backdrop { display: none; }
 /* scoped to .rail so it can't deform a legacy page that also uses a `.brand` element */
 .rail .brand { display: flex; align-items: center; gap: 11px; padding: 16px 16px 12px; }
@@ -76,7 +80,9 @@
   cursor: pointer; border: 1px solid var(--line); white-space: nowrap;
   transition: background 0.15s, border-color 0.15s; width: calc(100% - 24px); font-family: var(--font); font-size: 14px;
 }
-.new:hover { background: var(--surface-2); border-color: var(--line-2); }
+/* NOTE: must use --fill-hover (translucent), not --surface-2 — --surface-2 now equals --rail-bg
+   (#f0f0f0 light), so a solid-surface hover would vanish into the rail it sits on. */
+.new:hover { background: var(--fill-hover); border-color: var(--line-2); }
 .rail-collapsed .new { justify-content: center; padding: 10px 0; }
 .search {
   margin: 0 12px 12px; display: flex; align-items: center; gap: 8px; padding: 8px 11px;
@@ -93,15 +99,17 @@
 .search input:focus { box-shadow: none; }
 .nav { flex: 1; overflow-y: auto; padding: 2px 8px 10px; }
 .r-label { font-size: 11px; letter-spacing: 0.02em; color: var(--text-2); padding: 14px 10px 6px; font-weight: 600; }
+/* Manus nav row: 36px tall, radius follows --radius-sm (10px), padding 0 2px 0 8px, 8px icon gap. */
 .hist {
-  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text-2);
+  display: flex; align-items: center; gap: 8px; padding: 0 2px 0 8px; height: 36px; border-radius: var(--radius-sm); color: var(--text-2);
   cursor: pointer; position: relative; white-space: nowrap; overflow: hidden; width: 100%; background: none; border: none; text-align: left; font-family: var(--font); font-size: 14px;
   transition: background 0.12s, color 0.12s;
 }
 .hist span { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
-.hist:hover { background: var(--surface-2); color: var(--text); }
-/* Active nav = a plain subtle fill, no accent bar, no glow (ChatGPT-style). */
-.hist.active { background: var(--surface-2); color: var(--text); font-weight: 500; }
+/* Manus hover/active tint fills — translucent, not a solid surface swap. */
+.hist:hover { background: var(--fill-hover); color: var(--text); }
+/* Active nav = a plain subtle fill, no accent bar, no glow (Manus-style). */
+.hist.active { background: var(--fill-active); color: var(--text); font-weight: 500; }
 .hist-ic { width: 16px; height: 16px; flex: none; opacity: 0.75; }
 /* A chat row = the link + a hover-revealed delete control. */
 .hist-row { display: flex; align-items: center; position: relative; }
@@ -110,7 +118,9 @@
 .hist-more { flex: none; width: 26px; height: 26px; margin-right: 4px; display: grid; place-items: center; padding: 0; border: none; background: none; color: var(--text-3); border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s; }
 .hist-more svg { display: block; }
 .hist-row:hover .hist-more, .hist-more:focus-visible, .hist-row.menu-open .hist-more { opacity: 1; }
-.hist-more:hover, .hist-row.menu-open .hist-more { color: var(--text); background: var(--surface); }
+/* --fill-hover (translucent), not --surface — this button lives on the rail; a solid surface fill
+   reads faintly at best against --rail-bg, per the same collision as .new/.acct-btn above. */
+.hist-more:hover, .hist-row.menu-open .hist-more { color: var(--text); background: var(--fill-hover); }
 /* touch devices have no hover state — keep the affordance visible so it's discoverable */
 @media (hover: none) { .hist-more { opacity: 1; } }
 /* inline rename: the title becomes this editable field in place of the link, matched to the row.
@@ -120,7 +130,7 @@
 .row-menu { position: fixed; width: 200px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.28); padding: 6px; z-index: 60; animation: fade 0.16s both; }
 .row-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; text-align: left; }
 .row-menu button svg { display: block; flex: none; }
-.row-menu button:hover { background: var(--surface-2); color: var(--text); }
+.row-menu button:hover { background: var(--fill-hover); color: var(--text); }
 .row-menu button:disabled { opacity: 0.55; cursor: default; }
 .row-menu button:disabled:hover { background: none; color: var(--text-2); }
 .row-menu button:disabled small { margin-left: auto; text-transform: uppercase; letter-spacing: 0.04em; font-family: var(--mono); font-size: 9.5px; }
@@ -149,7 +159,7 @@
   width: 34px; height: 34px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--text-2);
   display: grid; place-items: center; padding: 0; cursor: pointer; transition: background 0.15s, color 0.15s; flex: none;
 }
-.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.icon-btn:hover { background: var(--fill-hover); color: var(--text); }
 /* icons sit dead-center: zero the inherited global button padding (9px 16px) so place-items has room
    to center, and render the svg as a block to drop the inline-baseline descender gap. */
 .icon-btn svg { display: block; }
@@ -192,10 +202,12 @@
 /* account menu (rail footer) */
 .acct-wrap { position: relative; border-top: 1px solid var(--line); }
 .acct-btn { width: 100%; background: none; border: none; padding: 10px 12px; border-radius: var(--radius-sm); display: flex; align-items: center; gap: 10px; cursor: pointer; color: inherit; font-family: var(--font); text-align: left; transition: background 0.15s; }
-.acct-btn:hover { background: var(--surface-2); }
+/* --fill-hover (translucent), not --surface-2 — this button lives on the rail, and --surface-2 now
+   equals --rail-bg, so a solid-surface hover would be invisible. */
+.acct-btn:hover { background: var(--fill-hover); }
 .acct-menu { position: absolute; bottom: calc(100% - 2px); left: 12px; right: 12px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.25); padding: 6px; z-index: 40; animation: fade 0.16s both; }
 .acct-menu a, .acct-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); cursor: pointer; text-align: left; font-weight: 500; }
-.acct-menu a:hover, .acct-menu button:hover { background: var(--surface-2); color: var(--text); }
+.acct-menu a:hover, .acct-menu button:hover { background: var(--fill-hover); color: var(--text); }
 .acct-menu button:disabled { opacity: 0.5; cursor: default; }
 .acct-menu button:disabled:hover { background: none; color: var(--text-2); }
 .acct-menu button:disabled small { text-transform: uppercase; letter-spacing: 0.04em; font-family: var(--mono); font-size: 9.5px; }
@@ -566,13 +578,13 @@
 
 .chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .chip-action { font-size: 12.5px; color: var(--text-2); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 13px; cursor: pointer; transition: 0.15s; font-family: var(--font); }
-.chip-action:hover { border-color: var(--line-2); color: var(--text); background: var(--surface-2); }
+.chip-action:hover { border-color: var(--line-2); color: var(--text); background: var(--fill-hover); }
 .msg-actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
 .msg-actions .icon-btn { width: 30px; height: 30px; }
 /* "Sources" pill with stacked overlapping favicons (the ChatGPT answer-footer button) — opens the
    evidence panel showing cited + also-reviewed sources. */
 .sources-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px 4px 6px; font-size: 12.5px; font-weight: 500; color: var(--text-2); cursor: pointer; font-family: var(--font); transition: background 0.15s, color 0.15s; }
-.sources-btn:hover { background: var(--surface-2); color: var(--text); }
+.sources-btn:hover { background: var(--fill-hover); color: var(--text); }
 .sources-favs { display: inline-flex; align-items: center; }
 .sources-favs img { border-radius: 50%; border: 1.5px solid var(--bg); margin-left: -6px; display: block; }
 .sources-favs img:first-child { margin-left: 0; }
@@ -580,10 +592,10 @@
 /* ── composer ── */
 .composer-wrap { padding: 10px 0 22px; background: linear-gradient(0deg, var(--bg) 60%, transparent); flex: none; }
 .composer { max-width: 768px; margin: 0 auto; padding: 0 28px; }
-/* ChatGPT-measured pill: 768px column, 28px radius, 52px rest height (8px padding + 36px controls).
-   One flex row with controls bottom-anchored — the textarea grows upward on multi-line input while
-   the +/mode/mic/send stay pinned to the bottom edge, exactly like the reference composer. */
-.box { display: flex; align-items: flex-end; gap: 4px; border: 1px solid var(--line); background: var(--surface); border-radius: 28px; padding: 8px; box-shadow: var(--shadow); transition: border-color 0.2s, box-shadow 0.2s; }
+/* Manus-measured composer box: 768px column, 22px radius, rgba(0,0,0,.2) border (light), a barely-
+   there lift shadow. One flex row with controls bottom-anchored — the textarea grows upward on
+   multi-line input while the +/mode/mic/send stay pinned to the bottom edge. */
+.box { display: flex; align-items: flex-end; gap: 4px; border: 1px solid var(--composer-border); background: var(--raised); border-radius: 22px; padding: 8px; box-shadow: var(--composer-shadow); transition: border-color 0.2s, box-shadow 0.2s; }
 /* Calm focus: a subtle border tint + a touch more lift, no acid glow ring (the bar no longer "lights up"). */
 .box:focus-within { border-color: var(--line-2); box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.18); }
 /* composer affordance icons sit dead-center in their buttons (svg as block removes baseline drift) */
@@ -619,13 +631,13 @@
 /* In-pill controls, ChatGPT-style: borderless ghost buttons that only show a soft surface on hover. */
 .mode { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 13.5px; color: var(--text-2); border: none; border-radius: 999px; padding: 8px 12px; height: 36px; cursor: pointer; background: transparent; font-family: var(--font); }
 .mode b { color: var(--text-2); font-weight: 500; }
-.mode:hover { background: var(--surface-2); color: var(--text); }
+.mode:hover { background: var(--fill-hover); color: var(--text); }
 .mode:hover b { color: var(--text); }
 /* padding:0 overrides the global text-button padding (legacy.css `button { padding: 10px 14px }`),
    which these fixed-size icon buttons inherit — that shrinks the grid content box and pushes the
    centered icon off. With padding:0 the 18px icon centers cleanly in the full 36px button. */
 .tool { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: none; background: transparent; color: var(--text-2); display: grid; place-items: center; cursor: pointer; flex: none; }
-.tool:hover { color: var(--text); background: var(--surface-2); }
+.tool:hover { color: var(--text); background: var(--fill-hover); }
 .send { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: none; background: var(--acid); color: var(--on-acid); display: grid; place-items: center; cursor: pointer; flex: none; box-shadow: 0 2px 9px -5px rgba(var(--acid-rgb), 0.45); }
 .send:hover { filter: brightness(1.07); }
 .send:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(0.3); }
@@ -641,17 +653,23 @@
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 @media (prefers-reduced-motion: reduce) { .tool.rec svg { animation: none; } }
 
-/* ── centered welcome (empty state), ChatGPT-style: orb + headline + composer + chips, vertically centered ── */
+/* ── centered welcome (empty state), Manus-style: orb + serif headline + composer + chips, vertically centered ── */
 .welcome-wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 24px 20px 40px; }
 .welcome { width: 100%; max-width: 720px; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .welcome .orb { margin-bottom: 20px; }
-.welcome-title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 10px; }
+/* Manus's one distinctive type choice: the greeting renders in the serif, not the UI sans. */
+.welcome-title { font-family: var(--font-serif); font-size: 36px; font-weight: 400; letter-spacing: -0.01em; margin: 0 0 10px; }
 .welcome-sub { color: var(--text-2); max-width: 460px; margin: 0 0 22px; line-height: 1.55; }
 .welcome .composer { width: 100%; max-width: 100%; padding: 0; }
 .welcome-chips { justify-content: center; margin-top: 18px; }
 /* suggestion chips carry a leading icon; keep the icon and text on one baseline */
 .chip-action { display: inline-flex; align-items: center; gap: 7px; }
 .chip-action svg { color: var(--text-3); flex: none; }
+/* Manus welcome-page suggestion chips: card radius (12px), and Manus's distinctive card hover —
+   the card DIMS (opacity 0.8), it does not swap background. Scoped to .welcome-chips only; the
+   many other .chip-action buttons across the app (export/plan/nav actions) keep their pill shape. */
+.welcome-chips .chip-action { border-radius: var(--radius); transition: opacity 0.15s; }
+.welcome-chips .chip-action:hover { opacity: 0.8; background: var(--surface); border-color: var(--line); color: var(--text-2); }
 @media (max-width: 480px) { .welcome-title { font-size: 23px; } }
 
 /* ── evidence panel ── */
@@ -887,7 +905,7 @@
 .cite-style-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-right: 4px; }
 .cite-style-toggle button { font-size: 11.5px; font-family: var(--font); padding: 5px 11px; background: var(--surface); color: var(--text-2); border: none; cursor: pointer; transition: 0.15s; }
 .cite-style-toggle button:not(:last-child) { border-right: 1px solid var(--line); }
-.cite-style-toggle button:hover { background: var(--surface-2); color: var(--text); }
+.cite-style-toggle button:hover { background: var(--fill-hover); color: var(--text); }
 .cite-style-toggle button.active { background: var(--acid); color: #fff; }
 .research-section { margin: 18px 0; }
 .research-heading { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); margin: 0 0 8px; }
@@ -905,7 +923,7 @@
 /* Mode selector row (Standard / Structured review) */
 .research-mode-row { display: flex; gap: 6px; margin: 8px 0 4px; flex-wrap: wrap; }
 .research-mode-btn { padding: 4px 12px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--text-2); font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
-.research-mode-btn:hover { background: var(--surface-2); color: var(--text); }
+.research-mode-btn:hover { background: var(--fill-hover); color: var(--text); }
 .research-mode-btn.active { background: var(--acid); color: #fff; border-color: var(--acid); }
 
 /* "What we searched" counts — collapsible, honest cap disclosure */
@@ -957,8 +975,9 @@
 /* report history */
 .research-history { margin-top: 28px; }
 .research-history-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-.research-card { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-2); text-decoration: none; transition: 0.15s; }
-.research-card:hover { border-color: var(--line-2); background: var(--surface-2); color: var(--text); }
+/* Manus card geometry (12px radius) + Manus's card hover: dims via opacity, doesn't swap bg. */
+.research-card { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text-2); text-decoration: none; transition: opacity 0.15s; }
+.research-card:hover { opacity: 0.8; }
 .research-card svg { color: var(--text-3); flex: none; }
 .research-card-title { flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .research-card small { color: var(--text-3); font-family: var(--mono); font-size: 11px; flex: none; }
@@ -1079,7 +1098,7 @@
   display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--line);
   border-radius: 999px; background: var(--raised); color: var(--text-2); font-size: 11px; font-family: var(--font);
 }
-.discovery-cite:hover { border-color: var(--line-2); color: var(--text); background: var(--surface-2); filter: none; }
+.discovery-cite:hover { border-color: var(--line-2); color: var(--text); background: var(--fill-hover); filter: none; }
 .discovery-cite b { font-family: var(--mono); font-size: 10px; color: var(--text); }
 .discovery-study-table td b { color: var(--text); font-weight: 600; }
 .discovery-study-table td small { display: block; color: var(--text-3); margin-top: 4px; line-height: 1.35; }
@@ -1132,7 +1151,7 @@
 .confirm-actions { display: flex; justify-content: flex-end; gap: 9px; }
 .confirm-actions button { padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; font-family: var(--font); cursor: pointer; border: 1px solid var(--line); transition: background 0.15s, border-color 0.15s, color 0.15s, filter 0.15s; }
 .confirm-cancel { background: var(--surface); color: var(--text-2); }
-.confirm-cancel:hover { background: var(--surface-2); color: var(--text); }
+.confirm-cancel:hover { background: var(--fill-hover); color: var(--text); }
 .confirm-del { background: var(--danger); border-color: var(--danger); color: #fff; }
 .confirm-del:hover { filter: brightness(1.07); }
 .confirm-actions button:focus-visible { outline: 2px solid var(--acid-dim); outline-offset: 2px; }
@@ -1171,7 +1190,7 @@
   color: var(--text-2); font-size: 14px; font-weight: 500; font-family: var(--font); cursor: pointer; text-align: left;
   transition: background 0.12s, color 0.12s;
 }
-.settings-nav button:hover { background: var(--surface-2); color: var(--text); }
+.settings-nav button:hover { background: var(--fill-hover); color: var(--text); }
 .settings-nav button.active { background: var(--surface-2); color: var(--text); font-weight: 600; }
 /* min-height keeps short sections (General/About) from collapsing smaller than the tall ones
    (Account/Billing) on the full page, so switching sections doesn't jump the layout. */
@@ -1190,22 +1209,26 @@
 .theme-swatch .tp-dot { position: absolute; right: 9px; bottom: 9px; width: 13px; height: 13px; border-radius: 50%; }
 .theme-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); padding: 0 2px; }
 .theme-card-foot svg { color: var(--acid); }
-[data-theme-preview="system"] { color: #ececec; }
-[data-theme-preview="system"] .tp-rail { background: linear-gradient(90deg, #f0f0f1 0 50%, #171717 50% 100%); }
-[data-theme-preview="system"] .tp-page { background: linear-gradient(90deg, #ffffff 0 50%, #212121 50% 100%); }
-[data-theme-preview="system"] .tp-dot { background: #9bd92e; }
-[data-theme-preview="light"] { color: #0d0d0d; }
-[data-theme-preview="light"] .tp-rail { background: #f0f0f1; }
+/* Settings theme-picker preview swatches — kept in sync with the live Manus token values above
+   (globals.css :root / [data-theme="grey"|"dark"]). tp-dot uses the Manus accent blue, matching
+   the app's live --acid (the orb's pinned --orb-color is deliberately NOT mirrored here — this
+   swatch previews the theme's accent, not the fixed brand mark). */
+[data-theme-preview="system"] { color: #dadada; }
+[data-theme-preview="system"] .tp-rail { background: linear-gradient(90deg, #f0f0f0 0 50%, #1f1f1f 50% 100%); }
+[data-theme-preview="system"] .tp-page { background: linear-gradient(90deg, #ffffff 0 50%, #242424 50% 100%); }
+[data-theme-preview="system"] .tp-dot { background: #0081f2; }
+[data-theme-preview="light"] { color: #34322d; }
+[data-theme-preview="light"] .tp-rail { background: #f0f0f0; }
 [data-theme-preview="light"] .tp-page { background: #ffffff; }
-[data-theme-preview="light"] .tp-dot { background: #62b000; }
-[data-theme-preview="grey"] { color: #ececec; }
-[data-theme-preview="grey"] .tp-rail { background: #171717; }
-[data-theme-preview="grey"] .tp-page { background: #212121; }
-[data-theme-preview="grey"] .tp-dot { background: #bcff3c; }
-[data-theme-preview="dark"] { color: #f4f4f5; }
-[data-theme-preview="dark"] .tp-rail { background: #0e0e10; }
-[data-theme-preview="dark"] .tp-page { background: #0a0a0b; }
-[data-theme-preview="dark"] .tp-dot { background: #bcff3c; }
+[data-theme-preview="light"] .tp-dot { background: #0081f2; }
+[data-theme-preview="grey"] { color: #dadada; }
+[data-theme-preview="grey"] .tp-rail { background: #1f1f1f; }
+[data-theme-preview="grey"] .tp-page { background: #242424; }
+[data-theme-preview="grey"] .tp-dot { background: #1a93fe; }
+[data-theme-preview="dark"] { color: #dadada; }
+[data-theme-preview="dark"] .tp-rail { background: #1f1f1f; }
+[data-theme-preview="dark"] .tp-page { background: #242424; }
+[data-theme-preview="dark"] .tp-dot { background: #1a93fe; }
 /* the consolidated Settings modal is wider so the left nav + content sit comfortably side by side */
 .app-modal-wide { width: min(840px, calc(100vw - 32px)); height: min(86vh, 580px); }
 /* FIXED height + the body scrolls within → switching sections never resizes/re-centers the modal;
