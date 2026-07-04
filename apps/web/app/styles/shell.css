@@ -127,6 +127,9 @@
 .row-menu .danger { color: var(--danger); }
 .row-menu .danger:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 .row-menu .sep { height: 1px; background: var(--line); margin: 5px 2px; }
+/* the in-place project list inside the row menu can grow past the viewport with many projects —
+   cap its height and let it scroll instead of overflowing (the menu's own flip math assumes a fixed height) */
+.row-menu-scroll { max-height: 260px; overflow-y: auto; }
 .rail-collapsed .hist { justify-content: center; padding: 9px 0; }
 .rail-collapsed .hist span, .rail-collapsed .hist-more { display: none; }
 .acct { border-top: 1px solid var(--line); padding: 12px; display: flex; align-items: center; gap: 10px; }

@@ -7,6 +7,7 @@ import { useTheme, type ThemePreference } from "@/components/theme-provider";
 import { Icon } from "@/components/icons";
 import { ProfilePanel } from "@/components/ProfilePanel";
 import { BillingPanel } from "@/components/BillingPanel";
+import { DataSourcesPanel } from "@/components/DataSourcesPanel";
 
 const THEME_OPTIONS: { id: ThemePreference; label: string }[] = [
   { id: "system", label: "System" },
@@ -33,6 +34,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: string }[] = [
  */
 export function SettingsSurface({ initialSection = "general", checkoutStatus }: { initialSection?: SettingsSection; checkoutStatus?: string }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const { preference, setTheme } = useTheme();
   const { signOut } = useAuth();
   const router = useRouter();
@@ -99,6 +101,10 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
             <p className="muted" style={{ fontSize: 13, margin: 0, lineHeight: 1.6 }}>
               PharmaOrb gives source-grounded, cited answers. Every medical claim traces to a real source. Educational use only — not a substitute for professional medical advice.
             </p>
+            <button type="button" className="mode watch-add-btn" style={{ marginTop: 12 }} onClick={() => setSourcesOpen(true)}>
+              <Icon name="shield" size={14} /> View data sources
+            </button>
+            <DataSourcesPanel open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
           </section>
         ) : null}
       </div>

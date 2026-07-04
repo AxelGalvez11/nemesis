@@ -6,7 +6,7 @@ import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
 import { simplifiedModesEnabled } from "@/lib/env";
-import { askQuestion, createConversation, fetchConversationTurns, fetchResearchReport, fetchResearchRun, fetchUsage, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
+import { askQuestion, createConversation, fetchConversationTurns, fetchProject, fetchResearchReport, fetchResearchRun, fetchUsage, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
@@ -16,13 +16,14 @@ import { POINT_OF_USE_DISCLAIMER } from "@/lib/legal";
 import { buildThinkingPreview } from "@/lib/thinking-preview";
 import { citationDomains, faviconUrl, hostnameOf, SEARCH_DOMAINS } from "@/lib/favicon";
 import { composerModeLabel } from "@/lib/ask-mode-label";
-import { setCached } from "@/lib/cache";
+import { getCached, setCached } from "@/lib/cache";
 import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
 import { PLAYBOOKS } from "@/lib/playbooks";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
+import { DataSourcesPanel } from "@/components/DataSourcesPanel";
 import { MissionSheet } from "@/components/MissionSheet";
 import { ResearchProgress } from "@/components/ResearchProgress";
 import { WatchButton } from "@/components/WatchButton";
@@ -88,6 +89,14 @@ function AskPage() {
   const loadedConvRef = useRef<string | null>(null); // guards against reloading a chat we just created
   const creatingConvRef = useRef<Promise<string | null> | null>(null); // dedupes concurrent first-turn creates
   const [question, setQuestion] = useState("");
+  // Project context (ChatGPT-Projects): a chat started from a project workspace carries its projectId
+  // (so the new conversation is filed into it) and the project's user-set instructions (prepended to
+  // the OUTGOING question for plain Ask calls only — never shown in the transcript, never to autoDepth,
+  // never to saved history, and never to report runs). Read once from the session cache on mount.
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string>("");
+  const [projectInstructions, setProjectInstructions] = useState<string>("");
+  const appliedProjectRef = useRef(false); // one-shot guard for the project→Ask cache handoff below
   // The full conversation: every question + its answer (or in-flight/errored state) stays on screen,
   // so a second prompt no longer wipes the first.
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -128,8 +137,27 @@ function AskPage() {
   // Load a saved chat when the URL targets one (?c=<id>); reset to a blank chat when it doesn't.
   // loadedConvRef stops us re-fetching a conversation we just created in this session.
   useEffect(() => {
-    if (!cParam) { loadedConvRef.current = null; creatingConvRef.current = null; setConversationId(null); setTurns([]); return; }
+    if (!cParam) {
+      loadedConvRef.current = null; creatingConvRef.current = null; setConversationId(null); setTurns([]);
+      // A bare "new chat" (router.push("/app/ask") from the sidebar, a saved chat, or elsewhere) must not
+      // inherit the previous mount's project context — AskPage doesn't remount on a query-only navigation,
+      // so without this, an unrelated next message would still be filed into the old project. If this
+      // navigation IS a fresh project→Ask handoff, the prefill effect below (same commit, declared after)
+      // re-populates projectId/instructions from the cache right after this clears it.
+      appliedProjectRef.current = false;
+      setProjectId(null); setProjectName(""); setProjectInstructions("");
+      return;
+    }
+    // cParam === loadedConvRef.current means this is OUR OWN just-created/just-loaded conversation
+    // (e.g. ensureConversation's router.replace after the first send) — keep the project context so a
+    // multi-turn project chat still carries instructions into turn 2+. Only a change to a genuinely
+    // DIFFERENT chat (switching in the sidebar) should drop the previous chat's project context; a
+    // reopened chat that WAS filed into a project won't re-show its chip (the one-shot cache seed is
+    // long consumed by then) — a known, out-of-scope limitation; it's still correctly filed server-side
+    // via its stored project_id.
     if (cParam === loadedConvRef.current) return;
+    appliedProjectRef.current = false;
+    setProjectId(null); setProjectName(""); setProjectInstructions("");
     loadedConvRef.current = cParam;
     setConversationId(cParam);
     setActiveTag(null);
@@ -164,6 +192,26 @@ function AskPage() {
     router.replace(cParam ? `/app/ask?c=${cParam}` : "/app/ask");
   }, [qParam, cParam, router]);
 
+  // Consume a project→Ask handoff written by the project workspace ("New chat in {name}"). Prefill the
+  // box (never auto-submit — same as ?q=), remember the project so the new chat is filed into it, and
+  // load the project to get its display name + instructions. Applied once, then the cache key is cleared
+  // so a later unrelated new chat isn't wrongly tagged to the project. (appliedProjectRef is declared
+  // with the other state above so the ?c=-reset effect can clear it too — see that effect's comment.)
+  useEffect(() => {
+    if (appliedProjectRef.current || cParam) return; // only on a fresh (no ?c=) chat
+    const seed = getCached<{ projectId: string; question: string }>("ask-project-prefill");
+    if (!seed || !seed.projectId) return;
+    appliedProjectRef.current = true;
+    setCached("ask-project-prefill", undefined); // consume it (one-shot)
+    setProjectId(seed.projectId);
+    if (seed.question) setQuestion(seed.question);
+    let alive = true; // guards against a stale response landing after the user navigates away mid-fetch
+    void fetchProject(seed.projectId).then((p) => {
+      if (alive && p) { setProjectName(p.name); setProjectInstructions(p.instructions ?? ""); }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [cParam]);
+
   // Persist a completed turn — best-effort, so a save failure never breaks the chat. On the first
   // message it creates the conversation, points the URL at it (refresh / deep-link works), and tells
   // the rail to refresh so the new chat appears in history.
@@ -171,7 +219,7 @@ function AskPage() {
   // e.g. a chat turn and a research turn racing), point the URL at it, and refresh the rail history.
   const ensureConversation = useCallback(async (q: string): Promise<string | null> => {
     if (conversationId) return conversationId;
-    if (!creatingConvRef.current) creatingConvRef.current = createConversation(q).catch(() => null);
+    if (!creatingConvRef.current) creatingConvRef.current = createConversation(q, projectId).catch(() => null);
     const convId = await creatingConvRef.current;
     if (convId) {
       loadedConvRef.current = convId;
@@ -183,7 +231,7 @@ function AskPage() {
       creatingConvRef.current = null;
     }
     return convId;
-  }, [conversationId, router, bumpChats]);
+  }, [conversationId, router, bumpChats, projectId]);
 
   // Persist a completed chat turn — best-effort, so a save failure never breaks the chat.
   const persistTurn = useCallback(async (idx: number, q: string, answer: AskResponse) => {
@@ -355,7 +403,13 @@ function AskPage() {
       // Only fast/thorough/auto reach here — report modes returned above via the research branch.
       // Auto picks the depth from the question shape (reuses the same fast/thorough engine paths).
       const askMode: AskMode = mode === "thorough" ? "thorough" : mode === "auto" ? autoDepth(text) : "fast";
-      const res = await askQuestion(text, askMode);
+      // Ride the project's user-set instructions into the question the engine sees — the frozen /ask fn
+      // is untouched; the safety scan still sees everything. Never applied to `text` (transcript, saved
+      // history) or autoDepth (depth classification) above. Report runs (deep/discovery) are excluded.
+      const outgoing = projectInstructions.trim()
+        ? `Project context (user-set): ${projectInstructions.trim().slice(0, 500)}\n\nQuestion: ${text}`
+        : text;
+      const res = await askQuestion(outgoing, askMode);
       await minThinkingPreview;
       setLast({ a: res, thinkSecs: Math.max(1, Math.round((Date.now() - t0) / 1000)) });
       setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
@@ -376,12 +430,25 @@ function AskPage() {
 
   const hasThread = turns.length > 0;
   const composer = (
-    <Composer
-      question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
-      submit={submit} busy={busy} mode={mode} setMode={setMode}
-      modeOpen={modeOpen} setModeOpen={setModeOpen} error={latest?.err ?? null}
-      welcome={!hasThread}
-    />
+    <>
+      {projectId ? (
+        <div className="chip-row" style={{ justifyContent: "center", marginBottom: 6 }}>
+          <span className="chip-action" style={{ cursor: "default" }}>
+            <Icon name="folder" size={14} />
+            in {projectName || "project"}
+            <button type="button" aria-label="Leave project context" title="Leave project context"
+              style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: "0 0 0 4px" }}
+              onClick={() => { setProjectId(null); setProjectInstructions(""); setProjectName(""); }}>✕</button>
+          </span>
+        </div>
+      ) : null}
+      <Composer
+        question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
+        submit={submit} busy={busy} mode={mode} setMode={setMode}
+        modeOpen={modeOpen} setModeOpen={setModeOpen} error={latest?.err ?? null}
+        welcome={!hasThread}
+      />
+    </>
   );
 
   // While a saved chat's turns are loading, show a quiet placeholder instead of the welcome screen
@@ -548,6 +615,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   // chat is active the suggestions stop — the box shows a calm static placeholder instead.
   const [phIdx, setPhIdx] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false); // the "+" tools launcher popover
+  const [sourcesOpen, setSourcesOpen] = useState(false); // the "Data sources" modal
   useEffect(() => {
     if (!welcome) return;
     const id = setInterval(() => setPhIdx((i) => (i + 1) % ASK_EXAMPLE_PROMPTS.length), 5000);
@@ -604,6 +672,10 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
               <button type="button" role="menuitem" disabled>
                 <Icon name="plus" size={14} /><span style={{ flex: 1 }}>Add photos &amp; files</span><small style={{ color: "var(--text-3)" }}>Soon</small>
               </button>
+              <div className="sep" role="separator" />
+              <button type="button" role="menuitem" onClick={() => { setSourcesOpen(true); setPlusOpen(false); }}>
+                <Icon name="shield" size={14} /><span style={{ flex: 1 }}>Data sources</span><small style={{ color: "var(--text-3)" }}>see what powers answers</small>
+              </button>
             </div>
           ) : null}
         </div>
@@ -657,6 +729,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
       </div>
       {error ? <div className="err">{error}</div> : null}
       <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
+      <DataSourcesPanel open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
     </div>
   );
 }

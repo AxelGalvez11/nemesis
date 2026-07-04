@@ -150,3 +150,10 @@ export * from "./claim-meter.ts";
 // " [1,3]" tag a claim's bullet line carries; referenceLines renders the numbered reference list
 // (with URL/DOI) in the same chunk_tag digit order, so a marker always points at the right line.
 export * from "./claim-refs.ts";
+
+// Report title cleanup: strip the Ask flow's "\n\nFocus: …" scoping suffix, normalize + cap for the
+// Library / workspace rows. PURE, display-only.
+export * from "./report-title.ts";
+
+// Relative "time until" ("in 2 h" / "in 3 d" / "due now") for the Scheduled surface. PURE.
+export * from "./relative-time.ts";
