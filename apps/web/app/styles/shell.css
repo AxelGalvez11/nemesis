@@ -1368,3 +1368,97 @@
 .credits-bar > span { display: block; height: 100%; background: var(--acid); border-radius: 999px; }
 .credits-foot { font-size: 12px; color: var(--text-3); line-height: 1.6; margin-top: 14px; }
 .credits-foot a { color: var(--acid-dim); }
+
+/* ── AgentRunTracker: Manus-style ordered task-progress checklist ──────────────────────────────────
+   Quiet, tight rows (14px label, right-aligned m:ss timer). Three states, deliberately discriminated:
+   ACTIVE is the emphasized "you are here" row (solid --acid dot + soft pulse, expandable narration);
+   DONE is calm — a tinted acid circle with an acid check (quieter than the solid active dot); PENDING
+   is a hollow muted ring in a dimmer text tier. Reads as a checklist, not cards. Tokens only. */
+.agent-run-tracker { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.art-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+/* The active row hosts a <details>; let it own the full grid so summary + detail align to the rows. */
+.art-row.active { display: block; padding: 0; }
+.art-disclosure { margin: 0; }
+.art-summary {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+  list-style: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.art-summary::-webkit-details-marker { display: none; }
+.art-summary:hover { background: var(--fill-hover, color-mix(in srgb, var(--text) 4%, transparent)); }
+
+/* Leading state icon — a 20px slot; done shows a tinted circle, active a solid dot, pending a ring. */
+.art-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.art-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--acid); }
+
+/* DONE — calm/tinted: soft acid-tinted disc + acid check, no glow. */
+.art-row.done .art-icon {
+  background: color-mix(in srgb, var(--acid) 15%, var(--surface));
+  color: var(--acid-deep);
+}
+.art-row.done .art-label { color: var(--text); }
+
+/* ACTIVE — the emphasized row: solid acid dot with a soft pulse. */
+.art-row.active .art-icon { background: transparent; }
+.art-row.active .art-dot {
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--acid) 40%, transparent);
+  animation: art-pulse 1.6s ease-out infinite;
+}
+.art-row.active .art-label { color: var(--text); font-weight: 500; }
+@keyframes art-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acid) 40%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 7px transparent; }
+}
+
+/* PENDING — hollow muted ring, dimmer label tier. */
+.art-row.pending .art-icon { border: 1.5px solid var(--line-2); }
+.art-row.pending .art-label { color: var(--text-3); }
+
+.art-label { min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.art-time {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.art-chevron {
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+  transition: transform 0.18s ease;
+}
+.art-disclosure[open] .art-chevron { transform: rotate(180deg); }
+
+/* Active-row narration — indented under the label, muted, a soft tinted panel. */
+.art-detail {
+  margin: 2px 0 6px;
+  padding: 8px 11px;
+  margin-left: 30px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--acid) 5%, var(--surface));
+  border-left: 2px solid color-mix(in srgb, var(--acid) 45%, var(--line));
+  border-radius: 0 8px 8px 0;
+}
