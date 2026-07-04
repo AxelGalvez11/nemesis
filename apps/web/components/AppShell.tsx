@@ -101,6 +101,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
   const [plan, setPlan] = useState<{ plan: string; used: number; limit: number }>({ plan: "free", used: 0, limit: 10 });
   const [chats, setChats] = useState<ConversationSummary[]>([]);
+  // Sidebar search: a client-side filter over the loaded Recent chats (title substring). Honest scope —
+  // this searches saved chats only, not the drug catalog.
+  const [chatQuery, setChatQuery] = useState("");
   const [chatsVersion, setChatsVersion] = useState(0);
   // Per-chat overflow (⋯) menu: which chat's menu is open + the fixed viewport coords to render it at
   // (fixed-positioned so the scrolling rail can't clip it).
@@ -373,6 +376,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const defaultTitle = titleForPath(path);
   const email = session.user.email ?? "preview@pharmaorb.app";
   const initials = email.slice(0, 2).toUpperCase();
+  // Filter Recent chats by title (case-insensitive substring). Empty query → the full list.
+  const q = chatQuery.trim().toLowerCase();
+  const visibleChats = q ? chats.filter((c) => c.title.toLowerCase().includes(q)) : chats;
 
   return (
     <AppChromeContext.Provider value={ctx}>
@@ -389,7 +395,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
           <div className="search">
             <Icon name="search" size={15} />
-            <input placeholder="Search chats & drugs" aria-label="Search chats and drugs" />
+            <input
+              value={chatQuery}
+              onChange={(e) => setChatQuery(e.target.value)}
+              placeholder="Search chats"
+              aria-label="Search chats"
+            />
           </div>
           <nav className="nav">
             <div className="r-label">Workspace</div>
@@ -413,8 +424,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="hist" style={{ color: "var(--text-2)", cursor: "default" }}>
                 <span style={{ fontSize: 12 }}>Your saved chats appear here</span>
               </div>
+            ) : visibleChats.length === 0 ? (
+              <div className="r-label" style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                No chats match
+              </div>
             ) : (
-              chats.map((c) => (
+              visibleChats.map((c) => (
                 <div key={c.id} className={`hist-row${rowMenu?.id === c.id ? " menu-open" : ""}`}>
                   {renamingId === c.id ? (
                     // Inline rename: the title becomes an editable field. Enter or click-away saves;
