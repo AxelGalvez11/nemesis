@@ -69,6 +69,89 @@ function pillName(t: string): string {
   return (k ? PROVIDER_PILL[k] : undefined) ?? "Source";
 }
 
+// ── Dictation (Web Speech API) ────────────────────────────────────────────────────────────────────
+// SpeechRecognition isn't in the TS DOM lib, so we declare the minimal surface we use. No `any`.
+interface SpeechRecognitionAlternativeLike { readonly transcript: string; }
+interface SpeechRecognitionResultLike { readonly isFinal: boolean; readonly length: number; readonly [index: number]: SpeechRecognitionAlternativeLike; }
+interface SpeechRecognitionResultListLike { readonly length: number; readonly [index: number]: SpeechRecognitionResultLike; }
+interface SpeechRecognitionEventLike { readonly resultIndex: number; readonly results: SpeechRecognitionResultListLike; }
+interface SpeechRecognitionErrorEventLike { readonly error: string; }
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((e: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+// Dictation hook: feature-detected on the client (init `false` so SSR and first client render agree —
+// no hydration mismatch). `toggle` starts/stops recognition; finals accumulate onto the text present
+// when recording began (`getBaseText`), and the live interim is shown appended. Permission errors
+// surface as an honest note. The recognizer is aborted on unmount.
+function useDictation(setQuestion: Dispatch<SetStateAction<string>>, getBaseText: () => string) {
+  const [supported, setSupported] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const recRef = useRef<SpeechRecognitionLike | null>(null);
+  const baseRef = useRef("");     // textarea text captured when recording started
+  const finalsRef = useRef("");   // finalized transcript accumulated this session
+
+  useEffect(() => { setSupported(getSpeechRecognitionCtor() !== null); }, []);
+
+  useEffect(() => () => { recRef.current?.abort(); }, []); // stop cleanly if we unmount mid-dictation
+
+  const toggle = useCallback(() => {
+    if (listening) { recRef.current?.stop(); return; }
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) { setError("Dictation isn’t supported in this browser."); return; }
+    const rec = new Ctor();
+    rec.lang = "en-US";
+    rec.interimResults = true;
+    rec.continuous = true;
+    baseRef.current = getBaseText();
+    finalsRef.current = "";
+    rec.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (!r) continue; // noUncheckedIndexedAccess: index access on the results list is optional
+        const text = r[0]?.transcript ?? "";
+        if (r.isFinal) finalsRef.current += text;
+        else interim += text;
+      }
+      const base = baseRef.current;
+      const joiner = base && !/\s$/.test(base) ? " " : "";
+      setQuestion(`${base}${joiner}${finalsRef.current}${interim}`.trimStart());
+    };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        setError("Microphone access is blocked — allow it in your browser to dictate.");
+      } else if (e.error === "no-speech") {
+        setError(null); // benign: user just didn't speak
+      } else {
+        setError("Dictation stopped unexpectedly. Try again.");
+      }
+    };
+    rec.onend = () => { setListening(false); recRef.current = null; };
+    recRef.current = rec;
+    setError(null);
+    try { rec.start(); setListening(true); }
+    catch { setError("Couldn’t start dictation. Try again."); setListening(false); recRef.current = null; }
+  }, [listening, setQuestion, getBaseText]);
+
+  return { supported, listening, error, toggle };
+}
+
 export default function AskPageRoute() {
   // useSearchParams (for the ?c=<conversation> deep link) needs a Suspense boundary at build time.
   return (
@@ -658,6 +741,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   const [phIdx, setPhIdx] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false); // the "+" tools launcher popover
   const [sourcesOpen, setSourcesOpen] = useState(false); // the "Data sources" modal
+  const dictation = useDictation(setQuestion, () => question);
   useEffect(() => {
     if (!welcome) return;
     const id = setInterval(() => setPhIdx((i) => (i + 1) % ASK_EXAMPLE_PROMPTS.length), 5000);
@@ -795,7 +879,15 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             </div>
           ) : null}
         </div>
-        <button className="tool" type="button" data-tip="Voice — coming soon" aria-label="Voice input" disabled>
+        <button
+          className={`tool${dictation.listening ? " rec" : ""}`}
+          type="button"
+          data-tip={dictation.supported ? (dictation.listening ? "Stop dictation" : "Dictate") : "Dictation not supported in this browser"}
+          aria-label={dictation.listening ? "Stop dictation" : "Dictate"}
+          aria-pressed={dictation.listening}
+          disabled={!dictation.supported}
+          onClick={dictation.toggle}
+        >
           <Icon name="mic" size={18} />
         </button>
         <button className="send" data-tip="Send" aria-label="Send" onClick={() => submit(question)} disabled={busy || !question.trim()}>
@@ -803,6 +895,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
         </button>
       </div>
       {error ? <div className="err">{error}</div> : null}
+      {dictation.error ? <div className="err">{dictation.error}</div> : null}
       <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
       <DataSourcesPanel open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
     </div>
