@@ -84,11 +84,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
 
   // Persisted across reloads so the sidebar stays where the user left it (ChatGPT/Manus behavior).
-  // Lazy initializer so we read localStorage exactly once, and only in the browser (SSR-safe).
-  const [railCollapsed, setRailCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("rail-collapsed") === "1";
-  });
+  // Starts deterministic (expanded) and reconciles from localStorage after mount — same pattern as
+  // theme-provider — because reading storage in the initializer makes SSR and client render different
+  // markup (hydration mismatch + flash for collapsed-sidebar users).
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  useEffect(() => {
+    if (window.localStorage.getItem("rail-collapsed") === "1") setRailCollapsed(true);
+  }, []);
   // Evidence panel starts COLLAPSED: the chat is the focus on entry. It opens on demand — the
   // topbar panel button, or a citation click (openEvidence) — so sources are one click away.
   const [evidenceCollapsed, setEvidenceCollapsed] = useState(true);
