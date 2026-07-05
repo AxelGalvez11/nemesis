@@ -3,7 +3,7 @@
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
+import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ResearchProgressStep, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
 import { simplifiedModesEnabled } from "@/lib/env";
 import { askQuestion, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
@@ -22,6 +22,7 @@ import { PLAYBOOKS, SKILLS } from "@/lib/playbooks";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Icon } from "@/components/icons";
+import { AgentRunDock } from "@/components/AgentRunDock";
 import { DataSourcesPanel } from "@/components/DataSourcesPanel";
 import { MissionSheet } from "@/components/MissionSheet";
 import { ResearchProgress } from "@/components/ResearchProgress";
@@ -183,6 +184,10 @@ function AskPage() {
   // The full conversation: every question + its answer (or in-flight/errored state) stays on screen,
   // so a second prompt no longer wipes the first.
   const [turns, setTurns] = useState<Turn[]>([]);
+  // Live progress for the currently-active research run, lifted up from ResearchRunCard so the pinned
+  // AgentRunDock (docked above the composer) can mirror it. Null when no run is active — the card
+  // reports its `run.progress` here on each poll and clears it (null) on completion/failure/unmount.
+  const [activeRunProgress, setActiveRunProgress] = useState<ResearchProgressStep[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
@@ -633,6 +638,7 @@ function AskPage() {
                     <>
                       <ResearchRunCard
                         card={t.research}
+                        onProgress={setActiveRunProgress}
                         onComplete={(r) => {
                           void persistResearchTurn(i, t.q, t.research!.mode, r);
                           // Slides skill: if THIS turn asked for slides, export its report to PowerPoint
@@ -670,7 +676,10 @@ function AskPage() {
         })}
         <div ref={bottomRef} />
       </div>
-      <div className="composer-wrap">{composer}</div>
+      <div className="composer-wrap">
+        <AgentRunDock progress={activeRunProgress} />
+        {composer}
+      </div>
     </>
   );
 }
@@ -1089,7 +1098,7 @@ function ScopeTurn({ state, onRun }: { state: ScopeTurnState; onRun: (enrichedQu
 // The inline deep-research card. While the run is in flight it polls research_report_runs (RLS-scoped)
 // and shows live progress; on completion it becomes a "Report ready" card linking to the full report
 // in the Reports library. A start-time error (quota / Pro gate) is passed down on the card.
-function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?: (r: { savedReportId: string | null; sources: number }) => void }) {
+function ResearchRunCard({ card, onComplete, onProgress }: { card: ResearchCard; onComplete?: (r: { savedReportId: string | null; sources: number }) => void; onProgress?: (progress: ResearchProgressStep[] | null) => void }) {
   const [run, setRun] = useState<ResearchRunRow | null>(null);
   // Rehydrated (saved) cards start already-done; live runs reach done via polling.
   const [done, setDone] = useState<{ id: string | null; sources: number; title: string } | null>(
@@ -1099,6 +1108,10 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
   // Hold the latest onComplete in a ref so it isn't a poll-effect dependency (which would restart polling).
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+  // Same ref pattern for onProgress — keeps it out of the poll effect's deps so lifting live progress
+  // up to the pinned dock never restarts the poll.
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
   const firedRef = useRef(false);
   const [showMission, setShowMission] = useState(false);
 
@@ -1113,13 +1126,17 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
       if (!alive) return;
-      if (++polls > MAX_POLLS) { setErr("This is taking longer than expected — check your Reports list in a bit."); return; }
+      if (++polls > MAX_POLLS) { onProgressRef.current?.(null); setErr("This is taking longer than expected — check your Reports list in a bit."); return; }
       try {
         const row = await fetchResearchRun(card.runId);
         if (!alive) return;
         if (row) {
           setRun(row);
+          // Mirror this run's live progress up to the pinned AgentRunDock (above the composer).
+          onProgressRef.current?.(row.progress ?? []);
           if (row.status === "completed") {
+            // Run finished — clear the dock so it stops mirroring a now-done run.
+            onProgressRef.current?.(null);
             const rep = row.saved_report_id ? await fetchResearchReport(row.saved_report_id) : null;
             if (!alive) return;
             const sources = rep?.citations.length ?? 0;
@@ -1128,13 +1145,13 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
             if (!firedRef.current) { firedRef.current = true; onCompleteRef.current?.({ savedReportId: row.saved_report_id, sources }); }
             return;
           }
-          if (row.status === "failed") { setErr(row.error || "Research could not be completed."); return; }
+          if (row.status === "failed") { onProgressRef.current?.(null); setErr(row.error || "Research could not be completed."); return; }
         }
       } catch { /* transient read error — keep polling */ }
       timer = setTimeout(tick, 1500);
     };
     void tick();
-    return () => { alive = false; clearTimeout(timer); };
+    return () => { alive = false; clearTimeout(timer); onProgressRef.current?.(null); };
   }, [card.runId, card.error, card.completed, card.title, done]);
 
   // "meta", "structured_review", and "standard" are ALL user-facing "Deep research" now (the pooled

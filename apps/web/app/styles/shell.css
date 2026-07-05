@@ -1474,6 +1474,83 @@
   border-radius: 0 8px 8px 0;
 }
 
+/* ── Agent-run dock ── */
+/* Manus's pinned "Task progress" dock: a collapsible bar docked directly above the composer while a
+   research run is live. Sits in the same 768px centered column as .composer, with a raised background,
+   a hairline top border, and rounded top corners (--radius) so it reads as attached to the box below.
+   Collapsed = one bar (state icon · current step · elapsed · N/M · chevron); expanded reveals the full
+   AgentRunTracker under a small caption. Tokens only. */
+.agent-run-dock {
+  max-width: 768px;
+  margin: 0 auto 8px;
+  padding: 0 28px;
+}
+.ard-bar {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto 18px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 13px;
+  border: 1px solid var(--line);
+  border-top: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--raised), var(--surface));
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 -1px 0 var(--line-2), 0 6px 18px -12px rgba(0, 0, 0, 0.24);
+  transition: border-color 0.15s, background 0.15s;
+}
+.ard-bar:hover { border-color: var(--line-2); }
+.ard-thumb {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--acid) 14%, var(--surface));
+  color: var(--acid-deep);
+  flex: none;
+}
+.ard-current { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
+.ard-elapsed {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ard-count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--fill-hover, color-mix(in srgb, var(--text) 5%, transparent));
+}
+.ard-chevron { display: grid; place-items: center; color: var(--text-3); transition: transform 0.18s ease; }
+.ard-chevron.open { transform: rotate(180deg); }
+.ard-body {
+  margin-top: 6px;
+  padding: 10px 13px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.ard-caption {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+
 /* ── Library (Manus grid) ── */
 /* Manus's Library is a header row (title + always-on search + filter + grid/list toggle) over a
    responsive card grid — NOT a centered serif greeting. Chrome uses only existing tokens; cards get
