@@ -1801,19 +1801,21 @@
 .rail-collapsed .brand .rail-collapse { margin: 0; }
 
 /* ── Research poster (wedge) ──────────────────────────────────────────────────────────────────
-   A cited conference poster board: fixed landscape canvas (a 4:3-ish board that reads as a real
-   printed poster), a full-width accent header band, a 3-column body, an evidence mini-table, and a
-   numbered references column. Tokens only. print-color-adjust: exact keeps the accent band + table
-   fills when printed to PDF; @media print strips the app to just the board so it prints clean. */
+   A cited conference poster board sized to the US academic-conference standard: 48×36 inches,
+   LANDSCAPE (4:3 — wider than tall). The board is aspect-ratio-locked to 48/36 so the on-screen
+   preview and any print/PDF keep true poster proportions; a 4-column body fills the wide canvas
+   (no portrait growth, no empty vertical gap). Academic header (title + author/affiliation
+   placeholder + neutral N-sources·date), an evidence mini-table, and a multi-column references
+   column. Tokens only, no product branding. print-color-adjust: exact keeps the accent header +
+   table fills when printed to PDF; @media print strips the app to just the board so it prints clean. */
 .poster-preview-stage {
   min-height: 100vh; background: var(--surface); display: flex; justify-content: center;
   align-items: flex-start; padding: 40px 24px; box-sizing: border-box;
 }
 .research-poster {
-  --poster-w: 1120px;
-  /* Fixed landscape board. aspect-ratio sets the 4:3 board proportion as a FLOOR (min-height) so the
-     board keeps its poster shape but grows to fit content rather than clipping the references column. */
-  width: var(--poster-w); max-width: 100%; min-height: calc(var(--poster-w) * 3 / 4);
+  /* Fixed 48×36 landscape board. aspect-ratio locks the true 4:3 poster shape; the width scales to
+     fit the viewport (capped so the board reads large) and the height follows from the ratio. */
+  width: 100%; max-width: 1440px; aspect-ratio: 48 / 36;
   background: var(--bg);
   border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden;
   display: flex; flex-direction: column; color: var(--text); font-family: var(--font);
@@ -1821,96 +1823,104 @@
   print-color-adjust: exact; -webkit-print-color-adjust: exact;
 }
 
-/* Header band — accent-tinted, with the report question as the title. */
+/* Academic header — accent-tinted band with the report question as the title, an editable-looking
+   author/affiliation line, and a neutral sources·date line. No product branding. */
 .poster-head {
-  padding: 26px 34px 22px; border-bottom: 3px solid var(--acid);
+  padding: 20px 34px 14px; border-bottom: 3px solid var(--acid);
   background: linear-gradient(180deg, color-mix(in srgb, var(--acid) 9%, var(--bg)), var(--bg));
 }
-.poster-kicker {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase;
-  font-weight: 600; color: var(--acid-dim); margin-bottom: 8px;
-}
 .poster-title {
-  font-family: var(--font-serif); font-size: 34px; line-height: 1.16; font-weight: 400;
-  color: var(--text); margin: 0 0 14px; letter-spacing: -0.01em;
+  font-family: var(--font-serif); font-size: 29px; line-height: 1.12; font-weight: 400;
+  color: var(--text); margin: 0 0 8px; letter-spacing: -0.01em;
 }
-.poster-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
-.poster-grade {
-  font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
-  font-weight: 600; color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.35);
-  border-radius: 999px; padding: 3px 10px; background: color-mix(in srgb, var(--acid) 6%, transparent);
+.poster-byline {
+  font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: -0.005em; margin-bottom: 5px;
 }
-.poster-verify, .poster-builtfrom { font-size: 12px; color: var(--text-2); font-weight: 500; }
-.poster-verify::before, .poster-builtfrom::before { content: "·"; margin-right: 10px; color: var(--text-3); }
+.poster-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.poster-meta-item { font-family: var(--mono); font-size: 11px; letter-spacing: 0.03em; color: var(--text-3); }
+.poster-meta-item + .poster-meta-item::before { content: "·"; margin-right: 8px; color: var(--text-3); }
 
-/* Body — 3 columns, thin token rules between them. */
+/* Body — a 3-column upper region, then a full-width evidence-base band and references band, so the
+   wide landscape canvas is used top-to-bottom without a portrait gap or a clipped column. */
 .poster-body {
-  flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr;
-  gap: 28px; padding: 26px 34px 20px;
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  gap: 13px; padding: 16px 34px 18px; overflow: hidden;
 }
-.poster-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
-.poster-col + .poster-col { border-left: 1px solid var(--line); padding-left: 28px; margin-left: -14px; }
+.poster-upper {
+  flex: 0 0 auto; min-height: 0; display: grid; grid-template-columns: 1fr 2.3fr 1fr; gap: 22px;
+}
+.poster-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; }
+.poster-col + .poster-col { border-left: 1px solid var(--line); padding-left: 22px; margin-left: -11px; }
+
+/* Key findings flow three-up inside the double-width middle column. */
+.poster-findings-flow { columns: 3; column-gap: 18px; }
+.poster-findings-flow .poster-finding { break-inside: avoid; margin-bottom: 2px; }
+.poster-findings-flow .poster-p { margin-bottom: 5px; }
 
 .poster-block { break-inside: avoid; }
 .poster-h {
-  font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 9px; padding-bottom: 6px;
+  font-size: 13.5px; font-weight: 700; color: var(--text); margin: 0 0 7px; padding-bottom: 4px;
   border-bottom: 2px solid var(--acid); display: inline-block; letter-spacing: -0.01em;
 }
-.poster-h3 { font-size: 13px; font-weight: 700; color: var(--text); margin: 12px 0 5px; }
+.poster-h3 { font-size: 12px; font-weight: 700; color: var(--text); margin: 9px 0 4px; }
 .poster-finding:first-child .poster-h3 { margin-top: 0; }
-.poster-p { font-size: 12.5px; line-height: 1.5; color: var(--text-2); margin: 0 0 8px; }
+.poster-p { font-size: 11.5px; line-height: 1.42; color: var(--text-2); margin: 0 0 6px; }
 .poster-p.poster-muted { color: var(--text-3); }
 .poster-claim { color: var(--text); }
 .poster-cite {
-  font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--acid-dim);
+  font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--acid-dim);
   white-space: nowrap;
 }
 
-.poster-methods, .poster-gaps { margin: 0; padding-left: 16px; }
-.poster-methods li, .poster-gaps li { font-size: 12px; line-height: 1.5; color: var(--text-2); margin: 0 0 6px; }
+.poster-methods, .poster-gaps { margin: 0; padding-left: 15px; }
+.poster-methods li, .poster-gaps li { font-size: 11px; line-height: 1.4; color: var(--text-2); margin: 0 0 4px; }
 .poster-methods li b { color: var(--text); font-weight: 600; }
-.poster-methods-count { font-size: 12px; line-height: 1.5; color: var(--text-2); margin: 8px 0 0; }
+.poster-methods-count { font-size: 11px; line-height: 1.4; color: var(--text-2); margin: 6px 0 0; }
 .poster-methods-count b { color: var(--text); font-family: var(--mono); }
 .poster-gap-trials { color: var(--text-3); }
 
 .poster-safety .poster-h { border-bottom-color: var(--warn); }
 
-/* Evidence mini-table (# · Type · Year), mirroring evidenceRows. */
-.poster-evidence { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+/* Full-width evidence-base + references bands below the upper region. */
+.poster-evidence-band, .poster-refs-band {
+  flex: none; min-width: 0; border-top: 1px solid var(--line-2); padding-top: 10px;
+}
+
+/* Evidence mini-table (# · Type · Source · Year), mirroring evidenceRows. Split four-up so a real
+   source list stays a short full-width band while keeping the Source column readable. */
+.poster-evidence-split { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 4px; }
+.poster-evidence { width: 100%; border-collapse: collapse; font-size: 9px; table-layout: fixed; margin-top: 6px; }
 .poster-evidence th {
-  text-align: left; font-weight: 700; color: var(--text); padding: 5px 8px;
+  text-align: left; font-weight: 700; color: var(--text); padding: 2.5px 6px;
   background: var(--fill-active); border-bottom: 1px solid var(--line-2);
 }
 .poster-evidence th:first-child { border-top-left-radius: 6px; }
 .poster-evidence th:last-child { border-top-right-radius: 6px; }
-.poster-evidence td { padding: 4px 8px; color: var(--text-2); border-bottom: 1px solid var(--line); }
+.poster-evidence td { padding: 1.5px 6px; color: var(--text-2); border-bottom: 1px solid var(--line); vertical-align: top; }
 .poster-evidence tr:last-child td { border-bottom: none; }
-.poster-ev-tag { font-family: var(--mono); font-weight: 600; color: var(--acid-dim); }
+.poster-ev-tag { font-family: var(--mono); font-weight: 600; color: var(--acid-dim); width: 8%; }
+.poster-evidence th:nth-child(2), .poster-evidence td:nth-child(2) { width: 24%; }
+.poster-evidence th:nth-child(4), .poster-evidence td:nth-child(4) { width: 11%; }
+.poster-ev-src { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* References — numbered, tight, monospace numerals via the shared referenceLines strings. */
-.poster-refs { margin: 0; padding-left: 20px; }
-.poster-refs li { font-size: 10.5px; line-height: 1.45; color: var(--text-2); margin: 0 0 6px; }
+/* References — a full-width band that flows the whole numbered list across sub-columns, so a
+   real-sized citation list (~30) fills the wide board horizontally instead of overflowing a narrow
+   column. Numbered, tight, monospace numerals via the shared referenceLines strings. */
+.poster-refs {
+  margin: 4px 0 0; padding: 0; list-style-position: inside;
+  column-count: 7; column-gap: 14px; column-rule: 1px solid var(--line);
+}
+.poster-refs li { font-size: 8px; line-height: 1.26; color: var(--text-2); margin: 0 0 3px; break-inside: avoid; padding-left: 1px; }
 .poster-refs li::marker { color: var(--text-3); font-family: var(--mono); }
 
-/* Growth-loop footer strip. */
-.poster-footer {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 11px 34px; border-top: 1px solid var(--line);
-  background: color-mix(in srgb, var(--acid) 5%, var(--bg));
-}
-.poster-footer-mark { font-weight: 700; font-size: 12px; color: var(--text); letter-spacing: -0.01em; }
-.poster-footer-sep { color: var(--text-3); }
-.poster-footer-note {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--text-3);
-}
-
-/* Print / PDF: strip everything but a fixed-size board so it prints to a clean landscape page. */
+/* Print / PDF: strip everything but the fixed 4:3 board so it prints to a clean landscape page.
+   Unlock overflow/height so nothing clips on paper while keeping the 48×36 landscape ratio. */
 @media print {
   .poster-preview-stage { padding: 0; background: var(--bg); min-height: 0; }
   .research-poster {
-    width: 100%; max-width: none; aspect-ratio: auto; height: auto; min-height: 100vh;
-    border: none; border-radius: 0; box-shadow: none;
+    width: 100%; max-width: none; aspect-ratio: 48 / 36; height: auto;
+    border: none; border-radius: 0; box-shadow: none; overflow: visible;
   }
+  .poster-body { overflow: visible; }
   @page { size: landscape; margin: 12mm; }
 }
