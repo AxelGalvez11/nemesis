@@ -3,7 +3,7 @@
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
+import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ResearchProgressStep, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
 import { simplifiedModesEnabled } from "@/lib/env";
 import { askQuestion, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
@@ -21,8 +21,10 @@ import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
 import { PLAYBOOKS, SKILLS } from "@/lib/playbooks";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
-import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
+import { AgentRunDock } from "@/components/AgentRunDock";
+import { WorkPanel } from "@/components/WorkPanel";
+import { DomainChips } from "@/components/DomainChips";
 import { DataSourcesPanel } from "@/components/DataSourcesPanel";
 import { MissionSheet } from "@/components/MissionSheet";
 import { ResearchProgress } from "@/components/ResearchProgress";
@@ -184,6 +186,10 @@ function AskPage() {
   // The full conversation: every question + its answer (or in-flight/errored state) stays on screen,
   // so a second prompt no longer wipes the first.
   const [turns, setTurns] = useState<Turn[]>([]);
+  // Live progress for the currently-active research run, lifted up from ResearchRunCard so the pinned
+  // AgentRunDock (docked above the composer) can mirror it. Null when no run is active — the card
+  // reports its `run.progress` here on each poll and clears it (null) on completion/failure/unmount.
+  const [activeRunProgress, setActiveRunProgress] = useState<ResearchProgressStep[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
@@ -385,8 +391,17 @@ function AskPage() {
   // render, so depending on it would re-run this effect in a loop as it sets shell state.
   // The panel shows the PINNED answer (a citation the user clicked) if set, else the latest answer.
   const panelAnswer = activeAnswer ?? lastAnswered;
+  // While a research run is LIVE the right dock shows the "watch the evidence assemble" WorkPanel;
+  // when it ends (progress back to null) the dock reverts to the normal per-answer EvidencePanel.
+  // `runActive` re-derives on every poll (activeRunProgress gets a fresh array each tick), which is
+  // exactly what keeps the WorkPanel's timeline + source count live via the injection effect below.
+  const runActive = Boolean(activeRunProgress && activeRunProgress.length);
   useEffect(() => {
-    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} reviewed={panelAnswer?.reviewed_sources} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />);
+    setEvidence(
+      runActive
+        ? <WorkPanel progress={activeRunProgress!} question={latest?.q} />
+        : <EvidencePanel citations={panelAnswer?.citations ?? []} reviewed={panelAnswer?.reviewed_sources} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />,
+    );
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
@@ -399,7 +414,15 @@ function AskPage() {
       setEvidence(null);
       setTopbar(null);
     };
-  }, [panelAnswer, latest?.q, activeTag, activeQuote, setEvidence, setTopbar]);
+  }, [runActive, activeRunProgress, panelAnswer, latest?.q, activeTag, activeQuote, setEvidence, setTopbar]);
+
+  // Open the right dock ONCE when a run starts (the null→live rising edge), so the WorkPanel is
+  // visible. Depending on the BOOLEAN `runActive` (not the poll-updated array) means this effect
+  // does NOT re-fire on each poll — so a user who re-collapses the dock stays collapsed. openEvidence
+  // is a stable useCallback that only ever un-collapses; setEvidence never touches the collapsed state.
+  useEffect(() => {
+    if (runActive) openEvidence();
+  }, [runActive, openEvidence]);
 
   // Thinking steps: a decelerating schedule that tracks the real pipeline (read the question fast,
   // then the slow library + live search, then ranking) and HOLDS on the final "composing" step until
@@ -583,7 +606,6 @@ function AskPage() {
     return (
       <div className="welcome-wrap">
         <div className="welcome">
-          <Orb size={56} />
           <h2 className="welcome-title">{reopenedEmpty ? "This chat has no saved messages" : "What can I help you research?"}</h2>
           {reopenedEmpty ? (
             <p className="welcome-sub">Its earlier turns didn’t save (a now-fixed bug). Ask below to continue in this chat, or start a new one.</p>
@@ -619,6 +641,13 @@ function AskPage() {
             <div className="turn" key={i}>
               <div className="msg-user"><div className="bubble">{t.q}</div></div>
               <div className="msg-ai">
+                {/* Manus-style agent turn header: a quiet monogram avatar + the product name above each
+                    AI answer (Manus shows "🌱 manus"). The decorative Orb was removed by owner direction,
+                    so this is a simple token-tinted "P" square, not <Orb/>. Purely presentational. */}
+                <div className="agent-head" aria-hidden="true">
+                  <span className="agent-avatar">P</span>
+                  <span className="agent-name">PharmaOrb</span>
+                </div>
                 <div className="ai-body">
                   {t.scoping ? (
                     <div className="thinking"><div className="think-row"><span className="shimmer">Scoping your question…</span></div></div>
@@ -628,6 +657,7 @@ function AskPage() {
                     <>
                       <ResearchRunCard
                         card={t.research}
+                        onProgress={setActiveRunProgress}
                         onComplete={(r) => {
                           void persistResearchTurn(i, t.q, t.research!.mode, r);
                           // Slides skill: if THIS turn asked for slides, export its report to PowerPoint
@@ -665,7 +695,10 @@ function AskPage() {
         })}
         <div ref={bottomRef} />
       </div>
-      <div className="composer-wrap">{composer}</div>
+      <div className="composer-wrap">
+        <AgentRunDock progress={activeRunProgress} question={latest?.q} />
+        {composer}
+      </div>
     </>
   );
 }
@@ -741,21 +774,57 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   const [phIdx, setPhIdx] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false); // the "+" tools launcher popover
   const [sourcesOpen, setSourcesOpen] = useState(false); // the "Data sources" modal
+  // The tall "+" tools menu flips up/down and caps its height to the free space on that side, so its
+  // Skills/Playbooks list is never pushed past the window edge — the welcome composer sits low (little
+  // room above) while a thread composer sits at the bottom (little room below).
+  const plusBtnRef = useRef<HTMLButtonElement>(null);
+  const [plusMenuStyle, setPlusMenuStyle] = useState<CSSProperties>({ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 280, maxHeight: 460 });
   const dictation = useDictation(setQuestion, () => question);
   useEffect(() => {
     if (!welcome) return;
     const id = setInterval(() => setPhIdx((i) => (i + 1) % ASK_EXAMPLE_PROMPTS.length), 5000);
     return () => clearInterval(id);
   }, [welcome]);
+  // Place the tools menu when it opens (and keep it placed on resize/scroll): open on whichever side of
+  // the "+" button has more room, and cap the menu to that side's height so the whole list always fits.
+  useEffect(() => {
+    if (!plusOpen) return;
+    const place = () => {
+      const btn = plusBtnRef.current;
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      const gap = 12;
+      // The upward menu must clear the fixed topbar, so the usable space above is measured from the
+      // topbar's bottom edge (not the window top). This also biases the choice toward whichever side
+      // genuinely has more room, so a low welcome composer flips the menu downward instead of clipping.
+      const topbarH = (document.querySelector(".topbar") as HTMLElement | null)?.getBoundingClientRect().height ?? 56;
+      const above = r.top - topbarH - gap;
+      const below = window.innerHeight - r.bottom - gap;
+      const openUp = above >= below;
+      const maxHeight = Math.max(200, Math.min(460, Math.round(openUp ? above : below)));
+      setPlusMenuStyle(
+        openUp
+          ? { bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 280, maxHeight }
+          : { top: "calc(100% + 6px)", bottom: "auto", left: 0, right: "auto", width: 280, maxHeight },
+      );
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [plusOpen]);
   return (
     <div className="composer">
       <div className="box">
         <div className="mode-wrap" style={{ position: "relative" }}>
-          <button className="tool" type="button" data-tip="Tools" aria-label="Tools" aria-haspopup="menu" aria-expanded={plusOpen} onClick={() => setPlusOpen((v) => !v)}>
+          <button ref={plusBtnRef} className="tool" type="button" data-tip="Tools" aria-label="Tools" aria-haspopup="menu" aria-expanded={plusOpen} onClick={() => setPlusOpen((v) => !v)}>
             <Icon name="plus" size={18} />
           </button>
           {plusOpen ? (
-            <div className="acct-menu tools-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 280 }}>
+            <div className="acct-menu tools-menu" role="menu" style={plusMenuStyle}>
               {/* Tools: each arms a report mode (or prefills the box) for the next send, and the
                   armed mode resets to the default depth once that run launches (single-shot — see
                   submit()). Deep research includes the pooled meta-analysis when studies allow it. */}
@@ -845,10 +914,19 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             value={question}
             maxLength={500}
             aria-label="Ask a question about a drug, dose, interaction, or monograph"
-            placeholder={welcome ? "" : busy ? "Follow up" : "Ask anything"}
+            placeholder={welcome ? "Ask anything, or type / for more" : busy ? "Follow up" : "Ask anything"}
             onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); } }}
+            onKeyDown={(e) => {
+              // Manus's slash affordance: on an empty box, "/" opens the existing "+" tools launcher
+              // instead of typing a literal slash. Any non-empty box types "/" normally.
+              if (e.key === "/" && !question) { e.preventDefault(); setPlusOpen(true); return; }
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); }
+            }}
           />
+          {/* The standing "/ for more" affordance lives in the textarea PLACEHOLDER (short, static, never
+              clips). This overlay only rotates the example prompts on top of it — it has an opaque
+              background so it cleanly occludes the placeholder while shown, then fades to reveal the
+              standing "/ for more" hint again. Best of both: rotating examples AND a persistent slash hint. */}
           {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{askPlaceholderFor(phIdx)}</span> : null}
         </div>
         <div className="mode-wrap" style={{ position: "relative" }}>
@@ -898,26 +976,6 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
       {dictation.error ? <div className="err">{dictation.error}</div> : null}
       <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
       <DataSourcesPanel open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
-    </div>
-  );
-}
-
-// Rounded chips naming the domains the engine searched (favicon + hostname), with an overflow count —
-// the ChatGPT Activity-panel pattern. While a search runs we show the fixed search surface; once the
-// answer lands the chips become the REAL hostnames its citations came from.
-function DomainChips({ domains, max = 6 }: { domains: string[]; max?: number }) {
-  if (!domains.length) return null;
-  const shown = domains.slice(0, max);
-  const extra = domains.length - shown.length;
-  return (
-    <div className="domain-chips">
-      {shown.map((d) => (
-        <span className="domain-chip" key={d}>
-          <img src={faviconUrl(d)} alt="" width={14} height={14} loading="lazy" />
-          {d}
-        </span>
-      ))}
-      {extra > 0 ? <span className="domain-chip domain-chip-more">{extra} more</span> : null}
     </div>
   );
 }
@@ -1039,7 +1097,7 @@ function ScopeTurn({ state, onRun }: { state: ScopeTurnState; onRun: (enrichedQu
 // The inline deep-research card. While the run is in flight it polls research_report_runs (RLS-scoped)
 // and shows live progress; on completion it becomes a "Report ready" card linking to the full report
 // in the Reports library. A start-time error (quota / Pro gate) is passed down on the card.
-function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?: (r: { savedReportId: string | null; sources: number }) => void }) {
+function ResearchRunCard({ card, onComplete, onProgress }: { card: ResearchCard; onComplete?: (r: { savedReportId: string | null; sources: number }) => void; onProgress?: (progress: ResearchProgressStep[] | null) => void }) {
   const [run, setRun] = useState<ResearchRunRow | null>(null);
   // Rehydrated (saved) cards start already-done; live runs reach done via polling.
   const [done, setDone] = useState<{ id: string | null; sources: number; title: string } | null>(
@@ -1049,6 +1107,10 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
   // Hold the latest onComplete in a ref so it isn't a poll-effect dependency (which would restart polling).
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+  // Same ref pattern for onProgress — keeps it out of the poll effect's deps so lifting live progress
+  // up to the pinned dock never restarts the poll.
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
   const firedRef = useRef(false);
   const [showMission, setShowMission] = useState(false);
 
@@ -1063,13 +1125,17 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
       if (!alive) return;
-      if (++polls > MAX_POLLS) { setErr("This is taking longer than expected — check your Reports list in a bit."); return; }
+      if (++polls > MAX_POLLS) { onProgressRef.current?.(null); setErr("This is taking longer than expected — check your Reports list in a bit."); return; }
       try {
         const row = await fetchResearchRun(card.runId);
         if (!alive) return;
         if (row) {
           setRun(row);
+          // Mirror this run's live progress up to the pinned AgentRunDock (above the composer).
+          onProgressRef.current?.(row.progress ?? []);
           if (row.status === "completed") {
+            // Run finished — clear the dock so it stops mirroring a now-done run.
+            onProgressRef.current?.(null);
             const rep = row.saved_report_id ? await fetchResearchReport(row.saved_report_id) : null;
             if (!alive) return;
             const sources = rep?.citations.length ?? 0;
@@ -1078,13 +1144,13 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
             if (!firedRef.current) { firedRef.current = true; onCompleteRef.current?.({ savedReportId: row.saved_report_id, sources }); }
             return;
           }
-          if (row.status === "failed") { setErr(row.error || "Research could not be completed."); return; }
+          if (row.status === "failed") { onProgressRef.current?.(null); setErr(row.error || "Research could not be completed."); return; }
         }
       } catch { /* transient read error — keep polling */ }
       timer = setTimeout(tick, 1500);
     };
     void tick();
-    return () => { alive = false; clearTimeout(timer); };
+    return () => { alive = false; clearTimeout(timer); onProgressRef.current?.(null); };
   }, [card.runId, card.error, card.completed, card.title, done]);
 
   // "meta", "structured_review", and "standard" are ALL user-facing "Deep research" now (the pooled
@@ -1124,6 +1190,10 @@ function ResearchRunCard({ card, onComplete }: { card: ResearchCard; onComplete?
   }
   return (
     <div className="research-run-card">
+      {/* Manus-style one-line acknowledgement, shown only for a real research run (this branch renders
+          solely while a deep-research / systematic-review / discovery / lab-draft run is live) — an
+          honest "I'm on it" before the progress steps. Plain fast asks never reach here. */}
+      <p className="agent-ack">Researching this now — gathering and citing sources.</p>
       <div className="ai-block-label"><Icon name="sparkle" size={14} /> {modeLabel} running…</div>
       <ResearchProgress steps={run?.progress ?? []} done={false} />
     </div>

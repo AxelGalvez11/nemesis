@@ -16,7 +16,6 @@ import {
 } from "@/lib/api";
 import { displayReportTitle } from "@pharmabro/shared";
 import { setCached } from "@/lib/cache";
-import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { SkeletonRows } from "@/components/Skeleton";
 import { useResearchMapData } from "@/lib/research-map-data";
@@ -109,7 +108,6 @@ export default function ProjectWorkspacePage() {
   return (
     <div className="research-wrap">
       <div className="research-intro">
-        <Orb size={48} />
         <Link href="/app/projects" className="proj-back">‹ All projects</Link>
         <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
           <h2 className="welcome-title" style={{ margin: 0 }}>{projName}</h2>
