@@ -1551,6 +1551,36 @@
   margin-bottom: 6px;
 }
 
+/* ── Work panel (watch evidence assemble) ── */
+/* Manus's right-hand "computer" pane, reframed honestly for our engine: while a research run is LIVE
+   this renders inside the SAME `.evidence` right dock (not a new column), showing the research
+   ASSEMBLING — a header + a "● Live" pill, the current step label, the ordered AgentRunTracker
+   timeline, and a live "N sources gathered" line. It reuses .ev-head/.ev-body/.ev-foot for layout
+   parity with EvidencePanel; the .wp-* rules are the "working" accents. Tokens only. */
+.wp-head b { font-size: 13px; font-weight: 600; }
+/* The "● Live" pill mirrors .ev-head .live (acid = our established LIVE convention), softly pulsing. */
+.wp-live {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--acid-dim);
+  border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px;
+}
+.wp-live .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 8px var(--acid); animation: pulse 1.8s infinite; }
+/* Current-step banner, just under the head — the "using … / creating …" line in Manus's panel. */
+.wp-current {
+  flex: none;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wp-body { padding: 12px 14px 20px; }
+.wp-assembling { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+@media (prefers-reduced-motion: reduce) {
+  .wp-live .dot { animation: none; }
+}
+
 /* ── Library (Manus grid) ── */
 /* Manus's Library is a header row (title + always-on search + filter + grid/list toggle) over a
    responsive card grid — NOT a centered serif greeting. Chrome uses only existing tokens; cards get

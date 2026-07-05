@@ -23,6 +23,7 @@ import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Icon } from "@/components/icons";
 import { AgentRunDock } from "@/components/AgentRunDock";
+import { WorkPanel } from "@/components/WorkPanel";
 import { DataSourcesPanel } from "@/components/DataSourcesPanel";
 import { MissionSheet } from "@/components/MissionSheet";
 import { ResearchProgress } from "@/components/ResearchProgress";
@@ -389,8 +390,17 @@ function AskPage() {
   // render, so depending on it would re-run this effect in a loop as it sets shell state.
   // The panel shows the PINNED answer (a citation the user clicked) if set, else the latest answer.
   const panelAnswer = activeAnswer ?? lastAnswered;
+  // While a research run is LIVE the right dock shows the "watch the evidence assemble" WorkPanel;
+  // when it ends (progress back to null) the dock reverts to the normal per-answer EvidencePanel.
+  // `runActive` re-derives on every poll (activeRunProgress gets a fresh array each tick), which is
+  // exactly what keeps the WorkPanel's timeline + source count live via the injection effect below.
+  const runActive = Boolean(activeRunProgress && activeRunProgress.length);
   useEffect(() => {
-    setEvidence(<EvidencePanel citations={panelAnswer?.citations ?? []} reviewed={panelAnswer?.reviewed_sources} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />);
+    setEvidence(
+      runActive
+        ? <WorkPanel progress={activeRunProgress!} />
+        : <EvidencePanel citations={panelAnswer?.citations ?? []} reviewed={panelAnswer?.reviewed_sources} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />,
+    );
     setTopbar(
       <div>
         <div className="thread-title">{latest?.q || "New question"}</div>
@@ -403,7 +413,15 @@ function AskPage() {
       setEvidence(null);
       setTopbar(null);
     };
-  }, [panelAnswer, latest?.q, activeTag, activeQuote, setEvidence, setTopbar]);
+  }, [runActive, activeRunProgress, panelAnswer, latest?.q, activeTag, activeQuote, setEvidence, setTopbar]);
+
+  // Open the right dock ONCE when a run starts (the null→live rising edge), so the WorkPanel is
+  // visible. Depending on the BOOLEAN `runActive` (not the poll-updated array) means this effect
+  // does NOT re-fire on each poll — so a user who re-collapses the dock stays collapsed. openEvidence
+  // is a stable useCallback that only ever un-collapses; setEvidence never touches the collapsed state.
+  useEffect(() => {
+    if (runActive) openEvidence();
+  }, [runActive, openEvidence]);
 
   // Thinking steps: a decelerating schedule that tracks the real pipeline (read the question fast,
   // then the slow library + live search, then ranking) and HOLDS on the final "composing" step until
