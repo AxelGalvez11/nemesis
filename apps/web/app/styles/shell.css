@@ -1221,24 +1221,45 @@
 .app-modal-body .grid.two, .app-modal-body .grid.three { grid-template-columns: 1fr; }
 /* The Settings sections ARE real cards — undo the generic modal card-flatten above for them, which had
    stripped their padding so text (Account / email / etc.) hugged the left edge. Match the full-page look. */
-.app-modal-body .settings-body .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; }
+/* Manus is low-shadow / contrast-driven: keep the hairline, drop the card shadow. */
+.app-modal-body .settings-body .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
 .app-modal-body .settings-body .card.acid { border-color: var(--line-acid); }
 .app-modal-body .settings-body .card + .card { padding-top: 18px; }
 
-/* ── Consolidated Settings surface (Anthropic-style: left section nav + content) ──────────────── */
-.settings-surface { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 24px; align-items: start; }
-.settings-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; }
+/* ── Settings (Manus modal) ────────────────────────────────────────────────────────────────────
+   Manus's settings anatomy: a quiet left tab rail (36px rows, 10px radius, 16/400 text, 8px icon
+   gap) + a content pane on the right, separated by a hairline. Active row = a subtle 6% fill
+   (--fill-active) with one restrained accent cue: the active icon tints to --acid and a 2px acid
+   bar marks the left edge. Low-shadow, contrast-driven — the Manus house style. Shared by both the
+   /app/settings route AND the account-menu modal (both render SettingsSurface). */
+.settings-surface { display: grid; grid-template-columns: 188px minmax(0, 1fr); gap: 0; align-items: start; }
+.settings-nav {
+  display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0;
+  padding-right: 16px; margin-right: 16px; border-right: 1px solid var(--line);
+}
 .settings-nav button {
-  display: flex; align-items: center; gap: 10px; width: 100%; justify-content: flex-start;
-  padding: 9px 11px; border-radius: var(--radius-sm); background: transparent; border: 1px solid transparent;
-  color: var(--text-2); font-size: 14px; font-weight: 500; font-family: var(--font); cursor: pointer; text-align: left;
+  position: relative; display: flex; align-items: center; gap: 8px; width: 100%; justify-content: flex-start;
+  height: 36px; padding: 0 10px; border-radius: var(--radius-sm); background: transparent; border: none;
+  color: var(--text-2); font-size: 16px; font-weight: 400; font-family: var(--font); cursor: pointer; text-align: left;
   transition: background 0.12s, color 0.12s;
 }
+.settings-nav button svg { color: var(--text-3); flex-shrink: 0; transition: color 0.12s; }
 .settings-nav button:hover { background: var(--fill-hover); color: var(--text); }
-.settings-nav button.active { background: var(--surface-2); color: var(--text); font-weight: 600; }
+.settings-nav button:hover svg { color: var(--text-2); }
+.settings-nav button.active { background: var(--fill-active); color: var(--text); font-weight: 500; }
+.settings-nav button.active svg { color: var(--acid); }
+.settings-nav button.active::before {
+  content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 2px; height: 18px; border-radius: 2px; background: var(--acid);
+}
 /* min-height keeps short sections (General/About) from collapsing smaller than the tall ones
    (Account/Billing) on the full page, so switching sections doesn't jump the layout. */
 .settings-body { display: grid; gap: 16px; min-width: 0; min-height: 440px; align-content: start; }
+/* Quiet Manus section headers within the content pane: primary-text 16/500 heading, muted 13px sub. */
+.settings-body .card h2 { font-size: 16px; font-weight: 500; color: var(--text); letter-spacing: 0; }
+/* Manus is low-shadow / contrast-driven: settings cards keep only the hairline (full-page route AND
+   modal). Scoped to .settings-body so the app-wide .card shadow (browse/reports/watch) is untouched. */
+.settings-body .card { box-shadow: none; }
 
 /* Appearance — visual theme-preview cards (a mini app per theme: rail + page + accent dot). */
 .theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -1280,8 +1301,13 @@
 .app-modal-wide .app-modal-body { flex: 1; min-height: 0; }
 @media (max-width: 680px) {
   .settings-surface { grid-template-columns: 1fr; gap: 14px; }
-  .settings-nav { flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
-  .settings-nav button { width: auto; flex-shrink: 0; }
+  .settings-nav {
+    flex-direction: row; overflow-x: auto; gap: 6px; padding: 0 0 6px; margin: 0;
+    border-right: none; border-bottom: 1px solid var(--line);
+  }
+  .settings-nav button { width: auto; flex-shrink: 0; padding: 0 12px; }
+  /* The left accent bar reads as a bottom underline in the horizontal (mobile) rail. */
+  .settings-nav button.active::before { left: 8px; right: 8px; top: auto; bottom: 0; transform: none; width: auto; height: 2px; }
 }
 
 /* ── Live monitoring — watch detail (WS-D) ──────────────────────────────────────────────────────
