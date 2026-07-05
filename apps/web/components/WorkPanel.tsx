@@ -1,8 +1,7 @@
 "use client";
 
 import type { ResearchProgressStep } from "@pharmabro/shared";
-import { buildThinkingPreview } from "@/lib/thinking-preview";
-import { RunThinking, stageFromProgress } from "./RunThinking";
+import { RunThinking, stageFromProgress, runStepCurrent } from "./RunThinking";
 
 export interface WorkPanelProps {
   /** Live progress for the currently-active research run. Rendered while the run is in flight. */
@@ -25,12 +24,12 @@ function latestSourcesFound(progress: ResearchProgressStep[]): number | null {
 /** Manus's "computer" pane, reframed honestly for our evidence engine: the "watch the evidence
  *  assemble" panel. While a research run is LIVE it renders inside the right dock (the same `.evidence`
  *  aside EvidencePanel uses), showing the research ASSEMBLING — the current thinking-stage line and the
- *  ChatGPT thinking trail (Understand / Search / Rank / Answer + searched-source chips), plus a live
+ *  ChatGPT thinking trail (Understand / Search / Answer / Verify + searched-source chips), plus a live
  *  "N sources gathered" line — NOT a fake compute terminal. Presentational only: it reads the same
  *  `progress` array that already drives ResearchProgress + the pinned AgentRunDock; it starts no polling. */
 export function WorkPanel({ progress, question }: WorkPanelProps) {
   const stage = stageFromProgress(progress);
-  const currentLine = buildThinkingPreview(question ?? "", stage).current;
+  const currentLine = runStepCurrent(stage);
   const sources = latestSourcesFound(progress);
 
   return (

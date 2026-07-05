@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ResearchProgressStep } from "@pharmabro/shared";
-import { buildThinkingPreview, THINKING_STEPS } from "@/lib/thinking-preview";
-import { RunThinking, stageFromProgress } from "./RunThinking";
+import { RunThinking, stageFromProgress, runStepCurrent, RESEARCH_STEPS } from "./RunThinking";
 import { Icon } from "./icons";
 
 export interface AgentRunDockProps {
@@ -24,7 +23,7 @@ function formatElapsed(ms: number): string {
 /** Manus-style pinned "Task progress" dock: a collapsible bar docked directly above the composer while
  *  a research run is live. Collapsed = a small state icon + the current thinking-stage line + live
  *  elapsed + an "N / 4" stage counter + a chevron; clicking expands to the ChatGPT thinking trail
- *  (Understand / Search / Rank / Answer + searched-source chips) via RunThinking. Renders nothing when
+ *  (Understand / Search / Answer / Verify + searched-source chips) via RunThinking. Renders nothing when
  *  no run is active. Presentational only — it reads the same `progress` array that already drives
  *  ResearchProgress; it starts no polling. */
 export function AgentRunDock({ progress, question }: AgentRunDockProps) {
@@ -41,12 +40,12 @@ export function AgentRunDock({ progress, question }: AgentRunDockProps) {
   if (!progress || progress.length === 0) return null;
 
   // Derive the thinking stage (0..3) from the latest progress phase, then source the collapsed bar's
-  // current line from the thinking preview so it matches RunThinking's active step exactly.
+  // current line from the SAME shared helper RunThinking uses, so the bar can never desync from the trail.
   const last = progress[progress.length - 1];
   const stage = stageFromProgress(progress);
-  const currentLine = buildThinkingPreview(question ?? "", stage).current;
-  // "N / 4" over the four fixed thinking steps: steps strictly before the active stage are done.
-  const total = THINKING_STEPS.length;
+  const currentLine = runStepCurrent(stage);
+  // "N / 4" over the four ordered thinking steps: steps strictly before the active stage are done.
+  const total = RESEARCH_STEPS.length;
   const doneCount = Math.min(stage, total);
 
   // Live elapsed for the active step: computed from the last progress entry's timestamp.
