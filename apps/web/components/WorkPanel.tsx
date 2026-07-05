@@ -1,11 +1,14 @@
 "use client";
 
 import type { ResearchProgressStep } from "@pharmabro/shared";
-import { AgentRunTracker, stepsFromProgress } from "./AgentRunTracker";
+import { buildThinkingPreview } from "@/lib/thinking-preview";
+import { RunThinking, stageFromProgress } from "./RunThinking";
 
 export interface WorkPanelProps {
   /** Live progress for the currently-active research run. Rendered while the run is in flight. */
   progress: ResearchProgressStep[];
+  /** The run's question, threaded to the thinking preview for a focused current line. */
+  question?: string;
 }
 
 /** The latest cumulative `sources_found` on the run, scanning from the end. The last progress step
@@ -21,14 +24,13 @@ function latestSourcesFound(progress: ResearchProgressStep[]): number | null {
 
 /** Manus's "computer" pane, reframed honestly for our evidence engine: the "watch the evidence
  *  assemble" panel. While a research run is LIVE it renders inside the right dock (the same `.evidence`
- *  aside EvidencePanel uses), showing the research ASSEMBLING — the current step, an ordered step
- *  timeline (reusing AgentRunTracker), and a live "N sources gathered" line — NOT a fake compute
- *  terminal. Presentational only: it reads the same `progress` array that already drives
- *  ResearchProgress + the pinned AgentRunDock; it starts no polling. */
-export function WorkPanel({ progress }: WorkPanelProps) {
-  const steps = stepsFromProgress(progress);
-  // The current step is the active row if there is one, else the last (a run about to finish/unmount).
-  const current = steps.find((s) => s.state === "active") ?? steps[steps.length - 1];
+ *  aside EvidencePanel uses), showing the research ASSEMBLING — the current thinking-stage line and the
+ *  ChatGPT thinking trail (Understand / Search / Rank / Answer + searched-source chips), plus a live
+ *  "N sources gathered" line — NOT a fake compute terminal. Presentational only: it reads the same
+ *  `progress` array that already drives ResearchProgress + the pinned AgentRunDock; it starts no polling. */
+export function WorkPanel({ progress, question }: WorkPanelProps) {
+  const stage = stageFromProgress(progress);
+  const currentLine = buildThinkingPreview(question ?? "", stage).current;
   const sources = latestSourcesFound(progress);
 
   return (
@@ -39,10 +41,10 @@ export function WorkPanel({ progress }: WorkPanelProps) {
         <span className="wp-live"><span className="dot" />Live</span>
       </div>
 
-      <div className="wp-current">{current?.label ?? "Working…"}</div>
+      <div className="wp-current">{currentLine}</div>
 
       <div className="ev-body wp-body">
-        <AgentRunTracker steps={steps} />
+        <RunThinking progress={progress} question={question} />
       </div>
 
       <div className="ev-foot wp-foot">

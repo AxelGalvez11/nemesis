@@ -404,6 +404,37 @@
 .domain-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border-radius: 999px; padding: 3px 10px 3px 6px; font-size: 12px; color: var(--text-2); line-height: 1.4; }
 .domain-chip img { border-radius: 50%; display: block; }
 .domain-chip-more { padding: 3px 10px; color: var(--text-3); }
+
+/* ── Run thinking trail (shared) ── */
+/* The ChatGPT "Thinking" trail reused for a LIVE research run, inside the pinned dock + right-dock
+   work panel. Same quiet activity-trail rail as the answer's Thinking, but each of the four fixed
+   steps carries a leading done/active/pending marker (mirroring the AgentRunTracker affordances) so
+   the current stage reads at a glance. Tokens only. */
+.run-thinking-trail { margin: 0; }
+.run-step { display: grid; grid-template-columns: 18px 1fr; column-gap: 10px; align-items: start; }
+.run-step-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin-top: 1px;
+}
+.run-step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--acid); }
+.run-step-body { min-width: 0; }
+/* DONE — calm/tinted disc + acid check. */
+.run-step.done .run-step-marker { background: color-mix(in srgb, var(--acid) 15%, var(--surface)); color: var(--acid-deep); }
+/* ACTIVE — solid acid dot with a soft pulse; emphasized title. */
+.run-step.active .run-step-dot {
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--acid) 40%, transparent);
+  animation: art-pulse 1.6s ease-out infinite;
+}
+/* PENDING — hollow muted ring, dimmer title. */
+.run-step.pending .run-step-marker { border: 1.5px solid var(--line-2); }
+.run-step.pending .activity-step-title { color: var(--text-3); font-weight: 500; }
+.run-thinking-compact .run-thinking-trail { gap: 11px; }
+
 .engine-preview summary::-webkit-details-marker { display: none; }
 .engine-preview-head {
   display: flex;

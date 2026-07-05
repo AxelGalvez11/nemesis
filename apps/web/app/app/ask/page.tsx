@@ -24,6 +24,7 @@ import { EvidencePanel } from "@/components/EvidencePanel";
 import { Icon } from "@/components/icons";
 import { AgentRunDock } from "@/components/AgentRunDock";
 import { WorkPanel } from "@/components/WorkPanel";
+import { DomainChips } from "@/components/DomainChips";
 import { DataSourcesPanel } from "@/components/DataSourcesPanel";
 import { MissionSheet } from "@/components/MissionSheet";
 import { ResearchProgress } from "@/components/ResearchProgress";
@@ -398,7 +399,7 @@ function AskPage() {
   useEffect(() => {
     setEvidence(
       runActive
-        ? <WorkPanel progress={activeRunProgress!} />
+        ? <WorkPanel progress={activeRunProgress!} question={latest?.q} />
         : <EvidencePanel citations={panelAnswer?.citations ?? []} reviewed={panelAnswer?.reviewed_sources} activeTag={activeTag ?? undefined} activeQuote={activeQuote ?? undefined} />,
     );
     setTopbar(
@@ -695,7 +696,7 @@ function AskPage() {
         <div ref={bottomRef} />
       </div>
       <div className="composer-wrap">
-        <AgentRunDock progress={activeRunProgress} />
+        <AgentRunDock progress={activeRunProgress} question={latest?.q} />
         {composer}
       </div>
     </>
@@ -975,26 +976,6 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
       {dictation.error ? <div className="err">{dictation.error}</div> : null}
       <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
       <DataSourcesPanel open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
-    </div>
-  );
-}
-
-// Rounded chips naming the domains the engine searched (favicon + hostname), with an overflow count —
-// the ChatGPT Activity-panel pattern. While a search runs we show the fixed search surface; once the
-// answer lands the chips become the REAL hostnames its citations came from.
-function DomainChips({ domains, max = 6 }: { domains: string[]; max?: number }) {
-  if (!domains.length) return null;
-  const shown = domains.slice(0, max);
-  const extra = domains.length - shown.length;
-  return (
-    <div className="domain-chips">
-      {shown.map((d) => (
-        <span className="domain-chip" key={d}>
-          <img src={faviconUrl(d)} alt="" width={14} height={14} loading="lazy" />
-          {d}
-        </span>
-      ))}
-      {extra > 0 ? <span className="domain-chip domain-chip-more">{extra} more</span> : null}
     </div>
   );
 }
