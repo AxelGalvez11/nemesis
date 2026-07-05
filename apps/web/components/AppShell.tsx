@@ -60,6 +60,9 @@ function titleForPath(path: string): { title: string; sub?: string } {
   if (path.startsWith("/app/reports")) return { title: "Library", sub: "everything you've generated" };
   if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };
   if (path.startsWith("/app/scheduled")) return { title: "Scheduled", sub: "recurring research + monitors" };
+  // Covers both the list (/app/projects) and a project detail page (/app/projects/<id>) — previously
+  // both fell through to the "PharmaOrb" fallback, so the topbar read the app name instead of "Projects".
+  if (path.startsWith("/app/projects")) return { title: "Projects", sub: "group chats, reports + monitors" };
   if (path.startsWith("/app/score")) return { title: "Score", sub: "your longevity rank" };
   if (path.startsWith("/app/explore")) return { title: "Explore" };
   if (path.startsWith("/app/billing")) return { title: "Billing" };
@@ -397,6 +400,19 @@ export function AppShell({ children }: { children: ReactNode }) {
         <aside className="rail" id="app-rail">
           <div className="brand">
             <div className="wordmark">PharmaOrb</div>
+            {/* Manus-style rail collapse toggle atop the sidebar. Reuses toggleRail (same handler as the
+                topbar hamburger). When expanded it sits right of the wordmark; when collapsed the
+                wordmark hides and this stays centered in the icon rail as the expand affordance. */}
+            <button
+              className="icon-btn rail-collapse"
+              onClick={toggleRail}
+              data-tip={railCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={railCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-controls="app-rail"
+              aria-expanded={!railCollapsed}
+            >
+              <Icon name="sidebar" size={16} />
+            </button>
           </div>
           <button className="new" onClick={() => router.push("/app/ask")} aria-label="New chat">
             <Icon name="plus" size={16} />

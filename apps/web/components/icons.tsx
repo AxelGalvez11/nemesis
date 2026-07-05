@@ -6,6 +6,9 @@ const PATHS: Record<string, React.ReactNode> = {
   plus: <path d="M12 5v14M5 12h14" />,
   "chevron-down": <path d="m6 9 6 6 6-6" />,
   menu: <path d="M3 5h18M3 12h18M3 19h18" />,
+  // Manus-style rail collapse toggle: a panel with a divided left column (a sidebar glyph). Static in
+  // both states — reads as "the sidebar" regardless of expanded/collapsed, matching Manus's header.
+  sidebar: (<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>),
   search: (<><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>),
   message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
   bell: (<><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></>),

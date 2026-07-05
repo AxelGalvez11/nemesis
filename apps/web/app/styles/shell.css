@@ -66,7 +66,7 @@
 .rail { background: var(--rail-bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 .rail-backdrop, .evidence-backdrop { display: none; }
 /* scoped to .rail so it can't deform a legacy page that also uses a `.brand` element */
-.rail .brand { display: flex; align-items: center; gap: 11px; padding: 16px 16px 12px; }
+.rail .brand { display: flex; align-items: center; justify-content: space-between; gap: 11px; padding: 16px 16px 12px; }
 .rail .brand .orb { width: 28px; height: 28px; }
 .wordmark { font-weight: 600; font-size: 16px; letter-spacing: -0.02em; white-space: nowrap; }
 .rail-collapsed .wordmark, .rail-collapsed .r-label, .rail-collapsed .new-txt,
@@ -892,6 +892,8 @@
 @media (min-width: 721px) and (max-width: 1100px) {
   .rail .wordmark, .rail .r-label, .rail .new-txt, .rail .search input, .rail .acct-meta { display: none; }
   .rail .brand { padding: 18px 0; justify-content: center; }
+  /* wordmark is hidden here too — drop the header toggle's edge nudge so it centers cleanly */
+  .rail .brand .rail-collapse { margin: 0; }
   .rail .new { justify-content: center; padding: 10px 0; }
   .rail .hist { justify-content: center; padding: 9px 0; }
   .rail .hist span { display: none; }
@@ -1763,3 +1765,11 @@
 .agent-name { font-size: 13px; font-weight: 500; color: var(--text-2); letter-spacing: -0.01em; }
 /* One-line acknowledgement before a research run's progress steps — honest "I'm on it" prose. */
 .agent-ack { font-size: 14px; line-height: 22px; color: var(--text-2); margin: 0 0 10px; }
+
+/* ── Rail header (Manus) ── */
+/* The collapse toggle sits quiet next to the wordmark. .icon-btn already gives it a 34px round-ish
+   hit-area + muted --text-2 color + token hover; nudge its box in so it hugs the header edge and
+   reads aligned with the wordmark rather than ballooning the 16px top padding. When the rail is
+   collapsed the wordmark hides and the header centers this button as the expand affordance. */
+.rail .brand .rail-collapse { width: 30px; height: 30px; margin: -3px -4px -3px 0; }
+.rail-collapsed .brand .rail-collapse { margin: 0; }
