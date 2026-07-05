@@ -1799,3 +1799,118 @@
    collapsed the wordmark hides and the header centers this button as the expand affordance. */
 .rail .brand .rail-collapse { width: 30px; height: 30px; margin: -3px -4px -3px 0; }
 .rail-collapsed .brand .rail-collapse { margin: 0; }
+
+/* ── Research poster (wedge) ──────────────────────────────────────────────────────────────────
+   A cited conference poster board: fixed landscape canvas (a 4:3-ish board that reads as a real
+   printed poster), a full-width accent header band, a 3-column body, an evidence mini-table, and a
+   numbered references column. Tokens only. print-color-adjust: exact keeps the accent band + table
+   fills when printed to PDF; @media print strips the app to just the board so it prints clean. */
+.poster-preview-stage {
+  min-height: 100vh; background: var(--surface); display: flex; justify-content: center;
+  align-items: flex-start; padding: 40px 24px; box-sizing: border-box;
+}
+.research-poster {
+  --poster-w: 1120px;
+  /* Fixed landscape board. aspect-ratio sets the 4:3 board proportion as a FLOOR (min-height) so the
+     board keeps its poster shape but grows to fit content rather than clipping the references column. */
+  width: var(--poster-w); max-width: 100%; min-height: calc(var(--poster-w) * 3 / 4);
+  background: var(--bg);
+  border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden;
+  display: flex; flex-direction: column; color: var(--text); font-family: var(--font);
+  box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.28);
+  print-color-adjust: exact; -webkit-print-color-adjust: exact;
+}
+
+/* Header band — accent-tinted, with the report question as the title. */
+.poster-head {
+  padding: 26px 34px 22px; border-bottom: 3px solid var(--acid);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acid) 9%, var(--bg)), var(--bg));
+}
+.poster-kicker {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase;
+  font-weight: 600; color: var(--acid-dim); margin-bottom: 8px;
+}
+.poster-title {
+  font-family: var(--font-serif); font-size: 34px; line-height: 1.16; font-weight: 400;
+  color: var(--text); margin: 0 0 14px; letter-spacing: -0.01em;
+}
+.poster-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.poster-grade {
+  font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  font-weight: 600; color: var(--acid-dim); border: 1px solid rgba(var(--acid-rgb), 0.35);
+  border-radius: 999px; padding: 3px 10px; background: color-mix(in srgb, var(--acid) 6%, transparent);
+}
+.poster-verify, .poster-builtfrom { font-size: 12px; color: var(--text-2); font-weight: 500; }
+.poster-verify::before, .poster-builtfrom::before { content: "·"; margin-right: 10px; color: var(--text-3); }
+
+/* Body — 3 columns, thin token rules between them. */
+.poster-body {
+  flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 28px; padding: 26px 34px 20px;
+}
+.poster-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.poster-col + .poster-col { border-left: 1px solid var(--line); padding-left: 28px; margin-left: -14px; }
+
+.poster-block { break-inside: avoid; }
+.poster-h {
+  font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 9px; padding-bottom: 6px;
+  border-bottom: 2px solid var(--acid); display: inline-block; letter-spacing: -0.01em;
+}
+.poster-h3 { font-size: 13px; font-weight: 700; color: var(--text); margin: 12px 0 5px; }
+.poster-finding:first-child .poster-h3 { margin-top: 0; }
+.poster-p { font-size: 12.5px; line-height: 1.5; color: var(--text-2); margin: 0 0 8px; }
+.poster-p.poster-muted { color: var(--text-3); }
+.poster-claim { color: var(--text); }
+.poster-cite {
+  font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--acid-dim);
+  white-space: nowrap;
+}
+
+.poster-methods, .poster-gaps { margin: 0; padding-left: 16px; }
+.poster-methods li, .poster-gaps li { font-size: 12px; line-height: 1.5; color: var(--text-2); margin: 0 0 6px; }
+.poster-methods li b { color: var(--text); font-weight: 600; }
+.poster-methods-count { font-size: 12px; line-height: 1.5; color: var(--text-2); margin: 8px 0 0; }
+.poster-methods-count b { color: var(--text); font-family: var(--mono); }
+.poster-gap-trials { color: var(--text-3); }
+
+.poster-safety .poster-h { border-bottom-color: var(--warn); }
+
+/* Evidence mini-table (# · Type · Year), mirroring evidenceRows. */
+.poster-evidence { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.poster-evidence th {
+  text-align: left; font-weight: 700; color: var(--text); padding: 5px 8px;
+  background: var(--fill-active); border-bottom: 1px solid var(--line-2);
+}
+.poster-evidence th:first-child { border-top-left-radius: 6px; }
+.poster-evidence th:last-child { border-top-right-radius: 6px; }
+.poster-evidence td { padding: 4px 8px; color: var(--text-2); border-bottom: 1px solid var(--line); }
+.poster-evidence tr:last-child td { border-bottom: none; }
+.poster-ev-tag { font-family: var(--mono); font-weight: 600; color: var(--acid-dim); }
+
+/* References — numbered, tight, monospace numerals via the shared referenceLines strings. */
+.poster-refs { margin: 0; padding-left: 20px; }
+.poster-refs li { font-size: 10.5px; line-height: 1.45; color: var(--text-2); margin: 0 0 6px; }
+.poster-refs li::marker { color: var(--text-3); font-family: var(--mono); }
+
+/* Growth-loop footer strip. */
+.poster-footer {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 11px 34px; border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--acid) 5%, var(--bg));
+}
+.poster-footer-mark { font-weight: 700; font-size: 12px; color: var(--text); letter-spacing: -0.01em; }
+.poster-footer-sep { color: var(--text-3); }
+.poster-footer-note {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* Print / PDF: strip everything but a fixed-size board so it prints to a clean landscape page. */
+@media print {
+  .poster-preview-stage { padding: 0; background: var(--bg); min-height: 0; }
+  .research-poster {
+    width: 100%; max-width: none; aspect-ratio: auto; height: auto; min-height: 100vh;
+    border: none; border-radius: 0; box-shadow: none;
+  }
+  @page { size: landscape; margin: 12mm; }
+}

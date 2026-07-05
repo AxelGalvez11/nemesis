@@ -10,12 +10,17 @@ function bullets(ps: AnswerPoint[]): Run[] {
   return ps.map((p) => ({ text: `${p.text}${claimRefMarker(p.citation_ids)}`, options: { bullet: true, breakLine: true } }));
 }
 
-function contentSlide(pptx: pptxgen, title: string, runs: Run[]): void {
+// Growth-loop footer line, mirroring the on-screen ResearchPoster footer strip. Muted, single line.
+const MADE_WITH_FOOTER = "Made with PharmaOrb · verify every source";
+
+// Returns the created slide so callers can dock a footer onto it (e.g. the References slide).
+function contentSlide(pptx: pptxgen, title: string, runs: Run[]): pptxgen.Slide {
   const slide = pptx.addSlide();
   slide.addText(title, { x: 0.5, y: 0.3, w: 12.3, h: 0.8, fontSize: 26, bold: true, color: "1A1A1A" });
   if (runs.length) {
     slide.addText(runs, { x: 0.5, y: 1.2, w: 12.3, h: 5.6, fontSize: 15, color: "363636", valign: "top" });
   }
+  return slide;
 }
 
 // Evidence-base table slide (# · Type · Source · Year), mirroring the on-screen review. Rows come
@@ -90,7 +95,10 @@ export async function reportToPptx(report: ResearchReport, style: CitationStyle)
 
   if (report.citations.length) {
     const refs = referenceLines(report.citations as Citation[], style);
-    contentSlide(pptx, "References", refs.map((r) => ({ text: r, options: { bullet: false, breakLine: true } })));
+    const refSlide = contentSlide(pptx, "References", refs.map((r) => ({ text: r, options: { bullet: false, breakLine: true } })));
+    // Growth-loop attribution: a quiet "Made with PharmaOrb" footer on the shared artifact. Docked on
+    // the References slide (present exactly when citations exist, matching the on-screen poster footer).
+    refSlide.addText(MADE_WITH_FOOTER, { x: 0.5, y: 7.0, w: 12.3, h: 0.3, fontSize: 11, italic: true, color: "858481" });
   }
 
   // Closing attribution slide: what this deck was actually built from, so it's never more
