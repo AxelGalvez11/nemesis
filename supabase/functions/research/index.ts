@@ -19,6 +19,7 @@ import { runResearch } from "../ask/research/orchestrate.ts";
 import { scopeQuestion } from "../ask/research/scope.ts";
 import { planSubQuestions } from "../ask/research/plan.ts";
 import { hasLlmKey, llmApiKey } from "../ask/llm.ts";
+import { medicalizeSubQuestions } from "./medicalize.ts";
 import { persistDiscoveryProject } from "./discovery-persist.ts";
 import type { ReportMode, ResearchProgressStep, ResearchReport } from "../../../packages/shared/src/research.ts";
 import { nextRunAt, type MissionCadence } from "../../../packages/shared/src/missions.ts";
@@ -41,6 +42,9 @@ const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const LIVE_SOURCES_ON = Deno.env.get("LIVE_SOURCES") === "on";
+// GATED (default OFF): rewrite plain-English sub-questions into MeSH-style biomedical search terminology
+// before the frozen engine retrieves against them. Off → EXACT current behavior. See ./medicalize.ts.
+const MEDICAL_QUERY_EXPANSION_ON = Deno.env.get("MEDICAL_QUERY_EXPANSION") === "on";
 
 // Supabase edge runtime keeps the worker alive past the response for background work. Typed loosely so
 // the file type-checks outside the edge runtime (local tooling); guarded at the call site.
@@ -98,7 +102,12 @@ serve(async (req) => {
   if (body.action === "plan") {
     try {
       const subQuestions = await planSubQuestions(question, llmApiKey(), mode);
-      return json({ sub_questions: subQuestions }, 200, req);
+      // GATED: show the medicalized plan the UI so what's previewed matches what will run. Best-effort:
+      // medicalizeSubQuestions degrades to the plain-English plan on any failure. Flag off → unchanged.
+      const shown = MEDICAL_QUERY_EXPANSION_ON && subQuestions.length > 0
+        ? await medicalizeSubQuestions(subQuestions, llmApiKey())
+        : subQuestions;
+      return json({ sub_questions: shown }, 200, req);
     } catch {
       return json({ sub_questions: [] }, 200, req);
     }
@@ -153,13 +162,19 @@ serve(async (req) => {
 async function executeRun(runId: string, userId: string, question: string, mode: ReportMode, subQuestions?: string[]): Promise<void> {
   const steps: ResearchProgressStep[] = [];
   try {
+    // GATED biomedical query expansion (default OFF). Only when the caller did NOT hand us a plan
+    // (user-edited plans win verbatim — never override the user). Best-effort: plan+medicalize live in
+    // their own try/catch and degrade to the original `subQuestions`, so this can never fail the run and
+    // never delays the 202 (executeRun already runs in the background). The frozen engine then uses the
+    // medicalized set VERBATIM (resolveSubQuestions: a non-empty provided list skips engine planning).
+    const effectiveSubQuestions = await maybeMedicalize(question, mode, subQuestions);
     const report = await runResearch(question, {
       apiKey: llmApiKey(),
       sbUrl: SB_URL,
       serviceKey: SERVICE_KEY,
       liveOn: LIVE_SOURCES_ON,
       mode,
-      subQuestions,
+      subQuestions: effectiveSubQuestions,
       onProgress: (step) => {
         steps.push(step);
         // Best-effort live update; a dropped progress patch must not fail the run.
@@ -198,6 +213,35 @@ async function executeRun(runId: string, userId: string, question: string, mode:
       error: "Research could not be completed. Please try again.",
       completed_at: new Date().toISOString(),
     }).catch(() => {});
+  }
+}
+
+/**
+ * GATED (MEDICAL_QUERY_EXPANSION=on) plain-English → biomedical-search-terminology expansion.
+ *
+ * OFF (default) → returns `provided` unchanged: EXACT current behavior, byte-for-byte.
+ * ON + caller gave NO plan → plan the sub-questions (frozen planSubQuestions), rewrite them into
+ *   MeSH-style search terminology (medicalizeSubQuestions), and return that set for the frozen engine to
+ *   use verbatim. Covers interactive runs AND missions (both flow through executeRun).
+ * ON + caller gave a plan (user-edited) → returns `provided` unchanged (never override the user; the
+ *   engine also can't double-expand it — resolveSubQuestions uses a provided list verbatim).
+ *
+ * Best-effort: ANY failure degrades to `provided` (the original behavior). Never throws.
+ */
+async function maybeMedicalize(
+  question: string,
+  mode: ReportMode,
+  provided?: string[],
+): Promise<string[] | undefined> {
+  if (!MEDICAL_QUERY_EXPANSION_ON) return provided;
+  if (provided?.length) return provided;
+  try {
+    const planned = await planSubQuestions(question, llmApiKey(), mode);
+    if (planned.length === 0) return provided;
+    return await medicalizeSubQuestions(planned, llmApiKey());
+  } catch (e) {
+    console.error("research query-expansion failed; using default plan path:", (e as Error).message);
+    return provided;
   }
 }
 
