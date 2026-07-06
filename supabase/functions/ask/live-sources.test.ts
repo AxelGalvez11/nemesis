@@ -2,6 +2,12 @@
 // search matched FRAUDULENT name-drop products (e.g. "slimming patches" for investigational
 // retatrutide); field-scoping to generic/brand NAME excludes them. These lock that behavior.
 // Run: deno test supabase/functions/ask/
+// NOTE: isScienceConnectorsOn() unit tests intentionally omitted here — exercising them requires
+// Deno.env.set/delete (env WRITE access), which needs --allow-env and would add new failures to a
+// permission-less `deno test` invocation (this file's existing tests are pure functions and pass
+// either way; a mutating env test would not). The gate's shape (LIVE_SOURCES vs LIVE_SOURCES +
+// SCIENCE_CONNECTOR_SOURCES) is covered structurally instead by literature-adapter.test.ts's
+// LITERATURE_CONNECTOR_DEFS assertion (exactly the 4 net-new connectors, not pubmed/europepmc/openalex).
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   isSafetyCriticalQuery,
