@@ -10,6 +10,8 @@ const PATHS: Record<string, React.ReactNode> = {
   // both states — reads as "the sidebar" regardless of expanded/collapsed, matching Manus's header.
   sidebar: (<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>),
   search: (<><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>),
+  // Web search row in the composer "+" menu — a standard globe (meridians + equator on a circle).
+  globe: (<><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a13.5 13.5 0 0 1 0 18M12 3a13.5 13.5 0 0 0 0 18" /></>),
   message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
   bell: (<><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></>),
   folder: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,

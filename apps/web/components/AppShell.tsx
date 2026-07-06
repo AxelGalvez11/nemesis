@@ -546,7 +546,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icon name="sparkle" size={15} />
               <b>{Math.max(0, plan.limit - plan.used)}</b>
             </button>
-            <button className="icon-btn" onClick={toggleTheme} data-tip="Switch theme" aria-label="Switch theme (light, grey, dark)">
+            <button className="icon-btn" onClick={toggleTheme} data-tip="Switch theme" aria-label="Switch theme (light, dark)">
               <Icon name={theme === "light" ? "moon" : "sun"} />
             </button>
             {hasEvidence ? (
