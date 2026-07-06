@@ -1676,15 +1676,49 @@
 .lib-seg-btn svg { flex: none; }
 .lib-new-btn { flex: none; height: 34px; }
 
-/* Card grid: responsive auto-fill; each tile = doc glyph + title + meta line (date · N sources) */
+/* Chip buttons standing alone (type filter, favorites) get an outline-chip treatment — a single pill
+   rather than a segmented pair, matching the capture's two separate chips. Direct children only, so
+   the grid/list toggle pair (still wrapped in .lib-seg) is unaffected. */
+.lib-controls > .lib-seg-btn { height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.lib-controls > .lib-seg-btn:hover, .lib-controls > .lib-seg-btn.active { background: var(--fill-hover); }
+
+/* Type-filter chip + checkable dropdown menu (Manus: "[filter] All ⌄" opening a checklist). Anchored
+   with position:relative/absolute — no scroll-tracking needed since the toolbar itself doesn't scroll
+   (unlike AppShell's .row-menu, which is fixed-positioned against a scrolling rail). */
+.lib-filter-wrap { position: relative; }
+.lib-filter-wrap > .lib-seg-btn { height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.lib-filter-wrap > .lib-seg-btn:hover, .lib-filter-wrap > .lib-seg-btn.active { background: var(--fill-hover); }
+.lib-filter-menu { position: absolute; top: calc(100% + 6px); left: 0; width: 208px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.28); padding: 6px; z-index: 40; animation: fade 0.16s both; }
+.lib-filter-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; text-align: left; }
+.lib-filter-menu button svg { flex: none; }
+.lib-filter-menu button:hover { background: var(--fill-hover); color: var(--text); }
+.lib-filter-menu .lib-filter-check { margin-left: auto; color: var(--acid); }
+
+/* Day-grouped sections (our honest analogue of Manus's per-task grouping): header = day label left,
+   relative time right, over that day's own grid/list. */
+.lib-groups { display: flex; flex-direction: column; gap: 22px; }
+.lib-group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.lib-group-title { font-size: 14px; font-weight: 600; color: var(--text); margin: 0; }
+.lib-group-time { font-size: 12px; color: var(--text-3); font-family: var(--mono); flex: none; }
+
+/* Card grid: responsive auto-fill; each tile = doc glyph + title + preview body + meta line */
 .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .lib-card { position: relative; display: flex; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); transition: opacity 0.15s; }
 .lib-card:hover { opacity: 0.8; }
 .lib-card-link { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 15px 16px; text-decoration: none; color: var(--text); }
+.lib-card-row { display: flex; align-items: center; gap: 10px; }
 .lib-card-icon { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: var(--radius-sm); background: var(--fill-hover); color: var(--text-2); flex: none; }
 .lib-card-title { font-size: 14px; font-weight: 500; color: var(--text); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lib-card-meta { display: flex; align-items: center; gap: 6px; margin-top: auto; font-size: 12px; color: var(--text-3); font-family: var(--mono); }
 .lib-card-dot { opacity: 0.7; }
+
+/* Preview body: a light-surface panel showing the report's own title + real summary text, echoing
+   Manus's rendered-markdown thumbnail (fixed light colors — deliberately NOT var(--surface) — so it
+   reads the same in dark mode, matching the capture's "renders in its own light context" note). Text
+   preview only, never a fabricated screenshot. */
+.lib-card-preview { display: flex; flex-direction: column; gap: 4px; padding: 10px 11px; border-radius: 8px; background: #f4f3ef; border: 1px solid rgba(0, 0, 0, 0.06); }
+.lib-card-preview-title { font-size: 12px; font-weight: 600; color: #161512; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.lib-card-preview-body { font-size: 11.5px; color: #4b493f; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* Star favorite toggle — a SIBLING of the link (never nested in an <a>), pinned top-right */
 .lib-fav { position: absolute; top: 9px; right: 9px; z-index: 2; width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border: none; border-radius: 7px; background: transparent; color: var(--text-3); cursor: pointer; transition: background 0.15s, color 0.15s; }
@@ -1692,9 +1726,11 @@
 .lib-fav.on { color: var(--acid); }
 .lib-fav.on svg { fill: var(--acid); }
 
-/* Compact list variant of the same cards: single-row layout */
+/* Compact list variant of the same cards: single-row layout, no preview thumbnail (Manus list rows
+   drop the preview too) */
 .lib-list { display: flex; flex-direction: column; gap: 8px; }
 .lib-list .lib-card-link { flex-direction: row; align-items: center; gap: 12px; padding: 11px 44px 11px 14px; }
+.lib-list .lib-card-row { flex: 1; min-width: 0; }
 .lib-list .lib-card-icon { width: 30px; height: 30px; }
 .lib-list .lib-card-title { flex: 1; -webkit-line-clamp: 1; }
 .lib-list .lib-card-meta { margin-top: 0; flex: none; }
@@ -1749,13 +1785,47 @@
 }
 
 /* ── Scheduled (Manus tabs + calendar) ── */
-/* Header tabs reuse the app's .ev-tab segmented look (see .ev-tabs above); this wrapper just seats them
-   under the "Scheduled" title with the icon+label pair centered. */
-.sched-tabs { display: flex; gap: 4px; margin: 4px 0 18px; border-bottom: 1px solid var(--line); }
+/* Header tabs reuse the app's .ev-tab segmented look (see .ev-tabs above). The row also carries the
+   "New scheduled task" trigger at the right, so create stays reachable regardless of which tab (incl.
+   the default Calendar tab) is active. */
+.sched-tabs-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 4px 0 18px; border-bottom: 1px solid var(--line); }
+.sched-tabs { display: flex; gap: 4px; }
 .sched-tabs .ev-tab { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; padding: 10px 4px; margin-right: 14px; }
 .sched-tabs .ev-tab svg { color: var(--text-3); }
 .sched-tabs .ev-tab.active svg { color: var(--text-2); }
 .sched-tabs .ev-tab.active::after { left: 0; right: 0; }
+.sched-new-btn { flex: none; margin-bottom: 8px; }
+
+/* ── Scheduled empty state (Manus anatomy: illustration + H2 + 3 suggestion rows + create button) ── */
+.sched-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 36px 16px 8px; }
+.sched-empty-art { position: relative; margin-bottom: 22px; color: var(--text-3); }
+.sched-art-frame { fill: none; stroke: currentColor; stroke-width: 2.5; }
+.sched-art-cell { fill: var(--line-2); }
+.sched-art-cell.active { fill: var(--acid); }
+.sched-empty-badge {
+  position: absolute; right: -10px; bottom: -8px; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--acid); color: var(--bg); box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--acid) 70%, transparent);
+}
+.sched-empty-title { font-size: 19px; font-weight: 600; color: var(--text); max-width: 420px; margin: 0 0 22px; line-height: 1.4; }
+.sched-suggestions { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
+.sched-suggestion-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 16px; text-align: left;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text);
+  font-family: var(--font); font-size: 13.5px; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+}
+.sched-suggestion-row:hover { background: var(--fill-hover); border-color: var(--line-2); }
+.sched-suggestion-row svg:first-child { color: var(--text-3); flex: none; }
+.sched-suggestion-row svg:last-child { color: var(--text-3); flex: none; margin-left: auto; }
+.sched-suggestion-text { flex: 1; min-width: 0; }
+.sched-empty-monitor { font-size: 12.5px; color: var(--text-3); margin: 18px 0 0; }
+.sched-empty-cta { margin-top: 18px; }
+
+/* ── New scheduled task modal form (inside AppModal's .app-modal-body) ── */
+.sched-form { display: grid; gap: 14px; }
+.sched-field { display: grid; gap: 6px; }
+.sched-field-label { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.sched-select { appearance: auto; cursor: pointer; }
+.sched-modal-actions { margin-top: 2px; }
 
 .sched-cal { margin-top: 4px; }
 .sched-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }

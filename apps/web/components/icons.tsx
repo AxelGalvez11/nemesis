@@ -43,6 +43,10 @@ const PATHS: Record<string, React.ReactNode> = {
   star: <path d="M12 3l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.6 9.1l5.8-.8z" />,
   grid: (<><rect x="4" y="4" width="7" height="7" rx="1.2" /><rect x="13" y="4" width="7" height="7" rx="1.2" /><rect x="4" y="13" width="7" height="7" rx="1.2" /><rect x="13" y="13" width="7" height="7" rx="1.2" /></>),
   list: (<><path d="M8 6h13M8 12h13M8 18h13" /><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" /></>),
+  "chevron-right": <path d="m9 18 6-6-6-6" />,
+  monitor: (<><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></>),
+  pipeline: (<><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M8.5 7.5 15.5 16.5M6 8.5V15a3 3 0 0 0 3 3h2" /></>),
+  filter: <path d="M4 5h16l-6 8v5l-4 2v-7z" />,
 };
 
 export type IconName = keyof typeof PATHS;
