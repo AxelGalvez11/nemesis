@@ -1327,6 +1327,78 @@ export async function setItemProject(kind: ProjectItemKind, id: string, projectI
   if (error) throw new Error(`assign to project failed: ${error.message}`);
 }
 
+// ── Project sources (ChatGPT-Projects "give it more context"): pasted text or small uploaded text
+//    files attached to a workspace. Owner-gated migration 20260706000000_project_sources.sql. ──
+export interface ProjectSource {
+  id: string;
+  project_id: string;
+  kind: "text" | "file";
+  name: string;
+  content: string;
+  bytes: number | null;
+  created_at: string;
+}
+
+function toProjectSource(r: Record<string, unknown>): ProjectSource | null {
+  return typeof r.id === "string" && typeof r.project_id === "string" && typeof r.content === "string"
+    ? {
+      id: r.id,
+      project_id: r.project_id,
+      kind: r.kind === "file" ? "file" : "text",
+      name: typeof r.name === "string" ? r.name : "Untitled source",
+      content: r.content,
+      bytes: typeof r.bytes === "number" ? r.bytes : null,
+      created_at: typeof r.created_at === "string" ? r.created_at : "",
+    }
+    : null;
+}
+
+/** A project's sources, or `{ enabled: false }` when the project_sources table doesn't exist yet
+ *  (pre-migration) — kept distinct from "enabled but empty" so the Sources tab can tell the two apart
+ *  (a quiet "not enabled yet" note vs. the normal empty/drop-zone state), instead of collapsing both
+ *  into an empty array the way fetchProjects() does for its own pre-deploy case. */
+export async function fetchProjectSources(projectId: string): Promise<{ enabled: boolean; sources: ProjectSource[] }> {
+  if (isPreviewMode) return { enabled: true, sources: [] };
+  const { data, error } = await supabase
+    .from("project_sources")
+    .select("id,project_id,kind,name,content,bytes,created_at")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    if (isMissingRelation(error)) return { enabled: false, sources: [] };
+    throw new Error(`project sources failed: ${error.message}`);
+  }
+  return { enabled: true, sources: rows(data, toProjectSource) };
+}
+
+/** Add a source (pasted text, or a small text-format file already read client-side) to a project.
+ *  RLS scopes the insert to the caller; user_id also defaults server-side via auth.uid(). */
+export async function createProjectSource(input: { projectId: string; kind: "text" | "file"; name: string; content: string; bytes?: number }): Promise<ProjectSource | null> {
+  const { data: sess } = await supabase.auth.getSession();
+  const userId = sess.session?.user?.id;
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from("project_sources")
+    .insert({
+      project_id: input.projectId,
+      user_id: userId,
+      kind: input.kind,
+      name: input.name.trim().slice(0, 200) || "Untitled source",
+      content: input.content,
+      bytes: input.bytes ?? input.content.length,
+    })
+    .select("id,project_id,kind,name,content,bytes,created_at")
+    .maybeSingle();
+  if (error) throw new Error(`add source failed: ${error.message}`);
+  return data ? toProjectSource(data) : null;
+}
+
+/** Delete a project source. RLS scopes the delete to the caller. */
+export async function deleteProjectSource(id: string): Promise<void> {
+  const { error } = await supabase.from("project_sources").delete().eq("id", id);
+  if (error) throw new Error(`delete source failed: ${error.message}`);
+}
+
 // ── Research Map: OpenAlex-backed "explore related papers" (calls the auth-gated /api/v1/graph/expand
 //    Next.js route). Client-only — the returned works become ghost nodes in the map, never persisted. ──
 export interface GraphExpandWork {
