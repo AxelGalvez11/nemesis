@@ -33,8 +33,11 @@ export function Nav({ theme, onToggleTheme }: NavProps) {
           >
             {theme === "light" ? <MoonIcon /> : <SunIcon />}
           </button>
-          <a className="nav-cta" href="#waitlist">
-            Join waitlist
+          <a className="nav-signin" href="https://app.pharmaorb.app/sign-in">
+            Sign in
+          </a>
+          <a className="nav-cta" href="https://app.pharmaorb.app/sign-up">
+            Sign up
           </a>
         </div>
       </div>

@@ -547,6 +547,7 @@ export interface ConversationSummary {
   title: string;
   updated_at: string;
   pinned: boolean;
+  project_id: string | null;
 }
 
 /** A reconstructed deep-research card (persisted on completion) — links to the finished report. */
@@ -555,6 +556,12 @@ export interface SavedResearchCard {
   savedReportId: string | null;
   title: string;
   citationCount: number;
+}
+
+function parseReportMode(value: unknown): ReportMode {
+  return value === "structured_review" || value === "meta" || value === "lab_draft" || value === "discovery" || value === "standard"
+    ? value
+    : "standard";
 }
 
 /** One reconstructed turn: a cited chat answer, OR a deep-research card (when `research` is set). */
@@ -569,28 +576,31 @@ export async function fetchConversations(): Promise<ConversationSummary[]> {
   if (isPreviewMode) return [];
   const { data, error } = await supabase
     .from("conversations")
-    .select("id,title,updated_at,pinned")
+    .select("id,title,updated_at,pinned,project_id")
     .order("pinned", { ascending: false }) // pinned chats first…
     .order("updated_at", { ascending: false }) // …then most-recent
     .limit(50);
   if (error) throw new Error(`conversations failed: ${error.message}`);
   return rows(data, (r) =>
     typeof r.id === "string" && typeof r.title === "string"
-      ? { id: r.id, title: r.title, updated_at: String(r.updated_at ?? ""), pinned: r.pinned === true }
+      ? { id: r.id, title: r.title, updated_at: String(r.updated_at ?? ""), pinned: r.pinned === true, project_id: typeof r.project_id === "string" ? r.project_id : null }
       : null,
   );
 }
 
-/** Create a chat (title = first question, trimmed); returns its id. */
-export async function createConversation(title: string): Promise<string | null> {
+/** Create a chat (title = first question, trimmed); returns its id. Pass `projectId` to file the new
+ *  chat directly into a project workspace (used by the project→Ask "New chat in {name}" flow). */
+export async function createConversation(title: string, projectId?: string | null): Promise<string | null> {
   if (isPreviewMode) return null;
   const { data: sess } = await supabase.auth.getSession();
   const userId = sess.session?.user.id;
   if (!userId) throw new Error("Sign in to save chats");
   const clean = title.trim().slice(0, 120) || "New chat";
+  const row: Record<string, unknown> = { user_id: userId, title: clean };
+  if (projectId) row.project_id = projectId;
   const { data, error } = await supabase
     .from("conversations")
-    .insert({ user_id: userId, title: clean })
+    .insert(row)
     .select("id")
     .single();
   if (error) throw new Error(`create chat failed: ${error.message}`);
@@ -698,7 +708,7 @@ export async function fetchConversationTurns(conversationId: string): Promise<Sa
           q: pendingQ ?? "",
           a: null,
           research: {
-            mode: p.mode === "structured_review" ? "structured_review" : p.mode === "meta" ? "meta" : "standard",
+            mode: parseReportMode(p.mode),
             savedReportId: typeof p.saved_report_id === "string" ? p.saved_report_id : null,
             title: typeof p.title === "string" ? p.title : (pendingQ ?? ""),
             citationCount: typeof p.citation_count === "number" ? p.citation_count : 0,
@@ -736,13 +746,14 @@ export interface ResearchReportSummary {
   title: string;
   created_at: string;
   citation_count: number;
-  /** Report sub-type for grouping: 'standard' | 'meta' | 'structured_review' | 'lab_draft'. */
+  /** Report sub-type for grouping: 'standard' | 'meta' | 'structured_review' | 'lab_draft' | 'discovery'. */
   mode: string;
 }
 
 /** Start a deep-research run. Returns the run id to poll. Throws AskQuotaError on the Pro gate /
- *  daily-limit 429 (deep_research_daily_limit is 0 for free/plus). */
-export async function startResearch(question: string, mode: ReportMode = "standard"): Promise<string> {
+ *  daily-limit 429 (deep_research_daily_limit is 0 for free/plus). `subQuestions`, when provided (a
+ *  user-edited plan from `planResearchPreview`), tells the engine to skip its own planning call. */
+export async function startResearch(question: string, mode: ReportMode = "standard", subQuestions?: string[]): Promise<string> {
   if (isPreviewMode) throw new Error("Deep research needs a live connection (not available in preview).");
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -755,7 +766,7 @@ export async function startResearch(question: string, mode: ReportMode = "standa
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ question, mode }),
+    body: JSON.stringify({ question, mode, ...(subQuestions?.length ? { sub_questions: subQuestions } : {}) }),
   });
   const body = await res.json().catch(() => null);
   if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
@@ -790,6 +801,28 @@ export async function scopeResearch(question: string): Promise<ScopeResult> {
     return body as unknown as ScopeResult;
   } catch {
     return none;
+  }
+}
+
+/** Preview the research plan (3-6 sub-questions) for user review. Best-effort: [] on any failure. */
+export async function planResearchPreview(question: string, mode: ReportMode): Promise<string[]> {
+  if (isPreviewMode) return [];
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return [];
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/research`, {
+      method: "POST",
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ question, mode, action: "plan" }),
+    });
+    if (!res.ok) return [];
+    const body = await res.json().catch(() => null);
+    return isObj(body) && Array.isArray(body.sub_questions)
+      ? body.sub_questions.filter((s: unknown): s is string => typeof s === "string").slice(0, 8)
+      : [];
+  } catch {
+    return [];
   }
 }
 
@@ -1140,8 +1173,8 @@ export async function downloadReportExport(
 // ── Projects (workspaces) — group a user's chats + reports + watches into one named space. Direct
 //    PostgREST writes; RLS is the enforcement (projects is owner-scoped; the project_id columns inherit
 //    each item table's existing owner policy). Pre-migration the table is absent (PGRST205) → empty.
-export interface Project { id: string; name: string; description: string | null; created_at: string; }
-export interface ProjectChat { id: string; title: string; }
+export interface Project { id: string; name: string; description: string | null; created_at: string; instructions?: string | null; }
+export interface ProjectChat { id: string; title: string; created_at?: string; }
 export interface ProjectContents { chats: ProjectChat[]; reports: ResearchReportSummary[]; watches: WatchSummary[]; }
 export type ProjectItemKind = "conversation" | "report" | "watch";
 
@@ -1201,15 +1234,63 @@ export async function deleteProject(id: string): Promise<void> {
   if (error) throw new Error(`delete project failed: ${error.message}`);
 }
 
+/** One project by id (RLS-scoped). Includes `instructions` when the column exists; before the
+ *  20260703120000 migration is applied that column is absent (Postgres 42703, a PostgREST 400 — NOT the
+ *  PGRST205 that isMissingRelation catches), so we retry with the base columns and return instructions:null.
+ *  Returns null if the project isn't found or the table itself is absent (pre-Projects deploy). */
+export async function fetchProject(id: string): Promise<Project | null> {
+  if (isPreviewMode) return null;
+  const withInstr = await supabase
+    .from("projects").select("id,name,description,created_at,instructions").eq("id", id).maybeSingle();
+  if (!withInstr.error) {
+    const d = withInstr.data;
+    return d && typeof d.id === "string"
+      ? { id: d.id, name: String(d.name ?? ""), description: (d.description as string) ?? null, created_at: (d.created_at as string) ?? "", instructions: (d.instructions as string) ?? null }
+      : null;
+  }
+  // Missing table → treat as "no project" (pre-Projects deploy). Missing column (42703) → retry base.
+  if (isMissingRelation(withInstr.error)) return null;
+  const base = await supabase
+    .from("projects").select("id,name,description,created_at").eq("id", id).maybeSingle();
+  if (base.error || !base.data || typeof base.data.id !== "string") return null;
+  const d = base.data;
+  return { id: d.id, name: String(d.name ?? ""), description: (d.description as string) ?? null, created_at: (d.created_at as string) ?? "", instructions: null };
+}
+
+/** Update a project's editable fields (RLS-scoped). Only the provided keys are written. `instructions`
+ *  writes only when the column exists; before the 20260703120000 migration is applied, that write fails
+ *  with Postgres 42703 (missing column) — reported back via `instructionsPersisted: false` so callers can
+ *  tell the user honestly rather than pretending the save succeeded. Name/description are unaffected. */
+export async function updateProject(id: string, patch: { name?: string; description?: string | null; instructions?: string | null }): Promise<{ instructionsPersisted: boolean }> {
+  if (isPreviewMode) return { instructionsPersisted: true };
+  // Split so a missing `instructions` column (pre-migration 42703) can't fail the name/description write.
+  const base: Record<string, unknown> = {};
+  if (patch.name !== undefined) base.name = patch.name.trim().slice(0, 200);
+  if (patch.description !== undefined) base.description = patch.description;
+  if (Object.keys(base).length) {
+    const { error } = await supabase.from("projects").update(base).eq("id", id);
+    if (error) throw new Error(`update project failed: ${error.message}`);
+  }
+  if (patch.instructions !== undefined) {
+    const { error } = await supabase.from("projects").update({ instructions: patch.instructions }).eq("id", id);
+    if (error) {
+      // Swallow ONLY the pre-migration column-missing case; surface anything else.
+      if (error.code !== "42703") throw new Error(`update project failed: ${error.message}`);
+      return { instructionsPersisted: false };
+    }
+  }
+  return { instructionsPersisted: true };
+}
+
 /** A project's contents — the chats, reports, and watches assigned to it. */
 export async function fetchProjectContents(projectId: string): Promise<ProjectContents> {
   const [c, r, w] = await Promise.all([
-    supabase.from("conversations").select("id,title").eq("project_id", projectId).order("updated_at", { ascending: false }),
+    supabase.from("conversations").select("id,title,created_at").eq("project_id", projectId).order("updated_at", { ascending: false }),
     supabase.from("saved_reports").select("id,title,created_at,citation_count,mode").eq("project_id", projectId).eq("kind", "deep_research").order("created_at", { ascending: false }),
     supabase.from("evidence_watches").select("id,title,cadence,status,last_checked_at,baselined_at").eq("project_id", projectId).order("created_at", { ascending: false }),
   ]);
   return {
-    chats: rows(c.data, (x) => (typeof x.id === "string" ? ({ id: x.id, title: typeof x.title === "string" ? x.title : "Untitled" } as ProjectChat) : null)),
+    chats: rows(c.data, (x) => (typeof x.id === "string" ? ({ id: x.id, title: typeof x.title === "string" ? x.title : "Untitled", created_at: typeof x.created_at === "string" ? x.created_at : undefined } as ProjectChat) : null)),
     reports: rows(r.data, toReportSummary),
     watches: rows(w.data, toWatchSummaryRow),
   };
@@ -1233,4 +1314,34 @@ export async function fetchUnassignedItems(): Promise<ProjectContents> {
 export async function setItemProject(kind: ProjectItemKind, id: string, projectId: string | null): Promise<void> {
   const { error } = await supabase.from(PROJECT_ITEM_TABLE[kind]).update({ project_id: projectId }).eq("id", id);
   if (error) throw new Error(`assign to project failed: ${error.message}`);
+}
+
+// ── Research Map: OpenAlex-backed "explore related papers" (calls the auth-gated /api/v1/graph/expand
+//    Next.js route). Client-only — the returned works become ghost nodes in the map, never persisted. ──
+export interface GraphExpandWork {
+  /** Short OpenAlex id (e.g. "W2125065061"). */
+  id: string;
+  title: string | null;
+  year: string | null;
+  pmid: string | null;
+}
+
+export interface GraphExpand {
+  work: GraphExpandWork;
+  cites: GraphExpandWork[];
+  cited_by: GraphExpandWork[];
+  similar: GraphExpandWork[];
+}
+
+/** Fetch cites / cited-by / similar papers for a PMID via the auth-gated proxy. Throws on failure so
+ *  the caller can show an honest "couldn't load" message (never fabricates results). */
+export async function fetchGraphExpand(pmid: string): Promise<GraphExpand> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to explore related papers");
+  const res = await fetch(`/api/v1/graph/expand?pmid=${encodeURIComponent(pmid)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`graph expand failed (${res.status})`);
+  return (await res.json()) as GraphExpand;
 }

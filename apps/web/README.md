@@ -26,6 +26,15 @@ Server-only:
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PLUS_PRICE_ID`
 - `STRIPE_ALLOW_LIVE` (`false` for MVP test mode; `true` only when deliberately going live)
+- `NCBI_API_KEY` (optional; raises PubMed E-utilities rate limits)
+- `UNPAYWALL_EMAIL` (optional but recommended; contact email used for Unpaywall/OpenAlex API etiquette)
+
+Evidence broker:
+
+- `GET /api/v1/evidence/search?q=berberine+glucose`
+- Federates PubMed, Europe PMC, OpenAlex, and Unpaywall.
+- Returns source provenance and access labels instead of pretending all papers are full-text indexed.
+- Only store/index full text when a source/license explicitly allows reuse.
 
 ## Commands
 

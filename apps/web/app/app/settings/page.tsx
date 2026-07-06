@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/ui";
 import { SettingsSurface, type SettingsSection } from "@/components/SettingsSurface";
 
-const SECTIONS = ["general", "account", "billing", "about"] as const;
+const SECTIONS = ["general", "account", "billing", "usage", "about"] as const;
 
 // One consolidated Settings surface (Anthropic-style left section nav). The old /app/profile and
 // /app/billing routes now redirect here with ?section=, so direct URLs still land on the right place.

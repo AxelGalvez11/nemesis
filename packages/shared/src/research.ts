@@ -7,6 +7,7 @@
 // /ask AskResponse.
 
 import type { AnswerPoint, AnswerTemplate, Citation, EvidenceGrade, SafetyFlag } from "./answer.ts";
+import type { DiscoveryReport } from "./discovery.ts";
 // Direct module import (NOT the ./index barrel) to avoid a barrel import cycle.
 import type { MetaAnalysisResult } from "./meta-analysis.ts";
 
@@ -86,6 +87,8 @@ export interface ResearchReport {
   meta_analysis?: MetaAnalysisResult;
   /** Optional audit metadata: which configured model slot handled each stage. */
   model_slots?: ModelSlotMap;
+  /** Level 4 discovery payload: claim cards, gaps, hypotheses, and next-study design. */
+  discovery?: DiscoveryReport;
 }
 
 /** Async run lifecycle (mirrors research_report_runs.status). */
@@ -107,7 +110,7 @@ export interface ResearchProgressStep {
  *  code-computed pooled estimate (risk ratio) when ≥2 comparable studies report extractable counts;
  *  'lab_draft' = a literature-grounded study-DESIGN scaffold (objective/arms/controls/endpoints/assays/
  *  sample-size/pitfalls) — never an executable protocol or synthesis route. Beta, hazardous-scope-gated. */
-export type ReportMode = "standard" | "structured_review" | "meta" | "lab_draft";
+export type ReportMode = "standard" | "structured_review" | "meta" | "lab_draft" | "discovery";
 
 /** The fixed comparison a meta-analysis run pools around (PICO), parsed from the question BEFORE the
  *  corpus is read so the contrast can never be inferred post-hoc across mismatched studies. */

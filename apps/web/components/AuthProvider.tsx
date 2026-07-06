@@ -2,7 +2,8 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { appUrl, isPreviewMode } from "@/lib/env";
+import { isPreviewMode } from "@/lib/env";
+import { resolveAuthRedirectUrl } from "@/lib/auth-redirect";
 import { supabase } from "@/lib/supabase";
 import { phCapture, phIdentify, phReset } from "@/lib/posthog";
 
@@ -80,6 +81,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(previewSession);
       return null;
     }
+    // captchaToken is forwarded only when present; Supabase ignores it until CAPTCHA enforcement is
+    // enabled in the dashboard, so this is inert until activated.
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -97,7 +100,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
-        emailRedirectTo: `${appUrl}/app`,
+        emailRedirectTo: resolveAuthRedirectUrl("/app"),
+        // Forwarded only when present; Supabase ignores it until CAPTCHA enforcement is enabled.
         ...(captchaToken ? { captchaToken } : {}),
         // Record the accepted Terms/Disclaimer version on the user (the signup consent gate). The
         // account's created_at is the authoritative acceptance time; we add a client stamp for context.

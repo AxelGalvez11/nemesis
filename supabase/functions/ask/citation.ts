@@ -198,6 +198,60 @@ function oldestDate(citations: Citation[]): string | null {
   return dates.sort()[0];
 }
 
+/** The differentiated source-class badge fields for a reviewed card (e.g. "official label",
+ *  "randomized trial") — what the evidence panel reads as `Citation.evidence_role`. Deliberately
+ *  narrow: it does NOT include `support_level`/`claim_relation`, which are tag-keyed (relative to a
+ *  cited claim) and meaningless for a source no claim cited. Keeping this type narrow makes
+ *  reintroducing those fields on reviewed cards a type error, not just a lint nit. */
+export type ReviewedRating = Pick<Citation, "evidence_role" | "evidence_weight" | "support_reason">;
+
+/**
+ * Task 3: the "also reviewed" breadth set — the full reranked pool minus what the answer actually
+ * cited, relevance-floored and capped. PURE (no network, no sort — `pool` is expected to already be
+ * rank-ordered, e.g. the reranker's output or dense-similarity order).
+ *
+ * Exclusion is by `chunk_id` (stable identity), NOT by `tag`: `pool` (guardPool) carries pool-local
+ * tags that can collide with the cited slice's retagged "1".."N" tags, so tag-based exclusion would
+ * incorrectly drop or keep the wrong rows.
+ *
+ * Reviewed rows are re-tagged starting strictly ABOVE the highest cited tag — `max(citedTags) + 1`,
+ * NOT `citedTags.size + 1`. The generator cites a SPARSE subset of "1".."matchCount" (e.g. {1,2,5,9,18}),
+ * so offsetting by the count (5) would re-emit tags {6..} that overlap live cited tags (9, 18) — and
+ * since the evidence panel keys `ev-src-<tag>` and the "active"/support highlight off chunk_tag, that
+ * would paint a "Supports this claim" highlight (and a duplicate DOM id) onto a source no claim cited.
+ * Passing the cited-tag SET lets the helper own the safe offset and be tested against the sparse case.
+ *
+ * `rate` is an OPTIONAL per-chunk rater (the caller wraps `evidenceRole()` from source-support.ts) that
+ * derives the differentiated evidence-role badge from the chunk's own provider/publication_types/
+ * study_type. It is called with the ORIGINAL chunk — never a tag, never a lookup keyed by
+ * `ret.chunks`/`supportRatings` — so it stays collision-safe with the cited-tag namespace by
+ * construction. Omit it and reviewed cards carry no evidence_role (today's behavior).
+ */
+export function buildReviewedSet(
+  pool: readonly (RetrievedChunk & { rerank_score?: number })[],
+  citedChunkIds: ReadonlySet<string>,
+  citedTags: ReadonlySet<string>,
+  floor: number,
+  cap: number,
+  rate?: (chunk: RetrievedChunk) => Partial<ReviewedRating>,
+): Citation[] {
+  // Start reviewed tags strictly above every cited tag (numeric), so no reviewed tag can equal a cited
+  // one regardless of how sparse the cited subset is. Empty cited set -> offset 0 -> reviewed "1"..
+  let offset = 0;
+  for (const t of citedTags) {
+    const n = Number(t);
+    if (Number.isFinite(n) && n > offset) offset = n;
+  }
+  return pool
+    .filter((c) => !citedChunkIds.has(c.chunk_id))
+    .filter((c) => (c.rerank_score ?? c.similarity ?? 0) >= floor)
+    .slice(0, cap)
+    .map((c, i) => {
+      const cite = chunkToCitation({ ...c, tag: String(offset + i + 1) });
+      return rate ? { ...cite, ...rate(c) } : cite;
+    });
+}
+
 /**
  * Verbatim per-tag source text for the `include_source_text` verification payload. At most one entry
  * per tag (first non-empty wins); a chunk with no usable body text is skipped — there is nothing to

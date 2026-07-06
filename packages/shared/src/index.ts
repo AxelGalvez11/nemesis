@@ -12,6 +12,7 @@
 
 export * from "./answer.ts";
 export * from "./claim-relation.ts";
+export * from "./discovery.ts";
 export * from "./search.ts";
 export * from "./evidence.ts";
 // Phase-4 evidence-scoring engine (§9): the deterministic tier core. Pure
@@ -28,12 +29,22 @@ export * from "./health-context.ts";
 export * from "./compare.ts";
 // MVP web-beta entitlements + usage snapshots (0122).
 export * from "./entitlements.ts";
+// Missions (scheduled background deep-research runs): types + cadence math + entitlement + labels (pure).
+// The cadence math is here so the edge function and mobile clients can advance next_run_at identically.
+export * from "./missions.ts";
+// Mission "report ready" email: PURE content builder for scheduled research completion notifications.
+// The send I/O lives in the research edge function; this module builds user-visible email content.
+export * from "./mission-email.ts";
 // Deep Research report contract (research-modes): the multi-step, cited REPORT
 // produced by plan -> gather -> synthesize -> faithfulness. Additive, optional.
 export * from "./research.ts";
 // Publishable-reports: PRISMA-overclaim guard + numbered citation formatter (pure).
 export * from "./forbidden-phrases.ts";
 export * from "./citation-format.ts";
+// Source enrichment: PMID/DOI extraction for source trust badges and cache keying.
+export * from "./source-ids.ts";
+// Research Map (per-project connection graph): pure node/edge aggregation from saved-item citations.
+export * from "./research-map.ts";
 // Evidence-base table helpers (publishable-reports): pure citation -> row mapping shared by the
 // on-screen report and the docx/pptx exports so both render the same body-of-evidence summary.
 export * from "./citation-meta.ts";
@@ -46,6 +57,9 @@ export * from "./meta-analysis.ts";
 // model for theme-aware React rendering + an SVG string for the Word/PDF/PPT export. Draws only numbers
 // the pool produced — never an LLM-drawn figure.
 export * from "./forest-plot.ts";
+// Source Attribution (NotebookLM pattern): "Built from N sources · method · date" — a deterministic
+// summary of what a report was built from, rendered at the foot of every generated deliverable.
+export * from "./report-attribution.ts";
 
 // Structured abstract (Background/Methods/Results/Conclusions) for a meta report. The Results line is
 // computed from the real pool — never LLM-stated. Null unless the report actually pooled.
@@ -94,3 +108,60 @@ export * from "./health-score.ts";
 
 // Missions: scheduled background research (cadence/deliver types, entitlement + next-run helpers).
 export * from "./missions.ts";
+// Evidence distribution charts (study-design mix + publications-by-year): PURE, deterministic SVG-layout
+// builders over the report's real citation metadata (studyTypeLabel / citationYear). Null when the data is
+// too thin to be honest. Rendered behind NEXT_PUBLIC_ENGINE_VISUALS (default off).
+export * from "./evidence-charts.ts";
+
+// Evidence map points (Litmaps scatter plot): x = publication year, y = evidence weight, r = support score.
+// Pure geometry module for rendering citation sources on a 2D plane.
+export * from "./evidence-map-points.ts";
+
+// Gap test-runner (meta): the comparability gate between a gap's extracted studies and the meta engine
+// — clusters by outcome, pools comparable clusters via poolRiskRatio, abstains honestly otherwise.
+// PURE; reuses the computed-statistics engine (never LLM-guessed). Extraction + UI wiring are owner-gated.
+export * from "./gap-meta-test.ts";
+
+// Field-router (beyond-medicine prerequisite): PURE, deterministic classifier that maps a query to a
+// field (→ source-set + in-silico executability) and to the safety systems to engage. Safety is
+// signal-driven and additive — a health/drug signal keeps the medical floor on even inside a CS query.
+// Deterministic spine; an LLM classifier is the owner-gated refinement that feeds the same contract.
+export * from "./field-router.ts";
+
+// Auto-depth: PURE depth picker for the simplified "Auto" composer mode — fast vs thorough from the
+// query shape (length / multi-part / comparison markers). Deterministic; an LLM router refines later.
+export * from "./auto-depth.ts";
+
+// Real-World Signal (researcher-facing): PURE aggregation of patient-reported outcomes into descriptive
+// per-intervention COUNTS — never an effect estimate — graded at the lowest (anecdotal) tier and walled
+// from the cited evidence, abstaining below a minimum-reports floor. A hypothesis-generation / gap-detection
+// signal for researchers (feeds the discovery engine), not consumer advice. Safety pass over reported
+// stacks + sourcing are owner-gated follow-ups.
+export * from "./realworld-signal.ts";
+
+// Stack safety (Real-World Signal Phase B): PURE checker that flags WELL-ESTABLISHED dangerous drug/
+// supplement combinations in a reported regimen, for a researcher's review. A curated, conservative SEED
+// (clinical review + a licensed source pending) — a flag means a known danger; absence of a flag != safe.
+export * from "./stack-safety.ts";
+
+// Per-claim Evidence Meter (trust layer): PURE, DETERMINISTIC, design-weighted score for a single
+// answer point's cited sources — score = design weight × support-level multiplier, plus a small
+// capped corroboration bonus. Never vote-counted: one meta-analysis outscores any pile of weak
+// mentions. "contested" label is reserved for a future scite-contrast signal, not wired here.
+export * from "./claim-meter.ts";
+
+// Per-claim reference markers for deliverable exports (PPT/DOCX/PDF): claimRefMarker renders the
+// " [1,3]" tag a claim's bullet line carries; referenceLines renders the numbered reference list
+// (with URL/DOI) in the same chunk_tag digit order, so a marker always points at the right line.
+export * from "./claim-refs.ts";
+
+// Report title cleanup: strip the Ask flow's "\n\nFocus: …" scoping suffix, normalize + cap for the
+// Library / workspace rows. PURE, display-only.
+export * from "./report-title.ts";
+
+// Relative "time until" ("in 2 h" / "in 3 d" / "due now") for the Scheduled surface. PURE.
+export * from "./relative-time.ts";
+
+// Visible credits (Manus-style usage surface): PURE display model over the existing entitlement + usage
+// + watch/mission counts. Display-only — reads what the backend reports, never enforces or charges.
+export * from "./credits.ts";

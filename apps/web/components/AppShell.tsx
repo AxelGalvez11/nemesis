@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useAuth } from "./AuthProvider";
 import { useTheme } from "./theme-provider";
-import { Orb } from "./Orb";
-import { deleteConversation, fetchConversations, fetchEntitlements, fetchUsage, pinConversation, renameConversation, type ConversationSummary } from "@/lib/api";
+import { deleteConversation, fetchConversations, fetchEntitlements, fetchProjects, fetchUsage, pinConversation, renameConversation, setItemProject, type ConversationSummary, type Project } from "@/lib/api";
 import { Icon } from "./icons";
 import { AppModal } from "./AppModal";
 import { SettingsSurface } from "./SettingsSurface";
+import { CreditsPanel } from "./CreditsPanel";
 
 type Overlay = "settings" | null;
 
@@ -23,6 +23,7 @@ interface AppChromeValue {
   setEvidence: (node: ReactNode | null) => void;
   setTopbar: (node: ReactNode | null) => void;
   bumpChats: () => void;
+  bumpUsage: () => void;
 }
 const AppChromeContext = createContext<AppChromeValue>({
   railCollapsed: false,
@@ -33,13 +34,16 @@ const AppChromeContext = createContext<AppChromeValue>({
   setEvidence: () => {},
   setTopbar: () => {},
   bumpChats: () => {},
+  bumpUsage: () => {},
 });
 export const useAppChrome = () => useContext(AppChromeContext);
 
 const workspace = [
   { href: "/app/ask", label: "Ask", icon: "message" as const },
-  { href: "/app/reports", label: "Reports", icon: "doc" as const },
-  { href: "/app/monitor", label: "Monitoring", icon: "bell" as const },
+  { href: "/app/reports", label: "Library", icon: "doc" as const },
+  // Monitoring's nav entry folded into Scheduled 2026-07-03 (one automation surface, ChatGPT-style).
+  // /app/monitor routes still exist — reached from Scheduled's monitor rows and its "New monitor" link.
+  { href: "/app/scheduled", label: "Scheduled", icon: "clock" as const },
   // Explore is deferred (mostly mockup) — hidden from the nav until it's real. The route still exists.
   // (The old "Watchlist" feature was retired 2026-06-18, superseded by Monitoring above. Its empty DB
   // tables stay dormant for now; the drug-page "Follow" now creates a Monitoring watch.)
@@ -51,10 +55,14 @@ function isActive(path: string, href: string) {
   return path === href || path.startsWith(`${href}/`);
 }
 function titleForPath(path: string): { title: string; sub?: string } {
-  if (path.startsWith("/app/ask")) return { title: "Ask", sub: "live evidence · cited" };
+  if (path.startsWith("/app/ask")) return { title: "Ask" };
   if (path.startsWith("/app/research")) return { title: "Deep research", sub: "multi-step cited report" };
-  if (path.startsWith("/app/reports")) return { title: "Reports", sub: "your saved evidence reports" };
+  if (path.startsWith("/app/reports")) return { title: "Library", sub: "everything you've generated" };
   if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };
+  if (path.startsWith("/app/scheduled")) return { title: "Scheduled", sub: "recurring research + monitors" };
+  // Covers both the list (/app/projects) and a project detail page (/app/projects/<id>) — previously
+  // both fell through to the "PharmaOrb" fallback, so the topbar read the app name instead of "Projects".
+  if (path.startsWith("/app/projects")) return { title: "Projects", sub: "group chats, reports + monitors" };
   if (path.startsWith("/app/score")) return { title: "Score", sub: "your longevity rank" };
   if (path.startsWith("/app/explore")) return { title: "Explore" };
   if (path.startsWith("/app/billing")) return { title: "Billing" };
@@ -65,7 +73,7 @@ function titleForPath(path: string): { title: string; sub?: string } {
   return { title: "PharmaOrb" };
 }
 
-const FULL_BLEED = ["/app/ask", "/app/research", "/app/reports", "/app/monitor", "/app/explore", "/app/drugs/", "/app/score"];
+const FULL_BLEED = ["/app/ask", "/app/research", "/app/reports", "/app/monitor", "/app/scheduled", "/app/explore", "/app/drugs/", "/app/score"];
 
 // Client-only breakpoint probe (clicks are client-side, so window is always defined here).
 const mqMatch = (q: string) =>
@@ -77,10 +85,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const path = usePathname();
 
+  // Persisted across reloads so the sidebar stays where the user left it (ChatGPT/Manus behavior).
+  // Starts deterministic (expanded) and reconciles from localStorage after mount — same pattern as
+  // theme-provider — because reading storage in the initializer makes SSR and client render different
+  // markup (hydration mismatch + flash for collapsed-sidebar users).
   const [railCollapsed, setRailCollapsed] = useState(false);
+  useEffect(() => {
+    if (window.localStorage.getItem("rail-collapsed") === "1") setRailCollapsed(true);
+  }, []);
   // Evidence panel starts COLLAPSED: the chat is the focus on entry. It opens on demand — the
   // topbar panel button, or a citation click (openEvidence) — so sources are one click away.
   const [evidenceCollapsed, setEvidenceCollapsed] = useState(true);
+  const [evidenceWidth, setEvidenceWidth] = useState(344);
+  const [evidenceFullscreen, setEvidenceFullscreen] = useState(false);
   const [evidence, setEvidenceNode] = useState<ReactNode | null>(null);
   const [topbar, setTopbarNode] = useState<ReactNode | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -91,10 +108,22 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
   const [plan, setPlan] = useState<{ plan: string; used: number; limit: number }>({ plan: "free", used: 0, limit: 10 });
   const [chats, setChats] = useState<ConversationSummary[]>([]);
+  // Sidebar search: a client-side filter over the loaded Recent chats (title substring). Honest scope —
+  // this searches saved chats only, not the drug catalog.
+  const [chatQuery, setChatQuery] = useState("");
   const [chatsVersion, setChatsVersion] = useState(0);
+  // Bumped after each ask so the account footer + credits chip re-read usage (they'd otherwise go stale —
+  // AppShell reads usage once on mount). Private local state; only bumpUsage() is exposed on the context.
+  const [usageVersion, setUsageVersion] = useState(0);
+  // Whether the credits modal (opened from the topbar chip) is showing.
+  const [creditsOpen, setCreditsOpen] = useState(false);
   // Per-chat overflow (⋯) menu: which chat's menu is open + the fixed viewport coords to render it at
   // (fixed-positioned so the scrolling rail can't clip it).
   const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  // The per-chat ⋯ menu can swap into a "pick a project" list in place (no nested flyout). `projMenuFor`
+  // is the chat id whose project picker is showing; `projects` is lazily loaded on first open.
+  const [projMenuFor, setProjMenuFor] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[] | null>(null);
   // Delete confirmation: the chat awaiting a styled confirm dialog (replaces window.confirm). null = closed.
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null);
   // Inline rename: the chat whose title is being edited in-row (replaces window.prompt) + the draft text.
@@ -105,6 +134,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const cancelRenameRef = useRef(false);
   // Lets the chat page refresh the rail history the moment it creates a new conversation.
   const bumpChats = useCallback(() => setChatsVersion((v) => v + 1), []);
+  const bumpUsage = useCallback(() => setUsageVersion((v) => v + 1), []);
 
   // Delete a chat: optimistically drop it from the rail, then delete server-side (RLS-scoped). If we
   // were viewing it, return to a blank chat. Re-fetch on failure so the rail reflects the real state.
@@ -154,6 +184,25 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Assign / unassign a chat to a project from the rail. Optimistically updates the row's project_id,
+  // closes the menu, then resyncs from the server (matching handlePinChat's pattern).
+  const handleAssignChat = useCallback(async (id: string, projectId: string | null) => {
+    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, project_id: projectId } : c)));
+    setRowMenu(null);
+    setProjMenuFor(null);
+    try {
+      await setItemProject("conversation", id, projectId);
+    } catch {
+      setChatsVersion((v) => v + 1); // resync from the server on failure
+    }
+  }, []);
+
+  // Open the in-place project picker for a chat; lazy-load the project list the first time.
+  const openProjMenu = useCallback((id: string) => {
+    setProjMenuFor(id);
+    if (projects === null) void fetchProjects().then(setProjects).catch(() => setProjects([]));
+  }, [projects]);
+
   // Open the ⋯ menu anchored to the kebab button, clamped to the viewport (toggles if already open).
   const openRowMenu = useCallback((id: string, btn: HTMLElement) => {
     setRowMenu((cur) => {
@@ -177,7 +226,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const toggleRail = useCallback(() => {
     setMobileEvidenceOpen(false);
     if (mqMatch("(max-width: 720px)")) setMobileNavOpen((v) => !v);
-    else setRailCollapsed((v) => !v);
+    else
+      setRailCollapsed((v) => {
+        const next = !v;
+        if (typeof window !== "undefined") window.localStorage.setItem("rail-collapsed", next ? "1" : "0");
+        return next;
+      });
   }, []);
   const toggleEvidence = useCallback(() => {
     setMobileNavOpen(false);
@@ -192,7 +246,32 @@ export function AppShell({ children }: { children: ReactNode }) {
     else setEvidenceCollapsed(false);
   }, []);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
-  const closeMobileEvidence = useCallback(() => setMobileEvidenceOpen(false), []);
+  const closeMobileEvidence = useCallback(() => { setMobileEvidenceOpen(false); setEvidenceFullscreen(false); }, []);
+  const toggleEvidenceFullscreen = useCallback(() => {
+    setMobileNavOpen(false);
+    setMobileEvidenceOpen(false);
+    setEvidenceCollapsed(false);
+    setEvidenceFullscreen((v) => !v);
+  }, []);
+  const beginEvidenceResize = useCallback((e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (evidenceFullscreen || mqMatch("(max-width: 1100px)")) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = evidenceWidth;
+    const onMove = (ev: PointerEvent) => {
+      const max = Math.min(760, Math.max(344, window.innerWidth - (railCollapsed ? 96 : 296) - 420));
+      const next = Math.max(320, Math.min(max, startW + startX - ev.clientX));
+      setEvidenceWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.classList.remove("resizing-evidence");
+    };
+    document.body.classList.add("resizing-evidence");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+  }, [evidenceFullscreen, evidenceWidth, railCollapsed]);
 
   useEffect(() => {
     if (!loading && !session) router.replace(`/sign-in?next=${encodeURIComponent(path)}`);
@@ -211,7 +290,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [session]);
+  }, [session, usageVersion]);
 
   // Load the rail's saved-chat history (refreshes when the chat page bumps after creating one).
   useEffect(() => {
@@ -235,9 +314,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   // track the rail) on scroll or resize.
   useEffect(() => {
     if (!rowMenu) return;
-    const close = () => setRowMenu(null);
-    const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".row-menu, .hist-more")) setRowMenu(null); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setRowMenu(null); };
+    const close = () => { setRowMenu(null); setProjMenuFor(null); };
+    const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".row-menu, .hist-more")) close(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
     const nav = document.querySelector(".nav");
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
@@ -252,7 +331,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [rowMenu]);
 
   // Close both mobile drawers + any account overlay + the row menu / its dialogs on route change.
-  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setOverlay(null); setRowMenu(null); setConfirmDelete(null); setRenamingId(null); }, [path]);
+  useEffect(() => { setMobileNavOpen(false); setMobileEvidenceOpen(false); setEvidenceFullscreen(false); setOverlay(null); setRowMenu(null); setProjMenuFor(null); setConfirmDelete(null); setRenamingId(null); }, [path]);
 
   // Close the delete-confirm dialog on Escape.
   useEffect(() => {
@@ -265,7 +344,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Close the open drawer on Escape.
   useEffect(() => {
     if (!mobileNavOpen && !mobileEvidenceOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setMobileNavOpen(false); setMobileEvidenceOpen(false); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setMobileNavOpen(false); setMobileEvidenceOpen(false); setEvidenceFullscreen(false); } };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [mobileNavOpen, mobileEvidenceOpen]);
@@ -284,8 +363,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const ctx = useMemo<AppChromeValue>(
-    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats }),
-    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats],
+    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage }),
+    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage],
   );
 
   // Hooks are all above this line — only conditional returns below (Rules of Hooks).
@@ -301,22 +380,39 @@ export function AppShell({ children }: { children: ReactNode }) {
     railCollapsed && "rail-collapsed",
     mobileNavOpen && "mobile-open",
     hasEvidence && mobileEvidenceOpen && "mobile-evidence-open",
+    hasEvidence && evidenceFullscreen && "evidence-fullscreen",
     hasEvidence ? evidenceCollapsed && "evidence-collapsed" : "no-evidence",
   ]
     .filter(Boolean)
     .join(" ");
+  const appStyle = hasEvidence ? ({ "--evidence": `${evidenceWidth}px` } as CSSProperties) : undefined;
   const defaultTitle = titleForPath(path);
   const email = session.user.email ?? "preview@pharmaorb.app";
   const initials = email.slice(0, 2).toUpperCase();
+  // Filter Recent chats by title (case-insensitive substring). Empty query → the full list.
+  const q = chatQuery.trim().toLowerCase();
+  const visibleChats = q ? chats.filter((c) => c.title.toLowerCase().includes(q)) : chats;
 
   return (
     <AppChromeContext.Provider value={ctx}>
-      <div className={appClass}>
+      <div className={appClass} style={appStyle}>
         {/* ── rail ── */}
         <aside className="rail" id="app-rail">
           <div className="brand">
-            <Orb size={28} />
             <div className="wordmark">PharmaOrb</div>
+            {/* Manus-style rail collapse toggle atop the sidebar. Reuses toggleRail (same handler as the
+                topbar hamburger). When expanded it sits right of the wordmark; when collapsed the
+                wordmark hides and this stays centered in the icon rail as the expand affordance. */}
+            <button
+              className="icon-btn rail-collapse"
+              onClick={toggleRail}
+              data-tip={railCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={railCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-controls="app-rail"
+              aria-expanded={!railCollapsed}
+            >
+              <Icon name="sidebar" size={16} />
+            </button>
           </div>
           <button className="new" onClick={() => router.push("/app/ask")} aria-label="New chat">
             <Icon name="plus" size={16} />
@@ -324,7 +420,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
           <div className="search">
             <Icon name="search" size={15} />
-            <input placeholder="Search chats & drugs" aria-label="Search chats and drugs" />
+            <input
+              value={chatQuery}
+              onChange={(e) => setChatQuery(e.target.value)}
+              placeholder="Search chats"
+              aria-label="Search chats"
+            />
           </div>
           <nav className="nav">
             <div className="r-label">Workspace</div>
@@ -343,13 +444,18 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span style={{ fontSize: 12 }}>Projects</span>
             </Link>
 
+            <div className="rail-recents">
             <div className="r-label">Recent chats</div>
             {chats.length === 0 ? (
               <div className="hist" style={{ color: "var(--text-2)", cursor: "default" }}>
                 <span style={{ fontSize: 12 }}>Your saved chats appear here</span>
               </div>
+            ) : visibleChats.length === 0 ? (
+              <div className="r-label" style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                No chats match
+              </div>
             ) : (
-              chats.map((c) => (
+              visibleChats.map((c) => (
                 <div key={c.id} className={`hist-row${rowMenu?.id === c.id ? " menu-open" : ""}`}>
                   {renamingId === c.id ? (
                     // Inline rename: the title becomes an editable field. Enter or click-away saves;
@@ -394,6 +500,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               ))
             )}
+            </div>
           </nav>
 
           <div className="acct-wrap">
@@ -430,6 +537,15 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             )}
             <div className="spacer" />
+            <button
+              className="credits-chip"
+              onClick={() => setCreditsOpen(true)}
+              data-tip="Your credits"
+              aria-label={`Your credits — ${Math.max(0, plan.limit - plan.used)} asks left today`}
+            >
+              <Icon name="sparkle" size={15} />
+              <b>{Math.max(0, plan.limit - plan.used)}</b>
+            </button>
             <button className="icon-btn" onClick={toggleTheme} data-tip="Switch theme" aria-label="Switch theme (light, grey, dark)">
               <Icon name={theme === "light" ? "moon" : "sun"} />
             </button>
@@ -442,11 +558,25 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className={pageClass}>{children}</div>
         </main>
 
+        <CreditsPanel open={creditsOpen} onClose={() => setCreditsOpen(false)} />
+
         {/* ── evidence (page-injected) — a right-side drawer at ≤1100px ── */}
         {hasEvidence ? (
           <>
             <button className="evidence-backdrop" aria-label="Close evidence" onClick={closeMobileEvidence} tabIndex={-1} />
-            <aside className="evidence" id="app-evidence">{evidence}</aside>
+            <aside className="evidence" id="app-evidence">
+              <button className="evidence-resizer" type="button" aria-label="Resize evidence panel" onPointerDown={beginEvidenceResize} />
+              <button
+                className="evidence-fullscreen-toggle icon-btn"
+                type="button"
+                data-tip={evidenceFullscreen ? "Exit full screen evidence" : "Full screen evidence"}
+                aria-label={evidenceFullscreen ? "Exit full screen evidence" : "Full screen evidence"}
+                onClick={toggleEvidenceFullscreen}
+              >
+                <Icon name={evidenceFullscreen ? "panel" : "expand"} size={16} />
+              </button>
+              {evidence}
+            </aside>
           </>
         ) : null}
 
@@ -456,18 +586,49 @@ export function AppShell({ children }: { children: ReactNode }) {
           if (!c) return null;
           return (
             <div className="row-menu" role="menu" style={{ left: rowMenu.x, top: rowMenu.y }}>
-              <button role="menuitem" onClick={() => { setRowMenu(null); setRenamingId(c.id); setRenameDraft(c.title); }}>
-                <Icon name="pencil" size={15} />Rename
-              </button>
-              <button role="menuitem" onClick={() => { setRowMenu(null); void handlePinChat(c.id, !c.pinned); }}>
-                <Icon name="pin" size={15} />{c.pinned ? "Unpin chat" : "Pin chat"}
-              </button>
-              {/* Add to project waits on Projects (not built yet) — shown honestly as disabled "Soon". */}
-              <button role="menuitem" disabled><Icon name="folder" size={15} />Add to project<small>Soon</small></button>
-              <div className="sep" />
-              <button role="menuitem" className="danger" onClick={() => { setRowMenu(null); setConfirmDelete({ id: c.id, title: c.title }); }}>
-                <Icon name="trash" size={15} />Delete chat
-              </button>
+              {projMenuFor === c.id ? (
+                <>
+                  <button role="menuitem" onClick={() => setProjMenuFor(null)}>
+                    <Icon name="chevron-down" size={15} style={{ transform: "rotate(90deg)" }} />Back
+                  </button>
+                  <div className="sep" />
+                  {c.project_id ? (
+                    <button role="menuitem" onClick={() => void handleAssignChat(c.id, null)}>
+                      <Icon name="folder" size={15} />Remove from project
+                    </button>
+                  ) : null}
+                  {projects === null ? (
+                    <button role="menuitem" disabled><Icon name="folder" size={15} />Loading projects…</button>
+                  ) : projects.length === 0 ? (
+                    <button role="menuitem" disabled><Icon name="folder" size={15} />No projects yet</button>
+                  ) : (
+                    <div className="row-menu-scroll">
+                      {projects.map((p) => (
+                        <button key={p.id} role="menuitem" disabled={p.id === c.project_id}
+                          onClick={() => void handleAssignChat(c.id, p.id)} title={p.name}>
+                          <Icon name={p.id === c.project_id ? "check" : "folder"} size={15} />{p.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button role="menuitem" onClick={() => { setRowMenu(null); setRenamingId(c.id); setRenameDraft(c.title); }}>
+                    <Icon name="pencil" size={15} />Rename
+                  </button>
+                  <button role="menuitem" onClick={() => { setRowMenu(null); void handlePinChat(c.id, !c.pinned); }}>
+                    <Icon name="pin" size={15} />{c.pinned ? "Unpin chat" : "Pin chat"}
+                  </button>
+                  <button role="menuitem" onClick={() => openProjMenu(c.id)}>
+                    <Icon name="folder" size={15} />{c.project_id ? "Move to project" : "Add to project"}
+                  </button>
+                  <div className="sep" />
+                  <button role="menuitem" className="danger" onClick={() => { setRowMenu(null); setConfirmDelete({ id: c.id, title: c.title }); }}>
+                    <Icon name="trash" size={15} />Delete chat
+                  </button>
+                </>
+              )}
             </div>
           );
         })()}

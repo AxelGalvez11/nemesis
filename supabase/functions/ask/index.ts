@@ -21,12 +21,12 @@ import { classify } from "./classify.ts";
 import { resolveEntities } from "./resolve.ts";
 import { retrieve } from "./retrieve.ts";
 import { generate } from "./generate.ts";
-import { chunkToCitation, citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
+import { buildReviewedSet, citationMeta, collectSourceTexts, enforceCitations, type RetrievedChunk } from "./citation.ts";
 import { attachSupport } from "./support-span.ts";
 import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
 import { balanceCitedSlice } from "./cite-balance.ts";
-import { extractSearchTerms } from "./search-query.ts";
+import { buildSubQueries, extractSearchTerms } from "./search-query.ts";
 import { espellCorrect } from "../core-source-sync/providers/pubmed.ts";
 import { decideNewsGate } from "./news-gate.ts";
 import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
@@ -37,9 +37,9 @@ import { hasLlmKey, llmApiKey } from "./llm.ts";
 import { modelFor } from "./model-router.ts";
 import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
-import { applyReconToUnderstanding, understandQuery } from "./query-understanding.ts";
+import { applyReconToUnderstanding, isConsumerProductOnlyQuery, understandQuery } from "./query-understanding.ts";
 import { runWebRecon, type WebReconResult } from "./web-recon.ts";
-import { rateSourceSupport } from "./source-support.ts";
+import { evidenceRole, rateSourceSupport } from "./source-support.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
@@ -91,6 +91,20 @@ const MATCH_COUNT = 12;
 // sources to draw on. The label family is still capped at LABEL_SLICE_CAP, so the extra slots go to research /
 // trials, never more label prose. Fast/default keep MATCH_COUNT (today's breadth) so the quick answer never thins.
 const THOROUGH_MATCH_COUNT = 18;
+// Task 3: "also reviewed" breadth. The reranker already returns the WHOLE reranked union
+// (guardPool, e.g. 31-67 chunks) without truncating; only the cited slice (MATCH_COUNT /
+// THOROUGH_MATCH_COUNT) was ever surfaced to the reader as "reviewed". These two constants
+// let the panel show much more of that real, already-retrieved pool instead of the ~18-item
+// leftovers of the cited slice — display-only, does not touch ret.chunks or the generator.
+const REVIEWED_CAP = 34; // max "also reviewed" sources shown (total shown ~= cited ~6 + reviewed <=34 ~= 40)
+const REVIEWED_SCORE_FLOOR = 0.35; // min relevance (rerank_score, else dense similarity) to be shown as reviewed
+// Task 3b: parallel multi-query DENSE recall. A single dense query under-retrieves the library side of the
+// pool (esp. thin-live consumer questions). We fan the question into a few deterministic sub-queries
+// (buildSubQueries) and keep a bigger merged dense pool that then feeds augmentWithLive's rerank. This is
+// GATED behind LIVE_SOURCES_ON so the dense-only path stays byte-for-byte the behavior the gate locks in:
+// with live off we pass no sub-queries and recallPool == matchCount, i.e. today's single-query retrieve.
+const RECALL_POOL = 28; // merged dense candidates kept (fast/default) when live sources are on
+const THOROUGH_RECALL_POOL = 40; // merged dense candidates kept (thorough) when live sources are on
 
 // Live evidence sources (PubMed / Europe PMC / ClinicalTrials / openFDA / FAERS) are gated behind a
 // flag so deploying this code is non-breaking: with LIVE_SOURCES unset the pipeline is byte-for-byte
@@ -247,17 +261,31 @@ async function runAsk(
   const scopeId = resolvedIds.length === 1 ? resolvedIds[0] : null; // 2+ entities -> broad
 
   // ---- 3. retrieve ----
+  const consumerProductOnly = isConsumerProductOnlyQuery(queryUnderstanding);
+  // No-drug general-health/symptom questions ("why do I have white flakes in my hair?") route to
+  // consumer-health + literature sources (MedlinePlus/PubMed/EuropePMC), NOT FDA labels (#82).
   const noDrugGeneralHealth =
     queryUnderstanding.fieldMentions.length === 0 &&
     (cls.intent === "general_health" || cls.intent === "health_context" || cls.intent === "side_effects");
   const effectiveIntent = noDrugGeneralHealth ? "general_health" : cls.intent;
-  const priority = providerPriorityForIntent(effectiveIntent);
+  // Consumer-product-only queries (e.g. "Celsius") stay on pubmed_oa; everything else uses the
+  // intent-scoped priority (now symptom-aware via effectiveIntent).
+  const priority = consumerProductOnly ? ["pubmed_oa"] : providerPriorityForIntent(effectiveIntent);
+  // Multi-query dense recall — ONLY when live sources are on (see RECALL_POOL comment). With live off,
+  // subQueries=undefined + recallPool=matchCount makes retrieve() a single-query matchCount call, i.e.
+  // byte-identical to today's dense-only path (the gate/guardrail baseline).
+  // effectiveIntent (not cls.intent) so a no-drug symptom/general-health question gets the general_health
+  // sub-query variant — exactly the thin-live case where the extra dense recall helps most.
+  const subQueries = LIVE_SOURCES_ON ? buildSubQueries(question, cls.entity_mentions, effectiveIntent) : undefined;
+  const recallPool = LIVE_SOURCES_ON ? (mode === "thorough" ? THOROUGH_RECALL_POOL : RECALL_POOL) : matchCount;
   let ret = await retrieve({
     question,
     providers: priority,
     entityId: scopeId,
     threshold: ASK_MATCH_THRESHOLD,
     matchCount,
+    subQueries,
+    recallPool,
     sbUrl: SB_URL,
     serviceKey: SERVICE_KEY,
   });
@@ -266,13 +294,15 @@ async function runAsk(
   // bridged to its entity in Phase 2 (e.g. retatrutide, BPC-157 — their
   // trials/PubMed chunks exist but the drug_entity_sources link is sparse). Before
   // refusing, retry with NO provider AND NO entity filter (broad semantic search).
-  if (ret.chunks.length === 0 && (priority !== null || scopeId !== null)) {
+  if (!consumerProductOnly && ret.chunks.length === 0 && (priority !== null || scopeId !== null)) {
     ret = await retrieve({
       question,
       providers: null,
       entityId: null,
       threshold: ASK_MATCH_THRESHOLD,
       matchCount,
+      subQueries,
+      recallPool,
       sbUrl: SB_URL,
       serviceKey: SERVICE_KEY,
     });
@@ -431,10 +461,36 @@ async function runAsk(
   // didn't end up citing. Surfaced as "also reviewed" so the breadth (e.g. 9 PubMed + 4 trials) stays
   // visible even when the answer text leans on a few — additive DISPLAY only; never affects the answer,
   // the cited set, or citation enforcement.
+  //
+  // Task 3: derive this from `guardPool` (the FULL reranked union — aug.pool when LIVE_SOURCES is on,
+  // ret.chunks otherwise), not from `ret.chunks` (the ~12-18 item cited slice fed to the generator).
+  // guardPool tags are pool-local and collide with the cited slice's retagged "1".."N" tags, so cited
+  // chunks are excluded by their stable `chunk_id` instead. buildReviewedSet re-tags survivors starting
+  // at citedCount+1 so reviewed tags never collide with the cited namespace; ret.chunks/generate()/the
+  // fabrication guard are untouched by this — it only changes what the panel surfaces as "reviewed".
+  //
+  // No support-rating lookup here: `supportRatings` is keyed by `ret.chunks` tags ("1".."N", the cited
+  // slice's namespace), and guardPool's re-tagged reviewed tags (citedCount+1, citedCount+2, ...) can
+  // land inside that SAME numeric range, so a `supportRatings.get(reviewedTag)` would attach an
+  // unrelated cited chunk's rating instead of returning undefined. A reviewed source never had a claim
+  // cited against it, so it correctly carries no support rating.
   const citedTags = new Set(enf.citations.map((c) => c.chunk_tag));
-  const reviewedSources = ret.chunks
-    .filter((c) => !citedTags.has(c.tag))
-    .map((c) => ({ ...chunkToCitation(c), ...supportRatings.get(c.tag) }));
+  const citedChunkIds = new Set(
+    ret.chunks.filter((c) => citedTags.has(c.tag)).map((c) => c.chunk_id),
+  );
+  const reviewedSources = buildReviewedSet(
+    // Pass the cited-tag SET (not its size): reviewed tags must start above max(citedTags), because the
+    // generator cites a SPARSE subset of 1..matchCount — offsetting by the count would collide with
+    // higher cited tags and mis-paint a "Supports this claim" highlight on a non-cited source.
+    guardPool, citedChunkIds, citedTags, REVIEWED_SCORE_FLOOR, REVIEWED_CAP,
+    // Restore the differentiated source-class badge on reviewed cards via the PURE per-chunk
+    // evidenceRole() — never the tag-keyed supportRatings (its "1".."N" keys collide with the
+    // re-tagged reviewed namespace). support_level/claim_relation stay omitted (flat for non-cited).
+    (c) => {
+      const er = evidenceRole(c);
+      return { evidence_role: er.role, evidence_weight: er.weight, support_reason: er.reason };
+    },
+  );
   // Walled news (paid) / locked teaser (free). Resolved here so its fetch overlapped the work above.
   // It is attached as a SEPARATE field — never folded into citations/reviewed_sources/the chunk pool.
   const news = await newsPromise;
@@ -497,7 +553,11 @@ async function augmentWithLive(
   webRecon?: WebReconResult,
   labelCap?: number,
 ): Promise<{ pool: RetrievedChunk[]; top: RetrievedChunk[] }> {
-  const fallback = { pool: libChunks, top: libChunks };
+  // top feeds the generator and must stay matchCount-sized even when augmentation fails and even when
+  // libChunks is now a bigger multi-query recall pool (Task 3b) — otherwise the generator would see the
+  // full pool. pool keeps all of libChunks for the fabrication guard + reviewed breadth. When libChunks
+  // is already <= matchCount (today's dense-only path), slice is a no-op, so this stays byte-identical.
+  const fallback = { pool: libChunks, top: libChunks.slice(0, matchCount) };
   try {
     const baseResearchQuery = extractSearchTerms(question) || question;
     const understood = webRecon

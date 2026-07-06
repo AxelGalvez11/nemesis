@@ -463,6 +463,49 @@ Deno.test("assembleReport output carries mode in payload, never a kind field", (
   assertEquals("kind" in report, false);
 });
 
+Deno.test("assembleReport in discovery mode attaches the Level 4 discovery payload", () => {
+  const report = assembleReport({
+    question: "Creatine for cognition in sleep-deprived adults",
+    subQuestions: ["q"],
+    enforced: {
+      summary: "Human evidence is suggestive but limited.",
+      body: [{
+        section: "Human evidence",
+        text: "Small human studies suggest creatine may preserve cognition during sleep deprivation.",
+        citation_ids: ["1"],
+      }],
+      safety_notes: [],
+      uncertainties: [{ text: "Studies are small.", citation_ids: [] }],
+    },
+    chunks: [chunk("1", {
+      title: "Creatine cognition trial",
+      publication_types: ["Randomized Controlled Trial"],
+    })],
+    evidenceGrade: "weak",
+    safetyFlags: [],
+    claimsVerified: true,
+    gaps: [{
+      dimension: "study_design",
+      type: "no_rct",
+      scope: "this_run",
+      text: "No randomized controlled trial was among the sources we searched for this question.",
+      denominator: {
+        providers_searched: ["pubmed_oa"],
+        n_sources: 1,
+        retrieved_at: "2026-06-28T00:00:00Z",
+      },
+      corroborating_trials: [],
+    }],
+    counts: { per_provider: { pubmed_oa: 1 }, total_retrieved: 1, per_search_cap: 6, n_searches: 1, retrieved_at: "2026-06-28T00:00:00Z" },
+    mode: "discovery",
+  });
+
+  assertEquals(report.mode, "discovery");
+  assertEquals(report.discovery?.claims.length, 1);
+  assertEquals(report.discovery?.study_designs[0].design_type, "randomized_controlled_trial");
+  assertEquals(report.discovery?.evidence_meter, "weak");
+});
+
 Deno.test("assembleReport carries model slot metadata when provided", () => {
   const report = assembleReport({
     question: "q",

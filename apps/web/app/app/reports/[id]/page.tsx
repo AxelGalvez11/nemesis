@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { CitationStyle, ResearchReport } from "@pharmabro/shared";
-import { fetchResearchReport } from "@/lib/api";
+import { fetchResearchReport, fetchRunForReport, type ResearchRunRow } from "@/lib/api";
 import { ResearchReportView } from "@/components/ResearchReportView";
 import { WatchButton } from "@/components/WatchButton";
 import { SkeletonRows } from "@/components/Skeleton";
@@ -17,6 +17,7 @@ export default function ReportDetailPage() {
   const id = typeof params.id === "string" ? params.id : "";
 
   const [report, setReport] = useState<ResearchReport | null>(null);
+  const [run, setRun] = useState<ResearchRunRow | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [citeStyle, setCiteStyle] = useState<CitationStyle>("vancouver");
@@ -30,6 +31,7 @@ export default function ReportDetailPage() {
       .then((rep) => { if (!alive) return; if (rep) setReport(rep); else setErr("Report not found."); })
       .catch((e) => { if (alive) setErr(e instanceof Error ? e.message : "Could not load report."); })
       .finally(() => { if (alive) setLoading(false); });
+    fetchRunForReport(id).then((r) => { if (alive) setRun(r); }).catch(() => {});
     return () => { alive = false; };
   }, [id]);
 
@@ -42,7 +44,7 @@ export default function ReportDetailPage() {
       </div>
       {loading ? <SkeletonRows count={4} label="Loading report…" /> : null}
       {err ? <p className="tmpl-note">{err}</p> : null}
-      {report ? <ResearchReportView report={report} reportId={id} style={citeStyle} onStyleChange={setCiteStyle} /> : null}
+      {report ? <ResearchReportView report={report} reportId={id} run={run} style={citeStyle} onStyleChange={setCiteStyle} /> : null}
     </div>
   );
 }

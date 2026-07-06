@@ -127,3 +127,85 @@ export function extractSearchTerms(raw: string): string {
   if (s.split(" ").every((w) => PRONOUN_RESIDUE.has(w))) return ""; // bare pronoun residue
   return s;
 }
+
+// ---------------------------------------------------------------------------------------------
+// buildSubQueries: deterministic sub-query expansion (Phase 1 of the retrieval-depth workstream).
+//
+// The engine today runs ONE dense search per ask, embedding the raw (trimmed) question directly
+// (see retrieve.ts / index.ts's primary `retrieve({ question, ... })` call — `extractSearchTerms`
+// is used ONLY on the separate 0-result retry path, not the primary search). This turns a single
+// question + its classification into a small, ordered list of search strings so a later stage
+// (Task 2) can fan out into a few parallel recalls and merge the results into one pool before the
+// single generate call. Pure string assembly ONLY — no LLM call, no randomness — so the same
+// question + classification always yields the identical ordered array. That determinism is
+// required so saved-chat replays and the guardrail suite stay stable, and so the fan-out stays
+// bounded (never unbounded/agentic).
+//
+// DEVIATION FROM THE LITERAL BRIEF, NOTED: the brief says "element 0 = extractSearchTerms(question)
+// ... so worst case = today's behavior." But extractSearchTerms only strips conversational
+// lead-ins and returns "" whenever nothing was stripped (by design — see its own doc comment,
+// "retrying the identical string is pointless"). For ordinary questions (including every prompt in
+// the workstream's own baseline table, e.g. "Is sucralose bad for me?", "How effective is
+// tirzepatide for weight loss?") it returns "". Using that empty string as element 0 verbatim
+// would make the worst case *no retrieval* instead of *today's retrieval* — the opposite of the
+// stated goal. So element 0 is `extractSearchTerms(question)` when it produces something, and
+// falls back to the trimmed raw question (the exact string today's primary search already embeds)
+// when extractSearchTerms returns "". `extractSearchTerms` is still consulted first and still wins
+// when it has something to offer (e.g. the retry-path heartburn case), so it stays "in the
+// formula" as the brief asked; only a real question ever produces base="" -> that only happens
+// for empty/whitespace-only input, matching "[] if base is empty".
+//
+// Intent -> keyword map. Only intents where a keyword phrase plausibly sharpens literature recall
+// get an entry; conversational/non-clinical intents (smalltalk, investment, drug_sourcing,
+// general_health, health_context, label_summary, trial_lookup, pregnancy_pediatrics,
+// supplement_peptide) are deliberately omitted so they add nothing beyond the base query.
+const INTENT_KEYWORDS: Readonly<Partial<Record<string, string>>> = {
+  side_effects: "adverse effects safety",
+  emergency_overdose: "adverse effects safety",
+  mechanism: "mechanism of action",
+  evidence_for_claim: "randomized trial efficacy",
+  comparison: "randomized trial efficacy",
+  dosing: "dosing",
+  drug_interaction: "drug interaction",
+  drug_overview: "overview",
+};
+
+/**
+ * Build up to 4 deterministic, deduped search-query strings from one question + its
+ * classification. Element 0 is `extractSearchTerms(question)` when it yields something, otherwise
+ * the trimmed raw question (the exact string today's primary dense search already embeds) — so
+ * element 0 is only "" when the question itself is empty/whitespace, matching "[] if base is
+ * empty" and guaranteeing worst case = today's single-query behavior. For each entity mention (in
+ * order, capped so the total output stays <= 4), adds an "<entity> <intent-keyword>" variant when
+ * the intent maps to a useful keyword. Duplicates (case-insensitive) are dropped, including the
+ * case where a variant collides with the base or with another variant. Pure + deterministic: no
+ * LLM call, no randomness.
+ */
+export function buildSubQueries(question: string, entityMentions: readonly string[], intent: string): string[] {
+  const base = extractSearchTerms(question) || question.trim();
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (candidate: string) => {
+    const trimmed = candidate.trim();
+    if (!trimmed) return;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(trimmed);
+  };
+
+  push(base);
+
+  const keyword = INTENT_KEYWORDS[intent];
+  if (keyword) {
+    for (const entity of entityMentions) {
+      if (out.length >= 4) break;
+      const trimmedEntity = entity.trim();
+      if (!trimmedEntity) continue;
+      push(`${trimmedEntity} ${keyword}`);
+    }
+  }
+
+  return out.slice(0, 4);
+}
