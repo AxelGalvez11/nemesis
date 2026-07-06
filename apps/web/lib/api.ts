@@ -748,6 +748,9 @@ export interface ResearchReportSummary {
   citation_count: number;
   /** Report sub-type for grouping: 'standard' | 'meta' | 'structured_review' | 'lab_draft' | 'discovery'. */
   mode: string;
+  /** The report's bottom-line summary (ResearchReport.summary, always populated) — used for the
+   *  Library card preview. Optional only because older rows or a malformed payload could lack it. */
+  summary?: string;
 }
 
 /** Start a deep-research run. Returns the run id to poll. Throws AskQuotaError on the Pro gate /
@@ -862,9 +865,14 @@ export async function fetchResearchReport(savedReportId: string): Promise<Resear
 /** The user's saved deep-research reports, newest first — drives the rail history. */
 export async function fetchResearchReports(): Promise<ResearchReportSummary[]> {
   if (isPreviewMode) return [];
+  // `payload` is selected whole (not a JSON-path projection like `payload->>summary`) — this codebase
+  // has no existing precedent for PostgREST's `->>` select syntax, and a rejected select here would
+  // break the entire Library page. Selecting the proven-working `payload` column (already used at
+  // fetchResearchReport above) and unwrapping `.summary` client-side costs more bytes per row but
+  // carries zero query-syntax risk.
   const { data, error } = await supabase
     .from("saved_reports")
-    .select("id,title,created_at,citation_count,mode")
+    .select("id,title,created_at,citation_count,mode,payload")
     .eq("kind", "deep_research")
     .order("created_at", { ascending: false })
     .limit(50);
@@ -876,6 +884,9 @@ export async function fetchResearchReports(): Promise<ResearchReportSummary[]> {
       created_at: typeof r.created_at === "string" ? r.created_at : "",
       citation_count: typeof r.citation_count === "number" ? r.citation_count : 0,
       mode: typeof r.mode === "string" ? r.mode : "standard",
+      summary: isObj(r.payload) && typeof r.payload.summary === "string" && r.payload.summary.trim()
+        ? r.payload.summary
+        : undefined,
     } as ResearchReportSummary)
     : null));
 }

@@ -980,18 +980,23 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
   );
 }
 
-// The thinking header over an answer. Live: shimmer stage line + the search-surface chips. Complete:
-// a "Thought for Xs ›" disclosure (ChatGPT's collapsed-thought row) that expands into the activity
-// trail — the engine's real pipeline steps with the searched-domain chips under the search step.
+// The thinking header over an answer, ChatGPT-measured anatomy (observed live 2026-07-05):
+//   1. A first-person plan line ("I'll check what the evidence says about …") that appears first and
+//      STAYS above the answer permanently — it never collapses away.
+//   2. While working: a dimmed reasoning snippet under it that swaps as the pipeline advances (the
+//      live "I'm thinking of…" line), plus the search-surface chips during the search stages.
+//   3. Once answered: a "Thought for Xs ›" disclosure under the plan line that expands into the
+//      activity trail — alternating search blocks (search icon + gerund title + domain chips) and
+//      reasoning blocks (bullet + first-person paragraph), ChatGPT's Activity-panel pattern.
 function Thinking({ stage, question, complete = false, secs, domains }: { stage: number; question: string; complete?: boolean; secs?: number; domains?: string[] }) {
   const preview = buildThinkingPreview(question, stage);
   const [open, setOpen] = useState(false);
   if (!complete) {
-    const line = stage <= 0 ? "Thinking" : preview.current;
     return (
       <div className="thinking engine-preview engine-preview-compact" aria-live="polite" title={preview.preview}>
-        <span className="engine-preview-title">
-          {line}
+        <div className="intent-line">{preview.intent}</div>
+        <span className="engine-preview-title thinking-snippet">
+          {stage <= 0 ? "Thinking" : preview.current}
           <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>
         </span>
         {stage >= 1 && stage <= 2 ? <DomainChips domains={SEARCH_DOMAINS} max={4} /> : null}
@@ -1001,6 +1006,7 @@ function Thinking({ stage, question, complete = false, secs, domains }: { stage:
   const chips = domains?.length ? domains : SEARCH_DOMAINS;
   return (
     <div className="thinking engine-preview engine-preview-compact engine-preview-done">
+      <div className="intent-line">{preview.intent}</div>
       <button type="button" className="thought-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <span className="engine-preview-title">
           {secs ? `Thought for ${secs}s` : "Thought through evidence"}
@@ -1009,11 +1015,14 @@ function Thinking({ stage, question, complete = false, secs, domains }: { stage:
       </button>
       {open ? (
         <div className="activity-trail">
-          {preview.steps.map((s, i) => (
-            <div className="activity-step" key={s.label}>
-              <div className="activity-step-title">{s.current}</div>
+          {preview.steps.map((s) => (
+            <div className={`activity-step activity-step-${s.kind}`} key={s.label}>
+              <div className="activity-step-title">
+                {s.kind === "search" ? <Icon name="search" size={13} /> : <span className="activity-bullet" aria-hidden="true" />}
+                {s.current}
+              </div>
               <div className="activity-step-detail">{s.detail}</div>
-              {i === 1 ? <DomainChips domains={chips} /> : null}
+              {s.kind === "search" ? <DomainChips domains={chips} /> : null}
             </div>
           ))}
         </div>

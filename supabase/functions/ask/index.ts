@@ -43,6 +43,7 @@ import { evidenceRole, rateSourceSupport } from "./source-support.ts";
 import {
   CONSERVATIVE_FALLBACK_COPY,
   EMERGENCY_COPY,
+  FRESH_INFO_COPY,
   GREETING_COPY,
   LAB_DRAFT_REFUSAL_COPY,
   NO_SOURCE_COPY,
@@ -50,6 +51,7 @@ import {
   SOURCING_COPY,
   STANDARD_QUESTIONS,
 } from "./templates.ts";
+import { detectFreshInfo, laneRouterEnabled } from "./lane-router.ts";
 import type {
   AnswerNewsItem,
   AnswerTemplate,
@@ -205,6 +207,19 @@ async function runAsk(
   // message is hard-routed first and can never reach this branch.
   if (detectSmallTalk(question)) {
     return await finalizeSmallTalk(answerId, question, userId);
+  }
+
+  // ---- 0a2. fresh-info lane (LANE_ROUTER=on, DEFAULT OFF — zero behavior change until enabled) ----
+  // Current-events / named-person questions with zero biomedical signal get an honest "this needs
+  // live web, not an evidence library" reply instead of being force-fit into clinical retrieval
+  // (the 4-lane router's lane 0.5 — docs/research/chatgpt-openevidence-routing-2026-07.md §5).
+  // Deterministic + conservative (any biomedical marker or known entity keeps the question in the
+  // normal pipeline); preScreen already hard-routed emergencies above. No LLM call, no quota spend.
+  if (laneRouterEnabled()) {
+    const fresh = detectFreshInfo(question);
+    if (fresh.fires) {
+      return await finalizeFreshInfo(answerId, question, userId, fresh.reason ?? "current_events");
+    }
   }
 
   // ---- 0b. server-side usage limit (before LLM classify/generate spend) ----
@@ -648,6 +663,49 @@ async function finalizeSmallTalk(
     source_ids: [],
     retrieval_scores: [],
     model_name: "deterministic-smalltalk",
+    prompt_version: PROMPT_VERSION,
+    safety_flags: [],
+    used_health_context: false,
+  });
+
+  return resp;
+}
+
+/** Honest out-of-corpus reply for the fresh-info lane (lane-router.ts, gated LANE_ROUTER=on):
+ *  a current-events / named-person question our evidence library can't answer. Mirrors
+ *  finalizeSmallTalk — no retrieval, no generation, no quota spend, rendered as a plain
+ *  conversational message. Reuses the "smalltalk" wire intent so no shared-type or frontend
+ *  change is needed; the trace's model_name ("deterministic-fresh-info:<reason>") keeps it
+ *  distinguishable in analytics. */
+async function finalizeFreshInfo(
+  answerId: string,
+  question: string,
+  userId: string,
+  reason: string,
+): Promise<AskResponse> {
+  const resp: AskResponse = {
+    answer_id: answerId,
+    intent: "smalltalk",
+    plain_english_summary: FRESH_INFO_COPY,
+    evidence_grade: "not_applicable",
+    answer_sections: { what_we_know: [], what_we_do_not_know: [], safety_notes: [], questions_to_ask: [] },
+    citations: [],
+    safety_flags: [],
+    refused_unsupported: false,
+    oldest_source_date: null,
+  };
+
+  await storeTrace({
+    id: answerId,
+    user_id: userId,
+    question,
+    intent: "smalltalk",
+    detected_entities: [],
+    answer: resp,
+    evidence_grade: "not_applicable",
+    source_ids: [],
+    retrieval_scores: [],
+    model_name: `deterministic-fresh-info:${reason}`,
     prompt_version: PROMPT_VERSION,
     safety_flags: [],
     used_health_context: false,
