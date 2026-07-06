@@ -24,13 +24,13 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "PharmaOrb: Drug information that shows its work",
+  title: "PharmaOrb: AI workspace for scientific evidence",
   description:
-    "Plain-English answers about any medication or supplement, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Not medical advice. Join the waitlist.",
+    "Deep research for biomedicine, life sciences, behavioral sciences, and health evidence. Build notebooks, deploy research agents, trace claims, monitor topics, and export deliverables.",
   openGraph: {
-    title: "PharmaOrb: Drug information that shows its work",
+    title: "PharmaOrb: AI workspace for scientific evidence",
     description:
-      "Plain-English answers about medications, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Join the waitlist.",
+      "Build source-grounded notebooks, deploy research agents, trace scientific claims, monitor evidence, and export research deliverables.",
     type: "website",
   },
   robots: { index: true, follow: true },

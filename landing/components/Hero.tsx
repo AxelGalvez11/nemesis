@@ -18,33 +18,20 @@ export function Hero() {
       <div className="hero-content">
         <div className="eyebrow hero-eyebrow">
           <span className="bdot" />
-          Beta · Coming soon
+          Scientific research beta
         </div>
         <h1 className="hero-h1">
           Evidence<br />
-          <em>engine</em>
+          <em>workspace</em>
         </h1>
         <p className="hero-sub">
-          Plain-English answers about any medication or supplement, with every claim traced to FDA
-          labels, PubMed, and ClinicalTrials.gov.
+          Deep research for biomedicine, life sciences, behavioral sciences, and health
+          evidence. Ask questions, build source-grounded notebooks, deploy research agents, and
+          turn evidence into deliverables you can inspect.
         </p>
         <div className="waitlist-wrap" id="waitlist-area">
           <WaitlistForm note="We'll email you when the beta opens. No spam, ever." />
         </div>
-        <p style={{ marginTop: "28px", fontSize: "13px", color: "var(--t35)" }}>
-          or{" "}
-          <a
-            href="#reel"
-            style={{
-              color: "var(--teal)",
-              fontWeight: 600,
-              textDecoration: "underline",
-              textUnderlineOffset: "3px",
-            }}
-          >
-            watch the 30-second tour ↓
-          </a>
-        </p>
       </div>
       <div className="scroll-cue">
         <div className="sline" />

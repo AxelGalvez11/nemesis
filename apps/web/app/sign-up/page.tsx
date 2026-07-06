@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CSSProperties, FormEvent, useState } from "react";
+import { CSSProperties, FormEvent, useRef, useState } from "react";
 import { ErrorText } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
-import { isPreviewMode } from "@/lib/env";
+import { Turnstile, TurnstileHandle } from "@/components/Turnstile";
+import { isPreviewMode, turnstileSiteKey } from "@/lib/env";
 import { TOS_VERSION } from "@/lib/legal";
 
 const cardStyle: CSSProperties = { padding: "36px 32px", textAlign: "center" };
@@ -43,6 +44,9 @@ export default function SignUpPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileHandle>(null);
+  const captchaRequired = Boolean(turnstileSiteKey) && !isPreviewMode;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -55,10 +59,13 @@ export default function SignUpPage() {
     setBusy(true);
     setError(null);
     const cleanEmail = email.trim();
-    const result = await signUp(cleanEmail, password, { tosVersion: TOS_VERSION });
+    const result = await signUp(cleanEmail, password, { tosVersion: TOS_VERSION }, captchaToken ?? undefined);
     if (result.error) {
       setBusy(false);
       setError(result.error);
+      // The captcha token is single-use; re-arm the widget so a retry gets a fresh one.
+      turnstileRef.current?.reset();
+      setCaptchaToken(null);
       return;
     }
     setBusy(false);
@@ -97,7 +104,8 @@ export default function SignUpPage() {
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} style={checkboxStyle} aria-label="Agree to the Terms and Disclaimer" />
             <span>I understand PharmaOrb provides educational research information, not medical advice, and I agree to the <Link className="source-link" href="/legal/terms">Terms</Link> and <Link className="source-link" href="/legal/disclaimer">Disclaimer</Link>.</span>
           </label>
-          <button disabled={busy || (!agreed && !isPreviewMode)} type="submit" style={submitStyle}>{busy ? "Creating…" : isPreviewMode ? "Enter preview app" : "Create account"}</button>
+          <Turnstile ref={turnstileRef} onToken={setCaptchaToken} />
+          <button disabled={busy || (!agreed && !isPreviewMode) || (captchaRequired && !captchaToken)} type="submit" style={submitStyle}>{busy ? "Creating…" : isPreviewMode ? "Enter preview app" : "Create account"}</button>
         </form>
         {error ? <ErrorText>{error}</ErrorText> : null}
         <p className="muted" style={footStyle}>Already have an account? <Link className="source-link" href="/sign-in">Sign in</Link></p>

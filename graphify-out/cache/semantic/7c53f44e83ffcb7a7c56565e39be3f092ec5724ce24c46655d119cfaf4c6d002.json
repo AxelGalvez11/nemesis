@@ -1,0 +1,1 @@
+{"nodes": [], "edges": [{"source": "doc_spec_publishable_reports", "target": "pharmaorb_publishable_reports", "relation": "references", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "docs/superpowers/specs/2026-06-10-publishable-evidence-reports-design.md", "source_location": null, "weight": 1.0}], "hyperedges": []}

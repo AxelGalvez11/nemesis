@@ -91,3 +91,6 @@ export * from "./watch-digest.ts";
 //     evidence-weight hook the "living score" turns. Wellness framings only; never a disease label.
 export * from "./percentile.ts";
 export * from "./health-score.ts";
+
+// Missions: scheduled background research (cadence/deliver types, entitlement + next-run helpers).
+export * from "./missions.ts";

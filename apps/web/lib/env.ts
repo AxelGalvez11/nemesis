@@ -9,6 +9,12 @@ export const landingUrl = process.env.NEXT_PUBLIC_LANDING_URL ?? "https://pharma
 export const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
 export const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
 
+// Cloudflare Turnstile bot protection on the auth forms. Public site key — safe in the browser
+// bundle. The matching SECRET key lives only in the Supabase dashboard (Auth → Bot & Abuse
+// Protection), where Supabase verifies the token server-side. Empty key = widget disabled (the
+// forms work exactly as before), so this is a safe no-op until the keys are configured.
+export const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+
 export const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 export const stripeSecretKey = process.env.STRIPE_SECRET_KEY ?? "";
 export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";

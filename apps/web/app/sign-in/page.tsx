@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CSSProperties, FormEvent, useEffect, useState } from "react";
+import { CSSProperties, FormEvent, useEffect, useRef, useState } from "react";
 import { ErrorText } from "@/components/ui";
 import { useAuth } from "@/components/AuthProvider";
-import { isPreviewMode } from "@/lib/env";
+import { Turnstile, TurnstileHandle } from "@/components/Turnstile";
+import { isPreviewMode, turnstileSiteKey } from "@/lib/env";
 
 const cardStyle: CSSProperties = { padding: "36px 32px", textAlign: "center" };
 const eyebrowStyle: CSSProperties = { marginBottom: 18 };
@@ -30,6 +31,9 @@ export default function SignInPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleted, setDeleted] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileHandle>(null);
+  const captchaRequired = Boolean(turnstileSiteKey) && !isPreviewMode;
 
   useEffect(() => {
     setDeleted(new URLSearchParams(window.location.search).get("deleted") === "1");
@@ -39,14 +43,20 @@ export default function SignInPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const err = await signIn(email.trim(), password);
+    const err = await signIn(email.trim(), password, captchaToken ?? undefined);
     setBusy(false);
     if (err) {
       setError(err);
+      // The captcha token is single-use; re-arm the widget so a retry gets a fresh one.
+      turnstileRef.current?.reset();
+      setCaptchaToken(null);
       return;
     }
-    const next = new URLSearchParams(window.location.search).get("next");
-    router.replace(next || "/app");
+    // Only honor same-site relative redirects. Reject absolute URLs and protocol-relative "//host"
+    // so a crafted ?next=https://evil.com link can't bounce a freshly-signed-in user off-site (phishing).
+    const rawNext = new URLSearchParams(window.location.search).get("next");
+    const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/app";
+    router.replace(next);
   }
 
   return (
@@ -60,7 +70,8 @@ export default function SignInPage() {
         <form onSubmit={onSubmit} style={formStyle}>
           <input type="email" autoComplete="email" required={!isPreviewMode} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input type="password" autoComplete="current-password" required={!isPreviewMode} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <button disabled={busy} type="submit" style={submitStyle}>{busy ? "Signing in…" : isPreviewMode ? "Enter preview app" : "Sign in"}</button>
+          <Turnstile ref={turnstileRef} onToken={setCaptchaToken} />
+          <button disabled={busy || (captchaRequired && !captchaToken)} type="submit" style={submitStyle}>{busy ? "Signing in…" : isPreviewMode ? "Enter preview app" : "Sign in"}</button>
         </form>
         {error ? <ErrorText>{error}</ErrorText> : null}
         <p className="muted" style={footStyle}>No account yet? <Link className="source-link" href="/sign-up">Create one</Link></p>
