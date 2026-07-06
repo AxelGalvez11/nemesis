@@ -355,14 +355,25 @@
   transition: transform 0.15s;
 }
 .engine-preview-chevron.open { transform: rotate(90deg); }
+/* The persistent first-person plan line (ChatGPT-measured): full text color, normal weight, streams
+   in first and stays above the answer permanently. NOT dimmed — it reads as the answer's opening. */
+.intent-line { font-size: 15.5px; color: var(--text); line-height: 1.6; margin-bottom: 10px; animation: fade 0.3s both; }
+/* The live reasoning snippet under the plan line while working — dimmed, ChatGPT's swapping
+   "I'm thinking…" line. */
+.thinking-snippet { display: inline-flex; }
 /* completed-thought disclosure row ("Thought for 12s ›") — a bare text button, ChatGPT-style */
 .thought-toggle { background: none; border: none; padding: 0; cursor: pointer; font: inherit; text-align: left; }
 .thought-toggle:hover .engine-preview-title { color: var(--text); }
-/* expanded activity trail: the engine's pipeline steps down a quiet timeline rail, with the
-   searched-domain chips under the search step */
+/* expanded activity trail: alternating block anatomy (ChatGPT Activity panel, observed 2026-07-05) —
+   search blocks get a search icon + gerund title + the searched-domain chips; reasoning blocks get a
+   bullet dot + a first-person paragraph. */
 .activity-trail { margin: 10px 0 4px 2px; padding-left: 14px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 13px; animation: fade 0.25s both; }
-.activity-step-title { font-size: 13.5px; font-weight: 600; color: var(--text); line-height: 1.4; }
+.activity-step-title { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 600; color: var(--text); line-height: 1.4; }
+.activity-step-title svg { color: var(--text-3); flex: none; }
+.activity-bullet { width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); flex: none; margin: 0 4px; }
 .activity-step-detail { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 1px; }
+.activity-step-reason .activity-step-detail { margin-left: 20px; }
+.activity-step-search .domain-chips { margin-left: 20px; }
 /* searched-domain chips (favicon + hostname + "N more") — the ChatGPT Activity-panel chip pattern */
 .domain-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .domain-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border-radius: 999px; padding: 3px 10px 3px 6px; font-size: 12px; color: var(--text-2); line-height: 1.4; }

@@ -65,10 +65,11 @@
 :root[data-theme="grey"] {
   color-scheme: dark;
 
-  /* GREY (soft dim — the ChatGPT-style dark): page #212121 · sidebar #171717 · user-bubble #2f2f33 */
-  --bg: #212121; --bg-2: #171717; --surface: #2a2a2c; --surface-2: #2f2f33; --raised: #2a2a2c;
-  --line: #2f2f33; --line-2: #3a3a40;
-  --text: #ececec; --text-2: #a9a9b3; --text-3: #8e8e9a;
+  /* GREY (soft dim) — Manus-measured neutrals (live DOM probe 2026-07-05): page #242424 ·
+     sidebar #1f1f1f · text #dadada. All surfaces are TRUE neutral grays — no blue cast. */
+  --bg: #242424; --bg-2: #1f1f1f; --surface: #2b2b2b; --surface-2: #303030; --raised: #2b2b2b;
+  --line: #303030; --line-2: #3c3c3c;
+  --text: #dadada; --text-2: #a6a6a6; --text-3: #8a8a8a;
 
   /* PharmaOrb accent — PRESERVED (was #bcff3c dark; contrast-tuned per theme). */
   --acid: #bcff3c; --acid-dim: #9bd92e; --acid-deep: #74a81e; --on-acid: #0d0d0d;
@@ -80,25 +81,25 @@
   --shadow-acid: 0 8px 28px -8px rgba(140, 220, 40, 0.5);
   --line-acid: rgba(188, 255, 60, 0.28);
 
-  --background: 0 0% 13%; --foreground: 0 0% 93%;
-  --card: 240 2% 16%; --card-foreground: 0 0% 93%;
-  --popover: 240 2% 16%; --popover-foreground: 0 0% 93%;
+  --background: 0 0% 14%; --foreground: 0 0% 85%;
+  --card: 0 0% 17%; --card-foreground: 0 0% 85%;
+  --popover: 0 0% 17%; --popover-foreground: 0 0% 85%;
   --primary: 81 100% 62%; --primary-foreground: 0 0% 5%;
-  --secondary: 240 4% 18%; --secondary-foreground: 0 0% 93%;
-  --muted-shadcn: 240 4% 18%; --muted-foreground: 240 4% 66%;
-  --accent-shadcn: 240 4% 18%; --accent-foreground: 0 0% 93%;
+  --secondary: 0 0% 19%; --secondary-foreground: 0 0% 85%;
+  --muted-shadcn: 0 0% 19%; --muted-foreground: 0 0% 65%;
+  --accent-shadcn: 0 0% 19%; --accent-foreground: 0 0% 85%;
   --destructive: 5 100% 65%; --destructive-foreground: 0 0% 5%;
-  --border: 240 4% 19%; --input: 240 4% 24%; --ring: 81 100% 62%;
+  --border: 0 0% 19%; --input: 0 0% 24%; --ring: 81 100% 62%;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* DARK ("complete dark") — true near-black; PharmaOrb's pre-overhaul dark, restored.
-     page #0a0a0b · sidebar #0e0e10 · surface #141417 · raised #1f1f24 */
-  --bg: #0a0a0b; --bg-2: #0e0e10; --surface: #141417; --surface-2: #1a1a1e; --raised: #1f1f24;
-  --line: #232329; --line-2: #2c2c33;
-  --text: #f4f4f5; --text-2: #a6a6ad; --text-3: #8c8c95;
+  /* DARK ("complete dark") — true near-black. Neutralized 2026-07-05 (Manus parity pass): the old
+     240-hue surfaces read as a blue tint next to Manus/ChatGPT's pure-neutral darks. */
+  --bg: #0b0b0b; --bg-2: #0f0f0f; --surface: #151515; --surface-2: #1a1a1a; --raised: #202020;
+  --line: #242424; --line-2: #2d2d2d;
+  --text: #f4f4f4; --text-2: #a8a8a8; --text-3: #8d8d8d;
 
   /* PharmaOrb accent — lime on near-black (same accent as grey). */
   --acid: #bcff3c; --acid-dim: #9bd92e; --acid-deep: #74a81e; --on-acid: #0a0a0b;
@@ -110,15 +111,15 @@
   --shadow-acid: 0 8px 28px -8px rgba(140, 220, 40, 0.5);
   --line-acid: rgba(188, 255, 60, 0.28);
 
-  --background: 240 7% 4%; --foreground: 0 0% 96%;
-  --card: 240 6% 8%; --card-foreground: 0 0% 96%;
-  --popover: 240 6% 8%; --popover-foreground: 0 0% 96%;
+  --background: 0 0% 4%; --foreground: 0 0% 96%;
+  --card: 0 0% 8%; --card-foreground: 0 0% 96%;
+  --popover: 0 0% 8%; --popover-foreground: 0 0% 96%;
   --primary: 81 100% 62%; --primary-foreground: 0 0% 4%;
-  --secondary: 240 6% 11%; --secondary-foreground: 0 0% 96%;
-  --muted-shadcn: 240 5% 11%; --muted-foreground: 240 5% 64%;
-  --accent-shadcn: 240 6% 11%; --accent-foreground: 0 0% 96%;
+  --secondary: 0 0% 11%; --secondary-foreground: 0 0% 96%;
+  --muted-shadcn: 0 0% 11%; --muted-foreground: 0 0% 64%;
+  --accent-shadcn: 0 0% 11%; --accent-foreground: 0 0% 96%;
   --destructive: 5 100% 65%; --destructive-foreground: 0 0% 5%;
-  --border: 240 6% 13%; --input: 240 6% 16%; --ring: 81 100% 62%;
+  --border: 0 0% 13%; --input: 0 0% 16%; --ring: 81 100% 62%;
 }
 
 * { box-sizing: border-box; }
