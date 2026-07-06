@@ -5,153 +5,127 @@
 @tailwind utilities;
 
 /* ──────────────────────────────────────────────────────────────────────────
-   PharmaOrb design tokens — Manus visual skin: warm-neutral grayscale + Manus's
-   own accent (blue) reserved for primary actions and links only.
+   PharmaOrb design tokens — faithful ChatGPT visual skin: neutral grayscale +
+   ChatGPT's own accent (blue) reserved for primary actions and links only.
 
-   LIGHT is the default (bare :root); [data-theme="dark"] flips it. The inline
-   no-flash script in layout.tsx resolves stored→OS preference→light into an
-   explicit data-theme before paint, so prefers-color-scheme is honored without
-   cloning the whole token set here.
+   LIGHT is the default (bare :root); [data-theme="dark"] flips it. There are
+   only TWO themes (light, dark) — "grey" was removed per owner direction
+   ("Only white and black"). The inline no-flash script in layout.tsx resolves
+   stored→OS preference→light into an explicit data-theme before paint, so
+   prefers-color-scheme is honored without cloning the whole token set here.
 
    The mockup hex tokens drive the custom shell/chat CSS; the shadcn HSL triplets
    (same colors) drive the shadcn primitives so both render the same theme. The
    token NAMES are a stable contract — screens read var(--bg)/--surface/--text/
    --acid, so they re-skin coherently for free. Never rename a token.
 
-   Values below are Manus's real semantic tokens (docs/design/manus-design-tokens.md
-   §1b, read from Manus's live CSS custom properties via getComputedStyle). --acid
-   is repurposed to carry Manus's blue accent (was PharmaOrb lime/green) — the
-   token NAME is unchanged, only the color it carries.
+   Values below are measured from ChatGPT's live UI (docs/design/chatgpt-clone-
+   teardown-2026-07-06.md, Probe 3 — getComputedStyle on every surface). --acid
+   carries ChatGPT's blue accent — the token NAME is unchanged, only the color
+   it carries.
    ────────────────────────────────────────────────────────────────────────── */
 :root {
   color-scheme: light;
 
-  /* surfaces & lines (Manus light neutrals — warm-neutral base #37352f, not cool gray)
-     page #ffffff · sidebar #f0f0f0 · raised/deep panel #f8f8f7 · border rgba(0,0,0,.06-.10) */
-  --bg: #ffffff; --bg-2: #f8f8f7; --surface: #f8f8f7; --surface-2: #f0f0f0; --raised: #ffffff;
+  /* surfaces & lines (ChatGPT light neutrals — neutral gray, not warm)
+     page #ffffff · composer/sidebar surface #f4f4f4 · raised/menu #ffffff · border rgba(0,0,0,.06-.10) */
+  --bg: #ffffff; --bg-2: #f4f4f4; --surface: #f4f4f4; --surface-2: #ececec; --raised: #ffffff;
   --line: #0000000f; --line-2: #0000001a;
-  --text: #34322d; --text-2: #5e5e5b; --text-3: #858481;
-  /* sidebar bg — a dedicated token because Manus's rail color (#f0f0f0 light / #1f1f1f dark) doesn't
-     land on any single existing token across both themes (light matches --surface-2, dark matches
-     --bg-2). Addition only, not a rename — see docs/design/manus-design-tokens.md §1b --background-nav. */
-  --rail-bg: #f0f0f0;
-  /* Manus's hover/active tint fills (--fill-tsp-white-light/-main): warm-black-over-white in light. */
-  --fill-hover: rgba(55, 53, 47, 0.04); --fill-active: rgba(55, 53, 47, 0.06);
-  /* Manus composer box border + shadow (docs/design/manus-design-tokens.md §4: "New-task / composer
-     box"). Dedicated tokens (addition, not a rename) since neither is theme-symmetric with --line. */
+  --text: #0d0d0d; --text-2: #5d5d5d; --text-3: #8f8f8f;
+  /* sidebar bg — a dedicated token because the rail color doesn't land on any single existing
+     token across both themes (light matches --surface, dark matches --surface). Addition only,
+     not a rename. */
+  --rail-bg: #f4f4f4;
+  /* hover/active tint fills — neutral-black-over-white in light. */
+  --fill-hover: rgba(0, 0, 0, 0.04); --fill-active: rgba(0, 0, 0, 0.06);
+  /* composer box border + shadow. Dedicated tokens (addition, not a rename) since neither is
+     theme-symmetric with --line. */
   --composer-border: rgba(0, 0, 0, 0.2); --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.02);
 
   /* PharmaOrb brand mark color — PINNED, decoupled from --acid. The brief: "Keep the PharmaOrb
-     wordmark + orb logo (the brand mark stays — everything else is Manus)." --acid now carries
-     Manus's blue for actions/links; the orb keeps PharmaOrb's original green identity so the mark
-     doesn't silently follow the accent retune. Value = the pre-skin --acid (light). */
+     wordmark + orb logo (the brand mark stays — everything else follows the ChatGPT skin)."
+     --acid now carries ChatGPT's blue for actions/links; the orb keeps PharmaOrb's original green
+     identity so the mark doesn't silently follow the accent retune. Value = the pre-skin --acid (light). */
   --orb-color: #62b000; --orb-rgb: 98, 176, 0;
 
-  /* Manus accent — blue (was PharmaOrb #62b000 lime/green). Reserved for primary actions/links. */
-  --acid: #0081f2; --acid-dim: #0072d6; --acid-deep: #005cad; --on-acid: #ffffff;
-  /* accent as raw RGB channels — lets the Orb's halo/sonar/glow build rgba()s that track the accent
-     per theme (the dots already use var(--acid); this fixes the surrounding glow's hue in light). */
-  --acid-rgb: 0, 129, 242;
+  /* ChatGPT accent — blue, measured (docs/design/chatgpt-clone-teardown-2026-07-06.md Probe 3:
+     toggle switch ON = #3a83f7). Reserved for primary actions/links, both themes. */
+  --acid: #3a83f7; --acid-dim: #2f74e0; --acid-deep: #235bb3; --on-acid: #ffffff;
+  /* accent as raw RGB channels — lets rgba()-built glows/halos track the accent per theme. */
+  --acid-rgb: 58, 131, 247;
   --warn: #b5760a; --danger: #cc3322; --info: #0278c0;
 
   /* layout + type */
   --radius: 12px; --radius-sm: 10px; --rail: 300px; --rail-collapsed: 64px; --evidence: 344px;
+  /* ChatGPT-measured radii (Probe 3): composer pill 28px · menu/modal 16px. --radius/--radius-sm
+     stay as-is (used by ~60 unrelated cards/buttons) — these are dedicated additions so the
+     ChatGPT-specific surfaces can opt in without re-skinning every card. */
+  --radius-pill: 28px; --radius-menu: 16px; --radius-menu-item: 10px;
   --font: -apple-system, system-ui, "Segoe UI Variable Display", "Segoe UI", Helvetica, Arial, sans-serif;
   --font-serif: "Libre Baskerville", Georgia, Cambria, ui-serif, "Times New Roman", serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
-  /* The page chrome is flat (Manus feel; the body's ambient accent gradient is removed). --glow now
-     drives ONLY the brand Orb's soft halo — kept modest so the mark stays alive without a page wash. */
+  /* The page chrome is flat; the body's ambient accent gradient is removed. --glow now drives ONLY
+     the brand Orb's soft halo — kept modest so the mark stays alive without a page wash. */
   --glow: 0.12;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px -4px rgba(0, 0, 0, 0.07);
-  --shadow-acid: 0 6px 22px -8px rgba(0, 129, 242, 0.4);
+  --shadow-acid: 0 6px 22px -8px rgba(58, 131, 247, 0.4);
+  /* Menu/popover shadow (Probe 3, measured): model menu / "+" menu / profile menu. */
+  --shadow-menu: 0 8px 16px rgba(0, 0, 0, 0.32), inset 0 0 1px rgba(255, 255, 255, 0.2);
 
   /* legacy aliases (pre-existing pages reference these) */
   --muted: var(--text-2); --muted-2: var(--text-3);
   --accent: var(--acid); --accent-2: var(--acid-dim); --accent-mid: var(--acid-deep); --accent-dark: var(--acid-dim);
-  --line-acid: rgba(0, 129, 242, 0.24); --placeholder: var(--text-3); --button-text: var(--on-acid);
+  --line-acid: rgba(58, 131, 247, 0.24); --placeholder: var(--text-3); --button-text: var(--on-acid);
 
-  /* shadcn HSL triplets (same colors as the hex tokens above) */
-  --background: 0 0% 100%; --foreground: 40 6% 15%;
-  --card: 0 0% 100%; --card-foreground: 40 6% 15%;
-  --popover: 0 0% 100%; --popover-foreground: 40 6% 15%;
-  --primary: 209 100% 47%; --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 94%; --secondary-foreground: 40 6% 15%;
-  --muted-shadcn: 40 3% 97%; --muted-foreground: 40 2% 42%;
-  --accent-shadcn: 0 0% 94%; --accent-foreground: 40 6% 15%;
+  /* shadcn HSL triplets (same colors as the hex tokens above; accent #3a83f7 = hsl(217 92% 60%)) */
+  --background: 0 0% 100%; --foreground: 0 0% 5%;
+  --card: 0 0% 100%; --card-foreground: 0 0% 5%;
+  --popover: 0 0% 100%; --popover-foreground: 0 0% 5%;
+  --primary: 217 92% 60%; --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 96%; --secondary-foreground: 0 0% 5%;
+  --muted-shadcn: 0 0% 96%; --muted-foreground: 0 0% 45%;
+  --accent-shadcn: 0 0% 96%; --accent-foreground: 0 0% 5%;
   --destructive: 5 75% 47%; --destructive-foreground: 0 0% 100%;
-  --border: 0 0% 94%; --input: 0 0% 88%; --ring: 209 100% 47%;
+  --border: 0 0% 92%; --input: 0 0% 88%; --ring: 217 92% 60%;
   --shadcn-radius: 12px;
-}
-
-:root[data-theme="grey"] {
-  color-scheme: dark;
-
-  /* GREY — pointed at the same Manus dark values as [data-theme="dark"] (see note in report:
-     Manus only ships one dark theme; keeping grey as a separate near-black avoids a second,
-     unspecified dark palette that would drift from the Manus reference). */
-  --bg: #242424; --bg-2: #1f1f1f; --surface: #242424; --surface-2: #1a1a1a; --raised: #242424;
-  --line: #ffffff0f; --line-2: #ffffff1a;
-  --text: #dadada; --text-2: #acacac; --text-3: #7f7f7f;
-  --rail-bg: #1f1f1f;
-  --fill-hover: rgba(255, 255, 255, 0.04); --fill-active: rgba(255, 255, 255, 0.06);
-  --composer-border: rgba(255, 255, 255, 0.2); --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
-  /* PharmaOrb brand mark color, pinned — see --orb-color comment in :root. Pre-skin dark --acid. */
-  --orb-color: #bcff3c; --orb-rgb: 188, 255, 60;
-
-  /* Manus accent — blue on dark (was PharmaOrb #bcff3c lime). */
-  --acid: #1a93fe; --acid-dim: #1680db; --acid-deep: #1268b0; --on-acid: #ffffff;
-  --acid-rgb: 26, 147, 254;
-  --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
-
-  --glow: 0;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 6px 18px -6px rgba(0, 0, 0, 0.38);
-  --shadow-acid: 0 8px 28px -8px rgba(26, 147, 254, 0.5);
-  --line-acid: rgba(26, 147, 254, 0.28);
-
-  --background: 0 0% 14%; --foreground: 0 0% 85%;
-  --card: 0 0% 14%; --card-foreground: 0 0% 85%;
-  --popover: 0 0% 14%; --popover-foreground: 0 0% 85%;
-  --primary: 209 99% 55%; --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 10%; --secondary-foreground: 0 0% 85%;
-  --muted-shadcn: 0 0% 10%; --muted-foreground: 0 0% 67%;
-  --accent-shadcn: 0 0% 10%; --accent-foreground: 0 0% 85%;
-  --destructive: 5 100% 65%; --destructive-foreground: 0 0% 5%;
-  --border: 0 0% 19%; --input: 0 0% 24%; --ring: 209 99% 55%;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* DARK — Manus dark theme (docs/design/manus-design-tokens.md §1b): page/surface #242424 ·
-     sidebar #1f1f1f · deep panel #1a1a1a. Replaces PharmaOrb's prior true-near-black dark. */
-  --bg: #242424; --bg-2: #1f1f1f; --surface: #242424; --surface-2: #1a1a1a; --raised: #242424;
+  /* DARK — faithful ChatGPT dark theme (docs/design/chatgpt-clone-teardown-2026-07-06.md, Probe 1
+     + Probe 3, measured via getComputedStyle): page #000 PURE BLACK · composer/settings #212121 ·
+     menus/popovers #353535 · search modal #2f2f2f. Replaces the prior Manus near-black (#242424). */
+  --bg: #000000; --bg-2: #171717; --surface: #212121; --surface-2: #2f2f2f; --raised: #353535;
   --line: #ffffff0f; --line-2: #ffffff1a;
-  --text: #dadada; --text-2: #acacac; --text-3: #7f7f7f;
-  --rail-bg: #1f1f1f;
+  --text: #ffffff; --text-2: #b4b4b4; --text-3: #8f8f8f;
+  --rail-bg: #000000;
   --fill-hover: rgba(255, 255, 255, 0.04); --fill-active: rgba(255, 255, 255, 0.06);
   --composer-border: rgba(255, 255, 255, 0.2); --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
-  /* PharmaOrb brand mark color, pinned — see --orb-color comment in :root. Pre-skin dark --acid. */
+  /* PharmaOrb brand mark color, pinned — see --orb-color comment in :root. The orb mark stays
+     PharmaOrb's own brand green regardless of the ChatGPT skin retune. */
   --orb-color: #bcff3c; --orb-rgb: 188, 255, 60;
 
-  /* Manus accent — blue on dark (was PharmaOrb #bcff3c lime, same accent as grey). */
-  --acid: #1a93fe; --acid-dim: #1680db; --acid-deep: #1268b0; --on-acid: #ffffff;
-  --acid-rgb: 26, 147, 254;
+  /* ChatGPT accent — blue, measured (Probe 3: toggle switch ON = #3a83f7, same accent both themes). */
+  --acid: #3a83f7; --acid-dim: #588ff5; --acid-deep: #79a6f6; --on-acid: #ffffff;
+  --acid-rgb: 58, 131, 247;
   --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
 
   --glow: 0;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px -6px rgba(0, 0, 0, 0.6);
-  --shadow-acid: 0 8px 28px -8px rgba(26, 147, 254, 0.5);
-  --line-acid: rgba(26, 147, 254, 0.28);
+  --shadow-acid: 0 8px 28px -8px rgba(58, 131, 247, 0.5);
+  --shadow-menu: 0 8px 16px rgba(0, 0, 0, 0.32), inset 0 0 1px rgba(255, 255, 255, 0.2);
+  --line-acid: rgba(58, 131, 247, 0.28);
 
-  --background: 0 0% 14%; --foreground: 0 0% 85%;
-  --card: 0 0% 14%; --card-foreground: 0 0% 85%;
-  --popover: 0 0% 14%; --popover-foreground: 0 0% 85%;
-  --primary: 209 99% 55%; --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 10%; --secondary-foreground: 0 0% 85%;
-  --muted-shadcn: 0 0% 10%; --muted-foreground: 0 0% 67%;
-  --accent-shadcn: 0 0% 10%; --accent-foreground: 0 0% 85%;
+  --background: 0 0% 0%; --foreground: 0 0% 100%;
+  --card: 0 0% 13%; --card-foreground: 0 0% 100%;
+  --popover: 0 0% 21%; --popover-foreground: 0 0% 100%;
+  --primary: 217 92% 60%; --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 18%; --secondary-foreground: 0 0% 100%;
+  --muted-shadcn: 0 0% 13%; --muted-foreground: 0 0% 71%;
+  --accent-shadcn: 0 0% 21%; --accent-foreground: 0 0% 100%;
   --destructive: 5 100% 65%; --destructive-foreground: 0 0% 5%;
-  --border: 0 0% 19%; --input: 0 0% 24%; --ring: 209 99% 55%;
+  --border: 0 0% 19%; --input: 0 0% 24%; --ring: 217 92% 60%;
 }
 
 * { box-sizing: border-box; }

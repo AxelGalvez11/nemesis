@@ -2,14 +2,19 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
-type Theme = "light" | "grey" | "dark";
+type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
 const STORAGE_KEY = "pharmaorb-theme";
 
-const isTheme = (v: unknown): v is Theme => v === "light" || v === "grey" || v === "dark";
+const isTheme = (v: unknown): v is Theme => v === "light" || v === "dark";
 const isPreference = (v: unknown): v is ThemePreference => isTheme(v) || v === "system";
 const systemTheme = (): Theme =>
-  typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "grey" : "light";
+  typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+
+// Only two themes ship now ("grey" was removed — owner: "Only white and black"). A stored
+// preference of "grey" from before the removal must keep resolving to something valid, so
+// existing users don't silently flip to an unintended theme on read.
+const normalizeStoredPreference = (v: string | null): string | null => (v === "grey" ? "dark" : v);
 
 interface ThemeContextValue {
   preference: ThemePreference;
@@ -32,8 +37,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
 
   useEffect(() => {
-    const fromDom = document.documentElement.dataset.theme;
-    const stored = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+    // Normalize legacy "grey" (pre-existing users' stored preference, or a stale value the
+    // no-flash script may have already written to the DOM) to "dark" before validating.
+    const fromDom = normalizeStoredPreference(document.documentElement.dataset.theme ?? null);
+    const stored = normalizeStoredPreference(typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null);
     setPreferenceState(isPreference(stored) ? stored : "system");
     setThemeState(isTheme(fromDom) ? fromDom : isTheme(stored) ? stored : systemTheme());
   }, []);
@@ -62,8 +69,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // The topbar button cycles light → grey → dark → light; Settings offers the three explicitly.
-  const toggle = () => setTheme(theme === "light" ? "grey" : theme === "grey" ? "dark" : "light");
+  // The topbar button toggles light ↔ dark; Settings offers System/Light/Dark explicitly.
+  const toggle = () => setTheme(theme === "light" ? "dark" : "light");
 
   return <ThemeContext.Provider value={{ preference, theme, setTheme, toggle }}>{children}</ThemeContext.Provider>;
 }

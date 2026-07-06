@@ -1,6 +1,6 @@
 /* Score page ("Percentile Engine"). Route-scoped global CSS — every class is `sc-`-prefixed to
    avoid colliding with shell.css/legacy.css. Colors come from the app theme tokens (--acid, --bg,
-   --surface, --text…) so the page follows light / grey / dark like the rest of the app. */
+   --surface, --text…) so the page follows light / dark like the rest of the app. */
 
 .sc-wrap { max-width: 1140px; margin: 0 auto; padding: 6px 4px 40px; }
 

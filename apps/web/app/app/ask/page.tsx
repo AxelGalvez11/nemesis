@@ -19,14 +19,12 @@ import { citationDomains, faviconUrl, hostnameOf, SEARCH_DOMAINS } from "@/lib/f
 import { composerModeLabel } from "@/lib/ask-mode-label";
 import { getCached, setCached } from "@/lib/cache";
 import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
-import { PLAYBOOKS, SKILLS } from "@/lib/playbooks";
 import { useAppChrome } from "@/components/AppShell";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { Icon } from "@/components/icons";
 import { AgentRunDock } from "@/components/AgentRunDock";
 import { WorkPanel } from "@/components/WorkPanel";
 import { DomainChips } from "@/components/DomainChips";
-import { DataSourcesPanel } from "@/components/DataSourcesPanel";
 import { MissionSheet } from "@/components/MissionSheet";
 import { ResearchProgress } from "@/components/ResearchProgress";
 import { WatchButton } from "@/components/WatchButton";
@@ -233,6 +231,24 @@ function AskPage() {
   // command from the shell that always OPENS (never toggles closed). The double rAF defers the
   // scroll until after React applies the open state and the drawer's slide-in begins laying out.
   const { setEvidence, setTopbar, openEvidence, bumpChats, bumpUsage } = chrome;
+
+  // Sidebar "New chat" pressed (chrome.newChatNonce bumps on every click). router.push("/app/ask")
+  // alone is a NO-OP when the current chat is unsaved — the URL is already bare /app/ask, so no
+  // navigation happens, cParam never changes, and the old thread stayed on screen (the reported
+  // "New chat button doesn't work"). The nonce makes the reset unconditional. Mid-request state is
+  // safe: an in-flight answer's setLast patch maps over the now-empty turns array (a no-op).
+  const seenNonceRef = useRef(chrome.newChatNonce);
+  useEffect(() => {
+    if (chrome.newChatNonce === seenNonceRef.current) return; // initial mount — nothing was clicked
+    seenNonceRef.current = chrome.newChatNonce;
+    loadedConvRef.current = null; creatingConvRef.current = null;
+    setConversationId(null); setTurns([]); setQuestion("");
+    setActiveTag(null); setActiveQuote(null); setActiveAnswer(null);
+    setRevealIdx(null); setChatLoadError(null); setLoadingChat(false);
+    appliedProjectRef.current = false;
+    setProjectId(null); setProjectName(""); setProjectInstructions("");
+    if (taRef.current) taRef.current.style.height = "auto";
+  }, [chrome.newChatNonce]);
 
   // Load a saved chat when the URL targets one (?c=<id>); reset to a blank chat when it doesn't.
   // loadedConvRef stops us re-fetching a conversation we just created in this session.
@@ -598,11 +614,13 @@ function AskPage() {
     }
   }
 
-  // Skill: Systematic review — arm the documented-method report mode.
+  // Skill: Systematic review — arms the documented-method report mode. Skill: Slides — arms Deep
+  // research AND flags "export this run's report to PowerPoint when it's done" (consumed on the next
+  // submit; see submit()'s wantSlides/slidesIntentRef). Both callbacks and their submit()-side machinery
+  // are kept live (the PPTX auto-export path still works end-to-end) even though the composer "+" menu
+  // no longer exposes a Skills row that calls them — the ChatGPT-parity menu (Task B, 2026-07-06) has
+  // no Skills slot. Slides currently has NO trigger surface anywhere in the UI; needs a new home.
   const armSystematicReview = useCallback(() => { setMode("structured_review"); }, []);
-  // Skill: Slides — arm Deep research AND flag "export this run's report to PowerPoint when it's done".
-  // Consumed on the next submit (see submit()); if the user instead picks a plain depth, the flag is
-  // still cleared on that submit, so it never leaks into an unrelated run.
   const armSlides = useCallback(() => { setMode("deep"); slidesArmedRef.current = true; }, []);
 
   const hasThread = turns.length > 0;
@@ -623,7 +641,6 @@ function AskPage() {
         question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
         submit={submit} busy={busy} mode={mode} setMode={setMode}
         modeOpen={modeOpen} setModeOpen={setModeOpen}
-        armSlides={armSlides} armSystematicReview={armSystematicReview}
         error={latest?.err ?? null}
         welcome={!hasThread}
       />
@@ -664,8 +681,10 @@ function AskPage() {
           ) : null}
           {composer}
           {/* ChatGPT-style calm landing: greeting + composer + ONE row of at most three ghost chips.
-              Everything else (Discovery, Monitor, Playbooks, filters, Data sources) lives in the "+"
-              launcher — one front door, no chip wall. */}
+              The composer's own "+" launcher is now ChatGPT's own short shape (Add photos & files /
+              Web search / Deep research) — Discovery, Monitor, Playbooks, and Data sources no longer
+              live there; Discovery/Verify stay reachable via these welcome chips and Monitor's own
+              page, Data sources via Settings. */}
           {!reopenedEmpty ? (
             <div className="chip-row welcome-chips">
               <button type="button" className="chip-action" onClick={() => { setQuestion("Is it true that "); taRef.current?.focus(); }}>
@@ -822,10 +841,6 @@ interface ComposerProps {
   setMode: Dispatch<SetStateAction<(typeof MODES)[number]["id"]>>;
   modeOpen: boolean;
   setModeOpen: Dispatch<SetStateAction<boolean>>;
-  // A Skill click arms a deliverable recipe. Kept as callbacks (not raw setMode) because arming
-  // Slides / Systematic review touches refs on the page, not just the mode — see Tasks 2 and 3.
-  armSlides: () => void;
-  armSystematicReview: () => void;
   error: string | null;
   // true only on the empty welcome screen — drives the cycling example placeholders. In an active
   // chat (thread) it's false, so the box shows a calm static "Ask a follow-up…" instead.
@@ -835,18 +850,16 @@ interface ComposerProps {
 // The input pill, shared between the centered welcome screen and the pinned bottom bar. A leading
 // "+" (attachments) and a "mic" (voice) are shown as ChatGPT-style affordances but disabled until
 // those features ship — same honest "coming soon" treatment as the non-live modes.
-function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, armSlides, armSystematicReview, error, welcome }: ComposerProps) {
-  const router = useRouter(); // "Monitor this topic" hops to /app/monitor with the typed topic pre-filled
+function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error, welcome }: ComposerProps) {
   const activeMode = MODES.find((m) => m.id === mode)!;
   // On the welcome screen, cycle example questions through an animated overlay placeholder (reveals
   // in from the left, fades out) so suggestions live in the chat bar without a hard text swap. Once a
   // chat is active the suggestions stop — the box shows a calm static placeholder instead.
   const [phIdx, setPhIdx] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false); // the "+" tools launcher popover
-  const [sourcesOpen, setSourcesOpen] = useState(false); // the "Data sources" modal
-  // The tall "+" tools menu flips up/down and caps its height to the free space on that side, so its
-  // Skills/Playbooks list is never pushed past the window edge — the welcome composer sits low (little
-  // room above) while a thread composer sits at the bottom (little room below).
+  // The "+" tools menu flips up/down and caps its height to the free space on that side, so it's never
+  // pushed past the window edge — the welcome composer sits low (little room above) while a thread
+  // composer sits at the bottom (little room below).
   const plusBtnRef = useRef<HTMLButtonElement>(null);
   const [plusMenuStyle, setPlusMenuStyle] = useState<CSSProperties>({ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 280, maxHeight: 460 });
   const dictation = useDictation(setQuestion, () => question);
@@ -894,85 +907,26 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             <Icon name="plus" size={18} />
           </button>
           {plusOpen ? (
+            // ChatGPT's own "+" shape (docs/design/chatgpt-clone-teardown-2026-07-06.md): Add photos
+            // & files / Web search / Deep research, nothing else — the owner's complaint was this menu
+            // carrying Discovery/Verify/Monitor/filters/Skills/Playbooks/Data sources all at once.
+            // Those still exist: Discovery/Verify via the welcome-screen chips, Monitor at /app/monitor,
+            // Data sources in Settings. Only Deep research is wired here — the other two are honest
+            // disabled "Soon" rows (no upload backend, no frontend web-search toggle yet) rather than
+            // dead buttons that claim to do something they don't.
             <div className="acct-menu tools-menu" role="menu" style={plusMenuStyle}>
-              {/* Tools: each arms a report mode (or prefills the box) for the next send, and the
-                  armed mode resets to the default depth once that run launches (single-shot — see
-                  submit()). Deep research includes the pooled meta-analysis when studies allow it. */}
+              <button type="button" role="menuitem" disabled>
+                <Icon name="attach" size={14} /><span style={{ flex: 1 }}>Add photos &amp; files</span><small style={{ color: "var(--text-3)" }}>Soon</small>
+              </button>
+              <button type="button" role="menuitem" disabled>
+                <Icon name="globe" size={14} /><span style={{ flex: 1 }}>Web search</span><small style={{ color: "var(--text-3)" }}>Soon</small>
+              </button>
+              {/* Deep research runs the engine's "meta" pipeline: the full structured review (documented
+                  method, cited sections) PLUS a code-computed pooled estimate when the studies are
+                  genuinely comparable. This is the one live tool — single-shot (see submit()), the
+                  armed mode resets to the default depth once the run launches. */}
               <button type="button" role="menuitem" onClick={() => { setMode("deep"); setPlusOpen(false); taRef.current?.focus(); }}>
                 <Icon name="doc" size={14} /><span style={{ flex: 1 }}>Deep research</span><small style={{ color: "var(--text-3)" }}>cited report + pooled stats</small>
-              </button>
-              <button type="button" role="menuitem" onClick={() => { setMode("discovery"); setPlusOpen(false); taRef.current?.focus(); }}>
-                <Icon name="sparkle" size={14} /><span style={{ flex: 1 }}>Discovery</span><small style={{ color: "var(--text-3)" }}>gaps &amp; hypotheses</small>
-              </button>
-              {/* Verify is a quick cited check by design — it also DISARMS any armed report tool,
-                  so "Deep research → actually, verify this" can't accidentally fire a Pro run. */}
-              <button type="button" role="menuitem" onClick={() => { setMode(DEFAULT_DEPTH); setQuestion("Is it true that "); setPlusOpen(false); taRef.current?.focus(); }}>
-                <Icon name="check" size={14} /><span style={{ flex: 1 }}>Verify a claim</span><small style={{ color: "var(--text-3)" }}>check it against evidence</small>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  // Hand the typed topic to Monitoring's "Monitor a new topic" box via the in-memory
-                  // session cache (client-side nav keeps module state; nothing hits the URL). Capped
-                  // to the picker's own 200-char input limit, which programmatic values would bypass.
-                  if (question.trim()) setCached("monitor-prefill", question.trim().slice(0, 200));
-                  setPlusOpen(false);
-                  router.push("/app/monitor");
-                }}
-              >
-                <Icon name="bell" size={14} /><span style={{ flex: 1 }}>Monitor this topic</span><small style={{ color: "var(--text-3)" }}>alerts on new evidence</small>
-              </button>
-              <div className="sep" role="separator" />
-              {/* Skills: one-click DELIVERABLE recipes. Slides arms Deep research + a slides-export
-                  intent (auto-exports the finished report to PowerPoint — see submit()/ResearchRunCard).
-                  Systematic review arms the documented-method report mode. "soon" entries are honest
-                  disabled rows (same treatment as the search filters below). */}
-              <div className="menu-label" aria-hidden="true">Skills</div>
-              {SKILLS.map((s) => (
-                s.action === "soon" ? (
-                  <button key={s.id} type="button" role="menuitem" disabled>
-                    <Icon name="message" size={14} /><span style={{ flex: 1 }}>{s.title}</span><small style={{ color: "var(--text-3)" }}>{s.desc}</small>
-                  </button>
-                ) : (
-                  <button key={s.id} type="button" role="menuitem"
-                    onClick={() => {
-                      if (s.action === "slides") armSlides();
-                      else armSystematicReview();
-                      setPlusOpen(false);
-                      taRef.current?.focus();
-                    }}>
-                    <Icon name="doc" size={14} /><span style={{ flex: 1 }}>{s.title}</span><small style={{ color: "var(--text-3)" }}>{s.desc}</small>
-                  </button>
-                )
-              ))}
-              <div className="sep" role="separator" />
-              {/* Playbooks (the Manus pattern): curated one-click recipes — seed the question AND arm
-                  the right tool. */}
-              <div className="menu-label" aria-hidden="true">Playbooks</div>
-              {PLAYBOOKS.map((p) => (
-                <button key={p.id} type="button" role="menuitem" title={p.question}
-                  onClick={() => { setMode(p.tool); setQuestion(p.question); setPlusOpen(false); taRef.current?.focus(); }}>
-                  <Icon name="doc" size={14} /><span style={{ flex: 1 }}>{p.title}</span>
-                </button>
-              ))}
-              <div className="sep" role="separator" />
-              {/* Source filters: honest coming-soon until the engine can scope a run to one source
-                  class (news-only; community chatter from Reddit/X walled off from cited evidence). */}
-              <div className="menu-label" aria-hidden="true">Search filters</div>
-              <button type="button" role="menuitem" disabled>
-                <Icon name="message" size={14} /><span style={{ flex: 1 }}>News only</span><small style={{ color: "var(--text-3)" }}>Soon</small>
-              </button>
-              <button type="button" role="menuitem" disabled>
-                <Icon name="search" size={14} /><span style={{ flex: 1 }}>Communities — Reddit &amp; X</span><small style={{ color: "var(--text-3)" }}>Soon</small>
-              </button>
-              <div className="sep" role="separator" />
-              <button type="button" role="menuitem" disabled>
-                <Icon name="plus" size={14} /><span style={{ flex: 1 }}>Add photos &amp; files</span><small style={{ color: "var(--text-3)" }}>Soon</small>
-              </button>
-              <div className="sep" role="separator" />
-              <button type="button" role="menuitem" onClick={() => { setSourcesOpen(true); setPlusOpen(false); }}>
-                <Icon name="shield" size={14} /><span style={{ flex: 1 }}>Data sources</span><small style={{ color: "var(--text-3)" }}>see what powers answers</small>
               </button>
             </div>
           ) : null}
@@ -1045,7 +999,6 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
       {error ? <div className="err">{error}</div> : null}
       {dictation.error ? <div className="err">{dictation.error}</div> : null}
       <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
-      <DataSourcesPanel open={sourcesOpen} onClose={() => setSourcesOpen(false)} />
     </div>
   );
 }

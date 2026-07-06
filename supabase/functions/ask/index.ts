@@ -34,7 +34,7 @@ import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
 import { assumptionNote, findTypoCorrections } from "./typo-correct.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
-import { hasLlmKey, llmApiKey } from "./llm.ts";
+import { chat, hasLlmKey, llmApiKey } from "./llm.ts";
 import { modelFor } from "./model-router.ts";
 import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
@@ -52,7 +52,7 @@ import {
   SOURCING_COPY,
   STANDARD_QUESTIONS,
 } from "./templates.ts";
-import { detectFreshInfo, laneRouterEnabled } from "./lane-router.ts";
+import { detectFreshInfo, detectGeneralAssistant, generalAssistantEnabled, laneRouterEnabled } from "./lane-router.ts";
 import type {
   AnswerNewsItem,
   AnswerTemplate,
@@ -232,6 +232,18 @@ async function runAsk(
   // ---- 0b. server-side usage limit (before LLM classify/generate spend) ----
   const quota = await consumeAskQuota(userId);
   if (!quota.allowed) throw new QuotaExceeded(quota);
+
+  // ---- 0c. general-assistant lane (GENERAL_ASSISTANT_LANE=on, DEFAULT OFF) ----
+  // A clearly non-medical task ("write me a cover letter", "translate this") gets a natural, helpful
+  // reply instead of being force-fit through clinical retrieval (lane 0.6). Runs after the quota
+  // consume because it spends one cheap LLM call. Fail-safe twice over: the detector requires a
+  // POSITIVE general-task signal (a medical question can't match), and finalizeGeneralAssistant
+  // returns null on any LLM failure/empty completion, so we fall straight through to classify and
+  // the normal engine. preScreen already hard-routed emergencies far above.
+  if (generalAssistantEnabled() && detectGeneralAssistant(question).fires) {
+    const general = await finalizeGeneralAssistant(answerId, question, userId, apiKey);
+    if (general) return general;
+  }
 
   // ---- 1. classify ----
   const cls = await classify(question, apiKey);
@@ -729,6 +741,76 @@ async function finalizeFreshInfo(
     source_ids: [],
     retrieval_scores: [],
     model_name: `deterministic-fresh-info:${reason}`,
+    prompt_version: PROMPT_VERSION,
+    safety_flags: [],
+    used_health_context: false,
+  });
+
+  return resp;
+}
+
+// The general-assistant lane's system prompt (lane 0.6, gated GENERAL_ASSISTANT_LANE=on). The
+// question already passed the deterministic general-task detector (lane-router.ts) — a clearly
+// non-medical request. Answer it naturally, no medical theater. Kept short so a misrouted question
+// (should never happen given the positive-signal detector) can't produce a long unscanned medical
+// essay. If the model somehow gets a medical-looking request here, it defers rather than advising.
+const GENERAL_ASSISTANT_SYSTEM =
+  "You are PharmaOrb. Your specialty is cited medical evidence, but this request is a general, " +
+  "non-medical one, so just help the user naturally and well — like a capable, friendly assistant. " +
+  "Answer directly and concisely. Do not add medical framing, citations, evidence grades, or " +
+  "disclaimers, and do not mention that you are usually a medical tool. If the request turns out to " +
+  "be about a health, medical, drug, or supplement topic, do NOT give medical advice — instead say " +
+  "in one line that they can ask that as a normal question to get a cited, evidence-backed answer.";
+
+/** Lane 0.6 — a natural reply to a clearly non-medical request (gated GENERAL_ASSISTANT_LANE=on).
+ *  One light LLM call, no retrieval, no citations, no safety-scan (positive-signal detector kept
+ *  medical questions out — see lane-router.ts). Rendered as a plain conversational message via the
+ *  reused "smalltalk" wire intent (no shared-type/frontend change). Any LLM failure degrades to the
+ *  normal engine by returning null, so the caller falls through to classify. */
+async function finalizeGeneralAssistant(
+  answerId: string,
+  question: string,
+  userId: string,
+  apiKey: string,
+): Promise<AskResponse | null> {
+  let content: string;
+  try {
+    const res = await chat({
+      model: modelFor("classify"),
+      max_tokens: 900,
+      system: GENERAL_ASSISTANT_SYSTEM,
+      messages: [{ role: "user", content: question }],
+      temperature: 0.7,
+    }, apiKey);
+    content = res.choices[0]?.message?.content?.trim() ?? "";
+    if (!content) return null; // empty completion → let the normal engine handle it
+  } catch {
+    return null; // never fail the request on the general lane — fall through to classify
+  }
+
+  const resp: AskResponse = {
+    answer_id: answerId,
+    intent: "smalltalk",
+    plain_english_summary: content,
+    evidence_grade: "not_applicable",
+    answer_sections: { what_we_know: [], what_we_do_not_know: [], safety_notes: [], questions_to_ask: [] },
+    citations: [],
+    safety_flags: [],
+    refused_unsupported: false,
+    oldest_source_date: null,
+  };
+
+  await storeTrace({
+    id: answerId,
+    user_id: userId,
+    question,
+    intent: "smalltalk",
+    detected_entities: [],
+    answer: resp,
+    evidence_grade: "not_applicable",
+    source_ids: [],
+    retrieval_scores: [],
+    model_name: "general-assistant",
     prompt_version: PROMPT_VERSION,
     safety_flags: [],
     used_health_context: false,

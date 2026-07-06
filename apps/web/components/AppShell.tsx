@@ -24,6 +24,11 @@ interface AppChromeValue {
   setTopbar: (node: ReactNode | null) => void;
   bumpChats: () => void;
   bumpUsage: () => void;
+  /** Increments on every sidebar "New chat" click. AskPage resets on ANY change — router.push alone
+   *  is a no-op when the current chat is unsaved (URL already bare /app/ask), so the previous thread
+   *  stayed on screen. The nonce makes the reset unconditional. */
+  newChatNonce: number;
+  bumpNewChat: () => void;
 }
 const AppChromeContext = createContext<AppChromeValue>({
   railCollapsed: false,
@@ -35,6 +40,8 @@ const AppChromeContext = createContext<AppChromeValue>({
   setTopbar: () => {},
   bumpChats: () => {},
   bumpUsage: () => {},
+  newChatNonce: 0,
+  bumpNewChat: () => {},
 });
 export const useAppChrome = () => useContext(AppChromeContext);
 
@@ -135,6 +142,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Lets the chat page refresh the rail history the moment it creates a new conversation.
   const bumpChats = useCallback(() => setChatsVersion((v) => v + 1), []);
   const bumpUsage = useCallback(() => setUsageVersion((v) => v + 1), []);
+  const [newChatNonce, setNewChatNonce] = useState(0);
+  const bumpNewChat = useCallback(() => setNewChatNonce((v) => v + 1), []);
 
   // Delete a chat: optimistically drop it from the rail, then delete server-side (RLS-scoped). If we
   // were viewing it, return to a blank chat. Re-fetch on failure so the rail reflects the real state.
@@ -363,8 +372,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const ctx = useMemo<AppChromeValue>(
-    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage }),
-    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage],
+    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage, newChatNonce, bumpNewChat }),
+    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage, newChatNonce, bumpNewChat],
   );
 
   // Hooks are all above this line — only conditional returns below (Rules of Hooks).
@@ -414,7 +423,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icon name="sidebar" size={16} />
             </button>
           </div>
-          <button className="new" onClick={() => router.push("/app/ask")} aria-label="New chat">
+          <button className="new" onClick={() => { bumpNewChat(); router.push("/app/ask"); }} aria-label="New chat">
             <Icon name="plus" size={16} />
             <span className="new-txt">New chat</span>
           </button>
@@ -546,7 +555,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icon name="sparkle" size={15} />
               <b>{Math.max(0, plan.limit - plan.used)}</b>
             </button>
-            <button className="icon-btn" onClick={toggleTheme} data-tip="Switch theme" aria-label="Switch theme (light, grey, dark)">
+            <button className="icon-btn" onClick={toggleTheme} data-tip="Switch theme" aria-label="Switch theme (light, dark)">
               <Icon name={theme === "light" ? "moon" : "sun"} />
             </button>
             {hasEvidence ? (
