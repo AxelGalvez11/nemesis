@@ -7,7 +7,7 @@ import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, Research
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
 import { deliverablesOnCommandEnabled, simplifiedModesEnabled } from "@/lib/env";
 import { detectDeliverableIntent, type DeliverableFormat } from "@/lib/deliverable-intent";
-import { askQuestion, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
+import { askQuestion, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchProjectSources, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
@@ -181,6 +181,11 @@ function AskPage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>("");
   const [projectInstructions, setProjectInstructions] = useState<string>("");
+  // Project sources (ChatGPT-Projects "give it more context"): pre-joined text from every source
+  // attached to the project, capped below at 4000 chars before it's appended to the outgoing prefix.
+  // Same lifecycle as projectInstructions — fetched once on the fresh-project handoff, never on a
+  // reopened ?c= chat, never shown in the transcript.
+  const [projectSourcesText, setProjectSourcesText] = useState<string>("");
   const appliedProjectRef = useRef(false); // one-shot guard for the project→Ask cache handoff below
   // The full conversation: every question + its answer (or in-flight/errored state) stays on screen,
   // so a second prompt no longer wipes the first.
@@ -324,6 +329,13 @@ function AskPage() {
     let alive = true; // guards against a stale response landing after the user navigates away mid-fetch
     void fetchProject(seed.projectId).then((p) => {
       if (alive && p) { setProjectName(p.name); setProjectInstructions(p.instructions ?? ""); }
+    }).catch(() => {});
+    // Sources ride in the same way instructions do (see the outgoing-question builder below). A
+    // missing project_sources table (pre-migration) resolves to enabled:false/sources:[] — this join
+    // is simply empty in that case, never an error the user sees.
+    void fetchProjectSources(seed.projectId).then(({ sources }) => {
+      if (!alive || sources.length === 0) return;
+      setProjectSourcesText(sources.map((s) => `[${s.name}]\n${s.content}`).join("\n\n"));
     }).catch(() => {});
     return () => { alive = false; };
   }, [cParam]);
@@ -589,11 +601,23 @@ function AskPage() {
       // Only fast/thorough/auto reach here — report modes returned above via the research branch.
       // Auto picks the depth from the question shape (reuses the same fast/thorough engine paths).
       const askMode: AskMode = mode === "thorough" ? "thorough" : mode === "auto" ? autoDepth(text) : "fast";
-      // Ride the project's user-set instructions into the question the engine sees — the frozen /ask fn
-      // is untouched; the safety scan still sees everything. Never applied to `text` (transcript, saved
-      // history) or autoDepth (depth classification) above. Report runs (deep/discovery) are excluded.
-      const outgoing = projectInstructions.trim()
-        ? `Project context (user-set): ${projectInstructions.trim().slice(0, 500)}\n\nQuestion: ${text}`
+      // Ride the project's user-set instructions AND its attached sources into the question the engine
+      // sees — the frozen /ask fn is untouched; the safety scan still sees everything. Never applied to
+      // `text` (transcript, saved history) or autoDepth (depth classification) above. Report runs
+      // (deep/discovery) are excluded. Sources are capped at 4000 chars total (truncated with a visible
+      // note) so one large source can't blow out the prompt; instructions keep their existing 500-char cap.
+      const instr = projectInstructions.trim();
+      const srcRaw = projectSourcesText.trim();
+      const SOURCES_CAP = 4000;
+      const src = srcRaw.length > SOURCES_CAP
+        ? `${srcRaw.slice(0, SOURCES_CAP)}\n…(sources truncated)`
+        : srcRaw;
+      const contextParts = [
+        instr ? `Project context (user-set): ${instr.slice(0, 500)}` : "",
+        src ? `Project sources:\n${src}` : "",
+      ].filter(Boolean);
+      const outgoing = contextParts.length
+        ? `${contextParts.join("\n\n")}\n\nQuestion: ${text}`
         : text;
       const res = await askQuestion(outgoing, askMode);
       await minThinkingPreview;
