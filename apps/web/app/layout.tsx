@@ -11,9 +11,10 @@ export const metadata: Metadata = {
   description: "Source-grounded biomedical evidence — live and cited.",
 };
 
-// Resolve the theme before first paint to avoid a flash. Preferences: system, light, grey (soft dim),
-// dark (true near-black). "system" resolves OS dark to GREY (the gentle default), else light.
-const themeScript = `(function(){try{var p=localStorage.getItem('pharmaorb-theme');var s=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'grey':'light';var t=(p==='light'||p==='grey'||p==='dark')?p:s;document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
+// Resolve the theme before first paint to avoid a flash. Only two themes: light, dark (true
+// ChatGPT-black). "system" resolves OS dark to DARK. A stored preference of "grey" (from before
+// that theme was removed) is normalized to "dark" so existing users don't break.
+const themeScript = `(function(){try{var p=localStorage.getItem('pharmaorb-theme');if(p==='grey')p='dark';var s=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';var t=(p==='light'||p==='dark')?p:s;document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
