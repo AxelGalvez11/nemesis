@@ -45,7 +45,26 @@ export type CoreSourceProvider =
   | "cms_nadac"
   // Live evidence breadth — OpenAlex (~250M works, key-less). Per-record license; non-PMID long tail
   // surfaces under this provider (PMID-bearing works dedupe under pubmed_oa instead).
-  | "openalex";
+  | "openalex"
+  // SCIENCE_CONNECTORS breadth (gated, default off) — literature connectors ported from
+  // _shared/science/literature, wired as additional live sources. Each is key-less/public; none
+  // publishes a verifiable per-record open license the way OpenAlex/Europe PMC do, so — mirroring
+  // openalex's "unknown -> cc_by_nc" precedent — every record from these providers is treated as
+  // restricted: it can surface LIVE (citable in an answer) but is never eligible for storage via
+  // assertCommercialFriendly. PMID-bearing hits from any of these dedupe into "pubmed_oa" instead
+  // (see literature-adapter.ts), so "biorxiv"/"crossref"/"semantic_scholar"/"arxiv" are only ever
+  // assigned to a hit with NEITHER a PMID NOR a DOI (each connector's own no-identifier long tail).
+  // A hit that carries a DOI but no PMID uses the SHARED "doi_lit" provider instead of its
+  // originating connector's name — this is what makes the SAME paper surfaced by two DIFFERENT new
+  // connectors (e.g. Crossref AND Semantic Scholar both returning the same DOI) collapse to one
+  // candidate in live-sources.ts's (provider, provider_id) dedupe; keying by the origin connector's
+  // own name would keep them as two separate "different provider" candidates and dedupe would silently
+  // no-op for that (very common) case.
+  | "biorxiv"
+  | "crossref"
+  | "semantic_scholar"
+  | "arxiv"
+  | "doi_lit";
 
 export type CoreSourceLicense =
   | "public_domain"
@@ -186,4 +205,12 @@ export const PROVIDER_DEFAULT_LICENSE: Readonly<
   // dormant. Keep it conservative (cc_by_nc = live-only, never stored) to match that per-record default,
   // so any future path that reads the provider default instead can't treat a paywalled work as storable.
   openalex: "cc_by_nc",
+  // SCIENCE_CONNECTORS (gated) literature connectors — see the CoreSourceProvider comment above.
+  // None of these surface a verifiable per-record open license, so all default restricted
+  // (cc_by_nc): live-citable, never stored.
+  biorxiv: "cc_by_nc",
+  crossref: "cc_by_nc",
+  semantic_scholar: "cc_by_nc",
+  arxiv: "cc_by_nc",
+  doi_lit: "cc_by_nc",
 };
