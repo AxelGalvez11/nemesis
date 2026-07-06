@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 
 const COUNTERS = [
-  { target: 12, suffix: "M+", label: ["Scientific records", "indexed across sources"] },
-  { target: 500, suffix: "K+", label: ["Biomedical studies", "continuously monitored"] },
-  { target: 5, suffix: "", label: ["Evidence source lanes", "open and traceable"] },
+  { target: 12, suffix: "M+", label: ["Drug records indexed", "across all sources"] },
+  { target: 500, suffix: "K+", label: ["PubMed studies", "continuously monitored"] },
+  { target: 5, suffix: "", label: ["Authoritative public", "data sources"] },
   { target: 6, suffix: "", label: ["Evidence tiers", "never a black box"] },
 ] as const;
 

@@ -1,50 +1,49 @@
 import type { CSSProperties } from "react";
-import { WaitlistForm } from "@/components/WaitlistForm";
 
 const SOURCES = [
   {
-    name: "Scientific literature",
-    desc: "Biomedical, life-science, and behavioral-science papers gathered into one searchable evidence layer",
+    name: "FDA / openFDA",
+    desc: "Official drug approval records, adverse event reports, and labeling data from the US Food & Drug Administration",
     status: "Live · Updated 1h ago",
   },
   {
-    name: "Clinical and public registries",
-    desc: "Trials, study records, labels, safety notices, and public datasets connected back to their original source",
+    name: "DailyMed",
+    desc: "Full FDA-approved drug labels published by the National Library of Medicine, the most authoritative prescribing information available",
     status: "Live · Updated 3h ago",
   },
   {
-    name: "Uploaded papers and notes",
-    desc: "Your PDFs, saved findings, notebook entries, and source collections become part of the same research workspace",
+    name: "PubMed / MEDLINE",
+    desc: "30M+ peer-reviewed biomedical studies from the National Library of Medicine, the world's largest medical literature database",
     status: "Live · Updated 2h ago",
   },
   {
-    name: "Citation and claim context",
-    desc: "Support, conflict, related work, study type, recency, and evidence strength are kept visible beside each claim",
+    name: "ClinicalTrials.gov",
+    desc: "The US registry of publicly and privately funded clinical trials: ongoing, completed, and recruiting",
     status: "Live · Updated 4h ago",
   },
   {
-    name: "Living monitors",
-    desc: "Agents keep watching selected topics for new papers, trial changes, retractions, and major evidence shifts",
+    name: "RxNorm",
+    desc: "Normalized names for clinical drugs from the NLM, used to unify drug terminology across all data sources",
     status: "Live · Updated 6h ago",
   },
 ];
 
 const STEPS = [
   {
-    title: "Start with a question",
-    body: "Ask about a mechanism, intervention, behavior, biomarker, trial, claim, paper, or open scientific debate.",
+    title: "Ask in plain English",
+    body: "Type any medication question (side effects, interactions, what studies say) exactly as you'd ask a friend.",
   },
   {
-    title: "Build a source notebook",
-    body: "Collect papers, labels, registries, notes, saved answers, and PDFs into one traceable research file.",
+    title: "Get a cited answer",
+    body: "Receive a clear, jargon-free response graded by evidence strength. Every claim links back to its source.",
   },
   {
-    title: "Deploy a research agent",
-    body: "Have PharmaOrb screen sources, extract findings, compare evidence, map related work, and keep the topic moving.",
+    title: "Read the original",
+    body: "Tap any citation to open the original FDA label, PubMed study, or ClinicalTrials.gov record in full.",
   },
   {
-    title: "Export the work",
-    body: "Turn the evidence into briefs, tables, slide decks, citations, study maps, and living reports that stay current.",
+    title: "Stay informed",
+    body: "Follow any drug or topic. Get notified when labels change, new trials publish, or new studies land.",
   },
 ];
 
@@ -53,9 +52,9 @@ const EVIDENCE = [
     tier: "vs",
     color: "#9BD92E",
     name: "Very Strong",
-    desc: "Multiple high-quality human studies, meta-analyses, or well-established source consensus point the same way.",
+    desc: "FDA-approved with multiple meta-analyses and large, consistent randomized controlled trials.",
     tag: "High",
-    chips: ["Meta-analyses", "Large studies", "Consistent signal"],
+    chips: ["FDA Approval", "Meta-analyses", "Large RCTs"],
     litBars: 5,
     breathe: "2.3s",
   },
@@ -63,9 +62,9 @@ const EVIDENCE = [
     tier: "s",
     color: "#3BC87A",
     name: "Strong",
-    desc: "Several reliable studies or registered evidence sources support the finding with limited conflict.",
+    desc: "Multiple well-designed randomized trials with consistent, reproducible findings.",
     tag: "Good",
-    chips: ["Human data", "Replicated", "Low conflict"],
+    chips: ["RCTs", "Consistent trials", "Human data"],
     litBars: 4,
     breathe: "2.9s",
   },
@@ -73,7 +72,7 @@ const EVIDENCE = [
     tier: "m",
     color: "#C97B06",
     name: "Moderate",
-    desc: "Useful evidence exists, but results may be mixed, narrow, indirect, or dependent on study context.",
+    desc: "Limited or mixed human trial data. Findings exist but may vary across studies.",
     tag: "Some",
     chips: ["Limited trials", "Mixed data"],
     litBars: 3,
@@ -83,7 +82,7 @@ const EVIDENCE = [
     tier: "w",
     color: "#C24A00",
     name: "Weak",
-    desc: "Mostly observational, exploratory, underpowered, or indirect evidence. Enough to inspect, not enough to settle.",
+    desc: "Observational studies or indirect evidence only. No controlled trials available.",
     tag: "Low",
     chips: ["Observational", "Indirect evidence"],
     litBars: 2,
@@ -93,7 +92,7 @@ const EVIDENCE = [
     tier: "vw",
     color: "#B51C1C",
     name: "Very Weak",
-    desc: "Early, preclinical, theoretical, or sparse evidence. Useful for hypothesis work, not a firm conclusion.",
+    desc: "Early lab or animal studies only. No human clinical data yet available.",
     tag: "Preliminary",
     chips: ["Lab studies", "Animal data"],
     litBars: 1,
@@ -104,7 +103,7 @@ const EVIDENCE = [
     color: "#555",
     nameColor: "#888",
     name: "Unknown",
-    desc: "The system cannot find enough relevant, inspectable evidence to grade the claim responsibly.",
+    desc: "Insufficient data exists to assign a confidence level to this claim.",
     tag: "Ungraded",
     tagColor: "#888",
     chips: ["No data"],
@@ -126,33 +125,33 @@ const EVIDENCE_BAR_DELAYS = [".05s", ".22s", ".38s", ".12s", ".28s"] as const;
 const FEATURES = [
   {
     img: "/art/dna.webp",
-    title: "Source-grounded notebooks",
-    body: "Organize papers, notes, registries, saved answers, and research threads into notebooks that stay tied to their sources.",
+    title: "Every answer is traceable",
+    body: "No black-box claims. Each point cites its source (FDA labels, peer-reviewed research, registered trials) so you can check the basis yourself.",
   },
   {
     img: "/art/mortar.webp",
-    title: "Agentic deep research",
-    body: "Give the agent a question and it can gather sources, screen papers, extract findings, compare claims, and summarize the state of the evidence.",
+    title: "Built on real studies",
+    body: "Answers are grounded in published research and official labels, not vibes or guesswork, and you can always see what they draw from.",
   },
   {
     img: "/art/heart.webp",
-    title: "Research deliverables",
-    body: "Generate evidence briefs, study tables, slide decks, citation exports, claim summaries, and living reports from the same source file.",
+    title: "Follow what you take",
+    body: "Track the medications you care about. Get notified when labels change, new trials publish results, or new studies land.",
   },
   {
     img: "/art/brain.webp",
-    title: "Chat with the literature",
-    body: "Ask plain-English questions across biomedicine, life sciences, behavioral sciences, and health evidence without losing the citation trail.",
+    title: "Ask in plain English",
+    body: "Type any medication question exactly as you'd ask a friend: side effects, interactions, what the studies actually say.",
   },
   {
     img: "/art/lungs.webp",
-    title: "Maps and claim tracing",
-    body: "Explore related papers, mechanisms, populations, interventions, citations, conflicts, and adjacent questions in one research map.",
+    title: "Fast or thorough",
+    body: "Get a quick, plain answer in seconds, or switch to a deeper, more detailed read when you want the full picture.",
   },
   {
     img: "/art/asclepius.webp",
-    title: "Living topic monitors",
-    body: "Follow a topic, paper, claim, or intervention. PharmaOrb monitors new evidence and shows what changed since the last check.",
+    title: "Educational, not advice",
+    body: "PharmaOrb helps you ask better questions at your next appointment. It doesn't diagnose, treat, or prescribe. Always consult a professional.",
   },
 ];
 
@@ -165,12 +164,11 @@ export function Manifesto() {
       <div className="container reveal">
         <div className="art-section-copy">
           <div className="section-tag">Why we built it</div>
-          <h2 className="section-h2">Research scattered across too many tabs</h2>
+          <h2 className="section-h2">Medicine you can actually check</h2>
           <p className="section-p">
-            Scientific work now lives across papers, preprints, trial registries, citation
-            trails, PDFs, notes, chats, and static reports. PharmaOrb pulls those pieces into one
-            source-grounded workspace for asking, extracting, mapping, monitoring, and making
-            deliverables.
+            Most health answers ask you to just trust them. PharmaOrb does the opposite. Every
+            claim is traced back to the FDA label, the study, or the trial it came from, in plain
+            English, so you can see the evidence for yourself.
           </p>
         </div>
       </div>
@@ -187,11 +185,10 @@ export function Sources() {
       <div className="container">
         <div className="art-section-copy reveal">
           <div className="section-tag">Data sources</div>
-          <h2 className="section-h2">Bring every source into the same evidence layer</h2>
+          <h2 className="section-h2">Always fresh. Always open.</h2>
           <p className="section-p">
-            PharmaOrb is built around inspectable sources. Public databases, scientific papers,
-            registries, notes, and saved materials remain linked to the claims and deliverables
-            they support.
+            Every answer draws from authoritative public databases, updated continuously. You
+            can always trace a claim back to the original document.
           </p>
         </div>
         <div className="source-list reveal">
@@ -219,7 +216,7 @@ export function HowItWorks() {
       <div className="container">
         <div style={{ textAlign: "center" }}>
           <div className="section-tag reveal">How it works</div>
-          <h2 className="section-h2 reveal d1">Ask. Notebook. Agent. Deliver.</h2>
+          <h2 className="section-h2 reveal d1">Ask. Read. Verify. Follow.</h2>
         </div>
         <div className="how-steps">
           {STEPS.map((step, i) => (
@@ -244,11 +241,10 @@ export function Evidence() {
       <div className="container">
         <div className="art-section-copy reveal">
           <div className="section-tag">Evidence system</div>
-          <h2 className="section-h2">Evidence you can inspect</h2>
+          <h2 className="section-h2">Graded, not guessed</h2>
           <p className="section-p">
-            Every answer, notebook, and deliverable keeps the evidence visible: source, study
-            type, recency, strength, support, conflict, and uncertainty. The point is not just a
-            summary. It is a research trail you can audit.
+            Every answer carries a transparent evidence grade. From large clinical trials to
+            early lab data, always labelled, never hidden.
           </p>
         </div>
         <div className="ev-spectrum reveal">
@@ -334,7 +330,7 @@ export function Features() {
       <div className="container">
         <div style={{ textAlign: "center", marginBottom: "52px" }}>
           <div className="section-tag reveal">Why PharmaOrb</div>
-          <h2 className="section-h2 reveal d1">The full evidence loop in one place</h2>
+          <h2 className="section-h2 reveal d1">Built on trust, not vibes</h2>
         </div>
         <div className="feat-grid">
           {FEATURES.map((f, i) => (
@@ -359,20 +355,24 @@ export function CallToAction() {
     <section className="cta-sec" id="cta">
       <div style={{ position: "relative", zIndex: 1 }}>
         <div className="section-tag reveal" style={{ justifyContent: "center" }}>
-          Join the waitlist
+          Get started
         </div>
         <h2
           className="section-h2 reveal d1"
           style={{ maxWidth: "560px", margin: "0 auto 14px" }}
         >
-          Build your scientific evidence workspace.
+          Ask your first question.
         </h2>
         <p className="section-p reveal d2" style={{ margin: "0 auto 36px" }}>
-          Join the beta for source-grounded deep research across biomedicine, life sciences,
-          behavioral sciences, and health evidence.
+          Free to start. Every answer traced to the evidence.
         </p>
-        <div id="waitlist-area-2" className="reveal d3">
-          <WaitlistForm centered note="We'll email you when the beta opens. No spam." />
+        <div className="hero-cta-row reveal d3" style={{ justifyContent: "center" }}>
+          <a className="wbtn" href="https://app.pharmaorb.app/sign-up">
+            Get started — free
+          </a>
+          <a className="hero-ghost" href="https://app.pharmaorb.app/sign-in">
+            Sign in
+          </a>
         </div>
       </div>
     </section>
@@ -402,10 +402,9 @@ export function SiteFooter() {
           <a href="/terms#disclaimer">Disclaimer</a>
         </div>
         <p className="footer-disc">
-          PharmaOrb provides educational research tools for scientific evidence, including
-          biomedicine, life sciences, behavioral sciences, and health-adjacent research. Not
-          medical advice. Does not diagnose, treat, or prescribe. Always consult a qualified
-          healthcare professional.
+          PharmaOrb provides educational information from public sources including FDA labels,
+          PubMed, and ClinicalTrials.gov. Not medical advice. Does not diagnose, treat, or
+          prescribe. Always consult a qualified healthcare professional.
         </p>
         <p className="footer-copy">
           We only use your email to notify you about the beta. © 2026 PharmaOrb.

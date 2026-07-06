@@ -18,9 +18,8 @@ export function Nav({ theme, onToggleTheme }: NavProps) {
         </a>
         <div className="nav-links">
           <a href="#sources">Sources</a>
-          <a href="#how-it-works">Workflow</a>
+          <a href="#how-it-works">How it works</a>
           <a href="#evidence">Evidence</a>
-          <a href="#features">Deliverables</a>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <button

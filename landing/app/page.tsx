@@ -2,6 +2,7 @@
 
 import { Nav } from "@/components/Nav";
 import { Hero } from "@/components/Hero";
+import { VideoShowcase } from "@/components/VideoShowcase";
 import { Stats } from "@/components/Stats";
 import {
   Manifesto,
@@ -29,6 +30,7 @@ export default function Home() {
       <hr className="rule" />
       <Manifesto />
       <hr className="rule" />
+      <VideoShowcase />
       <Stats />
       <hr className="rule" />
       <Sources />
