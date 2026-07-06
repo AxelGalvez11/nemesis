@@ -29,6 +29,7 @@ import { balanceCitedSlice } from "./cite-balance.ts";
 import { buildSubQueries, extractSearchTerms } from "./search-query.ts";
 import { expandSymptomQuery } from "./symptom-expansion.ts";
 import { espellCorrect } from "../core-source-sync/providers/pubmed.ts";
+import { normalizeResearchQuery, queryNormalizeEnabled } from "./query-normalize.ts";
 import { decideNewsGate } from "./news-gate.ts";
 import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
@@ -616,18 +617,24 @@ async function augmentWithLive(
     // instead of generic drug papers; the field-scoped + adverse-event sources (openFDA/FAERS/trials)
     // keep the literal drug `term`. This is the lever behind the side-effects/interaction/mechanism gap.
     let researchQuery = understood.researchQuery;
-    // Typo-correct the research string ONLY on the no-drug path (general/benign topics like
-    // "metfromin and the livr"). When classify pulled a literal drug mention we leave the query alone —
-    // espell only ever rewrites the research search string, never the literal `term`/entityMentions the
-    // fabrication guard checks, so a real-but-new drug is still found by name and a fabricated one still
-    // finds nothing. Best-effort: espellCorrect returns the query unchanged on any failure.
-    // EXCEPTION: skip espell when the gated symptom expansion produced the research string (e.g.
-    // "skin itchy") — that string is already a clean, bare symptom phrase, and PubMed's espell
-    // endpoint is verified (see diagnosis) to "correct" unusual-shaped multi-word phrases into
-    // garbage (e.g. "why" -> "ho") rather than improve them. `symptomExpansion` is null whenever the
-    // flag is off or no why-frame matched, so this exception can only trigger on the new gated path —
-    // the espell call still runs, unchanged, for every case it ran for before this fix.
-    if (understood.fieldMentions.length === 0 && !symptomExpansion) {
+    // Typo-correct the research string. QUERY_NORMALIZE on: one classify-tier LLM pass fixes
+    // typos to intent on every research query (told to keep drug/medical terms exact; the
+    // deterministic gate in acceptNormalized rejects any shape-changing rewrite, any rewrite
+    // that loses a literal drug mention, and any rewrite that paraphrases away the
+    // isSafetyCriticalQuery trigger gating the FDA-enforcement/toxicology sources) and fully
+    // supersedes espell — whose medical-only dictionary mangles conversational text ("why is
+    // my skin itchy" -> "ho is my skin itchy"). It also catches typos that survive INSIDE the
+    // symptom-expanded phrase ("skn itchey" stays typo'd after frame-stripping). Flag off:
+    // byte-identical legacy path — espell on the no-drug path only, skipped when the gated
+    // symptom expansion produced the research string (already a clean, bare symptom phrase;
+    // espell is verified to "correct" unusual-shaped multi-word phrases into garbage, e.g.
+    // "why" -> "ho"). Either way only the research search string is rewritten, never the
+    // literal `term`/entityMentions the fabrication guard checks, so a real-but-new drug is
+    // still found by name and a fabricated one still finds nothing. Both are best-effort and
+    // return the query unchanged on any failure.
+    if (queryNormalizeEnabled()) {
+      researchQuery = await normalizeResearchQuery(researchQuery, understood.fieldMentions);
+    } else if (understood.fieldMentions.length === 0 && !symptomExpansion) {
       researchQuery = await espellCorrect(researchQuery);
     }
     const live = await gatherLiveCandidates({ query: term, mentions: understood.fieldMentions, researchQuery, perSourceMax });
