@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ResearchProgressStep, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
-import { simplifiedModesEnabled } from "@/lib/env";
+import { deliverablesOnCommandEnabled, simplifiedModesEnabled } from "@/lib/env";
+import { detectDeliverableIntent, type DeliverableFormat } from "@/lib/deliverable-intent";
 import { askQuestion, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
@@ -208,10 +209,13 @@ function AskPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   // Slides skill: `slidesArmedRef` is set when the user clicks Skills → Slides but hasn't sent yet.
   // On the next submit we consume it and, for a research run, record THAT turn's index in
-  // `slidesIntentRef` so the completed report auto-exports to PowerPoint. Keyed by index (not a single
-  // boolean) so two concurrent runs — the research branch never sets `busy` — don't cross wires.
+  // `exportIntentRef` so the completed report auto-exports to the matching file. Keyed by index (not
+  // a single boolean) so two concurrent runs — the research branch never sets `busy` — don't cross
+  // wires. Maps a turn index to the export format to run when that turn's report completes: "pptx"
+  // from the Skills → Slides menu action (unchanged), or "pptx"/"docx" from a typed deliverable
+  // request detected by lib/deliverable-intent.ts when NEXT_PUBLIC_DELIVERABLES_ON_COMMAND is on.
   const slidesArmedRef = useRef(false);
-  const slidesIntentRef = useRef<Set<number>>(new Set());
+  const exportIntentRef = useRef<Map<number, "pptx" | "docx">>(new Map());
 
   const latest = turns[turns.length - 1];
   // The most recent COMPLETED answer drives the evidence panel + topbar, so the panel doesn't blank
@@ -347,8 +351,19 @@ function AskPage() {
 
   // Turn slot `idx` into a running research card and kick off the run. `searchQ` may be enriched with
   // clarifying answers, while `displayQ` stays the readable original (shown on the card + saved).
-  const launchResearch = useCallback(async (idx: number, displayQ: string, searchQ: string, runMode: ReportMode, subQuestions?: string[]) => {
-    setTurns((prev) => prev.map((t, i) => (i === idx ? { q: displayQ, a: null, err: null, research: { runId: "", mode: runMode, title: displayQ, error: null, proGate: false } } : t)));
+  // `bubbleQ` is what the chat bubble shows — normally identical to `displayQ`, but for a detected
+  // deliverable command it's the user's own typed words ("make me slides on statin safety") while
+  // `displayQ`/searchQ carry just the stripped topic ("statin safety") that the report is titled and
+  // searched from. `deliverableLabel`/`deliverableNote` (when set) flow onto the run card so a
+  // deliverable request stays honestly visible while the report builds — see ResearchRunCard.
+  const launchResearch = useCallback(async (
+    idx: number, displayQ: string, searchQ: string, runMode: ReportMode, subQuestions?: string[],
+    deliverableLabel?: DeliverableFormat, deliverableNote?: string, bubbleQ?: string,
+  ) => {
+    setTurns((prev) => prev.map((t, i) => (i === idx ? {
+      q: bubbleQ ?? displayQ, a: null, err: null,
+      research: { runId: "", mode: runMode, title: displayQ, error: null, proGate: false, deliverableLabel, deliverableNote },
+    } : t)));
     try {
       const runId = await startResearch(searchQ, runMode, subQuestions);
       setTurns((prev) => prev.map((t, i) => (i === idx && t.research ? { ...t, research: { ...t.research, runId } } : t)));
@@ -470,25 +485,58 @@ function AskPage() {
     // records it below; a plain ask clears it and moves on.
     const wantSlides = slidesArmedRef.current;
     slidesArmedRef.current = false;
-    phCapture("ask_submitted", { mode });
+    // Deliverable-on-command (flag-gated, off by default — see lib/env.ts): when on, a pure grammar
+    // check looks for a COMMAND to produce a named artifact ("make me slides on X", "write a document
+    // about Y", "make a poster on Z") in the raw typed text. `deliverable` stays null unless the flag
+    // is on AND the detector actually fires, so every read of `deliverable?.` below collapses to the
+    // exact flag-off code path — nothing new runs when the flag is off. Detection never touches `mode`
+    // (setMode is async and wouldn't take effect until the NEXT submit — see comment on `runMode`
+    // below), so it must drive this call directly rather than routing through armSlides()/setMode().
+    const deliverable = deliverablesOnCommandEnabled ? detectDeliverableIntent(text) : null;
+    const isDeliverableCommand = Boolean(deliverable?.isDeliverable);
+    phCapture("ask_submitted", isDeliverableCommand ? { mode, deliverable: deliverable!.format } : { mode });
     // Deep research / structured review run INLINE in the thread: append a turn whose body is a
     // research-run card that streams live progress, then becomes a "Report ready" card linking to the
     // full report in the Reports library. It runs in the background (no global busy lock), so the user
-    // can keep chatting while it works.
-    if (mode === "deep" || mode === "structured_review" || mode === "discovery" || mode === "lab_draft") {
+    // can keep chatting while it works. A detected deliverable command ALSO enters this branch (it
+    // always wants a deep-research report to export from), even if the composer dial is sitting on a
+    // plain ask mode — this is the "type it, don't click a menu" path the owner asked for.
+    if (isDeliverableCommand || mode === "deep" || mode === "structured_review" || mode === "discovery" || mode === "lab_draft") {
       // Deep research runs the engine's "meta" pipeline: the full structured review (documented
       // method, cited sections) PLUS a code-computed pooled estimate when the studies are genuinely
       // comparable — and an honest "no pooled estimate could be computed" note when they aren't
       // (meta-prose.ts degrades gracefully; parsePico → null skips pooling entirely). One tool, not
       // two: the old separate "Meta-analysis" mode is folded in. Discovery adds claim cards, gap
       // analysis, hypotheses, and a next-study design; lab_draft produces a study-design scaffold
-      // (not a runnable protocol).
-      const runMode: ReportMode = mode === "lab_draft" ? "lab_draft" : mode === "discovery" ? "discovery" : mode === "structured_review" ? "structured_review" : "meta";
+      // (not a runnable protocol). A detected deliverable always runs the "meta" (Deep research)
+      // pipeline — slides/documents/posters are built FROM a deep-research report, not a lighter mode.
+      const runMode: ReportMode = isDeliverableCommand ? "meta"
+        : mode === "lab_draft" ? "lab_draft" : mode === "discovery" ? "discovery" : mode === "structured_review" ? "structured_review" : "meta";
       phCapture("research_started", { mode: runMode });
       const ridx = turns.length;
-      if (wantSlides) slidesIntentRef.current.add(ridx);
+      // SLIDES is fully wired (existing armSlides path, unchanged). DOCUMENT reuses the existing docx
+      // export route (also fully wired — apps/web/app/api/reports/[id]/export/docx already exists).
+      // POSTER has no export today (ResearchPoster is dev-preview only, no live route) — it honestly
+      // falls back to a normal deep-research report; see the "coming soon" note added to that turn.
+      if (wantSlides) exportIntentRef.current.set(ridx, "pptx");
+      else if (isDeliverableCommand && deliverable!.format === "slides") exportIntentRef.current.set(ridx, "pptx");
+      else if (isDeliverableCommand && deliverable!.format === "document") exportIntentRef.current.set(ridx, "docx");
+      // The report itself is scoped/searched/titled from the stripped `topic` ("statin safety", not
+      // "make me slides on statin safety") so it reads like a normal research report, not an echo of
+      // the command. The user's own typed words stay the DISPLAY text (`displayText`) passed to
+      // launchResearch below, so the chat bubble always shows exactly what they typed.
+      const searchText = isDeliverableCommand ? deliverable!.topic : text;
+      const displayText = text;
+      const posterFallback = isDeliverableCommand && deliverable!.format === "poster";
+      // Honest surfacing: while scoping/running, this turn's research card shows what's actually
+      // happening ("Building your slides on statin safety…"), not a silent reinterpretation. See
+      // deliverableLabel/deliverableNote on Turn/ResearchCard and their render in ResearchRunCard.
+      const deliverableLabel: DeliverableFormat | undefined = isDeliverableCommand ? (deliverable!.format ?? undefined) : undefined;
+      const deliverableNote = posterFallback
+        ? `Poster export isn't built yet — building a deep-research report on "${searchText}" instead.`
+        : undefined;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
-      setTurns((prev) => [...prev, { q: text, a: null, err: null, scoping: true }]);
+      setTurns((prev) => [...prev, { q: displayText, a: null, err: null, scoping: true, deliverableLabel, deliverableNote }]);
       setQuestion("");
       if (taRef.current) taRef.current.style.height = "auto";
       // Tools are SINGLE-SHOT (the ChatGPT behavior): this run is launched, so the composer returns
@@ -496,11 +544,15 @@ function AskPage() {
       setMode(DEFAULT_DEPTH);
       // Scope (clarifying questions) and the pre-run plan (editable sub-questions) are independent,
       // best-effort steps — fetch both in parallel so the "scoping…" wait isn't doubled.
-      const [scope, plan] = await Promise.all([scopeResearch(text), planResearchPreview(text, runMode)]);
+      const [scope, plan] = await Promise.all([scopeResearch(searchText), planResearchPreview(searchText, runMode)]);
       if (scope.needs_clarification || plan.length) {
-        setTurns((prev) => prev.map((t, i) => (i === ridx ? { q: text, a: null, err: null, scope: { question: text, runMode, questions: scope.questions, plan } } : t)));
+        // A fresh object (NOT `{ ...t, ... }`) — `t` at this index is still the `scoping: true`
+        // placeholder pushed above, and the render ternary checks `t.scoping` before `t.scope`, so
+        // carrying `scoping: true` forward here would leave the turn stuck on the "Scoping…" shimmer
+        // forever instead of showing the clarifying-questions/plan UI. Matches the pre-existing pattern.
+        setTurns((prev) => prev.map((t, i) => (i === ridx ? { q: displayText, a: null, err: null, scope: { question: searchText, runMode, questions: scope.questions, plan, deliverableLabel, deliverableNote, bubbleQ: displayText } } : t)));
       } else {
-        void launchResearch(ridx, text, text, runMode);
+        void launchResearch(ridx, searchText, searchText, runMode, undefined, deliverableLabel, deliverableNote, displayText);
       }
       return;
     }
@@ -650,9 +702,9 @@ function AskPage() {
                 </div>
                 <div className="ai-body">
                   {t.scoping ? (
-                    <div className="thinking"><div className="think-row"><span className="shimmer">Scoping your question…</span></div></div>
+                    <div className="thinking"><div className="think-row"><span className="shimmer">{t.deliverableLabel ? `Building your ${t.deliverableLabel} — scoping the research first…` : "Scoping your question…"}</span></div></div>
                   ) : t.scope ? (
-                    <ScopeTurn state={t.scope} onRun={(enriched, subQuestions) => void launchResearch(i, t.scope!.question, enriched, t.scope!.runMode, subQuestions)} />
+                    <ScopeTurn state={t.scope} onRun={(enriched, subQuestions) => void launchResearch(i, t.scope!.question, enriched, t.scope!.runMode, subQuestions, t.scope!.deliverableLabel, t.scope!.deliverableNote, t.scope!.bubbleQ)} />
                   ) : t.research ? (
                     <>
                       <ResearchRunCard
@@ -660,19 +712,22 @@ function AskPage() {
                         onProgress={setActiveRunProgress}
                         onComplete={(r) => {
                           void persistResearchTurn(i, t.q, t.research!.mode, r);
-                          // Slides skill: if THIS turn asked for slides, export its report to PowerPoint
-                          // once. `downloadReportExport` needs the saved report id; if it's missing (no
-                          // report row) or the download throws, show a neutral fallback — the report is
-                          // already saved and the "Report ready" card links to it for a manual export.
-                          if (slidesIntentRef.current.has(i)) {
-                            slidesIntentRef.current.delete(i);
+                          // Slides skill (or a typed "make me slides/a document…" deliverable command,
+                          // see submit()): if THIS turn armed an export, run it once. `downloadReportExport`
+                          // needs the saved report id; if it's missing (no report row) or the download
+                          // throws, show a neutral fallback — the report is already saved and the "Report
+                          // ready" card links to it for a manual export.
+                          const fmt = exportIntentRef.current.get(i);
+                          if (fmt) {
+                            exportIntentRef.current.delete(i);
+                            const label = fmt === "docx" ? "your document" : "your slides";
                             if (r.savedReportId) {
-                              setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: "Opening your slides — check your downloads." } : x)));
-                              void downloadReportExport(r.savedReportId, "pptx", "vancouver").catch(() => {
-                                setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: "Couldn’t export slides automatically — open the report to download." } : x)));
+                              setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: `Opening ${label} — check your downloads.` } : x)));
+                              void downloadReportExport(r.savedReportId, fmt, "vancouver").catch(() => {
+                                setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: `Couldn’t export ${label} automatically — open the report to download.` } : x)));
                               });
                             } else {
-                              setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: "Couldn’t export slides automatically — open the report to download." } : x)));
+                              setTurns((prev) => prev.map((x, j) => (j === i ? { ...x, slidesNote: `Couldn’t export ${label} automatically — open the report to download.` } : x)));
                             }
                           }
                         }}
@@ -712,6 +767,11 @@ interface ResearchCard {
   error: string | null;
   proGate: boolean;
   completed?: { savedReportId: string | null; sources: number }; // set when rehydrated from a saved chat
+  // Set only for a run launched from a detected deliverable command — surfaces the honest
+  // "Building your slides on {title}…" framing instead of the generic "Deep research running…".
+  // deliverableNote (when set) is the poster-fallback disclosure ("Poster export isn't built yet…").
+  deliverableLabel?: DeliverableFormat;
+  deliverableNote?: string;
 }
 
 // A research card loaded from a saved chat is already complete — render the "Report ready" state
@@ -728,6 +788,11 @@ interface ScopeTurnState {
   questions: ScopeQuestion[];
   /** The engine's planned sub-questions (3-6), shown as editable rows above the run actions. May be empty. */
   plan: string[];
+  // Carried through from a detected deliverable command (see submit()) so a clarification round
+  // doesn't drop the armed export or the honest "building your slides…" framing.
+  deliverableLabel?: DeliverableFormat;
+  deliverableNote?: string;
+  bubbleQ?: string;
 }
 
 interface Turn {
@@ -739,6 +804,11 @@ interface Turn {
   scoping?: boolean;       // brief: the scope step is running before we know if clarification is needed
   thinkSecs?: number;      // wall-clock seconds the engine spent before this turn's answer arrived ("Thought for Xs")
   slidesNote?: string;     // set when a Slides-skill run finished: either a "opening PowerPoint" note or a neutral fallback
+  // Set only when a typed deliverable command was detected (NEXT_PUBLIC_DELIVERABLES_ON_COMMAND) —
+  // drives the honest "Building your slides…" copy on the brief scoping placeholder before `research`
+  // exists yet. Once `research` is set, ResearchCard.deliverableLabel/deliverableNote take over.
+  deliverableLabel?: DeliverableFormat;
+  deliverableNote?: string;
 }
 
 interface ComposerProps {
@@ -1180,6 +1250,18 @@ function ResearchRunCard({ card, onComplete, onProgress }: { card: ResearchCard;
       </div>
     );
   }
+  // Deliverable-on-command framing (see submit() in AskPage): when this run was launched from a
+  // typed "make me slides on X" / "write a document about Y" / "make a poster on Z" command, name the
+  // artifact honestly instead of the generic mode label — this IS the "surface it honestly" requirement,
+  // reusing this same research-run card rather than any silent reinterpretation. A poster request has
+  // no export today (deliverableNote carries the fallback disclosure, shown once the report is done) —
+  // so its RUNNING label says "report" up front rather than promising a poster it can't yet produce.
+  const deliverableWord = card.deliverableLabel === "slides" ? "slides"
+    : card.deliverableLabel === "document" ? "document"
+    : card.deliverableLabel === "poster" ? "report"
+    : null;
+  const runningLabel = deliverableWord ? `Building your ${deliverableWord} on ${card.title}…` : `${modeLabel} running…`;
+
   if (done) {
     return (
       <div className="research-done">
@@ -1188,6 +1270,7 @@ function ResearchRunCard({ card, onComplete, onProgress }: { card: ResearchCard;
           <span className="research-card-title">Report ready: {done.title}</span>
           <small>{done.sources} sources · {modeLabel}</small>
         </Link>
+        {card.deliverableNote ? <p className="tmpl-note">{card.deliverableNote}</p> : null}
         <div className="msg-actions">
           <button type="button" className="chip-action" onClick={() => setShowMission((v) => !v)} aria-expanded={showMission}>
             <Icon name="bell" size={14} />Repeat this research
@@ -1202,8 +1285,8 @@ function ResearchRunCard({ card, onComplete, onProgress }: { card: ResearchCard;
       {/* Manus-style one-line acknowledgement, shown only for a real research run (this branch renders
           solely while a deep-research / systematic-review / discovery / lab-draft run is live) — an
           honest "I'm on it" before the progress steps. Plain fast asks never reach here. */}
-      <p className="agent-ack">Researching this now — gathering and citing sources.</p>
-      <div className="ai-block-label"><Icon name="sparkle" size={14} /> {modeLabel} running…</div>
+      <p className="agent-ack">{card.deliverableLabel === "poster" ? "Poster export is coming soon — building a cited deep-research report on this instead." : deliverableWord ? `Building your ${deliverableWord} — gathering and citing sources first.` : "Researching this now — gathering and citing sources."}</p>
+      <div className="ai-block-label"><Icon name="sparkle" size={14} /> {runningLabel}</div>
       <ResearchProgress steps={run?.progress ?? []} done={false} />
     </div>
   );

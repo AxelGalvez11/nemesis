@@ -30,6 +30,13 @@ export const engineVisualsEnabled = process.env.NEXT_PUBLIC_ENGINE_VISUALS === "
 // 6-mode dial, byte-identical. The Auto routing reuses the existing fast/thorough engine paths.
 export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "true";
 
+// Deliverables-on-command — DEFAULT OFF. When "true", a typed message like "make me slides on X" /
+// "write a document about Y" / "make a poster on Z" is detected (see lib/deliverable-intent.ts) and
+// auto-routes to the deep-research report pipeline with the matching export armed, instead of the
+// user having to open the "+" menu and click a Skill first. Off ⇒ submit() behaves exactly as today
+// (byte-identical) — the SKILLS menu entries remain the only way to arm a deliverable export.
+export const deliverablesOnCommandEnabled = process.env.NEXT_PUBLIC_DELIVERABLES_ON_COMMAND === "true";
+
 // Bot-protection CAPTCHA (Cloudflare Turnstile + Supabase native enforcement) — DEFAULT OFF.
 // When NEXT_PUBLIC_TURNSTILE_SITE_KEY is set, the sign-in/sign-up forms render a Turnstile widget
 // and pass its token to Supabase auth (options.captchaToken). Off (no key) ⇒ no widget, no token,
