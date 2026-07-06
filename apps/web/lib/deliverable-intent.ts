@@ -26,7 +26,11 @@ const NOT_DELIVERABLE: DeliverableIntent = { isDeliverable: false, format: null,
 
 // Imperative verbs that can head a deliverable command.
 const VERB = "(?:make|create|build|draft|write|generate|prepare|put together)";
-// Optional polite prefix ("can you", "could you", "please", "i need", "i want", combinations thereof).
+// Optional polite prefix before the imperative VERB below ("can you make…", "could you build…",
+// "please draft…", "i'd like to make…", "i want you to write…"). NOTE: this prefix only strips a
+// lead-in — VERB is still mandatory right after it, so "i need a poster on X" (no verb) does NOT
+// match; only "i need you to make a poster on X" does. That's intentional fail-safe behavior (a
+// missed deliverable command falls through to a normal question, never a false hijack), not a bug.
 const PREFIX = "(?:^|^(?:hey\\s+)?(?:can|could|would)\\s+you\\s+|^please\\s+|^i(?:'d|\\s+would)?\\s+(?:like|want|need)\\s+(?:you\\s+to\\s+)?|^i\\s+need\\s+)";
 // Optional subject between verb and format noun ("me", "us", "me a", "me some", "a", "some", "an").
 const SUBJECT = "(?:me|us)?\\s*(?:a|an|some)?\\s*";
