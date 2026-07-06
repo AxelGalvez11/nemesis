@@ -131,10 +131,51 @@ values); verify every phase with `npm run build` + screenshots against the captu
 
 ---
 
-## Part C — The X post (@synscience status 2073829478393086311)
+## Part C — The X post → resolved: `synthetic-sciences/openscience`
 
-Unretrievable from this environment (x.com + all mirrors blocked by egress policy; not indexed by
-search). Owner to paste screenshot/text; fold whatever it shows into the relevant phase above.
+The post pointed at **OpenScience** (github.com/synthetic-sciences/openscience, Apache-2.0) — an
+open-source "AI scientist": goal in → literature review → hypothesis → code → experiment →
+critique → LaTeX write-up. Recon verdict (full analysis 2026-07-06, local clone inspected): it is
+an **opencode fork** — Bun/Hono server + SolidJS workspace — architecturally **single-tenant and
+local-only** (loopback server, git-snapshot state, local shell/FS tools, one unauthenticated
+broadcast event stream). **Not a drop-in backend for a hosted multi-tenant product.** The value is
+portable IP, adopted as Part D below. Attribution: keep an Apache-2.0 NOTICE entry for any code
+lifted.
+
+## Part D — What we lift from OpenScience (ranked by value ÷ friction)
+
+1. **Science database connectors** (`backend/cli/src/science/connectors/**`) — *code, near drop-in.*
+   ~35 thin fetch+normalize modules behind a uniform `Connector` interface exposed as two tools
+   (`science_list_dbs`, `science_search`). Port the interface + modules into our Deno edge
+   functions beside `live-sources.ts`. Net-new for PharmaOrb: chemistry (ChEMBL, PubChem,
+   BindingDB), targets/structures (UniProt, PDB, AlphaFold, OpenTargets), variants (ClinVar,
+   gnomAD), pathways (Reactome, STRING), plus biorxiv/crossref/semantic-scholar for literature.
+   Overlapping PubMed/EuropePMC/OpenAlex code can inform our existing providers.
+2. **The critic/reviewer sub-agent design** (`agent/prompt/{critique,reviewer}.txt` +
+   `science/provenance/store.ts`) — *prompt + pattern IP, portable verbatim.* Blind adversarial
+   reviewer (generator's reasoning withheld), "trace every number to provenance or presume
+   fabricated", BLOCKING-vs-OBSERVATION checklists, content-addressed provenance DAG (ours becomes
+   a Postgres table). Directly strengthens our verify/fabrication story — on-moat.
+3. **PRISMA-adapted literature-review loop** (`agent/prompt/literature-review.txt`,
+   `research.txt`) — *pattern.* Facet fan-out (3–5 parallel reviews) → screening → zero-tolerance
+   citation verification → synthesis, with hard file-gates between 8 pipeline stages (scope /
+   literature / reason / methodology / compute / analyze / synthesize / write). Maps onto our
+   research orchestrator; gates persist to Supabase instead of local markdown.
+4. **Inline scientific artifact renderers** (`frontend/workspace/src/science/**`) — *code, medium
+   friction (SolidJS → React rewrite).* Registry/dispatcher keyed on a `metadata.artifact =
+   {kind, data}` envelope; renderers for molecules (molstar/3dmol), 2D chemistry (RDKit wasm),
+   genome tracks (igv.js), LaTeX (katex), PDF (pdfjs). Copy the envelope contract now; port
+   renderers as the report surfaces need them.
+5. **The streaming agent-loop event protocol** (`session/processor.ts` part types over SSE) —
+   *blueprint only, do not lift code.* Typed parts (reasoning/text/tool-call/tool-result/step
+   deltas) reconciled client-side — the upgrade path from our 1500ms polling when Phase 1's run
+   view wants finer-grained streaming. Reimplement on our stack (same AI-SDK `fullStream`
+   primitive); the concrete Bus/SSE code is single-tenant.
+
+Explicit non-goals from OpenScience: its SolidJS workspace UI (we're building Manus, and it's the
+wrong framework), the Bun/Hono server, git-snapshot revert, local terminal/PTY, Atlas billing glue.
+A per-task sandboxed cloud computer (Manus-style, possibly running OpenScience inside) is a
+possible later phase — real infrastructure work, not part of this plan.
 
 ---
 
@@ -144,7 +185,11 @@ search). Owner to paste screenshot/text; fold whatever it shows into the relevan
    flag-gated fallback), and every demo of the new UI reads better when the engine stops refusing
    normal questions.
 2. **Phase 1 (run view)** second — highest-leverage UI work; makes the product feel like Manus.
-3. Phases 2→3→4 next (shell, top bar, home), then 5–6.
+   Design its progress vocabulary around the Part D #3 pipeline stages so the tracker reads like
+   OpenScience's research loop.
+3. **Part D #1–2 (connectors + critic/provenance)** third — pure-backend evidence expansion that
+   the new run view then shows off.
+4. Phases 2→3→4 next (shell, top bar, home), then 5–6 and remaining Part D items.
 
 Delivery: each part/phase = one PR-sized branch off `main`; conventional commits; deno tests for
 engine changes, `npm run build` for web. `main` auto-deploys to production — merges are
