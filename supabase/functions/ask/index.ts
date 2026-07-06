@@ -27,6 +27,7 @@ import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
 import { balanceCitedSlice } from "./cite-balance.ts";
 import { buildSubQueries, extractSearchTerms } from "./search-query.ts";
+import { expandSymptomQuery } from "./symptom-expansion.ts";
 import { espellCorrect } from "../core-source-sync/providers/pubmed.ts";
 import { decideNewsGate } from "./news-gate.ts";
 import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
@@ -112,6 +113,12 @@ const THOROUGH_RECALL_POOL = 40; // merged dense candidates kept (thorough) when
 // flag so deploying this code is non-breaking: with LIVE_SOURCES unset the pipeline is byte-for-byte
 // the dense-only behavior the gate/guardrail suite locks in. The owner flips LIVE_SOURCES=on to enable.
 const LIVE_SOURCES_ON = Deno.env.get("LIVE_SOURCES") === "on";
+// Symptom-question retrieval breadth: gated INDEPENDENTLY of LIVE_SOURCES (nests inside the
+// LIVE_SOURCES_ON branch below). With LIVE_SOURCES=on and this flag unset/off, augmentWithLive's
+// researchQuery is byte-identical to today's `extractSearchTerms(question) || question` — the new
+// symptom expansion (why-is-my-X -> clinical term, e.g. "pruritus") is only consulted when this flag
+// is "on". Off by default so deploying this code changes nothing until explicitly enabled.
+const SYMPTOM_RETRIEVAL_BREADTH_ON = Deno.env.get("SYMPTOM_RETRIEVAL_BREADTH") === "on";
 const LIVE_PER_SOURCE_MAX = 8; // how many candidates to pull per live source before the merge/rerank
 // Thorough mode also casts a WIDER candidate net per live source (more abstracts/trials feed the rerank),
 // which — paired with the bigger THOROUGH_MATCH_COUNT slice above — lets the deeper search surface AND show
@@ -332,7 +339,7 @@ async function runAsk(
   let guardPool: RetrievedChunk[] = ret.chunks;
   if (LIVE_SOURCES_ON) {
     const labelCap = noDrugGeneralHealth ? 0 : undefined;
-    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount, webRecon, labelCap);
+    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount, webRecon, labelCap, noDrugGeneralHealth);
     guardPool = aug.pool;
     ret = { ...ret, chunks: aug.top };
   }
@@ -567,6 +574,7 @@ async function augmentWithLive(
   matchCount: number = MATCH_COUNT,
   webRecon?: WebReconResult,
   labelCap?: number,
+  noDrugGeneralHealth = false,
 ): Promise<{ pool: RetrievedChunk[]; top: RetrievedChunk[] }> {
   // top feeds the generator and must stay matchCount-sized even when augmentation fails and even when
   // libChunks is now a bigger multi-query recall pool (Task 3b) — otherwise the generator would see the
@@ -574,7 +582,16 @@ async function augmentWithLive(
   // is already <= matchCount (today's dense-only path), slice is a no-op, so this stays byte-identical.
   const fallback = { pool: libChunks, top: libChunks.slice(0, matchCount) };
   try {
-    const baseResearchQuery = extractSearchTerms(question) || question;
+    // GATED (SYMPTOM_RETRIEVAL_BREADTH=on), no-drug symptom questions ONLY: try the "why is my X"
+    // clinical-term expansion first. Falls back to the EXACT existing expression the instant the
+    // flag is off, expandSymptomQuery finds no "why" frame, or entityMentions is non-empty (a named
+    // drug already gives PubMed/MedlinePlus a term that matches) — so this can only ever ADD a
+    // candidate base string, never replace/degrade the one today's code already computes.
+    const symptomExpansion =
+      SYMPTOM_RETRIEVAL_BREADTH_ON && noDrugGeneralHealth && entityMentions.length === 0
+        ? expandSymptomQuery(question)
+        : null;
+    const baseResearchQuery = symptomExpansion?.expandedQuery || extractSearchTerms(question) || question;
     const understood = webRecon
       ? applyReconToUnderstanding(understandQuery(question, entityMentions, baseResearchQuery), webRecon)
       : understandQuery(question, entityMentions, baseResearchQuery);
@@ -592,7 +609,13 @@ async function augmentWithLive(
     // espell only ever rewrites the research search string, never the literal `term`/entityMentions the
     // fabrication guard checks, so a real-but-new drug is still found by name and a fabricated one still
     // finds nothing. Best-effort: espellCorrect returns the query unchanged on any failure.
-    if (understood.fieldMentions.length === 0) {
+    // EXCEPTION: skip espell when the gated symptom expansion produced the research string (e.g.
+    // "skin itchy") — that string is already a clean, bare symptom phrase, and PubMed's espell
+    // endpoint is verified (see diagnosis) to "correct" unusual-shaped multi-word phrases into
+    // garbage (e.g. "why" -> "ho") rather than improve them. `symptomExpansion` is null whenever the
+    // flag is off or no why-frame matched, so this exception can only trigger on the new gated path —
+    // the espell call still runs, unchanged, for every case it ran for before this fix.
+    if (understood.fieldMentions.length === 0 && !symptomExpansion) {
       researchQuery = await espellCorrect(researchQuery);
     }
     const live = await gatherLiveCandidates({ query: term, mentions: understood.fieldMentions, researchQuery, perSourceMax });
