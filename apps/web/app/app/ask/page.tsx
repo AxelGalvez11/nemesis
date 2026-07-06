@@ -230,6 +230,24 @@ function AskPage() {
   // scroll until after React applies the open state and the drawer's slide-in begins laying out.
   const { setEvidence, setTopbar, openEvidence, bumpChats, bumpUsage } = chrome;
 
+  // Sidebar "New chat" pressed (chrome.newChatNonce bumps on every click). router.push("/app/ask")
+  // alone is a NO-OP when the current chat is unsaved — the URL is already bare /app/ask, so no
+  // navigation happens, cParam never changes, and the old thread stayed on screen (the reported
+  // "New chat button doesn't work"). The nonce makes the reset unconditional. Mid-request state is
+  // safe: an in-flight answer's setLast patch maps over the now-empty turns array (a no-op).
+  const seenNonceRef = useRef(chrome.newChatNonce);
+  useEffect(() => {
+    if (chrome.newChatNonce === seenNonceRef.current) return; // initial mount — nothing was clicked
+    seenNonceRef.current = chrome.newChatNonce;
+    loadedConvRef.current = null; creatingConvRef.current = null;
+    setConversationId(null); setTurns([]); setQuestion("");
+    setActiveTag(null); setActiveQuote(null); setActiveAnswer(null);
+    setRevealIdx(null); setChatLoadError(null); setLoadingChat(false);
+    appliedProjectRef.current = false;
+    setProjectId(null); setProjectName(""); setProjectInstructions("");
+    if (taRef.current) taRef.current.style.height = "auto";
+  }, [chrome.newChatNonce]);
+
   // Load a saved chat when the URL targets one (?c=<id>); reset to a blank chat when it doesn't.
   // loadedConvRef stops us re-fetching a conversation we just created in this session.
   useEffect(() => {
