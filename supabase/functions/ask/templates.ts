@@ -48,6 +48,16 @@ export const GREETING_COPY =
   "mechanism, or what the research says about a treatment, and I'll pull the sources. What would " +
   "you like to look into?";
 
+/** Fresh-info lane reply (lane-router.ts, gated LANE_ROUTER=on): a current-events / named-person
+ *  question with zero biomedical signal. Honest about the boundary — we do NOT pretend the evidence
+ *  library can answer live-web questions. Fixed copy (never model output). */
+export const FRESH_INFO_COPY =
+  "That looks like a live news or current-events question, and my library doesn't cover it — I " +
+  "work from vetted medical evidence (FDA labels, PubMed, clinical trials), which doesn't track " +
+  "things like sports schedules, people in the news, or market prices. A regular web search will " +
+  "serve you better for this one. If there's a health or medication angle you want checked " +
+  "against the actual evidence, ask me that and I'll pull the sources.";
+
 /** lab_draft hazardous-scope refusal — the request's PURPOSE was producing a dangerous substance,
  *  a weapon, or making a pathogen more dangerous. Refuse the scope, redirect to legitimate design.
  *  Fixed copy (never model output); not run through detectViolations. */

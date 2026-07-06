@@ -9,7 +9,7 @@
 --
 -- ACTIVATION (owner, gated — keeps the service key OUT of this migration text and out of any GUC):
 --   -- detection (in-app monitoring) — this is all that's needed for the in-app feature:
---   select vault.create_secret('https://<project-ref>.supabase.co/functions/v1/watch-check', 'watch_check_url');
+--   select vault.create_secret('https://<project-ref>.supabase.co/functions/v1/watch', 'watch_check_url');
 --   select vault.create_secret('<service-role-key>', 'watch_service_role_key');
 --   -- email digest (ONLY when also activating Resend: set RESEND_API_KEY + RESEND_FROM on the
 --   -- watch-digest function, then add this third secret so the daily digest fan-out begins):
