@@ -76,13 +76,14 @@
 /* New chat + Search chats: ChatGPT anatomy — plain unboxed rows, NOT filled/bordered buttons. Same
    36px-tall .hist shape as every other sidebar row (Library, Scheduled, Projects, Chats). They sit
    in .rail-top (above the scrolling <nav>) so they stay pinned while only the chats list scrolls. */
-.rail-top { padding: 4px 8px 6px; flex: none; }
+.rail-top { padding: 4px 6px 6px; flex: none; }
 .rail-top .hist { width: 100%; }
-.nav { flex: 1; overflow-y: auto; padding: 2px 8px 10px; }
+.nav { flex: 1; overflow-y: auto; padding: 2px 6px 10px; }
 .r-label { font-size: 11px; letter-spacing: 0.02em; color: var(--text-2); padding: 14px 10px 6px; font-weight: 600; }
-/* Manus nav row: 36px tall, radius follows --radius-sm (10px), padding 0 2px 0 8px, 8px icon gap. */
+/* ChatGPT nav row measured live 2026-07-07: 36px tall, radius 10px, padding 6px 10px (h fixed ->
+   0 10px), 8px icon gap, full-strength text (rgb 255/255/255 dark, not secondary), 6px rail gutters. */
 .hist {
-  display: flex; align-items: center; gap: 8px; padding: 0 2px 0 8px; height: 36px; border-radius: var(--radius-sm); color: var(--text-2);
+  display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 36px; border-radius: var(--radius-sm); color: var(--text);
   cursor: pointer; position: relative; white-space: nowrap; overflow: hidden; width: 100%; background: none; border: none; text-align: left; font-family: var(--font); font-size: 14px;
   transition: background 0.12s, color 0.12s;
 }

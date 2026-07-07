@@ -469,11 +469,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
 
             <div className="r-label">Projects</div>
-            {/* Projects workspaces (group chats + reports + watches). Lives on its own pages
-                (/app/projects + /app/projects/[id]) rather than inline in the rail. */}
-            <Link href="/app/projects" className="hist">
-              <Icon name="folder" className="hist-ic" />
-              <span style={{ fontSize: 12 }}>Projects</span>
+            {/* ChatGPT anatomy (measured live 2026-07-07): the Projects section lists YOUR projects as
+                folder rows (capped, newest-first as fetched), with one trailing row to the projects
+                home. A generic single "Projects" link is not the ChatGPT shape. */}
+            {(projects ?? []).slice(0, 5).map((p) => (
+              <Link key={p.id} href={`/app/projects/${p.id}`} aria-label={`Project ${p.name}`}
+                className={`hist${isActive(path, `/app/projects/${p.id}`) ? " active" : ""}`}>
+                <Icon name="folder" className="hist-ic" />
+                <span>{p.name}</span>
+              </Link>
+            ))}
+            <Link href="/app/projects" className={`hist${path === "/app/projects" ? " active" : ""}`}>
+              <Icon name="plus" className="hist-ic" />
+              <span>{(projects?.length ?? 0) > 5 ? "All projects" : "New project"}</span>
             </Link>
 
             <div className="rail-recents">

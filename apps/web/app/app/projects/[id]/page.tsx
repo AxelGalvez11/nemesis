@@ -29,6 +29,9 @@ import { AppModal } from "@/components/AppModal";
 const EMPTY: ProjectContents = { chats: [], reports: [], watches: [] };
 type Tab = "conversation" | "report" | "watch" | "map" | "sources";
 
+// Monitoring + Map hidden from the project surface (owner call 2026-07-07) — flip to restore.
+const LEGACY_PROJECT_TABS = false;
+
 // A project workspace (ChatGPT-Projects style): a "New chat in this project" composer, tabbed contents
 // (Chats / Reports / Monitoring) with the inline add-from-unassigned picker + per-item remove, and a
 // settings modal to rename / set description + instructions / delete. All reads/writes are RLS-scoped.
@@ -165,8 +168,12 @@ export default function ProjectWorkspacePage() {
       {contents ? (
         <>
           {/* Tabs */}
+          {/* Monitoring + Map tabs HIDDEN (owner call 2026-07-07): ChatGPT Projects are chats +
+              context, and these two read as engine clutter there. All their code paths (watch
+              items, ResearchMapView, mapActivated) are kept intact behind this flag for an easy
+              revert — nothing was deleted, the tabs just don't render. */}
           <div className="chip-row" role="tablist" aria-label="Project contents">
-            {(["conversation", "report", "watch"] as Tab[]).map((t) => {
+            {((LEGACY_PROJECT_TABS ? ["conversation", "report", "watch"] : ["conversation", "report"]) as Tab[]).map((t) => {
               const label = t === "conversation" ? "Chats" : t === "report" ? "Reports" : "Monitoring";
               const count = t === "conversation" ? contents.chats.length : t === "report" ? contents.reports.length : contents.watches.length;
               return (
@@ -177,11 +184,13 @@ export default function ProjectWorkspacePage() {
                 </button>
               );
             })}
-            <button type="button" role="tab" aria-selected={tab === "map"}
-              className={`chip-action${tab === "map" ? " active" : ""}`}
-              onClick={() => { setTab("map"); setOpenPicker(false); setMapActivated(true); }}>
-              Map
-            </button>
+            {LEGACY_PROJECT_TABS ? (
+              <button type="button" role="tab" aria-selected={tab === "map"}
+                className={`chip-action${tab === "map" ? " active" : ""}`}
+                onClick={() => { setTab("map"); setOpenPicker(false); setMapActivated(true); }}>
+                Map
+              </button>
+            ) : null}
             <button type="button" role="tab" aria-selected={tab === "sources"}
               className={`chip-action${tab === "sources" ? " active" : ""}`}
               onClick={() => { setTab("sources"); setOpenPicker(false); }}>

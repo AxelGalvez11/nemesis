@@ -56,7 +56,7 @@
   --warn: #b5760a; --danger: #cc3322; --info: #0278c0;
 
   /* layout + type */
-  --radius: 12px; --radius-sm: 10px; --rail: 300px; --rail-collapsed: 64px; --evidence: 344px;
+  --radius: 12px; --radius-sm: 10px; --rail: 260px; --rail-collapsed: 64px; --evidence: 344px;
   /* ChatGPT-measured radii (Probe 3): composer pill 28px · menu/modal 16px. --radius/--radius-sm
      stay as-is (used by ~60 unrelated cards/buttons) — these are dedicated additions so the
      ChatGPT-specific surfaces can opt in without re-skinning every card. */
@@ -100,7 +100,8 @@
   --line: #ffffff0f; --line-2: #ffffff1a;
   --text: #ffffff; --text-2: #b4b4b4; --text-3: #8f8f8f;
   --rail-bg: #000000;
-  --fill-hover: rgba(255, 255, 255, 0.04); --fill-active: rgba(255, 255, 255, 0.06);
+  /* ChatGPT dark sidebar fills measured live 2026-07-07: selected row rgba(255,255,255,.1). */
+  --fill-hover: rgba(255, 255, 255, 0.08); --fill-active: rgba(255, 255, 255, 0.10);
   --composer-border: rgba(255, 255, 255, 0.2); --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
   /* PharmaOrb brand mark color, pinned — see --orb-color comment in :root. The orb mark stays
      PharmaOrb's own brand green regardless of the ChatGPT skin retune. */
