@@ -285,6 +285,111 @@ export async function askQuestion(question: string, mode?: AskMode): Promise<Ask
   return body as AskResponse;
 }
 
+/** Streamed /ask (SSE): real pipeline milestones + the lead paragraph as the model writes it. */
+export interface AskStreamHandlers {
+  /** Real pipeline milestone ({stage:"understanding"|"searching"|"sources"|"writing", ...}). */
+  onStage?: (stage: { stage: string } & Record<string, unknown>) => void;
+  /** Safety-gated lead-paragraph text, in order. The final response SUPERSEDES streamed text. */
+  onDelta?: (text: string) => void;
+}
+
+/**
+ * Ask with streaming. Resolves with the SAME canonical AskResponse askQuestion returns — the
+ * terminal `complete` event — after relaying stage/delta events. Degrades cleanly: if the server
+ * flag is off (plain JSON reply) this behaves exactly like askQuestion, so the client flag can
+ * ship ahead of the fn deploy. Quota errors throw the same AskQuotaError shape either way.
+ */
+export async function askQuestionStream(
+  question: string,
+  mode: AskMode | undefined,
+  handlers: AskStreamHandlers,
+): Promise<AskResponse> {
+  if (isPreviewMode) return askQuestion(question, mode);
+
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to ask");
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/ask`, {
+    method: "POST",
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ question, use_health_context: false, stream: true, ...(mode ? { mode } : {}) }),
+  });
+
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/event-stream")) {
+    // Server streaming flag off (or an error status): identical handling to askQuestion.
+    const body = await res.json().catch(() => null);
+    if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
+      const err = new Error("quota_exceeded") as AskQuotaError;
+      err.quota = body as unknown as QuotaExceededError;
+      throw err;
+    }
+    if (!res.ok) throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `ask failed (${res.status})`);
+    return body as AskResponse;
+  }
+
+  if (!res.body) throw new Error("ask stream: empty body");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let complete: AskResponse | null = null;
+  let streamError: Record<string, unknown> | null = null;
+
+  const handleBlock = (block: string) => {
+    let event = "message";
+    const dataLines: string[] = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+    }
+    if (!dataLines.length) return;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return;
+    }
+    if (event === "delta" && isObj(payload) && typeof payload.text === "string") handlers.onDelta?.(payload.text);
+    else if (event === "stage" && isObj(payload) && typeof payload.stage === "string") {
+      handlers.onStage?.(payload as { stage: string } & Record<string, unknown>);
+    } else if (event === "complete") complete = payload as AskResponse;
+    else if (event === "error" && isObj(payload)) streamError = payload;
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let sep: number;
+      while ((sep = buf.indexOf("\n\n")) >= 0) {
+        handleBlock(buf.slice(0, sep));
+        buf = buf.slice(sep + 2);
+      }
+    }
+    if (buf.trim()) handleBlock(buf);
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (streamError) {
+    const errPayload: Record<string, unknown> = streamError;
+    if (errPayload.error === "quota_exceeded") {
+      const err = new Error("quota_exceeded") as AskQuotaError;
+      err.quota = errPayload as unknown as QuotaExceededError;
+      throw err;
+    }
+    throw new Error(typeof errPayload.error === "string" ? errPayload.error : "ask failed");
+  }
+  if (!complete) throw new Error("ask stream ended without a complete answer");
+  return complete;
+}
+
 export async function searchEntities(q: string): Promise<SearchResult[]> {
   const query = q.trim();
   if (!query) return [];

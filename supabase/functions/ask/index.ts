@@ -54,6 +54,7 @@ import {
   STANDARD_QUESTIONS,
 } from "./templates.ts";
 import { detectFreshInfo, detectGeneralAssistant, generalAssistantEnabled, laneRouterEnabled } from "./lane-router.ts";
+import { type AskEmit, askStreamingEnabled, makeLeadGate, sseAskResponse } from "./stream.ts";
 import type {
   AnswerNewsItem,
   AnswerTemplate,
@@ -148,6 +149,9 @@ serve(async (req) => {
     // (a benchmark/judge aid — see SourceText). Default false → normal answers are byte-for-byte
     // unchanged. The sources are the public databases the answer already cites.
     include_source_text?: boolean;
+    // SSE opt-in (ASK_STREAMING=on required): stage + safety-gated lead deltas + terminal complete
+    // event. Ignored (normal JSON body) when the flag is off, so an eager client degrades cleanly.
+    stream?: boolean;
   };
   try {
     body = await req.json();
@@ -164,6 +168,22 @@ serve(async (req) => {
   // Validate the speed/depth dial at the boundary: only the two known modes pass through; an unknown
   // or absent value becomes undefined → current behavior (mobile / older clients / saved-chat replays).
   const mode: AskMode | undefined = body.mode === "fast" || body.mode === "thorough" ? body.mode : undefined;
+
+  // SSE streaming (gated twice: the client asks AND the server flag is on). Same runAsk, same
+  // canonical response — it just also relays real milestones and the safety-gated lead as they
+  // happen. Errors travel as terminal events carrying the exact non-streaming bodies.
+  if (body.stream === true && askStreamingEnabled()) {
+    return sseAskResponse(
+      (emit) => runAsk(question, !!body.use_health_context, userId, !!body.include_source_text, mode, emit),
+      corsHeaders(req),
+      (e) => {
+        // payload already carries error:"quota_exceeded" — the exact 429 body the JSON path sends.
+        if (e instanceof QuotaExceeded) return { ...e.payload };
+        console.error("ask pipeline error:", (e as Error).message);
+        return { error: "ask failed" };
+      },
+    );
+  }
 
   try {
     const resp = await runAsk(question, !!body.use_health_context, userId, !!body.include_source_text, mode);
@@ -183,6 +203,10 @@ async function runAsk(
   userId: string,
   includeSourceText = false,
   mode?: AskMode,
+  // SSE relay (streaming mode only; undefined = byte-identical non-streaming behavior). Stage
+  // milestones + safety-gated lead deltas; the function's RETURN value stays the single source
+  // of truth either way — streaming adds bytes earlier, never a different answer.
+  emit?: AskEmit,
 ): Promise<AskResponse> {
   const answerId = crypto.randomUUID();
   const apiKey = llmApiKey();
@@ -256,6 +280,7 @@ async function runAsk(
   // a flag the LLM added.
   const rawFlags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
   const flags = suppressEmergencyForGeneralToxicity(question, rawFlags);
+  emit?.("stage", { stage: "understanding", intent: cls.intent });
   const webRecon = await runWebRecon(question);
   const queryUnderstanding = applyReconToUnderstanding(
     understandQuery(question, cls.entity_mentions),
@@ -313,6 +338,7 @@ async function runAsk(
   // sub-query variant — exactly the thin-live case where the extra dense recall helps most.
   const subQueries = LIVE_SOURCES_ON ? buildSubQueries(question, cls.entity_mentions, effectiveIntent) : undefined;
   const recallPool = LIVE_SOURCES_ON ? (mode === "thorough" ? THOROUGH_RECALL_POOL : RECALL_POOL) : matchCount;
+  emit?.("stage", { stage: "searching" });
   let ret = await retrieve({
     question,
     providers: priority,
@@ -356,6 +382,8 @@ async function runAsk(
     guardPool = aug.pool;
     ret = { ...ret, chunks: aug.top };
   }
+
+  emit?.("stage", { stage: "sources", cited: ret.chunks.length, pool: guardPool.length });
 
   if (ret.chunks.length === 0) {
     return await finalizeTemplate(answerId, question, cls.intent,
@@ -407,6 +435,11 @@ async function runAsk(
   // ---- 5. generate (graceful: a total LLM failure degrades to a cited refusal,
   //         never a user-facing 500) ----
   let gen: Awaited<ReturnType<typeof generate>>;
+  // Streamed lead deltas pass the SAME detectViolations scan the finished answer faces, via the
+  // holdback gate (stream-gate.ts) — a violating prefix is never emitted and the gate freezes;
+  // the canonical `complete` event (post resolveSafety/enforceCitations) supersedes shown text.
+  const leadGate = emit ? makeLeadGate() : null;
+  emit?.("stage", { stage: "writing" });
   try {
     gen = await generate({
       question: genQuestion,
@@ -415,7 +448,17 @@ async function runAsk(
       healthContext,
       apiKey,
       style,
+      onLead: leadGate
+        ? (delta) => {
+          const safe = leadGate.push(delta);
+          if (safe) emit!("delta", { text: safe });
+        }
+        : undefined,
     });
+    if (leadGate) {
+      const tail = leadGate.finalize();
+      if (tail) emit!("delta", { text: tail });
+    }
   } catch (e) {
     console.error("ask generate failed after retries:", (e as Error).message);
     return await finalizeTemplate(answerId, question, cls.intent,
