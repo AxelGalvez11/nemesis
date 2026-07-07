@@ -628,11 +628,18 @@ function AskPage() {
       // Non-streaming path unchanged. `streamed` decides the reveal: a lead that already streamed
       // must not re-type itself.
       let streamed = false;
+      // Real pipeline milestones advance the thinking trail ahead of the synthetic timers —
+      // monotonic (Math.max) so the trail never steps backwards when a timer and a real event race.
+      const STAGE_INDEX: Record<string, number> = { understanding: 1, searching: 2, sources: 2, writing: 3 };
       const res = streamingEnabled
         ? await askQuestionStream(outgoing, askMode, {
-          onDelta: (text) => {
+          onStage: (evt) => {
+            const target = STAGE_INDEX[evt.stage];
+            if (target !== undefined) setStage((s) => Math.max(s, target));
+          },
+          onDelta: (delta) => {
             streamed = true;
-            setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, stream: (t.stream ?? "") + text } : t)));
+            setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, stream: (t.stream ?? "") + delta } : t)));
           },
         })
         : await askQuestion(outgoing, askMode);

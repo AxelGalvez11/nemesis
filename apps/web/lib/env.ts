@@ -25,10 +25,9 @@ export const landingUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_LANDING_URL) 
 // Computed from real citation metadata; shown only when the data warrants. Off ⇒ reports render as today.
 export const engineVisualsEnabled = process.env.NEXT_PUBLIC_ENGINE_VISUALS === "true";
 
-// Simplified composer dial — DEFAULT OFF. When "true": Fast/Thorough collapse into one "Auto" mode
-// (auto-picks depth), and Meta-analysis drops off the dial (folded into Deep research). Off ⇒ today's
-// 6-mode dial, byte-identical. The Auto routing reuses the existing fast/thorough engine paths.
-export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "true";
+// NEXT_PUBLIC_SIMPLE_MODES is retired (2026-07-06): the simplified dial is now the ONLY dial —
+// Auto (default) + Thorough, hardcoded in the ask page ("Fast" removed as a label; its engine
+// register survives as Auto's quick depth). The env var no longer has any effect.
 
 // Deliverables-on-command — DEFAULT OFF. When "true", a typed message like "make me slides on X" /
 // "write a document about Y" / "make a poster on Z" is detected (see lib/deliverable-intent.ts) and
