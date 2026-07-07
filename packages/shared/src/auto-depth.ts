@@ -15,8 +15,10 @@ const COMPLEX_MARKERS = [
 
 /**
  * Pick the answer depth for an Auto-mode question. PURE + deterministic.
- * Thorough when the question is long, multi-part (>=2 question marks), or asks for a
- * comparison/mechanism/depth; fast otherwise (Auto errs cheap — the user can still force Thorough).
+ * INVERTED BIAS (owner report 2026-07-07, "answers aren't thorough"): the composer no longer has a
+ * depth dial, so Auto must err RICH — there is no way to force Thorough anymore. Thorough is the
+ * default for any substantive question; fast only for bare lookups (<=4 words, single question,
+ * no depth markers — 'what is metformin') where a quick gist genuinely serves better.
  */
 export function autoDepth(query: string): AskDepth {
   const q = query.trim().toLowerCase();
@@ -24,6 +26,6 @@ export function autoDepth(query: string): AskDepth {
   const words = q.split(/\s+/).length;
   const questionMarks = (q.match(/\?/g) ?? []).length;
   const hasComplexMarker = COMPLEX_MARKERS.some((m) => q.includes(m));
-  if (words >= 16 || questionMarks >= 2 || hasComplexMarker) return "thorough";
+  if (hasComplexMarker || questionMarks >= 2 || words >= 5) return "thorough";
   return "fast";
 }

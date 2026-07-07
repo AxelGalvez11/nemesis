@@ -1,10 +1,17 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { autoDepth } from "./auto-depth.ts";
 
-Deno.test("auto-depth: short / simple questions go fast", () => {
+Deno.test("auto-depth: bare lookups go fast", () => {
   assertEquals(autoDepth("hi"), "fast");
-  assertEquals(autoDepth("what is metformin used for"), "fast");
+  assertEquals(autoDepth("what is metformin"), "fast");
   assertEquals(autoDepth(""), "fast");
+});
+
+Deno.test("auto-depth: substantive questions go thorough (no dial to force it anymore)", () => {
+  // The owner's actual terse-feeling chats — these MUST get the full register now.
+  assertEquals(autoDepth("is sucralose bad for you"), "thorough");
+  assertEquals(autoDepth("what is metformin used for"), "thorough");
+  assertEquals(autoDepth("why do I have white flakes in my hair"), "thorough");
 });
 
 Deno.test("auto-depth: comparison questions go thorough", () => {
