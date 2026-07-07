@@ -51,6 +51,13 @@ export interface ResearchReport {
   safety_notes: AnswerPoint[];
   /** Every source cited anywhere in the report, in reranked order. */
   citations: Citation[];
+  /**
+   * Sources RETRIEVED into the evidence pool but not cited by the writer — the "also reviewed"
+   * breadth. The agentic web loop + wider DB retrieval gather far more than the report cites, so this
+   * surfaces the full evidence base instead of collapsing it to the cited handful. Display-only:
+   * never grounded, never part of the cited set, never scanned as answer text.
+   */
+  reviewed_sources?: Citation[];
   evidence_grade: EvidenceGrade;
   safety_flags: SafetyFlag[];
   /**
