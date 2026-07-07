@@ -21,6 +21,7 @@ import { fetchMedlinePlus } from "../core-source-sync/providers/medlineplus.ts";
 import { fetchOpenFdaEnforcement } from "../core-source-sync/providers/enforcement.ts";
 import { fetchToxicologyReference } from "../core-source-sync/providers/toxicology.ts";
 import { extractSearchTerms } from "./search-query.ts";
+import { fetchLiteratureConnector, LITERATURE_CONNECTOR_DEFS } from "./literature-adapter.ts";
 
 /** One live result, normalized for the reranker + citation layer; `source` is the full
  *  record, so a candidate the reranker keeps can be persisted via read-through-ingest. */
@@ -158,6 +159,23 @@ const LIVE_SOURCES: LiveSourceDef[] = [
   { origin: "medlineplus", fetch: (_q, n, _m, rq) => fetchMedlinePlus({ query: rq, retmax: n }) },
 ];
 
+// GATED (SCIENCE_CONNECTORS=on, default OFF): the 4 net-new literature connectors ported from
+// _shared/science/literature that are NOT already covered by a source above (pubmed/europepmc/
+// openalex already have dedicated entries; adding them again here would just be dropped by the
+// dedupe below, wasting latency for zero net breadth — see literature-adapter.ts header). Each
+// searches `rq` (the RESEARCH query — the same symptom/topic term extractSearchTerms/
+// expandSymptomQuery already computed for the research-family sources above), so this reuses that
+// term rather than recomputing anything. Appended to LIVE_SOURCES only when the flag is on; with it
+// off, `fanOut` iterates the exact same array as before this change (byte-identical behavior).
+const SCIENCE_CONNECTOR_SOURCES: LiveSourceDef[] = LITERATURE_CONNECTOR_DEFS.map((def) => ({
+  origin: def.origin,
+  fetch: (_q: string, n: number, _m: string[], rq: string) => fetchLiteratureConnector(def, rq, n),
+}));
+
+export function isScienceConnectorsOn(): boolean {
+  return Deno.env.get("SCIENCE_CONNECTORS") === "on";
+}
+
 /**
  * Build a field-scoped openFDA `search` value: each drug name matched against generic OR brand name,
  * the names OR'd together. URLSearchParams (in the provider) encodes the spaces to `+`, yielding
@@ -229,11 +247,19 @@ async function fanOut(
   timeoutMs: number,
   mentions: string[],
 ): Promise<LiveCandidate[]> {
+  // SCIENCE_CONNECTORS=on appends the 4 net-new literature sources to the SAME fan-out + dedupe
+  // pass below. With the flag off, `sources` is exactly `LIVE_SOURCES` — byte-identical to this
+  // function's behavior before this change.
+  const sources = isScienceConnectorsOn() ? [...LIVE_SOURCES, ...SCIENCE_CONNECTOR_SOURCES] : LIVE_SOURCES;
   const batches = await Promise.all(
-    LIVE_SOURCES.map((def) => withTimeout(fetchOne(def, query, researchQuery, perSourceMax, mentions), timeoutMs, def.origin)),
+    sources.map((def) => withTimeout(fetchOne(def, query, researchQuery, perSourceMax, mentions), timeoutMs, def.origin)),
   );
   // Dedupe the union by (provider, provider_id): e.g. PubMed and Europe PMC both returning the
-  // same PMID collapse to one candidate (first wins). Keeps the rerank set clean.
+  // same PMID collapse to one candidate (first wins). Keeps the rerank set clean. The literature-
+  // adapter maps any PMID-bearing hit from a new connector to provider "pubmed_oa" + the bare pmid
+  // (see literature-adapter.ts), and any DOI-only hit to "doi:<doi>" under its own provider — so a
+  // Crossref/Semantic-Scholar/bioRxiv/arXiv hit for a paper PubMed/Europe PMC already returned
+  // collapses HERE, via the same key this line already computes, with no dedupe-logic change needed.
   const seen = new Set<string>();
   return batches.flat().filter((c) => {
     const key = `${c.provider}:${c.provider_id}`;

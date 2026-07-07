@@ -69,34 +69,15 @@
 .rail .brand { display: flex; align-items: center; justify-content: space-between; gap: 11px; padding: 16px 16px 12px; }
 .rail .brand .orb { width: 28px; height: 28px; }
 .wordmark { font-weight: 600; font-size: 16px; letter-spacing: -0.02em; white-space: nowrap; }
-.rail-collapsed .wordmark, .rail-collapsed .r-label, .rail-collapsed .new-txt,
-.rail-collapsed .search input, .rail-collapsed .acct-meta { display: none; }
+/* New chat / Search chats are now .hist rows, so collapse-hiding their label is already covered by
+   the ".rail-collapsed .hist span" rule below — no ".new-txt"/".search input" selectors needed. */
+.rail-collapsed .wordmark, .rail-collapsed .r-label, .rail-collapsed .acct-meta { display: none; }
 .rail-collapsed .brand { padding: 16px 0; justify-content: center; }
-/* New chat: a prominent but calm full-width row (ChatGPT moved away from a solid-fill button) —
-   subtle surface, thin border, gentle hover. No accent fill, no glow. */
-.new {
-  margin: 4px 12px 8px; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-  border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-weight: 600;
-  cursor: pointer; border: 1px solid var(--line); white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s; width: calc(100% - 24px); font-family: var(--font); font-size: 14px;
-}
-/* NOTE: must use --fill-hover (translucent), not --surface-2 — --surface-2 now equals --rail-bg
-   (#f0f0f0 light), so a solid-surface hover would vanish into the rail it sits on. */
-.new:hover { background: var(--fill-hover); border-color: var(--line-2); }
-.rail-collapsed .new { justify-content: center; padding: 10px 0; }
-.search {
-  margin: 0 12px 12px; display: flex; align-items: center; gap: 8px; padding: 8px 11px;
-  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg);
-  transition: border-color 0.15s;
-}
-/* Calm focus: the wrapper tints its border (like the composer), instead of an acid glow/ring. */
-.search:focus-within { border-color: var(--line-2); }
-.search input { background: none; border: none; color: var(--text); font-family: var(--font); font-size: 13px; width: 100%; outline: none; padding: 0; }
-.search input::placeholder { color: var(--text-3); }
-/* Kill the global green focus glow (legacy.css `input:focus` box-shadow) on the sidebar search —
-   the .search wrapper shows focus via its own border, not an acid ring. The keyboard focus-visible
-   outline (the rule near the bottom of this file) is separate and stays. */
-.search input:focus { box-shadow: none; }
+/* New chat + Search chats: ChatGPT anatomy — plain unboxed rows, NOT filled/bordered buttons. Same
+   36px-tall .hist shape as every other sidebar row (Library, Scheduled, Projects, Chats). They sit
+   in .rail-top (above the scrolling <nav>) so they stay pinned while only the chats list scrolls. */
+.rail-top { padding: 4px 8px 6px; flex: none; }
+.rail-top .hist { width: 100%; }
 .nav { flex: 1; overflow-y: auto; padding: 2px 8px 10px; }
 .r-label { font-size: 11px; letter-spacing: 0.02em; color: var(--text-2); padding: 14px 10px 6px; font-weight: 600; }
 /* Manus nav row: 36px tall, radius follows --radius-sm (10px), padding 0 2px 0 8px, 8px icon gap. */
@@ -150,6 +131,23 @@
 .acct-meta b { font-size: 13px; font-weight: 600; display: block; }
 .acct-meta small { font-size: 11px; color: var(--text-2); }
 .rail-collapsed .acct { justify-content: center; }
+
+/* ── "Search chats" modal (ChatGPT's Cmd/Ctrl+K palette) — rendered via AppModal; content-only,
+   the modal chrome itself (frame/title/close) is AppModal's. Input styled like the composer's calm
+   border-tint focus (no acid ring on a text field); results reuse the plain .hist row. ── */
+.search-modal-input {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px; margin-bottom: 4px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg);
+  color: var(--text-3); transition: border-color 0.15s;
+}
+.search-modal-input:focus-within { border-color: var(--line-2); }
+.search-modal-input input {
+  flex: 1; background: none; border: none; color: var(--text); font-family: var(--font);
+  font-size: 14px; outline: none; padding: 0; box-shadow: none;
+}
+.search-modal-input input::placeholder { color: var(--text-3); }
+.search-modal-results { display: flex; flex-direction: column; gap: 1px; max-height: 50vh; overflow-y: auto; }
+.search-modal-results .hist { width: 100%; }
 
 /* ── main column ── */
 .main { display: flex; flex-direction: column; min-width: 0; background: var(--bg); overflow: hidden; }
@@ -719,7 +717,10 @@
 .welcome { width: 100%; max-width: 720px; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .welcome .orb { margin-bottom: 20px; }
 /* Manus's one distinctive type choice: the greeting renders in the serif, not the UI sans. */
-.welcome-title { font-family: var(--font-serif); font-size: 36px; font-weight: 400; letter-spacing: -0.01em; margin: 0 0 10px; }
+/* ChatGPT's home greeting is sans, not serif — matches the rest of the shell's type (var(--font)).
+   --font-serif stays defined for other surfaces (e.g. the research workspace heading below); only
+   this selector changes. */
+.welcome-title { font-family: var(--font); font-size: 36px; font-weight: 400; letter-spacing: -0.01em; margin: 0 0 10px; }
 .welcome-sub { color: var(--text-2); max-width: 460px; margin: 0 0 22px; line-height: 1.55; }
 .welcome .composer { width: 100%; max-width: 100%; padding: 0; }
 .welcome-chips { justify-content: center; margin-top: 18px; }
@@ -912,11 +913,12 @@
    treatment (full-width labels would otherwise clip at 64px). At ≤720px the rail is instead a
    full off-canvas drawer, so this is scoped above that breakpoint. ── */
 @media (min-width: 721px) and (max-width: 1100px) {
-  .rail .wordmark, .rail .r-label, .rail .new-txt, .rail .search input, .rail .acct-meta { display: none; }
+  .rail .wordmark, .rail .r-label, .rail .acct-meta { display: none; }
   .rail .brand { padding: 18px 0; justify-content: center; }
   /* wordmark is hidden here too — drop the header toggle's edge nudge so it centers cleanly */
   .rail .brand .rail-collapse { margin: 0; }
-  .rail .new { justify-content: center; padding: 10px 0; }
+  /* New chat / Search chats are .hist rows now, so the shared .rail .hist rule below already
+     centers + hides their labels — no separate ".rail .new" selector needed. */
   .rail .hist { justify-content: center; padding: 9px 0; }
   .rail .hist span { display: none; }
   .rail .rail-recents { display: none; }
@@ -935,17 +937,17 @@
   .app.mobile-open .wordmark, .app.mobile-open .acct-meta, .app.mobile-open .r-label { display: block; }
   /* the drawer shows the full Recent-chats list even if the rail was left collapsed on desktop */
   .app.mobile-open .rail-recents { display: block; }
-  .app.mobile-open .new-txt, .app.mobile-open .hist span { display: inline; }
-  .app.mobile-open .search input { display: block; }
-  .app.mobile-open .new, .app.mobile-open .hist { justify-content: flex-start; }
+  .app.mobile-open .hist span { display: inline; }
+  .app.mobile-open .hist { justify-content: flex-start; }
 }
 
 /* keyboard focus ring for the custom (non-shadcn) interactive elements. NOTE: the composer textarea
-   AND the rail search input are deliberately EXCLUDED — text fields match :focus-visible even on a
-   mouse click, so an acid outline here read as a "green glow" on the box. Their focus is shown by a
-   calm border tint instead (.box:focus-within / .search:focus-within; legacy.css already sets
-   outline:none on the inputs themselves). */
-.icon-btn:focus-visible, .hist:focus-visible, .new:focus-visible, .mode:focus-visible, .send:focus-visible,
+   and the "Search chats" modal input are deliberately EXCLUDED — text fields match :focus-visible
+   even on a mouse click, so an acid outline here read as a "green glow" on the box. Their focus is
+   shown by a calm border tint instead (.box:focus-within / .search-modal-input:focus-within; legacy.css
+   already sets outline:none on the inputs themselves). New chat / Search chats are plain .hist rows,
+   so .hist:focus-visible below already covers them. */
+.icon-btn:focus-visible, .hist:focus-visible, .mode:focus-visible, .send:focus-visible,
 .tool:focus-visible, .ev-tab:focus-visible, .chip-action:focus-visible, .acct-btn:focus-visible, .src:focus-visible,
 .cite:focus-visible {
   outline: 2px solid var(--acid-dim); outline-offset: 2px;
@@ -2013,3 +2015,33 @@
   .poster-body { overflow: visible; }
   @page { size: landscape; margin: 12mm; }
 }
+
+/* ── BEGIN project-sources block (owned by Agent A — apps/web/app/app/projects/[id]/page.tsx) ── */
+
+.proj-sources-empty {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 22px 20px; border: 1px dashed var(--line-2); border-radius: 14px;
+  background: var(--surface); margin-top: 4px;
+}
+
+/* "Add sources" modal: dashed drag zone + the Upload/Text/Drive/Slack tile row, ChatGPT-Projects style. */
+.proj-source-drop {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 30px 16px; border: 1.5px dashed var(--line-2); border-radius: 14px;
+  background: var(--surface); color: var(--text-3); font-size: 13.5px; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.proj-source-drop:hover, .proj-source-drop.drag { border-color: var(--acid); color: var(--text-2); background: var(--surface-2); }
+
+.proj-source-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
+@media (max-width: 480px) { .proj-source-tiles { grid-template-columns: 1fr; } }
+.proj-source-tile {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--surface); color: var(--text-2); font-family: var(--font);
+  font-size: 13.5px; font-weight: 550; cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.proj-source-tile:hover:not(:disabled) { border-color: var(--acid); color: var(--text); background: var(--surface-2); }
+.proj-source-tile:disabled { cursor: not-allowed; opacity: 0.55; }
+.proj-source-tile small { margin-left: auto; font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-3); }
+
+/* ── END project-sources block ── */

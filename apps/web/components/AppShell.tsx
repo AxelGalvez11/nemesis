@@ -13,6 +13,23 @@ import { CreditsPanel } from "./CreditsPanel";
 
 type Overlay = "settings" | null;
 
+// ChatGPT keyboard convention: Cmd/Ctrl+K opens "Search chats". Matched on physical key "k" so it
+// works regardless of layout; ignored while the user is already typing in a text field other than
+// via the shortcut itself (browsers) — we still preventDefault so Ctrl+K doesn't hijack the
+// browser's own address-bar-search shortcut in some browsers/OSes.
+function useSearchChatsShortcut(onOpen: () => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        onOpen();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onOpen]);
+}
+
 /* ── chrome context: pages inject their evidence panel + topbar title here ── */
 interface AppChromeValue {
   railCollapsed: boolean;
@@ -24,6 +41,11 @@ interface AppChromeValue {
   setTopbar: (node: ReactNode | null) => void;
   bumpChats: () => void;
   bumpUsage: () => void;
+  /** Increments on every sidebar "New chat" click. AskPage resets on ANY change — router.push alone
+   *  is a no-op when the current chat is unsaved (URL already bare /app/ask), so the previous thread
+   *  stayed on screen. The nonce makes the reset unconditional. */
+  newChatNonce: number;
+  bumpNewChat: () => void;
 }
 const AppChromeContext = createContext<AppChromeValue>({
   railCollapsed: false,
@@ -35,11 +57,14 @@ const AppChromeContext = createContext<AppChromeValue>({
   setTopbar: () => {},
   bumpChats: () => {},
   bumpUsage: () => {},
+  newChatNonce: 0,
+  bumpNewChat: () => {},
 });
 export const useAppChrome = () => useContext(AppChromeContext);
 
+// "Ask" has no separate nav row — ChatGPT has none either (New chat covers it). The /app/ask route
+// and its ?c=<id> deep links still work; this list only drives the rail's icon rows.
 const workspace = [
-  { href: "/app/ask", label: "Ask", icon: "message" as const },
   { href: "/app/reports", label: "Library", icon: "doc" as const },
   // Monitoring's nav entry folded into Scheduled 2026-07-03 (one automation surface, ChatGPT-style).
   // /app/monitor routes still exist — reached from Scheduled's monitor rows and its "New monitor" link.
@@ -108,9 +133,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
   const [plan, setPlan] = useState<{ plan: string; used: number; limit: number }>({ plan: "free", used: 0, limit: 10 });
   const [chats, setChats] = useState<ConversationSummary[]>([]);
-  // Sidebar search: a client-side filter over the loaded Recent chats (title substring). Honest scope —
-  // this searches saved chats only, not the drug catalog.
+  // "Search chats" — a modal (ChatGPT's Cmd/Ctrl+K palette), not an inline rail input. It filters the
+  // same Recent-chats list (title substring, client-side — honest scope: saved chats only, not the
+  // drug catalog). Query state lives here (not shared with the always-visible rail list) and is
+  // cleared on close so a stale filter can't silently apply next time the rail renders.
+  const [searchChatsOpen, setSearchChatsOpen] = useState(false);
   const [chatQuery, setChatQuery] = useState("");
+  const closeSearchChats = useCallback(() => { setSearchChatsOpen(false); setChatQuery(""); }, []);
+  useSearchChatsShortcut(useCallback(() => setSearchChatsOpen(true), []));
   const [chatsVersion, setChatsVersion] = useState(0);
   // Bumped after each ask so the account footer + credits chip re-read usage (they'd otherwise go stale —
   // AppShell reads usage once on mount). Private local state; only bumpUsage() is exposed on the context.
@@ -135,6 +165,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Lets the chat page refresh the rail history the moment it creates a new conversation.
   const bumpChats = useCallback(() => setChatsVersion((v) => v + 1), []);
   const bumpUsage = useCallback(() => setUsageVersion((v) => v + 1), []);
+  const [newChatNonce, setNewChatNonce] = useState(0);
+  const bumpNewChat = useCallback(() => setNewChatNonce((v) => v + 1), []);
 
   // Delete a chat: optimistically drop it from the rail, then delete server-side (RLS-scoped). If we
   // were viewing it, return to a blank chat. Re-fetch on failure so the rail reflects the real state.
@@ -363,8 +395,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const ctx = useMemo<AppChromeValue>(
-    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage }),
-    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage],
+    () => ({ railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage, newChatNonce, bumpNewChat }),
+    [railCollapsed, toggleRail, evidenceCollapsed, toggleEvidence, openEvidence, setEvidence, setTopbar, bumpChats, bumpUsage, newChatNonce, bumpNewChat],
   );
 
   // Hooks are all above this line — only conditional returns below (Rules of Hooks).
@@ -389,9 +421,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const defaultTitle = titleForPath(path);
   const email = session.user.email ?? "preview@pharmaorb.app";
   const initials = email.slice(0, 2).toUpperCase();
-  // Filter Recent chats by title (case-insensitive substring). Empty query → the full list.
-  const q = chatQuery.trim().toLowerCase();
-  const visibleChats = q ? chats.filter((c) => c.title.toLowerCase().includes(q)) : chats;
+  // Filter for the "Search chats" MODAL only (title substring, case-insensitive). The rail's own
+  // Chats list always shows every chat — it is no longer the thing being filtered.
+  const sq = chatQuery.trim().toLowerCase();
+  const searchResults = sq ? chats.filter((c) => c.title.toLowerCase().includes(sq)) : chats;
 
   return (
     <AppChromeContext.Provider value={ctx}>
@@ -414,21 +447,20 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icon name="sidebar" size={16} />
             </button>
           </div>
-          <button className="new" onClick={() => router.push("/app/ask")} aria-label="New chat">
-            <Icon name="plus" size={16} />
-            <span className="new-txt">New chat</span>
-          </button>
-          <div className="search">
-            <Icon name="search" size={15} />
-            <input
-              value={chatQuery}
-              onChange={(e) => setChatQuery(e.target.value)}
-              placeholder="Search chats"
-              aria-label="Search chats"
-            />
+          {/* ChatGPT anatomy: New chat + Search chats are plain unboxed rows (same 36px .hist shape as
+              Library/Scheduled below), not filled buttons — and they sit above the scrolling <nav>
+              so they stay pinned while only the chats list scrolls. */}
+          <div className="rail-top">
+            <button className="hist" onClick={() => { bumpNewChat(); router.push("/app/ask"); }} aria-label="New chat">
+              <Icon name="plus" className="hist-ic" />
+              <span>New chat</span>
+            </button>
+            <button className="hist" onClick={() => setSearchChatsOpen(true)} aria-label="Search chats (Cmd/Ctrl+K)" data-tip="Cmd/Ctrl+K">
+              <Icon name="search" className="hist-ic" />
+              <span>Search chats</span>
+            </button>
           </div>
           <nav className="nav">
-            <div className="r-label">Workspace</div>
             {workspace.map((item) => (
               <Link key={item.href} href={item.href} aria-label={item.label} className={`hist${isActive(path, item.href) ? " active" : ""}`}>
                 <Icon name={item.icon} className="hist-ic" />
@@ -445,17 +477,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
 
             <div className="rail-recents">
-            <div className="r-label">Recent chats</div>
+            <div className="r-label">Chats</div>
             {chats.length === 0 ? (
               <div className="hist" style={{ color: "var(--text-2)", cursor: "default" }}>
                 <span style={{ fontSize: 12 }}>Your saved chats appear here</span>
               </div>
-            ) : visibleChats.length === 0 ? (
-              <div className="r-label" style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
-                No chats match
-              </div>
             ) : (
-              visibleChats.map((c) => (
+              chats.map((c) => (
                 <div key={c.id} className={`hist-row${rowMenu?.id === c.id ? " menu-open" : ""}`}>
                   {renamingId === c.id ? (
                     // Inline rename: the title becomes an editable field. Enter or click-away saves;
@@ -656,6 +684,44 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
         )}
+
+        {/* ── Search chats (ChatGPT's Cmd/Ctrl+K palette) — an autofocused filter over Recent chats.
+            Simple rows only (no rename/pin/⋯ here — that stays on the rail rows); clicking a result
+            navigates to it and closes the modal. ── */}
+        <AppModal open={searchChatsOpen} onClose={closeSearchChats} title="Search chats">
+          <div className="search-modal-input">
+            <Icon name="search" size={15} />
+            <input
+              autoFocus
+              value={chatQuery}
+              onChange={(e) => setChatQuery(e.target.value)}
+              placeholder="Search chats…"
+              aria-label="Search chats"
+            />
+          </div>
+          <div className="search-modal-results">
+            <Link
+              href="/app/ask"
+              className="hist"
+              onClick={() => { bumpNewChat(); closeSearchChats(); }}
+            >
+              <Icon name="plus" className="hist-ic" />
+              <span>New chat</span>
+            </Link>
+            {searchResults.length === 0 ? (
+              <div className="r-label" style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                No chats match
+              </div>
+            ) : (
+              searchResults.map((c) => (
+                <Link key={c.id} href={`/app/ask?c=${c.id}`} className="hist" title={c.title} onClick={closeSearchChats}>
+                  <Icon name={c.pinned ? "pin" : "message"} className="hist-ic" />
+                  <span>{c.title}</span>
+                </Link>
+              ))
+            )}
+          </div>
+        </AppModal>
 
         {/* ── account overlays (Settings / Profile / Billing) — portaled, so they sit above everything ── */}
         <AppModal open={overlay === "settings"} onClose={() => setOverlay(null)} title="Settings" sub="Appearance, account, billing, and preferences." wide>

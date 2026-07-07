@@ -27,13 +27,15 @@ import { gatherLiveCandidates, liveToChunk } from "./live-sources.ts";
 import { rerankChunks } from "./rerank.ts";
 import { balanceCitedSlice } from "./cite-balance.ts";
 import { buildSubQueries, extractSearchTerms } from "./search-query.ts";
+import { expandSymptomQuery } from "./symptom-expansion.ts";
 import { espellCorrect } from "../core-source-sync/providers/pubmed.ts";
+import { normalizeResearchQuery, queryNormalizeEnabled } from "./query-normalize.ts";
 import { decideNewsGate } from "./news-gate.ts";
 import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
 import { assumptionNote, findTypoCorrections } from "./typo-correct.ts";
 import { applyGradeCeiling, fetchStoredEvidenceGrade } from "./evidence-grade.ts";
-import { hasLlmKey, llmApiKey } from "./llm.ts";
+import { chat, hasLlmKey, llmApiKey } from "./llm.ts";
 import { modelFor } from "./model-router.ts";
 import { type AnswerStyle, PROMPT_VERSION } from "./prompts.ts";
 import { withProfessionalRouting } from "./routing.ts";
@@ -51,7 +53,7 @@ import {
   SOURCING_COPY,
   STANDARD_QUESTIONS,
 } from "./templates.ts";
-import { detectFreshInfo, laneRouterEnabled } from "./lane-router.ts";
+import { detectFreshInfo, detectGeneralAssistant, generalAssistantEnabled, laneRouterEnabled } from "./lane-router.ts";
 import type {
   AnswerNewsItem,
   AnswerTemplate,
@@ -112,6 +114,12 @@ const THOROUGH_RECALL_POOL = 40; // merged dense candidates kept (thorough) when
 // flag so deploying this code is non-breaking: with LIVE_SOURCES unset the pipeline is byte-for-byte
 // the dense-only behavior the gate/guardrail suite locks in. The owner flips LIVE_SOURCES=on to enable.
 const LIVE_SOURCES_ON = Deno.env.get("LIVE_SOURCES") === "on";
+// Symptom-question retrieval breadth: gated INDEPENDENTLY of LIVE_SOURCES (nests inside the
+// LIVE_SOURCES_ON branch below). With LIVE_SOURCES=on and this flag unset/off, augmentWithLive's
+// researchQuery is byte-identical to today's `extractSearchTerms(question) || question` — the new
+// symptom expansion (why-is-my-X -> clinical term, e.g. "pruritus") is only consulted when this flag
+// is "on". Off by default so deploying this code changes nothing until explicitly enabled.
+const SYMPTOM_RETRIEVAL_BREADTH_ON = Deno.env.get("SYMPTOM_RETRIEVAL_BREADTH") === "on";
 const LIVE_PER_SOURCE_MAX = 8; // how many candidates to pull per live source before the merge/rerank
 // Thorough mode also casts a WIDER candidate net per live source (more abstracts/trials feed the rerank),
 // which — paired with the bigger THOROUGH_MATCH_COUNT slice above — lets the deeper search surface AND show
@@ -226,6 +234,18 @@ async function runAsk(
   const quota = await consumeAskQuota(userId);
   if (!quota.allowed) throw new QuotaExceeded(quota);
 
+  // ---- 0c. general-assistant lane (GENERAL_ASSISTANT_LANE=on, DEFAULT OFF) ----
+  // A clearly non-medical task ("write me a cover letter", "translate this") gets a natural, helpful
+  // reply instead of being force-fit through clinical retrieval (lane 0.6). Runs after the quota
+  // consume because it spends one cheap LLM call. Fail-safe twice over: the detector requires a
+  // POSITIVE general-task signal (a medical question can't match), and finalizeGeneralAssistant
+  // returns null on any LLM failure/empty completion, so we fall straight through to classify and
+  // the normal engine. preScreen already hard-routed emergencies far above.
+  if (generalAssistantEnabled() && detectGeneralAssistant(question).fires) {
+    const general = await finalizeGeneralAssistant(answerId, question, userId, apiKey);
+    if (general) return general;
+  }
+
   // ---- 1. classify ----
   const cls = await classify(question, apiKey);
   // Relax the classifier's over-eager emergency_possible on a general "is X lethal/toxic/dangerous"
@@ -332,7 +352,7 @@ async function runAsk(
   let guardPool: RetrievedChunk[] = ret.chunks;
   if (LIVE_SOURCES_ON) {
     const labelCap = noDrugGeneralHealth ? 0 : undefined;
-    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount, webRecon, labelCap);
+    const aug = await augmentWithLive(question, cls.entity_mentions, ret.chunks, perSourceMax, matchCount, webRecon, labelCap, noDrugGeneralHealth);
     guardPool = aug.pool;
     ret = { ...ret, chunks: aug.top };
   }
@@ -567,6 +587,7 @@ async function augmentWithLive(
   matchCount: number = MATCH_COUNT,
   webRecon?: WebReconResult,
   labelCap?: number,
+  noDrugGeneralHealth = false,
 ): Promise<{ pool: RetrievedChunk[]; top: RetrievedChunk[] }> {
   // top feeds the generator and must stay matchCount-sized even when augmentation fails and even when
   // libChunks is now a bigger multi-query recall pool (Task 3b) — otherwise the generator would see the
@@ -574,7 +595,16 @@ async function augmentWithLive(
   // is already <= matchCount (today's dense-only path), slice is a no-op, so this stays byte-identical.
   const fallback = { pool: libChunks, top: libChunks.slice(0, matchCount) };
   try {
-    const baseResearchQuery = extractSearchTerms(question) || question;
+    // GATED (SYMPTOM_RETRIEVAL_BREADTH=on), no-drug symptom questions ONLY: try the "why is my X"
+    // clinical-term expansion first. Falls back to the EXACT existing expression the instant the
+    // flag is off, expandSymptomQuery finds no "why" frame, or entityMentions is non-empty (a named
+    // drug already gives PubMed/MedlinePlus a term that matches) — so this can only ever ADD a
+    // candidate base string, never replace/degrade the one today's code already computes.
+    const symptomExpansion =
+      SYMPTOM_RETRIEVAL_BREADTH_ON && noDrugGeneralHealth && entityMentions.length === 0
+        ? expandSymptomQuery(question)
+        : null;
+    const baseResearchQuery = symptomExpansion?.expandedQuery || extractSearchTerms(question) || question;
     const understood = webRecon
       ? applyReconToUnderstanding(understandQuery(question, entityMentions, baseResearchQuery), webRecon)
       : understandQuery(question, entityMentions, baseResearchQuery);
@@ -587,12 +617,24 @@ async function augmentWithLive(
     // instead of generic drug papers; the field-scoped + adverse-event sources (openFDA/FAERS/trials)
     // keep the literal drug `term`. This is the lever behind the side-effects/interaction/mechanism gap.
     let researchQuery = understood.researchQuery;
-    // Typo-correct the research string ONLY on the no-drug path (general/benign topics like
-    // "metfromin and the livr"). When classify pulled a literal drug mention we leave the query alone —
-    // espell only ever rewrites the research search string, never the literal `term`/entityMentions the
-    // fabrication guard checks, so a real-but-new drug is still found by name and a fabricated one still
-    // finds nothing. Best-effort: espellCorrect returns the query unchanged on any failure.
-    if (understood.fieldMentions.length === 0) {
+    // Typo-correct the research string. QUERY_NORMALIZE on: one classify-tier LLM pass fixes
+    // typos to intent on every research query (told to keep drug/medical terms exact; the
+    // deterministic gate in acceptNormalized rejects any shape-changing rewrite, any rewrite
+    // that loses a literal drug mention, and any rewrite that paraphrases away the
+    // isSafetyCriticalQuery trigger gating the FDA-enforcement/toxicology sources) and fully
+    // supersedes espell — whose medical-only dictionary mangles conversational text ("why is
+    // my skin itchy" -> "ho is my skin itchy"). It also catches typos that survive INSIDE the
+    // symptom-expanded phrase ("skn itchey" stays typo'd after frame-stripping). Flag off:
+    // byte-identical legacy path — espell on the no-drug path only, skipped when the gated
+    // symptom expansion produced the research string (already a clean, bare symptom phrase;
+    // espell is verified to "correct" unusual-shaped multi-word phrases into garbage, e.g.
+    // "why" -> "ho"). Either way only the research search string is rewritten, never the
+    // literal `term`/entityMentions the fabrication guard checks, so a real-but-new drug is
+    // still found by name and a fabricated one still finds nothing. Both are best-effort and
+    // return the query unchanged on any failure.
+    if (queryNormalizeEnabled()) {
+      researchQuery = await normalizeResearchQuery(researchQuery, understood.fieldMentions);
+    } else if (understood.fieldMentions.length === 0 && !symptomExpansion) {
       researchQuery = await espellCorrect(researchQuery);
     }
     const live = await gatherLiveCandidates({ query: term, mentions: understood.fieldMentions, researchQuery, perSourceMax });
@@ -706,6 +748,76 @@ async function finalizeFreshInfo(
     source_ids: [],
     retrieval_scores: [],
     model_name: `deterministic-fresh-info:${reason}`,
+    prompt_version: PROMPT_VERSION,
+    safety_flags: [],
+    used_health_context: false,
+  });
+
+  return resp;
+}
+
+// The general-assistant lane's system prompt (lane 0.6, gated GENERAL_ASSISTANT_LANE=on). The
+// question already passed the deterministic general-task detector (lane-router.ts) — a clearly
+// non-medical request. Answer it naturally, no medical theater. Kept short so a misrouted question
+// (should never happen given the positive-signal detector) can't produce a long unscanned medical
+// essay. If the model somehow gets a medical-looking request here, it defers rather than advising.
+const GENERAL_ASSISTANT_SYSTEM =
+  "You are PharmaOrb. Your specialty is cited medical evidence, but this request is a general, " +
+  "non-medical one, so just help the user naturally and well — like a capable, friendly assistant. " +
+  "Answer directly and concisely. Do not add medical framing, citations, evidence grades, or " +
+  "disclaimers, and do not mention that you are usually a medical tool. If the request turns out to " +
+  "be about a health, medical, drug, or supplement topic, do NOT give medical advice — instead say " +
+  "in one line that they can ask that as a normal question to get a cited, evidence-backed answer.";
+
+/** Lane 0.6 — a natural reply to a clearly non-medical request (gated GENERAL_ASSISTANT_LANE=on).
+ *  One light LLM call, no retrieval, no citations, no safety-scan (positive-signal detector kept
+ *  medical questions out — see lane-router.ts). Rendered as a plain conversational message via the
+ *  reused "smalltalk" wire intent (no shared-type/frontend change). Any LLM failure degrades to the
+ *  normal engine by returning null, so the caller falls through to classify. */
+async function finalizeGeneralAssistant(
+  answerId: string,
+  question: string,
+  userId: string,
+  apiKey: string,
+): Promise<AskResponse | null> {
+  let content: string;
+  try {
+    const res = await chat({
+      model: modelFor("classify"),
+      max_tokens: 900,
+      system: GENERAL_ASSISTANT_SYSTEM,
+      messages: [{ role: "user", content: question }],
+      temperature: 0.7,
+    }, apiKey);
+    content = res.choices[0]?.message?.content?.trim() ?? "";
+    if (!content) return null; // empty completion → let the normal engine handle it
+  } catch {
+    return null; // never fail the request on the general lane — fall through to classify
+  }
+
+  const resp: AskResponse = {
+    answer_id: answerId,
+    intent: "smalltalk",
+    plain_english_summary: content,
+    evidence_grade: "not_applicable",
+    answer_sections: { what_we_know: [], what_we_do_not_know: [], safety_notes: [], questions_to_ask: [] },
+    citations: [],
+    safety_flags: [],
+    refused_unsupported: false,
+    oldest_source_date: null,
+  };
+
+  await storeTrace({
+    id: answerId,
+    user_id: userId,
+    question,
+    intent: "smalltalk",
+    detected_entities: [],
+    answer: resp,
+    evidence_grade: "not_applicable",
+    source_ids: [],
+    retrieval_scores: [],
+    model_name: "general-assistant",
     prompt_version: PROMPT_VERSION,
     safety_flags: [],
     used_health_context: false,

@@ -57,3 +57,51 @@ export function detectFreshInfo(question: string): FreshInfoDecision {
   if (PERSON_QUESTION.test(q)) return { fires: true, reason: "person_lookup" };
   return NO_FIRE;
 }
+
+// ---------------------------------------------------------------------------
+// Lane 0.6 — general-assistant lane (gated GENERAL_ASSISTANT_LANE=on, DEFAULT OFF)
+// ---------------------------------------------------------------------------
+// A reasonable-but-off-topic request ("help me write a cover letter", "translate this to Spanish")
+// is neither small talk, an emergency, a fresh-info lookup, nor a medical evidence question — today
+// it gets force-fit into clinical retrieval and comes back as a stilted cited non-answer. This lane
+// detects a clearly-general TASK and hands it a natural, helpful reply (finalizeGeneralAssistant),
+// no medical framing, no citations. Runs after small-talk + fresh-info, after the quota consume
+// (it does spend one cheap LLM call), before classify.
+//
+// SAFETY PROPERTY — positive signal required: this fires ONLY on an explicit general-task pattern
+// (a make/write verb on a clearly non-health object, or an unambiguous general-knowledge shape).
+// The mere ABSENCE of medical words is never enough. So a medical question that happens to slip
+// past BIOMEDICAL_MARKERS still carries no general-task verb → never fires here → stays in the
+// evidence pipeline with the full safety scan. Over-firing (answering a medical question without
+// the scan) is the failure mode we design against; every guard errs toward NOT firing.
+
+export function generalAssistantEnabled(): boolean {
+  return Deno.env.get("GENERAL_ASSISTANT_LANE") === "on";
+}
+
+export interface GeneralAssistantDecision {
+  fires: boolean;
+  reason: "general_task" | null;
+}
+
+const NO_GENERAL: GeneralAssistantDecision = { fires: false, reason: null };
+
+// A make/write/edit verb applied to a clearly NON-health object. Health-adjacent objects (meal plan,
+// workout, diet, supplement routine) are deliberately EXCLUDED — those may carry real health content
+// and belong in the evidence pipeline, not this lane.
+const GENERAL_TASK =
+  /\b(write|draft|compose|create|make|generate|build|design|plan|outline|summari[sz]e|translate|rewrite|reword|edit|proofread|brainstorm|help me (?:write|draft|make|create|build|plan|come up with))\b[\s\S]{0,40}\b(cover letter|resume|r[ée]sum[ée]|cv|curriculum vitae|e-?mail|essay|cover note|letter of intent|poem|short story|story|song|lyrics|screenplay|script|blog post|article|code|function|program|app|website|landing page|business plan|marketing plan|itinerary|travel plan|speech|toast|presentation|slide deck|pitch deck|tweet|thread|caption|instagram bio|headline|joke|spreadsheet|formula|regex|sql query)\b/i;
+
+// Unambiguously general knowledge / utility requests with no plausible medical reading.
+const GENERAL_KNOWLEDGE =
+  /^\s*(?:what(?:'?s| is) the capital of\b|how do (?:i|you) say\b|translate\b|what does .{1,40} mean in (?:spanish|french|german|italian|japanese|chinese|korean|portuguese)|convert \d|what(?:'?s| is) \d[\d\s+\-*/.^%()]*\??$)/i;
+
+export function detectGeneralAssistant(question: string): GeneralAssistantDecision {
+  const q = question.trim();
+  if (!q || q.length > 500) return NO_GENERAL;
+  if (BIOMEDICAL_MARKERS.test(q)) return NO_GENERAL;
+  if (mentionsKnownEntity(q)) return NO_GENERAL;
+  if (CURRENT_EVENTS.test(q) || PERSON_QUESTION.test(q)) return NO_GENERAL; // fresh-info lane owns these
+  if (GENERAL_TASK.test(q) || GENERAL_KNOWLEDGE.test(q)) return { fires: true, reason: "general_task" };
+  return NO_GENERAL;
+}
