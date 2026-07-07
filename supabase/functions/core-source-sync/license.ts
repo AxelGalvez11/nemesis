@@ -64,7 +64,14 @@ export type CoreSourceProvider =
   | "crossref"
   | "semantic_scholar"
   | "arxiv"
-  | "doi_lit";
+  | "doi_lit"
+  // WEB_IN_CHAT breadth (gated, default off) — a trusted-web live source for normal chat: Tavily
+  // results hard-filtered to journals / .gov / guideline bodies / .edu (blogs & SEO dropped). Same
+  // "surface LIVE (citable) but NEVER stored" posture as the science connectors above — a web page
+  // has no verifiable per-record open license, so it is treated as restricted (assertCommercialFriendly
+  // rejects it for storage). It flows through the SAME rerank + citation-enforcement + deterministic
+  // safety scan as every other live source in the chat answer path.
+  | "web_trusted";
 
 export type CoreSourceLicense =
   | "public_domain"
@@ -213,4 +220,6 @@ export const PROVIDER_DEFAULT_LICENSE: Readonly<
   semantic_scholar: "cc_by_nc",
   arxiv: "cc_by_nc",
   doi_lit: "cc_by_nc",
+  // Restricted (surface-live, never-store) — a web page has no verifiable open license.
+  web_trusted: "cc_by_nc",
 };

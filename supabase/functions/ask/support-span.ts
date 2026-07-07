@@ -8,6 +8,7 @@
 
 import type { AnswerPoint, AnswerSections, ClaimSupport } from "../../../packages/shared/src/answer.ts";
 import type { RetrievedChunk } from "./citation.ts";
+import { detectViolations } from "./safety.ts";
 
 export interface SupportSpan {
   /** Verbatim substring of the source text: sourceText.slice(start, end) === quote. */
@@ -137,7 +138,12 @@ function supportForPoint(point: AnswerPoint, byTag: Map<string, string>): ClaimS
     const text = byTag.get(tag);
     if (!text) continue;
     const span = bestSupportingSpan(point.text, text);
-    if (span) {
+    // The quote is VERBATIM source text (PubMed abstract, FDA label, or now a trusted-web page) shown
+    // to the user as a highlight — it is not generated text, so it never passed detectViolations. Scan
+    // it here: a source passage that itself trips a forbidden-phrase rule is dropped (the claim keeps
+    // its citation, just no highlighted quote). Closes the one path where raw source text reaches the
+    // UI unscanned; matters most for web sources, whose text is the least controlled.
+    if (span && detectViolations(span.quote).length === 0) {
       out.push({ citation_tag: tag, quote: span.quote });
       seen.add(tag);
     }
