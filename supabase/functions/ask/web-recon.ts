@@ -66,12 +66,14 @@ export async function runWebRecon(question: string): Promise<WebReconResult> {
     });
     if (!res.ok) return inferRecon(question, []);
 
-    const data = await res.json() as { results?: Array<{ title?: string; url?: string; snippet?: string }> };
+    // Provider-tolerant result shape: generic engines return `snippet`; Tavily returns `content`.
+    // Same trust filter either way — only .gov/wikipedia survive into recon context.
+    const data = await res.json() as { results?: Array<{ title?: string; url?: string; snippet?: string; content?: string }> };
     const sources = (data.results ?? [])
       .map((r) => ({
         title: String(r.title ?? "").trim(),
         url: String(r.url ?? "").trim(),
-        snippet: String(r.snippet ?? "").trim(),
+        snippet: String(r.snippet ?? r.content ?? "").trim(),
         trust: trustUrl(String(r.url ?? "")),
       }))
       .filter((r) => r.title && r.url && r.trust !== "untrusted");
