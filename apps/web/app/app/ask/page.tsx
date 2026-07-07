@@ -4,7 +4,7 @@ import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ResearchProgressStep, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
-import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
+import { autoDepth, scienceState } from "@pharmabro/shared";
 import { deliverablesOnCommandEnabled, streamingEnabled } from "@/lib/env";
 import { detectDeliverableIntent, type DeliverableFormat } from "@/lib/deliverable-intent";
 import { askQuestion, askQuestionStream, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchProjectSources, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
@@ -16,7 +16,6 @@ import { phCapture } from "@/lib/posthog";
 import { POINT_OF_USE_DISCLAIMER } from "@/lib/legal";
 import { buildThinkingPreview } from "@/lib/thinking-preview";
 import { citationDomains, faviconUrl, hostnameOf, SEARCH_DOMAINS } from "@/lib/favicon";
-import { composerModeLabel } from "@/lib/ask-mode-label";
 import { getCached, setCached } from "@/lib/cache";
 import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
 import { useAppChrome } from "@/components/AppShell";
@@ -202,7 +201,7 @@ function AskPage() {
   const [showThinking, setShowThinking] = useState(false);
   const [revealIdx, setRevealIdx] = useState<number | null>(null); // the turn whose answer should type itself in (only the just-arrived one — never reopened/saved turns)
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>(DEFAULT_DEPTH);
-  const [modeOpen, setModeOpen] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   // The verbatim source sentence backing the claim whose citation was just clicked, shown highlighted
   // in that source's evidence card. null = no claim-specific highlight (e.g. nothing cleared the bar).
@@ -492,16 +491,6 @@ function AskPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [turns, busy]);
 
-  // Close the mode menu on Escape / outside click.
-  useEffect(() => {
-    if (!modeOpen) return;
-    const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".mode-wrap")) setModeOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setModeOpen(false); };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, [modeOpen]);
-
   function autoGrow() {
     const ta = taRef.current;
     if (!ta) return;
@@ -687,7 +676,7 @@ function AskPage() {
       <Composer
         question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
         submit={submit} busy={busy} mode={mode} setMode={setMode}
-        modeOpen={modeOpen} setModeOpen={setModeOpen}
+        hint={question ? null : hint}
         error={latest?.err ?? null}
         welcome={!hasThread}
       />
@@ -734,13 +723,15 @@ function AskPage() {
               page, Data sources via Settings. */}
           {!reopenedEmpty ? (
             <div className="chip-row welcome-chips">
-              <button type="button" className="chip-action" onClick={() => { setQuestion("Is it true that "); taRef.current?.focus(); }}>
+              {/* Chips GUIDE, never inject text (owner call 2026-07-07): clicking sets a
+                  placeholder hint + focuses, so the box stays the user's own words. */}
+              <button type="button" className="chip-action" onClick={() => { setHint("Paste the claim you want checked…"); taRef.current?.focus(); }}>
                 <Icon name="check" size={14} />Verify a claim
               </button>
               <button type="button" className="chip-action" onClick={() => { setMode("deep"); taRef.current?.focus(); }}>
                 <Icon name="doc" size={14} />Deep research
               </button>
-              <button type="button" className="chip-action" onClick={() => { setQuestion("Is creatine good for me?"); taRef.current?.focus(); }}>
+              <button type="button" className="chip-action" onClick={() => { setHint("Name the product or supplement you\u2019re wondering about\u2026"); taRef.current?.focus(); }}>
                 <Icon name="search" size={14} />Is this good for me?
               </button>
             </div>
@@ -903,8 +894,8 @@ interface ComposerProps {
   busy: boolean;
   mode: (typeof MODES)[number]["id"];
   setMode: Dispatch<SetStateAction<(typeof MODES)[number]["id"]>>;
-  modeOpen: boolean;
-  setModeOpen: Dispatch<SetStateAction<boolean>>;
+  // Welcome-chip guidance shown as the textarea PLACEHOLDER (never injected text) until typing starts.
+  hint: string | null;
   error: string | null;
   // true only on the empty welcome screen — drives the cycling example placeholders. In an active
   // chat (thread) it's false, so the box shows a calm static "Ask a follow-up…" instead.
@@ -914,7 +905,7 @@ interface ComposerProps {
 // The input pill, shared between the centered welcome screen and the pinned bottom bar. A leading
 // "+" (attachments) and a "mic" (voice) are shown as ChatGPT-style affordances but disabled until
 // those features ship — same honest "coming soon" treatment as the non-live modes.
-function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error, welcome }: ComposerProps) {
+function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, hint, error, welcome }: ComposerProps) {
   const activeMode = MODES.find((m) => m.id === mode)!;
   // On the welcome screen, cycle example questions through an animated overlay placeholder (reveals
   // in from the left, fades out) so suggestions live in the chat bar without a hard text swap. Once a
@@ -1002,12 +993,12 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             value={question}
             maxLength={500}
             aria-label="Ask a question about a drug, dose, interaction, or monograph"
-            placeholder={welcome ? "Ask anything, or type / for more" : busy ? "Follow up" : "Ask anything"}
+            placeholder={hint ?? (welcome ? "Ask anything — / or @ for tools" : busy ? "Follow up" : "Ask anything")}
             onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
             onKeyDown={(e) => {
               // Manus's slash affordance: on an empty box, "/" opens the existing "+" tools launcher
               // instead of typing a literal slash. Any non-empty box types "/" normally.
-              if (e.key === "/" && !question) { e.preventDefault(); setPlusOpen(true); return; }
+              if ((e.key === "/" || e.key === "@") && !question) { e.preventDefault(); setPlusOpen(true); return; }
               if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); }
             }}
           />
@@ -1017,34 +1008,16 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
               standing "/ for more" hint again. Best of both: rotating examples AND a persistent slash hint. */}
           {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{askPlaceholderFor(phIdx)}</span> : null}
         </div>
-        <div className="mode-wrap" style={{ position: "relative" }}>
-          <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
-            <b>{composerModeLabel(activeMode)}</b>
-            <Icon name="chevron-down" size={14} />
+        {/* No depth dial (owner call 2026-07-07 — ChatGPT has none): Auto routing is always on.
+            An armed report tool (from "+"/@) shows as a removable pill, the ChatGPT armed-tool
+            shape; clicking it disarms back to the default depth. */}
+        {mode !== "auto" && mode !== "thorough" ? (
+          <button className="mode tool-armed" type="button" onClick={() => setMode(DEFAULT_DEPTH)}
+            title="Click to remove this tool" aria-label={`Remove ${activeMode.label}`}>
+            <b>{activeMode.label}</b>
+            <span aria-hidden="true">✕</span>
           </button>
-          {modeOpen ? (
-            <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
-              {/* Depth ONLY — the Pro report tools (Deep research / Discovery) moved to the "+"
-                  launcher on the left, so this dial reads as speed/depth (the ChatGPT split). When a
-                  tool is armed, the dial button shows its name; picking a depth here disarms it.
-                  lab_draft stays out until its engine deploy is owner-gated live. */}
-              {MODES.filter((m) => m.id === "auto" || m.id === "thorough").map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  role="menuitem"
-                  disabled={!m.live}
-                  onClick={() => { if (m.live) { setMode(m.id); setModeOpen(false); } }}
-                  title={m.hint}
-                >
-                  <Icon name={m.live ? (m.id === mode ? "check" : "sparkle") : "lock"} size={14} />
-                  <span style={{ flex: 1 }}>{m.label}</span>
-                  {!m.live ? <small style={{ color: "var(--text-3)" }}>Soon</small> : m.pro ? <small style={{ color: "var(--text-3)" }}>Pro</small> : null}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        ) : null}
         <button
           className={`tool${dictation.listening ? " rec" : ""}`}
           type="button"
@@ -1368,21 +1341,23 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
   const tailDelayMs = REVEAL_BASE + headSlots * REVEAL_STEP + 150;
   return (
     <div className={`answer${fadeClass}`}>
-      <div className="grade-row">
-        <span className="grade">{answer.evidence_grade.replace(/_/g, " ")}</span>
+      {/* Evidence-grade chip removed (owner call 2026-07-07 — visual noise); the grade still rides
+          the response + sources panel. Row renders only when it has something left to show. */}
+      {science || flags.length ? <div className="grade-row">
         {science ? (
           <span className={`science-state ${science.state}`} title={scienceBasis(science)}>
             {science.state === "well_studied" ? "Well-studied" : "Emerging"}
           </span>
         ) : null}
         {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
-      </div>
+      </div> : null}
       {answer.primary_drug && !answer.template && !answer.refused_unsupported ? <MoleculeImage drug={answer.primary_drug} /> : null}
       {answer.plain_english_summary ? <p className="lead">{rt(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
 
       {/* Main explanation, under a quiet section heading (owner wants clearer structure) over the cited body. */}
-      {s.what_we_know?.length ? <div className="ai-block-label">What the evidence shows</div> : null}
+      {/* Fixed section header removed (owner call 2026-07-07): ChatGPT answers flow without
+          template headings — the v16 bold lead-ins already carry the structure. */}
       <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} citations={answer.citations} ctx={ctx} />
 
       {/* Safety block intentionally NOT rendered in the answer body (owner 2026-06-21: it "reads like
@@ -1553,28 +1528,14 @@ function Prose({ points, citeMap, onCite, citations = [], ctx = null }: PointBlo
     <>
       {points.map((p, i) => {
         const chips = <CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} />;
-        // Per-claim Evidence Meter chip — deterministic, design-weighted (never vote-counted, see
-        // packages/shared/src/claim-meter.ts). Additive: null when the point has no usable citations,
-        // so the answer renders exactly as before.
-        const meter = (() => {
-          const m = meterForPoint(p.citation_ids, citations);
-          return m ? (
-            <span
-              className={`meter-chip meter-${m.label}`}
-              style={{ "--pct": `${m.score}%` } as CSSProperties}
-              title={`Evidence for this point: ${m.basis}`}
-            >
-              <i />
-              <b>{m.label}</b>
-            </span>
-          ) : null;
-        })();
+        // Per-claim Evidence Meter chip REMOVED from the render (owner call 2026-07-07 — reads as
+        // noise). meterForPoint + claim-meter.ts stay intact for the sources panel / future surfaces.
         return (
           <p className="ai-para" key={i}>
             {ctx ? wrapWords(renderInline(p.text), ctx) : renderInline(p.text)}
-            {/* delay the chips (and the meter, sharing the same slot) so neither appears before the
-                sentence it backs — keeps the single reveal-timeline slot-per-point that headSlots assumes. */}
-            {ctx ? <span className="rv-w" style={{ animationDelay: `${revealDelay(ctx)}ms` }}>{chips}{meter}</span> : <>{chips}{meter}</>}
+            {/* delay the chips so none appears before the sentence it backs — keeps the single
+                reveal-timeline slot-per-point that headSlots assumes. */}
+            {ctx ? <span className="rv-w" style={{ animationDelay: `${revealDelay(ctx)}ms` }}>{chips}</span> : chips}
           </p>
         );
       })}
@@ -1587,7 +1548,8 @@ function UnclearBlock({ points, citeMap, onCite }: PointBlockProps) {
   if (!points?.length) return null;
   return (
     <div className="ai-unclear">
-      <div className="muted-label">Still uncertain</div>
+      {/* "Still uncertain" label removed (owner call 2026-07-07) — the muted styling alone
+          de-emphasizes the caveats without a robotic template heading. */}
       <PointItems points={points} citeMap={citeMap} onCite={onCite} paraClass="" />
     </div>
   );
