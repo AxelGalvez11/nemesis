@@ -41,17 +41,31 @@ Deno.test("webLearningsToChunks: one chunk per distinct URL, tags start at start
   assertEquals(chunks.map((c) => c.url).sort(), ["https://healthline.com/b", "https://nejm.org/a"]);
 });
 
-Deno.test("webLearningsToChunks: high-trust sources sort before lower-trust", () => {
+Deno.test("webLearningsToChunks: LOW-trust sources are DROPPED (never citable in a medical report)", () => {
+  Deno.env.delete("DEEP_AGENTIC_ALLOW_LOW_TRUST");
   const chunks = webLearningsToChunks([
     L("blog claim", "https://blog.example.com/x", "low"),
     L("journal claim", "https://thelancet.com/y", "high"),
     L("wiki claim", "https://en.wikipedia.org/z", "medium"),
   ], 1);
+  // low dropped; high sorts before medium
   assertEquals(chunks.map((c) => c.url), [
     "https://thelancet.com/y",
     "https://en.wikipedia.org/z",
-    "https://blog.example.com/x",
   ]);
+});
+
+Deno.test("webLearningsToChunks: DEEP_AGENTIC_ALLOW_LOW_TRUST=on keeps low-trust (sorted last)", () => {
+  Deno.env.set("DEEP_AGENTIC_ALLOW_LOW_TRUST", "on");
+  try {
+    const chunks = webLearningsToChunks([
+      L("blog claim", "https://blog.example.com/x", "low"),
+      L("journal claim", "https://thelancet.com/y", "high"),
+    ], 1);
+    assertEquals(chunks.map((c) => c.url), ["https://thelancet.com/y", "https://blog.example.com/x"]);
+  } finally {
+    Deno.env.delete("DEEP_AGENTIC_ALLOW_LOW_TRUST");
+  }
 });
 
 Deno.test("webLearningsToChunks: chunk_text is the SOURCE passage ONLY (grounding target), provider=web", () => {

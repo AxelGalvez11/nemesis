@@ -15,6 +15,14 @@
 // Fail-safe by contract: every network/LLM failure degrades to fewer learnings, never throws — a weak
 // web round must never sink the report. Bounded concurrency + hard depth cap keep it inside the job's
 // wall-clock budget. Web text is truncated before it ever reaches the LLM (token-blowup pitfall).
+//
+// LOAD-BEARING INVARIANT (see webLearningsToChunks): chunk_text is the source's REAL passage ONLY —
+// the model's `learning` is never written into it, so a hallucinated learning cannot self-ground past
+// the faithfulness judge. KNOWN RESIDUAL: the judge checks support-BY-TEXT, not truth — a web page
+// that asserts something false in its own prose can be "faithfully" cited. Mitigated by dropping all
+// low-trust domains (only trusted journals / guideline bodies / health authorities are citable), but
+// not eliminated. This is inherent to grounding on live web content; keep the flag OFF until this
+// tradeoff is acceptable for the deployment.
 
 import { callTool, type Tool } from "../llm.ts";
 import { modelFor } from "../model-router.ts";
@@ -49,9 +57,10 @@ export type WebTrust = "high" | "medium" | "low";
 
 /**
  * Trust rank for a research web source (broader than the /ask recon filter, which is .gov/wikipedia
- * only — a research report legitimately draws on journals, Cochrane, guideline bodies, .edu). The
- * faithfulness judge is the real gate; this only ORDERS the pool so higher-trust sources win ties and
- * a "low" tier can be dropped when higher-trust breadth is plentiful. Pure.
+ * only — a research report legitimately draws on journals, Cochrane, guideline bodies, .edu). Two
+ * uses downstream: "low" (random blogs / SEO) is DROPPED entirely in webLearningsToChunks (never
+ * citable in a medical report), and among the kept high/medium sources this orders the pool so
+ * higher-trust wins ties. The faithfulness judge is still the per-claim gate on top. Pure.
  */
 export function webTrust(url: string): WebTrust {
   let host = "";
@@ -306,8 +315,15 @@ export async function runAgenticWebResearch(
  * distinct source URL (learnings from the same page collapse to that page's chunk). Pure.
  */
 export function webLearningsToChunks(learnings: readonly WebLearning[], startTag: number): RetrievedChunk[] {
+  // Drop LOW-trust sources (random blogs / SEO pages) entirely — they are never citable in a medical
+  // evidence report. This is the real mitigation for "a web page can assert something false in its own
+  // prose and pass the support-check judge": the pool is restricted to trusted journals, guideline
+  // bodies, and health authorities (webTrust high/medium), so the residual shrinks to a trusted source
+  // being wrong, not an SEO farm. DEEP_AGENTIC_ALLOW_LOW_TRUST=on lifts this if ever needed.
+  const allowLow = Deno.env.get("DEEP_AGENTIC_ALLOW_LOW_TRUST") === "on";
+  const kept = allowLow ? learnings : learnings.filter((l) => l.trust !== "low");
   const byUrl = new Map<string, WebLearning[]>();
-  for (const l of learnings) {
+  for (const l of kept) {
     const arr = byUrl.get(l.url) ?? [];
     arr.push(l);
     byUrl.set(l.url, arr);
