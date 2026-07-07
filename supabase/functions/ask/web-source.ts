@@ -64,7 +64,9 @@ export async function fetchTrustedWeb(query: string, max: number): Promise<Norma
   for (const r of results) {
     const url = String(r.url ?? "").trim();
     const title = String(r.title ?? "").trim();
-    const text = String(r.raw_content ?? r.content ?? "").trim();
+    // Prefer Tavily's extracted `content` (the on-topic snippet) over `raw_content` (full page): it's
+    // more relevant AND a smaller injection surface (less uncontrolled page text as grounding context).
+    const text = String(r.content ?? r.raw_content ?? "").trim();
     if (!url || !title || !text) continue;
     if (webTrust(url) === "low") continue; // journals / .gov / guidelines / .edu only — no blogs/SEO
     if (seen.has(url)) continue;

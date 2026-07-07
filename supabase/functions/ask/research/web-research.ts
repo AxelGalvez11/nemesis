@@ -78,9 +78,22 @@ export function webTrust(url: string): WebTrust {
     "wikipedia.org", "medlineplus.gov", "mayoclinic.org", "clevelandclinic.org", "healthline.com",
     "webmd.com", "drugs.com", "medscape.com", "examine.com", "consensus.app", "semanticscholar.org",
   ];
-  if (HIGH.some((d) => host.endsWith(d) || host.includes(d))) return "high";
-  if (MEDIUM.some((d) => host.endsWith(d) || host.includes(d))) return "medium";
+  if (HIGH.some((d) => hostMatchesDomain(host, d))) return "high";
+  if (MEDIUM.some((d) => hostMatchesDomain(host, d))) return "medium";
   return "low";
+}
+
+/**
+ * Strict domain-suffix match — the trust filter's load-bearing check. The old `host.includes(d)`
+ * let a spoofed host ("nejm.org.evil-attacker.com") pass as trusted; this matches only the real
+ * registrable domain or a subdomain of it. Two entry forms:
+ *   - ".gov"/".edu"/".nih.gov" (leading dot) → TLD/suffix: host is exactly the label or ends with it.
+ *   - "nejm.org" (no dot) → host is that domain exactly, or a subdomain ("www.nejm.org"), never a
+ *     domain that merely CONTAINS it ("nejm.org.evil.com" and "evilnejm.org" both reject). Pure.
+ */
+export function hostMatchesDomain(host: string, domain: string): boolean {
+  if (domain.startsWith(".")) return host === domain.slice(1) || host.endsWith(domain);
+  return host === domain || host.endsWith("." + domain);
 }
 
 interface SerpQuery {

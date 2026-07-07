@@ -25,6 +25,19 @@ Deno.test("webTrust ranks journals/gov/edu high, consumer-health medium, blogs l
   assertEquals(webTrust("not a url"), "low");
 });
 
+Deno.test("webTrust REJECTS hostname-spoofing (the code-review HIGH) — a forged trusted label is 'low'", () => {
+  // These merely CONTAIN a trusted domain string; the real registrable domain is the attacker's.
+  assertEquals(webTrust("https://nejm.org.evil-attacker.com/fake"), "low");
+  assertEquals(webTrust("https://fake-fda.gov.phishing-site.ru/article"), "low");
+  assertEquals(webTrust("https://cochrane.org.malicious.net/page"), "low");
+  assertEquals(webTrust("https://evilnejm.org/x"), "low"); // prefix squat — not a subdomain of nejm.org
+  assertEquals(webTrust("https://notreallyharvard.edu.attacker.com/x"), "low");
+  // Real subdomains still pass.
+  assertEquals(webTrust("https://www.nejm.org/x"), "high");
+  assertEquals(webTrust("https://subdomain.cochrane.org/x"), "high");
+  assertEquals(webTrust("https://www.cdc.gov/x"), "high"); // .gov suffix
+});
+
 const L = (learning: string, url: string, trust: WebLearning["trust"], text = "source passage text"): WebLearning => ({
   learning, url, title: `Title for ${url}`, text, trust,
 });
