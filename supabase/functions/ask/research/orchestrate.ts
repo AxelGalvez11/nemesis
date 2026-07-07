@@ -49,6 +49,7 @@ import { detectForbiddenPhrases } from "../../../../packages/shared/src/forbidde
 import { poolRiskRatio } from "../../../../packages/shared/src/meta-analysis.ts";
 import type { MetaAnalysisResult } from "../../../../packages/shared/src/meta-analysis.ts";
 import { planSubQuestions, resolveSubQuestions } from "./plan.ts";
+import { agenticResearchEnabled, runAgenticWebResearch, webLearningsToChunks } from "./web-research.ts";
 import { deriveGaps } from "./gaps.ts";
 import { assembleSections, type RawReportPoint, synthesizeReport } from "./synthesize.ts";
 import { parsePico } from "./pico.ts";
@@ -90,6 +91,7 @@ const PROVIDER_DB_LABELS: Record<string, string> = {
   faers: "FDA FAERS adverse-event reports",
   europepmc: "Europe PMC",
   corpus: "PharmaBro curated evidence corpus",
+  web: "Web sources (trusted journals, guidelines, and health authorities)",
 };
 
 /**
@@ -437,13 +439,22 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
   }
 
   // ---- 3. gather (bounded parallel; recall-first per sub-question, reranked against THAT question) ----
+  // 3a runs the medical-database gather (dense + live sources) per sub-question. 3b, when
+  // DEEP_RESEARCH_AGENTIC=on, runs the ChatGPT-style agentic WEB loop in PARALLEL: iterative
+  // search -> per-source learning extraction -> follow-up queries -> repeat. Its learnings become
+  // provider:"web" chunks that MERGE into the same pool below, so the reranker, the per-claim
+  // faithfulness judge, and the forbidden-phrase scan run on them UNCHANGED — web breadth in, the
+  // citation bar untouched. Flag off: webChunks is [] and this is byte-identical to the DB-only path.
   emit("gathering", `Searching evidence for ${subQuestions.length} sub-questions`);
-  const perSubQuestion = await Promise.all(
-    subQuestions.map((sq) => gatherForSubQuestion(sq, cls.entity_mentions, cfg)),
-  );
+  const [perSubQuestion, webChunks] = await Promise.all([
+    Promise.all(subQuestions.map((sq) => gatherForSubQuestion(sq, cls.entity_mentions, cfg))),
+    gatherWebResearch(question, cfg, emit),
+  ]);
 
   // ---- 4. merge into ONE citation namespace ----
-  const chunks = mergeEvidence(perSubQuestion, REPORT_MAX_CHUNKS);
+  // Web chunks join as one more reranked list; mergeEvidence dedups by chunk_id (web synthetic ids
+  // never collide with library ids), round-robins for fairness, caps at REPORT_MAX_CHUNKS, retags 1..N.
+  const chunks = mergeEvidence(webChunks.length ? [...perSubQuestion, webChunks] : perSubQuestion, REPORT_MAX_CHUNKS);
   const { gaps, counts } = deriveGaps(chunks, subQuestions);
   emit("gathering", "Merged and deduplicated the evidence pool", chunks.length);
   if (chunks.length === 0) {
@@ -580,6 +591,37 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
   });
   emit("done", "Report ready", report.citations.length);
   return report;
+}
+
+/**
+ * Agentic WEB research (DEEP_RESEARCH_AGENTIC=on): run the iterative search->extract->follow-up loop,
+ * convert its per-source learnings to provider:"web" chunks, and rerank them against the ORIGINAL
+ * question so their internal order is by relevance before they merge into the evidence pool. Flag off
+ * (or no search key) -> [] instantly, so the DB-only path is byte-identical. Never throws; a failed
+ * web round just returns fewer/no chunks. Progress feeds the same activity trail the DB gather uses.
+ */
+async function gatherWebResearch(
+  question: string,
+  cfg: OrchestrateConfig,
+  emit: (step: ResearchProgressStep["step"], detail: string, sources_found?: number) => void,
+): Promise<RetrievedChunk[]> {
+  if (!agenticResearchEnabled()) return [];
+  try {
+    const learnings = await runAgenticWebResearch(question, cfg.apiKey, {
+      onQueries: (queries) => emit("gathering", `Searching the web: ${queries.slice(0, 3).join("; ")}`.slice(0, 200)),
+      onSources: (count) => emit("gathering", "Reading and extracting from web sources", count),
+    });
+    if (learnings.length === 0) return [];
+    const chunks = webLearningsToChunks(learnings, 1);
+    try {
+      return await rerankChunks(question, chunks);
+    } catch {
+      return chunks; // rerank failure -> trust-sorted order from the adapter
+    }
+  } catch (e) {
+    console.error("agentic web research gather failed; using DB evidence only:", (e as Error).message);
+    return [];
+  }
 }
 
 /**
