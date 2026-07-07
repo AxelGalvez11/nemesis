@@ -182,6 +182,31 @@ export function buildCitations(tags: string[], chunks: RetrievedChunk[]): Citati
     });
 }
 
+/**
+ * Build the "also reviewed" set: sources that were RETRIEVED into the evidence pool but the writer
+ * did not end up citing. The agentic web loop + wider DB breadth gather far more than the synthesizer
+ * cites, so without this the report's evidence base collapses to the ~8 cited tags and all the
+ * gathered breadth is invisible. Additive + display-only: never affects the answer, the cited set,
+ * grounding, or the faithfulness/forbidden gates (those already ran on the synthesized body). Deduped
+ * against the cited tags; tagged continuing after the cited namespace so tags never collide. PURE.
+ */
+export function buildReviewedSources(citedTags: string[], chunks: RetrievedChunk[]): Citation[] {
+  const cited = new Set(citedTags);
+  const reviewed = chunks.filter((c) => !cited.has(c.tag));
+  return reviewed.map((c) => ({
+    chunk_tag: c.tag,
+    source_id: c.source_id,
+    source_type: c.provider,
+    title: c.title,
+    section: c.section,
+    url: c.url,
+    license: c.license,
+    published_date: c.published_date,
+    retrieved_at: c.retrieved_at,
+    ...citationMeta(c),
+  }));
+}
+
 const UNVERIFIED_NOTE: AnswerPoint = {
   text:
     "These findings passed an automated check that each cited source exists, but the deeper " +
@@ -260,6 +285,7 @@ export function assembleReport(args: {
     uncertainties,
     safety_notes,
     citations: buildCitations(allTags, chunks),
+    reviewed_sources: buildReviewedSources(allTags, chunks),
     evidence_grade: args.evidenceGrade,
     safety_flags: args.safetyFlags,
     claims_verified: args.claimsVerified,
