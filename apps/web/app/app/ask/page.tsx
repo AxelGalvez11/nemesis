@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ResearchProgressStep, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
-import { deliverablesOnCommandEnabled, simplifiedModesEnabled } from "@/lib/env";
+import { deliverablesOnCommandEnabled } from "@/lib/env";
 import { detectDeliverableIntent, type DeliverableFormat } from "@/lib/deliverable-intent";
 import { askQuestion, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchProjectSources, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
@@ -40,9 +40,12 @@ function isQuotaError(e: unknown): e is AskQuotaError {
 // "Meta-analysis" is no longer a separate user-facing tool: Deep research runs the meta pipeline,
 // which ALWAYS produces the full structured review and ADDS a computed pooled estimate only when the
 // studies are genuinely comparable (engine degrades to an honest "no pooled estimate" note otherwise).
+// "Fast" is no longer a user-facing option (owner call 2026-07-06): it only changed the answer
+// REGISTER (plain + concise), not the pipeline, so the label over-promised speed. Auto is the
+// default (its quick depth still sends mode:"fast" on the wire — that engine register is kept);
+// Thorough remains the explicit escalation, the ChatGPT default/Thinking split.
 const MODES = [
   { id: "auto", label: "Auto", live: true, pro: false, hint: "Picks the right depth for your question automatically" },
-  { id: "fast", label: "Fast", live: true, pro: false, hint: "Quick, plain-English answer — cited from the library + live sources" },
   { id: "thorough", label: "Thorough", live: true, pro: false, hint: "Thinks longer: a wider source pull and a fuller, more technical answer" },
   { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report — pools comparable studies into a computed estimate when the evidence supports it (Pro)" },
   { id: "structured_review", label: "Systematic review", live: true, pro: true, hint: "A documented-method evidence review: what was searched, what was included, and cited findings in tables (Pro)" },
@@ -52,7 +55,7 @@ const MODES = [
 
 // Where the dial rests when no tool is armed — and what an armed tool resets to after its run
 // launches (tools are single-shot, the ChatGPT behavior; see submit()).
-const DEFAULT_DEPTH: (typeof MODES)[number]["id"] = simplifiedModesEnabled ? "auto" : "fast";
+const DEFAULT_DEPTH: (typeof MODES)[number]["id"] = "auto";
 
 const MIN_THINKING_PREVIEW_MS = 650;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -598,9 +601,10 @@ function AskPage() {
     const minThinkingPreview = wait(MIN_THINKING_PREVIEW_MS);
     const t0 = Date.now();
     try {
-      // Only fast/thorough/auto reach here — report modes returned above via the research branch.
-      // Auto picks the depth from the question shape (reuses the same fast/thorough engine paths).
-      const askMode: AskMode = mode === "thorough" ? "thorough" : mode === "auto" ? autoDepth(text) : "fast";
+      // Only auto/thorough reach here — report modes returned above via the research branch.
+      // Auto picks the depth from the question shape; its quick depth is the engine's "fast"
+      // register (plain + concise), which is no longer a user-facing label.
+      const askMode: AskMode = mode === "thorough" ? "thorough" : autoDepth(text);
       // Ride the project's user-set instructions AND its attached sources into the question the engine
       // sees — the frozen /ask fn is untouched; the safety scan still sees everything. Never applied to
       // `text` (transcript, saved history) or autoDepth (depth classification) above. Report runs
@@ -988,7 +992,7 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
                   launcher on the left, so this dial reads as speed/depth (the ChatGPT split). When a
                   tool is armed, the dial button shows its name; picking a depth here disarms it.
                   lab_draft stays out until its engine deploy is owner-gated live. */}
-              {MODES.filter((m) => simplifiedModesEnabled ? m.id === "auto" : (m.id === "fast" || m.id === "thorough")).map((m) => (
+              {MODES.filter((m) => m.id === "auto" || m.id === "thorough").map((m) => (
                 <button
                   key={m.id}
                   type="button"
