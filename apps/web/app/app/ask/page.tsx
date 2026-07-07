@@ -547,13 +547,15 @@ function AskPage() {
       // launchResearch below, so the chat bubble always shows exactly what they typed.
       const searchText = isDeliverableCommand ? deliverable!.topic : text;
       const displayText = text;
-      const posterFallback = isDeliverableCommand && deliverable!.format === "poster";
+      const isPoster = isDeliverableCommand && deliverable!.format === "poster";
       // Honest surfacing: while scoping/running, this turn's research card shows what's actually
       // happening ("Building your slides on statin safety…"), not a silent reinterpretation. See
       // deliverableLabel/deliverableNote on Turn/ResearchCard and their render in ResearchRunCard.
       const deliverableLabel: DeliverableFormat | undefined = isDeliverableCommand ? (deliverable!.format ?? undefined) : undefined;
-      const deliverableNote = posterFallback
-        ? `Poster export isn't built yet — building a deep-research report on "${searchText}" instead.`
+      // Poster IS built now (the report's "Poster" export opens a print-ready cited board): a poster
+      // command runs the deep-research report and the note points at the poster view.
+      const deliverableNote = isPoster
+        ? `Building the deep-research report on "${searchText}" — open its "Poster" export for a print-ready cited board.`
         : undefined;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
       setTurns((prev) => [...prev, { q: displayText, a: null, err: null, scoping: true, deliverableLabel, deliverableNote }]);

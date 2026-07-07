@@ -23,6 +23,7 @@ import { Icon } from "./icons";
 import { ForestPlot } from "./ForestPlot";
 import { EvidenceChartsSection } from "./EvidenceCharts";
 import { downloadReportExport } from "@/lib/api";
+import Link from "next/link";
 import { engineVisualsEnabled } from "@/lib/env";
 import { MissionSheet } from "@/components/MissionSheet";
 import { ResearchProgress } from "./ResearchProgress";
@@ -452,6 +453,12 @@ export function ResearchReportView({ report, reportId, run, style = "vancouver",
             <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pptx", style)}>
               <Icon name="doc" size={14} />PowerPoint (cited)
             </button>
+            {/* Poster = a print-ready cited conference poster generated from this report (the
+                ResearchPoster component, now wired to a live route). Opens the poster view where
+                Print/Save-as-PDF produces the 48x36 board. */}
+            <Link className="chip-action" href={`/app/reports/${reportId}/poster`}>
+              <Icon name="doc" size={14} />Poster
+            </Link>
             <button type="button" className="chip-action" onClick={() => setShowMission((v) => !v)} aria-expanded={showMission}>
               <Icon name="bell" size={14} />Repeat this research
             </button>
