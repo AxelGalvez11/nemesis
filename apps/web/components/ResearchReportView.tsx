@@ -486,6 +486,14 @@ export function ResearchReportView({ report, reportId, run, style = "vancouver",
         </div>
       ) : null}
 
+      {report.paper_meta ? (
+        <p className="muted-note appraisal-paper-line">
+          <Icon name="doc" size={13} /> Appraisal of {report.paper_meta.title ?? "an uploaded paper"}
+          {report.paper_meta.pages ? ` · ${report.paper_meta.pages} pages` : ""}
+          {report.paper_meta.truncated ? " · long paper, appraised from its leading text" : ""}
+        </p>
+      ) : null}
+
       {abstract ? (
         <section className="research-section meta-abstract">
           <h4 className="research-heading">Abstract</h4>
@@ -576,6 +584,15 @@ export function ResearchReportView({ report, reportId, run, style = "vancouver",
               ) : null}
             </p>
           ))}
+        </div>
+      ) : null}
+
+      {report.appraisal_questions?.length ? (
+        <div className="research-questions">
+          <div className="muted-label">Discussion questions</div>
+          <ol>
+            {report.appraisal_questions.map((q, i) => <li key={i}>{renderInline(q)}</li>)}
+          </ol>
         </div>
       ) : null}
 

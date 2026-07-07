@@ -1463,6 +1463,23 @@
 .credits-foot { font-size: 12px; color: var(--text-3); line-height: 1.6; margin-top: 14px; }
 .credits-foot a { color: var(--acid-dim); }
 
+/* Journal-club appraisal report view */
+.appraisal-paper-line { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.research-questions { margin-top: 18px; }
+.research-questions ol { margin: 6px 0 0 18px; }
+.research-questions li { margin-bottom: 6px; }
+
+/* Journal-club paper upload sheet — mirrors .confirm-overlay/.confirm-card's centered-modal pattern */
+.upload-sheet-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.46); backdrop-filter: blur(2px); display: grid; place-items: center; padding: 20px; z-index: 80; animation: app-modal-in 0.15s both; }
+.upload-sheet { width: min(440px, 100%); background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.6); padding: 18px; animation: app-modal-in 0.15s both; }
+.upload-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.upload-close { background: none; border: none; font-size: 20px; line-height: 1; color: var(--text-2); cursor: pointer; padding: 0 4px; }
+.upload-drop { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 28px 16px; border: 1.5px dashed var(--line-2); border-radius: 12px; color: var(--text-2); cursor: pointer; transition: border-color .15s, background .15s; }
+.upload-drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.upload-drop.busy { cursor: default; opacity: 0.7; }
+.upload-err { color: var(--danger); margin-top: 10px; font-size: 13px; }
+.upload-note { color: var(--text-3); margin-top: 10px; font-size: 12px; }
+
 /* ── AgentRunTracker: Manus-style ordered task-progress checklist ──────────────────────────────────
    Quiet, tight rows (14px label, right-aligned m:ss timer). Three states, deliberately discriminated:
    ACTIVE is the emphasized "you are here" row (solid --acid dot + soft pulse, expandable narration);

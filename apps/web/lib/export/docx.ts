@@ -114,6 +114,10 @@ export async function reportToDocx(report: ResearchReport, style: CitationStyle)
       bullet(g.text + (g.corroborating_trials.length ? ` An answer may be coming: ${g.corroborating_trials.join(", ")}.` : ""))
     ));
   }
+  if (report.appraisal_questions?.length) {
+    children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Discussion questions")] }));
+    children.push(...report.appraisal_questions.map((q) => bullet(q)));
+  }
 
   if (report.uncertainties.length) {
     children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Still uncertain")] }));

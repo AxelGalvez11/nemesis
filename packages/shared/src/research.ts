@@ -96,6 +96,14 @@ export interface ResearchReport {
   model_slots?: ModelSlotMap;
   /** Level 4 discovery payload: claim cards, gaps, hypotheses, and next-study design. */
   discovery?: DiscoveryReport;
+  /** Journal-club appraisal (mode 'appraisal' only): open discussion questions generated from the
+   *  appraised paper. Additive/optional — absent on every other report kind and on older saved reports;
+   *  the UI and exports render a "Discussion questions" block only when present. */
+  appraisal_questions?: string[];
+  /** Journal-club appraisal (mode 'appraisal' only): light metadata about the uploaded paper the
+   *  appraisal was built from (title if detected, page count, whether the extracted text was capped).
+   *  Additive/optional; the UI shows a one-line paper header when present. */
+  paper_meta?: PaperMeta;
 }
 
 /** Async run lifecycle (mirrors research_report_runs.status). */
@@ -117,7 +125,7 @@ export interface ResearchProgressStep {
  *  code-computed pooled estimate (risk ratio) when ≥2 comparable studies report extractable counts;
  *  'lab_draft' = a literature-grounded study-DESIGN scaffold (objective/arms/controls/endpoints/assays/
  *  sample-size/pitfalls) — never an executable protocol or synthesis route. Beta, hazardous-scope-gated. */
-export type ReportMode = "standard" | "structured_review" | "meta" | "lab_draft" | "discovery";
+export type ReportMode = "standard" | "structured_review" | "meta" | "lab_draft" | "discovery" | "appraisal";
 
 /** The fixed comparison a meta-analysis run pools around (PICO), parsed from the question BEFORE the
  *  corpus is read so the contrast can never be inferred post-hoc across mismatched studies. */
@@ -180,4 +188,64 @@ export interface SearchMethod {
   search_date: string; // YYYY-MM-DD
   inclusion_notes: string;
   exclusion_notes: string;
+}
+
+// ── Journal-club appraisal (mode 'appraisal') ───────────────────────────────
+// A structured critical appraisal of ONE uploaded paper. The pipeline (research edge fn) produces an
+// AppraisalInput; the PURE shaper in ./appraisal-report.ts turns it into a ResearchReport so the whole
+// Library / report-view / export stack renders it unchanged. Every appraisal claim is grounded in a
+// verbatim quote from the paper (or carries no quote and is surfaced as a lower-confidence statement).
+
+/** Light metadata about the uploaded paper (never trusted as evidence — descriptive only). */
+export interface PaperMeta {
+  /** First plausible title line the extractor found, or null if none was confidently detected. */
+  title: string | null;
+  /** Page count reported by the PDF extractor (0 if unknown). */
+  pages: number;
+  /** True when the extracted text was capped (the appraisal saw a prefix of a very long paper). */
+  truncated: boolean;
+}
+
+/** The six appraisal dimensions, in fixed display order. */
+export type AppraisalDimensionKey =
+  | "design"
+  | "population"
+  | "endpoints"
+  | "statistics"
+  | "risk_of_bias"
+  | "applicability";
+
+/** A per-dimension verdict. 'unclear' = the paper did not report enough to judge (never invented). */
+export type AppraisalVerdict = "strong" | "adequate" | "weak" | "unclear";
+
+/** One appraisal finding, grounded in a verbatim paper quote when one supports it. */
+export interface AppraisalPoint {
+  text: string;
+  /** A verbatim substring of the paper's extracted text, or null when no supporting quote survived
+   *  the verbatim check. A null quote means the point is shown as a lower-confidence observation. */
+  quote: string | null;
+}
+
+/** One appraised dimension: its verdict and the grounded findings behind it. */
+export interface AppraisalDimension {
+  key: AppraisalDimensionKey;
+  heading: string;
+  verdict: AppraisalVerdict;
+  points: AppraisalPoint[];
+}
+
+/** The structured appraisal the pipeline produces, before it is shaped into a ResearchReport. */
+export interface AppraisalInput {
+  paper_meta: PaperMeta;
+  /** Plain-English bottom line (becomes the report summary). */
+  bottom_line: string;
+  dimensions: AppraisalDimension[];
+  /** Honest limitations of the paper (become the report's "Still uncertain" block). */
+  limitations: string[];
+  /** Open discussion questions for the journal club (become appraisal_questions). */
+  questions: string[];
+  evidence_grade: EvidenceGrade;
+  safety_flags: SafetyFlag[];
+  /** True when every load-bearing appraisal point carried a verbatim quote that verified. */
+  claims_verified: boolean;
 }

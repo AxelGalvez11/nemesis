@@ -25,6 +25,7 @@ import { AgentRunDock } from "@/components/AgentRunDock";
 import { WorkPanel } from "@/components/WorkPanel";
 import { DomainChips } from "@/components/DomainChips";
 import { MissionSheet } from "@/components/MissionSheet";
+import { PaperUploadSheet } from "@/components/PaperUploadSheet";
 import { ResearchProgress } from "@/components/ResearchProgress";
 import { WatchButton } from "@/components/WatchButton";
 
@@ -409,6 +410,12 @@ function AskPage() {
     }
   }, []);
 
+  // Appraisal launch: the run id already exists (the upload sheet started it). Append a new turn whose
+  // research card polls it — same card/poll machinery as launchResearch, minus the startResearch call.
+  const launchAppraisal = useCallback((runId: string, title: string) => {
+    setTurns((prev) => [...prev, { q: title, a: null, err: null, research: { runId, mode: "appraisal" as ReportMode, title, error: null, proGate: false } }]);
+  }, []);
+
   // A citation click pins the panel to ITS answer's sources (per-turn evidence) before opening +
   // scrolling. Takes the answer so an older turn's [n] tag resolves against that turn's citations,
   // not the latest answer's (whose tag N may be a different source). `quote` is the verbatim sentence
@@ -679,6 +686,7 @@ function AskPage() {
         question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
         submit={submit} busy={busy} mode={mode} setMode={setMode}
         hint={question ? null : hint}
+        onLaunchAppraisal={launchAppraisal}
         error={latest?.err ?? null}
         welcome={!hasThread}
       />
@@ -898,6 +906,9 @@ interface ComposerProps {
   setMode: Dispatch<SetStateAction<(typeof MODES)[number]["id"]>>;
   // Welcome-chip guidance shown as the textarea PLACEHOLDER (never injected text) until typing starts.
   hint: string | null;
+  // The Journal Club upload sheet already started the appraisal run (extract → startAppraisal); this
+  // just appends the polling turn — see launchAppraisal in AskPage.
+  onLaunchAppraisal: (runId: string, title: string) => void;
   error: string | null;
   // true only on the empty welcome screen — drives the cycling example placeholders. In an active
   // chat (thread) it's false, so the box shows a calm static "Ask a follow-up…" instead.
@@ -907,13 +918,14 @@ interface ComposerProps {
 // The input pill, shared between the centered welcome screen and the pinned bottom bar. A leading
 // "+" (attachments) and a "mic" (voice) are shown as ChatGPT-style affordances but disabled until
 // those features ship — same honest "coming soon" treatment as the non-live modes.
-function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, hint, error, welcome }: ComposerProps) {
+function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, hint, onLaunchAppraisal, error, welcome }: ComposerProps) {
   const activeMode = MODES.find((m) => m.id === mode)!;
   // On the welcome screen, cycle example questions through an animated overlay placeholder (reveals
   // in from the left, fades out) so suggestions live in the chat bar without a hard text swap. Once a
   // chat is active the suggestions stop — the box shows a calm static placeholder instead.
   const [phIdx, setPhIdx] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false); // the "+" tools launcher popover
+  const [journalOpen, setJournalOpen] = useState(false); // the Journal club upload sheet
   // The "+" tools menu flips up/down and caps its height to the free space on that side, so it's never
   // pushed past the window edge — the welcome composer sits low (little room above) while a thread
   // composer sits at the bottom (little room below).
@@ -985,6 +997,13 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
               <button type="button" role="menuitem" onClick={() => { setMode("deep"); setPlusOpen(false); taRef.current?.focus(); }}>
                 <Icon name="doc" size={14} /><span style={{ flex: 1 }}>Deep research</span><small style={{ color: "var(--text-3)" }}>cited report + pooled stats</small>
               </button>
+              {/* Journal club — upload a paper for a grounded critical appraisal (design/endpoints/
+                  stats/bias), each verdict tied to a verbatim quote. The one real tool added back to
+                  the simplified ChatGPT-parity menu (the old cluttered Discovery/Verify/Monitor/
+                  Skills/Playbooks/filters rows stay removed). */}
+              <button type="button" role="menuitem" onClick={() => { setJournalOpen(true); setPlusOpen(false); }}>
+                <Icon name="doc" size={14} /><span style={{ flex: 1 }}>Journal club — appraise a paper</span><small style={{ color: "var(--text-3)" }}>PDF</small>
+              </button>
             </div>
           ) : null}
         </div>
@@ -1038,6 +1057,14 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
       {error ? <div className="err">{error}</div> : null}
       {dictation.error ? <div className="err">{dictation.error}</div> : null}
       <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
+      {/* Journal Club upload sheet: extracts the PDF, starts the appraisal run, then hands the runId
+          back to launchAppraisal (which appends the polling turn). Opened from the "+" tools menu. */}
+      {journalOpen ? (
+        <PaperUploadSheet
+          onClose={() => setJournalOpen(false)}
+          onLaunch={(runId, title) => { onLaunchAppraisal(runId, title); setJournalOpen(false); }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1232,6 +1259,8 @@ function ResearchRunCard({ card, onComplete, onProgress }: { card: ResearchCard;
     ? "Discovery"
     : card.mode === "structured_review"
     ? "Systematic review"
+    : card.mode === "appraisal"
+    ? "Journal club appraisal"
     : "Deep research";
 
   if (err) {

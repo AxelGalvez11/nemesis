@@ -20,22 +20,24 @@ type ViewMode = "grid" | "list";
 // the EXACT relabeling ask/page.tsx's ResearchRunCard already does ("standard" and "meta" are both
 // user-facing "Deep research" — the pooled pipeline is one tool now) — so the filter never shows two
 // chips for what the user sees as one report type, and never invents a kind ("Posters"/"Slides") that
-// saved_reports.mode can't actually hold.
-type ModeBucket = "deep_research" | "structured_review" | "discovery" | "lab_draft";
+// saved_reports.mode can't actually hold. "appraisal" = a Journal Club paper appraisal (its own tool).
+type ModeBucket = "deep_research" | "structured_review" | "discovery" | "lab_draft" | "appraisal";
 const BUCKET_LABEL: Record<ModeBucket, string> = {
   deep_research: "Deep research",
   structured_review: "Systematic review",
   discovery: "Discovery",
   lab_draft: "Lab draft",
+  appraisal: "Journal club",
 };
 const BUCKET_ICON: Record<ModeBucket, "sparkle" | "doc" | "compute" | "calc"> = {
   deep_research: "sparkle",
   structured_review: "doc",
   discovery: "compute",
   lab_draft: "calc",
+  appraisal: "doc",
 };
 function modeBucket(mode: string): ModeBucket {
-  return mode === "structured_review" || mode === "discovery" || mode === "lab_draft" ? mode : "deep_research";
+  return mode === "structured_review" || mode === "discovery" || mode === "lab_draft" || mode === "appraisal" ? mode : "deep_research";
 }
 
 type Filter = "all" | ModeBucket;
@@ -184,7 +186,7 @@ export default function ReportsPage() {
     if (!reports) return [];
     const seen = new Set<ModeBucket>();
     for (const r of reports) seen.add(modeBucket(r.mode));
-    return (["deep_research", "structured_review", "discovery", "lab_draft"] as ModeBucket[]).filter((b) => seen.has(b));
+    return (["deep_research", "structured_review", "discovery", "lab_draft", "appraisal"] as ModeBucket[]).filter((b) => seen.has(b));
   }, [reports]);
 
   const filtered = useMemo(() => {

@@ -67,6 +67,9 @@ function buildLines(report: ResearchReport, style: CitationStyle): PdfLine[] {
       g.text + (g.corroborating_trials.length ? ` An answer may be coming: ${g.corroborating_trials.join(", ")}.` : "")
     ));
   }
+  if (report.appraisal_questions?.length) {
+    section(lines, "Discussion questions", report.appraisal_questions);
+  }
   if (report.uncertainties.length) section(lines, "Still uncertain", report.uncertainties.map(pointText));
   if (report.citations.length) {
     const refs = referenceLines(report.citations as Citation[], style);
