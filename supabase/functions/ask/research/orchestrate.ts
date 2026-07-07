@@ -64,11 +64,23 @@ import {
 
 // Tuning. Recall-first per sub-question (broad retrieve, no provider/entity filter), then the reranker
 // and faithfulness judge are the precision gates — a research report wants breadth the reranker prunes.
-const SUB_RETRIEVE_THRESHOLD = 0.5; // matches /ask's ASK_MATCH_THRESHOLD (AC3 floor)
-const SUB_MATCH_COUNT = 8; // dense candidates pulled per sub-question
-const SUB_TOP_M = 6; // kept per sub-question after reranking against that sub-question
-const REPORT_MAX_CHUNKS = 24; // cap on the merged single-namespace pool
-const LIVE_PER_SOURCE_MAX = 6; // live candidates per source per sub-question
+//
+// BREADTH KNOBS (DEEP_RESEARCH_WIDE=on widens all four; default OFF = byte-identical to the old
+// hard-coded 8/6/24/6). The old caps kept only 6 sources per sub-question and 24 total, so 5
+// overlapping sub-questions deduped down to ~8 cited sources — thin for a "deep" report. Widening
+// keeps more of the SAME reranked+faithfulness-gated evidence (the precision gates are unchanged),
+// so a wider net only surfaces more real sources, never lowers the citation bar. Requires a
+// deep-research faithfulness/guardrail re-check at deploy because the cited set shifts.
+const DEEP_WIDE = Deno.env.get("DEEP_RESEARCH_WIDE") === "on";
+const numEnv = (key: string, fallback: number): number => {
+  const v = Number(Deno.env.get(key));
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+};
+const SUB_RETRIEVE_THRESHOLD = 0.5; // matches /ask's ASK_MATCH_THRESHOLD (AC3 floor) — precision gate, unchanged
+const SUB_MATCH_COUNT = DEEP_WIDE ? numEnv("DEEP_SUB_MATCH_COUNT", 16) : 8; // dense candidates pulled per sub-question
+const SUB_TOP_M = DEEP_WIDE ? numEnv("DEEP_SUB_TOP_M", 14) : 6; // kept per sub-question after reranking against that sub-question
+const REPORT_MAX_CHUNKS = DEEP_WIDE ? numEnv("DEEP_REPORT_MAX_CHUNKS", 48) : 24; // cap on the merged single-namespace pool
+const LIVE_PER_SOURCE_MAX = DEEP_WIDE ? numEnv("DEEP_LIVE_PER_SOURCE_MAX", 10) : 6; // live candidates per source per sub-question
 
 /** Human-readable database labels for each live/corpus provider key. */
 const PROVIDER_DB_LABELS: Record<string, string> = {
