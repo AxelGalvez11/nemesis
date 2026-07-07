@@ -316,14 +316,19 @@ export function webLearningsToChunks(learnings: readonly WebLearning[], startTag
   const entries = [...byUrl.entries()].sort((a, b) => order.indexOf(a[1][0].trust) - order.indexOf(b[1][0].trust));
   return entries.map(([url, ls], i) => {
     const syntheticId = `web:${simpleHash(url)}`;
-    // chunk_text = the source's own passage (grounding target), prefixed with the distilled learnings
-    // so the reranker sees the on-topic facts; the faithfulness judge still checks against real text.
-    const distilled = ls.map((l) => l.learning).join(" ");
+    // chunk_text = the source's REAL passage ONLY — the grounding target the faithfulness judge
+    // checks every claim against. The model-generated `learning` is DELIBERATELY excluded: prepending
+    // it would let a hallucinated learning "support itself" (the judge would see model output in the
+    // grounding target and pass a claim the real source never backs) — the one way to defeat the whole
+    // safety argument. So a web claim survives ONLY if the actual fetched source text supports it;
+    // if the fact lived outside the kept passage, the claim is conservatively dropped (safe: a real
+    // source lost, never a fabrication admitted). Learnings still earn their keep upstream — they
+    // filter irrelevant sources (no learnings -> no chunk) and seed the loop's follow-up queries.
     const passage = ls[0].text.slice(0, 4000);
     return {
       tag: String(startTag + i),
       chunk_id: syntheticId,
-      chunk_text: `${distilled}\n\n${passage}`.trim(),
+      chunk_text: passage,
       source_id: syntheticId,
       provider: "web",
       title: ls[0].title || url,

@@ -54,7 +54,7 @@ Deno.test("webLearningsToChunks: high-trust sources sort before lower-trust", ()
   ]);
 });
 
-Deno.test("webLearningsToChunks: chunk_text carries the SOURCE passage (grounding target), provider=web", () => {
+Deno.test("webLearningsToChunks: chunk_text is the SOURCE passage ONLY (grounding target), provider=web", () => {
   const chunks = webLearningsToChunks([
     L("creatine SMD 0.80 in older adults", "https://cochrane.org/rev", "high", "The pooled SMD was 0.80 (95% CI 0.25-1.34) in adults over 60."),
   ], 1);
@@ -63,8 +63,10 @@ Deno.test("webLearningsToChunks: chunk_text carries the SOURCE passage (groundin
   assertEquals(chunks[0].source_id, chunks[0].chunk_id);
   // the real source passage MUST be present — it's what the faithfulness judge verifies against
   assert((chunks[0].chunk_text ?? "").includes("The pooled SMD was 0.80"));
-  // the distilled learning is prepended for the reranker
-  assert((chunks[0].chunk_text ?? "").includes("creatine SMD 0.80 in older adults"));
+  // SOUNDNESS: the model-generated learning must NOT be in chunk_text (else it self-grounds and
+  // defeats the faithfulness judge). chunk_text is exactly the source passage, nothing prepended.
+  assertEquals(chunks[0].chunk_text, "The pooled SMD was 0.80 (95% CI 0.25-1.34) in adults over 60.");
+  assert(!(chunks[0].chunk_text ?? "").includes("creatine SMD 0.80 in older adults"));
 });
 
 Deno.test("webLearningsToChunks: empty input -> empty output", () => {
