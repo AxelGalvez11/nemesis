@@ -37,6 +37,11 @@ export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "
 // (byte-identical) — the SKILLS menu entries remain the only way to arm a deliverable export.
 export const deliverablesOnCommandEnabled = process.env.NEXT_PUBLIC_DELIVERABLES_ON_COMMAND === "true";
 
+// Streamed answers (SSE): the thinking trail rides real pipeline milestones and the lead
+// paragraph types itself in as the model writes it. Requires the ask fn deployed with
+// ASK_STREAMING=on — an eager client against an off server degrades cleanly to normal JSON.
+export const streamingEnabled = process.env.NEXT_PUBLIC_STREAMING === "true";
+
 // Bot-protection CAPTCHA (Cloudflare Turnstile + Supabase native enforcement) — DEFAULT OFF.
 // When NEXT_PUBLIC_TURNSTILE_SITE_KEY is set, the sign-in/sign-up forms render a Turnstile widget
 // and pass its token to Supabase auth (options.captchaToken). Off (no key) ⇒ no widget, no token,

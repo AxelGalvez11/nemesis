@@ -5,9 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ResearchProgressStep, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
 import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
-import { deliverablesOnCommandEnabled } from "@/lib/env";
+import { deliverablesOnCommandEnabled, streamingEnabled } from "@/lib/env";
 import { detectDeliverableIntent, type DeliverableFormat } from "@/lib/deliverable-intent";
-import { askQuestion, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchProjectSources, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
+import { askQuestion, askQuestionStream, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchProjectSources, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
@@ -623,10 +623,22 @@ function AskPage() {
       const outgoing = contextParts.length
         ? `${contextParts.join("\n\n")}\n\nQuestion: ${text}`
         : text;
-      const res = await askQuestion(outgoing, askMode);
+      // Streaming (flag-gated): the lead paragraph types itself in as the model writes it (real
+      // deltas, safety-gated server-side), and the canonical complete answer then replaces it.
+      // Non-streaming path unchanged. `streamed` decides the reveal: a lead that already streamed
+      // must not re-type itself.
+      let streamed = false;
+      const res = streamingEnabled
+        ? await askQuestionStream(outgoing, askMode, {
+          onDelta: (text) => {
+            streamed = true;
+            setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, stream: (t.stream ?? "") + text } : t)));
+          },
+        })
+        : await askQuestion(outgoing, askMode);
       await minThinkingPreview;
-      setLast({ a: res, thinkSecs: Math.max(1, Math.round((Date.now() - t0) / 1000)) });
-      setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
+      setLast({ a: res, stream: undefined, thinkSecs: Math.max(1, Math.round((Date.now() - t0) / 1000)) });
+      setRevealIdx(streamed ? null : idx); // just-arrived turns type in — unless the lead already streamed live
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
       bumpUsage(); // refresh the shell's account footer + credits chip after this ask consumed a unit
       void persistTurn(idx, text, res); // save the question + cited answer to chat history
@@ -788,7 +800,16 @@ function AskPage() {
                       ) : null}
                       <Answer answer={t.a} onCite={onCite} question={t.q} reveal={i === revealIdx} />
                     </>
-                  ) : isLast && busy && showThinking ? <Thinking stage={stage} question={t.q} /> : null}
+                  ) : isLast && busy && showThinking ? (
+                    <>
+                      <Thinking stage={stage} question={t.q} />
+                      {t.stream ? (
+                        <div className="answer fade-none" aria-live="polite">
+                          <p className="stream-lead">{t.stream.replace(/\*\*/g, "")}<span className="stream-caret" aria-hidden="true" /></p>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
               </div>
@@ -819,6 +840,10 @@ interface ResearchCard {
   // deliverableNote (when set) is the poster-fallback disclosure ("Poster export isn't built yet…").
   deliverableLabel?: DeliverableFormat;
   deliverableNote?: string;
+  // Streamed lead text (NEXT_PUBLIC_STREAMING): the safety-gated bottom-line deltas shown while the
+  // engine is still working. Cleared when the canonical answer arrives — the complete response is
+  // authoritative and replaces it.
+  stream?: string;
 }
 
 // A research card loaded from a saved chat is already complete — render the "Report ready" state
@@ -856,6 +881,10 @@ interface Turn {
   // exists yet. Once `research` is set, ResearchCard.deliverableLabel/deliverableNote take over.
   deliverableLabel?: DeliverableFormat;
   deliverableNote?: string;
+  // Streamed lead text (NEXT_PUBLIC_STREAMING): the safety-gated bottom-line deltas shown while the
+  // engine is still working. Cleared when the canonical answer arrives — the complete response is
+  // authoritative and replaces it.
+  stream?: string;
 }
 
 interface ComposerProps {

@@ -143,7 +143,7 @@ export async function callTool<T>(
  * genuinely truncated payload still throws (surfaced as a 500, the honest
  * signal that max_tokens was too low).
  */
-function parseToolArguments(raw: string): unknown {
+export function parseToolArguments(raw: string): unknown {
   try {
     return JSON.parse(raw);
   } catch {
@@ -157,4 +157,87 @@ function parseToolArguments(raw: string): unknown {
     return JSON.parse(candidate.slice(start, end + 1));
   }
   return JSON.parse(candidate); // throws -> caller reports invalid JSON
+}
+
+/**
+ * Streaming variant of a forced tool call: same request with stream:true, forwarding each
+ * tool-arguments delta to `onArgs` as it arrives (SSE "data:" lines, OpenAI/DeepSeek shape).
+ * NO retry loop on purpose — a stream that fails or yields no arguments throws, and the caller
+ * falls back to the non-streaming callTool path, so streaming can never be less reliable than
+ * today, only faster to first byte.
+ */
+export async function chatToolArgsStream(
+  params: ChatParams,
+  toolName: string,
+  apiKey: string,
+  onArgs: (chunk: string) => void,
+): Promise<{ argumentsText: string; model: string }> {
+  const messages = [
+    ...(params.system ? [{ role: "system" as const, content: params.system }] : []),
+    ...params.messages,
+  ];
+  const body: Record<string, unknown> = {
+    model: params.model,
+    max_tokens: params.max_tokens,
+    messages,
+    temperature: params.temperature ?? 1,
+    stream: true,
+    tool_choice: { type: "function", function: { name: toolName } },
+  };
+  if (params.tools) {
+    body.tools = params.tools.map((t) => ({
+      type: "function",
+      function: { name: t.name, description: t.description, parameters: t.parameters },
+    }));
+  }
+
+  const res = await fetch(`${llmBaseUrl()}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`llm stream ${res.status}: ${text.slice(0, 300)}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let args = "";
+  let model = params.model;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        let evt: {
+          model?: string;
+          choices?: Array<{ delta?: { tool_calls?: Array<{ function?: { name?: string; arguments?: string } }> } }>;
+        };
+        try {
+          evt = JSON.parse(data);
+        } catch {
+          continue; // partial/garbled event line — the terminal parse of `args` is the correctness gate
+        }
+        if (evt.model) model = evt.model;
+        const chunk = evt.choices?.[0]?.delta?.tool_calls?.[0]?.function?.arguments;
+        if (typeof chunk === "string" && chunk) {
+          args += chunk;
+          onArgs(chunk);
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (!args) throw new Error(`llm stream: no '${toolName}' arguments received`);
+  return { argumentsText: args, model };
 }
