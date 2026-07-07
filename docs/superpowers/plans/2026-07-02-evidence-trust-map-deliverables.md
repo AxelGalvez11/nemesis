@@ -1087,8 +1087,6 @@ git commit -m "feat: source-attribution block on research reports"
 
 ## Phase 4 — Cited deliverables
 
-> **Refinement (added 2026-07-02, from Claude Science analysis):** Anthropic's Claude Science builds review deliverables from a structured "evidence state database" — per paper it stores the central claim + key quantitative finding, then assembles the document from those fields rather than re-summarizing prose. We already extract the equivalent per-source (the Study Snapshot: population / sample size / duration / design, plus claim support). When implementing Tasks 12–13, prefer assembling each cited claim line from that structured per-source store (snapshot fields + support level + reference marker) over re-summarizing the answer text, so every exported bullet traces to a verified field. Keep it additive: fall back to today's text when a source has no snapshot.
-
 ### Task 12: per-claim references inside PPT/DOCX/PDF exports
 
 **Files:**

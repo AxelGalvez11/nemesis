@@ -104,7 +104,10 @@ export default function ScorePage() {
         <div className="sc-card sc-hero-score">
           <div
             className="sc-orb"
-            style={{ filter: `drop-shadow(0 0 ${Math.round(glow * 70)}px rgba(188,255,60,${glow.toFixed(2)}))` }}
+            // rgba() can't take a CSS custom property list directly as its color channels in all
+            // browsers via a template string, so we build the color from --orb-rgb (the PINNED
+            // PharmaOrb brand color, not the Manus --acid accent) using a CSS var() with fallback.
+            style={{ filter: `drop-shadow(0 0 ${Math.round(glow * 70)}px rgba(var(--orb-rgb, 98, 176, 0), ${glow.toFixed(2)}))` }}
           >
             <Orb size={150} />
           </div>

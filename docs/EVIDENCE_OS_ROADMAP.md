@@ -109,6 +109,51 @@ _Already built (no work): PowerPoint export (`lib/export/pptx.ts`), Word export 
 
 ---
 
+## Competitive — MediSearch teardown (added 2026-06-29)
+
+> Source: competitive teardown of **medisearch.io** (1M+ users; consumer Pro + B2B API). Core lesson:
+> they packaged the **same primitives PharmaOrb already has** into *visible, paid, exportable, shareable*
+> product surfaces plus an API, and market freshness + rigor loudly. Most items below are **exposure plays
+> over engine we already built**. `→` points at the existing backlog line that already covers it (bump
+> priority, don't duplicate); `NEW` = genuinely not yet on the list.
+>
+> Wedge: their headline marketing is benchmark-led (USMLE 94%, HealthBench > GPT-5), but an independent
+> 2026 peer-reviewed study ranked MediSearch **last of 4 (71%)** on real-world correctness / freshness /
+> context-awareness — i.e. exactly the faithfulness/safety axis PharmaOrb is built to win.
+
+**Quick wins (engine exists, surface missing):**
+- [ ] **Evidence filters** — user-facing chips to filter the answer's evidence by **date**, **source type**
+  (article/book/guideline), and **study type** (RCT, meta-analysis, review). Over existing study-type +
+  evidence-grade capture. MediSearch's single most-praised Pro feature. _(S–M)_ `NEW`
+- [ ] **Per-source "key finding" card** — for each cited paper: 1-line summary + the **exact verbatim
+  sentence** that supports the claim + the **key stat**, surfaced from the shipped claim-checker
+  support-span + faithfulness gate (turns the safety mechanism into visible UX). _(S–M)_ `NEW`
+- [ ] **"Find contradictions" button** — user-triggered conflicts surface. → rides `[x]` Evidence relation
+  labels (Phase -1) + Data-extraction table (Phase 5). Dead-on the honesty brand. _(M)_
+- [ ] **Citation export (Zotero / RIS / BibTeX)** — → already Phase 1 "Citation export RIS/BibTeX"; **bump
+  priority** (this is what hooks MediSearch's medical-writer segment). _(S)_
+- [ ] **Public shareable answer/report link** — → already Phase 2 "Public living claim URL"; **bump
+  priority** (every shared link is free marketing; MediSearch leans on `/share/`). _(M)_
+- [ ] **Freshness badge** — show "newest source: N days old" as a trust signal; data is already pulled
+  live daily, just not surfaced. _(S)_ `NEW`
+
+**Bigger bets (strategic):**
+- [ ] **Verification / "LLM-as-a-judge" API** — productize the faithfulness + abstention + real-source
+  spine as a "verify this medical claim/answer" API. → folds into Phase 5 "Claim reliability checker" +
+  "Public API + MCP layer". The honesty-moat money play; MediSearch sells exactly this. _(L)_
+- [ ] **Clinical-guideline corpus** — ingest major full-text guidelines (ACC/AHA, WHO, USPSTF). Gap vs
+  MediSearch; raises clinician trust. _(L)_ `NEW`
+- [ ] **Enterprise compliance prereqs** — HIPAA posture, SOC 2, public trust page. Table stakes **iff** the
+  B2B API is pursued; plan for it, don't bolt on later. _(L)_ `NEW`
+
+**Explicitly do NOT copy:**
+- Reddit-in-the-answer ("see what others think") — keep **walling off** non-evidence; that discipline is
+  the differentiator. Adopt the *idea* (real-world/patient perspective) only if walled + labeled.
+- Don't market on USMLE/MedQA multiple-choice scores — benchmark on faithfulness / citation-accuracy /
+  safety (where the independent study put MediSearch last and PharmaOrb is built to win).
+
+---
+
 ## Cleanup / watch-outs (do alongside)
 
 - [ ] **Consolidate the two watch systems** — `watchlist_items` vs `evidence_watches` (two limit keys `watchlist_limit`/`watch_limit`); UI can read the wrong gate.

@@ -9,7 +9,6 @@ import { isCatalogDrug, watchFieldsFromEntity } from "@/lib/entity";
 import { getCached, setCached } from "@/lib/cache";
 import { BrowseTopics } from "@/components/BrowseTopics";
 import { EntityPicker } from "@/components/EntityPicker";
-import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { SkeletonRows } from "@/components/Skeleton";
 
@@ -152,7 +151,6 @@ export default function MonitorPage() {
   return (
     <div className="research-wrap">
       <div className="research-intro">
-        <Orb size={52} />
         <h2 className="welcome-title">Monitoring</h2>
         <p className="welcome-sub">
           Topics and saved questions you&apos;re watching. We re-check the live evidence on a schedule and

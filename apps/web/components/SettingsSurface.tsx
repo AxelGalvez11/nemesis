@@ -15,7 +15,6 @@ import { fetchEntitlements, fetchMissions, fetchUsage, fetchWatches } from "@/li
 const THEME_OPTIONS: { id: ThemePreference; label: string }[] = [
   { id: "system", label: "System" },
   { id: "light", label: "Light" },
-  { id: "grey", label: "Grey" },
   { id: "dark", label: "Dark" },
 ];
 

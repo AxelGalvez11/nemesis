@@ -49,6 +49,7 @@ import { detectForbiddenPhrases } from "../../../../packages/shared/src/forbidde
 import { poolRiskRatio } from "../../../../packages/shared/src/meta-analysis.ts";
 import type { MetaAnalysisResult } from "../../../../packages/shared/src/meta-analysis.ts";
 import { planSubQuestions, resolveSubQuestions } from "./plan.ts";
+import { agenticResearchEnabled, runAgenticWebResearch, webLearningsToChunks } from "./web-research.ts";
 import { deriveGaps } from "./gaps.ts";
 import { assembleSections, type RawReportPoint, synthesizeReport } from "./synthesize.ts";
 import { parsePico } from "./pico.ts";
@@ -64,11 +65,23 @@ import {
 
 // Tuning. Recall-first per sub-question (broad retrieve, no provider/entity filter), then the reranker
 // and faithfulness judge are the precision gates — a research report wants breadth the reranker prunes.
-const SUB_RETRIEVE_THRESHOLD = 0.5; // matches /ask's ASK_MATCH_THRESHOLD (AC3 floor)
-const SUB_MATCH_COUNT = 8; // dense candidates pulled per sub-question
-const SUB_TOP_M = 6; // kept per sub-question after reranking against that sub-question
-const REPORT_MAX_CHUNKS = 24; // cap on the merged single-namespace pool
-const LIVE_PER_SOURCE_MAX = 6; // live candidates per source per sub-question
+//
+// BREADTH KNOBS (DEEP_RESEARCH_WIDE=on widens all four; default OFF = byte-identical to the old
+// hard-coded 8/6/24/6). The old caps kept only 6 sources per sub-question and 24 total, so 5
+// overlapping sub-questions deduped down to ~8 cited sources — thin for a "deep" report. Widening
+// keeps more of the SAME reranked+faithfulness-gated evidence (the precision gates are unchanged),
+// so a wider net only surfaces more real sources, never lowers the citation bar. Requires a
+// deep-research faithfulness/guardrail re-check at deploy because the cited set shifts.
+const DEEP_WIDE = Deno.env.get("DEEP_RESEARCH_WIDE") === "on";
+const numEnv = (key: string, fallback: number): number => {
+  const v = Number(Deno.env.get(key));
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+};
+const SUB_RETRIEVE_THRESHOLD = 0.5; // matches /ask's ASK_MATCH_THRESHOLD (AC3 floor) — precision gate, unchanged
+const SUB_MATCH_COUNT = DEEP_WIDE ? numEnv("DEEP_SUB_MATCH_COUNT", 16) : 8; // dense candidates pulled per sub-question
+const SUB_TOP_M = DEEP_WIDE ? numEnv("DEEP_SUB_TOP_M", 14) : 6; // kept per sub-question after reranking against that sub-question
+const REPORT_MAX_CHUNKS = DEEP_WIDE ? numEnv("DEEP_REPORT_MAX_CHUNKS", 48) : 24; // cap on the merged single-namespace pool
+const LIVE_PER_SOURCE_MAX = DEEP_WIDE ? numEnv("DEEP_LIVE_PER_SOURCE_MAX", 10) : 6; // live candidates per source per sub-question
 
 /** Human-readable database labels for each live/corpus provider key. */
 const PROVIDER_DB_LABELS: Record<string, string> = {
@@ -78,6 +91,7 @@ const PROVIDER_DB_LABELS: Record<string, string> = {
   faers: "FDA FAERS adverse-event reports",
   europepmc: "Europe PMC",
   corpus: "PharmaBro curated evidence corpus",
+  web: "Web sources (trusted journals, guidelines, and health authorities)",
 };
 
 /**
@@ -168,6 +182,31 @@ export function buildCitations(tags: string[], chunks: RetrievedChunk[]): Citati
     });
 }
 
+/**
+ * Build the "also reviewed" set: sources that were RETRIEVED into the evidence pool but the writer
+ * did not end up citing. The agentic web loop + wider DB breadth gather far more than the synthesizer
+ * cites, so without this the report's evidence base collapses to the ~8 cited tags and all the
+ * gathered breadth is invisible. Additive + display-only: never affects the answer, the cited set,
+ * grounding, or the faithfulness/forbidden gates (those already ran on the synthesized body). Deduped
+ * against the cited tags; tagged continuing after the cited namespace so tags never collide. PURE.
+ */
+export function buildReviewedSources(citedTags: string[], chunks: RetrievedChunk[]): Citation[] {
+  const cited = new Set(citedTags);
+  const reviewed = chunks.filter((c) => !cited.has(c.tag));
+  return reviewed.map((c) => ({
+    chunk_tag: c.tag,
+    source_id: c.source_id,
+    source_type: c.provider,
+    title: c.title,
+    section: c.section,
+    url: c.url,
+    license: c.license,
+    published_date: c.published_date,
+    retrieved_at: c.retrieved_at,
+    ...citationMeta(c),
+  }));
+}
+
 const UNVERIFIED_NOTE: AnswerPoint = {
   text:
     "These findings passed an automated check that each cited source exists, but the deeper " +
@@ -246,6 +285,7 @@ export function assembleReport(args: {
     uncertainties,
     safety_notes,
     citations: buildCitations(allTags, chunks),
+    reviewed_sources: buildReviewedSources(allTags, chunks),
     evidence_grade: args.evidenceGrade,
     safety_flags: args.safetyFlags,
     claims_verified: args.claimsVerified,
@@ -425,13 +465,22 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
   }
 
   // ---- 3. gather (bounded parallel; recall-first per sub-question, reranked against THAT question) ----
+  // 3a runs the medical-database gather (dense + live sources) per sub-question. 3b, when
+  // DEEP_RESEARCH_AGENTIC=on, runs the ChatGPT-style agentic WEB loop in PARALLEL: iterative
+  // search -> per-source learning extraction -> follow-up queries -> repeat. Its learnings become
+  // provider:"web" chunks that MERGE into the same pool below, so the reranker, the per-claim
+  // faithfulness judge, and the forbidden-phrase scan run on them UNCHANGED — web breadth in, the
+  // citation bar untouched. Flag off: webChunks is [] and this is byte-identical to the DB-only path.
   emit("gathering", `Searching evidence for ${subQuestions.length} sub-questions`);
-  const perSubQuestion = await Promise.all(
-    subQuestions.map((sq) => gatherForSubQuestion(sq, cls.entity_mentions, cfg)),
-  );
+  const [perSubQuestion, webChunks] = await Promise.all([
+    Promise.all(subQuestions.map((sq) => gatherForSubQuestion(sq, cls.entity_mentions, cfg))),
+    gatherWebResearch(question, cfg, emit),
+  ]);
 
   // ---- 4. merge into ONE citation namespace ----
-  const chunks = mergeEvidence(perSubQuestion, REPORT_MAX_CHUNKS);
+  // Web chunks join as one more reranked list; mergeEvidence dedups by chunk_id (web synthetic ids
+  // never collide with library ids), round-robins for fairness, caps at REPORT_MAX_CHUNKS, retags 1..N.
+  const chunks = mergeEvidence(webChunks.length ? [...perSubQuestion, webChunks] : perSubQuestion, REPORT_MAX_CHUNKS);
   const { gaps, counts } = deriveGaps(chunks, subQuestions);
   emit("gathering", "Merged and deduplicated the evidence pool", chunks.length);
   if (chunks.length === 0) {
@@ -568,6 +617,37 @@ export async function runResearch(question: string, cfg: OrchestrateConfig): Pro
   });
   emit("done", "Report ready", report.citations.length);
   return report;
+}
+
+/**
+ * Agentic WEB research (DEEP_RESEARCH_AGENTIC=on): run the iterative search->extract->follow-up loop,
+ * convert its per-source learnings to provider:"web" chunks, and rerank them against the ORIGINAL
+ * question so their internal order is by relevance before they merge into the evidence pool. Flag off
+ * (or no search key) -> [] instantly, so the DB-only path is byte-identical. Never throws; a failed
+ * web round just returns fewer/no chunks. Progress feeds the same activity trail the DB gather uses.
+ */
+async function gatherWebResearch(
+  question: string,
+  cfg: OrchestrateConfig,
+  emit: (step: ResearchProgressStep["step"], detail: string, sources_found?: number) => void,
+): Promise<RetrievedChunk[]> {
+  if (!agenticResearchEnabled()) return [];
+  try {
+    const learnings = await runAgenticWebResearch(question, cfg.apiKey, {
+      onQueries: (queries) => emit("gathering", `Searching the web: ${queries.slice(0, 3).join("; ")}`.slice(0, 200)),
+      onSources: (count) => emit("gathering", "Reading and extracting from web sources", count),
+    });
+    if (learnings.length === 0) return [];
+    const chunks = webLearningsToChunks(learnings, 1);
+    try {
+      return await rerankChunks(question, chunks);
+    } catch {
+      return chunks; // rerank failure -> trust-sorted order from the adapter
+    }
+  } catch (e) {
+    console.error("agentic web research gather failed; using DB evidence only:", (e as Error).message);
+    return [];
+  }
 }
 
 /**

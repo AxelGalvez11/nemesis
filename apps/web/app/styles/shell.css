@@ -2,36 +2,38 @@
    Drives AppShell (rail | main | evidence) and the chat page. Uses the tokens in globals.css. */
 
 /* ── ORB: halftone dot lattice (largest at center), a pulse rippling outward from the core.
-   Dots + falloff are generated in components/Orb.tsx; all motion is here. ── */
+   Dots + falloff are generated in components/Orb.tsx; all motion is here.
+   Uses --orb-color/--orb-rgb (PINNED to PharmaOrb green), NOT --acid — the brand mark is the one
+   element the Manus skin explicitly keeps, so it doesn't follow the blue accent retune. ── */
 .orb { position: relative; display: inline-block; flex: none; line-height: 0; }
-.orb svg { display: block; overflow: visible; filter: drop-shadow(0 0 1.5px rgba(var(--acid-rgb), calc(var(--glow) * 0.85))); transition: filter 0.45s ease; }
+.orb svg { display: block; overflow: visible; filter: drop-shadow(0 0 1.5px rgba(var(--orb-rgb), calc(var(--glow) * 0.85))); transition: filter 0.45s ease; }
 .orb .hd {
-  fill: var(--acid);
+  fill: var(--orb-color);
   transform-box: fill-box; transform-origin: center;
   animation: orbpulse 2.6s ease-in-out infinite;
 }
 /* soft halo — breathes slowly at rest (out of phase with the dot pulse) so the mark feels alive */
 .orb::after {
   content: ""; position: absolute; inset: 16%; border-radius: 50%;
-  background: radial-gradient(circle, rgba(var(--acid-rgb), 0.32), transparent 70%);
+  background: radial-gradient(circle, rgba(var(--orb-rgb), 0.32), transparent 70%);
   opacity: var(--glow); pointer-events: none;
   animation: orbglow 4.2s ease-in-out infinite;
 }
 /* sonar ring — invisible at rest, emanates outward only while thinking (echoes the answer ripple) */
 .orb::before {
   content: ""; position: absolute; inset: 0; border-radius: 50%;
-  border: 1px solid var(--acid); opacity: 0; transform: scale(0.55); pointer-events: none;
+  border: 1px solid var(--orb-color); opacity: 0; transform: scale(0.55); pointer-events: none;
 }
 
 /* ── thinking: faster ripple, brighter core, a looping sonar pulse + quicker halo ── */
-.orb.busy svg { filter: drop-shadow(0 0 3px rgba(var(--acid-rgb), 0.95)); }
+.orb.busy svg { filter: drop-shadow(0 0 3px rgba(var(--orb-rgb), 0.95)); }
 .orb.busy .hd { animation-duration: 1.05s; }
 .orb.busy::before { animation: orbsonar 1.5s ease-out infinite; }
 .orb.busy::after { animation-duration: 1.6s; }
 
 /* ── completion bloom: a one-shot flare the moment an answer lands ── */
 .orb.bloom { animation: orbbloom 0.7s ease-out; }
-.orb.bloom svg { filter: drop-shadow(0 0 5px rgba(var(--acid-rgb), 1)); }
+.orb.bloom svg { filter: drop-shadow(0 0 5px rgba(var(--orb-rgb), 1)); }
 
 @keyframes orbpulse { 0%, 100% { opacity: 0.74; transform: scale(0.96); } 45% { opacity: 1; transform: scale(1.05); } }
 @keyframes orbglow { 0%, 100% { opacity: calc(var(--glow) * 0.62); } 50% { opacity: var(--glow); } }
@@ -58,50 +60,40 @@
 .app.no-evidence { grid-template-columns: var(--rail) 1fr; }
 .app.no-evidence.rail-collapsed { grid-template-columns: var(--rail-collapsed) 1fr; }
 
-/* ── left rail (ChatGPT-style: tinted sidebar surface, calm hover/active, no accent glow) ── */
-.rail { background: var(--bg-2); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+/* ── left rail (Manus-style: tinted sidebar surface, calm hover/active, no accent glow).
+   Rendered from the dedicated --rail-bg token (light #f0f0f0, dark #1f1f1f) — neither --surface-2
+   nor --bg-2 lands on Manus's sidebar color in BOTH themes, see globals.css --rail-bg comment. ── */
+.rail { background: var(--rail-bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 .rail-backdrop, .evidence-backdrop { display: none; }
 /* scoped to .rail so it can't deform a legacy page that also uses a `.brand` element */
-.rail .brand { display: flex; align-items: center; gap: 11px; padding: 16px 16px 12px; }
+.rail .brand { display: flex; align-items: center; justify-content: space-between; gap: 11px; padding: 16px 16px 12px; }
 .rail .brand .orb { width: 28px; height: 28px; }
 .wordmark { font-weight: 600; font-size: 16px; letter-spacing: -0.02em; white-space: nowrap; }
-.rail-collapsed .wordmark, .rail-collapsed .r-label, .rail-collapsed .new-txt,
-.rail-collapsed .search input, .rail-collapsed .acct-meta { display: none; }
+/* New chat / Search chats are now .hist rows, so collapse-hiding their label is already covered by
+   the ".rail-collapsed .hist span" rule below — no ".new-txt"/".search input" selectors needed. */
+.rail-collapsed .wordmark, .rail-collapsed .r-label, .rail-collapsed .acct-meta { display: none; }
 .rail-collapsed .brand { padding: 16px 0; justify-content: center; }
-/* New chat: a prominent but calm full-width row (ChatGPT moved away from a solid-fill button) —
-   subtle surface, thin border, gentle hover. No accent fill, no glow. */
-.new {
-  margin: 4px 12px 8px; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-  border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-weight: 600;
-  cursor: pointer; border: 1px solid var(--line); white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s; width: calc(100% - 24px); font-family: var(--font); font-size: 14px;
-}
-.new:hover { background: var(--surface-2); border-color: var(--line-2); }
-.rail-collapsed .new { justify-content: center; padding: 10px 0; }
-.search {
-  margin: 0 12px 12px; display: flex; align-items: center; gap: 8px; padding: 8px 11px;
-  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg);
-  transition: border-color 0.15s;
-}
-/* Calm focus: the wrapper tints its border (like the composer), instead of an acid glow/ring. */
-.search:focus-within { border-color: var(--line-2); }
-.search input { background: none; border: none; color: var(--text); font-family: var(--font); font-size: 13px; width: 100%; outline: none; padding: 0; }
-.search input::placeholder { color: var(--text-3); }
-/* Kill the global green focus glow (legacy.css `input:focus` box-shadow) on the sidebar search —
-   the .search wrapper shows focus via its own border, not an acid ring. The keyboard focus-visible
-   outline (the rule near the bottom of this file) is separate and stays. */
-.search input:focus { box-shadow: none; }
-.nav { flex: 1; overflow-y: auto; padding: 2px 8px 10px; }
+/* New chat + Search chats: ChatGPT anatomy — plain unboxed rows, NOT filled/bordered buttons. Same
+   36px-tall .hist shape as every other sidebar row (Library, Scheduled, Projects, Chats). They sit
+   in .rail-top (above the scrolling <nav>) so they stay pinned while only the chats list scrolls. */
+.rail-top { padding: 4px 6px 6px; flex: none; }
+/* ChatGPT parity (probe 2026-07-07): ALL sidebar rows are weight 400 — New chat/Search chats
+   were rendering bold via the button element and read as a different control. */
+.rail-top .hist { width: 100%; font-weight: 400; }
+.nav { flex: 1; overflow-y: auto; padding: 2px 6px 10px; }
 .r-label { font-size: 11px; letter-spacing: 0.02em; color: var(--text-2); padding: 14px 10px 6px; font-weight: 600; }
+/* ChatGPT nav row measured live 2026-07-07: 36px tall, radius 10px, padding 6px 10px (h fixed ->
+   0 10px), 8px icon gap, full-strength text (rgb 255/255/255 dark, not secondary), 6px rail gutters. */
 .hist {
-  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--text-2);
+  display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 36px; border-radius: var(--radius-sm); color: var(--text);
   cursor: pointer; position: relative; white-space: nowrap; overflow: hidden; width: 100%; background: none; border: none; text-align: left; font-family: var(--font); font-size: 14px;
   transition: background 0.12s, color 0.12s;
 }
 .hist span { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
-.hist:hover { background: var(--surface-2); color: var(--text); }
-/* Active nav = a plain subtle fill, no accent bar, no glow (ChatGPT-style). */
-.hist.active { background: var(--surface-2); color: var(--text); font-weight: 500; }
+/* Manus hover/active tint fills — translucent, not a solid surface swap. */
+.hist:hover { background: var(--fill-hover); color: var(--text); }
+/* Active nav = a plain subtle fill, no accent bar, no glow (Manus-style). */
+.hist.active { background: var(--fill-active); color: var(--text); font-weight: 400; }
 .hist-ic { width: 16px; height: 16px; flex: none; opacity: 0.75; }
 /* A chat row = the link + a hover-revealed delete control. */
 .hist-row { display: flex; align-items: center; position: relative; }
@@ -110,17 +102,19 @@
 .hist-more { flex: none; width: 26px; height: 26px; margin-right: 4px; display: grid; place-items: center; padding: 0; border: none; background: none; color: var(--text-3); border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity 0.12s, color 0.12s, background 0.12s; }
 .hist-more svg { display: block; }
 .hist-row:hover .hist-more, .hist-more:focus-visible, .hist-row.menu-open .hist-more { opacity: 1; }
-.hist-more:hover, .hist-row.menu-open .hist-more { color: var(--text); background: var(--surface); }
+/* --fill-hover (translucent), not --surface — this button lives on the rail; a solid surface fill
+   reads faintly at best against --rail-bg, per the same collision as .new/.acct-btn above. */
+.hist-more:hover, .hist-row.menu-open .hist-more { color: var(--text); background: var(--fill-hover); }
 /* touch devices have no hover state — keep the affordance visible so it's discoverable */
 @media (hover: none) { .hist-more { opacity: 1; } }
 /* inline rename: the title becomes this editable field in place of the link, matched to the row.
    Acid border marks the live edit; box-shadow:none kills the global green focus glow (legacy.css). */
 .hist-rename { flex: 1; min-width: 0; margin: 0; padding: 7px 10px; border: 1px solid var(--acid); border-radius: 8px; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; outline: none; box-shadow: none; }
 /* the per-chat menu — fixed-positioned (coords set inline) so the scrolling rail can't clip it */
-.row-menu { position: fixed; width: 200px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.28); padding: 6px; z-index: 60; animation: fade 0.16s both; }
-.row-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; text-align: left; }
+.row-menu { position: fixed; width: 200px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-menu); box-shadow: var(--shadow-menu); padding: 6px; z-index: 60; animation: fade 0.16s both; }
+.row-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: var(--radius-menu-item); background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; text-align: left; }
 .row-menu button svg { display: block; flex: none; }
-.row-menu button:hover { background: var(--surface-2); color: var(--text); }
+.row-menu button:hover { background: var(--fill-hover); color: var(--text); }
 .row-menu button:disabled { opacity: 0.55; cursor: default; }
 .row-menu button:disabled:hover { background: none; color: var(--text-2); }
 .row-menu button:disabled small { margin-left: auto; text-transform: uppercase; letter-spacing: 0.04em; font-family: var(--mono); font-size: 9.5px; }
@@ -132,11 +126,31 @@
 .row-menu-scroll { max-height: 260px; overflow-y: auto; }
 .rail-collapsed .hist { justify-content: center; padding: 9px 0; }
 .rail-collapsed .hist span, .rail-collapsed .hist-more { display: none; }
+/* Collapsed rail = icon nav only. The Recent-chats list would otherwise render as a column of
+   identical message icons (one per chat) — visual noise — so hide the whole section when collapsed. */
+.rail-collapsed .rail-recents { display: none; }
 .acct { border-top: 1px solid var(--line); padding: 12px; display: flex; align-items: center; gap: 10px; }
 .av { width: 30px; height: 30px; border-radius: 50%; flex: none; background: var(--surface-2); display: grid; place-items: center; font-weight: 600; font-size: 12px; color: var(--text-2); border: 1px solid var(--line); }
 .acct-meta b { font-size: 13px; font-weight: 600; display: block; }
 .acct-meta small { font-size: 11px; color: var(--text-2); }
 .rail-collapsed .acct { justify-content: center; }
+
+/* ── "Search chats" modal (ChatGPT's Cmd/Ctrl+K palette) — rendered via AppModal; content-only,
+   the modal chrome itself (frame/title/close) is AppModal's. Input styled like the composer's calm
+   border-tint focus (no acid ring on a text field); results reuse the plain .hist row. ── */
+.search-modal-input {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px; margin-bottom: 4px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg);
+  color: var(--text-3); transition: border-color 0.15s;
+}
+.search-modal-input:focus-within { border-color: var(--line-2); }
+.search-modal-input input {
+  flex: 1; background: none; border: none; color: var(--text); font-family: var(--font);
+  font-size: 14px; outline: none; padding: 0; box-shadow: none;
+}
+.search-modal-input input::placeholder { color: var(--text-3); }
+.search-modal-results { display: flex; flex-direction: column; gap: 1px; max-height: 50vh; overflow-y: auto; }
+.search-modal-results .hist { width: 100%; }
 
 /* ── main column ── */
 .main { display: flex; flex-direction: column; min-width: 0; background: var(--bg); overflow: hidden; }
@@ -149,7 +163,7 @@
   width: 34px; height: 34px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--text-2);
   display: grid; place-items: center; padding: 0; cursor: pointer; transition: background 0.15s, color 0.15s; flex: none;
 }
-.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.icon-btn:hover { background: var(--fill-hover); color: var(--text); }
 /* icons sit dead-center: zero the inherited global button padding (9px 16px) so place-items has room
    to center, and render the svg as a block to drop the inline-baseline descender gap. */
 .icon-btn svg { display: block; }
@@ -192,20 +206,33 @@
 /* account menu (rail footer) */
 .acct-wrap { position: relative; border-top: 1px solid var(--line); }
 .acct-btn { width: 100%; background: none; border: none; padding: 10px 12px; border-radius: var(--radius-sm); display: flex; align-items: center; gap: 10px; cursor: pointer; color: inherit; font-family: var(--font); text-align: left; transition: background 0.15s; }
-.acct-btn:hover { background: var(--surface-2); }
-.acct-menu { position: absolute; bottom: calc(100% - 2px); left: 12px; right: 12px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.25); padding: 6px; z-index: 40; animation: fade 0.16s both; }
-.acct-menu a, .acct-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); cursor: pointer; text-align: left; font-weight: 500; }
-.acct-menu a:hover, .acct-menu button:hover { background: var(--surface-2); color: var(--text); }
+/* --fill-hover (translucent), not --surface-2 — this button lives on the rail, and --surface-2 now
+   equals --rail-bg, so a solid-surface hover would be invisible. */
+.acct-btn:hover { background: var(--fill-hover); }
+.acct-menu { position: absolute; bottom: calc(100% - 2px); left: 12px; right: 12px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-menu); box-shadow: var(--shadow-menu); padding: 6px; z-index: 40; animation: fade 0.16s both; }
+.acct-menu a, .acct-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: var(--radius-menu-item); background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); cursor: pointer; text-align: left; font-weight: 500; }
+.acct-menu a:hover, .acct-menu button:hover { background: var(--fill-hover); color: var(--text); }
 .acct-menu button:disabled { opacity: 0.5; cursor: default; }
 .acct-menu button:disabled:hover { background: none; color: var(--text-2); }
 .acct-menu button:disabled small { text-transform: uppercase; letter-spacing: 0.04em; font-family: var(--mono); font-size: 9.5px; }
 .acct-menu .sep { height: 1px; background: var(--line); margin: 5px 2px; }
 /* Quiet section caption inside a popover menu (e.g. "Search filters" in the composer tools menu). */
 .acct-menu .menu-label { padding: 4px 10px 2px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3); }
-/* The composer tools launcher opens UPWARD from a vertically-centered composer on the welcome
-   screen; with the Playbooks section it can be taller than the space above it. Cap and scroll so
-   the top entries (Deep research, Discovery…) are never pushed past the window edge. */
+/* The composer "+" menu — ChatGPT's own short shape (Add photos & files / Web search / Deep
+   research), measured in docs/design/chatgpt-clone-teardown-2026-07-06.md: 36px-tall rows, 6px 10px
+   padding, 14px labels. Scoped to .tools-menu (not the shared .acct-menu rows used by the mode dial /
+   account menu / other popovers) so this doesn't retune menus outside this task. Kept scrollable +
+   height-capped as a safety net for the upward-opening placement math, even though three rows never
+   needs it in practice.
+   Row anatomy fix: the label <span> is the only flex-growing child; the gray sublabel <small> is
+   fixed-width text that truncates with an ellipsis instead of wrapping. Without this, "Deep research"
+   (label) + "cited report + pooled stats" (sublabel) together exceed the 280px menu's ~225px text
+   budget at 14px and would wrap the row to two lines, breaking the single-line ChatGPT look. */
 .tools-menu { max-height: min(58vh, 460px); overflow-y: auto; }
+.tools-menu a, .tools-menu button { min-height: 36px; padding: 6px 10px; font-size: 14px; }
+.tools-menu a > span, .tools-menu button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tools-menu a > small, .tools-menu button > small { flex: none; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tools-menu button:disabled small { text-transform: none; letter-spacing: normal; font-family: var(--font); font-size: 12px; }
 
 /* ── chat thread ── */
 .thread { flex: 1; overflow-y: auto; padding: 30px 0 8px; }
@@ -214,7 +241,9 @@
 .turn { max-width: 738px; margin: 0 auto; padding: 0 28px 30px; }
 .msg-user { display: flex; justify-content: flex-end; }
 .bubble { background: var(--surface-2); padding: 10px 16px; border-radius: 22px; max-width: 70%; color: var(--text); font-size: 16px; line-height: 1.6; }
-.msg-ai { display: flex; gap: 14px; margin-top: 26px; }
+/* Column layout so the Manus-style agent header (avatar + name) sits ABOVE the answer body, not
+   beside it. (The decorative Orb is no longer rendered, so the old avatar-left row is retired.) */
+.msg-ai { display: flex; flex-direction: column; gap: 8px; margin-top: 26px; }
 .msg-ai .orb { width: 28px; height: 28px; margin-top: 2px; }
 .ai-body { min-width: 0; flex: 1; }
 .ai-body h4 { font-size: 20px; font-weight: 700; margin: 2px 0 9px; letter-spacing: -0.01em; }
@@ -374,19 +403,61 @@
   transition: transform 0.15s;
 }
 .engine-preview-chevron.open { transform: rotate(90deg); }
+/* The persistent first-person plan line (ChatGPT-measured): full text color, normal weight, streams
+   in first and stays above the answer permanently. NOT dimmed — it reads as the answer's opening. */
+.intent-line { font-size: 15.5px; color: var(--text); line-height: 1.6; margin-bottom: 10px; animation: fade 0.3s both; }
+/* The live reasoning snippet under the plan line while working — dimmed, ChatGPT's swapping
+   "I'm thinking…" line. */
+.thinking-snippet { display: inline-flex; }
 /* completed-thought disclosure row ("Thought for 12s ›") — a bare text button, ChatGPT-style */
 .thought-toggle { background: none; border: none; padding: 0; cursor: pointer; font: inherit; text-align: left; }
 .thought-toggle:hover .engine-preview-title { color: var(--text); }
-/* expanded activity trail: the engine's pipeline steps down a quiet timeline rail, with the
-   searched-domain chips under the search step */
+/* expanded activity trail: alternating block anatomy (ChatGPT Activity panel, observed 2026-07-05) —
+   search blocks get a search icon + gerund title + the searched-domain chips; reasoning blocks get a
+   bullet dot + a first-person paragraph. */
 .activity-trail { margin: 10px 0 4px 2px; padding-left: 14px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 13px; animation: fade 0.25s both; }
-.activity-step-title { font-size: 13.5px; font-weight: 600; color: var(--text); line-height: 1.4; }
+.activity-step-title { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 600; color: var(--text); line-height: 1.4; }
+.activity-step-title svg { color: var(--text-3); flex: none; }
+.activity-bullet { width: 5px; height: 5px; border-radius: 50%; background: var(--text-3); flex: none; margin: 0 4px; }
 .activity-step-detail { font-size: 13px; color: var(--text-2); line-height: 1.5; margin-top: 1px; }
+.activity-step-reason .activity-step-detail { margin-left: 20px; }
+.activity-step-search .domain-chips { margin-left: 20px; }
 /* searched-domain chips (favicon + hostname + "N more") — the ChatGPT Activity-panel chip pattern */
 .domain-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .domain-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border-radius: 999px; padding: 3px 10px 3px 6px; font-size: 12px; color: var(--text-2); line-height: 1.4; }
 .domain-chip img { border-radius: 50%; display: block; }
 .domain-chip-more { padding: 3px 10px; color: var(--text-3); }
+
+/* ── Run thinking trail (shared) ── */
+/* The ChatGPT "Thinking" trail reused for a LIVE research run, inside the pinned dock + right-dock
+   work panel. Same quiet activity-trail rail as the answer's Thinking, but each of the four fixed
+   steps carries a leading done/active/pending marker (mirroring the AgentRunTracker affordances) so
+   the current stage reads at a glance. Tokens only. */
+.run-thinking-trail { margin: 0; }
+.run-step { display: grid; grid-template-columns: 18px 1fr; column-gap: 10px; align-items: start; }
+.run-step-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin-top: 1px;
+}
+.run-step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--acid); }
+.run-step-body { min-width: 0; }
+/* DONE — calm/tinted disc + acid check. */
+.run-step.done .run-step-marker { background: color-mix(in srgb, var(--acid) 15%, var(--surface)); color: var(--acid-deep); }
+/* ACTIVE — solid acid dot with a soft pulse; emphasized title. */
+.run-step.active .run-step-dot {
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--acid) 40%, transparent);
+  animation: art-pulse 1.6s ease-out infinite;
+}
+/* PENDING — hollow muted ring, dimmer title. */
+.run-step.pending .run-step-marker { border: 1.5px solid var(--line-2); }
+.run-step.pending .activity-step-title { color: var(--text-3); font-weight: 500; }
+.run-thinking-compact .run-thinking-trail { gap: 11px; }
+
 .engine-preview summary::-webkit-details-marker { display: none; }
 .engine-preview-head {
   display: flex;
@@ -566,13 +637,13 @@
 
 .chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .chip-action { font-size: 12.5px; color: var(--text-2); border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 13px; cursor: pointer; transition: 0.15s; font-family: var(--font); }
-.chip-action:hover { border-color: var(--line-2); color: var(--text); background: var(--surface-2); }
+.chip-action:hover { border-color: var(--line-2); color: var(--text); background: var(--fill-hover); }
 .msg-actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
 .msg-actions .icon-btn { width: 30px; height: 30px; }
 /* "Sources" pill with stacked overlapping favicons (the ChatGPT answer-footer button) — opens the
    evidence panel showing cited + also-reviewed sources. */
 .sources-btn { display: inline-flex; align-items: center; gap: 7px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px 4px 6px; font-size: 12.5px; font-weight: 500; color: var(--text-2); cursor: pointer; font-family: var(--font); transition: background 0.15s, color 0.15s; }
-.sources-btn:hover { background: var(--surface-2); color: var(--text); }
+.sources-btn:hover { background: var(--fill-hover); color: var(--text); }
 .sources-favs { display: inline-flex; align-items: center; }
 .sources-favs img { border-radius: 50%; border: 1.5px solid var(--bg); margin-left: -6px; display: block; }
 .sources-favs img:first-child { margin-left: 0; }
@@ -580,10 +651,10 @@
 /* ── composer ── */
 .composer-wrap { padding: 10px 0 22px; background: linear-gradient(0deg, var(--bg) 60%, transparent); flex: none; }
 .composer { max-width: 768px; margin: 0 auto; padding: 0 28px; }
-/* ChatGPT-measured pill: 768px column, 28px radius, 52px rest height (8px padding + 36px controls).
-   One flex row with controls bottom-anchored — the textarea grows upward on multi-line input while
-   the +/mode/mic/send stay pinned to the bottom edge, exactly like the reference composer. */
-.box { display: flex; align-items: flex-end; gap: 4px; border: 1px solid var(--line); background: var(--surface); border-radius: 28px; padding: 8px; box-shadow: var(--shadow); transition: border-color 0.2s, box-shadow 0.2s; }
+/* Manus-measured composer box: 768px column, 22px radius, rgba(0,0,0,.2) border (light), a barely-
+   there lift shadow. One flex row with controls bottom-anchored — the textarea grows upward on
+   multi-line input while the +/mode/mic/send stay pinned to the bottom edge. */
+.box { display: flex; align-items: flex-end; gap: 4px; border: 1px solid var(--composer-border); background: var(--raised); border-radius: var(--radius-pill); padding: 8px; box-shadow: var(--composer-shadow); transition: border-color 0.2s, box-shadow 0.2s; }
 /* Calm focus: a subtle border tint + a touch more lift, no acid glow ring (the bar no longer "lights up"). */
 .box:focus-within { border-color: var(--line-2); box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.18); }
 /* composer affordance icons sit dead-center in their buttons (svg as block removes baseline drift) */
@@ -599,6 +670,9 @@
   position: absolute; top: 6px; left: 6px; right: 6px; pointer-events: none;
   color: var(--text-3); font-size: 16px; line-height: 24px; text-align: left;
   white-space: nowrap; overflow: hidden; text-overflow: clip;
+  /* Opaque fill so the rotating example cleanly occludes the static "Ask anything, or type / for more"
+     placeholder underneath — when the overlay fades out, that standing "/ for more" hint shows through. */
+  background: var(--raised);
   animation: phReveal 5s ease-in-out forwards;
 }
 /* Slow, graceful reveal: wipe in left→right over the first ~1.5s, hold, then fade out over the last
@@ -619,13 +693,13 @@
 /* In-pill controls, ChatGPT-style: borderless ghost buttons that only show a soft surface on hover. */
 .mode { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 13.5px; color: var(--text-2); border: none; border-radius: 999px; padding: 8px 12px; height: 36px; cursor: pointer; background: transparent; font-family: var(--font); }
 .mode b { color: var(--text-2); font-weight: 500; }
-.mode:hover { background: var(--surface-2); color: var(--text); }
+.mode:hover { background: var(--fill-hover); color: var(--text); }
 .mode:hover b { color: var(--text); }
 /* padding:0 overrides the global text-button padding (legacy.css `button { padding: 10px 14px }`),
    which these fixed-size icon buttons inherit — that shrinks the grid content box and pushes the
    centered icon off. With padding:0 the 18px icon centers cleanly in the full 36px button. */
 .tool { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: none; background: transparent; color: var(--text-2); display: grid; place-items: center; cursor: pointer; flex: none; }
-.tool:hover { color: var(--text); background: var(--surface-2); }
+.tool:hover { color: var(--text); background: var(--fill-hover); }
 .send { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: none; background: var(--acid); color: var(--on-acid); display: grid; place-items: center; cursor: pointer; flex: none; box-shadow: 0 2px 9px -5px rgba(var(--acid-rgb), 0.45); }
 .send:hover { filter: brightness(1.07); }
 .send:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(0.3); }
@@ -641,17 +715,26 @@
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 @media (prefers-reduced-motion: reduce) { .tool.rec svg { animation: none; } }
 
-/* ── centered welcome (empty state), ChatGPT-style: orb + headline + composer + chips, vertically centered ── */
+/* ── centered welcome (empty state), Manus-style: orb + serif headline + composer + chips, vertically centered ── */
 .welcome-wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 24px 20px 40px; }
 .welcome { width: 100%; max-width: 720px; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .welcome .orb { margin-bottom: 20px; }
-.welcome-title { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 10px; }
+/* Manus's one distinctive type choice: the greeting renders in the serif, not the UI sans. */
+/* ChatGPT's home greeting is sans, not serif — matches the rest of the shell's type (var(--font)).
+   --font-serif stays defined for other surfaces (e.g. the research workspace heading below); only
+   this selector changes. */
+.welcome-title { font-family: var(--font); font-size: 36px; font-weight: 400; letter-spacing: -0.01em; margin: 0 0 10px; }
 .welcome-sub { color: var(--text-2); max-width: 460px; margin: 0 0 22px; line-height: 1.55; }
 .welcome .composer { width: 100%; max-width: 100%; padding: 0; }
 .welcome-chips { justify-content: center; margin-top: 18px; }
 /* suggestion chips carry a leading icon; keep the icon and text on one baseline */
 .chip-action { display: inline-flex; align-items: center; gap: 7px; }
 .chip-action svg { color: var(--text-3); flex: none; }
+/* Manus welcome-page suggestion chips: card radius (12px), and Manus's distinctive card hover —
+   the card DIMS (opacity 0.8), it does not swap background. Scoped to .welcome-chips only; the
+   many other .chip-action buttons across the app (export/plan/nav actions) keep their pill shape. */
+.welcome-chips .chip-action { border-radius: var(--radius); transition: opacity 0.15s; }
+.welcome-chips .chip-action:hover { opacity: 0.8; background: var(--surface); border-color: var(--line); color: var(--text-2); }
 @media (max-width: 480px) { .welcome-title { font-size: 23px; } }
 
 /* ── evidence panel ── */
@@ -833,11 +916,15 @@
    treatment (full-width labels would otherwise clip at 64px). At ≤720px the rail is instead a
    full off-canvas drawer, so this is scoped above that breakpoint. ── */
 @media (min-width: 721px) and (max-width: 1100px) {
-  .rail .wordmark, .rail .r-label, .rail .new-txt, .rail .search input, .rail .acct-meta { display: none; }
+  .rail .wordmark, .rail .r-label, .rail .acct-meta { display: none; }
   .rail .brand { padding: 18px 0; justify-content: center; }
-  .rail .new { justify-content: center; padding: 10px 0; }
+  /* wordmark is hidden here too — drop the header toggle's edge nudge so it centers cleanly */
+  .rail .brand .rail-collapse { margin: 0; }
+  /* New chat / Search chats are .hist rows now, so the shared .rail .hist rule below already
+     centers + hides their labels — no separate ".rail .new" selector needed. */
   .rail .hist { justify-content: center; padding: 9px 0; }
   .rail .hist span { display: none; }
+  .rail .rail-recents { display: none; }
   .rail .acct-btn { justify-content: center; }
 }
 @media (max-width: 720px) {
@@ -851,17 +938,19 @@
   .app.mobile-open .rail-backdrop { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, 0.5); border: none; }
   /* the drawer is always full — neutralize any desktop rail-collapsed shrinking */
   .app.mobile-open .wordmark, .app.mobile-open .acct-meta, .app.mobile-open .r-label { display: block; }
-  .app.mobile-open .new-txt, .app.mobile-open .hist span { display: inline; }
-  .app.mobile-open .search input { display: block; }
-  .app.mobile-open .new, .app.mobile-open .hist { justify-content: flex-start; }
+  /* the drawer shows the full Recent-chats list even if the rail was left collapsed on desktop */
+  .app.mobile-open .rail-recents { display: block; }
+  .app.mobile-open .hist span { display: inline; }
+  .app.mobile-open .hist { justify-content: flex-start; }
 }
 
 /* keyboard focus ring for the custom (non-shadcn) interactive elements. NOTE: the composer textarea
-   AND the rail search input are deliberately EXCLUDED — text fields match :focus-visible even on a
-   mouse click, so an acid outline here read as a "green glow" on the box. Their focus is shown by a
-   calm border tint instead (.box:focus-within / .search:focus-within; legacy.css already sets
-   outline:none on the inputs themselves). */
-.icon-btn:focus-visible, .hist:focus-visible, .new:focus-visible, .mode:focus-visible, .send:focus-visible,
+   and the "Search chats" modal input are deliberately EXCLUDED — text fields match :focus-visible
+   even on a mouse click, so an acid outline here read as a "green glow" on the box. Their focus is
+   shown by a calm border tint instead (.box:focus-within / .search-modal-input:focus-within; legacy.css
+   already sets outline:none on the inputs themselves). New chat / Search chats are plain .hist rows,
+   so .hist:focus-visible below already covers them. */
+.icon-btn:focus-visible, .hist:focus-visible, .mode:focus-visible, .send:focus-visible,
 .tool:focus-visible, .ev-tab:focus-visible, .chip-action:focus-visible, .acct-btn:focus-visible, .src:focus-visible,
 .cite:focus-visible {
   outline: 2px solid var(--acid-dim); outline-offset: 2px;
@@ -887,7 +976,7 @@
 .cite-style-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-right: 4px; }
 .cite-style-toggle button { font-size: 11.5px; font-family: var(--font); padding: 5px 11px; background: var(--surface); color: var(--text-2); border: none; cursor: pointer; transition: 0.15s; }
 .cite-style-toggle button:not(:last-child) { border-right: 1px solid var(--line); }
-.cite-style-toggle button:hover { background: var(--surface-2); color: var(--text); }
+.cite-style-toggle button:hover { background: var(--fill-hover); color: var(--text); }
 .cite-style-toggle button.active { background: var(--acid); color: #fff; }
 .research-section { margin: 18px 0; }
 .research-heading { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); margin: 0 0 8px; }
@@ -905,7 +994,7 @@
 /* Mode selector row (Standard / Structured review) */
 .research-mode-row { display: flex; gap: 6px; margin: 8px 0 4px; flex-wrap: wrap; }
 .research-mode-btn { padding: 4px 12px; border-radius: 16px; border: 1px solid var(--border); background: transparent; color: var(--text-2); font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
-.research-mode-btn:hover { background: var(--surface-2); color: var(--text); }
+.research-mode-btn:hover { background: var(--fill-hover); color: var(--text); }
 .research-mode-btn.active { background: var(--acid); color: #fff; border-color: var(--acid); }
 
 /* "What we searched" counts — collapsible, honest cap disclosure */
@@ -957,8 +1046,9 @@
 /* report history */
 .research-history { margin-top: 28px; }
 .research-history-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-.research-card { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-2); text-decoration: none; transition: 0.15s; }
-.research-card:hover { border-color: var(--line-2); background: var(--surface-2); color: var(--text); }
+/* Manus card geometry (12px radius) + Manus's card hover: dims via opacity, doesn't swap bg. */
+.research-card { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text-2); text-decoration: none; transition: opacity 0.15s; }
+.research-card:hover { opacity: 0.8; }
 .research-card svg { color: var(--text-3); flex: none; }
 .research-card-title { flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .research-card small { color: var(--text-3); font-family: var(--mono); font-size: 11px; flex: none; }
@@ -1079,7 +1169,7 @@
   display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--line);
   border-radius: 999px; background: var(--raised); color: var(--text-2); font-size: 11px; font-family: var(--font);
 }
-.discovery-cite:hover { border-color: var(--line-2); color: var(--text); background: var(--surface-2); filter: none; }
+.discovery-cite:hover { border-color: var(--line-2); color: var(--text); background: var(--fill-hover); filter: none; }
 .discovery-cite b { font-family: var(--mono); font-size: 10px; color: var(--text); }
 .discovery-study-table td b { color: var(--text); font-weight: 600; }
 .discovery-study-table td small { display: block; color: var(--text-3); margin-top: 4px; line-height: 1.35; }
@@ -1126,20 +1216,20 @@
 /* ── confirm dialog (destructive actions, e.g. delete chat) — a compact centered modal above the
    rail/drawers/row-menu/settings overlay. Reuses the app tokens + the modal fade-in. ── */
 .confirm-overlay { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, 0.46); backdrop-filter: blur(2px); display: grid; place-items: center; padding: 20px; animation: app-modal-in 0.15s both; }
-.confirm-card { width: min(400px, 100%); background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.6); padding: 20px 20px 16px; animation: app-modal-in 0.15s both; }
+.confirm-card { width: min(400px, 100%); background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius-menu); box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.6); padding: 20px 20px 16px; animation: app-modal-in 0.15s both; }
 .confirm-title { font-size: 16px; font-weight: 650; color: var(--text); margin: 0 0 8px; }
 .confirm-body { font-size: 14px; line-height: 1.55; color: var(--text-2); margin: 0 0 18px; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 9px; }
 .confirm-actions button { padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; font-family: var(--font); cursor: pointer; border: 1px solid var(--line); transition: background 0.15s, border-color 0.15s, color 0.15s, filter 0.15s; }
 .confirm-cancel { background: var(--surface); color: var(--text-2); }
-.confirm-cancel:hover { background: var(--surface-2); color: var(--text); }
+.confirm-cancel:hover { background: var(--fill-hover); color: var(--text); }
 .confirm-del { background: var(--danger); border-color: var(--danger); color: #fff; }
 .confirm-del:hover { filter: brightness(1.07); }
 .confirm-actions button:focus-visible { outline: 2px solid var(--acid-dim); outline-offset: 2px; }
 .app-modal {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 71;
   width: min(560px, calc(100vw - 32px)); max-height: min(86vh, 760px); display: flex; flex-direction: column;
-  background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius);
+  background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius-menu);
   box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.6); animation: app-modal-in 0.15s both; outline: none;
 }
 .app-modal-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px 13px; border-bottom: 1px solid var(--line); }
@@ -1158,24 +1248,45 @@
 .app-modal-body .grid.two, .app-modal-body .grid.three { grid-template-columns: 1fr; }
 /* The Settings sections ARE real cards — undo the generic modal card-flatten above for them, which had
    stripped their padding so text (Account / email / etc.) hugged the left edge. Match the full-page look. */
-.app-modal-body .settings-body .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; }
+/* Manus is low-shadow / contrast-driven: keep the hairline, drop the card shadow. */
+.app-modal-body .settings-body .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
 .app-modal-body .settings-body .card.acid { border-color: var(--line-acid); }
 .app-modal-body .settings-body .card + .card { padding-top: 18px; }
 
-/* ── Consolidated Settings surface (Anthropic-style: left section nav + content) ──────────────── */
-.settings-surface { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 24px; align-items: start; }
-.settings-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; }
+/* ── Settings (Manus modal) ────────────────────────────────────────────────────────────────────
+   Manus's settings anatomy: a quiet left tab rail (36px rows, 10px radius, 16/400 text, 8px icon
+   gap) + a content pane on the right, separated by a hairline. Active row = a subtle 6% fill
+   (--fill-active) with one restrained accent cue: the active icon tints to --acid and a 2px acid
+   bar marks the left edge. Low-shadow, contrast-driven — the Manus house style. Shared by both the
+   /app/settings route AND the account-menu modal (both render SettingsSurface). */
+.settings-surface { display: grid; grid-template-columns: 188px minmax(0, 1fr); gap: 0; align-items: start; }
+.settings-nav {
+  display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0;
+  padding-right: 16px; margin-right: 16px; border-right: 1px solid var(--line);
+}
 .settings-nav button {
-  display: flex; align-items: center; gap: 10px; width: 100%; justify-content: flex-start;
-  padding: 9px 11px; border-radius: var(--radius-sm); background: transparent; border: 1px solid transparent;
-  color: var(--text-2); font-size: 14px; font-weight: 500; font-family: var(--font); cursor: pointer; text-align: left;
+  position: relative; display: flex; align-items: center; gap: 8px; width: 100%; justify-content: flex-start;
+  height: 36px; padding: 0 10px; border-radius: var(--radius-sm); background: transparent; border: none;
+  color: var(--text-2); font-size: 16px; font-weight: 400; font-family: var(--font); cursor: pointer; text-align: left;
   transition: background 0.12s, color 0.12s;
 }
-.settings-nav button:hover { background: var(--surface-2); color: var(--text); }
-.settings-nav button.active { background: var(--surface-2); color: var(--text); font-weight: 600; }
+.settings-nav button svg { color: var(--text-3); flex-shrink: 0; transition: color 0.12s; }
+.settings-nav button:hover { background: var(--fill-hover); color: var(--text); }
+.settings-nav button:hover svg { color: var(--text-2); }
+.settings-nav button.active { background: var(--fill-active); color: var(--text); font-weight: 500; }
+.settings-nav button.active svg { color: var(--acid); }
+.settings-nav button.active::before {
+  content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 2px; height: 18px; border-radius: 2px; background: var(--acid);
+}
 /* min-height keeps short sections (General/About) from collapsing smaller than the tall ones
    (Account/Billing) on the full page, so switching sections doesn't jump the layout. */
 .settings-body { display: grid; gap: 16px; min-width: 0; min-height: 440px; align-content: start; }
+/* Quiet Manus section headers within the content pane: primary-text 16/500 heading, muted 13px sub. */
+.settings-body .card h2 { font-size: 16px; font-weight: 500; color: var(--text); letter-spacing: 0; }
+/* Manus is low-shadow / contrast-driven: settings cards keep only the hairline (full-page route AND
+   modal). Scoped to .settings-body so the app-wide .card shadow (browse/reports/watch) is untouched. */
+.settings-body .card { box-shadow: none; }
 
 /* Appearance — visual theme-preview cards (a mini app per theme: rail + page + accent dot). */
 .theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -1190,22 +1301,23 @@
 .theme-swatch .tp-dot { position: absolute; right: 9px; bottom: 9px; width: 13px; height: 13px; border-radius: 50%; }
 .theme-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); padding: 0 2px; }
 .theme-card-foot svg { color: var(--acid); }
-[data-theme-preview="system"] { color: #ececec; }
-[data-theme-preview="system"] .tp-rail { background: linear-gradient(90deg, #f0f0f1 0 50%, #171717 50% 100%); }
-[data-theme-preview="system"] .tp-page { background: linear-gradient(90deg, #ffffff 0 50%, #212121 50% 100%); }
-[data-theme-preview="system"] .tp-dot { background: #9bd92e; }
+/* Settings theme-picker preview swatches — kept in sync with the live token values above
+   (globals.css :root / [data-theme="dark"]). tp-dot uses the ChatGPT accent blue, matching
+   the app's live --acid (the orb's pinned --orb-color is deliberately NOT mirrored here — this
+   swatch previews the theme's accent, not the fixed brand mark). Only two themes ship (light,
+   dark); "system" previews as a split light/dark swatch. */
+[data-theme-preview="system"] { color: #dadada; }
+[data-theme-preview="system"] .tp-rail { background: linear-gradient(90deg, #f4f4f4 0 50%, #000000 50% 100%); }
+[data-theme-preview="system"] .tp-page { background: linear-gradient(90deg, #ffffff 0 50%, #000000 50% 100%); }
+[data-theme-preview="system"] .tp-dot { background: #3a83f7; }
 [data-theme-preview="light"] { color: #0d0d0d; }
-[data-theme-preview="light"] .tp-rail { background: #f0f0f1; }
+[data-theme-preview="light"] .tp-rail { background: #f4f4f4; }
 [data-theme-preview="light"] .tp-page { background: #ffffff; }
-[data-theme-preview="light"] .tp-dot { background: #62b000; }
-[data-theme-preview="grey"] { color: #ececec; }
-[data-theme-preview="grey"] .tp-rail { background: #171717; }
-[data-theme-preview="grey"] .tp-page { background: #212121; }
-[data-theme-preview="grey"] .tp-dot { background: #bcff3c; }
-[data-theme-preview="dark"] { color: #f4f4f5; }
-[data-theme-preview="dark"] .tp-rail { background: #0e0e10; }
-[data-theme-preview="dark"] .tp-page { background: #0a0a0b; }
-[data-theme-preview="dark"] .tp-dot { background: #bcff3c; }
+[data-theme-preview="light"] .tp-dot { background: #3a83f7; }
+[data-theme-preview="dark"] { color: #ffffff; }
+[data-theme-preview="dark"] .tp-rail { background: #000000; }
+[data-theme-preview="dark"] .tp-page { background: #000000; }
+[data-theme-preview="dark"] .tp-dot { background: #3a83f7; }
 /* the consolidated Settings modal is wider so the left nav + content sit comfortably side by side */
 .app-modal-wide { width: min(840px, calc(100vw - 32px)); height: min(86vh, 580px); }
 /* FIXED height + the body scrolls within → switching sections never resizes/re-centers the modal;
@@ -1213,8 +1325,13 @@
 .app-modal-wide .app-modal-body { flex: 1; min-height: 0; }
 @media (max-width: 680px) {
   .settings-surface { grid-template-columns: 1fr; gap: 14px; }
-  .settings-nav { flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
-  .settings-nav button { width: auto; flex-shrink: 0; }
+  .settings-nav {
+    flex-direction: row; overflow-x: auto; gap: 6px; padding: 0 0 6px; margin: 0;
+    border-right: none; border-bottom: 1px solid var(--line);
+  }
+  .settings-nav button { width: auto; flex-shrink: 0; padding: 0 12px; }
+  /* The left accent bar reads as a bottom underline in the horizontal (mobile) rail. */
+  .settings-nav button.active::before { left: 8px; right: 8px; top: auto; bottom: 0; transform: none; width: auto; height: 2px; }
 }
 
 /* ── Live monitoring — watch detail (WS-D) ──────────────────────────────────────────────────────
@@ -1294,7 +1411,7 @@
 .watch-add:focus-within { border-color: var(--line-2); }
 /* Entity picker dropdown — typeahead suggestions under the Monitor box. Mirrors the .row-menu surface
    (raised bg, hairline, soft shadow) so it reads as a native menu across all three themes. */
-.entity-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40; margin: 0; padding: 6px; list-style: none; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.28); max-height: 320px; overflow-y: auto; animation: fade 0.16s both; }
+.entity-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40; margin: 0; padding: 6px; list-style: none; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-menu); box-shadow: var(--shadow-menu); max-height: 320px; overflow-y: auto; animation: fade 0.16s both; }
 .entity-option { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
 .entity-option.active { background: var(--surface-2); }
 .entity-option-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
@@ -1362,3 +1479,589 @@
 .upload-drop.busy { cursor: default; opacity: 0.7; }
 .upload-err { color: var(--danger); margin-top: 10px; font-size: 13px; }
 .upload-note { color: var(--text-3); margin-top: 10px; font-size: 12px; }
+
+/* ── AgentRunTracker: Manus-style ordered task-progress checklist ──────────────────────────────────
+   Quiet, tight rows (14px label, right-aligned m:ss timer). Three states, deliberately discriminated:
+   ACTIVE is the emphasized "you are here" row (solid --acid dot + soft pulse, expandable narration);
+   DONE is calm — a tinted acid circle with an acid check (quieter than the solid active dot); PENDING
+   is a hollow muted ring in a dimmer text tier. Reads as a checklist, not cards. Tokens only. */
+.agent-run-tracker { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.art-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+/* The active row hosts a <details>; let it own the full grid so summary + detail align to the rows. */
+.art-row.active { display: block; padding: 0; }
+.art-disclosure { margin: 0; }
+.art-summary {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+  list-style: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.art-summary::-webkit-details-marker { display: none; }
+.art-summary:hover { background: var(--fill-hover, color-mix(in srgb, var(--text) 4%, transparent)); }
+
+/* Leading state icon — a 20px slot; done shows a tinted circle, active a solid dot, pending a ring. */
+.art-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.art-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--acid); }
+
+/* DONE — calm/tinted: soft acid-tinted disc + acid check, no glow. */
+.art-row.done .art-icon {
+  background: color-mix(in srgb, var(--acid) 15%, var(--surface));
+  color: var(--acid-deep);
+}
+.art-row.done .art-label { color: var(--text); }
+
+/* ACTIVE — the emphasized row: solid acid dot with a soft pulse. */
+.art-row.active .art-icon { background: transparent; }
+.art-row.active .art-dot {
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--acid) 40%, transparent);
+  animation: art-pulse 1.6s ease-out infinite;
+}
+.art-row.active .art-label { color: var(--text); font-weight: 500; }
+@keyframes art-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acid) 40%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 7px transparent; }
+}
+
+/* PENDING — hollow muted ring, dimmer label tier. */
+.art-row.pending .art-icon { border: 1.5px solid var(--line-2); }
+.art-row.pending .art-label { color: var(--text-3); }
+
+.art-label { min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.art-time {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.art-chevron {
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+  transition: transform 0.18s ease;
+}
+.art-disclosure[open] .art-chevron { transform: rotate(180deg); }
+
+/* Active-row narration — indented under the label, muted, a soft tinted panel. */
+.art-detail {
+  margin: 2px 0 6px;
+  padding: 8px 11px;
+  margin-left: 30px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--acid) 5%, var(--surface));
+  border-left: 2px solid color-mix(in srgb, var(--acid) 45%, var(--line));
+  border-radius: 0 8px 8px 0;
+}
+
+/* ── Agent-run dock ── */
+/* Manus's pinned "Task progress" dock: a collapsible bar docked directly above the composer while a
+   research run is live. Sits in the same 768px centered column as .composer, with a raised background,
+   a hairline top border, and rounded top corners (--radius) so it reads as attached to the box below.
+   Collapsed = one bar (state icon · current step · elapsed · N/M · chevron); expanded reveals the full
+   AgentRunTracker under a small caption. Tokens only. */
+.agent-run-dock {
+  max-width: 768px;
+  margin: 0 auto 8px;
+  padding: 0 28px;
+}
+.ard-bar {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto 18px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 13px;
+  border: 1px solid var(--line);
+  border-top: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--raised), var(--surface));
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 -1px 0 var(--line-2), 0 6px 18px -12px rgba(0, 0, 0, 0.24);
+  transition: border-color 0.15s, background 0.15s;
+}
+.ard-bar:hover { border-color: var(--line-2); }
+.ard-thumb {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--acid) 14%, var(--surface));
+  color: var(--acid-deep);
+  flex: none;
+}
+.ard-current { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
+.ard-elapsed {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ard-count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--fill-hover, color-mix(in srgb, var(--text) 5%, transparent));
+}
+.ard-chevron { display: grid; place-items: center; color: var(--text-3); transition: transform 0.18s ease; }
+.ard-chevron.open { transform: rotate(180deg); }
+.ard-body {
+  margin-top: 6px;
+  padding: 10px 13px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.ard-caption {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+
+/* ── Work panel (watch evidence assemble) ── */
+/* Manus's right-hand "computer" pane, reframed honestly for our engine: while a research run is LIVE
+   this renders inside the SAME `.evidence` right dock (not a new column), showing the research
+   ASSEMBLING — a header + a "● Live" pill, the current step label, the ordered AgentRunTracker
+   timeline, and a live "N sources gathered" line. It reuses .ev-head/.ev-body/.ev-foot for layout
+   parity with EvidencePanel; the .wp-* rules are the "working" accents. Tokens only. */
+.wp-head b { font-size: 13px; font-weight: 600; }
+/* The "● Live" pill mirrors .ev-head .live (acid = our established LIVE convention), softly pulsing. */
+.wp-live {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--acid-dim);
+  border: 1px solid rgba(var(--acid-rgb), 0.3); border-radius: 999px; padding: 2px 8px;
+}
+.wp-live .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 8px var(--acid); animation: pulse 1.8s infinite; }
+/* Current-step banner, just under the head — the "using … / creating …" line in Manus's panel. */
+.wp-current {
+  flex: none;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wp-body { padding: 12px 14px 20px; }
+.wp-assembling { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+@media (prefers-reduced-motion: reduce) {
+  .wp-live .dot { animation: none; }
+}
+
+/* ── Library (Manus grid) ── */
+/* Manus's Library is a header row (title + always-on search + filter + grid/list toggle) over a
+   responsive card grid — NOT a centered serif greeting. Chrome uses only existing tokens; cards get
+   the Manus treatment (--line hairline border, --radius corners, and the distinctive card-hover =
+   opacity 0.8 dim, no background swap). Control buttons tint with --fill-hover on hover. */
+.lib-wrap { max-width: 980px; margin: 0 auto; padding: 26px 28px 80px; }
+.lib-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.lib-title { font-size: 16px; font-weight: 500; color: var(--text); margin: 0; letter-spacing: -0.01em; }
+.lib-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Always-on search: filled (borderless) input, Manus radius-sm */
+.lib-search { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 10px; border-radius: var(--radius-sm); background: var(--fill-hover); min-width: 200px; }
+.lib-search > svg { color: var(--text-3); flex: none; }
+.lib-search-input { flex: 1; min-width: 0; background: none; border: none; outline: none; box-shadow: none; color: var(--text); font-family: var(--font); font-size: 14px; }
+.lib-search-input::placeholder { color: var(--text-3); }
+
+/* Segmented controls (filter + view toggle): ghost buttons, active = fill, hover = --fill-hover */
+.lib-seg { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface); }
+.lib-seg-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border: none; border-radius: 7px; background: transparent; color: var(--text-2); font-family: var(--font); font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s, color 0.15s; white-space: nowrap; }
+.lib-seg-btn:hover { background: var(--fill-hover); color: var(--text); }
+.lib-seg-btn.active { background: var(--fill-hover); color: var(--text); }
+.lib-seg-btn.icon { padding: 0; width: 30px; justify-content: center; }
+.lib-seg-btn svg { flex: none; }
+.lib-new-btn { flex: none; height: 34px; }
+
+/* Chip buttons standing alone (type filter, favorites) get an outline-chip treatment — a single pill
+   rather than a segmented pair, matching the capture's two separate chips. Direct children only, so
+   the grid/list toggle pair (still wrapped in .lib-seg) is unaffected. */
+.lib-controls > .lib-seg-btn { height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.lib-controls > .lib-seg-btn:hover, .lib-controls > .lib-seg-btn.active { background: var(--fill-hover); }
+
+/* Type-filter chip + checkable dropdown menu (Manus: "[filter] All ⌄" opening a checklist). Anchored
+   with position:relative/absolute — no scroll-tracking needed since the toolbar itself doesn't scroll
+   (unlike AppShell's .row-menu, which is fixed-positioned against a scrolling rail). */
+.lib-filter-wrap { position: relative; }
+.lib-filter-wrap > .lib-seg-btn { height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.lib-filter-wrap > .lib-seg-btn:hover, .lib-filter-wrap > .lib-seg-btn.active { background: var(--fill-hover); }
+.lib-filter-menu { position: absolute; top: calc(100% + 6px); left: 0; width: 208px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-menu); box-shadow: var(--shadow-menu); padding: 6px; z-index: 40; animation: fade 0.16s both; }
+.lib-filter-menu button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px 10px; border-radius: var(--radius-menu-item); background: none; border: none; color: var(--text-2); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; text-align: left; }
+.lib-filter-menu button svg { flex: none; }
+.lib-filter-menu button:hover { background: var(--fill-hover); color: var(--text); }
+.lib-filter-menu .lib-filter-check { margin-left: auto; color: var(--acid); }
+
+/* Day-grouped sections (our honest analogue of Manus's per-task grouping): header = day label left,
+   relative time right, over that day's own grid/list. */
+.lib-groups { display: flex; flex-direction: column; gap: 22px; }
+.lib-group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.lib-group-title { font-size: 14px; font-weight: 600; color: var(--text); margin: 0; }
+.lib-group-time { font-size: 12px; color: var(--text-3); font-family: var(--mono); flex: none; }
+
+/* Card grid: responsive auto-fill; each tile = doc glyph + title + preview body + meta line */
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.lib-card { position: relative; display: flex; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); transition: opacity 0.15s; }
+.lib-card:hover { opacity: 0.8; }
+.lib-card-link { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 15px 16px; text-decoration: none; color: var(--text); }
+.lib-card-row { display: flex; align-items: center; gap: 10px; }
+.lib-card-icon { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: var(--radius-sm); background: var(--fill-hover); color: var(--text-2); flex: none; }
+.lib-card-title { font-size: 14px; font-weight: 500; color: var(--text); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lib-card-meta { display: flex; align-items: center; gap: 6px; margin-top: auto; font-size: 12px; color: var(--text-3); font-family: var(--mono); }
+.lib-card-dot { opacity: 0.7; }
+
+/* Preview body: a light-surface panel showing the report's own title + real summary text, echoing
+   Manus's rendered-markdown thumbnail (fixed light colors — deliberately NOT var(--surface) — so it
+   reads the same in dark mode, matching the capture's "renders in its own light context" note). Text
+   preview only, never a fabricated screenshot. */
+.lib-card-preview { display: flex; flex-direction: column; gap: 4px; padding: 10px 11px; border-radius: 8px; background: #f4f3ef; border: 1px solid rgba(0, 0, 0, 0.06); }
+.lib-card-preview-title { font-size: 12px; font-weight: 600; color: #161512; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.lib-card-preview-body { font-size: 11.5px; color: #4b493f; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Star favorite toggle — a SIBLING of the link (never nested in an <a>), pinned top-right */
+.lib-fav { position: absolute; top: 9px; right: 9px; z-index: 2; width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border: none; border-radius: 7px; background: transparent; color: var(--text-3); cursor: pointer; transition: background 0.15s, color 0.15s; }
+.lib-fav:hover { background: var(--fill-hover); color: var(--text-2); }
+.lib-fav.on { color: var(--acid); }
+.lib-fav.on svg { fill: var(--acid); }
+
+/* Compact list variant of the same cards: single-row layout, no preview thumbnail (Manus list rows
+   drop the preview too) */
+.lib-list { display: flex; flex-direction: column; gap: 8px; }
+.lib-list .lib-card-link { flex-direction: row; align-items: center; gap: 12px; padding: 11px 44px 11px 14px; }
+.lib-list .lib-card-row { flex: 1; min-width: 0; }
+.lib-list .lib-card-icon { width: 30px; height: 30px; }
+.lib-list .lib-card-title { flex: 1; -webkit-line-clamp: 1; }
+.lib-list .lib-card-meta { margin-top: 0; flex: none; }
+.lib-list .lib-fav { top: 50%; transform: translateY(-50%); right: 10px; }
+
+/* Empty state (Manus-style centered message) + no-match line */
+.lib-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 72px 20px; color: var(--text-3); }
+.lib-empty > svg { color: var(--text-3); margin-bottom: 6px; }
+.lib-empty-title { font-size: 15px; font-weight: 500; color: var(--text); margin: 0; }
+.lib-empty-sub { font-size: 13.5px; color: var(--text-2); max-width: 380px; margin: 0; line-height: 1.55; }
+.lib-empty-sub a { color: var(--acid-dim); }
+.lib-nomatch { color: var(--text-3); font-size: 13.5px; padding: 40px 4px; text-align: center; }
+
+@media (max-width: 640px) {
+  .lib-controls { width: 100%; }
+  .lib-search { flex: 1; min-width: 0; }
+}
+
+/* ── Projects (Manus grid) ── */
+/* Projects reuses Library's card grid (.lib-grid / .lib-card / .lib-card-link / .lib-card-icon /
+   .lib-card-title / .lib-card-meta) verbatim — same hairline border, --radius corners, and the
+   distinctive card-hover = opacity 0.8. The ONLY page-specific chrome is the header row (title + sub
+   on the left, an inline "New project" create control on the right) and the multi-line card description.
+   Keeping the create control always visible (the existing createProject flow) avoids a toggle; the same
+   control is reused inside the empty state. */
+.proj-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
+.proj-head-text { min-width: 0; }
+.proj-sub { margin: 4px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--text-3); max-width: 46ch; }
+
+/* Inline create control: filled (borderless) container with a folder glyph + input + "New project"
+   button — mirrors Manus's search-fill treatment (var(--fill-hover), the same fill Library's search uses,
+   at --radius-sm). */
+.proj-create { display: flex; align-items: center; gap: 8px; flex: none; height: 40px; padding: 0 6px 0 12px; border-radius: var(--radius-sm); background: var(--fill-hover); border: 1px solid var(--line); transition: border-color 0.15s; }
+.proj-create:focus-within { border-color: var(--line-2); }
+.proj-create > svg { color: var(--text-3); flex: none; }
+.proj-create-input { flex: 1; min-width: 200px; background: none; border: none; outline: none; box-shadow: none; color: var(--text); font-family: var(--font); font-size: 14px; }
+.proj-create-input::placeholder { color: var(--text-3); }
+.proj-create-btn { flex: none; height: 30px; }
+
+/* Card description: quiet second line under the title, clamped to 2 lines (the card meta line sits below). */
+.proj-card-desc { font-size: 12.5px; line-height: 1.45; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Empty-state create affordance: re-seat the same inline control, centered under the message. */
+.proj-empty-create { margin-top: 12px; }
+.proj-empty-create .proj-create { height: 42px; }
+.proj-empty-create .proj-create-input { min-width: 220px; }
+
+@media (max-width: 640px) {
+  .proj-head { gap: 14px; }
+  .proj-create { width: 100%; }
+  .proj-create-input { min-width: 0; }
+}
+
+/* ── Scheduled (Manus tabs + calendar) ── */
+/* Header tabs reuse the app's .ev-tab segmented look (see .ev-tabs above). The row also carries the
+   "New scheduled task" trigger at the right, so create stays reachable regardless of which tab (incl.
+   the default Calendar tab) is active. */
+.sched-tabs-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 4px 0 18px; border-bottom: 1px solid var(--line); }
+.sched-tabs { display: flex; gap: 4px; }
+.sched-tabs .ev-tab { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; padding: 10px 4px; margin-right: 14px; }
+.sched-tabs .ev-tab svg { color: var(--text-3); }
+.sched-tabs .ev-tab.active svg { color: var(--text-2); }
+.sched-tabs .ev-tab.active::after { left: 0; right: 0; }
+.sched-new-btn { flex: none; margin-bottom: 8px; }
+
+/* ── Scheduled empty state (Manus anatomy: illustration + H2 + 3 suggestion rows + create button) ── */
+.sched-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 36px 16px 8px; }
+.sched-empty-art { position: relative; margin-bottom: 22px; color: var(--text-3); }
+.sched-art-frame { fill: none; stroke: currentColor; stroke-width: 2.5; }
+.sched-art-cell { fill: var(--line-2); }
+.sched-art-cell.active { fill: var(--acid); }
+.sched-empty-badge {
+  position: absolute; right: -10px; bottom: -8px; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--acid); color: var(--bg); box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--acid) 70%, transparent);
+}
+.sched-empty-title { font-size: 19px; font-weight: 600; color: var(--text); max-width: 420px; margin: 0 0 22px; line-height: 1.4; }
+.sched-suggestions { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 560px; }
+.sched-suggestion-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 16px; text-align: left;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text);
+  font-family: var(--font); font-size: 13.5px; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+}
+.sched-suggestion-row:hover { background: var(--fill-hover); border-color: var(--line-2); }
+.sched-suggestion-row svg:first-child { color: var(--text-3); flex: none; }
+.sched-suggestion-row svg:last-child { color: var(--text-3); flex: none; margin-left: auto; }
+.sched-suggestion-text { flex: 1; min-width: 0; }
+.sched-empty-monitor { font-size: 12.5px; color: var(--text-3); margin: 18px 0 0; }
+.sched-empty-cta { margin-top: 18px; }
+
+/* ── New scheduled task modal form (inside AppModal's .app-modal-body) ── */
+.sched-form { display: grid; gap: 14px; }
+.sched-field { display: grid; gap: 6px; }
+.sched-field-label { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.sched-select { appearance: auto; cursor: pointer; }
+.sched-modal-actions { margin-top: 2px; }
+
+.sched-cal { margin-top: 4px; }
+.sched-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.sched-cal-month { font-size: 16px; font-weight: 600; color: var(--text); }
+.sched-cal-nav { display: flex; align-items: center; gap: 6px; }
+.sched-cal-btn { width: 30px; height: 30px; display: grid; place-items: center; font-size: 18px; line-height: 1; color: var(--text-2); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; font-family: var(--font); transition: background 0.15s, border-color 0.15s, color 0.15s; }
+.sched-cal-btn:hover { background: var(--fill-hover); border-color: var(--line-2); color: var(--text); }
+.sched-cal-today { height: 30px; padding: 0 12px; font-size: 12.5px; font-weight: 500; color: var(--text-2); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; font-family: var(--font); transition: background 0.15s, border-color 0.15s, color 0.15s; }
+.sched-cal-today:hover { background: var(--fill-hover); border-color: var(--line-2); color: var(--text); }
+
+.sched-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.sched-cal-dow { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); text-align: center; padding: 2px 0 6px; }
+.sched-cal-cell { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-height: 78px; padding: 7px 8px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; font-family: var(--font); color: var(--text); transition: background 0.15s, border-color 0.15s; }
+.sched-cal-cell:hover { background: var(--fill-hover); border-color: var(--line-2); }
+.sched-cal-cell.muted { color: var(--text-3); background: none; }
+.sched-cal-cell.muted .sched-cal-num { color: var(--text-3); }
+.sched-cal-cell.today { border-color: var(--acid); }
+.sched-cal-cell.selected { border-color: var(--acid); background: color-mix(in srgb, var(--acid) 10%, var(--surface)); }
+.sched-cal-num { font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+.sched-cal-cell.today .sched-cal-num { color: var(--acid-deep); font-weight: 700; }
+.sched-cal-marks { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sched-cal-mark { font-size: 10.5px; line-height: 1.25; color: var(--text); background: color-mix(in srgb, var(--acid) 14%, transparent); border-radius: 5px; padding: 2px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sched-cal-more { font-family: var(--mono); font-size: 9.5px; color: var(--text-3); padding-left: 2px; }
+
+.sched-cal-day { margin-top: 22px; }
+.sched-cal-day-head { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); margin: 0 0 4px; }
+.sched-cal-empty { color: var(--text-3); font-size: 13.5px; text-align: center; padding: 26px 4px 6px; }
+
+@media (max-width: 640px) {
+  .sched-cal-cell { min-height: 62px; padding: 5px 5px; }
+  .sched-cal-mark { font-size: 9.5px; padding: 1px 4px; }
+}
+
+/* ── Agent turn header + ack ── */
+/* Manus's quiet agent-run framing: a small monogram avatar + product name above each AI answer
+   (Manus shows "🌱 manus"). Subtle by design — token-tinted, no shadow, muted name. */
+.agent-head { display: flex; align-items: center; gap: 8px; }
+.agent-avatar {
+  width: 22px; height: 22px; flex: none; border-radius: var(--radius-sm);
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--acid) 16%, transparent);
+  color: var(--acid); font-size: 12px; font-weight: 700; line-height: 1;
+}
+.agent-name { font-size: 13px; font-weight: 500; color: var(--text-2); letter-spacing: -0.01em; }
+/* One-line acknowledgement before a research run's progress steps — honest "I'm on it" prose. */
+.agent-ack { font-size: 14px; line-height: 22px; color: var(--text-2); margin: 0 0 10px; }
+
+/* ── Rail header (Manus) ── */
+/* The collapse toggle sits quiet next to the wordmark. .icon-btn already gives it a 34px round-ish
+   hit-area + muted --text-2 color + token hover; nudge its box in so it hugs the header edge and
+   reads aligned with the wordmark rather than ballooning the 16px top padding. When the rail is
+   collapsed the wordmark hides and the header centers this button as the expand affordance. */
+.rail .brand .rail-collapse { width: 30px; height: 30px; margin: -3px -4px -3px 0; }
+.rail-collapsed .brand .rail-collapse { margin: 0; }
+
+/* ── Research poster (wedge) ──────────────────────────────────────────────────────────────────
+   A cited conference poster board sized to the US academic-conference standard: 48×36 inches,
+   LANDSCAPE (4:3 — wider than tall). The board is aspect-ratio-locked to 48/36 so the on-screen
+   preview and any print/PDF keep true poster proportions; a 4-column body fills the wide canvas
+   (no portrait growth, no empty vertical gap). Academic header (title + author/affiliation
+   placeholder + neutral N-sources·date), an evidence mini-table, and a multi-column references
+   column. Tokens only, no product branding. print-color-adjust: exact keeps the accent header +
+   table fills when printed to PDF; @media print strips the app to just the board so it prints clean. */
+.poster-preview-stage {
+  min-height: 100vh; background: var(--surface); display: flex; justify-content: center;
+  align-items: flex-start; padding: 40px 24px; box-sizing: border-box;
+}
+.research-poster {
+  /* Fixed 48×36 landscape board. aspect-ratio locks the true 4:3 poster shape; the width scales to
+     fit the viewport (capped so the board reads large) and the height follows from the ratio. */
+  width: 100%; max-width: 1440px; aspect-ratio: 48 / 36;
+  background: var(--bg);
+  border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden;
+  display: flex; flex-direction: column; color: var(--text); font-family: var(--font);
+  box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.28);
+  print-color-adjust: exact; -webkit-print-color-adjust: exact;
+}
+
+/* Academic header — accent-tinted band with the report question as the title, an editable-looking
+   author/affiliation line, and a neutral sources·date line. No product branding. */
+.poster-head {
+  padding: 20px 34px 14px; border-bottom: 3px solid var(--acid);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acid) 9%, var(--bg)), var(--bg));
+}
+.poster-title {
+  font-family: var(--font-serif); font-size: 29px; line-height: 1.12; font-weight: 400;
+  color: var(--text); margin: 0 0 8px; letter-spacing: -0.01em;
+}
+.poster-byline {
+  font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: -0.005em; margin-bottom: 5px;
+}
+.poster-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.poster-meta-item { font-family: var(--mono); font-size: 11px; letter-spacing: 0.03em; color: var(--text-3); }
+.poster-meta-item + .poster-meta-item::before { content: "·"; margin-right: 8px; color: var(--text-3); }
+
+/* Body — a 3-column upper region, then a full-width evidence-base band and references band, so the
+   wide landscape canvas is used top-to-bottom without a portrait gap or a clipped column. */
+.poster-body {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  gap: 9px; padding: 12px 32px 12px; overflow: hidden;
+}
+.poster-upper {
+  flex: 0 0 auto; min-height: 0; display: grid; grid-template-columns: 1fr 2.3fr 1fr; gap: 22px;
+}
+.poster-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
+.poster-col + .poster-col { border-left: 1px solid var(--line); padding-left: 22px; margin-left: -11px; }
+
+/* Key findings flow three-up inside the double-width middle column. */
+.poster-findings-flow { columns: 3; column-gap: 18px; }
+.poster-findings-flow .poster-finding { break-inside: avoid; margin-bottom: 2px; }
+.poster-findings-flow .poster-p { margin-bottom: 4px; }
+
+.poster-block { break-inside: avoid; }
+.poster-h {
+  font-size: 13px; font-weight: 700; color: var(--text); margin: 0 0 6px; padding-bottom: 3px;
+  border-bottom: 2px solid var(--acid); display: inline-block; letter-spacing: -0.01em;
+}
+.poster-h3 { font-size: 11.5px; font-weight: 700; color: var(--text); margin: 8px 0 3px; }
+.poster-finding:first-child .poster-h3 { margin-top: 0; }
+.poster-p { font-size: 11px; line-height: 1.38; color: var(--text-2); margin: 0 0 5px; }
+.poster-p.poster-muted { color: var(--text-3); }
+.poster-claim { color: var(--text); }
+.poster-cite {
+  font-family: var(--mono); font-size: 10px; font-weight: 600; color: var(--acid-dim);
+  white-space: nowrap;
+}
+
+.poster-methods, .poster-gaps { margin: 0; padding-left: 15px; }
+.poster-methods li, .poster-gaps li { font-size: 11px; line-height: 1.4; color: var(--text-2); margin: 0 0 4px; }
+.poster-methods li b { color: var(--text); font-weight: 600; }
+.poster-methods-count { font-size: 11px; line-height: 1.4; color: var(--text-2); margin: 6px 0 0; }
+.poster-methods-count b { color: var(--text); font-family: var(--mono); }
+.poster-gap-trials { color: var(--text-3); }
+
+.poster-safety .poster-h { border-bottom-color: var(--warn); }
+
+/* Full-width evidence-base + references bands below the upper region. */
+.poster-evidence-band, .poster-refs-band {
+  flex: none; min-width: 0; border-top: 1px solid var(--line-2); padding-top: 8px;
+}
+
+/* Evidence mini-table (# · Type · Source · Year), mirroring evidenceRows. Split four-up so a real
+   source list stays a short full-width band while keeping the Source column readable. */
+.poster-evidence-split { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 4px; }
+.poster-evidence { width: 100%; border-collapse: collapse; font-size: 8.5px; line-height: 1.2; table-layout: fixed; margin-top: 5px; }
+.poster-evidence th {
+  text-align: left; font-weight: 700; color: var(--text); padding: 2px 5px;
+  background: var(--fill-active); border-bottom: 1px solid var(--line-2);
+}
+.poster-evidence th:first-child { border-top-left-radius: 6px; }
+.poster-evidence th:last-child { border-top-right-radius: 6px; }
+.poster-evidence td { padding: 1px 5px; color: var(--text-2); border-bottom: 1px solid var(--line); vertical-align: top; }
+.poster-evidence tr:last-child td { border-bottom: none; }
+.poster-ev-tag { font-family: var(--mono); font-weight: 600; color: var(--acid-dim); width: 8%; }
+.poster-evidence th:nth-child(2), .poster-evidence td:nth-child(2) { width: 24%; }
+.poster-evidence th:nth-child(4), .poster-evidence td:nth-child(4) { width: 11%; }
+.poster-ev-src { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* References — a full-width band that flows the whole numbered list across sub-columns, so a
+   real-sized citation list (~30) fills the wide board horizontally instead of overflowing a narrow
+   column. Numbered, tight, monospace numerals via the shared referenceLines strings. */
+.poster-refs {
+  margin: 3px 0 0; padding: 0; list-style-position: inside;
+  column-count: 8; column-gap: 13px; column-rule: 1px solid var(--line);
+}
+.poster-refs li { font-size: 8px; line-height: 1.24; color: var(--text-2); margin: 0 0 2.5px; break-inside: avoid; padding-left: 1px; }
+.poster-refs li::marker { color: var(--text-3); font-family: var(--mono); }
+
+/* Print / PDF: strip everything but the fixed 4:3 board so it prints to a clean landscape page.
+   Unlock overflow/height so nothing clips on paper while keeping the 48×36 landscape ratio. */
+@media print {
+  .poster-preview-stage { padding: 0; background: var(--bg); min-height: 0; }
+  .research-poster {
+    width: 100%; max-width: none; aspect-ratio: 48 / 36; height: auto;
+    border: none; border-radius: 0; box-shadow: none; overflow: visible;
+  }
+  .poster-body { overflow: visible; }
+  @page { size: landscape; margin: 12mm; }
+}
+
+/* ── BEGIN project-sources block (owned by Agent A — apps/web/app/app/projects/[id]/page.tsx) ── */
+
+.proj-sources-empty {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 22px 20px; border: 1px dashed var(--line-2); border-radius: 14px;
+  background: var(--surface); margin-top: 4px;
+}
+
+/* "Add sources" modal: dashed drag zone + the Upload/Text/Drive/Slack tile row, ChatGPT-Projects style. */
+.proj-source-drop {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 30px 16px; border: 1.5px dashed var(--line-2); border-radius: 14px;
+  background: var(--surface); color: var(--text-3); font-size: 13.5px; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.proj-source-drop:hover, .proj-source-drop.drag { border-color: var(--acid); color: var(--text-2); background: var(--surface-2); }
+
+.proj-source-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
+@media (max-width: 480px) { .proj-source-tiles { grid-template-columns: 1fr; } }
+.proj-source-tile {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--surface); color: var(--text-2); font-family: var(--font);
+  font-size: 13.5px; font-weight: 550; cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.proj-source-tile:hover:not(:disabled) { border-color: var(--acid); color: var(--text); background: var(--surface-2); }
+.proj-source-tile:disabled { cursor: not-allowed; opacity: 0.55; }
+.proj-source-tile small { margin-left: auto; font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-3); }
+
+/* ── END project-sources block ── */

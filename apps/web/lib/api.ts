@@ -286,6 +286,111 @@ export async function askQuestion(question: string, mode?: AskMode): Promise<Ask
   return body as AskResponse;
 }
 
+/** Streamed /ask (SSE): real pipeline milestones + the lead paragraph as the model writes it. */
+export interface AskStreamHandlers {
+  /** Real pipeline milestone ({stage:"understanding"|"searching"|"sources"|"writing", ...}). */
+  onStage?: (stage: { stage: string } & Record<string, unknown>) => void;
+  /** Safety-gated lead-paragraph text, in order. The final response SUPERSEDES streamed text. */
+  onDelta?: (text: string) => void;
+}
+
+/**
+ * Ask with streaming. Resolves with the SAME canonical AskResponse askQuestion returns — the
+ * terminal `complete` event — after relaying stage/delta events. Degrades cleanly: if the server
+ * flag is off (plain JSON reply) this behaves exactly like askQuestion, so the client flag can
+ * ship ahead of the fn deploy. Quota errors throw the same AskQuotaError shape either way.
+ */
+export async function askQuestionStream(
+  question: string,
+  mode: AskMode | undefined,
+  handlers: AskStreamHandlers,
+): Promise<AskResponse> {
+  if (isPreviewMode) return askQuestion(question, mode);
+
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to ask");
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/ask`, {
+    method: "POST",
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ question, use_health_context: false, stream: true, ...(mode ? { mode } : {}) }),
+  });
+
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/event-stream")) {
+    // Server streaming flag off (or an error status): identical handling to askQuestion.
+    const body = await res.json().catch(() => null);
+    if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
+      const err = new Error("quota_exceeded") as AskQuotaError;
+      err.quota = body as unknown as QuotaExceededError;
+      throw err;
+    }
+    if (!res.ok) throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `ask failed (${res.status})`);
+    return body as AskResponse;
+  }
+
+  if (!res.body) throw new Error("ask stream: empty body");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let complete: AskResponse | null = null;
+  let streamError: Record<string, unknown> | null = null;
+
+  const handleBlock = (block: string) => {
+    let event = "message";
+    const dataLines: string[] = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+    }
+    if (!dataLines.length) return;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return;
+    }
+    if (event === "delta" && isObj(payload) && typeof payload.text === "string") handlers.onDelta?.(payload.text);
+    else if (event === "stage" && isObj(payload) && typeof payload.stage === "string") {
+      handlers.onStage?.(payload as { stage: string } & Record<string, unknown>);
+    } else if (event === "complete") complete = payload as AskResponse;
+    else if (event === "error" && isObj(payload)) streamError = payload;
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let sep: number;
+      while ((sep = buf.indexOf("\n\n")) >= 0) {
+        handleBlock(buf.slice(0, sep));
+        buf = buf.slice(sep + 2);
+      }
+    }
+    if (buf.trim()) handleBlock(buf);
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (streamError) {
+    const errPayload: Record<string, unknown> = streamError;
+    if (errPayload.error === "quota_exceeded") {
+      const err = new Error("quota_exceeded") as AskQuotaError;
+      err.quota = errPayload as unknown as QuotaExceededError;
+      throw err;
+    }
+    throw new Error(typeof errPayload.error === "string" ? errPayload.error : "ask failed");
+  }
+  if (!complete) throw new Error("ask stream ended without a complete answer");
+  return complete;
+}
+
 export async function searchEntities(q: string): Promise<SearchResult[]> {
   const query = q.trim();
   if (!query) return [];
@@ -754,6 +859,9 @@ export interface ResearchReportSummary {
   citation_count: number;
   /** Report sub-type for grouping: 'standard' | 'meta' | 'structured_review' | 'lab_draft' | 'discovery'. */
   mode: string;
+  /** The report's bottom-line summary (ResearchReport.summary, always populated) — used for the
+   *  Library card preview. Optional only because older rows or a malformed payload could lack it. */
+  summary?: string;
 }
 
 /** Start a deep-research run. Returns the run id to poll. Throws AskQuotaError on the Pro gate /
@@ -927,9 +1035,14 @@ export async function fetchResearchReport(savedReportId: string): Promise<Resear
 /** The user's saved deep-research reports, newest first — drives the rail history. */
 export async function fetchResearchReports(): Promise<ResearchReportSummary[]> {
   if (isPreviewMode) return [];
+  // `payload` is selected whole (not a JSON-path projection like `payload->>summary`) — this codebase
+  // has no existing precedent for PostgREST's `->>` select syntax, and a rejected select here would
+  // break the entire Library page. Selecting the proven-working `payload` column (already used at
+  // fetchResearchReport above) and unwrapping `.summary` client-side costs more bytes per row but
+  // carries zero query-syntax risk.
   const { data, error } = await supabase
     .from("saved_reports")
-    .select("id,title,created_at,citation_count,mode")
+    .select("id,title,created_at,citation_count,mode,payload")
     .eq("kind", "deep_research")
     .order("created_at", { ascending: false })
     .limit(50);
@@ -941,6 +1054,9 @@ export async function fetchResearchReports(): Promise<ResearchReportSummary[]> {
       created_at: typeof r.created_at === "string" ? r.created_at : "",
       citation_count: typeof r.citation_count === "number" ? r.citation_count : 0,
       mode: typeof r.mode === "string" ? r.mode : "standard",
+      summary: isObj(r.payload) && typeof r.payload.summary === "string" && r.payload.summary.trim()
+        ? r.payload.summary
+        : undefined,
     } as ResearchReportSummary)
     : null));
 }
@@ -1379,6 +1495,78 @@ export async function fetchUnassignedItems(): Promise<ProjectContents> {
 export async function setItemProject(kind: ProjectItemKind, id: string, projectId: string | null): Promise<void> {
   const { error } = await supabase.from(PROJECT_ITEM_TABLE[kind]).update({ project_id: projectId }).eq("id", id);
   if (error) throw new Error(`assign to project failed: ${error.message}`);
+}
+
+// ── Project sources (ChatGPT-Projects "give it more context"): pasted text or small uploaded text
+//    files attached to a workspace. Owner-gated migration 20260706000000_project_sources.sql. ──
+export interface ProjectSource {
+  id: string;
+  project_id: string;
+  kind: "text" | "file";
+  name: string;
+  content: string;
+  bytes: number | null;
+  created_at: string;
+}
+
+function toProjectSource(r: Record<string, unknown>): ProjectSource | null {
+  return typeof r.id === "string" && typeof r.project_id === "string" && typeof r.content === "string"
+    ? {
+      id: r.id,
+      project_id: r.project_id,
+      kind: r.kind === "file" ? "file" : "text",
+      name: typeof r.name === "string" ? r.name : "Untitled source",
+      content: r.content,
+      bytes: typeof r.bytes === "number" ? r.bytes : null,
+      created_at: typeof r.created_at === "string" ? r.created_at : "",
+    }
+    : null;
+}
+
+/** A project's sources, or `{ enabled: false }` when the project_sources table doesn't exist yet
+ *  (pre-migration) — kept distinct from "enabled but empty" so the Sources tab can tell the two apart
+ *  (a quiet "not enabled yet" note vs. the normal empty/drop-zone state), instead of collapsing both
+ *  into an empty array the way fetchProjects() does for its own pre-deploy case. */
+export async function fetchProjectSources(projectId: string): Promise<{ enabled: boolean; sources: ProjectSource[] }> {
+  if (isPreviewMode) return { enabled: true, sources: [] };
+  const { data, error } = await supabase
+    .from("project_sources")
+    .select("id,project_id,kind,name,content,bytes,created_at")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    if (isMissingRelation(error)) return { enabled: false, sources: [] };
+    throw new Error(`project sources failed: ${error.message}`);
+  }
+  return { enabled: true, sources: rows(data, toProjectSource) };
+}
+
+/** Add a source (pasted text, or a small text-format file already read client-side) to a project.
+ *  RLS scopes the insert to the caller; user_id also defaults server-side via auth.uid(). */
+export async function createProjectSource(input: { projectId: string; kind: "text" | "file"; name: string; content: string; bytes?: number }): Promise<ProjectSource | null> {
+  const { data: sess } = await supabase.auth.getSession();
+  const userId = sess.session?.user?.id;
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from("project_sources")
+    .insert({
+      project_id: input.projectId,
+      user_id: userId,
+      kind: input.kind,
+      name: input.name.trim().slice(0, 200) || "Untitled source",
+      content: input.content,
+      bytes: input.bytes ?? input.content.length,
+    })
+    .select("id,project_id,kind,name,content,bytes,created_at")
+    .maybeSingle();
+  if (error) throw new Error(`add source failed: ${error.message}`);
+  return data ? toProjectSource(data) : null;
+}
+
+/** Delete a project source. RLS scopes the delete to the caller. */
+export async function deleteProjectSource(id: string): Promise<void> {
+  const { error } = await supabase.from("project_sources").delete().eq("id", id);
+  if (error) throw new Error(`delete source failed: ${error.message}`);
 }
 
 // ── Research Map: OpenAlex-backed "explore related papers" (calls the auth-gated /api/v1/graph/expand
