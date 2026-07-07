@@ -21,7 +21,9 @@ export function askStreamingEnabled(): boolean {
   return Deno.env.get("ASK_STREAMING") === "on";
 }
 
-export type AskEmit = (event: "stage" | "delta", data: Record<string, unknown>) => void;
+// "intent" carries the dynamic per-question plan line (DYNAMIC_INTENT), emitted early so it appears
+// during thinking; it is already forbidden-phrase-scanned at its source before being emitted.
+export type AskEmit = (event: "stage" | "delta" | "intent", data: Record<string, unknown>) => void;
 
 /** The streamed-lead gate: same detectViolations teeth as the non-streaming scan. */
 export function makeLeadGate(): SafeTextEmitter {

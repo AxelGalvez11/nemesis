@@ -639,10 +639,14 @@ function AskPage() {
             streamed = true;
             setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, stream: (t.stream ?? "") + delta } : t)));
           },
+          // Real per-question plan line, in DURING thinking — replaces the template intent line live.
+          onIntent: (line) => setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, intentLine: line } : t))),
         })
         : await askQuestion(outgoing, askMode);
       await minThinkingPreview;
-      setLast({ a: res, stream: undefined, thinkSecs: Math.max(1, Math.round((Date.now() - t0) / 1000)) });
+      // Prefer the streamed line; else the one on the final response (non-streaming path). Undefined
+      // leaves it unset → Thinking shows its template. res.intent_line wins if present (canonical).
+      setLast({ a: res, stream: undefined, thinkSecs: Math.max(1, Math.round((Date.now() - t0) / 1000)), ...(res.intent_line ? { intentLine: res.intent_line } : {}) });
       setRevealIdx(streamed ? null : idx); // just-arrived turns type in — unless the lead already streamed live
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
       bumpUsage(); // refresh the shell's account footer + credits chip after this ask consumed a unit
@@ -804,13 +808,13 @@ function AskPage() {
                   ) : t.a ? (
                     <>
                       {t.a.intent !== "smalltalk" ? (
-                        <Thinking stage={3} question={t.q} complete secs={t.thinkSecs} domains={citationDomains(t.a.citations, t.a.reviewed_sources)} />
+                        <Thinking stage={3} question={t.q} complete secs={t.thinkSecs} domains={citationDomains(t.a.citations, t.a.reviewed_sources)} intentLine={t.intentLine ?? t.a.intent_line} />
                       ) : null}
                       <Answer answer={t.a} onCite={onCite} question={t.q} reveal={i === revealIdx} />
                     </>
                   ) : isLast && busy && showThinking ? (
                     <>
-                      <Thinking stage={stage} question={t.q} />
+                      <Thinking stage={stage} question={t.q} intentLine={t.intentLine} />
                       {t.stream ? (
                         <div className="answer fade-none" aria-live="polite">
                           <p className="stream-lead">{t.stream.replace(/\*\*/g, "")}<span className="stream-caret" aria-hidden="true" /></p>
@@ -879,6 +883,9 @@ interface Turn {
   q: string;
   a: AskResponse | null;
   err: string | null;
+  // The dynamic per-question plan line (DYNAMIC_INTENT): streamed in during thinking, or read from
+  // the final response. When present, the Thinking component shows THIS instead of its fixed template.
+  intentLine?: string;
   research?: ResearchCard; // present when this turn is a deep-research run instead of a chat answer
   scope?: ScopeTurnState;  // present while clarifying questions await answers
   scoping?: boolean;       // brief: the scope step is running before we know if clarification is needed
@@ -1077,13 +1084,15 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
 //   3. Once answered: a "Thought for Xs ›" disclosure under the plan line that expands into the
 //      activity trail — alternating search blocks (search icon + gerund title + domain chips) and
 //      reasoning blocks (bullet + first-person paragraph), ChatGPT's Activity-panel pattern.
-function Thinking({ stage, question, complete = false, secs, domains }: { stage: number; question: string; complete?: boolean; secs?: number; domains?: string[] }) {
+function Thinking({ stage, question, complete = false, secs, domains, intentLine }: { stage: number; question: string; complete?: boolean; secs?: number; domains?: string[]; intentLine?: string }) {
   const preview = buildThinkingPreview(question, stage);
+  // The dynamic per-question plan line (DYNAMIC_INTENT) supersedes the fixed template when present.
+  const intent = intentLine || preview.intent;
   const [open, setOpen] = useState(false);
   if (!complete) {
     return (
       <div className="thinking engine-preview engine-preview-compact" aria-live="polite" title={preview.preview}>
-        <div className="intent-line">{preview.intent}</div>
+        <div className="intent-line">{intent}</div>
         <span className="engine-preview-title thinking-snippet">
           {stage <= 0 ? "Thinking" : preview.current}
           <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>
@@ -1095,7 +1104,7 @@ function Thinking({ stage, question, complete = false, secs, domains }: { stage:
   const chips = domains?.length ? domains : SEARCH_DOMAINS;
   return (
     <div className="thinking engine-preview engine-preview-compact engine-preview-done">
-      <div className="intent-line">{preview.intent}</div>
+      <div className="intent-line">{intent}</div>
       <button type="button" className="thought-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <span className="engine-preview-title">
           {secs ? `Thought for ${secs}s` : "Thought through evidence"}

@@ -292,6 +292,8 @@ export interface AskStreamHandlers {
   onStage?: (stage: { stage: string } & Record<string, unknown>) => void;
   /** Safety-gated lead-paragraph text, in order. The final response SUPERSEDES streamed text. */
   onDelta?: (text: string) => void;
+  /** The dynamic per-question plan line (DYNAMIC_INTENT), emitted early so it shows during thinking. */
+  onIntent?: (text: string) => void;
 }
 
 /**
@@ -356,6 +358,7 @@ export async function askQuestionStream(
       return;
     }
     if (event === "delta" && isObj(payload) && typeof payload.text === "string") handlers.onDelta?.(payload.text);
+    else if (event === "intent" && isObj(payload) && typeof payload.text === "string") handlers.onIntent?.(payload.text);
     else if (event === "stage" && isObj(payload) && typeof payload.stage === "string") {
       handlers.onStage?.(payload as { stage: string } & Record<string, unknown>);
     } else if (event === "complete") complete = payload as AskResponse;

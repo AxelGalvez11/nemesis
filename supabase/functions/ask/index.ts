@@ -30,6 +30,7 @@ import { buildSubQueries, extractSearchTerms } from "./search-query.ts";
 import { expandSymptomQuery } from "./symptom-expansion.ts";
 import { espellCorrect } from "../core-source-sync/providers/pubmed.ts";
 import { normalizeResearchQuery, queryNormalizeEnabled } from "./query-normalize.ts";
+import { dynamicIntentEnabled, generateIntentLine } from "./intent-line.ts";
 import { decideNewsGate } from "./news-gate.ts";
 import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
@@ -281,6 +282,16 @@ async function runAsk(
   const rawFlags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
   const flags = suppressEmergencyForGeneralToxicity(question, rawFlags);
   emit?.("stage", { stage: "understanding", intent: cls.intent });
+  // Dynamic thinking line (DYNAMIC_INTENT=on): kick off a real per-question plan line in PARALLEL
+  // with retrieval — it never blocks the answer. When it resolves it streams in via the "intent"
+  // event (so it appears DURING thinking like ChatGPT's) and is also returned on the response for
+  // non-streaming clients + persistence. Flag off / failure → null → client shows its template.
+  const intentLinePromise: Promise<string | null> = dynamicIntentEnabled()
+    ? generateIntentLine(question, apiKey).then((line) => {
+      if (line) emit?.("intent", { text: line });
+      return line;
+    })
+    : Promise.resolve(null);
   const webRecon = await runWebRecon(question);
   const queryUnderstanding = applyReconToUnderstanding(
     understandQuery(question, cls.entity_mentions),
@@ -432,6 +443,17 @@ async function runAsk(
   // ---- 4. health context (verified-user-scoped) ----
   const healthContext = useHealthContext ? await loadHealthContext(userId) : null;
 
+  // Typo-normalize the question the WRITING model reads (QUERY_NORMALIZE=on). Until now normalization
+  // only fixed the hidden SEARCH string, so retrieval found the right sources but the answer could
+  // still echo the user's typo ("metfrmin"). This runs the same gated LLM correction over genQuestion
+  // (deterministic acceptNormalized gate; entityMentions pinned as mustKeep so a drug can't be
+  // swapped), so the answer reads cleanly. Best-effort: returns genQuestion unchanged on any failure
+  // or shape-changing rewrite; flag off = untouched. It only changes the model's INPUT text — the
+  // deterministic safety scan still runs on the OUTPUT, and preScreen already ran on the raw question.
+  if (queryNormalizeEnabled()) {
+    genQuestion = await normalizeResearchQuery(genQuestion, queryUnderstanding.fieldMentions);
+  }
+
   // ---- 5. generate (graceful: a total LLM failure degrades to a cited refusal,
   //         never a user-facing 500) ----
   let gen: Awaited<ReturnType<typeof generate>>;
@@ -572,6 +594,10 @@ async function runAsk(
   // Walled news (paid) / locked teaser (free). Resolved here so its fetch overlapped the work above.
   // It is attached as a SEPARATE field — never folded into citations/reviewed_sources/the chunk pool.
   const news = await newsPromise;
+  // The dynamic plan line resolved while retrieval/generation ran (or is null: flag off / failed /
+  // trumped by the forbidden scan). Attached for non-streaming clients + persistence; streaming
+  // clients already received it via the "intent" event.
+  const intentLine = await intentLinePromise;
   const surfacedAssumption = [
     assumption ? `${assumption}.` : "",
     ...queryUnderstanding.assumptions,
@@ -592,6 +618,7 @@ async function runAsk(
     ...(reviewedSources.length ? { reviewed_sources: reviewedSources } : {}),
     ...(news.length ? { news } : {}),
     ...(newsGate.locked ? { news_locked: true } : {}),
+    ...(intentLine ? { intent_line: intentLine } : {}),
   };
 
   // ---- 8. trace store ----

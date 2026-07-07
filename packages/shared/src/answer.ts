@@ -216,6 +216,12 @@ export interface AnswerNewsItem {
 export interface AskResponse {
   answer_id: string;
   intent: Intent;
+  /**
+   * Dynamic per-question "thinking" plan line (DYNAMIC_INTENT), model-written and forbidden-phrase
+   * scanned. Cosmetic narration only — never the answer, never grounded/cited. Absent when the flag
+   * is off or generation failed; the client then shows its fixed template line.
+   */
+  intent_line?: string;
   /** doc-20 "Bottom line" == §8 plain_english_summary. */
   plain_english_summary: string;
   evidence_grade: EvidenceGrade;
