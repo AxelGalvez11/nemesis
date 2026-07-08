@@ -360,6 +360,23 @@ const FIXTURE: ResearchReport = {
     retrieved_at: "2026-07-04",
   },
   citation_style: "vancouver",
+  // Poolable meta-analysis so the preview exercises the forest-plot band. Realistic 2x2 counts →
+  // the real poolRiskRatio math would produce these figures; hand-set here for a static fixture.
+  meta_analysis: {
+    poolable: true,
+    measure: "risk_ratio",
+    k: 5,
+    studies: [
+      { label: "Evans 2005 (ZODIAC)", citation_tag: "3", outcome_label: "cancer incidence", events_treatment: 45, total_treatment: 1200, events_control: 78, total_control: 1100, effect_log: Math.log(0.53), effect: 0.53, variance: 0.04, ci_low: 0.37, ci_high: 0.76, weight_percent: 22, continuity_corrected: false, source_quote: "" },
+      { label: "Libby 2009", citation_tag: "7", outcome_label: "cancer incidence", events_treatment: 120, total_treatment: 4085, events_control: 100, total_control: 1465, effect_log: Math.log(0.63), effect: 0.63, variance: 0.02, ci_low: 0.49, ci_high: 0.81, weight_percent: 28, continuity_corrected: false, source_quote: "" },
+      { label: "Currie 2009", citation_tag: "11", outcome_label: "cancer incidence", events_treatment: 210, total_treatment: 6200, events_control: 190, total_control: 3100, effect_log: Math.log(0.79), effect: 0.79, variance: 0.015, ci_low: 0.63, ci_high: 0.99, weight_percent: 26, continuity_corrected: false, source_quote: "" },
+      { label: "Bodmer 2010", citation_tag: "16", outcome_label: "cancer incidence", events_treatment: 30, total_treatment: 900, events_control: 40, total_control: 850, effect_log: Math.log(0.70), effect: 0.70, variance: 0.06, ci_low: 0.44, ci_high: 1.12, weight_percent: 14, continuity_corrected: false, source_quote: "" },
+      { label: "Ruiter 2012", citation_tag: "21", outcome_label: "cancer incidence", events_treatment: 18, total_treatment: 620, events_control: 22, total_control: 580, effect_log: Math.log(0.76), effect: 0.76, variance: 0.10, ci_low: 0.41, ci_high: 1.41, weight_percent: 10, continuity_corrected: false, source_quote: "" },
+    ],
+    fixed: { estimate: 0.67, estimate_log: Math.log(0.67), variance: 0.0075, ci_low: 0.58, ci_high: 0.78 },
+    random: { estimate: 0.68, estimate_log: Math.log(0.68), variance: 0.0095, ci_low: 0.57, ci_high: 0.81 },
+    heterogeneity: { q: 5.1, df: 4, i2: 22, tau2: 0.01 },
+  },
 };
 
 export default function PosterPreviewPage() {

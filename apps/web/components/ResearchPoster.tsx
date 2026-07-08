@@ -14,11 +14,19 @@
 // it does everywhere else.
 import type { Citation, CitationStyle, ResearchReport } from "@pharmabro/shared";
 import { claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
+import { ForestPlot } from "./ForestPlot";
+
+const f2 = (n: number) => n.toFixed(2);
 
 export function ResearchPoster({ report, style = "vancouver" }: { report: ResearchReport; style?: CitationStyle }) {
   const rows = report.citations.length ? evidenceRows(report.citations as Citation[]) : [];
   const refs = report.citations.length ? referenceLines(report.citations as Citation[], style) : [];
   const searchDate = report.search_method?.search_date ?? report.counts?.retrieved_at ?? "";
+  // The headline figure: only when the engine actually pooled >= 2 comparable studies into a real
+  // risk-ratio estimate (meta.poolable). Never LLM-drawn — buildForestPlot (inside ForestPlot)
+  // computes the geometry from the same numbers the evidence table is auditable against.
+  const meta = report.meta_analysis;
+  const forest = meta?.poolable ? meta : null;
 
   return (
     <article className="research-poster" aria-label="Cited conference poster">
@@ -135,6 +143,23 @@ export function ResearchPoster({ report, style = "vancouver" }: { report: Resear
             ) : null}
           </div>
         </div>
+
+        {/* Pooled meta-analysis — the headline figure. Full-width band so the journal-style forest
+            plot reads at poster scale, with a heterogeneity caption stating the pooled estimate and
+            I²/τ² in words. Rendered ONLY when the engine computed a real pooled estimate. */}
+        {forest ? (
+          <section className="poster-block poster-forest-band">
+            <h2 className="poster-h">Pooled meta-analysis ({forest.k} studies)</h2>
+            <ForestPlot meta={forest} />
+            <p className="poster-forest-caption">
+              Random-effects pooled risk ratio <b>{f2(forest.random.estimate)}</b> (95% CI{" "}
+              {f2(forest.random.ci_low)}–{f2(forest.random.ci_high)}) across {forest.k} studies.{" "}
+              Heterogeneity: I² = {forest.heterogeneity.i2 == null ? "n/a" : `${Math.round(forest.heterogeneity.i2)}%`},
+              τ² = {f2(forest.heterogeneity.tau2)}. Box area is study weight; the diamond is the pooled
+              estimate. Every value is code-computed from the cited studies, not model-generated.
+            </p>
+          </section>
+        ) : null}
 
         {/* Evidence-base band — full width, flowed four-up so a real-sized source list stays a short
             band while keeping the # · Type · Source · Year columns readable. */}
