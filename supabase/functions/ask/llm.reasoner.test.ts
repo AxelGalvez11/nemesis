@@ -93,7 +93,9 @@ Deno.test("reasoner callTool: JSON-in-text — no tools on the wire, schema in s
   assertStringIncludes(system.content, "ONLY a single JSON object");
   assertStringIncludes(system.content, '"emit_answer"');
   assertStringIncludes(system.content, '"required":["answer"]'); // schema embedded
-  assert((body.max_tokens as number) >= 1024, "reasoner answer budget floored");
+  // The caller's answer budget (200) PLUS the thinking headroom (24000) — proves reasoning can't
+  // starve the JSON answer (the deep-research truncation→reroll→timeout root cause).
+  assert((body.max_tokens as number) >= 200 + 24000, `reasoner budget must add thinking headroom, got ${body.max_tokens}`);
 });
 
 Deno.test("reasoner callTool: recovers JSON wrapped in thinking prose and fences", async () => {

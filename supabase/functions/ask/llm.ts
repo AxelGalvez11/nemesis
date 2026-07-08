@@ -180,9 +180,16 @@ export async function callTool<T>(
   throw new Error(`tool '${toolName}' failed after retries: ${lastErr}`);
 }
 
-/** Final-answer floor for reasoner calls: thinking happens in a separate channel, but the JSON
- *  answer itself must never be squeezed by a caller budget tuned for terse tool arguments. */
+/** Final-answer floor for reasoner calls. */
 const REASONER_MIN_TOKENS = 1024;
+/** Thinking headroom added ON TOP of the caller's answer budget for reasoner models. DeepSeek's
+ *  max_tokens caps the WHOLE output — chain-of-thought AND the final answer (their pricing docs:
+ *  "MAX OUTPUT … includes the CoT tokens"). A caller budget sized for the answer alone (e.g.
+ *  synthesis's 8192) gets consumed by reasoning first, so the JSON answer truncates mid-string →
+ *  unparseable → reroll → fallback → the deep-research timeout. Reserving a large separate reasoning
+ *  allowance lets the model think AND still emit the full JSON on the first roll. Well under v4-pro's
+ *  384K output ceiling; unused tokens are never billed. */
+const REASONER_THINKING_HEADROOM = 24000;
 
 /**
  * Structured output from a REASONER-class model: same contract as callTool (parsed arguments
@@ -227,8 +234,10 @@ async function callToolViaJson<T>(
         {
           ...params,
           system: jsonInstruction,
-          max_tokens: Math.max(params.max_tokens, REASONER_MIN_TOKENS),
-          // No tools/tool_choice on the wire: reasoner endpoints reject or ignore them.
+          // Answer budget (floored) PLUS a separate reasoning allowance — see REASONER_THINKING_HEADROOM.
+          max_tokens: Math.max(params.max_tokens, REASONER_MIN_TOKENS) + REASONER_THINKING_HEADROOM,
+          // No tools/tool_choice on the wire: forced tool_choice is rejected in thinking mode
+          // ("Thinking mode does not support this tool_choice" — api-docs.deepseek.com/guides/tool_calls).
           tools: undefined,
           tool_choice: undefined,
         },
