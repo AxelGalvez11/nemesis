@@ -619,6 +619,18 @@ Deno.test("toxicity inquiry: EXPOSURE NARRATIVES are never certified — classif
     // contemplation shapes (slot action/quantity rejects)
     "is taking 20 pills dangerous",
     "can drinking bleach be dangerous",
+    // round 3 — past-participle-adjective forms (the "swallowed battery" gap)
+    "is a swallowed battery dangerous",
+    "is an ingested battery dangerous",
+    "is inhaled bleach dangerous",
+    "is snorted fentanyl dangerous",
+    "is a chewed battery dangerous",
+    "is drunk bleach dangerous",
+    "is eaten rat poison toxic",
+    // round 3 — word-form and bulk quantities
+    "is twenty pills of tylenol dangerous",
+    "is a whole bottle of vodka dangerous",
+    "is a handful of ibuprofen dangerous",
   ];
   for (const q of attacks) {
     assertEquals(isGeneralToxicityQuestion(q), false, `exposure narrative must not certify: ${JSON.stringify(q)}`);

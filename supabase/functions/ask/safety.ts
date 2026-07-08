@@ -111,10 +111,21 @@ const SUBSTANCE_SLOT = "((?:[a-z0-9][a-z0-9\\-'’.]*\\s?){1,6})";
 const SLOT_PERSON =
   /\b(baby|babies|infant|child|children|kid|kids|toddler|son|daughter|boy|girl|teen|teenager|man|woman|men|women|person|people|patient|friend|roommate|coworker|neighbor|husband|wife|mom|mother|dad|father|grandpa|grandma|grandparent|brother|sister|someone|somebody|anyone|he|she|they|him|her|them|dog|cat|pet|puppy|kitten)\b/i;
 // An ACTION or QUANTITY in the slot also rejects: "is taking 20 pills dangerous" / "can drinking
-// bleach be dangerous" is a person contemplating an act, not a substance question — fail closed.
+// bleach be dangerous" is a person contemplating an act; "is a SWALLOWED battery dangerous" is an
+// incident described with a past-participle adjective. Both are non-hypothetical — fail closed.
+// Matches every inflection of the ingestion/exposure verbs (root + optional -e/-es/-ed/-ing/-en)
+// PLUS the irregular past/participle forms, so no tense (gerund, present, past, or past-participle-
+// as-adjective) can slip. Deliberately broad on the safe side: an odd hypothetical that happens to
+// contain one of these words just routes to the cautious template.
+// Roots are e-stripped (e.g. "inhal", "consum") so the -e/-es/-ed/-ing/-en suffix attaches to every
+// inflection including the past participle ("inhaled").
 const SLOT_ACTION =
-  /\b(taking|eating|drinking|swallowing|ingesting|injecting|snorting|huffing|inhaling|mixing|combining|using|chewing|smoking|vaping|drinks?|eats?|swallows?|takes?)\b/i;
-const SLOT_QUANTITY = /\b\d+\s*(pills?|tablets?|caps(?:ules)?|doses?|mg|grams?|g|ml|shots?|bottles?|cans?|drinks?)\b/i;
+  /\b(?:swallow|ingest|inhal|snort|huff|chew|lick|inject|consum|sip|tast|nibbl|sampl|suck|mouth|gulp|mix|combin|us|smok|vap)(?:e|es|ed|ing|en)?\b|\b(?:eat|eats|eating|ate|eaten|drink|drinks|drinking|drank|drunk|take|takes|taking|took|taken|bite|bites|biting|bit|bitten|feed|feeds|feeding|fed|give|gives|giving|gave|given|got|gotten)\b/i;
+// A specific or bulk QUANTITY in the slot signals an incident, not a class question. The template's
+// leading article ("is a …") is consumed BEFORE the slot, so the article is optional here and a
+// bare "whole/half/full + container" and "container of" both count.
+const SLOT_QUANTITY =
+  /\b\d+\s*(?:pills?|tablets?|caps(?:ules)?|doses?|mg|grams?|g|ml|shots?|bottles?|cans?|drinks?)\b|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|hundred|dozen)\s+(?:pills?|tablets?|caps(?:ules)?|doses?|shots?|bottles?|cans?|drinks?)\b|\b(?:whole|half|full)\s+(?:a\s+)?(?:bottle|pack|packet|box|carton|jar|tube)s?\b|\b(?:bottle|pack|packet|box|carton|jar|tube|handful|bunch|couple|dozen|lot)s?\s+of\b|\b(?:several|multiple|numerous|dozens?|handfuls?)\b/i;
 // The templates. Anchored ^…$ ON PURPOSE: "child ate 20 pills is that dangerous" contains
 // "is that dangerous" but the leading narrative fails the anchor, so it can never certify.
 const HYPOTHETICAL_TEMPLATES: RegExp[] = [
