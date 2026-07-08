@@ -1,18 +1,34 @@
-// OpenAI-compatible chat/completions client (DeepSeek by default).
+// OpenAI-compatible chat/completions client (DeepSeek by default — the settled provider).
 //
-// Provider-agnostic on purpose: LLM_BASE_URL + LLM_API_KEY select the provider,
-// so swapping DeepSeek -> OpenAI (if DeepSeek's forced tool-use proves flaky) is
-// a config change, not a code change. Structured output uses forced function
-// calling; the model's reply is parsed from tool_calls[0].function.arguments.
-//
-// COMPLIANCE NOTE: with the DeepSeek default, user questions are sent to a
-// Chinese API. That is a Phase-7 launch-gate decision (re-point LLM_BASE_URL to
-// a US provider, or get sign-off) — fine for synthetic-question validation now.
+// Provider-agnostic on purpose: LLM_BASE_URL + LLM_API_KEY select the provider, so re-pointing
+// is a config change, not a code change. Structured output uses forced function calling
+// (parsed from tool_calls[0].function.arguments) for chat-class models; REASONER-class models
+// (deepseek-reasoner and kin) don't support forced tool calls, so callTool transparently switches
+// to a JSON-in-text protocol for them (see callToolViaJson) — same schema, same parsed result,
+// with an automatic fallback to the chat-class model if the reasoner's JSON can't be parsed.
 
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
 
 export function llmBaseUrl(): string {
   return Deno.env.get("LLM_BASE_URL") ?? DEFAULT_BASE_URL;
+}
+
+/**
+ * Reasoner-class model? These emit chain-of-thought and (per provider docs) do NOT support
+ * forced function calling — structured output must be requested as plain JSON text. The match
+ * pattern is env-tunable (REASONER_MODEL_PATTERN) so a future model name routes correctly
+ * without a code change. Default matches "reasoner" anywhere in the model name.
+ */
+export function isReasonerModel(model: string): boolean {
+  const pattern = Deno.env.get("REASONER_MODEL_PATTERN");
+  if (pattern) {
+    try {
+      return new RegExp(pattern, "i").test(model);
+    } catch {
+      // invalid pattern -> fall through to the default match
+    }
+  }
+  return model.toLowerCase().includes("reasoner");
 }
 
 /** First configured key wins: LLM_API_KEY (generic) > DEEPSEEK > OPENAI. */
@@ -22,6 +38,27 @@ export function llmApiKey(): string {
     Deno.env.get("OPENAI_API_KEY") ??
     "";
 }
+
+/** Reasoner calls may live on a DIFFERENT provider than the chat slots (e.g. chat slots pointed
+ *  at one vendor while the reasoner is DeepSeek's). Own base/key with sane DeepSeek defaults. */
+export function reasonerBaseUrl(): string {
+  return Deno.env.get("REASONER_BASE_URL") ?? DEFAULT_BASE_URL;
+}
+export function reasonerApiKey(): string {
+  return Deno.env.get("REASONER_API_KEY") ?? Deno.env.get("DEEPSEEK_API_KEY") ?? llmApiKey();
+}
+
+/**
+ * True when a reasoner call would send the CHAT provider's generic key to a DIFFERENT reasoner
+ * endpoint — the silent-degradation misconfig (every reasoner call 401s twice, then falls back to
+ * the chat model: safe but a permanent invisible quality downgrade). PURE for testability; the
+ * once-per-isolate warning below makes it loud in logs.
+ */
+export function reasonerKeyMisconfigured(): boolean {
+  const dedicated = Deno.env.get("REASONER_API_KEY") ?? Deno.env.get("DEEPSEEK_API_KEY");
+  return !dedicated && reasonerBaseUrl() !== llmBaseUrl();
+}
+let warnedReasonerKey = false;
 
 export function hasLlmKey(): boolean {
   return llmApiKey().length > 0;
@@ -63,7 +100,7 @@ interface ChatResponse {
   usage?: Usage;
 }
 
-export async function chat(params: ChatParams, apiKey: string): Promise<ChatResponse> {
+export async function chat(params: ChatParams, apiKey: string, baseUrl: string = llmBaseUrl()): Promise<ChatResponse> {
   const messages = [
     ...(params.system ? [{ role: "system" as const, content: params.system }] : []),
     ...params.messages,
@@ -85,7 +122,7 @@ export async function chat(params: ChatParams, apiKey: string): Promise<ChatResp
   // Retry transient rate-limit / 5xx (DeepSeek can 429 under bursty traffic).
   let lastErr = "";
   for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(`${llmBaseUrl()}/chat/completions`, {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -108,12 +145,18 @@ export async function chat(params: ChatParams, apiKey: string): Promise<ChatResp
  * output is INTERMITTENTLY malformed on complex nested schemas (~some fraction
  * of calls), so we retry the whole generation on a no-tool-call / invalid-JSON
  * result — an independent re-roll almost always succeeds.
+ *
+ * Reasoner-class models can't be forced into tool calls, so they route through
+ * callToolViaJson (same contract: parsed arguments as T), which itself falls
+ * back to the chat-class model on persistent parse failure — a reasoner slot
+ * can therefore never be LESS reliable than today's chat slot, only smarter.
  */
 export async function callTool<T>(
   params: ChatParams,
   toolName: string,
   apiKey: string,
 ): Promise<{ input: T; model: string; usage?: Usage }> {
+  if (isReasonerModel(params.model)) return await callToolViaJson<T>(params, toolName, apiKey);
   let lastErr = "no attempts";
   for (let attempt = 0; attempt < 5; attempt++) {
     const res = await chat(
@@ -135,6 +178,82 @@ export async function callTool<T>(
     }
   }
   throw new Error(`tool '${toolName}' failed after retries: ${lastErr}`);
+}
+
+/** Final-answer floor for reasoner calls: thinking happens in a separate channel, but the JSON
+ *  answer itself must never be squeezed by a caller budget tuned for terse tool arguments. */
+const REASONER_MIN_TOKENS = 1024;
+
+/**
+ * Structured output from a REASONER-class model: same contract as callTool (parsed arguments
+ * for `toolName` as T), different wire protocol. The tool's JSON Schema is embedded in the
+ * system prompt and the model is told to answer with ONLY a JSON object; the reply text goes
+ * through the same parseToolArguments recovery (fences/prose stripping) as tool calls.
+ *
+ * Two independent rolls, then a HARD FALLBACK: re-run the whole call as a normal forced tool
+ * call on the chat-class generate model. The fallback result's `model` field reports the model
+ * that actually answered, so stored model_version strings stay honest automatically.
+ */
+async function callToolViaJson<T>(
+  params: ChatParams,
+  toolName: string,
+  apiKey: string,
+): Promise<{ input: T; model: string; usage?: Usage }> {
+  if (!warnedReasonerKey && reasonerKeyMisconfigured()) {
+    warnedReasonerKey = true;
+    console.warn(
+      `reasoner model '${params.model}' has no REASONER_API_KEY/DEEPSEEK_API_KEY while the chat slots use a different ` +
+        `provider — the generic key will be sent to ${reasonerBaseUrl()} and will likely be rejected; every reasoner call ` +
+        `will burn 2 attempts and fall back to the chat model. Set REASONER_API_KEY (or DEEPSEEK_API_KEY) to fix.`,
+    );
+  }
+  const schema = params.tools?.find((t) => t.name === toolName);
+  const jsonInstruction = [
+    params.system ?? "",
+    "",
+    `Respond with ONLY a single JSON object — no markdown fences, no prose before or after. ` +
+    `The object must be valid arguments for the tool "${toolName}"` +
+    (schema ? ` per this JSON Schema:\n${JSON.stringify(schema.parameters)}` : "."),
+  ].join("\n").trim();
+
+  let lastErr = "no attempts";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let content = "";
+    try {
+      // The reasoner leg has its own provider config (reasonerBaseUrl/reasonerApiKey — DeepSeek by
+      // default), independent of where the chat slots point. An API error here (wrong key, model
+      // not found, provider down) counts as a failed attempt, NOT a crash — the fallback still runs.
+      const res = await chat(
+        {
+          ...params,
+          system: jsonInstruction,
+          max_tokens: Math.max(params.max_tokens, REASONER_MIN_TOKENS),
+          // No tools/tool_choice on the wire: reasoner endpoints reject or ignore them.
+          tools: undefined,
+          tool_choice: undefined,
+        },
+        reasonerApiKey() || apiKey,
+        reasonerBaseUrl(),
+      );
+      content = res.choices[0]?.message.content ?? "";
+      const input = parseToolArguments(content) as T;
+      return { input, model: res.model, usage: res.usage };
+    } catch (err) {
+      lastErr = content
+        ? `reasoner JSON unparseable (len=${content.length})`
+        : `reasoner call failed: ${err instanceof Error ? err.message.slice(0, 200) : "unknown"}`;
+      console.error(`tool '${toolName}' ${lastErr} attempt ${attempt + 1}${content ? `: ${content.slice(0, 300)}` : ""}`);
+    }
+  }
+
+  // Hard fallback: the chat-class model with a real forced tool call. Guard against a
+  // misconfigured fallback that is itself a reasoner (would recurse forever).
+  const fallbackModel = Deno.env.get("LLM_GENERATE_MODEL") ?? "deepseek-chat";
+  if (isReasonerModel(fallbackModel)) {
+    throw new Error(`tool '${toolName}' failed on reasoner and fallback '${fallbackModel}' is also a reasoner: ${lastErr}`);
+  }
+  console.error(`tool '${toolName}': reasoner '${params.model}' fell back to '${fallbackModel}' (${lastErr})`);
+  return await callTool<T>({ ...params, model: fallbackModel }, toolName, apiKey);
 }
 
 /**
@@ -172,6 +291,11 @@ export async function chatToolArgsStream(
   apiKey: string,
   onArgs: (chunk: string) => void,
 ): Promise<{ argumentsText: string; model: string }> {
+  // Reasoner models can't stream forced tool arguments — throw BEFORE any network call so the
+  // caller's existing fallback path (non-streaming callTool, which handles reasoners) kicks in.
+  if (isReasonerModel(params.model)) {
+    throw new Error(`llm stream: '${params.model}' is a reasoner model (no forced tool calls) — use callTool`);
+  }
   const messages = [
     ...(params.system ? [{ role: "system" as const, content: params.system }] : []),
     ...params.messages,
