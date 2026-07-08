@@ -84,12 +84,24 @@ const TOXICITY_DANGER =
 // though it shares the danger vocabulary.
 const LETHAL_AMOUNT =
   /\b(lethal|toxic|fatal|deadly)\s+(dose|dosage|amount|level|quantity|concentration)\b|\bhow\s+(much|many)\b/i;
+// EXPOSURE NARRATIVE — someone (any person, any tense) ate/drank/swallowed/took something. This is
+// a live third-party incident report ("child ate 20 pills is that dangerous", "someone just drank
+// bleach"), NOT an educational hypothetical, even though it dodges the first-person and
+// overdose-idiom guards. Any of these verbs vetoes certification outright — the fail-safe direction
+// is to keep full emergency routing. Includes copula+progressive ("is eating", "keeps taking") so an
+// in-progress exposure ("toddler is eating tide pods") also vetoes; the cost is that a hypothetical
+// phrased as "is taking X daily dangerous" stays on the cautious path too, which is acceptable.
+const EXPOSURE_NARRATIVE =
+  /\b(ate|eaten|swallowed|drank|drunk|took|taken|ingested|injected|snorted|huffed|inhaled|overdosed|chewed|gulped|licked|got\s+into)\b|\b(is|was|are|were|been|keeps?|kept|started)\s+(eating|drinking|swallowing|taking|ingesting|injecting|snorting|huffing|inhaling|chewing|consuming|licking)\b/i;
 
 /**
- * True when the question is a general, third-person toxicity/danger inquiry ("is X lethal/toxic/
- * dangerous?") — educational, not an active emergency. False the moment it looks like distress: a
- * first-person report, an acute emergency symptom, an overdose/self-harm phrasing, or a request for
- * a lethal AMOUNT. PURE.
+ * True when the question is a general, hypothetical toxicity/danger inquiry ("is X lethal/toxic/
+ * dangerous?") — educational, not an active emergency. False the moment it looks like distress OR
+ * an incident: a first-person report, an acute emergency symptom, an overdose/self-harm phrasing,
+ * a request for a lethal AMOUNT, or an EXPOSURE NARRATIVE — any person, any tense, having
+ * eaten/drunk/swallowed/taken something ("child ate 20 pills is that dangerous" is a live incident
+ * report, not an educational question, even with no first-person pronoun and no overdose idiom).
+ * PURE.
  */
 export function isGeneralToxicityQuestion(question: string): boolean {
   return TOXICITY_DANGER.test(question) &&
@@ -97,20 +109,25 @@ export function isGeneralToxicityQuestion(question: string): boolean {
     !EMERGENCY_SYMPTOM.test(question) &&
     !OVERDOSE.test(question) &&
     !SELF_HARM.test(question) &&
-    !LETHAL_AMOUNT.test(question);
+    !LETHAL_AMOUNT.test(question) &&
+    !EXPOSURE_NARRATIVE.test(question);
 }
 
 /**
  * Relax the classifier's over-eager emergency-family flags on a general toxicity inquiry. STRICT
- * and fail-safe: returns the flags UNCHANGED unless the question is deterministically certified
- * educational (third-person, no acute symptom, no overdose phrasing, no lethal-amount ask — see
- * isGeneralToxicityQuestion). On such a question BOTH emergency_possible AND overdose_possible are
- * relaxed: the deterministic scan has already PROVEN the text carries no overdose phrasing, so a
- * classifier's overdose_possible here is the same over-flagging as its emergency_possible, not
- * evidence of something worse. (2026-07: the v4-flash classifier co-flags both on "is celsius
- * lethal"; the old solo-flag rule let the co-flag through and emergency-templated an educational
- * question — caught by the guardrail suite within the hour of the model swap.) self_harm is an
- * ABSOLUTE veto: if the classifier senses self-harm, nothing is relaxed, ever. PURE.
+ * and fail-safe: returns the flags UNCHANGED unless the question is deterministically certified as
+ * a HYPOTHETICAL educational inquiry — no first person, no acute symptom, no overdose phrasing, no
+ * lethal-amount ask, and (load-bearing) NO exposure narrative: a question describing that anyone
+ * ate/drank/swallowed/took anything is an incident report and is never certified, so a classifier's
+ * flags on it always stand. Only on a certified hypothetical ("is celsius lethal") are BOTH
+ * emergency_possible AND overdose_possible relaxed — there, with no person and no event in the
+ * text, the co-flag is over-flagging, not evidence of danger. (2026-07: the v4-flash classifier
+ * co-flags both on "is celsius lethal"; the old solo-flag rule let the co-flag through and
+ * emergency-templated an educational question — caught by the guardrail suite. The adversarial
+ * review of the first fix then proved the exposure-narrative veto is REQUIRED: without it, "child
+ * ate 20 pills is that dangerous" would certify and have a correct overdose_possible stripped.)
+ * self_harm is an ABSOLUTE veto: if the classifier senses self-harm, nothing is relaxed, ever.
+ * PURE.
  */
 export function suppressEmergencyForGeneralToxicity(
   question: string,

@@ -578,6 +578,53 @@ Deno.test("toxicity inquiry: self_harm is an ABSOLUTE veto — nothing is relaxe
   );
 });
 
+// THE ADVERSARIAL-REVIEW ATTACK SET (2026-07): third-person exposure narratives that dodge the
+// first-person, overdose-idiom, and lethal-amount guards. Every one is a live incident report and
+// must NEVER be certified educational — the classifier's emergency-family flags must stand in full.
+// (Bonus fix over origin/main: pre-PR, a SOLO emergency_possible on these was wrongly stripped.)
+Deno.test("toxicity inquiry: EXPOSURE NARRATIVES are never certified — classifier flags stand in full", () => {
+  const attacks = [
+    "child ate 20 pills is that dangerous",
+    "someone just drank bleach is it dangerous",
+    "grandpa took a bunch of pills is that dangerous",
+    "the patient ingested antifreeze, is that lethal",
+    "he drank a bottle of drain cleaner is that dangerous",
+    "she swallowed several batteries is that dangerous",
+    "coworker just took a bunch of xanax is that dangerous",
+    "roommate just snorted a line of unknown powder is that dangerous",
+    "he just injected an unknown substance is that dangerous",
+    "friend just huffed spray paint is that toxic",
+    "toddler got into the medicine cabinet is that dangerous",
+    "kid is eating tide pods is that toxic",
+  ];
+  for (const q of attacks) {
+    assertEquals(isGeneralToxicityQuestion(q), false, `exposure narrative must not certify: ${JSON.stringify(q)}`);
+    assertEquals(
+      suppressEmergencyForGeneralToxicity(q, ["emergency_possible", "overdose_possible"]),
+      ["emergency_possible", "overdose_possible"],
+      `emergency family must stand for: ${JSON.stringify(q)}`,
+    );
+    assertEquals(
+      suppressEmergencyForGeneralToxicity(q, ["emergency_possible"]),
+      ["emergency_possible"],
+      `solo emergency_possible must also stand (pre-PR hole closed) for: ${JSON.stringify(q)}`,
+    );
+  }
+});
+
+Deno.test("toxicity inquiry: hypothetical phrasings still certify after the exposure veto", () => {
+  for (
+    const q of [
+      "is celsius lethal",
+      "is creatine toxic",
+      "how toxic is ibuprofen",
+      "can melatonin be dangerous",
+    ]
+  ) {
+    assert(isGeneralToxicityQuestion(q), `hypothetical must still certify: ${JSON.stringify(q)}`);
+  }
+});
+
 Deno.test("toxicity inquiry: overdose_possible stands untouched on NON-educational questions (first-person / lethal-amount / overdose phrasing)", () => {
   for (
     const [q, flags] of [
