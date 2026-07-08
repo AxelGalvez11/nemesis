@@ -578,12 +578,15 @@ Deno.test("toxicity inquiry: self_harm is an ABSOLUTE veto — nothing is relaxe
   );
 });
 
-// THE ADVERSARIAL-REVIEW ATTACK SET (2026-07): third-person exposure narratives that dodge the
-// first-person, overdose-idiom, and lethal-amount guards. Every one is a live incident report and
-// must NEVER be certified educational — the classifier's emergency-family flags must stand in full.
+// THE ADVERSARIAL-REVIEW ATTACK SET (2026-07, BOTH ROUNDS): incident reports in every surface form
+// the two reviews produced — active verbs, missed verbs, passive voice, nominalizations, simple
+// present. Every one is a live incident and must NEVER be certified educational — the classifier's
+// emergency-family flags must stand in full. The allowlist guarantees this by construction (none
+// matches an anchored bare substance-danger template), and this test pins it forever.
 // (Bonus fix over origin/main: pre-PR, a SOLO emergency_possible on these was wrongly stripped.)
 Deno.test("toxicity inquiry: EXPOSURE NARRATIVES are never certified — classifier flags stand in full", () => {
   const attacks = [
+    // round 1 — active past-tense verbs
     "child ate 20 pills is that dangerous",
     "someone just drank bleach is it dangerous",
     "grandpa took a bunch of pills is that dangerous",
@@ -596,6 +599,26 @@ Deno.test("toxicity inquiry: EXPOSURE NARRATIVES are never certified — classif
     "friend just huffed spray paint is that toxic",
     "toddler got into the medicine cabinet is that dangerous",
     "kid is eating tide pods is that toxic",
+    // round 2 — verbs the old blocklist missed
+    "the baby bit into a battery is that dangerous",
+    "the kid tasted some rat poison is that dangerous",
+    "toddler sipped some cleaning fluid is that toxic",
+    "the dog nibbled a chocolate bar is that dangerous",
+    "kid sniffed some glue is that harmful",
+    // round 2 — passive voice (victim is the object)
+    "the toddler was fed a handful of pills, is that dangerous",
+    "the patient was given 20 pills by mistake, is that dangerous",
+    "the patient was poisoned by carbon monoxide, is that dangerous",
+    // round 2 — nominalizations (no verb at all)
+    "ingestion of bleach by a child — dangerous?",
+    "accidental ingestion of antifreeze in toddlers, is that dangerous",
+    "consumption of a whole bottle of vitamins by a child, is that toxic",
+    "poisoning from lead paint chips, is that dangerous",
+    // round 2 — simple present tense
+    "is it dangerous if someone drinks a bottle of vodka in one sitting",
+    // contemplation shapes (slot action/quantity rejects)
+    "is taking 20 pills dangerous",
+    "can drinking bleach be dangerous",
   ];
   for (const q of attacks) {
     assertEquals(isGeneralToxicityQuestion(q), false, `exposure narrative must not certify: ${JSON.stringify(q)}`);

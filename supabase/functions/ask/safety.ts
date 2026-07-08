@@ -84,50 +84,89 @@ const TOXICITY_DANGER =
 // though it shares the danger vocabulary.
 const LETHAL_AMOUNT =
   /\b(lethal|toxic|fatal|deadly)\s+(dose|dosage|amount|level|quantity|concentration)\b|\bhow\s+(much|many)\b/i;
-// EXPOSURE NARRATIVE — someone (any person, any tense) ate/drank/swallowed/took something. This is
-// a live third-party incident report ("child ate 20 pills is that dangerous", "someone just drank
-// bleach"), NOT an educational hypothetical, even though it dodges the first-person and
-// overdose-idiom guards. Any of these verbs vetoes certification outright — the fail-safe direction
-// is to keep full emergency routing. Includes copula+progressive ("is eating", "keeps taking") so an
-// in-progress exposure ("toddler is eating tide pods") also vetoes; the cost is that a hypothetical
-// phrased as "is taking X daily dangerous" stays on the cautious path too, which is acceptable.
-const EXPOSURE_NARRATIVE =
-  /\b(ate|eaten|swallowed|drank|drunk|took|taken|ingested|injected|snorted|huffed|inhaled|overdosed|chewed|gulped|licked|got\s+into)\b|\b(is|was|are|were|been|keeps?|kept|started)\s+(eating|drinking|swallowing|taking|ingesting|injecting|snorting|huffing|inhaling|chewing|consuming|licking)\b/i;
+// ---- ALLOWLIST design (adversarial review, 2026-07) ----
+// The first two iterations of this carve-out were BLOCKLISTS (certify educational unless a listed
+// pattern matches) and both fell to enumeration attacks: "child ate 20 pills…" dodged the overdose
+// idioms; then "the baby bit into a battery…" / "the toddler was fed…" / "ingestion of bleach by a
+// child…" dodged a verb list. English incident reports have unlimited surface forms — verbs,
+// tenses, passive voice, nominalizations — so a blocklist structurally FAILS OPEN toward stripping
+// flags on a real emergency. Emergency routing must fail CLOSED: certification is now a POSITIVE
+// ALLOWLIST — the whole question must match a bare substance-danger template, anchored end to end,
+// with no room for any narrative clause. Anything else (all 31 attack phrasings across both review
+// rounds, and every phrasing nobody has thought of yet) simply never certifies, and the
+// classifier's flags stand.
+
+// The danger predicate inside a template slot (same vocabulary as TOXICITY_DANGER, inlined so the
+// templates stay anchored and readable).
+const DANGER_WORD =
+  "(?:lethal|toxic|deadly|fatal|poisonous|harmful|dangerous|carcinogenic|hepatotoxic|nephrotoxic|cardiotoxic|bad\\s+for\\s+you)";
+// The substance slot: a short noun phrase ("celsius", "creatine", "tide pods", "red dye 40",
+// "grandma's heart medication" is REJECTED by the person check below). Bounded length keeps a
+// narrative from hiding inside the slot.
+const SUBSTANCE_SLOT = "((?:[a-z0-9][a-z0-9\\-'’.]*\\s?){1,6})";
+// A person/animal token anywhere in the captured slot rejects certification — "is the baby toxic",
+// "is grandpa dangerous" are not substance questions. Bounded list used only to REJECT (fail-closed:
+// a missed token means we certify a weird-but-substance-shaped question, and only when the whole
+// anchored template already matched — no narrative can be present).
+const SLOT_PERSON =
+  /\b(baby|babies|infant|child|children|kid|kids|toddler|son|daughter|boy|girl|teen|teenager|man|woman|men|women|person|people|patient|friend|roommate|coworker|neighbor|husband|wife|mom|mother|dad|father|grandpa|grandma|grandparent|brother|sister|someone|somebody|anyone|he|she|they|him|her|them|dog|cat|pet|puppy|kitten)\b/i;
+// An ACTION or QUANTITY in the slot also rejects: "is taking 20 pills dangerous" / "can drinking
+// bleach be dangerous" is a person contemplating an act, not a substance question — fail closed.
+const SLOT_ACTION =
+  /\b(taking|eating|drinking|swallowing|ingesting|injecting|snorting|huffing|inhaling|mixing|combining|using|chewing|smoking|vaping|drinks?|eats?|swallows?|takes?)\b/i;
+const SLOT_QUANTITY = /\b\d+\s*(pills?|tablets?|caps(?:ules)?|doses?|mg|grams?|g|ml|shots?|bottles?|cans?|drinks?)\b/i;
+// The templates. Anchored ^…$ ON PURPOSE: "child ate 20 pills is that dangerous" contains
+// "is that dangerous" but the leading narrative fails the anchor, so it can never certify.
+const HYPOTHETICAL_TEMPLATES: RegExp[] = [
+  // "is celsius lethal" / "are energy drinks dangerous" / "is tylenol harmful to the liver"
+  new RegExp(`^\\s*(?:is|are)\\s+(?:the\\s+|a\\s+)?${SUBSTANCE_SLOT}\\s*(?:really\\s+|actually\\s+|that\\s+)?${DANGER_WORD}(?:\\s+(?:to|for)\\s+(?:the\\s+|your\\s+)?[a-z][a-z\\s]{0,24})?\\s*[?.!]*\\s*$`, "i"),
+  // "how toxic is ibuprofen" / "how dangerous is creatine for the kidneys"
+  new RegExp(`^\\s*how\\s+${DANGER_WORD}\\s+(?:is|are)\\s+(?:the\\s+|a\\s+)?${SUBSTANCE_SLOT}(?:\\s+(?:to|for)\\s+(?:the\\s+|your\\s+)?[a-z][a-z\\s]{0,24})?\\s*[?.!]*\\s*$`, "i"),
+  // "can melatonin be dangerous" / "could creatine be toxic to the liver"
+  new RegExp(`^\\s*(?:can|could|would|might)\\s+(?:the\\s+|a\\s+)?${SUBSTANCE_SLOT}\\s*(?:really\\s+|actually\\s+|ever\\s+)?be\\s+${DANGER_WORD}(?:\\s+(?:to|for)\\s+(?:the\\s+|your\\s+)?[a-z][a-z\\s]{0,24})?\\s*[?.!]*\\s*$`, "i"),
+];
 
 /**
- * True when the question is a general, hypothetical toxicity/danger inquiry ("is X lethal/toxic/
- * dangerous?") — educational, not an active emergency. False the moment it looks like distress OR
- * an incident: a first-person report, an acute emergency symptom, an overdose/self-harm phrasing,
- * a request for a lethal AMOUNT, or an EXPOSURE NARRATIVE — any person, any tense, having
- * eaten/drunk/swallowed/taken something ("child ate 20 pills is that dangerous" is a live incident
- * report, not an educational question, even with no first-person pronoun and no overdose idiom).
- * PURE.
+ * True ONLY when the question positively matches a bare, anchored substance-danger template —
+ * "is X lethal", "how toxic is X", "can X be dangerous" — with no person/animal in the substance
+ * slot. This is an ALLOWLIST: an incident report in any verb, tense, voice, or nominalization
+ * ("child ate…", "the toddler was fed…", "ingestion of bleach by a child…") never matches the
+ * anchored template and therefore never certifies — the fail-CLOSED direction for emergency
+ * routing. The distress/idiom vetoes are kept as defense in depth on top. PURE.
  */
 export function isGeneralToxicityQuestion(question: string): boolean {
-  return TOXICITY_DANGER.test(question) &&
-    !FIRST_PERSON_DISTRESS.test(question) &&
-    !EMERGENCY_SYMPTOM.test(question) &&
-    !OVERDOSE.test(question) &&
-    !SELF_HARM.test(question) &&
-    !LETHAL_AMOUNT.test(question) &&
-    !EXPOSURE_NARRATIVE.test(question);
+  if (
+    FIRST_PERSON_DISTRESS.test(question) ||
+    EMERGENCY_SYMPTOM.test(question) ||
+    OVERDOSE.test(question) ||
+    SELF_HARM.test(question) ||
+    LETHAL_AMOUNT.test(question)
+  ) {
+    return false;
+  }
+  for (const template of HYPOTHETICAL_TEMPLATES) {
+    const m = template.exec(question);
+    if (m && m[1] && !SLOT_PERSON.test(m[1]) && !SLOT_ACTION.test(m[1]) && !SLOT_QUANTITY.test(m[1])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
- * Relax the classifier's over-eager emergency-family flags on a general toxicity inquiry. STRICT
- * and fail-safe: returns the flags UNCHANGED unless the question is deterministically certified as
- * a HYPOTHETICAL educational inquiry — no first person, no acute symptom, no overdose phrasing, no
- * lethal-amount ask, and (load-bearing) NO exposure narrative: a question describing that anyone
- * ate/drank/swallowed/took anything is an incident report and is never certified, so a classifier's
- * flags on it always stand. Only on a certified hypothetical ("is celsius lethal") are BOTH
- * emergency_possible AND overdose_possible relaxed — there, with no person and no event in the
- * text, the co-flag is over-flagging, not evidence of danger. (2026-07: the v4-flash classifier
- * co-flags both on "is celsius lethal"; the old solo-flag rule let the co-flag through and
- * emergency-templated an educational question — caught by the guardrail suite. The adversarial
- * review of the first fix then proved the exposure-narrative veto is REQUIRED: without it, "child
- * ate 20 pills is that dangerous" would certify and have a correct overdose_possible stripped.)
- * self_harm is an ABSOLUTE veto: if the classifier senses self-harm, nothing is relaxed, ever.
- * PURE.
+ * Relax the classifier's over-eager emergency-family flags on a certified educational toxicity
+ * hypothetical. STRICT and fail-CLOSED: certification is the anchored ALLOWLIST above — the whole
+ * question must be a bare substance-danger template ("is celsius lethal", "how toxic is
+ * ibuprofen", "can melatonin be dangerous") with no person, action, or quantity in the slot. Only
+ * then are emergency_possible AND overdose_possible relaxed: with no person and no event in the
+ * text, the classifier's co-flags are over-flagging, not evidence of danger. Any incident report
+ * — any verb, tense, passive voice, or nominalization ("child ate 20 pills…", "the toddler was
+ * fed…", "ingestion of bleach by a child…") — never matches the anchored templates, so the
+ * classifier's flags on it always stand. (History, 2026-07: the v4-flash classifier co-flags both
+ * on "is celsius lethal" and the old solo-flag rule emergency-templated it — guardrail caught it;
+ * two adversarial review rounds then proved that any BLOCKLIST fix is enumeration-attackable,
+ * forcing this allowlist inversion.) self_harm is an ABSOLUTE veto: if the classifier senses
+ * self-harm, nothing is relaxed, ever. PURE.
  */
 export function suppressEmergencyForGeneralToxicity(
   question: string,
