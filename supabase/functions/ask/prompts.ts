@@ -42,7 +42,12 @@ export const CLASSIFY_SYSTEM =
   "or consumer-health questions when no medication, supplement, trial, or drug label is being " +
   "asked about. Examples: dandruff, white flakes in hair, dry scalp, acne causes, heartburn, " +
   "headache, rash. Do not force these into side_effects unless the user names a medication or " +
-  "asks whether a drug caused it. You only classify — you never answer.";
+  "asks whether a drug caused it. Exception — educational toxicity: a general, third-person " +
+  "question about whether a substance is lethal, toxic, or dangerous ('is X lethal', 'how toxic " +
+  "is X'), with no sign anyone has taken anything, is an educational question — do not set " +
+  "emergency_possible or overdose_possible for it. Any first-person report, any described " +
+  "exposure, and any lethal-amount request ('how much X is lethal', 'lethal dose of X') must " +
+  "still be flagged aggressively. You only classify — you never answer.";
 
 export const CLASSIFY_TOOL: Tool = {
   name: "classify",

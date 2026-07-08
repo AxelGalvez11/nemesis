@@ -11,11 +11,15 @@ export const MEDICAL_DISCLAIMER =
   "treatment, or prescribing decisions. Always consult a qualified healthcare professional " +
   "for personal medical decisions.";
 
-/** doc-18 / doc-20 emergency routing — verbatim. */
+/** doc-18 / doc-20 emergency routing — same required elements (urgency signal, emergency-services
+ *  directive, Poison Control + number, education-after offer), re-voiced warm and human per the
+ *  owner's "safe AND natural" direction (2026-07). Never model output; kept free of any forbidden
+ *  pattern (pinned by test). */
 export const EMERGENCY_COPY =
-  "This could be urgent. If you may be experiencing a medical emergency, call emergency " +
-  "services now. For possible poisoning or overdose in the U.S., contact Poison Control at " +
-  "1-800-222-1222.\n\nI can provide general educational information after immediate safety is addressed.";
+  "This could be urgent, so let's make sure you're safe first. If there's any chance this is a " +
+  "medical emergency, please call emergency services right now. If someone may have taken too much " +
+  "of something, U.S. Poison Control is fast, free, and open around the clock at 1-800-222-1222.\n\n" +
+  "Once you're safe, I'm right here — happy to walk through the general information together.";
 
 /** doc-20 drug-sourcing refusal — refuse to source, offer education only. */
 export const SOURCING_COPY =

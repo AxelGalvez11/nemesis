@@ -273,12 +273,12 @@ async function runAsk(
 
   // ---- 1. classify ----
   const cls = await classify(question, apiKey);
-  // Relax the classifier's over-eager emergency_possible on a general "is X lethal/toxic/dangerous"
-  // inquiry (the reported "is celsius lethal" over-route). Deterministic + fail-safe: only a SOLO
-  // emergency_possible on a third-person educational toxicity question is dropped; first-person
-  // distress, lethal-amount, overdose_possible, and self_harm all keep full emergency routing. See
-  // safety.ts. preScreen's emergency family already short-circuited above, so this only ever acts on
-  // a flag the LLM added.
+  // Relax the classifier's over-eager emergency-family flags on a general "is X lethal/toxic/
+  // dangerous" inquiry (the "is celsius lethal" over-route). Deterministic + fail-safe: only a
+  // third-person educational toxicity question (no first-person distress, no acute symptom, no
+  // overdose phrasing, no lethal-amount ask) has emergency_possible/overdose_possible dropped;
+  // self_harm always keeps full emergency routing. See safety.ts. preScreen's emergency family
+  // already short-circuited above, so this only ever acts on flags the LLM added.
   const rawFlags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
   const flags = suppressEmergencyForGeneralToxicity(question, rawFlags);
   emit?.("stage", { stage: "understanding", intent: cls.intent });
@@ -298,9 +298,13 @@ async function runAsk(
     webRecon,
   );
   // Observability for a SAFETY RELAXATION: a backstop that quietly downgrades an emergency must leave
-  // an audit trail. Logs only when the carve-out actually fired (emergency_possible was present, now isn't).
-  if (rawFlags.includes("emergency_possible") && !flags.includes("emergency_possible")) {
-    console.warn(`ask toxicity carve-out — relaxed classifier emergency_possible on educational toxicity question: ${JSON.stringify(question.slice(0, 120))}`);
+  // an audit trail. Logs only when the carve-out actually fired, naming exactly which flags it relaxed
+  // (emergency_possible and/or overdose_possible — see suppressEmergencyForGeneralToxicity).
+  const relaxedFlags = rawFlags.filter((f) =>
+    (f === "emergency_possible" || f === "overdose_possible") && !flags.includes(f)
+  );
+  if (relaxedFlags.length > 0) {
+    console.warn(`ask toxicity carve-out — relaxed classifier ${relaxedFlags.join("+")} on educational toxicity question: ${JSON.stringify(question.slice(0, 120))}`);
   }
 
   // ---- 1b. news lane (paid-only walled panel) ----
