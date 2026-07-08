@@ -11,6 +11,8 @@ import {
   isGeneralToxicityQuestion,
   suppressEmergencyForGeneralToxicity,
 } from "./safety.ts";
+import { EMERGENCY_COPY } from "./templates.ts";
+import type { SafetyFlag } from "../../../packages/shared/src/answer.ts";
 
 // ---------------------------------------------------------------------------
 // detectSmallTalk — pure greeting/thanks/capability messages only
@@ -470,12 +472,15 @@ Deno.test("detectViolations: stripping does NOT create false positives on safe f
 
 // ---------------------------------------------------------------------------
 // suppressEmergencyForGeneralToxicity — relax the CLASSIFIER's over-eager
-// emergency_possible on a third-person "is X lethal/toxic/dangerous" inquiry.
-// preScreen never matches "lethal", so this flag is purely the LLM classifier's
+// emergency-family flags on a third-person "is X lethal/toxic/dangerous" inquiry.
+// preScreen never matches "lethal", so these flags are purely the LLM classifier's
 // ("err toward flagging"); a general toxicity question is educational, not a
-// caller in distress. STRICT: only ever strips a SOLO emergency_possible, never
-// overdose_possible / self_harm, and never when the question is first-person,
-// has acute symptoms, asks a lethal AMOUNT, or carries a worse flag.
+// caller in distress. STRICT: strips emergency_possible AND overdose_possible only
+// on a question the deterministic guards certify as educational (never first-person,
+// never acute symptoms, never overdose phrasing, never a lethal AMOUNT); self_harm
+// is an absolute veto — nothing is relaxed when it is present. (Widened 2026-07:
+// the v4-flash classifier co-flags overdose_possible on "is celsius lethal", which
+// slipped the old solo-flag rule — caught by the guardrail suite.)
 // ---------------------------------------------------------------------------
 
 Deno.test("toxicity inquiry: the reported 'is celsius lethal' bug — emergency_possible is relaxed", () => {
@@ -544,15 +549,60 @@ Deno.test("toxicity inquiry: a lethal-AMOUNT / how-much question is harm-adjacen
   }
 });
 
-Deno.test("toxicity inquiry: a WORSE co-flag (overdose/self-harm) keeps full emergency routing", () => {
+Deno.test("toxicity inquiry: classifier's co-flagged overdose_possible is ALSO relaxed on a certified-educational question (the v4-flash 'is celsius lethal' breach)", () => {
+  // The deterministic guards have already proven the text has no overdose phrasing, so the
+  // classifier's overdose_possible here is over-flagging, not evidence of something worse.
+  assertEquals(
+    suppressEmergencyForGeneralToxicity("is celsius lethal", ["emergency_possible", "overdose_possible"]),
+    [],
+  );
   assertEquals(
     suppressEmergencyForGeneralToxicity("is acetaminophen lethal", ["emergency_possible", "overdose_possible"]),
-    ["emergency_possible", "overdose_possible"],
+    [],
   );
+  // Non-emergency flags still ride through untouched.
+  assertEquals(
+    suppressEmergencyForGeneralToxicity("is celsius lethal", ["emergency_possible", "overdose_possible", "psychiatric_medication"]),
+    ["psychiatric_medication"],
+  );
+});
+
+Deno.test("toxicity inquiry: self_harm is an ABSOLUTE veto — nothing is relaxed, ever", () => {
   assertEquals(
     suppressEmergencyForGeneralToxicity("is acetaminophen lethal", ["emergency_possible", "self_harm"]),
     ["emergency_possible", "self_harm"],
   );
+  assertEquals(
+    suppressEmergencyForGeneralToxicity("is acetaminophen lethal", ["emergency_possible", "overdose_possible", "self_harm"]),
+    ["emergency_possible", "overdose_possible", "self_harm"],
+  );
+});
+
+Deno.test("toxicity inquiry: overdose_possible stands untouched on NON-educational questions (first-person / lethal-amount / overdose phrasing)", () => {
+  for (
+    const [q, flags] of [
+      ["i took a whole bottle of tylenol", ["overdose_possible"]],
+      ["how much tylenol is lethal", ["emergency_possible", "overdose_possible"]],
+      ["lethal dose of insulin", ["overdose_possible"]],
+      ["i think i overdosed on celsius", ["emergency_possible", "overdose_possible"]],
+    ] as Array<[string, SafetyFlag[]]>
+  ) {
+    assertEquals(
+      suppressEmergencyForGeneralToxicity(q, flags),
+      flags,
+      `emergency family must stand for: ${JSON.stringify(q)}`,
+    );
+  }
+});
+
+// The emergency template is fixed copy that BYPASSES the generator scan, so its safety properties
+// are pinned here: every doc-18/20 required element present, zero forbidden patterns — any future
+// re-voicing must keep both.
+Deno.test("EMERGENCY_COPY: warm re-voicing keeps every required element and stays scan-clean", () => {
+  for (const required of ["urgent", "emergency services", "Poison Control", "1-800-222-1222"]) {
+    assert(EMERGENCY_COPY.includes(required), `emergency copy must contain: ${required}`);
+  }
+  assertEquals(detectViolations(EMERGENCY_COPY), []);
 });
 
 Deno.test("toxicity inquiry: an acute SYMPTOM in the question is never educational", () => {

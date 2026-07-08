@@ -101,19 +101,24 @@ export function isGeneralToxicityQuestion(question: string): boolean {
 }
 
 /**
- * Relax the classifier's over-eager emergency_possible on a general toxicity inquiry. STRICT and
- * fail-safe: returns the flags UNCHANGED unless the question is an educational toxicity question
- * AND emergency_possible is the only emergency-family flag present. A co-flagged overdose_possible
- * or self_harm (the classifier saw something worse) keeps the FULL emergency routing untouched, and
- * only emergency_possible is ever removed — overdose_possible / self_harm are never stripped. PURE.
+ * Relax the classifier's over-eager emergency-family flags on a general toxicity inquiry. STRICT
+ * and fail-safe: returns the flags UNCHANGED unless the question is deterministically certified
+ * educational (third-person, no acute symptom, no overdose phrasing, no lethal-amount ask — see
+ * isGeneralToxicityQuestion). On such a question BOTH emergency_possible AND overdose_possible are
+ * relaxed: the deterministic scan has already PROVEN the text carries no overdose phrasing, so a
+ * classifier's overdose_possible here is the same over-flagging as its emergency_possible, not
+ * evidence of something worse. (2026-07: the v4-flash classifier co-flags both on "is celsius
+ * lethal"; the old solo-flag rule let the co-flag through and emergency-templated an educational
+ * question — caught by the guardrail suite within the hour of the model swap.) self_harm is an
+ * ABSOLUTE veto: if the classifier senses self-harm, nothing is relaxed, ever. PURE.
  */
 export function suppressEmergencyForGeneralToxicity(
   question: string,
   flags: readonly SafetyFlag[],
 ): SafetyFlag[] {
-  if (flags.includes("overdose_possible") || flags.includes("self_harm")) return [...flags];
+  if (flags.includes("self_harm")) return [...flags];
   if (!isGeneralToxicityQuestion(question)) return [...flags];
-  return flags.filter((f) => f !== "emergency_possible");
+  return flags.filter((f) => f !== "emergency_possible" && f !== "overdose_possible");
 }
 
 // ---------------------------------------------------------------------------
