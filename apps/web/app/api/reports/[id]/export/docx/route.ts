@@ -1,6 +1,7 @@
 import type { CitationStyle, ResearchReport } from "@pharmabro/shared";
 import { json, userClient, verifyBearer } from "@/lib/server";
 import { reportToDocx } from "@/lib/export/docx";
+import { safeFilename } from "@/lib/export/filename";
 
 // docx Packer.toBuffer needs Node; declare it so Next never flips this to edge.
 export const runtime = "nodejs";
@@ -36,9 +37,4 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
-}
-
-function safeFilename(title: string, ext: string): string {
-  const base = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "report";
-  return `${base}.${ext}`;
 }

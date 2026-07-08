@@ -1,11 +1,50 @@
 // Export smoke: generate a .docx and .pptx from a fixture ResearchReport and assert each is a
 // non-empty OOXML zip (PK\x03\x04). Runtime proof the formatters produce openable files — typecheck
 // can't catch a malformed docx/pptx. Run: pnpm --filter @pharmaorb/web smoke:export
+import { inflateSync } from "node:zlib";
 import { strFromU8, unzipSync } from "fflate";
 import type { ResearchReport } from "@pharmabro/shared";
 import { reportToDocx } from "../lib/export/docx.ts";
 import { reportToPdf } from "../lib/export/pdf.ts";
 import { reportToPptx } from "../lib/export/pptx.ts";
+
+// Visible text of a PDF: inflate each content stream (pdf-lib Flate-compresses them, so a raw grep
+// would false-fail) and join every string literal drawn by a text operator, whitespace-normalized.
+// Wrapping splits phrases across lines, so assertions match against the space-joined whole.
+function pdfVisibleText(buf: Buffer): string {
+  const raw = buf.toString("latin1");
+  const texts: string[] = [];
+  const streamRe = /stream\r?\n([\s\S]*?)endstream/g;
+  let m: RegExpExecArray | null;
+  while ((m = streamRe.exec(raw)) !== null) {
+    let content = m[1];
+    try {
+      content = inflateSync(Buffer.from(content.replace(/\r?\n$/, ""), "latin1")).toString("latin1");
+    } catch {
+      // uncompressed stream — use as-is
+    }
+    // Paren-literal strings…
+    const litRe = /\(((?:[^()\\]|\\.)*)\)/g;
+    let t: RegExpExecArray | null;
+    while ((t = litRe.exec(content)) !== null) {
+      texts.push(
+        t[1]
+          .replace(/\\([()\\])/g, "$1")
+          .replace(/\\(\d{1,3})/g, (_, oct: string) => String.fromCharCode(parseInt(oct, 8))),
+      );
+    }
+    // …and hex strings (pdf-lib encodes drawText output this way: "<4d6574…> Tj").
+    const hexRe = /<([0-9A-Fa-f][0-9A-Fa-f\s]*)>/g;
+    let h: RegExpExecArray | null;
+    while ((h = hexRe.exec(content)) !== null) {
+      const hex = h[1].replace(/\s+/g, "");
+      let s = "";
+      for (let i = 0; i + 1 < hex.length; i += 2) s += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
+      texts.push(s);
+    }
+  }
+  return texts.join(" ").replace(/\s+/g, " ");
+}
 
 const fixtureReport: ResearchReport = {
   question: "Smoke: tesamorelin evidence",
@@ -57,7 +96,7 @@ console.log("✓ mode-less docx falls back to 'Method: standard'");
 const pptxBuf = await reportToPptx(fixtureReport, "ama");
 assertPkZip(pptxBuf, "reportToPptx");
 
-const pdfBuf = reportToPdf(fixtureReport, "vancouver");
+const pdfBuf = await reportToPdf(fixtureReport, "vancouver");
 if (!(pdfBuf[0] === 0x25 && pdfBuf[1] === 0x50 && pdfBuf[2] === 0x44 && pdfBuf[3] === 0x46)) {
   throw new Error("reportToPdf: not a PDF file");
 }
@@ -157,9 +196,10 @@ if (!slideXml.includes("Built from 1 source")) {
 }
 console.log("✓ structured pptx carries the attribution slide");
 
-const pdfBuf2 = reportToPdf(structuredReport, "ama");
-const pdfText = pdfBuf2.toString("latin1");
-for (const needle of ["%PDF", "Methods", "not an exhaustive census", "References"]) {
+const pdfBuf2 = await reportToPdf(structuredReport, "ama");
+if (!pdfBuf2.toString("latin1", 0, 5).includes("%PDF")) throw new Error("structured pdf: bad header");
+const pdfText = pdfVisibleText(pdfBuf2);
+for (const needle of ["Methods", "not an exhaustive census", "References"]) {
   if (!pdfText.includes(needle)) throw new Error(`honesty signal missing from pdf: ${needle}`);
 }
 console.log("✓ structured pdf carries honesty signals");
@@ -200,12 +240,31 @@ const slideXml3 = Object.entries(pptxFiles3)
 if (slideXml3.includes("Built from")) throw new Error("attribution slide present in zero-citation pptx");
 console.log("✓ zero-citation pptx omits the attribution slide");
 
-const pdfBuf3 = reportToPdf(zeroCitationReport, "vancouver");
+const pdfBuf3 = await reportToPdf(zeroCitationReport, "vancouver");
 if (!(pdfBuf3[0] === 0x25 && pdfBuf3[1] === 0x50 && pdfBuf3[2] === 0x44 && pdfBuf3[3] === 0x46)) {
   throw new Error("reportToPdf (zero-citation): not a PDF file");
 }
-const pdfText3 = pdfBuf3.toString("latin1");
+const pdfText3 = pdfVisibleText(pdfBuf3);
 if (pdfText3.includes("Built from")) throw new Error("attribution block present in zero-citation pdf");
 console.log("✓ zero-citation pdf omits the attribution block");
+
+// Brand-free rule (owner decision 2026-07-07): exported deliverables carry NO product branding —
+// not in visible text, not in file metadata, not in internal part names (e.g. slide-master names).
+// Scan every zip part of the OOXML files and the whole PDF byte stream.
+function assertBrandFree(label: string, texts: string[]): void {
+  if (texts.some((s) => /pharma\s*orb/i.test(s))) throw new Error(`${label}: contains product branding`);
+  console.log(`✓ ${label} is brand-free`);
+}
+const allZipText = (buf: Buffer): string[] =>
+  Object.values(unzipSync(new Uint8Array(buf))).map((d) => {
+    try {
+      return strFromU8(d);
+    } catch {
+      return "";
+    }
+  });
+assertBrandFree("docx", allZipText(docxBuf2));
+assertBrandFree("pptx", allZipText(pptxBuf2));
+assertBrandFree("pdf", [pdfBuf2.toString("latin1")]);
 
 console.log("export smoke: PASS");
