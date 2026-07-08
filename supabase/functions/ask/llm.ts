@@ -48,6 +48,18 @@ export function reasonerApiKey(): string {
   return Deno.env.get("REASONER_API_KEY") ?? Deno.env.get("DEEPSEEK_API_KEY") ?? llmApiKey();
 }
 
+/**
+ * True when a reasoner call would send the CHAT provider's generic key to a DIFFERENT reasoner
+ * endpoint — the silent-degradation misconfig (every reasoner call 401s twice, then falls back to
+ * the chat model: safe but a permanent invisible quality downgrade). PURE for testability; the
+ * once-per-isolate warning below makes it loud in logs.
+ */
+export function reasonerKeyMisconfigured(): boolean {
+  const dedicated = Deno.env.get("REASONER_API_KEY") ?? Deno.env.get("DEEPSEEK_API_KEY");
+  return !dedicated && reasonerBaseUrl() !== llmBaseUrl();
+}
+let warnedReasonerKey = false;
+
 export function hasLlmKey(): boolean {
   return llmApiKey().length > 0;
 }
@@ -187,6 +199,14 @@ async function callToolViaJson<T>(
   toolName: string,
   apiKey: string,
 ): Promise<{ input: T; model: string; usage?: Usage }> {
+  if (!warnedReasonerKey && reasonerKeyMisconfigured()) {
+    warnedReasonerKey = true;
+    console.warn(
+      `reasoner model '${params.model}' has no REASONER_API_KEY/DEEPSEEK_API_KEY while the chat slots use a different ` +
+        `provider — the generic key will be sent to ${reasonerBaseUrl()} and will likely be rejected; every reasoner call ` +
+        `will burn 2 attempts and fall back to the chat model. Set REASONER_API_KEY (or DEEPSEEK_API_KEY) to fix.`,
+    );
+  }
   const schema = params.tools?.find((t) => t.name === toolName);
   const jsonInstruction = [
     params.system ?? "",

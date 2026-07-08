@@ -4,7 +4,7 @@
 // via globalThis.fetch (same pattern as retrieve.test.ts).
 // Run: deno test --allow-env supabase/functions/ask/
 import { assert, assertEquals, assertRejects, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { callTool, chatToolArgsStream, isReasonerModel, type ChatParams } from "./llm.ts";
+import { callTool, chatToolArgsStream, isReasonerModel, reasonerKeyMisconfigured, type ChatParams } from "./llm.ts";
 
 const TOOL = {
   name: "emit_answer",
@@ -194,6 +194,36 @@ Deno.test("reasoner API error (wrong key / model not found) counts as a failed a
     },
   );
   assertEquals(bodies.length, 3);
+});
+
+Deno.test("reasonerKeyMisconfigured: flags generic-key-to-different-endpoint; quiet when a dedicated key or same provider", () => {
+  for (const k of ["REASONER_API_KEY", "DEEPSEEK_API_KEY", "REASONER_BASE_URL", "LLM_BASE_URL"]) Deno.env.delete(k);
+  // Same provider both legs (both DeepSeek default): generic key is the right key -> fine.
+  assertEquals(reasonerKeyMisconfigured(), false);
+  // Chat slots moved to another provider, no dedicated reasoner key -> misconfigured (loud).
+  Deno.env.set("LLM_BASE_URL", "https://api.other-provider.example/v1");
+  assertEquals(reasonerKeyMisconfigured(), true);
+  // A dedicated key fixes it.
+  Deno.env.set("DEEPSEEK_API_KEY", "dk");
+  assertEquals(reasonerKeyMisconfigured(), false);
+  Deno.env.delete("DEEPSEEK_API_KEY");
+  Deno.env.set("REASONER_API_KEY", "rk");
+  assertEquals(reasonerKeyMisconfigured(), false);
+  // Or pointing the reasoner leg at the same custom provider.
+  Deno.env.delete("REASONER_API_KEY");
+  Deno.env.set("REASONER_BASE_URL", "https://api.other-provider.example/v1");
+  assertEquals(reasonerKeyMisconfigured(), false);
+  for (const k of ["REASONER_BASE_URL", "LLM_BASE_URL"]) Deno.env.delete(k);
+});
+
+Deno.test("reasoner callTool: missing tool schema degrades to a schema-less instruction (no crash)", async () => {
+  const noTools: ChatParams = { ...params("deepseek-reasoner"), tools: undefined };
+  const { bodies } = await withFetch([chatResponse('{"answer":"still fine"}')], async () => {
+    const out = await callTool<{ answer: string }>(noTools, "emit_answer", "k");
+    assertEquals(out.input.answer, "still fine");
+  });
+  const system = (bodies[0].messages as Array<{ role: string; content: string }>)[0];
+  assertStringIncludes(system.content, 'valid arguments for the tool "emit_answer"');
 });
 
 Deno.test("chatToolArgsStream: reasoner model throws before any network call", async () => {
