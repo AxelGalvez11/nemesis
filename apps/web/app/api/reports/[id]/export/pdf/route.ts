@@ -1,6 +1,7 @@
 import type { CitationStyle, ResearchReport } from "@pharmabro/shared";
 import { json, userClient, verifyBearer } from "@/lib/server";
 import { reportToPdf } from "@/lib/export/pdf";
+import { safeFilename } from "@/lib/export/filename";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -26,7 +27,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!data?.payload) return json({ error: "report not found" }, 404);
 
   const report = data.payload as unknown as ResearchReport;
-  const buffer = reportToPdf(report, styleOf(req, report));
+  const buffer = await reportToPdf(report, styleOf(req, report));
   const filename = safeFilename((data.title as string) ?? "evidence-report", "pdf");
   return new Response(new Uint8Array(buffer), {
     headers: {
@@ -34,9 +35,4 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
-}
-
-function safeFilename(title: string, ext: string): string {
-  const base = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "report";
-  return `${base}.${ext}`;
 }

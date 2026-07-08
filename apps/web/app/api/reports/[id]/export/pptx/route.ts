@@ -1,6 +1,7 @@
 import type { CitationStyle, ResearchReport } from "@pharmabro/shared";
 import { json, userClient, verifyBearer } from "@/lib/server";
 import { reportToPptx } from "@/lib/export/pptx";
+import { safeFilename } from "@/lib/export/filename";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,9 +35,4 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
-}
-
-function safeFilename(title: string, ext: string): string {
-  const base = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "report";
-  return `${base}.${ext}`;
 }
