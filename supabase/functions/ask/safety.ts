@@ -119,8 +119,12 @@ const SLOT_PERSON =
 // contain one of these words just routes to the cautious template.
 // Roots are e-stripped (e.g. "inhal", "consum") so the -e/-es/-ed/-ing/-en suffix attaches to every
 // inflection including the past participle ("inhaled").
+// NOTE (follow-up tracked): the root list is still enumerable — a durable fix would reject a
+// non-head slot token by participle MORPHOLOGY (-ed/-en/-ing), but a naive suffix check wrongly
+// rejects real substances ("ibuprofen" ends -en, "red dye" ends -ed), so it needs a head-token
+// carve-out and its own review. For now the named-instance roots (absorb/contaminat/…) are added.
 const SLOT_ACTION =
-  /\b(?:swallow|ingest|inhal|snort|huff|chew|lick|inject|consum|sip|tast|nibbl|sampl|suck|mouth|gulp|mix|combin|us|smok|vap)(?:e|es|ed|ing|en)?\b|\b(?:eat|eats|eating|ate|eaten|drink|drinks|drinking|drank|drunk|take|takes|taking|took|taken|bite|bites|biting|bit|bitten|feed|feeds|feeding|fed|give|gives|giving|gave|given|got|gotten)\b/i;
+  /\b(?:swallow|ingest|inhal|snort|huff|chew|lick|inject|consum|sip|tast|nibbl|sampl|suck|mouth|gulp|mix|combin|us|smok|vap|absorb|contaminat|regurgitat|vomit)(?:e|es|ed|ing|en)?\b|\b(?:administer|administered|administering|eat|eats|eating|ate|eaten|drink|drinks|drinking|drank|drunk|take|takes|taking|took|taken|bite|bites|biting|bit|bitten|feed|feeds|feeding|fed|give|gives|giving|gave|given|got|gotten|spit|spat)\b/i;
 // A specific or bulk QUANTITY in the slot signals an incident, not a class question. The template's
 // leading article ("is a …") is consumed BEFORE the slot, so the article is optional here and a
 // bare "whole/half/full + container" and "container of" both count.

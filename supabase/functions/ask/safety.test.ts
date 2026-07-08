@@ -631,6 +631,10 @@ Deno.test("toxicity inquiry: EXPOSURE NARRATIVES are never certified — classif
     "is twenty pills of tylenol dangerous",
     "is a whole bottle of vodka dangerous",
     "is a handful of ibuprofen dangerous",
+    // round 4 — named-instance exposure verb roots
+    "is absorbed antifreeze dangerous",
+    "is contaminated formula dangerous",
+    "is regurgitated poison dangerous",
   ];
   for (const q of attacks) {
     assertEquals(isGeneralToxicityQuestion(q), false, `exposure narrative must not certify: ${JSON.stringify(q)}`);
@@ -654,6 +658,11 @@ Deno.test("toxicity inquiry: hypothetical phrasings still certify after the expo
       "is creatine toxic",
       "how toxic is ibuprofen",
       "can melatonin be dangerous",
+      // -ed/-en-ending SUBSTANCES must still certify: the slot reject is by an enumerated verb-root
+      // list ON PURPOSE, NOT a blanket participle-suffix check (which would wrongly reject these).
+      "is red dye 40 dangerous",
+      "is expired medication dangerous",
+      "is processed meat dangerous",
     ]
   ) {
     assert(isGeneralToxicityQuestion(q), `hypothetical must still certify: ${JSON.stringify(q)}`);
