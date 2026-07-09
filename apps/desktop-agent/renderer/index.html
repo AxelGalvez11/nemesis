@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <!-- No meta CSP: this is a first-party local renderer (contextIsolation on, nodeIntegration off), and
+       the Assistant view embeds our own app.pharmaorb.app in a <webview>. Security is enforced by
+       Electron's process model, not a meta policy. -->
+  <title>PharmaOrb</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ── left rail ── -->
+    <nav class="rail">
+      <div class="brand">
+        <span class="orb" aria-hidden="true"></span>
+        <span class="brand-name">PharmaOrb</span>
+      </div>
+      <div class="rail-sub">school agent</div>
+      <ul class="nav">
+        <li><button class="nav-item active" data-view="today"><span class="ico">◎</span>Today</button></li>
+        <li><button class="nav-item" data-view="library"><span class="ico">▤</span>Study library</button></li>
+        <li><button class="nav-item" data-view="courses"><span class="ico">◫</span>Courses</button></li>
+        <li><button class="nav-item" data-view="connections"><span class="ico">⇄</span>Connections</button></li>
+        <li><button class="nav-item" data-view="assistant"><span class="ico">✦</span>Assistant</button></li>
+      </ul>
+      <div class="rail-foot">
+        <button class="nav-item" data-view="settings"><span class="ico">⚙</span>Settings</button>
+        <div id="railStatus" class="rail-status"></div>
+      </div>
+    </nav>
+
+    <!-- ── main ── -->
+    <main class="main">
+      <!-- TODAY -->
+      <section class="view active" data-view="today">
+        <header class="view-head">
+          <h1>Today's brief</h1>
+          <div class="head-actions">
+            <button id="refreshBrief" class="btn ghost">Refresh</button>
+            <button id="scanToday" class="btn ghost">Scan folder now</button>
+          </div>
+        </header>
+        <div id="briefStats" class="stat-row"></div>
+        <div id="briefNudge" class="nudge"></div>
+        <h2 class="section-label">Made today</h2>
+        <ul id="briefDecks" class="cards"></ul>
+        <h2 class="section-label">Activity</h2>
+        <ul id="activity" class="feed"></ul>
+      </section>
+
+      <!-- STUDY LIBRARY -->
+      <section class="view" data-view="library">
+        <header class="view-head"><h1>Study library</h1>
+          <div class="head-actions"><button id="openOutput" class="btn ghost">Open folder</button></div>
+        </header>
+        <p class="muted">Every deck the agent has made from your lectures. Import a deck's <code>cards.txt</code> into Anki.</p>
+        <ul id="libraryList" class="cards"></ul>
+      </section>
+
+      <!-- COURSES -->
+      <section class="view" data-view="courses">
+        <header class="view-head"><h1>Courses</h1></header>
+        <p class="muted">Decks grouped by course (inferred from the folder each lecture lives in).</p>
+        <div id="coursesList" class="courses"></div>
+      </section>
+
+      <!-- CONNECTIONS -->
+      <section class="view" data-view="connections">
+        <header class="view-head"><h1>Connections</h1></header>
+
+        <div class="panel">
+          <h2>Watched folder</h2>
+          <p class="muted">New lecture PDFs here become study material automatically.</p>
+          <div class="row"><button id="pickFolder" class="btn">Choose folder…</button><code id="watchFolder" class="path">not set</code></div>
+        </div>
+
+        <div class="panel">
+          <div class="row spread">
+            <div><h2 class="inline">School portals</h2> <span id="pwNote" class="muted"></span></div>
+            <div class="row"><button id="syncAll" class="btn ghost">Sync all now</button><button id="addPortal" class="btn">Add portal</button></div>
+          </div>
+          <p class="muted">Log in once in the browser we open; the agent reuses that session and <strong>checks every 30 minutes</strong>, pulling new lecture files and turning them into study material automatically. Your password is never stored, and it never submits anything.</p>
+          <div id="portalList" class="portals"></div>
+        </div>
+      </section>
+
+      <!-- ASSISTANT (embedded web app) -->
+      <section class="view no-pad" data-view="assistant">
+        <div class="assistant-bar">
+          <span class="muted">PharmaOrb research assistant</span>
+          <span id="assistantUrl" class="muted small"></span>
+        </div>
+        <webview id="assistant" class="assistant-view" src="https://app.pharmaorb.app" partition="persist:pharmaorb" allowpopups></webview>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="view" data-view="settings">
+        <header class="view-head"><h1>Settings</h1></header>
+
+        <div class="panel">
+          <h2>DeepSeek key</h2>
+          <p class="muted">Powers study-material generation. Stored encrypted in your OS keychain — never in plain text.</p>
+          <div class="row"><input id="apiKey" type="password" placeholder="sk-… paste your DeepSeek API key" autocomplete="off" />
+            <button id="saveKey" class="btn">Save</button><button id="clearKey" class="btn ghost">Clear</button></div>
+          <div id="keyStatus" class="status"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Appearance</h2>
+          <div class="row"><button class="btn ghost theme-btn" data-theme="dark">Dark</button><button class="btn ghost theme-btn" data-theme="light">Light</button></div>
+        </div>
+
+        <div class="panel">
+          <h2>About</h2>
+          <p class="muted">PharmaOrb desktop agent · v0. Local-first. It reads only files you point it at and never turns in work for you — everything it makes is a draft you review.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- add-portal modal -->
+  <div id="portalModal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Add a school portal</h2>
+      <label>Name<input id="pName" placeholder="Blackboard / Outlook / Canvas" /></label>
+      <label>Type
+        <select id="pType"><option value="browser">Browser login (Blackboard, Outlook, most)</option><option value="canvas">Canvas API (token)</option></select>
+      </label>
+      <label>URL<input id="pUrl" placeholder="https://yourschool.blackboard.com" /></label>
+      <div id="canvasFields" class="hidden">
+        <label>Canvas base URL<input id="pCanvasBase" placeholder="https://yourschool.instructure.com" /></label>
+        <label>Access token<input id="pToken" type="password" placeholder="Canvas > Account > Settings > New Access Token" /></label>
+      </div>
+      <div class="row end"><button id="pCancel" class="btn ghost">Cancel</button><button id="pSave" class="btn">Save</button></div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

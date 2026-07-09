@@ -1,0 +1,19 @@
+{
+  "name": "pharmaorb-desktop-agent",
+  "version": "0.0.1",
+  "private": true,
+  "description": "PharmaOrb autopilot school agent — v0: watches a folder and turns new lecture files into pharmacy-grade study guides + flashcards.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test:core": "node test/core.mjs"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "pdf-parse": "^1.1.1",
+    "playwright": "^1.45.0"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}
