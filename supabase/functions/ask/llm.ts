@@ -14,6 +14,32 @@ export function llmBaseUrl(): string {
 }
 
 /**
+ * DeepSeek retires the `deepseek-chat` and `deepseek-reasoner` model aliases on 2026-07-24 15:59 UTC
+ * (api-docs.deepseek.com/updates). This maps our internal model names to the durable V4 names plus the
+ * `thinking` request parameter that selects the mode — so mechanical calls keep working after the
+ * aliases die. V4 models default to THINKING mode, which rejects forced tool_choice ("Thinking mode
+ * does not support this tool_choice"); the mechanical flash model must therefore send thinking OFF
+ * explicitly. The v4-pro synthesis path is left at its provider default (thinking on) and is never
+ * sent with forced tools. Non-DeepSeek providers (LLM_BASE_URL pointed elsewhere) pass through
+ * untouched, so `thinking` — a DeepSeek-specific field — is never sent to another vendor.
+ *   deepseek-chat     -> deepseek-v4-flash, thinking OFF   (behavior-preserving; the retired alias was thinking-off)
+ *   deepseek-reasoner -> deepseek-v4-flash, thinking ON    (behavior-preserving; the retired alias was thinking-on)
+ *   *v4-flash*        -> thinking OFF                        (bare name defaults to thinking; force off for forced tools)
+ *   everything else   -> unchanged                          (v4-pro keeps its thinking-on default; no param sent)
+ */
+export function resolveDeepSeekModel(
+  model: string,
+  baseUrl: string,
+): { model: string; thinking?: { type: "enabled" | "disabled" } } {
+  if (!baseUrl.includes("deepseek")) return { model };
+  const m = model.toLowerCase();
+  if (m === "deepseek-chat") return { model: "deepseek-v4-flash", thinking: { type: "disabled" } };
+  if (m === "deepseek-reasoner") return { model: "deepseek-v4-flash", thinking: { type: "enabled" } };
+  if (m.includes("v4-flash")) return { model, thinking: { type: "disabled" } };
+  return { model };
+}
+
+/**
  * Reasoner-class model? These emit chain-of-thought and (per provider docs) do NOT support
  * forced function calling — structured output must be requested as plain JSON text. The match
  * pattern is env-tunable (REASONER_MODEL_PATTERN) so a future model name routes correctly
@@ -105,12 +131,14 @@ export async function chat(params: ChatParams, apiKey: string, baseUrl: string =
     ...(params.system ? [{ role: "system" as const, content: params.system }] : []),
     ...params.messages,
   ];
+  const resolved = resolveDeepSeekModel(params.model, baseUrl);
   const body: Record<string, unknown> = {
-    model: params.model,
+    model: resolved.model,
     max_tokens: params.max_tokens,
     messages,
     temperature: params.temperature ?? 1,
   };
+  if (resolved.thinking) body.thinking = resolved.thinking;
   if (params.tools) {
     body.tools = params.tools.map((t) => ({
       type: "function",
@@ -309,14 +337,16 @@ export async function chatToolArgsStream(
     ...(params.system ? [{ role: "system" as const, content: params.system }] : []),
     ...params.messages,
   ];
+  const resolved = resolveDeepSeekModel(params.model, llmBaseUrl());
   const body: Record<string, unknown> = {
-    model: params.model,
+    model: resolved.model,
     max_tokens: params.max_tokens,
     messages,
     temperature: params.temperature ?? 1,
     stream: true,
     tool_choice: { type: "function", function: { name: toolName } },
   };
+  if (resolved.thinking) body.thinking = resolved.thinking;
   if (params.tools) {
     body.tools = params.tools.map((t) => ({
       type: "function",
