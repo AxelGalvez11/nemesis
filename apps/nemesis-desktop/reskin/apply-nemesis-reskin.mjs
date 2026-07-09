@@ -79,11 +79,22 @@ const ANCHORS = [
   ['apps/desktop/src/app/settings/model-settings.tsx', [
     ['Hermes runs the flow for you', 'Nemesis runs the flow for you'],
   ]],
+  // Default theme → mono (owner brief 2026-07-09: "default color should be mono"). The 'mono'
+  // theme ships with Hermes, so this one-word flip is safe; the custom mono+red 'nemesis' theme
+  // is a fork commit (see docs/design/nemesis-product-reskin-plan-2026-07.md §B1).
+  ['apps/desktop/src/themes/presets.ts', [
+    ["export const DEFAULT_SKIN_NAME = 'nous'", "export const DEFAULT_SKIN_NAME = 'mono'"],
+  ]],
 ]
 
 // 3) Asset swaps — copy brand/<src> over <target>. Missing brand files are reported, not fatal.
+// Targets corrected 2026-07-09 after a source audit: public/hermes.png + hermes-frames/* are DEAD
+// (zero code references). The real surfaces are the runtime dock/window icon (apple-touch-icon.png,
+// via electron/main.ts getAppIconPath), the electron-builder package icons (assets/icon.*), and the
+// in-app brand mark image (public/nous-girl.jpg via src/components/brand-mark.tsx) — the mark swap
+// is a fork commit alongside its bg-white tile fix (plan §B1.3).
 const ASSETS = [
-  ['brand/nemesis.png', 'apps/desktop/public/hermes.png'],
+  ['brand/nemesis.png', 'apps/desktop/public/apple-touch-icon.png'],
   ['brand/icon.png', 'apps/desktop/assets/icon.png'],
 ]
 
