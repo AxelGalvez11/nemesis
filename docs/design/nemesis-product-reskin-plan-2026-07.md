@@ -123,6 +123,16 @@ Plus the copy pass: workspace-flavored i18n strings re-voiced for school ("sessi
 "library"; examples in placeholders swap code-talk for school-talk). The i18n dictionaries are the same
 files the reskin kit already rewrites — the school-voice pass extends the kit's dictionary step.
 
+## B5. New study pages (owner ask 2026-07-09; researched same day)
+Four pages join the sidebar where Capabilities/Messaging leave it — **Library** (notes over our
+Obsidian-compatible vault, CodeMirror 6 editor — already in the chassis), **Study** (flashcards on
+ts-fsrs + Anki-pattern UI + `ankipack` .apkg export), **Graph** (3d-force-graph over the vault index),
+**Recorder** (consent-first lecture capture: Electron 39+ system-audio loopback + whisper.cpp local
+transcription — the anti-Cluely). Full license-vetted stack, alternatives, and build order:
+[docs/research/nemesis-study-pages-oss-2026-07.md](../research/nemesis-study-pages-oss-2026-07.md).
+Headline legal finding: SiYuan/Logseq/AppFlowy/Trilium/Joplin/Anki are all AGPL (and Outline is BSL)
+— **UX inspiration only, zero embedded code**; everything we build on is MIT/Apache/BSD/CC-BY.
+
 ## Build sequence (fork commits, in order)
 1. ~~Kit: default skin → `mono`~~ + icon-target fix (**done, this repo, 2026-07-09**).
 2. Fork setup: private fork + apply kit (Layer A) — *gated on disk headroom for the build, now cleared.*
