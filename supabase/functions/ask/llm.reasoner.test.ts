@@ -4,7 +4,7 @@
 // via globalThis.fetch (same pattern as retrieve.test.ts).
 // Run: deno test --allow-env supabase/functions/ask/
 import { assert, assertEquals, assertRejects, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { callTool, chatToolArgsStream, isReasonerModel, reasonerKeyMisconfigured, type ChatParams } from "./llm.ts";
+import { callTool, chatToolArgsStream, isReasonerModel, reasonerKeyMisconfigured, resolveDeepSeekModel, type ChatParams } from "./llm.ts";
 
 const TOOL = {
   name: "emit_answer",
@@ -93,7 +93,9 @@ Deno.test("reasoner callTool: JSON-in-text — no tools on the wire, schema in s
   assertStringIncludes(system.content, "ONLY a single JSON object");
   assertStringIncludes(system.content, '"emit_answer"');
   assertStringIncludes(system.content, '"required":["answer"]'); // schema embedded
-  assert((body.max_tokens as number) >= 1024, "reasoner answer budget floored");
+  // The caller's answer budget (200) PLUS the thinking headroom (24000) — proves reasoning can't
+  // starve the JSON answer (the deep-research truncation→reroll→timeout root cause).
+  assert((body.max_tokens as number) >= 200 + 24000, `reasoner budget must add thinking headroom, got ${body.max_tokens}`);
 });
 
 Deno.test("reasoner callTool: recovers JSON wrapped in thinking prose and fences", async () => {
@@ -131,7 +133,10 @@ Deno.test("reasoner callTool: both rolls fail -> hard fallback to chat model via
   );
   assertEquals(bodies.length, 3);
   const fallbackBody = bodies[2];
-  assertEquals(fallbackBody.model, "deepseek-chat");
+  // The fallback runs on DeepSeek's base URL, so the alias shim rewrites the internal "deepseek-chat"
+  // to the durable "deepseek-v4-flash" + thinking OFF (so the forced tool call is accepted post-alias).
+  assertEquals(fallbackBody.model, "deepseek-v4-flash");
+  assertEquals(fallbackBody.thinking, { type: "disabled" });
   assert(fallbackBody.tool_choice !== undefined, "fallback uses a real forced tool call");
 });
 
@@ -150,7 +155,7 @@ Deno.test("reasoner callTool: fallback misconfigured as a reasoner -> throws (no
   }
 });
 
-Deno.test("chat-class models are untouched: forced tool call exactly as before", async () => {
+Deno.test("chat-class forced tool call preserved; alias translated to the durable V4 name + thinking off", async () => {
   const { bodies } = await withFetch([toolCallResponse('{"answer":"chat path"}')], async () => {
     const out = await callTool<{ answer: string }>(params("deepseek-chat"), "emit_answer", "k");
     assertEquals(out.input.answer, "chat path");
@@ -158,6 +163,24 @@ Deno.test("chat-class models are untouched: forced tool call exactly as before",
   assertEquals(bodies.length, 1);
   assert(bodies[0].tools !== undefined, "chat path still sends tools");
   assert(bodies[0].tool_choice !== undefined, "chat path still forces the tool");
+  // Post-migration: the retiring "deepseek-chat" alias is sent as "deepseek-v4-flash" with thinking
+  // OFF — the only wire shape that both survives the 2026-07-24 alias retirement AND accepts forced tools.
+  assertEquals(bodies[0].model, "deepseek-v4-flash");
+  assertEquals(bodies[0].thinking, { type: "disabled" });
+});
+
+Deno.test("resolveDeepSeekModel: maps retiring aliases + bare v4-flash; leaves v4-pro and non-DeepSeek alone", () => {
+  const ds = "https://api.deepseek.com";
+  // Retiring aliases -> durable name + explicit mode (behavior-preserving).
+  assertEquals(resolveDeepSeekModel("deepseek-chat", ds), { model: "deepseek-v4-flash", thinking: { type: "disabled" } });
+  assertEquals(resolveDeepSeekModel("deepseek-reasoner", ds), { model: "deepseek-v4-flash", thinking: { type: "enabled" } });
+  // Bare flash defaults to thinking mode (rejects forced tools) -> force it off.
+  assertEquals(resolveDeepSeekModel("deepseek-v4-flash", ds), { model: "deepseek-v4-flash", thinking: { type: "disabled" } });
+  // v4-pro (the synthesis/reasoner flagship) keeps its thinking-on default: no param sent, name unchanged.
+  assertEquals(resolveDeepSeekModel("deepseek-v4-pro", ds), { model: "deepseek-v4-pro" });
+  // Non-DeepSeek provider: never inject the DeepSeek-specific `thinking` field, never rewrite the name.
+  assertEquals(resolveDeepSeekModel("deepseek-chat", "https://api.openai.com/v1"), { model: "deepseek-chat" });
+  assertEquals(resolveDeepSeekModel("gpt-4.1-mini", "https://api.openai.com/v1"), { model: "gpt-4.1-mini" });
 });
 
 Deno.test("reasoner leg uses its OWN provider: DeepSeek base even when chat slots point elsewhere", async () => {
