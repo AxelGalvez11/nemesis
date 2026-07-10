@@ -1,3 +1,12 @@
+---
+name: school-portal
+description: Check Blackboard and Outlook school portals — read courses, announcements, inbox — read-only, no submitting.
+version: 1.1.0
+metadata:
+  hermes:
+    tags: [school, blackboard, outlook, portal, email, courses, academic]
+---
+
 # School portal extraction (Blackboard + Outlook web)
 
 Use this skill when the student asks you to check their school portal, pull course
@@ -59,14 +68,50 @@ entry. If it's missing:
 
 ## Outlook web flow
 
-1. Navigate to the mail URL from memory (default outlook.office.com; student logs
-   in themselves).
-2. Snapshot the inbox list; open only what's needed to summarize.
-3. Triage into: action needed (assignments, professor requests, registration deadlines),
+1. Navigate to the mail URL from memory (student logs in themselves). If the initial
+   browser_snapshot returns an "(empty page)", do NOT assume the session is dead —
+   Outlook web renders content dynamically. Check `document.title` via browser_console:
+   if it contains "Mail - <Name> - Outlook" the user IS logged in; the page just needs
+   a moment or a second snapshot to populate.
+2. Snapshot the inbox list. The inbox groups emails into **Pinned**, **Today**,
+   **Yesterday**, **This week**, and **Older** sections. Read each section.
+3. **Opening an email:** clicking a conversation header (the top-level option in the
+   listbox) expands/collapses it — it does NOT open a reading pane. To see the email
+   body, you must click the **"Expand conversation"** button inside the option, then
+   click a **specific sub-message** (listitem inside the expanded list). This opens the
+   reading pane on the right. The close button hides the pane.
+4. **Finding pinned/older emails not visible in the inbox:** The default inbox view
+   may not show all pinned emails (conversation grouping can subsume them). Use the
+   search box (`browser_type` into the combobox + `browser_press` Enter) to find a
+   specific email by subject or sender — search returns results even when the item is
+   off-screen or aggregated into a conversation.
+5. **Attachments:** Outlook web renders attachments dynamically (served via OneDrive /
+   SharePoint). They are NOT static download URLs accessible to the browser tool. You
+   **cannot auto-download attachments from Outlook web** — even if the email shows a
+   "Has attachments" badge and you open it in the reading pane, the attachment tiles
+   are hosted behind signed OneDrive URLs that the browser tool can't fetch. If the
+   student needs a file from an email, tell them to open that email manually in their
+   own browser and download from there.
+6. **SPA session pitfall:** After the browser navigates to a different site (e.g., PubMed,
+   Blackboard) and then back to Outlook, the SPA may lose its message-list state. The
+   page shows the app chrome, the user's name, and the folder pane — but the message
+   list is empty. The user is still logged in; the SPA just needs a fresh page load.
+   Navigate away and come back, or ask the student to visit Outlook once to restore it.
+7. **CORE ELMS references:** Some IPPE/rotation emails reference documents hosted in
+   the external **CORE ELMS** system (Student Handbook, IPPE Checklist, Pre-/Post-
+   Reflections, Study Guides). These are not Blackboard files or email attachments.
+   The student must log into CORE ELMS directly to download them.
+8. **Downloaded files:** When you download files (via Blackboard's native download links
+   that land in ~/Downloads), move them into course-specific subdirectories:
+   `~/Documents/Nemesis Library/School/<Course-Name>/`. Create the folder if needed.
+   Tell the student the exact filename and byte size (`ls -la` or `stat -f%z` on macOS).
+9. Triage into: action needed (assignments, professor requests, registration deadlines),
    informational (newsletters, campus events), ignorable. Cite sender + date for each.
-4. You may DRAFT replies in the chat for the student to copy. Never click Send.
-5. Save the triage as a note in `~/Documents/Nemesis Library/School/Inbox brief <date>.md`
-   when the student asks to keep it.
+10. You may DRAFT replies in the chat for the student to copy. Never click Send.
+11. Save the triage as a note in `~/Documents/Nemesis Library/School/Inbox brief <date>.md`
+    when the student asks to keep it.
+
+> See `references/outlook-web.md` for detailed Outlook web navigation patterns.
 
 ## Style
 
