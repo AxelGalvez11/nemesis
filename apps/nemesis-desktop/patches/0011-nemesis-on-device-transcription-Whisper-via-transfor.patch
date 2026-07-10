@@ -1,0 +1,1479 @@
+From ae723e60b6a7f25741e1799c06613f3404426848 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Thu, 9 Jul 2026 20:22:34 -0500
+Subject: [PATCH 11/13] nemesis: on-device transcription (Whisper via
+ transformers.js) + graph zoom polish
+
+- recorder/transcribe.ts: whisper-tiny.en ASR pipeline (single-thread WASM,
+  hub model fetch), webm->16kHz-mono decode via OfflineAudioContext.
+- Recorder UI: Transcribe button per recording w/ progress, transcript panel,
+  Save-as-note into the Library vault.
+- vite: optimizeDeps.exclude transformers.js (self-loads WASM); ort-wasm bundles
+  locally so the engine needs no CDN. dep: @huggingface/transformers.
+- graph: smaller nodes + generous zoomToFit padding (less zoomed-in).
+---
+ apps/desktop/package.json                   |   1 +
+ apps/desktop/src/app/graph/index.js         |  17 +-
+ apps/desktop/src/app/graph/index.tsx        |  17 +-
+ apps/desktop/src/app/recorder/index.js      |  56 +-
+ apps/desktop/src/app/recorder/index.tsx     | 116 ++-
+ apps/desktop/src/app/recorder/transcribe.js |  53 ++
+ apps/desktop/src/app/recorder/transcribe.ts |  69 ++
+ apps/desktop/vite.config.ts                 |   4 +
+ package-lock.json                           | 738 +++++++++++++++++++-
+ 9 files changed, 1006 insertions(+), 65 deletions(-)
+ create mode 100644 apps/desktop/src/app/recorder/transcribe.js
+ create mode 100644 apps/desktop/src/app/recorder/transcribe.ts
+
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index 0e99f27..5e08a4a 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -60,6 +60,7 @@
+     "@dnd-kit/sortable": "^10.0.0",
+     "@dnd-kit/utilities": "^3.2.2",
+     "@hermes/shared": "file:../shared",
++    "@huggingface/transformers": "^4.2.0",
+     "@icons-pack/react-simple-icons": "=13.11.1",
+     "@lezer/highlight": "^1.2.3",
+     "@nanostores/react": "^1.1.0",
+diff --git a/apps/desktop/src/app/graph/index.js b/apps/desktop/src/app/graph/index.js
+index 1487f35..5ea5222 100644
+--- a/apps/desktop/src/app/graph/index.js
++++ b/apps/desktop/src/app/graph/index.js
+@@ -43,22 +43,23 @@ export function GraphView() {
+                     .width(host.clientWidth || host.offsetWidth || 800)
+                     .height(host.clientHeight || host.offsetHeight || 600)
+                     .nodeLabel((node) => `<div style="font: 12px sans-serif; color:#eee">${node.id}</div>`)
+-                    .nodeRelSize(6)
++                    .nodeRelSize(4)
+                     .nodeColor((node) => (node.degree >= 2 ? accent : '#c8c8c8'))
+-                    .nodeVal((node) => 2 + node.degree * 2)
+-                    .nodeOpacity(0.95)
++                    .nodeVal((node) => 1 + node.degree)
++                    .nodeOpacity(0.9)
+                     .linkColor(() => '#4a4a4a')
+                     .linkWidth(0.5)
+-                    .linkOpacity(0.6)
++                    .linkOpacity(0.55)
+                     .onNodeClick((node) => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(node.id)}`))
+                     .graphData({ links, nodes });
+                 // Frame the whole graph once the force sim settles (and again as a fallback —
+-                // the container can report 0px at construction inside the flex layout).
+-                instance.onEngineStop(() => instance.zoomToFit(400, 60));
+-                window.setTimeout(() => instance.zoomToFit(600, 60), 1400);
++                // the container can report 0px at construction inside the flex layout). Generous
++                // padding keeps the nodes comfortably inside the viewport rather than filling it.
++                instance.onEngineStop(() => instance.zoomToFit(500, 110));
++                window.setTimeout(() => instance.zoomToFit(700, 110), 1500);
+                 const controls = instance.controls();
+                 controls.autoRotate = true;
+-                controls.autoRotateSpeed = 0.6;
++                controls.autoRotateSpeed = 0.5;
+                 observer = new ResizeObserver(() => {
+                     instance.width(host.clientWidth || 800);
+                     instance.height(host.clientHeight || 600);
+diff --git a/apps/desktop/src/app/graph/index.tsx b/apps/desktop/src/app/graph/index.tsx
+index 8056f20..7f23f1d 100644
+--- a/apps/desktop/src/app/graph/index.tsx
++++ b/apps/desktop/src/app/graph/index.tsx
+@@ -62,26 +62,27 @@ export function GraphView() {
+           .width(host.clientWidth || host.offsetWidth || 800)
+           .height(host.clientHeight || host.offsetHeight || 600)
+           .nodeLabel((node: object) => `<div style="font: 12px sans-serif; color:#eee">${(node as GraphNode).id}</div>`)
+-          .nodeRelSize(6)
++          .nodeRelSize(4)
+           .nodeColor((node: object) => ((node as GraphNode).degree >= 2 ? accent : '#c8c8c8'))
+-          .nodeVal((node: object) => 2 + (node as GraphNode).degree * 2)
+-          .nodeOpacity(0.95)
++          .nodeVal((node: object) => 1 + (node as GraphNode).degree)
++          .nodeOpacity(0.9)
+           .linkColor(() => '#4a4a4a')
+           .linkWidth(0.5)
+-          .linkOpacity(0.6)
++          .linkOpacity(0.55)
+           .onNodeClick((node: object) =>
+             navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent((node as GraphNode).id)}`)
+           )
+           .graphData({ links, nodes })
+ 
+         // Frame the whole graph once the force sim settles (and again as a fallback —
+-        // the container can report 0px at construction inside the flex layout).
+-        instance.onEngineStop(() => instance.zoomToFit(400, 60))
+-        window.setTimeout(() => instance.zoomToFit(600, 60), 1400)
++        // the container can report 0px at construction inside the flex layout). Generous
++        // padding keeps the nodes comfortably inside the viewport rather than filling it.
++        instance.onEngineStop(() => instance.zoomToFit(500, 110))
++        window.setTimeout(() => instance.zoomToFit(700, 110), 1500)
+ 
+         const controls = instance.controls() as { autoRotate?: boolean; autoRotateSpeed?: number }
+         controls.autoRotate = true
+-        controls.autoRotateSpeed = 0.6
++        controls.autoRotateSpeed = 0.5
+ 
+         observer = new ResizeObserver(() => {
+           instance.width(host.clientWidth || 800)
+diff --git a/apps/desktop/src/app/recorder/index.js b/apps/desktop/src/app/recorder/index.js
+index 23ad9f9..e5977bb 100644
+--- a/apps/desktop/src/app/recorder/index.js
++++ b/apps/desktop/src/app/recorder/index.js
+@@ -10,6 +10,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
+ import { Button } from '@/components/ui/button';
+ import { EmptyState } from '@/components/ui/empty-state';
+ import { cn } from '@/lib/utils';
++import { saveNote } from '../library/vault';
++import { transcribeAudio } from './transcribe';
+ const RECORDINGS_DIR = '~/Documents/Nemesis Recordings';
+ export function RecorderView() {
+     const [state, setState] = useState('idle');
+@@ -18,6 +20,9 @@ export function RecorderView() {
+     const [withSystemAudio, setWithSystemAudio] = useState(true);
+     const [recordings, setRecordings] = useState([]);
+     const [playing, setPlaying] = useState(null);
++    const [transcripts, setTranscripts] = useState({});
++    const [transcribingStatus, setTranscribingStatus] = useState({});
++    const [savedNote, setSavedNote] = useState({});
+     const recorderRef = useRef(null);
+     const streamsRef = useRef([]);
+     const chunksRef = useRef([]);
+@@ -142,7 +147,56 @@ export function RecorderView() {
+             setPlaying({ path: file.path, src });
+         }
+     }, [playing]);
++    const readAudioBuffer = async (file) => {
++        const read = await window.hermesDesktop?.readFileDataUrl?.(file.path);
++        const src = typeof read === 'string' ? read : read?.dataUrl;
++        if (!src) {
++            throw new Error('Could not read the recording file.');
++        }
++        return (await fetch(src)).arrayBuffer();
++    };
++    const transcribe = useCallback(async (file) => {
++        setTranscribingStatus(status => ({ ...status, [file.path]: 'Loading model…' }));
++        try {
++            const buffer = await readAudioBuffer(file);
++            const text = await transcribeAudio(buffer, update => setTranscribingStatus(status => ({
++                ...status,
++                [file.path]: update.stage === 'loading-model'
++                    ? `Loading model… ${Math.round(update.progress ?? 0)}%`
++                    : update.stage === 'decoding'
++                        ? 'Decoding audio…'
++                        : 'Transcribing…'
++            })));
++            setTranscripts(current => ({ ...current, [file.path]: text || '(No speech detected.)' }));
++        }
++        catch (err) {
++            setTranscripts(current => ({
++                ...current,
++                [file.path]: `Transcription failed: ${err instanceof Error ? err.message : 'unknown error'}`
++            }));
++        }
++        finally {
++            setTranscribingStatus(status => {
++                const next = { ...status };
++                delete next[file.path];
++                return next;
++            });
++        }
++    }, []);
++    const saveTranscriptNote = useCallback(async (file) => {
++        const text = transcripts[file.path];
++        if (!text) {
++            return;
++        }
++        const title = `Lecture ${file.name.replace(/\.webm$/i, '').replace(/^lecture-/, '')}`;
++        await saveNote(title, `# ${title}\n\n*Transcribed by Nemesis — review before relying on it.*\n\n${text}\n`);
++        setSavedNote(current => ({ ...current, [file.path]: true }));
++    }, [transcripts]);
+     const minutes = String(Math.floor(elapsed / 60)).padStart(2, '0');
+     const seconds = String(elapsed % 60).padStart(2, '0');
+-    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "px-6 pb-2 pt-5", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Recorder" }), _jsxs("p", { className: "text-xs text-muted-foreground", children: ["Records your mic", withSystemAudio ? ' + this computer’s audio (the lecture/Zoom)' : ' only', " \u2014 locally, to your own files. You start it, you see it, you keep it."] })] }), _jsxs("section", { className: "mx-6 mt-3 flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-8", children: [state === 'recording' ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex items-center gap-3", children: [_jsxs("span", { className: "relative flex size-4", children: [_jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" }), _jsx("span", { className: "relative inline-flex size-4 rounded-full bg-primary" })] }), _jsxs("span", { className: "text-2xl font-semibold tabular-nums", children: [minutes, ":", seconds] })] }), _jsx("p", { className: "text-xs font-medium uppercase tracking-widest text-primary", children: "Recording \u2014 visible, on purpose" }), _jsx(Button, { onClick: stop, size: "lg", variant: "secondary", children: "Stop & save" })] })) : (_jsxs(_Fragment, { children: [_jsx(Button, { disabled: state === 'saving', onClick: () => void start(), size: "lg", children: state === 'saving' ? 'Saving…' : 'Start recording' }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: withSystemAudio, className: "accent-(--theme-primary)", onChange: event => setWithSystemAudio(event.target.checked), type: "checkbox" }), "Also capture this computer\u2019s audio (lecture, Zoom) \u2014 macOS will ask once"] })] })), error && _jsx("p", { className: "max-w-md text-center text-xs text-destructive", children: error })] }), _jsxs("section", { className: "px-6 pb-8 pt-5", children: [_jsx("h2", { className: "pb-2 text-sm font-medium", children: "Saved recordings" }), recordings.length ? (_jsx("ul", { className: "flex flex-col gap-1.5", children: recordings.map(file => (_jsxs("li", { className: "flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2", children: [_jsx("span", { className: "truncate text-sm", children: file.name }), _jsx(Button, { onClick: () => void play(file), size: "sm", variant: "outline", children: playing?.path === file.path ? 'Hide' : 'Play' })] }, file.path))) })) : (_jsx(EmptyState, { className: cn('min-h-28'), description: "Recordings save to Documents / Nemesis Recordings as ordinary audio files.", title: "No recordings yet" })), playing && _jsx("audio", { autoPlay: true, className: "mt-3 w-full", controls: true, src: playing.src }), _jsx("p", { className: "pt-4 text-[11px] leading-relaxed text-muted-foreground", children: "Recording other people may require their consent where you live \u2014 check your school\u2019s policy. Nemesis never records on its own, never hides the indicator, and transcription (turning lectures into notes) lands in a coming update." })] })] }));
++    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "px-6 pb-2 pt-5", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Recorder" }), _jsxs("p", { className: "text-xs text-muted-foreground", children: ["Records your mic", withSystemAudio ? ' + this computer’s audio (the lecture/Zoom)' : ' only', " \u2014 locally, to your own files. You start it, you see it, you keep it."] })] }), _jsxs("section", { className: "mx-6 mt-3 flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-8", children: [state === 'recording' ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex items-center gap-3", children: [_jsxs("span", { className: "relative flex size-4", children: [_jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" }), _jsx("span", { className: "relative inline-flex size-4 rounded-full bg-primary" })] }), _jsxs("span", { className: "text-2xl font-semibold tabular-nums", children: [minutes, ":", seconds] })] }), _jsx("p", { className: "text-xs font-medium uppercase tracking-widest text-primary", children: "Recording \u2014 visible, on purpose" }), _jsx(Button, { onClick: stop, size: "lg", variant: "secondary", children: "Stop & save" })] })) : (_jsxs(_Fragment, { children: [_jsx(Button, { disabled: state === 'saving', onClick: () => void start(), size: "lg", children: state === 'saving' ? 'Saving…' : 'Start recording' }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: withSystemAudio, className: "accent-(--theme-primary)", onChange: event => setWithSystemAudio(event.target.checked), type: "checkbox" }), "Also capture this computer\u2019s audio (lecture, Zoom) \u2014 macOS will ask once"] })] })), error && _jsx("p", { className: "max-w-md text-center text-xs text-destructive", children: error })] }), _jsxs("section", { className: "px-6 pb-8 pt-5", children: [_jsx("h2", { className: "pb-2 text-sm font-medium", children: "Saved recordings" }), recordings.length ? (_jsx("ul", { className: "flex flex-col gap-1.5", children: recordings.map(file => {
++                            const status = transcribingStatus[file.path];
++                            const transcript = transcripts[file.path];
++                            return (_jsxs("li", { className: "flex flex-col gap-2 rounded-md border border-border px-3 py-2", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx("span", { className: "truncate text-sm", children: file.name }), _jsxs("div", { className: "flex shrink-0 items-center gap-2", children: [_jsx(Button, { disabled: Boolean(status), onClick: () => void transcribe(file), size: "sm", variant: "outline", children: status ?? (transcript ? 'Re-transcribe' : 'Transcribe') }), _jsx(Button, { onClick: () => void play(file), size: "sm", variant: "outline", children: playing?.path === file.path ? 'Hide' : 'Play' })] })] }), transcript && (_jsxs("div", { className: "rounded-md bg-muted/40 p-3", children: [_jsx("p", { className: "whitespace-pre-wrap text-xs leading-relaxed text-foreground", children: transcript }), _jsx("div", { className: "mt-2 flex items-center gap-2", children: _jsx(Button, { disabled: savedNote[file.path], onClick: () => void saveTranscriptNote(file), size: "sm", variant: "secondary", children: savedNote[file.path] ? 'Saved to Library ✓' : 'Save as note' }) })] }))] }, file.path));
++                        }) })) : (_jsx(EmptyState, { className: cn('min-h-28'), description: "Recordings save to Documents / Nemesis Recordings as ordinary audio files.", title: "No recordings yet" })), playing && _jsx("audio", { autoPlay: true, className: "mt-3 w-full", controls: true, src: playing.src }), _jsx("p", { className: "pt-4 text-[11px] leading-relaxed text-muted-foreground", children: "Recording other people may require their consent where you live \u2014 check your school\u2019s policy. Nemesis never records on its own and never hides the indicator. Transcription runs on your device (the first run downloads a small model); the text is a draft \u2014 review it before you rely on it." })] })] }));
+ }
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index 0b4e8c1..1f40c83 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -11,6 +11,9 @@ import { Button } from '@/components/ui/button'
+ import { EmptyState } from '@/components/ui/empty-state'
+ import { cn } from '@/lib/utils'
+ 
++import { saveNote } from '../library/vault'
++import { transcribeAudio } from './transcribe'
++
+ const RECORDINGS_DIR = '~/Documents/Nemesis Recordings'
+ 
+ interface RecordingFile {
+@@ -27,6 +30,9 @@ export function RecorderView() {
+   const [withSystemAudio, setWithSystemAudio] = useState(true)
+   const [recordings, setRecordings] = useState<RecordingFile[]>([])
+   const [playing, setPlaying] = useState<null | { path: string; src: string }>(null)
++  const [transcripts, setTranscripts] = useState<Record<string, string>>({})
++  const [transcribingStatus, setTranscribingStatus] = useState<Record<string, string>>({})
++  const [savedNote, setSavedNote] = useState<Record<string, boolean>>({})
+ 
+   const recorderRef = useRef<MediaRecorder | null>(null)
+   const streamsRef = useRef<MediaStream[]>([])
+@@ -179,6 +185,64 @@ export function RecorderView() {
+     [playing]
+   )
+ 
++  const readAudioBuffer = async (file: RecordingFile): Promise<ArrayBuffer> => {
++    const read = await window.hermesDesktop?.readFileDataUrl?.(file.path)
++    const src = typeof read === 'string' ? read : (read as { dataUrl?: string } | undefined)?.dataUrl
++
++    if (!src) {
++      throw new Error('Could not read the recording file.')
++    }
++
++    return (await fetch(src)).arrayBuffer()
++  }
++
++  const transcribe = useCallback(async (file: RecordingFile) => {
++    setTranscribingStatus(status => ({ ...status, [file.path]: 'Loading model…' }))
++
++    try {
++      const buffer = await readAudioBuffer(file)
++      const text = await transcribeAudio(buffer, update =>
++        setTranscribingStatus(status => ({
++          ...status,
++          [file.path]:
++            update.stage === 'loading-model'
++              ? `Loading model… ${Math.round(update.progress ?? 0)}%`
++              : update.stage === 'decoding'
++                ? 'Decoding audio…'
++                : 'Transcribing…'
++        }))
++      )
++      setTranscripts(current => ({ ...current, [file.path]: text || '(No speech detected.)' }))
++    } catch (err) {
++      setTranscripts(current => ({
++        ...current,
++        [file.path]: `Transcription failed: ${err instanceof Error ? err.message : 'unknown error'}`
++      }))
++    } finally {
++      setTranscribingStatus(status => {
++        const next = { ...status }
++        delete next[file.path]
++
++        return next
++      })
++    }
++  }, [])
++
++  const saveTranscriptNote = useCallback(
++    async (file: RecordingFile) => {
++      const text = transcripts[file.path]
++
++      if (!text) {
++        return
++      }
++
++      const title = `Lecture ${file.name.replace(/\.webm$/i, '').replace(/^lecture-/, '')}`
++      await saveNote(title, `# ${title}\n\n*Transcribed by Nemesis — review before relying on it.*\n\n${text}\n`)
++      setSavedNote(current => ({ ...current, [file.path]: true }))
++    },
++    [transcripts]
++  )
++
+   const minutes = String(Math.floor(elapsed / 60)).padStart(2, '0')
+   const seconds = String(elapsed % 60).padStart(2, '0')
+ 
+@@ -232,14 +296,46 @@ export function RecorderView() {
+         <h2 className="pb-2 text-sm font-medium">Saved recordings</h2>
+         {recordings.length ? (
+           <ul className="flex flex-col gap-1.5">
+-            {recordings.map(file => (
+-              <li className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2" key={file.path}>
+-                <span className="truncate text-sm">{file.name}</span>
+-                <Button onClick={() => void play(file)} size="sm" variant="outline">
+-                  {playing?.path === file.path ? 'Hide' : 'Play'}
+-                </Button>
+-              </li>
+-            ))}
++            {recordings.map(file => {
++              const status = transcribingStatus[file.path]
++              const transcript = transcripts[file.path]
++
++              return (
++                <li className="flex flex-col gap-2 rounded-md border border-border px-3 py-2" key={file.path}>
++                  <div className="flex items-center justify-between gap-3">
++                    <span className="truncate text-sm">{file.name}</span>
++                    <div className="flex shrink-0 items-center gap-2">
++                      <Button
++                        disabled={Boolean(status)}
++                        onClick={() => void transcribe(file)}
++                        size="sm"
++                        variant="outline"
++                      >
++                        {status ?? (transcript ? 'Re-transcribe' : 'Transcribe')}
++                      </Button>
++                      <Button onClick={() => void play(file)} size="sm" variant="outline">
++                        {playing?.path === file.path ? 'Hide' : 'Play'}
++                      </Button>
++                    </div>
++                  </div>
++                  {transcript && (
++                    <div className="rounded-md bg-muted/40 p-3">
++                      <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{transcript}</p>
++                      <div className="mt-2 flex items-center gap-2">
++                        <Button
++                          disabled={savedNote[file.path]}
++                          onClick={() => void saveTranscriptNote(file)}
++                          size="sm"
++                          variant="secondary"
++                        >
++                          {savedNote[file.path] ? 'Saved to Library ✓' : 'Save as note'}
++                        </Button>
++                      </div>
++                    </div>
++                  )}
++                </li>
++              )
++            })}
+           </ul>
+         ) : (
+           <EmptyState
+@@ -251,8 +347,8 @@ export function RecorderView() {
+         {playing && <audio autoPlay className="mt-3 w-full" controls src={playing.src} />}
+         <p className="pt-4 text-[11px] leading-relaxed text-muted-foreground">
+           Recording other people may require their consent where you live — check your school&rsquo;s policy. Nemesis
+-          never records on its own, never hides the indicator, and transcription (turning lectures into notes) lands in
+-          a coming update.
++          never records on its own and never hides the indicator. Transcription runs on your device (the first run
++          downloads a small model); the text is a draft — review it before you rely on it.
+         </p>
+       </section>
+     </div>
+diff --git a/apps/desktop/src/app/recorder/transcribe.js b/apps/desktop/src/app/recorder/transcribe.js
+new file mode 100644
+index 0000000..9197b7c
+--- /dev/null
++++ b/apps/desktop/src/app/recorder/transcribe.js
+@@ -0,0 +1,53 @@
++// On-device transcription for the Recorder — Whisper via transformers.js (@huggingface/
++// transformers, MIT). The model (whisper-tiny.en, ~40MB) downloads once from the Hugging
++// Face hub on first use and is cached by the browser; audio never leaves the machine for
++// the transcription itself. WASM runs single-threaded (a file:// packaged app isn't
++// cross-origin isolated, so SharedArrayBuffer/multi-thread is unavailable — tiny.en is
++// still real-time-ish on Apple Silicon). base.en is the documented accuracy upgrade.
++import { pipeline, env } from '@huggingface/transformers';
++// Fetch models from the hub (we don't ship them in the bundle).
++env.allowLocalModels = false;
++// Force single-threaded WASM — no SAB under file://.
++if (env.backends.onnx.wasm) {
++    env.backends.onnx.wasm.numThreads = 1;
++}
++const MODEL_ID = 'Xenova/whisper-tiny.en';
++let transcriberPromise = null;
++function getTranscriber(onStatus) {
++    if (!transcriberPromise) {
++        transcriberPromise = pipeline('automatic-speech-recognition', MODEL_ID, {
++            progress_callback: (info) => {
++                if (info.status === 'progress') {
++                    onStatus?.({ progress: info.progress, stage: 'loading-model' });
++                }
++            }
++        });
++    }
++    return transcriberPromise;
++}
++/** Decode any browser-playable audio (webm/opus here) to 16 kHz mono Float32 — Whisper's input. */
++async function decodeTo16kMono(arrayBuffer) {
++    const ctx = new AudioContext();
++    try {
++        const decoded = await ctx.decodeAudioData(arrayBuffer);
++        const frames = Math.ceil(decoded.duration * 16_000);
++        const offline = new OfflineAudioContext(1, frames, 16_000);
++        const source = offline.createBufferSource();
++        source.buffer = decoded;
++        source.connect(offline.destination);
++        source.start();
++        const rendered = await offline.startRendering();
++        return rendered.getChannelData(0);
++    }
++    finally {
++        void ctx.close();
++    }
++}
++export async function transcribeAudio(arrayBuffer, onStatus) {
++    const transcriber = await getTranscriber(onStatus);
++    onStatus?.({ stage: 'decoding' });
++    const audio = await decodeTo16kMono(arrayBuffer);
++    onStatus?.({ stage: 'transcribing' });
++    const result = await transcriber(audio, { chunk_length_s: 30, return_timestamps: false, stride_length_s: 5 });
++    return (result.text || '').trim();
++}
+diff --git a/apps/desktop/src/app/recorder/transcribe.ts b/apps/desktop/src/app/recorder/transcribe.ts
+new file mode 100644
+index 0000000..51168e7
+--- /dev/null
++++ b/apps/desktop/src/app/recorder/transcribe.ts
+@@ -0,0 +1,69 @@
++// On-device transcription for the Recorder — Whisper via transformers.js (@huggingface/
++// transformers, MIT). The model (whisper-tiny.en, ~40MB) downloads once from the Hugging
++// Face hub on first use and is cached by the browser; audio never leaves the machine for
++// the transcription itself. WASM runs single-threaded (a file:// packaged app isn't
++// cross-origin isolated, so SharedArrayBuffer/multi-thread is unavailable — tiny.en is
++// still real-time-ish on Apple Silicon). base.en is the documented accuracy upgrade.
++import { pipeline, env } from '@huggingface/transformers'
++
++// Fetch models from the hub (we don't ship them in the bundle).
++env.allowLocalModels = false
++// Force single-threaded WASM — no SAB under file://.
++if (env.backends.onnx.wasm) {
++  env.backends.onnx.wasm.numThreads = 1
++}
++
++const MODEL_ID = 'Xenova/whisper-tiny.en'
++
++export type TranscribeStatus = { stage: 'loading-model' | 'decoding' | 'transcribing'; progress?: number }
++
++type Transcriber = (audio: Float32Array, opts: object) => Promise<{ text: string }>
++
++let transcriberPromise: Promise<Transcriber> | null = null
++
++function getTranscriber(onStatus?: (s: TranscribeStatus) => void): Promise<Transcriber> {
++  if (!transcriberPromise) {
++    transcriberPromise = pipeline('automatic-speech-recognition', MODEL_ID, {
++      progress_callback: (info: { status?: string; progress?: number }) => {
++        if (info.status === 'progress') {
++          onStatus?.({ progress: info.progress, stage: 'loading-model' })
++        }
++      }
++    }) as unknown as Promise<Transcriber>
++  }
++
++  return transcriberPromise
++}
++
++/** Decode any browser-playable audio (webm/opus here) to 16 kHz mono Float32 — Whisper's input. */
++async function decodeTo16kMono(arrayBuffer: ArrayBuffer): Promise<Float32Array> {
++  const ctx = new AudioContext()
++
++  try {
++    const decoded = await ctx.decodeAudioData(arrayBuffer)
++    const frames = Math.ceil(decoded.duration * 16_000)
++    const offline = new OfflineAudioContext(1, frames, 16_000)
++    const source = offline.createBufferSource()
++    source.buffer = decoded
++    source.connect(offline.destination)
++    source.start()
++    const rendered = await offline.startRendering()
++
++    return rendered.getChannelData(0)
++  } finally {
++    void ctx.close()
++  }
++}
++
++export async function transcribeAudio(
++  arrayBuffer: ArrayBuffer,
++  onStatus?: (s: TranscribeStatus) => void
++): Promise<string> {
++  const transcriber = await getTranscriber(onStatus)
++  onStatus?.({ stage: 'decoding' })
++  const audio = await decodeTo16kMono(arrayBuffer)
++  onStatus?.({ stage: 'transcribing' })
++  const result = await transcriber(audio, { chunk_length_s: 30, return_timestamps: false, stride_length_s: 5 })
++
++  return (result.text || '').trim()
++}
+diff --git a/apps/desktop/vite.config.ts b/apps/desktop/vite.config.ts
+index 7b5e162..bcfc6fb 100644
+--- a/apps/desktop/vite.config.ts
++++ b/apps/desktop/vite.config.ts
+@@ -28,6 +28,10 @@ const fsAllow = [
+ export default defineConfig({
+   base: './',
+   plugins: [react(), tailwindcss()],
++  // transformers.js (Whisper transcription) self-loads its WASM at runtime — don't let
++  // Vite pre-bundle it, and let it resolve its own browser build (dist/transformers.web.js,
++  // which avoids the Node-native onnxruntime-node).
++  optimizeDeps: { exclude: ['@huggingface/transformers'] },
+   css: {
+     // Pin an explicit (empty) PostCSS config. Tailwind is handled entirely by
+     // `@tailwindcss/vite`, so the renderer needs no PostCSS plugins — and
+diff --git a/package-lock.json b/package-lock.json
+index 8038515..1e05d41 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -74,6 +74,7 @@
+         "@dnd-kit/sortable": "^10.0.0",
+         "@dnd-kit/utilities": "^3.2.2",
+         "@hermes/shared": "file:../shared",
++        "@huggingface/transformers": "^4.2.0",
+         "@icons-pack/react-simple-icons": "=13.11.1",
+         "@lezer/highlight": "^1.2.3",
+         "@nanostores/react": "^1.1.0",
+@@ -2671,6 +2672,34 @@
+       "resolved": "apps/shared",
+       "link": true
+     },
++    "node_modules/@huggingface/jinja": {
++      "version": "0.5.9",
++      "resolved": "https://registry.npmjs.org/@huggingface/jinja/-/jinja-0.5.9.tgz",
++      "integrity": "sha512-uWTG+l3VJRsl7EXxYizuL3P+cCPoc3cRqbWWRcQN0FhejRfbdq0RNhCmbY/YDtnTcz9icdLYuLDjsnz4d8JMuw==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@huggingface/tokenizers": {
++      "version": "0.1.3",
++      "resolved": "https://registry.npmjs.org/@huggingface/tokenizers/-/tokenizers-0.1.3.tgz",
++      "integrity": "sha512-8rF/RRT10u+kn7YuUbUg0OF30K8rjTc78aHpxT+qJ1uWSqxT1MHi8+9ltwYfkFYJzT/oS+qw3JVfHtNMGAdqyA==",
++      "license": "Apache-2.0"
++    },
++    "node_modules/@huggingface/transformers": {
++      "version": "4.2.0",
++      "resolved": "https://registry.npmjs.org/@huggingface/transformers/-/transformers-4.2.0.tgz",
++      "integrity": "sha512-8BRCoBMH0XsWaEIamuR0LrJGAfftgHAfb2Vrffy0VKlSAE/MnUJ5/h/zTfEP3fDIft+nk7TqB8xXEyABGitBjQ==",
++      "license": "Apache-2.0",
++      "dependencies": {
++        "@huggingface/jinja": "^0.5.6",
++        "@huggingface/tokenizers": "^0.1.3",
++        "onnxruntime-node": "1.24.3",
++        "onnxruntime-web": "1.26.0-dev.20260416-b7804b056c",
++        "sharp": "^0.34.5"
++      }
++    },
+     "node_modules/@humanfs/core": {
+       "version": "0.19.2",
+       "resolved": "https://registry.npmjs.org/@humanfs/core/-/core-0.19.2.tgz",
+@@ -2763,6 +2792,471 @@
+         "react": "^16.13 || ^17 || ^18 || ^19"
+       }
+     },
++    "node_modules/@img/colour": {
++      "version": "1.1.0",
++      "resolved": "https://registry.npmjs.org/@img/colour/-/colour-1.1.0.tgz",
++      "integrity": "sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@img/sharp-darwin-arm64": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-darwin-arm64/-/sharp-darwin-arm64-0.34.5.tgz",
++      "integrity": "sha512-imtQ3WMJXbMY4fxb/Ndp6HBTNVtWCUI0WdobyheGf5+ad6xX8VIDO8u2xE4qc/fr08CKG/7dDseFtn6M6g/r3w==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-darwin-arm64": "1.2.4"
++      }
++    },
++    "node_modules/@img/sharp-darwin-x64": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-darwin-x64/-/sharp-darwin-x64-0.34.5.tgz",
++      "integrity": "sha512-YNEFAF/4KQ/PeW0N+r+aVVsoIY0/qxxikF2SWdp+NRkmMB7y9LBZAVqQ4yhGCm/H3H270OSykqmQMKLBhBJDEw==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-darwin-x64": "1.2.4"
++      }
++    },
++    "node_modules/@img/sharp-libvips-darwin-arm64": {
++      "version": "1.2.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.2.4.tgz",
++      "integrity": "sha512-zqjjo7RatFfFoP0MkQ51jfuFZBnVE2pRiaydKJ1G/rHZvnsrHAOcQALIi9sA5co5xenQdTugCvtb1cuf78Vf4g==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-darwin-x64": {
++      "version": "1.2.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-darwin-x64/-/sharp-libvips-darwin-x64-1.2.4.tgz",
++      "integrity": "sha512-1IOd5xfVhlGwX+zXv2N93k0yMONvUlANylbJw1eTah8K/Jtpi15KC+WSiaX/nBmbm2HxRM1gZ0nSdjSsrZbGKg==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-arm": {
++      "version": "1.2.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-arm/-/sharp-libvips-linux-arm-1.2.4.tgz",
++      "integrity": "sha512-bFI7xcKFELdiNCVov8e44Ia4u2byA+l3XtsAj+Q8tfCwO6BQ8iDojYdvoPMqsKDkuoOo+X6HZA0s0q11ANMQ8A==",
++      "cpu": [
++        "arm"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-arm64": {
++      "version": "1.2.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-arm64/-/sharp-libvips-linux-arm64-1.2.4.tgz",
++      "integrity": "sha512-excjX8DfsIcJ10x1Kzr4RcWe1edC9PquDRRPx3YVCvQv+U5p7Yin2s32ftzikXojb1PIFc/9Mt28/y+iRklkrw==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-ppc64": {
++      "version": "1.2.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-ppc64/-/sharp-libvips-linux-ppc64-1.2.4.tgz",
++      "integrity": "sha512-FMuvGijLDYG6lW+b/UvyilUWu5Ayu+3r2d1S8notiGCIyYU/76eig1UfMmkZ7vwgOrzKzlQbFSuQfgm7GYUPpA==",
++      "cpu": [
++        "ppc64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-riscv64": {
++      "version": "1.2.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-riscv64/-/sharp-libvips-linux-riscv64-1.2.4.tgz",
++      "integrity": "sha512-oVDbcR4zUC0ce82teubSm+x6ETixtKZBh/qbREIOcI3cULzDyb18Sr/Wcyx7NRQeQzOiHTNbZFF1UwPS2scyGA==",
++      "cpu": [
++        "riscv64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-s390x": {
++      "version": "1.2.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-s390x/-/sharp-libvips-linux-s390x-1.2.4.tgz",
++      "integrity": "sha512-qmp9VrzgPgMoGZyPvrQHqk02uyjA0/QrTO26Tqk6l4ZV0MPWIW6LTkqOIov+J1yEu7MbFQaDpwdwJKhbJvuRxQ==",
++      "cpu": [
++        "s390x"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linux-x64": {
++      "version": "1.2.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.2.4.tgz",
++      "integrity": "sha512-tJxiiLsmHc9Ax1bz3oaOYBURTXGIRDODBqhveVHonrHJ9/+k89qbLl0bcJns+e4t4rvaNBxaEZsFtSfAdquPrw==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linuxmusl-arm64": {
++      "version": "1.2.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linuxmusl-arm64/-/sharp-libvips-linuxmusl-arm64-1.2.4.tgz",
++      "integrity": "sha512-FVQHuwx1IIuNow9QAbYUzJ+En8KcVm9Lk5+uGUQJHaZmMECZmOlix9HnH7n1TRkXMS0pGxIJokIVB9SuqZGGXw==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-libvips-linuxmusl-x64": {
++      "version": "1.2.4",
++      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linuxmusl-x64/-/sharp-libvips-linuxmusl-x64-1.2.4.tgz",
++      "integrity": "sha512-+LpyBk7L44ZIXwz/VYfglaX/okxezESc6UxDSoyo2Ks6Jxc4Y7sGjpgU9s4PMgqgjj1gZCylTieNamqA1MF7Dg==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-linux-arm": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-arm/-/sharp-linux-arm-0.34.5.tgz",
++      "integrity": "sha512-9dLqsvwtg1uuXBGZKsxem9595+ujv0sJ6Vi8wcTANSFpwV/GONat5eCkzQo/1O6zRIkh0m/8+5BjrRr7jDUSZw==",
++      "cpu": [
++        "arm"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-arm": "1.2.4"
++      }
++    },
++    "node_modules/@img/sharp-linux-arm64": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-arm64/-/sharp-linux-arm64-0.34.5.tgz",
++      "integrity": "sha512-bKQzaJRY/bkPOXyKx5EVup7qkaojECG6NLYswgktOZjaXecSAeCWiZwwiFf3/Y+O1HrauiE3FVsGxFg8c24rZg==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-arm64": "1.2.4"
++      }
++    },
++    "node_modules/@img/sharp-linux-ppc64": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-ppc64/-/sharp-linux-ppc64-0.34.5.tgz",
++      "integrity": "sha512-7zznwNaqW6YtsfrGGDA6BRkISKAAE1Jo0QdpNYXNMHu2+0dTrPflTLNkpc8l7MUP5M16ZJcUvysVWWrMefZquA==",
++      "cpu": [
++        "ppc64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-ppc64": "1.2.4"
++      }
++    },
++    "node_modules/@img/sharp-linux-riscv64": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-riscv64/-/sharp-linux-riscv64-0.34.5.tgz",
++      "integrity": "sha512-51gJuLPTKa7piYPaVs8GmByo7/U7/7TZOq+cnXJIHZKavIRHAP77e3N2HEl3dgiqdD/w0yUfiJnII77PuDDFdw==",
++      "cpu": [
++        "riscv64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-riscv64": "1.2.4"
++      }
++    },
++    "node_modules/@img/sharp-linux-s390x": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-s390x/-/sharp-linux-s390x-0.34.5.tgz",
++      "integrity": "sha512-nQtCk0PdKfho3eC5MrbQoigJ2gd1CgddUMkabUj+rBevs8tZ2cULOx46E7oyX+04WGfABgIwmMC0VqieTiR4jg==",
++      "cpu": [
++        "s390x"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-s390x": "1.2.4"
++      }
++    },
++    "node_modules/@img/sharp-linux-x64": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linux-x64/-/sharp-linux-x64-0.34.5.tgz",
++      "integrity": "sha512-MEzd8HPKxVxVenwAa+JRPwEC7QFjoPWuS5NZnBt6B3pu7EG2Ge0id1oLHZpPJdn3OQK+BQDiw9zStiHBTJQQQQ==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linux-x64": "1.2.4"
++      }
++    },
++    "node_modules/@img/sharp-linuxmusl-arm64": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linuxmusl-arm64/-/sharp-linuxmusl-arm64-0.34.5.tgz",
++      "integrity": "sha512-fprJR6GtRsMt6Kyfq44IsChVZeGN97gTD331weR1ex1c1rypDEABN6Tm2xa1wE6lYb5DdEnk03NZPqA7Id21yg==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linuxmusl-arm64": "1.2.4"
++      }
++    },
++    "node_modules/@img/sharp-linuxmusl-x64": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-linuxmusl-x64/-/sharp-linuxmusl-x64-0.34.5.tgz",
++      "integrity": "sha512-Jg8wNT1MUzIvhBFxViqrEhWDGzqymo3sV7z7ZsaWbZNDLXRJZoRGrjulp60YYtV4wfY8VIKcWidjojlLcWrd8Q==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-libvips-linuxmusl-x64": "1.2.4"
++      }
++    },
++    "node_modules/@img/sharp-wasm32": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-wasm32/-/sharp-wasm32-0.34.5.tgz",
++      "integrity": "sha512-OdWTEiVkY2PHwqkbBI8frFxQQFekHaSSkUIJkwzclWZe64O1X4UlUjqqqLaPbUpMOQk6FBu/HtlGXNblIs0huw==",
++      "cpu": [
++        "wasm32"
++      ],
++      "license": "Apache-2.0 AND LGPL-3.0-or-later AND MIT",
++      "optional": true,
++      "dependencies": {
++        "@emnapi/runtime": "^1.7.0"
++      },
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-win32-arm64": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-win32-arm64/-/sharp-win32-arm64-0.34.5.tgz",
++      "integrity": "sha512-WQ3AgWCWYSb2yt+IG8mnC6Jdk9Whs7O0gxphblsLvdhSpSTtmu69ZG1Gkb6NuvxsNACwiPV6cNSZNzt0KPsw7g==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "Apache-2.0 AND LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-win32-ia32": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-win32-ia32/-/sharp-win32-ia32-0.34.5.tgz",
++      "integrity": "sha512-FV9m/7NmeCmSHDD5j4+4pNI8Cp3aW+JvLoXcTUo0IqyjSfAZJ8dIUmijx1qaJsIiU+Hosw6xM5KijAWRJCSgNg==",
++      "cpu": [
++        "ia32"
++      ],
++      "license": "Apache-2.0 AND LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
++    "node_modules/@img/sharp-win32-x64": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/@img/sharp-win32-x64/-/sharp-win32-x64-0.34.5.tgz",
++      "integrity": "sha512-+29YMsqY2/9eFEiW93eqWnuLcWcufowXewwSNIT6UwZdUUCrM3oFjMWH/Z6/TMmb4hlFenmfAVbpWeup2jryCw==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0 AND LGPL-3.0-or-later",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      }
++    },
+     "node_modules/@isaacs/fs-minipass": {
+       "version": "4.0.1",
+       "resolved": "https://registry.npmjs.org/@isaacs/fs-minipass/-/fs-minipass-4.0.1.tgz",
+@@ -3275,6 +3769,63 @@
+         "node": ">=14.18.0"
+       }
+     },
++    "node_modules/@protobufjs/aspromise": {
++      "version": "1.1.2",
++      "resolved": "https://registry.npmjs.org/@protobufjs/aspromise/-/aspromise-1.1.2.tgz",
++      "integrity": "sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==",
++      "license": "BSD-3-Clause"
++    },
++    "node_modules/@protobufjs/base64": {
++      "version": "1.1.2",
++      "resolved": "https://registry.npmjs.org/@protobufjs/base64/-/base64-1.1.2.tgz",
++      "integrity": "sha512-AZkcAA5vnN/v4PDqKyMR5lx7hZttPDgClv83E//FMNhR2TMcLUhfRUBHCmSl0oi9zMgDDqRUJkSxO3wm85+XLg==",
++      "license": "BSD-3-Clause"
++    },
++    "node_modules/@protobufjs/codegen": {
++      "version": "2.0.5",
++      "resolved": "https://registry.npmjs.org/@protobufjs/codegen/-/codegen-2.0.5.tgz",
++      "integrity": "sha512-zgXFLzW3Ap33e6d0Wlj4MGIm6Ce8O89n/apUaGNB/jx+hw+ruWEp7EwGUshdLKVRCxZW12fp9r40E1mQrf/34g==",
++      "license": "BSD-3-Clause"
++    },
++    "node_modules/@protobufjs/eventemitter": {
++      "version": "1.1.1",
++      "resolved": "https://registry.npmjs.org/@protobufjs/eventemitter/-/eventemitter-1.1.1.tgz",
++      "integrity": "sha512-vW1GmwMZNnL+gMRaovlh9yZX74kc+TTU3FObkkurpMaRtBfLP3ldjS9KQWlwZgraRE0+dheEEoAxdzcJQ8eXZg==",
++      "license": "BSD-3-Clause"
++    },
++    "node_modules/@protobufjs/fetch": {
++      "version": "1.1.1",
++      "resolved": "https://registry.npmjs.org/@protobufjs/fetch/-/fetch-1.1.1.tgz",
++      "integrity": "sha512-GpptLrs57adMSuHi3VNj0mAF8dwh36LMaYF6XyJ6JMWlVsc+t42tm1HSEDmOs3A8fC9yyeisgLhsTVQokOZ0zw==",
++      "license": "BSD-3-Clause",
++      "dependencies": {
++        "@protobufjs/aspromise": "^1.1.1"
++      }
++    },
++    "node_modules/@protobufjs/float": {
++      "version": "1.0.2",
++      "resolved": "https://registry.npmjs.org/@protobufjs/float/-/float-1.0.2.tgz",
++      "integrity": "sha512-Ddb+kVXlXst9d+R9PfTIxh1EdNkgoRe5tOX6t01f1lYWOvJnSPDBlG241QLzcyPdoNTsblLUdujGSE4RzrTZGQ==",
++      "license": "BSD-3-Clause"
++    },
++    "node_modules/@protobufjs/path": {
++      "version": "1.1.2",
++      "resolved": "https://registry.npmjs.org/@protobufjs/path/-/path-1.1.2.tgz",
++      "integrity": "sha512-6JOcJ5Tm08dOHAbdR3GrvP+yUUfkjG5ePsHYczMFLq3ZmMkAD98cDgcT2iA1lJ9NVwFd4tH/iSSoe44YWkltEA==",
++      "license": "BSD-3-Clause"
++    },
++    "node_modules/@protobufjs/pool": {
++      "version": "1.1.0",
++      "resolved": "https://registry.npmjs.org/@protobufjs/pool/-/pool-1.1.0.tgz",
++      "integrity": "sha512-0kELaGSIDBKvcgS4zkjz1PeddatrjYcmMWOlAuAPwAeccUrPHdUqo/J6LiymHHEiJT5NrF1UVwxY14f+fy4WQw==",
++      "license": "BSD-3-Clause"
++    },
++    "node_modules/@protobufjs/utf8": {
++      "version": "1.1.2",
++      "resolved": "https://registry.npmjs.org/@protobufjs/utf8/-/utf8-1.1.2.tgz",
++      "integrity": "sha512-b1UQwcEZ4yCnMCD8DAL1VlbvBJE9/IX4FTIp7BG1xYpf29SLazLSrqUkj4w7Y5y7cCVP6E5tcqqcI0xemPkHug==",
++      "license": "BSD-3-Clause"
++    },
+     "node_modules/@radix-ui/number": {
+       "version": "1.1.2",
+       "resolved": "https://registry.npmjs.org/@radix-ui/number/-/number-1.1.2.tgz",
+@@ -6405,7 +6956,6 @@
+       "version": "24.13.2",
+       "resolved": "https://registry.npmjs.org/@types/node/-/node-24.13.2.tgz",
+       "integrity": "sha512-fRa09kZTgu8o71KFcDjUFuc7F+dEbZYZmkI0mg5YBTRs0yMKjYHsq/c0urDKeDb+D5qVgXOdFcuu+DZPKOITwA==",
+-      "devOptional": true,
+       "license": "MIT",
+       "dependencies": {
+         "undici-types": "~7.18.0"
+@@ -7008,6 +7558,15 @@
+         "acorn": "^6.0.0 || ^7.0.0 || ^8.0.0"
+       }
+     },
++    "node_modules/adm-zip": {
++      "version": "0.5.18",
++      "resolved": "https://registry.npmjs.org/adm-zip/-/adm-zip-0.5.18.tgz",
++      "integrity": "sha512-ufJnssQGbxzLNS1Ho9bCtX4rQKCCvoVuDLHoJyc3F9dOGDB4BkWs2Ci0kv53lqocAEQ/Cbi+I2XCsNYGqVYqng==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=12.0"
++      }
++    },
+     "node_modules/agent-base": {
+       "version": "7.1.4",
+       "resolved": "https://registry.npmjs.org/agent-base/-/agent-base-7.1.4.tgz",
+@@ -7719,9 +8278,7 @@
+       "resolved": "https://registry.npmjs.org/boolean/-/boolean-3.2.0.tgz",
+       "integrity": "sha512-d0II/GO9uf9lfUHH2BQsjxzRJZBdsjgsBiW4BvhWk/3qoKwQFjIDVN19PfX8F2D/r9PCMTtLWjYVCFrpeYUzsw==",
+       "deprecated": "Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.",
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true
++      "license": "MIT"
+     },
+     "node_modules/brace-expansion": {
+       "version": "5.0.6",
+@@ -9295,7 +9852,6 @@
+       "version": "1.1.4",
+       "resolved": "https://registry.npmjs.org/define-data-property/-/define-data-property-1.1.4.tgz",
+       "integrity": "sha512-rBMvIzlpA8v6E+SJZoo++HAYqsLrkg7MSfIinMPFhmkorw7X+dOXVJQs+QT69zGkzMyfDnIMN2Wid1+NbL3T+A==",
+-      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "es-define-property": "^1.0.0",
+@@ -9313,7 +9869,6 @@
+       "version": "1.2.1",
+       "resolved": "https://registry.npmjs.org/define-properties/-/define-properties-1.2.1.tgz",
+       "integrity": "sha512-8QmQKqEASLd5nx0U1B1okLElbUuuttJ/AnYmRXbbbGDWh6uS208EjD4Xqq/I9wK7u0v6O08XhTWnt5XtEbR6Dg==",
+-      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "define-data-property": "^1.0.1",
+@@ -9368,9 +9923,7 @@
+       "version": "2.1.0",
+       "resolved": "https://registry.npmjs.org/detect-node/-/detect-node-2.1.0.tgz",
+       "integrity": "sha512-T0NIuQpnTvFDATNuHN5roPwSBG83rFsuO+MXXH9/3N1eFbn4wcPjttvjMLEPWJ0RGUYgQE7cGgS3tNxbqCGM7g==",
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true
++      "license": "MIT"
+     },
+     "node_modules/detect-node-es": {
+       "version": "1.1.0",
+@@ -10225,7 +10778,6 @@
+       "version": "1.0.1",
+       "resolved": "https://registry.npmjs.org/es-define-property/-/es-define-property-1.0.1.tgz",
+       "integrity": "sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==",
+-      "dev": true,
+       "license": "MIT",
+       "engines": {
+         "node": ">= 0.4"
+@@ -10235,7 +10787,6 @@
+       "version": "1.3.0",
+       "resolved": "https://registry.npmjs.org/es-errors/-/es-errors-1.3.0.tgz",
+       "integrity": "sha512-Zf5H2Kxt2xjTvbJvP2ZWLEICxA6j+hAmMzIlypy4xcBg1vKVnx89Wy0GbS+kf5cwCVFFzdCFh2XSCFNULS6csw==",
+-      "dev": true,
+       "license": "MIT",
+       "engines": {
+         "node": ">= 0.4"
+@@ -10353,9 +10904,7 @@
+       "version": "4.1.1",
+       "resolved": "https://registry.npmjs.org/es6-error/-/es6-error-4.1.1.tgz",
+       "integrity": "sha512-Um/+FxMr9CISWh0bi5Zv0iOD+4cFh5qLeks1qhAopKVAJw3drgKbKySikp7wGhDL0HPeaja0P5ULZrxLkniUVg==",
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true
++      "license": "MIT"
+     },
+     "node_modules/esbuild": {
+       "version": "0.28.1",
+@@ -11090,6 +11639,12 @@
+         "node": ">=16"
+       }
+     },
++    "node_modules/flatbuffers": {
++      "version": "25.9.23",
++      "resolved": "https://registry.npmjs.org/flatbuffers/-/flatbuffers-25.9.23.tgz",
++      "integrity": "sha512-MI1qs7Lo4Syw0EOzUl0xjs2lsoeqFku44KpngfIduHBYvzm8h2+7K8YMQh1JtVVVrUvhLpNwqVi4DERegUJhPQ==",
++      "license": "Apache-2.0"
++    },
+     "node_modules/flatted": {
+       "version": "3.4.2",
+       "resolved": "https://registry.npmjs.org/flatted/-/flatted-3.4.2.tgz",
+@@ -11483,9 +12038,7 @@
+       "version": "3.0.0",
+       "resolved": "https://registry.npmjs.org/global-agent/-/global-agent-3.0.0.tgz",
+       "integrity": "sha512-PT6XReJ+D07JvGoxQMkT6qji/jVNfX/h364XHZOWeRzy64sSFr+xJ5OX7LI3b4MPQzdL4H8Y8M0xzPpsVMwA8Q==",
+-      "dev": true,
+       "license": "BSD-3-Clause",
+-      "optional": true,
+       "dependencies": {
+         "boolean": "^3.0.1",
+         "es6-error": "^4.1.1",
+@@ -11515,7 +12068,6 @@
+       "version": "1.0.4",
+       "resolved": "https://registry.npmjs.org/globalthis/-/globalthis-1.0.4.tgz",
+       "integrity": "sha512-DpLKbNU4WylpxJykQujfCcwYWiV/Jhm50Goo0wrVILAv5jOr9d+H+UR3PhSCD2rCCEIg0uc+G+muBTwD54JhDQ==",
+-      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "define-properties": "^1.2.1",
+@@ -11532,7 +12084,6 @@
+       "version": "1.2.0",
+       "resolved": "https://registry.npmjs.org/gopd/-/gopd-1.2.0.tgz",
+       "integrity": "sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==",
+-      "dev": true,
+       "license": "MIT",
+       "engines": {
+         "node": ">= 0.4"
+@@ -11579,6 +12130,12 @@
+       "integrity": "sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A==",
+       "license": "Standard 'no charge' license: https://gsap.com/standard-license."
+     },
++    "node_modules/guid-typescript": {
++      "version": "1.0.9",
++      "resolved": "https://registry.npmjs.org/guid-typescript/-/guid-typescript-1.0.9.tgz",
++      "integrity": "sha512-Y8T4vYhEfwJOTbouREvG+3XDsjr8E3kIr7uf+JZ0BYloFsttiHU0WfvANVsR7TxNUJa/WpCnw/Ino/p+DeBhBQ==",
++      "license": "ISC"
++    },
+     "node_modules/hachure-fill": {
+       "version": "0.5.2",
+       "resolved": "https://registry.npmjs.org/hachure-fill/-/hachure-fill-0.5.2.tgz",
+@@ -11611,7 +12168,6 @@
+       "version": "1.0.2",
+       "resolved": "https://registry.npmjs.org/has-property-descriptors/-/has-property-descriptors-1.0.2.tgz",
+       "integrity": "sha512-55JNKuIW+vq4Ke1BjOTjM2YctQIvCT7GFzHwmfZPGo5wnrgkid0YQtnAleFSqumZm4az3n2BS+erby5ipJdgrg==",
+-      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "es-define-property": "^1.0.0"
+@@ -13186,9 +13742,7 @@
+       "version": "5.0.1",
+       "resolved": "https://registry.npmjs.org/json-stringify-safe/-/json-stringify-safe-5.0.1.tgz",
+       "integrity": "sha512-ZClg6AaYvamvYEE82d3Iyd3vSSIjQ+odgjaTzRuO3s7toCdFKczob2i0zCh7JE8kWn17yvAWhUVxvqGwUalsRA==",
+-      "dev": true,
+-      "license": "ISC",
+-      "optional": true
++      "license": "ISC"
+     },
+     "node_modules/json5": {
+       "version": "2.2.3",
+@@ -13639,6 +14193,12 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/long": {
++      "version": "5.3.2",
++      "resolved": "https://registry.npmjs.org/long/-/long-5.3.2.tgz",
++      "integrity": "sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==",
++      "license": "Apache-2.0"
++    },
+     "node_modules/longest-streak": {
+       "version": "3.1.0",
+       "resolved": "https://registry.npmjs.org/longest-streak/-/longest-streak-3.1.0.tgz",
+@@ -13735,9 +14295,7 @@
+       "version": "3.0.0",
+       "resolved": "https://registry.npmjs.org/matcher/-/matcher-3.0.0.tgz",
+       "integrity": "sha512-OkeDaAZ/bQCxeFAozM55PKcKU0yJMPGifLwV4Qgjitu+5MoAfSQN4lsLJeXZ1b8w0x+/Emda6MZgXS1jvsapng==",
+-      "dev": true,
+       "license": "MIT",
+-      "optional": true,
+       "dependencies": {
+         "escape-string-regexp": "^4.0.0"
+       },
+@@ -15168,7 +15726,6 @@
+       "version": "1.1.1",
+       "resolved": "https://registry.npmjs.org/object-keys/-/object-keys-1.1.1.tgz",
+       "integrity": "sha512-NuAESUOUMrlIXOfHKzD6bpPu3tYt3xvjNdRIQ+FeT0lNb4K8WR70CaDxhuNguS2XG+GjkyMwOzsN5ZktImfhLA==",
+-      "dev": true,
+       "license": "MIT",
+       "engines": {
+         "node": ">= 0.4"
+@@ -15305,6 +15862,49 @@
+         "regex-recursion": "^6.0.2"
+       }
+     },
++    "node_modules/onnxruntime-common": {
++      "version": "1.24.3",
++      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.3.tgz",
++      "integrity": "sha512-GeuPZO6U/LBJXvwdaqHbuUmoXiEdeCjWi/EG7Y1HNnDwJYuk6WUbNXpF6luSUY8yASul3cmUlLGrCCL1ZgVXqA==",
++      "license": "MIT"
++    },
++    "node_modules/onnxruntime-node": {
++      "version": "1.24.3",
++      "resolved": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.24.3.tgz",
++      "integrity": "sha512-JH7+czbc8ALA819vlTgcV+Q214/+VjGeBHDjX81+ZCD0PCVCIFGFNtT0V4sXG/1JXypKPgScQcB3ij/hk3YnTg==",
++      "hasInstallScript": true,
++      "license": "MIT",
++      "os": [
++        "win32",
++        "darwin",
++        "linux"
++      ],
++      "dependencies": {
++        "adm-zip": "^0.5.16",
++        "global-agent": "^3.0.0",
++        "onnxruntime-common": "1.24.3"
++      }
++    },
++    "node_modules/onnxruntime-web": {
++      "version": "1.26.0-dev.20260416-b7804b056c",
++      "resolved": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.26.0-dev.20260416-b7804b056c.tgz",
++      "integrity": "sha512-MD6Ss4GSpQBo6zqoJzyT9LRbKYs7x/JVN23FT24EcEvlqF4VuzPOeH6X38orZPKHQDbprn7K+SBpu0/mj2CQiw==",
++      "license": "MIT",
++      "dependencies": {
++        "flatbuffers": "^25.1.24",
++        "guid-typescript": "^1.0.9",
++        "long": "^5.2.3",
++        "onnxruntime-common": "1.24.0-dev.20251116-b39e144322",
++        "platform": "^1.3.6",
++        "protobufjs": "^7.2.4"
++      }
++    },
++    "node_modules/onnxruntime-web/node_modules/onnxruntime-common": {
++      "version": "1.24.0-dev.20251116-b39e144322",
++      "resolved": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.24.0-dev.20251116-b39e144322.tgz",
++      "integrity": "sha512-BOoomdHYmNRL5r4iQ4bMvsl2t0/hzVQ3OM3PHD0gxeXu1PmggqBv3puZicEUVOA3AtHHYmqZtjMj9FOfGrATTw==",
++      "license": "MIT"
++    },
+     "node_modules/optionator": {
+       "version": "0.9.4",
+       "resolved": "https://registry.npmjs.org/optionator/-/optionator-0.9.4.tgz",
+@@ -15583,6 +16183,12 @@
+         "url": "https://paulmillr.com/funding/"
+       }
+     },
++    "node_modules/platform": {
++      "version": "1.3.6",
++      "resolved": "https://registry.npmjs.org/platform/-/platform-1.3.6.tgz",
++      "integrity": "sha512-fnWVljUchTro6RiCFvCXBbNhJc2NijN7oIQxbwsyL0buWJPG85v81ehlHI9fXrJsMNgTofEoWIQeClKpgxFLrg==",
++      "license": "MIT"
++    },
+     "node_modules/plist": {
+       "version": "3.1.0",
+       "resolved": "https://registry.npmjs.org/plist/-/plist-3.1.0.tgz",
+@@ -15893,6 +16499,29 @@
+         "url": "https://github.com/sponsors/wooorm"
+       }
+     },
++    "node_modules/protobufjs": {
++      "version": "7.6.5",
++      "resolved": "https://registry.npmjs.org/protobufjs/-/protobufjs-7.6.5.tgz",
++      "integrity": "sha512-/FPD0nUc9jH6rfFjji9IBqOz4pcSE3CsT1m7Ep6Mdb0LxSUMj8hgl6GomOvZzpNpAqqGaXA0P3VSrZLFzIhQrw==",
++      "hasInstallScript": true,
++      "license": "BSD-3-Clause",
++      "dependencies": {
++        "@protobufjs/aspromise": "^1.1.2",
++        "@protobufjs/base64": "^1.1.2",
++        "@protobufjs/codegen": "^2.0.5",
++        "@protobufjs/eventemitter": "^1.1.1",
++        "@protobufjs/fetch": "^1.1.1",
++        "@protobufjs/float": "^1.0.2",
++        "@protobufjs/path": "^1.1.2",
++        "@protobufjs/pool": "^1.1.0",
++        "@protobufjs/utf8": "^1.1.1",
++        "@types/node": ">=13.7.0",
++        "long": "^5.3.2"
++      },
++      "engines": {
++        "node": ">=12.0.0"
++      }
++    },
+     "node_modules/proxy-from-env": {
+       "version": "2.1.0",
+       "resolved": "https://registry.npmjs.org/proxy-from-env/-/proxy-from-env-2.1.0.tgz",
+@@ -16959,9 +17588,7 @@
+       "version": "2.15.4",
+       "resolved": "https://registry.npmjs.org/roarr/-/roarr-2.15.4.tgz",
+       "integrity": "sha512-CHhPh+UNHD2GTXNYhPWLnU8ONHdI+5DI+4EYIAOaiD63rHeYlZvyh8P+in5999TTSFgUYuKUAjzRI4mdh/p+2A==",
+-      "dev": true,
+       "license": "BSD-3-Clause",
+-      "optional": true,
+       "dependencies": {
+         "boolean": "^3.0.1",
+         "detect-node": "^2.0.4",
+@@ -17204,17 +17831,13 @@
+       "version": "1.0.0",
+       "resolved": "https://registry.npmjs.org/semver-compare/-/semver-compare-1.0.0.tgz",
+       "integrity": "sha512-YM3/ITh2MJ5MtzaM429anh+x2jiLVjqILF4m4oyQB18W7Ggea7BfqdH/wGMK7dDiMghv/6WG7znWMwUDzJiXow==",
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true
++      "license": "MIT"
+     },
+     "node_modules/serialize-error": {
+       "version": "7.0.1",
+       "resolved": "https://registry.npmjs.org/serialize-error/-/serialize-error-7.0.1.tgz",
+       "integrity": "sha512-8I8TjW5KMOKsZQTvoxjuSIa7foAwPWGOts+6o7sgjz41/qMD9VQHEDxi6PBvK2l0MXUmqZyNpUK+T2tQaaElvw==",
+-      "dev": true,
+       "license": "MIT",
+-      "optional": true,
+       "dependencies": {
+         "type-fest": "^0.13.1"
+       },
+@@ -17229,9 +17852,7 @@
+       "version": "0.13.1",
+       "resolved": "https://registry.npmjs.org/type-fest/-/type-fest-0.13.1.tgz",
+       "integrity": "sha512-34R7HTnG0XIJcBSn5XhDd7nNFPRcXYRZrBB2O2jdKqYODldSzBAqzsWoZYYvduky73toYS/ESqxPvkDf/F0XMg==",
+-      "dev": true,
+       "license": "(MIT OR CC0-1.0)",
+-      "optional": true,
+       "engines": {
+         "node": ">=10"
+       },
+@@ -17324,6 +17945,50 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/sharp": {
++      "version": "0.34.5",
++      "resolved": "https://registry.npmjs.org/sharp/-/sharp-0.34.5.tgz",
++      "integrity": "sha512-Ou9I5Ft9WNcCbXrU9cMgPBcCK8LiwLqcbywW3t4oDV37n1pzpuNLsYiAV8eODnjbtQlSDwZ2cUEeQz4E54Hltg==",
++      "hasInstallScript": true,
++      "license": "Apache-2.0",
++      "dependencies": {
++        "@img/colour": "^1.0.0",
++        "detect-libc": "^2.1.2",
++        "semver": "^7.7.3"
++      },
++      "engines": {
++        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/libvips"
++      },
++      "optionalDependencies": {
++        "@img/sharp-darwin-arm64": "0.34.5",
++        "@img/sharp-darwin-x64": "0.34.5",
++        "@img/sharp-libvips-darwin-arm64": "1.2.4",
++        "@img/sharp-libvips-darwin-x64": "1.2.4",
++        "@img/sharp-libvips-linux-arm": "1.2.4",
++        "@img/sharp-libvips-linux-arm64": "1.2.4",
++        "@img/sharp-libvips-linux-ppc64": "1.2.4",
++        "@img/sharp-libvips-linux-riscv64": "1.2.4",
++        "@img/sharp-libvips-linux-s390x": "1.2.4",
++        "@img/sharp-libvips-linux-x64": "1.2.4",
++        "@img/sharp-libvips-linuxmusl-arm64": "1.2.4",
++        "@img/sharp-libvips-linuxmusl-x64": "1.2.4",
++        "@img/sharp-linux-arm": "0.34.5",
++        "@img/sharp-linux-arm64": "0.34.5",
++        "@img/sharp-linux-ppc64": "0.34.5",
++        "@img/sharp-linux-riscv64": "0.34.5",
++        "@img/sharp-linux-s390x": "0.34.5",
++        "@img/sharp-linux-x64": "0.34.5",
++        "@img/sharp-linuxmusl-arm64": "0.34.5",
++        "@img/sharp-linuxmusl-x64": "0.34.5",
++        "@img/sharp-wasm32": "0.34.5",
++        "@img/sharp-win32-arm64": "0.34.5",
++        "@img/sharp-win32-ia32": "0.34.5",
++        "@img/sharp-win32-x64": "0.34.5"
++      }
++    },
+     "node_modules/shebang-command": {
+       "version": "2.0.0",
+       "resolved": "https://registry.npmjs.org/shebang-command/-/shebang-command-2.0.0.tgz",
+@@ -17604,9 +18269,7 @@
+       "version": "1.1.3",
+       "resolved": "https://registry.npmjs.org/sprintf-js/-/sprintf-js-1.1.3.tgz",
+       "integrity": "sha512-Oo+0REFV59/rz3gfJNKQiBlwfHaSESl1pcGyABQsnnIfWOFt6JNj5gCog2U6MLZ//IGYD+nA8nI+mTShREReaA==",
+-      "dev": true,
+-      "license": "BSD-3-Clause",
+-      "optional": true
++      "license": "BSD-3-Clause"
+     },
+     "node_modules/stack-utils": {
+       "version": "2.0.6",
+@@ -18601,7 +19264,6 @@
+       "version": "7.18.2",
+       "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz",
+       "integrity": "sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==",
+-      "devOptional": true,
+       "license": "MIT"
+     },
+     "node_modules/unicode-animations": {
+-- 
+2.50.1 (Apple Git-155)
+

@@ -1,0 +1,26 @@
+From 5a4c6bf69fd090751c42f1842d1479f4cc83e89a Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Thu, 9 Jul 2026 20:29:42 -0500
+Subject: [PATCH 13/13] nemesis: strip any audio extension from transcript note
+ title
+
+---
+ apps/desktop/src/app/recorder/index.tsx | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index 1f40c83..a04862b 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -236,7 +236,7 @@ export function RecorderView() {
+         return
+       }
+ 
+-      const title = `Lecture ${file.name.replace(/\.webm$/i, '').replace(/^lecture-/, '')}`
++      const title = `Lecture ${file.name.replace(/\.(webm|m4a|wav|aiff?|mp3)$/i, '').replace(/^lecture-/, '')}`
+       await saveNote(title, `# ${title}\n\n*Transcribed by Nemesis — review before relying on it.*\n\n${text}\n`)
+       setSavedNote(current => ({ ...current, [file.path]: true }))
+     },
+-- 
+2.50.1 (Apple Git-155)
+

@@ -1,8 +1,8 @@
 From beef9655bf8e9f861d2d70de0dae9b7b366a6572 Mon Sep 17 00:00:00 2001
 From: AxelGalvez11 <axelgalvez1121@gmail.com>
 Date: Thu, 9 Jul 2026 19:24:23 -0500
-Subject: [PATCH 3/9] nemesis: rebrand welcome wordmark (NEMESIS) + personality
- greetings (intro-copy.jsonl)
+Subject: [PATCH 03/13] nemesis: rebrand welcome wordmark (NEMESIS) +
+ personality greetings (intro-copy.jsonl)
 
 ---
  .../src/components/chat/intro-copy.jsonl       | 18 +++++++++---------

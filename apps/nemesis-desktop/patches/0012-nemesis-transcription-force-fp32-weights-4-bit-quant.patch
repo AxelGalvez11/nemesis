@@ -1,0 +1,48 @@
+From 72baecbdc7260c86f550f97c9d709c0983cebedd Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Thu, 9 Jul 2026 20:26:29 -0500
+Subject: [PATCH 12/13] =?UTF-8?q?nemesis:=20transcription=20=E2=80=94=20fo?=
+ =?UTF-8?q?rce=20fp32=20weights=20(4-bit=20quant=20fails=20ONNX=20session?=
+ =?UTF-8?q?=20in=20bundled=20ort)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ apps/desktop/src/app/recorder/transcribe.js | 4 ++++
+ apps/desktop/src/app/recorder/transcribe.ts | 4 ++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/apps/desktop/src/app/recorder/transcribe.js b/apps/desktop/src/app/recorder/transcribe.js
+index 9197b7c..3ec9663 100644
+--- a/apps/desktop/src/app/recorder/transcribe.js
++++ b/apps/desktop/src/app/recorder/transcribe.js
+@@ -16,6 +16,10 @@ let transcriberPromise = null;
+ function getTranscriber(onStatus) {
+     if (!transcriberPromise) {
+         transcriberPromise = pipeline('automatic-speech-recognition', MODEL_ID, {
++            // Force full-precision weights. The default 4-bit-quantized variant fails to
++            // create an ONNX session in the bundled onnxruntime-web (MatMulNBits missing
++            // scale). fp32 is a touch larger but loads reliably single-threaded.
++            dtype: { decoder_model_merged: 'fp32', encoder_model: 'fp32' },
+             progress_callback: (info) => {
+                 if (info.status === 'progress') {
+                     onStatus?.({ progress: info.progress, stage: 'loading-model' });
+diff --git a/apps/desktop/src/app/recorder/transcribe.ts b/apps/desktop/src/app/recorder/transcribe.ts
+index 51168e7..61fb018 100644
+--- a/apps/desktop/src/app/recorder/transcribe.ts
++++ b/apps/desktop/src/app/recorder/transcribe.ts
+@@ -24,6 +24,10 @@ let transcriberPromise: Promise<Transcriber> | null = null
+ function getTranscriber(onStatus?: (s: TranscribeStatus) => void): Promise<Transcriber> {
+   if (!transcriberPromise) {
+     transcriberPromise = pipeline('automatic-speech-recognition', MODEL_ID, {
++      // Force full-precision weights. The default 4-bit-quantized variant fails to
++      // create an ONNX session in the bundled onnxruntime-web (MatMulNBits missing
++      // scale). fp32 is a touch larger but loads reliably single-threaded.
++      dtype: { decoder_model_merged: 'fp32', encoder_model: 'fp32' },
+       progress_callback: (info: { status?: string; progress?: number }) => {
+         if (info.status === 'progress') {
+           onStatus?.({ progress: info.progress, stage: 'loading-model' })
+-- 
+2.50.1 (Apple Git-155)
+
