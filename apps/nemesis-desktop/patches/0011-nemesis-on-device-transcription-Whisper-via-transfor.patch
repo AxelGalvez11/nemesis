@@ -1,7 +1,7 @@
 From ae723e60b6a7f25741e1799c06613f3404426848 Mon Sep 17 00:00:00 2001
 From: AxelGalvez11 <axelgalvez1121@gmail.com>
 Date: Thu, 9 Jul 2026 20:22:34 -0500
-Subject: [PATCH 11/14] nemesis: on-device transcription (Whisper via
+Subject: [PATCH 11/16] nemesis: on-device transcription (Whisper via
  transformers.js) + graph zoom polish
 
 - recorder/transcribe.ts: whisper-tiny.en ASR pipeline (single-thread WASM,

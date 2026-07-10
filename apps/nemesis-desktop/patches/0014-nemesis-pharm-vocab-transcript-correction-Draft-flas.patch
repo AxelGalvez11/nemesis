@@ -1,7 +1,7 @@
 From 04bac0150e70a95bb91abdd9841163437a3dd5d3 Mon Sep 17 00:00:00 2001
 From: AxelGalvez11 <axelgalvez1121@gmail.com>
 Date: Thu, 9 Jul 2026 20:39:01 -0500
-Subject: [PATCH 14/14] nemesis: pharm-vocab transcript correction +
+Subject: [PATCH 14/16] nemesis: pharm-vocab transcript correction +
  Draft-flashcards-in-chat
 
 - pharm-lexicon.ts: ~250-term canonical lexicon, edit-distance + consonant-

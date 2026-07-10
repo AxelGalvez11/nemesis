@@ -1,7 +1,7 @@
 From 72baecbdc7260c86f550f97c9d709c0983cebedd Mon Sep 17 00:00:00 2001
 From: AxelGalvez11 <axelgalvez1121@gmail.com>
 Date: Thu, 9 Jul 2026 20:26:29 -0500
-Subject: [PATCH 12/14] =?UTF-8?q?nemesis:=20transcription=20=E2=80=94=20fo?=
+Subject: [PATCH 12/16] =?UTF-8?q?nemesis:=20transcription=20=E2=80=94=20fo?=
  =?UTF-8?q?rce=20fp32=20weights=20(4-bit=20quant=20fails=20ONNX=20session?=
  =?UTF-8?q?=20in=20bundled=20ort)?=
 MIME-Version: 1.0
