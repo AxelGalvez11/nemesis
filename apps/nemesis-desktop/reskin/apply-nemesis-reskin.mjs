@@ -48,6 +48,19 @@ if (!fs.existsSync(path.join(HERMES, 'apps/desktop/package.json'))) {
 // 1) Pure display dictionaries — safe whole-word bulk rename.
 const I18N_DICTS = ['apps/desktop/src/i18n/en.ts', 'apps/desktop/src/i18n/zh.ts']
 
+// 1b) Pure brand-copy files (welcome-screen greetings; no code identifiers) — case-insensitive
+// whole-word rebrand, case pattern preserved (HERMES→NEMESIS, Hermes→Nemesis, hermes→nemesis).
+const BRAND_COPY = ['apps/desktop/src/components/chat/intro-copy.jsonl']
+
+function rebrandCasePreserving(text) {
+  return text.replace(/\bhermes\b/gi, match => {
+    if (match === match.toUpperCase()) return 'NEMESIS'
+    if (match[0] === match[0].toUpperCase()) return 'Nemesis'
+
+    return 'nemesis'
+  })
+}
+
 // 2) Exact-anchor replacements. [relPath, [[oldExact, newExact], ...]]  (replaceAll each).
 const ANCHORS = [
   ['apps/desktop/index.html', [
@@ -78,6 +91,10 @@ const ANCHORS = [
   ]],
   ['apps/desktop/src/app/settings/model-settings.tsx', [
     ['Hermes runs the flow for you', 'Nemesis runs the flow for you'],
+  ]],
+  // The welcome-screen hero wordmark (a hardcoded constant, not an i18n string).
+  ['apps/desktop/src/components/chat/intro.tsx', [
+    ["const WORDMARK = 'HERMES AGENT'", "const WORDMARK = 'NEMESIS'"],
   ]],
   // Default theme → mono (owner brief 2026-07-09: "default color should be mono"). The 'mono'
   // theme ships with Hermes, so this one-word flip is safe; the custom mono+red 'nemesis' theme
@@ -116,6 +133,19 @@ for (const rel of I18N_DICTS) {
   fs.writeFileSync(p, src.replace(/\bHermes\b/g, 'Nemesis'), 'utf8')
   changed += hits
   log(`  ✓ ${rel}: renamed ${hits} display strings`)
+}
+
+// --- 1b) brand-copy files (case-insensitive) -------------------------------
+for (const rel of BRAND_COPY) {
+  const p = path.join(HERMES, rel)
+  if (!fs.existsSync(p)) { log(`  · skip (absent): ${rel}`); continue }
+  const src = fs.readFileSync(p, 'utf8')
+  const hits = (src.match(/\bhermes\b/gi) || []).length
+  if (checkFlag) { log(`  ? ${rel}: ${hits} brand-copy "Hermes" → Nemesis`); continue }
+  if (hits === 0) { log(`  = ${rel}: already Nemesis`); continue }
+  fs.writeFileSync(p, rebrandCasePreserving(src), 'utf8')
+  changed += hits
+  log(`  ✓ ${rel}: rebranded ${hits} greetings`)
 }
 
 // --- 2) exact anchors ------------------------------------------------------
