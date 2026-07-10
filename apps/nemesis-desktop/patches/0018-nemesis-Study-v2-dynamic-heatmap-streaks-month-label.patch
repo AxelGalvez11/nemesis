@@ -1,0 +1,835 @@
+From 976cce9134df79e6f741b20ed0b268e7125f9d19 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Thu, 9 Jul 2026 21:32:46 -0500
+Subject: [PATCH 18/20] =?UTF-8?q?nemesis:=20Study=20v2=20=E2=80=94=20dynam?=
+ =?UTF-8?q?ic=20heatmap=20(streaks/month=20labels/tooltips/legend/today)?=
+ =?UTF-8?q?=20+=20Anki-style=20card=20browser=20(edit/add/delete/suspend)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+model.ts: suspended field + buildQueue/deckStats filter; updateCard/addCard/
+deleteCard/toggleSuspendCard; studyMotivation (current+longest streak, days-
+active %, 30d retention). index.tsx: Heatmap upgraded w/ shadcn Tip tooltips +
+stat row; per-deck Cards button opens CardBrowser table + Edit/Add dialogs.
+---
+ apps/desktop/src/app/study/index.js  |  90 ++++++-
+ apps/desktop/src/app/study/index.tsx | 343 +++++++++++++++++++++++++--
+ apps/desktop/src/app/study/model.js  |  74 ++++++
+ apps/desktop/src/app/study/model.ts  | 110 +++++++++
+ 4 files changed, 579 insertions(+), 38 deletions(-)
+
+diff --git a/apps/desktop/src/app/study/index.js b/apps/desktop/src/app/study/index.js
+index 345fc8e..7e02163 100644
+--- a/apps/desktop/src/app/study/index.js
++++ b/apps/desktop/src/app/study/index.js
+@@ -10,9 +10,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
+ import { EmptyState } from '@/components/ui/empty-state';
+ import { Input } from '@/components/ui/input';
+ import { Textarea } from '@/components/ui/textarea';
++import { Tip } from '@/components/ui/tooltip';
+ import { cn } from '@/lib/utils';
+ import { parseCardPaste } from './import-cards';
+-import { buildQueue, deckStats, freshId, gradeCard, groupDecks, loadState, previewIntervals, reviewHeatmap, saveState } from './model';
++import { addCard, buildQueue, deckStats, deleteCard, freshId, gradeCard, groupDecks, loadState, previewIntervals, reviewHeatmap, saveState, studyMotivation, toggleSuspendCard, updateCard } from './model';
+ const GRADES = [
+     { key: '1', label: 'Again', rating: 'again' },
+     { key: '2', label: 'Hard', rating: 'hard' },
+@@ -22,6 +23,7 @@ const GRADES = [
+ export function StudyView() {
+     const [state, setState] = useState(() => loadState());
+     const [reviewDeckId, setReviewDeckId] = useState(null);
++    const [browseDeckId, setBrowseDeckId] = useState(null);
+     const [reviewing, setReviewing] = useState(false);
+     const [revealed, setRevealed] = useState(false);
+     const [importOpen, setImportOpen] = useState(false);
+@@ -101,29 +103,91 @@ export function StudyView() {
+         setImportOpen(false);
+         return true;
+     }, [state, update]);
+-    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "flex shrink-0 items-center justify-between gap-3 px-6 pb-3 pt-5", children: [_jsxs("div", { children: [_jsx("h1", { className: "text-lg font-semibold", children: "Study" }), _jsxs("p", { className: "text-xs text-muted-foreground", children: [totals.due, " due \u00B7 ", totals.fresh, " new \u00B7 ", totals.total, " cards"] })] }), _jsx("div", { className: "flex items-center gap-2", children: reviewing ? (_jsx(Button, { onClick: exitReview, size: "sm", variant: "outline", children: "Back to decks" })) : (_jsxs(_Fragment, { children: [_jsx(Button, { onClick: () => setImportOpen(true), size: "sm", variant: "outline", children: "Import cards" }), _jsx(Button, { disabled: totals.due === 0, onClick: () => startReview(null), size: "sm", children: "Study all" })] })) })] }), reviewing ? (current ? (_jsx(ReviewSurface, { done: done, item: current, intervals: previewIntervals(state, current.card.id, now), onGrade: grade, onReveal: () => setRevealed(true), remaining: queue.length, revealed: revealed })) : (_jsx(EmptyState, { className: "flex-1", description: done > 0 ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.` : 'Nothing is due right now.', title: "All caught up" }))) : (_jsx(DeckBrowser, { onStudy: startReview, state: state })), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen })] }));
++    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "flex shrink-0 items-center justify-between gap-3 px-6 pb-3 pt-5", children: [_jsxs("div", { children: [_jsx("h1", { className: "text-lg font-semibold", children: "Study" }), _jsxs("p", { className: "text-xs text-muted-foreground", children: [totals.due, " due \u00B7 ", totals.fresh, " new \u00B7 ", totals.total, " cards"] })] }), _jsx("div", { className: "flex items-center gap-2", children: reviewing || browseDeckId ? (_jsx(Button, { onClick: () => {
++                                exitReview();
++                                setBrowseDeckId(null);
++                            }, size: "sm", variant: "outline", children: "Back to decks" })) : (_jsxs(_Fragment, { children: [_jsx(Button, { onClick: () => setImportOpen(true), size: "sm", variant: "outline", children: "Import cards" }), _jsx(Button, { disabled: totals.due === 0, onClick: () => startReview(null), size: "sm", children: "Study all" })] })) })] }), reviewing ? (current ? (_jsx(ReviewSurface, { done: done, item: current, intervals: previewIntervals(state, current.card.id, now), onGrade: grade, onReveal: () => setRevealed(true), remaining: queue.length, revealed: revealed })) : (_jsx(EmptyState, { className: "flex-1", description: done > 0 ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.` : 'Nothing is due right now.', title: "All caught up" }))) : browseDeckId ? (_jsx(CardBrowser, { deck: state.decks.find(deck => deck.id === browseDeckId) ?? null, onChange: update, state: state })) : (_jsx(DeckBrowser, { onBrowse: setBrowseDeckId, onStudy: startReview, state: state })), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen })] }));
+ }
+-function DeckBrowser({ onStudy, state }) {
++function DeckBrowser({ onBrowse, onStudy, state }) {
+     const now = new Date();
+     const groups = groupDecks(state, now);
+     if (!state.decks.length) {
+         return _jsx(EmptyState, { className: "flex-1", description: "Import cards to build your first deck.", title: "No decks yet" });
+     }
+-    return (_jsxs("div", { className: "pb-8", children: [_jsx(Heatmap, { state: state }), groups.map(group => (_jsxs("section", { className: "px-6 pt-5", children: [_jsxs("div", { className: "mb-2 flex items-baseline justify-between border-b border-border pb-1.5", children: [_jsx("h2", { className: "text-sm font-semibold", children: group.course }), _jsxs("span", { className: "text-xs text-muted-foreground", children: [group.stats.due, " due \u00B7 ", group.decks.length, " deck", group.decks.length === 1 ? '' : 's', " \u00B7 ", group.stats.total, " cards"] })] }), _jsx("div", { className: "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3", children: group.decks.map(deck => (_jsx(DeckCard, { deck: deck, now: now, onStudy: onStudy, state: state }, deck.id))) })] }, group.course)))] }));
++    return (_jsxs("div", { className: "pb-8", children: [_jsx(Heatmap, { state: state }), groups.map(group => (_jsxs("section", { className: "px-6 pt-5", children: [_jsxs("div", { className: "mb-2 flex items-baseline justify-between border-b border-border pb-1.5", children: [_jsx("h2", { className: "text-sm font-semibold", children: group.course }), _jsxs("span", { className: "text-xs text-muted-foreground", children: [group.stats.due, " due \u00B7 ", group.decks.length, " deck", group.decks.length === 1 ? '' : 's', " \u00B7 ", group.stats.total, " cards"] })] }), _jsx("div", { className: "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3", children: group.decks.map(deck => (_jsx(DeckCard, { deck: deck, now: now, onBrowse: onBrowse, onStudy: onStudy, state: state }, deck.id))) })] }, group.course)))] }));
+ }
+-function DeckCard({ deck, now, onStudy, state }) {
++function DeckCard({ deck, now, onBrowse, onStudy, state }) {
+     const stats = deckStats(state, deck.id, now);
+-    return (_jsxs("div", { className: "flex flex-col gap-3 rounded-lg border border-border bg-card p-4", children: [_jsxs("div", { className: "min-w-0", children: [_jsxs("div", { className: "flex items-start justify-between gap-2", children: [_jsx("div", { className: "truncate text-sm font-medium", children: deck.name }), stats.due > 0 && _jsxs(Badge, { variant: "muted", children: [stats.due, " due"] })] }), _jsxs("div", { className: "mt-1 text-xs text-muted-foreground", children: [stats.total, " cards \u00B7 ", stats.fresh, " new"] })] }), _jsx("div", { className: "mt-auto", children: _jsx(Button, { disabled: stats.due === 0, onClick: () => onStudy(deck.id), size: "sm", variant: "secondary", children: stats.due > 0 ? 'Study' : 'Done for now' }) })] }));
++    return (_jsxs("div", { className: "flex flex-col gap-3 rounded-lg border border-border bg-card p-4", children: [_jsxs("div", { className: "min-w-0", children: [_jsxs("div", { className: "flex items-start justify-between gap-2", children: [_jsx("div", { className: "truncate text-sm font-medium", children: deck.name }), stats.due > 0 && _jsxs(Badge, { variant: "muted", children: [stats.due, " due"] })] }), _jsxs("div", { className: "mt-1 text-xs text-muted-foreground", children: [stats.total, " cards \u00B7 ", stats.fresh, " new"] })] }), _jsxs("div", { className: "mt-auto flex gap-2", children: [_jsx(Button, { className: "flex-1", disabled: stats.due === 0, onClick: () => onStudy(deck.id), size: "sm", variant: "secondary", children: stats.due > 0 ? 'Study' : 'Done for now' }), _jsx(Button, { onClick: () => onBrowse(deck.id), size: "sm", variant: "outline", children: "Cards" })] })] }));
+ }
+-// GitHub-style contribution grid of review activity. Crimson intensity by daily count.
++// Contribution grid of review activity with streak stats, month labels, hover tooltips,
++// legend, and a today marker — the "dynamic" upgrade.
+ const HEAT_MIX = ['', '30%', '52%', '76%', '100%'];
++const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
++function heatColor(level) {
++    return level === 0
++        ? 'color-mix(in srgb, gray 16%, transparent)'
++        : `color-mix(in srgb, var(--theme-primary) ${HEAT_MIX[level]}, transparent)`;
++}
++function Stat({ label, value }) {
++    return (_jsxs("span", { className: "flex items-baseline gap-1", children: [_jsx("span", { className: "text-sm font-semibold text-foreground", children: value }), _jsx("span", { className: "text-muted-foreground", children: label })] }));
++}
+ function Heatmap({ state }) {
+-    const { cells, total } = useMemo(() => reviewHeatmap(state, new Date().toISOString()), [state]);
+-    return (_jsxs("div", { className: "px-6 pt-1", children: [_jsxs("div", { className: "mb-2 text-xs text-muted-foreground", children: [total, " reviews in the last 18 weeks"] }), _jsx("div", { className: "grid grid-flow-col grid-rows-7 gap-[3px]", style: { gridAutoColumns: '11px', gridTemplateRows: 'repeat(7, 11px)' }, children: cells.map(cell => (_jsx("div", { className: "rounded-[2px]", style: {
+-                        backgroundColor: cell.level === 0
+-                            ? 'color-mix(in srgb, gray 16%, transparent)'
+-                            : `color-mix(in srgb, var(--theme-primary) ${HEAT_MIX[cell.level]}, transparent)`
+-                    }, title: `${cell.date}: ${cell.count} review${cell.count === 1 ? '' : 's'}` }, cell.date))) })] }));
++    const todayIso = new Date().toISOString();
++    const { cells, total } = useMemo(() => reviewHeatmap(state, todayIso), [state, todayIso]);
++    const stats = useMemo(() => studyMotivation(state, todayIso), [state, todayIso]);
++    const todayKey = todayIso.slice(0, 10);
++    const weeks = Math.ceil(cells.length / 7);
++    const monthLabels = [];
++    let lastMonth = -1;
++    for (let w = 0; w < weeks; w++) {
++        const first = cells[w * 7];
++        if (first) {
++            const month = Number(first.date.slice(5, 7)) - 1;
++            if (month !== lastMonth) {
++                monthLabels.push({ col: w, label: MONTHS[month] });
++                lastMonth = month;
++            }
++        }
++    }
++    return (_jsxs("div", { className: "px-6 pt-1", children: [_jsxs("div", { className: "mb-2.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs", children: [_jsx(Stat, { label: "day streak", value: stats.currentStreak }), _jsx(Stat, { label: "longest", value: stats.longestStreak }), _jsx(Stat, { label: "days active", value: `${stats.daysLearnedPct}%` }), stats.retentionPct !== null && _jsx(Stat, { label: "retention (30d)", value: `${stats.retentionPct}%` }), _jsxs("span", { className: "text-muted-foreground", children: [total, " reviews \u00B7 18 weeks"] })] }), _jsxs("div", { className: "inline-flex flex-col gap-1", children: [_jsx("div", { className: "relative h-3 text-[9px] text-muted-foreground", style: { width: `${weeks * 14}px` }, children: monthLabels.map(m => (_jsx("span", { className: "absolute", style: { left: `${m.col * 14}px` }, children: m.label }, `${m.label}-${m.col}`))) }), _jsx("div", { className: "grid grid-flow-col grid-rows-7 gap-[3px]", style: { gridAutoColumns: '11px', gridTemplateRows: 'repeat(7, 11px)' }, children: cells.map(cell => (_jsx(Tip, { label: `${cell.count} review${cell.count === 1 ? '' : 's'} · ${new Date(`${cell.date}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' })}`, side: "top", children: _jsx("div", { className: cn('rounded-[2px]', cell.date === todayKey && 'ring-1 ring-foreground/60'), style: { backgroundColor: heatColor(cell.level) } }) }, cell.date))) }), _jsxs("div", { className: "flex items-center gap-1 self-end text-[9px] text-muted-foreground", children: [_jsx("span", { children: "Less" }), [0, 1, 2, 3, 4].map(level => (_jsx("span", { className: "size-2.5 rounded-[2px]", style: { backgroundColor: heatColor(level) } }, level))), _jsx("span", { children: "More" })] })] })] }));
++}
++function CardBrowser({ deck, onChange, state }) {
++    const [editing, setEditing] = useState(null);
++    const [adding, setAdding] = useState(false);
++    if (!deck) {
++        return _jsx(EmptyState, { className: "flex-1", description: "This deck no longer exists.", title: "Deck not found" });
++    }
++    return (_jsxs("div", { className: "px-6 pb-8", children: [_jsxs("div", { className: "mb-2 flex items-baseline justify-between border-b border-border pb-1.5", children: [_jsxs("div", { children: [_jsx("h2", { className: "text-sm font-semibold", children: deck.name }), _jsxs("p", { className: "text-xs text-muted-foreground", children: [deck.course ? `${deck.course} · ` : '', deck.cards.length, " card", deck.cards.length === 1 ? '' : 's'] })] }), _jsx(Button, { onClick: () => setAdding(true), size: "sm", variant: "outline", children: "Add card" })] }), deck.cards.length === 0 ? (_jsx(EmptyState, { className: "min-h-40", description: "Add a card or import a set.", title: "No cards in this deck" })) : (_jsx("div", { className: "overflow-hidden rounded-lg border border-border", children: _jsxs("table", { className: "w-full text-sm", children: [_jsx("thead", { className: "bg-muted/40 text-xs text-muted-foreground", children: _jsxs("tr", { children: [_jsx("th", { className: "px-3 py-2 text-left font-medium", children: "Front" }), _jsx("th", { className: "hidden px-3 py-2 text-left font-medium md:table-cell", children: "Back" }), _jsx("th", { className: "px-3 py-2 text-left font-medium", children: "Tags" }), _jsx("th", { className: "w-8 px-3 py-2" })] }) }), _jsx("tbody", { children: deck.cards.map(card => (_jsxs("tr", { className: cn('cursor-pointer border-t border-border hover:bg-accent', card.suspended && 'opacity-45'), onClick: () => setEditing(card), children: [_jsxs("td", { className: "max-w-xs truncate px-3 py-2", children: [card.suspended && _jsx("span", { className: "mr-1 text-xs text-muted-foreground", children: "\u23F8" }), card.front] }), _jsx("td", { className: "hidden max-w-xs truncate px-3 py-2 text-muted-foreground md:table-cell", children: card.back }), _jsx("td", { className: "px-3 py-2", children: _jsx("div", { className: "flex flex-wrap gap-1", children: card.tags.map(tag => (_jsx(Badge, { variant: "outline", children: tag }, tag))) }) }), _jsx("td", { className: "px-3 py-2 text-right text-muted-foreground", children: "\u203A" })] }, card.id))) })] }) })), editing && (_jsx(EditCardDialog, { card: editing, onClose: () => setEditing(null), onDelete: () => {
++                    onChange(deleteCard(state, deck.id, editing.id));
++                    setEditing(null);
++                }, onSave: card => {
++                    onChange(updateCard(state, deck.id, card));
++                    setEditing(null);
++                }, onToggleSuspend: () => {
++                    onChange(toggleSuspendCard(state, deck.id, editing.id));
++                    setEditing(null);
++                } })), adding && (_jsx(AddCardDialog, { onClose: () => setAdding(false), onCreate: (front, back, tags) => {
++                    onChange(addCard(state, deck.id, front, back, tags));
++                    setAdding(false);
++                } }))] }));
++}
++function EditCardDialog({ card, onClose, onDelete, onSave, onToggleSuspend }) {
++    const [front, setFront] = useState(card.front);
++    const [back, setBack] = useState(card.back);
++    const [tags, setTags] = useState(card.tags.join(', '));
++    return (_jsx(Dialog, { onOpenChange: open => !open && onClose(), open: true, children: _jsxs(DialogContent, { className: "sm:max-w-lg", children: [_jsxs(DialogHeader, { children: [_jsx(DialogTitle, { children: "Edit card" }), _jsx(DialogDescription, { children: "Suspend hides a card from review without deleting it." })] }), _jsxs("div", { className: "flex flex-col gap-3", children: [_jsx(Textarea, { className: "min-h-20", onChange: event => setFront(event.target.value), placeholder: "Front", value: front }), _jsx(Textarea, { className: "min-h-20", onChange: event => setBack(event.target.value), placeholder: "Back", value: back }), _jsx(Input, { onChange: event => setTags(event.target.value), placeholder: "Tags (comma-separated)", value: tags })] }), _jsxs(DialogFooter, { className: "flex-wrap gap-2 sm:justify-between", children: [_jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { className: "text-destructive", onClick: onDelete, variant: "outline", children: "Delete" }), _jsx(Button, { onClick: onToggleSuspend, variant: "outline", children: card.suspended ? 'Unsuspend' : 'Suspend' })] }), _jsx(Button, { disabled: !front.trim() || !back.trim(), onClick: () => onSave({
++                                ...card,
++                                back: back.trim(),
++                                front: front.trim(),
++                                tags: tags.split(',').map(tag => tag.trim()).filter(Boolean)
++                            }), children: "Save" })] })] }) }));
++}
++function AddCardDialog({ onClose, onCreate }) {
++    const [front, setFront] = useState('');
++    const [back, setBack] = useState('');
++    const [tags, setTags] = useState('');
++    return (_jsx(Dialog, { onOpenChange: open => !open && onClose(), open: true, children: _jsxs(DialogContent, { className: "sm:max-w-lg", children: [_jsxs(DialogHeader, { children: [_jsx(DialogTitle, { children: "Add card" }), _jsx(DialogDescription, { children: "New cards enter the review queue as \u201Cnew\u201D." })] }), _jsxs("div", { className: "flex flex-col gap-3", children: [_jsx(Textarea, { className: "min-h-20", onChange: event => setFront(event.target.value), placeholder: "Front", value: front }), _jsx(Textarea, { className: "min-h-20", onChange: event => setBack(event.target.value), placeholder: "Back", value: back }), _jsx(Input, { onChange: event => setTags(event.target.value), placeholder: "Tags (comma-separated)", value: tags })] }), _jsxs(DialogFooter, { children: [_jsx(Button, { onClick: onClose, variant: "outline", children: "Cancel" }), _jsx(Button, { disabled: !front.trim() || !back.trim(), onClick: () => onCreate(front.trim(), back.trim(), tags.split(',').map(tag => tag.trim()).filter(Boolean)), children: "Add card" })] })] }) }));
+ }
+ function ReviewSurface({ done, intervals, item, onGrade, onReveal, remaining, revealed }) {
+     return (_jsx("div", { className: "flex flex-1 flex-col items-center px-6 pb-8", children: _jsxs("div", { className: "flex w-full max-w-2xl flex-1 flex-col", children: [_jsxs("div", { className: "flex items-center justify-between pb-3 text-xs text-muted-foreground", children: [_jsxs("span", { className: "truncate", children: [item.deckName, item.isNew && (_jsx(Badge, { className: "ml-2", variant: "outline", children: "new" }))] }), _jsxs("span", { children: [done, " done \u00B7 ", remaining, " left"] })] }), _jsxs("div", { className: "flex min-h-64 flex-1 flex-col justify-center gap-5 rounded-lg border border-border bg-card p-8", children: [_jsx("div", { className: "text-base leading-relaxed", children: item.card.front }), revealed && (_jsxs(_Fragment, { children: [_jsx("div", { className: "border-t border-border" }), _jsx("div", { className: "text-base leading-relaxed text-muted-foreground", children: item.card.back })] }))] }), _jsx("div", { className: "pt-4", children: revealed ? (_jsx("div", { className: "grid grid-cols-4 gap-2", children: GRADES.map(option => (_jsxs(Button, { className: cn('flex-col gap-0.5 py-5', option.rating === 'again' && 'text-destructive'), onClick: () => onGrade(option.rating), variant: "secondary", children: [_jsx("span", { children: option.label }), _jsxs("span", { className: "text-[10px] opacity-60", children: [intervals[option.rating], " \u00B7 ", option.key] })] }, option.rating))) })) : (_jsxs(Button, { className: "w-full py-5", onClick: onReveal, variant: "secondary", children: ["Show answer ", _jsx("span", { className: "ml-2 text-[10px] opacity-60", children: "Space" })] })) })] }) }));
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index 87be277..bd7b5f8 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -17,12 +17,15 @@ import {
+ import { EmptyState } from '@/components/ui/empty-state'
+ import { Input } from '@/components/ui/input'
+ import { Textarea } from '@/components/ui/textarea'
++import { Tip } from '@/components/ui/tooltip'
+ import { cn } from '@/lib/utils'
+ 
+ import { parseCardPaste } from './import-cards'
+ import {
++  addCard,
+   buildQueue,
+   deckStats,
++  deleteCard,
+   freshId,
+   gradeCard,
+   groupDecks,
+@@ -31,9 +34,13 @@ import {
+   type QueueItem,
+   reviewHeatmap,
+   saveState,
++  type StudyCard,
+   type StudyDeck,
++  studyMotivation,
+   type StudyRating,
+-  type StudyState
++  type StudyState,
++  toggleSuspendCard,
++  updateCard
+ } from './model'
+ 
+ const GRADES: { key: string; label: string; rating: StudyRating }[] = [
+@@ -46,6 +53,7 @@ const GRADES: { key: string; label: string; rating: StudyRating }[] = [
+ export function StudyView() {
+   const [state, setState] = useState<StudyState>(() => loadState())
+   const [reviewDeckId, setReviewDeckId] = useState<null | string>(null)
++  const [browseDeckId, setBrowseDeckId] = useState<null | string>(null)
+   const [reviewing, setReviewing] = useState(false)
+   const [revealed, setRevealed] = useState(false)
+   const [importOpen, setImportOpen] = useState(false)
+@@ -165,8 +173,15 @@ export function StudyView() {
+           </p>
+         </div>
+         <div className="flex items-center gap-2">
+-          {reviewing ? (
+-            <Button onClick={exitReview} size="sm" variant="outline">
++          {reviewing || browseDeckId ? (
++            <Button
++              onClick={() => {
++                exitReview()
++                setBrowseDeckId(null)
++              }}
++              size="sm"
++              variant="outline"
++            >
+               Back to decks
+             </Button>
+           ) : (
+@@ -200,8 +215,14 @@ export function StudyView() {
+             title="All caught up"
+           />
+         )
++      ) : browseDeckId ? (
++        <CardBrowser
++          deck={state.decks.find(deck => deck.id === browseDeckId) ?? null}
++          onChange={update}
++          state={state}
++        />
+       ) : (
+-        <DeckBrowser onStudy={startReview} state={state} />
++        <DeckBrowser onBrowse={setBrowseDeckId} onStudy={startReview} state={state} />
+       )}
+ 
+       <ImportDialog onImport={importCards} onOpenChange={setImportOpen} open={importOpen} />
+@@ -209,7 +230,15 @@ export function StudyView() {
+   )
+ }
+ 
+-function DeckBrowser({ onStudy, state }: { onStudy: (deckId: string) => void; state: StudyState }) {
++function DeckBrowser({
++  onBrowse,
++  onStudy,
++  state
++}: {
++  onBrowse: (deckId: string) => void
++  onStudy: (deckId: string) => void
++  state: StudyState
++}) {
+   const now = new Date()
+   const groups = groupDecks(state, now)
+ 
+@@ -230,7 +259,7 @@ function DeckBrowser({ onStudy, state }: { onStudy: (deckId: string) => void; st
+           </div>
+           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+             {group.decks.map(deck => (
+-              <DeckCard deck={deck} key={deck.id} now={now} onStudy={onStudy} state={state} />
++              <DeckCard deck={deck} key={deck.id} now={now} onBrowse={onBrowse} onStudy={onStudy} state={state} />
+             ))}
+           </div>
+         </section>
+@@ -242,11 +271,13 @@ function DeckBrowser({ onStudy, state }: { onStudy: (deckId: string) => void; st
+ function DeckCard({
+   deck,
+   now,
++  onBrowse,
+   onStudy,
+   state
+ }: {
+   deck: StudyDeck
+   now: Date
++  onBrowse: (deckId: string) => void
+   onStudy: (deckId: string) => void
+   state: StudyState
+ }) {
+@@ -263,43 +294,305 @@ function DeckCard({
+           {stats.total} cards · {stats.fresh} new
+         </div>
+       </div>
+-      <div className="mt-auto">
+-        <Button disabled={stats.due === 0} onClick={() => onStudy(deck.id)} size="sm" variant="secondary">
++      <div className="mt-auto flex gap-2">
++        <Button className="flex-1" disabled={stats.due === 0} onClick={() => onStudy(deck.id)} size="sm" variant="secondary">
+           {stats.due > 0 ? 'Study' : 'Done for now'}
+         </Button>
++        <Button onClick={() => onBrowse(deck.id)} size="sm" variant="outline">
++          Cards
++        </Button>
+       </div>
+     </div>
+   )
+ }
+ 
+-// GitHub-style contribution grid of review activity. Crimson intensity by daily count.
++// Contribution grid of review activity with streak stats, month labels, hover tooltips,
++// legend, and a today marker — the "dynamic" upgrade.
+ const HEAT_MIX = ['', '30%', '52%', '76%', '100%']
++const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
++
++function heatColor(level: number): string {
++  return level === 0
++    ? 'color-mix(in srgb, gray 16%, transparent)'
++    : `color-mix(in srgb, var(--theme-primary) ${HEAT_MIX[level]}, transparent)`
++}
++
++function Stat({ label, value }: { label: string; value: number | string }) {
++  return (
++    <span className="flex items-baseline gap-1">
++      <span className="text-sm font-semibold text-foreground">{value}</span>
++      <span className="text-muted-foreground">{label}</span>
++    </span>
++  )
++}
+ 
+ function Heatmap({ state }: { state: StudyState }) {
+-  const { cells, total } = useMemo(() => reviewHeatmap(state, new Date().toISOString()), [state])
++  const todayIso = new Date().toISOString()
++  const { cells, total } = useMemo(() => reviewHeatmap(state, todayIso), [state, todayIso])
++  const stats = useMemo(() => studyMotivation(state, todayIso), [state, todayIso])
++  const todayKey = todayIso.slice(0, 10)
++  const weeks = Math.ceil(cells.length / 7)
++
++  const monthLabels: { col: number; label: string }[] = []
++  let lastMonth = -1
++
++  for (let w = 0; w < weeks; w++) {
++    const first = cells[w * 7]
++
++    if (first) {
++      const month = Number(first.date.slice(5, 7)) - 1
++
++      if (month !== lastMonth) {
++        monthLabels.push({ col: w, label: MONTHS[month] })
++        lastMonth = month
++      }
++    }
++  }
+ 
+   return (
+     <div className="px-6 pt-1">
+-      <div className="mb-2 text-xs text-muted-foreground">{total} reviews in the last 18 weeks</div>
+-      <div className="grid grid-flow-col grid-rows-7 gap-[3px]" style={{ gridAutoColumns: '11px', gridTemplateRows: 'repeat(7, 11px)' }}>
+-        {cells.map(cell => (
+-          <div
+-            className="rounded-[2px]"
+-            key={cell.date}
+-            style={{
+-              backgroundColor:
+-                cell.level === 0
+-                  ? 'color-mix(in srgb, gray 16%, transparent)'
+-                  : `color-mix(in srgb, var(--theme-primary) ${HEAT_MIX[cell.level]}, transparent)`
+-            }}
+-            title={`${cell.date}: ${cell.count} review${cell.count === 1 ? '' : 's'}`}
+-          />
+-        ))}
++      <div className="mb-2.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
++        <Stat label="day streak" value={stats.currentStreak} />
++        <Stat label="longest" value={stats.longestStreak} />
++        <Stat label="days active" value={`${stats.daysLearnedPct}%`} />
++        {stats.retentionPct !== null && <Stat label="retention (30d)" value={`${stats.retentionPct}%`} />}
++        <span className="text-muted-foreground">{total} reviews · 18 weeks</span>
++      </div>
++
++      <div className="inline-flex flex-col gap-1">
++        <div className="relative h-3 text-[9px] text-muted-foreground" style={{ width: `${weeks * 14}px` }}>
++          {monthLabels.map(m => (
++            <span className="absolute" key={`${m.label}-${m.col}`} style={{ left: `${m.col * 14}px` }}>
++              {m.label}
++            </span>
++          ))}
++        </div>
++        <div className="grid grid-flow-col grid-rows-7 gap-[3px]" style={{ gridAutoColumns: '11px', gridTemplateRows: 'repeat(7, 11px)' }}>
++          {cells.map(cell => (
++            <Tip
++              key={cell.date}
++              label={`${cell.count} review${cell.count === 1 ? '' : 's'} · ${new Date(`${cell.date}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' })}`}
++              side="top"
++            >
++              <div
++                className={cn('rounded-[2px]', cell.date === todayKey && 'ring-1 ring-foreground/60')}
++                style={{ backgroundColor: heatColor(cell.level) }}
++              />
++            </Tip>
++          ))}
++        </div>
++        <div className="flex items-center gap-1 self-end text-[9px] text-muted-foreground">
++          <span>Less</span>
++          {[0, 1, 2, 3, 4].map(level => (
++            <span className="size-2.5 rounded-[2px]" key={level} style={{ backgroundColor: heatColor(level) }} />
++          ))}
++          <span>More</span>
++        </div>
+       </div>
+     </div>
+   )
+ }
+ 
++function CardBrowser({
++  deck,
++  onChange,
++  state
++}: {
++  deck: null | StudyDeck
++  onChange: (next: StudyState) => void
++  state: StudyState
++}) {
++  const [editing, setEditing] = useState<null | StudyCard>(null)
++  const [adding, setAdding] = useState(false)
++
++  if (!deck) {
++    return <EmptyState className="flex-1" description="This deck no longer exists." title="Deck not found" />
++  }
++
++  return (
++    <div className="px-6 pb-8">
++      <div className="mb-2 flex items-baseline justify-between border-b border-border pb-1.5">
++        <div>
++          <h2 className="text-sm font-semibold">{deck.name}</h2>
++          <p className="text-xs text-muted-foreground">
++            {deck.course ? `${deck.course} · ` : ''}
++            {deck.cards.length} card{deck.cards.length === 1 ? '' : 's'}
++          </p>
++        </div>
++        <Button onClick={() => setAdding(true)} size="sm" variant="outline">
++          Add card
++        </Button>
++      </div>
++
++      {deck.cards.length === 0 ? (
++        <EmptyState className="min-h-40" description="Add a card or import a set." title="No cards in this deck" />
++      ) : (
++        <div className="overflow-hidden rounded-lg border border-border">
++          <table className="w-full text-sm">
++            <thead className="bg-muted/40 text-xs text-muted-foreground">
++              <tr>
++                <th className="px-3 py-2 text-left font-medium">Front</th>
++                <th className="hidden px-3 py-2 text-left font-medium md:table-cell">Back</th>
++                <th className="px-3 py-2 text-left font-medium">Tags</th>
++                <th className="w-8 px-3 py-2" />
++              </tr>
++            </thead>
++            <tbody>
++              {deck.cards.map(card => (
++                <tr
++                  className={cn('cursor-pointer border-t border-border hover:bg-accent', card.suspended && 'opacity-45')}
++                  key={card.id}
++                  onClick={() => setEditing(card)}
++                >
++                  <td className="max-w-xs truncate px-3 py-2">
++                    {card.suspended && <span className="mr-1 text-xs text-muted-foreground">⏸</span>}
++                    {card.front}
++                  </td>
++                  <td className="hidden max-w-xs truncate px-3 py-2 text-muted-foreground md:table-cell">{card.back}</td>
++                  <td className="px-3 py-2">
++                    <div className="flex flex-wrap gap-1">
++                      {card.tags.map(tag => (
++                        <Badge key={tag} variant="outline">
++                          {tag}
++                        </Badge>
++                      ))}
++                    </div>
++                  </td>
++                  <td className="px-3 py-2 text-right text-muted-foreground">›</td>
++                </tr>
++              ))}
++            </tbody>
++          </table>
++        </div>
++      )}
++
++      {editing && (
++        <EditCardDialog
++          card={editing}
++          onClose={() => setEditing(null)}
++          onDelete={() => {
++            onChange(deleteCard(state, deck.id, editing.id))
++            setEditing(null)
++          }}
++          onSave={card => {
++            onChange(updateCard(state, deck.id, card))
++            setEditing(null)
++          }}
++          onToggleSuspend={() => {
++            onChange(toggleSuspendCard(state, deck.id, editing.id))
++            setEditing(null)
++          }}
++        />
++      )}
++      {adding && (
++        <AddCardDialog
++          onClose={() => setAdding(false)}
++          onCreate={(front, back, tags) => {
++            onChange(addCard(state, deck.id, front, back, tags))
++            setAdding(false)
++          }}
++        />
++      )}
++    </div>
++  )
++}
++
++function EditCardDialog({
++  card,
++  onClose,
++  onDelete,
++  onSave,
++  onToggleSuspend
++}: {
++  card: StudyCard
++  onClose: () => void
++  onDelete: () => void
++  onSave: (card: StudyCard) => void
++  onToggleSuspend: () => void
++}) {
++  const [front, setFront] = useState(card.front)
++  const [back, setBack] = useState(card.back)
++  const [tags, setTags] = useState(card.tags.join(', '))
++
++  return (
++    <Dialog onOpenChange={open => !open && onClose()} open>
++      <DialogContent className="sm:max-w-lg">
++        <DialogHeader>
++          <DialogTitle>Edit card</DialogTitle>
++          <DialogDescription>Suspend hides a card from review without deleting it.</DialogDescription>
++        </DialogHeader>
++        <div className="flex flex-col gap-3">
++          <Textarea className="min-h-20" onChange={event => setFront(event.target.value)} placeholder="Front" value={front} />
++          <Textarea className="min-h-20" onChange={event => setBack(event.target.value)} placeholder="Back" value={back} />
++          <Input onChange={event => setTags(event.target.value)} placeholder="Tags (comma-separated)" value={tags} />
++        </div>
++        <DialogFooter className="flex-wrap gap-2 sm:justify-between">
++          <div className="flex gap-2">
++            <Button className="text-destructive" onClick={onDelete} variant="outline">
++              Delete
++            </Button>
++            <Button onClick={onToggleSuspend} variant="outline">
++              {card.suspended ? 'Unsuspend' : 'Suspend'}
++            </Button>
++          </div>
++          <Button
++            disabled={!front.trim() || !back.trim()}
++            onClick={() =>
++              onSave({
++                ...card,
++                back: back.trim(),
++                front: front.trim(),
++                tags: tags.split(',').map(tag => tag.trim()).filter(Boolean)
++              })
++            }
++          >
++            Save
++          </Button>
++        </DialogFooter>
++      </DialogContent>
++    </Dialog>
++  )
++}
++
++function AddCardDialog({
++  onClose,
++  onCreate
++}: {
++  onClose: () => void
++  onCreate: (front: string, back: string, tags: string[]) => void
++}) {
++  const [front, setFront] = useState('')
++  const [back, setBack] = useState('')
++  const [tags, setTags] = useState('')
++
++  return (
++    <Dialog onOpenChange={open => !open && onClose()} open>
++      <DialogContent className="sm:max-w-lg">
++        <DialogHeader>
++          <DialogTitle>Add card</DialogTitle>
++          <DialogDescription>New cards enter the review queue as “new”.</DialogDescription>
++        </DialogHeader>
++        <div className="flex flex-col gap-3">
++          <Textarea className="min-h-20" onChange={event => setFront(event.target.value)} placeholder="Front" value={front} />
++          <Textarea className="min-h-20" onChange={event => setBack(event.target.value)} placeholder="Back" value={back} />
++          <Input onChange={event => setTags(event.target.value)} placeholder="Tags (comma-separated)" value={tags} />
++        </div>
++        <DialogFooter>
++          <Button onClick={onClose} variant="outline">
++            Cancel
++          </Button>
++          <Button
++            disabled={!front.trim() || !back.trim()}
++            onClick={() => onCreate(front.trim(), back.trim(), tags.split(',').map(tag => tag.trim()).filter(Boolean))}
++          >
++            Add card
++          </Button>
++        </DialogFooter>
++      </DialogContent>
++    </Dialog>
++  )
++}
++
+ function ReviewSurface({
+   done,
+   intervals,
+diff --git a/apps/desktop/src/app/study/model.js b/apps/desktop/src/app/study/model.js
+index d0f7b69..88c685d 100644
+--- a/apps/desktop/src/app/study/model.js
++++ b/apps/desktop/src/app/study/model.js
+@@ -68,6 +68,9 @@ export function buildQueue(state, deckId, now) {
+             continue;
+         }
+         for (const card of deck.cards) {
++            if (card.suspended) {
++                continue;
++            }
+             const stored = state.schedule[card.id];
+             if (isDue(stored, now)) {
+                 queue.push({ card, deckId: deck.id, deckName: deck.name, isNew: !stored });
+@@ -87,6 +90,9 @@ export function deckStats(state, deckId, now) {
+         }
+         for (const card of deck.cards) {
+             total++;
++            if (card.suspended) {
++                continue;
++            }
+             const stored = state.schedule[card.id];
+             if (!stored) {
+                 fresh++;
+@@ -99,6 +105,74 @@ export function deckStats(state, deckId, now) {
+     }
+     return { due, fresh, total };
+ }
++// --- Card management (Anki-style browser/editor backing) -------------------
++function mapDeckCards(state, deckId, map) {
++    return {
++        ...state,
++        decks: state.decks.map(deck => (deck.id === deckId ? { ...deck, cards: map(deck.cards) } : deck))
++    };
++}
++export function updateCard(state, deckId, card) {
++    return mapDeckCards(state, deckId, cards => cards.map(existing => (existing.id === card.id ? card : existing)));
++}
++export function addCard(state, deckId, front, back, tags) {
++    const card = { back, front, id: freshId('card'), tags };
++    return mapDeckCards(state, deckId, cards => [...cards, card]);
++}
++/** Delete a card AND its FSRS schedule so state doesn't leak. */
++export function deleteCard(state, deckId, cardId) {
++    const next = mapDeckCards(state, deckId, cards => cards.filter(card => card.id !== cardId));
++    const schedule = { ...next.schedule };
++    delete schedule[cardId];
++    return { ...next, schedule };
++}
++export function toggleSuspendCard(state, deckId, cardId) {
++    return mapDeckCards(state, deckId, cards => cards.map(card => (card.id === cardId ? { ...card, suspended: !card.suspended } : card)));
++}
++export function studyMotivation(state, todayIso, windowDays = 90) {
++    const DAY = 86_400_000;
++    const days = new Set(state.reviews.map(review => review.at.slice(0, 10)));
++    const todayMs = new Date(`${todayIso.slice(0, 10)}T00:00:00.000Z`).getTime();
++    // Current streak: consecutive days ending today (or yesterday, so an unstudied
++    // "today so far" doesn't zero the streak before the student sits down).
++    let currentStreak = 0;
++    let cursor = todayMs;
++    if (!days.has(new Date(cursor).toISOString().slice(0, 10))) {
++        cursor -= DAY;
++    }
++    while (days.has(new Date(cursor).toISOString().slice(0, 10))) {
++        currentStreak++;
++        cursor -= DAY;
++    }
++    // Longest streak across all history.
++    const sorted = [...days].sort();
++    let longestStreak = 0;
++    let run = 0;
++    let previous = Number.NaN;
++    for (const day of sorted) {
++        const ms = new Date(`${day}T00:00:00.000Z`).getTime();
++        run = ms - previous === DAY ? run + 1 : 1;
++        previous = ms;
++        longestStreak = Math.max(longestStreak, run);
++    }
++    let learned = 0;
++    for (let i = 0; i < windowDays; i++) {
++        if (days.has(new Date(todayMs - i * DAY).toISOString().slice(0, 10))) {
++            learned++;
++        }
++    }
++    const cutoff = new Date(todayMs - 30 * DAY).toISOString();
++    const recent = state.reviews.filter(review => review.at >= cutoff);
++    const retentionPct = recent.length
++        ? Math.round((recent.filter(review => review.rating !== 'again').length / recent.length) * 100)
++        : null;
++    return {
++        currentStreak,
++        daysLearnedPct: Math.round((learned / windowDays) * 100),
++        longestStreak,
++        retentionPct
++    };
++}
+ /** Grade a card → next state (immutable: returns a new StudyState). */
+ export function gradeCard(state, cardId, rating, now) {
+     const stored = state.schedule[cardId];
+diff --git a/apps/desktop/src/app/study/model.ts b/apps/desktop/src/app/study/model.ts
+index 9af020b..0d7a65f 100644
+--- a/apps/desktop/src/app/study/model.ts
++++ b/apps/desktop/src/app/study/model.ts
+@@ -11,6 +11,8 @@ export interface StudyCard {
+   front: string
+   back: string
+   tags: string[]
++  /** Suspended cards stay in the deck but never enter the review queue (Anki semantics). */
++  suspended?: boolean
+ }
+ 
+ export interface StudyDeck {
+@@ -123,6 +125,10 @@ export function buildQueue(state: StudyState, deckId: null | string, now: Date):
+     }
+ 
+     for (const card of deck.cards) {
++      if (card.suspended) {
++        continue
++      }
++
+       const stored = state.schedule[card.id]
+ 
+       if (isDue(stored, now)) {
+@@ -154,6 +160,11 @@ export function deckStats(state: StudyState, deckId: null | string, now: Date):
+ 
+     for (const card of deck.cards) {
+       total++
++
++      if (card.suspended) {
++        continue
++      }
++
+       const stored = state.schedule[card.id]
+ 
+       if (!stored) {
+@@ -168,6 +179,105 @@ export function deckStats(state: StudyState, deckId: null | string, now: Date):
+   return { due, fresh, total }
+ }
+ 
++// --- Card management (Anki-style browser/editor backing) -------------------
++
++function mapDeckCards(state: StudyState, deckId: string, map: (cards: StudyCard[]) => StudyCard[]): StudyState {
++  return {
++    ...state,
++    decks: state.decks.map(deck => (deck.id === deckId ? { ...deck, cards: map(deck.cards) } : deck))
++  }
++}
++
++export function updateCard(state: StudyState, deckId: string, card: StudyCard): StudyState {
++  return mapDeckCards(state, deckId, cards => cards.map(existing => (existing.id === card.id ? card : existing)))
++}
++
++export function addCard(state: StudyState, deckId: string, front: string, back: string, tags: string[]): StudyState {
++  const card: StudyCard = { back, front, id: freshId('card'), tags }
++
++  return mapDeckCards(state, deckId, cards => [...cards, card])
++}
++
++/** Delete a card AND its FSRS schedule so state doesn't leak. */
++export function deleteCard(state: StudyState, deckId: string, cardId: string): StudyState {
++  const next = mapDeckCards(state, deckId, cards => cards.filter(card => card.id !== cardId))
++  const schedule = { ...next.schedule }
++  delete schedule[cardId]
++
++  return { ...next, schedule }
++}
++
++export function toggleSuspendCard(state: StudyState, deckId: string, cardId: string): StudyState {
++  return mapDeckCards(state, deckId, cards =>
++    cards.map(card => (card.id === cardId ? { ...card, suspended: !card.suspended } : card))
++  )
++}
++
++// --- Motivational stats (streaks + retention) -------------------------------
++
++export interface StudyMotivation {
++  currentStreak: number
++  longestStreak: number
++  /** % of the last `windowDays` with at least one review. */
++  daysLearnedPct: number
++  /** % of graded reviews that were NOT "again" over the last 30 days (retention proxy). */
++  retentionPct: null | number
++}
++
++export function studyMotivation(state: StudyState, todayIso: string, windowDays = 90): StudyMotivation {
++  const DAY = 86_400_000
++  const days = new Set(state.reviews.map(review => review.at.slice(0, 10)))
++  const todayMs = new Date(`${todayIso.slice(0, 10)}T00:00:00.000Z`).getTime()
++
++  // Current streak: consecutive days ending today (or yesterday, so an unstudied
++  // "today so far" doesn't zero the streak before the student sits down).
++  let currentStreak = 0
++  let cursor = todayMs
++
++  if (!days.has(new Date(cursor).toISOString().slice(0, 10))) {
++    cursor -= DAY
++  }
++
++  while (days.has(new Date(cursor).toISOString().slice(0, 10))) {
++    currentStreak++
++    cursor -= DAY
++  }
++
++  // Longest streak across all history.
++  const sorted = [...days].sort()
++  let longestStreak = 0
++  let run = 0
++  let previous = Number.NaN
++
++  for (const day of sorted) {
++    const ms = new Date(`${day}T00:00:00.000Z`).getTime()
++    run = ms - previous === DAY ? run + 1 : 1
++    previous = ms
++    longestStreak = Math.max(longestStreak, run)
++  }
++
++  let learned = 0
++
++  for (let i = 0; i < windowDays; i++) {
++    if (days.has(new Date(todayMs - i * DAY).toISOString().slice(0, 10))) {
++      learned++
++    }
++  }
++
++  const cutoff = new Date(todayMs - 30 * DAY).toISOString()
++  const recent = state.reviews.filter(review => review.at >= cutoff)
++  const retentionPct = recent.length
++    ? Math.round((recent.filter(review => review.rating !== 'again').length / recent.length) * 100)
++    : null
++
++  return {
++    currentStreak,
++    daysLearnedPct: Math.round((learned / windowDays) * 100),
++    longestStreak,
++    retentionPct
++  }
++}
++
+ /** Grade a card → next state (immutable: returns a new StudyState). */
+ export function gradeCard(state: StudyState, cardId: string, rating: StudyRating, now: Date): StudyState {
+   const stored = state.schedule[cardId]
+-- 
+2.50.1 (Apple Git-155)
+
