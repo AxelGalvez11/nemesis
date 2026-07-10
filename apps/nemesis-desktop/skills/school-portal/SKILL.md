@@ -42,6 +42,11 @@ entry. If it's missing:
 4. For files (slides, PDFs): capture the file URLs from the page. Save summaries and
    metadata as Markdown into `~/Documents/Nemesis Library/School/` (write_file). One note
    per course works well: `# PHAR 512 — updates <date>` with a bullet per item.
+   To CAPTURE a file the student asks for: click its download link in the browser
+   (it lands in `~/Downloads`), then move it into
+   `~/Documents/Nemesis Library/School/<Course>/` with your terminal (`mv`), and say
+   where you put it. PDFs and slides placed there open in the app's Library
+   automatically — from there the student can read them or ask you to deck them.
 5. Deliverables the student will love: a "daily brief" note — due-soon list first, then
    new materials, then announcements, each with its course tag.
 
