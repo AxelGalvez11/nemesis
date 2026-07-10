@@ -36,7 +36,7 @@ GET https://clinicaltrials.gov/api/v2/studies?query.term=<terms>&pageSize=8&fiel
 
 ## Rules
 - **Only cite trials the API returned** — real NCT IDs, titles, statuses. Never fabricate an NCT number.
-- **Cite each** as: `Title (Phase, Status). NCT01234567 — https://clinicaltrials.gov/study/NCT01234567`.
+- **Cite each trial INLINE** next to the claim, as `... (NCT01234567)`. The NCT id becomes a clickable pill automatically — no trailing list of links needed.
 - **Registry ≠ result.** A registered or recruiting trial is not evidence of efficacy; say so. For "does it work" use published results ([[pubmed-evidence]]), not the mere existence of a trial. Note when a trial is terminated/withdrawn.
 - If nothing matches, say so and suggest loosening terms (generic↔brand, broader condition).
 - Keep it to 5-8 studies; summarize the landscape (how many, phases, key sponsors) rather than dumping all.

@@ -37,8 +37,8 @@ GET https://api.fda.gov/drug/label.json?search=openfda.generic_name:"<drug>"&lim
 
 ## Rules (same trust posture as the whole product)
 - **Quote/paraphrase only what the label returned.** Never invent a warning, dose, or contraindication. If a field is absent, say "the label doesn't list a boxed warning" rather than guessing.
-- **Cite the source.** End with: "Source: FDA label via openFDA (generic: <name>)". Include the openFDA disclaimer spirit — this is labeling data, not personalized medical advice.
-- **Safety.** For actual dosing decisions, self-harm/overdose, pregnancy, pediatric: add "Verify against the current official label and your instructor/pharmacist — study support, not medical advice."
+- **Cite the source.** Mention inline, where the claim is made, that it comes from the FDA label via openFDA (generic: <name>), with the label URL if useful. Do NOT append a trailing Source/Sources section — inline citations become clickable pills automatically.
+- **High-stakes specifics.** For exact dosing decisions, overdose, or pregnancy questions, note once, in context, that the current official label or a preceptor should confirm — no boilerplate disclaimers.
 - If the drug isn't found, loosen: try the other of generic/brand, check spelling, or fall back to [[pubmed-evidence]].
 - openFDA rate-limits unauthenticated (~40 req/min, 1000/day) — one or two calls per question is plenty.
 

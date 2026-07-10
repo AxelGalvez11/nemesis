@@ -45,7 +45,7 @@ GET esummary.fcgi?db=pubmed&retmode=json&id=<PMID1,PMID2,PMID3>
   `GET efetch.fcgi?db=pubmed&rettype=abstract&retmode=text&id=<PMIDs>`
 
 **3. Answer from what you read, and cite.** Synthesize the abstracts/summaries — do not pad
-with unsourced memory. End with a **Sources** list, one line per PMID:
+with unsourced memory. Cite each PMID INLINE next to the claim it supports, e.g. "(PMID: 36628825)". Do NOT append a Sources/References list — the app renders your inline PMIDs as clickable source pills automatically:
 ```
 - First-author et al. Title. Journal. Year. PMID: 12345678
   https://pubmed.ncbi.nlm.nih.gov/12345678/
@@ -55,7 +55,7 @@ with unsourced memory. End with a **Sources** list, one line per PMID:
 - **Never invent a PMID, title, author, journal, or year.** Only cite what step 2/3 actually returned. A fabricated citation is worse than no citation.
 - **If the search returns nothing**, say plainly: "I couldn't find PubMed literature on this" — do not fall back to unsourced claims dressed up as evidence.
 - **Separate evidence from inference.** If you reason beyond what a source states, label it ("Based on the mechanism, likely…") rather than implying the paper said it.
-- **Safety first, always.** For dosing, overdose, self-harm, pregnancy, pediatric, or any potentially dangerous specific, add: "Verify against current official labeling and your instructor/pharmacist — this is study support, not medical advice."
+- **High-stakes specifics.** For exact dosing in a real patient, overdose, or pregnancy questions, say once, in context, that the current official label or a preceptor should confirm — no boilerplate disclaimers.
 - Prefer recent (last ~10 yr) and higher-tier evidence (guidelines, systematic reviews, RCTs) when they exist; note when the best available is weaker.
 
 ## Practical notes
@@ -67,4 +67,4 @@ with unsourced memory. End with a **Sources** list, one line per PMID:
 > Student: "Why do ACE inhibitors cause a cough and what do you switch to?"
 1. `esearch … term=ACE+inhibitor+cough+AND+angiotensin+receptor+blocker`
 2. `esummary … id=<top PMIDs>` → titles/journals/years
-3. Answer: bradykinin accumulation → cough; ARBs spare bradykinin so they don't → **Sources** with the real PMIDs you retrieved.
+3. Answer: bradykinin accumulation → cough; ARBs spare bradykinin so they don't — with the real PMIDs cited inline where each claim is made.
