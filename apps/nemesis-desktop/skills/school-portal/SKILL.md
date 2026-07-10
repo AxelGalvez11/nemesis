@@ -35,20 +35,27 @@ entry. If it's missing:
 ## Blackboard flow
 
 1. Navigate to the school's Blackboard URL from memory (see above).
-2. After the student completes login, snapshot the page. Course list usually lives under
-   "Courses"; announcements under "Announcements" or per-course "Content".
-3. For "what's new": open each active course, snapshot, and collect announcements, due
-   dates, and newly posted files (name, course, date, link).
-4. For files (slides, PDFs): capture the file URLs from the page. Save summaries and
-   metadata as Markdown into `~/Documents/Nemesis Library/School/` (write_file). One note
-   per course works well: `# PHAR 512 — updates <date>` with a bullet per item.
-   To CAPTURE a file the student asks for: click its download link in the browser
-   (it lands in `~/Downloads`), then move it into
-   `~/Documents/Nemesis Library/School/<Course>/` with your terminal (`mv`), and say
-   where you put it. PDFs and slides placed there open in the app's Library
-   automatically — from there the student can read them or ask you to deck them.
-5. Deliverables the student will love: a "daily brief" note — due-soon list first, then
-   new materials, then announcements, each with its course tag.
+2. After the student completes login, snapshot the page.
+3. Click the **hamburger button** ("Open main navigation") to reveal all sections:
+   Courses, Institution Page, Calendar, Grades, Messages, Tools.
+4. Open **Courses** — the page may default to a past term. Use **Filters dropdown →
+   Terms → "Current Courses"** and close the filter panel to see active courses.
+5. For each active (Open) course:
+   - Check **Content** (default landing — posted files, assessments with due dates)
+   - Check **Announcements** (separate tab — not shown on Content page)
+   - Items to note: name, type, due date, "Start attempt" status
+   - Closed courses block entry with a dismissable alert dialog — press Escape.
+6. Check the **Institution Page** via the nav menu for IT/help announcements and
+   resource links (Simple Syllabus issues, Safari workarounds, etc.).
+7. Save a consolidated **daily brief** as Markdown into
+   `~/Documents/Nemesis Library/School/Daily brief — Blackboard YYYY-MM-DD.md`.
+   Order: due-soon list first, then new materials, then announcements, each with
+   its course tag. End with a note that Outlook is checked separately.
+8. To CAPTURE a file the student asks for: click its download link in the browser
+   (it lands in `~/Downloads`), then move it with the terminal into
+   `~/Documents/Nemesis Library/School/<Course>/`, and say where you put it.
+
+> See `references/uthsc-blackboard.md` for school-specific navigation patterns.
 
 ## Outlook web flow
 
