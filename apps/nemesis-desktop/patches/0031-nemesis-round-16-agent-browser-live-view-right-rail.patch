@@ -1,0 +1,2110 @@
+From 8403776fa19e30702524431ee5d50ad991627c07 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Fri, 10 Jul 2026 14:09:48 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20round-16=20=E2=80=94=20agent=20brows?=
+ =?UTF-8?q?er=20live-view=20in=20the=20right=20rail=20(tabs,=20URL=20bar,?=
+ =?UTF-8?q?=20forwarded=20input)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- electron/school-browser.ts: app-managed persistent Chromium on :9333
+  (ms-playwright binary, ~/.hermes/browser_auth/school-profile), CDP relay
+  over IPC — screencast frames out, allowlisted input/navigation in,
+  HTTP tab create/close/activate
+- BrowserMirror: rail tab with the browser's own mini tab strip, URL bar,
+  back/forward/reload, live JPEG mirror, full mouse+keyboard forwarding
+  (logins typed in-panel), offline empty-state with Start browser
+- rail plumbing: RIGHT_RAIL_BROWSER_TAB_ID + $browserRailOpen, pane gates
+  in desktop-controller now count the browser tab, cmd+w closes it
+- auto-open: use-agent-browser-watcher pops the mirror when a turn starts
+  using browser_* tools; Sources header gains a Browser opener
+- agent side: config.yaml browser.cdp_url -> the same :9333 browser, so
+  the mirror shows the agent working live (verified: PubMed search E2E)
+---
+ apps/desktop/electron/main.ts                 |   4 +
+ apps/desktop/electron/preload.ts              |  20 +
+ apps/desktop/electron/school-browser.ts       | 367 ++++++++++++++
+ .../src/app/chat/right-rail/browser-mirror.js | 254 ++++++++++
+ .../app/chat/right-rail/browser-mirror.tsx    | 454 ++++++++++++++++++
+ .../src/app/chat/right-rail/preview.js        |  20 +-
+ .../src/app/chat/right-rail/preview.tsx       |  36 +-
+ apps/desktop/src/app/desktop-controller.js    |  20 +-
+ apps/desktop/src/app/desktop-controller.tsx   |  19 +-
+ apps/desktop/src/app/right-sidebar/index.js   |  10 +-
+ apps/desktop/src/app/right-sidebar/sources.js |   4 +-
+ .../desktop/src/app/right-sidebar/sources.tsx |  18 +
+ .../assistant-ui/thread/assistant-message.js  |   5 +-
+ apps/desktop/src/components/brand-mark.js     |   4 +-
+ apps/desktop/src/global.d.ts                  |  17 +
+ .../src/hooks/use-agent-browser-watcher.js    |  42 ++
+ .../src/hooks/use-agent-browser-watcher.ts    |  53 ++
+ .../src/hooks/use-exports-preview-watcher.js  |  82 ++++
+ apps/desktop/src/store/browser-rail.js        |  14 +
+ apps/desktop/src/store/browser-rail.ts        |  17 +
+ apps/desktop/src/store/layout.js              |   1 +
+ apps/desktop/src/store/layout.ts              |   3 +-
+ apps/desktop/src/store/preview.js             |  35 +-
+ apps/desktop/src/store/preview.ts             |  41 +-
+ 24 files changed, 1495 insertions(+), 45 deletions(-)
+ create mode 100644 apps/desktop/electron/school-browser.ts
+ create mode 100644 apps/desktop/src/app/chat/right-rail/browser-mirror.js
+ create mode 100644 apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
+ create mode 100644 apps/desktop/src/hooks/use-agent-browser-watcher.js
+ create mode 100644 apps/desktop/src/hooks/use-agent-browser-watcher.ts
+ create mode 100644 apps/desktop/src/hooks/use-exports-preview-watcher.js
+ create mode 100644 apps/desktop/src/store/browser-rail.js
+ create mode 100644 apps/desktop/src/store/browser-rail.ts
+
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index b29c0b41b23..2d814a756ba 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -65,6 +65,7 @@ import {
+ import { installEmbedReferer } from './embed-referer'
+ import { readDirForIpc } from './fs-read-dir'
+ import { probeGatewayWebSocket } from './gateway-ws-probe'
++import { registerSchoolBrowserIpc } from './school-browser'
+ import { scanGitRepos } from './git-repo-scan'
+ import {
+   fileDiffVsHead,
+@@ -7896,6 +7897,9 @@ function disposeTerminalSession(id) {
+ 
+ ipcMain.handle('hermes:fs:readDir', async (_event, dirPath) => readDirForIpc(dirPath))
+ 
++// App-managed agent browser (school-portal mirror) — see school-browser.ts.
++registerSchoolBrowserIpc()
++
+ ipcMain.handle('hermes:fs:gitRoot', async (_event, startPath) => gitRootForIpc(startPath))
+ 
+ // Reveal a path in the OS file manager (Finder / Explorer / Files).
+diff --git a/apps/desktop/electron/preload.ts b/apps/desktop/electron/preload.ts
+index 1d3ef0959eb..a095e0a5eec 100644
+--- a/apps/desktop/electron/preload.ts
++++ b/apps/desktop/electron/preload.ts
+@@ -96,6 +96,26 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
+   revealLogs: () => ipcRenderer.invoke('hermes:logs:reveal'),
+   getRecentLogs: () => ipcRenderer.invoke('hermes:logs:recent'),
+   readDir: dirPath => ipcRenderer.invoke('hermes:fs:readDir', dirPath),
++  // App-managed agent browser (school-portal mirror in the chat right rail).
++  schoolBrowser: {
++    ensure: () => ipcRenderer.invoke('hermes:schoolBrowser:ensure'),
++    list: () => ipcRenderer.invoke('hermes:schoolBrowser:list'),
++    attach: targetId => ipcRenderer.invoke('hermes:schoolBrowser:attach', targetId),
++    detach: () => ipcRenderer.invoke('hermes:schoolBrowser:detach'),
++    exec: payload => ipcRenderer.invoke('hermes:schoolBrowser:exec', payload),
++    onFrame: callback => {
++      const listener = (_event, payload) => callback(payload)
++      ipcRenderer.on('hermes:schoolBrowser:frame', listener)
++
++      return () => ipcRenderer.removeListener('hermes:schoolBrowser:frame', listener)
++    },
++    onEvent: callback => {
++      const listener = (_event, payload) => callback(payload)
++      ipcRenderer.on('hermes:schoolBrowser:event', listener)
++
++      return () => ipcRenderer.removeListener('hermes:schoolBrowser:event', listener)
++    }
++  },
+   gitRoot: startPath => ipcRenderer.invoke('hermes:fs:gitRoot', startPath),
+   revealPath: targetPath => ipcRenderer.invoke('hermes:fs:reveal', targetPath),
+   renamePath: (targetPath, newName) => ipcRenderer.invoke('hermes:fs:rename', targetPath, newName),
+diff --git a/apps/desktop/electron/school-browser.ts b/apps/desktop/electron/school-browser.ts
+new file mode 100644
+index 00000000000..41c38bf6714
+--- /dev/null
++++ b/apps/desktop/electron/school-browser.ts
+@@ -0,0 +1,367 @@
++// App-managed agent browser ("school browser"): a persistent Chromium the agent
++// drives over CDP (config.yaml browser.cdp_url → http://127.0.0.1:9333) and the
++// renderer mirrors live in the chat right rail. All CDP traffic (target list,
++// screencast frames, forwarded input) relays through THIS module over IPC — the
++// renderer cannot talk to the CDP endpoints itself (no CORS on /json/*), and the
++// main process keeps exactly one mirrored target per renderer window.
++//
++// The profile dir persists cookies (Blackboard/Outlook logins) across restarts;
++// the student types credentials INTO THE MIRROR (forwarded as trusted CDP input)
++// or into the real window — never into the chat.
++import { spawn } from 'node:child_process'
++import fs from 'node:fs'
++import os from 'node:os'
++import path from 'node:path'
++
++import { ipcMain } from 'electron'
++
++const PORT = 9333
++const ORIGIN = `http://127.0.0.1:${PORT}`
++const PROFILE_DIR = path.join(os.homedir(), '.hermes', 'browser_auth', 'school-profile')
++const START_URL = 'https://www.google.com'
++const HTTP_TIMEOUT_MS = 2_500
++const SPAWN_WAIT_MS = 12_000
++
++// Only these CDP methods may be forwarded from the renderer — the mirror needs
++// input + navigation, nothing else (no Runtime.evaluate from the renderer).
++const ALLOWED_FORWARD_METHODS = new Set([
++  'Input.dispatchKeyEvent',
++  'Input.dispatchMouseEvent',
++  'Input.insertText',
++  'Page.navigate',
++  'Page.reload'
++])
++
++function httpJson(url: string, init?: { method?: string }) {
++  return fetch(url, {
++    method: init?.method ?? 'GET',
++    signal: AbortSignal.timeout(HTTP_TIMEOUT_MS)
++  }).then(async res => {
++    const text = await res.text()
++
++    try {
++      return JSON.parse(text)
++    } catch {
++      return text
++    }
++  })
++}
++
++/** Playwright's Chrome-for-Testing build — the same binary the agent's own
++ *  headless launcher uses, so one install serves both. */
++function findChromeBinary(): null | string {
++  if (process.platform !== 'darwin') {
++    return null
++  }
++
++  const cache = path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright')
++
++  try {
++    const builds = fs
++      .readdirSync(cache)
++      .filter(name => /^chromium-\d+$/.test(name))
++      .sort()
++      .reverse()
++
++    for (const build of builds) {
++      for (const arch of ['chrome-mac-arm64', 'chrome-mac-x64', 'chrome-mac']) {
++        const bin = path.join(
++          cache,
++          build,
++          arch,
++          'Google Chrome for Testing.app',
++          'Contents',
++          'MacOS',
++          'Google Chrome for Testing'
++        )
++
++        if (fs.existsSync(bin)) {
++          return bin
++        }
++      }
++    }
++  } catch {
++    // No playwright cache — reported as not-installed below.
++  }
++
++  return null
++}
++
++async function isRunning(): Promise<boolean> {
++  try {
++    const version = await httpJson(`${ORIGIN}/json/version`)
++
++    return Boolean(version && typeof version === 'object' && 'webSocketDebuggerUrl' in version)
++  } catch {
++    return false
++  }
++}
++
++async function ensureBrowser(): Promise<{ ok: boolean; reason?: string }> {
++  if (await isRunning()) {
++    return { ok: true }
++  }
++
++  const bin = findChromeBinary()
++
++  if (!bin) {
++    return { ok: false, reason: 'no-binary' }
++  }
++
++  try {
++    fs.mkdirSync(PROFILE_DIR, { recursive: true })
++    const child = spawn(
++      bin,
++      [
++        `--remote-debugging-port=${PORT}`,
++        `--user-data-dir=${PROFILE_DIR}`,
++        '--no-first-run',
++        '--no-default-browser-check',
++        '--window-size=1280,860',
++        START_URL
++      ],
++      { detached: true, stdio: 'ignore' }
++    )
++    child.unref()
++  } catch {
++    return { ok: false, reason: 'spawn-failed' }
++  }
++
++  const deadline = Date.now() + SPAWN_WAIT_MS
++
++  while (Date.now() < deadline) {
++    if (await isRunning()) {
++      return { ok: true }
++    }
++
++    await new Promise(resolve => setTimeout(resolve, 400))
++  }
++
++  return { ok: false, reason: 'timeout' }
++}
++
++async function listTabs() {
++  try {
++    const targets = await httpJson(`${ORIGIN}/json/list`)
++
++    if (!Array.isArray(targets)) {
++      return { running: false, tabs: [] }
++    }
++
++    const tabs = targets
++      .filter(t => t?.type === 'page' && typeof t.id === 'string' && !String(t.url ?? '').startsWith('devtools://'))
++      .map(t => ({ id: t.id as string, title: String(t.title ?? ''), url: String(t.url ?? '') }))
++
++    return { running: true, tabs }
++  } catch {
++    return { running: false, tabs: [] }
++  }
++}
++
++interface MirrorSession {
++  ws: WebSocket
++  targetId: string
++  nextId: number
++  pending: Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>
++}
++
++// One mirrored target per renderer window (keyed by webContents id).
++const sessions = new Map<number, MirrorSession>()
++
++function closeSession(senderId: number) {
++  const session = sessions.get(senderId)
++
++  if (!session) {
++    return
++  }
++
++  sessions.delete(senderId)
++
++  try {
++    session.ws.close()
++  } catch {
++    // Already closed.
++  }
++
++  for (const waiter of session.pending.values()) {
++    waiter.reject(new Error('mirror detached'))
++  }
++
++  session.pending.clear()
++}
++
++function sessionCommand(session: MirrorSession, method: string, params?: Record<string, unknown>) {
++  return new Promise((resolve, reject) => {
++    const id = ++session.nextId
++    session.pending.set(id, { reject, resolve })
++
++    try {
++      session.ws.send(JSON.stringify({ id, method, params: params ?? {} }))
++    } catch (error) {
++      session.pending.delete(id)
++      reject(error instanceof Error ? error : new Error('send failed'))
++    }
++  })
++}
++
++async function attachMirror(sender: Electron.WebContents, targetId: string): Promise<boolean> {
++  closeSession(sender.id)
++
++  const ws = new WebSocket(`ws://127.0.0.1:${PORT}/devtools/page/${targetId}`)
++  const session: MirrorSession = { nextId: 0, pending: new Map(), targetId, ws }
++
++  const opened = await new Promise<boolean>(resolve => {
++    ws.onopen = () => resolve(true)
++    ws.onerror = () => resolve(false)
++    setTimeout(() => resolve(false), HTTP_TIMEOUT_MS)
++  })
++
++  if (!opened) {
++    return false
++  }
++
++  sessions.set(sender.id, session)
++
++  ws.onmessage = event => {
++    let message: {
++      id?: number
++      error?: { message?: string }
++      result?: unknown
++      method?: string
++      params?: Record<string, unknown>
++    }
++
++    try {
++      message = JSON.parse(String(event.data))
++    } catch {
++      return
++    }
++
++    if (message.id && session.pending.has(message.id)) {
++      const waiter = session.pending.get(message.id)!
++      session.pending.delete(message.id)
++      message.error ? waiter.reject(new Error(message.error.message ?? 'cdp error')) : waiter.resolve(message.result)
++
++      return
++    }
++
++    if (message.method === 'Page.screencastFrame') {
++      const params = message.params ?? {}
++      // Ack immediately or the stream stalls after a few frames.
++      void sessionCommand(session, 'Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => undefined)
++
++      if (!sender.isDestroyed()) {
++        sender.send('hermes:schoolBrowser:frame', {
++          data: params.data,
++          metadata: params.metadata,
++          targetId
++        })
++      }
++
++      return
++    }
++
++    if (message.method === 'Page.frameNavigated') {
++      const frame = (message.params?.frame ?? {}) as { parentId?: string; url?: string }
++
++      if (!frame.parentId && !sender.isDestroyed()) {
++        sender.send('hermes:schoolBrowser:event', { targetId, type: 'url-changed', url: frame.url ?? '' })
++      }
++    }
++  }
++
++  ws.onclose = () => {
++    if (sessions.get(sender.id) === session) {
++      sessions.delete(sender.id)
++
++      if (!sender.isDestroyed()) {
++        sender.send('hermes:schoolBrowser:event', { targetId, type: 'detached' })
++      }
++    }
++  }
++
++  sender.once('destroyed', () => closeSession(sender.id))
++
++  await sessionCommand(session, 'Page.enable').catch(() => undefined)
++  await sessionCommand(session, 'Page.startScreencast', {
++    format: 'jpeg',
++    maxHeight: 1800,
++    maxWidth: 1400,
++    quality: 65
++  }).catch(() => undefined)
++
++  return true
++}
++
++interface ForwardPayload {
++  method?: string
++  params?: Record<string, unknown>
++}
++
++async function execCommand(sender: Electron.WebContents, payload: ForwardPayload | Record<string, unknown>) {
++  const kind = String((payload as Record<string, unknown>).kind ?? 'cdp')
++
++  // Tab management rides the HTTP endpoints (works without an attached mirror).
++  if (kind === 'tab-new') {
++    const url = String((payload as Record<string, unknown>).url ?? START_URL)
++
++    return httpJson(`${ORIGIN}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })
++  }
++
++  if (kind === 'tab-close') {
++    return httpJson(`${ORIGIN}/json/close/${String((payload as Record<string, unknown>).targetId ?? '')}`)
++  }
++
++  if (kind === 'tab-activate') {
++    return httpJson(`${ORIGIN}/json/activate/${String((payload as Record<string, unknown>).targetId ?? '')}`)
++  }
++
++  if (kind === 'history') {
++    const session = sessions.get(sender.id)
++
++    if (!session) {
++      return null
++    }
++
++    const direction = String((payload as Record<string, unknown>).direction ?? 'back')
++    const history = (await sessionCommand(session, 'Page.getNavigationHistory')) as {
++      currentIndex: number
++      entries: { id: number }[]
++    }
++    const nextIndex = history.currentIndex + (direction === 'forward' ? 1 : -1)
++    const entry = history.entries[nextIndex]
++
++    if (entry) {
++      await sessionCommand(session, 'Page.navigateToHistoryEntry', { entryId: entry.id })
++    }
++
++    return null
++  }
++
++  // Plain CDP forward (input + navigation), allowlisted.
++  const { method, params } = payload as ForwardPayload
++
++  if (!method || !ALLOWED_FORWARD_METHODS.has(method)) {
++    throw new Error(`method not allowed: ${String(method)}`)
++  }
++
++  const session = sessions.get(sender.id)
++
++  if (!session) {
++    return null
++  }
++
++  return sessionCommand(session, method, params)
++}
++
++export function registerSchoolBrowserIpc() {
++  ipcMain.handle('hermes:schoolBrowser:ensure', () => ensureBrowser())
++  ipcMain.handle('hermes:schoolBrowser:list', () => listTabs())
++  ipcMain.handle('hermes:schoolBrowser:attach', (event, targetId) => attachMirror(event.sender, String(targetId)))
++  ipcMain.handle('hermes:schoolBrowser:detach', event => {
++    closeSession(event.sender.id)
++
++    return true
++  })
++  ipcMain.handle('hermes:schoolBrowser:exec', (event, payload) => execCommand(event.sender, payload ?? {}))
++}
+diff --git a/apps/desktop/src/app/chat/right-rail/browser-mirror.js b/apps/desktop/src/app/chat/right-rail/browser-mirror.js
+new file mode 100644
+index 00000000000..06c08aac48a
+--- /dev/null
++++ b/apps/desktop/src/app/chat/right-rail/browser-mirror.js
+@@ -0,0 +1,254 @@
++import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
++// Live mirror of the app-managed agent browser, docked in the chat right rail.
++// Frames arrive as CDP screencast JPEGs relayed by the main process; mouse and
++// keyboard events on the mirror are forwarded back as trusted CDP input — so a
++// student can watch the agent browse AND type (e.g. a Blackboard login) right
++// here, into the same persistent browser profile the agent drives.
++import { useCallback, useEffect, useRef, useState } from 'react';
++import { Codicon } from '@/components/ui/codicon';
++import { cn } from '@/lib/utils';
++const TAB_POLL_MS = 3000;
++// DOM key → CDP dispatchKeyEvent payload for the non-printable keys a login
++// form needs. Printable characters ride Input.insertText instead (reliable).
++const SPECIAL_KEYS = {
++    ArrowDown: { code: 'ArrowDown', vk: 40 },
++    ArrowLeft: { code: 'ArrowLeft', vk: 37 },
++    ArrowRight: { code: 'ArrowRight', vk: 39 },
++    ArrowUp: { code: 'ArrowUp', vk: 38 },
++    Backspace: { code: 'Backspace', vk: 8 },
++    Delete: { code: 'Delete', vk: 46 },
++    End: { code: 'End', vk: 35 },
++    Enter: { code: 'Enter', text: '\r', vk: 13 },
++    Escape: { code: 'Escape', vk: 27 },
++    Home: { code: 'Home', vk: 36 },
++    PageDown: { code: 'PageDown', vk: 34 },
++    PageUp: { code: 'PageUp', vk: 33 },
++    Tab: { code: 'Tab', text: '\t', vk: 9 }
++};
++function modifiersFor(event) {
++    return (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0);
++}
++function mouseButtonFor(button) {
++    return button === 1 ? 'middle' : button === 2 ? 'right' : 'left';
++}
++function api() {
++    return window.hermesDesktop?.schoolBrowser;
++}
++export function BrowserMirror() {
++    const [status, setStatus] = useState('connecting');
++    const [tabs, setTabs] = useState([]);
++    const [activeId, setActiveId] = useState('');
++    const [url, setUrl] = useState('');
++    const [urlDraft, setUrlDraft] = useState(null);
++    const imgRef = useRef(null);
++    const overlayRef = useRef(null);
++    // Page CSS size of the last frame — the input coordinate space.
++    const frameSizeRef = useRef({ height: 0, width: 0 });
++    const activeIdRef = useRef('');
++    activeIdRef.current = activeId;
++    const exec = useCallback((payload) => {
++        void api()
++            ?.exec(payload)
++            .catch(() => undefined);
++    }, []);
++    const attach = useCallback(async (targetId) => {
++        setActiveId(targetId);
++        if (imgRef.current) {
++            imgRef.current.removeAttribute('src');
++        }
++        const ok = await api()?.attach(targetId);
++        setStatus(ok ? 'live' : 'offline');
++    }, []);
++    const refreshTabs = useCallback(async () => {
++        const result = await api()?.list();
++        if (!result?.running) {
++            setStatus('offline');
++            setTabs([]);
++            return [];
++        }
++        setTabs(result.tabs);
++        return result.tabs;
++    }, []);
++    const startBrowser = useCallback(async () => {
++        setStatus('connecting');
++        const ensured = await api()?.ensure();
++        if (!ensured?.ok) {
++            setStatus('offline');
++            return;
++        }
++        const found = await refreshTabs();
++        if (found[0]) {
++            await attach(found[0].id);
++            setUrl(found[0].url);
++        }
++    }, [attach, refreshTabs]);
++    // Boot: ensure the browser, list its tabs, mirror the first one. Poll the tab
++    // strip; frames + URL changes stream in via the IPC subscriptions.
++    useEffect(() => {
++        let stopped = false;
++        void (async () => {
++            if (stopped) {
++                return;
++            }
++            await startBrowser();
++        })();
++        const timer = window.setInterval(() => {
++            void refreshTabs().then(found => {
++                if (found.length > 0 && !found.some(tab => tab.id === activeIdRef.current)) {
++                    void attach(found[0].id);
++                    setUrl(found[0].url);
++                }
++            });
++        }, TAB_POLL_MS);
++        const offFrame = api()?.onFrame(frame => {
++            if (frame.targetId !== activeIdRef.current || !imgRef.current) {
++                return;
++            }
++            frameSizeRef.current = { height: frame.metadata.deviceHeight, width: frame.metadata.deviceWidth };
++            imgRef.current.src = `data:image/jpeg;base64,${frame.data}`;
++            setStatus('live');
++        });
++        const offEvent = api()?.onEvent(event => {
++            if (event.targetId !== activeIdRef.current) {
++                return;
++            }
++            if (event.type === 'url-changed' && event.url) {
++                setUrl(event.url);
++            }
++            if (event.type === 'detached') {
++                setStatus('offline');
++            }
++        });
++        return () => {
++            stopped = true;
++            window.clearInterval(timer);
++            offFrame?.();
++            offEvent?.();
++            void api()?.detach();
++        };
++        // eslint-disable-next-line react-hooks/exhaustive-deps
++    }, []);
++    /** Mirror-box pixel → page CSS pixel, honoring the object-contain letterbox. */
++    const pageCoords = useCallback((clientX, clientY) => {
++        const box = overlayRef.current?.getBoundingClientRect();
++        const frame = frameSizeRef.current;
++        if (!box || !frame.width || !frame.height) {
++            return null;
++        }
++        const scale = Math.min(box.width / frame.width, box.height / frame.height);
++        const drawnWidth = frame.width * scale;
++        const drawnHeight = frame.height * scale;
++        const offsetX = box.left + (box.width - drawnWidth) / 2;
++        const offsetY = box.top + (box.height - drawnHeight) / 2;
++        const x = (clientX - offsetX) / scale;
++        const y = (clientY - offsetY) / scale;
++        if (x < 0 || y < 0 || x > frame.width || y > frame.height) {
++            return null;
++        }
++        return { x: Math.round(x), y: Math.round(y) };
++    }, []);
++    const sendMouse = useCallback((type, event, extra) => {
++        const coords = pageCoords(event.clientX, event.clientY);
++        if (!coords) {
++            return;
++        }
++        exec({
++            method: 'Input.dispatchMouseEvent',
++            params: {
++                button: mouseButtonFor('button' in event ? event.button : 0),
++                clickCount: 'detail' in event ? Math.max(1, Math.min(3, event.detail)) : 1,
++                modifiers: modifiersFor(event),
++                type,
++                x: coords.x,
++                y: coords.y,
++                ...extra
++            }
++        });
++    }, [exec, pageCoords]);
++    const lastMoveRef = useRef(0);
++    const onKeyDown = useCallback((event) => {
++        event.preventDefault();
++        event.stopPropagation();
++        // Paste: read the app clipboard and inject as text.
++        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
++            void navigator.clipboard
++                .readText()
++                .then(text => text && exec({ method: 'Input.insertText', params: { text } }))
++                .catch(() => undefined);
++            return;
++        }
++        const special = SPECIAL_KEYS[event.key];
++        if (special) {
++            const base = {
++                code: special.code,
++                key: event.key,
++                modifiers: modifiersFor(event),
++                nativeVirtualKeyCode: special.vk,
++                windowsVirtualKeyCode: special.vk
++            };
++            exec({ method: 'Input.dispatchKeyEvent', params: { ...base, ...(special.text ? { text: special.text } : {}), type: 'keyDown' } });
++            exec({ method: 'Input.dispatchKeyEvent', params: { ...base, type: 'keyUp' } });
++            return;
++        }
++        if (event.key.length === 1 && !event.metaKey && !event.ctrlKey) {
++            exec({ method: 'Input.insertText', params: { text: event.key } });
++        }
++    }, [exec]);
++    const navigate = useCallback((raw) => {
++        const trimmed = raw.trim();
++        if (!trimmed) {
++            return;
++        }
++        const target = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
++            ? trimmed
++            : /\s/.test(trimmed) || !trimmed.includes('.')
++                ? `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`
++                : `https://${trimmed}`;
++        exec({ method: 'Page.navigate', params: { url: target } });
++        setUrlDraft(null);
++    }, [exec]);
++    const newTab = useCallback(async () => {
++        await api()?.exec({ kind: 'tab-new', url: 'about:blank' });
++        const found = await refreshTabs();
++        const created = found[found.length - 1];
++        if (created) {
++            await attach(created.id);
++            setUrl(created.url);
++            setUrlDraft('');
++        }
++    }, [attach, refreshTabs]);
++    const closeTab = useCallback(async (targetId) => {
++        await api()?.exec({ kind: 'tab-close', targetId });
++        const found = await refreshTabs();
++        if (targetId === activeIdRef.current && found[0]) {
++            await attach(found[0].id);
++            setUrl(found[0].url);
++        }
++    }, [attach, refreshTabs]);
++    return (_jsxs("div", { className: "flex h-full min-h-0 w-full flex-col bg-(--ui-editor-surface-background)", children: [_jsxs("div", { className: "flex h-7 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-(--ui-stroke-tertiary) px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", children: [tabs.map(tab => {
++                        const active = tab.id === activeId;
++                        return (_jsxs("div", { className: cn('group/btab flex h-5.5 min-w-0 max-w-40 shrink-0 items-center rounded-md pl-2 pr-1 text-[0.65rem]', active
++                                ? 'bg-(--ui-bg-secondary) text-foreground'
++                                : 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'), children: [_jsx("button", { className: "min-w-0 truncate outline-none", onClick: () => {
++                                        void attach(tab.id);
++                                        setUrl(tab.url);
++                                        setUrlDraft(null);
++                                    }, title: tab.url, type: "button", children: tab.title || tab.url || 'New tab' }), _jsx("button", { "aria-label": "Close tab", className: "ml-1 grid size-4 shrink-0 place-items-center rounded-sm opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) group-hover/btab:opacity-100", onClick: () => void closeTab(tab.id), type: "button", children: _jsx(Codicon, { name: "close", size: "0.6rem" }) })] }, tab.id));
++                    }), _jsx("button", { "aria-label": "New tab", className: "grid size-5.5 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground", onClick: () => void newTab(), type: "button", children: _jsx(Codicon, { name: "add", size: "0.7rem" }) })] }), _jsxs("div", { className: "flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1.5", children: [_jsx("button", { "aria-label": "Back", className: "grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground", onClick: () => exec({ direction: 'back', kind: 'history' }), type: "button", children: _jsx(Codicon, { name: "arrow-left", size: "0.8rem" }) }), _jsx("button", { "aria-label": "Forward", className: "grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground", onClick: () => exec({ direction: 'forward', kind: 'history' }), type: "button", children: _jsx(Codicon, { name: "arrow-right", size: "0.8rem" }) }), _jsx("button", { "aria-label": "Reload", className: "grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground", onClick: () => exec({ method: 'Page.reload', params: {} }), type: "button", children: _jsx(Codicon, { name: "refresh", size: "0.8rem" }) }), _jsx("input", { className: "h-6 min-w-0 flex-1 rounded-md border border-(--ui-stroke-quaternary) bg-(--ui-bg-secondary) px-2 text-[0.7rem] text-foreground outline-none placeholder:text-(--ui-text-quaternary) focus:border-(--ui-stroke-secondary)", onBlur: () => setUrlDraft(null), onChange: event => setUrlDraft(event.target.value), onFocus: event => event.target.select(), onKeyDown: event => {
++                            if (event.key === 'Enter') {
++                                navigate(event.currentTarget.value);
++                                event.currentTarget.blur();
++                            }
++                        }, placeholder: "Type a URL and press Enter", spellCheck: false, value: urlDraft ?? url })] }), _jsx("div", { className: "relative min-h-0 flex-1 bg-black/90", children: status === 'offline' ? (_jsxs("div", { className: "flex h-full flex-col items-center justify-center gap-3 px-6 text-center", children: [_jsx(Codicon, { className: "text-(--ui-text-quaternary)", name: "globe", size: "1.6rem" }), _jsx("div", { className: "text-[0.75rem] text-(--ui-text-tertiary)", children: "The agent\u2019s browser isn\u2019t running." }), _jsx("button", { className: "rounded-md bg-(--ui-bg-secondary) px-3 py-1.5 text-[0.72rem] font-medium text-foreground transition-colors hover:bg-(--chrome-action-hover)", onClick: () => void startBrowser(), type: "button", children: "Start browser" })] })) : (_jsxs(_Fragment, { children: [_jsx("img", { alt: "", className: "h-full w-full select-none object-contain", draggable: false, ref: imgRef }), _jsx("div", { className: "absolute inset-0 cursor-default outline-none", onKeyDown: onKeyDown, onMouseDown: event => {
++                                event.preventDefault();
++                                event.currentTarget.focus();
++                                sendMouse('mousePressed', event, { buttons: 1 });
++                            }, onMouseMove: event => {
++                                const now = Date.now();
++                                if (now - lastMoveRef.current < 33) {
++                                    return;
++                                }
++                                lastMoveRef.current = now;
++                                sendMouse('mouseMoved', event, { buttons: event.buttons });
++                            }, onMouseUp: event => sendMouse('mouseReleased', event, { buttons: 0 }), onWheel: event => sendMouse('mouseWheel', event, { deltaX: event.deltaX, deltaY: event.deltaY }), ref: overlayRef, role: "application", tabIndex: 0 }), status === 'connecting' && (_jsx("div", { className: "pointer-events-none absolute inset-0 grid place-items-center text-[0.72rem] text-(--ui-text-tertiary)", children: "Connecting to the agent\u2019s browser\u2026" }))] })) })] }));
++}
+diff --git a/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx b/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
+new file mode 100644
+index 00000000000..ef76bc0a04f
+--- /dev/null
++++ b/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
+@@ -0,0 +1,454 @@
++// Live mirror of the app-managed agent browser, docked in the chat right rail.
++// Frames arrive as CDP screencast JPEGs relayed by the main process; mouse and
++// keyboard events on the mirror are forwarded back as trusted CDP input — so a
++// student can watch the agent browse AND type (e.g. a Blackboard login) right
++// here, into the same persistent browser profile the agent drives.
++import { useCallback, useEffect, useRef, useState } from 'react'
++
++import { Codicon } from '@/components/ui/codicon'
++import { cn } from '@/lib/utils'
++
++interface BrowserTab {
++  id: string
++  title: string
++  url: string
++}
++
++type MirrorStatus = 'connecting' | 'live' | 'offline'
++
++const TAB_POLL_MS = 3000
++
++// DOM key → CDP dispatchKeyEvent payload for the non-printable keys a login
++// form needs. Printable characters ride Input.insertText instead (reliable).
++const SPECIAL_KEYS: Record<string, { code: string; text?: string; vk: number }> = {
++  ArrowDown: { code: 'ArrowDown', vk: 40 },
++  ArrowLeft: { code: 'ArrowLeft', vk: 37 },
++  ArrowRight: { code: 'ArrowRight', vk: 39 },
++  ArrowUp: { code: 'ArrowUp', vk: 38 },
++  Backspace: { code: 'Backspace', vk: 8 },
++  Delete: { code: 'Delete', vk: 46 },
++  End: { code: 'End', vk: 35 },
++  Enter: { code: 'Enter', text: '\r', vk: 13 },
++  Escape: { code: 'Escape', vk: 27 },
++  Home: { code: 'Home', vk: 36 },
++  PageDown: { code: 'PageDown', vk: 34 },
++  PageUp: { code: 'PageUp', vk: 33 },
++  Tab: { code: 'Tab', text: '\t', vk: 9 }
++}
++
++function modifiersFor(event: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): number {
++  return (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0)
++}
++
++function mouseButtonFor(button: number): string {
++  return button === 1 ? 'middle' : button === 2 ? 'right' : 'left'
++}
++
++function api() {
++  return window.hermesDesktop?.schoolBrowser
++}
++
++export function BrowserMirror() {
++  const [status, setStatus] = useState<MirrorStatus>('connecting')
++  const [tabs, setTabs] = useState<BrowserTab[]>([])
++  const [activeId, setActiveId] = useState<string>('')
++  const [url, setUrl] = useState('')
++  const [urlDraft, setUrlDraft] = useState<null | string>(null)
++
++  const imgRef = useRef<HTMLImageElement | null>(null)
++  const overlayRef = useRef<HTMLDivElement | null>(null)
++  // Page CSS size of the last frame — the input coordinate space.
++  const frameSizeRef = useRef({ height: 0, width: 0 })
++  const activeIdRef = useRef('')
++  activeIdRef.current = activeId
++
++  const exec = useCallback((payload: Record<string, unknown>) => {
++    void api()
++      ?.exec(payload)
++      .catch(() => undefined)
++  }, [])
++
++  const attach = useCallback(async (targetId: string) => {
++    setActiveId(targetId)
++
++    if (imgRef.current) {
++      imgRef.current.removeAttribute('src')
++    }
++
++    const ok = await api()?.attach(targetId)
++    setStatus(ok ? 'live' : 'offline')
++  }, [])
++
++  const refreshTabs = useCallback(async (): Promise<BrowserTab[]> => {
++    const result = await api()?.list()
++
++    if (!result?.running) {
++      setStatus('offline')
++      setTabs([])
++
++      return []
++    }
++
++    setTabs(result.tabs)
++
++    return result.tabs
++  }, [])
++
++  const startBrowser = useCallback(async () => {
++    setStatus('connecting')
++    const ensured = await api()?.ensure()
++
++    if (!ensured?.ok) {
++      setStatus('offline')
++
++      return
++    }
++
++    const found = await refreshTabs()
++
++    if (found[0]) {
++      await attach(found[0].id)
++      setUrl(found[0].url)
++    }
++  }, [attach, refreshTabs])
++
++  // Boot: ensure the browser, list its tabs, mirror the first one. Poll the tab
++  // strip; frames + URL changes stream in via the IPC subscriptions.
++  useEffect(() => {
++    let stopped = false
++
++    void (async () => {
++      if (stopped) {
++        return
++      }
++
++      await startBrowser()
++    })()
++
++    const timer = window.setInterval(() => {
++      void refreshTabs().then(found => {
++        if (found.length > 0 && !found.some(tab => tab.id === activeIdRef.current)) {
++          void attach(found[0].id)
++          setUrl(found[0].url)
++        }
++      })
++    }, TAB_POLL_MS)
++
++    const offFrame = api()?.onFrame(frame => {
++      if (frame.targetId !== activeIdRef.current || !imgRef.current) {
++        return
++      }
++
++      frameSizeRef.current = { height: frame.metadata.deviceHeight, width: frame.metadata.deviceWidth }
++      imgRef.current.src = `data:image/jpeg;base64,${frame.data}`
++      setStatus('live')
++    })
++
++    const offEvent = api()?.onEvent(event => {
++      if (event.targetId !== activeIdRef.current) {
++        return
++      }
++
++      if (event.type === 'url-changed' && event.url) {
++        setUrl(event.url)
++      }
++
++      if (event.type === 'detached') {
++        setStatus('offline')
++      }
++    })
++
++    return () => {
++      stopped = true
++      window.clearInterval(timer)
++      offFrame?.()
++      offEvent?.()
++      void api()?.detach()
++    }
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [])
++
++  /** Mirror-box pixel → page CSS pixel, honoring the object-contain letterbox. */
++  const pageCoords = useCallback((clientX: number, clientY: number): null | { x: number; y: number } => {
++    const box = overlayRef.current?.getBoundingClientRect()
++    const frame = frameSizeRef.current
++
++    if (!box || !frame.width || !frame.height) {
++      return null
++    }
++
++    const scale = Math.min(box.width / frame.width, box.height / frame.height)
++    const drawnWidth = frame.width * scale
++    const drawnHeight = frame.height * scale
++    const offsetX = box.left + (box.width - drawnWidth) / 2
++    const offsetY = box.top + (box.height - drawnHeight) / 2
++    const x = (clientX - offsetX) / scale
++    const y = (clientY - offsetY) / scale
++
++    if (x < 0 || y < 0 || x > frame.width || y > frame.height) {
++      return null
++    }
++
++    return { x: Math.round(x), y: Math.round(y) }
++  }, [])
++
++  const sendMouse = useCallback(
++    (
++      type: 'mouseMoved' | 'mousePressed' | 'mouseReleased' | 'mouseWheel',
++      event: React.MouseEvent | React.WheelEvent,
++      extra?: Record<string, unknown>
++    ) => {
++      const coords = pageCoords(event.clientX, event.clientY)
++
++      if (!coords) {
++        return
++      }
++
++      exec({
++        method: 'Input.dispatchMouseEvent',
++        params: {
++          button: mouseButtonFor('button' in event ? event.button : 0),
++          clickCount: 'detail' in event ? Math.max(1, Math.min(3, event.detail)) : 1,
++          modifiers: modifiersFor(event),
++          type,
++          x: coords.x,
++          y: coords.y,
++          ...extra
++        }
++      })
++    },
++    [exec, pageCoords]
++  )
++
++  const lastMoveRef = useRef(0)
++
++  const onKeyDown = useCallback(
++    (event: React.KeyboardEvent) => {
++      event.preventDefault()
++      event.stopPropagation()
++
++      // Paste: read the app clipboard and inject as text.
++      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
++        void navigator.clipboard
++          .readText()
++          .then(text => text && exec({ method: 'Input.insertText', params: { text } }))
++          .catch(() => undefined)
++
++        return
++      }
++
++      const special = SPECIAL_KEYS[event.key]
++
++      if (special) {
++        const base = {
++          code: special.code,
++          key: event.key,
++          modifiers: modifiersFor(event),
++          nativeVirtualKeyCode: special.vk,
++          windowsVirtualKeyCode: special.vk
++        }
++        exec({ method: 'Input.dispatchKeyEvent', params: { ...base, ...(special.text ? { text: special.text } : {}), type: 'keyDown' } })
++        exec({ method: 'Input.dispatchKeyEvent', params: { ...base, type: 'keyUp' } })
++
++        return
++      }
++
++      if (event.key.length === 1 && !event.metaKey && !event.ctrlKey) {
++        exec({ method: 'Input.insertText', params: { text: event.key } })
++      }
++    },
++    [exec]
++  )
++
++  const navigate = useCallback(
++    (raw: string) => {
++      const trimmed = raw.trim()
++
++      if (!trimmed) {
++        return
++      }
++
++      const target = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
++        ? trimmed
++        : /\s/.test(trimmed) || !trimmed.includes('.')
++          ? `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`
++          : `https://${trimmed}`
++      exec({ method: 'Page.navigate', params: { url: target } })
++      setUrlDraft(null)
++    },
++    [exec]
++  )
++
++  const newTab = useCallback(async () => {
++    await api()?.exec({ kind: 'tab-new', url: 'about:blank' })
++    const found = await refreshTabs()
++    const created = found[found.length - 1]
++
++    if (created) {
++      await attach(created.id)
++      setUrl(created.url)
++      setUrlDraft('')
++    }
++  }, [attach, refreshTabs])
++
++  const closeTab = useCallback(
++    async (targetId: string) => {
++      await api()?.exec({ kind: 'tab-close', targetId })
++      const found = await refreshTabs()
++
++      if (targetId === activeIdRef.current && found[0]) {
++        await attach(found[0].id)
++        setUrl(found[0].url)
++      }
++    },
++    [attach, refreshTabs]
++  )
++
++  return (
++    <div className="flex h-full min-h-0 w-full flex-col bg-(--ui-editor-surface-background)">
++      {/* Browser tab strip (the AGENT browser's own tabs) */}
++      <div className="flex h-7 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-(--ui-stroke-tertiary) px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
++        {tabs.map(tab => {
++          const active = tab.id === activeId
++
++          return (
++            <div
++              className={cn(
++                'group/btab flex h-5.5 min-w-0 max-w-40 shrink-0 items-center rounded-md pl-2 pr-1 text-[0.65rem]',
++                active
++                  ? 'bg-(--ui-bg-secondary) text-foreground'
++                  : 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'
++              )}
++              key={tab.id}
++            >
++              <button
++                className="min-w-0 truncate outline-none"
++                onClick={() => {
++                  void attach(tab.id)
++                  setUrl(tab.url)
++                  setUrlDraft(null)
++                }}
++                title={tab.url}
++                type="button"
++              >
++                {tab.title || tab.url || 'New tab'}
++              </button>
++              <button
++                aria-label="Close tab"
++                className="ml-1 grid size-4 shrink-0 place-items-center rounded-sm opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) group-hover/btab:opacity-100"
++                onClick={() => void closeTab(tab.id)}
++                type="button"
++              >
++                <Codicon name="close" size="0.6rem" />
++              </button>
++            </div>
++          )
++        })}
++        <button
++          aria-label="New tab"
++          className="grid size-5.5 shrink-0 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground"
++          onClick={() => void newTab()}
++          type="button"
++        >
++          <Codicon name="add" size="0.7rem" />
++        </button>
++      </div>
++
++      {/* Nav row: back / forward / reload + URL */}
++      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-1.5">
++        <button
++          aria-label="Back"
++          className="grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground"
++          onClick={() => exec({ direction: 'back', kind: 'history' })}
++          type="button"
++        >
++          <Codicon name="arrow-left" size="0.8rem" />
++        </button>
++        <button
++          aria-label="Forward"
++          className="grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground"
++          onClick={() => exec({ direction: 'forward', kind: 'history' })}
++          type="button"
++        >
++          <Codicon name="arrow-right" size="0.8rem" />
++        </button>
++        <button
++          aria-label="Reload"
++          className="grid size-6 place-items-center rounded-md text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground"
++          onClick={() => exec({ method: 'Page.reload', params: {} })}
++          type="button"
++        >
++          <Codicon name="refresh" size="0.8rem" />
++        </button>
++        <input
++          className="h-6 min-w-0 flex-1 rounded-md border border-(--ui-stroke-quaternary) bg-(--ui-bg-secondary) px-2 text-[0.7rem] text-foreground outline-none placeholder:text-(--ui-text-quaternary) focus:border-(--ui-stroke-secondary)"
++          onBlur={() => setUrlDraft(null)}
++          onChange={event => setUrlDraft(event.target.value)}
++          onFocus={event => event.target.select()}
++          onKeyDown={event => {
++            if (event.key === 'Enter') {
++              navigate(event.currentTarget.value)
++              event.currentTarget.blur()
++            }
++          }}
++          placeholder="Type a URL and press Enter"
++          spellCheck={false}
++          value={urlDraft ?? url}
++        />
++      </div>
++
++      {/* Mirror surface */}
++      <div className="relative min-h-0 flex-1 bg-black/90">
++        {status === 'offline' ? (
++          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
++            <Codicon className="text-(--ui-text-quaternary)" name="globe" size="1.6rem" />
++            <div className="text-[0.75rem] text-(--ui-text-tertiary)">
++              The agent&rsquo;s browser isn&rsquo;t running.
++            </div>
++            <button
++              className="rounded-md bg-(--ui-bg-secondary) px-3 py-1.5 text-[0.72rem] font-medium text-foreground transition-colors hover:bg-(--chrome-action-hover)"
++              onClick={() => void startBrowser()}
++              type="button"
++            >
++              Start browser
++            </button>
++          </div>
++        ) : (
++          <>
++            <img alt="" className="h-full w-full select-none object-contain" draggable={false} ref={imgRef} />
++            {/* Input overlay: forwards mouse + keyboard into the mirrored page. */}
++            <div
++              className="absolute inset-0 cursor-default outline-none"
++              onKeyDown={onKeyDown}
++              onMouseDown={event => {
++                event.preventDefault()
++                event.currentTarget.focus()
++                sendMouse('mousePressed', event, { buttons: 1 })
++              }}
++              onMouseMove={event => {
++                const now = Date.now()
++
++                if (now - lastMoveRef.current < 33) {
++                  return
++                }
++
++                lastMoveRef.current = now
++                sendMouse('mouseMoved', event, { buttons: event.buttons })
++              }}
++              onMouseUp={event => sendMouse('mouseReleased', event, { buttons: 0 })}
++              onWheel={event => sendMouse('mouseWheel', event, { deltaX: event.deltaX, deltaY: event.deltaY })}
++              ref={overlayRef}
++              role="application"
++              tabIndex={0}
++            />
++            {status === 'connecting' && (
++              <div className="pointer-events-none absolute inset-0 grid place-items-center text-[0.72rem] text-(--ui-text-tertiary)">
++                Connecting to the agent&rsquo;s browser…
++              </div>
++            )}
++          </>
++        )}
++      </div>
++    </div>
++  )
++}
+diff --git a/apps/desktop/src/app/chat/right-rail/preview.js b/apps/desktop/src/app/chat/right-rail/preview.js
+index b9d382a783f..4b8edd74866 100644
+--- a/apps/desktop/src/app/chat/right-rail/preview.js
++++ b/apps/desktop/src/app/chat/right-rail/preview.js
+@@ -7,10 +7,20 @@ import { Tip } from '@/components/ui/tooltip';
+ import { translateNow, useI18n } from '@/i18n';
+ import { formatCombo } from '@/lib/keybinds/combo';
+ import { cn } from '@/lib/utils';
+-import { $panesFlipped, $rightRailActiveTabId, RIGHT_RAIL_PREVIEW_TAB_ID, selectRightRailTab } from '@/store/layout';
++import { $browserRailOpen } from '@/store/browser-rail';
++import { $panesFlipped, $rightRailActiveTabId, RIGHT_RAIL_BROWSER_TAB_ID, RIGHT_RAIL_PREVIEW_TAB_ID, selectRightRailTab } from '@/store/layout';
+ import { $filePreviewTabs, $previewReloadRequest, $previewTarget, closeOtherRightRailTabs, closeRightRail, closeRightRailTab, closeRightRailTabsToRight } from '@/store/preview';
+ import { $dirtyPreviewUrls } from '@/store/preview-edit';
++import { BrowserMirror } from './browser-mirror';
+ import { PreviewPane } from './preview-pane';
++// Synthetic target for the agent-browser mirror tab — it renders BrowserMirror,
++// not PreviewPane, so this only feeds the tab strip (label/tooltip/dirty-lookup).
++const BROWSER_TAB_TARGET = {
++    kind: 'url',
++    label: 'Browser',
++    source: 'agent-browser',
++    url: 'about:agent-browser'
++};
+ export const PREVIEW_RAIL_MIN_WIDTH = '18rem';
+ export const PREVIEW_RAIL_MAX_WIDTH = '38rem';
+ const INTRINSIC = `clamp(${PREVIEW_RAIL_MIN_WIDTH}, 36vw, 32rem)`;
+@@ -32,12 +42,16 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }) {
+     const filePreviewTabs = useStore($filePreviewTabs);
+     const previewTarget = useStore($previewTarget);
+     const dirtyPreviewUrls = useStore($dirtyPreviewUrls);
++    const browserRailOpen = useStore($browserRailOpen);
+     const tabs = useMemo(() => [
++        ...(browserRailOpen
++            ? [{ id: RIGHT_RAIL_BROWSER_TAB_ID, label: 'Browser', target: BROWSER_TAB_TARGET }]
++            : []),
+         ...(previewTarget
+             ? [{ id: RIGHT_RAIL_PREVIEW_TAB_ID, label: t.preview.tab, target: previewTarget }]
+             : []),
+         ...filePreviewTabs.map(({ id, target }) => ({ id, label: tabLabelFor(target), target }))
+-    ], [filePreviewTabs, previewTarget, t.preview.tab]);
++    ], [browserRailOpen, filePreviewTabs, previewTarget, t.preview.tab]);
+     const activeTab = tabs.find(tab => tab.id === activeTabId) ?? tabs[0];
+     useEffect(() => {
+         if (activeTab && activeTab.id !== activeTabId) {
+@@ -76,5 +90,5 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }) {
+                                                     event.preventDefault();
+                                                 }
+                                             }, children: [active && (_jsx("span", { "aria-hidden": "true", className: "absolute inset-x-0 top-0 h-px bg-(--ui-stroke-primary)" })), _jsx(Tip, { label: tab.target.path || tab.target.url || tab.label, children: _jsx("button", { "aria-selected": active, className: "flex h-full min-w-0 max-w-full items-center overflow-hidden pl-3 pr-2 text-left outline-none", onClick: () => selectRightRailTab(tab.id), role: "tab", type: "button", children: _jsx("span", { className: "block min-w-0 truncate", children: tab.label }) }) }), _jsx("span", { "aria-hidden": "true", className: "pointer-events-none absolute inset-y-0 right-0 w-9 bg-[linear-gradient(to_right,transparent,var(--tab-bg)_55%)] opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100" }), dirty && (_jsx("span", { "aria-hidden": "true", className: "pointer-events-none absolute right-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center opacity-100 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0", children: _jsx("span", { className: "size-2 rounded-full bg-amber-500 shadow-[0_0_0_2px_var(--tab-bg),0_1px_2px_rgba(0,0,0,0.45)] dark:bg-amber-400" }) })), _jsx("button", { "aria-label": t.preview.closeTab(tab.label), className: "pointer-events-none absolute right-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-(--ui-text-tertiary) opacity-0 transition-[background-color,color,opacity] hover:bg-(--ui-bg-secondary) hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100", onClick: () => closeRightRailTab(tab.id), type: "button", children: _jsx(Codicon, { name: "close", size: "0.75rem" }) })] }) }), _jsxs(ContextMenuContent, { children: [_jsxs(ContextMenuItem, { onSelect: () => closeRightRailTab(tab.id), children: [t.common.close, _jsx("span", { className: "ml-auto pl-4 text-(--ui-text-tertiary)", children: formatCombo('mod+w') })] }), _jsx(ContextMenuItem, { disabled: !hasOthers, onSelect: () => closeOtherRightRailTabs(tab.id), children: t.preview.closeOthers }), _jsx(ContextMenuItem, { disabled: !hasTabsToRight, onSelect: () => closeRightRailTabsToRight(tab.id), children: t.preview.closeToRight }), _jsx(ContextMenuSeparator, {}), _jsx(ContextMenuItem, { onSelect: closeRightRail, children: t.preview.closeAll })] })] }, tab.id));
+-                        }) }), _jsx("button", { "aria-label": t.preview.closePane, className: "mr-1.5 grid size-6 shrink-0 self-center place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring group-hover/rail-tabs:opacity-100 [-webkit-app-region:no-drag]", onClick: closeRightRail, type: "button", children: _jsx(Codicon, { name: "close", size: "0.75rem" }) })] }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden", children: _jsx(PreviewPane, { embedded: true, onRestartServer: isPreview ? onRestartServer : undefined, reloadRequest: previewReloadRequest, setTitlebarToolGroup: setTitlebarToolGroup, target: activeTab.target }) })] }));
++                        }) }), _jsx("button", { "aria-label": t.preview.closePane, className: "mr-1.5 grid size-6 shrink-0 self-center place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring group-hover/rail-tabs:opacity-100 [-webkit-app-region:no-drag]", onClick: closeRightRail, type: "button", children: _jsx(Codicon, { name: "close", size: "0.75rem" }) })] }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden", children: activeTab.id === RIGHT_RAIL_BROWSER_TAB_ID ? (_jsx(BrowserMirror, {})) : (_jsx(PreviewPane, { embedded: true, onRestartServer: isPreview ? onRestartServer : undefined, reloadRequest: previewReloadRequest, setTitlebarToolGroup: setTitlebarToolGroup, target: activeTab.target })) })] }));
+ }
+diff --git a/apps/desktop/src/app/chat/right-rail/preview.tsx b/apps/desktop/src/app/chat/right-rail/preview.tsx
+index 2b77007a730..e0d093b3b6d 100644
+--- a/apps/desktop/src/app/chat/right-rail/preview.tsx
++++ b/apps/desktop/src/app/chat/right-rail/preview.tsx
+@@ -14,9 +14,11 @@ import { Tip } from '@/components/ui/tooltip'
+ import { translateNow, useI18n } from '@/i18n'
+ import { formatCombo } from '@/lib/keybinds/combo'
+ import { cn } from '@/lib/utils'
++import { $browserRailOpen } from '@/store/browser-rail'
+ import {
+   $panesFlipped,
+   $rightRailActiveTabId,
++  RIGHT_RAIL_BROWSER_TAB_ID,
+   RIGHT_RAIL_PREVIEW_TAB_ID,
+   type RightRailTabId,
+   selectRightRailTab
+@@ -33,8 +35,18 @@ import {
+ } from '@/store/preview'
+ import { $dirtyPreviewUrls } from '@/store/preview-edit'
+ 
++import { BrowserMirror } from './browser-mirror'
+ import { PreviewPane } from './preview-pane'
+ 
++// Synthetic target for the agent-browser mirror tab — it renders BrowserMirror,
++// not PreviewPane, so this only feeds the tab strip (label/tooltip/dirty-lookup).
++const BROWSER_TAB_TARGET: PreviewTarget = {
++  kind: 'url',
++  label: 'Browser',
++  source: 'agent-browser',
++  url: 'about:agent-browser'
++}
++
+ export const PREVIEW_RAIL_MIN_WIDTH = '18rem'
+ export const PREVIEW_RAIL_MAX_WIDTH = '38rem'
+ 
+@@ -72,15 +84,19 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
+   const filePreviewTabs = useStore($filePreviewTabs)
+   const previewTarget = useStore($previewTarget)
+   const dirtyPreviewUrls = useStore($dirtyPreviewUrls)
++  const browserRailOpen = useStore($browserRailOpen)
+ 
+   const tabs = useMemo<readonly RailTab[]>(
+     () => [
++      ...(browserRailOpen
++        ? [{ id: RIGHT_RAIL_BROWSER_TAB_ID, label: 'Browser', target: BROWSER_TAB_TARGET } as RailTab]
++        : []),
+       ...(previewTarget
+         ? [{ id: RIGHT_RAIL_PREVIEW_TAB_ID, label: t.preview.tab, target: previewTarget } as RailTab]
+         : []),
+       ...filePreviewTabs.map(({ id, target }) => ({ id, label: tabLabelFor(target), target }) as RailTab)
+     ],
+-    [filePreviewTabs, previewTarget, t.preview.tab]
++    [browserRailOpen, filePreviewTabs, previewTarget, t.preview.tab]
+   )
+ 
+   const activeTab = tabs.find(tab => tab.id === activeTabId) ?? tabs[0]
+@@ -215,13 +231,17 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
+       </div>
+ 
+       <div className="min-h-0 flex-1 overflow-hidden">
+-        <PreviewPane
+-          embedded
+-          onRestartServer={isPreview ? onRestartServer : undefined}
+-          reloadRequest={previewReloadRequest}
+-          setTitlebarToolGroup={setTitlebarToolGroup}
+-          target={activeTab.target}
+-        />
++        {activeTab.id === RIGHT_RAIL_BROWSER_TAB_ID ? (
++          <BrowserMirror />
++        ) : (
++          <PreviewPane
++            embedded
++            onRestartServer={isPreview ? onRestartServer : undefined}
++            reloadRequest={previewReloadRequest}
++            setTitlebarToolGroup={setTitlebarToolGroup}
++            target={activeTab.target}
++          />
++        )}
+       </div>
+     </aside>
+   )
+diff --git a/apps/desktop/src/app/desktop-controller.js b/apps/desktop/src/app/desktop-controller.js
+index 4055dac3f7f..aa04b54a868 100644
+--- a/apps/desktop/src/app/desktop-controller.js
++++ b/apps/desktop/src/app/desktop-controller.js
+@@ -10,6 +10,8 @@ import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overla
+ import { DesktopOnboardingOverlay } from '@/components/onboarding';
+ import { Pane, PaneMain } from '@/components/pane-shell';
+ import { RemoteDisplayBanner } from '@/components/remote-display-banner';
++import { useAgentBrowserWatcher } from '@/hooks/use-agent-browser-watcher';
++import { useExportsPreviewWatcher } from '@/hooks/use-exports-preview-watcher';
+ import { useMediaQuery } from '@/hooks/use-media-query';
+ import { isFocusWithin } from '@/lib/keybinds/combo';
+ import { cn } from '@/lib/utils';
+@@ -27,6 +29,7 @@ import { $paneOpen } from '../store/panes';
+ import { setPetActivity } from '../store/pet';
+ import { setPetScale } from '../store/pet-gallery';
+ import { setPetOverlayOpenAppHandler, setPetOverlayScaleHandler, setPetOverlaySubmitHandler } from '../store/pet-overlay';
++import { $browserRailOpen } from '../store/browser-rail';
+ import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview';
+ import { $activeGatewayProfile, $freshSessionRequest, $profileScope, refreshActiveProfile } from '../store/profile';
+ import { $startWorkSessionRequest, followActiveSessionCwd, resolveNewSessionCwd } from '../store/projects';
+@@ -127,6 +130,10 @@ export function DesktopController() {
+     const queryClient = useQueryClient();
+     const location = useLocation();
+     const navigate = useNavigate();
++    // Deliverables written into Library/Exports auto-open in the preview rail.
++    useExportsPreviewWatcher();
++    // The agent-browser mirror pops open when a turn starts browsing.
++    useAgentBrowserWatcher();
+     const busyRef = useRef(false);
+     const creatingSessionRef = useRef(false);
+     const messagingTranscriptSignatureRef = useRef(new Map());
+@@ -138,6 +145,7 @@ export function DesktopController() {
+     const resumeExhaustedSessionId = useStore($resumeExhaustedSessionId);
+     const filePreviewTarget = useStore($filePreviewTarget);
+     const previewTarget = useStore($previewTarget);
++    const browserRailOpen = useStore($browserRailOpen);
+     const selectedStoredSessionId = useStore($selectedStoredSessionId);
+     const messagingSessions = useStore($messagingSessions);
+     const terminalTakeover = useStore($terminalTakeover);
+@@ -171,8 +179,8 @@ export function DesktopController() {
+     });
+     const { connectionRef, gatewayRef, requestGateway } = useGatewayRequest();
+     useEffect(() => {
+-        window.hermesDesktop?.setPreviewShortcutActive?.(Boolean(chatOpen && (filePreviewTarget || previewTarget)));
+-    }, [chatOpen, filePreviewTarget, previewTarget]);
++        window.hermesDesktop?.setPreviewShortcutActive?.(Boolean(chatOpen && (filePreviewTarget || previewTarget || browserRailOpen)));
++    }, [browserRailOpen, chatOpen, filePreviewTarget, previewTarget]);
+     useEffect(() => {
+         startUpdatePoller();
+         const unsubscribe = window.hermesDesktop?.onOpenUpdatesRequested?.(() => openUpdatesWindow());
+@@ -267,7 +275,7 @@ export function DesktopController() {
+                 return;
+             }
+             // Otherwise ⌘/Ctrl+W closes the active preview tab when one is open.
+-            if ($filePreviewTarget.get() || $previewTarget.get()) {
++            if ($filePreviewTarget.get() || $previewTarget.get() || $browserRailOpen.get()) {
+                 event.preventDefault();
+                 event.stopPropagation();
+                 closeActiveRightRailTab();
+@@ -789,13 +797,13 @@ export function DesktopController() {
+     const railSide = panesFlipped ? 'left' : 'right';
+     // Other sidebars docked as real columns on the terminal's rail. Force-collapsed
+     // hover-reveal overlays (narrow window) don't take a column, so they don't count.
+-    const railColumnOpen = (chatOpen && Boolean(previewTarget || filePreviewTarget) && previewPaneOpen) ||
++    const railColumnOpen = (chatOpen && Boolean(previewTarget || filePreviewTarget || browserRailOpen) && previewPaneOpen) ||
+         (chatOpen && !narrowViewport && fileBrowserOpen) ||
+         (chatOpen && Boolean(currentCwd.trim()) && !narrowViewport && reviewOpen);
+     // Once the terminal would share its rail with another sidebar, drop it to a
+     // full-width row beneath them rather than cramming in one more skinny column.
+     const terminalAsRow = terminalSidebarOpen && railColumnOpen;
+-    const previewPane = (_jsx(Pane, { disabled: !chatOpen || (!previewTarget && !filePreviewTarget), id: PREVIEW_PANE_ID, maxWidth: PREVIEW_RAIL_MAX_WIDTH, minWidth: PREVIEW_RAIL_MIN_WIDTH, resizable: true, side: railSide, width: PREVIEW_RAIL_PANE_WIDTH, children: chatOpen ? (_jsx(ChatPreviewRail, { onRestartServer: restartPreviewServer, setTitlebarToolGroup: setTitlebarToolGroup })) : null }, "preview"));
++    const previewPane = (_jsx(Pane, { disabled: !chatOpen || (!previewTarget && !filePreviewTarget && !browserRailOpen), id: PREVIEW_PANE_ID, maxWidth: PREVIEW_RAIL_MAX_WIDTH, minWidth: PREVIEW_RAIL_MIN_WIDTH, resizable: true, side: railSide, width: PREVIEW_RAIL_PANE_WIDTH, children: chatOpen ? (_jsx(ChatPreviewRail, { onRestartServer: restartPreviewServer, setTitlebarToolGroup: setTitlebarToolGroup })) : null }, "preview"));
+     const fileBrowserPane = (_jsx(Pane, { defaultOpen: false, disabled: !chatOpen, forceCollapsed: narrowViewport, hoverReveal: true, id: "file-browser", maxWidth: FILE_BROWSER_MAX_WIDTH, minWidth: FILE_BROWSER_MIN_WIDTH, resizable: true, side: railSide, width: FILE_BROWSER_DEFAULT_WIDTH, children: _jsx(RightSidebarPane, { onActivateFile: path => composer.insertContextPathInlineRef(path), onActivateFolder: path => composer.insertContextPathInlineRef(path, true) }, currentCwd || 'no-cwd') }, "file-browser"));
+     const reviewPane = (_jsx(Pane, { defaultOpen: true, 
+         // The diff pane only makes sense in a workspace, so force it shut when the
+@@ -809,7 +817,7 @@ export function DesktopController() {
+         // Mobile overlay sits at its min width — compact, doesn't bury the chat.
+         overlayWidth: FILE_BROWSER_MIN_WIDTH, resizable: true, side: railSide, width: FILE_BROWSER_DEFAULT_WIDTH, children: _jsx(ReviewPane, {}, currentCwd || 'no-cwd') }, "review"));
+     const terminalPane = (_jsx(Pane, { bottomRow: terminalAsRow, defaultOpen: true, disabled: !terminalSidebarOpen, divider: true, height: "38vh", id: "terminal-sidebar", maxHeight: "80vh", maxWidth: "80vw", minHeight: "8rem", minWidth: "22vw", resizable: true, side: railSide, width: "42vw", children: _jsx("div", { className: cn('relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-(--ui-editor-surface-background)', terminalAsRow ? 'border-l border-(--ui-stroke-secondary) pt-0' : 'pt-(--titlebar-height)'), children: _jsx(TerminalPaneChrome, {}) }) }, "terminal-sidebar"));
+-    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: chatOpen && Boolean(previewTarget || filePreviewTarget), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: chatView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
++    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: chatOpen && Boolean(previewTarget || filePreviewTarget || browserRailOpen), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: chatView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
+ }
+ function LegacySessionRedirect() {
+     const { sessionId } = useParams();
+diff --git a/apps/desktop/src/app/desktop-controller.tsx b/apps/desktop/src/app/desktop-controller.tsx
+index 516cfbf2191..f1e8c571589 100644
+--- a/apps/desktop/src/app/desktop-controller.tsx
++++ b/apps/desktop/src/app/desktop-controller.tsx
+@@ -10,6 +10,7 @@ import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overla
+ import { DesktopOnboardingOverlay } from '@/components/onboarding'
+ import { Pane, PaneMain } from '@/components/pane-shell'
+ import { RemoteDisplayBanner } from '@/components/remote-display-banner'
++import { useAgentBrowserWatcher } from '@/hooks/use-agent-browser-watcher'
+ import { useExportsPreviewWatcher } from '@/hooks/use-exports-preview-watcher'
+ import { useMediaQuery } from '@/hooks/use-media-query'
+ import { isFocusWithin } from '@/lib/keybinds/combo'
+@@ -47,6 +48,7 @@ import {
+   setPetOverlayScaleHandler,
+   setPetOverlaySubmitHandler
+ } from '../store/pet-overlay'
++import { $browserRailOpen } from '../store/browser-rail'
+ import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
+ import { $activeGatewayProfile, $freshSessionRequest, $profileScope, refreshActiveProfile } from '../store/profile'
+ import { $startWorkSessionRequest, followActiveSessionCwd, resolveNewSessionCwd } from '../store/projects'
+@@ -190,6 +192,8 @@ export function DesktopController() {
+ 
+   // Deliverables written into Library/Exports auto-open in the preview rail.
+   useExportsPreviewWatcher()
++  // The agent-browser mirror pops open when a turn starts browsing.
++  useAgentBrowserWatcher()
+ 
+   const busyRef = useRef(false)
+   const creatingSessionRef = useRef(false)
+@@ -203,6 +207,7 @@ export function DesktopController() {
+   const resumeExhaustedSessionId = useStore($resumeExhaustedSessionId)
+   const filePreviewTarget = useStore($filePreviewTarget)
+   const previewTarget = useStore($previewTarget)
++  const browserRailOpen = useStore($browserRailOpen)
+   const selectedStoredSessionId = useStore($selectedStoredSessionId)
+   const messagingSessions = useStore($messagingSessions)
+   const terminalTakeover = useStore($terminalTakeover)
+@@ -266,8 +271,10 @@ export function DesktopController() {
+   const { connectionRef, gatewayRef, requestGateway } = useGatewayRequest()
+ 
+   useEffect(() => {
+-    window.hermesDesktop?.setPreviewShortcutActive?.(Boolean(chatOpen && (filePreviewTarget || previewTarget)))
+-  }, [chatOpen, filePreviewTarget, previewTarget])
++    window.hermesDesktop?.setPreviewShortcutActive?.(
++      Boolean(chatOpen && (filePreviewTarget || previewTarget || browserRailOpen))
++    )
++  }, [browserRailOpen, chatOpen, filePreviewTarget, previewTarget])
+ 
+   useEffect(() => {
+     startUpdatePoller()
+@@ -383,7 +390,7 @@ export function DesktopController() {
+       }
+ 
+       // Otherwise ⌘/Ctrl+W closes the active preview tab when one is open.
+-      if ($filePreviewTarget.get() || $previewTarget.get()) {
++      if ($filePreviewTarget.get() || $previewTarget.get() || $browserRailOpen.get()) {
+         event.preventDefault()
+         event.stopPropagation()
+         closeActiveRightRailTab()
+@@ -1184,7 +1191,7 @@ export function DesktopController() {
+   // Other sidebars docked as real columns on the terminal's rail. Force-collapsed
+   // hover-reveal overlays (narrow window) don't take a column, so they don't count.
+   const railColumnOpen =
+-    (chatOpen && Boolean(previewTarget || filePreviewTarget) && previewPaneOpen) ||
++    (chatOpen && Boolean(previewTarget || filePreviewTarget || browserRailOpen) && previewPaneOpen) ||
+     (chatOpen && !narrowViewport && fileBrowserOpen) ||
+     (chatOpen && Boolean(currentCwd.trim()) && !narrowViewport && reviewOpen)
+ 
+@@ -1194,7 +1201,7 @@ export function DesktopController() {
+ 
+   const previewPane = (
+     <Pane
+-      disabled={!chatOpen || (!previewTarget && !filePreviewTarget)}
++      disabled={!chatOpen || (!previewTarget && !filePreviewTarget && !browserRailOpen)}
+       id={PREVIEW_PANE_ID}
+       key="preview"
+       maxWidth={PREVIEW_RAIL_MAX_WIDTH}
+@@ -1299,7 +1306,7 @@ export function DesktopController() {
+       mainOverlays={mainOverlays}
+       onOpenSettings={openSettings}
+       overlays={overlays}
+-      previewPaneOpen={chatOpen && Boolean(previewTarget || filePreviewTarget)}
++      previewPaneOpen={chatOpen && Boolean(previewTarget || filePreviewTarget || browserRailOpen)}
+       statusbarItems={statusbarItems}
+       terminalPaneOpen={terminalSidebarOpen}
+       titlebarTools={titlebarToolGroups.flat.right}
+diff --git a/apps/desktop/src/app/right-sidebar/index.js b/apps/desktop/src/app/right-sidebar/index.js
+index 87d5ec65f43..a4aa6e45636 100644
+--- a/apps/desktop/src/app/right-sidebar/index.js
++++ b/apps/desktop/src/app/right-sidebar/index.js
+@@ -1,6 +1,5 @@
+ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ import { useStore } from '@nanostores/react';
+-import { useState } from 'react';
+ import { TreeSkeleton } from '@/components/chat/skeletons';
+ import { ErrorBoundary } from '@/components/error-boundary';
+ import { Button } from '@/components/ui/button';
+@@ -23,9 +22,6 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder }) {
+     const r = t.rightSidebar;
+     const panesFlipped = useStore($panesFlipped);
+     const currentCwd = useStore($currentCwd).trim();
+-    // Student build: the rail defaults to the agent's cited sources — the thing a student
+-    // actually asks of a research answer — with the file tree one tab away.
+-    const [tab, setTab] = useState(NEMESIS_STUDENT_BUILD ? 'sources' : 'files');
+     // The file tree is simply "browse the session's working directory". If the
+     // session has a cwd — a repo, a sibling worktree, or any folder — show it. A
+     // bare/detached chat (resolveNewSessionCwd → '') has none, so it shows the
+@@ -49,11 +45,9 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder }) {
+             notifyError(error, r.previewUnavailable);
+         }
+     };
+-    return (_jsxs("aside", { "aria-label": r.aria, className: cn('before:pointer-events-none relative flex h-full w-full min-w-0 flex-col overflow-hidden border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height) text-(--ui-text-tertiary)', panesFlipped
++    return (_jsx("aside", { "aria-label": r.aria, className: cn('before:pointer-events-none relative flex h-full w-full min-w-0 flex-col overflow-hidden border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height) text-(--ui-text-tertiary)', panesFlipped
+             ? 'border-r shadow-[inset_-0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+-            : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'), children: [NEMESIS_STUDENT_BUILD && (_jsx("div", { className: "flex shrink-0 items-center gap-1 px-2 pt-1.5", children: ['sources', 'files'].map(id => (_jsx("button", { className: cn('rounded-md px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.07em] transition-colors', tab === id
+-                        ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+-                        : 'text-muted-foreground hover:text-foreground'), onClick: () => setTab(id), type: "button", children: id === 'sources' ? 'Sources' : 'Files' }, id))) })), NEMESIS_STUDENT_BUILD && tab === 'sources' ? (_jsx(SourcesTab, {})) : (_jsx(FilesystemTab, { canCollapse: canCollapse, collapseNonce: collapseNonce, cwd: effectiveCwd, cwdName: cwdName, data: data, error: rootError, hasWorkspace: hasWorkspace, loading: rootLoading, onActivateFile: onActivateFile, onActivateFolder: onActivateFolder, onCollapseAll: collapseAll, onLoadChildren: loadChildren, onNodeOpenChange: setNodeOpen, onPreviewFile: previewFile, onRefresh: () => void refreshRoot(), openState: openState }))] }));
++            : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'), children: NEMESIS_STUDENT_BUILD ? (_jsx(SourcesTab, {})) : (_jsx(FilesystemTab, { canCollapse: canCollapse, collapseNonce: collapseNonce, cwd: effectiveCwd, cwdName: cwdName, data: data, error: rootError, hasWorkspace: hasWorkspace, loading: rootLoading, onActivateFile: onActivateFile, onActivateFolder: onActivateFolder, onCollapseAll: collapseAll, onLoadChildren: loadChildren, onNodeOpenChange: setNodeOpen, onPreviewFile: previewFile, onRefresh: () => void refreshRoot(), openState: openState })) }));
+ }
+ // Sidebar palette + hover-reveal: header actions stay reachable while moving
+ // from the project label to the action buttons.
+diff --git a/apps/desktop/src/app/right-sidebar/sources.js b/apps/desktop/src/app/right-sidebar/sources.js
+index 940be405f48..ff71a304d30 100644
+--- a/apps/desktop/src/app/right-sidebar/sources.js
++++ b/apps/desktop/src/app/right-sidebar/sources.js
+@@ -5,7 +5,9 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ // ask evidence questions, so the rail should answer "where did that come from?".
+ import { useStore } from '@nanostores/react';
+ import { useMemo, useState } from 'react';
++import { Codicon } from '@/components/ui/codicon';
+ import { chatMessageText } from '@/lib/chat-messages';
++import { openBrowserRail } from '@/store/browser-rail';
+ import { $messages } from '@/store/session';
+ const MD_LINK = /\[([^\]\n]{1,160})\]\((https?:\/\/[^\s)]+)\)/g;
+ const BARE_URL = /https?:\/\/[^\s<>"'()[\]{}]+/g;
+@@ -174,5 +176,5 @@ export function SourcesTab() {
+     const openExternal = (url) => {
+         void window.hermesDesktop?.openExternal?.(url);
+     };
+-    return (_jsx("div", { className: "flex min-h-0 flex-1 flex-col pt-1", children: sources.length === 0 ? (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 text-center", children: [_jsx("div", { className: "text-[0.7rem] font-semibold uppercase tracking-[0.07em] text-muted-foreground/75", children: "No sources yet" }), _jsx("div", { className: "text-[0.68rem] leading-relaxed text-muted-foreground/65", children: "Ask a research question \u2014 every paper, label, and trial the agent cites lands here." })] })) : (_jsx("div", { className: "min-h-0 flex-1 overflow-y-auto px-2.5 pb-4", children: _jsx("div", { className: "flex flex-wrap gap-1.5", children: sources.map(source => (_jsxs("button", { className: "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground", onClick: () => openExternal(source.url), title: `${source.title}\n${source.url}`, type: "button", children: [_jsx(SourceFavicon, { domain: source.domain }), _jsx("span", { className: "font-semibold uppercase tracking-wide text-[10px] text-(--theme-primary)", children: source.badge }), _jsx("span", { className: "max-w-[8.5rem] truncate text-muted-foreground", children: source.title })] }, source.url))) }) })) }));
++    return (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col pt-1", children: [_jsxs("div", { className: "flex h-7 shrink-0 items-center justify-between px-2.5", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70", children: "Sources" }), _jsxs("button", { className: "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.65rem] font-medium text-muted-foreground transition-colors hover:bg-(--chrome-action-hover) hover:text-foreground", onClick: () => openBrowserRail(), title: "Watch and steer the agent's browser", type: "button", children: [_jsx(Codicon, { name: "globe", size: "0.7rem" }), "Browser"] })] }), sources.length === 0 ? (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 text-center", children: [_jsx("div", { className: "text-[0.7rem] font-semibold uppercase tracking-[0.07em] text-muted-foreground/75", children: "No sources yet" }), _jsx("div", { className: "text-[0.68rem] leading-relaxed text-muted-foreground/65", children: "Ask a research question \u2014 every paper, label, and trial the agent cites lands here." })] })) : (_jsx("div", { className: "min-h-0 flex-1 overflow-y-auto px-2.5 pb-4", children: _jsx("div", { className: "flex flex-wrap gap-1.5", children: sources.map(source => (_jsxs("button", { className: "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground", onClick: () => openExternal(source.url), title: `${source.title}\n${source.url}`, type: "button", children: [_jsx(SourceFavicon, { domain: source.domain }), _jsx("span", { className: "font-semibold uppercase tracking-wide text-[10px] text-(--theme-primary)", children: source.badge }), _jsx("span", { className: "max-w-[8.5rem] truncate text-muted-foreground", children: source.title })] }, source.url))) }) }))] }));
+ }
+diff --git a/apps/desktop/src/app/right-sidebar/sources.tsx b/apps/desktop/src/app/right-sidebar/sources.tsx
+index 34875331b35..bccce5499e4 100644
+--- a/apps/desktop/src/app/right-sidebar/sources.tsx
++++ b/apps/desktop/src/app/right-sidebar/sources.tsx
+@@ -5,7 +5,9 @@
+ import { useStore } from '@nanostores/react'
+ import { useMemo, useState } from 'react'
+ 
++import { Codicon } from '@/components/ui/codicon'
+ import { type ChatMessage, chatMessageText } from '@/lib/chat-messages'
++import { openBrowserRail } from '@/store/browser-rail'
+ import { $messages } from '@/store/session'
+ 
+ export interface SourceRef {
+@@ -244,6 +246,22 @@ export function SourcesTab() {
+ 
+   return (
+     <div className="flex min-h-0 flex-1 flex-col pt-1">
++      {/* Rail header: the label + the agent-browser opener (the live mirror
++          where school-portal logins are typed). */}
++      <div className="flex h-7 shrink-0 items-center justify-between px-2.5">
++        <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70">
++          Sources
++        </span>
++        <button
++          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.65rem] font-medium text-muted-foreground transition-colors hover:bg-(--chrome-action-hover) hover:text-foreground"
++          onClick={() => openBrowserRail()}
++          title="Watch and steer the agent's browser"
++          type="button"
++        >
++          <Codicon name="globe" size="0.7rem" />
++          Browser
++        </button>
++      </div>
+       {sources.length === 0 ? (
+         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 text-center">
+           <div className="text-[0.7rem] font-semibold uppercase tracking-[0.07em] text-muted-foreground/75">
+diff --git a/apps/desktop/src/components/assistant-ui/thread/assistant-message.js b/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
+index 00f6b9e6aa3..800ffe05144 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
++++ b/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
+@@ -41,7 +41,10 @@ export const AssistantMessage = ({ onBranchInNewChat, onDismissError }) => {
+     // scan and the re-render it would cause.
+     const completedText = useAuiState(s => s.message.status?.type === 'running' ? '' : messageContentText(s.message.content));
+     const previewTargets = useMemo(() => {
+-        if (!completedText || !/(https?:\/\/|file:\/\/)/i.test(completedText)) {
++        // The cheap pre-test must also admit `#preview/<path>` tokens (deliverable
++        // files carry a bare encoded path — no protocol), or extractPreviewTargets
++        // never runs for them and the rail silently stays shut.
++        if (!completedText || !/(https?:\/\/|file:\/\/|#preview[:/])/i.test(completedText)) {
+             return [];
+         }
+         return pickPrimaryPreviewTarget(extractPreviewTargets(completedText));
+diff --git a/apps/desktop/src/components/brand-mark.js b/apps/desktop/src/components/brand-mark.js
+index b0cc5c9b008..b0f62dfb230 100644
+--- a/apps/desktop/src/components/brand-mark.js
++++ b/apps/desktop/src/components/brand-mark.js
+@@ -1,8 +1,8 @@
+ import { jsx as _jsx } from "react/jsx-runtime";
+ import { cn } from '@/lib/utils';
+ const assetPath = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
+-// Brand badge: nous-girl mark on a white tile, identical in light/dark.
++// Brand badge: the Nemesis winged mark on a black tile, identical in light/dark.
+ // Fills the tile (softly rounded); size via className (default size-14).
+ export function BrandMark({ className, ...props }) {
+-    return (_jsx("span", { className: cn('inline-flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white', className), ...props, children: _jsx("img", { alt: "", className: "size-full object-contain", src: assetPath('nous-girl.jpg') }) }));
++    return (_jsx("span", { className: cn('inline-flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md bg-black', className), ...props, children: _jsx("img", { alt: "", className: "size-full object-contain", src: assetPath('nemesis-mark.png') }) }));
+ }
+diff --git a/apps/desktop/src/global.d.ts b/apps/desktop/src/global.d.ts
+index 9133a717354..cf8bfdac5a6 100644
+--- a/apps/desktop/src/global.d.ts
++++ b/apps/desktop/src/global.d.ts
+@@ -97,6 +97,23 @@ declare global {
+       revealLogs: () => Promise<{ ok: boolean; path: string; error?: string }>
+       getRecentLogs: () => Promise<{ path: string; lines: string[] }>
+       readDir: (path: string) => Promise<HermesReadDirResult>
++      // App-managed agent browser: persistent Chromium the agent drives via CDP
++      // and the chat right rail mirrors (screencast + forwarded input).
++      schoolBrowser?: {
++        ensure: () => Promise<{ ok: boolean; reason?: string }>
++        list: () => Promise<{ running: boolean; tabs: { id: string; title: string; url: string }[] }>
++        attach: (targetId: string) => Promise<boolean>
++        detach: () => Promise<boolean>
++        exec: (payload: Record<string, unknown>) => Promise<unknown>
++        onFrame: (
++          callback: (frame: {
++            data: string
++            metadata: { deviceHeight: number; deviceWidth: number }
++            targetId: string
++          }) => void
++        ) => () => void
++        onEvent: (callback: (event: { targetId: string; type: string; url?: string }) => void) => () => void
++      }
+       gitRoot?: (path: string) => Promise<string | null>
+       // Reveal a path in the OS file manager (Finder / Explorer).
+       revealPath?: (path: string) => Promise<boolean>
+diff --git a/apps/desktop/src/hooks/use-agent-browser-watcher.js b/apps/desktop/src/hooks/use-agent-browser-watcher.js
+new file mode 100644
+index 00000000000..297ecb9d91b
+--- /dev/null
++++ b/apps/desktop/src/hooks/use-agent-browser-watcher.js
+@@ -0,0 +1,42 @@
++import { useEffect } from 'react';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++import { openBrowserRail } from '@/store/browser-rail';
++import { $messages } from '@/store/session';
++// "Watch the agent work": when the current assistant turn starts using its
++// browser tools, pop the live browser mirror open in the right rail — once per
++// message, so a student who closes it mid-turn isn't fought over the pane.
++// Also warms the app-managed browser at startup so the agent's configured
++// cdp_url (config.yaml browser.cdp_url) always has something to attach to.
++const BROWSER_TOOL_MARKER = /"browser_[a-z_]+"/;
++export function useAgentBrowserWatcher() {
++    useEffect(() => {
++        if (!NEMESIS_STUDENT_BUILD) {
++            return;
++        }
++        void window.hermesDesktop?.schoolBrowser?.ensure().catch(() => undefined);
++        let lastOpenedFor = '';
++        return $messages.subscribe(messages => {
++            const last = messages[messages.length - 1];
++            if (!last) {
++                return;
++            }
++            const key = last.id ?? `#${messages.length}`;
++            if (key === lastOpenedFor) {
++                return;
++            }
++            let raw = '';
++            try {
++                // Tool calls ride inside the assistant message payload; a stringify
++                // scan is shape-agnostic (same trick as the Sources rail).
++                raw = JSON.stringify(last).slice(0, 200_000);
++            }
++            catch {
++                return;
++            }
++            if (BROWSER_TOOL_MARKER.test(raw)) {
++                lastOpenedFor = key;
++                openBrowserRail();
++            }
++        });
++    }, []);
++}
+diff --git a/apps/desktop/src/hooks/use-agent-browser-watcher.ts b/apps/desktop/src/hooks/use-agent-browser-watcher.ts
+new file mode 100644
+index 00000000000..8ae1be1356e
+--- /dev/null
++++ b/apps/desktop/src/hooks/use-agent-browser-watcher.ts
+@@ -0,0 +1,53 @@
++import { useEffect } from 'react'
++
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
++import { openBrowserRail } from '@/store/browser-rail'
++import { $messages } from '@/store/session'
++
++// "Watch the agent work": when the current assistant turn starts using its
++// browser tools, pop the live browser mirror open in the right rail — once per
++// message, so a student who closes it mid-turn isn't fought over the pane.
++// Also warms the app-managed browser at startup so the agent's configured
++// cdp_url (config.yaml browser.cdp_url) always has something to attach to.
++const BROWSER_TOOL_MARKER = /"browser_[a-z_]+"/
++
++export function useAgentBrowserWatcher() {
++  useEffect(() => {
++    if (!NEMESIS_STUDENT_BUILD) {
++      return
++    }
++
++    void window.hermesDesktop?.schoolBrowser?.ensure().catch(() => undefined)
++
++    let lastOpenedFor = ''
++
++    return $messages.subscribe(messages => {
++      const last = messages[messages.length - 1] as { id?: string } | undefined
++
++      if (!last) {
++        return
++      }
++
++      const key = last.id ?? `#${messages.length}`
++
++      if (key === lastOpenedFor) {
++        return
++      }
++
++      let raw = ''
++
++      try {
++        // Tool calls ride inside the assistant message payload; a stringify
++        // scan is shape-agnostic (same trick as the Sources rail).
++        raw = JSON.stringify(last).slice(0, 200_000)
++      } catch {
++        return
++      }
++
++      if (BROWSER_TOOL_MARKER.test(raw)) {
++        lastOpenedFor = key
++        openBrowserRail()
++      }
++    })
++  }, [])
++}
+diff --git a/apps/desktop/src/hooks/use-exports-preview-watcher.js b/apps/desktop/src/hooks/use-exports-preview-watcher.js
+new file mode 100644
+index 00000000000..fc052201f00
+--- /dev/null
++++ b/apps/desktop/src/hooks/use-exports-preview-watcher.js
+@@ -0,0 +1,82 @@
++import { useEffect } from 'react';
++import { VAULT_DIR } from '@/app/library/vault';
++import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++import { setCurrentSessionPreviewTarget } from '@/store/preview';
++// The agent writes deliverables (slide decks, reports) into the Library's
++// Exports folder as self-contained HTML. The chat's `[Preview:](#preview/…)`
++// token opens them instantly — but only when the model actually emits the
++// token. This watcher is the deterministic backstop: any NEW .html landing in
++// Exports auto-opens in the chat preview rail, token or no token.
++const EXPORTS_DIR = `${VAULT_DIR}/Exports`;
++const POLL_MS = 4000;
++function isHtmlName(name) {
++    const lower = name.toLowerCase();
++    return lower.endsWith('.html') || lower.endsWith('.htm');
++}
++export function useExportsPreviewWatcher() {
++    useEffect(() => {
++        if (!NEMESIS_STUDENT_BUILD) {
++            return;
++        }
++        // null until the first successful scan — pre-existing exports never auto-open.
++        let seen = null;
++        let stopped = false;
++        let opening = false;
++        const tick = async () => {
++            const api = window.hermesDesktop;
++            if (!api?.readDir || opening) {
++                return;
++            }
++            let dir;
++            try {
++                dir = await api.readDir(EXPORTS_DIR);
++            }
++            catch {
++                return;
++            }
++            if (stopped) {
++                return;
++            }
++            // A missing folder is a valid empty baseline: the very first deliverable
++            // (which creates the folder) should still auto-open.
++            if (dir.error) {
++                seen ??= new Set();
++                return;
++            }
++            const files = dir.entries.filter(entry => !entry.isDirectory && isHtmlName(entry.name));
++            if (!seen) {
++                seen = new Set(files.map(file => file.name));
++                return;
++            }
++            const baseline = seen;
++            const fresh = files.filter(file => !baseline.has(file.name));
++            for (const file of fresh) {
++                baseline.add(file.name);
++            }
++            const newest = fresh[fresh.length - 1];
++            if (!newest) {
++                return;
++            }
++            opening = true;
++            try {
++                const target = await normalizeOrLocalPreviewTarget(newest.path);
++                if (target && !stopped) {
++                    // 'tool-result' → runnable artifact → rendered HTML in the live
++                    // preview tab (same treatment as an agent-emitted preview token).
++                    setCurrentSessionPreviewTarget(target, 'tool-result', newest.path);
++                }
++            }
++            catch {
++                // Preview is a convenience; a failed open just waits for the token path.
++            }
++            opening = false;
++        };
++        void tick();
++        const timer = window.setInterval(() => void tick(), POLL_MS);
++        return () => {
++            stopped = true;
++            window.clearInterval(timer);
++        };
++    }, []);
++}
+diff --git a/apps/desktop/src/store/browser-rail.js b/apps/desktop/src/store/browser-rail.js
+new file mode 100644
+index 00000000000..2c005c327cd
+--- /dev/null
++++ b/apps/desktop/src/store/browser-rail.js
+@@ -0,0 +1,14 @@
++// The agent-browser mirror tab in the chat right rail ("watch the agent work").
++// Open/visible state only — the mirror itself (screencast, tabs, input) lives in
++// BrowserMirror + the school-browser IPC. Close handling that must coordinate
++// with the preview/file tabs lives in store/preview.ts (avoids an import cycle).
++import { atom } from 'nanostores';
++import { PREVIEW_PANE_ID, RIGHT_RAIL_BROWSER_TAB_ID, selectRightRailTab } from './layout';
++import { setPaneOpen } from './panes';
++export const $browserRailOpen = atom(false);
++/** Show the agent-browser tab in the right rail and focus it. */
++export function openBrowserRail() {
++    $browserRailOpen.set(true);
++    setPaneOpen(PREVIEW_PANE_ID, true);
++    selectRightRailTab(RIGHT_RAIL_BROWSER_TAB_ID);
++}
+diff --git a/apps/desktop/src/store/browser-rail.ts b/apps/desktop/src/store/browser-rail.ts
+new file mode 100644
+index 00000000000..def8e4b3219
+--- /dev/null
++++ b/apps/desktop/src/store/browser-rail.ts
+@@ -0,0 +1,17 @@
++// The agent-browser mirror tab in the chat right rail ("watch the agent work").
++// Open/visible state only — the mirror itself (screencast, tabs, input) lives in
++// BrowserMirror + the school-browser IPC. Close handling that must coordinate
++// with the preview/file tabs lives in store/preview.ts (avoids an import cycle).
++import { atom } from 'nanostores'
++
++import { PREVIEW_PANE_ID, RIGHT_RAIL_BROWSER_TAB_ID, selectRightRailTab } from './layout'
++import { setPaneOpen } from './panes'
++
++export const $browserRailOpen = atom(false)
++
++/** Show the agent-browser tab in the right rail and focus it. */
++export function openBrowserRail() {
++  $browserRailOpen.set(true)
++  setPaneOpen(PREVIEW_PANE_ID, true)
++  selectRightRailTab(RIGHT_RAIL_BROWSER_TAB_ID)
++}
+diff --git a/apps/desktop/src/store/layout.js b/apps/desktop/src/store/layout.js
+index 31c624c55ed..864afab6f89 100644
+--- a/apps/desktop/src/store/layout.js
++++ b/apps/desktop/src/store/layout.js
+@@ -29,6 +29,7 @@ export const CHAT_SIDEBAR_PANE_ID = 'chat-sidebar';
+ export const FILE_BROWSER_PANE_ID = 'file-browser';
+ export const PREVIEW_PANE_ID = 'preview';
+ export const RIGHT_RAIL_PREVIEW_TAB_ID = 'preview';
++export const RIGHT_RAIL_BROWSER_TAB_ID = 'browser';
+ ensurePaneRegistered(CHAT_SIDEBAR_PANE_ID, { open: true });
+ ensurePaneRegistered(FILE_BROWSER_PANE_ID, { open: false });
+ ensurePaneRegistered(PREVIEW_PANE_ID, { open: true });
+diff --git a/apps/desktop/src/store/layout.ts b/apps/desktop/src/store/layout.ts
+index b168e35059e..50d8e46d4d9 100644
+--- a/apps/desktop/src/store/layout.ts
++++ b/apps/desktop/src/store/layout.ts
+@@ -35,8 +35,9 @@ export const CHAT_SIDEBAR_PANE_ID = 'chat-sidebar'
+ export const FILE_BROWSER_PANE_ID = 'file-browser'
+ export const PREVIEW_PANE_ID = 'preview'
+ export const RIGHT_RAIL_PREVIEW_TAB_ID = 'preview'
++export const RIGHT_RAIL_BROWSER_TAB_ID = 'browser'
+ 
+-export type RightRailTabId = typeof RIGHT_RAIL_PREVIEW_TAB_ID | `file:${string}`
++export type RightRailTabId = typeof RIGHT_RAIL_BROWSER_TAB_ID | typeof RIGHT_RAIL_PREVIEW_TAB_ID | `file:${string}`
+ 
+ ensurePaneRegistered(CHAT_SIDEBAR_PANE_ID, { open: true })
+ ensurePaneRegistered(FILE_BROWSER_PANE_ID, { open: false })
+diff --git a/apps/desktop/src/store/preview.js b/apps/desktop/src/store/preview.js
+index 4623045be49..ca18184d5b2 100644
+--- a/apps/desktop/src/store/preview.js
++++ b/apps/desktop/src/store/preview.js
+@@ -1,7 +1,8 @@
+ import { atom, computed } from 'nanostores';
+ import { persistentAtom } from '@/lib/persisted';
+ import { normalize } from '@/lib/text';
+-import { $rightRailActiveTabId, PREVIEW_PANE_ID, RIGHT_RAIL_PREVIEW_TAB_ID, selectRightRailTab } from './layout';
++import { $browserRailOpen } from './browser-rail';
++import { $rightRailActiveTabId, PREVIEW_PANE_ID, RIGHT_RAIL_BROWSER_TAB_ID, RIGHT_RAIL_PREVIEW_TAB_ID, selectRightRailTab } from './layout';
+ import { setPaneOpen } from './panes';
+ import { $activeSessionId, $selectedStoredSessionId } from './session';
+ const REGISTRY_STORAGE_KEY = 'hermes.desktop.sessionPreviews.v1';
+@@ -20,9 +21,11 @@ export const $filePreviewTabs = persistentAtom(TABS_STORAGE_KEY, [], {
+     encode: tabs => JSON.stringify(tabs, (key, value) => (key === 'dataUrl' ? undefined : value))
+ });
+ // Drop a restored active file-tab that didn't survive validation so the rail
+-// never points at a tab that isn't there.
+-if ($rightRailActiveTabId.get().startsWith('file:') &&
+-    !$filePreviewTabs.get().some(tab => tab.id === $rightRailActiveTabId.get())) {
++// never points at a tab that isn't there. Same for a restored 'browser' id —
++// the mirror tab always starts closed.
++if (($rightRailActiveTabId.get().startsWith('file:') &&
++    !$filePreviewTabs.get().some(tab => tab.id === $rightRailActiveTabId.get())) ||
++    $rightRailActiveTabId.get() === RIGHT_RAIL_BROWSER_TAB_ID) {
+     selectRightRailTab(RIGHT_RAIL_PREVIEW_TAB_ID);
+ }
+ export const $filePreviewTarget = computed([$filePreviewTabs, $rightRailActiveTabId], (tabs, activeTabId) => {
+@@ -284,6 +287,19 @@ function closeFilePreviewTab(tabId) {
+         setPaneOpen(PREVIEW_PANE_ID, false);
+     }
+ }
++/** Hide the agent-browser mirror tab (the browser process keeps running). */
++function closeBrowserRailTab() {
++    if (!$browserRailOpen.get()) {
++        return;
++    }
++    $browserRailOpen.set(false);
++    if ($rightRailActiveTabId.get() === RIGHT_RAIL_BROWSER_TAB_ID) {
++        selectRightRailTab($previewTarget.get() ? RIGHT_RAIL_PREVIEW_TAB_ID : ($filePreviewTabs.get()[0]?.id ?? RIGHT_RAIL_PREVIEW_TAB_ID));
++    }
++    if (!$previewTarget.get() && $filePreviewTabs.get().length === 0) {
++        setPaneOpen(PREVIEW_PANE_ID, false);
++    }
++}
+ export function closeRightRailTab(tabId) {
+     if (tabId === RIGHT_RAIL_PREVIEW_TAB_ID) {
+         if ($previewTarget.get()) {
+@@ -291,6 +307,10 @@ export function closeRightRailTab(tabId) {
+         }
+         return;
+     }
++    if (tabId === RIGHT_RAIL_BROWSER_TAB_ID) {
++        closeBrowserRailTab();
++        return;
++    }
+     closeFilePreviewTab(tabId);
+ }
+ export const closeActiveRightRailTab = () => closeRightRailTab($rightRailActiveTabId.get());
+@@ -299,6 +319,9 @@ export const closeActiveRightRailTab = () => closeRightRailTab($rightRailActiveT
+ // so "close others / to the right" act on what the user actually sees.
+ function rightRailTabOrder() {
+     const ids = [];
++    if ($browserRailOpen.get()) {
++        ids.push(RIGHT_RAIL_BROWSER_TAB_ID);
++    }
+     if ($previewTarget.get()) {
+         ids.push(RIGHT_RAIL_PREVIEW_TAB_ID);
+     }
+@@ -327,12 +350,14 @@ export function closeRightRailTabsToRight(tabId) {
+         closeRightRailTab(id);
+     }
+ }
+-/** Dismisses the active preview + every file tab so the rail pane unmounts. */
++/** Dismisses the active preview + every file tab + the browser mirror so the
++ *  rail pane unmounts. */
+ export function closeRightRail() {
+     if ($previewTarget.get()) {
+         dismissPreviewTarget();
+     }
+     $filePreviewTabs.set([]);
++    $browserRailOpen.set(false);
+     setPaneOpen(PREVIEW_PANE_ID, false);
+ }
+ export function clearSessionPreviewRegistry() {
+diff --git a/apps/desktop/src/store/preview.ts b/apps/desktop/src/store/preview.ts
+index c0533e719e4..90b79b2971b 100644
+--- a/apps/desktop/src/store/preview.ts
++++ b/apps/desktop/src/store/preview.ts
+@@ -3,9 +3,11 @@ import { atom, computed } from 'nanostores'
+ import { persistentAtom } from '@/lib/persisted'
+ import { normalize } from '@/lib/text'
+ 
++import { $browserRailOpen } from './browser-rail'
+ import {
+   $rightRailActiveTabId,
+   PREVIEW_PANE_ID,
++  RIGHT_RAIL_BROWSER_TAB_ID,
+   RIGHT_RAIL_PREVIEW_TAB_ID,
+   type RightRailTabId,
+   selectRightRailTab
+@@ -79,10 +81,12 @@ export const $filePreviewTabs = persistentAtom<FilePreviewTab[]>(TABS_STORAGE_KE
+ })
+ 
+ // Drop a restored active file-tab that didn't survive validation so the rail
+-// never points at a tab that isn't there.
++// never points at a tab that isn't there. Same for a restored 'browser' id —
++// the mirror tab always starts closed.
+ if (
+-  $rightRailActiveTabId.get().startsWith('file:') &&
+-  !$filePreviewTabs.get().some(tab => tab.id === $rightRailActiveTabId.get())
++  ($rightRailActiveTabId.get().startsWith('file:') &&
++    !$filePreviewTabs.get().some(tab => tab.id === $rightRailActiveTabId.get())) ||
++  $rightRailActiveTabId.get() === RIGHT_RAIL_BROWSER_TAB_ID
+ ) {
+   selectRightRailTab(RIGHT_RAIL_PREVIEW_TAB_ID)
+ }
+@@ -448,6 +452,23 @@ function closeFilePreviewTab(tabId: RightRailTabId) {
+   }
+ }
+ 
++/** Hide the agent-browser mirror tab (the browser process keeps running). */
++function closeBrowserRailTab() {
++  if (!$browserRailOpen.get()) {
++    return
++  }
++
++  $browserRailOpen.set(false)
++
++  if ($rightRailActiveTabId.get() === RIGHT_RAIL_BROWSER_TAB_ID) {
++    selectRightRailTab($previewTarget.get() ? RIGHT_RAIL_PREVIEW_TAB_ID : ($filePreviewTabs.get()[0]?.id ?? RIGHT_RAIL_PREVIEW_TAB_ID))
++  }
++
++  if (!$previewTarget.get() && $filePreviewTabs.get().length === 0) {
++    setPaneOpen(PREVIEW_PANE_ID, false)
++  }
++}
++
+ export function closeRightRailTab(tabId: RightRailTabId) {
+   if (tabId === RIGHT_RAIL_PREVIEW_TAB_ID) {
+     if ($previewTarget.get()) {
+@@ -457,6 +478,12 @@ export function closeRightRailTab(tabId: RightRailTabId) {
+     return
+   }
+ 
++  if (tabId === RIGHT_RAIL_BROWSER_TAB_ID) {
++    closeBrowserRailTab()
++
++    return
++  }
++
+   closeFilePreviewTab(tabId)
+ }
+ 
+@@ -468,6 +495,10 @@ export const closeActiveRightRailTab = () => closeRightRailTab($rightRailActiveT
+ function rightRailTabOrder(): RightRailTabId[] {
+   const ids: RightRailTabId[] = []
+ 
++  if ($browserRailOpen.get()) {
++    ids.push(RIGHT_RAIL_BROWSER_TAB_ID)
++  }
++
+   if ($previewTarget.get()) {
+     ids.push(RIGHT_RAIL_PREVIEW_TAB_ID)
+   }
+@@ -504,13 +535,15 @@ export function closeRightRailTabsToRight(tabId: RightRailTabId) {
+   }
+ }
+ 
+-/** Dismisses the active preview + every file tab so the rail pane unmounts. */
++/** Dismisses the active preview + every file tab + the browser mirror so the
++ *  rail pane unmounts. */
+ export function closeRightRail() {
+   if ($previewTarget.get()) {
+     dismissPreviewTarget()
+   }
+ 
+   $filePreviewTabs.set([])
++  $browserRailOpen.set(false)
+   setPaneOpen(PREVIEW_PANE_ID, false)
+ }
+ 
+-- 
+2.50.1 (Apple Git-155)
+

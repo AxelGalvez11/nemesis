@@ -3,6 +3,15 @@
 Plain-English guide for running the agent against a real school account, and for
 wiring it up again later. Written 2026-07-10 (round 15).
 
+> **Round-16 update — the browser now lives INSIDE the app.** The chat right
+> rail has a **Browser** tab (button in the Sources rail header, and it pops
+> open automatically whenever the agent starts browsing): a live mirror of the
+> agent's persistent browser with its own tab strip, URL bar, and full
+> mouse/keyboard — **type the Blackboard/Outlook logins right in the panel**.
+> The app spawns the browser itself at launch, and `browser.cdp_url` is now set
+> permanently in `~/.hermes/config.yaml`, so the manual launcher + config toggle
+> below are only the fallback path.
+
 ## How the pieces fit
 
 - The agent has real browser tools (`browser_navigate`, `browser_snapshot`,
