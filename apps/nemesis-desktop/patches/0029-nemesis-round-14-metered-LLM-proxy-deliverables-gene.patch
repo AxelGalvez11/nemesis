@@ -1,0 +1,474 @@
+From c1eb53b8d63a475112695670a679d2c56c11b118 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Fri, 10 Jul 2026 12:55:34 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20round-14=20=E2=80=94=20metered=20LLM?=
+ =?UTF-8?q?=20proxy=20+=20deliverables=20generator=20+=20Emil=20design=20p?=
+ =?UTF-8?q?ass?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Metered billing (structure):
+- src/nemesis-account.ts: device-key mint (JWT->proxy), $deviceKey store, LLM_PROXY_URL
+- account dialog: 'Metered model key' row (mint/copy/rotate)
+- cloud/nemesis-llm edge function + device_keys migration staged in the kit
+  (OpenAI-compatible proxy: device key -> plan -> daily token budget -> DeepSeek
+  -> usage_events; NOT yet deployed — needs owner OK on the prod project)
+
+Deliverables generator:
+- nemesis-deliverables skill: agent writes self-contained styled HTML slide
+  decks/reports into Library/Exports + [Preview:](#preview/) link; brand-free,
+  grounded-only. SOUL updated.
+- Library renders .html deliverables live (sandboxed iframe) + Exports visible
+  in the tree. E2E PROVED: agent built a 6-slide ACE-cough deck from chat.
+
+Design pass (Emil Kowalski MIT skills, staged in kit design-skills/):
+- flip curve -> 400ms strong ease-in-out; shake 350ms; deck-card hover +
+  match-tile transitions scoped to GPU props with :active feedback
+---
+ apps/desktop/src/app/library/index.js         | 16 +++---
+ apps/desktop/src/app/library/index.tsx        | 23 ++++++--
+ apps/desktop/src/app/library/vault.js         |  2 +
+ apps/desktop/src/app/library/vault.ts         |  3 +-
+ apps/desktop/src/app/study/index.js           |  4 +-
+ apps/desktop/src/app/study/index.tsx          |  4 +-
+ .../src/components/nemesis-account-gate.js    | 15 ++++-
+ .../src/components/nemesis-account-gate.tsx   | 46 +++++++++++++++
+ apps/desktop/src/nemesis-account.js           | 45 +++++++++++++++
+ apps/desktop/src/nemesis-account.ts           | 56 +++++++++++++++++++
+ apps/desktop/src/styles.css                   | 10 ++--
+ 11 files changed, 200 insertions(+), 24 deletions(-)
+
+diff --git a/apps/desktop/src/app/library/index.js b/apps/desktop/src/app/library/index.js
+index 20df42dfe60..a15fd6df660 100644
+--- a/apps/desktop/src/app/library/index.js
++++ b/apps/desktop/src/app/library/index.js
+@@ -233,13 +233,15 @@ export function LibraryView() {
+ function FileGlyph({ kind }) {
+     const Icon = kind === 'pdf'
+         ? IconFileTypePdf
+-        : kind === 'slides'
++        : kind === 'html'
+             ? IconPresentation
+-            : kind === 'image'
+-                ? IconPhoto
+-                : kind === 'doc'
+-                    ? IconFileText
+-                    : IconPaperclip;
++            : kind === 'slides'
++                ? IconPresentation
++                : kind === 'image'
++                    ? IconPhoto
++                    : kind === 'doc'
++                        ? IconFileText
++                        : IconPaperclip;
+     return _jsx(Icon, { className: "-mt-px mr-1.5 inline shrink-0 opacity-70", size: 14 });
+ }
+ function TreeLevel({ collapsed, depth, node, onSelect, onToggle, selection }) {
+@@ -265,7 +267,7 @@ function FilePreview({ file }) {
+     const url = fileUrl(file.path);
+     const openExternal = () => void window.hermesDesktop?.openExternal?.(url);
+     const reveal = () => void window.hermesDesktop?.revealPath?.(file.path);
+-    return (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col", children: [_jsxs("div", { className: "flex items-center justify-between gap-2 px-5 pb-2 pt-5", children: [_jsx("h2", { className: "truncate text-base font-medium", children: file.name }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: openExternal, size: "sm", variant: "outline", children: "Open in default app" }), _jsx(Button, { onClick: reveal, size: "sm", variant: "outline", children: "Reveal" })] })] }), _jsx("div", { className: "min-h-0 flex-1 px-5 pb-5", children: file.kind === 'pdf' ? (_jsx(PdfViewer, { path: file.path })) : file.kind === 'image' ? (_jsx("div", { className: "grid h-full place-items-center rounded-lg border border-border bg-card p-4", children: _jsx("img", { alt: file.name, className: "max-h-full max-w-full object-contain", src: url }) })) : (_jsx(EmptyState, { className: "h-full", description: file.kind === 'slides'
++    return (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col", children: [_jsxs("div", { className: "flex items-center justify-between gap-2 px-5 pb-2 pt-5", children: [_jsx("h2", { className: "truncate text-base font-medium", children: file.name }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: openExternal, size: "sm", variant: "outline", children: "Open in default app" }), _jsx(Button, { onClick: reveal, size: "sm", variant: "outline", children: "Reveal" })] })] }), _jsx("div", { className: "min-h-0 flex-1 px-5 pb-5", children: file.kind === 'pdf' ? (_jsx(PdfViewer, { path: file.path })) : file.kind === 'html' ? (_jsx("iframe", { className: "h-full w-full rounded-lg border border-border bg-white", sandbox: "", src: url, title: file.name })) : file.kind === 'image' ? (_jsx("div", { className: "grid h-full place-items-center rounded-lg border border-border bg-card p-4", children: _jsx("img", { alt: file.name, className: "max-h-full max-w-full object-contain", src: url }) })) : (_jsx(EmptyState, { className: "h-full", description: file.kind === 'slides'
+                         ? 'PowerPoint/Keynote files open in their own app — click “Open in default app”.'
+                         : 'This file type opens in its own app — click “Open in default app”.', title: file.name })) })] }));
+ }
+diff --git a/apps/desktop/src/app/library/index.tsx b/apps/desktop/src/app/library/index.tsx
+index b0f8b08c3ca..8e07b5bb90a 100644
+--- a/apps/desktop/src/app/library/index.tsx
++++ b/apps/desktop/src/app/library/index.tsx
+@@ -438,13 +438,15 @@ function FileGlyph({ kind }: { kind: VaultFile['kind'] }) {
+   const Icon =
+     kind === 'pdf'
+       ? IconFileTypePdf
+-      : kind === 'slides'
++      : kind === 'html'
+         ? IconPresentation
+-        : kind === 'image'
+-          ? IconPhoto
+-          : kind === 'doc'
+-            ? IconFileText
+-            : IconPaperclip
++        : kind === 'slides'
++          ? IconPresentation
++          : kind === 'image'
++            ? IconPhoto
++            : kind === 'doc'
++              ? IconFileText
++              : IconPaperclip
+ 
+   return <Icon className="-mt-px mr-1.5 inline shrink-0 opacity-70" size={14} />
+ }
+@@ -562,6 +564,15 @@ function FilePreview({ file }: { file: VaultFile }) {
+       <div className="min-h-0 flex-1 px-5 pb-5">
+         {file.kind === 'pdf' ? (
+           <PdfViewer path={file.path} />
++        ) : file.kind === 'html' ? (
++          // Agent-generated deliverables (slides/reports) render live. Sandboxed:
++          // no scripts, so the deck's own scroll-snap CSS drives it and nothing runs.
++          <iframe
++            className="h-full w-full rounded-lg border border-border bg-white"
++            sandbox=""
++            src={url}
++            title={file.name}
++          />
+         ) : file.kind === 'image' ? (
+           <div className="grid h-full place-items-center rounded-lg border border-border bg-card p-4">
+             <img alt={file.name} className="max-h-full max-w-full object-contain" src={url} />
+diff --git a/apps/desktop/src/app/library/vault.js b/apps/desktop/src/app/library/vault.js
+index d78842e0bd9..3f7a090d54f 100644
+--- a/apps/desktop/src/app/library/vault.js
++++ b/apps/desktop/src/app/library/vault.js
+@@ -8,6 +8,8 @@ function fileKind(name) {
+     const ext = name.toLowerCase().split('.').pop() ?? '';
+     if (ext === 'pdf')
+         return 'pdf';
++    if (ext === 'html' || ext === 'htm')
++        return 'html';
+     if (ext === 'pptx' || ext === 'ppt' || ext === 'key')
+         return 'slides';
+     if (ext === 'docx' || ext === 'doc' || ext === 'pages')
+diff --git a/apps/desktop/src/app/library/vault.ts b/apps/desktop/src/app/library/vault.ts
+index 2c175392618..815504a827b 100644
+--- a/apps/desktop/src/app/library/vault.ts
++++ b/apps/desktop/src/app/library/vault.ts
+@@ -15,7 +15,7 @@ export interface VaultNote {
+   folder: string
+ }
+ 
+-export type VaultFileKind = 'pdf' | 'slides' | 'doc' | 'image' | 'other'
++export type VaultFileKind = 'pdf' | 'slides' | 'doc' | 'image' | 'html' | 'other'
+ 
+ export interface VaultFile {
+   name: string
+@@ -35,6 +35,7 @@ function fileKind(name: string): null | VaultFileKind {
+   const ext = name.toLowerCase().split('.').pop() ?? ''
+ 
+   if (ext === 'pdf') return 'pdf'
++  if (ext === 'html' || ext === 'htm') return 'html'
+   if (ext === 'pptx' || ext === 'ppt' || ext === 'key') return 'slides'
+   if (ext === 'docx' || ext === 'doc' || ext === 'pages') return 'doc'
+   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'image'
+diff --git a/apps/desktop/src/app/study/index.js b/apps/desktop/src/app/study/index.js
+index 3f9b61bbb6a..bd03ee7c064 100644
+--- a/apps/desktop/src/app/study/index.js
++++ b/apps/desktop/src/app/study/index.js
+@@ -256,7 +256,7 @@ function DeckRow({ deck, now, onBrowse, onMatch, onStudy, state }) {
+ function DeckCard({ deck, now, onBrowse, onMatch, onStudy, state }) {
+     const stats = deckStats(state, deck.id, now);
+     const pct = masteryPct(stats);
+-    return (_jsxs("div", { className: "group flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-(--theme-primary)/40 hover:shadow-lg hover:shadow-black/20", children: [_jsxs("div", { className: "flex items-start justify-between gap-2", children: [_jsx("h3", { className: "text-[15px] font-semibold leading-snug tracking-tight", children: deck.name }), stats.due > 0 && _jsx(DuePill, { due: stats.due })] }), _jsxs("div", { className: "mt-auto", children: [_jsxs("div", { className: "mb-1.5 flex items-baseline justify-between text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "tabular-nums", children: [stats.total, " card", stats.total === 1 ? '' : 's', " \u00B7 ", stats.fresh, " new"] }), _jsxs("span", { className: "tabular-nums", children: [pct, "% studied"] })] }), _jsx(MasteryBar, { pct: pct })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { className: "flex-1", disabled: stats.due === 0, onClick: () => onStudy(deck.id), size: "sm", children: stats.due > 0 ? 'Study' : 'Done for now' }), _jsx(Button, { disabled: stats.total < 2, onClick: () => onMatch(deck.id), size: "sm", variant: "outline", children: "Match" }), _jsx(Button, { onClick: () => onBrowse(deck.id), size: "sm", variant: "ghost", children: "Cards" })] })] }));
++    return (_jsxs("div", { className: "group flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-(--theme-primary)/40 hover:shadow-lg hover:shadow-black/20", children: [_jsxs("div", { className: "flex items-start justify-between gap-2", children: [_jsx("h3", { className: "text-[15px] font-semibold leading-snug tracking-tight", children: deck.name }), stats.due > 0 && _jsx(DuePill, { due: stats.due })] }), _jsxs("div", { className: "mt-auto", children: [_jsxs("div", { className: "mb-1.5 flex items-baseline justify-between text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "tabular-nums", children: [stats.total, " card", stats.total === 1 ? '' : 's', " \u00B7 ", stats.fresh, " new"] }), _jsxs("span", { className: "tabular-nums", children: [pct, "% studied"] })] }), _jsx(MasteryBar, { pct: pct })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { className: "flex-1", disabled: stats.due === 0, onClick: () => onStudy(deck.id), size: "sm", children: stats.due > 0 ? 'Study' : 'Done for now' }), _jsx(Button, { disabled: stats.total < 2, onClick: () => onMatch(deck.id), size: "sm", variant: "outline", children: "Match" }), _jsx(Button, { onClick: () => onBrowse(deck.id), size: "sm", variant: "ghost", children: "Cards" })] })] }));
+ }
+ // Contribution grid of review activity with streak stats, month labels, hover tooltips,
+ // legend, and a today marker — the "dynamic" upgrade.
+@@ -419,7 +419,7 @@ function MatchGame({ deck, onExit }) {
+                     const isMatched = matched.has(tile.id);
+                     const isWrong = wrong?.includes(tile.id);
+                     const isSelected = selected === tile.id;
+-                    return (_jsx("button", { className: cn('flex items-center justify-center rounded-lg border p-3 text-center text-sm leading-snug transition-all', isMatched && 'pointer-events-none scale-95 border-transparent bg-transparent opacity-0', isSelected && 'border-(--theme-primary) bg-(--theme-primary)/10', isWrong && 'nemesis-shake border-destructive text-destructive', !isMatched && !isSelected && !isWrong && 'border-border bg-card hover:border-(--theme-primary)/50'), onClick: () => pick(tile), type: "button", children: tile.text }, tile.id));
++                    return (_jsx("button", { className: cn('flex items-center justify-center rounded-lg border p-3 text-center text-sm leading-snug transition-[transform,opacity,border-color,background-color] duration-200 ease-out active:scale-[0.98]', isMatched && 'pointer-events-none scale-95 border-transparent bg-transparent opacity-0', isSelected && 'border-(--theme-primary) bg-(--theme-primary)/10', isWrong && 'nemesis-shake border-destructive text-destructive', !isMatched && !isSelected && !isWrong && 'border-border bg-card hover:border-(--theme-primary)/50'), onClick: () => pick(tile), type: "button", children: tile.text }, tile.id));
+                 }) }))] }));
+ }
+ function ReviewSurface({ done, flip, intervals, item, onGrade, onReveal, remaining, revealed }) {
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index 0532ac1e386..79d68a54020 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -618,7 +618,7 @@ function DeckCard({
+   const pct = masteryPct(stats)
+ 
+   return (
+-    <div className="group flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-(--theme-primary)/40 hover:shadow-lg hover:shadow-black/20">
++    <div className="group flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-(--theme-primary)/40 hover:shadow-lg hover:shadow-black/20">
+       <div className="flex items-start justify-between gap-2">
+         <h3 className="text-[15px] font-semibold leading-snug tracking-tight">{deck.name}</h3>
+         {stats.due > 0 && <DuePill due={stats.due} />}
+@@ -1137,7 +1137,7 @@ function MatchGame({ deck, onExit }: { deck: null | StudyDeck; onExit: () => voi
+             return (
+               <button
+                 className={cn(
+-                  'flex items-center justify-center rounded-lg border p-3 text-center text-sm leading-snug transition-all',
++                  'flex items-center justify-center rounded-lg border p-3 text-center text-sm leading-snug transition-[transform,opacity,border-color,background-color] duration-200 ease-out active:scale-[0.98]',
+                   isMatched && 'pointer-events-none scale-95 border-transparent bg-transparent opacity-0',
+                   isSelected && 'border-(--theme-primary) bg-(--theme-primary)/10',
+                   isWrong && 'nemesis-shake border-destructive text-destructive',
+diff --git a/apps/desktop/src/components/nemesis-account-gate.js b/apps/desktop/src/components/nemesis-account-gate.js
+index 5613ab15795..adeacc82d95 100644
+--- a/apps/desktop/src/components/nemesis-account-gate.js
++++ b/apps/desktop/src/components/nemesis-account-gate.js
+@@ -12,14 +12,17 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
+ import { Input } from '@/components/ui/input';
+ import { Loader } from '@/components/ui/loader';
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+-import { $account, $accountDialogOpen, BILLING_URL, bypassAccount, initAccount, planLabel, refreshEntitlement, SIGNUP_URL, signIn, signOut } from '@/nemesis-account';
++import { $account, $accountDialogOpen, $deviceKey, BILLING_URL, bypassAccount, initAccount, mintDeviceKey, planLabel, refreshEntitlement, SIGNUP_URL, signIn, signOut } from '@/nemesis-account';
+ export const NemesisAccountGate = () => {
+     const account = useStore($account);
+     const dialogOpen = useStore($accountDialogOpen);
++    const deviceKey = useStore($deviceKey);
+     const [email, setEmail] = useState('');
+     const [password, setPassword] = useState('');
+     const [busy, setBusy] = useState(false);
+     const [error, setError] = useState(null);
++    const [keyBusy, setKeyBusy] = useState(false);
++    const [keyError, setKeyError] = useState(null);
+     useEffect(() => {
+         if (NEMESIS_STUDENT_BUILD) {
+             void initAccount();
+@@ -60,7 +63,15 @@ export const NemesisAccountGate = () => {
+                                         ? 'Upgrade for the full study engine.'
+                                         : account.periodEnd
+                                             ? `Renews ${new Date(account.periodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
+-                                            : account.planStatus || 'Active' })] }), _jsx("span", { className: "rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)", children: planLabel(account.plan) })] })), _jsxs(DialogFooter, { className: "flex-wrap gap-2 sm:justify-between", children: [_jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: () => void window.hermesDesktop?.openExternal?.(BILLING_URL), size: "sm", variant: "secondary", children: account.plan === 'free' ? 'Upgrade' : 'Manage billing' }), !account.bypass && (_jsx(Button, { onClick: () => void refreshEntitlement(), size: "sm", variant: "outline", children: "Refresh plan" }))] }), _jsx(Button, { onClick: () => {
++                                            : account.planStatus || 'Active' })] }), _jsx("span", { className: "rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)", children: planLabel(account.plan) })] })), !account.bypass && (_jsxs("div", { className: "rounded-lg border border-border bg-muted/30 px-3 py-2.5", children: [_jsxs("div", { className: "flex items-center justify-between gap-2", children: [_jsxs("div", { children: [_jsx("div", { className: "text-sm font-medium", children: "Metered model key" }), _jsx("div", { className: "text-xs text-muted-foreground", children: deviceKey
++                                                ? `Active · ends …${deviceKey.slice(-4)} — usage counts against your plan`
++                                                : 'Bills model usage to your plan instead of a local key.' })] }), _jsxs("div", { className: "flex shrink-0 gap-1.5", children: [deviceKey && (_jsx(Button, { onClick: () => void navigator.clipboard?.writeText(deviceKey).catch(() => { }), size: "sm", variant: "ghost", children: "Copy" })), _jsx(Button, { disabled: keyBusy, onClick: () => {
++                                                setKeyBusy(true);
++                                                setKeyError(null);
++                                                void mintDeviceKey()
++                                                    .catch(err => setKeyError(err instanceof Error ? err.message : 'failed'))
++                                                    .finally(() => setKeyBusy(false));
++                                            }, size: "sm", variant: "outline", children: keyBusy ? 'Minting…' : deviceKey ? 'New key' : 'Mint key' })] })] }), keyError && _jsx("p", { className: "pt-1.5 text-xs text-destructive", children: keyError })] })), _jsxs(DialogFooter, { className: "flex-wrap gap-2 sm:justify-between", children: [_jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: () => void window.hermesDesktop?.openExternal?.(BILLING_URL), size: "sm", variant: "secondary", children: account.plan === 'free' ? 'Upgrade' : 'Manage billing' }), !account.bypass && (_jsx(Button, { onClick: () => void refreshEntitlement(), size: "sm", variant: "outline", children: "Refresh plan" }))] }), _jsx(Button, { onClick: () => {
+                                 $accountDialogOpen.set(false);
+                                 void signOut();
+                             }, size: "sm", variant: "ghost", children: "Sign out" })] })] }) }));
+diff --git a/apps/desktop/src/components/nemesis-account-gate.tsx b/apps/desktop/src/components/nemesis-account-gate.tsx
+index 27a8f6ac81c..306d4f0ac37 100644
+--- a/apps/desktop/src/components/nemesis-account-gate.tsx
++++ b/apps/desktop/src/components/nemesis-account-gate.tsx
+@@ -22,9 +22,11 @@ import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import {
+   $account,
+   $accountDialogOpen,
++  $deviceKey,
+   BILLING_URL,
+   bypassAccount,
+   initAccount,
++  mintDeviceKey,
+   planLabel,
+   refreshEntitlement,
+   SIGNUP_URL,
+@@ -35,10 +37,13 @@ import {
+ export const NemesisAccountGate: FC = () => {
+   const account = useStore($account)
+   const dialogOpen = useStore($accountDialogOpen)
++  const deviceKey = useStore($deviceKey)
+   const [email, setEmail] = useState('')
+   const [password, setPassword] = useState('')
+   const [busy, setBusy] = useState(false)
+   const [error, setError] = useState<null | string>(null)
++  const [keyBusy, setKeyBusy] = useState(false)
++  const [keyError, setKeyError] = useState<null | string>(null)
+ 
+   useEffect(() => {
+     if (NEMESIS_STUDENT_BUILD) {
+@@ -163,6 +168,47 @@ export const NemesisAccountGate: FC = () => {
+           </div>
+         )}
+ 
++        {!account.bypass && (
++          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
++            <div className="flex items-center justify-between gap-2">
++              <div>
++                <div className="text-sm font-medium">Metered model key</div>
++                <div className="text-xs text-muted-foreground">
++                  {deviceKey
++                    ? `Active · ends …${deviceKey.slice(-4)} — usage counts against your plan`
++                    : 'Bills model usage to your plan instead of a local key.'}
++                </div>
++              </div>
++              <div className="flex shrink-0 gap-1.5">
++                {deviceKey && (
++                  <Button
++                    onClick={() => void navigator.clipboard?.writeText(deviceKey).catch(() => {})}
++                    size="sm"
++                    variant="ghost"
++                  >
++                    Copy
++                  </Button>
++                )}
++                <Button
++                  disabled={keyBusy}
++                  onClick={() => {
++                    setKeyBusy(true)
++                    setKeyError(null)
++                    void mintDeviceKey()
++                      .catch(err => setKeyError(err instanceof Error ? err.message : 'failed'))
++                      .finally(() => setKeyBusy(false))
++                  }}
++                  size="sm"
++                  variant="outline"
++                >
++                  {keyBusy ? 'Minting…' : deviceKey ? 'New key' : 'Mint key'}
++                </Button>
++              </div>
++            </div>
++            {keyError && <p className="pt-1.5 text-xs text-destructive">{keyError}</p>}
++          </div>
++        )}
++
+         <DialogFooter className="flex-wrap gap-2 sm:justify-between">
+           <div className="flex gap-2">
+             <Button onClick={() => void window.hermesDesktop?.openExternal?.(BILLING_URL)} size="sm" variant="secondary">
+diff --git a/apps/desktop/src/nemesis-account.js b/apps/desktop/src/nemesis-account.js
+index 3e75d47676e..d7da0faadd5 100644
+--- a/apps/desktop/src/nemesis-account.js
++++ b/apps/desktop/src/nemesis-account.js
+@@ -184,6 +184,51 @@ export async function refreshEntitlement() {
+         // keep current state; a later refresh can succeed
+     }
+ }
++// --- Metered LLM proxy device key -------------------------------------------
++// The proxy (cloud/nemesis-llm in the kit) authenticates the agent's model calls with a
++// long-lived device key so every token is attributed, budgeted, and billed to the plan.
++const DEVICE_KEY_STORE = 'nemesis.devicekey.v1';
++export const LLM_PROXY_URL = `${SUPABASE_URL}/functions/v1/nemesis-llm`;
++export const $deviceKey = atom(loadDeviceKey());
++function loadDeviceKey() {
++    try {
++        return window.localStorage.getItem(DEVICE_KEY_STORE);
++    }
++    catch {
++        return null;
++    }
++}
++export async function mintDeviceKey() {
++    const stored = loadSession();
++    if (!stored) {
++        throw new Error('Sign in first.');
++    }
++    const session = await refreshIfNeeded(stored);
++    const response = await fetch(`${LLM_PROXY_URL}/device-key`, {
++        body: JSON.stringify({ label: 'Nemesis desktop' }),
++        headers: {
++            apikey: SUPABASE_ANON_KEY,
++            Authorization: `Bearer ${session.accessToken}`,
++            'Content-Type': 'application/json'
++        },
++        method: 'POST'
++    });
++    if (response.status === 404) {
++        throw new Error('Metering proxy is not deployed yet — deploy cloud/nemesis-llm first.');
++    }
++    const data = (await response.json().catch(() => ({})));
++    if (!response.ok || !data.key) {
++        throw new Error(data.error || `could not mint a device key (${response.status})`);
++    }
++    try {
++        window.localStorage.setItem(DEVICE_KEY_STORE, data.key);
++    }
++    catch {
++        // best-effort
++    }
++    $deviceKey.set(data.key);
++    return data.key;
++}
+ /** Human label for a plan code: 'health_pro' → 'Health Pro'. */
+ export function planLabel(plan) {
+     if (!plan || plan === 'free') {
+diff --git a/apps/desktop/src/nemesis-account.ts b/apps/desktop/src/nemesis-account.ts
+index 1f19b092d00..b03475cbffe 100644
+--- a/apps/desktop/src/nemesis-account.ts
++++ b/apps/desktop/src/nemesis-account.ts
+@@ -252,6 +252,62 @@ export async function refreshEntitlement(): Promise<void> {
+   }
+ }
+ 
++// --- Metered LLM proxy device key -------------------------------------------
++// The proxy (cloud/nemesis-llm in the kit) authenticates the agent's model calls with a
++// long-lived device key so every token is attributed, budgeted, and billed to the plan.
++
++const DEVICE_KEY_STORE = 'nemesis.devicekey.v1'
++export const LLM_PROXY_URL = `${SUPABASE_URL}/functions/v1/nemesis-llm`
++
++export const $deviceKey = atom<null | string>(loadDeviceKey())
++
++function loadDeviceKey(): null | string {
++  try {
++    return window.localStorage.getItem(DEVICE_KEY_STORE)
++  } catch {
++    return null
++  }
++}
++
++export async function mintDeviceKey(): Promise<string> {
++  const stored = loadSession()
++
++  if (!stored) {
++    throw new Error('Sign in first.')
++  }
++
++  const session = await refreshIfNeeded(stored)
++  const response = await fetch(`${LLM_PROXY_URL}/device-key`, {
++    body: JSON.stringify({ label: 'Nemesis desktop' }),
++    headers: {
++      apikey: SUPABASE_ANON_KEY,
++      Authorization: `Bearer ${session.accessToken}`,
++      'Content-Type': 'application/json'
++    },
++    method: 'POST'
++  })
++
++  if (response.status === 404) {
++    throw new Error('Metering proxy is not deployed yet — deploy cloud/nemesis-llm first.')
++  }
++
++  const data = (await response.json().catch(() => ({}))) as { key?: string; error?: string }
++
++  if (!response.ok || !data.key) {
++    throw new Error(data.error || `could not mint a device key (${response.status})`)
++  }
++
++  try {
++    window.localStorage.setItem(DEVICE_KEY_STORE, data.key)
++  } catch {
++    // best-effort
++  }
++
++  $deviceKey.set(data.key)
++
++  return data.key
++}
++
+ /** Human label for a plan code: 'health_pro' → 'Health Pro'. */
+ export function planLabel(plan: string): string {
+   if (!plan || plan === 'free') {
+diff --git a/apps/desktop/src/styles.css b/apps/desktop/src/styles.css
+index 9052700c01c..de1b27d5407 100644
+--- a/apps/desktop/src/styles.css
++++ b/apps/desktop/src/styles.css
+@@ -1865,23 +1865,25 @@ text-* variant utilities. */ .btn-arc {
+ }
+ 
+ /* Study flashcard flip (nemesis.study.flip). The inner wrapper rotates 180° on
+-   reveal; the two faces are back-face-hidden so only one shows at a time. */
++   reveal; the two faces are back-face-hidden so only one shows at a time.
++   400ms with a STRONG ease-in-out: a card flip is on-screen movement (natural
++   acceleration + deceleration); the stock material curve reads mushy at 500ms. */
+ .nemesis-flip-inner {
+   transform-style: preserve-3d;
+-  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
++  transition: transform 400ms cubic-bezier(0.77, 0, 0.175, 1);
+ }
+ .nemesis-flip[data-flipped='true'] .nemesis-flip-inner {
+   transform: rotateY(180deg);
+ }
+ 
+-/* Match game: wrong pair shakes briefly. */
++/* Match game: wrong pair shakes briefly (one-shot error feedback). */
+ @keyframes nemesis-shake {
+   0%, 100% { transform: translateX(0); }
+   20%, 60% { transform: translateX(-5px); }
+   40%, 80% { transform: translateX(5px); }
+ }
+ .nemesis-shake {
+-  animation: nemesis-shake 0.4s ease-in-out;
++  animation: nemesis-shake 350ms ease-in-out;
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
+-- 
+2.50.1 (Apple Git-155)
+
