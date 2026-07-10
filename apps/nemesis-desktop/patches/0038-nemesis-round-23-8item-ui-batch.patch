@@ -1,0 +1,1741 @@
+From 9e08dfa3453fc95fea99487f5d4e067f2d19cb8d Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Fri, 10 Jul 2026 17:56:22 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20round-23=20=E2=80=94=208-item=20UI/U?=
+ =?UTF-8?q?X=20batch=20(Codex/GPT-5.6-Sol=20+=20retina=20mirror)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Owner batch, verified live via CDP:
+- Right rail: single-view switcher (Sources/Browser/Preview segmented control, one visible) replacing side-by-side tabs
+- Titlebar: per-route icon gating — clean top-right on Study/Graph/Recorder/Library; rail toggle only on chat; haptics/kbd/settings removed for student build
+- Account + Settings moved to lower-left sidebar footer (avatar/email/plan pill + gear)
+- Browser mirror: capture at devicePixelRatio (retina) + higher JPEG quality (was blurry 1x upscaled)
+- Graph: theme-aware colors (light bg in light mode / dark in dark, reads --ui-* tokens, reacts to theme) + legible GRAPH CONTROLS card
+- Study heatmap: full rolling year (53wk) + tied to REAL reviews (seed fakery removed; grade appends a review)
+- Study: create + assign deck SECTIONS (New section dialog, grouped headers)
+- Recorder: on stop, auto-save transcript (+AI notes) as a Library/Lectures note
+
+Shell/rail authored by Codex Run A; graph/study/recorder by Codex Run B; mirror by hand. Compiled clean first try.
+---
+ apps/desktop/electron/school-browser.ts       |   8 +-
+ .../app/chat/right-rail/browser-mirror.tsx    |   6 +-
+ .../src/app/chat/right-rail/preview.tsx       | 211 +++++++++++-
+ apps/desktop/src/app/chat/sidebar/index.tsx   |  65 ++++
+ apps/desktop/src/app/graph/index.tsx          | 188 ++++++++---
+ apps/desktop/src/app/recorder/index.tsx       |  37 +-
+ .../app/shell/hooks/use-statusbar-items.tsx   |  31 +-
+ .../src/app/shell/titlebar-controls.tsx       |  36 +-
+ apps/desktop/src/app/study/index.tsx          | 315 ++++++++++++++----
+ apps/desktop/src/app/study/model.ts           | 100 ++++--
+ apps/desktop/src/store/layout.ts              |   3 +-
+ apps/desktop/src/store/preview.ts             |  57 +++-
+ 12 files changed, 822 insertions(+), 235 deletions(-)
+
+diff --git a/apps/desktop/electron/school-browser.ts b/apps/desktop/electron/school-browser.ts
+index ca1db8f3ffa..a1625523a98 100644
+--- a/apps/desktop/electron/school-browser.ts
++++ b/apps/desktop/electron/school-browser.ts
+@@ -364,10 +364,12 @@ async function attachMirror(sender: Electron.WebContents, targetId: string): Pro
+ 
+   await sessionCommand(session, 'Page.enable').catch(() => undefined)
+   await sessionCommand(session, 'Page.startScreencast', {
++    // Headroom for a 2x (retina) capture of the panel-shaped viewport so the
++    // mirror stays sharp; higher JPEG quality since the panel is small.
+     format: 'jpeg',
+-    maxHeight: 1800,
+-    maxWidth: 1400,
+-    quality: 65
++    maxHeight: 3200,
++    maxWidth: 2600,
++    quality: 82
+   }).catch(() => undefined)
+ 
+   return true
+diff --git a/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx b/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
+index ed61e985837..c232112219e 100644
+--- a/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
++++ b/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
+@@ -91,9 +91,13 @@ export function BrowserMirror() {
+       }
+ 
+       lastViewportRef.current = { height, width }
++      // Render the page at the display's pixel density (capped at 2x) so the
++      // screencast is captured at retina resolution — otherwise a 1x capture is
++      // upscaled onto the retina panel and looks blurry.
++      const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
+       exec({
+         method: 'Emulation.setDeviceMetricsOverride',
+-        params: { deviceScaleFactor: 1, height, mobile: false, width }
++        params: { deviceScaleFactor: dpr, height, mobile: false, width }
+       })
+     },
+     [exec]
+diff --git a/apps/desktop/src/app/chat/right-rail/preview.tsx b/apps/desktop/src/app/chat/right-rail/preview.tsx
+index d9cf4892928..207834bd83b 100644
+--- a/apps/desktop/src/app/chat/right-rail/preview.tsx
++++ b/apps/desktop/src/app/chat/right-rail/preview.tsx
+@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
+ import { useEffect, useMemo } from 'react'
+ 
+ import type { SetTitlebarToolGroup } from '@/app/shell/titlebar-controls'
++import { Button } from '@/components/ui/button'
+ import { Codicon } from '@/components/ui/codicon'
+ import {
+   ContextMenu,
+@@ -11,6 +12,7 @@ import {
+   ContextMenuTrigger
+ } from '@/components/ui/context-menu'
+ import { Tip } from '@/components/ui/tooltip'
++import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control'
+ import { translateNow, useI18n } from '@/i18n'
+ import { formatCombo } from '@/lib/keybinds/combo'
+ import { cn } from '@/lib/utils'
+@@ -86,7 +88,214 @@ function tabLabelFor(target: PreviewTarget): string {
+   return tail || value || translateNow('preview.tab')
+ }
+ 
+-export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatPreviewRailProps) {
++type StudentRailSegmentId =
++  | typeof RIGHT_RAIL_BROWSER_TAB_ID
++  | typeof RIGHT_RAIL_PREVIEW_TAB_ID
++  | typeof RIGHT_RAIL_SOURCES_TAB_ID
++
++export function ChatPreviewRail(props: ChatPreviewRailProps) {
++  return NEMESIS_STUDENT_BUILD ? <StudentChatPreviewRail {...props} /> : <DefaultChatPreviewRail {...props} />
++}
++
++function StudentChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatPreviewRailProps) {
++  const { t } = useI18n()
++  const previewReloadRequest = useStore($previewReloadRequest)
++  const activeTabId = useStore($rightRailActiveTabId)
++  const panesFlipped = useStore($panesFlipped)
++  const filePreviewTabs = useStore($filePreviewTabs)
++  const previewTarget = useStore($previewTarget)
++  const dirtyPreviewUrls = useStore($dirtyPreviewUrls)
++  const browserRailOpen = useStore($browserRailOpen)
++  const hasPreviewContent = Boolean(previewTarget || filePreviewTabs.length > 0)
++
++  const segments = useMemo<readonly SegmentedControlOption<StudentRailSegmentId>[]>(
++    () => [
++      { id: RIGHT_RAIL_SOURCES_TAB_ID, label: 'Sources' },
++      ...(browserRailOpen ? [{ id: RIGHT_RAIL_BROWSER_TAB_ID, label: 'Browser' } as const] : []),
++      ...(hasPreviewContent ? [{ id: RIGHT_RAIL_PREVIEW_TAB_ID, label: 'Preview' } as const] : [])
++    ],
++    [browserRailOpen, hasPreviewContent]
++  )
++
++  const activeFileTab = activeTabId.startsWith('file:')
++    ? filePreviewTabs.find(tab => tab.id === activeTabId)
++    : undefined
++  const activeSegmentId: StudentRailSegmentId =
++    activeTabId === RIGHT_RAIL_BROWSER_TAB_ID && browserRailOpen
++      ? RIGHT_RAIL_BROWSER_TAB_ID
++      : (activeTabId === RIGHT_RAIL_PREVIEW_TAB_ID || activeFileTab) && hasPreviewContent
++        ? RIGHT_RAIL_PREVIEW_TAB_ID
++        : RIGHT_RAIL_SOURCES_TAB_ID
++  const activePreviewTarget =
++    activeTabId === RIGHT_RAIL_PREVIEW_TAB_ID
++      ? previewTarget
++      : (activeFileTab?.target ?? previewTarget ?? filePreviewTabs[0]?.target ?? null)
++
++  const previewTabs = useMemo<readonly RailTab[]>(
++    () => [
++      ...(previewTarget
++        ? [{ id: RIGHT_RAIL_PREVIEW_TAB_ID, label: t.preview.tab, target: previewTarget } as RailTab]
++        : []),
++      ...filePreviewTabs.map(({ id, target }) => ({ id, label: tabLabelFor(target), target }) as RailTab)
++    ],
++    [filePreviewTabs, previewTarget, t.preview.tab]
++  )
++
++  useEffect(() => {
++    const activeTabAvailable =
++      activeTabId === RIGHT_RAIL_SOURCES_TAB_ID ||
++      (activeTabId === RIGHT_RAIL_BROWSER_TAB_ID && browserRailOpen) ||
++      (activeTabId === RIGHT_RAIL_PREVIEW_TAB_ID && Boolean(previewTarget)) ||
++      Boolean(activeFileTab)
++
++    if (!activeTabAvailable) {
++      selectRightRailTab(RIGHT_RAIL_SOURCES_TAB_ID)
++    }
++  }, [activeFileTab, activeTabId, browserRailOpen, previewTarget])
++
++  const selectSegment = (id: StudentRailSegmentId) => {
++    if (id !== RIGHT_RAIL_PREVIEW_TAB_ID) {
++      selectRightRailTab(id)
++
++      return
++    }
++
++    if (activeSegmentId === RIGHT_RAIL_PREVIEW_TAB_ID) {
++      return
++    }
++
++    selectRightRailTab(
++      previewTarget ? RIGHT_RAIL_PREVIEW_TAB_ID : (filePreviewTabs[0]?.id ?? RIGHT_RAIL_SOURCES_TAB_ID)
++    )
++  }
++
++  const closeActiveView = () => {
++    if (activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID) {
++      closeRightRail()
++
++      return
++    }
++
++    if (activeSegmentId === RIGHT_RAIL_BROWSER_TAB_ID) {
++      closeRightRailTab(RIGHT_RAIL_BROWSER_TAB_ID)
++
++      return
++    }
++
++    closeRightRailTab(activeFileTab?.id ?? RIGHT_RAIL_PREVIEW_TAB_ID)
++  }
++
++  const activeSegmentLabel = segments.find(segment => segment.id === activeSegmentId)?.label ?? 'Sources'
++
++  return (
++    <aside
++      className={cn(
++        'relative flex h-full w-full min-w-0 flex-col overflow-hidden border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background) text-(--ui-text-tertiary)',
++        panesFlipped ? 'border-r' : 'border-l'
++      )}
++      style={{ paddingTop: 'var(--right-rail-top-inset, 0px)' }}
++    >
++      <div className="flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-2 [-webkit-app-region:no-drag]">
++        <SegmentedControl
++          className="min-w-0 max-w-full bg-(--ui-bg-tertiary) [&>button]:min-w-0 [&>button]:truncate [&>button]:transition-none [&>button]:active:scale-[0.98] [&>button]:motion-reduce:active:scale-100 [&>button[aria-pressed=true]]:bg-(--theme-primary)/15 [&>button[aria-pressed=true]]:text-(--theme-primary) [&>button[aria-pressed=true]]:shadow-none"
++          onChange={selectSegment}
++          options={segments}
++          value={activeSegmentId}
++        />
++        <Tip
++          label={
++            activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID
++              ? t.preview.closePane
++              : t.preview.closeTab(activeSegmentLabel)
++          }
++        >
++          <Button
++            aria-label={
++              activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID
++                ? t.preview.closePane
++                : t.preview.closeTab(activeSegmentLabel)
++            }
++            className="ml-auto shrink-0 text-(--ui-text-tertiary) transition-colors duration-100 ease active:scale-[0.97] motion-reduce:active:scale-100"
++            onClick={closeActiveView}
++            size="icon-xs"
++            type="button"
++            variant="ghost"
++          >
++            <Codicon name="close" size="0.75rem" />
++          </Button>
++        </Tip>
++      </div>
++
++      {activeSegmentId === RIGHT_RAIL_PREVIEW_TAB_ID && filePreviewTabs.length > 0 && (
++        <div
++          className="flex h-7 shrink-0 overflow-x-auto border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
++          role="tablist"
++        >
++          {previewTabs.map(tab => {
++            const active = tab.id === activeTabId
++            const dirty = Boolean(dirtyPreviewUrls[tab.target.url])
++
++            return (
++              <div
++                className={cn(
++                  'group/file-tab relative flex h-full min-w-24 max-w-40 shrink-0 items-center border-r border-(--ui-stroke-quaternary) text-[0.65rem] font-medium [-webkit-app-region:no-drag]',
++                  active
++                    ? 'bg-(--ui-editor-surface-background) text-foreground'
++                    : 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'
++                )}
++                key={tab.id}
++              >
++                {active && (
++                  <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-px bg-(--theme-primary)" />
++                )}
++                <Tip label={tab.target.path || tab.target.url || tab.label}>
++                  <button
++                    aria-selected={active}
++                    className="min-w-0 flex-1 truncate py-1 pl-2 pr-1 text-left outline-none active:scale-[0.98] motion-reduce:active:scale-100"
++                    onClick={() => selectRightRailTab(tab.id)}
++                    role="tab"
++                    type="button"
++                  >
++                    {tab.label}
++                  </button>
++                </Tip>
++                {dirty && <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-(--theme-primary)" />}
++                <button
++                  aria-label={t.preview.closeTab(tab.label)}
++                  className="mx-1 grid size-4 shrink-0 place-items-center rounded-sm text-(--ui-text-tertiary) opacity-0 hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/file-tab:opacity-100 active:scale-[0.97] motion-reduce:active:scale-100"
++                  onClick={() => closeRightRailTab(tab.id)}
++                  type="button"
++                >
++                  <Codicon name="close" size="0.65rem" />
++                </button>
++              </div>
++            )
++          })}
++        </div>
++      )}
++
++      <div className="min-h-0 flex-1 overflow-hidden">
++        {activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID ? (
++          <div className="flex h-full min-h-0 flex-col bg-(--ui-sidebar-surface-background)">
++            <SourcesTab />
++          </div>
++        ) : activeSegmentId === RIGHT_RAIL_BROWSER_TAB_ID ? (
++          <BrowserMirror />
++        ) : activePreviewTarget ? (
++          <PreviewPane
++            embedded
++            onRestartServer={activeTabId === RIGHT_RAIL_PREVIEW_TAB_ID ? onRestartServer : undefined}
++            reloadRequest={previewReloadRequest}
++            setTitlebarToolGroup={setTitlebarToolGroup}
++            target={activePreviewTarget}
++          />
++        ) : null}
++      </div>
++    </aside>
++  )
++}
++
++function DefaultChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatPreviewRailProps) {
+   const { t } = useI18n()
+   const previewReloadRequest = useStore($previewReloadRequest)
+   const activeTabId = useStore($rightRailActiveTabId)
+diff --git a/apps/desktop/src/app/chat/sidebar/index.tsx b/apps/desktop/src/app/chat/sidebar/index.tsx
+index d7e3624dfd1..b5a87dae283 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.tsx
++++ b/apps/desktop/src/app/chat/sidebar/index.tsx
+@@ -13,12 +13,14 @@ import { SearchField } from '@/components/ui/search-field'
+ import {
+   Sidebar,
+   SidebarContent,
++  SidebarFooter,
+   SidebarGroup,
+   SidebarGroupContent,
+   SidebarMenu,
+   SidebarMenuButton,
+   SidebarMenuItem
+ } from '@/components/ui/sidebar'
++import { Tip } from '@/components/ui/tooltip'
+ import { searchSessions, type SessionInfo, type SessionSearchResult } from '@/hermes'
+ import { useI18n } from '@/i18n'
+ import { comboTokens } from '@/lib/keybinds/combo'
+@@ -26,6 +28,7 @@ import { profileColor } from '@/lib/profile-color'
+ import { sessionMatchesSearch } from '@/lib/session-search'
+ import { normalizeSessionSource, sessionSourceLabel } from '@/lib/session-source'
+ import { cn } from '@/lib/utils'
++import { $account, $accountDialogOpen, planLabel } from '@/nemesis-account'
+ import { $cronJobs } from '@/store/cron'
+ import {
+   $dismissedAutoProjectIds,
+@@ -104,6 +107,7 @@ import {
+   LIBRARY_ROUTE,
+   MESSAGING_ROUTE,
+   RECORDER_ROUTE,
++  SETTINGS_ROUTE,
+   SKILLS_ROUTE,
+   STUDY_ROUTE
+ } from '../../routes'
+@@ -164,6 +168,13 @@ const SIDEBAR_NAV_ALL: SidebarNavItem[] = [
+ 
+ const SIDEBAR_NAV = SIDEBAR_NAV_ALL.filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_NAV.has(item.id))
+ 
++const SETTINGS_NAV_ITEM: SidebarNavItem = {
++  id: 'settings',
++  label: 'Settings',
++  icon: props => <Codicon name="settings-gear" {...props} />,
++  route: SETTINGS_ROUTE
++}
++
+ // Two modes via the `compact` height variant (styles.css):
+ //   tall    → each section is shrink-0, capped, its own scroller; Sessions is flex-1.
+ //   compact → COMPACT_FLAT drops the caps so the whole stack scrolls as one.
+@@ -1417,11 +1428,65 @@ export function ChatSidebar({
+           </div>
+         )}
+       </SidebarContent>
++      {contentVisible && NEMESIS_STUDENT_BUILD && (
++        <StudentSidebarFooter onOpenSettings={() => onNavigate(SETTINGS_NAV_ITEM)} />
++      )}
+       <ProjectDialog />
+     </Sidebar>
+   )
+ }
+ 
++interface StudentSidebarFooterProps {
++  onOpenSettings: () => void
++}
++
++function StudentSidebarFooter({ onOpenSettings }: StudentSidebarFooterProps) {
++  const account = useStore($account)
++  const accountEmail = account.bypass
++    ? 'Offline mode'
++    : account.status === 'signed-in'
++      ? account.email || 'Account'
++      : account.status === 'loading'
++        ? 'Account'
++        : 'Sign in'
++  const accountInitial = account.email?.trim().charAt(0).toUpperCase() || 'N'
++
++  return (
++    <SidebarFooter className="sticky bottom-0 shrink-0 gap-1 border-t border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-2.5 py-2">
++      <div className="flex min-w-0 items-center gap-1">
++        <Button
++          aria-label="Account & plan"
++          className="min-w-0 flex-1 justify-start gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left text-(--ui-text-secondary) transition-colors duration-100 ease hover:bg-(--ui-control-hover-background) hover:text-foreground active:scale-[0.99] motion-reduce:active:scale-100"
++          onClick={() => $accountDialogOpen.set(true)}
++          size="sm"
++          type="button"
++          variant="ghost"
++        >
++          <span className="grid size-6 shrink-0 place-items-center rounded-full bg-(--ui-bg-quaternary) text-[0.65rem] font-semibold uppercase text-(--ui-text-secondary) shadow-[inset_0_0_0_1px_var(--ui-stroke-tertiary)]">
++            {accountInitial}
++          </span>
++          <span className="min-w-0 flex-1 truncate text-xs font-medium">{accountEmail}</span>
++          <span className="max-w-20 shrink truncate rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-(--theme-primary)">
++            {planLabel(account.plan)}
++          </span>
++        </Button>
++        <Tip label="Settings" side="top">
++          <Button
++            aria-label="Settings"
++            className="shrink-0 text-(--ui-text-tertiary) transition-colors duration-100 ease active:scale-[0.97] motion-reduce:active:scale-100"
++            onClick={onOpenSettings}
++            size="icon-xs"
++            type="button"
++            variant="ghost"
++          >
++            <Codicon name="settings-gear" size="0.8rem" />
++          </Button>
++        </Tip>
++      </div>
++    </SidebarFooter>
++  )
++}
++
+ interface MessagingSection {
+   sourceId: string
+   label: string
+diff --git a/apps/desktop/src/app/graph/index.tsx b/apps/desktop/src/app/graph/index.tsx
+index cfc0c2dcabd..c4090620305 100644
+--- a/apps/desktop/src/app/graph/index.tsx
++++ b/apps/desktop/src/app/graph/index.tsx
+@@ -9,6 +9,8 @@ import { useNavigate } from 'react-router-dom'
+ 
+ import { Button } from '@/components/ui/button'
+ import { EmptyState } from '@/components/ui/empty-state'
++import { Switch } from '@/components/ui/switch'
++import { useTheme } from '@/themes/context'
+ 
+ import { LIBRARY_ROUTE } from '../routes'
+ import { buildIndex, extractWikilinks, loadVault, saveNote } from '../library/vault'
+@@ -21,10 +23,23 @@ interface GraphNode {
+ 
+ // Structural slice of the 3d-force-graph instance we tune at runtime.
+ interface TunableGraph {
+-  nodeRelSize: (n: number) => unknown
++  backgroundColor: (color: string) => unknown
++  controls: () => { autoRotate?: boolean }
+   d3Force: (name: string) => undefined | { distance?: (n: number) => unknown; strength?: (n: number) => unknown }
+   d3ReheatSimulation: () => unknown
+-  controls: () => { autoRotate?: boolean }
++  linkColor: (accessor: () => string) => unknown
++  nodeColor: (accessor: (node: object) => string) => unknown
++  nodeRelSize: (n: number) => unknown
++  refresh?: () => unknown
++}
++
++interface GraphPalette {
++  accent: string
++  background: string
++  ghost: string
++  label: string
++  link: string
++  node: string
+ }
+ 
+ interface GraphControlsState {
+@@ -37,6 +52,46 @@ interface GraphControlsState {
+ const GRAPH_SETTINGS_KEY = 'nemesis.graph.settings.v1'
+ const DEFAULT_CONTROLS: GraphControlsState = { nodeSize: 4, repulsion: 40, rotate: true, spread: 34 }
+ 
++function resolveCssColor(value: string, fallback: string): string {
++  const probe = document.createElement('span')
++  probe.style.color = value
++  probe.style.display = 'none'
++  document.body.appendChild(probe)
++  const resolved = getComputedStyle(probe).color
++  probe.remove()
++
++  return resolved || fallback
++}
++
++function readGraphPalette(mode: 'dark' | 'light'): GraphPalette {
++  const dark = mode === 'dark'
++
++  return {
++    accent: resolveCssColor('var(--theme-primary)', '#b3382e'),
++    background: resolveCssColor('var(--ui-bg-editor)', dark ? '#0e0e0e' : '#fafafa'),
++    ghost: resolveCssColor(
++      'color-mix(in srgb, var(--ui-text-primary) 38%, transparent)',
++      dark ? 'rgba(232,232,232,0.38)' : 'rgba(28,28,30,0.38)'
++    ),
++    label: resolveCssColor('var(--ui-text-primary)', dark ? '#eeeeee' : '#1c1c1e'),
++    link: resolveCssColor(
++      'color-mix(in srgb, var(--ui-text-primary) 32%, transparent)',
++      dark ? 'rgba(232,232,232,0.32)' : 'rgba(28,28,30,0.32)'
++    ),
++    node: resolveCssColor('var(--ui-text-secondary)', dark ? '#c8c8c8' : '#3f3f43')
++  }
++}
++
++function graphNodeColor(node: object, palette: GraphPalette): string {
++  const graphNode = node as GraphNode
++
++  if (graphNode.ghost) {
++    return palette.ghost
++  }
++
++  return graphNode.degree >= 2 ? palette.accent : palette.node
++}
++
+ function loadControls(): GraphControlsState {
+   try {
+     const raw = window.localStorage.getItem(GRAPH_SETTINGS_KEY)
+@@ -67,13 +122,15 @@ function ControlSlider({
+   value: number
+ }) {
+   return (
+-    <label className="mb-2 block">
+-      <span className="flex items-center justify-between text-xs text-muted-foreground">
++    <label className="block space-y-1.5">
++      <span className="flex items-center justify-between text-xs font-medium text-(--ui-text-primary)">
+         {label}
+-        <span className="tabular-nums">{value}</span>
++        <span className="rounded bg-(--ui-bg-quaternary) px-1.5 py-0.5 text-[0.6875rem] font-semibold tabular-nums text-(--ui-text-secondary)">
++          {value}
++        </span>
+       </span>
+       <input
+-        className="w-full accent-(--theme-primary)"
++        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-(--ui-stroke-primary) accent-(--theme-primary) [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-(--theme-primary) [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-(--theme-primary)"
+         max={max}
+         min={min}
+         onChange={event => onChange(Number(event.target.value))}
+@@ -94,9 +151,30 @@ export function GraphView() {
+   const [ghostCount, setGhostCount] = useState(0)
+   const [controls, setControls] = useState<GraphControlsState>(() => loadControls())
+   const [panelOpen, setPanelOpen] = useState(false)
++  const { renderedMode, theme } = useTheme()
+   const controlsRef = useRef(controls)
++  const paletteRef = useRef<GraphPalette | null>(null)
+   controlsRef.current = controls
+ 
++  useEffect(() => {
++    const frame = window.requestAnimationFrame(() => {
++      const palette = readGraphPalette(renderedMode)
++      paletteRef.current = palette
++      const graph = graphRef.current
++
++      if (!graph) {
++        return
++      }
++
++      graph.backgroundColor(palette.background)
++      graph.nodeColor(node => graphNodeColor(node, palette))
++      graph.linkColor(() => palette.link)
++      graph.refresh?.()
++    })
++
++    return () => window.cancelAnimationFrame(frame)
++  }, [renderedMode, theme])
++
+   useEffect(() => {
+     const host = hostRef.current
+ 
+@@ -150,33 +228,26 @@ export function GraphView() {
+           nodes.push({ degree: 1, ghost: true, id: display })
+         }
+ 
+-        const accent = getComputedStyle(document.documentElement).getPropertyValue('--theme-midground').trim() || '#b3382e'
++        const palette =
++          paletteRef.current ?? readGraphPalette(document.documentElement.classList.contains('dark') ? 'dark' : 'light')
++        paletteRef.current = palette
+ 
+-        // A graph is a viz surface: keep it dark for node contrast even in light mode.
+         const instance = new ForceGraph3D(host)
+-          .backgroundColor('#0e0e0e')
++          .backgroundColor(palette.background)
+           .width(host.clientWidth || host.offsetWidth || 800)
+           .height(host.clientHeight || host.offsetHeight || 600)
+           .nodeLabel((node: object) => {
+             const graphNode = node as GraphNode
+ 
+             return graphNode.ghost
+-              ? `<div style="font: 12px sans-serif; color:#aaa">${graphNode.id} — click to create this note</div>`
+-              : `<div style="font: 12px sans-serif; color:#eee">${graphNode.id}</div>`
++              ? `<div style="font: 12px sans-serif; color:${paletteRef.current?.label ?? palette.label}">${graphNode.id} — click to create this note</div>`
++              : `<div style="font: 12px sans-serif; color:${paletteRef.current?.label ?? palette.label}">${graphNode.id}</div>`
+           })
+           .nodeRelSize(controlsRef.current.nodeSize)
+-          .nodeColor((node: object) => {
+-            const graphNode = node as GraphNode
+-
+-            if (graphNode.ghost) {
+-              return 'rgba(170,170,170,0.35)'
+-            }
+-
+-            return graphNode.degree >= 2 ? accent : '#c8c8c8'
+-          })
++          .nodeColor((node: object) => graphNodeColor(node, paletteRef.current ?? palette))
+           .nodeVal((node: object) => 1 + (node as GraphNode).degree)
+           .nodeOpacity(0.9)
+-          .linkColor(() => '#4a4a4a')
++          .linkColor(() => paletteRef.current?.link ?? palette.link)
+           .linkWidth(0.5)
+           .linkOpacity(0.55)
+           .onNodeClick((node: object) => {
+@@ -273,6 +344,7 @@ export function GraphView() {
+           <div className="flex gap-2">
+             <Button
+               aria-label="Graph settings"
++              className="active:scale-[0.97] motion-reduce:transition-none"
+               onClick={() => setPanelOpen(value => !value)}
+               size="sm"
+               variant={panelOpen ? 'secondary' : 'outline'}
+@@ -284,47 +356,53 @@ export function GraphView() {
+             </Button>
+           </div>
+           {panelOpen && (
+-            <div className="w-60 rounded-lg border border-border bg-card/95 p-3 backdrop-blur">
+-              <ControlSlider
+-                label="Node size"
+-                max={10}
+-                min={1}
+-                onChange={nodeSize => setControls(current => ({ ...current, nodeSize }))}
+-                step={0.5}
+-                value={controls.nodeSize}
+-              />
+-              <ControlSlider
+-                label="Spread"
+-                max={120}
+-                min={10}
+-                onChange={spread => setControls(current => ({ ...current, spread }))}
+-                step={2}
+-                value={controls.spread}
+-              />
+-              <ControlSlider
+-                label="Repulsion"
+-                max={140}
+-                min={0}
+-                onChange={repulsion => setControls(current => ({ ...current, repulsion }))}
+-                step={5}
+-                value={controls.repulsion}
+-              />
+-              <label className="mt-2 flex cursor-pointer items-center justify-between text-xs text-muted-foreground">
++            <div className="w-64 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-4 text-(--ui-text-primary) shadow-lg">
++              <div className="mb-4">
++                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">Graph controls</p>
++                <p className="mt-1 text-xs text-(--ui-text-secondary)">Tune the map without changing your notes.</p>
++              </div>
++              <div className="space-y-4">
++                <ControlSlider
++                  label="Node size"
++                  max={10}
++                  min={1}
++                  onChange={nodeSize => setControls(current => ({ ...current, nodeSize }))}
++                  step={0.5}
++                  value={controls.nodeSize}
++                />
++                <ControlSlider
++                  label="Spread"
++                  max={120}
++                  min={10}
++                  onChange={spread => setControls(current => ({ ...current, spread }))}
++                  step={2}
++                  value={controls.spread}
++                />
++                <ControlSlider
++                  label="Repulsion"
++                  max={140}
++                  min={0}
++                  onChange={repulsion => setControls(current => ({ ...current, repulsion }))}
++                  step={5}
++                  value={controls.repulsion}
++                />
++              </div>
++              <label className="mt-4 flex cursor-pointer items-center justify-between border-t border-(--ui-stroke-tertiary) pt-3 text-xs font-medium text-(--ui-text-primary)">
+                 Slow auto-rotate
+-                <input
++                <Switch
+                   checked={controls.rotate}
+-                  className="accent-(--theme-primary)"
+-                  onChange={event => setControls(current => ({ ...current, rotate: event.target.checked }))}
+-                  type="checkbox"
++                  onCheckedChange={rotate => setControls(current => ({ ...current, rotate }))}
++                  size="xs"
+                 />
+               </label>
+-              <button
+-                className="mt-2 text-[11px] text-muted-foreground underline-offset-2 hover:underline"
++              <Button
++                className="mt-3"
+                 onClick={() => setControls(DEFAULT_CONTROLS)}
+-                type="button"
++                size="inline"
++                variant="text"
+               >
+                 Reset to defaults
+-              </button>
++              </Button>
+             </div>
+           )}
+         </div>
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index d611f89c291..cc462060d08 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -259,18 +259,18 @@ export function RecorderView() {
+     )
+   }, [])
+ 
+-  // Granola/Hyprnote's signature move: after the lecture, the agent merges rough notes +
+-  // transcript into a clean study note — and since Nemesis has file tools over the vault,
+-  // it updates the SAME Library file in place.
++  // Granola/Hyprnote's signature move: after the lecture, the agent turns rough notes +
++  // transcript into structured AI notes in the SAME Library file while preserving the
++  // raw transcript as the durable source material.
+   const enhanceNote = useCallback(() => {
+     if (!lectureNote) {
+       return
+     }
+ 
+     setComposerDraft(
+-      `Open my lecture note "${lectureNote}.md" in ~/Documents/Nemesis Library/${LECTURE_FOLDER}/ and rewrite it into a clean, structured study note. ` +
+-        'Merge the "My notes" section with the "Transcript" section: keep my wording where it is good, fix transcription garbles against pharmacology vocabulary, ' +
+-        'organize with headings and bullets, and keep the header lines about the recording date and audio file. Update that same file with the result. ' +
++      `Open my lecture note "${lectureNote}.md" in ~/Documents/Nemesis Library/${LECTURE_FOLDER}/ and add a clean, structured "AI notes" section immediately above the existing "Transcript" section. ` +
++        'Use both "My notes" and "Transcript" as source material: keep my wording where it is good, fix transcription garbles against pharmacology vocabulary, ' +
++        'and organize the AI notes with useful headings and bullets. Preserve the original Transcript section, My notes section, and the header lines about the recording date and audio file. Update that same file with the result. ' +
+         'At the end add a "Flashcard candidates" section with 5 exam-style Q&A pairs from this lecture. Tell me when the file is updated.'
+     )
+     navigate(NEW_CHAT_ROUTE)
+@@ -557,23 +557,20 @@ export function RecorderView() {
+       await write(`${RECORDINGS_DIR}/${fileName}`, btoa(base64))
+       await refreshList()
+ 
+-      // Let in-flight transcription finish (bounded), then auto-save the lecture note:
+-      // the student's typed notes and the transcript, as separate sections.
++      // Let in-flight transcription finish (bounded), then auto-save the companion
++      // Library note. Even a silent capture gets a durable placeholder beside its audio.
+       setLiveStatus('Finishing transcript…')
+       await drainLive(sampleRateRef.current)
+       const transcript = liveSegmentsRef.current.join(' ').replace(/\s+/g, ' ').trim()
+       const typedNotes = notesRef.current.trim()
+-
+-      if (transcript || typedNotes) {
+-        const noteTitle = titleRef.current.trim() || lectureNoteTitle(at)
+-        await createFolder(LECTURE_FOLDER)
+-        await saveNote(
+-          noteTitle,
+-          `# ${noteTitle}\n\n*Recorded ${at.toLocaleString(undefined, { day: 'numeric', hour: 'numeric', minute: '2-digit', month: 'short' })} — my notes + on-device transcript (a draft; review before relying on it).*\n*Audio: ${fileName} (Nemesis Recordings)*\n\n## My notes\n\n${typedNotes || '_none taken_'}\n\n## Transcript\n\n${transcript || '_no speech captured_'}\n`,
+-          LECTURE_FOLDER
+-        )
+-        setLectureNote(noteTitle)
+-      }
++      const noteTitle = titleRef.current.trim() || lectureNoteTitle(at)
++      await createFolder(LECTURE_FOLDER)
++      await saveNote(
++        noteTitle,
++        `# ${noteTitle}\n\n*Recorded ${at.toLocaleString(undefined, { day: 'numeric', hour: 'numeric', minute: '2-digit', month: 'short' })} — my notes + on-device transcript (a draft; review before relying on it).*\n*Audio: ${fileName} (Nemesis Recordings)*\n\n## My notes\n\n${typedNotes || '_none taken_'}\n\n## Transcript\n\n${transcript || '_no speech captured_'}\n`,
++        LECTURE_FOLDER
++      )
++      setLectureNote(noteTitle)
+ 
+       setLiveStatus('')
+     } catch (err) {
+@@ -887,7 +884,7 @@ export function RecorderView() {
+           <div className="flex flex-wrap items-center gap-2 border-t border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-5 py-3 text-xs">
+             <span className="mr-auto inline-flex items-center gap-1.5 font-medium">
+               <IconCheck className="text-(--theme-primary)" size={13} />
+-              Lecture note saved to Library → {LECTURE_FOLDER}
++              Transcript note saved to Library / {LECTURE_FOLDER} as {lectureNote}.md
+             </span>
+             <Button onClick={() => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`)} size="xs" variant="outline">
+               Open note
+diff --git a/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx b/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
+index cdab8d3f30c..a2bf0da4262 100644
+--- a/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
++++ b/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
+@@ -1,11 +1,9 @@
+ import { useStore } from '@nanostores/react'
+-import { IconUser } from '@tabler/icons-react'
+ import { useCallback, useMemo } from 'react'
+ 
+ import type { CommandCenterSection } from '@/app/command-center'
+ import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/store'
+ import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_STATUSBAR } from '@/nemesis'
+-import { $account, $accountDialogOpen, planLabel } from '@/nemesis-account'
+ import { ContextUsagePanel } from '@/app/shell/context-usage-panel'
+ import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
+ import { Codicon } from '@/components/ui/codicon'
+@@ -430,37 +428,12 @@ export function useStatusbarItems({
+     ]
+   )
+ 
+-  // Student build: account chip — email · plan, click opens the Account dialog
+-  // (plan badge, upgrade/billing, sign out). Lives left so it reads as identity.
+-  const account = useStore($account)
+-  const accountItem = useMemo<null | StatusbarItem>(() => {
+-    if (!NEMESIS_STUDENT_BUILD) {
+-      return null
+-    }
+-
+-    const label =
+-      account.status === 'signed-in'
+-        ? account.bypass
+-          ? 'Offline mode'
+-          : `${account.email ?? 'Account'} · ${planLabel(account.plan)}`
+-        : 'Sign in'
+-
+-    return {
+-      icon: <IconUser size={12} />,
+-      id: 'nemesis-account',
+-      label,
+-      onSelect: () => $accountDialogOpen.set(true),
+-      title: 'Account & plan',
+-      variant: 'action'
+-    }
+-  }, [account])
+-
+   const leftStatusbarItems = useMemo(
+     () =>
+-      [...(accountItem ? [accountItem] : []), ...coreLeftStatusbarItems, ...extraLeftItems].filter(
++      [...coreLeftStatusbarItems, ...extraLeftItems].filter(
+         item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_STATUSBAR.has(item.id)
+       ),
+-    [accountItem, coreLeftStatusbarItems, extraLeftItems]
++    [coreLeftStatusbarItems, extraLeftItems]
+   )
+ 
+   const statusbarItems = useMemo(
+diff --git a/apps/desktop/src/app/shell/titlebar-controls.tsx b/apps/desktop/src/app/shell/titlebar-controls.tsx
+index a4970234ab1..4d8f61737a5 100644
+--- a/apps/desktop/src/app/shell/titlebar-controls.tsx
++++ b/apps/desktop/src/app/shell/titlebar-controls.tsx
+@@ -58,6 +58,8 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
+   const sidebarOpen = useStore($sidebarOpen)
+   const panesFlipped = useStore($panesFlipped)
+   const previewPaneOpen = useStore($paneOpen(PREVIEW_PANE_ID))
++  const currentView = appViewForPath(location.pathname)
++  const showChatRailControls = !NEMESIS_STUDENT_BUILD || currentView === 'chat'
+ 
+   const toggleHaptics = () => {
+     if (!hapticsMuted) {
+@@ -81,8 +83,8 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
+     ? { open: previewPaneOpen, toggle: () => togglePane(PREVIEW_PANE_ID) }
+     : { open: fileBrowserOpen, toggle: toggleFileBrowserOpen }
+   const sessionsEdge = { open: sidebarOpen, toggle: toggleSidebarOpen }
+-  const leftEdge = panesFlipped ? fileBrowserEdge : sessionsEdge
+-  const rightEdge = panesFlipped ? sessionsEdge : fileBrowserEdge
++  const leftEdge = NEMESIS_STUDENT_BUILD ? sessionsEdge : panesFlipped ? fileBrowserEdge : sessionsEdge
++  const rightEdge = NEMESIS_STUDENT_BUILD ? fileBrowserEdge : panesFlipped ? sessionsEdge : fileBrowserEdge
+ 
+   const leftToolbarTools: TitlebarTool[] = [
+     {
+@@ -123,12 +125,14 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
+   const systemTools: TitlebarTool[] = [
+     {
+       active: hapticsMuted,
++      hidden: NEMESIS_STUDENT_BUILD,
+       icon: <Codicon name={hapticsMuted ? 'mute' : 'unmute'} />,
+       id: 'haptics',
+       label: hapticsMuted ? t.titlebar.unmuteHaptics : t.titlebar.muteHaptics,
+       onSelect: toggleHaptics
+     },
+     {
++      hidden: NEMESIS_STUDENT_BUILD,
+       icon: <Codicon name="keyboard" />,
+       id: 'keybinds',
+       label: t.titlebar.openKeybinds,
+@@ -138,6 +142,7 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
+       }
+     },
+     {
++      hidden: NEMESIS_STUDENT_BUILD,
+       icon: <Codicon name="settings-gear" />,
+       id: 'settings',
+       label: t.titlebar.openSettings,
+@@ -152,14 +157,15 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
+   // visually own the window. These control clusters are `fixed` at a higher
+   // z-index than the overlay card, so they'd otherwise bleed over it — hide them
+   // and let the overlay's own chrome (close button, drag region) take over.
+-  if (isOverlayView(appViewForPath(location.pathname))) {
++  if (isOverlayView(currentView)) {
+     return null
+   }
+ 
+   const visibleSystemTools = systemTools.filter(tool => !tool.hidden)
+   const settingsTool = visibleSystemTools.find(tool => tool.id === 'settings')
+   const visibleSystemToolsBeforeSettings = visibleSystemTools.filter(tool => tool.id !== 'settings')
+-  const visiblePaneTools = tools.filter(tool => !tool.hidden)
++  const visiblePaneTools = showChatRailControls ? tools.filter(tool => !tool.hidden) : []
++  const showRightControls = visibleSystemTools.length > 0 || showChatRailControls
+ 
+   return (
+     <>
+@@ -193,16 +199,18 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
+         </div>
+       )}
+ 
+-      <div
+-        aria-label={t.shell.appControls}
+-        className="fixed right-(--titlebar-tools-right) top-(--titlebar-controls-top) z-70 flex flex-row items-center justify-end gap-x-1 pointer-events-auto select-none [-webkit-app-region:no-drag]"
+-      >
+-        {visibleSystemToolsBeforeSettings.map(tool => (
+-          <TitlebarToolButton key={tool.id} navigate={navigate} tool={tool} />
+-        ))}
+-        {settingsTool && <TitlebarToolButton navigate={navigate} tool={settingsTool} />}
+-        <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} />
+-      </div>
++      {showRightControls && (
++        <div
++          aria-label={t.shell.appControls}
++          className="fixed right-(--titlebar-tools-right) top-(--titlebar-controls-top) z-70 flex flex-row items-center justify-end gap-x-1 pointer-events-auto select-none [-webkit-app-region:no-drag]"
++        >
++          {visibleSystemToolsBeforeSettings.map(tool => (
++            <TitlebarToolButton key={tool.id} navigate={navigate} tool={tool} />
++          ))}
++          {settingsTool && <TitlebarToolButton navigate={navigate} tool={settingsTool} />}
++          {showChatRailControls && <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} />}
++        </div>
++      )}
+     </>
+   )
+ }
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index 79d68a54020..6bb9914a59e 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -2,7 +2,7 @@
+ // note). Interaction model deliberately mirrors what health-science students already have
+ // as muscle memory from Anki: deck browser with due badges → flip card (Space) →
+ // Again/Hard/Good/Easy (1-4), with the next-interval hint under each grade button.
+-import { IconCards, IconLayoutGrid, IconList, IconPlayerPause } from '@tabler/icons-react'
++import { IconCards, IconFolderPlus, IconLayoutGrid, IconList, IconPlayerPause } from '@tabler/icons-react'
+ import { useCallback, useEffect, useMemo, useState } from 'react'
+ 
+ import { Badge } from '@/components/ui/badge'
+@@ -17,6 +17,7 @@ import {
+ } from '@/components/ui/dialog'
+ import { EmptyState } from '@/components/ui/empty-state'
+ import { Input } from '@/components/ui/input'
++import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+ import { Textarea } from '@/components/ui/textarea'
+ import { Tip } from '@/components/ui/tooltip'
+ import { cn } from '@/lib/utils'
+@@ -25,6 +26,8 @@ import { markDeckFileImported, scanDeckFiles } from './deck-files'
+ import { parseCardPaste } from './import-cards'
+ import {
+   addCard,
++  addSection,
++  assignDeckSection,
+   buildQueue,
+   deckStats,
+   type DeckStats,
+@@ -87,7 +90,8 @@ export function StudyView() {
+   const [reviewing, setReviewing] = useState(false)
+   const [revealed, setRevealed] = useState(false)
+   const [importOpen, setImportOpen] = useState(false)
+-  const [newDeckOpen, setNewDeckOpen] = useState(false)
++  const [newDeckSection, setNewDeckSection] = useState<null | string>(null)
++  const [newSectionOpen, setNewSectionOpen] = useState(false)
+   const [view, setView] = useState<DeckViewMode>(() => loadViewMode())
+   const [flip, setFlip] = useState(() => loadFlip())
+   const [matchDeckId, setMatchDeckId] = useState<null | string>(null)
+@@ -98,6 +102,10 @@ export function StudyView() {
+   const queue = useMemo(() => (reviewing ? buildQueue(state, reviewDeckId, now) : []), [state, reviewDeckId, reviewing, now])
+   const current: QueueItem | undefined = queue[0]
+   const totals = deckStats(state, null, now)
++  const sections = useMemo(
++    () => groupDecks(state, now).map(group => group.course).filter(course => course.toLocaleLowerCase() !== 'other'),
++    [now, state]
++  )
+ 
+   const update = useCallback((next: StudyState) => {
+     setState(next)
+@@ -135,7 +143,7 @@ export function StudyView() {
+             createdAt: new Date().toISOString(),
+             cards: candidate.cards.map(card => ({ back: card.back, front: card.front, id: freshId('card'), tags: [] }))
+           }
+-          next = { ...next, decks: [...next.decks, deck] }
++          next = addSection({ ...next, decks: [...next.decks, deck] }, candidate.course ?? '')
+           importedNames.push(candidate.name)
+         }
+ 
+@@ -271,13 +279,26 @@ export function StudyView() {
+       }
+ 
+       update({ ...state, decks: [...state.decks, deck] })
+-      setNewDeckOpen(false)
++      setNewDeckSection(null)
+       // Straight into the card browser so the first card is one click away.
+       setBrowseDeckId(deck.id)
+     },
+     [state, update]
+   )
+ 
++  const createSection = useCallback(
++    (name: string) => {
++      update(addSection(state, name))
++      setNewSectionOpen(false)
++    },
++    [state, update]
++  )
++
++  const moveDeck = useCallback(
++    (deckId: string, section: string) => update(assignDeckSection(state, deckId, section)),
++    [state, update]
++  )
++
+   const removeDeck = useCallback(
+     (deckId: string) => {
+       update(deleteDeck(state, deckId))
+@@ -319,7 +340,7 @@ export function StudyView() {
+             {totals.due} due · {totals.fresh} new · {totals.total} cards
+           </p>
+         </div>
+-        <div className="flex items-center gap-2">
++        <div className="flex flex-wrap items-center justify-end gap-2">
+           {reviewing || browseDeckId || matchDeckId ? (
+             <Button
+               onClick={() => {
+@@ -369,7 +390,11 @@ export function StudyView() {
+               >
+                 <IconCards size={14} />
+               </button>
+-              <Button onClick={() => setNewDeckOpen(true)} size="sm" variant="outline">
++              <Button onClick={() => setNewSectionOpen(true)} size="sm" variant="outline">
++                <IconFolderPlus size={14} />
++                New section
++              </Button>
++              <Button onClick={() => setNewDeckSection('')} size="sm" variant="outline">
+                 New deck
+               </Button>
+               <Button onClick={() => setImportOpen(true)} size="sm" variant="outline">
+@@ -426,28 +451,94 @@ export function StudyView() {
+           onChange={update}
+           onDeleteDeck={() => removeDeck(browseDeckId)}
+           onMatch={() => startMatch(browseDeckId)}
++          onMoveDeck={section => moveDeck(browseDeckId, section)}
++          sections={sections}
+           state={state}
+         />
+       ) : (
+-        <DeckBrowser onBrowse={setBrowseDeckId} onMatch={startMatch} onStudy={startReview} state={state} view={view} />
++        <DeckBrowser
++          onBrowse={setBrowseDeckId}
++          onCreateDeck={setNewDeckSection}
++          onMatch={startMatch}
++          onStudy={startReview}
++          state={state}
++          view={view}
++        />
+       )}
+ 
+-      <ImportDialog onImport={importCards} onOpenChange={setImportOpen} open={importOpen} />
+-      {newDeckOpen && <NewDeckDialog onClose={() => setNewDeckOpen(false)} onCreate={createDeck} />}
++      <ImportDialog onImport={importCards} onOpenChange={setImportOpen} open={importOpen} sections={sections} />
++      {newDeckSection !== null && (
++        <NewDeckDialog
++          initialSection={newDeckSection}
++          onClose={() => setNewDeckSection(null)}
++          onCreate={createDeck}
++          sections={sections}
++        />
++      )}
++      {newSectionOpen && (
++        <NewSectionDialog
++          onClose={() => setNewSectionOpen(false)}
++          onCreate={createSection}
++          sections={sections}
++        />
++      )}
+     </div>
+   )
+ }
+ 
+-function NewDeckDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string, course: string) => void }) {
++const OTHER_SECTION_VALUE = '__other__'
++
++function SectionSelect({
++  label,
++  onChange,
++  sections,
++  value
++}: {
++  label: string
++  onChange: (section: string) => void
++  sections: string[]
++  value: string
++}) {
++  return (
++    <Select
++      onValueChange={section => onChange(section === OTHER_SECTION_VALUE ? '' : section)}
++      value={value.trim() || OTHER_SECTION_VALUE}
++    >
++      <SelectTrigger aria-label={label} className="w-full">
++        <SelectValue placeholder="Other" />
++      </SelectTrigger>
++      <SelectContent>
++        {sections.map(section => (
++          <SelectItem key={section} value={section}>
++            {section}
++          </SelectItem>
++        ))}
++        <SelectItem value={OTHER_SECTION_VALUE}>Other</SelectItem>
++      </SelectContent>
++    </Select>
++  )
++}
++
++function NewDeckDialog({
++  initialSection,
++  onClose,
++  onCreate,
++  sections
++}: {
++  initialSection: string
++  onClose: () => void
++  onCreate: (name: string, course: string) => void
++  sections: string[]
++}) {
+   const [name, setName] = useState('')
+-  const [course, setCourse] = useState('')
++  const [course, setCourse] = useState(initialSection)
+ 
+   return (
+     <Dialog onOpenChange={open => !open && onClose()} open>
+       <DialogContent className="sm:max-w-md">
+         <DialogHeader>
+           <DialogTitle>New deck</DialogTitle>
+-          <DialogDescription>Decks with the same course name group together on this page.</DialogDescription>
++          <DialogDescription>Choose where this deck belongs. Ungrouped decks stay in Other.</DialogDescription>
+         </DialogHeader>
+         <div className="flex flex-col gap-3">
+           <Input
+@@ -461,11 +552,12 @@ function NewDeckDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (
+             placeholder="Deck name (e.g. Renal pharm)"
+             value={name}
+           />
+-          <Input
+-            onChange={event => setCourse(event.target.value)}
+-            placeholder="Course / group (e.g. Pharmacology — optional)"
+-            value={course}
+-          />
++          <div className="space-y-1.5">
++            <label className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
++              Section
++            </label>
++            <SectionSelect label="Deck section" onChange={setCourse} sections={sections} value={course} />
++          </div>
+         </div>
+         <DialogFooter>
+           <Button onClick={onClose} variant="outline">
+@@ -480,14 +572,64 @@ function NewDeckDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (
+   )
+ }
+ 
++function NewSectionDialog({
++  onClose,
++  onCreate,
++  sections
++}: {
++  onClose: () => void
++  onCreate: (name: string) => void
++  sections: string[]
++}) {
++  const [name, setName] = useState('')
++  const normalized = name.trim().toLocaleLowerCase()
++  const unavailable = normalized === 'other' || sections.some(section => section.toLocaleLowerCase() === normalized)
++  const valid = Boolean(normalized) && !unavailable
++
++  return (
++    <Dialog onOpenChange={open => !open && onClose()} open>
++      <DialogContent className="sm:max-w-md">
++        <DialogHeader>
++          <DialogTitle>New section</DialogTitle>
++          <DialogDescription>Create a home for related decks. Empty sections remain visible until you add one.</DialogDescription>
++        </DialogHeader>
++        <Input
++          autoFocus
++          onChange={event => setName(event.target.value)}
++          onKeyDown={event => {
++            if (event.key === 'Enter' && valid) {
++              onCreate(name)
++            }
++          }}
++          placeholder="Section name (e.g. Pharmacology)"
++          value={name}
++        />
++        {normalized && unavailable && (
++          <p className="text-xs text-muted-foreground">That section already exists. “Other” is reserved for ungrouped decks.</p>
++        )}
++        <DialogFooter>
++          <Button onClick={onClose} variant="outline">
++            Cancel
++          </Button>
++          <Button disabled={!valid} onClick={() => onCreate(name)}>
++            Create section
++          </Button>
++        </DialogFooter>
++      </DialogContent>
++    </Dialog>
++  )
++}
++
+ function DeckBrowser({
+   onBrowse,
++  onCreateDeck,
+   onMatch,
+   onStudy,
+   state,
+   view
+ }: {
+   onBrowse: (deckId: string) => void
++  onCreateDeck: (section: string) => void
+   onMatch: (deckId: string) => void
+   onStudy: (deckId: string) => void
+   state: StudyState
+@@ -496,7 +638,7 @@ function DeckBrowser({
+   const now = new Date()
+   const groups = groupDecks(state, now)
+ 
+-  if (!state.decks.length) {
++  if (!groups.length) {
+     return <EmptyState className="flex-1" description="Create a deck or import cards to get going." title="No decks yet" />
+   }
+ 
+@@ -511,7 +653,19 @@ function DeckBrowser({
+               {group.stats.due} due · {group.decks.length} deck{group.decks.length === 1 ? '' : 's'} · {group.stats.total} cards
+             </span>
+           </div>
+-          {view === 'list' ? (
++          {group.decks.length === 0 ? (
++            <div className="rounded-xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-5">
++              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)">
++                Empty section
++              </p>
++              <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
++                <span>No decks yet —</span>
++                <Button onClick={() => onCreateDeck(group.course)} size="inline" variant="textStrong">
++                  add one
++                </Button>
++              </div>
++            </div>
++          ) : view === 'list' ? (
+             <div className="flex flex-col gap-2">
+               {group.decks.map(deck => (
+                 <DeckRow deck={deck} key={deck.id} now={now} onBrowse={onBrowse} onMatch={onMatch} onStudy={onStudy} state={state} />
+@@ -538,7 +692,7 @@ function masteryPct(stats: DeckStats): number {
+ function MasteryBar({ pct }: { pct: number }) {
+   return (
+     <div className="h-1.5 w-full overflow-hidden rounded-full bg-(--ui-bg-tertiary,color-mix(in_srgb,gray_18%,transparent))">
+-      <div className="h-full rounded-full bg-(--theme-primary) transition-all" style={{ width: `${pct}%` }} />
++      <div className="h-full rounded-full bg-(--theme-primary)" style={{ width: `${pct}%` }} />
+     </div>
+   )
+ }
+@@ -653,10 +807,11 @@ function DeckCard({
+ // legend, and a today marker — the "dynamic" upgrade.
+ const HEAT_MIX = ['', '30%', '52%', '76%', '100%']
+ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
++const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+ 
+ function heatColor(level: number): string {
+   return level === 0
+-    ? 'color-mix(in srgb, gray 16%, transparent)'
++    ? 'color-mix(in srgb, var(--ui-text-primary) 10%, transparent)'
+     : `color-mix(in srgb, var(--theme-primary) ${HEAT_MIX[level]}, transparent)`
+ }
+ 
+@@ -695,45 +850,69 @@ function Heatmap({ state }: { state: StudyState }) {
+   return (
+     <div className="px-8 pt-2">
+       <div className="rounded-2xl border border-border bg-card p-5">
+-      <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs">
+-        <Stat label="day streak" value={stats.currentStreak} />
+-        <Stat label="longest" value={stats.longestStreak} />
+-        <Stat label="days active" value={`${stats.daysLearnedPct}%`} />
+-        {stats.retentionPct !== null && <Stat label="retention (30d)" value={`${stats.retentionPct}%`} />}
+-        <span className="text-muted-foreground">{total} reviews · 18 weeks</span>
+-      </div>
+-
+-      <div className="inline-flex flex-col gap-1">
+-        <div className="relative h-3 text-[9px] text-muted-foreground" style={{ width: `${weeks * 14}px` }}>
+-          {monthLabels.map(m => (
+-            <span className="absolute" key={`${m.label}-${m.col}`} style={{ left: `${m.col * 14}px` }}>
+-              {m.label}
+-            </span>
+-          ))}
++        <div className="mb-4">
++          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">Review activity</p>
++          <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs">
++            <Stat label="day streak" value={stats.currentStreak} />
++            <Stat label="longest" value={stats.longestStreak} />
++            <Stat label="days active" value={`${stats.daysLearnedPct}%`} />
++            {stats.retentionPct !== null && <Stat label="retention (30d)" value={`${stats.retentionPct}%`} />}
++            <span className="text-muted-foreground">{total} reviews · past 53 weeks</span>
++          </div>
++          {total === 0 && <p className="mt-1 text-xs text-muted-foreground">Your year fills in as you grade cards.</p>}
+         </div>
+-        <div className="grid grid-flow-col grid-rows-7 gap-[3px]" style={{ gridAutoColumns: '11px', gridTemplateRows: 'repeat(7, 11px)' }}>
+-          {cells.map(cell => (
+-            <Tip
+-              key={cell.date}
+-              label={`${cell.count} review${cell.count === 1 ? '' : 's'} · ${new Date(`${cell.date}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' })}`}
+-              side="top"
+-            >
++
++        <div className="overflow-x-auto pb-1">
++          <div className="min-w-max">
++            <div className="grid grid-cols-[2rem_auto] gap-x-2 gap-y-1">
++              <div />
++              <div className="relative h-3 text-[9px] text-muted-foreground" style={{ width: `${weeks * 14}px` }}>
++                {monthLabels.map(month => (
++                  <span
++                    className="absolute"
++                    key={`${month.label}-${month.col}`}
++                    style={{ left: `${month.col * 14}px` }}
++                  >
++                    {month.label}
++                  </span>
++                ))}
++              </div>
+               <div
+-                className={cn('rounded-[2px]', cell.date === todayKey && 'ring-1 ring-foreground/60')}
+-                style={{ backgroundColor: heatColor(cell.level) }}
+-              />
+-            </Tip>
+-          ))}
+-        </div>
+-        <div className="flex items-center gap-1 self-end text-[9px] text-muted-foreground">
+-          <span>Less</span>
+-          {[0, 1, 2, 3, 4].map(level => (
+-            <span className="size-2.5 rounded-[2px]" key={level} style={{ backgroundColor: heatColor(level) }} />
+-          ))}
+-          <span>More</span>
++                className="grid grid-rows-7 gap-[3px] text-[9px] leading-[11px] text-muted-foreground"
++                style={{ gridTemplateRows: 'repeat(7, 11px)' }}
++              >
++                {WEEKDAYS.map(day => (
++                  <span key={day}>{day}</span>
++                ))}
++              </div>
++              <div
++                className="grid grid-flow-col grid-rows-7 gap-[3px]"
++                style={{ gridAutoColumns: '11px', gridTemplateRows: 'repeat(7, 11px)' }}
++              >
++                {cells.map(cell => (
++                  <Tip
++                    key={cell.date}
++                    label={`${cell.count} review${cell.count === 1 ? '' : 's'} · ${new Date(`${cell.date}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' })}`}
++                    side="top"
++                  >
++                    <div
++                      className={cn('rounded-[2px]', cell.date === todayKey && 'ring-1 ring-foreground/60')}
++                      style={{ backgroundColor: heatColor(cell.level) }}
++                    />
++                  </Tip>
++                ))}
++              </div>
++            </div>
++            <div className="mt-2 flex items-center justify-end gap-1 text-[9px] text-muted-foreground">
++              <span>Less</span>
++              {[0, 1, 2, 3, 4].map(level => (
++                <span className="size-2.5 rounded-[2px]" key={level} style={{ backgroundColor: heatColor(level) }} />
++              ))}
++              <span>More</span>
++            </div>
++          </div>
+         </div>
+       </div>
+-      </div>
+     </div>
+   )
+ }
+@@ -743,12 +922,16 @@ function CardBrowser({
+   onChange,
+   onDeleteDeck,
+   onMatch,
++  onMoveDeck,
++  sections,
+   state
+ }: {
+   deck: null | StudyDeck
+   onChange: (next: StudyState) => void
+   onDeleteDeck: () => void
+   onMatch: () => void
++  onMoveDeck: (section: string) => void
++  sections: string[]
+   state: StudyState
+ }) {
+   const [editing, setEditing] = useState<null | StudyCard>(null)
+@@ -761,7 +944,7 @@ function CardBrowser({
+ 
+   return (
+     <div className="px-6 pb-8">
+-      <div className="mb-2 flex items-baseline justify-between border-b border-border pb-1.5">
++      <div className="mb-2 flex items-center justify-between gap-3 border-b border-border pb-1.5">
+         <div>
+           <h2 className="text-sm font-semibold">{deck.name}</h2>
+           <p className="text-xs text-muted-foreground">
+@@ -769,7 +952,10 @@ function CardBrowser({
+             {deck.cards.length} card{deck.cards.length === 1 ? '' : 's'}
+           </p>
+         </div>
+-        <div className="flex gap-2">
++        <div className="flex flex-wrap items-center justify-end gap-2">
++          <div className="w-40">
++            <SectionSelect label="Move deck to section" onChange={onMoveDeck} sections={sections} value={deck.course ?? ''} />
++          </div>
+           <Button
+             className={cn(armDelete && 'text-destructive')}
+             onBlur={() => setArmDelete(false)}
+@@ -1198,7 +1384,7 @@ function ReviewSurface({
+ 
+         {/* Session progress */}
+         <div className="mb-4 h-1 w-full overflow-hidden rounded-full bg-(--ui-bg-tertiary,theme(colors.muted.DEFAULT))">
+-          <div className="h-full bg-(--theme-primary) transition-all duration-300" style={{ width: `${progress}%` }} />
++          <div className="h-full bg-(--theme-primary)" style={{ width: `${progress}%` }} />
+         </div>
+ 
+         {/* Card. Flip build = a 3D-rotating card with distinct front/back faces; plain
+@@ -1277,11 +1463,13 @@ function ReviewSurface({
+ function ImportDialog({
+   onImport,
+   onOpenChange,
+-  open
++  open,
++  sections
+ }: {
+   onImport: (name: string, course: string, text: string) => boolean
+   onOpenChange: (open: boolean) => void
+   open: boolean
++  sections: string[]
+ }) {
+   const [name, setName] = useState('')
+   const [course, setCourse] = useState('')
+@@ -1308,7 +1496,12 @@ function ImportDialog({
+         </DialogHeader>
+         <div className="flex flex-col gap-3">
+           <Input onChange={event => setName(event.target.value)} placeholder="Deck name" value={name} />
+-          <Input onChange={event => setCourse(event.target.value)} placeholder="Course (optional)" value={course} />
++          <div className="space-y-1.5">
++            <label className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
++              Section
++            </label>
++            <SectionSelect label="Imported deck section" onChange={setCourse} sections={sections} value={course} />
++          </div>
+           <Textarea
+             className="min-h-40 font-mono text-xs"
+             onChange={event => setText(event.target.value)}
+diff --git a/apps/desktop/src/app/study/model.ts b/apps/desktop/src/app/study/model.ts
+index ead1ef6f0d6..6f257c7d0bc 100644
+--- a/apps/desktop/src/app/study/model.ts
++++ b/apps/desktop/src/app/study/model.ts
+@@ -35,9 +35,11 @@ export interface ReviewEntry {
+ export interface StudyState {
+   version: 1
+   decks: StudyDeck[]
++  /** Persisted course/group names so an empty section can exist without a deck. */
++  sections: string[]
+   /** cardId → FSRS schedule. Absent = never studied (new). */
+   schedule: Record<string, StoredSchedule>
+-  /** Append-only review log (feeds the future heatmap). */
++  /** Append-only review log that feeds the activity heatmap. */
+   reviews: ReviewEntry[]
+ }
+ 
+@@ -50,7 +52,7 @@ export interface QueueItem {
+   isNew: boolean
+ }
+ 
+-// Bumped to v2 for the grouped-decks + heatmap seed. Pre-release, so discarding the old
++// Bumped to v2 for grouped decks + review activity. Pre-release, so discarding the old
+ // demo blob is fine; once real student data exists this needs a migration, not a bump.
+ const STORAGE_KEY = 'nemesis.study.v2'
+ const QUEUE_LIMIT = 200
+@@ -89,6 +91,23 @@ function isDue(stored: StoredSchedule | undefined, now: Date): boolean {
+   return new Date(stored.due).getTime() <= now.getTime()
+ }
+ 
++function normalizeSections(sections: string[] | undefined, decks: StudyDeck[]): string[] {
++  const names: string[] = []
++  const seen = new Set<string>()
++
++  for (const raw of [...(sections ?? []), ...decks.map(deck => deck.course ?? '')]) {
++    const name = raw.trim()
++    const key = name.toLocaleLowerCase()
++
++    if (name && key !== 'other' && !seen.has(key)) {
++      names.push(name)
++      seen.add(key)
++    }
++  }
++
++  return names
++}
++
+ export function loadState(): StudyState {
+   try {
+     const raw = window.localStorage.getItem(STORAGE_KEY)
+@@ -97,14 +116,20 @@ export function loadState(): StudyState {
+       const parsed = JSON.parse(raw) as StudyState
+ 
+       if (parsed && parsed.version === 1 && Array.isArray(parsed.decks)) {
+-        return parsed
++        return {
++          ...parsed,
++          reviews: (parsed.reviews ?? []).filter(review => !review.cardId.startsWith('seed#')),
++          sections: normalizeSections(parsed.sections, parsed.decks)
++        }
+       }
+     }
+   } catch {
+     // corrupted blob → fall through to a fresh seeded state
+   }
+ 
+-  return { version: 1, decks: seedDecks(), schedule: {}, reviews: seedReviews() }
++  const decks = seedDecks()
++
++  return { version: 1, decks, sections: normalizeSections([], decks), schedule: {}, reviews: [] }
+ }
+ 
+ export function saveState(state: StudyState): void {
+@@ -233,6 +258,29 @@ export function deleteDeck(state: StudyState, deckId: string): StudyState {
+   return { ...state, decks: state.decks.filter(candidate => candidate.id !== deckId), schedule }
+ }
+ 
++export function addSection(state: StudyState, name: string): StudyState {
++  const section = name.trim()
++
++  if (
++    !section ||
++    section.toLocaleLowerCase() === 'other' ||
++    state.sections.some(existing => existing.toLocaleLowerCase() === section.toLocaleLowerCase())
++  ) {
++    return state
++  }
++
++  return { ...state, sections: [...state.sections, section] }
++}
++
++export function assignDeckSection(state: StudyState, deckId: string, section: string): StudyState {
++  const course = section.trim() || undefined
++
++  return {
++    ...state,
++    decks: state.decks.map(deck => (deck.id === deckId ? { ...deck, course } : deck))
++  }
++}
++
+ // --- Motivational stats (streaks + retention) -------------------------------
+ 
+ export interface StudyMotivation {
+@@ -320,9 +368,21 @@ export interface DeckGroup {
+ /** Group decks by course (the "folder"). Ungrouped decks fall under "Other". Pure. */
+ export function groupDecks(state: StudyState, now: Date): DeckGroup[] {
+   const byCourse = new Map<string, StudyDeck[]>()
++  const canonicalNames = new Map<string, string>()
++
++  for (const section of state.sections) {
++    const name = section.trim()
++
++    if (name) {
++      byCourse.set(name, [])
++      canonicalNames.set(name.toLocaleLowerCase(), name)
++    }
++  }
+ 
+   for (const deck of state.decks) {
+-    const key = deck.course?.trim() || 'Other'
++    const course = deck.course?.trim()
++    const normalized = course?.toLocaleLowerCase()
++    const key = !course || normalized === 'other' ? 'Other' : (canonicalNames.get(course.toLocaleLowerCase()) ?? course)
+     const list = byCourse.get(key) ?? []
+     list.push(deck)
+     byCourse.set(key, list)
+@@ -353,7 +413,7 @@ export interface HeatCell {
+ 
+ /** GitHub-style contribution grid: review counts per day for the last `weeks` weeks,
+  *  laid out oldest→newest, each column a Sun-anchored week. Pure. */
+-export function reviewHeatmap(state: StudyState, todayIso: string, weeks = 18): { cells: HeatCell[]; total: number } {
++export function reviewHeatmap(state: StudyState, todayIso: string, weeks = 53): { cells: HeatCell[]; total: number } {
+   const perDay = new Map<string, number>()
+ 
+   for (const review of state.reviews) {
+@@ -514,31 +574,3 @@ function seedDecks(): StudyDeck[] {
+ 
+   return [cardio, antimicrobials]
+ }
+-
+-/** Demo review history so the activity heatmap isn't blank on first open — a realistic
+- *  (deterministic) scatter over the last ~12 weeks. These are demo entries tied to no real
+- *  card; the student's real reviews append here as they study, and the grid always counts
+- *  the true contents of `reviews`. Clearing/rebuilding decks does not remove them until the
+- *  student studies for real. */
+-function seedReviews(): ReviewEntry[] {
+-  const out: ReviewEntry[] = []
+-  const today = new Date()
+-
+-  for (let daysAgo = 84; daysAgo >= 1; daysAgo--) {
+-    const date = new Date(today)
+-    date.setDate(today.getDate() - daysAgo)
+-    const weekend = date.getDay() === 0 || date.getDay() === 6
+-    // Deterministic pseudo-organic intensity (no RNG): weekdays busier, some rest days.
+-    const wobble = ((daysAgo * 2654435761) % 97) / 97
+-    const base = weekend ? 4 : 13
+-    const count = Math.max(0, Math.round(base * wobble * 1.7) - (wobble < 0.22 ? base : 0))
+-
+-    for (let i = 0; i < count; i++) {
+-      const at = new Date(date)
+-      at.setHours(9 + (i % 12), (i * 7) % 60, 0, 0)
+-      out.push({ at: at.toISOString(), cardId: `seed#${daysAgo}#${i}`, rating: wobble > 0.6 ? 'good' : 'hard' })
+-    }
+-  }
+-
+-  return out
+-}
+diff --git a/apps/desktop/src/store/layout.ts b/apps/desktop/src/store/layout.ts
+index a4174f7914b..4e136626778 100644
+--- a/apps/desktop/src/store/layout.ts
++++ b/apps/desktop/src/store/layout.ts
+@@ -2,6 +2,7 @@ import { atom, computed, type ReadableAtom } from 'nanostores'
+ 
+ import { Codecs, persistentAtom } from '@/lib/persisted'
+ import { arraysEqual, insertUniqueId } from '@/lib/storage'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ 
+ import { $paneStates, ensurePaneRegistered, setPaneOpen, setPaneWidthOverride, togglePane } from './panes'
+ 
+@@ -64,7 +65,7 @@ export const $fileBrowserOpen: ReadableAtom<boolean> = computed(
+ // no matching tab is reconciled back to the preview tab in the preview store.
+ export const $rightRailActiveTabId = persistentAtom<RightRailTabId>(
+   RIGHT_RAIL_ACTIVE_TAB_STORAGE_KEY,
+-  RIGHT_RAIL_PREVIEW_TAB_ID,
++  NEMESIS_STUDENT_BUILD ? RIGHT_RAIL_SOURCES_TAB_ID : RIGHT_RAIL_PREVIEW_TAB_ID,
+   { decode: raw => raw as RightRailTabId, encode: tabId => tabId }
+ )
+ 
+diff --git a/apps/desktop/src/store/preview.ts b/apps/desktop/src/store/preview.ts
+index 75534549b5c..509a0e6adc5 100644
+--- a/apps/desktop/src/store/preview.ts
++++ b/apps/desktop/src/store/preview.ts
+@@ -83,15 +83,19 @@ export const $filePreviewTabs = persistentAtom<FilePreviewTab[]>(TABS_STORAGE_KE
+   encode: tabs => JSON.stringify(tabs, (key, value) => (key === 'dataUrl' ? undefined : value))
+ })
+ 
+-// Drop a restored active file-tab that didn't survive validation so the rail
+-// never points at a tab that isn't there. Same for a restored 'browser' id —
+-// the mirror tab always starts closed — and a restored 'sources' id outside
+-// the student build (where that tab doesn't exist).
++// Students always enter through Sources; live browser/preview events can then
++// focus their own view. Outside the student build, retain the persisted-tab
++// validation used by the legacy rail.
++const restoredRightRailTabId = $rightRailActiveTabId.get()
++const invalidDefaultRailTab =
++  (restoredRightRailTabId.startsWith('file:') &&
++    !$filePreviewTabs.get().some(tab => tab.id === restoredRightRailTabId)) ||
++  restoredRightRailTabId === RIGHT_RAIL_BROWSER_TAB_ID ||
++  restoredRightRailTabId === RIGHT_RAIL_SOURCES_TAB_ID
++
+ if (
+-  ($rightRailActiveTabId.get().startsWith('file:') &&
+-    !$filePreviewTabs.get().some(tab => tab.id === $rightRailActiveTabId.get())) ||
+-  $rightRailActiveTabId.get() === RIGHT_RAIL_BROWSER_TAB_ID ||
+-  (!NEMESIS_STUDENT_BUILD && $rightRailActiveTabId.get() === RIGHT_RAIL_SOURCES_TAB_ID)
++  (NEMESIS_STUDENT_BUILD && restoredRightRailTabId !== RIGHT_RAIL_SOURCES_TAB_ID) ||
++  (!NEMESIS_STUDENT_BUILD && invalidDefaultRailTab)
+ ) {
+   selectRightRailTab(NEMESIS_STUDENT_BUILD ? RIGHT_RAIL_SOURCES_TAB_ID : RIGHT_RAIL_PREVIEW_TAB_ID)
+ }
+@@ -426,10 +430,17 @@ export function dismissPreviewTarget() {
+   $previewTarget.set(null)
+ 
+   if ($rightRailActiveTabId.get() === RIGHT_RAIL_PREVIEW_TAB_ID) {
+-    selectRightRailTab($filePreviewTabs.get()[0]?.id ?? RIGHT_RAIL_PREVIEW_TAB_ID)
++    selectRightRailTab(
++      $filePreviewTabs.get()[0]?.id ??
++        (NEMESIS_STUDENT_BUILD
++          ? $browserRailOpen.get()
++            ? RIGHT_RAIL_BROWSER_TAB_ID
++            : RIGHT_RAIL_SOURCES_TAB_ID
++          : RIGHT_RAIL_PREVIEW_TAB_ID)
++    )
+   }
+ 
+-  setPaneOpen(PREVIEW_PANE_ID, $filePreviewTabs.get().length > 0)
++  setPaneOpen(PREVIEW_PANE_ID, NEMESIS_STUDENT_BUILD || $filePreviewTabs.get().length > 0)
+ }
+ 
+ function closeFilePreviewTab(tabId: RightRailTabId) {
+@@ -449,10 +460,19 @@ function closeFilePreviewTab(tabId: RightRailTabId) {
+   $filePreviewTabs.set(next)
+ 
+   if ($rightRailActiveTabId.get() === tabId) {
+-    selectRightRailTab(next[Math.min(index, next.length - 1)]?.id ?? RIGHT_RAIL_PREVIEW_TAB_ID)
++    selectRightRailTab(
++      next[Math.min(index, next.length - 1)]?.id ??
++        (NEMESIS_STUDENT_BUILD
++          ? $previewTarget.get()
++            ? RIGHT_RAIL_PREVIEW_TAB_ID
++            : $browserRailOpen.get()
++              ? RIGHT_RAIL_BROWSER_TAB_ID
++              : RIGHT_RAIL_SOURCES_TAB_ID
++          : RIGHT_RAIL_PREVIEW_TAB_ID)
++    )
+   }
+ 
+-  if (next.length === 0 && !$previewTarget.get()) {
++  if (next.length === 0 && !$previewTarget.get() && !NEMESIS_STUDENT_BUILD) {
+     setPaneOpen(PREVIEW_PANE_ID, false)
+   }
+ }
+@@ -466,17 +486,22 @@ function closeBrowserRailTab() {
+   $browserRailOpen.set(false)
+ 
+   if ($rightRailActiveTabId.get() === RIGHT_RAIL_BROWSER_TAB_ID) {
+-    selectRightRailTab($previewTarget.get() ? RIGHT_RAIL_PREVIEW_TAB_ID : ($filePreviewTabs.get()[0]?.id ?? RIGHT_RAIL_PREVIEW_TAB_ID))
++    selectRightRailTab(
++      $previewTarget.get()
++        ? RIGHT_RAIL_PREVIEW_TAB_ID
++        : ($filePreviewTabs.get()[0]?.id ??
++          (NEMESIS_STUDENT_BUILD ? RIGHT_RAIL_SOURCES_TAB_ID : RIGHT_RAIL_PREVIEW_TAB_ID))
++    )
+   }
+ 
+-  if (!$previewTarget.get() && $filePreviewTabs.get().length === 0) {
++  if (!$previewTarget.get() && $filePreviewTabs.get().length === 0 && !NEMESIS_STUDENT_BUILD) {
+     setPaneOpen(PREVIEW_PANE_ID, false)
+   }
+ }
+ 
+ export function closeRightRailTab(tabId: RightRailTabId) {
+-  // The Sources tab is pinned (student build) — the whole-rail close is the
+-  // only way it leaves the strip.
++  // Sources is the pinned student-build home view. It can only leave when the
++  // whole rail is dismissed.
+   if (tabId === RIGHT_RAIL_SOURCES_TAB_ID) {
+     return
+   }
+-- 
+2.50.1 (Apple Git-155)
+
