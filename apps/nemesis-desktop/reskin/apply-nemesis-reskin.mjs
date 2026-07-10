@@ -79,6 +79,7 @@ const ANCHORS = [
     ['"CFBundleName": "Hermes"', '"CFBundleName": "Nemesis"'],
     ['"NSAudioCaptureUsageDescription": "Hermes uses audio capture for voice conversations."', '"NSAudioCaptureUsageDescription": "Nemesis uses audio capture for voice conversations."'],
     ['"NSMicrophoneUsageDescription": "Hermes uses the microphone for voice input and voice conversations."', '"NSMicrophoneUsageDescription": "Nemesis uses the microphone for voice input and voice conversations."'],
+    ['"title": "Install Hermes"', '"title": "Install Nemesis"'],
   ]],
   ['apps/desktop/src/app/settings/uninstall-section.tsx', [
     ['Uninstall Hermes', 'Uninstall Nemesis'],

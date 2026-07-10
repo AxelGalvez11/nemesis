@@ -1,7 +1,7 @@
 From 5a4c6bf69fd090751c42f1842d1479f4cc83e89a Mon Sep 17 00:00:00 2001
 From: AxelGalvez11 <axelgalvez1121@gmail.com>
 Date: Thu, 9 Jul 2026 20:29:42 -0500
-Subject: [PATCH 13/13] nemesis: strip any audio extension from transcript note
+Subject: [PATCH 13/14] nemesis: strip any audio extension from transcript note
  title
 
 ---
