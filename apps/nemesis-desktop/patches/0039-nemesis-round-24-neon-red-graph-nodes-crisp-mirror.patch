@@ -1,0 +1,185 @@
+From f144b1522706c60b4fcfe6b7b15ad4a02c73428f Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Fri, 10 Jul 2026 18:14:48 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20round-24=20=E2=80=94=20neon=20red=20?=
+ =?UTF-8?q?+=20graph=20nodes=20visible=20+=20crisp=20mirror?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Neon red: nemesis theme primary/midground #b3382e -> #ff2740, ring -> #ff5563,
+  destructive -> #ff3b46, accent tints refreshed. Propagates app-wide via --theme-primary.
+- Graph nodes were INVISIBLE: Chrome resolves CSS custom props to color(srgb r g b / a),
+  which three.js can't parse -> silent black -> nodes vanished on the dark bg. Added
+  normalizeToRgb() in resolveCssColor to emit opaque rgb(); verified nodes render
+  (grey leaves + neon-red hubs) with zero THREE.Color warnings.
+- Mirror blur: headless Page.startScreencast captures at the CSS viewport width and
+  ignores deviceScaleFactor (measured: 1x frames upscaled on retina). Fix = supersample:
+  emulate the page at panel-size x devicePixelRatio and object-contain the larger frame
+  into the panel (measured 844x1512 frame in a 422x756 panel on a 2x display = 1:1 sharp)
+  + JPEG->PNG (lossless text). Dropped the ineffective --force-device-scale-factor flag.
+---
+ apps/desktop/electron/school-browser.ts       | 12 +++----
+ .../app/chat/right-rail/browser-mirror.tsx    | 19 +++++++-----
+ apps/desktop/src/app/graph/index.tsx          | 31 ++++++++++++++++++-
+ apps/desktop/src/themes/presets.ts            | 14 ++++-----
+ 4 files changed, 54 insertions(+), 22 deletions(-)
+
+diff --git a/apps/desktop/electron/school-browser.ts b/apps/desktop/electron/school-browser.ts
+index a1625523a98..0d1d6c27a43 100644
+--- a/apps/desktop/electron/school-browser.ts
++++ b/apps/desktop/electron/school-browser.ts
+@@ -364,12 +364,12 @@ async function attachMirror(sender: Electron.WebContents, targetId: string): Pro
+ 
+   await sessionCommand(session, 'Page.enable').catch(() => undefined)
+   await sessionCommand(session, 'Page.startScreencast', {
+-    // Headroom for a 2x (retina) capture of the panel-shaped viewport so the
+-    // mirror stays sharp; higher JPEG quality since the panel is small.
+-    format: 'jpeg',
+-    maxHeight: 3200,
+-    maxWidth: 2600,
+-    quality: 82
++    // PNG (lossless) keeps text crisp — JPEG softens small type; with the browser
++    // forced to 2x density the frames arrive at retina resolution. Generous
++    // max dims so the 2x panel-shaped viewport is never downscaled.
++    format: 'png',
++    maxHeight: 3600,
++    maxWidth: 3000
+   }).catch(() => undefined)
+ 
+   return true
+diff --git a/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx b/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
+index c232112219e..3b02ce69f96 100644
+--- a/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
++++ b/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
+@@ -82,8 +82,15 @@ export function BrowserMirror() {
+         return
+       }
+ 
+-      const width = Math.round(box.width)
+-      const height = Math.round(box.height)
++      // Headless Page.startScreencast captures at the CSS viewport WIDTH and
++      // ignores deviceScaleFactor, so a 1x viewport upscales blurrily on a retina
++      // panel. Supersample instead: emulate the page at panel-size × pixel-density,
++      // then object-contain the larger frame down into the panel → the frame lands
++      // 1:1 on the physical retina pixels, sharp. (lastViewportRef holds the
++      // EMULATED size so the onFrame self-heal compares against it correctly.)
++      const ss = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
++      const width = Math.round(box.width * ss)
++      const height = Math.round(box.height * ss)
+       const last = lastViewportRef.current
+ 
+       if (!force && Math.abs(width - last.width) < 4 && Math.abs(height - last.height) < 4) {
+@@ -91,13 +98,9 @@ export function BrowserMirror() {
+       }
+ 
+       lastViewportRef.current = { height, width }
+-      // Render the page at the display's pixel density (capped at 2x) so the
+-      // screencast is captured at retina resolution — otherwise a 1x capture is
+-      // upscaled onto the retina panel and looks blurry.
+-      const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
+       exec({
+         method: 'Emulation.setDeviceMetricsOverride',
+-        params: { deviceScaleFactor: dpr, height, mobile: false, width }
++        params: { deviceScaleFactor: 1, height, mobile: false, width }
+       })
+     },
+     [exec]
+@@ -185,7 +188,7 @@ export function BrowserMirror() {
+       }
+ 
+       frameSizeRef.current = { height: frame.metadata.deviceHeight, width: frame.metadata.deviceWidth }
+-      imgRef.current.src = `data:image/jpeg;base64,${frame.data}`
++      imgRef.current.src = `data:image/png;base64,${frame.data}`
+       setStatus('live')
+ 
+       // Self-heal: if a frame arrives at a size far from the panel's viewport
+diff --git a/apps/desktop/src/app/graph/index.tsx b/apps/desktop/src/app/graph/index.tsx
+index c4090620305..b443290556c 100644
+--- a/apps/desktop/src/app/graph/index.tsx
++++ b/apps/desktop/src/app/graph/index.tsx
+@@ -52,6 +52,35 @@ interface GraphControlsState {
+ const GRAPH_SETTINGS_KEY = 'nemesis.graph.settings.v1'
+ const DEFAULT_CONTROLS: GraphControlsState = { nodeSize: 4, repulsion: 40, rotate: true, spread: 34 }
+ 
++// Chrome resolves CSS custom properties to the CSS Color-4 `color(srgb r g b / a)`
++// syntax, which three.js (the 3d-force-graph renderer) CANNOT parse — it silently
++// falls back to black, making nodes invisible on a dark background. Normalize every
++// resolved value to an opaque `rgb(r, g, b)` string that three.js parses reliably.
++function normalizeToRgb(computed: string): null | string {
++  if (!computed) {
++    return null
++  }
++
++  const rgb = computed.match(/rgba?\(([^)]+)\)/i)
++
++  if (rgb) {
++    const [r, g, b] = rgb[1].split(/[,/]/).map(part => Math.round(parseFloat(part.trim())))
++
++    return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? `rgb(${r}, ${g}, ${b})` : null
++  }
++
++  const srgb = computed.match(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/i)
++
++  if (srgb) {
++    const [r, g, b] = [srgb[1], srgb[2], srgb[3]].map(part => Math.round(parseFloat(part) * 255))
++
++    return `rgb(${r}, ${g}, ${b})`
++  }
++
++  // Already a hex / named color three.js understands.
++  return computed
++}
++
+ function resolveCssColor(value: string, fallback: string): string {
+   const probe = document.createElement('span')
+   probe.style.color = value
+@@ -60,7 +89,7 @@ function resolveCssColor(value: string, fallback: string): string {
+   const resolved = getComputedStyle(probe).color
+   probe.remove()
+ 
+-  return resolved || fallback
++  return normalizeToRgb(resolved) || fallback
+ }
+ 
+ function readGraphPalette(mode: 'dark' | 'light'): GraphPalette {
+diff --git a/apps/desktop/src/themes/presets.ts b/apps/desktop/src/themes/presets.ts
+index 1ddde4d0729..8bd7f1ceee4 100644
+--- a/apps/desktop/src/themes/presets.ts
++++ b/apps/desktop/src/themes/presets.ts
+@@ -209,7 +209,7 @@ export const monoTheme: DesktopTheme = {
+ export const nemesisTheme: DesktopTheme = {
+   name: 'nemesis',
+   label: 'Nemesis',
+-  description: 'Monochrome with a red edge',
++  description: 'Monochrome with a neon-red edge',
+   colors: {
+     background: '#0e0e0e',
+     foreground: '#eaeaea',
+@@ -219,17 +219,17 @@ export const nemesisTheme: DesktopTheme = {
+     mutedForeground: '#808080',
+     popover: '#181818',
+     popoverForeground: '#eaeaea',
+-    primary: '#b3382e',
++    primary: '#ff2740',
+     primaryForeground: '#fff5f3',
+     secondary: '#262626',
+     secondaryForeground: '#c8c8c8',
+-    accent: '#261a18',
+-    accentForeground: '#e8c7c2',
++    accent: '#2a1416',
++    accentForeground: '#ffd0d4',
+     border: '#2a2a2a',
+     input: '#2a2a2a',
+-    ring: '#c04a40',
+-    midground: '#b3382e',
+-    destructive: '#a84040',
++    ring: '#ff5563',
++    midground: '#ff2740',
++    destructive: '#ff3b46',
+     destructiveForeground: '#fef2f2',
+     sidebarBackground: '#0a0a0a',
+     sidebarBorder: '#202020',
+-- 
+2.50.1 (Apple Git-155)
+
