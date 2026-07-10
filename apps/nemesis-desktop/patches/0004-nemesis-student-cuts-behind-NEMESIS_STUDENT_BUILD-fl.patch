@@ -1,0 +1,435 @@
+From 6b85397f5246aaf22c497c48e390b7e1b2f57498 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Thu, 9 Jul 2026 19:39:26 -0500
+Subject: [PATCH 4/9] nemesis: student cuts behind NEMESIS_STUDENT_BUILD flag
+ (src/nemesis.ts)
+
+Hide Capabilities+Messaging (sidebar + palette), settings allow-list
+(appearance/chat/safety/notifications/sessions/about; default tab appearance),
+unmount coding status row, hide terminal statusbar button, hide git projects
+toggle, school-voice intro copy.
+---
+ apps/desktop/src/app/chat/composer/index.js   |  3 ++-
+ apps/desktop/src/app/chat/composer/index.tsx  | 19 +++++++++-------
+ apps/desktop/src/app/chat/sidebar/index.js    |  6 +++--
+ apps/desktop/src/app/chat/sidebar/index.tsx   |  8 +++++--
+ apps/desktop/src/app/command-palette/index.js |  3 ++-
+ .../desktop/src/app/command-palette/index.tsx |  3 ++-
+ apps/desktop/src/app/settings/index.js        |  8 ++++---
+ apps/desktop/src/app/settings/index.tsx       | 15 ++++++++++---
+ .../app/shell/hooks/use-statusbar-items.js    |  3 ++-
+ .../app/shell/hooks/use-statusbar-items.tsx   |  3 ++-
+ .../src/components/chat/intro-copy.jsonl      |  6 ++---
+ apps/desktop/src/components/chat/intro.js     |  2 +-
+ apps/desktop/src/nemesis.js                   | 19 ++++++++++++++++
+ apps/desktop/src/nemesis.ts                   | 22 +++++++++++++++++++
+ 14 files changed, 93 insertions(+), 27 deletions(-)
+ create mode 100644 apps/desktop/src/nemesis.js
+ create mode 100644 apps/desktop/src/nemesis.ts
+
+diff --git a/apps/desktop/src/app/chat/composer/index.js b/apps/desktop/src/app/chat/composer/index.js
+index 4670851..9e92fde 100644
+--- a/apps/desktop/src/app/chat/composer/index.js
++++ b/apps/desktop/src/app/chat/composer/index.js
+@@ -4,6 +4,7 @@ import { useStore } from '@nanostores/react';
+ import { useEffect, useRef } from 'react';
+ import { composerFill, composerSurfaceGlass } from '@/components/chat/composer-dock';
+ import { Button } from '@/components/ui/button';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { useI18n } from '@/i18n';
+ import { chatMessageText } from '@/lib/chat-messages';
+ import { DATA_IMAGE_URL_RE } from '@/lib/embedded-images';
+@@ -523,7 +524,7 @@ export function ChatBar({ busy, cwd, disabled, focusKey, gateway, maxRecordingSe
+                                     if (removeQueuedPrompt(activeQueueSessionKey, id) && queueEdit?.entryId === id) {
+                                         exitQueuedEdit('cancel');
+                                     }
+-                                }, onEdit: beginQueuedEdit, onSendNow: id => void sendQueuedNow(id) })) : null, sessionId: statusSessionId }), !poppedOut && (_jsx("div", { className: "pointer-events-none absolute inset-0 rounded-[inherit]", style: { background: COMPOSER_FADE_BACKGROUND } })), popoutAllowed && (_jsx("div", { "aria-hidden": true, className: cn('pointer-events-auto absolute inset-0', dragging ? 'cursor-grabbing' : 'cursor-grab'), "data-dragging": dragging ? '' : undefined, "data-slot": "composer-drag-region", onDoubleClick: handleComposerToggle })), _jsx("div", { className: "relative w-full rounded-[inherit]", children: _jsxs("div", { className: cn('group/composer-surface relative z-4 isolate grid grid-rows-[auto_1fr] overflow-hidden rounded-[inherit] border border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(18%*var(--composer-ring-strength)),var(--dt-input))]', COMPOSER_DROP_FADE_CLASS, dragActive && COMPOSER_DROP_ACTIVE_CLASS), "data-slot": "composer-surface", ref: composerSurfaceRef, children: [_jsx("div", { "aria-hidden": true, className: cn('pointer-events-none absolute inset-0 -z-10 rounded-[inherit]', composerFill, composerSurfaceGlass) }), _jsx(CodingStatusRow, { onBranchOff: handleBranchOff, onConvertBranch: handleConvertBranch, onListBranches: handleListBranches, onOpen: toggleReview, onOpenWorktree: openInWorktree, onSwitchBranch: handleSwitchBranch }), _jsxs("div", { className: cn('relative z-1 flex min-h-0 w-full flex-col gap-(--composer-row-gap) overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y) transition-opacity duration-200 ease-out', scrolledUp
++                                }, onEdit: beginQueuedEdit, onSendNow: id => void sendQueuedNow(id) })) : null, sessionId: statusSessionId }), !poppedOut && (_jsx("div", { className: "pointer-events-none absolute inset-0 rounded-[inherit]", style: { background: COMPOSER_FADE_BACKGROUND } })), popoutAllowed && (_jsx("div", { "aria-hidden": true, className: cn('pointer-events-auto absolute inset-0', dragging ? 'cursor-grabbing' : 'cursor-grab'), "data-dragging": dragging ? '' : undefined, "data-slot": "composer-drag-region", onDoubleClick: handleComposerToggle })), _jsx("div", { className: "relative w-full rounded-[inherit]", children: _jsxs("div", { className: cn('group/composer-surface relative z-4 isolate grid grid-rows-[auto_1fr] overflow-hidden rounded-[inherit] border border-[color-mix(in_srgb,var(--dt-composer-ring)_calc(18%*var(--composer-ring-strength)),var(--dt-input))]', COMPOSER_DROP_FADE_CLASS, dragActive && COMPOSER_DROP_ACTIVE_CLASS), "data-slot": "composer-surface", ref: composerSurfaceRef, children: [_jsx("div", { "aria-hidden": true, className: cn('pointer-events-none absolute inset-0 -z-10 rounded-[inherit]', composerFill, composerSurfaceGlass) }), !NEMESIS_STUDENT_BUILD && (_jsx(CodingStatusRow, { onBranchOff: handleBranchOff, onConvertBranch: handleConvertBranch, onListBranches: handleListBranches, onOpen: toggleReview, onOpenWorktree: openInWorktree, onSwitchBranch: handleSwitchBranch })), _jsxs("div", { className: cn('relative z-1 flex min-h-0 w-full flex-col gap-(--composer-row-gap) overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y) transition-opacity duration-200 ease-out', scrolledUp
+                                             ? 'opacity-30 group-hover/composer:opacity-100 group-focus-within/composer-surface:opacity-100'
+                                             : 'opacity-100'), "data-slot": "composer-fade", children: [_jsx(VoiceActivity, { state: voiceActivityState }), _jsx(VoicePlaybackActivity, {}), queueEdit && editingQueuedPrompt && (_jsxs("div", { className: "flex items-center justify-between gap-2 rounded-lg border border-[color-mix(in_srgb,var(--dt-composer-ring)_32%,transparent)] bg-accent/18 px-2 py-1", children: [_jsx("div", { className: "min-w-0 text-[0.7rem] text-muted-foreground/88", children: t.composer.editingQueuedInComposer }), _jsxs("div", { className: "flex shrink-0 items-center gap-1", children: [_jsx(Button, { className: "h-6 rounded-md px-2 text-[0.68rem]", onClick: () => exitQueuedEdit('cancel'), type: "button", variant: "ghost", children: t.common.cancel }), _jsx(Button, { className: "h-6 rounded-md px-2 text-[0.68rem]", onClick: () => exitQueuedEdit('save'), type: "button", children: t.common.save })] })] })), attachments.length > 0 && _jsx(AttachmentList, { attachments: attachments, onRemove: onRemoveAttachment }), _jsxs("div", { className: cn('grid w-full', stacked
+                                                     ? 'grid-cols-[auto_1fr] gap-(--composer-row-gap) [grid-template-areas:"input_input"_"menu_controls"]'
+diff --git a/apps/desktop/src/app/chat/composer/index.tsx b/apps/desktop/src/app/chat/composer/index.tsx
+index 1f5df46..a084309 100644
+--- a/apps/desktop/src/app/chat/composer/index.tsx
++++ b/apps/desktop/src/app/chat/composer/index.tsx
+@@ -4,6 +4,7 @@ import { type ClipboardEvent, type FormEvent, type KeyboardEvent, useEffect, use
+ 
+ import { composerFill, composerSurfaceGlass } from '@/components/chat/composer-dock'
+ import { Button } from '@/components/ui/button'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { useI18n } from '@/i18n'
+ import { chatMessageText } from '@/lib/chat-messages'
+ import { DATA_IMAGE_URL_RE } from '@/lib/embedded-images'
+@@ -918,14 +919,16 @@ export function ChatBar({
+                   composerSurfaceGlass
+                 )}
+               />
+-              <CodingStatusRow
+-                onBranchOff={handleBranchOff}
+-                onConvertBranch={handleConvertBranch}
+-                onListBranches={handleListBranches}
+-                onOpen={toggleReview}
+-                onOpenWorktree={openInWorktree}
+-                onSwitchBranch={handleSwitchBranch}
+-              />
++              {!NEMESIS_STUDENT_BUILD && (
++                <CodingStatusRow
++                  onBranchOff={handleBranchOff}
++                  onConvertBranch={handleConvertBranch}
++                  onListBranches={handleListBranches}
++                  onOpen={toggleReview}
++                  onOpenWorktree={openInWorktree}
++                  onSwitchBranch={handleSwitchBranch}
++                />
++              )}
+               <div
+                 className={cn(
+                   'relative z-1 flex min-h-0 w-full flex-col gap-(--composer-row-gap) overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y) transition-opacity duration-200 ease-out',
+diff --git a/apps/desktop/src/app/chat/sidebar/index.js b/apps/desktop/src/app/chat/sidebar/index.js
+index 50a18db..047fbea 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.js
++++ b/apps/desktop/src/app/chat/sidebar/index.js
+@@ -22,6 +22,7 @@ import { $dismissedAutoProjectIds, $panesFlipped, $pinnedSessionIds, $sidebarAge
+ import { $newChatProfile, $profiles, $profileScope, ALL_PROFILES, normalizeProfileKey } from '@/store/profile';
+ import { $activeProjectId, $projects, $projectScope, $projectTree, $projectTreeLoading, $removedSessionIds, $reposScanning, ALL_PROJECTS, enterProject, exitProjectScope, fetchProjectSessions, openProjectCreate, refreshProjects, refreshProjectTree, refreshWorktrees, scanAndRecordRepos } from '@/store/projects';
+ import { $cronSessions, $currentCwd, $gatewayState, $messagingPlatformTotals, $messagingSessions, $messagingTruncated, $selectedStoredSessionId, $sessionProfileTotals, $sessions, $sessionsLoading, $sessionsTotal, $workingSessionIds, sessionPinId, setCurrentCwd } from '@/store/session';
++import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_NAV } from '@/nemesis';
+ import { ARTIFACTS_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE, STUDY_ROUTE } from '../../routes';
+ import { countLabel } from './chrome';
+ import { SidebarCronJobsSection } from './cron-jobs-section';
+@@ -38,7 +39,7 @@ import { SidebarSessionsSection, VIRTUALIZE_THRESHOLD } from './sessions-section
+ const NON_SESSION_INITIAL_ROWS = 3;
+ const NON_SESSION_LOAD_STEP = 10;
+ const NEW_SESSION_KBD = comboTokens('mod+n');
+-const SIDEBAR_NAV = [
++const SIDEBAR_NAV_ALL = [
+     {
+         id: 'new-session',
+         label: '',
+@@ -55,6 +56,7 @@ const SIDEBAR_NAV = [
+     { id: 'artifacts', label: '', icon: props => _jsx(Codicon, { name: "files", ...props }), route: ARTIFACTS_ROUTE },
+     { id: 'study', label: 'Study', icon: props => _jsx(Codicon, { name: "mortar-board", ...props }), route: STUDY_ROUTE }
+ ];
++const SIDEBAR_NAV = SIDEBAR_NAV_ALL.filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_NAV.has(item.id));
+ // Two modes via the `compact` height variant (styles.css):
+ //   tall    → each section is shrink-0, capped, its own scroller; Sessions is flex-1.
+ //   compact → COMPACT_FLAT drops the caps so the whole stack scrolls as one.
+@@ -736,7 +738,7 @@ export function ChatSidebar({ currentView, onNavigate, onLoadMoreSessions, onLoa
+                                                 else {
+                                                     onNewSessionInWorkspace(null);
+                                                 }
+-                                            }, size: "icon-xs", variant: "ghost", children: _jsx(Codicon, { name: "add", size: "0.75rem" }) })) : null, _jsx("div", { className: "grid size-6 place-items-center", children: !showAllProfiles && agentSessions.length > 0 ? (_jsx(Button, { "aria-label": agentsGrouped ? s.showSessions : s.showProjects, className: cn(HEADER_NAV_BTN, agentsGrouped && 'bg-(--ui-control-active-background) text-foreground opacity-100'), onClick: event => {
++                                            }, size: "icon-xs", variant: "ghost", children: _jsx(Codicon, { name: "add", size: "0.75rem" }) })) : null, _jsx("div", { className: "grid size-6 place-items-center", children: !NEMESIS_STUDENT_BUILD && !showAllProfiles && agentSessions.length > 0 ? (_jsx(Button, { "aria-label": agentsGrouped ? s.showSessions : s.showProjects, className: cn(HEADER_NAV_BTN, agentsGrouped && 'bg-(--ui-control-active-background) text-foreground opacity-100'), onClick: event => {
+                                                     event.stopPropagation();
+                                                     setSidebarRecentsOpen(true);
+                                                     setSidebarAgentsGrouped(!agentsGrouped);
+diff --git a/apps/desktop/src/app/chat/sidebar/index.tsx b/apps/desktop/src/app/chat/sidebar/index.tsx
+index 40c6d58..185574e 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.tsx
++++ b/apps/desktop/src/app/chat/sidebar/index.tsx
+@@ -95,6 +95,8 @@ import {
+   setCurrentCwd
+ } from '@/store/session'
+ 
++import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_NAV } from '@/nemesis'
++
+ import { type AppView, ARTIFACTS_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE, STUDY_ROUTE } from '../../routes'
+ import type { SidebarNavItem } from '../../types'
+ 
+@@ -130,7 +132,7 @@ const NON_SESSION_LOAD_STEP = 10
+ 
+ const NEW_SESSION_KBD = comboTokens('mod+n')
+ 
+-const SIDEBAR_NAV: SidebarNavItem[] = [
++const SIDEBAR_NAV_ALL: SidebarNavItem[] = [
+   {
+     id: 'new-session',
+     label: '',
+@@ -148,6 +150,8 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
+   { id: 'study', label: 'Study', icon: props => <Codicon name="mortar-board" {...props} />, route: STUDY_ROUTE }
+ ]
+ 
++const SIDEBAR_NAV = SIDEBAR_NAV_ALL.filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_NAV.has(item.id))
++
+ // Two modes via the `compact` height variant (styles.css):
+ //   tall    → each section is shrink-0, capped, its own scroller; Sessions is flex-1.
+ //   compact → COMPACT_FLAT drops the caps so the whole stack scrolls as one.
+@@ -1268,7 +1272,7 @@ export function ChatSidebar({
+                         </Button>
+                       ) : null}
+                       <div className="grid size-6 place-items-center">
+-                        {!showAllProfiles && agentSessions.length > 0 ? (
++                        {!NEMESIS_STUDENT_BUILD && !showAllProfiles && agentSessions.length > 0 ? (
+                           <Button
+                             aria-label={agentsGrouped ? s.showSessions : s.showProjects}
+                             className={cn(
+diff --git a/apps/desktop/src/app/command-palette/index.js b/apps/desktop/src/app/command-palette/index.js
+index 7e9cfea..a620457 100644
+--- a/apps/desktop/src/app/command-palette/index.js
++++ b/apps/desktop/src/app/command-palette/index.js
+@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import { HUD_HEADING, HUD_ITEM, HUD_POSITION, HUD_SURFACE, HUD_TEXT } from '@/app/floating-hud';
+ import { setTerminalTakeover } from '@/app/right-sidebar/store';
++import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_PALETTE } from '@/nemesis';
+ import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+ import { KbdCombo } from '@/components/ui/kbd';
+ import { getHermesConfigRecord, listAllProfileSessions } from '@/hermes';
+@@ -307,7 +308,7 @@ export function CommandPalette() {
+                         label: t.starmap.title,
+                         run: go(STARMAP_ROUTE)
+                     }
+-                ]
++                ].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_PALETTE.has(item.id))
+             },
+             ...branchGroup,
+             {
+diff --git a/apps/desktop/src/app/command-palette/index.tsx b/apps/desktop/src/app/command-palette/index.tsx
+index be89ebb..9692a3b 100644
+--- a/apps/desktop/src/app/command-palette/index.tsx
++++ b/apps/desktop/src/app/command-palette/index.tsx
+@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom'
+ 
+ import { HUD_HEADING, HUD_ITEM, HUD_POSITION, HUD_SURFACE, HUD_TEXT } from '@/app/floating-hud'
+ import { setTerminalTakeover } from '@/app/right-sidebar/store'
++import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_PALETTE } from '@/nemesis'
+ import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+ import { KbdCombo } from '@/components/ui/kbd'
+ import { getHermesConfigRecord, listAllProfileSessions } from '@/hermes'
+@@ -462,7 +463,7 @@ export function CommandPalette() {
+             label: t.starmap.title,
+             run: go(STARMAP_ROUTE)
+           }
+-        ]
++        ].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_PALETTE.has(item.id))
+       },
+       ...branchGroup,
+       {
+diff --git a/apps/desktop/src/app/settings/index.js b/apps/desktop/src/app/settings/index.js
+index dea80d5..503c0b8 100644
+--- a/apps/desktop/src/app/settings/index.js
++++ b/apps/desktop/src/app/settings/index.js
+@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
+ import { useLocation, useNavigate } from 'react-router-dom';
+ import { codiconIcon } from '@/components/ui/codicon';
+ import { Tip } from '@/components/ui/tooltip';
++import { NEMESIS_STUDENT_BUILD, STUDENT_SETTINGS_KEEP } from '@/nemesis';
+ import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes';
+ import { useI18n } from '@/i18n';
+ import { triggerHaptic } from '@/lib/haptics';
+@@ -22,7 +23,7 @@ import { KEYS_VIEWS, KeysSettings } from './keys-settings';
+ import { NotificationsSettings } from './notifications-settings';
+ import { PROVIDER_VIEWS, ProvidersSettings } from './providers-settings';
+ import { SessionsSettings } from './sessions-settings';
+-const SETTINGS_VIEWS = [
++const SETTINGS_VIEWS_ALL = [
+     ...SECTIONS.map(s => `config:${s.id}`),
+     'providers',
+     'gateway',
+@@ -31,6 +32,7 @@ const SETTINGS_VIEWS = [
+     'sessions',
+     'about'
+ ];
++const SETTINGS_VIEWS = SETTINGS_VIEWS_ALL.filter(view => !NEMESIS_STUDENT_BUILD || STUDENT_SETTINGS_KEEP.has(view));
+ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }) {
+     const { t } = useI18n();
+     const navigate = useNavigate();
+@@ -47,7 +49,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }) {
+             navigate(`${SKILLS_ROUTE}?tab=mcp${suffix}`, { replace: true });
+         }
+     }, [navigate, search]);
+-    const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'config:model');
++    const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, (NEMESIS_STUDENT_BUILD ? 'config:appearance' : 'config:model'));
+     // Providers subnav (Accounts vs API keys) lives in its own param so each
+     // sub-view is deep-linkable and survives a refresh.
+     const [providerView, setProviderView] = useRouteEnumParam('pview', PROVIDER_VIEWS, 'accounts');
+@@ -186,7 +188,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }) {
+             label: t.settings.nav.about,
+             onSelect: () => setActiveView('about')
+         }
+-    ];
++    ].filter(group => !NEMESIS_STUDENT_BUILD || STUDENT_SETTINGS_KEEP.has(group.id));
+     const navFooter = (_jsxs(_Fragment, { children: [_jsx(Tip, { label: t.settings.exportConfig, children: _jsx(OverlayIconButton, { onClick: () => void exportConfig(), children: _jsx(Download, {}) }) }), _jsx(Tip, { label: t.settings.importConfig, children: _jsx(OverlayIconButton, { onClick: () => {
+                         triggerHaptic('open');
+                         importInputRef.current?.click();
+diff --git a/apps/desktop/src/app/settings/index.tsx b/apps/desktop/src/app/settings/index.tsx
+index 9c7c4dd..20ede8a 100644
+--- a/apps/desktop/src/app/settings/index.tsx
++++ b/apps/desktop/src/app/settings/index.tsx
+@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
+ 
+ import { codiconIcon } from '@/components/ui/codicon'
+ import { Tip } from '@/components/ui/tooltip'
++import { NEMESIS_STUDENT_BUILD, STUDENT_SETTINGS_KEEP } from '@/nemesis'
+ import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes'
+ import { useI18n } from '@/i18n'
+ import { triggerHaptic } from '@/lib/haptics'
+@@ -26,7 +27,7 @@ import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './provider
+ import { SessionsSettings } from './sessions-settings'
+ import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
+ 
+-const SETTINGS_VIEWS: readonly SettingsViewId[] = [
++const SETTINGS_VIEWS_ALL: readonly SettingsViewId[] = [
+   ...SECTIONS.map(s => `config:${s.id}` as SettingsViewId),
+   'providers',
+   'gateway',
+@@ -36,6 +37,10 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
+   'about'
+ ]
+ 
++const SETTINGS_VIEWS: readonly SettingsViewId[] = SETTINGS_VIEWS_ALL.filter(
++  view => !NEMESIS_STUDENT_BUILD || STUDENT_SETTINGS_KEEP.has(view)
++)
++
+ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: SettingsPageProps) {
+   const { t } = useI18n()
+   const navigate = useNavigate()
+@@ -55,7 +60,11 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
+     }
+   }, [navigate, search])
+ 
+-  const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'config:model' as SettingsViewId)
++  const [activeView, setActiveView] = useRouteEnumParam(
++    'tab',
++    SETTINGS_VIEWS,
++    (NEMESIS_STUDENT_BUILD ? 'config:appearance' : 'config:model') as SettingsViewId
++  )
+   // Providers subnav (Accounts vs API keys) lives in its own param so each
+   // sub-view is deep-linkable and survives a refresh.
+   const [providerView, setProviderView] = useRouteEnumParam<ProviderView>('pview', PROVIDER_VIEWS, 'accounts')
+@@ -201,7 +210,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
+       label: t.settings.nav.about,
+       onSelect: () => setActiveView('about')
+     }
+-  ]
++  ].filter(group => !NEMESIS_STUDENT_BUILD || STUDENT_SETTINGS_KEEP.has(group.id))
+ 
+   const navFooter = (
+     <>
+diff --git a/apps/desktop/src/app/shell/hooks/use-statusbar-items.js b/apps/desktop/src/app/shell/hooks/use-statusbar-items.js
+index 5c62eef..04a59ed 100644
+--- a/apps/desktop/src/app/shell/hooks/use-statusbar-items.js
++++ b/apps/desktop/src/app/shell/hooks/use-statusbar-items.js
+@@ -2,6 +2,7 @@ import { jsx as _jsx } from "react/jsx-runtime";
+ import { useStore } from '@nanostores/react';
+ import { useCallback, useMemo } from 'react';
+ import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/store';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { ContextUsagePanel } from '@/app/shell/context-usage-panel';
+ import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel';
+ import { Codicon } from '@/components/ui/codicon';
+@@ -276,7 +277,7 @@ export function useStatusbarItems({ agentsOpen, chatOpen, commandCenterOpen, ext
+         },
+         {
+             className: `w-7 justify-center px-0${terminalTakeover ? ' bg-accent/55 text-foreground' : ''}`,
+-            hidden: !chatOpen,
++            hidden: !chatOpen || NEMESIS_STUDENT_BUILD,
+             icon: _jsx(Terminal, { className: "size-3.5" }),
+             id: 'terminal',
+             onSelect: () => setTerminalTakeover(!$terminalTakeover.get()),
+diff --git a/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx b/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
+index 753c389..78c0d2c 100644
+--- a/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
++++ b/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
+@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react'
+ 
+ import type { CommandCenterSection } from '@/app/command-center'
+ import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/store'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { ContextUsagePanel } from '@/app/shell/context-usage-panel'
+ import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
+ import { Codicon } from '@/components/ui/codicon'
+@@ -397,7 +398,7 @@ export function useStatusbarItems({
+       },
+       {
+         className: `w-7 justify-center px-0${terminalTakeover ? ' bg-accent/55 text-foreground' : ''}`,
+-        hidden: !chatOpen,
++        hidden: !chatOpen || NEMESIS_STUDENT_BUILD,
+         icon: <Terminal className="size-3.5" />,
+         id: 'terminal',
+         onSelect: () => setTerminalTakeover(!$terminalTakeover.get()),
+diff --git a/apps/desktop/src/components/chat/intro-copy.jsonl b/apps/desktop/src/components/chat/intro-copy.jsonl
+index 5dfdf5c..cb018d5 100644
+--- a/apps/desktop/src/components/chat/intro-copy.jsonl
++++ b/apps/desktop/src/components/chat/intro-copy.jsonl
+@@ -68,8 +68,8 @@
+ {"personality":"hype","headline":"New session, infinite W's","body":"Bring the gnarliest bug you've got. I'll read, patch, test, commit like my life depends on it. LET'S GO."}
+ {"personality":"hype","headline":"ABSOLUTELY DIALED IN","body":"Describe the task. I'll blitz through files, crush failing tests, and leave a commit that SLAPS. Go go go."}
+ {"personality":"hype","headline":"Ready. So ready. Too ready.","body":"Tiny typo or huge refactor - doesn't matter. I'm shipping clean code today. Name the task and let's WORK."}
+-{"personality":"none","headline":"Nemesis Agent is ready.","body":"Ask a question, paste an error, or point me at a repo. I can read code, run tools, and help you ship."}
++{"personality":"none","headline":"Nemesis is ready.","body":"Ask anything from class, drop lecture files, or name a topic. I research with citations, build study material, and help you keep up."}
+ {"personality":"none","headline":"What are we building today?","body":"Describe the task in your own words. I'll pick the right tools, explain my plan, and check in before risky steps."}
+-{"personality":"none","headline":"Start anywhere.","body":"Drop a file path, a traceback, or a rough idea. I'll investigate, suggest next steps, and keep things reversible."}
+-{"personality":"none","headline":"Your workspace, one prompt away.","body":"Search the repo, edit files, run tests, open PRs. Tell me the goal and I'll handle the mechanical parts."}
++{"personality":"none","headline":"Start anywhere.","body":"Drop a lecture PDF, a half-formed question, or a topic you're behind on. I'll dig in, explain it plainly, and turn it into notes and cards."}
++{"personality":"none","headline":"Your semester, one prompt away.","body":"Summarize lectures, draft study guides, build flashcard decks, keep track of deadlines. Tell me the goal — you approve everything before it counts."}
+ {"personality":"none","headline":"Ready when you are.","body":"Type a task, question, or snippet. I remember the session, cite my sources, and stop to ask when I'm unsure."}
+diff --git a/apps/desktop/src/components/chat/intro.js b/apps/desktop/src/components/chat/intro.js
+index 23dea09..fd70a1c 100644
+--- a/apps/desktop/src/components/chat/intro.js
++++ b/apps/desktop/src/components/chat/intro.js
+@@ -107,7 +107,7 @@ function fallbackCopyForPersonality(personalityKey) {
+ function pickCopy(copies, seed = 0) {
+     return copies[Math.abs(seed) % copies.length] || FALLBACK_COPY[0];
+ }
+-const WORDMARK = 'HERMES AGENT';
++const WORDMARK = 'NEMESIS';
+ function resolveCopy(personality, seed) {
+     const personalityKey = normalizeKey(personality);
+     const copies = NEUTRAL_PERSONALITIES.has(personalityKey)
+diff --git a/apps/desktop/src/nemesis.js b/apps/desktop/src/nemesis.js
+new file mode 100644
+index 0000000..6587ee2
+--- /dev/null
++++ b/apps/desktop/src/nemesis.js
+@@ -0,0 +1,19 @@
++// Nemesis student-build switches. ONE flag gates every "student cut" (hidden pages,
++// trimmed settings, hidden coding surfaces) so the whole trim is greppable and can later
++// be driven per-account from the backend (`/api/config` ui.student_mode — Layer C in
++// docs/design/nemesis-product-reskin-plan-2026-07.md). Flip to false → stock Hermes UI.
++export const NEMESIS_STUDENT_BUILD = true;
++/** Sidebar pages hidden for students (machinery stays alive underneath). */
++export const STUDENT_HIDDEN_NAV = new Set(['skills', 'messaging']);
++/** ⌘K palette entries hidden for students. */
++export const STUDENT_HIDDEN_PALETTE = new Set(['nav-terminal', 'nav-skills', 'nav-messaging']);
++/** Settings sections students see. Everything else (model/providers/keys/gateway/workspace/
++ *  voice/memory/advanced) is provisioned by Nemesis — students pay, we run the model. */
++export const STUDENT_SETTINGS_KEEP = new Set([
++    'config:appearance',
++    'config:chat',
++    'config:safety',
++    'notifications',
++    'sessions',
++    'about'
++]);
+diff --git a/apps/desktop/src/nemesis.ts b/apps/desktop/src/nemesis.ts
+new file mode 100644
+index 0000000..f7c60aa
+--- /dev/null
++++ b/apps/desktop/src/nemesis.ts
+@@ -0,0 +1,22 @@
++// Nemesis student-build switches. ONE flag gates every "student cut" (hidden pages,
++// trimmed settings, hidden coding surfaces) so the whole trim is greppable and can later
++// be driven per-account from the backend (`/api/config` ui.student_mode — Layer C in
++// docs/design/nemesis-product-reskin-plan-2026-07.md). Flip to false → stock Hermes UI.
++export const NEMESIS_STUDENT_BUILD = true
++
++/** Sidebar pages hidden for students (machinery stays alive underneath). */
++export const STUDENT_HIDDEN_NAV: ReadonlySet<string> = new Set(['skills', 'messaging'])
++
++/** ⌘K palette entries hidden for students. */
++export const STUDENT_HIDDEN_PALETTE: ReadonlySet<string> = new Set(['nav-terminal', 'nav-skills', 'nav-messaging'])
++
++/** Settings sections students see. Everything else (model/providers/keys/gateway/workspace/
++ *  voice/memory/advanced) is provisioned by Nemesis — students pay, we run the model. */
++export const STUDENT_SETTINGS_KEEP: ReadonlySet<string> = new Set([
++  'config:appearance',
++  'config:chat',
++  'config:safety',
++  'notifications',
++  'sessions',
++  'about'
++])
+-- 
+2.50.1 (Apple Git-155)
+

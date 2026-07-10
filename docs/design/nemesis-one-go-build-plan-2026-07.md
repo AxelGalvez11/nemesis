@@ -71,6 +71,21 @@ so we don't rebuild 5 times):
   and the 3D issue is reported.
 - Packaged-rebuild wall-clock (~15 min total across two checkpoints) is the main fixed cost.
 
-## Status
-- [ ] Stage 0 · [ ] Stage 1 · [ ] Stage 2 · [ ] Checkpoint A · [ ] Stage 3 · [ ] Stage 4 ·
-  [ ] Stage 5 · [ ] Checkpoint B
+## Status (run executed 2026-07-09 evening)
+- [x] Stage 0 — disk 4.3GB ✓; fs IPC discovered (preload readDir/readFileText/writeTextFile,
+  hardened, home-scoped) → Library needs no backend; deps installable.
+- [x] Stage 1 — student cuts (16 edits, all behind `src/nemesis.ts` NEMESIS_STUDENT_BUILD).
+- [x] Stage 2 — `nemesis` theme (mono + crimson #b3382e), default skin.
+- [x] Checkpoint A — rebuilt; in-app checks: nav = Artifacts+Study only ✓, settings =
+  Chat/Appearance/Safety/Notifications/About opening on Appearance ✓, crimson active ✓.
+- [x] Stage 3 — Library (vault IPC + CodeMirror + wikilinks/backlinks + seeds); parser smoke PASS;
+  boot mkdir for both data folders in electron main.
+- [x] Stage 4 — Graph (3d-force-graph ^1.80, theme-aware, ?note= deep link into Library).
+- [x] Stage 5 — Recorder v1 (loopback handler + display-capture permission + writeBinary IPC +
+  consent-first page). **Gate B (transcription) deferred as planned** — record/save/playback
+  shipped; whisper transcription is the documented next step.
+- [x] Checkpoint B — final rebuild + full in-app walkthrough (screenshots delivered to owner).
+- Patches 0003–0008 archived in `apps/nemesis-desktop/patches/`.
+- Known follow-ups: transcription engine; live system-audio capture needs the owner's one-time
+  macOS Screen & System Audio Recording approval (first Start click); app icon raster pass;
+  in-editor wikilink click-through.
