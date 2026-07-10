@@ -1,0 +1,633 @@
+From fc9d59f5a34f81e84de260af78ad7ca282b95126 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Fri, 10 Jul 2026 14:36:37 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20round-17=20=E2=80=94=20ONE=20right?=
+ =?UTF-8?q?=20panel=20(Sources=20as=20pinned=20rail=20tab)=20+=20memory-ba?=
+ =?UTF-8?q?cked=20portal=20URLs?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- student build: the separate sources/file-browser column never mounts;
+  Sources is the pinned first tab of the tabbed rail (Sources | Browser |
+  Preview | files), close disabled on the pinned tab
+- pane gates (railColumnOpen / Pane disabled / previewPaneOpen) treat the
+  student rail as always-populated; titlebar right button toggles the rail
+- agent-browser watcher skips the initial store snapshot so restored
+  sessions don't pop the mirror on relaunch
+- school-portal skill: ask once for the school's exact portal URLs, save
+  via the memory tool to USER.md, never re-ask (verified E2E: elicitation
+  form -> refused to memorize a fake URL -> real fact written to USER.md)
+---
+ .../src/app/chat/right-rail/preview.js        | 24 ++++++++--
+ .../src/app/chat/right-rail/preview.tsx       | 46 ++++++++++++++-----
+ apps/desktop/src/app/desktop-controller.js    | 15 ++++--
+ apps/desktop/src/app/desktop-controller.tsx   | 19 ++++++--
+ apps/desktop/src/app/right-sidebar/index.js   |  3 +-
+ apps/desktop/src/app/right-sidebar/index.tsx  |  9 ++--
+ .../src/app/shell/titlebar-controls.js        | 10 +++-
+ .../src/app/shell/titlebar-controls.tsx       |  9 +++-
+ .../src/hooks/use-agent-browser-watcher.js    |  8 ++++
+ .../src/hooks/use-agent-browser-watcher.ts    | 10 ++++
+ apps/desktop/src/store/layout.js              |  3 ++
+ apps/desktop/src/store/layout.ts              | 11 ++++-
+ apps/desktop/src/store/preview.js             | 19 ++++++--
+ apps/desktop/src/store/preview.ts             | 21 +++++++--
+ 14 files changed, 161 insertions(+), 46 deletions(-)
+
+diff --git a/apps/desktop/src/app/chat/right-rail/preview.js b/apps/desktop/src/app/chat/right-rail/preview.js
+index 4b8edd74866..70731a65911 100644
+--- a/apps/desktop/src/app/chat/right-rail/preview.js
++++ b/apps/desktop/src/app/chat/right-rail/preview.js
+@@ -7,20 +7,28 @@ import { Tip } from '@/components/ui/tooltip';
+ import { translateNow, useI18n } from '@/i18n';
+ import { formatCombo } from '@/lib/keybinds/combo';
+ import { cn } from '@/lib/utils';
++import { SourcesTab } from '@/app/right-sidebar/sources';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { $browserRailOpen } from '@/store/browser-rail';
+-import { $panesFlipped, $rightRailActiveTabId, RIGHT_RAIL_BROWSER_TAB_ID, RIGHT_RAIL_PREVIEW_TAB_ID, selectRightRailTab } from '@/store/layout';
++import { $panesFlipped, $rightRailActiveTabId, RIGHT_RAIL_BROWSER_TAB_ID, RIGHT_RAIL_PREVIEW_TAB_ID, RIGHT_RAIL_SOURCES_TAB_ID, selectRightRailTab } from '@/store/layout';
+ import { $filePreviewTabs, $previewReloadRequest, $previewTarget, closeOtherRightRailTabs, closeRightRail, closeRightRailTab, closeRightRailTabsToRight } from '@/store/preview';
+ import { $dirtyPreviewUrls } from '@/store/preview-edit';
+ import { BrowserMirror } from './browser-mirror';
+ import { PreviewPane } from './preview-pane';
+-// Synthetic target for the agent-browser mirror tab — it renders BrowserMirror,
+-// not PreviewPane, so this only feeds the tab strip (label/tooltip/dirty-lookup).
++// Synthetic targets for the non-PreviewPane tabs (browser mirror + pinned
++// sources) — they only feed the tab strip (label/tooltip/dirty-lookup).
+ const BROWSER_TAB_TARGET = {
+     kind: 'url',
+     label: 'Browser',
+     source: 'agent-browser',
+     url: 'about:agent-browser'
+ };
++const SOURCES_TAB_TARGET = {
++    kind: 'url',
++    label: 'Sources',
++    source: 'sources',
++    url: 'about:sources'
++};
+ export const PREVIEW_RAIL_MIN_WIDTH = '18rem';
+ export const PREVIEW_RAIL_MAX_WIDTH = '38rem';
+ const INTRINSIC = `clamp(${PREVIEW_RAIL_MIN_WIDTH}, 36vw, 32rem)`;
+@@ -44,6 +52,11 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }) {
+     const dirtyPreviewUrls = useStore($dirtyPreviewUrls);
+     const browserRailOpen = useStore($browserRailOpen);
+     const tabs = useMemo(() => [
++        // Student build: Sources is the rail's pinned home tab — the one right
++        // panel replaces the old separate sources sidebar column.
++        ...(NEMESIS_STUDENT_BUILD
++            ? [{ id: RIGHT_RAIL_SOURCES_TAB_ID, label: 'Sources', target: SOURCES_TAB_TARGET }]
++            : []),
+         ...(browserRailOpen
+             ? [{ id: RIGHT_RAIL_BROWSER_TAB_ID, label: 'Browser', target: BROWSER_TAB_TARGET }]
+             : []),
+@@ -70,6 +83,7 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }) {
+         // titlebar-height so it opens below the band. 0px elsewhere → unchanged.
+         style: { paddingTop: 'var(--right-rail-top-inset, 0px)' }, children: [_jsxs("div", { className: "group/rail-tabs flex h-(--titlebar-height) shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background)", children: [_jsx("div", { className: "flex min-w-0 flex-1 overflow-x-auto overflow-y-hidden overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", role: "tablist", children: tabs.map((tab, index) => {
+                             const active = tab.id === activeTab.id;
++                            const pinned = tab.id === RIGHT_RAIL_SOURCES_TAB_ID;
+                             const hasOthers = tabs.length > 1;
+                             const hasTabsToRight = index < tabs.length - 1;
+                             const dirty = Boolean(dirtyPreviewUrls[tab.target.url]);
+@@ -89,6 +103,6 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }) {
+                                                 if (event.button === 1) {
+                                                     event.preventDefault();
+                                                 }
+-                                            }, children: [active && (_jsx("span", { "aria-hidden": "true", className: "absolute inset-x-0 top-0 h-px bg-(--ui-stroke-primary)" })), _jsx(Tip, { label: tab.target.path || tab.target.url || tab.label, children: _jsx("button", { "aria-selected": active, className: "flex h-full min-w-0 max-w-full items-center overflow-hidden pl-3 pr-2 text-left outline-none", onClick: () => selectRightRailTab(tab.id), role: "tab", type: "button", children: _jsx("span", { className: "block min-w-0 truncate", children: tab.label }) }) }), _jsx("span", { "aria-hidden": "true", className: "pointer-events-none absolute inset-y-0 right-0 w-9 bg-[linear-gradient(to_right,transparent,var(--tab-bg)_55%)] opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100" }), dirty && (_jsx("span", { "aria-hidden": "true", className: "pointer-events-none absolute right-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center opacity-100 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0", children: _jsx("span", { className: "size-2 rounded-full bg-amber-500 shadow-[0_0_0_2px_var(--tab-bg),0_1px_2px_rgba(0,0,0,0.45)] dark:bg-amber-400" }) })), _jsx("button", { "aria-label": t.preview.closeTab(tab.label), className: "pointer-events-none absolute right-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-(--ui-text-tertiary) opacity-0 transition-[background-color,color,opacity] hover:bg-(--ui-bg-secondary) hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100", onClick: () => closeRightRailTab(tab.id), type: "button", children: _jsx(Codicon, { name: "close", size: "0.75rem" }) })] }) }), _jsxs(ContextMenuContent, { children: [_jsxs(ContextMenuItem, { onSelect: () => closeRightRailTab(tab.id), children: [t.common.close, _jsx("span", { className: "ml-auto pl-4 text-(--ui-text-tertiary)", children: formatCombo('mod+w') })] }), _jsx(ContextMenuItem, { disabled: !hasOthers, onSelect: () => closeOtherRightRailTabs(tab.id), children: t.preview.closeOthers }), _jsx(ContextMenuItem, { disabled: !hasTabsToRight, onSelect: () => closeRightRailTabsToRight(tab.id), children: t.preview.closeToRight }), _jsx(ContextMenuSeparator, {}), _jsx(ContextMenuItem, { onSelect: closeRightRail, children: t.preview.closeAll })] })] }, tab.id));
+-                        }) }), _jsx("button", { "aria-label": t.preview.closePane, className: "mr-1.5 grid size-6 shrink-0 self-center place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring group-hover/rail-tabs:opacity-100 [-webkit-app-region:no-drag]", onClick: closeRightRail, type: "button", children: _jsx(Codicon, { name: "close", size: "0.75rem" }) })] }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden", children: activeTab.id === RIGHT_RAIL_BROWSER_TAB_ID ? (_jsx(BrowserMirror, {})) : (_jsx(PreviewPane, { embedded: true, onRestartServer: isPreview ? onRestartServer : undefined, reloadRequest: previewReloadRequest, setTitlebarToolGroup: setTitlebarToolGroup, target: activeTab.target })) })] }));
++                                            }, children: [active && (_jsx("span", { "aria-hidden": "true", className: "absolute inset-x-0 top-0 h-px bg-(--ui-stroke-primary)" })), _jsx(Tip, { label: tab.target.path || tab.target.url || tab.label, children: _jsx("button", { "aria-selected": active, className: "flex h-full min-w-0 max-w-full items-center overflow-hidden pl-3 pr-2 text-left outline-none", onClick: () => selectRightRailTab(tab.id), role: "tab", type: "button", children: _jsx("span", { className: "block min-w-0 truncate", children: tab.label }) }) }), _jsx("span", { "aria-hidden": "true", className: "pointer-events-none absolute inset-y-0 right-0 w-9 bg-[linear-gradient(to_right,transparent,var(--tab-bg)_55%)] opacity-0 transition-opacity group-hover/tab:opacity-100 group-focus-within/tab:opacity-100" }), dirty && (_jsx("span", { "aria-hidden": "true", className: "pointer-events-none absolute right-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center opacity-100 transition-opacity group-hover/tab:opacity-0 group-focus-within/tab:opacity-0", children: _jsx("span", { className: "size-2 rounded-full bg-amber-500 shadow-[0_0_0_2px_var(--tab-bg),0_1px_2px_rgba(0,0,0,0.45)] dark:bg-amber-400" }) })), !pinned && (_jsx("button", { "aria-label": t.preview.closeTab(tab.label), className: "pointer-events-none absolute right-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-(--ui-text-tertiary) opacity-0 transition-[background-color,color,opacity] hover:bg-(--ui-bg-secondary) hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100", onClick: () => closeRightRailTab(tab.id), type: "button", children: _jsx(Codicon, { name: "close", size: "0.75rem" }) }))] }) }), _jsxs(ContextMenuContent, { children: [_jsxs(ContextMenuItem, { disabled: pinned, onSelect: () => closeRightRailTab(tab.id), children: [t.common.close, _jsx("span", { className: "ml-auto pl-4 text-(--ui-text-tertiary)", children: formatCombo('mod+w') })] }), _jsx(ContextMenuItem, { disabled: !hasOthers, onSelect: () => closeOtherRightRailTabs(tab.id), children: t.preview.closeOthers }), _jsx(ContextMenuItem, { disabled: !hasTabsToRight, onSelect: () => closeRightRailTabsToRight(tab.id), children: t.preview.closeToRight }), _jsx(ContextMenuSeparator, {}), _jsx(ContextMenuItem, { onSelect: closeRightRail, children: t.preview.closeAll })] })] }, tab.id));
++                        }) }), _jsx("button", { "aria-label": t.preview.closePane, className: "mr-1.5 grid size-6 shrink-0 self-center place-items-center rounded-md text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring group-hover/rail-tabs:opacity-100 [-webkit-app-region:no-drag]", onClick: closeRightRail, type: "button", children: _jsx(Codicon, { name: "close", size: "0.75rem" }) })] }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden", children: activeTab.id === RIGHT_RAIL_SOURCES_TAB_ID ? (_jsx("div", { className: "flex h-full min-h-0 flex-col bg-(--ui-sidebar-surface-background)", children: _jsx(SourcesTab, {}) })) : activeTab.id === RIGHT_RAIL_BROWSER_TAB_ID ? (_jsx(BrowserMirror, {})) : (_jsx(PreviewPane, { embedded: true, onRestartServer: isPreview ? onRestartServer : undefined, reloadRequest: previewReloadRequest, setTitlebarToolGroup: setTitlebarToolGroup, target: activeTab.target })) })] }));
+ }
+diff --git a/apps/desktop/src/app/chat/right-rail/preview.tsx b/apps/desktop/src/app/chat/right-rail/preview.tsx
+index e0d093b3b6d..d9cf4892928 100644
+--- a/apps/desktop/src/app/chat/right-rail/preview.tsx
++++ b/apps/desktop/src/app/chat/right-rail/preview.tsx
+@@ -14,12 +14,15 @@ import { Tip } from '@/components/ui/tooltip'
+ import { translateNow, useI18n } from '@/i18n'
+ import { formatCombo } from '@/lib/keybinds/combo'
+ import { cn } from '@/lib/utils'
++import { SourcesTab } from '@/app/right-sidebar/sources'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { $browserRailOpen } from '@/store/browser-rail'
+ import {
+   $panesFlipped,
+   $rightRailActiveTabId,
+   RIGHT_RAIL_BROWSER_TAB_ID,
+   RIGHT_RAIL_PREVIEW_TAB_ID,
++  RIGHT_RAIL_SOURCES_TAB_ID,
+   type RightRailTabId,
+   selectRightRailTab
+ } from '@/store/layout'
+@@ -38,8 +41,8 @@ import { $dirtyPreviewUrls } from '@/store/preview-edit'
+ import { BrowserMirror } from './browser-mirror'
+ import { PreviewPane } from './preview-pane'
+ 
+-// Synthetic target for the agent-browser mirror tab — it renders BrowserMirror,
+-// not PreviewPane, so this only feeds the tab strip (label/tooltip/dirty-lookup).
++// Synthetic targets for the non-PreviewPane tabs (browser mirror + pinned
++// sources) — they only feed the tab strip (label/tooltip/dirty-lookup).
+ const BROWSER_TAB_TARGET: PreviewTarget = {
+   kind: 'url',
+   label: 'Browser',
+@@ -47,6 +50,13 @@ const BROWSER_TAB_TARGET: PreviewTarget = {
+   url: 'about:agent-browser'
+ }
+ 
++const SOURCES_TAB_TARGET: PreviewTarget = {
++  kind: 'url',
++  label: 'Sources',
++  source: 'sources',
++  url: 'about:sources'
++}
++
+ export const PREVIEW_RAIL_MIN_WIDTH = '18rem'
+ export const PREVIEW_RAIL_MAX_WIDTH = '38rem'
+ 
+@@ -88,6 +98,11 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
+ 
+   const tabs = useMemo<readonly RailTab[]>(
+     () => [
++      // Student build: Sources is the rail's pinned home tab — the one right
++      // panel replaces the old separate sources sidebar column.
++      ...(NEMESIS_STUDENT_BUILD
++        ? [{ id: RIGHT_RAIL_SOURCES_TAB_ID, label: 'Sources', target: SOURCES_TAB_TARGET } as RailTab]
++        : []),
+       ...(browserRailOpen
+         ? [{ id: RIGHT_RAIL_BROWSER_TAB_ID, label: 'Browser', target: BROWSER_TAB_TARGET } as RailTab]
+         : []),
+@@ -133,6 +148,7 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
+         >
+           {tabs.map((tab, index) => {
+             const active = tab.id === activeTab.id
++            const pinned = tab.id === RIGHT_RAIL_SOURCES_TAB_ID
+             const hasOthers = tabs.length > 1
+             const hasTabsToRight = index < tabs.length - 1
+             const dirty = Boolean(dirtyPreviewUrls[tab.target.url])
+@@ -192,18 +208,20 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
+                         <span className="size-2 rounded-full bg-amber-500 shadow-[0_0_0_2px_var(--tab-bg),0_1px_2px_rgba(0,0,0,0.45)] dark:bg-amber-400" />
+                       </span>
+                     )}
+-                    <button
+-                      aria-label={t.preview.closeTab(tab.label)}
+-                      className="pointer-events-none absolute right-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-(--ui-text-tertiary) opacity-0 transition-[background-color,color,opacity] hover:bg-(--ui-bg-secondary) hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100"
+-                      onClick={() => closeRightRailTab(tab.id)}
+-                      type="button"
+-                    >
+-                      <Codicon name="close" size="0.75rem" />
+-                    </button>
++                    {!pinned && (
++                      <button
++                        aria-label={t.preview.closeTab(tab.label)}
++                        className="pointer-events-none absolute right-1.5 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-(--ui-text-tertiary) opacity-0 transition-[background-color,color,opacity] hover:bg-(--ui-bg-secondary) hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/tab:pointer-events-auto group-hover/tab:opacity-100 group-focus-within/tab:pointer-events-auto group-focus-within/tab:opacity-100"
++                        onClick={() => closeRightRailTab(tab.id)}
++                        type="button"
++                      >
++                        <Codicon name="close" size="0.75rem" />
++                      </button>
++                    )}
+                   </div>
+                 </ContextMenuTrigger>
+                 <ContextMenuContent>
+-                  <ContextMenuItem onSelect={() => closeRightRailTab(tab.id)}>
++                  <ContextMenuItem disabled={pinned} onSelect={() => closeRightRailTab(tab.id)}>
+                     {t.common.close}
+                     <span className="ml-auto pl-4 text-(--ui-text-tertiary)">{formatCombo('mod+w')}</span>
+                   </ContextMenuItem>
+@@ -231,7 +249,11 @@ export function ChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
+       </div>
+ 
+       <div className="min-h-0 flex-1 overflow-hidden">
+-        {activeTab.id === RIGHT_RAIL_BROWSER_TAB_ID ? (
++        {activeTab.id === RIGHT_RAIL_SOURCES_TAB_ID ? (
++          <div className="flex h-full min-h-0 flex-col bg-(--ui-sidebar-surface-background)">
++            <SourcesTab />
++          </div>
++        ) : activeTab.id === RIGHT_RAIL_BROWSER_TAB_ID ? (
+           <BrowserMirror />
+         ) : (
+           <PreviewPane
+diff --git a/apps/desktop/src/app/desktop-controller.js b/apps/desktop/src/app/desktop-controller.js
+index aa04b54a868..8a69148af26 100644
+--- a/apps/desktop/src/app/desktop-controller.js
++++ b/apps/desktop/src/app/desktop-controller.js
+@@ -13,6 +13,7 @@ import { RemoteDisplayBanner } from '@/components/remote-display-banner';
+ import { useAgentBrowserWatcher } from '@/hooks/use-agent-browser-watcher';
+ import { useExportsPreviewWatcher } from '@/hooks/use-exports-preview-watcher';
+ import { useMediaQuery } from '@/hooks/use-media-query';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { isFocusWithin } from '@/lib/keybinds/combo';
+ import { cn } from '@/lib/utils';
+ import { useSkinCommand } from '@/themes/use-skin-command';
+@@ -797,14 +798,18 @@ export function DesktopController() {
+     const railSide = panesFlipped ? 'left' : 'right';
+     // Other sidebars docked as real columns on the terminal's rail. Force-collapsed
+     // hover-reveal overlays (narrow window) don't take a column, so they don't count.
+-    const railColumnOpen = (chatOpen && Boolean(previewTarget || filePreviewTarget || browserRailOpen) && previewPaneOpen) ||
+-        (chatOpen && !narrowViewport && fileBrowserOpen) ||
++    const railColumnOpen = (chatOpen &&
++        (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)) &&
++        previewPaneOpen) ||
++        (chatOpen && !NEMESIS_STUDENT_BUILD && !narrowViewport && fileBrowserOpen) ||
+         (chatOpen && Boolean(currentCwd.trim()) && !narrowViewport && reviewOpen);
+     // Once the terminal would share its rail with another sidebar, drop it to a
+     // full-width row beneath them rather than cramming in one more skinny column.
+     const terminalAsRow = terminalSidebarOpen && railColumnOpen;
+-    const previewPane = (_jsx(Pane, { disabled: !chatOpen || (!previewTarget && !filePreviewTarget && !browserRailOpen), id: PREVIEW_PANE_ID, maxWidth: PREVIEW_RAIL_MAX_WIDTH, minWidth: PREVIEW_RAIL_MIN_WIDTH, resizable: true, side: railSide, width: PREVIEW_RAIL_PANE_WIDTH, children: chatOpen ? (_jsx(ChatPreviewRail, { onRestartServer: restartPreviewServer, setTitlebarToolGroup: setTitlebarToolGroup })) : null }, "preview"));
+-    const fileBrowserPane = (_jsx(Pane, { defaultOpen: false, disabled: !chatOpen, forceCollapsed: narrowViewport, hoverReveal: true, id: "file-browser", maxWidth: FILE_BROWSER_MAX_WIDTH, minWidth: FILE_BROWSER_MIN_WIDTH, resizable: true, side: railSide, width: FILE_BROWSER_DEFAULT_WIDTH, children: _jsx(RightSidebarPane, { onActivateFile: path => composer.insertContextPathInlineRef(path), onActivateFolder: path => composer.insertContextPathInlineRef(path, true) }, currentCwd || 'no-cwd') }, "file-browser"));
++    const previewPane = (_jsx(Pane, { disabled: !chatOpen || (!NEMESIS_STUDENT_BUILD && !previewTarget && !filePreviewTarget && !browserRailOpen), id: PREVIEW_PANE_ID, maxWidth: PREVIEW_RAIL_MAX_WIDTH, minWidth: PREVIEW_RAIL_MIN_WIDTH, resizable: true, side: railSide, width: PREVIEW_RAIL_PANE_WIDTH, children: chatOpen ? (_jsx(ChatPreviewRail, { onRestartServer: restartPreviewServer, setTitlebarToolGroup: setTitlebarToolGroup })) : null }, "preview"));
++    // Student build has exactly ONE right panel — the tabbed rail (Sources |
++    // Browser | Preview). The developer file-browser column never mounts.
++    const fileBrowserPane = NEMESIS_STUDENT_BUILD ? null : (_jsx(Pane, { defaultOpen: false, disabled: !chatOpen, forceCollapsed: narrowViewport, hoverReveal: true, id: "file-browser", maxWidth: FILE_BROWSER_MAX_WIDTH, minWidth: FILE_BROWSER_MIN_WIDTH, resizable: true, side: railSide, width: FILE_BROWSER_DEFAULT_WIDTH, children: _jsx(RightSidebarPane, { onActivateFile: path => composer.insertContextPathInlineRef(path), onActivateFolder: path => composer.insertContextPathInlineRef(path, true) }, currentCwd || 'no-cwd') }, "file-browser"));
+     const reviewPane = (_jsx(Pane, { defaultOpen: true, 
+         // The diff pane only makes sense in a workspace, so force it shut when the
+         // session is detached — "No diffs" then only ever shows inside a project,
+@@ -817,7 +822,7 @@ export function DesktopController() {
+         // Mobile overlay sits at its min width — compact, doesn't bury the chat.
+         overlayWidth: FILE_BROWSER_MIN_WIDTH, resizable: true, side: railSide, width: FILE_BROWSER_DEFAULT_WIDTH, children: _jsx(ReviewPane, {}, currentCwd || 'no-cwd') }, "review"));
+     const terminalPane = (_jsx(Pane, { bottomRow: terminalAsRow, defaultOpen: true, disabled: !terminalSidebarOpen, divider: true, height: "38vh", id: "terminal-sidebar", maxHeight: "80vh", maxWidth: "80vw", minHeight: "8rem", minWidth: "22vw", resizable: true, side: railSide, width: "42vw", children: _jsx("div", { className: cn('relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-(--ui-editor-surface-background)', terminalAsRow ? 'border-l border-(--ui-stroke-secondary) pt-0' : 'pt-(--titlebar-height)'), children: _jsx(TerminalPaneChrome, {}) }) }, "terminal-sidebar"));
+-    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: chatOpen && Boolean(previewTarget || filePreviewTarget || browserRailOpen), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: chatView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
++    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: chatOpen && (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: chatView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
+ }
+ function LegacySessionRedirect() {
+     const { sessionId } = useParams();
+diff --git a/apps/desktop/src/app/desktop-controller.tsx b/apps/desktop/src/app/desktop-controller.tsx
+index f1e8c571589..946a508b55c 100644
+--- a/apps/desktop/src/app/desktop-controller.tsx
++++ b/apps/desktop/src/app/desktop-controller.tsx
+@@ -13,6 +13,7 @@ import { RemoteDisplayBanner } from '@/components/remote-display-banner'
+ import { useAgentBrowserWatcher } from '@/hooks/use-agent-browser-watcher'
+ import { useExportsPreviewWatcher } from '@/hooks/use-exports-preview-watcher'
+ import { useMediaQuery } from '@/hooks/use-media-query'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { isFocusWithin } from '@/lib/keybinds/combo'
+ import { cn } from '@/lib/utils'
+ import { useSkinCommand } from '@/themes/use-skin-command'
+@@ -1191,8 +1192,10 @@ export function DesktopController() {
+   // Other sidebars docked as real columns on the terminal's rail. Force-collapsed
+   // hover-reveal overlays (narrow window) don't take a column, so they don't count.
+   const railColumnOpen =
+-    (chatOpen && Boolean(previewTarget || filePreviewTarget || browserRailOpen) && previewPaneOpen) ||
+-    (chatOpen && !narrowViewport && fileBrowserOpen) ||
++    (chatOpen &&
++      (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)) &&
++      previewPaneOpen) ||
++    (chatOpen && !NEMESIS_STUDENT_BUILD && !narrowViewport && fileBrowserOpen) ||
+     (chatOpen && Boolean(currentCwd.trim()) && !narrowViewport && reviewOpen)
+ 
+   // Once the terminal would share its rail with another sidebar, drop it to a
+@@ -1201,7 +1204,9 @@ export function DesktopController() {
+ 
+   const previewPane = (
+     <Pane
+-      disabled={!chatOpen || (!previewTarget && !filePreviewTarget && !browserRailOpen)}
++      disabled={
++        !chatOpen || (!NEMESIS_STUDENT_BUILD && !previewTarget && !filePreviewTarget && !browserRailOpen)
++      }
+       id={PREVIEW_PANE_ID}
+       key="preview"
+       maxWidth={PREVIEW_RAIL_MAX_WIDTH}
+@@ -1216,7 +1221,9 @@ export function DesktopController() {
+     </Pane>
+   )
+ 
+-  const fileBrowserPane = (
++  // Student build has exactly ONE right panel — the tabbed rail (Sources |
++  // Browser | Preview). The developer file-browser column never mounts.
++  const fileBrowserPane = NEMESIS_STUDENT_BUILD ? null : (
+     <Pane
+       defaultOpen={false}
+       disabled={!chatOpen}
+@@ -1306,7 +1313,9 @@ export function DesktopController() {
+       mainOverlays={mainOverlays}
+       onOpenSettings={openSettings}
+       overlays={overlays}
+-      previewPaneOpen={chatOpen && Boolean(previewTarget || filePreviewTarget || browserRailOpen)}
++      previewPaneOpen={
++        chatOpen && (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen))
++      }
+       statusbarItems={statusbarItems}
+       terminalPaneOpen={terminalSidebarOpen}
+       titlebarTools={titlebarToolGroups.flat.right}
+diff --git a/apps/desktop/src/app/right-sidebar/index.js b/apps/desktop/src/app/right-sidebar/index.js
+index a4aa6e45636..d578dc21a90 100644
+--- a/apps/desktop/src/app/right-sidebar/index.js
++++ b/apps/desktop/src/app/right-sidebar/index.js
+@@ -16,7 +16,6 @@ import { $currentCwd } from '@/store/session';
+ import { SidebarPanelLabel } from '../shell/sidebar-label';
+ import { ProjectTree } from './files/tree';
+ import { useProjectTree } from './files/use-project-tree';
+-import { SourcesTab } from './sources';
+ export function RightSidebarPane({ onActivateFile, onActivateFolder }) {
+     const { t } = useI18n();
+     const r = t.rightSidebar;
+@@ -47,7 +46,7 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder }) {
+     };
+     return (_jsx("aside", { "aria-label": r.aria, className: cn('before:pointer-events-none relative flex h-full w-full min-w-0 flex-col overflow-hidden border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height) text-(--ui-text-tertiary)', panesFlipped
+             ? 'border-r shadow-[inset_-0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+-            : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'), children: NEMESIS_STUDENT_BUILD ? (_jsx(SourcesTab, {})) : (_jsx(FilesystemTab, { canCollapse: canCollapse, collapseNonce: collapseNonce, cwd: effectiveCwd, cwdName: cwdName, data: data, error: rootError, hasWorkspace: hasWorkspace, loading: rootLoading, onActivateFile: onActivateFile, onActivateFolder: onActivateFolder, onCollapseAll: collapseAll, onLoadChildren: loadChildren, onNodeOpenChange: setNodeOpen, onPreviewFile: previewFile, onRefresh: () => void refreshRoot(), openState: openState })) }));
++            : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'), children: NEMESIS_STUDENT_BUILD ? (_jsx(PaneEmptyState, { label: "Not available" })) : (_jsx(FilesystemTab, { canCollapse: canCollapse, collapseNonce: collapseNonce, cwd: effectiveCwd, cwdName: cwdName, data: data, error: rootError, hasWorkspace: hasWorkspace, loading: rootLoading, onActivateFile: onActivateFile, onActivateFolder: onActivateFolder, onCollapseAll: collapseAll, onLoadChildren: loadChildren, onNodeOpenChange: setNodeOpen, onPreviewFile: previewFile, onRefresh: () => void refreshRoot(), openState: openState })) }));
+ }
+ // Sidebar palette + hover-reveal: header actions stay reachable while moving
+ // from the project label to the action buttons.
+diff --git a/apps/desktop/src/app/right-sidebar/index.tsx b/apps/desktop/src/app/right-sidebar/index.tsx
+index 874f62ed0d5..09766fb24a5 100644
+--- a/apps/desktop/src/app/right-sidebar/index.tsx
++++ b/apps/desktop/src/app/right-sidebar/index.tsx
+@@ -19,7 +19,6 @@ import { SidebarPanelLabel } from '../shell/sidebar-label'
+ 
+ import { ProjectTree } from './files/tree'
+ import { useProjectTree } from './files/use-project-tree'
+-import { SourcesTab } from './sources'
+ 
+ interface RightSidebarPaneProps {
+   onActivateFile: (path: string) => void
+@@ -83,11 +82,11 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder }: RightSide
+           : 'border-l shadow-[inset_0.0625rem_0_0_color-mix(in_srgb,white_18%,transparent)]'
+       )}
+     >
+-      {/* Student build: the rail IS the agent's cited sources. The workspace file
+-          tree is a developer surface — hidden entirely for students (the Library
+-          is their file home). */}
++      {/* This pane is the DEVELOPER workspace tree only. The student build never
++          mounts it — Sources lives as the pinned first tab of the chat right
++          rail (see ChatPreviewRail). */}
+       {NEMESIS_STUDENT_BUILD ? (
+-        <SourcesTab />
++        <PaneEmptyState label="Not available" />
+       ) : (
+         <FilesystemTab
+           canCollapse={canCollapse}
+diff --git a/apps/desktop/src/app/shell/titlebar-controls.js b/apps/desktop/src/app/shell/titlebar-controls.js
+index 23258cec03c..ccb08c801a4 100644
+--- a/apps/desktop/src/app/shell/titlebar-controls.js
++++ b/apps/desktop/src/app/shell/titlebar-controls.js
+@@ -10,7 +10,8 @@ import { cn } from '@/lib/utils';
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { $hapticsMuted, toggleHapticsMuted } from '@/store/haptics';
+ import { toggleKeybindPanel } from '@/store/keybinds';
+-import { $fileBrowserOpen, $panesFlipped, $sidebarOpen, toggleFileBrowserOpen, togglePanesFlipped, toggleSidebarOpen } from '@/store/layout';
++import { $fileBrowserOpen, $panesFlipped, $sidebarOpen, PREVIEW_PANE_ID, toggleFileBrowserOpen, togglePanesFlipped, toggleSidebarOpen } from '@/store/layout';
++import { $paneOpen, togglePane } from '@/store/panes';
+ import { appViewForPath, isOverlayView } from '../routes';
+ import { titlebarButtonClass } from './titlebar';
+ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }) {
+@@ -21,6 +22,7 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings })
+     const fileBrowserOpen = useStore($fileBrowserOpen);
+     const sidebarOpen = useStore($sidebarOpen);
+     const panesFlipped = useStore($panesFlipped);
++    const previewPaneOpen = useStore($paneOpen(PREVIEW_PANE_ID));
+     const toggleHaptics = () => {
+         if (!hapticsMuted) {
+             triggerHaptic('tap');
+@@ -34,7 +36,11 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings })
+     // swaps which pane each one toggles. Default: sessions left, file browser
+     // right. Flipped: file browser left, sessions right. Sidebar toggles never
+     // carry an active highlight — they're plain show/hide affordances.
+-    const fileBrowserEdge = { open: fileBrowserOpen, toggle: toggleFileBrowserOpen };
++    // Student build: the right edge IS the single tabbed rail (Sources | Browser
++    // | Preview) — there is no separate file-browser column to toggle.
++    const fileBrowserEdge = NEMESIS_STUDENT_BUILD
++        ? { open: previewPaneOpen, toggle: () => togglePane(PREVIEW_PANE_ID) }
++        : { open: fileBrowserOpen, toggle: toggleFileBrowserOpen };
+     const sessionsEdge = { open: sidebarOpen, toggle: toggleSidebarOpen };
+     const leftEdge = panesFlipped ? fileBrowserEdge : sessionsEdge;
+     const rightEdge = panesFlipped ? sessionsEdge : fileBrowserEdge;
+diff --git a/apps/desktop/src/app/shell/titlebar-controls.tsx b/apps/desktop/src/app/shell/titlebar-controls.tsx
+index fb026422598..a4970234ab1 100644
+--- a/apps/desktop/src/app/shell/titlebar-controls.tsx
++++ b/apps/desktop/src/app/shell/titlebar-controls.tsx
+@@ -15,10 +15,12 @@ import {
+   $fileBrowserOpen,
+   $panesFlipped,
+   $sidebarOpen,
++  PREVIEW_PANE_ID,
+   toggleFileBrowserOpen,
+   togglePanesFlipped,
+   toggleSidebarOpen
+ } from '@/store/layout'
++import { $paneOpen, togglePane } from '@/store/panes'
+ 
+ import { appViewForPath, isOverlayView } from '../routes'
+ 
+@@ -55,6 +57,7 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
+   const fileBrowserOpen = useStore($fileBrowserOpen)
+   const sidebarOpen = useStore($sidebarOpen)
+   const panesFlipped = useStore($panesFlipped)
++  const previewPaneOpen = useStore($paneOpen(PREVIEW_PANE_ID))
+ 
+   const toggleHaptics = () => {
+     if (!hapticsMuted) {
+@@ -72,7 +75,11 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
+   // swaps which pane each one toggles. Default: sessions left, file browser
+   // right. Flipped: file browser left, sessions right. Sidebar toggles never
+   // carry an active highlight — they're plain show/hide affordances.
+-  const fileBrowserEdge = { open: fileBrowserOpen, toggle: toggleFileBrowserOpen }
++  // Student build: the right edge IS the single tabbed rail (Sources | Browser
++  // | Preview) — there is no separate file-browser column to toggle.
++  const fileBrowserEdge = NEMESIS_STUDENT_BUILD
++    ? { open: previewPaneOpen, toggle: () => togglePane(PREVIEW_PANE_ID) }
++    : { open: fileBrowserOpen, toggle: toggleFileBrowserOpen }
+   const sessionsEdge = { open: sidebarOpen, toggle: toggleSidebarOpen }
+   const leftEdge = panesFlipped ? fileBrowserEdge : sessionsEdge
+   const rightEdge = panesFlipped ? sessionsEdge : fileBrowserEdge
+diff --git a/apps/desktop/src/hooks/use-agent-browser-watcher.js b/apps/desktop/src/hooks/use-agent-browser-watcher.js
+index 297ecb9d91b..8ad3713d755 100644
+--- a/apps/desktop/src/hooks/use-agent-browser-watcher.js
++++ b/apps/desktop/src/hooks/use-agent-browser-watcher.js
+@@ -15,7 +15,15 @@ export function useAgentBrowserWatcher() {
+         }
+         void window.hermesDesktop?.schoolBrowser?.ensure().catch(() => undefined);
+         let lastOpenedFor = '';
++        // nanostores fires the subscriber once with the CURRENT value — for a
++        // restored session whose last turn used the browser, that would pop the
++        // mirror on every relaunch. Only live updates should auto-open.
++        let initialSnapshot = true;
+         return $messages.subscribe(messages => {
++            if (initialSnapshot) {
++                initialSnapshot = false;
++                return;
++            }
+             const last = messages[messages.length - 1];
+             if (!last) {
+                 return;
+diff --git a/apps/desktop/src/hooks/use-agent-browser-watcher.ts b/apps/desktop/src/hooks/use-agent-browser-watcher.ts
+index 8ae1be1356e..765a93a0cc9 100644
+--- a/apps/desktop/src/hooks/use-agent-browser-watcher.ts
++++ b/apps/desktop/src/hooks/use-agent-browser-watcher.ts
+@@ -20,8 +20,18 @@ export function useAgentBrowserWatcher() {
+     void window.hermesDesktop?.schoolBrowser?.ensure().catch(() => undefined)
+ 
+     let lastOpenedFor = ''
++    // nanostores fires the subscriber once with the CURRENT value — for a
++    // restored session whose last turn used the browser, that would pop the
++    // mirror on every relaunch. Only live updates should auto-open.
++    let initialSnapshot = true
+ 
+     return $messages.subscribe(messages => {
++      if (initialSnapshot) {
++        initialSnapshot = false
++
++        return
++      }
++
+       const last = messages[messages.length - 1] as { id?: string } | undefined
+ 
+       if (!last) {
+diff --git a/apps/desktop/src/store/layout.js b/apps/desktop/src/store/layout.js
+index 864afab6f89..218185b74d1 100644
+--- a/apps/desktop/src/store/layout.js
++++ b/apps/desktop/src/store/layout.js
+@@ -30,6 +30,9 @@ export const FILE_BROWSER_PANE_ID = 'file-browser';
+ export const PREVIEW_PANE_ID = 'preview';
+ export const RIGHT_RAIL_PREVIEW_TAB_ID = 'preview';
+ export const RIGHT_RAIL_BROWSER_TAB_ID = 'browser';
++// Student build only: the agent's cited sources live as a PINNED first tab in
++// the single right rail (there is no separate sources sidebar column).
++export const RIGHT_RAIL_SOURCES_TAB_ID = 'sources';
+ ensurePaneRegistered(CHAT_SIDEBAR_PANE_ID, { open: true });
+ ensurePaneRegistered(FILE_BROWSER_PANE_ID, { open: false });
+ ensurePaneRegistered(PREVIEW_PANE_ID, { open: true });
+diff --git a/apps/desktop/src/store/layout.ts b/apps/desktop/src/store/layout.ts
+index 50d8e46d4d9..a4174f7914b 100644
+--- a/apps/desktop/src/store/layout.ts
++++ b/apps/desktop/src/store/layout.ts
+@@ -36,8 +36,15 @@ export const FILE_BROWSER_PANE_ID = 'file-browser'
+ export const PREVIEW_PANE_ID = 'preview'
+ export const RIGHT_RAIL_PREVIEW_TAB_ID = 'preview'
+ export const RIGHT_RAIL_BROWSER_TAB_ID = 'browser'
+-
+-export type RightRailTabId = typeof RIGHT_RAIL_BROWSER_TAB_ID | typeof RIGHT_RAIL_PREVIEW_TAB_ID | `file:${string}`
++// Student build only: the agent's cited sources live as a PINNED first tab in
++// the single right rail (there is no separate sources sidebar column).
++export const RIGHT_RAIL_SOURCES_TAB_ID = 'sources'
++
++export type RightRailTabId =
++  | typeof RIGHT_RAIL_BROWSER_TAB_ID
++  | typeof RIGHT_RAIL_PREVIEW_TAB_ID
++  | typeof RIGHT_RAIL_SOURCES_TAB_ID
++  | `file:${string}`
+ 
+ ensurePaneRegistered(CHAT_SIDEBAR_PANE_ID, { open: true })
+ ensurePaneRegistered(FILE_BROWSER_PANE_ID, { open: false })
+diff --git a/apps/desktop/src/store/preview.js b/apps/desktop/src/store/preview.js
+index ca18184d5b2..840c6d5982f 100644
+--- a/apps/desktop/src/store/preview.js
++++ b/apps/desktop/src/store/preview.js
+@@ -1,8 +1,9 @@
+ import { atom, computed } from 'nanostores';
+ import { persistentAtom } from '@/lib/persisted';
+ import { normalize } from '@/lib/text';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { $browserRailOpen } from './browser-rail';
+-import { $rightRailActiveTabId, PREVIEW_PANE_ID, RIGHT_RAIL_BROWSER_TAB_ID, RIGHT_RAIL_PREVIEW_TAB_ID, selectRightRailTab } from './layout';
++import { $rightRailActiveTabId, PREVIEW_PANE_ID, RIGHT_RAIL_BROWSER_TAB_ID, RIGHT_RAIL_PREVIEW_TAB_ID, RIGHT_RAIL_SOURCES_TAB_ID, selectRightRailTab } from './layout';
+ import { setPaneOpen } from './panes';
+ import { $activeSessionId, $selectedStoredSessionId } from './session';
+ const REGISTRY_STORAGE_KEY = 'hermes.desktop.sessionPreviews.v1';
+@@ -22,11 +23,13 @@ export const $filePreviewTabs = persistentAtom(TABS_STORAGE_KEY, [], {
+ });
+ // Drop a restored active file-tab that didn't survive validation so the rail
+ // never points at a tab that isn't there. Same for a restored 'browser' id —
+-// the mirror tab always starts closed.
++// the mirror tab always starts closed — and a restored 'sources' id outside
++// the student build (where that tab doesn't exist).
+ if (($rightRailActiveTabId.get().startsWith('file:') &&
+     !$filePreviewTabs.get().some(tab => tab.id === $rightRailActiveTabId.get())) ||
+-    $rightRailActiveTabId.get() === RIGHT_RAIL_BROWSER_TAB_ID) {
+-    selectRightRailTab(RIGHT_RAIL_PREVIEW_TAB_ID);
++    $rightRailActiveTabId.get() === RIGHT_RAIL_BROWSER_TAB_ID ||
++    (!NEMESIS_STUDENT_BUILD && $rightRailActiveTabId.get() === RIGHT_RAIL_SOURCES_TAB_ID)) {
++    selectRightRailTab(NEMESIS_STUDENT_BUILD ? RIGHT_RAIL_SOURCES_TAB_ID : RIGHT_RAIL_PREVIEW_TAB_ID);
+ }
+ export const $filePreviewTarget = computed([$filePreviewTabs, $rightRailActiveTabId], (tabs, activeTabId) => {
+     if (!activeTabId.startsWith('file:')) {
+@@ -301,6 +304,11 @@ function closeBrowserRailTab() {
+     }
+ }
+ export function closeRightRailTab(tabId) {
++    // The Sources tab is pinned (student build) — the whole-rail close is the
++    // only way it leaves the strip.
++    if (tabId === RIGHT_RAIL_SOURCES_TAB_ID) {
++        return;
++    }
+     if (tabId === RIGHT_RAIL_PREVIEW_TAB_ID) {
+         if ($previewTarget.get()) {
+             dismissPreviewTarget();
+@@ -319,6 +327,9 @@ export const closeActiveRightRailTab = () => closeRightRailTab($rightRailActiveT
+ // so "close others / to the right" act on what the user actually sees.
+ function rightRailTabOrder() {
+     const ids = [];
++    if (NEMESIS_STUDENT_BUILD) {
++        ids.push(RIGHT_RAIL_SOURCES_TAB_ID);
++    }
+     if ($browserRailOpen.get()) {
+         ids.push(RIGHT_RAIL_BROWSER_TAB_ID);
+     }
+diff --git a/apps/desktop/src/store/preview.ts b/apps/desktop/src/store/preview.ts
+index 90b79b2971b..75534549b5c 100644
+--- a/apps/desktop/src/store/preview.ts
++++ b/apps/desktop/src/store/preview.ts
+@@ -3,12 +3,15 @@ import { atom, computed } from 'nanostores'
+ import { persistentAtom } from '@/lib/persisted'
+ import { normalize } from '@/lib/text'
+ 
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
++
+ import { $browserRailOpen } from './browser-rail'
+ import {
+   $rightRailActiveTabId,
+   PREVIEW_PANE_ID,
+   RIGHT_RAIL_BROWSER_TAB_ID,
+   RIGHT_RAIL_PREVIEW_TAB_ID,
++  RIGHT_RAIL_SOURCES_TAB_ID,
+   type RightRailTabId,
+   selectRightRailTab
+ } from './layout'
+@@ -82,13 +85,15 @@ export const $filePreviewTabs = persistentAtom<FilePreviewTab[]>(TABS_STORAGE_KE
+ 
+ // Drop a restored active file-tab that didn't survive validation so the rail
+ // never points at a tab that isn't there. Same for a restored 'browser' id —
+-// the mirror tab always starts closed.
++// the mirror tab always starts closed — and a restored 'sources' id outside
++// the student build (where that tab doesn't exist).
+ if (
+   ($rightRailActiveTabId.get().startsWith('file:') &&
+     !$filePreviewTabs.get().some(tab => tab.id === $rightRailActiveTabId.get())) ||
+-  $rightRailActiveTabId.get() === RIGHT_RAIL_BROWSER_TAB_ID
++  $rightRailActiveTabId.get() === RIGHT_RAIL_BROWSER_TAB_ID ||
++  (!NEMESIS_STUDENT_BUILD && $rightRailActiveTabId.get() === RIGHT_RAIL_SOURCES_TAB_ID)
+ ) {
+-  selectRightRailTab(RIGHT_RAIL_PREVIEW_TAB_ID)
++  selectRightRailTab(NEMESIS_STUDENT_BUILD ? RIGHT_RAIL_SOURCES_TAB_ID : RIGHT_RAIL_PREVIEW_TAB_ID)
+ }
+ 
+ export const $filePreviewTarget = computed([$filePreviewTabs, $rightRailActiveTabId], (tabs, activeTabId) => {
+@@ -470,6 +475,12 @@ function closeBrowserRailTab() {
+ }
+ 
+ export function closeRightRailTab(tabId: RightRailTabId) {
++  // The Sources tab is pinned (student build) — the whole-rail close is the
++  // only way it leaves the strip.
++  if (tabId === RIGHT_RAIL_SOURCES_TAB_ID) {
++    return
++  }
++
+   if (tabId === RIGHT_RAIL_PREVIEW_TAB_ID) {
+     if ($previewTarget.get()) {
+       dismissPreviewTarget()
+@@ -495,6 +506,10 @@ export const closeActiveRightRailTab = () => closeRightRailTab($rightRailActiveT
+ function rightRailTabOrder(): RightRailTabId[] {
+   const ids: RightRailTabId[] = []
+ 
++  if (NEMESIS_STUDENT_BUILD) {
++    ids.push(RIGHT_RAIL_SOURCES_TAB_ID)
++  }
++
+   if ($browserRailOpen.get()) {
+     ids.push(RIGHT_RAIL_BROWSER_TAB_ID)
+   }
+-- 
+2.50.1 (Apple Git-155)
+

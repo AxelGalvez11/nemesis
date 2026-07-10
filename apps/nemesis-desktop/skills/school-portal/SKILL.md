@@ -19,9 +19,22 @@ web, and similar school sites that have no public API.
 4. **Read-only bias.** Navigation, reading, and downloading course materials the student
    already has access to are fine. Anything that writes to the portal is not.
 
+## Portal addresses: ask once, remember forever
+
+Before any portal work, check your USER.md memory snapshot for a "School portals"
+entry. If it's missing:
+
+1. ASK the student for their school's exact Blackboard web address (e.g.
+   `https://learn.<school>.edu`) and whether their school email is plain
+   `outlook.office.com` or a school-specific mail URL.
+2. SAVE the answer immediately with the memory tool (target USER.md), one entry:
+   `School portals — Blackboard: <url> · Mail: <url>`.
+3. Never ask again once saved. If the student corrects an address later, use the
+   memory replace action to update the same entry — don't add duplicates.
+
 ## Blackboard flow
 
-1. Navigate to the school's Blackboard URL (ask once, remember it via memory).
+1. Navigate to the school's Blackboard URL from memory (see above).
 2. After the student completes login, snapshot the page. Course list usually lives under
    "Courses"; announcements under "Announcements" or per-course "Content".
 3. For "what's new": open each active course, snapshot, and collect announcements, due
@@ -34,7 +47,8 @@ web, and similar school sites that have no public API.
 
 ## Outlook web flow
 
-1. Navigate to outlook.office.com (student logs in themselves).
+1. Navigate to the mail URL from memory (default outlook.office.com; student logs
+   in themselves).
 2. Snapshot the inbox list; open only what's needed to summarize.
 3. Triage into: action needed (assignments, professor requests, registration deadlines),
    informational (newsletters, campus events), ignorable. Cite sender + date for each.
