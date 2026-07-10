@@ -1,0 +1,1581 @@
+From 7c7324cbdf832868622bb5641f0621eedce23627 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Thu, 9 Jul 2026 23:32:29 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20round-7=20=E2=80=94=20inline=20citat?=
+ =?UTF-8?q?ion=20pills,=20PDF=20thumbnails,=20Library=20tabs,=20no=20emoji?=
+ =?UTF-8?q?s?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Inline source pills under each assistant answer (message-sources.tsx; text-level
+  citations via sourcesFromText; renders only after the turn completes)
+- Sources refactor: makeSink/harvestText shared by rail + inline pills; badges are
+  plain text now (PubMed/FDA/Trial), red uppercase, no emojis anywhere
+- Artifacts page (student): web links excluded — citations live in Sources, not
+  Artifacts; Link filter chip hidden
+- PdfViewer: thumbnail side rail (lazy mini renders, click-to-jump, active ring)
+  + Page x/y readout from scroll position
+- Library: Obsidian-style tabs (open/refocus/close; freshest note per render)
+- Emoji sweep: tabler icons replace file/mic/lock/pause glyphs
+- Student build: 'Branch in new chat' relabeled 'Continue in a new chat';
+  panes-flip titlebar toggle hidden
+- school-portal skill (Blackboard + Outlook web extraction, never-submit rules)
+---
+ .../src/app/artifacts/artifact-utils.js       |  12 +-
+ .../src/app/artifacts/artifact-utils.ts       |  13 +-
+ apps/desktop/src/app/library/index.js         |  88 ++++++--
+ apps/desktop/src/app/library/index.tsx        | 127 +++++++++--
+ apps/desktop/src/app/library/pdf-viewer.js    |  90 +++++++-
+ apps/desktop/src/app/library/pdf-viewer.tsx   | 197 ++++++++++++++++--
+ apps/desktop/src/app/recorder/index.js        |   5 +-
+ apps/desktop/src/app/recorder/index.tsx       |   8 +-
+ apps/desktop/src/app/right-sidebar/sources.js |  83 ++++----
+ .../desktop/src/app/right-sidebar/sources.tsx | 105 ++++++----
+ apps/desktop/src/app/settings/constants.js    |   2 +-
+ apps/desktop/src/app/settings/constants.ts    |   2 +-
+ .../src/app/shell/titlebar-controls.js        |   3 +
+ .../src/app/shell/titlebar-controls.tsx       |   3 +
+ apps/desktop/src/app/study/index.js           |   4 +-
+ apps/desktop/src/app/study/index.tsx          |   6 +-
+ .../assistant-ui/thread/assistant-message.js  |   6 +-
+ .../assistant-ui/thread/assistant-message.tsx |  10 +-
+ .../assistant-ui/thread/message-sources.js    |  15 ++
+ .../assistant-ui/thread/message-sources.tsx   |  35 ++++
+ 20 files changed, 669 insertions(+), 145 deletions(-)
+ create mode 100644 apps/desktop/src/components/assistant-ui/thread/message-sources.js
+ create mode 100644 apps/desktop/src/components/assistant-ui/thread/message-sources.tsx
+
+diff --git a/apps/desktop/src/app/artifacts/artifact-utils.js b/apps/desktop/src/app/artifacts/artifact-utils.js
+index a911b11..8b6faea 100644
+--- a/apps/desktop/src/app/artifacts/artifact-utils.js
++++ b/apps/desktop/src/app/artifacts/artifact-utils.js
+@@ -1,6 +1,12 @@
+ import { readDesktopFileDataUrl } from '@/lib/desktop-fs';
+ import { filePathFromMediaPath, isRemoteGateway, mediaExternalUrl } from '@/lib/media';
+-export const ARTIFACT_FILTERS = ['all', 'image', 'file', 'link'];
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++// Student build: Artifacts = things the agent MADE (files, images). Web links —
++// including every cited source URL — live in the chat's Sources rail instead, so
++// they don't double-report here as "artifacts".
++export const ARTIFACT_FILTERS = NEMESIS_STUDENT_BUILD
++    ? ['all', 'image', 'file']
++    : ['all', 'image', 'file', 'link'];
+ const MARKDOWN_IMAGE_RE = /!\[([^\]]*)\]\(([^)\s]+)\)/g;
+ const MARKDOWN_LINK_RE = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+ const URL_RE = /https?:\/\/[^\s<>"')]+/g;
+@@ -184,6 +190,10 @@ export function collectArtifactsForSession(session, messages) {
+             if (!value || !looksLikeArtifact(value)) {
+                 return;
+             }
++            // Student build: skip plain web links entirely (see ARTIFACT_FILTERS note).
++            if (NEMESIS_STUDENT_BUILD && artifactKind(value) === 'link' && /^https?:\/\//.test(value)) {
++                return;
++            }
+             const key = `${session.id}:${value}`;
+             if (found.has(key)) {
+                 return;
+diff --git a/apps/desktop/src/app/artifacts/artifact-utils.ts b/apps/desktop/src/app/artifacts/artifact-utils.ts
+index 730ec0e..3bb63bd 100644
+--- a/apps/desktop/src/app/artifacts/artifact-utils.ts
++++ b/apps/desktop/src/app/artifacts/artifact-utils.ts
+@@ -1,10 +1,16 @@
+ import { readDesktopFileDataUrl } from '@/lib/desktop-fs'
+ import { filePathFromMediaPath, isRemoteGateway, mediaExternalUrl } from '@/lib/media'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import type { SessionInfo, SessionMessage } from '@/types/hermes'
+ 
+ export type ArtifactKind = 'image' | 'file' | 'link'
+ export type ArtifactFilter = 'all' | ArtifactKind
+-export const ARTIFACT_FILTERS: readonly ArtifactFilter[] = ['all', 'image', 'file', 'link']
++// Student build: Artifacts = things the agent MADE (files, images). Web links —
++// including every cited source URL — live in the chat's Sources rail instead, so
++// they don't double-report here as "artifacts".
++export const ARTIFACT_FILTERS: readonly ArtifactFilter[] = NEMESIS_STUDENT_BUILD
++  ? ['all', 'image', 'file']
++  : ['all', 'image', 'file', 'link']
+ 
+ export interface ArtifactRecord {
+   id: string
+@@ -259,6 +265,11 @@ export function collectArtifactsForSession(session: SessionInfo, messages: Sessi
+         return
+       }
+ 
++      // Student build: skip plain web links entirely (see ARTIFACT_FILTERS note).
++      if (NEMESIS_STUDENT_BUILD && artifactKind(value) === 'link' && /^https?:\/\//.test(value)) {
++        return
++      }
++
+       const key = `${session.id}:${value}`
+ 
+       if (found.has(key)) {
+diff --git a/apps/desktop/src/app/library/index.js b/apps/desktop/src/app/library/index.js
+index a3e8b39..20df42d 100644
+--- a/apps/desktop/src/app/library/index.js
++++ b/apps/desktop/src/app/library/index.js
+@@ -3,6 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
+ // Markdown, a prose-styled CodeMirror editor (middle, de-code-ified via .nemesis-prose-editor
+ // CSS), and a Links/Backlinks rail. Non-markdown files (PDF/images inline; slides/docs open
+ // externally) preview in place. Autosaves 800ms after typing.
++import { IconFileText, IconFileTypePdf, IconPaperclip, IconPhoto, IconPresentation, IconX } from '@tabler/icons-react';
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+ import { useSearchParams } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+@@ -12,6 +13,12 @@ import { cn } from '@/lib/utils';
+ import { NoteEditor } from './note-editor';
+ import { PdfViewer } from './pdf-viewer';
+ import { buildIndex, createFolder, extractWikilinks, loadVaultContents, saveNote, SEED_NOTES, VAULT_DIR } from './vault';
++function tabKey(tab) {
++    return tab.kind === 'note' ? tab.note.path : tab.file.path;
++}
++function tabLabel(tab) {
++    return tab.kind === 'note' ? tab.note.title : tab.file.name;
++}
+ function buildTree(contents) {
+     const root = { files: [], folders: [], name: '', notes: [], path: '' };
+     const nodeFor = (folder) => {
+@@ -46,7 +53,9 @@ function buildTree(contents) {
+ export function LibraryView() {
+     const [contents, setContents] = useState(null);
+     const [error, setError] = useState(null);
+-    const [selection, setSelection] = useState(null);
++    // Obsidian-style tabs: every opened note/file gets (or refocuses) a tab.
++    const [tabs, setTabs] = useState([]);
++    const [activeTab, setActiveTab] = useState(0);
+     const [collapsed, setCollapsed] = useState(new Set());
+     const [creating, setCreating] = useState(null);
+     const [draft, setDraft] = useState('');
+@@ -71,11 +80,27 @@ export function LibraryView() {
+             return null;
+         }
+     }, []);
++    const openSelection = useCallback((next) => {
++        const key = tabKey(next);
++        setTabs(current => {
++            const existing = current.findIndex(tab => tabKey(tab) === key);
++            if (existing >= 0) {
++                setActiveTab(existing);
++                return current;
++            }
++            setActiveTab(current.length);
++            return [...current, next];
++        });
++    }, []);
++    const closeTab = useCallback((index) => {
++        setTabs(current => current.filter((_, i) => i !== index));
++        setActiveTab(current => (index < current ? current - 1 : Math.max(0, Math.min(current, tabs.length - 2))));
++    }, [tabs.length]);
+     useEffect(() => {
+         void (async () => {
+             const loaded = await refresh();
+-            if (loaded && !selection && loaded.notes[0]) {
+-                setSelection({ kind: 'note', note: loaded.notes[0] });
++            if (loaded && tabs.length === 0 && loaded.notes[0]) {
++                openSelection({ kind: 'note', note: loaded.notes[0] });
+             }
+         })();
+         return () => {
+@@ -94,14 +119,27 @@ export function LibraryView() {
+         if (requested && contents) {
+             const note = contents.notes.find(n => n.title === requested);
+             if (note) {
+-                setSelection({ kind: 'note', note });
++                openSelection({ kind: 'note', note });
+             }
+         }
+         if (searchParams.get('create') === 'note') {
+             setCreating('note');
+             setDraft('');
+         }
+-    }, [contents, searchParams]);
++    }, [contents, openSelection, searchParams]);
++    // Tabs hold snapshots; always render the freshest note object from `contents`
++    // so switching back to a tab shows the edits made since it was opened.
++    const selection = useMemo(() => {
++        const tab = tabs[activeTab];
++        if (!tab) {
++            return null;
++        }
++        if (tab.kind === 'note' && contents) {
++            const fresh = contents.notes.find(note => note.path === tab.note.path);
++            return { kind: 'note', note: fresh ?? tab.note };
++        }
++        return tab;
++    }, [activeTab, contents, tabs]);
+     const activeNote = selection?.kind === 'note' ? selection.note : null;
+     const scheduleSave = useCallback((note, content) => {
+         setContents(current => current
+@@ -125,16 +163,16 @@ export function LibraryView() {
+         }
+         const existing = loaded.notes.find(n => n.title.toLowerCase() === target.toLowerCase());
+         if (existing) {
+-            setSelection({ kind: 'note', note: existing });
++            openSelection({ kind: 'note', note: existing });
+             return;
+         }
+         await saveNote(target, `# ${target}\n\n`);
+         const after = await refresh();
+         const created = after?.notes.find(n => n.title.toLowerCase() === target.toLowerCase());
+         if (created) {
+-            setSelection({ kind: 'note', note: created });
++            openSelection({ kind: 'note', note: created });
+         }
+-    }, [contents, refresh]);
++    }, [contents, openSelection, refresh]);
+     const submitCreate = useCallback(async () => {
+         const name = draft.trim();
+         if (!name) {
+@@ -153,10 +191,10 @@ export function LibraryView() {
+         if (mode === 'note' && loaded) {
+             const note = loaded.notes.find(n => n.title === name && n.folder === targetFolder);
+             if (note) {
+-                setSelection({ kind: 'note', note });
++                openSelection({ kind: 'note', note });
+             }
+         }
+-    }, [creating, draft, refresh, targetFolder]);
++    }, [creating, draft, openSelection, refresh, targetFolder]);
+     if (error) {
+         return _jsx(EmptyState, { className: "h-full", description: `${error} (${VAULT_DIR})`, title: "Library unavailable" });
+     }
+@@ -173,21 +211,37 @@ export function LibraryView() {
+                                         void submitCreate();
+                                     if (event.key === 'Escape')
+                                         setCreating(null);
+-                                }, placeholder: creating === 'folder' ? 'Folder name' : 'Note title', value: draft }), targetFolder && _jsxs("p", { className: "px-1 pt-1 text-[10px] text-muted-foreground", children: ["in ", targetFolder] })] })), _jsx("nav", { className: "min-h-0 flex-1 overflow-y-auto px-2 pb-4", children: _jsx(TreeLevel, { collapsed: collapsed, depth: 0, node: tree, onSelect: setSelection, onToggle: path => setCollapsed(current => {
++                                }, placeholder: creating === 'folder' ? 'Folder name' : 'Note title', value: draft }), targetFolder && _jsxs("p", { className: "px-1 pt-1 text-[10px] text-muted-foreground", children: ["in ", targetFolder] })] })), _jsx("nav", { className: "min-h-0 flex-1 overflow-y-auto px-2 pb-4", children: _jsx(TreeLevel, { collapsed: collapsed, depth: 0, node: tree, onSelect: next => next && openSelection(next), onToggle: path => setCollapsed(current => {
+                                 const next = new Set(current);
+                                 next.has(path) ? next.delete(path) : next.add(path);
+                                 return next;
+-                            }), selection: selection }) })] }), _jsx("main", { className: "flex min-w-0 flex-1 flex-col", children: selection?.kind === 'note' ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex items-center justify-between px-5 pb-1 pt-5", children: [_jsx("h2", { className: "truncate text-base font-medium", children: selection.note.title }), _jsx("span", { className: "text-xs text-muted-foreground", children: saving ? 'Saving…' : 'Saved to disk' })] }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden px-6 pb-3", children: _jsx(NoteEditor, { initialValue: selection.note.content, onChange: value => scheduleSave(selection.note, value), onOpenWikilink: target => void openWikilink(target) }, selection.note.path) })] })) : selection?.kind === 'file' ? (_jsx(FilePreview, { file: selection.file })) : (_jsx(EmptyState, { className: "flex-1", description: "Pick a note on the left, or create one.", title: "No note open" })) }), activeNote && (_jsxs("aside", { className: "hidden w-56 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border px-4 pb-4 pt-5 lg:flex", children: [_jsx(LinkGroup, { emptyLabel: "Write [[Note title]] to connect ideas.", onOpen: title => {
++                            }), selection: selection }) })] }), _jsxs("main", { className: "flex min-w-0 flex-1 flex-col", children: [tabs.length > 0 && (_jsx("div", { className: "flex shrink-0 items-end gap-0.5 overflow-x-auto border-b border-border px-2 pt-2", children: tabs.map((tab, i) => (_jsxs("div", { className: cn('group/tab flex max-w-[13rem] shrink-0 cursor-pointer items-center gap-1 rounded-t-md border border-b-0 px-2.5 py-1.5 text-xs transition-colors', i === activeTab
++                                ? 'border-border bg-card text-foreground'
++                                : 'border-transparent text-muted-foreground hover:text-foreground'), onClick: () => setActiveTab(i), children: [_jsx("span", { className: "truncate", children: tabLabel(tab) }), _jsx("button", { "aria-label": "Close tab", className: "rounded p-0.5 opacity-0 transition-opacity hover:bg-accent group-hover/tab:opacity-100", onClick: event => {
++                                        event.stopPropagation();
++                                        closeTab(i);
++                                    }, type: "button", children: _jsx(IconX, { size: 11 }) })] }, tabKey(tab)))) })), selection?.kind === 'note' ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex items-center justify-between px-5 pb-1 pt-5", children: [_jsx("h2", { className: "truncate text-base font-medium", children: selection.note.title }), _jsx("span", { className: "text-xs text-muted-foreground", children: saving ? 'Saving…' : 'Saved to disk' })] }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden px-6 pb-3", children: _jsx(NoteEditor, { initialValue: selection.note.content, onChange: value => scheduleSave(selection.note, value), onOpenWikilink: target => void openWikilink(target) }, selection.note.path) })] })) : selection?.kind === 'file' ? (_jsx(FilePreview, { file: selection.file })) : (_jsx(EmptyState, { className: "flex-1", description: "Pick a note on the left, or create one.", title: "No note open" }))] }), activeNote && (_jsxs("aside", { className: "hidden w-56 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border px-4 pb-4 pt-5 lg:flex", children: [_jsx(LinkGroup, { emptyLabel: "Write [[Note title]] to connect ideas.", onOpen: title => {
+                             const note = contents.notes.find(n => n.title === title);
+                             if (note)
+-                                setSelection({ kind: 'note', note });
++                                openSelection({ kind: 'note', note });
+                         }, title: "Links", titles: outgoing }), _jsx(LinkGroup, { emptyLabel: "Nothing links here yet.", onOpen: title => {
+                             const note = contents.notes.find(n => n.title === title);
+                             if (note)
+-                                setSelection({ kind: 'note', note });
++                                openSelection({ kind: 'note', note });
+                         }, title: "Backlinks", titles: incoming }), unresolved.length > 0 && (_jsxs("div", { children: [_jsx("h3", { className: "pb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground", children: "Unresolved" }), _jsx("div", { className: "flex flex-wrap gap-1.5", children: unresolved.map(target => (_jsx("span", { className: "rounded-md border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground", children: target }, target))) })] }))] }))] }));
+ }
+-const FILE_ICON = { doc: '📄', image: '🖼', other: '📎', pdf: '📕', slides: '📊' };
++function FileGlyph({ kind }) {
++    const Icon = kind === 'pdf'
++        ? IconFileTypePdf
++        : kind === 'slides'
++            ? IconPresentation
++            : kind === 'image'
++                ? IconPhoto
++                : kind === 'doc'
++                    ? IconFileText
++                    : IconPaperclip;
++    return _jsx(Icon, { className: "-mt-px mr-1.5 inline shrink-0 opacity-70", size: 14 });
++}
+ function TreeLevel({ collapsed, depth, node, onSelect, onToggle, selection }) {
+     const pad = { paddingLeft: `${depth * 12 + 8}px` };
+     return (_jsxs(_Fragment, { children: [node.folders
+@@ -202,7 +256,7 @@ function TreeLevel({ collapsed, depth, node, onSelect, onToggle, selection }) {
+                 .map(note => (_jsx("button", { className: cn('block w-full truncate rounded-md py-1.5 pr-2 text-left text-sm hover:bg-accent', selection?.kind === 'note' && selection.note.path === note.path && 'bg-accent text-accent-foreground'), onClick: () => onSelect({ kind: 'note', note }), style: pad, type: "button", children: note.title }, note.path))), node.files
+                 .slice()
+                 .sort((a, b) => a.name.localeCompare(b.name))
+-                .map(file => (_jsxs("button", { className: cn('block w-full truncate rounded-md py-1.5 pr-2 text-left text-sm text-muted-foreground hover:bg-accent', selection?.kind === 'file' && selection.file.path === file.path && 'bg-accent text-accent-foreground'), onClick: () => onSelect({ file, kind: 'file' }), style: pad, type: "button", children: [FILE_ICON[file.kind], " ", file.name] }, file.path)))] }));
++                .map(file => (_jsxs("button", { className: cn('block w-full truncate rounded-md py-1.5 pr-2 text-left text-sm text-muted-foreground hover:bg-accent', selection?.kind === 'file' && selection.file.path === file.path && 'bg-accent text-accent-foreground'), onClick: () => onSelect({ file, kind: 'file' }), style: pad, type: "button", children: [_jsx(FileGlyph, { kind: file.kind }), file.name] }, file.path)))] }));
+ }
+ function fileUrl(path) {
+     return `file://${encodeURI(path).replace(/#/g, '%23')}`;
+@@ -213,7 +267,7 @@ function FilePreview({ file }) {
+     const reveal = () => void window.hermesDesktop?.revealPath?.(file.path);
+     return (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col", children: [_jsxs("div", { className: "flex items-center justify-between gap-2 px-5 pb-2 pt-5", children: [_jsx("h2", { className: "truncate text-base font-medium", children: file.name }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: openExternal, size: "sm", variant: "outline", children: "Open in default app" }), _jsx(Button, { onClick: reveal, size: "sm", variant: "outline", children: "Reveal" })] })] }), _jsx("div", { className: "min-h-0 flex-1 px-5 pb-5", children: file.kind === 'pdf' ? (_jsx(PdfViewer, { path: file.path })) : file.kind === 'image' ? (_jsx("div", { className: "grid h-full place-items-center rounded-lg border border-border bg-card p-4", children: _jsx("img", { alt: file.name, className: "max-h-full max-w-full object-contain", src: url }) })) : (_jsx(EmptyState, { className: "h-full", description: file.kind === 'slides'
+                         ? 'PowerPoint/Keynote files open in their own app — click “Open in default app”.'
+-                        : 'This file type opens in its own app — click “Open in default app”.', title: `${FILE_ICON[file.kind]} ${file.name}` })) })] }));
++                        : 'This file type opens in its own app — click “Open in default app”.', title: file.name })) })] }));
+ }
+ function LinkGroup({ emptyLabel, onOpen, title, titles }) {
+     return (_jsxs("div", { children: [_jsx("h3", { className: "pb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground", children: title }), titles.length ? (_jsx("div", { className: "flex flex-wrap gap-1.5", children: titles.map(target => (_jsx("button", { className: "rounded-md border border-border px-2 py-0.5 text-xs hover:bg-accent", onClick: () => onOpen(target), type: "button", children: target }, target))) })) : (_jsx("p", { className: "text-xs text-muted-foreground", children: emptyLabel }))] }));
+diff --git a/apps/desktop/src/app/library/index.tsx b/apps/desktop/src/app/library/index.tsx
+index 29d3ed4..b0f8b08 100644
+--- a/apps/desktop/src/app/library/index.tsx
++++ b/apps/desktop/src/app/library/index.tsx
+@@ -2,6 +2,7 @@
+ // Markdown, a prose-styled CodeMirror editor (middle, de-code-ified via .nemesis-prose-editor
+ // CSS), and a Links/Backlinks rail. Non-markdown files (PDF/images inline; slides/docs open
+ // externally) preview in place. Autosaves 800ms after typing.
++import { IconFileText, IconFileTypePdf, IconPaperclip, IconPhoto, IconPresentation, IconX } from '@tabler/icons-react'
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+ import { useSearchParams } from 'react-router-dom'
+ 
+@@ -26,6 +27,15 @@ import {
+ } from './vault'
+ 
+ type Selection = { kind: 'note'; note: VaultNote } | { kind: 'file'; file: VaultFile } | null
++type TabItem = NonNullable<Selection>
++
++function tabKey(tab: TabItem): string {
++  return tab.kind === 'note' ? tab.note.path : tab.file.path
++}
++
++function tabLabel(tab: TabItem): string {
++  return tab.kind === 'note' ? tab.note.title : tab.file.name
++}
+ 
+ interface TreeNode {
+   name: string
+@@ -77,7 +87,9 @@ function buildTree(contents: VaultContents): TreeNode {
+ export function LibraryView() {
+   const [contents, setContents] = useState<VaultContents | null>(null)
+   const [error, setError] = useState<null | string>(null)
+-  const [selection, setSelection] = useState<Selection>(null)
++  // Obsidian-style tabs: every opened note/file gets (or refocuses) a tab.
++  const [tabs, setTabs] = useState<TabItem[]>([])
++  const [activeTab, setActiveTab] = useState(0)
+   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+   const [creating, setCreating] = useState<null | 'folder' | 'note'>(null)
+   const [draft, setDraft] = useState('')
+@@ -108,12 +120,34 @@ export function LibraryView() {
+     }
+   }, [])
+ 
++  const openSelection = useCallback((next: TabItem) => {
++    const key = tabKey(next)
++    setTabs(current => {
++      const existing = current.findIndex(tab => tabKey(tab) === key)
++
++      if (existing >= 0) {
++        setActiveTab(existing)
++
++        return current
++      }
++
++      setActiveTab(current.length)
++
++      return [...current, next]
++    })
++  }, [])
++
++  const closeTab = useCallback((index: number) => {
++    setTabs(current => current.filter((_, i) => i !== index))
++    setActiveTab(current => (index < current ? current - 1 : Math.max(0, Math.min(current, tabs.length - 2))))
++  }, [tabs.length])
++
+   useEffect(() => {
+     void (async () => {
+       const loaded = await refresh()
+ 
+-      if (loaded && !selection && loaded.notes[0]) {
+-        setSelection({ kind: 'note', note: loaded.notes[0] })
++      if (loaded && tabs.length === 0 && loaded.notes[0]) {
++        openSelection({ kind: 'note', note: loaded.notes[0] })
+       }
+     })()
+ 
+@@ -137,7 +171,7 @@ export function LibraryView() {
+       const note = contents.notes.find(n => n.title === requested)
+ 
+       if (note) {
+-        setSelection({ kind: 'note', note })
++        openSelection({ kind: 'note', note })
+       }
+     }
+ 
+@@ -145,7 +179,25 @@ export function LibraryView() {
+       setCreating('note')
+       setDraft('')
+     }
+-  }, [contents, searchParams])
++  }, [contents, openSelection, searchParams])
++
++  // Tabs hold snapshots; always render the freshest note object from `contents`
++  // so switching back to a tab shows the edits made since it was opened.
++  const selection: Selection = useMemo(() => {
++    const tab = tabs[activeTab]
++
++    if (!tab) {
++      return null
++    }
++
++    if (tab.kind === 'note' && contents) {
++      const fresh = contents.notes.find(note => note.path === tab.note.path)
++
++      return { kind: 'note', note: fresh ?? tab.note }
++    }
++
++    return tab
++  }, [activeTab, contents, tabs])
+ 
+   const activeNote = selection?.kind === 'note' ? selection.note : null
+ 
+@@ -182,7 +234,7 @@ export function LibraryView() {
+       const existing = loaded.notes.find(n => n.title.toLowerCase() === target.toLowerCase())
+ 
+       if (existing) {
+-        setSelection({ kind: 'note', note: existing })
++        openSelection({ kind: 'note', note: existing })
+ 
+         return
+       }
+@@ -192,10 +244,10 @@ export function LibraryView() {
+       const created = after?.notes.find(n => n.title.toLowerCase() === target.toLowerCase())
+ 
+       if (created) {
+-        setSelection({ kind: 'note', note: created })
++        openSelection({ kind: 'note', note: created })
+       }
+     },
+-    [contents, refresh]
++    [contents, openSelection, refresh]
+   )
+ 
+   const submitCreate = useCallback(async () => {
+@@ -220,10 +272,10 @@ export function LibraryView() {
+       const note = loaded.notes.find(n => n.title === name && n.folder === targetFolder)
+ 
+       if (note) {
+-        setSelection({ kind: 'note', note })
++        openSelection({ kind: 'note', note })
+       }
+     }
+-  }, [creating, draft, refresh, targetFolder])
++  }, [creating, draft, openSelection, refresh, targetFolder])
+ 
+   if (error) {
+     return <EmptyState className="h-full" description={`${error} (${VAULT_DIR})`} title="Library unavailable" />
+@@ -276,7 +328,7 @@ export function LibraryView() {
+             collapsed={collapsed}
+             depth={0}
+             node={tree}
+-            onSelect={setSelection}
++            onSelect={next => next && openSelection(next)}
+             onToggle={path =>
+               setCollapsed(current => {
+                 const next = new Set(current)
+@@ -292,6 +344,35 @@ export function LibraryView() {
+ 
+       {/* Editor / preview */}
+       <main className="flex min-w-0 flex-1 flex-col">
++        {tabs.length > 0 && (
++          <div className="flex shrink-0 items-end gap-0.5 overflow-x-auto border-b border-border px-2 pt-2">
++            {tabs.map((tab, i) => (
++              <div
++                className={cn(
++                  'group/tab flex max-w-[13rem] shrink-0 cursor-pointer items-center gap-1 rounded-t-md border border-b-0 px-2.5 py-1.5 text-xs transition-colors',
++                  i === activeTab
++                    ? 'border-border bg-card text-foreground'
++                    : 'border-transparent text-muted-foreground hover:text-foreground'
++                )}
++                key={tabKey(tab)}
++                onClick={() => setActiveTab(i)}
++              >
++                <span className="truncate">{tabLabel(tab)}</span>
++                <button
++                  aria-label="Close tab"
++                  className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent group-hover/tab:opacity-100"
++                  onClick={event => {
++                    event.stopPropagation()
++                    closeTab(i)
++                  }}
++                  type="button"
++                >
++                  <IconX size={11} />
++                </button>
++              </div>
++            ))}
++          </div>
++        )}
+         {selection?.kind === 'note' ? (
+           <>
+             <div className="flex items-center justify-between px-5 pb-1 pt-5">
+@@ -321,7 +402,7 @@ export function LibraryView() {
+             emptyLabel="Write [[Note title]] to connect ideas."
+             onOpen={title => {
+               const note = contents.notes.find(n => n.title === title)
+-              if (note) setSelection({ kind: 'note', note })
++              if (note) openSelection({ kind: 'note', note })
+             }}
+             title="Links"
+             titles={outgoing}
+@@ -330,7 +411,7 @@ export function LibraryView() {
+             emptyLabel="Nothing links here yet."
+             onOpen={title => {
+               const note = contents.notes.find(n => n.title === title)
+-              if (note) setSelection({ kind: 'note', note })
++              if (note) openSelection({ kind: 'note', note })
+             }}
+             title="Backlinks"
+             titles={incoming}
+@@ -353,7 +434,20 @@ export function LibraryView() {
+   )
+ }
+ 
+-const FILE_ICON: Record<VaultFile['kind'], string> = { doc: '📄', image: '🖼', other: '📎', pdf: '📕', slides: '📊' }
++function FileGlyph({ kind }: { kind: VaultFile['kind'] }) {
++  const Icon =
++    kind === 'pdf'
++      ? IconFileTypePdf
++      : kind === 'slides'
++        ? IconPresentation
++        : kind === 'image'
++          ? IconPhoto
++          : kind === 'doc'
++            ? IconFileText
++            : IconPaperclip
++
++  return <Icon className="-mt-px mr-1.5 inline shrink-0 opacity-70" size={14} />
++}
+ 
+ function TreeLevel({
+   collapsed,
+@@ -435,7 +529,8 @@ function TreeLevel({
+             style={pad}
+             type="button"
+           >
+-            {FILE_ICON[file.kind]} {file.name}
++            <FileGlyph kind={file.kind} />
++            {file.name}
+           </button>
+         ))}
+     </>
+@@ -479,7 +574,7 @@ function FilePreview({ file }: { file: VaultFile }) {
+                 ? 'PowerPoint/Keynote files open in their own app — click “Open in default app”.'
+                 : 'This file type opens in its own app — click “Open in default app”.'
+             }
+-            title={`${FILE_ICON[file.kind]} ${file.name}`}
++            title={file.name}
+           />
+         )}
+       </div>
+diff --git a/apps/desktop/src/app/library/pdf-viewer.js b/apps/desktop/src/app/library/pdf-viewer.js
+index eda7148..ac5dd1d 100644
+--- a/apps/desktop/src/app/library/pdf-viewer.js
++++ b/apps/desktop/src/app/library/pdf-viewer.js
+@@ -10,17 +10,21 @@ import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mj
+ import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+ import { useCallback, useEffect, useRef, useState } from 'react';
+ import { Button } from '@/components/ui/button';
++import { cn } from '@/lib/utils';
+ GlobalWorkerOptions.workerSrc = workerUrl;
+ const FIT_PADDING = 72;
+ const MIN_SCALE = 0.5;
+ const MAX_SCALE = 2.5;
+ export function PdfViewer({ path }) {
+     const containerRef = useRef(null);
++    const railRef = useRef(null);
++    const pageHostsRef = useRef(new Map());
+     const [doc, setDoc] = useState(null);
+     const [error, setError] = useState(null);
+     const [baseSize, setBaseSize] = useState(null);
+     const [fitScale, setFitScale] = useState(1);
+     const [zoom, setZoom] = useState('fit');
++    const [currentPage, setCurrentPage] = useState(1);
+     // Load the document once per path. Teardown goes through the loading task —
+     // that's pdf.js v6's owner of the worker/document lifecycle.
+     useEffect(() => {
+@@ -84,12 +88,89 @@ export function PdfViewer({ path }) {
+             return Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.round((from + direction * 0.125) * 1000) / 1000));
+         });
+     }, [fitScale]);
++    const registerPageHost = useCallback((pageNumber, host) => {
++        if (host) {
++            pageHostsRef.current.set(pageNumber, host);
++        }
++        else {
++            pageHostsRef.current.delete(pageNumber);
++        }
++    }, []);
++    // Track which page owns the middle of the viewport (drives the thumbnail highlight
++    // and the "Page x / y" readout).
++    const onScroll = useCallback(() => {
++        const container = containerRef.current;
++        if (!container) {
++            return;
++        }
++        const middle = container.scrollTop + container.clientHeight / 2;
++        let best = 1;
++        let bestDistance = Number.POSITIVE_INFINITY;
++        for (const [pageNumber, host] of pageHostsRef.current) {
++            const center = host.offsetTop + host.offsetHeight / 2;
++            const distance = Math.abs(center - middle);
++            if (distance < bestDistance) {
++                bestDistance = distance;
++                best = pageNumber;
++            }
++        }
++        setCurrentPage(best);
++    }, []);
++    const jumpToPage = useCallback((pageNumber) => {
++        pageHostsRef.current.get(pageNumber)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
++    }, []);
+     if (error) {
+         return (_jsx("div", { className: "grid h-full place-items-center rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground", children: error }));
+     }
+-    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-(--ui-bg-secondary,var(--color-muted))", children: [_jsxs("div", { className: "flex shrink-0 items-center justify-between gap-2 border-b border-border bg-card/70 px-3 py-1.5 backdrop-blur", children: [_jsx("span", { className: "text-xs tabular-nums text-muted-foreground", children: doc ? `${doc.numPages} page${doc.numPages === 1 ? '' : 's'}` : 'Opening…' }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsx(Button, { "aria-label": "Zoom out", className: "h-6 w-6 p-0", onClick: () => step(-1), size: "sm", variant: "ghost", children: "\u2212" }), _jsxs("span", { className: "w-12 text-center text-xs tabular-nums text-muted-foreground", children: [Math.round(scale * 100), "%"] }), _jsx(Button, { "aria-label": "Zoom in", className: "h-6 w-6 p-0", onClick: () => step(1), size: "sm", variant: "ghost", children: "+" }), _jsx(Button, { className: "h-6 px-2 text-xs", onClick: () => setZoom('fit'), size: "sm", variant: zoom === 'fit' ? 'secondary' : 'ghost', children: "Fit" })] })] }), _jsx("div", { className: "min-h-0 flex-1 overflow-y-auto px-4 py-2", ref: containerRef, children: doc && baseSize ? (Array.from({ length: doc.numPages }, (_, i) => (_jsx(PdfPage, { baseSize: baseSize, doc: doc, pageNumber: i + 1, root: containerRef.current, scale: scale }, `${i + 1}@${scale.toFixed(3)}`)))) : (_jsx("div", { className: "grid h-full place-items-center text-sm text-muted-foreground", children: "Opening\u2026" })) })] }));
++    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-(--ui-bg-secondary,var(--color-muted))", children: [_jsxs("div", { className: "flex shrink-0 items-center justify-between gap-2 border-b border-border bg-card/70 px-3 py-1.5 backdrop-blur", children: [_jsx("span", { className: "text-xs tabular-nums text-muted-foreground", children: doc ? `Page ${currentPage} / ${doc.numPages}` : 'Opening…' }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsx(Button, { "aria-label": "Zoom out", className: "h-6 w-6 p-0", onClick: () => step(-1), size: "sm", variant: "ghost", children: "\u2212" }), _jsxs("span", { className: "w-12 text-center text-xs tabular-nums text-muted-foreground", children: [Math.round(scale * 100), "%"] }), _jsx(Button, { "aria-label": "Zoom in", className: "h-6 w-6 p-0", onClick: () => step(1), size: "sm", variant: "ghost", children: "+" }), _jsx(Button, { className: "h-6 px-2 text-xs", onClick: () => setZoom('fit'), size: "sm", variant: zoom === 'fit' ? 'secondary' : 'ghost', children: "Fit" })] })] }), _jsxs("div", { className: "flex min-h-0 flex-1", children: [doc && baseSize && doc.numPages > 1 && (_jsx("div", { className: "w-[6.5rem] shrink-0 overflow-y-auto border-r border-border px-2 py-2", ref: railRef, children: Array.from({ length: doc.numPages }, (_, i) => (_jsx(PdfThumb, { active: currentPage === i + 1, baseSize: baseSize, doc: doc, onSelect: jumpToPage, pageNumber: i + 1, root: railRef.current }, i + 1))) })), _jsx("div", { className: "min-h-0 flex-1 overflow-y-auto px-4 py-2", onScroll: onScroll, ref: containerRef, children: doc && baseSize ? (Array.from({ length: doc.numPages }, (_, i) => (_jsx(PdfPage, { baseSize: baseSize, doc: doc, onHost: registerPageHost, pageNumber: i + 1, root: containerRef.current, scale: scale }, `${i + 1}@${scale.toFixed(3)}`)))) : (_jsx("div", { className: "grid h-full place-items-center text-sm text-muted-foreground", children: "Opening\u2026" })) })] })] }));
++}
++const THUMB_WIDTH = 80;
++function PdfThumb({ active, baseSize, doc, onSelect, pageNumber, root }) {
++    const hostRef = useRef(null);
++    const canvasRef = useRef(null);
++    const [visible, setVisible] = useState(pageNumber <= 8);
++    useEffect(() => {
++        const host = hostRef.current;
++        if (!host || visible) {
++            return;
++        }
++        const observer = new IntersectionObserver(entries => {
++            if (entries.some(entry => entry.isIntersecting)) {
++                setVisible(true);
++            }
++        }, { root, rootMargin: '400px 0px' });
++        observer.observe(host);
++        return () => observer.disconnect();
++    }, [root, visible]);
++    useEffect(() => {
++        if (!visible) {
++            return;
++        }
++        let cancelled = false;
++        void (async () => {
++            try {
++                const page = await doc.getPage(pageNumber);
++                const canvas = canvasRef.current;
++                if (cancelled || !canvas) {
++                    return;
++                }
++                const viewport = page.getViewport({ scale: (THUMB_WIDTH / baseSize.width) * 2 });
++                canvas.width = Math.floor(viewport.width);
++                canvas.height = Math.floor(viewport.height);
++                await page.render({ canvas, viewport }).promise;
++            }
++            catch {
++                // thumb render failures are non-fatal; the main page view still works
++            }
++        })();
++        return () => {
++            cancelled = true;
++        };
++    }, [baseSize.width, doc, pageNumber, visible]);
++    const thumbHeight = Math.round((baseSize.height / baseSize.width) * THUMB_WIDTH);
++    return (_jsxs("button", { className: cn('mb-2 block w-full rounded-md p-1 transition-colors', active ? 'bg-(--theme-primary)/15 ring-1 ring-(--theme-primary)' : 'hover:bg-accent'), onClick: () => onSelect(pageNumber), ref: hostRef, title: `Page ${pageNumber}`, type: "button", children: [visible ? (_jsx("canvas", { className: "w-full rounded-sm bg-white shadow", ref: canvasRef, style: { height: thumbHeight } })) : (_jsx("div", { className: "w-full rounded-sm bg-white/10", style: { height: thumbHeight } })), _jsx("span", { className: cn('mt-0.5 block text-center text-[10px] tabular-nums', active ? 'text-foreground' : 'text-muted-foreground'), children: pageNumber })] }));
+ }
+-function PdfPage({ baseSize, doc, pageNumber, root, scale }) {
++function PdfPage({ baseSize, doc, onHost, pageNumber, root, scale }) {
+     const hostRef = useRef(null);
+     const canvasRef = useRef(null);
+     const [visible, setVisible] = useState(pageNumber <= 2);
+@@ -147,5 +228,8 @@ function PdfPage({ baseSize, doc, pageNumber, root, scale }) {
+         };
+     }, [doc, pageNumber, scale, visible]);
+     const placeholderHeight = Math.floor(baseSize.height * scale);
+-    return (_jsx("div", { className: "my-3 flex justify-center", ref: hostRef, children: visible ? (_jsx("canvas", { className: "max-w-full rounded-md bg-white shadow-lg ring-1 ring-black/20", ref: canvasRef, style: rendered ? undefined : { height: placeholderHeight, width: Math.floor(baseSize.width * scale) } })) : (_jsx("div", { className: "max-w-full rounded-md bg-white/5 ring-1 ring-white/10", style: { height: placeholderHeight, width: Math.floor(baseSize.width * scale) } })) }));
++    return (_jsx("div", { className: "my-3 flex justify-center", ref: element => {
++            hostRef.current = element;
++            onHost(pageNumber, element);
++        }, children: visible ? (_jsx("canvas", { className: "max-w-full rounded-md bg-white shadow-lg ring-1 ring-black/20", ref: canvasRef, style: rendered ? undefined : { height: placeholderHeight, width: Math.floor(baseSize.width * scale) } })) : (_jsx("div", { className: "max-w-full rounded-md bg-white/5 ring-1 ring-white/10", style: { height: placeholderHeight, width: Math.floor(baseSize.width * scale) } })) }));
+ }
+diff --git a/apps/desktop/src/app/library/pdf-viewer.tsx b/apps/desktop/src/app/library/pdf-viewer.tsx
+index e0633d6..64017df 100644
+--- a/apps/desktop/src/app/library/pdf-viewer.tsx
++++ b/apps/desktop/src/app/library/pdf-viewer.tsx
+@@ -10,6 +10,7 @@ import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+ import { useCallback, useEffect, useRef, useState } from 'react'
+ 
+ import { Button } from '@/components/ui/button'
++import { cn } from '@/lib/utils'
+ 
+ GlobalWorkerOptions.workerSrc = workerUrl
+ 
+@@ -23,11 +24,14 @@ interface PdfViewerProps {
+ 
+ export function PdfViewer({ path }: PdfViewerProps) {
+   const containerRef = useRef<HTMLDivElement | null>(null)
++  const railRef = useRef<HTMLDivElement | null>(null)
++  const pageHostsRef = useRef(new Map<number, HTMLDivElement>())
+   const [doc, setDoc] = useState<null | PDFDocumentProxy>(null)
+   const [error, setError] = useState<null | string>(null)
+   const [baseSize, setBaseSize] = useState<{ height: number; width: number } | null>(null)
+   const [fitScale, setFitScale] = useState(1)
+   const [zoom, setZoom] = useState<'fit' | number>('fit')
++  const [currentPage, setCurrentPage] = useState(1)
+ 
+   // Load the document once per path. Teardown goes through the loading task —
+   // that's pdf.js v6's owner of the worker/document lifecycle.
+@@ -112,6 +116,44 @@ export function PdfViewer({ path }: PdfViewerProps) {
+     [fitScale]
+   )
+ 
++  const registerPageHost = useCallback((pageNumber: number, host: HTMLDivElement | null) => {
++    if (host) {
++      pageHostsRef.current.set(pageNumber, host)
++    } else {
++      pageHostsRef.current.delete(pageNumber)
++    }
++  }, [])
++
++  // Track which page owns the middle of the viewport (drives the thumbnail highlight
++  // and the "Page x / y" readout).
++  const onScroll = useCallback(() => {
++    const container = containerRef.current
++
++    if (!container) {
++      return
++    }
++
++    const middle = container.scrollTop + container.clientHeight / 2
++    let best = 1
++    let bestDistance = Number.POSITIVE_INFINITY
++
++    for (const [pageNumber, host] of pageHostsRef.current) {
++      const center = host.offsetTop + host.offsetHeight / 2
++      const distance = Math.abs(center - middle)
++
++      if (distance < bestDistance) {
++        bestDistance = distance
++        best = pageNumber
++      }
++    }
++
++    setCurrentPage(best)
++  }, [])
++
++  const jumpToPage = useCallback((pageNumber: number) => {
++    pageHostsRef.current.get(pageNumber)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
++  }, [])
++
+   if (error) {
+     return (
+       <div className="grid h-full place-items-center rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
+@@ -124,7 +166,7 @@ export function PdfViewer({ path }: PdfViewerProps) {
+     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-(--ui-bg-secondary,var(--color-muted))">
+       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-card/70 px-3 py-1.5 backdrop-blur">
+         <span className="text-xs tabular-nums text-muted-foreground">
+-          {doc ? `${doc.numPages} page${doc.numPages === 1 ? '' : 's'}` : 'Opening…'}
++          {doc ? `Page ${currentPage} / ${doc.numPages}` : 'Opening…'}
+         </span>
+         <div className="flex items-center gap-1">
+           <Button aria-label="Zoom out" className="h-6 w-6 p-0" onClick={() => step(-1)} size="sm" variant="ghost">
+@@ -139,35 +181,152 @@ export function PdfViewer({ path }: PdfViewerProps) {
+           </Button>
+         </div>
+       </div>
+-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2" ref={containerRef}>
+-        {doc && baseSize ? (
+-          Array.from({ length: doc.numPages }, (_, i) => (
+-            <PdfPage
+-              baseSize={baseSize}
+-              doc={doc}
+-              key={`${i + 1}@${scale.toFixed(3)}`}
+-              pageNumber={i + 1}
+-              root={containerRef.current}
+-              scale={scale}
+-            />
+-          ))
+-        ) : (
+-          <div className="grid h-full place-items-center text-sm text-muted-foreground">Opening…</div>
++      <div className="flex min-h-0 flex-1">
++        {doc && baseSize && doc.numPages > 1 && (
++          <div className="w-[6.5rem] shrink-0 overflow-y-auto border-r border-border px-2 py-2" ref={railRef}>
++            {Array.from({ length: doc.numPages }, (_, i) => (
++              <PdfThumb
++                active={currentPage === i + 1}
++                baseSize={baseSize}
++                doc={doc}
++                key={i + 1}
++                onSelect={jumpToPage}
++                pageNumber={i + 1}
++                root={railRef.current}
++              />
++            ))}
++          </div>
+         )}
++        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2" onScroll={onScroll} ref={containerRef}>
++          {doc && baseSize ? (
++            Array.from({ length: doc.numPages }, (_, i) => (
++              <PdfPage
++                baseSize={baseSize}
++                doc={doc}
++                key={`${i + 1}@${scale.toFixed(3)}`}
++                onHost={registerPageHost}
++                pageNumber={i + 1}
++                root={containerRef.current}
++                scale={scale}
++              />
++            ))
++          ) : (
++            <div className="grid h-full place-items-center text-sm text-muted-foreground">Opening…</div>
++          )}
++        </div>
+       </div>
+     </div>
+   )
+ }
+ 
++const THUMB_WIDTH = 80
++
++function PdfThumb({
++  active,
++  baseSize,
++  doc,
++  onSelect,
++  pageNumber,
++  root
++}: {
++  active: boolean
++  baseSize: { height: number; width: number }
++  doc: PDFDocumentProxy
++  onSelect: (pageNumber: number) => void
++  pageNumber: number
++  root: HTMLDivElement | null
++}) {
++  const hostRef = useRef<HTMLButtonElement | null>(null)
++  const canvasRef = useRef<HTMLCanvasElement | null>(null)
++  const [visible, setVisible] = useState(pageNumber <= 8)
++
++  useEffect(() => {
++    const host = hostRef.current
++
++    if (!host || visible) {
++      return
++    }
++
++    const observer = new IntersectionObserver(
++      entries => {
++        if (entries.some(entry => entry.isIntersecting)) {
++          setVisible(true)
++        }
++      },
++      { root, rootMargin: '400px 0px' }
++    )
++
++    observer.observe(host)
++
++    return () => observer.disconnect()
++  }, [root, visible])
++
++  useEffect(() => {
++    if (!visible) {
++      return
++    }
++
++    let cancelled = false
++
++    void (async () => {
++      try {
++        const page = await doc.getPage(pageNumber)
++        const canvas = canvasRef.current
++
++        if (cancelled || !canvas) {
++          return
++        }
++
++        const viewport = page.getViewport({ scale: (THUMB_WIDTH / baseSize.width) * 2 })
++        canvas.width = Math.floor(viewport.width)
++        canvas.height = Math.floor(viewport.height)
++        await page.render({ canvas, viewport }).promise
++      } catch {
++        // thumb render failures are non-fatal; the main page view still works
++      }
++    })()
++
++    return () => {
++      cancelled = true
++    }
++  }, [baseSize.width, doc, pageNumber, visible])
++
++  const thumbHeight = Math.round((baseSize.height / baseSize.width) * THUMB_WIDTH)
++
++  return (
++    <button
++      className={cn(
++        'mb-2 block w-full rounded-md p-1 transition-colors',
++        active ? 'bg-(--theme-primary)/15 ring-1 ring-(--theme-primary)' : 'hover:bg-accent'
++      )}
++      onClick={() => onSelect(pageNumber)}
++      ref={hostRef}
++      title={`Page ${pageNumber}`}
++      type="button"
++    >
++      {visible ? (
++        <canvas className="w-full rounded-sm bg-white shadow" ref={canvasRef} style={{ height: thumbHeight }} />
++      ) : (
++        <div className="w-full rounded-sm bg-white/10" style={{ height: thumbHeight }} />
++      )}
++      <span className={cn('mt-0.5 block text-center text-[10px] tabular-nums', active ? 'text-foreground' : 'text-muted-foreground')}>
++        {pageNumber}
++      </span>
++    </button>
++  )
++}
++
+ function PdfPage({
+   baseSize,
+   doc,
++  onHost,
+   pageNumber,
+   root,
+   scale
+ }: {
+   baseSize: { height: number; width: number }
+   doc: PDFDocumentProxy
++  onHost: (pageNumber: number, host: HTMLDivElement | null) => void
+   pageNumber: number
+   root: HTMLDivElement | null
+   scale: number
+@@ -246,7 +405,13 @@ function PdfPage({
+   const placeholderHeight = Math.floor(baseSize.height * scale)
+ 
+   return (
+-    <div className="my-3 flex justify-center" ref={hostRef}>
++    <div
++      className="my-3 flex justify-center"
++      ref={element => {
++        hostRef.current = element
++        onHost(pageNumber, element)
++      }}
++    >
+       {visible ? (
+         <canvas
+           className="max-w-full rounded-md bg-white shadow-lg ring-1 ring-black/20"
+diff --git a/apps/desktop/src/app/recorder/index.js b/apps/desktop/src/app/recorder/index.js
+index fd3e001..02afea8 100644
+--- a/apps/desktop/src/app/recorder/index.js
++++ b/apps/desktop/src/app/recorder/index.js
+@@ -6,6 +6,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
+ // ~/Documents/Nemesis Recordings — and, while recording, streams ~8s chunks of the live
+ // mix through the local Whisper model so the transcript scrolls in as the lecture happens.
+ // On stop, the transcript auto-saves as a Library note (Lectures folder).
++import { IconLock, IconMicrophone } from '@tabler/icons-react';
+ import { useCallback, useEffect, useRef, useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+@@ -483,9 +484,9 @@ export function RecorderView() {
+     }, [transcripts]);
+     const minutes = String(Math.floor(elapsed / 60)).padStart(2, '0');
+     const seconds = String(elapsed % 60).padStart(2, '0');
+-    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "px-6 pb-2 pt-5", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Recorder" }), _jsxs("p", { className: "text-xs text-muted-foreground", children: ["Records your mic", withSystemAudio ? ' + this computer’s audio (the lecture/Zoom)' : ' only', " \u2014 locally, to your own files. You start it, you see it, you keep it."] })] }), _jsxs("section", { className: "mx-6 mt-3 flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-8", children: [state === 'recording' ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex items-center gap-3", children: [_jsxs("span", { className: "relative flex size-3", children: [_jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" }), _jsx("span", { className: "relative inline-flex size-3 rounded-full bg-primary" })] }), _jsx("span", { className: "text-xs font-medium uppercase tracking-widest text-primary", children: "On air \u2014 visible, on purpose" })] }), _jsx("canvas", { className: "h-16 w-full max-w-xl", height: 64, ref: canvasRef, width: 640 }), _jsxs("span", { className: "text-2xl font-semibold tabular-nums", children: [minutes, ":", seconds] }), liveCaptions && (_jsxs("div", { className: "w-full max-w-xl rounded-md border border-border bg-muted/30 px-3 py-2 text-left", children: [_jsxs("div", { className: "flex items-center justify-between pb-1", children: [_jsx("span", { className: "text-[10px] font-medium uppercase tracking-widest text-muted-foreground", children: "Live transcript \u2014 on this device" }), _jsx("span", { className: "text-[10px] text-muted-foreground", children: liveStatus })] }), _jsx("div", { className: "max-h-36 overflow-y-auto text-sm leading-relaxed", ref: liveScrollRef, children: liveSegments.length ? (liveSegments.join(' ')) : (_jsx("span", { className: "text-muted-foreground", children: "Listening for speech\u2026" })) })] })), _jsx(Button, { onClick: stop, size: "lg", variant: "secondary", children: "Stop & save" })] })) : (_jsxs(_Fragment, { children: [_jsx(Button, { disabled: state === 'saving', onClick: () => void start(), size: "lg", children: state === 'saving' ? 'Saving…' : 'Start recording' }), state === 'saving' && liveStatus && _jsx("p", { className: "text-xs text-muted-foreground", children: liveStatus }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: withSystemAudio, className: "accent-(--theme-primary)", onChange: event => setWithSystemAudio(event.target.checked), type: "checkbox" }), "Also capture this computer\u2019s audio (lecture, Zoom) \u2014 macOS will ask once"] }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: liveCaptions, className: "accent-(--theme-primary)", onChange: event => setLiveCaptions(event.target.checked), type: "checkbox" }), "Live transcript while recording \u2014 auto-saves a lecture note to the Library"] }), lectureNote && (_jsxs("div", { className: "flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs", children: [_jsxs("span", { children: ["Lecture note saved to Library \u2192 ", LECTURE_FOLDER, " ", _jsx("span", { className: "text-primary", children: "\u2713" })] }), _jsx(Button, { className: "h-6 px-2 text-xs", onClick: () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`), size: "sm", variant: "outline", children: "Open note" })] })), _jsx("span", { className: "rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground", children: "\uD83D\uDD12 Nothing joins your call \u2014 capture & transcription happen on this device only" })] })), error && _jsx("p", { className: "max-w-md text-center text-xs text-destructive", children: error })] }), _jsxs("section", { className: "px-6 pb-8 pt-5", children: [_jsx("h2", { className: "pb-2 text-sm font-medium", children: "Saved recordings" }), recordings.length ? (_jsx("ul", { className: "flex flex-col gap-1.5", children: recordings.map(file => {
++    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "px-6 pb-2 pt-5", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Recorder" }), _jsxs("p", { className: "text-xs text-muted-foreground", children: ["Records your mic", withSystemAudio ? ' + this computer’s audio (the lecture/Zoom)' : ' only', " \u2014 locally, to your own files. You start it, you see it, you keep it."] })] }), _jsxs("section", { className: "mx-6 mt-3 flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-8", children: [state === 'recording' ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex items-center gap-3", children: [_jsxs("span", { className: "relative flex size-3", children: [_jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" }), _jsx("span", { className: "relative inline-flex size-3 rounded-full bg-primary" })] }), _jsx("span", { className: "text-xs font-medium uppercase tracking-widest text-primary", children: "On air \u2014 visible, on purpose" })] }), _jsx("canvas", { className: "h-16 w-full max-w-xl", height: 64, ref: canvasRef, width: 640 }), _jsxs("span", { className: "text-2xl font-semibold tabular-nums", children: [minutes, ":", seconds] }), liveCaptions && (_jsxs("div", { className: "w-full max-w-xl rounded-md border border-border bg-muted/30 px-3 py-2 text-left", children: [_jsxs("div", { className: "flex items-center justify-between pb-1", children: [_jsx("span", { className: "text-[10px] font-medium uppercase tracking-widest text-muted-foreground", children: "Live transcript \u2014 on this device" }), _jsx("span", { className: "text-[10px] text-muted-foreground", children: liveStatus })] }), _jsx("div", { className: "max-h-36 overflow-y-auto text-sm leading-relaxed", ref: liveScrollRef, children: liveSegments.length ? (liveSegments.join(' ')) : (_jsx("span", { className: "text-muted-foreground", children: "Listening for speech\u2026" })) })] })), _jsx(Button, { onClick: stop, size: "lg", variant: "secondary", children: "Stop & save" })] })) : (_jsxs(_Fragment, { children: [_jsx(Button, { disabled: state === 'saving', onClick: () => void start(), size: "lg", children: state === 'saving' ? 'Saving…' : 'Start recording' }), state === 'saving' && liveStatus && _jsx("p", { className: "text-xs text-muted-foreground", children: liveStatus }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: withSystemAudio, className: "accent-(--theme-primary)", onChange: event => setWithSystemAudio(event.target.checked), type: "checkbox" }), "Also capture this computer\u2019s audio (lecture, Zoom) \u2014 macOS will ask once"] }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: liveCaptions, className: "accent-(--theme-primary)", onChange: event => setLiveCaptions(event.target.checked), type: "checkbox" }), "Live transcript while recording \u2014 auto-saves a lecture note to the Library"] }), lectureNote && (_jsxs("div", { className: "flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs", children: [_jsxs("span", { children: ["Lecture note saved to Library \u2192 ", LECTURE_FOLDER, " ", _jsx("span", { className: "text-primary", children: "\u2713" })] }), _jsx(Button, { className: "h-6 px-2 text-xs", onClick: () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`), size: "sm", variant: "outline", children: "Open note" })] })), _jsxs("span", { className: "inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground", children: [_jsx(IconLock, { size: 12 }), "Nothing joins your call \u2014 capture & transcription happen on this device only"] })] })), error && _jsx("p", { className: "max-w-md text-center text-xs text-destructive", children: error })] }), _jsxs("section", { className: "px-6 pb-8 pt-5", children: [_jsx("h2", { className: "pb-2 text-sm font-medium", children: "Saved recordings" }), recordings.length ? (_jsx("ul", { className: "flex flex-col gap-1.5", children: recordings.map(file => {
+                             const status = transcribingStatus[file.path];
+                             const transcript = transcripts[file.path];
+-                            return (_jsxs("li", { className: "flex flex-col gap-2 rounded-md border border-border px-3 py-2", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsxs("div", { className: "flex min-w-0 items-center gap-2", children: [_jsx("span", { className: "text-base", children: "\uD83C\uDF99\uFE0F" }), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "truncate text-sm", children: recordingLabel(file.name) }), status && _jsx("div", { className: "text-[11px] text-primary", children: status })] })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2", children: [_jsx(Button, { disabled: Boolean(status), onClick: () => void transcribe(file), size: "sm", variant: "outline", children: status ? '…' : transcript ? 'Re-transcribe' : 'Transcribe' }), _jsx(Button, { onClick: () => void play(file), size: "sm", variant: "outline", children: playing?.path === file.path ? 'Hide' : 'Play' })] })] }), transcript && (_jsxs("div", { className: "rounded-md bg-muted/40 p-3", children: [_jsx("p", { className: "whitespace-pre-wrap text-xs leading-relaxed text-foreground", children: transcript }), _jsxs("div", { className: "mt-2 flex flex-wrap items-center gap-2", children: [_jsx(Button, { disabled: savedNote[file.path], onClick: () => void saveTranscriptNote(file), size: "sm", variant: "secondary", children: savedNote[file.path] ? 'Saved to Library ✓' : 'Save as note' }), _jsx(Button, { onClick: () => draftFlashcards(file), size: "sm", variant: "secondary", children: "Draft flashcards" }), (corrections[file.path] ?? 0) > 0 && (_jsxs("span", { className: "text-[10px] text-muted-foreground", children: [corrections[file.path], " pharm term", corrections[file.path] === 1 ? '' : 's', " auto-corrected"] }))] })] }))] }, file.path));
++                            return (_jsxs("li", { className: "flex flex-col gap-2 rounded-md border border-border px-3 py-2", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsxs("div", { className: "flex min-w-0 items-center gap-2", children: [_jsx(IconMicrophone, { className: "shrink-0 text-muted-foreground", size: 16 }), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "truncate text-sm", children: recordingLabel(file.name) }), status && _jsx("div", { className: "text-[11px] text-primary", children: status })] })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2", children: [_jsx(Button, { disabled: Boolean(status), onClick: () => void transcribe(file), size: "sm", variant: "outline", children: status ? '…' : transcript ? 'Re-transcribe' : 'Transcribe' }), _jsx(Button, { onClick: () => void play(file), size: "sm", variant: "outline", children: playing?.path === file.path ? 'Hide' : 'Play' })] })] }), transcript && (_jsxs("div", { className: "rounded-md bg-muted/40 p-3", children: [_jsx("p", { className: "whitespace-pre-wrap text-xs leading-relaxed text-foreground", children: transcript }), _jsxs("div", { className: "mt-2 flex flex-wrap items-center gap-2", children: [_jsx(Button, { disabled: savedNote[file.path], onClick: () => void saveTranscriptNote(file), size: "sm", variant: "secondary", children: savedNote[file.path] ? 'Saved to Library ✓' : 'Save as note' }), _jsx(Button, { onClick: () => draftFlashcards(file), size: "sm", variant: "secondary", children: "Draft flashcards" }), (corrections[file.path] ?? 0) > 0 && (_jsxs("span", { className: "text-[10px] text-muted-foreground", children: [corrections[file.path], " pharm term", corrections[file.path] === 1 ? '' : 's', " auto-corrected"] }))] })] }))] }, file.path));
+                         }) })) : (_jsx(EmptyState, { className: cn('min-h-28'), description: "Recordings save to Documents / Nemesis Recordings as ordinary audio files.", title: "No recordings yet" })), playing && _jsx("audio", { autoPlay: true, className: "mt-3 w-full", controls: true, src: playing.src }), _jsx("p", { className: "pt-4 text-[11px] leading-relaxed text-muted-foreground", children: "Recording other people may require their consent where you live \u2014 check your school\u2019s policy. Nemesis never records on its own and never hides the indicator. Transcription runs on your device (the first run downloads a small model); the text is a draft \u2014 review it before you rely on it." })] })] }));
+ }
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index 5e6d3b1..542bfc1 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -5,6 +5,7 @@
+ // ~/Documents/Nemesis Recordings — and, while recording, streams ~8s chunks of the live
+ // mix through the local Whisper model so the transcript scrolls in as the lecture happens.
+ // On stop, the transcript auto-saves as a Library note (Lectures folder).
++import { IconLock, IconMicrophone } from '@tabler/icons-react'
+ import { useCallback, useEffect, useRef, useState } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ 
+@@ -697,8 +698,9 @@ export function RecorderView() {
+                 </Button>
+               </div>
+             )}
+-            <span className="rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground">
+-              🔒 Nothing joins your call — capture &amp; transcription happen on this device only
++            <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground">
++              <IconLock size={12} />
++              Nothing joins your call — capture &amp; transcription happen on this device only
+             </span>
+           </>
+         )}
+@@ -717,7 +719,7 @@ export function RecorderView() {
+                 <li className="flex flex-col gap-2 rounded-md border border-border px-3 py-2" key={file.path}>
+                   <div className="flex items-center justify-between gap-3">
+                     <div className="flex min-w-0 items-center gap-2">
+-                      <span className="text-base">🎙️</span>
++                      <IconMicrophone className="shrink-0 text-muted-foreground" size={16} />
+                       <div className="min-w-0">
+                         <div className="truncate text-sm">{recordingLabel(file.name)}</div>
+                         {status && <div className="text-[11px] text-primary">{status}</div>}
+diff --git a/apps/desktop/src/app/right-sidebar/sources.js b/apps/desktop/src/app/right-sidebar/sources.js
+index fdc40c1..078f336 100644
+--- a/apps/desktop/src/app/right-sidebar/sources.js
++++ b/apps/desktop/src/app/right-sidebar/sources.js
+@@ -18,33 +18,33 @@ function cleanUrl(raw) {
+ function badgeFor(hostname) {
+     const host = hostname.replace(/^www\./, '');
+     if (host.includes('pubmed.ncbi')) {
+-        return '📄 PubMed';
++        return 'PubMed';
+     }
+     if (host.includes('ncbi.nlm.nih.gov') || host.includes('pmc.ncbi')) {
+-        return '📄 NCBI';
++        return 'NCBI';
+     }
+     if (host.endsWith('fda.gov')) {
+-        return '💊 FDA';
++        return 'FDA';
+     }
+     if (host.includes('clinicaltrials.gov')) {
+-        return '🧪 Trial';
++        return 'Trial';
+     }
+     if (host === 'doi.org') {
+-        return '🔗 DOI';
++        return 'DOI';
+     }
+     if (host.endsWith('who.int')) {
+-        return '🌍 WHO';
++        return 'WHO';
+     }
+     if (host.endsWith('cdc.gov')) {
+-        return '🏛️ CDC';
++        return 'CDC';
+     }
+     if (host.endsWith('nih.gov')) {
+-        return '🏥 NIH';
++        return 'NIH';
+     }
+     if (host.includes('cochrane')) {
+-        return '📚 Cochrane';
++        return 'Cochrane';
+     }
+-    return '🌐 Web';
++    return 'Web';
+ }
+ // Tool traffic only counts when it hits a known evidence host — the agent consulting
+ // PubMed/FDA/ClinicalTrials is a source; a random search-result URL is noise.
+@@ -53,9 +53,28 @@ function isEvidenceHost(hostname) {
+     const host = hostname.replace(/^www\./, '');
+     return EVIDENCE_HOSTS.some(candidate => host === candidate || host.endsWith(`.${candidate}`));
+ }
+-/** Pull every citation out of the assistant's messages (plus evidence-host URLs from the
+- *  agent's tool traffic), deduped, in reading order. Pure. */
+-export function extractSources(messages) {
++/** Text-level citations: markdown links, bare URLs, PMIDs, NCT ids, DOIs. */
++function harvestText(text, sink) {
++    // Markdown links first (they carry real titles), then scan the remainder so the
++    // same URL isn't double-counted as a bare match.
++    for (const match of text.matchAll(MD_LINK)) {
++        sink.push(match[2], match[1]);
++    }
++    const stripped = text.replace(MD_LINK, ' ');
++    for (const match of stripped.matchAll(BARE_URL)) {
++        sink.push(match[0]);
++    }
++    for (const match of stripped.matchAll(PMID_RE)) {
++        sink.push(`https://pubmed.ncbi.nlm.nih.gov/${match[1]}/`, `PMID ${match[1]}`);
++    }
++    for (const match of stripped.matchAll(NCT_RE)) {
++        sink.push(`https://clinicaltrials.gov/study/${match[0].toUpperCase()}`, match[0].toUpperCase());
++    }
++    for (const match of stripped.matchAll(DOI_RE)) {
++        sink.push(`https://doi.org/${cleanUrl(match[0])}`, `DOI ${cleanUrl(match[0])}`);
++    }
++}
++function makeSink() {
+     const seen = new Set();
+     const out = [];
+     const push = (rawUrl, title) => {
+@@ -88,6 +107,18 @@ export function extractSources(messages) {
+             : `${domain}${parsed.pathname.length > 1 ? decodeURIComponent(parsed.pathname).slice(0, 60) : ''}`;
+         out.push({ badge: badgeFor(parsed.hostname), domain, title: (title || fallback).trim(), url });
+     };
++    return { out, sink: { push } };
++}
++/** Citations named in a single blob of answer text. Pure — feeds the inline pills. */
++export function sourcesFromText(text) {
++    const { out, sink } = makeSink();
++    harvestText(text, sink);
++    return out.slice(0, 24);
++}
++/** Pull every citation out of the assistant's messages (plus evidence-host URLs from the
++ *  agent's tool traffic), deduped, in reading order. Pure. */
++export function extractSources(messages) {
++    const { out, sink } = makeSink();
+     for (const message of messages) {
+         // Deep-scan every message's raw payload — tool calls and their results ride INSIDE
+         // the assistant message in this app — keeping only evidence-host URLs (a PubMed/FDA/
+@@ -104,7 +135,7 @@ export function extractSources(messages) {
+                 const candidate = cleanUrl(match[0].replace(/\\+$/, ''));
+                 try {
+                     if (isEvidenceHost(new URL(candidate).hostname)) {
+-                        push(candidate);
++                        sink.push(candidate);
+                     }
+                 }
+                 catch {
+@@ -122,26 +153,8 @@ export function extractSources(messages) {
+         catch {
+             continue;
+         }
+-        if (!text) {
+-            continue;
+-        }
+-        // Markdown links first (they carry real titles), then scan the remainder so the
+-        // same URL isn't double-counted as a bare match.
+-        for (const match of text.matchAll(MD_LINK)) {
+-            push(match[2], match[1]);
+-        }
+-        const stripped = text.replace(MD_LINK, ' ');
+-        for (const match of stripped.matchAll(BARE_URL)) {
+-            push(match[0]);
+-        }
+-        for (const match of stripped.matchAll(PMID_RE)) {
+-            push(`https://pubmed.ncbi.nlm.nih.gov/${match[1]}/`, `PMID ${match[1]}`);
+-        }
+-        for (const match of stripped.matchAll(NCT_RE)) {
+-            push(`https://clinicaltrials.gov/study/${match[0].toUpperCase()}`, match[0].toUpperCase());
+-        }
+-        for (const match of stripped.matchAll(DOI_RE)) {
+-            push(`https://doi.org/${cleanUrl(match[0])}`, `DOI ${cleanUrl(match[0])}`);
++        if (text) {
++            harvestText(text, sink);
+         }
+     }
+     return out.slice(0, 100);
+@@ -152,5 +165,5 @@ export function SourcesTab() {
+     const openExternal = (url) => {
+         void window.hermesDesktop?.openExternal?.(url);
+     };
+-    return (_jsx("div", { className: "flex min-h-0 flex-1 flex-col pt-1", children: sources.length === 0 ? (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 text-center", children: [_jsx("div", { className: "text-[0.7rem] font-semibold uppercase tracking-[0.07em] text-muted-foreground/75", children: "No sources yet" }), _jsx("div", { className: "text-[0.68rem] leading-relaxed text-muted-foreground/65", children: "Ask a research question \u2014 every paper, label, and trial the agent cites lands here." })] })) : (_jsx("div", { className: "min-h-0 flex-1 overflow-y-auto px-2.5 pb-4", children: _jsx("div", { className: "flex flex-wrap gap-1.5", children: sources.map(source => (_jsxs("button", { className: "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground", onClick: () => openExternal(source.url), title: `${source.title}\n${source.url}`, type: "button", children: [_jsx("span", { children: source.badge }), _jsx("span", { className: "max-w-[9.5rem] truncate text-muted-foreground", children: source.title })] }, source.url))) }) })) }));
++    return (_jsx("div", { className: "flex min-h-0 flex-1 flex-col pt-1", children: sources.length === 0 ? (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 text-center", children: [_jsx("div", { className: "text-[0.7rem] font-semibold uppercase tracking-[0.07em] text-muted-foreground/75", children: "No sources yet" }), _jsx("div", { className: "text-[0.68rem] leading-relaxed text-muted-foreground/65", children: "Ask a research question \u2014 every paper, label, and trial the agent cites lands here." })] })) : (_jsx("div", { className: "min-h-0 flex-1 overflow-y-auto px-2.5 pb-4", children: _jsx("div", { className: "flex flex-wrap gap-1.5", children: sources.map(source => (_jsxs("button", { className: "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground", onClick: () => openExternal(source.url), title: `${source.title}\n${source.url}`, type: "button", children: [_jsx("span", { className: "font-semibold uppercase tracking-wide text-[10px] text-(--theme-primary)", children: source.badge }), _jsx("span", { className: "max-w-[9.5rem] truncate text-muted-foreground", children: source.title })] }, source.url))) }) })) }));
+ }
+diff --git a/apps/desktop/src/app/right-sidebar/sources.tsx b/apps/desktop/src/app/right-sidebar/sources.tsx
+index 822cb86..9c19161 100644
+--- a/apps/desktop/src/app/right-sidebar/sources.tsx
++++ b/apps/desktop/src/app/right-sidebar/sources.tsx
+@@ -29,42 +29,42 @@ function badgeFor(hostname: string): string {
+   const host = hostname.replace(/^www\./, '')
+ 
+   if (host.includes('pubmed.ncbi')) {
+-    return '📄 PubMed'
++    return 'PubMed'
+   }
+ 
+   if (host.includes('ncbi.nlm.nih.gov') || host.includes('pmc.ncbi')) {
+-    return '📄 NCBI'
++    return 'NCBI'
+   }
+ 
+   if (host.endsWith('fda.gov')) {
+-    return '💊 FDA'
++    return 'FDA'
+   }
+ 
+   if (host.includes('clinicaltrials.gov')) {
+-    return '🧪 Trial'
++    return 'Trial'
+   }
+ 
+   if (host === 'doi.org') {
+-    return '🔗 DOI'
++    return 'DOI'
+   }
+ 
+   if (host.endsWith('who.int')) {
+-    return '🌍 WHO'
++    return 'WHO'
+   }
+ 
+   if (host.endsWith('cdc.gov')) {
+-    return '🏛️ CDC'
++    return 'CDC'
+   }
+ 
+   if (host.endsWith('nih.gov')) {
+-    return '🏥 NIH'
++    return 'NIH'
+   }
+ 
+   if (host.includes('cochrane')) {
+-    return '📚 Cochrane'
++    return 'Cochrane'
+   }
+ 
+-  return '🌐 Web'
++  return 'Web'
+ }
+ 
+ // Tool traffic only counts when it hits a known evidence host — the agent consulting
+@@ -77,9 +77,38 @@ function isEvidenceHost(hostname: string): boolean {
+   return EVIDENCE_HOSTS.some(candidate => host === candidate || host.endsWith(`.${candidate}`))
+ }
+ 
+-/** Pull every citation out of the assistant's messages (plus evidence-host URLs from the
+- *  agent's tool traffic), deduped, in reading order. Pure. */
+-export function extractSources(messages: readonly ChatMessage[]): SourceRef[] {
++interface SourceSink {
++  push: (rawUrl: string, title?: string) => void
++}
++
++/** Text-level citations: markdown links, bare URLs, PMIDs, NCT ids, DOIs. */
++function harvestText(text: string, sink: SourceSink): void {
++  // Markdown links first (they carry real titles), then scan the remainder so the
++  // same URL isn't double-counted as a bare match.
++  for (const match of text.matchAll(MD_LINK)) {
++    sink.push(match[2], match[1])
++  }
++
++  const stripped = text.replace(MD_LINK, ' ')
++
++  for (const match of stripped.matchAll(BARE_URL)) {
++    sink.push(match[0])
++  }
++
++  for (const match of stripped.matchAll(PMID_RE)) {
++    sink.push(`https://pubmed.ncbi.nlm.nih.gov/${match[1]}/`, `PMID ${match[1]}`)
++  }
++
++  for (const match of stripped.matchAll(NCT_RE)) {
++    sink.push(`https://clinicaltrials.gov/study/${match[0].toUpperCase()}`, match[0].toUpperCase())
++  }
++
++  for (const match of stripped.matchAll(DOI_RE)) {
++    sink.push(`https://doi.org/${cleanUrl(match[0])}`, `DOI ${cleanUrl(match[0])}`)
++  }
++}
++
++function makeSink(): { out: SourceRef[]; sink: SourceSink } {
+   const seen = new Set<string>()
+   const out: SourceRef[] = []
+ 
+@@ -119,6 +148,22 @@ export function extractSources(messages: readonly ChatMessage[]): SourceRef[] {
+     out.push({ badge: badgeFor(parsed.hostname), domain, title: (title || fallback).trim(), url })
+   }
+ 
++  return { out, sink: { push } }
++}
++
++/** Citations named in a single blob of answer text. Pure — feeds the inline pills. */
++export function sourcesFromText(text: string): SourceRef[] {
++  const { out, sink } = makeSink()
++  harvestText(text, sink)
++
++  return out.slice(0, 24)
++}
++
++/** Pull every citation out of the assistant's messages (plus evidence-host URLs from the
++ *  agent's tool traffic), deduped, in reading order. Pure. */
++export function extractSources(messages: readonly ChatMessage[]): SourceRef[] {
++  const { out, sink } = makeSink()
++
+   for (const message of messages) {
+     // Deep-scan every message's raw payload — tool calls and their results ride INSIDE
+     // the assistant message in this app — keeping only evidence-host URLs (a PubMed/FDA/
+@@ -137,7 +182,7 @@ export function extractSources(messages: readonly ChatMessage[]): SourceRef[] {
+ 
+         try {
+           if (isEvidenceHost(new URL(candidate).hostname)) {
+-            push(candidate)
++            sink.push(candidate)
+           }
+         } catch {
+           // not a parseable URL — skip
+@@ -157,32 +202,8 @@ export function extractSources(messages: readonly ChatMessage[]): SourceRef[] {
+       continue
+     }
+ 
+-    if (!text) {
+-      continue
+-    }
+-
+-    // Markdown links first (they carry real titles), then scan the remainder so the
+-    // same URL isn't double-counted as a bare match.
+-    for (const match of text.matchAll(MD_LINK)) {
+-      push(match[2], match[1])
+-    }
+-
+-    const stripped = text.replace(MD_LINK, ' ')
+-
+-    for (const match of stripped.matchAll(BARE_URL)) {
+-      push(match[0])
+-    }
+-
+-    for (const match of stripped.matchAll(PMID_RE)) {
+-      push(`https://pubmed.ncbi.nlm.nih.gov/${match[1]}/`, `PMID ${match[1]}`)
+-    }
+-
+-    for (const match of stripped.matchAll(NCT_RE)) {
+-      push(`https://clinicaltrials.gov/study/${match[0].toUpperCase()}`, match[0].toUpperCase())
+-    }
+-
+-    for (const match of stripped.matchAll(DOI_RE)) {
+-      push(`https://doi.org/${cleanUrl(match[0])}`, `DOI ${cleanUrl(match[0])}`)
++    if (text) {
++      harvestText(text, sink)
+     }
+   }
+ 
+@@ -219,7 +240,9 @@ export function SourcesTab() {
+                 title={`${source.title}\n${source.url}`}
+                 type="button"
+               >
+-                <span>{source.badge}</span>
++                <span className="font-semibold uppercase tracking-wide text-[10px] text-(--theme-primary)">
++                  {source.badge}
++                </span>
+                 <span className="max-w-[9.5rem] truncate text-muted-foreground">{source.title}</span>
+               </button>
+             ))}
+diff --git a/apps/desktop/src/app/settings/constants.js b/apps/desktop/src/app/settings/constants.js
+index c8968e9..98a5f4e 100644
+--- a/apps/desktop/src/app/settings/constants.js
++++ b/apps/desktop/src/app/settings/constants.js
+@@ -448,7 +448,7 @@ export const FIELD_DESCRIPTIONS = defineFieldCopy({
+     },
+     stt: {
+         enabled: 'Enable local or provider-backed speech transcription.',
+-        echoTranscripts: 'Post the raw 🎙️ transcript of voice messages back to the chat.',
++        echoTranscripts: 'Post the raw transcript of voice messages back to the chat.',
+         elevenlabs: {
+             languageCode: 'Optional ISO-639-3 language code. Blank lets ElevenLabs auto-detect.'
+         }
+diff --git a/apps/desktop/src/app/settings/constants.ts b/apps/desktop/src/app/settings/constants.ts
+index 5ae4eb3..e36f23d 100644
+--- a/apps/desktop/src/app/settings/constants.ts
++++ b/apps/desktop/src/app/settings/constants.ts
+@@ -487,7 +487,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
+   },
+   stt: {
+     enabled: 'Enable local or provider-backed speech transcription.',
+-    echoTranscripts: 'Post the raw 🎙️ transcript of voice messages back to the chat.',
++    echoTranscripts: 'Post the raw transcript of voice messages back to the chat.',
+     elevenlabs: {
+       languageCode: 'Optional ISO-639-3 language code. Blank lets ElevenLabs auto-detect.'
+     }
+diff --git a/apps/desktop/src/app/shell/titlebar-controls.js b/apps/desktop/src/app/shell/titlebar-controls.js
+index 78a8ac1..23258ce 100644
+--- a/apps/desktop/src/app/shell/titlebar-controls.js
++++ b/apps/desktop/src/app/shell/titlebar-controls.js
+@@ -7,6 +7,7 @@ import { Tip } from '@/components/ui/tooltip';
+ import { useI18n } from '@/i18n';
+ import { triggerHaptic } from '@/lib/haptics';
+ import { cn } from '@/lib/utils';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { $hapticsMuted, toggleHapticsMuted } from '@/store/haptics';
+ import { toggleKeybindPanel } from '@/store/keybinds';
+ import { $fileBrowserOpen, $panesFlipped, $sidebarOpen, toggleFileBrowserOpen, togglePanesFlipped, toggleSidebarOpen } from '@/store/layout';
+@@ -48,6 +49,8 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings })
+             }
+         },
+         {
++            // Layout-flipping is a power-user affordance; students get a stable layout.
++            hidden: NEMESIS_STUDENT_BUILD,
+             icon: _jsx(Codicon, { name: "arrow-swap" }),
+             id: 'flip-panes',
+             label: t.titlebar.swapSidebarSides,
+diff --git a/apps/desktop/src/app/shell/titlebar-controls.tsx b/apps/desktop/src/app/shell/titlebar-controls.tsx
+index fb0cae4..fb02642 100644
+--- a/apps/desktop/src/app/shell/titlebar-controls.tsx
++++ b/apps/desktop/src/app/shell/titlebar-controls.tsx
+@@ -8,6 +8,7 @@ import { Tip } from '@/components/ui/tooltip'
+ import { useI18n } from '@/i18n'
+ import { triggerHaptic } from '@/lib/haptics'
+ import { cn } from '@/lib/utils'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { $hapticsMuted, toggleHapticsMuted } from '@/store/haptics'
+ import { toggleKeybindPanel } from '@/store/keybinds'
+ import {
+@@ -87,6 +88,8 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
+       }
+     },
+     {
++      // Layout-flipping is a power-user affordance; students get a stable layout.
++      hidden: NEMESIS_STUDENT_BUILD,
+       icon: <Codicon name="arrow-swap" />,
+       id: 'flip-panes',
+       label: t.titlebar.swapSidebarSides,
+diff --git a/apps/desktop/src/app/study/index.js b/apps/desktop/src/app/study/index.js
+index 8409ca0..3e548a1 100644
+--- a/apps/desktop/src/app/study/index.js
++++ b/apps/desktop/src/app/study/index.js
+@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
+ // note). Interaction model deliberately mirrors what health-science students already have
+ // as muscle memory from Anki: deck browser with due badges → flip card (Space) →
+ // Again/Hard/Good/Easy (1-4), with the next-interval hint under each grade button.
+-import { IconLayoutGrid, IconList } from '@tabler/icons-react';
++import { IconLayoutGrid, IconList, IconPlayerPause } from '@tabler/icons-react';
+ import { useCallback, useEffect, useMemo, useState } from 'react';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
+@@ -210,7 +210,7 @@ function CardBrowser({ deck, onChange, onDeleteDeck, state }) {
+     if (!deck) {
+         return _jsx(EmptyState, { className: "flex-1", description: "This deck no longer exists.", title: "Deck not found" });
+     }
+-    return (_jsxs("div", { className: "px-6 pb-8", children: [_jsxs("div", { className: "mb-2 flex items-baseline justify-between border-b border-border pb-1.5", children: [_jsxs("div", { children: [_jsx("h2", { className: "text-sm font-semibold", children: deck.name }), _jsxs("p", { className: "text-xs text-muted-foreground", children: [deck.course ? `${deck.course} · ` : '', deck.cards.length, " card", deck.cards.length === 1 ? '' : 's'] })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { className: cn(armDelete && 'text-destructive'), onBlur: () => setArmDelete(false), onClick: () => (armDelete ? onDeleteDeck() : setArmDelete(true)), size: "sm", variant: "outline", children: armDelete ? 'Really delete?' : 'Delete deck' }), _jsx(Button, { onClick: () => setAdding(true), size: "sm", variant: "outline", children: "Add card" })] })] }), deck.cards.length === 0 ? (_jsx(EmptyState, { className: "min-h-40", description: "Add a card or import a set.", title: "No cards in this deck" })) : (_jsx("div", { className: "overflow-hidden rounded-lg border border-border", children: _jsxs("table", { className: "w-full text-sm", children: [_jsx("thead", { className: "bg-muted/40 text-xs text-muted-foreground", children: _jsxs("tr", { children: [_jsx("th", { className: "px-3 py-2 text-left font-medium", children: "Front" }), _jsx("th", { className: "hidden px-3 py-2 text-left font-medium md:table-cell", children: "Back" }), _jsx("th", { className: "px-3 py-2 text-left font-medium", children: "Tags" }), _jsx("th", { className: "w-8 px-3 py-2" })] }) }), _jsx("tbody", { children: deck.cards.map(card => (_jsxs("tr", { className: cn('cursor-pointer border-t border-border hover:bg-accent', card.suspended && 'opacity-45'), onClick: () => setEditing(card), children: [_jsxs("td", { className: "max-w-xs truncate px-3 py-2", children: [card.suspended && _jsx("span", { className: "mr-1 text-xs text-muted-foreground", children: "\u23F8" }), card.front] }), _jsx("td", { className: "hidden max-w-xs truncate px-3 py-2 text-muted-foreground md:table-cell", children: card.back }), _jsx("td", { className: "px-3 py-2", children: _jsx("div", { className: "flex flex-wrap gap-1", children: card.tags.map(tag => (_jsx(Badge, { variant: "outline", children: tag }, tag))) }) }), _jsx("td", { className: "px-3 py-2 text-right text-muted-foreground", children: "\u203A" })] }, card.id))) })] }) })), editing && (_jsx(EditCardDialog, { card: editing, onClose: () => setEditing(null), onDelete: () => {
++    return (_jsxs("div", { className: "px-6 pb-8", children: [_jsxs("div", { className: "mb-2 flex items-baseline justify-between border-b border-border pb-1.5", children: [_jsxs("div", { children: [_jsx("h2", { className: "text-sm font-semibold", children: deck.name }), _jsxs("p", { className: "text-xs text-muted-foreground", children: [deck.course ? `${deck.course} · ` : '', deck.cards.length, " card", deck.cards.length === 1 ? '' : 's'] })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { className: cn(armDelete && 'text-destructive'), onBlur: () => setArmDelete(false), onClick: () => (armDelete ? onDeleteDeck() : setArmDelete(true)), size: "sm", variant: "outline", children: armDelete ? 'Really delete?' : 'Delete deck' }), _jsx(Button, { onClick: () => setAdding(true), size: "sm", variant: "outline", children: "Add card" })] })] }), deck.cards.length === 0 ? (_jsx(EmptyState, { className: "min-h-40", description: "Add a card or import a set.", title: "No cards in this deck" })) : (_jsx("div", { className: "overflow-hidden rounded-lg border border-border", children: _jsxs("table", { className: "w-full text-sm", children: [_jsx("thead", { className: "bg-muted/40 text-xs text-muted-foreground", children: _jsxs("tr", { children: [_jsx("th", { className: "px-3 py-2 text-left font-medium", children: "Front" }), _jsx("th", { className: "hidden px-3 py-2 text-left font-medium md:table-cell", children: "Back" }), _jsx("th", { className: "px-3 py-2 text-left font-medium", children: "Tags" }), _jsx("th", { className: "w-8 px-3 py-2" })] }) }), _jsx("tbody", { children: deck.cards.map(card => (_jsxs("tr", { className: cn('cursor-pointer border-t border-border hover:bg-accent', card.suspended && 'opacity-45'), onClick: () => setEditing(card), children: [_jsxs("td", { className: "max-w-xs truncate px-3 py-2", children: [card.suspended && (_jsx(IconPlayerPause, { className: "-mt-px mr-1 inline text-muted-foreground", size: 12 })), card.front] }), _jsx("td", { className: "hidden max-w-xs truncate px-3 py-2 text-muted-foreground md:table-cell", children: card.back }), _jsx("td", { className: "px-3 py-2", children: _jsx("div", { className: "flex flex-wrap gap-1", children: card.tags.map(tag => (_jsx(Badge, { variant: "outline", children: tag }, tag))) }) }), _jsx("td", { className: "px-3 py-2 text-right text-muted-foreground", children: "\u203A" })] }, card.id))) })] }) })), editing && (_jsx(EditCardDialog, { card: editing, onClose: () => setEditing(null), onDelete: () => {
+                     onChange(deleteCard(state, deck.id, editing.id));
+                     setEditing(null);
+                 }, onSave: card => {
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index a764553..bfe1d1f 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -2,7 +2,7 @@
+ // note). Interaction model deliberately mirrors what health-science students already have
+ // as muscle memory from Anki: deck browser with due badges → flip card (Space) →
+ // Again/Hard/Good/Easy (1-4), with the next-interval hint under each grade button.
+-import { IconLayoutGrid, IconList } from '@tabler/icons-react'
++import { IconLayoutGrid, IconList, IconPlayerPause } from '@tabler/icons-react'
+ import { useCallback, useEffect, useMemo, useState } from 'react'
+ 
+ import { Badge } from '@/components/ui/badge'
+@@ -626,7 +626,9 @@ function CardBrowser({
+                   onClick={() => setEditing(card)}
+                 >
+                   <td className="max-w-xs truncate px-3 py-2">
+-                    {card.suspended && <span className="mr-1 text-xs text-muted-foreground">⏸</span>}
++                    {card.suspended && (
++                      <IconPlayerPause className="-mt-px mr-1 inline text-muted-foreground" size={12} />
++                    )}
+                     {card.front}
+                   </td>
+                   <td className="hidden max-w-xs truncate px-3 py-2 text-muted-foreground md:table-cell">{card.back}</td>
+diff --git a/apps/desktop/src/components/assistant-ui/thread/assistant-message.js b/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
+index f9787b6..a6d2a89 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
++++ b/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
+@@ -4,6 +4,7 @@ import { useStore } from '@nanostores/react';
+ import { useCallback, useMemo, useState } from 'react';
+ import { contentHasVisibleText, messageContentText, pickPrimaryPreviewTarget } from '@/components/assistant-ui/thread/content';
+ import { MESSAGE_PARTS_COMPONENTS } from '@/components/assistant-ui/thread/message-parts';
++import { MessageSources } from '@/components/assistant-ui/thread/message-sources';
+ import { StreamStallIndicator } from '@/components/assistant-ui/thread/status';
+ import { formatMessageTimestamp } from '@/components/assistant-ui/thread/timestamp';
+ import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button';
+@@ -14,6 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+ import { useI18n } from '@/i18n';
+ import { triggerHaptic } from '@/lib/haptics';
+ import { GitBranchIcon, Loader2Icon, Volume2Icon, VolumeXIcon, XIcon } from '@/lib/icons';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { extractPreviewTargets } from '@/lib/preview-targets';
+ import { useEnterAnimation } from '@/lib/use-enter-animation';
+ import { cn } from '@/lib/utils';
+@@ -48,7 +50,7 @@ export const AssistantMessage = ({ onBranchInNewChat, onDismissError }) => {
+     if (isPlaceholder) {
+         return null;
+     }
+-    return (_jsxs(MessagePrimitive.Root, { className: "group flex w-full min-w-0 max-w-full flex-col gap-0 self-start overflow-hidden", "data-role": "assistant", "data-slot": "aui_assistant-message-root", "data-streaming": isRunning ? 'true' : undefined, ref: enterRef, children: [_jsxs("div", { className: "wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground", "data-slot": "aui_assistant-message-content", children: [_jsx(MessagePrimitive.Parts, { components: MESSAGE_PARTS_COMPONENTS }), isRunning && _jsx(StreamStallIndicator, {}), previewTargets.length > 0 && (_jsx("div", { className: "mt-3 flex flex-wrap gap-2", children: previewTargets.map(target => (_jsx(PreviewAttachment, { source: "explicit-link", target: target }, target))) })), _jsx(MessagePrimitive.Error, { children: _jsxs(ErrorPrimitive.Root, { className: "mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]", role: "alert", children: [_jsx(ErrorPrimitive.Message, { className: "min-w-0 flex-1" }), onDismissError && (_jsx(TooltipIconButton, { className: "-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100", onClick: () => onDismissError(messageId), side: "top", tooltip: t.assistant.thread.dismissError, children: _jsx(XIcon, { className: "size-3.5" }) }))] }) })] }), hasVisibleText && (_jsx(AssistantFooter, { getMessageText: getMessageText, messageId: messageId, onBranchInNewChat: onBranchInNewChat }))] }));
++    return (_jsxs(MessagePrimitive.Root, { className: "group flex w-full min-w-0 max-w-full flex-col gap-0 self-start overflow-hidden", "data-role": "assistant", "data-slot": "aui_assistant-message-root", "data-streaming": isRunning ? 'true' : undefined, ref: enterRef, children: [_jsxs("div", { className: "wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground", "data-slot": "aui_assistant-message-content", children: [_jsx(MessagePrimitive.Parts, { components: MESSAGE_PARTS_COMPONENTS }), isRunning && _jsx(StreamStallIndicator, {}), previewTargets.length > 0 && (_jsx("div", { className: "mt-3 flex flex-wrap gap-2", children: previewTargets.map(target => (_jsx(PreviewAttachment, { source: "explicit-link", target: target }, target))) })), _jsx(MessageSources, { text: completedText }), _jsx(MessagePrimitive.Error, { children: _jsxs(ErrorPrimitive.Root, { className: "mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]", role: "alert", children: [_jsx(ErrorPrimitive.Message, { className: "min-w-0 flex-1" }), onDismissError && (_jsx(TooltipIconButton, { className: "-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100", onClick: () => onDismissError(messageId), side: "top", tooltip: t.assistant.thread.dismissError, children: _jsx(XIcon, { className: "size-3.5" }) }))] }) })] }), hasVisibleText && (_jsx(AssistantFooter, { getMessageText: getMessageText, messageId: messageId, onBranchInNewChat: onBranchInNewChat }))] }));
+ };
+ const AssistantActionBar = ({ messageId, getMessageText, onBranchInNewChat }) => {
+     const { t } = useI18n();
+@@ -62,7 +64,7 @@ const AssistantActionBar = ({ messageId, getMessageText, onBranchInNewChat }) =>
+             // invisible by default (opacity-0 + pointer-events-none, reveals on
+             // hover), so keeping it mounted reserves stable layout height with
+             // no visual change during streaming.
+-            'relative flex flex-row items-center justify-end gap-2 py-1.5 opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100', menuOpen && 'pointer-events-auto opacity-100 [&_button]:opacity-100'), "data-slot": "aui_msg-actions", children: [_jsx(CopyButton, { appearance: "icon", buttonSize: "icon", label: copy.copy, text: getMessageText }), _jsx(ActionBarPrimitive.Reload, { asChild: true, children: _jsx(TooltipIconButton, { onClick: () => triggerHaptic('submit'), tooltip: copy.refresh, children: _jsx(Codicon, { name: "refresh" }) }) }), _jsxs(DropdownMenu, { onOpenChange: setMenuOpen, open: menuOpen, children: [_jsx(DropdownMenuTrigger, { asChild: true, children: _jsx(TooltipIconButton, { tooltip: copy.moreActions, children: _jsx(Codicon, { name: "ellipsis" }) }) }), _jsxs(DropdownMenuContent, { align: "start", onCloseAutoFocus: e => e.preventDefault(), sideOffset: 6, children: [_jsx(MessageTimestamp, {}), _jsxs(DropdownMenuItem, { onSelect: () => onBranchInNewChat?.(messageId), children: [_jsx(GitBranchIcon, {}), copy.branchNewChat] }), _jsx(ReadAloudItem, { getText: getMessageText, messageId: messageId })] })] })] }) }));
++            'relative flex flex-row items-center justify-end gap-2 py-1.5 opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100', menuOpen && 'pointer-events-auto opacity-100 [&_button]:opacity-100'), "data-slot": "aui_msg-actions", children: [_jsx(CopyButton, { appearance: "icon", buttonSize: "icon", label: copy.copy, text: getMessageText }), _jsx(ActionBarPrimitive.Reload, { asChild: true, children: _jsx(TooltipIconButton, { onClick: () => triggerHaptic('submit'), tooltip: copy.refresh, children: _jsx(Codicon, { name: "refresh" }) }) }), _jsxs(DropdownMenu, { onOpenChange: setMenuOpen, open: menuOpen, children: [_jsx(DropdownMenuTrigger, { asChild: true, children: _jsx(TooltipIconButton, { tooltip: copy.moreActions, children: _jsx(Codicon, { name: "ellipsis" }) }) }), _jsxs(DropdownMenuContent, { align: "start", onCloseAutoFocus: e => e.preventDefault(), sideOffset: 6, children: [_jsx(MessageTimestamp, {}), _jsxs(DropdownMenuItem, { onSelect: () => onBranchInNewChat?.(messageId), children: [NEMESIS_STUDENT_BUILD ? _jsx(Codicon, { name: "comment-discussion" }) : _jsx(GitBranchIcon, {}), NEMESIS_STUDENT_BUILD ? 'Continue in a new chat' : copy.branchNewChat] }), _jsx(ReadAloudItem, { getText: getMessageText, messageId: messageId })] })] })] }) }));
+ };
+ const ReadAloudItem = ({ getText, messageId }) => {
+     const { t } = useI18n();
+diff --git a/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx b/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
+index 5c73a80..4682d7a 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
++++ b/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
+@@ -15,6 +15,7 @@ import {
+   pickPrimaryPreviewTarget
+ } from '@/components/assistant-ui/thread/content'
+ import { MESSAGE_PARTS_COMPONENTS } from '@/components/assistant-ui/thread/message-parts'
++import { MessageSources } from '@/components/assistant-ui/thread/message-sources'
+ import { StreamStallIndicator } from '@/components/assistant-ui/thread/status'
+ import { formatMessageTimestamp } from '@/components/assistant-ui/thread/timestamp'
+ import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button'
+@@ -31,6 +32,7 @@ import {
+ import { useI18n } from '@/i18n'
+ import { triggerHaptic } from '@/lib/haptics'
+ import { GitBranchIcon, Loader2Icon, Volume2Icon, VolumeXIcon, XIcon } from '@/lib/icons'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { extractPreviewTargets } from '@/lib/preview-targets'
+ import { useEnterAnimation } from '@/lib/use-enter-animation'
+ import { cn } from '@/lib/utils'
+@@ -111,6 +113,9 @@ export const AssistantMessage: FC<{
+             ))}
+           </div>
+         )}
++        {/* Per-answer citation pills (student build). completedText is '' while the
++            turn streams, so this never renders (or re-renders) mid-stream. */}
++        <MessageSources text={completedText} />
+         <MessagePrimitive.Error>
+           <ErrorPrimitive.Root
+             className="mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]"
+@@ -172,9 +177,10 @@ const AssistantActionBar: FC<MessageActionProps> = ({ messageId, getMessageText,
+           </DropdownMenuTrigger>
+           <DropdownMenuContent align="start" onCloseAutoFocus={e => e.preventDefault()} sideOffset={6}>
+             <MessageTimestamp />
++            {/* Same fork-the-conversation feature; students get plain words, not git ones. */}
+             <DropdownMenuItem onSelect={() => onBranchInNewChat?.(messageId)}>
+-              <GitBranchIcon />
+-              {copy.branchNewChat}
++              {NEMESIS_STUDENT_BUILD ? <Codicon name="comment-discussion" /> : <GitBranchIcon />}
++              {NEMESIS_STUDENT_BUILD ? 'Continue in a new chat' : copy.branchNewChat}
+             </DropdownMenuItem>
+             <ReadAloudItem getText={getMessageText} messageId={messageId} />
+           </DropdownMenuContent>
+diff --git a/apps/desktop/src/components/assistant-ui/thread/message-sources.js b/apps/desktop/src/components/assistant-ui/thread/message-sources.js
+new file mode 100644
+index 0000000..c918946
+--- /dev/null
++++ b/apps/desktop/src/components/assistant-ui/thread/message-sources.js
+@@ -0,0 +1,15 @@
++import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
++// Inline source pills — PharmaOrb-style chips directly under an assistant answer,
++// built from the citations named in THAT answer's text (PMIDs, links, trial ids, DOIs).
++// The right-sidebar Sources rail stays the whole-chat view (it also digs through tool
++// traffic); this is the per-answer receipt.
++import { useMemo } from 'react';
++import { sourcesFromText } from '@/app/right-sidebar/sources';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++export const MessageSources = ({ text }) => {
++    const sources = useMemo(() => (text ? sourcesFromText(text) : []), [text]);
++    if (!NEMESIS_STUDENT_BUILD || sources.length === 0) {
++        return null;
++    }
++    return (_jsx("div", { className: "mt-3 flex flex-wrap gap-1.5", "data-slot": "nemesis_message-sources", children: sources.map(source => (_jsxs("button", { className: "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground", onClick: () => void window.hermesDesktop?.openExternal?.(source.url), title: `${source.title}\n${source.url}`, type: "button", children: [_jsx("span", { className: "text-[10px] font-semibold uppercase tracking-wide text-(--theme-primary)", children: source.badge }), _jsx("span", { className: "max-w-[14rem] truncate text-muted-foreground", children: source.title })] }, source.url))) }));
++};
+diff --git a/apps/desktop/src/components/assistant-ui/thread/message-sources.tsx b/apps/desktop/src/components/assistant-ui/thread/message-sources.tsx
+new file mode 100644
+index 0000000..9d42a9b
+--- /dev/null
++++ b/apps/desktop/src/components/assistant-ui/thread/message-sources.tsx
+@@ -0,0 +1,35 @@
++// Inline source pills — PharmaOrb-style chips directly under an assistant answer,
++// built from the citations named in THAT answer's text (PMIDs, links, trial ids, DOIs).
++// The right-sidebar Sources rail stays the whole-chat view (it also digs through tool
++// traffic); this is the per-answer receipt.
++import { type FC, useMemo } from 'react'
++
++import { sourcesFromText } from '@/app/right-sidebar/sources'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
++
++export const MessageSources: FC<{ text: string }> = ({ text }) => {
++  const sources = useMemo(() => (text ? sourcesFromText(text) : []), [text])
++
++  if (!NEMESIS_STUDENT_BUILD || sources.length === 0) {
++    return null
++  }
++
++  return (
++    <div className="mt-3 flex flex-wrap gap-1.5" data-slot="nemesis_message-sources">
++      {sources.map(source => (
++        <button
++          className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground"
++          key={source.url}
++          onClick={() => void window.hermesDesktop?.openExternal?.(source.url)}
++          title={`${source.title}\n${source.url}`}
++          type="button"
++        >
++          <span className="text-[10px] font-semibold uppercase tracking-wide text-(--theme-primary)">
++            {source.badge}
++          </span>
++          <span className="max-w-[14rem] truncate text-muted-foreground">{source.title}</span>
++        </button>
++      ))}
++    </div>
++  )
++}
+-- 
+2.50.1 (Apple Git-155)
+
