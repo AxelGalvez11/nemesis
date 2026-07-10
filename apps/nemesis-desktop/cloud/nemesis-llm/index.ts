@@ -27,6 +27,22 @@ const FALLBACK_DAILY_TOKENS = 150_000 // free-tier default when no entitlement r
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
 
+/**
+ * DeepSeek retires the 'deepseek-chat'/'deepseek-reasoner' aliases on 2026-07-24.
+ * Mirror of resolveDeepSeekModel in supabase/functions/ask/llm.ts — map to the durable
+ * V4 names plus the `thinking` mode selector, so desktop clients keep working after the
+ * aliases die. A client-supplied body.thinking always wins over this default.
+ */
+function resolveModel(model: string): { model: string; thinking?: { type: 'disabled' | 'enabled' } } {
+  const m = model.toLowerCase()
+
+  if (m === 'deepseek-chat') return { model: 'deepseek-v4-flash', thinking: { type: 'disabled' } }
+  if (m === 'deepseek-reasoner') return { model: 'deepseek-v4-flash', thinking: { type: 'enabled' } }
+  if (m.includes('v4-flash')) return { model, thinking: { type: 'disabled' } }
+
+  return { model }
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     headers: { 'Content-Type': 'application/json' },
@@ -179,7 +195,15 @@ async function chatCompletions(req: Request): Promise<Response> {
     return json({ error: 'invalid chat.completions body' }, 400)
   }
 
-  const model = typeof body.model === 'string' ? body.model : 'deepseek-chat'
+  const requested = typeof body.model === 'string' ? body.model : 'deepseek-chat'
+  const resolved = resolveModel(requested)
+  const model = resolved.model
+  body.model = model
+
+  if (resolved.thinking && body.thinking === undefined) {
+    body.thinking = resolved.thinking
+  }
+
   const streaming = body.stream === true
 
   if (streaming) {
@@ -253,7 +277,9 @@ Deno.serve(async (req: Request) => {
     return json({
       data: [
         { id: 'deepseek-chat', object: 'model', owned_by: 'nemesis' },
-        { id: 'deepseek-reasoner', object: 'model', owned_by: 'nemesis' }
+        { id: 'deepseek-reasoner', object: 'model', owned_by: 'nemesis' },
+        { id: 'deepseek-v4-flash', object: 'model', owned_by: 'nemesis' },
+        { id: 'deepseek-v4-pro', object: 'model', owned_by: 'nemesis' }
       ],
       object: 'list'
     })
