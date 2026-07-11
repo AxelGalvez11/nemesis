@@ -1,0 +1,908 @@
+From 9937cd473b03e05fa3bf3fc521259f78d838fc54 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 13:31:00 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis-kit):=20round-31=20=E2=80=94=20Act?=
+ =?UTF-8?q?ivity=20Ledger=20(plain-English=20append-only=20action=20log)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- lib/activity-ledger.ts: tolerant ledger.jsonl loader (skip bad lines, newest-first,
+  500 cap) + pure groupByDay/trustLine helpers; 5 unit tests (node-safe window stub)
+- /ledger page: day-grouped feed w/ mono timestamps, area chips, written paths,
+  sticky 'Sent nothing. Submitted nothing.' trust header, focus+manual refresh,
+  honest empty state; student sidebar nav directly under Today
+- Today trust stripe now navigates to /ledger
+---
+ apps/desktop/src/app/chat/sidebar/index.js   |   7 +-
+ apps/desktop/src/app/chat/sidebar/index.tsx  |   7 +
+ apps/desktop/src/app/desktop-controller.js   |   3 +-
+ apps/desktop/src/app/desktop-controller.tsx  |   9 ++
+ apps/desktop/src/app/ledger/index.js         |  38 +++++
+ apps/desktop/src/app/ledger/index.tsx        | 129 ++++++++++++++++
+ apps/desktop/src/app/routes.js               |   2 +
+ apps/desktop/src/app/routes.ts               |   4 +
+ apps/desktop/src/app/today/index.js          |   4 +-
+ apps/desktop/src/app/today/index.tsx         |  10 +-
+ apps/desktop/src/app/types.ts                |   1 +
+ apps/desktop/src/lib/activity-ledger.js      | 111 ++++++++++++++
+ apps/desktop/src/lib/activity-ledger.test.js |  72 +++++++++
+ apps/desktop/src/lib/activity-ledger.test.ts |  94 ++++++++++++
+ apps/desktop/src/lib/activity-ledger.ts      | 152 +++++++++++++++++++
+ 15 files changed, 636 insertions(+), 7 deletions(-)
+ create mode 100644 apps/desktop/src/app/ledger/index.js
+ create mode 100644 apps/desktop/src/app/ledger/index.tsx
+ create mode 100644 apps/desktop/src/lib/activity-ledger.js
+ create mode 100644 apps/desktop/src/lib/activity-ledger.test.js
+ create mode 100644 apps/desktop/src/lib/activity-ledger.test.ts
+ create mode 100644 apps/desktop/src/lib/activity-ledger.ts
+
+diff --git a/apps/desktop/src/app/chat/sidebar/index.js b/apps/desktop/src/app/chat/sidebar/index.js
+index 3e744c05607..eb3bfa5eaa4 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.js
++++ b/apps/desktop/src/app/chat/sidebar/index.js
+@@ -24,7 +24,7 @@ import { $newChatProfile, $profiles, $profileScope, ALL_PROFILES, normalizeProfi
+ import { $activeProjectId, $projects, $projectScope, $projectTree, $projectTreeLoading, $removedSessionIds, $reposScanning, ALL_PROJECTS, enterProject, exitProjectScope, fetchProjectSessions, openProjectCreate, refreshProjects, refreshProjectTree, refreshWorktrees, scanAndRecordRepos } from '@/store/projects';
+ import { $cronSessions, $currentCwd, $gatewayState, $messagingPlatformTotals, $messagingSessions, $messagingTruncated, $selectedStoredSessionId, $sessionProfileTotals, $sessions, $sessionsLoading, $sessionsTotal, $workingSessionIds, sessionPinId, setCurrentCwd } from '@/store/session';
+ import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_NAV } from '@/nemesis';
+-import { ARTIFACTS_ROUTE, CALENDAR_ROUTE, GRAPH_ROUTE, LIBRARY_ROUTE, MESSAGING_ROUTE, RECORDER_ROUTE, SETTINGS_ROUTE, SKILLS_ROUTE, STUDY_ROUTE, TODAY_ROUTE } from '../../routes';
++import { ARTIFACTS_ROUTE, CALENDAR_ROUTE, GRAPH_ROUTE, LEDGER_ROUTE, LIBRARY_ROUTE, MESSAGING_ROUTE, RECORDER_ROUTE, SETTINGS_ROUTE, SKILLS_ROUTE, STUDY_ROUTE, TODAY_ROUTE } from '../../routes';
+ import { countLabel } from './chrome';
+ import { SidebarCronJobsSection } from './cron-jobs-section';
+ import { SidebarLoadMoreRow } from './load-more-row';
+@@ -40,8 +40,12 @@ import { SidebarSessionsSection, VIRTUALIZE_THRESHOLD } from './sessions-section
+ const NON_SESSION_INITIAL_ROWS = 3;
+ const NON_SESSION_LOAD_STEP = 10;
+ const NEW_SESSION_KBD = comboTokens('mod+n');
++const STUDENT_LEDGER_NAV = NEMESIS_STUDENT_BUILD
++    ? [{ id: 'ledger', label: 'Ledger', icon: props => _jsx(Codicon, { name: "history", ...props }), route: LEDGER_ROUTE }]
++    : [];
+ const SIDEBAR_NAV_ALL = [
+     { id: 'today', label: 'Today', icon: props => _jsx(Codicon, { name: "dashboard", ...props }), route: TODAY_ROUTE },
++    ...STUDENT_LEDGER_NAV,
+     {
+         id: 'new-session',
+         label: '',
+@@ -702,6 +706,7 @@ export function ChatSidebar({ currentView, onNavigate, onLoadMoreSessions, onLoa
+         'in-data-[pane-hover-reveal=open]:pointer-events-auto in-data-[pane-hover-reveal=open]:border-(--sidebar-edge-border) in-data-[pane-hover-reveal=open]:bg-(--ui-sidebar-surface-background) in-data-[pane-hover-reveal=open]:opacity-100', 'group-hover/reveal:pointer-events-auto group-hover/reveal:border-(--sidebar-edge-border) group-hover/reveal:bg-(--ui-sidebar-surface-background) group-hover/reveal:opacity-100'), collapsible: "none", children: [_jsxs(SidebarContent, { className: "gap-0 overflow-hidden bg-transparent px-2.5", children: [_jsx(SidebarGroup, { className: "shrink-0 p-0 pb-2 pt-[calc(var(--titlebar-height)+0.375rem)]", children: _jsx(SidebarGroupContent, { children: _jsx(SidebarMenu, { className: "gap-px", children: SIDEBAR_NAV.map(item => {
+                                     const isInteractive = Boolean(item.action) || Boolean(item.route);
+                                     const active = (item.id === 'today' && currentView === 'today') ||
++                                        (item.id === 'ledger' && currentView === 'ledger') ||
+                                         (item.id === 'skills' && currentView === 'skills') ||
+                                         (item.id === 'messaging' && currentView === 'messaging') ||
+                                         (item.id === 'artifacts' && currentView === 'artifacts');
+diff --git a/apps/desktop/src/app/chat/sidebar/index.tsx b/apps/desktop/src/app/chat/sidebar/index.tsx
+index afda0e183dc..ee998d5cca4 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.tsx
++++ b/apps/desktop/src/app/chat/sidebar/index.tsx
+@@ -105,6 +105,7 @@ import {
+   ARTIFACTS_ROUTE,
+   CALENDAR_ROUTE,
+   GRAPH_ROUTE,
++  LEDGER_ROUTE,
+   LIBRARY_ROUTE,
+   MESSAGING_ROUTE,
+   RECORDER_ROUTE,
+@@ -147,8 +148,13 @@ const NON_SESSION_LOAD_STEP = 10
+ 
+ const NEW_SESSION_KBD = comboTokens('mod+n')
+ 
++const STUDENT_LEDGER_NAV: SidebarNavItem[] = NEMESIS_STUDENT_BUILD
++  ? [{ id: 'ledger', label: 'Ledger', icon: props => <Codicon name="history" {...props} />, route: LEDGER_ROUTE }]
++  : []
++
+ const SIDEBAR_NAV_ALL: SidebarNavItem[] = [
+   { id: 'today', label: 'Today', icon: props => <Codicon name="dashboard" {...props} />, route: TODAY_ROUTE },
++  ...STUDENT_LEDGER_NAV,
+   {
+     id: 'new-session',
+     label: '',
+@@ -1084,6 +1090,7 @@ export function ChatSidebar({
+ 
+                 const active =
+                   (item.id === 'today' && currentView === 'today') ||
++                  (item.id === 'ledger' && currentView === 'ledger') ||
+                   (item.id === 'skills' && currentView === 'skills') ||
+                   (item.id === 'messaging' && currentView === 'messaging') ||
+                   (item.id === 'artifacts' && currentView === 'artifacts')
+diff --git a/apps/desktop/src/app/desktop-controller.js b/apps/desktop/src/app/desktop-controller.js
+index 0d9b30267d6..daf5550b9a5 100644
+--- a/apps/desktop/src/app/desktop-controller.js
++++ b/apps/desktop/src/app/desktop-controller.js
+@@ -97,6 +97,7 @@ const GraphView = lazy(async () => ({ default: (await import('./graph')).GraphVi
+ const RecorderView = lazy(async () => ({ default: (await import('./recorder')).RecorderView }));
+ const CalendarView = lazy(async () => ({ default: (await import('./calendar')).CalendarView }));
+ const TodayView = lazy(async () => ({ default: (await import('./today')).TodayView }));
++const LedgerView = lazy(async () => ({ default: (await import('./ledger')).LedgerView }));
+ // Latest cron-job sessions surfaced in the collapsed "Cron jobs" section. The
+ // Cron sessions are written by a background scheduler tick (the desktop
+ // backend), so no user action signals the UI. Poll the bounded cron list on
+@@ -829,7 +830,7 @@ export function DesktopController() {
+         // Mobile overlay sits at its min width — compact, doesn't bury the chat.
+         overlayWidth: FILE_BROWSER_MIN_WIDTH, resizable: true, side: railSide, width: FILE_BROWSER_DEFAULT_WIDTH, children: _jsx(ReviewPane, {}, currentCwd || 'no-cwd') }, "review"));
+     const terminalPane = (_jsx(Pane, { bottomRow: terminalAsRow, defaultOpen: true, disabled: !terminalSidebarOpen, divider: true, height: "38vh", id: "terminal-sidebar", maxHeight: "80vh", maxWidth: "80vw", minHeight: "8rem", minWidth: "22vw", resizable: true, side: railSide, width: "42vw", children: _jsx("div", { className: cn('relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-(--ui-editor-surface-background)', terminalAsRow ? 'border-l border-(--ui-stroke-secondary) pt-0' : 'pt-(--titlebar-height)'), children: _jsx(TerminalPaneChrome, {}) }) }, "terminal-sidebar"));
+-    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: chatOpen && (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: studentColdStart ? _jsx(Navigate, { replace: true, to: TODAY_ROUTE }) : chatView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(TodayView, {}) }), path: "today" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(CalendarView, {}) }), path: "calendar" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
++    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: chatOpen && (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: studentColdStart ? _jsx(Navigate, { replace: true, to: TODAY_ROUTE }) : chatView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(TodayView, {}) }), path: "today" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LedgerView, {}) }), path: "ledger" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(CalendarView, {}) }), path: "calendar" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
+ }
+ function LegacySessionRedirect() {
+     const { sessionId } = useParams();
+diff --git a/apps/desktop/src/app/desktop-controller.tsx b/apps/desktop/src/app/desktop-controller.tsx
+index 8b71de628f8..094a8f3a6b2 100644
+--- a/apps/desktop/src/app/desktop-controller.tsx
++++ b/apps/desktop/src/app/desktop-controller.tsx
+@@ -147,6 +147,7 @@ const GraphView = lazy(async () => ({ default: (await import('./graph')).GraphVi
+ const RecorderView = lazy(async () => ({ default: (await import('./recorder')).RecorderView }))
+ const CalendarView = lazy(async () => ({ default: (await import('./calendar')).CalendarView }))
+ const TodayView = lazy(async () => ({ default: (await import('./today')).TodayView }))
++const LedgerView = lazy(async () => ({ default: (await import('./ledger')).LedgerView }))
+ 
+ // Latest cron-job sessions surfaced in the collapsed "Cron jobs" section. The
+ // Cron sessions are written by a background scheduler tick (the desktop
+@@ -1357,6 +1358,14 @@ export function DesktopController() {
+             }
+             path="today"
+           />
++          <Route
++            element={
++              <Suspense fallback={null}>
++                <LedgerView />
++              </Suspense>
++            }
++            path="ledger"
++          />
+           <Route
+             element={
+               <Suspense fallback={null}>
+diff --git a/apps/desktop/src/app/ledger/index.js b/apps/desktop/src/app/ledger/index.js
+new file mode 100644
+index 00000000000..32eee7b305f
+--- /dev/null
++++ b/apps/desktop/src/app/ledger/index.js
+@@ -0,0 +1,38 @@
++import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
++import { useCallback, useEffect, useMemo, useState } from 'react';
++import { Button } from '@/components/ui/button';
++import { Codicon } from '@/components/ui/codicon';
++import { groupByDay, loadLedger, trustLine } from '@/lib/activity-ledger';
++import { cn } from '@/lib/utils';
++function formatTimestamp(ts) {
++    return new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
++}
++function LedgerRow({ entry }) {
++    const externalAction = entry.sent === true || entry.submitted === true;
++    return (_jsxs("article", { className: cn('grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 border-l-2 py-3 pl-3 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-5 sm:pl-4', externalAction ? 'border-l-(--ui-red)' : 'border-l-transparent'), children: [_jsx("time", { className: "pt-0.5 font-mono text-[0.67rem] tabular-nums text-(--ui-text-tertiary)", dateTime: entry.ts, children: formatTimestamp(entry.ts) }), _jsxs("div", { className: "min-w-0", children: [_jsxs("div", { className: "flex flex-wrap items-start gap-2", children: [_jsx("p", { className: "min-w-0 flex-1 text-sm leading-5 text-(--ui-text-primary)", children: entry.action }), _jsx("span", { className: "shrink-0 rounded bg-(--ui-bg-quaternary) px-1.5 py-0.5 text-[0.625rem] font-medium uppercase tracking-[0.06em] text-(--ui-text-tertiary)", children: entry.area })] }), entry.detail && _jsx("p", { className: "mt-1 text-xs leading-relaxed text-(--ui-text-secondary)", children: entry.detail }), entry.wrote?.map(path => (_jsx("p", { className: "mt-1 truncate font-mono text-[0.65rem] leading-4 text-(--ui-text-quaternary)", title: path, children: path }, path))), externalAction && (_jsx("p", { className: "mt-1.5 text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-(--ui-red)", children: [entry.sent && 'Sent', entry.submitted && 'Submitted'].filter(Boolean).join(' · ') }))] })] }));
++}
++export function LedgerView() {
++    const [entries, setEntries] = useState([]);
++    const [loaded, setLoaded] = useState(false);
++    const [refreshing, setRefreshing] = useState(false);
++    const refresh = useCallback(async (manual = false) => {
++        if (manual) {
++            setRefreshing(true);
++        }
++        try {
++            setEntries(await loadLedger());
++        }
++        finally {
++            setLoaded(true);
++            setRefreshing(false);
++        }
++    }, []);
++    useEffect(() => {
++        void refresh();
++        const onFocus = () => void refresh();
++        window.addEventListener('focus', onFocus);
++        return () => window.removeEventListener('focus', onFocus);
++    }, [refresh]);
++    const groups = useMemo(() => groupByDay(entries), [entries]);
++    return (_jsxs("main", { className: "h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background)", children: [_jsx("header", { className: "sticky top-0 z-10 border-b border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background)/95 backdrop-blur", children: _jsxs("div", { className: "mx-auto w-full max-w-[960px] px-5 pb-4 pt-6 sm:px-7", children: [_jsxs("div", { className: "flex items-center justify-between gap-4", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)", children: "Activity" }), _jsx("h1", { className: "mt-1 text-2xl font-semibold tracking-[-0.025em]", children: "Ledger" })] }), _jsxs(Button, { disabled: refreshing, onClick: () => void refresh(true), size: "sm", variant: "outline", children: [_jsx(Codicon, { name: "refresh", spinning: refreshing }), "Refresh"] })] }), _jsxs("div", { className: "mt-4 flex items-center justify-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) px-4 py-3 text-center text-[0.6875rem] text-(--ui-text-tertiary)", children: [_jsx(Codicon, { className: "shrink-0", name: "shield", size: "0.85rem" }), _jsx("span", { children: trustLine(entries) })] })] }) }), _jsx("div", { className: "mx-auto w-full max-w-[960px] px-5 pb-10 pt-5 sm:px-7", children: !loaded ? (_jsxs("div", { className: "flex items-center justify-center gap-2 py-16 text-xs text-(--ui-text-tertiary)", children: [_jsx(Codicon, { name: "loading", spinning: true }), "Reading the ledger"] })) : groups.length === 0 ? (_jsx("div", { className: "grid min-h-64 place-items-center px-5 text-center", children: _jsx("p", { className: "max-w-md text-sm leading-relaxed text-(--ui-text-secondary)", children: "No actions recorded yet. Every action Nemesis takes will appear here, in plain English." }) })) : (_jsx("div", { className: "space-y-7", children: groups.map(group => (_jsxs("section", { children: [_jsx("h2", { className: "border-b border-(--ui-stroke-tertiary) pb-2 text-xs font-semibold text-(--ui-text-secondary)", children: group.label }), _jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: group.entries.map((entry, index) => (_jsx(LedgerRow, { entry: entry }, `${entry.ts}:${entry.action}:${index}`))) })] }, group.dayIso))) })) })] }));
++}
+diff --git a/apps/desktop/src/app/ledger/index.tsx b/apps/desktop/src/app/ledger/index.tsx
+new file mode 100644
+index 00000000000..1df04702f6e
+--- /dev/null
++++ b/apps/desktop/src/app/ledger/index.tsx
+@@ -0,0 +1,129 @@
++import { useCallback, useEffect, useMemo, useState } from 'react'
++
++import { Button } from '@/components/ui/button'
++import { Codicon } from '@/components/ui/codicon'
++import { groupByDay, type LedgerEntry, loadLedger, trustLine } from '@/lib/activity-ledger'
++import { cn } from '@/lib/utils'
++
++function formatTimestamp(ts: string): string {
++  return new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' })
++}
++
++function LedgerRow({ entry }: { entry: LedgerEntry }) {
++  const externalAction = entry.sent === true || entry.submitted === true
++
++  return (
++    <article
++      className={cn(
++        'grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3 border-l-2 py-3 pl-3 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:gap-5 sm:pl-4',
++        externalAction ? 'border-l-(--ui-red)' : 'border-l-transparent'
++      )}
++    >
++      <time className="pt-0.5 font-mono text-[0.67rem] tabular-nums text-(--ui-text-tertiary)" dateTime={entry.ts}>
++        {formatTimestamp(entry.ts)}
++      </time>
++      <div className="min-w-0">
++        <div className="flex flex-wrap items-start gap-2">
++          <p className="min-w-0 flex-1 text-sm leading-5 text-(--ui-text-primary)">{entry.action}</p>
++          <span className="shrink-0 rounded bg-(--ui-bg-quaternary) px-1.5 py-0.5 text-[0.625rem] font-medium uppercase tracking-[0.06em] text-(--ui-text-tertiary)">
++            {entry.area}
++          </span>
++        </div>
++        {entry.detail && <p className="mt-1 text-xs leading-relaxed text-(--ui-text-secondary)">{entry.detail}</p>}
++        {entry.wrote?.map(path => (
++          <p className="mt-1 truncate font-mono text-[0.65rem] leading-4 text-(--ui-text-quaternary)" key={path} title={path}>
++            {path}
++          </p>
++        ))}
++        {externalAction && (
++          <p className="mt-1.5 text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-(--ui-red)">
++            {[entry.sent && 'Sent', entry.submitted && 'Submitted'].filter(Boolean).join(' · ')}
++          </p>
++        )}
++      </div>
++    </article>
++  )
++}
++
++export function LedgerView() {
++  const [entries, setEntries] = useState<LedgerEntry[]>([])
++  const [loaded, setLoaded] = useState(false)
++  const [refreshing, setRefreshing] = useState(false)
++
++  const refresh = useCallback(async (manual = false) => {
++    if (manual) {
++      setRefreshing(true)
++    }
++
++    try {
++      setEntries(await loadLedger())
++    } finally {
++      setLoaded(true)
++      setRefreshing(false)
++    }
++  }, [])
++
++  useEffect(() => {
++    void refresh()
++
++    const onFocus = () => void refresh()
++    window.addEventListener('focus', onFocus)
++
++    return () => window.removeEventListener('focus', onFocus)
++  }, [refresh])
++
++  const groups = useMemo(() => groupByDay(entries), [entries])
++
++  return (
++    <main className="h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background)">
++      <header className="sticky top-0 z-10 border-b border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background)/95 backdrop-blur">
++        <div className="mx-auto w-full max-w-[960px] px-5 pb-4 pt-6 sm:px-7">
++          <div className="flex items-center justify-between gap-4">
++            <div>
++              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">Activity</p>
++              <h1 className="mt-1 text-2xl font-semibold tracking-[-0.025em]">Ledger</h1>
++            </div>
++            <Button disabled={refreshing} onClick={() => void refresh(true)} size="sm" variant="outline">
++              <Codicon name="refresh" spinning={refreshing} />
++              Refresh
++            </Button>
++          </div>
++          <div className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) px-4 py-3 text-center text-[0.6875rem] text-(--ui-text-tertiary)">
++            <Codicon className="shrink-0" name="shield" size="0.85rem" />
++            <span>{trustLine(entries)}</span>
++          </div>
++        </div>
++      </header>
++
++      <div className="mx-auto w-full max-w-[960px] px-5 pb-10 pt-5 sm:px-7">
++        {!loaded ? (
++          <div className="flex items-center justify-center gap-2 py-16 text-xs text-(--ui-text-tertiary)">
++            <Codicon name="loading" spinning />
++            Reading the ledger
++          </div>
++        ) : groups.length === 0 ? (
++          <div className="grid min-h-64 place-items-center px-5 text-center">
++            <p className="max-w-md text-sm leading-relaxed text-(--ui-text-secondary)">
++              No actions recorded yet. Every action Nemesis takes will appear here, in plain English.
++            </p>
++          </div>
++        ) : (
++          <div className="space-y-7">
++            {groups.map(group => (
++              <section key={group.dayIso}>
++                <h2 className="border-b border-(--ui-stroke-tertiary) pb-2 text-xs font-semibold text-(--ui-text-secondary)">
++                  {group.label}
++                </h2>
++                <div className="divide-y divide-(--ui-stroke-tertiary)">
++                  {group.entries.map((entry, index) => (
++                    <LedgerRow entry={entry} key={`${entry.ts}:${entry.action}:${index}`} />
++                  ))}
++                </div>
++              </section>
++            ))}
++          </div>
++        )}
++      </div>
++    </main>
++  )
++}
+diff --git a/apps/desktop/src/app/routes.js b/apps/desktop/src/app/routes.js
+index 8d3e64d7ef3..39a1088aa5e 100644
+--- a/apps/desktop/src/app/routes.js
++++ b/apps/desktop/src/app/routes.js
+@@ -1,6 +1,7 @@
+ export const SESSION_ROUTE_PREFIX = '/';
+ export const NEW_CHAT_ROUTE = '/';
+ export const TODAY_ROUTE = '/today';
++export const LEDGER_ROUTE = '/ledger';
+ export const SETTINGS_ROUTE = '/settings';
+ export const COMMAND_CENTER_ROUTE = '/command-center';
+ export const SKILLS_ROUTE = '/skills';
+@@ -18,6 +19,7 @@ export const STARMAP_ROUTE = '/starmap';
+ export const APP_ROUTES = [
+     { id: 'new', path: NEW_CHAT_ROUTE, view: 'chat' },
+     { id: 'today', path: TODAY_ROUTE, view: 'today' },
++    { id: 'ledger', path: LEDGER_ROUTE, view: 'ledger' },
+     { id: 'settings', path: SETTINGS_ROUTE, view: 'settings' },
+     { id: 'command-center', path: COMMAND_CENTER_ROUTE, view: 'command-center' },
+     { id: 'skills', path: SKILLS_ROUTE, view: 'skills' },
+diff --git a/apps/desktop/src/app/routes.ts b/apps/desktop/src/app/routes.ts
+index 3490b12de48..a1e1adadaed 100644
+--- a/apps/desktop/src/app/routes.ts
++++ b/apps/desktop/src/app/routes.ts
+@@ -1,6 +1,7 @@
+ export const SESSION_ROUTE_PREFIX = '/'
+ export const NEW_CHAT_ROUTE = '/'
+ export const TODAY_ROUTE = '/today'
++export const LEDGER_ROUTE = '/ledger'
+ export const SETTINGS_ROUTE = '/settings'
+ export const COMMAND_CENTER_ROUTE = '/command-center'
+ export const SKILLS_ROUTE = '/skills'
+@@ -25,6 +26,7 @@ export type AppView =
+   | 'cron'
+   | 'graph'
+   | 'library'
++  | 'ledger'
+   | 'messaging'
+   | 'profiles'
+   | 'recorder'
+@@ -42,6 +44,7 @@ export type AppRouteId =
+   | 'cron'
+   | 'graph'
+   | 'library'
++  | 'ledger'
+   | 'messaging'
+   | 'new'
+   | 'profiles'
+@@ -61,6 +64,7 @@ export interface AppRoute {
+ export const APP_ROUTES = [
+   { id: 'new', path: NEW_CHAT_ROUTE, view: 'chat' },
+   { id: 'today', path: TODAY_ROUTE, view: 'today' },
++  { id: 'ledger', path: LEDGER_ROUTE, view: 'ledger' },
+   { id: 'settings', path: SETTINGS_ROUTE, view: 'settings' },
+   { id: 'command-center', path: COMMAND_CENTER_ROUTE, view: 'command-center' },
+   { id: 'skills', path: SKILLS_ROUTE, view: 'skills' },
+diff --git a/apps/desktop/src/app/today/index.js b/apps/desktop/src/app/today/index.js
+index b6bdac74fa9..02c84a40477 100644
+--- a/apps/desktop/src/app/today/index.js
++++ b/apps/desktop/src/app/today/index.js
+@@ -6,7 +6,7 @@ import { Codicon } from '@/components/ui/codicon';
+ import { courseTitle, dueSoon, emptyGraph, eventsOnDay, loadAcademicGraph, recentChanges, scoreNextAction } from '@/lib/academic-graph';
+ import { setComposerDraft } from '@/store/composer';
+ import { dateKey, loadCalendarState, parseDateKey } from '../calendar/model';
+-import { CALENDAR_ROUTE, NEW_CHAT_ROUTE, SETTINGS_ROUTE } from '../routes';
++import { CALENDAR_ROUTE, LEDGER_ROUTE, NEW_CHAT_ROUTE, SETTINGS_ROUTE } from '../routes';
+ const DAY_START_MINUTES = 8 * 60;
+ const DAY_END_MINUTES = 22 * 60;
+ const DEFAULT_EVENT_MINUTES = 60;
+@@ -247,5 +247,5 @@ export function TodayView() {
+     const dateLabel = now.toLocaleDateString(undefined, { day: 'numeric', month: 'short', weekday: 'long' });
+     return (_jsx("main", { className: "h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background)", children: _jsxs("div", { className: "mx-auto flex w-full max-w-[1180px] flex-col px-5 pb-7 pt-6 sm:px-7", children: [_jsxs("header", { children: [_jsxs("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: ["Today \u00B7 ", dateLabel] }), _jsxs("h1", { className: "mt-2 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl", children: ["Good ", greeting, ", ", graph.student?.name?.trim() || 'there'] }), _jsxs("p", { className: "mt-2 text-sm text-(--ui-text-secondary)", children: [formatDuration(free), " free today \u00B7 ", needsYou, " item", needsYou === 1 ? '' : 's', " need you \u00B7 ", overdue.length, ' ', "overdue"] })] }), _jsx("section", { className: "mt-6 rounded-xl border-2 border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--ui-bg-elevated))] p-5 shadow-[0_0_28px_color-mix(in_srgb,var(--theme-primary)_9%,transparent)]", children: _jsxs("div", { className: "flex flex-col gap-5 sm:flex-row sm:items-center", children: [_jsx("span", { className: "grid size-11 shrink-0 place-items-center rounded-xl bg-(--theme-primary)/15 text-(--theme-primary)", children: _jsx(Codicon, { name: "target", size: "1.2rem" }) }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-(--theme-primary)", children: "Start here" }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-[-0.015em]", children: nextAction?.object.title ?? 'You are clear for the moment' }), _jsx("p", { className: "mt-1 text-xs text-(--ui-text-secondary)", children: nextAction?.reason ?? 'No urgent deadline is competing for your attention.' })] }), nextAction && (_jsxs(Button, { className: "self-start sm:self-auto", onClick: startNextAction, size: "lg", children: [_jsx(Codicon, { name: "play" }), "Start"] }))] }) }), _jsxs("div", { className: "mt-5 grid [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))] gap-4", children: [_jsx(Card, { icon: "history", title: "Changed since yesterday", children: changes.length === 0 ? (_jsx(EmptyCopy, { children: "Nothing new." })) : (_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: changes.slice(0, 4).map(change => (_jsxs("div", { className: "flex gap-2.5 py-2.5 first:pt-0 last:pb-0", children: [_jsx("span", { className: changeIsTrusted(change)
+                                                 ? 'mt-1.5 size-1.5 shrink-0 rounded-full bg-(--theme-primary)'
+-                                                : 'mt-1.5 size-1.5 shrink-0 rounded-full bg-(--ui-text-quaternary)' }), _jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "text-xs leading-relaxed text-(--ui-text-primary)", children: change.summary }), changeIsTrusted(change) && (_jsx("p", { className: "mt-1 text-[0.625rem] font-medium uppercase tracking-[0.07em] text-(--theme-primary)", children: change.kind === 'date-changed' ? 'Date changed' : 'Instructor stated' }))] })] }, `${change.objectId}:${change.ts}`))) })) }), _jsx(Card, { icon: "calendar", title: "Due soon", children: upcoming.length === 0 ? (_jsx(EmptyCopy, { children: "Nothing due \u2014 you're clear." })) : (_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: upcoming.slice(0, 5).map(object => (_jsxs("button", { className: "group flex w-full items-start justify-between gap-3 py-2.5 text-left first:pt-0 last:pb-0", onClick: () => navigate(CALENDAR_ROUTE), type: "button", children: [_jsxs("span", { className: "min-w-0", children: [_jsx("span", { className: "block truncate text-xs font-medium group-hover:text-(--theme-primary)", children: object.title }), _jsx("span", { className: "mt-0.5 block truncate text-[0.6875rem] text-(--ui-text-tertiary)", children: courseTitle(graph, object.course) || object.type })] }), _jsx("span", { className: "shrink-0 text-[0.6875rem] font-medium tabular-nums text-(--ui-text-secondary)", children: relativeDate(object.date, now) })] }, object.id))) })) }), _jsx(Card, { icon: "checklist", title: "Today's plan", children: plan.length === 0 ? (_jsx(EmptyCopy, { children: "Your day is open. Add a study block when you know what deserves the time." })) : (_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: plan.slice(0, 5).map(item => (_jsxs("div", { className: "flex gap-3 py-2.5 first:pt-0 last:pb-0", children: [_jsx("span", { className: "w-16 shrink-0 text-[0.6875rem] font-medium tabular-nums text-(--theme-primary)", children: item.time ? formatTime(item.time) : 'Any time' }), _jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "truncate text-xs font-medium", children: item.title }), _jsx("p", { className: "mt-0.5 truncate text-[0.6875rem] capitalize text-(--ui-text-tertiary)", children: [item.kind, item.subtitle].filter(Boolean).join(' · ') })] })] }, item.id))) })) }), _jsx(Card, { icon: "mail", title: "Inbox needs you", children: inbox.length === 0 ? (_jsx(EmptyCopy, { children: "Nothing waiting for you." })) : (_jsxs("div", { children: [_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: inbox.slice(0, 3).map(object => (_jsxs("div", { className: "py-2.5 first:pt-0 last:pb-0", children: [_jsx("p", { className: "truncate text-xs font-medium", children: object.title }), _jsx("p", { className: "mt-0.5 truncate text-[0.6875rem] capitalize text-(--ui-text-tertiary)", children: [object.type, courseTitle(graph, object.course)].filter(Boolean).join(' · ') })] }, object.id))) }), inbox.length > 3 && (_jsxs("p", { className: "mt-3 text-[0.6875rem] text-(--ui-text-quaternary)", children: [inbox.length - 3, " more filed"] }))] })) })] }), _jsxs("div", { className: "mt-5 flex items-center justify-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) px-4 py-3 text-center text-[0.6875rem] text-(--ui-text-tertiary)", children: [_jsx(Codicon, { className: "shrink-0 text-(--theme-primary)", name: "shield", size: "0.85rem" }), _jsx("span", { children: "Read your accounts this morning \u00B7 sent nothing \u00B7 submitted nothing." })] })] }) }));
++                                                : 'mt-1.5 size-1.5 shrink-0 rounded-full bg-(--ui-text-quaternary)' }), _jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "text-xs leading-relaxed text-(--ui-text-primary)", children: change.summary }), changeIsTrusted(change) && (_jsx("p", { className: "mt-1 text-[0.625rem] font-medium uppercase tracking-[0.07em] text-(--theme-primary)", children: change.kind === 'date-changed' ? 'Date changed' : 'Instructor stated' }))] })] }, `${change.objectId}:${change.ts}`))) })) }), _jsx(Card, { icon: "calendar", title: "Due soon", children: upcoming.length === 0 ? (_jsx(EmptyCopy, { children: "Nothing due \u2014 you're clear." })) : (_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: upcoming.slice(0, 5).map(object => (_jsxs("button", { className: "group flex w-full items-start justify-between gap-3 py-2.5 text-left first:pt-0 last:pb-0", onClick: () => navigate(CALENDAR_ROUTE), type: "button", children: [_jsxs("span", { className: "min-w-0", children: [_jsx("span", { className: "block truncate text-xs font-medium group-hover:text-(--theme-primary)", children: object.title }), _jsx("span", { className: "mt-0.5 block truncate text-[0.6875rem] text-(--ui-text-tertiary)", children: courseTitle(graph, object.course) || object.type })] }), _jsx("span", { className: "shrink-0 text-[0.6875rem] font-medium tabular-nums text-(--ui-text-secondary)", children: relativeDate(object.date, now) })] }, object.id))) })) }), _jsx(Card, { icon: "checklist", title: "Today's plan", children: plan.length === 0 ? (_jsx(EmptyCopy, { children: "Your day is open. Add a study block when you know what deserves the time." })) : (_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: plan.slice(0, 5).map(item => (_jsxs("div", { className: "flex gap-3 py-2.5 first:pt-0 last:pb-0", children: [_jsx("span", { className: "w-16 shrink-0 text-[0.6875rem] font-medium tabular-nums text-(--theme-primary)", children: item.time ? formatTime(item.time) : 'Any time' }), _jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "truncate text-xs font-medium", children: item.title }), _jsx("p", { className: "mt-0.5 truncate text-[0.6875rem] capitalize text-(--ui-text-tertiary)", children: [item.kind, item.subtitle].filter(Boolean).join(' · ') })] })] }, item.id))) })) }), _jsx(Card, { icon: "mail", title: "Inbox needs you", children: inbox.length === 0 ? (_jsx(EmptyCopy, { children: "Nothing waiting for you." })) : (_jsxs("div", { children: [_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: inbox.slice(0, 3).map(object => (_jsxs("div", { className: "py-2.5 first:pt-0 last:pb-0", children: [_jsx("p", { className: "truncate text-xs font-medium", children: object.title }), _jsx("p", { className: "mt-0.5 truncate text-[0.6875rem] capitalize text-(--ui-text-tertiary)", children: [object.type, courseTitle(graph, object.course)].filter(Boolean).join(' · ') })] }, object.id))) }), inbox.length > 3 && (_jsxs("p", { className: "mt-3 text-[0.6875rem] text-(--ui-text-quaternary)", children: [inbox.length - 3, " more filed"] }))] })) })] }), _jsxs("button", { className: "mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) px-4 py-3 text-center text-[0.6875rem] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)", onClick: () => navigate(LEDGER_ROUTE), type: "button", children: [_jsx(Codicon, { className: "shrink-0 text-(--theme-primary)", name: "shield", size: "0.85rem" }), _jsx("span", { children: "Read your accounts this morning \u00B7 sent nothing \u00B7 submitted nothing." })] })] }) }));
+ }
+diff --git a/apps/desktop/src/app/today/index.tsx b/apps/desktop/src/app/today/index.tsx
+index ccddaac1d56..604893c9ece 100644
+--- a/apps/desktop/src/app/today/index.tsx
++++ b/apps/desktop/src/app/today/index.tsx
+@@ -18,7 +18,7 @@ import {
+ import { setComposerDraft } from '@/store/composer'
+ 
+ import { type CalendarEvent, dateKey, loadCalendarState, parseDateKey } from '../calendar/model'
+-import { CALENDAR_ROUTE, NEW_CHAT_ROUTE, SETTINGS_ROUTE } from '../routes'
++import { CALENDAR_ROUTE, LEDGER_ROUTE, NEW_CHAT_ROUTE, SETTINGS_ROUTE } from '../routes'
+ 
+ const DAY_START_MINUTES = 8 * 60
+ const DAY_END_MINUTES = 22 * 60
+@@ -537,10 +537,14 @@ export function TodayView() {
+           </Card>
+         </div>
+ 
+-        <div className="mt-5 flex items-center justify-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) px-4 py-3 text-center text-[0.6875rem] text-(--ui-text-tertiary)">
++        <button
++          className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) px-4 py-3 text-center text-[0.6875rem] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)"
++          onClick={() => navigate(LEDGER_ROUTE)}
++          type="button"
++        >
+           <Codicon className="shrink-0 text-(--theme-primary)" name="shield" size="0.85rem" />
+           <span>Read your accounts this morning · sent nothing · submitted nothing.</span>
+-        </div>
++        </button>
+       </div>
+     </main>
+   )
+diff --git a/apps/desktop/src/app/types.ts b/apps/desktop/src/app/types.ts
+index 0f0bc7ed14d..a80e5498492 100644
+--- a/apps/desktop/src/app/types.ts
++++ b/apps/desktop/src/app/types.ts
+@@ -128,6 +128,7 @@ export type SidebarNavId =
+   | 'command-center'
+   | 'graph'
+   | 'library'
++  | 'ledger'
+   | 'messaging'
+   | 'new-session'
+   | 'recorder'
+diff --git a/apps/desktop/src/lib/activity-ledger.js b/apps/desktop/src/lib/activity-ledger.js
+new file mode 100644
+index 00000000000..dc47ce6ce2c
+--- /dev/null
++++ b/apps/desktop/src/lib/activity-ledger.js
+@@ -0,0 +1,111 @@
++export const LEDGER_PATH = '~/Documents/Nemesis Library/.nemesis/ledger.jsonl';
++const LEDGER_AREAS = new Set([
++    'files',
++    'study',
++    'calendar',
++    'email',
++    'browse',
++    'graph',
++    'chat',
++    'other'
++]);
++function isRecord(value) {
++    return typeof value === 'object' && value !== null && !Array.isArray(value);
++}
++function parseEntry(value) {
++    if (!isRecord(value)) {
++        return null;
++    }
++    const { action, area, detail, sent, submitted, ts, wrote } = value;
++    if (typeof ts !== 'string' ||
++        !Number.isFinite(Date.parse(ts)) ||
++        typeof action !== 'string' ||
++        typeof area !== 'string' ||
++        !LEDGER_AREAS.has(area) ||
++        (detail !== undefined && typeof detail !== 'string') ||
++        (wrote !== undefined && (!Array.isArray(wrote) || !wrote.every(path => typeof path === 'string'))) ||
++        (sent !== undefined && typeof sent !== 'boolean') ||
++        (submitted !== undefined && typeof submitted !== 'boolean')) {
++        return null;
++    }
++    return {
++        action,
++        area: area,
++        ...(detail === undefined ? {} : { detail }),
++        ...(sent === undefined ? {} : { sent }),
++        ...(submitted === undefined ? {} : { submitted }),
++        ts,
++        ...(wrote === undefined ? {} : { wrote })
++    };
++}
++/** Parse a JSON Lines ledger defensively. A partially-written or malformed line
++ * never hides the valid actions around it. */
++export function parseLedger(text) {
++    const entries = [];
++    for (const line of text.split(/\r?\n/)) {
++        if (!line.trim()) {
++            continue;
++        }
++        try {
++            const entry = parseEntry(JSON.parse(line));
++            if (entry) {
++                entries.push(entry);
++            }
++        }
++        catch {
++            // JSONL is append-only; tolerate a malformed or half-written line.
++        }
++    }
++    return entries.sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)).slice(0, 500);
++}
++/** Missing bridge/file, read errors, and malformed content all degrade to the
++ * valid entries we can recover (or an empty ledger). */
++export async function loadLedger() {
++    if (typeof window === 'undefined' || !window.hermesDesktop?.readFileText) {
++        return [];
++    }
++    try {
++        const result = await window.hermesDesktop.readFileText(LEDGER_PATH);
++        return parseLedger(result.text);
++    }
++    catch {
++        return [];
++    }
++}
++function localDayIso(date) {
++    const year = date.getFullYear();
++    const month = String(date.getMonth() + 1).padStart(2, '0');
++    const day = String(date.getDate()).padStart(2, '0');
++    return `${year}-${month}-${day}`;
++}
++export function groupByDay(entries) {
++    const now = new Date();
++    const todayIso = localDayIso(now);
++    const yesterdayIso = localDayIso(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
++    const groups = new Map();
++    for (const entry of entries) {
++        const date = new Date(entry.ts);
++        const dayIso = localDayIso(date);
++        const label = dayIso === todayIso
++            ? 'Today'
++            : dayIso === yesterdayIso
++                ? 'Yesterday'
++                : date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
++        const group = groups.get(dayIso);
++        if (group) {
++            group.entries.push(entry);
++        }
++        else {
++            groups.set(dayIso, { dayIso, entries: [entry], label });
++        }
++    }
++    return [...groups.values()];
++}
++function countLine(verb, count) {
++    return count === 0 ? `${verb} nothing.` : `${verb} ${count} ${count === 1 ? 'item' : 'items'}.`;
++}
++export function trustLine(entries) {
++    const sent = entries.filter(entry => entry.sent === true).length;
++    const submitted = entries.filter(entry => entry.submitted === true).length;
++    return `${countLine('Sent', sent)} ${countLine('Submitted', submitted)}`;
++}
+diff --git a/apps/desktop/src/lib/activity-ledger.test.js b/apps/desktop/src/lib/activity-ledger.test.js
+new file mode 100644
+index 00000000000..8eaf3fb911c
+--- /dev/null
++++ b/apps/desktop/src/lib/activity-ledger.test.js
+@@ -0,0 +1,72 @@
++import { beforeEach, describe, expect, it } from 'vitest';
++import { groupByDay, LEDGER_PATH, loadLedger, parseLedger, trustLine } from './activity-ledger';
++function entry(ts, action = ts, extra = {}) {
++    return { action, area: 'other', ts, ...extra };
++}
++// The suite runs under node (no DOM). loadLedger reads window.hermesDesktop, so give
++// the tests a minimal window they can stub and restore.
++const globalWithWindow = globalThis;
++describe('activity ledger parsing', () => {
++    beforeEach(() => {
++        globalWithWindow.window = globalWithWindow.window ?? {};
++        window.hermesDesktop = undefined;
++    });
++    it('keeps valid JSON Lines while silently skipping malformed lines and entries', () => {
++        const parsed = parseLedger([
++            JSON.stringify(entry('2026-07-10T12:00:00Z', 'Kept a valid action')),
++            '{not json',
++            JSON.stringify({ action: 'Missing required fields' }),
++            JSON.stringify(entry('2026-07-10T13:00:00Z', 'Also valid', { wrote: ['~/notes.md'] }))
++        ].join('\n'));
++        expect(parsed.map(item => item.action)).toEqual(['Also valid', 'Kept a valid action']);
++    });
++    it('loads through the desktop bridge, orders newest first, and returns [] on a missing file', async () => {
++        // @ts-expect-error — the ledger only needs this one bridge method.
++        window.hermesDesktop = {
++            readFileText: async (path) => ({
++                path,
++                text: [entry('2026-07-10T10:00:00Z'), entry('2026-07-10T12:00:00Z')]
++                    .map(item => JSON.stringify(item))
++                    .join('\n')
++            })
++        };
++        expect((await loadLedger()).map(item => item.ts)).toEqual(['2026-07-10T12:00:00Z', '2026-07-10T10:00:00Z']);
++        // @ts-expect-error — the ledger only needs this one bridge method.
++        window.hermesDesktop = { readFileText: async () => Promise.reject(new Error('ENOENT')) };
++        expect(await loadLedger()).toEqual([]);
++        expect(LEDGER_PATH).toBe('~/Documents/Nemesis Library/.nemesis/ledger.jsonl');
++    });
++    it('caps the newest-first result at 500 entries', () => {
++        const lines = Array.from({ length: 510 }, (_, index) => JSON.stringify(entry(new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString())));
++        const parsed = parseLedger(lines.join('\n'));
++        expect(parsed).toHaveLength(500);
++        expect(parsed[0].ts).toBe(new Date(Date.UTC(2026, 0, 1, 0, 509)).toISOString());
++        expect(parsed.at(-1)?.ts).toBe(new Date(Date.UTC(2026, 0, 1, 0, 10)).toISOString());
++    });
++});
++describe('groupByDay', () => {
++    it('groups entries and labels today, yesterday, and older dates', () => {
++        const now = new Date();
++        const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12);
++        const older = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3, 12);
++        const groups = groupByDay([
++            entry(now.toISOString(), 'today one'),
++            entry(new Date(now.getTime() - 1_000).toISOString(), 'today two'),
++            entry(yesterday.toISOString(), 'yesterday'),
++            entry(older.toISOString(), 'older')
++        ]);
++        expect(groups.map(group => group.label).slice(0, 2)).toEqual(['Today', 'Yesterday']);
++        expect(groups[0].entries.map(item => item.action)).toEqual(['today one', 'today two']);
++        expect(groups[2].dayIso).toMatch(/^\d{4}-\d{2}-\d{2}$/);
++        expect(groups[2].label).not.toBe('Today');
++    });
++});
++describe('trustLine', () => {
++    it('states inactivity exactly and otherwise reports honest sent/submitted counts', () => {
++        expect(trustLine([entry('2026-07-10T12:00:00Z')])).toBe('Sent nothing. Submitted nothing.');
++        expect(trustLine([
++            entry('2026-07-10T12:00:00Z', 'sent', { sent: true }),
++            entry('2026-07-10T13:00:00Z', 'both', { sent: true, submitted: true })
++        ])).toBe('Sent 2 items. Submitted 1 item.');
++    });
++});
+diff --git a/apps/desktop/src/lib/activity-ledger.test.ts b/apps/desktop/src/lib/activity-ledger.test.ts
+new file mode 100644
+index 00000000000..d267b01d086
+--- /dev/null
++++ b/apps/desktop/src/lib/activity-ledger.test.ts
+@@ -0,0 +1,94 @@
++import { beforeEach, describe, expect, it } from 'vitest'
++
++import { groupByDay, LEDGER_PATH, type LedgerEntry, loadLedger, parseLedger, trustLine } from './activity-ledger'
++
++function entry(ts: string, action = ts, extra: Partial<LedgerEntry> = {}): LedgerEntry {
++  return { action, area: 'other', ts, ...extra }
++}
++
++// The suite runs under node (no DOM). loadLedger reads window.hermesDesktop, so give
++// the tests a minimal window they can stub and restore.
++const globalWithWindow = globalThis as { window?: Window & typeof globalThis }
++
++describe('activity ledger parsing', () => {
++  beforeEach(() => {
++    globalWithWindow.window = globalWithWindow.window ?? ({} as Window & typeof globalThis)
++    ;(window as { hermesDesktop?: unknown }).hermesDesktop = undefined
++  })
++
++  it('keeps valid JSON Lines while silently skipping malformed lines and entries', () => {
++    const parsed = parseLedger(
++      [
++        JSON.stringify(entry('2026-07-10T12:00:00Z', 'Kept a valid action')),
++        '{not json',
++        JSON.stringify({ action: 'Missing required fields' }),
++        JSON.stringify(entry('2026-07-10T13:00:00Z', 'Also valid', { wrote: ['~/notes.md'] }))
++      ].join('\n')
++    )
++
++    expect(parsed.map(item => item.action)).toEqual(['Also valid', 'Kept a valid action'])
++  })
++
++  it('loads through the desktop bridge, orders newest first, and returns [] on a missing file', async () => {
++    // @ts-expect-error — the ledger only needs this one bridge method.
++    window.hermesDesktop = {
++      readFileText: async (path: string) => ({
++        path,
++        text: [entry('2026-07-10T10:00:00Z'), entry('2026-07-10T12:00:00Z')]
++          .map(item => JSON.stringify(item))
++          .join('\n')
++      })
++    }
++
++    expect((await loadLedger()).map(item => item.ts)).toEqual(['2026-07-10T12:00:00Z', '2026-07-10T10:00:00Z'])
++
++    // @ts-expect-error — the ledger only needs this one bridge method.
++    window.hermesDesktop = { readFileText: async () => Promise.reject(new Error('ENOENT')) }
++    expect(await loadLedger()).toEqual([])
++    expect(LEDGER_PATH).toBe('~/Documents/Nemesis Library/.nemesis/ledger.jsonl')
++  })
++
++  it('caps the newest-first result at 500 entries', () => {
++    const lines = Array.from({ length: 510 }, (_, index) =>
++      JSON.stringify(entry(new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString()))
++    )
++
++    const parsed = parseLedger(lines.join('\n'))
++
++    expect(parsed).toHaveLength(500)
++    expect(parsed[0].ts).toBe(new Date(Date.UTC(2026, 0, 1, 0, 509)).toISOString())
++    expect(parsed.at(-1)?.ts).toBe(new Date(Date.UTC(2026, 0, 1, 0, 10)).toISOString())
++  })
++})
++
++describe('groupByDay', () => {
++  it('groups entries and labels today, yesterday, and older dates', () => {
++    const now = new Date()
++    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12)
++    const older = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3, 12)
++
++    const groups = groupByDay([
++      entry(now.toISOString(), 'today one'),
++      entry(new Date(now.getTime() - 1_000).toISOString(), 'today two'),
++      entry(yesterday.toISOString(), 'yesterday'),
++      entry(older.toISOString(), 'older')
++    ])
++
++    expect(groups.map(group => group.label).slice(0, 2)).toEqual(['Today', 'Yesterday'])
++    expect(groups[0].entries.map(item => item.action)).toEqual(['today one', 'today two'])
++    expect(groups[2].dayIso).toMatch(/^\d{4}-\d{2}-\d{2}$/)
++    expect(groups[2].label).not.toBe('Today')
++  })
++})
++
++describe('trustLine', () => {
++  it('states inactivity exactly and otherwise reports honest sent/submitted counts', () => {
++    expect(trustLine([entry('2026-07-10T12:00:00Z')])).toBe('Sent nothing. Submitted nothing.')
++    expect(
++      trustLine([
++        entry('2026-07-10T12:00:00Z', 'sent', { sent: true }),
++        entry('2026-07-10T13:00:00Z', 'both', { sent: true, submitted: true })
++      ])
++    ).toBe('Sent 2 items. Submitted 1 item.')
++  })
++})
+diff --git a/apps/desktop/src/lib/activity-ledger.ts b/apps/desktop/src/lib/activity-ledger.ts
+new file mode 100644
+index 00000000000..fa12ac1851c
+--- /dev/null
++++ b/apps/desktop/src/lib/activity-ledger.ts
+@@ -0,0 +1,152 @@
++export const LEDGER_PATH = '~/Documents/Nemesis Library/.nemesis/ledger.jsonl'
++
++export interface LedgerEntry {
++  ts: string
++  action: string
++  detail?: string
++  area: 'files' | 'study' | 'calendar' | 'email' | 'browse' | 'graph' | 'chat' | 'other'
++  wrote?: string[]
++  sent?: boolean
++  submitted?: boolean
++}
++
++export interface LedgerDay {
++  dayIso: string
++  label: string
++  entries: LedgerEntry[]
++}
++
++const LEDGER_AREAS: ReadonlySet<LedgerEntry['area']> = new Set([
++  'files',
++  'study',
++  'calendar',
++  'email',
++  'browse',
++  'graph',
++  'chat',
++  'other'
++])
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return typeof value === 'object' && value !== null && !Array.isArray(value)
++}
++
++function parseEntry(value: unknown): LedgerEntry | null {
++  if (!isRecord(value)) {
++    return null
++  }
++
++  const { action, area, detail, sent, submitted, ts, wrote } = value
++
++  if (
++    typeof ts !== 'string' ||
++    !Number.isFinite(Date.parse(ts)) ||
++    typeof action !== 'string' ||
++    typeof area !== 'string' ||
++    !LEDGER_AREAS.has(area as LedgerEntry['area']) ||
++    (detail !== undefined && typeof detail !== 'string') ||
++    (wrote !== undefined && (!Array.isArray(wrote) || !wrote.every(path => typeof path === 'string'))) ||
++    (sent !== undefined && typeof sent !== 'boolean') ||
++    (submitted !== undefined && typeof submitted !== 'boolean')
++  ) {
++    return null
++  }
++
++  return {
++    action,
++    area: area as LedgerEntry['area'],
++    ...(detail === undefined ? {} : { detail }),
++    ...(sent === undefined ? {} : { sent }),
++    ...(submitted === undefined ? {} : { submitted }),
++    ts,
++    ...(wrote === undefined ? {} : { wrote })
++  }
++}
++
++/** Parse a JSON Lines ledger defensively. A partially-written or malformed line
++ * never hides the valid actions around it. */
++export function parseLedger(text: string): LedgerEntry[] {
++  const entries: LedgerEntry[] = []
++
++  for (const line of text.split(/\r?\n/)) {
++    if (!line.trim()) {
++      continue
++    }
++
++    try {
++      const entry = parseEntry(JSON.parse(line) as unknown)
++
++      if (entry) {
++        entries.push(entry)
++      }
++    } catch {
++      // JSONL is append-only; tolerate a malformed or half-written line.
++    }
++  }
++
++  return entries.sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)).slice(0, 500)
++}
++
++/** Missing bridge/file, read errors, and malformed content all degrade to the
++ * valid entries we can recover (or an empty ledger). */
++export async function loadLedger(): Promise<LedgerEntry[]> {
++  if (typeof window === 'undefined' || !window.hermesDesktop?.readFileText) {
++    return []
++  }
++
++  try {
++    const result = await window.hermesDesktop.readFileText(LEDGER_PATH)
++
++    return parseLedger(result.text)
++  } catch {
++    return []
++  }
++}
++
++function localDayIso(date: Date): string {
++  const year = date.getFullYear()
++  const month = String(date.getMonth() + 1).padStart(2, '0')
++  const day = String(date.getDate()).padStart(2, '0')
++
++  return `${year}-${month}-${day}`
++}
++
++export function groupByDay(entries: LedgerEntry[]): LedgerDay[] {
++  const now = new Date()
++  const todayIso = localDayIso(now)
++  const yesterdayIso = localDayIso(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
++  const groups = new Map<string, LedgerDay>()
++
++  for (const entry of entries) {
++    const date = new Date(entry.ts)
++    const dayIso = localDayIso(date)
++
++    const label =
++      dayIso === todayIso
++        ? 'Today'
++        : dayIso === yesterdayIso
++          ? 'Yesterday'
++          : date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
++
++    const group = groups.get(dayIso)
++
++    if (group) {
++      group.entries.push(entry)
++    } else {
++      groups.set(dayIso, { dayIso, entries: [entry], label })
++    }
++  }
++
++  return [...groups.values()]
++}
++
++function countLine(verb: 'Sent' | 'Submitted', count: number): string {
++  return count === 0 ? `${verb} nothing.` : `${verb} ${count} ${count === 1 ? 'item' : 'items'}.`
++}
++
++export function trustLine(entries: LedgerEntry[]): string {
++  const sent = entries.filter(entry => entry.sent === true).length
++  const submitted = entries.filter(entry => entry.submitted === true).length
++
++  return `${countLine('Sent', sent)} ${countLine('Submitted', submitted)}`
++}
+-- 
+2.53.0
+
