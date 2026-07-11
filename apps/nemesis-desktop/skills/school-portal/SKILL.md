@@ -117,3 +117,22 @@ entry. If it's missing:
 
 Summaries in plain English, newest first, always with dates. If a page fails to load or
 the session expires, say exactly where you got stuck rather than guessing at content.
+
+## Writing dates to the Calendar page
+
+When you read due dates, exam dates, quiz windows, or rotation/IPPE dates from Blackboard or
+Outlook, write them into `~/Documents/Nemesis Library/School/calendar.json` so they appear on
+the app's Calendar page.
+
+Shape: `{ "events": [{ "id", "title", "date": "yyyy-mm-dd", "time"?, "kind":
+"assignment"|"exam"|"rotation"|"class"|"other", "course"?, "note"?, "source": "agent" }] }`
+
+RULES — the student can also add their own events by hand in the app, so:
+1. **Read-merge-write, never overwrite.** Read the existing file first; keep every event you
+   didn't author (`source` ≠ "agent", or ids you don't recognize); add/update only your own.
+2. Give your events stable ids (e.g. `bb-<course>-<slug>-<date>`) so re-running a brief
+   UPDATES an event instead of duplicating it. Update in place when a date shifts.
+3. Only remove an agent event when the source portal shows it's gone or its date passed —
+   never remove a manual (`"source": "manual"`) event.
+4. Always `"source": "agent"` on events you write; keep the JSON valid (validate after
+   writing with a quick parse, e.g. `python3 -c "import json;json.load(open(...))"`).
