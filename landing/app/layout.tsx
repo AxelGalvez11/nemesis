@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
-import { Hanken_Grotesk, JetBrains_Mono, Playfair_Display } from "next/font/google";
+import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-// Type system: Hanken Grotesk for body/UI, JetBrains Mono for labels/accent, and a
-// high-contrast Didone serif (Playfair Display) for the editorial display headings and the
-// giant wordmark — the look adapted from Hermes Agent's landing. All three are variable
-// fonts (full wght axis loads), self-hosted by next/font, exposed as CSS variables that
-// globals.css feeds into --f / --mono / --serif.
+// Type system: Hanken Grotesk (variable, full wght axis — the heavy 800 display weight
+// and body text) + JetBrains Mono for the technical labels. Self-hosted by next/font and
+// exposed as CSS variables that globals.css maps into --sans / --mono.
 const hanken = Hanken_Grotesk({
   subsets: ["latin"],
   variable: "--font-hanken",
@@ -17,21 +15,19 @@ const jetbrains = JetBrains_Mono({
   variable: "--font-jetbrains",
   display: "swap",
 });
-const playfair = Playfair_Display({
-  subsets: ["latin"],
-  variable: "--font-playfair",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
-  title: "PharmaOrb: Drug information that shows its work",
+  // Current apex domain; swap when the Nemesis domain is wired up.
+  metadataBase: new URL("https://pharmaorb.app"),
+  title: "Nemesis — academic operating system for macOS",
   description:
-    "Plain-English answers about any medication or supplement, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Not medical advice. Sign up to start.",
+    "Nemesis reads your school accounts, tracks every deadline and change, measures what you know, and drafts your work. It never submits. Local-first, for macOS.",
   openGraph: {
-    title: "PharmaOrb: Drug information that shows its work",
+    title: "Nemesis — academic operating system for macOS",
     description:
-      "Plain-English answers about medications, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Sign up to start.",
+      "It knows what changed. It knows what comes next. It knows what you don't. Local-first, never submits.",
     type: "website",
+    images: [{ url: "/nemesis/og.jpg", width: 1200, height: 630 }],
   },
   robots: { index: true, follow: true },
 };
@@ -40,13 +36,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    // suppressHydrationWarning: the theme effect may add `class="light"` to <html> after
-    // mount (read from localStorage), which would otherwise trip React's attribute check.
-    <html
-      lang="en"
-      className={`${hanken.variable} ${jetbrains.variable} ${playfair.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang="en" className={`${hanken.variable} ${jetbrains.variable}`}>
       <body>{children}</body>
     </html>
   );
