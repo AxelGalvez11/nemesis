@@ -1,7 +1,7 @@
 From d1905729f3d1ee655e26bbd7376b77b40b2068d0 Mon Sep 17 00:00:00 2001
 From: AxelGalvez11 <axelgalvez1121@gmail.com>
 Date: Sat, 11 Jul 2026 18:06:56 -0500
-Subject: [PATCH 1/3] =?UTF-8?q?feat(nemesis-kit):=20round-34a=20=E2=80=94?=
+Subject: [PATCH 1/4] =?UTF-8?q?feat(nemesis-kit):=20round-34a=20=E2=80=94?=
  =?UTF-8?q?=20interactive=20mind=20maps=20(mind-elixir)?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -1288,7 +1288,7 @@ index 714d33d784a..2bbd147fbaf 100644
 From 2ad1d115f311fad35ceaf78ea28d078fa8d91dc8 Mon Sep 17 00:00:00 2001
 From: AxelGalvez11 <axelgalvez1121@gmail.com>
 Date: Sat, 11 Jul 2026 18:18:42 -0500
-Subject: [PATCH 2/3] =?UTF-8?q?feat(nemesis-kit):=20round-34b=20=E2=80=94?=
+Subject: [PATCH 2/4] =?UTF-8?q?feat(nemesis-kit):=20round-34b=20=E2=80=94?=
  =?UTF-8?q?=20Recorder=20redesign=20(record=20control=20never=20hidden)?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -2233,7 +2233,7 @@ index 3ba5ec6338d..6eaebfaf8a2 100644
 From 5b6e0635f32e64f20648c67cdaa9484abe6c16e9 Mon Sep 17 00:00:00 2001
 From: AxelGalvez11 <axelgalvez1121@gmail.com>
 Date: Sat, 11 Jul 2026 18:29:22 -0500
-Subject: [PATCH 3/3] =?UTF-8?q?fix(nemesis-kit):=20round-34c=20=E2=80=94?=
+Subject: [PATCH 3/4] =?UTF-8?q?fix(nemesis-kit):=20round-34c=20=E2=80=94?=
  =?UTF-8?q?=20mind=20maps=20were=20completely=20inert?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -2279,6 +2279,144 @@ index 9a0b32af04a..7bf8827a461 100644
          theme: MINDMAP_THEME,
          toolBar: false
        })
+-- 
+2.53.0
+
+
+From d1327cebe762b580df3f4211d2d1c61547facde4 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 18:35:08 -0500
+Subject: [PATCH 4/4] =?UTF-8?q?feat(nemesis-kit):=20round-34d=20=E2=80=94?=
+ =?UTF-8?q?=20click=20a=20mind-map=20node=20to=20open/close=20its=20childr?=
+ =?UTF-8?q?en?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Parent nodes now toggle expand/collapse on direct click (not just the tiny edge
+expander); 6px movement guard keeps drag-drops from toggling; expansion state
+persists via the existing layout store. Verified live: 7 -> 6 -> 7 me-tpc nodes
+across click/collapse/expand; note panel + drag unaffected.
+---
+ apps/desktop/src/app/study/mindmap-viewer.js  | 29 +++++++++++++++
+ apps/desktop/src/app/study/mindmap-viewer.tsx | 36 +++++++++++++++++++
+ 2 files changed, 65 insertions(+)
+
+diff --git a/apps/desktop/src/app/study/mindmap-viewer.js b/apps/desktop/src/app/study/mindmap-viewer.js
+index e5e22a6c1e1..5da11679304 100644
+--- a/apps/desktop/src/app/study/mindmap-viewer.js
++++ b/apps/desktop/src/app/study/mindmap-viewer.js
+@@ -172,6 +172,7 @@ function MindmapCanvas({ file }) {
+         let mind = null;
+         let resizeObserver = null;
+         let animationFrame = 0;
++        let hostCleanup = null;
+         try {
+             const root = applyStoredLayout(parseMindmapMarkdown(file.outline, file.title), readStoredLayout(file));
+             addNoteIndicators(root);
+@@ -209,6 +210,33 @@ function MindmapCanvas({ file }) {
+                 const selected = nodes.at(-1);
+                 setSelectedDetail(selected?.note ? { note: selected.note, topic: selected.topic } : null);
+             });
++            // Clicking a parent node toggles its children open/closed — students expect the
++            // node itself to respond, not only mind-elixir's tiny edge expander dot. Notes
++            // still open via the selection listener above; both can happen on one click.
++            // A small movement guard keeps drag-drops from also toggling the dropped node.
++            let pointerOrigin = null;
++            const onPointerDown = (event) => {
++                pointerOrigin = { x: event.clientX, y: event.clientY };
++            };
++            const onTopicClick = (event) => {
++                const dragged = pointerOrigin &&
++                    Math.hypot(event.clientX - pointerOrigin.x, event.clientY - pointerOrigin.y) > 6;
++                if (dragged) {
++                    return;
++                }
++                const topic = event.target.closest('me-tpc');
++                const node = topic?.nodeObj;
++                if (mind && topic && node?.children?.length) {
++                    mind.expandNode(topic, node.expanded === false);
++                    persistLayout(file, mind);
++                }
++            };
++            host.addEventListener('pointerdown', onPointerDown);
++            host.addEventListener('click', onTopicClick);
++            hostCleanup = () => {
++                host.removeEventListener('pointerdown', onPointerDown);
++                host.removeEventListener('click', onTopicClick);
++            };
+             mind.bus.addListener('operation', (operation) => {
+                 if (operation.name === 'moveNodeAfter' || operation.name === 'moveNodeBefore' || operation.name === 'moveNodeIn') {
+                     persistLayout(file, mind);
+@@ -224,6 +252,7 @@ function MindmapCanvas({ file }) {
+         return () => {
+             window.cancelAnimationFrame(animationFrame);
+             resizeObserver?.disconnect();
++            hostCleanup?.();
+             mind?.destroy();
+             mindRef.current = null;
+         };
+diff --git a/apps/desktop/src/app/study/mindmap-viewer.tsx b/apps/desktop/src/app/study/mindmap-viewer.tsx
+index 7bf8827a461..9c1eaf3c64b 100644
+--- a/apps/desktop/src/app/study/mindmap-viewer.tsx
++++ b/apps/desktop/src/app/study/mindmap-viewer.tsx
+@@ -255,6 +255,7 @@ function MindmapCanvas({ file }: { file: MindmapFile }) {
+     let mind: MindElixirInstance | null = null
+     let resizeObserver: ResizeObserver | null = null
+     let animationFrame = 0
++    let hostCleanup: (() => void) | null = null
+ 
+     try {
+       const root = applyStoredLayout(parseMindmapMarkdown(file.outline, file.title), readStoredLayout(file))
+@@ -300,6 +301,40 @@ function MindmapCanvas({ file }: { file: MindmapFile }) {
+ 
+         setSelectedDetail(selected?.note ? { note: selected.note, topic: selected.topic } : null)
+       })
++      // Clicking a parent node toggles its children open/closed — students expect the
++      // node itself to respond, not only mind-elixir's tiny edge expander dot. Notes
++      // still open via the selection listener above; both can happen on one click.
++      // A small movement guard keeps drag-drops from also toggling the dropped node.
++      let pointerOrigin: { x: number; y: number } | null = null
++      const onPointerDown = (event: PointerEvent) => {
++        pointerOrigin = { x: event.clientX, y: event.clientY }
++      }
++      const onTopicClick = (event: MouseEvent) => {
++        const dragged =
++          pointerOrigin &&
++          Math.hypot(event.clientX - pointerOrigin.x, event.clientY - pointerOrigin.y) > 6
++
++        if (dragged) {
++          return
++        }
++
++        const topic = (event.target as HTMLElement).closest('me-tpc') as
++          | (HTMLElement & { nodeObj?: NodeObj })
++          | null
++        const node = topic?.nodeObj
++
++        if (mind && topic && node?.children?.length) {
++          mind.expandNode(topic as Parameters<typeof mind.expandNode>[0], node.expanded === false)
++          persistLayout(file, mind)
++        }
++      }
++
++      host.addEventListener('pointerdown', onPointerDown)
++      host.addEventListener('click', onTopicClick)
++      hostCleanup = () => {
++        host.removeEventListener('pointerdown', onPointerDown)
++        host.removeEventListener('click', onTopicClick)
++      }
+       mind.bus.addListener('operation', (operation: Operation) => {
+         if (operation.name === 'moveNodeAfter' || operation.name === 'moveNodeBefore' || operation.name === 'moveNodeIn') {
+           persistLayout(file, mind as MindElixirInstance)
+@@ -316,6 +351,7 @@ function MindmapCanvas({ file }: { file: MindmapFile }) {
+     return () => {
+       window.cancelAnimationFrame(animationFrame)
+       resizeObserver?.disconnect()
++      hostCleanup?.()
+       mind?.destroy()
+       mindRef.current = null
+     }
 -- 
 2.53.0
 
