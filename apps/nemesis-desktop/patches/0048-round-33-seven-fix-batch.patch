@@ -1,0 +1,1116 @@
+From 4d34619ef85d36970d4d0df1e25015d46ed1f0e4 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 17:58:37 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis-kit):=20round-33=20=E2=80=94=207-f?=
+ =?UTF-8?q?ix=20batch?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Native browser view hides when rail collapsed / other tab / unmounted
+  (visible requires boundsReady && railVisible && no dialog) — fixes float-over-chat
+- Recorder: pinned always-visible Record button + custom audio player
+  (play/pause, seek, mono timestamps, 1x-2x speed)
+- Study review: Anki-style New/Learning/Review counts replace progress bar
+- Graph: label-size slider (4-24) + larger default/min node size
+- Settings: Pets hidden for students; Connections presets + Quizlet/Notion/
+  Google Drive/OneNote/Teams
+- Ledger removed from sidebar nav (route + Today trust-card link remain)
+---
+ .../chat/right-rail/native-browser-panel.js   |  28 +++-
+ .../chat/right-rail/native-browser-panel.tsx  |  35 ++++-
+ apps/desktop/src/app/chat/sidebar/index.js    |   8 +-
+ apps/desktop/src/app/chat/sidebar/index.tsx   |  10 +-
+ apps/desktop/src/app/graph/index.js           |  32 +++--
+ apps/desktop/src/app/graph/index.tsx          |  45 +++++--
+ apps/desktop/src/app/recorder/archive.js      |  59 ++++++++-
+ apps/desktop/src/app/recorder/archive.tsx     | 125 ++++++++++++++++--
+ apps/desktop/src/app/recorder/index.js        |   2 +-
+ apps/desktop/src/app/recorder/index.tsx       |  25 +++-
+ .../src/app/settings/appearance-settings.js   |   3 +-
+ .../src/app/settings/appearance-settings.tsx  |   9 +-
+ .../src/app/settings/connections-settings.js  |  35 +++++
+ .../src/app/settings/connections-settings.tsx |  35 +++++
+ apps/desktop/src/app/study/index.js           |  23 +++-
+ apps/desktop/src/app/study/index.tsx          |  53 +++++---
+ 16 files changed, 437 insertions(+), 90 deletions(-)
+
+diff --git a/apps/desktop/src/app/chat/right-rail/native-browser-panel.js b/apps/desktop/src/app/chat/right-rail/native-browser-panel.js
+index c3069250fd5..d2ecfe02159 100644
+--- a/apps/desktop/src/app/chat/right-rail/native-browser-panel.js
++++ b/apps/desktop/src/app/chat/right-rail/native-browser-panel.js
+@@ -18,6 +18,8 @@ import { useStore } from '@nanostores/react';
+ import { useCallback, useEffect, useRef, useState } from 'react';
+ import { Codicon } from '@/components/ui/codicon';
+ import { cn } from '@/lib/utils';
++import { $rightRailActiveTabId, PREVIEW_PANE_ID, RIGHT_RAIL_BROWSER_TAB_ID } from '@/store/layout';
++import { $paneOpen } from '@/store/panes';
+ import { $zoomPercent } from '@/store/zoom';
+ import { BrowserMirror } from './browser-mirror';
+ // ResizeObserver only fires on SIZE changes; pure position shifts (another
+@@ -75,6 +77,8 @@ function resolveMode() {
+  *  otherwise (mirror config fallback, older preload, plain web build). */
+ export function SchoolBrowserPanel() {
+     const [mode, setMode] = useState(null);
++    const activeTabId = useStore($rightRailActiveTabId);
++    const railOpen = useStore($paneOpen(PREVIEW_PANE_ID));
+     useEffect(() => {
+         let cancelled = false;
+         void resolveMode().then(resolved => {
+@@ -90,9 +94,10 @@ export function SchoolBrowserPanel() {
+         // One IPC round-trip of blank surface — avoids flashing the wrong chrome.
+         return _jsx("div", { className: "h-full w-full bg-(--ui-editor-surface-background)" });
+     }
+-    return mode === 'native' ? _jsx(NativeBrowserPanel, {}) : _jsx(BrowserMirror, {});
++    return mode === 'native' ? (_jsx(NativeBrowserPanel, { railVisible: railOpen && activeTabId === RIGHT_RAIL_BROWSER_TAB_ID })) : (_jsx(BrowserMirror, {}));
+ }
+-function NativeBrowserPanel() {
++function NativeBrowserPanel({ railVisible }) {
++    const [boundsReady, setBoundsReady] = useState(false);
+     const [state, setState] = useState(null);
+     const [urlDraft, setUrlDraft] = useState(null);
+     const zoomPercent = useStore($zoomPercent);
+@@ -110,6 +115,13 @@ function NativeBrowserPanel() {
+     const reportBounds = useCallback((force = false) => {
+         const box = placeholderRef.current?.getBoundingClientRect();
+         if (!box || box.width < MIN_PANEL_PX || box.height < MIN_PANEL_PX) {
++            // The DOM pane remains mounted while PaneShell collapses it. A native
++            // WebContentsView is composited independently, so zero/near-zero DOM
++            // geometry must actively hide it instead of merely skipping setBounds.
++            void api()
++                ?.setVisible(false)
++                .catch(() => undefined);
++            setBoundsReady(false);
+             return false;
+         }
+         const z = zoomFactorRef.current;
+@@ -124,6 +136,7 @@ function NativeBrowserPanel() {
+             Math.abs(rect.y - last.y) < 2 &&
+             Math.abs(rect.width - last.width) < 2 &&
+             Math.abs(rect.height - last.height) < 2;
++        setBoundsReady(true);
+         if (!force && unchanged) {
+             return true;
+         }
+@@ -166,9 +179,10 @@ function NativeBrowserPanel() {
+     useEffect(() => {
+         reportBounds(true);
+     }, [reportBounds, zoomPercent]);
+-    // Visibility: shown while mounted — EXCEPT while any open DOM dialog
+-    // exists, because the native view composites above the entire DOM and would
+-    // cover the modal. Watch the body and yield for as long as one is up.
++    // Visibility: shown only while the rail is open on the Browser tab, and
++    // EXCEPT while any open DOM dialog exists. The native view composites above
++    // the entire DOM, so mounted-but-collapsed panes and inactive tabs must hide
++    // it explicitly.
+     useEffect(() => {
+         let lastApplied = null;
+         let raf = 0;
+@@ -199,7 +213,7 @@ function NativeBrowserPanel() {
+             });
+         };
+         const sync = () => {
+-            const next = !document.querySelector('[role="dialog"][data-state="open"]');
++            const next = boundsReady && railVisible && !document.querySelector('[role="dialog"][data-state="open"]');
+             if (next === lastApplied) {
+                 return;
+             }
+@@ -242,7 +256,7 @@ function NativeBrowserPanel() {
+                 ?.setVisible(false)
+                 .catch(() => undefined);
+         };
+-    }, [reportBounds]);
++    }, [boundsReady, railVisible, reportBounds]);
+     // Tab-op invokes resolve with the fresh snapshot — apply it directly
+     // instead of waiting a beat for the broadcast to come back around.
+     const apply = useCallback((op) => {
+diff --git a/apps/desktop/src/app/chat/right-rail/native-browser-panel.tsx b/apps/desktop/src/app/chat/right-rail/native-browser-panel.tsx
+index e65a545bfc6..bab72aaf8c7 100644
+--- a/apps/desktop/src/app/chat/right-rail/native-browser-panel.tsx
++++ b/apps/desktop/src/app/chat/right-rail/native-browser-panel.tsx
+@@ -19,6 +19,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
+ import { Codicon } from '@/components/ui/codicon'
+ import type { HermesSchoolViewState } from '@/global'
+ import { cn } from '@/lib/utils'
++import { $rightRailActiveTabId, PREVIEW_PANE_ID, RIGHT_RAIL_BROWSER_TAB_ID } from '@/store/layout'
++import { $paneOpen } from '@/store/panes'
+ import { $zoomPercent } from '@/store/zoom'
+ 
+ import { BrowserMirror } from './browser-mirror'
+@@ -90,6 +92,8 @@ function resolveMode(): Promise<PanelMode> {
+  *  otherwise (mirror config fallback, older preload, plain web build). */
+ export function SchoolBrowserPanel() {
+   const [mode, setMode] = useState<null | PanelMode>(null)
++  const activeTabId = useStore($rightRailActiveTabId)
++  const railOpen = useStore($paneOpen(PREVIEW_PANE_ID))
+ 
+   useEffect(() => {
+     let cancelled = false
+@@ -110,10 +114,15 @@ export function SchoolBrowserPanel() {
+     return <div className="h-full w-full bg-(--ui-editor-surface-background)" />
+   }
+ 
+-  return mode === 'native' ? <NativeBrowserPanel /> : <BrowserMirror />
++  return mode === 'native' ? (
++    <NativeBrowserPanel railVisible={railOpen && activeTabId === RIGHT_RAIL_BROWSER_TAB_ID} />
++  ) : (
++    <BrowserMirror />
++  )
+ }
+ 
+-function NativeBrowserPanel() {
++function NativeBrowserPanel({ railVisible }: { railVisible: boolean }) {
++  const [boundsReady, setBoundsReady] = useState(false)
+   const [state, setState] = useState<HermesSchoolViewState | null>(null)
+   const [urlDraft, setUrlDraft] = useState<null | string>(null)
+   const zoomPercent = useStore($zoomPercent)
+@@ -134,10 +143,19 @@ function NativeBrowserPanel() {
+     const box = placeholderRef.current?.getBoundingClientRect()
+ 
+     if (!box || box.width < MIN_PANEL_PX || box.height < MIN_PANEL_PX) {
++      // The DOM pane remains mounted while PaneShell collapses it. A native
++      // WebContentsView is composited independently, so zero/near-zero DOM
++      // geometry must actively hide it instead of merely skipping setBounds.
++      void api()
++        ?.setVisible(false)
++        .catch(() => undefined)
++      setBoundsReady(false)
++
+       return false
+     }
+ 
+     const z = zoomFactorRef.current
++
+     const rect = {
+       height: Math.round(box.height * z),
+       width: Math.round(box.width * z),
+@@ -153,6 +171,8 @@ function NativeBrowserPanel() {
+       Math.abs(rect.width - last.width) < 2 &&
+       Math.abs(rect.height - last.height) < 2
+ 
++    setBoundsReady(true)
++
+     if (!force && unchanged) {
+       return true
+     }
+@@ -206,9 +226,10 @@ function NativeBrowserPanel() {
+     reportBounds(true)
+   }, [reportBounds, zoomPercent])
+ 
+-  // Visibility: shown while mounted — EXCEPT while any open DOM dialog
+-  // exists, because the native view composites above the entire DOM and would
+-  // cover the modal. Watch the body and yield for as long as one is up.
++  // Visibility: shown only while the rail is open on the Browser tab, and
++  // EXCEPT while any open DOM dialog exists. The native view composites above
++  // the entire DOM, so mounted-but-collapsed panes and inactive tabs must hide
++  // it explicitly.
+   useEffect(() => {
+     let lastApplied: boolean | null = null
+     let raf = 0
+@@ -242,7 +263,7 @@ function NativeBrowserPanel() {
+     }
+ 
+     const sync = () => {
+-      const next = !document.querySelector('[role="dialog"][data-state="open"]')
++      const next = boundsReady && railVisible && !document.querySelector('[role="dialog"][data-state="open"]')
+ 
+       if (next === lastApplied) {
+         return
+@@ -292,7 +313,7 @@ function NativeBrowserPanel() {
+         ?.setVisible(false)
+         .catch(() => undefined)
+     }
+-  }, [reportBounds])
++  }, [boundsReady, railVisible, reportBounds])
+ 
+   // Tab-op invokes resolve with the fresh snapshot — apply it directly
+   // instead of waiting a beat for the broadcast to come back around.
+diff --git a/apps/desktop/src/app/chat/sidebar/index.js b/apps/desktop/src/app/chat/sidebar/index.js
+index eb3bfa5eaa4..73cf0eb9133 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.js
++++ b/apps/desktop/src/app/chat/sidebar/index.js
+@@ -17,14 +17,14 @@ import { profileColor } from '@/lib/profile-color';
+ import { sessionMatchesSearch } from '@/lib/session-search';
+ import { normalizeSessionSource, sessionSourceLabel } from '@/lib/session-source';
+ import { cn } from '@/lib/utils';
++import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_NAV } from '@/nemesis';
+ import { $account, planLabel } from '@/nemesis-account';
+ import { $cronJobs } from '@/store/cron';
+ import { $dismissedAutoProjectIds, $panesFlipped, $pinnedSessionIds, $sidebarAgentsGrouped, $sidebarCronOpen, $sidebarMessagingOpenIds, $sidebarOpen, $sidebarOverlayMounted, $sidebarPinsOpen, $sidebarProjectOrderIds, $sidebarRecentsOpen, $sidebarSessionOrderIds, $sidebarSessionOrderManual, $sidebarWorkspaceOrderIds, $sidebarWorkspaceParentOrderIds, pinSession, SESSION_SEARCH_FOCUS_EVENT, setPinnedSessionOrder, setSidebarAgentsGrouped, setSidebarCronOpen, setSidebarPinsOpen, setSidebarProjectOrderIds, setSidebarRecentsOpen, setSidebarSessionOrderIds, setSidebarSessionOrderManual, setSidebarWorkspaceOrderIds, setSidebarWorkspaceParentOrderIds, SIDEBAR_SESSIONS_PAGE_SIZE, toggleSidebarMessagingOpen, unpinSession } from '@/store/layout';
+ import { $newChatProfile, $profiles, $profileScope, ALL_PROFILES, normalizeProfileKey } from '@/store/profile';
+ import { $activeProjectId, $projects, $projectScope, $projectTree, $projectTreeLoading, $removedSessionIds, $reposScanning, ALL_PROJECTS, enterProject, exitProjectScope, fetchProjectSessions, openProjectCreate, refreshProjects, refreshProjectTree, refreshWorktrees, scanAndRecordRepos } from '@/store/projects';
+ import { $cronSessions, $currentCwd, $gatewayState, $messagingPlatformTotals, $messagingSessions, $messagingTruncated, $selectedStoredSessionId, $sessionProfileTotals, $sessions, $sessionsLoading, $sessionsTotal, $workingSessionIds, sessionPinId, setCurrentCwd } from '@/store/session';
+-import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_NAV } from '@/nemesis';
+-import { ARTIFACTS_ROUTE, CALENDAR_ROUTE, GRAPH_ROUTE, LEDGER_ROUTE, LIBRARY_ROUTE, MESSAGING_ROUTE, RECORDER_ROUTE, SETTINGS_ROUTE, SKILLS_ROUTE, STUDY_ROUTE, TODAY_ROUTE } from '../../routes';
++import { ARTIFACTS_ROUTE, CALENDAR_ROUTE, GRAPH_ROUTE, LIBRARY_ROUTE, MESSAGING_ROUTE, RECORDER_ROUTE, SETTINGS_ROUTE, SKILLS_ROUTE, STUDY_ROUTE, TODAY_ROUTE } from '../../routes';
+ import { countLabel } from './chrome';
+ import { SidebarCronJobsSection } from './cron-jobs-section';
+ import { SidebarLoadMoreRow } from './load-more-row';
+@@ -40,12 +40,8 @@ import { SidebarSessionsSection, VIRTUALIZE_THRESHOLD } from './sessions-section
+ const NON_SESSION_INITIAL_ROWS = 3;
+ const NON_SESSION_LOAD_STEP = 10;
+ const NEW_SESSION_KBD = comboTokens('mod+n');
+-const STUDENT_LEDGER_NAV = NEMESIS_STUDENT_BUILD
+-    ? [{ id: 'ledger', label: 'Ledger', icon: props => _jsx(Codicon, { name: "history", ...props }), route: LEDGER_ROUTE }]
+-    : [];
+ const SIDEBAR_NAV_ALL = [
+     { id: 'today', label: 'Today', icon: props => _jsx(Codicon, { name: "dashboard", ...props }), route: TODAY_ROUTE },
+-    ...STUDENT_LEDGER_NAV,
+     {
+         id: 'new-session',
+         label: '',
+diff --git a/apps/desktop/src/app/chat/sidebar/index.tsx b/apps/desktop/src/app/chat/sidebar/index.tsx
+index ee998d5cca4..a6125b231e4 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.tsx
++++ b/apps/desktop/src/app/chat/sidebar/index.tsx
+@@ -20,7 +20,6 @@ import {
+   SidebarMenuButton,
+   SidebarMenuItem
+ } from '@/components/ui/sidebar'
+-import { Tip } from '@/components/ui/tooltip'
+ import { searchSessions, type SessionInfo, type SessionSearchResult } from '@/hermes'
+ import { useI18n } from '@/i18n'
+ import { comboTokens } from '@/lib/keybinds/combo'
+@@ -28,6 +27,7 @@ import { profileColor } from '@/lib/profile-color'
+ import { sessionMatchesSearch } from '@/lib/session-search'
+ import { normalizeSessionSource, sessionSourceLabel } from '@/lib/session-source'
+ import { cn } from '@/lib/utils'
++import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_NAV } from '@/nemesis'
+ import { $account, planLabel } from '@/nemesis-account'
+ import { $cronJobs } from '@/store/cron'
+ import {
+@@ -98,14 +98,11 @@ import {
+   setCurrentCwd
+ } from '@/store/session'
+ 
+-import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_NAV } from '@/nemesis'
+-
+ import {
+   type AppView,
+   ARTIFACTS_ROUTE,
+   CALENDAR_ROUTE,
+   GRAPH_ROUTE,
+-  LEDGER_ROUTE,
+   LIBRARY_ROUTE,
+   MESSAGING_ROUTE,
+   RECORDER_ROUTE,
+@@ -148,13 +145,8 @@ const NON_SESSION_LOAD_STEP = 10
+ 
+ const NEW_SESSION_KBD = comboTokens('mod+n')
+ 
+-const STUDENT_LEDGER_NAV: SidebarNavItem[] = NEMESIS_STUDENT_BUILD
+-  ? [{ id: 'ledger', label: 'Ledger', icon: props => <Codicon name="history" {...props} />, route: LEDGER_ROUTE }]
+-  : []
+-
+ const SIDEBAR_NAV_ALL: SidebarNavItem[] = [
+   { id: 'today', label: 'Today', icon: props => <Codicon name="dashboard" {...props} />, route: TODAY_ROUTE },
+-  ...STUDENT_LEDGER_NAV,
+   {
+     id: 'new-session',
+     label: '',
+diff --git a/apps/desktop/src/app/graph/index.js b/apps/desktop/src/app/graph/index.js
+index dc4a603097a..7c65525aeb4 100644
+--- a/apps/desktop/src/app/graph/index.js
++++ b/apps/desktop/src/app/graph/index.js
+@@ -13,12 +13,16 @@ import { Button } from '@/components/ui/button';
+ import { EmptyState } from '@/components/ui/empty-state';
+ import { Switch } from '@/components/ui/switch';
+ import { useTheme } from '@/themes/context';
+-import { LIBRARY_ROUTE } from '../routes';
+ import { buildIndex, extractWikilinks, loadVault, saveNote } from '../library/vault';
++import { LIBRARY_ROUTE } from '../routes';
+ const GRAPH_SETTINGS_KEY = 'nemesis.graph.settings.v1';
++const MIN_NODE_SIZE = 4;
++const MIN_LABEL_SIZE = 4;
++const MAX_LABEL_SIZE = 24;
+ const DEFAULT_CONTROLS = {
++    labelSize: 8,
+     neighborGlow: true,
+-    nodeSize: 4,
++    nodeSize: 7,
+     repulsion: 40,
+     rotationSpeed: 0,
+     showNames: true,
+@@ -26,7 +30,6 @@ const DEFAULT_CONTROLS = {
+ };
+ // Always-visible node label (three-spritetext) tuning.
+ const LABEL_MAX_CHARS = 24;
+-const LABEL_TEXT_HEIGHT = 3.6;
+ // The label's bottom edge sits this much beyond the node sphere's own radius (see
+ // sprite.center below) — proportional, not a flat offset, so it still clears big hub
+ // spheres instead of looking glued on at high "Node size" settings.
+@@ -140,7 +143,17 @@ function loadControls() {
+     try {
+         const raw = window.localStorage.getItem(GRAPH_SETTINGS_KEY);
+         if (raw) {
+-            return { ...DEFAULT_CONTROLS, ...JSON.parse(raw) };
++            const stored = JSON.parse(raw);
++            const controls = { ...DEFAULT_CONTROLS, ...stored };
++            return {
++                ...controls,
++                labelSize: typeof controls.labelSize === 'number' && Number.isFinite(controls.labelSize)
++                    ? Math.min(MAX_LABEL_SIZE, Math.max(MIN_LABEL_SIZE, controls.labelSize))
++                    : DEFAULT_CONTROLS.labelSize,
++                nodeSize: typeof controls.nodeSize === 'number' && Number.isFinite(controls.nodeSize)
++                    ? Math.max(MIN_NODE_SIZE, controls.nodeSize)
++                    : DEFAULT_CONTROLS.nodeSize
++            };
+         }
+     }
+     catch {
+@@ -175,7 +188,7 @@ export function GraphView() {
+     // Last-applied values for the tuning-panel effect below, so toggling "Node names" or
+     // dragging a layout slider only pays for a sprite rebuild / simulation reheat when
+     // that specific setting actually changed — not on every unrelated control tweak.
+-    const prevShowNamesRef = useRef(controls.showNames);
++    const prevLabelSignatureRef = useRef(`${controls.showNames}|${controls.labelSize}|${controls.nodeSize}`);
+     const prevLayoutSignatureRef = useRef(`${controls.nodeSize}|${controls.spread}|${controls.repulsion}`);
+     controlsRef.current = controls;
+     useEffect(() => {
+@@ -312,7 +325,7 @@ export function GraphView() {
+                     const graphNode = node;
+                     const activePalette = paletteRef.current ?? palette;
+                     const color = graphNode.ghost ? activePalette.ghost : activePalette.label;
+-                    const sprite = new SpriteText(truncateLabel(graphNode.id), LABEL_TEXT_HEIGHT, color);
++                    const sprite = new SpriteText(truncateLabel(graphNode.id), controlsRef.current.labelSize, color);
+                     const object3d = sprite;
+                     const radius = Math.cbrt(1 + graphNode.degree) * controlsRef.current.nodeSize;
+                     // Anchor the sprite's bottom edge (not its center) at the offset point, so the
+@@ -423,13 +436,14 @@ export function GraphView() {
+         const orbit = graph.controls();
+         orbit.autoRotate = controls.rotationSpeed > 0;
+         orbit.autoRotateSpeed = controls.rotationSpeed;
+-        if (prevShowNamesRef.current !== controls.showNames) {
+-            prevShowNamesRef.current = controls.showNames;
++        const labelSignature = `${controls.showNames}|${controls.labelSize}|${controls.nodeSize}`;
++        if (prevLabelSignatureRef.current !== labelSignature) {
++            prevLabelSignatureRef.current = labelSignature;
+             graph.refresh?.();
+         }
+         refreshHighlight();
+     }, [controls, status]);
+     return (_jsxs("div", { className: "relative flex h-full min-h-0 flex-col", children: [_jsxs("header", { className: "pointer-events-none absolute left-6 top-5 z-10", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Graph" }), _jsx("p", { className: "text-xs text-muted-foreground", children: status === 'ready'
+                             ? `${noteCount} notes${ghostCount > 0 ? ` · ${ghostCount} to create` : ''} — click any node`
+-                            : '' }), status === 'ready' && ghostCount > 0 && (_jsx("p", { className: "text-[11px] text-muted-foreground/70", children: "Dim nodes are [[links]] with no note yet \u2014 click one to create it." }))] }), status === 'ready' && (_jsxs("div", { className: "absolute right-6 top-5 z-10 flex flex-col items-end gap-2", children: [_jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { "aria-label": "Graph settings", className: "active:scale-[0.97] motion-reduce:transition-none", onClick: () => setPanelOpen(value => !value), size: "sm", variant: panelOpen ? 'secondary' : 'outline', children: _jsx(IconAdjustmentsHorizontal, { size: 14 }) }), _jsx(Button, { onClick: () => navigate(`${LIBRARY_ROUTE}?create=note`), size: "sm", variant: "outline", children: "+ New note" })] }), panelOpen && (_jsxs("div", { className: "w-64 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-4 text-(--ui-text-primary) shadow-lg", children: [_jsxs("div", { className: "mb-4", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Graph controls" }), _jsx("p", { className: "mt-1 text-xs text-(--ui-text-secondary)", children: "Tune the map without changing your notes." })] }), _jsxs("div", { className: "space-y-4", children: [_jsx(ControlSlider, { label: "Node size", max: 10, min: 1, onChange: nodeSize => setControls(current => ({ ...current, nodeSize })), step: 0.5, value: controls.nodeSize }), _jsx(ControlSlider, { label: "Spread", max: 120, min: 10, onChange: spread => setControls(current => ({ ...current, spread })), step: 2, value: controls.spread }), _jsx(ControlSlider, { label: "Repulsion", max: 140, min: 0, onChange: repulsion => setControls(current => ({ ...current, repulsion })), step: 5, value: controls.repulsion }), _jsx(ControlSlider, { label: "Rotation speed", max: 3, min: 0, onChange: rotationSpeed => setControls(current => ({ ...current, rotationSpeed })), step: 0.1, value: controls.rotationSpeed })] }), _jsxs("label", { className: "mt-4 flex cursor-pointer items-center justify-between border-t border-(--ui-stroke-tertiary) pt-3 text-xs font-medium text-(--ui-text-primary)", children: ["Node names", _jsx(Switch, { checked: controls.showNames, onCheckedChange: showNames => setControls(current => ({ ...current, showNames })), size: "xs" })] }), _jsxs("label", { className: "mt-3 flex cursor-pointer items-center justify-between text-xs font-medium text-(--ui-text-primary)", children: ["Neighbor glow", _jsx(Switch, { checked: controls.neighborGlow, onCheckedChange: neighborGlow => setControls(current => ({ ...current, neighborGlow })), size: "xs" })] }), _jsx(Button, { className: "mt-3", onClick: () => setControls(DEFAULT_CONTROLS), size: "inline", variant: "text", children: "Reset to defaults" })] }))] })), status === 'error' && (_jsx(EmptyState, { className: "flex-1", description: "Could not read the Library vault.", title: "Graph unavailable" })), status === 'empty' && (_jsx(EmptyState, { className: "flex-1", description: "Write linked notes in the Library first.", title: "Nothing to map yet" })), _jsx("div", { className: status === 'ready' || status === 'loading' ? 'min-h-0 flex-1' : 'hidden', ref: hostRef })] }));
++                            : '' }), status === 'ready' && ghostCount > 0 && (_jsx("p", { className: "text-[11px] text-muted-foreground/70", children: "Dim nodes are [[links]] with no note yet \u2014 click one to create it." }))] }), status === 'ready' && (_jsxs("div", { className: "absolute right-6 top-5 z-10 flex flex-col items-end gap-2", children: [_jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { "aria-label": "Graph settings", className: "active:scale-[0.97] motion-reduce:transition-none", onClick: () => setPanelOpen(value => !value), size: "sm", variant: panelOpen ? 'secondary' : 'outline', children: _jsx(IconAdjustmentsHorizontal, { size: 14 }) }), _jsx(Button, { onClick: () => navigate(`${LIBRARY_ROUTE}?create=note`), size: "sm", variant: "outline", children: "+ New note" })] }), panelOpen && (_jsxs("div", { className: "w-64 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-4 text-(--ui-text-primary) shadow-lg", children: [_jsxs("div", { className: "mb-4", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Graph controls" }), _jsx("p", { className: "mt-1 text-xs text-(--ui-text-secondary)", children: "Tune the map without changing your notes." })] }), _jsxs("div", { className: "space-y-4", children: [_jsx(ControlSlider, { label: "Node size", max: 10, min: MIN_NODE_SIZE, onChange: nodeSize => setControls(current => ({ ...current, nodeSize })), step: 0.5, value: controls.nodeSize }), _jsx(ControlSlider, { label: "Label size", max: MAX_LABEL_SIZE, min: MIN_LABEL_SIZE, onChange: labelSize => setControls(current => ({ ...current, labelSize })), step: 1, value: controls.labelSize }), _jsx(ControlSlider, { label: "Spread", max: 120, min: 10, onChange: spread => setControls(current => ({ ...current, spread })), step: 2, value: controls.spread }), _jsx(ControlSlider, { label: "Repulsion", max: 140, min: 0, onChange: repulsion => setControls(current => ({ ...current, repulsion })), step: 5, value: controls.repulsion }), _jsx(ControlSlider, { label: "Rotation speed", max: 3, min: 0, onChange: rotationSpeed => setControls(current => ({ ...current, rotationSpeed })), step: 0.1, value: controls.rotationSpeed })] }), _jsxs("label", { className: "mt-4 flex cursor-pointer items-center justify-between border-t border-(--ui-stroke-tertiary) pt-3 text-xs font-medium text-(--ui-text-primary)", children: ["Node names", _jsx(Switch, { checked: controls.showNames, onCheckedChange: showNames => setControls(current => ({ ...current, showNames })), size: "xs" })] }), _jsxs("label", { className: "mt-3 flex cursor-pointer items-center justify-between text-xs font-medium text-(--ui-text-primary)", children: ["Neighbor glow", _jsx(Switch, { checked: controls.neighborGlow, onCheckedChange: neighborGlow => setControls(current => ({ ...current, neighborGlow })), size: "xs" })] }), _jsx(Button, { className: "mt-3", onClick: () => setControls(DEFAULT_CONTROLS), size: "inline", variant: "text", children: "Reset to defaults" })] }))] })), status === 'error' && (_jsx(EmptyState, { className: "flex-1", description: "Could not read the Library vault.", title: "Graph unavailable" })), status === 'empty' && (_jsx(EmptyState, { className: "flex-1", description: "Write linked notes in the Library first.", title: "Nothing to map yet" })), _jsx("div", { className: status === 'ready' || status === 'loading' ? 'min-h-0 flex-1' : 'hidden', ref: hostRef })] }));
+ }
+diff --git a/apps/desktop/src/app/graph/index.tsx b/apps/desktop/src/app/graph/index.tsx
+index d72e400ce58..6491d9f2802 100644
+--- a/apps/desktop/src/app/graph/index.tsx
++++ b/apps/desktop/src/app/graph/index.tsx
+@@ -14,8 +14,8 @@ import { EmptyState } from '@/components/ui/empty-state'
+ import { Switch } from '@/components/ui/switch'
+ import { useTheme } from '@/themes/context'
+ 
+-import { LIBRARY_ROUTE } from '../routes'
+ import { buildIndex, extractWikilinks, loadVault, saveNote } from '../library/vault'
++import { LIBRARY_ROUTE } from '../routes'
+ 
+ interface GraphNode {
+   id: string
+@@ -77,6 +77,7 @@ interface GraphPalette {
+ }
+ 
+ interface GraphControlsState {
++  labelSize: number
+   nodeSize: number
+   spread: number
+   repulsion: number
+@@ -86,10 +87,14 @@ interface GraphControlsState {
+ }
+ 
+ const GRAPH_SETTINGS_KEY = 'nemesis.graph.settings.v1'
++const MIN_NODE_SIZE = 4
++const MIN_LABEL_SIZE = 4
++const MAX_LABEL_SIZE = 24
+ 
+ const DEFAULT_CONTROLS: GraphControlsState = {
++  labelSize: 8,
+   neighborGlow: true,
+-  nodeSize: 4,
++  nodeSize: 7,
+   repulsion: 40,
+   rotationSpeed: 0,
+   showNames: true,
+@@ -98,7 +103,6 @@ const DEFAULT_CONTROLS: GraphControlsState = {
+ 
+ // Always-visible node label (three-spritetext) tuning.
+ const LABEL_MAX_CHARS = 24
+-const LABEL_TEXT_HEIGHT = 3.6
+ // The label's bottom edge sits this much beyond the node sphere's own radius (see
+ // sprite.center below) — proportional, not a flat offset, so it still clears big hub
+ // spheres instead of looking glued on at high "Node size" settings.
+@@ -253,7 +257,20 @@ function loadControls(): GraphControlsState {
+     const raw = window.localStorage.getItem(GRAPH_SETTINGS_KEY)
+ 
+     if (raw) {
+-      return { ...DEFAULT_CONTROLS, ...(JSON.parse(raw) as Partial<GraphControlsState>) }
++      const stored = JSON.parse(raw) as Partial<GraphControlsState>
++      const controls = { ...DEFAULT_CONTROLS, ...stored }
++
++      return {
++        ...controls,
++        labelSize:
++          typeof controls.labelSize === 'number' && Number.isFinite(controls.labelSize)
++            ? Math.min(MAX_LABEL_SIZE, Math.max(MIN_LABEL_SIZE, controls.labelSize))
++            : DEFAULT_CONTROLS.labelSize,
++        nodeSize:
++          typeof controls.nodeSize === 'number' && Number.isFinite(controls.nodeSize)
++            ? Math.max(MIN_NODE_SIZE, controls.nodeSize)
++            : DEFAULT_CONTROLS.nodeSize
++      }
+     }
+   } catch {
+     // fall through to defaults
+@@ -322,7 +339,7 @@ export function GraphView() {
+   // Last-applied values for the tuning-panel effect below, so toggling "Node names" or
+   // dragging a layout slider only pays for a sprite rebuild / simulation reheat when
+   // that specific setting actually changed — not on every unrelated control tweak.
+-  const prevShowNamesRef = useRef(controls.showNames)
++  const prevLabelSignatureRef = useRef(`${controls.showNames}|${controls.labelSize}|${controls.nodeSize}`)
+   const prevLayoutSignatureRef = useRef(`${controls.nodeSize}|${controls.spread}|${controls.repulsion}`)
+   controlsRef.current = controls
+ 
+@@ -499,7 +516,7 @@ export function GraphView() {
+             const graphNode = node as GraphNode
+             const activePalette = paletteRef.current ?? palette
+             const color = graphNode.ghost ? activePalette.ghost : activePalette.label
+-            const sprite = new SpriteText(truncateLabel(graphNode.id), LABEL_TEXT_HEIGHT, color)
++            const sprite = new SpriteText(truncateLabel(graphNode.id), controlsRef.current.labelSize, color)
+             const object3d = sprite as unknown as Object3DLike
+             const radius = Math.cbrt(1 + graphNode.degree) * controlsRef.current.nodeSize
+ 
+@@ -636,8 +653,10 @@ export function GraphView() {
+     orbit.autoRotate = controls.rotationSpeed > 0
+     orbit.autoRotateSpeed = controls.rotationSpeed
+ 
+-    if (prevShowNamesRef.current !== controls.showNames) {
+-      prevShowNamesRef.current = controls.showNames
++    const labelSignature = `${controls.showNames}|${controls.labelSize}|${controls.nodeSize}`
++
++    if (prevLabelSignatureRef.current !== labelSignature) {
++      prevLabelSignatureRef.current = labelSignature
+       graph.refresh?.()
+     }
+ 
+@@ -683,11 +702,19 @@ export function GraphView() {
+                 <ControlSlider
+                   label="Node size"
+                   max={10}
+-                  min={1}
++                  min={MIN_NODE_SIZE}
+                   onChange={nodeSize => setControls(current => ({ ...current, nodeSize }))}
+                   step={0.5}
+                   value={controls.nodeSize}
+                 />
++                <ControlSlider
++                  label="Label size"
++                  max={MAX_LABEL_SIZE}
++                  min={MIN_LABEL_SIZE}
++                  onChange={labelSize => setControls(current => ({ ...current, labelSize }))}
++                  step={1}
++                  value={controls.labelSize}
++                />
+                 <ControlSlider
+                   label="Spread"
+                   max={120}
+diff --git a/apps/desktop/src/app/recorder/archive.js b/apps/desktop/src/app/recorder/archive.js
+index c6ea0d3e0f8..f84a4b52f65 100644
+--- a/apps/desktop/src/app/recorder/archive.js
++++ b/apps/desktop/src/app/recorder/archive.js
+@@ -13,7 +13,8 @@ import { jsxs as _jsxs, jsx as _jsx, Fragment as _Fragment } from "react/jsx-run
+ // is hard-capped at 16MB, which a lecture-length recording routinely exceeds. The custom
+ // protocol goes through the same path-hardening resolver with no size cap and supports
+ // seeking — the same mechanism chat's audio/video attachments already use.
+-import { useCallback, useEffect, useState } from 'react';
++import { IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react';
++import { useCallback, useEffect, useRef, useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import { Checkbox } from '@/components/ui/checkbox';
+ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+@@ -28,6 +29,7 @@ import { LECTURE_FOLDER, RECORDINGS_DIR } from './service';
+ import { transcribeAudio } from './transcribe';
+ export { LECTURE_FOLDER, RECORDINGS_DIR } from './service';
+ const AUDIO_FILE_RE = /\.(webm|m4a|wav)$/i;
++const PLAYBACK_RATES = [1, 1.25, 1.5, 2];
+ function audioMarker(fileName) {
+     return `Audio: ${fileName} (Nemesis Recordings)`;
+ }
+@@ -226,12 +228,65 @@ export function RecordingArchive({ reloadToken }) {
+                                         { icon: 'trash', label: 'Move to Trash', onSelect: () => requestDelete(file), tone: 'danger' }
+                                     ], label: `Actions for ${file.note?.title || recordingLabel(file.name)}` }), meta: recordingTime(file.name), onSelect: () => setSelectedPath(file.path), rowKey: file.path, title: file.note?.title || recordingLabel(file.name) }, file.path))) }), selected ? (_jsx(RecordingDetail, { corrections: corrections[selected.path] ?? 0, file: selected, navigate: navigate, onDelete: () => requestDelete(selected), onDraftFlashcards: draftFlashcards, onSaveTranscriptNote: (file, transcript) => void saveTranscriptNote(file, transcript), onTranscribe: () => void transcribe(selected), savedNote: Boolean(savedNote[selected.path]), transcribingStatus: transcribingStatus[selected.path], transcript: transcripts[selected.path] ?? '' }, selected.path)) : (_jsx(PanelEmpty, { description: "Pick a recording on the left.", icon: "mic", title: "No recording selected" }))] }) }), deleteDialog] }));
+ }
++function audioTimestamp(seconds) {
++    if (!Number.isFinite(seconds) || seconds < 0) {
++        return '0:00';
++    }
++    const whole = Math.floor(seconds);
++    const minutes = Math.floor(whole / 60);
++    return `${minutes}:${String(whole % 60).padStart(2, '0')}`;
++}
++/** Compact app-styled playback controls for a streamed recording. */
++function RecordingAudioPlayer({ onError, src }) {
++    const audioRef = useRef(null);
++    const [currentTime, setCurrentTime] = useState(0);
++    const [duration, setDuration] = useState(0);
++    const [playing, setPlaying] = useState(false);
++    const [rateIndex, setRateIndex] = useState(0);
++    useEffect(() => {
++        setCurrentTime(0);
++        setDuration(0);
++        setPlaying(false);
++        setRateIndex(0);
++    }, [src]);
++    const togglePlayback = () => {
++        const audio = audioRef.current;
++        if (!audio) {
++            return;
++        }
++        if (audio.paused) {
++            void audio.play().catch(() => setPlaying(false));
++        }
++        else {
++            audio.pause();
++        }
++    };
++    const cycleRate = () => {
++        const nextIndex = (rateIndex + 1) % PLAYBACK_RATES.length;
++        const nextRate = PLAYBACK_RATES[nextIndex];
++        setRateIndex(nextIndex);
++        if (audioRef.current) {
++            audioRef.current.playbackRate = nextRate;
++        }
++    };
++    return (_jsxs("div", { className: "flex items-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-2", children: [_jsx("audio", { onDurationChange: event => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0), onEnded: () => setPlaying(false), onError: onError, onLoadedMetadata: event => {
++                    setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0);
++                    event.currentTarget.playbackRate = PLAYBACK_RATES[rateIndex];
++                }, onPause: () => setPlaying(false), onPlay: () => setPlaying(true), onTimeUpdate: event => setCurrentTime(event.currentTarget.currentTime), preload: "metadata", ref: audioRef, src: src }), _jsx("button", { "aria-label": playing ? 'Pause recording' : 'Play recording', className: "grid size-7 shrink-0 place-items-center rounded-full bg-(--theme-primary) text-primary-foreground transition-transform active:scale-[0.96]", onClick: togglePlayback, type: "button", children: playing ? _jsx(IconPlayerPause, { size: 13 }) : _jsx(IconPlayerPlay, { className: "ml-px", size: 13 }) }), _jsx("span", { className: "w-9 shrink-0 text-right font-mono text-[0.65rem] tabular-nums text-muted-foreground", children: audioTimestamp(currentTime) }), _jsx("input", { "aria-label": "Recording position", className: "h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-(--ui-stroke-primary) accent-(--theme-primary) disabled:cursor-default disabled:opacity-50", disabled: duration <= 0, max: duration || 0, min: 0, onChange: event => {
++                    const nextTime = Number(event.target.value);
++                    setCurrentTime(nextTime);
++                    if (audioRef.current) {
++                        audioRef.current.currentTime = nextTime;
++                    }
++                }, step: 0.1, type: "range", value: Math.min(currentTime, duration || 0) }), _jsx("span", { className: "w-9 shrink-0 font-mono text-[0.65rem] tabular-nums text-muted-foreground", children: audioTimestamp(duration) }), _jsxs("button", { "aria-label": `Playback speed ${PLAYBACK_RATES[rateIndex]}x`, className: "min-w-10 shrink-0 rounded-md px-1.5 py-1 font-mono text-[0.65rem] font-semibold text-muted-foreground hover:bg-(--ui-control-hover-background) hover:text-foreground", onClick: cycleRate, type: "button", children: [PLAYBACK_RATES[rateIndex], "x"] })] }));
++}
+ function RecordingDetail({ corrections, file, navigate, onDelete, onDraftFlashcards, onSaveTranscriptNote, onTranscribe, savedNote, transcribingStatus, transcript }) {
+     const [audioFailed, setAudioFailed] = useState(false);
+     const sections = file.note ? parseLectureSections(file.note.content) : null;
+     const rawTranscript = sections?.transcript || transcript;
+     const hasNote = Boolean(file.note);
+-    return (_jsxs(PanelDetail, { children: [_jsxs("header", { className: "flex min-w-0 items-start justify-between gap-3", children: [_jsxs("div", { className: "min-w-0 space-y-1", children: [_jsxs("div", { className: "flex min-w-0 flex-wrap items-center gap-2", children: [_jsx("h3", { className: "min-w-0 truncate text-[0.95rem] font-semibold tracking-tight text-foreground", children: file.note?.title || recordingLabel(file.name) }), !hasNote && _jsx(PanelPill, { children: "No linked note" })] }), _jsx("p", { className: "truncate text-xs text-muted-foreground", children: recordingLabel(file.name) })] }), _jsx(PanelAction, { icon: "trash", onClick: onDelete, children: "Delete" })] }), _jsxs("section", { className: "space-y-1.5", children: [_jsx(PanelSectionLabel, { children: "Audio" }), audioFailed ? (_jsx("p", { className: "rounded bg-destructive/10 p-2.5 text-xs text-destructive", children: "Couldn\u2019t play this recording \u2014 the audio file may have been moved or deleted." })) : (_jsx("audio", { className: "w-full", controls: true, onError: () => setAudioFailed(true), preload: "metadata", src: mediaStreamUrl(file.path) }))] }), _jsxs("section", { className: "space-y-1.5", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx(PanelSectionLabel, { children: "AI notes" }), hasNote && (_jsx(PanelAction, { icon: "wand", onClick: () => enhanceLectureNote(file.note?.title ?? '', navigate), children: sections?.aiNotes ? 'Re-enhance' : 'Enhance with Nemesis' }))] }), sections?.aiNotes ? (_jsx("p", { className: "whitespace-pre-wrap text-[0.8125rem] leading-6 text-foreground/90", children: sections.aiNotes })) : (_jsx("p", { className: "text-xs text-muted-foreground", children: hasNote
++    useEffect(() => setAudioFailed(false), [file.path]);
++    return (_jsxs(PanelDetail, { children: [_jsxs("header", { className: "flex min-w-0 items-start justify-between gap-3", children: [_jsxs("div", { className: "min-w-0 space-y-1", children: [_jsxs("div", { className: "flex min-w-0 flex-wrap items-center gap-2", children: [_jsx("h3", { className: "min-w-0 truncate text-[0.95rem] font-semibold tracking-tight text-foreground", children: file.note?.title || recordingLabel(file.name) }), !hasNote && _jsx(PanelPill, { children: "No linked note" })] }), _jsx("p", { className: "truncate text-xs text-muted-foreground", children: recordingLabel(file.name) })] }), _jsx(PanelAction, { icon: "trash", onClick: onDelete, children: "Delete" })] }), _jsxs("section", { className: "space-y-1.5", children: [_jsx(PanelSectionLabel, { children: "Audio" }), audioFailed ? (_jsx("p", { className: "rounded bg-destructive/10 p-2.5 text-xs text-destructive", children: "Couldn\u2019t play this recording \u2014 the audio file may have been moved or deleted." })) : (_jsx(RecordingAudioPlayer, { onError: () => setAudioFailed(true), src: mediaStreamUrl(file.path) }))] }), _jsxs("section", { className: "space-y-1.5", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx(PanelSectionLabel, { children: "AI notes" }), hasNote && (_jsx(PanelAction, { icon: "wand", onClick: () => enhanceLectureNote(file.note?.title ?? '', navigate), children: sections?.aiNotes ? 'Re-enhance' : 'Enhance with Nemesis' }))] }), sections?.aiNotes ? (_jsx("p", { className: "whitespace-pre-wrap text-[0.8125rem] leading-6 text-foreground/90", children: sections.aiNotes })) : (_jsx("p", { className: "text-xs text-muted-foreground", children: hasNote
+                             ? 'Not enhanced yet — click "Enhance with Nemesis" to turn your notes and transcript into structured AI notes.'
+                             : 'No notes linked to this recording — it predates note-linking, or its note was moved or deleted.' }))] }), sections?.myNotes ? (_jsxs("section", { className: "space-y-1.5", children: [_jsx(PanelSectionLabel, { children: "My notes" }), _jsx("p", { className: "whitespace-pre-wrap text-[0.8125rem] leading-6 text-foreground/90", children: sections.myNotes })] })) : null, _jsxs("section", { className: "space-y-1.5", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx(PanelSectionLabel, { children: "Transcript" }), rawTranscript && !transcribingStatus && (_jsxs("div", { className: "flex flex-wrap items-center justify-end gap-0.5", children: [_jsx(PanelAction, { icon: "checklist", onClick: () => onDraftFlashcards(rawTranscript), children: "Draft flashcards" }), !hasNote && (_jsx(PanelAction, { disabled: savedNote, icon: "save", onClick: () => onSaveTranscriptNote(file, rawTranscript), children: savedNote ? 'Saved' : 'Save as note' }))] }))] }), transcribingStatus ? (_jsxs("div", { className: "flex items-center gap-1.5 text-xs font-medium text-(--theme-primary)", children: [_jsx("span", { className: "size-1.5 animate-pulse rounded-full bg-(--theme-primary)" }), transcribingStatus] })) : rawTranscript ? (_jsxs(_Fragment, { children: [_jsx("p", { className: "whitespace-pre-wrap border-l-2 border-(--theme-primary)/25 pl-3 text-[0.8125rem] leading-6 text-foreground/90", children: rawTranscript }), corrections > 0 && (_jsxs("p", { className: "text-[10px] text-muted-foreground", children: [corrections, " pharm term", corrections === 1 ? '' : 's', " auto-corrected"] }))] })) : (_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx("p", { className: "text-xs text-muted-foreground", children: "No transcript yet." }), _jsx(PanelAction, { icon: "sparkle", onClick: onTranscribe, children: "Transcribe" })] }))] })] }));
+ }
+diff --git a/apps/desktop/src/app/recorder/archive.tsx b/apps/desktop/src/app/recorder/archive.tsx
+index 82d1dcfaeba..93b6d7ef772 100644
+--- a/apps/desktop/src/app/recorder/archive.tsx
++++ b/apps/desktop/src/app/recorder/archive.tsx
+@@ -12,7 +12,8 @@
+ // is hard-capped at 16MB, which a lecture-length recording routinely exceeds. The custom
+ // protocol goes through the same path-hardening resolver with no size cap and supports
+ // seeking — the same mechanism chat's audio/video attachments already use.
+-import { useCallback, useEffect, useState } from 'react'
++import { IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react'
++import { useCallback, useEffect, useRef, useState } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ import type { NavigateFunction } from 'react-router-dom'
+ 
+@@ -43,6 +44,7 @@ import { transcribeAudio } from './transcribe'
+ export { LECTURE_FOLDER, RECORDINGS_DIR } from './service'
+ 
+ const AUDIO_FILE_RE = /\.(webm|m4a|wav)$/i
++const PLAYBACK_RATES = [1, 1.25, 1.5, 2] as const
+ 
+ export interface RecordingFile {
+   name: string
+@@ -421,6 +423,117 @@ interface RecordingDetailProps {
+   transcript: string
+ }
+ 
++function audioTimestamp(seconds: number): string {
++  if (!Number.isFinite(seconds) || seconds < 0) {
++    return '0:00'
++  }
++
++  const whole = Math.floor(seconds)
++  const minutes = Math.floor(whole / 60)
++
++  return `${minutes}:${String(whole % 60).padStart(2, '0')}`
++}
++
++/** Compact app-styled playback controls for a streamed recording. */
++function RecordingAudioPlayer({ onError, src }: { onError: () => void; src: string }) {
++  const audioRef = useRef<HTMLAudioElement | null>(null)
++  const [currentTime, setCurrentTime] = useState(0)
++  const [duration, setDuration] = useState(0)
++  const [playing, setPlaying] = useState(false)
++  const [rateIndex, setRateIndex] = useState(0)
++
++  useEffect(() => {
++    setCurrentTime(0)
++    setDuration(0)
++    setPlaying(false)
++    setRateIndex(0)
++  }, [src])
++
++  const togglePlayback = () => {
++    const audio = audioRef.current
++
++    if (!audio) {
++      return
++    }
++
++    if (audio.paused) {
++      void audio.play().catch(() => setPlaying(false))
++    } else {
++      audio.pause()
++    }
++  }
++
++  const cycleRate = () => {
++    const nextIndex = (rateIndex + 1) % PLAYBACK_RATES.length
++    const nextRate = PLAYBACK_RATES[nextIndex]
++    setRateIndex(nextIndex)
++
++    if (audioRef.current) {
++      audioRef.current.playbackRate = nextRate
++    }
++  }
++
++  return (
++    <div className="flex items-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-2">
++      <audio
++        onDurationChange={event => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
++        onEnded={() => setPlaying(false)}
++        onError={onError}
++        onLoadedMetadata={event => {
++          setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)
++          event.currentTarget.playbackRate = PLAYBACK_RATES[rateIndex]
++        }}
++        onPause={() => setPlaying(false)}
++        onPlay={() => setPlaying(true)}
++        onTimeUpdate={event => setCurrentTime(event.currentTarget.currentTime)}
++        preload="metadata"
++        ref={audioRef}
++        src={src}
++      />
++      <button
++        aria-label={playing ? 'Pause recording' : 'Play recording'}
++        className="grid size-7 shrink-0 place-items-center rounded-full bg-(--theme-primary) text-primary-foreground transition-transform active:scale-[0.96]"
++        onClick={togglePlayback}
++        type="button"
++      >
++        {playing ? <IconPlayerPause size={13} /> : <IconPlayerPlay className="ml-px" size={13} />}
++      </button>
++      <span className="w-9 shrink-0 text-right font-mono text-[0.65rem] tabular-nums text-muted-foreground">
++        {audioTimestamp(currentTime)}
++      </span>
++      <input
++        aria-label="Recording position"
++        className="h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-(--ui-stroke-primary) accent-(--theme-primary) disabled:cursor-default disabled:opacity-50"
++        disabled={duration <= 0}
++        max={duration || 0}
++        min={0}
++        onChange={event => {
++          const nextTime = Number(event.target.value)
++          setCurrentTime(nextTime)
++
++          if (audioRef.current) {
++            audioRef.current.currentTime = nextTime
++          }
++        }}
++        step={0.1}
++        type="range"
++        value={Math.min(currentTime, duration || 0)}
++      />
++      <span className="w-9 shrink-0 font-mono text-[0.65rem] tabular-nums text-muted-foreground">
++        {audioTimestamp(duration)}
++      </span>
++      <button
++        aria-label={`Playback speed ${PLAYBACK_RATES[rateIndex]}x`}
++        className="min-w-10 shrink-0 rounded-md px-1.5 py-1 font-mono text-[0.65rem] font-semibold text-muted-foreground hover:bg-(--ui-control-hover-background) hover:text-foreground"
++        onClick={cycleRate}
++        type="button"
++      >
++        {PLAYBACK_RATES[rateIndex]}x
++      </button>
++    </div>
++  )
++}
++
+ function RecordingDetail({
+   corrections,
+   file,
+@@ -438,6 +551,8 @@ function RecordingDetail({
+   const rawTranscript = sections?.transcript || transcript
+   const hasNote = Boolean(file.note)
+ 
++  useEffect(() => setAudioFailed(false), [file.path])
++
+   return (
+     <PanelDetail>
+       <header className="flex min-w-0 items-start justify-between gap-3">
+@@ -462,13 +577,7 @@ function RecordingDetail({
+             Couldn&rsquo;t play this recording — the audio file may have been moved or deleted.
+           </p>
+         ) : (
+-          <audio
+-            className="w-full"
+-            controls
+-            onError={() => setAudioFailed(true)}
+-            preload="metadata"
+-            src={mediaStreamUrl(file.path)}
+-          />
++          <RecordingAudioPlayer onError={() => setAudioFailed(true)} src={mediaStreamUrl(file.path)} />
+         )}
+       </section>
+ 
+diff --git a/apps/desktop/src/app/recorder/index.js b/apps/desktop/src/app/recorder/index.js
+index 439b5f6fba5..d58bea7d9c7 100644
+--- a/apps/desktop/src/app/recorder/index.js
++++ b/apps/desktop/src/app/recorder/index.js
+@@ -108,7 +108,7 @@ export function RecorderView() {
+     }
+     const queuedCount = liveInsights.filter(insight => insight.queued).length;
+     const stopping = recording === 'stopping';
+-    return (_jsxs("main", { className: "flex h-full min-h-0 flex-col overflow-y-auto bg-(--ui-editor-surface-background)", children: [_jsxs("header", { className: "px-4 pb-2 pt-5 sm:px-6 sm:pt-6 [@media(max-height:720px)]:pb-1 [@media(max-height:720px)]:pt-3", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: "Capture desk" }), _jsx("h1", { className: "mt-1 text-2xl font-semibold tracking-[-0.025em] [@media(max-height:720px)]:text-xl", children: "Recorder" }), _jsxs("p", { className: "mt-1 max-w-3xl text-xs leading-5 text-muted-foreground [@media(max-height:720px)]:hidden", children: ["Capture your microphone", withSystemAudio ? ' and this computer’s audio' : '', " locally. Keep a live notepad, review on-device transcription, and collect the pharmacology terms that matter."] })] }), _jsxs("section", { className: "mx-4 mt-4 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)] sm:mx-6 [@media(max-height:720px)]:mt-2", children: [_jsxs("div", { className: "grid items-stretch lg:grid-cols-[minmax(0,0.9fr)_minmax(20rem,1.1fr)]", children: [_jsxs("div", { className: "flex min-w-0 flex-col items-start gap-5 border-b border-(--ui-stroke-tertiary) p-5 sm:flex-row sm:items-center sm:p-6 lg:border-b-0 lg:border-r [@media(max-height:720px)]:gap-3 [@media(max-height:720px)]:p-3", children: [_jsx("div", { className: "grid size-24 shrink-0 place-items-center rounded-full border border-(--theme-primary)/25 bg-(--ui-bg-primary) shadow-[inset_0_0_0_7px_var(--ui-bg-elevated)] [@media(max-height:720px)]:size-16 [@media(max-height:720px)]:shadow-[inset_0_0_0_4px_var(--ui-bg-elevated)]", children: _jsx(Button, { "aria-label": "Start recording", className: "size-20 rounded-full shadow-lg transition-[transform,opacity] active:scale-[0.96] [@media(max-height:720px)]:size-12", disabled: stopping || starting, onClick: () => void startRecording(), size: "icon-lg", children: _jsx(IconMicrophone, { className: "size-7 [@media(max-height:720px)]:size-5" }) }) }), _jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: stopping ? 'Finishing capture' : starting ? 'Opening audio capture' : 'Ready to record' }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-tight", children: stopping ? 'Saving your lecture' : 'Capture the lecture, keep the context' }), _jsx("p", { className: "mt-1 max-w-sm text-xs leading-5 text-muted-foreground", children: stopping
++    return (_jsxs("main", { className: "flex h-full min-h-0 flex-col overflow-y-auto bg-(--ui-editor-surface-background)", children: [_jsxs("header", { className: "sticky top-0 z-20 flex shrink-0 items-start gap-3 border-b border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background)/95 px-4 pb-2 pt-5 backdrop-blur-sm sm:px-6 sm:pt-6 [@media(max-height:720px)]:pb-2 [@media(max-height:720px)]:pt-3", children: [_jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: "Capture desk" }), _jsx("h1", { className: "mt-1 text-2xl font-semibold tracking-[-0.025em] [@media(max-height:720px)]:text-xl", children: "Recorder" }), _jsxs("p", { className: "mt-1 max-w-3xl text-xs leading-5 text-muted-foreground [@media(max-height:720px)]:hidden", children: ["Capture your microphone", withSystemAudio ? ' and this computer’s audio' : '', " locally. Keep a live notepad, review on-device transcription, and collect the pharmacology terms that matter."] })] }), _jsx(Button, { "aria-label": "Start recording", className: "mt-0.5 shrink-0 active:scale-[0.98]", disabled: stopping || starting, onClick: () => void startRecording(), size: "sm", children: "\u25CF Record" })] }), _jsxs("section", { className: "mx-4 mt-4 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)] sm:mx-6 [@media(max-height:720px)]:mt-2", children: [_jsxs("div", { className: "grid items-stretch lg:grid-cols-[minmax(0,0.9fr)_minmax(20rem,1.1fr)]", children: [_jsxs("div", { className: "flex min-w-0 flex-col items-start gap-5 border-b border-(--ui-stroke-tertiary) p-5 sm:flex-row sm:items-center sm:p-6 lg:border-b-0 lg:border-r [@media(max-height:720px)]:gap-3 [@media(max-height:720px)]:p-3", children: [_jsx("div", { className: "grid size-24 shrink-0 place-items-center rounded-full border border-(--theme-primary)/25 bg-(--ui-bg-primary) shadow-[inset_0_0_0_7px_var(--ui-bg-elevated)] [@media(max-height:720px)]:size-16 [@media(max-height:720px)]:shadow-[inset_0_0_0_4px_var(--ui-bg-elevated)]", children: _jsx(Button, { "aria-label": "Start recording", className: "size-20 rounded-full shadow-lg transition-[transform,opacity] active:scale-[0.96] [@media(max-height:720px)]:size-12", disabled: stopping || starting, onClick: () => void startRecording(), size: "icon-lg", children: _jsx(IconMicrophone, { className: "size-7 [@media(max-height:720px)]:size-5" }) }) }), _jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: stopping ? 'Finishing capture' : starting ? 'Opening audio capture' : 'Ready to record' }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-tight", children: stopping ? 'Saving your lecture' : 'Capture the lecture, keep the context' }), _jsx("p", { className: "mt-1 max-w-sm text-xs leading-5 text-muted-foreground", children: stopping
+                                                     ? liveStatus || 'Writing audio and notes to disk…'
+                                                     : 'One click opens the live notepad, audio signal, transcript, and pharmacology mentions.' })] })] }), _jsxs("div", { className: "flex min-w-0 flex-col justify-center gap-2 p-4", children: [_jsxs("label", { className: "group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-(--ui-stroke-tertiary) hover:bg-(--ui-bg-quaternary)", children: [_jsx("input", { checked: withSystemAudio, className: "peer sr-only", disabled: starting || stopping, onChange: event => setSystemAudioEnabled(event.target.checked), type: "checkbox" }), _jsx("span", { className: "relative h-5 w-9 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-(--theme-primary)/35 peer-checked:bg-(--theme-primary) peer-checked:after:translate-x-4 peer-checked:after:bg-primary-foreground peer-disabled:opacity-45" }), _jsxs("span", { className: "min-w-0", children: [_jsx("span", { className: "block text-xs font-semibold", children: "Computer audio" }), _jsx("span", { className: "block text-[0.6875rem] leading-relaxed text-muted-foreground", children: "Capture lecture or meeting audio \u00B7 macOS asks once" })] })] }), _jsxs("label", { className: "group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-(--ui-stroke-tertiary) hover:bg-(--ui-bg-quaternary)", children: [_jsx("input", { checked: liveCaptions, className: "peer sr-only", disabled: starting || stopping, onChange: event => setLiveCaptionsEnabled(event.target.checked), type: "checkbox" }), _jsx("span", { className: "relative h-5 w-9 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-(--theme-primary)/35 peer-checked:bg-(--theme-primary) peer-checked:after:translate-x-4 peer-checked:after:bg-primary-foreground peer-disabled:opacity-45" }), _jsxs("span", { className: "min-w-0", children: [_jsx("span", { className: "block text-xs font-semibold", children: "Live transcript" }), _jsx("span", { className: "block text-[0.6875rem] leading-relaxed text-muted-foreground", children: "Process speech on-device and save a linked lecture note" })] })] }), _jsxs("span", { className: "mx-3 mt-1 inline-flex items-center gap-1.5 self-start rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-3 py-1.5 text-[0.6875rem] text-muted-foreground", children: [_jsx(IconLock, { size: 12 }), "Nothing joins your call \u00B7 processed on this device"] })] })] }), lectureNote && (_jsxs("div", { className: "flex flex-wrap items-center gap-2 border-t border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-5 py-3 text-xs", children: [_jsxs("span", { className: "min-w-0 flex-1 basis-full items-center gap-1.5 font-medium sm:inline-flex sm:basis-auto", children: [_jsx(IconCheck, { className: "mr-1 inline text-(--theme-primary)", size: 13 }), "Saved to Library / ", LECTURE_FOLDER, " as ", lectureNote, ".md"] }), _jsx(Button, { onClick: () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`), size: "xs", variant: "outline", children: "Open note" }), _jsxs(Button, { onClick: enhanceNote, size: "xs", variant: "secondary", children: [_jsx(IconSparkles, { size: 12 }), "Enhance with Nemesis"] }), queuedCount > 0 && (_jsxs(Button, { onClick: askQueued, size: "xs", variant: "outline", children: ["Review ", queuedCount, " queued drug", queuedCount === 1 ? '' : 's'] }))] })), error && _jsx("p", { className: "border-t border-(--ui-stroke-tertiary) px-5 py-3 text-xs text-destructive", children: error })] }), _jsxs("section", { className: "px-4 pb-8 pt-7 sm:px-6", children: [_jsxs("div", { className: "mb-3", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: "Archive" }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-tight", children: "Saved recordings" }), _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: "Play back, transcribe, enhance, or clean up past captures." })] }), _jsx(RecordingArchive, { reloadToken: recordingsVersion }), _jsxs("div", { className: "flex flex-wrap items-center gap-1.5 pt-4 text-[0.6875rem] text-muted-foreground", children: [_jsx(IconLock, { size: 11 }), _jsx("span", { children: "Local by design \u00B7" }), _jsx(Tip, { className: "max-w-sm whitespace-normal text-left leading-relaxed", label: _jsx("span", { children: "Recording other people may require their consent where you live \u2014 check your school\u2019s policy. Nemesis never records on its own and never hides the indicator. Transcription runs on your device; review the draft before relying on it." }), side: "top", children: _jsx("button", { className: "underline decoration-current/30 underline-offset-2 hover:text-foreground", type: "button", children: "Consent & transcription details" }) })] })] })] }));
+ }
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index d02d3f04d34..3ba5ec6338d 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -331,13 +331,24 @@ export function RecorderView() {
+           the record button must sit in the FIRST screenful at every zoom step,
+           so header + hero tighten below ~720px effective height instead of
+           pushing the primary control under the fold. */}
+-      <header className="px-4 pb-2 pt-5 sm:px-6 sm:pt-6 [@media(max-height:720px)]:pb-1 [@media(max-height:720px)]:pt-3">
+-        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)">Capture desk</p>
+-        <h1 className="mt-1 text-2xl font-semibold tracking-[-0.025em] [@media(max-height:720px)]:text-xl">Recorder</h1>
+-        <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground [@media(max-height:720px)]:hidden">
+-          Capture your microphone{withSystemAudio ? ' and this computer’s audio' : ''} locally. Keep a live notepad,
+-          review on-device transcription, and collect the pharmacology terms that matter.
+-        </p>
++      <header className="sticky top-0 z-20 flex shrink-0 items-start gap-3 border-b border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background)/95 px-4 pb-2 pt-5 backdrop-blur-sm sm:px-6 sm:pt-6 [@media(max-height:720px)]:pb-2 [@media(max-height:720px)]:pt-3">
++        <div className="min-w-0 flex-1">
++          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)">Capture desk</p>
++          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.025em] [@media(max-height:720px)]:text-xl">Recorder</h1>
++          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground [@media(max-height:720px)]:hidden">
++            Capture your microphone{withSystemAudio ? ' and this computer’s audio' : ''} locally. Keep a live notepad,
++            review on-device transcription, and collect the pharmacology terms that matter.
++          </p>
++        </div>
++        <Button
++          aria-label="Start recording"
++          className="mt-0.5 shrink-0 active:scale-[0.98]"
++          disabled={stopping || starting}
++          onClick={() => void startRecording()}
++          size="sm"
++        >
++          ● Record
++        </Button>
+       </header>
+ 
+       <section className="mx-4 mt-4 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)] sm:mx-6 [@media(max-height:720px)]:mt-2">
+diff --git a/apps/desktop/src/app/settings/appearance-settings.js b/apps/desktop/src/app/settings/appearance-settings.js
+index 6551e4dc794..7c3e784a7be 100644
+--- a/apps/desktop/src/app/settings/appearance-settings.js
++++ b/apps/desktop/src/app/settings/appearance-settings.js
+@@ -11,6 +11,7 @@ import { Check, Download, Loader2, Palette, Trash2 } from '@/lib/icons';
+ import { selectableCardClass } from '@/lib/selectable-card';
+ import { normalize } from '@/lib/text';
+ import { cn } from '@/lib/utils';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { $embedAllowed, $embedMode, clearEmbedAllowed, setEmbedMode } from '@/store/embed-consent';
+ import { $activeGatewayProfile, $profiles, normalizeProfileKey } from '@/store/profile';
+ import { $toolViewMode, setToolViewMode } from '@/store/tool-view';
+@@ -190,5 +191,5 @@ export function AppearanceSettings() {
+                                             }, options: embedOptions, value: embedMode }), embedAllowed.length > 0 && (_jsx(Button, { onClick: () => {
+                                                 triggerHaptic('selection');
+                                                 clearEmbedAllowed();
+-                                            }, size: "inline", variant: "text", children: a.embedsReset(embedAllowed.length) }))] }), description: a.embedsDesc, title: a.embedsTitle })] })] }), _jsx("div", { className: "mt-6", children: _jsx(PetSettings, {}) })] }));
++                                            }, size: "inline", variant: "text", children: a.embedsReset(embedAllowed.length) }))] }), description: a.embedsDesc, title: a.embedsTitle })] })] }), !NEMESIS_STUDENT_BUILD && (_jsx("div", { className: "mt-6", children: _jsx(PetSettings, {}) }))] }));
+ }
+diff --git a/apps/desktop/src/app/settings/appearance-settings.tsx b/apps/desktop/src/app/settings/appearance-settings.tsx
+index 559978e4156..914e9b49c0f 100644
+--- a/apps/desktop/src/app/settings/appearance-settings.tsx
++++ b/apps/desktop/src/app/settings/appearance-settings.tsx
+@@ -12,6 +12,7 @@ import { Check, Download, Loader2, Palette, Trash2 } from '@/lib/icons'
+ import { selectableCardClass } from '@/lib/selectable-card'
+ import { normalize } from '@/lib/text'
+ import { cn } from '@/lib/utils'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { $embedAllowed, $embedMode, clearEmbedAllowed, type EmbedMode, setEmbedMode } from '@/store/embed-consent'
+ import { $activeGatewayProfile, $profiles, normalizeProfileKey } from '@/store/profile'
+ import { $toolViewMode, setToolViewMode } from '@/store/tool-view'
+@@ -497,9 +498,11 @@ export function AppearanceSettings() {
+         </div>
+       </div>
+ 
+-      <div className="mt-6">
+-        <PetSettings />
+-      </div>
++      {!NEMESIS_STUDENT_BUILD && (
++        <div className="mt-6">
++          <PetSettings />
++        </div>
++      )}
+     </SettingsContent>
+   )
+ }
+diff --git a/apps/desktop/src/app/settings/connections-settings.js b/apps/desktop/src/app/settings/connections-settings.js
+index 2eda3100ee5..bf5c8820354 100644
+--- a/apps/desktop/src/app/settings/connections-settings.js
++++ b/apps/desktop/src/app/settings/connections-settings.js
+@@ -39,6 +39,41 @@ const PORTALS = [
+         name: 'Canvas',
+         origin: 'https://canvas.instructure.com',
+         url: 'https://canvas.instructure.com/'
++    },
++    {
++        hint: 'Flashcards and study sets',
++        id: 'quizlet',
++        name: 'Quizlet',
++        origin: 'https://quizlet.com',
++        url: 'https://quizlet.com/'
++    },
++    {
++        hint: 'Notes, docs, and course workspaces',
++        id: 'notion',
++        name: 'Notion',
++        origin: 'https://www.notion.so',
++        url: 'https://www.notion.so/'
++    },
++    {
++        hint: 'School files and shared folders',
++        id: 'google-drive',
++        name: 'Google Drive',
++        origin: 'https://drive.google.com',
++        url: 'https://drive.google.com/drive/my-drive'
++    },
++    {
++        hint: 'Class notebooks and course notes',
++        id: 'onenote',
++        name: 'OneNote',
++        origin: 'https://www.onenote.com',
++        url: 'https://www.onenote.com/notebooks'
++    },
++    {
++        hint: 'Classes, meetings, and assignments',
++        id: 'teams',
++        name: 'Microsoft Teams',
++        origin: 'https://teams.microsoft.com',
++        url: 'https://teams.microsoft.com/v2/'
+     }
+ ];
+ function originOf(url) {
+diff --git a/apps/desktop/src/app/settings/connections-settings.tsx b/apps/desktop/src/app/settings/connections-settings.tsx
+index 59fbaf9eaad..6f8968de870 100644
+--- a/apps/desktop/src/app/settings/connections-settings.tsx
++++ b/apps/desktop/src/app/settings/connections-settings.tsx
+@@ -48,6 +48,41 @@ const PORTALS: Portal[] = [
+     name: 'Canvas',
+     origin: 'https://canvas.instructure.com',
+     url: 'https://canvas.instructure.com/'
++  },
++  {
++    hint: 'Flashcards and study sets',
++    id: 'quizlet',
++    name: 'Quizlet',
++    origin: 'https://quizlet.com',
++    url: 'https://quizlet.com/'
++  },
++  {
++    hint: 'Notes, docs, and course workspaces',
++    id: 'notion',
++    name: 'Notion',
++    origin: 'https://www.notion.so',
++    url: 'https://www.notion.so/'
++  },
++  {
++    hint: 'School files and shared folders',
++    id: 'google-drive',
++    name: 'Google Drive',
++    origin: 'https://drive.google.com',
++    url: 'https://drive.google.com/drive/my-drive'
++  },
++  {
++    hint: 'Class notebooks and course notes',
++    id: 'onenote',
++    name: 'OneNote',
++    origin: 'https://www.onenote.com',
++    url: 'https://www.onenote.com/notebooks'
++  },
++  {
++    hint: 'Classes, meetings, and assignments',
++    id: 'teams',
++    name: 'Microsoft Teams',
++    origin: 'https://teams.microsoft.com',
++    url: 'https://teams.microsoft.com/v2/'
+   }
+ ]
+ 
+diff --git a/apps/desktop/src/app/study/index.js b/apps/desktop/src/app/study/index.js
+index 07a84d30220..1a320ed0521 100644
+--- a/apps/desktop/src/app/study/index.js
++++ b/apps/desktop/src/app/study/index.js
+@@ -75,6 +75,21 @@ export function StudyView() {
+     const now = useMemo(() => new Date(), [state, reviewing]);
+     const queue = useMemo(() => (reviewing ? buildQueue(state, reviewDeckId, now) : []), [state, reviewDeckId, reviewing, now]);
+     const current = queue[0];
++    const remainingCounts = useMemo(() => queue.reduce((counts, item) => {
++        if (item.isNew) {
++            counts.new++;
++        }
++        else {
++            const cardState = state.schedule[item.card.id]?.state;
++            if (cardState === 1 || cardState === 3) {
++                counts.learning++;
++            }
++            else {
++                counts.review++;
++            }
++        }
++        return counts;
++    }, { learning: 0, new: 0, review: 0 }), [queue, state.schedule]);
+     const totals = deckStats(state, null, now);
+     const sections = useMemo(() => groupDecks(state, now).map(group => group.course).filter(course => course.toLocaleLowerCase() !== 'other'), [now, state]);
+     const settings = getSettings(state);
+@@ -246,7 +261,7 @@ export function StudyView() {
+                                 setBrowseDeckId(null);
+                                 setMatchDeckId(null);
+                                 setTakingTest(null);
+-                            }, size: "sm", variant: "outline", children: "Back to decks" })) : (_jsxs(_Fragment, { children: [_jsxs("div", { className: "mr-1 flex items-center overflow-hidden rounded-md border border-border", children: [_jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'cards' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('cards'), title: "Card view", type: "button", children: _jsx(IconLayoutGrid, { size: 14 }) }), _jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'list' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('list'), title: "List view", type: "button", children: _jsx(IconList, { size: 14 }) })] }), _jsx("button", { "aria-label": "Study settings", className: "rounded-md border border-border px-2 py-1.5 text-muted-foreground transition-colors hover:text-foreground", onClick: () => setSettingsOpen(true), title: "Study settings", type: "button", children: _jsx(IconSettings, { size: 14 }) }), _jsxs(Button, { onClick: () => setNewSectionOpen(true), size: "sm", variant: "outline", children: [_jsx(IconFolderPlus, { size: 14 }), "New section"] }), _jsx(Button, { onClick: () => setNewDeckSection(''), size: "sm", variant: "outline", children: "New deck" }), _jsx(Button, { onClick: () => setImportOpen(true), size: "sm", variant: "outline", children: "Import cards" }), _jsx(Button, { disabled: totals.due === 0, onClick: () => startReview(null), size: "sm", children: "Study all" })] })) })] }), autoImported.length > 0 && !reviewing && !browseDeckId && (_jsxs("div", { className: "mx-6 mb-1 flex items-center justify-between rounded-md border border-(--theme-primary)/40 bg-(--theme-primary)/10 px-3 py-1.5 text-xs", children: [_jsxs("span", { children: ["Nemesis added ", autoImported.length === 1 ? 'a new deck' : `${autoImported.length} new decks`, ":", ' ', autoImported.join(', ')] }), _jsx("button", { className: "text-muted-foreground hover:text-foreground", onClick: () => setAutoImported([]), type: "button", children: "Dismiss" })] })), reviewing ? (current ? (_jsx(ReviewSurface, { done: done, flip: flip, intervals: previewIntervals(state, current.card.id, now), item: current, onGrade: grade, onReveal: () => setRevealed(true), remaining: queue.length, revealed: revealed, showIntervalHints: settings.showIntervalHints })) : (_jsx(EmptyState, { className: "flex-1", description: done > 0 ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.` : 'Nothing is due right now.', title: "All caught up" }))) : matchDeckId ? (_jsx(MatchGame, { deck: state.decks.find(deck => deck.id === matchDeckId) ?? null, onExit: () => setMatchDeckId(null) })) : browseDeckId ? (_jsx(CardBrowser, { deck: state.decks.find(deck => deck.id === browseDeckId) ?? null, onChange: update, onDeleteDeck: () => removeDeck(browseDeckId), onMatch: () => startMatch(browseDeckId), onMoveDeck: section => moveDeck(browseDeckId, section), sections: sections, state: state })) : takingTest ? (_jsx(TestSurface, { file: takingTest, onComplete: () => setTestAttempts(loadTestAttempts()), onExit: () => setTakingTest(null) })) : (_jsx(DeckBrowser, { mindmaps: mindmaps, onBrowse: setBrowseDeckId, onCreateDeck: setNewDeckSection, onMatch: startMatch, onOpenMindmap: setViewingMindmap, onStartTest: setTakingTest, onStudy: startReview, state: state, testAttempts: testAttempts, tests: tests, view: view })), _jsx(MindmapViewerDialog, { file: viewingMindmap, onOpenChange: open => !open && setViewingMindmap(null) }), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen, sections: sections }), newDeckSection !== null && (_jsx(NewDeckDialog, { initialSection: newDeckSection, onClose: () => setNewDeckSection(null), onCreate: createDeck, sections: sections })), newSectionOpen && (_jsx(NewSectionDialog, { onClose: () => setNewSectionOpen(false), onCreate: createSection, sections: sections })), _jsx(StudySettingsDialog, { onChange: patch => update(setSettings(state, patch)), onOpenChange: setSettingsOpen, open: settingsOpen, settings: settings })] }));
++                            }, size: "sm", variant: "outline", children: "Back to decks" })) : (_jsxs(_Fragment, { children: [_jsxs("div", { className: "mr-1 flex items-center overflow-hidden rounded-md border border-border", children: [_jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'cards' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('cards'), title: "Card view", type: "button", children: _jsx(IconLayoutGrid, { size: 14 }) }), _jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'list' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('list'), title: "List view", type: "button", children: _jsx(IconList, { size: 14 }) })] }), _jsx("button", { "aria-label": "Study settings", className: "rounded-md border border-border px-2 py-1.5 text-muted-foreground transition-colors hover:text-foreground", onClick: () => setSettingsOpen(true), title: "Study settings", type: "button", children: _jsx(IconSettings, { size: 14 }) }), _jsxs(Button, { onClick: () => setNewSectionOpen(true), size: "sm", variant: "outline", children: [_jsx(IconFolderPlus, { size: 14 }), "New section"] }), _jsx(Button, { onClick: () => setNewDeckSection(''), size: "sm", variant: "outline", children: "New deck" }), _jsx(Button, { onClick: () => setImportOpen(true), size: "sm", variant: "outline", children: "Import cards" }), _jsx(Button, { disabled: totals.due === 0, onClick: () => startReview(null), size: "sm", children: "Study all" })] })) })] }), autoImported.length > 0 && !reviewing && !browseDeckId && (_jsxs("div", { className: "mx-6 mb-1 flex items-center justify-between rounded-md border border-(--theme-primary)/40 bg-(--theme-primary)/10 px-3 py-1.5 text-xs", children: [_jsxs("span", { children: ["Nemesis added ", autoImported.length === 1 ? 'a new deck' : `${autoImported.length} new decks`, ":", ' ', autoImported.join(', ')] }), _jsx("button", { className: "text-muted-foreground hover:text-foreground", onClick: () => setAutoImported([]), type: "button", children: "Dismiss" })] })), reviewing ? (current ? (_jsx(ReviewSurface, { flip: flip, intervals: previewIntervals(state, current.card.id, now), item: current, onGrade: grade, onReveal: () => setRevealed(true), remainingCounts: remainingCounts, revealed: revealed, showIntervalHints: settings.showIntervalHints })) : (_jsx(EmptyState, { className: "flex-1", description: done > 0 ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.` : 'Nothing is due right now.', title: "All caught up" }))) : matchDeckId ? (_jsx(MatchGame, { deck: state.decks.find(deck => deck.id === matchDeckId) ?? null, onExit: () => setMatchDeckId(null) })) : browseDeckId ? (_jsx(CardBrowser, { deck: state.decks.find(deck => deck.id === browseDeckId) ?? null, onChange: update, onDeleteDeck: () => removeDeck(browseDeckId), onMatch: () => startMatch(browseDeckId), onMoveDeck: section => moveDeck(browseDeckId, section), sections: sections, state: state })) : takingTest ? (_jsx(TestSurface, { file: takingTest, onComplete: () => setTestAttempts(loadTestAttempts()), onExit: () => setTakingTest(null) })) : (_jsx(DeckBrowser, { mindmaps: mindmaps, onBrowse: setBrowseDeckId, onCreateDeck: setNewDeckSection, onMatch: startMatch, onOpenMindmap: setViewingMindmap, onStartTest: setTakingTest, onStudy: startReview, state: state, testAttempts: testAttempts, tests: tests, view: view })), _jsx(MindmapViewerDialog, { file: viewingMindmap, onOpenChange: open => !open && setViewingMindmap(null) }), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen, sections: sections }), newDeckSection !== null && (_jsx(NewDeckDialog, { initialSection: newDeckSection, onClose: () => setNewDeckSection(null), onCreate: createDeck, sections: sections })), newSectionOpen && (_jsx(NewSectionDialog, { onClose: () => setNewSectionOpen(false), onCreate: createSection, sections: sections })), _jsx(StudySettingsDialog, { onChange: patch => update(setSettings(state, patch)), onOpenChange: setSettingsOpen, open: settingsOpen, settings: settings })] }));
+ }
+ const OTHER_SECTION_VALUE = '__other__';
+ function SectionSelect({ label, onChange, sections, value }) {
+@@ -503,10 +518,8 @@ function MatchGame({ deck, onExit }) {
+                     return (_jsx("button", { className: cn('flex items-center justify-center rounded-lg border p-3 text-center text-sm leading-snug transition-[transform,opacity,border-color,background-color] duration-200 ease-out active:scale-[0.98]', isMatched && 'pointer-events-none scale-95 border-transparent bg-transparent opacity-0', isSelected && 'border-(--theme-primary) bg-(--theme-primary)/10', isWrong && 'nemesis-shake border-destructive text-destructive', !isMatched && !isSelected && !isWrong && 'border-border bg-card hover:border-(--theme-primary)/50'), onClick: () => pick(tile), type: "button", children: tile.text }, tile.id));
+                 }) }))] }));
+ }
+-function ReviewSurface({ done, flip, intervals, item, onGrade, onReveal, remaining, revealed, showIntervalHints }) {
+-    const total = done + remaining;
+-    const progress = total > 0 ? Math.round((done / total) * 100) : 0;
+-    return (_jsx("div", { className: "flex flex-1 flex-col items-center px-6 pb-8", children: _jsxs("div", { className: "flex w-full max-w-2xl flex-1 flex-col", children: [_jsxs("div", { className: "flex items-center justify-between pb-2 text-xs text-muted-foreground", children: [_jsxs("span", { className: "truncate", children: [item.deckName, item.isNew && (_jsx(Badge, { className: "ml-2", variant: "outline", children: "new" }))] }), _jsxs("span", { className: "tabular-nums", children: [done, " done \u00B7 ", remaining, " left"] })] }), _jsx("div", { className: "mb-4 h-1 w-full overflow-hidden rounded-full bg-(--ui-bg-tertiary,theme(colors.muted.DEFAULT))", children: _jsx("div", { className: "h-full bg-(--theme-primary)", style: { width: `${progress}%` } }) }), flip ? (_jsx("button", { "aria-label": revealed ? item.card.back : 'Show answer', className: "nemesis-flip flex-1 [perspective:1600px]", "data-flipped": revealed ? 'true' : undefined, onClick: () => !revealed && onReveal(), type: "button", children: _jsxs("div", { className: "nemesis-flip-inner relative h-full min-h-64 w-full", children: [_jsx(FlipFace, { label: "Question", children: item.card.front }), _jsx(FlipFace, { back: true, label: "Answer", muted: true, children: item.card.back })] }) })) : (_jsxs("div", { className: "flex min-h-64 flex-1 flex-col justify-center gap-5 rounded-xl border border-border bg-card p-8", children: [_jsxs("div", { children: [_jsx("div", { className: "pb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground", children: "Question" }), _jsx("div", { className: "text-lg leading-relaxed", children: item.card.front })] }), revealed && (_jsxs(_Fragment, { children: [_jsx("div", { className: "border-t border-border" }), _jsxs("div", { children: [_jsx("div", { className: "pb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground", children: "Answer" }), _jsx("div", { className: "text-lg leading-relaxed text-foreground/80", children: item.card.back })] })] }))] })), item.card.tags.length > 0 && (_jsx("div", { className: "flex flex-wrap gap-1 pt-2.5", children: item.card.tags.map(tag => (_jsx(Badge, { variant: "outline", children: tag }, tag))) })), _jsx("div", { className: "pt-4", children: revealed ? (_jsx("div", { className: "grid grid-cols-4 gap-2", children: GRADES.map(option => (_jsxs(Button, { className: cn('flex-col gap-0.5 py-5', option.rating === 'again' && 'text-destructive'), onClick: () => onGrade(option.rating), variant: "secondary", children: [_jsx("span", { children: option.label }), showIntervalHints && (_jsxs("span", { className: "text-[10px] opacity-60", children: [intervals[option.rating], " \u00B7 ", option.key] }))] }, option.rating))) })) : (_jsxs(Button, { className: "w-full py-5", onClick: onReveal, variant: "secondary", children: ["Show answer ", _jsx("span", { className: "ml-2 text-[10px] opacity-60", children: "Space" })] })) })] }) }));
++function ReviewSurface({ flip, intervals, item, onGrade, onReveal, remainingCounts, revealed, showIntervalHints }) {
++    return (_jsx("div", { className: "flex flex-1 flex-col items-center px-6 pb-8", children: _jsxs("div", { className: "flex w-full max-w-2xl flex-1 flex-col", children: [_jsxs("div", { className: "flex items-center justify-between pb-2 text-xs text-muted-foreground", children: [_jsxs("span", { className: "truncate", children: [item.deckName, item.isNew && (_jsx(Badge, { className: "ml-2", variant: "outline", children: "new" }))] }), _jsxs("span", { "aria-label": "Cards remaining", className: "flex shrink-0 items-center gap-3 font-mono text-[0.6875rem] tabular-nums", children: [_jsxs("span", { className: "text-(--ui-blue)", title: "New cards remaining", children: [remainingCounts.new, " ", _jsx("span", { className: "font-sans text-muted-foreground", children: "New" })] }), _jsxs("span", { className: "text-(--ui-red)", title: "Learning cards remaining", children: [remainingCounts.learning, " ", _jsx("span", { className: "font-sans text-muted-foreground", children: "Learning" })] }), _jsxs("span", { className: "text-(--ui-green)", title: "Review cards remaining", children: [remainingCounts.review, " ", _jsx("span", { className: "font-sans text-muted-foreground", children: "Review" })] })] })] }), flip ? (_jsx("button", { "aria-label": revealed ? item.card.back : 'Show answer', className: "nemesis-flip flex-1 [perspective:1600px]", "data-flipped": revealed ? 'true' : undefined, onClick: () => !revealed && onReveal(), type: "button", children: _jsxs("div", { className: "nemesis-flip-inner relative h-full min-h-64 w-full", children: [_jsx(FlipFace, { label: "Question", children: item.card.front }), _jsx(FlipFace, { back: true, label: "Answer", muted: true, children: item.card.back })] }) })) : (_jsxs("div", { className: "flex min-h-64 flex-1 flex-col justify-center gap-5 rounded-xl border border-border bg-card p-8", children: [_jsxs("div", { children: [_jsx("div", { className: "pb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground", children: "Question" }), _jsx("div", { className: "text-lg leading-relaxed", children: item.card.front })] }), revealed && (_jsxs(_Fragment, { children: [_jsx("div", { className: "border-t border-border" }), _jsxs("div", { children: [_jsx("div", { className: "pb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground", children: "Answer" }), _jsx("div", { className: "text-lg leading-relaxed text-foreground/80", children: item.card.back })] })] }))] })), item.card.tags.length > 0 && (_jsx("div", { className: "flex flex-wrap gap-1 pt-2.5", children: item.card.tags.map(tag => (_jsx(Badge, { variant: "outline", children: tag }, tag))) })), _jsx("div", { className: "pt-4", children: revealed ? (_jsx("div", { className: "grid grid-cols-4 gap-2", children: GRADES.map(option => (_jsxs(Button, { className: cn('flex-col gap-0.5 py-5', option.rating === 'again' && 'text-destructive'), onClick: () => onGrade(option.rating), variant: "secondary", children: [_jsx("span", { children: option.label }), showIntervalHints && (_jsxs("span", { className: "text-[10px] opacity-60", children: [intervals[option.rating], " \u00B7 ", option.key] }))] }, option.rating))) })) : (_jsxs(Button, { className: "w-full py-5", onClick: onReveal, variant: "secondary", children: ["Show answer ", _jsx("span", { className: "ml-2 text-[10px] opacity-60", children: "Space" })] })) })] }) }));
+ }
+ function ImportDialog({ onImport, onOpenChange, open, sections }) {
+     const [name, setName] = useState('');
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index 7018ba24c9a..96d7e102f76 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -140,6 +140,30 @@ export function StudyView() {
+   const now = useMemo(() => new Date(), [state, reviewing])
+   const queue = useMemo(() => (reviewing ? buildQueue(state, reviewDeckId, now) : []), [state, reviewDeckId, reviewing, now])
+   const current: QueueItem | undefined = queue[0]
++
++  const remainingCounts = useMemo(
++    () =>
++      queue.reduce(
++        (counts, item) => {
++          if (item.isNew) {
++            counts.new++
++          } else {
++            const cardState = state.schedule[item.card.id]?.state
++
++            if (cardState === 1 || cardState === 3) {
++              counts.learning++
++            } else {
++              counts.review++
++            }
++          }
++
++          return counts
++        },
++        { learning: 0, new: 0, review: 0 }
++      ),
++    [queue, state.schedule]
++  )
++
+   const totals = deckStats(state, null, now)
+ 
+   const sections = useMemo(
+@@ -475,13 +499,12 @@ export function StudyView() {
+       {reviewing ? (
+         current ? (
+           <ReviewSurface
+-            done={done}
+             flip={flip}
+             intervals={previewIntervals(state, current.card.id, now)}
+             item={current}
+             onGrade={grade}
+             onReveal={() => setRevealed(true)}
+-            remaining={queue.length}
++            remainingCounts={remainingCounts}
+             revealed={revealed}
+             showIntervalHints={settings.showIntervalHints}
+           />
+@@ -1630,29 +1653,24 @@ function MatchGame({ deck, onExit }: { deck: null | StudyDeck; onExit: () => voi
+ }
+ 
+ function ReviewSurface({
+-  done,
+   flip,
+   intervals,
+   item,
+   onGrade,
+   onReveal,
+-  remaining,
++  remainingCounts,
+   revealed,
+   showIntervalHints
+ }: {
+-  done: number
+   flip: boolean
+   intervals: Record<StudyRating, string>
+   item: QueueItem
+   onGrade: (rating: StudyRating) => void
+   onReveal: () => void
+-  remaining: number
++  remainingCounts: { learning: number; new: number; review: number }
+   revealed: boolean
+   showIntervalHints: boolean
+ }) {
+-  const total = done + remaining
+-  const progress = total > 0 ? Math.round((done / total) * 100) : 0
+-
+   return (
+     <div className="flex flex-1 flex-col items-center px-6 pb-8">
+       <div className="flex w-full max-w-2xl flex-1 flex-col">
+@@ -1665,16 +1683,19 @@ function ReviewSurface({
+               </Badge>
+             )}
+           </span>
+-          <span className="tabular-nums">
+-            {done} done · {remaining} left
++          <span aria-label="Cards remaining" className="flex shrink-0 items-center gap-3 font-mono text-[0.6875rem] tabular-nums">
++            <span className="text-(--ui-blue)" title="New cards remaining">
++              {remainingCounts.new} <span className="font-sans text-muted-foreground">New</span>
++            </span>
++            <span className="text-(--ui-red)" title="Learning cards remaining">
++              {remainingCounts.learning} <span className="font-sans text-muted-foreground">Learning</span>
++            </span>
++            <span className="text-(--ui-green)" title="Review cards remaining">
++              {remainingCounts.review} <span className="font-sans text-muted-foreground">Review</span>
++            </span>
+           </span>
+         </div>
+ 
+-        {/* Session progress */}
+-        <div className="mb-4 h-1 w-full overflow-hidden rounded-full bg-(--ui-bg-tertiary,theme(colors.muted.DEFAULT))">
+-          <div className="h-full bg-(--theme-primary)" style={{ width: `${progress}%` }} />
+-        </div>
+-
+         {/* Card. Flip build = a 3D-rotating card with distinct front/back faces; plain
+             build reveals the answer beneath a divider (unchanged behavior). */}
+         {flip ? (
+-- 
+2.53.0
+
