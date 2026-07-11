@@ -285,5 +285,27 @@ Deno.serve(async (req: Request) => {
     })
   }
 
+  // Read-only today's-budget snapshot for the in-app Usage view. Same key →
+  // plan → counter path chatCompletions already walks, so it can't disagree
+  // with what actually gets enforced.
+  if (req.method === 'GET' && path.endsWith('/usage')) {
+    const deviceKey = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+    const ctx = await resolveKey(deviceKey)
+
+    if (ctx instanceof Response) {
+      return ctx
+    }
+
+    const remaining = Math.max(0, ctx.dailyLimit - ctx.used)
+
+    return json({
+      daily_limit: ctx.dailyLimit,
+      period_start: ctx.periodStart,
+      plan: ctx.plan,
+      remaining,
+      used: ctx.used
+    })
+  }
+
   return json({ error: 'not found' }, 404)
 })
