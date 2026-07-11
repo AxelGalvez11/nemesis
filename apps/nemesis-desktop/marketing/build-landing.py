@@ -56,16 +56,17 @@ HTML = f"""<style>
   /* hero — square art anchored right, black-on-black blend */
   .hero {{ position:relative; min-height:92vh; display:flex; align-items:center;
     border-bottom:1px solid var(--line); overflow:hidden; }}
-  .hero-art {{ position:absolute; top:50%; transform:translateY(-50%); right:-3vw;
+  .hero-art {{ position:absolute; top:50%; transform:translateY(calc(-50% + var(--par,0px))); right:-3vw;
     height:104%; aspect-ratio:1/1; background-image:url('{hero}');
-    background-size:cover; background-position:center; }}
+    background-size:cover; background-position:center; will-change:transform; }}
   .hero-veil {{ position:absolute; inset:0;
     background:linear-gradient(90deg,var(--ink) 24%,rgba(8,8,9,.7) 46%,rgba(8,8,9,.06) 72%,rgba(8,8,9,.3) 100%); }}
-  .hero-in {{ position:relative; padding:60px 0; max-width:620px; }}
-  .hero h1 {{ font-size:clamp(46px,7vw,88px); line-height:.96; letter-spacing:-.04em;
-    font-weight:800; margin:20px 0 0; }}
-  .hero h1 .mute {{ color:var(--steel); }}
-  .hero p.lede {{ font-size:clamp(15px,1.7vw,18px); color:var(--steel); margin:22px 0 0; max-width:24em; }}
+  .hero-in {{ position:relative; padding:60px 0; max-width:820px; }}
+  .hero h1 {{ font-size:clamp(64px,10.5vw,148px); line-height:.92; letter-spacing:-.035em;
+    font-weight:800; margin:18px 0 0; text-transform:uppercase; }}
+  .hero .phrase {{ font-family:var(--mono); font-size:clamp(12px,1.2vw,15px); letter-spacing:.3em;
+    text-transform:uppercase; color:var(--steel); margin:26px 0 0; }}
+  .hero .phrase .dot {{ color:var(--blood); }}
   .hero-cta {{ display:flex; gap:14px; margin-top:34px; flex-wrap:wrap; }}
   .hero-meta {{ margin-top:30px; font-family:var(--mono); font-size:11px; letter-spacing:.06em;
     color:var(--iron); display:flex; align-items:center; gap:10px; }}
@@ -103,7 +104,8 @@ HTML = f"""<style>
   /* full-width image bands */
   .band {{ position:relative; min-height:54vh; display:flex; align-items:center;
     border-bottom:1px solid var(--line); overflow:hidden; }}
-  .band-art {{ position:absolute; inset:0; background-size:cover; background-position:center; }}
+  .band-art {{ position:absolute; inset:0; background-size:cover; background-position:center;
+    background-attachment:fixed; }}
   .band-veil {{ position:absolute; inset:0;
     background:linear-gradient(90deg,var(--ink) 22%,rgba(8,8,9,.82) 48%,rgba(8,8,9,.12) 80%); }}
   .band-in {{ position:relative; padding:88px 0; max-width:520px; }}
@@ -131,7 +133,20 @@ HTML = f"""<style>
   .closer {{ padding:120px 0; text-align:center; }}
   .closer h2 {{ font-size:clamp(30px,4.2vw,50px); letter-spacing:-.03em; font-weight:700; line-height:1.08; margin:0 auto; max-width:16em; }}
   .closer p {{ color:var(--steel); margin:20px auto 34px; max-width:32em; }}
+  /* legal panels — hidden until targeted from the footer */
+  .legal {{ display:none; padding:88px 0; border-bottom:1px solid var(--line); background:var(--ink2); }}
+  .legal:target {{ display:block; }}
+  .legal .inner {{ max-width:720px; }}
+  .legal h2 {{ font-size:clamp(24px,3vw,34px); letter-spacing:-.02em; margin-top:12px; }}
+  .legal h3 {{ font-size:16px; margin:28px 0 8px; }}
+  .legal p, .legal li {{ font-size:14.5px; color:var(--steel); }}
+  .legal ul {{ margin:8px 0 0; padding-left:18px; }}
+  .legal .back {{ display:inline-block; margin-top:30px; font-family:var(--mono); font-size:12px;
+    letter-spacing:.12em; text-transform:uppercase; color:var(--blood); text-decoration:none; }}
+  .legal .stamp {{ font-family:var(--mono); font-size:11px; letter-spacing:.08em; color:var(--iron); margin:14px 0 0; }}
   .foot {{ border-top:1px solid var(--line); padding:48px 0 40px; }}
+  .foot a {{ color:var(--iron); text-decoration:none; font-family:var(--mono); font-size:12px; letter-spacing:.06em; }}
+  .foot a:hover {{ color:var(--steel); }}
   .foot-in {{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }}
   .foot .muted {{ color:var(--iron); font-size:12.5px; font-family:var(--mono); letter-spacing:.04em; }}
   .foot .spacer {{ flex:1; }}
@@ -139,7 +154,8 @@ HTML = f"""<style>
   .reveal {{ animation:rise .8s cubic-bezier(.2,.7,.2,1) both; }}
   .r2 {{ animation-delay:.08s; }} .r3 {{ animation-delay:.16s; }} .r4 {{ animation-delay:.24s; }}
   @keyframes rise {{ from {{ transform:translateY(14px); }} to {{ transform:none; }} }}
-  @media (prefers-reduced-motion:reduce) {{ .reveal {{ animation:none; }} }}
+  @media (prefers-reduced-motion:reduce) {{ .reveal {{ animation:none; }}
+    .band-art {{ background-attachment:scroll; }} }}
 
   @media (max-width:820px) {{
     .triad {{ grid-template-columns:1fr; }} .qs {{ grid-template-columns:1fr; }}
@@ -148,6 +164,7 @@ HTML = f"""<style>
     .hero-art {{ height:88%; right:-34vw; opacity:.8; }}
     .hero-veil {{ background:linear-gradient(180deg,rgba(8,8,9,.42),rgba(8,8,9,.88)); }}
     .band-veil {{ background:linear-gradient(180deg,rgba(8,8,9,.5),rgba(8,8,9,.88)); }}
+    .band-art {{ background-attachment:scroll; }}
     .nav a.ghost {{ display:none; }}
   }}
 </style>
@@ -168,8 +185,8 @@ HTML = f"""<style>
     <div class="hero-art"></div><div class="hero-veil"></div>
     <div class="wrap"><div class="hero-in">
       <p class="eyebrow reveal">Academic operating system<span class="dot"> · </span>macOS</p>
-      <h1 class="reveal r2">It knows what<br>you missed.<br><span class="mute">You will not<br>fall behind.</span></h1>
-      <p class="lede reveal r3">Nemesis reads your school accounts, tracks every deadline and change, and ranks what to do next. It records lectures and measures what you know. It drafts. You submit.</p>
+      <h1 class="reveal r2">Nemesis</h1>
+      <p class="phrase reveal r3">Intelligence<span class="dot"> · </span>Precision<span class="dot"> · </span>Relentless</p>
       <div class="hero-cta reveal r4">
         <a class="btn btn-primary" href="#get">Get Nemesis</a>
         <a class="btn btn-ghost" href="#how">Watch it work</a>
@@ -246,13 +263,83 @@ HTML = f"""<style>
     <h2>It starts with school. It does not end there.</h2>
     <p>Nemesis keeps your knowledge, projects, and record. It follows you into residency, research, and work.</p>
     <a class="btn btn-primary" href="#" style="font-size:13px;padding:14px 30px;">Get Nemesis for Mac</a>
-  </div>
+  </div></section>
+
+  <section class="legal" id="privacy-policy"><div class="wrap"><div class="inner">
+    <p class="eyebrow">Legal<span class="dot"> · </span>Privacy</p>
+    <h2>Privacy policy</h2>
+    <p class="stamp">Effective July 2026</p>
+    <h3>What stays on your Mac</h3>
+    <p>Nemesis is local-first. Your course files, notes, lecture recordings, transcripts, flashcards, calendar, and the academic record it builds are stored on your device. Lecture audio is transcribed on your Mac and is not uploaded. Your school and email logins are entered in Nemesis's own browser on your device; we never see or store those credentials.</p>
+    <h3>What we collect</h3>
+    <ul>
+      <li>Account information: the email address you sign up with and your subscription status.</li>
+      <li>Metering: counts of assistant usage (not the content) to enforce plan limits.</li>
+      <li>Payments are processed by our payment provider; we do not store card numbers.</li>
+    </ul>
+    <h3>When content leaves your device</h3>
+    <p>When you ask the assistant a question, that request (and the context you attach to it) is sent to our model provider to generate the answer, then used for nothing else. Nemesis does not send email, submit coursework, or upload your library.</p>
+    <h3>What we never do</h3>
+    <ul>
+      <li>No selling or sharing of personal data.</li>
+      <li>No advertising and no ad tracking.</li>
+      <li>No training on your content.</li>
+    </ul>
+    <h3>Deletion</h3>
+    <p>Delete your account and we delete the account records we hold. Everything local is already yours: it lives in your files and stays there.</p>
+    <p>Questions: support@nemesis.app</p>
+    <a class="back" href="#">Close</a>
+  </div></div></section>
+
+  <section class="legal" id="terms"><div class="wrap"><div class="inner">
+    <p class="eyebrow">Legal<span class="dot"> · </span>Terms</p>
+    <h2>Terms of use</h2>
+    <p class="stamp">Effective July 2026</p>
+    <h3>The license</h3>
+    <p>Nemesis is licensed to you personally, for your own studies. Don't resell it, share your account, or reverse-engineer the service.</p>
+    <h3>Academic integrity</h3>
+    <p>Nemesis produces drafts and study material. It has no ability to submit coursework, and it never sends anything on your behalf. What you submit — and whether it complies with your institution's policies — is your decision and your responsibility. Use Nemesis in the way your school permits.</p>
+    <h3>Your accounts</h3>
+    <p>You connect your school portals and email by signing in yourself, on your device. You are responsible for having the right to access the accounts you connect.</p>
+    <h3>Subscriptions</h3>
+    <p>Paid plans bill through our payment provider until you cancel. Cancel any time; access continues through the period you paid for.</p>
+    <h3>No warranty</h3>
+    <p>Nemesis is provided as-is. We work to keep it accurate and dependable, but we do not guarantee it is error-free, and you should verify anything that matters — grades, deadlines, and citations included.</p>
+    <h3>Liability</h3>
+    <p>To the maximum extent the law allows, our liability is limited to the amount you paid for the service in the twelve months before a claim.</p>
+    <h3>Changes</h3>
+    <p>If these terms change materially, we will tell you in the app before the change takes effect.</p>
+    <p>Questions: support@nemesis.app</p>
+    <a class="back" href="#">Close</a>
+  </div></div></section>
+
   <div class="foot"><div class="wrap foot-in">
     <span class="brand"><img src="{logo}" alt="" style="width:20px;height:20px;"><b style="font-size:11px;">Nemesis</b></span>
+    <a href="#privacy-policy">Privacy</a>
+    <a href="#terms">Terms</a>
+    <a href="mailto:support@nemesis.app">Contact</a>
     <span class="spacer"></span>
     <span class="muted">local-first · never submits · macOS</span>
-  </div></div></section>
-</div>"""
+  </div></div>
+</div>
+
+<script>
+(function () {{
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var art = document.querySelector('.hero-art');
+  if (!art) return;
+  var ticking = false;
+  function onScroll() {{
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () {{
+      art.style.setProperty('--par', (window.scrollY * 0.14).toFixed(1) + 'px');
+      ticking = false;
+    }});
+  }}
+  window.addEventListener('scroll', onScroll, {{ passive: true }});
+}})();
+</script>"""
 
 out = SP.parent / "nemesis-landing.html"
 out.write_text(HTML)
