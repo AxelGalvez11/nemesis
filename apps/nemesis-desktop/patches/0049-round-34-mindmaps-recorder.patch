@@ -1,0 +1,2231 @@
+From d1905729f3d1ee655e26bbd7376b77b40b2068d0 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 18:06:56 -0500
+Subject: [PATCH 1/2] =?UTF-8?q?feat(nemesis-kit):=20round-34a=20=E2=80=94?=
+ =?UTF-8?q?=20interactive=20mind=20maps=20(mind-elixir)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- markmap viewer replaced: pan/zoom + DRAG to arrange nodes; per-map layout
+  persisted (localStorage by file path); md stays source of truth
+- 'Term: explanation' bullets -> node notes with indicator dot + click-to-read
+  detail panel; structural editing disabled (arrangement only)
+- 'Open source note' jumps into Library; md->tree parser + 4 tests
+- new dep: mind-elixir@^5.13.0 (MIT)
+---
+ apps/desktop/package.json                     |   1 +
+ apps/desktop/src/app/study/mindmap-parser.js  |  81 ++++
+ .../src/app/study/mindmap-parser.test.js      |  32 ++
+ .../src/app/study/mindmap-parser.test.ts      |  45 ++
+ apps/desktop/src/app/study/mindmap-parser.ts  | 116 +++++
+ apps/desktop/src/app/study/mindmap-viewer.js  | 312 +++++++++----
+ apps/desktop/src/app/study/mindmap-viewer.tsx | 439 ++++++++++++------
+ apps/desktop/src/styles.css                   |  30 ++
+ package-lock.json                             |   7 +
+ 9 files changed, 825 insertions(+), 238 deletions(-)
+ create mode 100644 apps/desktop/src/app/study/mindmap-parser.js
+ create mode 100644 apps/desktop/src/app/study/mindmap-parser.test.js
+ create mode 100644 apps/desktop/src/app/study/mindmap-parser.test.ts
+ create mode 100644 apps/desktop/src/app/study/mindmap-parser.ts
+
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index 4fe49c9e88e..cd96720e117 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -97,6 +97,7 @@
+     "markmap-lib": "^0.18.12",
+     "markmap-view": "^0.18.12",
+     "mermaid": "^11.15.0",
++    "mind-elixir": "^5.13.0",
+     "motion": "^12.38.0",
+     "nanostores": "^1.3.0",
+     "node-pty": "1.1.0",
+diff --git a/apps/desktop/src/app/study/mindmap-parser.js b/apps/desktop/src/app/study/mindmap-parser.js
+new file mode 100644
+index 00000000000..8326144d196
+--- /dev/null
++++ b/apps/desktop/src/app/study/mindmap-parser.js
+@@ -0,0 +1,81 @@
++const COURSE_COMMENT = /^\s*<!--\s*course:\s*.+?\s*-->\s*$/i;
++function parsedLines(markdown) {
++    const lines = [];
++    let headingDepth = 0;
++    for (const rawLine of markdown.split(/\r?\n/)) {
++        if (COURSE_COMMENT.test(rawLine)) {
++            continue;
++        }
++        const heading = rawLine.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
++        if (heading) {
++            headingDepth = heading[1].length - 1;
++            lines.push({ depth: headingDepth, isBullet: false, text: heading[2].trim() });
++            continue;
++        }
++        const bullet = rawLine.match(/^(\s*)[-*+]\s+(.+?)\s*$/);
++        if (bullet) {
++            const indentation = bullet[1].replace(/\t/g, '  ').length;
++            lines.push({ depth: headingDepth + 1 + Math.floor(indentation / 2), isBullet: true, text: bullet[2].trim() });
++        }
++    }
++    return lines;
++}
++/** Split the optional bullet explanation on the first exact `: ` delimiter. */
++function splitBullet(text) {
++    const separator = text.indexOf(': ');
++    if (separator < 0) {
++        return { topic: text };
++    }
++    const topic = text.slice(0, separator).trim();
++    const note = text.slice(separator + 2).trim();
++    return topic && note ? { note, topic } : { topic: text };
++}
++function stableId(value) {
++    // FNV-1a keeps ids deterministic without pulling browser or crypto APIs into the
++    // parser. Stable ids let a separately persisted arrangement survive reloads.
++    let hash = 0x811c9dc5;
++    for (let index = 0; index < value.length; index++) {
++        hash ^= value.charCodeAt(index);
++        hash = Math.imul(hash, 0x01000193);
++    }
++    return `mindmap-${(hash >>> 0).toString(16).padStart(8, '0')}`;
++}
++function createNode(line, occurrences) {
++    const content = line.isBullet ? splitBullet(line.text) : { topic: line.text };
++    const identity = `${line.isBullet ? 'bullet' : 'heading'}:${content.topic}`;
++    const occurrence = (occurrences.get(identity) ?? 0) + 1;
++    occurrences.set(identity, occurrence);
++    return {
++        children: [],
++        expanded: true,
++        id: stableId(`${identity}:${occurrence}`),
++        note: content.note,
++        topic: content.topic
++    };
++}
++/** Convert the agent-authored heading/bullet outline into mind-elixir node data.
++ *
++ * The first outline item is the required mind-elixir root. Later items attach to the
++ * nearest shallower heading/bullet. If a file has no usable outline, its file title is
++ * used as a harmless root so the viewer can still open.
++ */
++export function parseMindmapMarkdown(markdown, fallbackTopic = 'Mind map') {
++    const lines = parsedLines(markdown);
++    const occurrences = new Map();
++    if (!lines.length) {
++        return createNode({ depth: 0, isBullet: false, text: fallbackTopic }, occurrences);
++    }
++    const root = createNode(lines[0], occurrences);
++    const stack = [{ depth: lines[0].depth, node: root }];
++    for (const line of lines.slice(1)) {
++        const node = createNode(line, occurrences);
++        while (stack.length > 1 && stack[stack.length - 1].depth >= line.depth) {
++            stack.pop();
++        }
++        const parent = stack[stack.length - 1].depth < line.depth ? stack[stack.length - 1].node : root;
++        parent.children ??= [];
++        parent.children.push(node);
++        stack.push({ depth: line.depth, node });
++    }
++    return root;
++}
+diff --git a/apps/desktop/src/app/study/mindmap-parser.test.js b/apps/desktop/src/app/study/mindmap-parser.test.js
+new file mode 100644
+index 00000000000..57ec6f7b962
+--- /dev/null
++++ b/apps/desktop/src/app/study/mindmap-parser.test.js
+@@ -0,0 +1,32 @@
++import { describe, expect, it } from 'vitest';
++import { parseMindmapMarkdown } from './mindmap-parser';
++describe('parseMindmapMarkdown', () => {
++    it('uses headings and bullets as node topics', () => {
++        const root = parseMindmapMarkdown('# Cardiac cycle\n- Systole\n- Diastole');
++        expect(root.topic).toBe('Cardiac cycle');
++        expect(root.children?.map(node => node.topic)).toEqual(['Systole', 'Diastole']);
++    });
++    it('splits a bullet note on only the first exact colon-space delimiter', () => {
++        const root = parseMindmapMarkdown('# Root\n- Afterload: Resistance the ventricle must overcome: usually arterial pressure\n- Plain:term');
++        expect(root.children?.[0]).toMatchObject({
++            note: 'Resistance the ventricle must overcome: usually arterial pressure',
++            topic: 'Afterload'
++        });
++        expect(root.children?.[1]).toMatchObject({ note: undefined, topic: 'Plain:term' });
++    });
++    it('preserves heading and indented-bullet nesting', () => {
++        const root = parseMindmapMarkdown(['# Pharmacology', '## Receptors', '- Agonists', '  - Full agonist: Produces the maximum response', '## Kinetics', '- Half-life'].join('\n'));
++        expect(root.children?.map(node => node.topic)).toEqual(['Receptors', 'Kinetics']);
++        expect(root.children?.[0].children?.[0].topic).toBe('Agonists');
++        expect(root.children?.[0].children?.[0].children?.[0]).toMatchObject({
++            note: 'Produces the maximum response',
++            topic: 'Full agonist'
++        });
++        expect(root.children?.[1].children?.[0].topic).toBe('Half-life');
++    });
++    it('ignores the optional course comment', () => {
++        const root = parseMindmapMarkdown('<!-- course: Cardiovascular -->\n# Hemodynamics\n- Preload');
++        expect(root.topic).toBe('Hemodynamics');
++        expect(root.children?.map(node => node.topic)).toEqual(['Preload']);
++    });
++});
+diff --git a/apps/desktop/src/app/study/mindmap-parser.test.ts b/apps/desktop/src/app/study/mindmap-parser.test.ts
+new file mode 100644
+index 00000000000..c241bb1e9f2
+--- /dev/null
++++ b/apps/desktop/src/app/study/mindmap-parser.test.ts
+@@ -0,0 +1,45 @@
++import { describe, expect, it } from 'vitest'
++
++import { parseMindmapMarkdown } from './mindmap-parser'
++
++describe('parseMindmapMarkdown', () => {
++  it('uses headings and bullets as node topics', () => {
++    const root = parseMindmapMarkdown('# Cardiac cycle\n- Systole\n- Diastole')
++
++    expect(root.topic).toBe('Cardiac cycle')
++    expect(root.children?.map(node => node.topic)).toEqual(['Systole', 'Diastole'])
++  })
++
++  it('splits a bullet note on only the first exact colon-space delimiter', () => {
++    const root = parseMindmapMarkdown('# Root\n- Afterload: Resistance the ventricle must overcome: usually arterial pressure\n- Plain:term')
++
++    expect(root.children?.[0]).toMatchObject({
++      note: 'Resistance the ventricle must overcome: usually arterial pressure',
++      topic: 'Afterload'
++    })
++    expect(root.children?.[1]).toMatchObject({ note: undefined, topic: 'Plain:term' })
++  })
++
++  it('preserves heading and indented-bullet nesting', () => {
++    const root = parseMindmapMarkdown(
++      ['# Pharmacology', '## Receptors', '- Agonists', '  - Full agonist: Produces the maximum response', '## Kinetics', '- Half-life'].join(
++        '\n'
++      )
++    )
++
++    expect(root.children?.map(node => node.topic)).toEqual(['Receptors', 'Kinetics'])
++    expect(root.children?.[0].children?.[0].topic).toBe('Agonists')
++    expect(root.children?.[0].children?.[0].children?.[0]).toMatchObject({
++      note: 'Produces the maximum response',
++      topic: 'Full agonist'
++    })
++    expect(root.children?.[1].children?.[0].topic).toBe('Half-life')
++  })
++
++  it('ignores the optional course comment', () => {
++    const root = parseMindmapMarkdown('<!-- course: Cardiovascular -->\n# Hemodynamics\n- Preload')
++
++    expect(root.topic).toBe('Hemodynamics')
++    expect(root.children?.map(node => node.topic)).toEqual(['Preload'])
++  })
++})
+diff --git a/apps/desktop/src/app/study/mindmap-parser.ts b/apps/desktop/src/app/study/mindmap-parser.ts
+new file mode 100644
+index 00000000000..cea49f83a4f
+--- /dev/null
++++ b/apps/desktop/src/app/study/mindmap-parser.ts
+@@ -0,0 +1,116 @@
++import type { NodeObj } from 'mind-elixir'
++
++interface ParsedLine {
++  depth: number
++  isBullet: boolean
++  text: string
++}
++
++const COURSE_COMMENT = /^\s*<!--\s*course:\s*.+?\s*-->\s*$/i
++
++function parsedLines(markdown: string): ParsedLine[] {
++  const lines: ParsedLine[] = []
++  let headingDepth = 0
++
++  for (const rawLine of markdown.split(/\r?\n/)) {
++    if (COURSE_COMMENT.test(rawLine)) {
++      continue
++    }
++
++    const heading = rawLine.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/)
++
++    if (heading) {
++      headingDepth = heading[1].length - 1
++      lines.push({ depth: headingDepth, isBullet: false, text: heading[2].trim() })
++
++      continue
++    }
++
++    const bullet = rawLine.match(/^(\s*)[-*+]\s+(.+?)\s*$/)
++
++    if (bullet) {
++      const indentation = bullet[1].replace(/\t/g, '  ').length
++
++      lines.push({ depth: headingDepth + 1 + Math.floor(indentation / 2), isBullet: true, text: bullet[2].trim() })
++    }
++  }
++
++  return lines
++}
++
++/** Split the optional bullet explanation on the first exact `: ` delimiter. */
++function splitBullet(text: string): { note?: string; topic: string } {
++  const separator = text.indexOf(': ')
++
++  if (separator < 0) {
++    return { topic: text }
++  }
++
++  const topic = text.slice(0, separator).trim()
++  const note = text.slice(separator + 2).trim()
++
++  return topic && note ? { note, topic } : { topic: text }
++}
++
++function stableId(value: string): string {
++  // FNV-1a keeps ids deterministic without pulling browser or crypto APIs into the
++  // parser. Stable ids let a separately persisted arrangement survive reloads.
++  let hash = 0x811c9dc5
++
++  for (let index = 0; index < value.length; index++) {
++    hash ^= value.charCodeAt(index)
++    hash = Math.imul(hash, 0x01000193)
++  }
++
++  return `mindmap-${(hash >>> 0).toString(16).padStart(8, '0')}`
++}
++
++function createNode(line: ParsedLine, occurrences: Map<string, number>): NodeObj {
++  const content = line.isBullet ? splitBullet(line.text) : { topic: line.text }
++  const identity = `${line.isBullet ? 'bullet' : 'heading'}:${content.topic}`
++  const occurrence = (occurrences.get(identity) ?? 0) + 1
++
++  occurrences.set(identity, occurrence)
++
++  return {
++    children: [],
++    expanded: true,
++    id: stableId(`${identity}:${occurrence}`),
++    note: content.note,
++    topic: content.topic
++  }
++}
++
++/** Convert the agent-authored heading/bullet outline into mind-elixir node data.
++ *
++ * The first outline item is the required mind-elixir root. Later items attach to the
++ * nearest shallower heading/bullet. If a file has no usable outline, its file title is
++ * used as a harmless root so the viewer can still open.
++ */
++export function parseMindmapMarkdown(markdown: string, fallbackTopic = 'Mind map'): NodeObj {
++  const lines = parsedLines(markdown)
++  const occurrences = new Map<string, number>()
++
++  if (!lines.length) {
++    return createNode({ depth: 0, isBullet: false, text: fallbackTopic }, occurrences)
++  }
++
++  const root = createNode(lines[0], occurrences)
++  const stack: Array<{ depth: number; node: NodeObj }> = [{ depth: lines[0].depth, node: root }]
++
++  for (const line of lines.slice(1)) {
++    const node = createNode(line, occurrences)
++
++    while (stack.length > 1 && stack[stack.length - 1].depth >= line.depth) {
++      stack.pop()
++    }
++
++    const parent = stack[stack.length - 1].depth < line.depth ? stack[stack.length - 1].node : root
++
++    parent.children ??= []
++    parent.children.push(node)
++    stack.push({ depth: line.depth, node })
++  }
++
++  return root
++}
+diff --git a/apps/desktop/src/app/study/mindmap-viewer.js b/apps/desktop/src/app/study/mindmap-viewer.js
+index 44161c4bd13..4dcc0198e35 100644
+--- a/apps/desktop/src/app/study/mindmap-viewer.js
++++ b/apps/desktop/src/app/study/mindmap-viewer.js
+@@ -1,136 +1,244 @@
+ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+-// Mind map viewer: renders an agent-written outline (see extras.ts) as an interactive
+-// markmap (markmap-lib transforms markdown → tree, markmap-view lays it out as SVG).
+-// Both are MIT-licensed and load no network resources — the transform + render are fully
+-// local, matching every other vault-content viewer in this app (PdfViewer, Library notes).
+-import { Transformer } from 'markmap-lib';
+-import { Markmap } from 'markmap-view';
++// Interactive, local-only rendering for agent-authored Mindmaps/*.md files. Markdown
++// remains authoritative; mind-elixir only owns the viewport and a persisted arrangement.
++import 'mind-elixir/style.css';
++import MindElixir from 'mind-elixir';
+ import { useEffect, useRef, useState } from 'react';
++import { useNavigate } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+-// One shared Transformer — it's stateless per-call (transform() takes the markdown fresh
+-// each time), so there's no reason to build a new markdown-it pipeline per dialog open.
+-const transformer = new Transformer();
+-// Real CSS text, injected into markmap's own <style> tag (see the `style` option below) —
+-// var()/color-mix() are resolved natively by the browser's CSS engine here, so referencing
+-// the app's tokens directly is safe (unlike the `color` option below, which is a JS
+-// function whose return value becomes an SVG stroke attribute).
+-const MINDMAP_THEME_CSS = `
+-.markmap {
+-  --markmap-text-color: var(--ui-text-primary);
+-  --markmap-a-color: var(--theme-primary);
+-  --markmap-a-hover-color: var(--theme-primary);
+-  --markmap-code-bg: color-mix(in srgb, var(--ui-text-primary) 10%, transparent);
+-  --markmap-code-color: var(--ui-text-secondary);
+-  --markmap-circle-open-bg: var(--ui-bg-card);
+-  --markmap-highlight-bg: color-mix(in srgb, var(--theme-primary) 25%, transparent);
++import { LIBRARY_ROUTE } from '../routes';
++import { MINDMAP_DIR } from './extras';
++import { parseMindmapMarkdown } from './mindmap-parser';
++const LAYOUT_STORAGE_PREFIX = 'nemesis.study.mindmap.layout:';
++const MINDMAP_THEME = {
++    cssVar: {
++        '--accent-color': 'var(--theme-primary)',
++        '--bgcolor': 'var(--ui-editor-surface-background)',
++        '--color': 'var(--ui-text-secondary)',
++        '--main-bgcolor': 'var(--ui-bg-card)',
++        '--main-bgcolor-transparent': 'color-mix(in srgb, var(--ui-bg-card) 84%, transparent)',
++        '--main-border': '1px solid var(--ui-stroke-secondary)',
++        '--main-color': 'var(--ui-text-primary)',
++        '--map-padding': '64px 88px',
++        '--panel-bgcolor': 'var(--ui-bg-elevated)',
++        '--panel-border-color': 'var(--ui-stroke-secondary)',
++        '--panel-color': 'var(--ui-text-primary)',
++        '--root-bgcolor': 'var(--theme-primary)',
++        '--root-border-color': 'color-mix(in srgb, var(--theme-primary) 70%, black)',
++        '--root-color': 'white',
++        '--selected': 'var(--theme-primary)'
++    },
++    name: 'Nemesis Study',
++    palette: ['#b3382e', '#94683c', '#54745f', '#4e7082', '#735f86', '#8b5c66'],
++    type: 'light'
++};
++function mapPath(file) {
++    return `${MINDMAP_DIR}/${file.fileName}`;
+ }
+-`;
+-// Chrome can resolve a CSS custom property to the CSS Color-4 `color(srgb r g b / a)`
+-// syntax. That's real CSS (safe wherever the browser parses it natively, like the style
+-// text above) — but the `color` option below returns a plain string that markmap-view
+-// hands to d3's `.attr('stroke', …)`. The graph page (app/graph/index.tsx) hit this exact
+-// class of bug with three.js, whose own color parser doesn't understand `color(srgb …)`
+-// and silently falls back to black. SVG presentation attributes are CSS-parsed by the
+-// browser too, so this is likely unnecessary here — but normalizing to a plain
+-// `rgb(r, g, b)` string removes any doubt at near-zero cost. Local copy (not imported):
+-// the graph page is out of this branch's scope, and this is a small, stable utility.
+-function normalizeToRgb(computed) {
+-    if (!computed) {
+-        return null;
+-    }
+-    const rgb = computed.match(/rgba?\(([^)]+)\)/i);
+-    if (rgb) {
+-        const [r, g, b] = rgb[1].split(/[,/]/).map(part => Math.round(parseFloat(part.trim())));
+-        return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? `rgb(${r}, ${g}, ${b})` : null;
++function storageKey(file) {
++    return `${LAYOUT_STORAGE_PREFIX}${mapPath(file)}`;
++}
++function walkNodes(node, visit, parentId = null, index = 0) {
++    visit(node, parentId, index);
++    node.children?.forEach((child, index) => {
++        walkNodes(child, visit, node.id, index);
++    });
++}
++function collectLayout(root) {
++    const entries = [];
++    walkNodes(root, (node, parentId, index) => {
++        entries.push({ direction: node.direction, expanded: node.expanded, id: node.id, index, parentId });
++    });
++    return { entries, version: 1 };
++}
++function readStoredLayout(file) {
++    try {
++        const raw = window.localStorage.getItem(storageKey(file));
++        if (!raw) {
++            return null;
++        }
++        const parsed = JSON.parse(raw);
++        if (parsed.version !== 1 || !Array.isArray(parsed.entries)) {
++            return null;
++        }
++        const entries = parsed.entries.filter((entry) => Boolean(entry) &&
++            typeof entry.id === 'string' &&
++            typeof entry.index === 'number' &&
++            (entry.parentId === null || typeof entry.parentId === 'string'));
++        return { entries, version: 1 };
+     }
+-    const srgb = computed.match(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/i);
+-    if (srgb) {
+-        const [r, g, b] = [srgb[1], srgb[2], srgb[3]].map(part => Math.round(parseFloat(part) * 255));
+-        return `rgb(${r}, ${g}, ${b})`;
++    catch {
++        return null;
+     }
+-    return computed;
+ }
+-function resolveCssColor(value, fallback) {
+-    const probe = document.createElement('span');
+-    probe.style.color = value;
+-    probe.style.display = 'none';
+-    document.body.appendChild(probe);
+-    const resolved = getComputedStyle(probe).color;
+-    probe.remove();
+-    return normalizeToRgb(resolved) || fallback;
+-}
+-function readMindmapPalette() {
+-    return {
+-        accent: resolveCssColor('var(--theme-primary)', '#b3382e'),
+-        line: resolveCssColor('color-mix(in srgb, var(--ui-text-primary) 32%, transparent)', 'rgba(160,160,160,0.5)')
+-    };
++function createsCycle(id, parentId, parentById) {
++    const visited = new Set([id]);
++    let cursor = parentId;
++    while (cursor) {
++        if (visited.has(cursor)) {
++            return true;
++        }
++        visited.add(cursor);
++        cursor = parentById.get(cursor) ?? null;
++    }
++    return false;
+ }
+-/** Fallback-path parser: headings + bullets → an indented line list. Not a full markdown
+- *  parser (deliberately) — this only has to be legible when markmap itself can't render. */
+-function parseOutlineFallback(markdown) {
+-    const lines = [];
+-    let headingDepth = 0;
+-    for (const rawLine of markdown.split(/\r?\n/)) {
+-        const heading = rawLine.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
+-        if (heading) {
+-            headingDepth = heading[1].length - 1;
+-            lines.push({ depth: headingDepth, text: heading[2] });
++/** Apply only parent/order/direction/expanded state to freshly parsed nodes. Topics,
++ * notes, and membership always come from the current Markdown file. */
++function applyStoredLayout(root, stored) {
++    if (!stored) {
++        return root;
++    }
++    const nodesById = new Map();
++    const canonicalOrder = new Map();
++    const parentById = new Map();
++    walkNodes(root, (node, parentId, index) => {
++        nodesById.set(node.id, node);
++        canonicalOrder.set(node.id, index);
++        parentById.set(node.id, parentId);
++    });
++    const storedById = new Map(stored.entries.map(entry => [entry.id, entry]));
++    for (const entry of stored.entries) {
++        if (entry.id === root.id || !nodesById.has(entry.id) || !entry.parentId || !nodesById.has(entry.parentId)) {
+             continue;
+         }
+-        const bullet = rawLine.match(/^(\s*)[-*+]\s+(.+)$/);
+-        if (bullet) {
+-            const indent = Math.floor(bullet[1].replace(/\t/g, '  ').length / 2);
+-            lines.push({ depth: headingDepth + 1 + indent, text: bullet[2] });
+-            continue;
++        if (!createsCycle(entry.id, entry.parentId, parentById)) {
++            parentById.set(entry.id, entry.parentId);
+         }
+-        const text = rawLine.trim();
+-        if (text) {
+-            lines.push({ depth: headingDepth + 1, text });
++    }
++    for (const node of nodesById.values()) {
++        node.children = [];
++        const entry = storedById.get(node.id);
++        if (entry?.direction === 0 || entry?.direction === 1) {
++            node.direction = entry.direction;
++        }
++        if (typeof entry?.expanded === 'boolean') {
++            node.expanded = entry.expanded;
++        }
++    }
++    for (const node of nodesById.values()) {
++        if (node.id === root.id) {
++            continue;
+         }
++        const parent = nodesById.get(parentById.get(node.id) ?? '') ?? root;
++        parent.children ??= [];
++        parent.children.push(node);
++    }
++    for (const parent of nodesById.values()) {
++        parent.children?.sort((left, right) => {
++            const leftEntry = storedById.get(left.id);
++            const rightEntry = storedById.get(right.id);
++            const leftOrder = leftEntry?.parentId === parent.id ? leftEntry.index : 1_000_000 + (canonicalOrder.get(left.id) ?? 0);
++            const rightOrder = rightEntry?.parentId === parent.id ? rightEntry.index : 1_000_000 + (canonicalOrder.get(right.id) ?? 0);
++            return leftOrder - rightOrder;
++        });
+     }
+-    return lines;
++    return root;
+ }
+-function OutlineFallback({ outline }) {
+-    const lines = parseOutlineFallback(outline);
+-    return (_jsxs("div", { className: "min-h-0 flex-1 overflow-y-auto px-6 py-5", children: [_jsx("p", { className: "mb-3 text-xs text-muted-foreground", children: "Showing the plain outline \u2014 the mind map view couldn\u2019t load." }), lines.length === 0 ? (_jsx("p", { className: "text-sm text-muted-foreground", children: "This mind map is empty." })) : (_jsx("div", { className: "space-y-1 font-mono text-[0.8125rem] leading-relaxed", children: lines.map((line, index) => (_jsx("div", { style: { paddingLeft: `${line.depth * 1.25}rem` }, children: line.text }, index))) }))] }));
++function addNoteIndicators(node) {
++    node.tags = node.note ? [{ className: 'mindmap-note-dot', text: '' }] : undefined;
++    node.children?.forEach(addNoteIndicators);
++}
++function persistLayout(file, mind) {
++    try {
++        window.localStorage.setItem(storageKey(file), JSON.stringify(collectLayout(mind.getData().nodeData)));
++    }
++    catch {
++        // Layout persistence is best-effort; the map remains fully usable without it.
++    }
++}
++function OutlineFallback({ file }) {
++    const root = parseMindmapMarkdown(file.outline, file.title);
++    const lines = [];
++    const flatten = (node, depth) => {
++        lines.push({ depth, node });
++        node.children?.forEach(child => flatten(child, depth + 1));
++    };
++    flatten(root, 0);
++    return (_jsxs("div", { className: "min-h-0 flex-1 overflow-y-auto px-6 py-5", children: [_jsx("p", { className: "mb-3 text-xs text-muted-foreground", children: "Showing the plain outline \u2014 the interactive mind map couldn\u2019t load." }), _jsx("div", { className: "space-y-1 text-[0.8125rem] leading-relaxed", children: lines.map(({ depth, node }) => (_jsxs("div", { style: { paddingLeft: `${depth * 1.25}rem` }, children: [_jsx("span", { className: "font-medium", children: node.topic }), node.note && _jsxs("span", { className: "text-muted-foreground", children: [" \u2014 ", node.note] })] }, node.id))) })] }));
+ }
+ function MindmapCanvas({ file }) {
+-    const svgRef = useRef(null);
+-    const markmapRef = useRef(null);
++    const hostRef = useRef(null);
++    const mindRef = useRef(null);
+     const [failed, setFailed] = useState(false);
++    const [selectedDetail, setSelectedDetail] = useState(null);
+     useEffect(() => {
+-        if (!svgRef.current) {
++        const host = hostRef.current;
++        if (!host) {
+             setFailed(true);
+             return;
+         }
++        let mind = null;
++        let resizeObserver = null;
++        let animationFrame = 0;
+         try {
+-            const { root } = transformer.transform(file.outline.trim() || `# ${file.title}`);
+-            const palette = readMindmapPalette();
+-            markmapRef.current = Markmap.create(svgRef.current, {
+-                autoFit: true,
+-                color: node => (node.state.depth === 0 ? palette.accent : palette.line),
+-                duration: 300,
+-                style: () => MINDMAP_THEME_CSS
+-            }, root);
++            const root = applyStoredLayout(parseMindmapMarkdown(file.outline, file.title), readStoredLayout(file));
++            addNoteIndicators(root);
++            mind = new MindElixir({
++                allowUndo: false,
++                before: {
++                    addChild: () => false,
++                    beginEdit: () => false,
++                    copyNode: () => false,
++                    copyNodes: () => false,
++                    insertParent: () => false,
++                    insertSibling: () => false,
++                    removeNodes: () => false,
++                    reshapeNode: () => false,
++                    rmSubline: () => false,
++                    setNodeTopic: () => false
++                },
++                contextMenu: false,
++                direction: MindElixir.SIDE,
++                editable: true,
++                el: host,
++                keypress: false,
++                overflowHidden: true,
++                theme: MINDMAP_THEME,
++                toolBar: false
++            });
++            const initError = mind.init({ direction: MindElixir.SIDE, nodeData: root, theme: MINDMAP_THEME });
++            if (initError) {
++                throw initError;
++            }
++            mindRef.current = mind;
++            mind.bus.addListener('selectNodes', nodes => {
++                const selected = nodes.at(-1);
++                setSelectedDetail(selected?.note ? { note: selected.note, topic: selected.topic } : null);
++            });
++            mind.bus.addListener('operation', (operation) => {
++                if (operation.name === 'moveNodeAfter' || operation.name === 'moveNodeBefore' || operation.name === 'moveNodeIn') {
++                    persistLayout(file, mind);
++                }
++            });
++            animationFrame = window.requestAnimationFrame(() => mind?.scaleFit());
++            resizeObserver = new ResizeObserver(() => mind?.scaleFit());
++            resizeObserver.observe(host);
+         }
+         catch {
+             setFailed(true);
+         }
+         return () => {
+-            markmapRef.current?.destroy();
+-            markmapRef.current = null;
++            window.cancelAnimationFrame(animationFrame);
++            resizeObserver?.disconnect();
++            mind?.destroy();
++            mindRef.current = null;
+         };
+-        // `file` is intentionally excluded: this component remounts on file change (the
+-        // caller passes `key={file.fileName}`), so re-running this effect for the same
+-        // mounted instance would only ever happen for a `file` that hasn't changed.
+-        // eslint-disable-next-line react-hooks/exhaustive-deps
+-    }, []);
++    }, [file]);
+     if (failed) {
+-        return _jsx(OutlineFallback, { outline: file.outline });
++        return _jsx(OutlineFallback, { file: file });
+     }
+-    return (_jsxs("div", { className: "relative min-h-0 flex-1", children: [_jsx("svg", { className: "h-full w-full", ref: svgRef }), _jsx(Button, { className: "absolute bottom-3 right-3", onClick: () => void markmapRef.current?.fit(), size: "sm", variant: "outline", children: "Fit" })] }));
++    return (_jsxs("div", { className: "flex min-h-0 flex-1 bg-(--ui-editor-surface-background)", children: [_jsxs("div", { className: "relative min-w-0 flex-1", children: [_jsx("div", { className: "study-mindmap-host h-full w-full", ref: hostRef }), _jsx("div", { className: "pointer-events-none absolute bottom-3 left-3 rounded-md border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/90 px-2.5 py-1.5 text-[0.6875rem] text-(--ui-text-tertiary) shadow-sm", children: "Drag nodes to arrange \u00B7 scroll to pan \u00B7 Ctrl/\u2318 + scroll to zoom" }), _jsx(Button, { className: "absolute bottom-3 right-3", onClick: () => mindRef.current?.scaleFit(), size: "sm", variant: "outline", children: "Fit" })] }), selectedDetail && (_jsxs("aside", { className: "w-72 shrink-0 overflow-y-auto border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-5 py-6", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-(--theme-primary)", children: "Explanation" }), _jsx("h3", { className: "mt-2 text-base font-semibold tracking-tight text-(--ui-text-primary)", children: selectedDetail.topic }), _jsx("p", { className: "mt-3 whitespace-pre-wrap text-sm leading-6 text-(--ui-text-secondary)", children: selectedDetail.note })] }))] }));
+ }
+ export function MindmapViewerDialog({ file, onOpenChange }) {
+-    return (_jsx(Dialog, { onOpenChange: onOpenChange, open: file !== null, children: _jsx(DialogContent, { className: "flex h-[85vh] max-h-[85vh] w-full max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl", children: file && (_jsxs(_Fragment, { children: [_jsx(DialogHeader, { className: "shrink-0 border-b border-border px-5 py-3.5 pr-11", children: _jsx(DialogTitle, { className: "truncate", children: file.title }) }), _jsx(MindmapCanvas, { file: file }, file.fileName)] })) }) }));
++    const navigate = useNavigate();
++    const openSourceNote = () => {
++        if (!file) {
++            return;
++        }
++        onOpenChange(false);
++        navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(file.title)}`);
++    };
++    return (_jsx(Dialog, { onOpenChange: onOpenChange, open: file !== null, children: _jsx(DialogContent, { className: "flex h-[85vh] max-h-[85vh] w-[94vw] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl", children: file && (_jsxs(_Fragment, { children: [_jsx(DialogHeader, { className: "shrink-0 border-b border-border px-5 py-3.5 pr-12", children: _jsxs("div", { className: "flex items-center justify-between gap-4", children: [_jsxs("div", { className: "min-w-0", children: [_jsx(DialogTitle, { className: "truncate", children: file.title }), _jsx("p", { className: "mt-0.5 truncate text-[0.6875rem] text-muted-foreground", children: mapPath(file) })] }), _jsx(Button, { className: "shrink-0", onClick: openSourceNote, size: "sm", variant: "outline", children: "Open source note" })] }) }), _jsx(MindmapCanvas, { file: file }, file.fileName)] })) }) }));
+ }
+diff --git a/apps/desktop/src/app/study/mindmap-viewer.tsx b/apps/desktop/src/app/study/mindmap-viewer.tsx
+index 53d5447b653..9a0b32af04a 100644
+--- a/apps/desktop/src/app/study/mindmap-viewer.tsx
++++ b/apps/desktop/src/app/study/mindmap-viewer.tsx
+@@ -1,203 +1,351 @@
+-// Mind map viewer: renders an agent-written outline (see extras.ts) as an interactive
+-// markmap (markmap-lib transforms markdown → tree, markmap-view lays it out as SVG).
+-// Both are MIT-licensed and load no network resources — the transform + render are fully
+-// local, matching every other vault-content viewer in this app (PdfViewer, Library notes).
+-import { Transformer } from 'markmap-lib'
+-import { Markmap } from 'markmap-view'
++// Interactive, local-only rendering for agent-authored Mindmaps/*.md files. Markdown
++// remains authoritative; mind-elixir only owns the viewport and a persisted arrangement.
++import 'mind-elixir/style.css'
++
++import MindElixir, { type MindElixirInstance, type NodeObj, type Operation, type Theme } from 'mind-elixir'
+ import { useEffect, useRef, useState } from 'react'
++import { useNavigate } from 'react-router-dom'
+ 
+ import { Button } from '@/components/ui/button'
+ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+ 
+-import type { MindmapFile } from './extras'
+-
+-// One shared Transformer — it's stateless per-call (transform() takes the markdown fresh
+-// each time), so there's no reason to build a new markdown-it pipeline per dialog open.
+-const transformer = new Transformer()
+-
+-// Real CSS text, injected into markmap's own <style> tag (see the `style` option below) —
+-// var()/color-mix() are resolved natively by the browser's CSS engine here, so referencing
+-// the app's tokens directly is safe (unlike the `color` option below, which is a JS
+-// function whose return value becomes an SVG stroke attribute).
+-const MINDMAP_THEME_CSS = `
+-.markmap {
+-  --markmap-text-color: var(--ui-text-primary);
+-  --markmap-a-color: var(--theme-primary);
+-  --markmap-a-hover-color: var(--theme-primary);
+-  --markmap-code-bg: color-mix(in srgb, var(--ui-text-primary) 10%, transparent);
+-  --markmap-code-color: var(--ui-text-secondary);
+-  --markmap-circle-open-bg: var(--ui-bg-card);
+-  --markmap-highlight-bg: color-mix(in srgb, var(--theme-primary) 25%, transparent);
+-}
+-`
+-
+-// Chrome can resolve a CSS custom property to the CSS Color-4 `color(srgb r g b / a)`
+-// syntax. That's real CSS (safe wherever the browser parses it natively, like the style
+-// text above) — but the `color` option below returns a plain string that markmap-view
+-// hands to d3's `.attr('stroke', …)`. The graph page (app/graph/index.tsx) hit this exact
+-// class of bug with three.js, whose own color parser doesn't understand `color(srgb …)`
+-// and silently falls back to black. SVG presentation attributes are CSS-parsed by the
+-// browser too, so this is likely unnecessary here — but normalizing to a plain
+-// `rgb(r, g, b)` string removes any doubt at near-zero cost. Local copy (not imported):
+-// the graph page is out of this branch's scope, and this is a small, stable utility.
+-function normalizeToRgb(computed: string): null | string {
+-  if (!computed) {
+-    return null
+-  }
+-
+-  const rgb = computed.match(/rgba?\(([^)]+)\)/i)
++import { LIBRARY_ROUTE } from '../routes'
++
++import { MINDMAP_DIR, type MindmapFile } from './extras'
++import { parseMindmapMarkdown } from './mindmap-parser'
++
++const LAYOUT_STORAGE_PREFIX = 'nemesis.study.mindmap.layout:'
++
++const MINDMAP_THEME: Theme = {
++  cssVar: {
++    '--accent-color': 'var(--theme-primary)',
++    '--bgcolor': 'var(--ui-editor-surface-background)',
++    '--color': 'var(--ui-text-secondary)',
++    '--main-bgcolor': 'var(--ui-bg-card)',
++    '--main-bgcolor-transparent': 'color-mix(in srgb, var(--ui-bg-card) 84%, transparent)',
++    '--main-border': '1px solid var(--ui-stroke-secondary)',
++    '--main-color': 'var(--ui-text-primary)',
++    '--map-padding': '64px 88px',
++    '--panel-bgcolor': 'var(--ui-bg-elevated)',
++    '--panel-border-color': 'var(--ui-stroke-secondary)',
++    '--panel-color': 'var(--ui-text-primary)',
++    '--root-bgcolor': 'var(--theme-primary)',
++    '--root-border-color': 'color-mix(in srgb, var(--theme-primary) 70%, black)',
++    '--root-color': 'white',
++    '--selected': 'var(--theme-primary)'
++  },
++  name: 'Nemesis Study',
++  palette: ['#b3382e', '#94683c', '#54745f', '#4e7082', '#735f86', '#8b5c66'],
++  type: 'light'
++}
+ 
+-  if (rgb) {
+-    const [r, g, b] = rgb[1].split(/[,/]/).map(part => Math.round(parseFloat(part.trim())))
++interface LayoutEntry {
++  direction?: 0 | 1
++  expanded?: boolean
++  id: string
++  index: number
++  parentId: null | string
++}
+ 
+-    return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? `rgb(${r}, ${g}, ${b})` : null
+-  }
++interface StoredLayout {
++  entries: LayoutEntry[]
++  version: 1
++}
+ 
+-  const srgb = computed.match(/color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/i)
++interface NodeDetail {
++  note: string
++  topic: string
++}
+ 
+-  if (srgb) {
+-    const [r, g, b] = [srgb[1], srgb[2], srgb[3]].map(part => Math.round(parseFloat(part) * 255))
++function mapPath(file: MindmapFile): string {
++  return `${MINDMAP_DIR}/${file.fileName}`
++}
+ 
+-    return `rgb(${r}, ${g}, ${b})`
+-  }
++function storageKey(file: MindmapFile): string {
++  return `${LAYOUT_STORAGE_PREFIX}${mapPath(file)}`
++}
+ 
+-  return computed
++function walkNodes(
++  node: NodeObj,
++  visit: (node: NodeObj, parentId: null | string, index: number) => void,
++  parentId: null | string = null,
++  index = 0
++) {
++  visit(node, parentId, index)
++  node.children?.forEach((child, index) => {
++    walkNodes(child, visit, node.id, index)
++  })
+ }
+ 
+-function resolveCssColor(value: string, fallback: string): string {
+-  const probe = document.createElement('span')
+-  probe.style.color = value
+-  probe.style.display = 'none'
+-  document.body.appendChild(probe)
+-  const resolved = getComputedStyle(probe).color
+-  probe.remove()
++function collectLayout(root: NodeObj): StoredLayout {
++  const entries: LayoutEntry[] = []
+ 
+-  return normalizeToRgb(resolved) || fallback
+-}
++  walkNodes(root, (node, parentId, index) => {
++    entries.push({ direction: node.direction, expanded: node.expanded, id: node.id, index, parentId })
++  })
+ 
+-interface MindmapPalette {
+-  accent: string
+-  line: string
++  return { entries, version: 1 }
+ }
+ 
+-function readMindmapPalette(): MindmapPalette {
+-  return {
+-    accent: resolveCssColor('var(--theme-primary)', '#b3382e'),
+-    line: resolveCssColor('color-mix(in srgb, var(--ui-text-primary) 32%, transparent)', 'rgba(160,160,160,0.5)')
++function readStoredLayout(file: MindmapFile): null | StoredLayout {
++  try {
++    const raw = window.localStorage.getItem(storageKey(file))
++
++    if (!raw) {
++      return null
++    }
++
++    const parsed = JSON.parse(raw) as Partial<StoredLayout>
++
++    if (parsed.version !== 1 || !Array.isArray(parsed.entries)) {
++      return null
++    }
++
++    const entries = parsed.entries.filter(
++      (entry): entry is LayoutEntry =>
++        Boolean(entry) &&
++        typeof entry.id === 'string' &&
++        typeof entry.index === 'number' &&
++        (entry.parentId === null || typeof entry.parentId === 'string')
++    )
++
++    return { entries, version: 1 }
++  } catch {
++    return null
+   }
+ }
+ 
+-interface OutlineLine {
+-  depth: number
+-  text: string
++function createsCycle(id: string, parentId: string, parentById: Map<string, null | string>): boolean {
++  const visited = new Set([id])
++  let cursor: null | string = parentId
++
++  while (cursor) {
++    if (visited.has(cursor)) {
++      return true
++    }
++
++    visited.add(cursor)
++    cursor = parentById.get(cursor) ?? null
++  }
++
++  return false
+ }
+ 
+-/** Fallback-path parser: headings + bullets → an indented line list. Not a full markdown
+- *  parser (deliberately) — this only has to be legible when markmap itself can't render. */
+-function parseOutlineFallback(markdown: string): OutlineLine[] {
+-  const lines: OutlineLine[] = []
+-  let headingDepth = 0
++/** Apply only parent/order/direction/expanded state to freshly parsed nodes. Topics,
++ * notes, and membership always come from the current Markdown file. */
++function applyStoredLayout(root: NodeObj, stored: null | StoredLayout): NodeObj {
++  if (!stored) {
++    return root
++  }
+ 
+-  for (const rawLine of markdown.split(/\r?\n/)) {
+-    const heading = rawLine.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/)
++  const nodesById = new Map<string, NodeObj>()
++  const canonicalOrder = new Map<string, number>()
++  const parentById = new Map<string, null | string>()
+ 
+-    if (heading) {
+-      headingDepth = heading[1].length - 1
+-      lines.push({ depth: headingDepth, text: heading[2] })
++  walkNodes(root, (node, parentId, index) => {
++    nodesById.set(node.id, node)
++    canonicalOrder.set(node.id, index)
++    parentById.set(node.id, parentId)
++  })
+ 
++  const storedById = new Map(stored.entries.map(entry => [entry.id, entry]))
++
++  for (const entry of stored.entries) {
++    if (entry.id === root.id || !nodesById.has(entry.id) || !entry.parentId || !nodesById.has(entry.parentId)) {
+       continue
+     }
+ 
+-    const bullet = rawLine.match(/^(\s*)[-*+]\s+(.+)$/)
++    if (!createsCycle(entry.id, entry.parentId, parentById)) {
++      parentById.set(entry.id, entry.parentId)
++    }
++  }
+ 
+-    if (bullet) {
+-      const indent = Math.floor(bullet[1].replace(/\t/g, '  ').length / 2)
+-      lines.push({ depth: headingDepth + 1 + indent, text: bullet[2] })
++  for (const node of nodesById.values()) {
++    node.children = []
++    const entry = storedById.get(node.id)
+ 
+-      continue
++    if (entry?.direction === 0 || entry?.direction === 1) {
++      node.direction = entry.direction
+     }
+ 
+-    const text = rawLine.trim()
++    if (typeof entry?.expanded === 'boolean') {
++      node.expanded = entry.expanded
++    }
++  }
+ 
+-    if (text) {
+-      lines.push({ depth: headingDepth + 1, text })
++  for (const node of nodesById.values()) {
++    if (node.id === root.id) {
++      continue
+     }
++
++    const parent = nodesById.get(parentById.get(node.id) ?? '') ?? root
++
++    parent.children ??= []
++    parent.children.push(node)
+   }
+ 
+-  return lines
++  for (const parent of nodesById.values()) {
++    parent.children?.sort((left, right) => {
++      const leftEntry = storedById.get(left.id)
++      const rightEntry = storedById.get(right.id)
++      const leftOrder = leftEntry?.parentId === parent.id ? leftEntry.index : 1_000_000 + (canonicalOrder.get(left.id) ?? 0)
++      const rightOrder = rightEntry?.parentId === parent.id ? rightEntry.index : 1_000_000 + (canonicalOrder.get(right.id) ?? 0)
++
++      return leftOrder - rightOrder
++    })
++  }
++
++  return root
+ }
+ 
+-function OutlineFallback({ outline }: { outline: string }) {
+-  const lines = parseOutlineFallback(outline)
++function addNoteIndicators(node: NodeObj) {
++  node.tags = node.note ? [{ className: 'mindmap-note-dot', text: '' }] : undefined
++  node.children?.forEach(addNoteIndicators)
++}
++
++function persistLayout(file: MindmapFile, mind: MindElixirInstance) {
++  try {
++    window.localStorage.setItem(storageKey(file), JSON.stringify(collectLayout(mind.getData().nodeData)))
++  } catch {
++    // Layout persistence is best-effort; the map remains fully usable without it.
++  }
++}
++
++function OutlineFallback({ file }: { file: MindmapFile }) {
++  const root = parseMindmapMarkdown(file.outline, file.title)
++  const lines: Array<{ depth: number; node: NodeObj }> = []
++
++  const flatten = (node: NodeObj, depth: number) => {
++    lines.push({ depth, node })
++    node.children?.forEach(child => flatten(child, depth + 1))
++  }
++
++  flatten(root, 0)
+ 
+   return (
+     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+-      <p className="mb-3 text-xs text-muted-foreground">Showing the plain outline — the mind map view couldn’t load.</p>
+-      {lines.length === 0 ? (
+-        <p className="text-sm text-muted-foreground">This mind map is empty.</p>
+-      ) : (
+-        <div className="space-y-1 font-mono text-[0.8125rem] leading-relaxed">
+-          {lines.map((line, index) => (
+-            <div key={index} style={{ paddingLeft: `${line.depth * 1.25}rem` }}>
+-              {line.text}
+-            </div>
+-          ))}
+-        </div>
+-      )}
++      <p className="mb-3 text-xs text-muted-foreground">Showing the plain outline — the interactive mind map couldn’t load.</p>
++      <div className="space-y-1 text-[0.8125rem] leading-relaxed">
++        {lines.map(({ depth, node }) => (
++          <div key={node.id} style={{ paddingLeft: `${depth * 1.25}rem` }}>
++            <span className="font-medium">{node.topic}</span>
++            {node.note && <span className="text-muted-foreground"> — {node.note}</span>}
++          </div>
++        ))}
++      </div>
+     </div>
+   )
+ }
+ 
+ function MindmapCanvas({ file }: { file: MindmapFile }) {
+-  const svgRef = useRef<null | SVGSVGElement>(null)
+-  const markmapRef = useRef<Markmap | null>(null)
++  const hostRef = useRef<HTMLDivElement | null>(null)
++  const mindRef = useRef<MindElixirInstance | null>(null)
+   const [failed, setFailed] = useState(false)
++  const [selectedDetail, setSelectedDetail] = useState<NodeDetail | null>(null)
+ 
+   useEffect(() => {
+-    if (!svgRef.current) {
++    const host = hostRef.current
++
++    if (!host) {
+       setFailed(true)
+ 
+       return
+     }
+ 
++    let mind: MindElixirInstance | null = null
++    let resizeObserver: ResizeObserver | null = null
++    let animationFrame = 0
++
+     try {
+-      const { root } = transformer.transform(file.outline.trim() || `# ${file.title}`)
+-      const palette = readMindmapPalette()
+-
+-      markmapRef.current = Markmap.create(
+-        svgRef.current,
+-        {
+-          autoFit: true,
+-          color: node => (node.state.depth === 0 ? palette.accent : palette.line),
+-          duration: 300,
+-          style: () => MINDMAP_THEME_CSS
++      const root = applyStoredLayout(parseMindmapMarkdown(file.outline, file.title), readStoredLayout(file))
++
++      addNoteIndicators(root)
++
++      mind = new MindElixir({
++        allowUndo: false,
++        before: {
++          addChild: () => false,
++          beginEdit: () => false,
++          copyNode: () => false,
++          copyNodes: () => false,
++          insertParent: () => false,
++          insertSibling: () => false,
++          removeNodes: () => false,
++          reshapeNode: () => false,
++          rmSubline: () => false,
++          setNodeTopic: () => false
+         },
+-        root
+-      )
++        contextMenu: false,
++        direction: MindElixir.SIDE as 2,
++        editable: true,
++        el: host,
++        keypress: false,
++        overflowHidden: true,
++        theme: MINDMAP_THEME,
++        toolBar: false
++      })
++
++      const initError = mind.init({ direction: MindElixir.SIDE as 2, nodeData: root, theme: MINDMAP_THEME })
++
++      if (initError) {
++        throw initError
++      }
++
++      mindRef.current = mind
++
++      mind.bus.addListener('selectNodes', nodes => {
++        const selected = nodes.at(-1)
++
++        setSelectedDetail(selected?.note ? { note: selected.note, topic: selected.topic } : null)
++      })
++      mind.bus.addListener('operation', (operation: Operation) => {
++        if (operation.name === 'moveNodeAfter' || operation.name === 'moveNodeBefore' || operation.name === 'moveNodeIn') {
++          persistLayout(file, mind as MindElixirInstance)
++        }
++      })
++
++      animationFrame = window.requestAnimationFrame(() => mind?.scaleFit())
++      resizeObserver = new ResizeObserver(() => mind?.scaleFit())
++      resizeObserver.observe(host)
+     } catch {
+       setFailed(true)
+     }
+ 
+     return () => {
+-      markmapRef.current?.destroy()
+-      markmapRef.current = null
++      window.cancelAnimationFrame(animationFrame)
++      resizeObserver?.disconnect()
++      mind?.destroy()
++      mindRef.current = null
+     }
+-    // `file` is intentionally excluded: this component remounts on file change (the
+-    // caller passes `key={file.fileName}`), so re-running this effect for the same
+-    // mounted instance would only ever happen for a `file` that hasn't changed.
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [])
++  }, [file])
+ 
+   if (failed) {
+-    return <OutlineFallback outline={file.outline} />
++    return <OutlineFallback file={file} />
+   }
+ 
+   return (
+-    <div className="relative min-h-0 flex-1">
+-      <svg className="h-full w-full" ref={svgRef} />
+-      <Button className="absolute bottom-3 right-3" onClick={() => void markmapRef.current?.fit()} size="sm" variant="outline">
+-        Fit
+-      </Button>
++    <div className="flex min-h-0 flex-1 bg-(--ui-editor-surface-background)">
++      <div className="relative min-w-0 flex-1">
++        <div className="study-mindmap-host h-full w-full" ref={hostRef} />
++        <div className="pointer-events-none absolute bottom-3 left-3 rounded-md border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/90 px-2.5 py-1.5 text-[0.6875rem] text-(--ui-text-tertiary) shadow-sm">
++          Drag nodes to arrange · scroll to pan · Ctrl/⌘ + scroll to zoom
++        </div>
++        <Button
++          className="absolute bottom-3 right-3"
++          onClick={() => mindRef.current?.scaleFit()}
++          size="sm"
++          variant="outline"
++        >
++          Fit
++        </Button>
++      </div>
++      {selectedDetail && (
++        <aside className="w-72 shrink-0 overflow-y-auto border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-5 py-6">
++          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-(--theme-primary)">Explanation</p>
++          <h3 className="mt-2 text-base font-semibold tracking-tight text-(--ui-text-primary)">{selectedDetail.topic}</h3>
++          <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-(--ui-text-secondary)">{selectedDetail.note}</p>
++        </aside>
++      )}
+     </div>
+   )
+ }
+@@ -209,13 +357,32 @@ export function MindmapViewerDialog({
+   file: MindmapFile | null
+   onOpenChange: (open: boolean) => void
+ }) {
++  const navigate = useNavigate()
++
++  const openSourceNote = () => {
++    if (!file) {
++      return
++    }
++
++    onOpenChange(false)
++    navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(file.title)}`)
++  }
++
+   return (
+     <Dialog onOpenChange={onOpenChange} open={file !== null}>
+-      <DialogContent className="flex h-[85vh] max-h-[85vh] w-full max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
++      <DialogContent className="flex h-[85vh] max-h-[85vh] w-[94vw] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
+         {file && (
+           <>
+-            <DialogHeader className="shrink-0 border-b border-border px-5 py-3.5 pr-11">
+-              <DialogTitle className="truncate">{file.title}</DialogTitle>
++            <DialogHeader className="shrink-0 border-b border-border px-5 py-3.5 pr-12">
++              <div className="flex items-center justify-between gap-4">
++                <div className="min-w-0">
++                  <DialogTitle className="truncate">{file.title}</DialogTitle>
++                  <p className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground">{mapPath(file)}</p>
++                </div>
++                <Button className="shrink-0" onClick={openSourceNote} size="sm" variant="outline">
++                  Open source note
++                </Button>
++              </div>
+             </DialogHeader>
+             <MindmapCanvas file={file} key={file.fileName} />
+           </>
+diff --git a/apps/desktop/src/styles.css b/apps/desktop/src/styles.css
+index 7190e6497c4..d48b3088d50 100644
+--- a/apps/desktop/src/styles.css
++++ b/apps/desktop/src/styles.css
+@@ -1898,6 +1898,36 @@ text-* variant utilities. */ .btn-arc {
+   animation: nemesis-shake 350ms ease-in-out;
+ }
+ 
++/* Study mind maps: mind-elixir provides interaction/layout while these focused
++   overrides make its custom elements read like the rest of the light Study UI. */
++.study-mindmap-host .map-container {
++  font-family: var(--dt-font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
++}
++.study-mindmap-host .map-container me-tpc {
++  line-height: 1.35;
++}
++.study-mindmap-host .map-container me-parent me-tpc {
++  padding: 0.25rem 0.45rem;
++}
++.study-mindmap-host .map-container .selected {
++  outline-width: 1px;
++  outline-offset: 3px;
++}
++.study-mindmap-host .map-container .tags {
++  display: inline-flex;
++  margin-left: 0.35rem;
++  vertical-align: middle;
++}
++.study-mindmap-host .map-container .tags .mindmap-note-dot {
++  width: 0.38rem;
++  height: 0.38rem;
++  margin: 0;
++  padding: 0;
++  border-radius: 999px;
++  background: var(--theme-primary);
++  opacity: 0.7;
++}
++
+ @media (prefers-reduced-motion: reduce) {
+   .nemesis-flip-inner { transition: none; }
+   .nemesis-shake { animation: none; }
+diff --git a/package-lock.json b/package-lock.json
+index 714d33d784a..2bbd147fbaf 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -111,6 +111,7 @@
+         "markmap-lib": "^0.18.12",
+         "markmap-view": "^0.18.12",
+         "mermaid": "^11.15.0",
++        "mind-elixir": "^5.13.0",
+         "motion": "^12.38.0",
+         "nanostores": "^1.3.0",
+         "node-pty": "1.1.0",
+@@ -15920,6 +15921,12 @@
+         "node": ">=4"
+       }
+     },
++    "node_modules/mind-elixir": {
++      "version": "5.13.0",
++      "resolved": "https://registry.npmjs.org/mind-elixir/-/mind-elixir-5.13.0.tgz",
++      "integrity": "sha512-ilvXVwrMmBclwyA+46nIrqOZot4Rv7arxInJwbK4XL83qMoPFb7AbwSYJIsMUSjJ+XPxMYYZ2SoMuT06eWAMRQ==",
++      "license": "MIT"
++    },
+     "node_modules/minimatch": {
+       "version": "10.2.5",
+       "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-10.2.5.tgz",
+-- 
+2.53.0
+
+
+From 2ad1d115f311fad35ceaf78ea28d078fa8d91dc8 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 18:18:42 -0500
+Subject: [PATCH 2/2] =?UTF-8?q?feat(nemesis-kit):=20round-34b=20=E2=80=94?=
+ =?UTF-8?q?=20Recorder=20redesign=20(record=20control=20never=20hidden)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Removed every height-based hide: short viewports COMPACT the hero into a slim
+  bar (record button shrinks size-28 -> size-14, never display:none)
+- Modern idle hero: large centered red Record, quiet caption, side-by-side
+  Computer-audio / Live-transcript switches, on-device privacy pill
+- Archive: clean expandable rows (name, mono date+duration, linked-note chip,
+  hover actions), friendly empty state; recording notepad flow untouched
+---
+ apps/desktop/src/app/recorder/archive.js  |  67 ++--
+ apps/desktop/src/app/recorder/archive.tsx | 449 ++++++++++++++--------
+ apps/desktop/src/app/recorder/index.js    |   8 +-
+ apps/desktop/src/app/recorder/index.tsx   | 181 ++++-----
+ 4 files changed, 418 insertions(+), 287 deletions(-)
+
+diff --git a/apps/desktop/src/app/recorder/archive.js b/apps/desktop/src/app/recorder/archive.js
+index f84a4b52f65..70abc8e2f5d 100644
+--- a/apps/desktop/src/app/recorder/archive.js
++++ b/apps/desktop/src/app/recorder/archive.js
+@@ -1,6 +1,6 @@
+ import { jsxs as _jsxs, jsx as _jsx, Fragment as _Fragment } from "react/jsx-runtime";
+-// Saved recordings — inline master/detail. The list (left) is everything under
+-// ~/Documents/Nemesis Recordings; selecting one (right) shows its audio playback, the
++// Saved recordings — inline expanding list. The rows are everything under
++// ~/Documents/Nemesis Recordings; selecting one expands its audio playback, the
+ // "AI notes" Nemesis wrote when asked to enhance it, and the raw transcript — all pulled
+ // from the auto-saved companion Library note when one exists (see `persist()` in
+ // index.tsx, which writes `*Audio: <filename> (Nemesis Recordings)*` into every lecture
+@@ -13,17 +13,19 @@ import { jsxs as _jsxs, jsx as _jsx, Fragment as _Fragment } from "react/jsx-run
+ // is hard-capped at 16MB, which a lecture-length recording routinely exceeds. The custom
+ // protocol goes through the same path-hardening resolver with no size cap and supports
+ // seeking — the same mechanism chat's audio/video attachments already use.
+-import { IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react';
++import { IconFileText, IconPlayerPause, IconPlayerPlay, IconTrash } from '@tabler/icons-react';
+ import { useCallback, useEffect, useRef, useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
++import { Button } from '@/components/ui/button';
+ import { Checkbox } from '@/components/ui/checkbox';
+ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+ import { mediaStreamUrl } from '@/lib/media';
++import { cn } from '@/lib/utils';
+ import { setComposerDraft } from '@/store/composer';
+ import { useRefreshHotkey } from '../hooks/use-refresh-hotkey';
+ import { loadFolderNotes, saveNote } from '../library/vault';
+-import { PanelAction, PanelBody, PanelDetail, PanelEmpty, PanelList, PanelListRow, PanelPill, PanelRowMenu, PanelSectionLabel } from '../overlays/panel';
+-import { NEW_CHAT_ROUTE } from '../routes';
++import { PanelAction, PanelPill, PanelSectionLabel } from '../overlays/panel';
++import { LIBRARY_ROUTE, NEW_CHAT_ROUTE } from '../routes';
+ import { correctPharmTerms } from './pharm-lexicon';
+ import { LECTURE_FOLDER, RECORDINGS_DIR } from './service';
+ import { transcribeAudio } from './transcribe';
+@@ -51,14 +53,12 @@ export function recordingLabel(name) {
+     }
+     return name;
+ }
+-/** Compact time-only form for the dense row list ("8:28 PM"). */
+-function recordingTime(name) {
+-    const match = name.match(/T(\d{2})-(\d{2})-(\d{2})/);
+-    if (!match) {
+-        return '';
++function recordingDisplayName(file) {
++    if (file.note?.title) {
++        return file.note.title;
+     }
+-    const date = new Date(2000, 0, 1, Number(match[1]), Number(match[2]));
+-    return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
++    const stem = file.name.replace(/\.(webm|m4a|wav|aiff?|mp3)$/i, '');
++    return /^lecture-\d{4}-\d{2}-\d{2}T/.test(stem) ? 'Untitled recording' : stem.replace(/^lecture-/, '');
+ }
+ /** Load saved recordings and best-effort match each to its auto-saved Library note. */
+ export async function loadRecordingFiles() {
+@@ -148,7 +148,7 @@ export function RecordingArchive({ reloadToken }) {
+     // Press "r" to pick up a note that "Enhance with Nemesis" updated in a chat turn —
+     // the selected recording's note snapshot otherwise stays as of the last load.
+     useRefreshHotkey(reload);
+-    const selected = recordings.find(file => file.path === selectedPath) ?? recordings[0] ?? null;
++    const selected = recordings.find(file => file.path === selectedPath) ?? null;
+     const transcribe = useCallback(async (file) => {
+         setTranscribingStatus(status => ({ ...status, [file.path]: 'Loading model…' }));
+         try {
+@@ -222,11 +222,34 @@ export function RecordingArchive({ reloadToken }) {
+     }, [deleteCompanionNote, deleteTarget, reload]);
+     const deleteDialog = (_jsx(ConfirmDialog, { busyLabel: "Moving to Trash\u2026", confirmLabel: "Move to Trash", description: deleteTarget ? (_jsxs("span", { className: "block space-y-3", children: [_jsxs("span", { className: "block", children: ["The audio file \u201C", deleteTarget.name, "\u201D will move to the system Trash, where it can still be recovered."] }), deleteTarget.note ? (_jsxs("label", { className: "flex cursor-pointer items-start gap-2 rounded-md border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) p-3 text-left text-foreground", children: [_jsx(Checkbox, { checked: deleteCompanionNote, className: "mt-0.5", onCheckedChange: checked => setDeleteCompanionNote(checked === true) }), _jsxs("span", { children: [_jsx("span", { className: "block text-xs font-medium", children: "Also move its lecture note to Trash" }), _jsxs("span", { className: "mt-0.5 block text-[0.6875rem] text-muted-foreground", children: [deleteTarget.note.title, ".md in Library / ", LECTURE_FOLDER] })] })] })) : null] })) : null, destructive: true, doneLabel: "Moved to Trash", onClose: () => setDeleteTarget(null), onConfirm: deleteRecording, open: Boolean(deleteTarget), title: "Move recording to Trash?" }));
+     if (recordings.length === 0) {
+-        return (_jsxs(_Fragment, { children: [_jsxs("div", { className: "grid min-h-40 place-content-center rounded-2xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-5 py-8 text-center", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Archive ready" }), _jsx("p", { className: "mt-1 text-sm font-medium text-foreground", children: "Your first recording will appear here" }), _jsx("p", { className: "mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground", children: "Captures stay in Documents / Nemesis Recordings as ordinary audio files you control." })] }), deleteDialog] }));
++        return (_jsxs(_Fragment, { children: [_jsx("p", { className: "border-t border-(--ui-stroke-tertiary) py-5 text-sm leading-relaxed text-(--ui-text-secondary)", children: "Your first recording will appear here, saved as an ordinary audio file you control." }), deleteDialog] }));
+     }
+-    return (_jsxs(_Fragment, { children: [_jsx("div", { className: "h-[min(34rem,68vh)] min-h-[28rem] min-w-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: _jsxs(PanelBody, { className: "!flex-col !gap-4 lg:!flex-row lg:!gap-5", children: [_jsx(PanelList, { className: "!w-full !max-h-40 lg:!max-h-none lg:!w-56", children: recordings.map(file => (_jsx(PanelListRow, { active: selected?.path === file.path, icon: "mic", menu: _jsx(PanelRowMenu, { items: [
+-                                        { icon: 'trash', label: 'Move to Trash', onSelect: () => requestDelete(file), tone: 'danger' }
+-                                    ], label: `Actions for ${file.note?.title || recordingLabel(file.name)}` }), meta: recordingTime(file.name), onSelect: () => setSelectedPath(file.path), rowKey: file.path, title: file.note?.title || recordingLabel(file.name) }, file.path))) }), selected ? (_jsx(RecordingDetail, { corrections: corrections[selected.path] ?? 0, file: selected, navigate: navigate, onDelete: () => requestDelete(selected), onDraftFlashcards: draftFlashcards, onSaveTranscriptNote: (file, transcript) => void saveTranscriptNote(file, transcript), onTranscribe: () => void transcribe(selected), savedNote: Boolean(savedNote[selected.path]), transcribingStatus: transcribingStatus[selected.path], transcript: transcripts[selected.path] ?? '' }, selected.path)) : (_jsx(PanelEmpty, { description: "Pick a recording on the left.", icon: "mic", title: "No recording selected" }))] }) }), deleteDialog] }));
++    return (_jsxs(_Fragment, { children: [_jsxs("div", { className: "mb-3", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)", children: "Archive" }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-tight", children: "Saved recordings" }), _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: "Play back, transcribe, enhance, or clean up past captures." })] }), _jsx("div", { className: "min-w-0 border-t border-(--ui-stroke-tertiary)", children: recordings.map(file => {
++                    const active = selected?.path === file.path;
++                    return (_jsxs("div", { className: "border-b border-(--ui-stroke-tertiary)", children: [_jsx(RecordingListRow, { active: active, file: file, onDelete: () => requestDelete(file), onOpenNote: file.note
++                                    ? () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(file.note?.title ?? '')}`)
++                                    : undefined, onSelect: () => setSelectedPath(current => (current === file.path ? null : file.path)) }), active && (_jsx(RecordingDetail, { corrections: corrections[file.path] ?? 0, file: file, navigate: navigate, onDelete: () => requestDelete(file), onDraftFlashcards: draftFlashcards, onSaveTranscriptNote: (recordingFile, transcript) => void saveTranscriptNote(recordingFile, transcript), onTranscribe: () => void transcribe(file), savedNote: Boolean(savedNote[file.path]), transcribingStatus: transcribingStatus[file.path], transcript: transcripts[file.path] ?? '' }))] }, file.path));
++                }) }), deleteDialog] }));
++}
++function RecordingListRow({ active, file, onDelete, onOpenNote, onSelect }) {
++    const audioRef = useRef(null);
++    const [duration, setDuration] = useState(0);
++    const [playing, setPlaying] = useState(false);
++    const togglePlayback = () => {
++        const audio = audioRef.current;
++        if (!audio) {
++            return;
++        }
++        if (audio.paused) {
++            void audio.play().catch(() => setPlaying(false));
++        }
++        else {
++            audio.pause();
++        }
++    };
++    return (_jsxs("article", { className: cn('group/recording relative flex min-w-0 flex-col transition-colors sm:flex-row sm:items-center', active ? 'bg-(--ui-bg-quaternary)' : 'hover:bg-(--ui-row-hover-background)'), children: [_jsx("audio", { className: "sr-only", onDurationChange: event => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0), onEnded: () => setPlaying(false), onPause: () => setPlaying(false), onPlay: () => setPlaying(true), preload: "metadata", ref: audioRef, src: mediaStreamUrl(file.path) }), _jsxs("button", { "aria-expanded": active, className: "min-w-0 flex-1 px-3 pb-2 pt-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 sm:py-4 sm:pr-32", onClick: onSelect, type: "button", children: [_jsxs("span", { className: "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1", children: [_jsx("span", { className: "min-w-0 truncate text-sm font-medium tracking-[-0.01em] text-(--ui-text-primary)", children: recordingDisplayName(file) }), file.note && (_jsxs("span", { className: "inline-flex shrink-0 items-center gap-1 rounded-full bg-(--ui-bg-primary) px-2 py-0.5 text-[0.625rem] font-medium text-(--ui-text-tertiary)", children: [_jsx(IconFileText, { size: 11 }), "Linked note"] }))] }), _jsxs("span", { className: "mt-1 block truncate font-mono text-[0.67rem] tabular-nums text-(--ui-text-tertiary)", children: [recordingLabel(file.name), " \u00B7 ", duration > 0 ? audioTimestamp(duration) : '—:—'] })] }), _jsxs("div", { className: cn('flex items-center gap-1 px-2 pb-3 sm:absolute sm:right-3 sm:top-1/2 sm:-translate-y-1/2 sm:p-0 sm:transition-opacity', playing
++                    ? 'sm:pointer-events-auto sm:opacity-100'
++                    : 'sm:pointer-events-none sm:opacity-0 sm:group-focus-within/recording:pointer-events-auto sm:group-focus-within/recording:opacity-100 sm:group-hover/recording:pointer-events-auto sm:group-hover/recording:opacity-100'), children: [_jsx(Button, { "aria-label": playing ? `Pause ${recordingDisplayName(file)}` : `Play ${recordingDisplayName(file)}`, className: cn(playing && 'bg-(--ui-control-active-background) text-foreground'), onClick: togglePlayback, size: "icon-xs", title: playing ? 'Pause' : 'Play inline', type: "button", variant: "ghost", children: playing ? _jsx(IconPlayerPause, {}) : _jsx(IconPlayerPlay, {}) }), onOpenNote && (_jsx(Button, { "aria-label": `Open linked note for ${recordingDisplayName(file)}`, onClick: onOpenNote, size: "icon-xs", title: "Open linked note", type: "button", variant: "ghost", children: _jsx(IconFileText, {}) })), _jsx(Button, { "aria-label": `Delete ${recordingDisplayName(file)}`, className: "hover:text-destructive", onClick: onDelete, size: "icon-xs", title: "Move to Trash", type: "button", variant: "ghost", children: _jsx(IconTrash, {}) })] })] }));
+ }
+ function audioTimestamp(seconds) {
+     if (!Number.isFinite(seconds) || seconds < 0) {
+@@ -269,10 +292,10 @@ function RecordingAudioPlayer({ onError, src }) {
+             audioRef.current.playbackRate = nextRate;
+         }
+     };
+-    return (_jsxs("div", { className: "flex items-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-2", children: [_jsx("audio", { onDurationChange: event => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0), onEnded: () => setPlaying(false), onError: onError, onLoadedMetadata: event => {
++    return (_jsxs("div", { className: "flex items-center gap-2 rounded-xl bg-(--ui-bg-quaternary) px-3 py-2.5", children: [_jsx("audio", { onDurationChange: event => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0), onEnded: () => setPlaying(false), onError: onError, onLoadedMetadata: event => {
+                     setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0);
+                     event.currentTarget.playbackRate = PLAYBACK_RATES[rateIndex];
+-                }, onPause: () => setPlaying(false), onPlay: () => setPlaying(true), onTimeUpdate: event => setCurrentTime(event.currentTarget.currentTime), preload: "metadata", ref: audioRef, src: src }), _jsx("button", { "aria-label": playing ? 'Pause recording' : 'Play recording', className: "grid size-7 shrink-0 place-items-center rounded-full bg-(--theme-primary) text-primary-foreground transition-transform active:scale-[0.96]", onClick: togglePlayback, type: "button", children: playing ? _jsx(IconPlayerPause, { size: 13 }) : _jsx(IconPlayerPlay, { className: "ml-px", size: 13 }) }), _jsx("span", { className: "w-9 shrink-0 text-right font-mono text-[0.65rem] tabular-nums text-muted-foreground", children: audioTimestamp(currentTime) }), _jsx("input", { "aria-label": "Recording position", className: "h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-(--ui-stroke-primary) accent-(--theme-primary) disabled:cursor-default disabled:opacity-50", disabled: duration <= 0, max: duration || 0, min: 0, onChange: event => {
++                }, onPause: () => setPlaying(false), onPlay: () => setPlaying(true), onTimeUpdate: event => setCurrentTime(event.currentTarget.currentTime), preload: "metadata", ref: audioRef, src: src }), _jsx("button", { "aria-label": playing ? 'Pause recording' : 'Play recording', className: "grid size-7 shrink-0 place-items-center rounded-full bg-foreground text-background transition-transform active:scale-[0.96]", onClick: togglePlayback, type: "button", children: playing ? _jsx(IconPlayerPause, { size: 13 }) : _jsx(IconPlayerPlay, { className: "ml-px", size: 13 }) }), _jsx("span", { className: "w-9 shrink-0 text-right font-mono text-[0.65rem] tabular-nums text-muted-foreground", children: audioTimestamp(currentTime) }), _jsx("input", { "aria-label": "Recording position", className: "h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-(--ui-stroke-primary) accent-foreground disabled:cursor-default disabled:opacity-50", disabled: duration <= 0, max: duration || 0, min: 0, onChange: event => {
+                     const nextTime = Number(event.target.value);
+                     setCurrentTime(nextTime);
+                     if (audioRef.current) {
+@@ -286,7 +309,7 @@ function RecordingDetail({ corrections, file, navigate, onDelete, onDraftFlashca
+     const rawTranscript = sections?.transcript || transcript;
+     const hasNote = Boolean(file.note);
+     useEffect(() => setAudioFailed(false), [file.path]);
+-    return (_jsxs(PanelDetail, { children: [_jsxs("header", { className: "flex min-w-0 items-start justify-between gap-3", children: [_jsxs("div", { className: "min-w-0 space-y-1", children: [_jsxs("div", { className: "flex min-w-0 flex-wrap items-center gap-2", children: [_jsx("h3", { className: "min-w-0 truncate text-[0.95rem] font-semibold tracking-tight text-foreground", children: file.note?.title || recordingLabel(file.name) }), !hasNote && _jsx(PanelPill, { children: "No linked note" })] }), _jsx("p", { className: "truncate text-xs text-muted-foreground", children: recordingLabel(file.name) })] }), _jsx(PanelAction, { icon: "trash", onClick: onDelete, children: "Delete" })] }), _jsxs("section", { className: "space-y-1.5", children: [_jsx(PanelSectionLabel, { children: "Audio" }), audioFailed ? (_jsx("p", { className: "rounded bg-destructive/10 p-2.5 text-xs text-destructive", children: "Couldn\u2019t play this recording \u2014 the audio file may have been moved or deleted." })) : (_jsx(RecordingAudioPlayer, { onError: () => setAudioFailed(true), src: mediaStreamUrl(file.path) }))] }), _jsxs("section", { className: "space-y-1.5", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx(PanelSectionLabel, { children: "AI notes" }), hasNote && (_jsx(PanelAction, { icon: "wand", onClick: () => enhanceLectureNote(file.note?.title ?? '', navigate), children: sections?.aiNotes ? 'Re-enhance' : 'Enhance with Nemesis' }))] }), sections?.aiNotes ? (_jsx("p", { className: "whitespace-pre-wrap text-[0.8125rem] leading-6 text-foreground/90", children: sections.aiNotes })) : (_jsx("p", { className: "text-xs text-muted-foreground", children: hasNote
+-                            ? 'Not enhanced yet — click "Enhance with Nemesis" to turn your notes and transcript into structured AI notes.'
+-                            : 'No notes linked to this recording — it predates note-linking, or its note was moved or deleted.' }))] }), sections?.myNotes ? (_jsxs("section", { className: "space-y-1.5", children: [_jsx(PanelSectionLabel, { children: "My notes" }), _jsx("p", { className: "whitespace-pre-wrap text-[0.8125rem] leading-6 text-foreground/90", children: sections.myNotes })] })) : null, _jsxs("section", { className: "space-y-1.5", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx(PanelSectionLabel, { children: "Transcript" }), rawTranscript && !transcribingStatus && (_jsxs("div", { className: "flex flex-wrap items-center justify-end gap-0.5", children: [_jsx(PanelAction, { icon: "checklist", onClick: () => onDraftFlashcards(rawTranscript), children: "Draft flashcards" }), !hasNote && (_jsx(PanelAction, { disabled: savedNote, icon: "save", onClick: () => onSaveTranscriptNote(file, rawTranscript), children: savedNote ? 'Saved' : 'Save as note' }))] }))] }), transcribingStatus ? (_jsxs("div", { className: "flex items-center gap-1.5 text-xs font-medium text-(--theme-primary)", children: [_jsx("span", { className: "size-1.5 animate-pulse rounded-full bg-(--theme-primary)" }), transcribingStatus] })) : rawTranscript ? (_jsxs(_Fragment, { children: [_jsx("p", { className: "whitespace-pre-wrap border-l-2 border-(--theme-primary)/25 pl-3 text-[0.8125rem] leading-6 text-foreground/90", children: rawTranscript }), corrections > 0 && (_jsxs("p", { className: "text-[10px] text-muted-foreground", children: [corrections, " pharm term", corrections === 1 ? '' : 's', " auto-corrected"] }))] })) : (_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx("p", { className: "text-xs text-muted-foreground", children: "No transcript yet." }), _jsx(PanelAction, { icon: "sparkle", onClick: onTranscribe, children: "Transcribe" })] }))] })] }));
++    return (_jsx("div", { className: "border-t border-(--ui-stroke-tertiary) px-3 pb-9 pt-5 sm:px-5 sm:pt-6", children: _jsxs("div", { className: "space-y-7", children: [_jsxs("header", { className: "flex min-w-0 flex-wrap items-start justify-between gap-3", children: [_jsxs("div", { className: "min-w-0 space-y-1", children: [_jsxs("div", { className: "flex min-w-0 flex-wrap items-center gap-2", children: [_jsx("h3", { className: "min-w-0 truncate text-base font-semibold tracking-[-0.015em] text-foreground", children: recordingDisplayName(file) }), !hasNote && _jsx(PanelPill, { children: "No linked note" })] }), _jsx("p", { className: "truncate font-mono text-[0.67rem] tabular-nums text-(--ui-text-tertiary)", children: recordingLabel(file.name) })] }), _jsxs("div", { className: "flex items-center gap-1", children: [file.note && (_jsx(PanelAction, { icon: "go-to-file", onClick: () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(file.note?.title ?? '')}`), children: "Open note" })), _jsx(PanelAction, { icon: "trash", onClick: onDelete, children: "Delete" })] })] }), _jsxs("section", { className: "space-y-2.5", children: [_jsx(PanelSectionLabel, { className: "text-(--ui-text-tertiary)", children: "Audio" }), audioFailed ? (_jsx("p", { className: "rounded bg-destructive/10 p-2.5 text-xs text-destructive", children: "Couldn\u2019t play this recording \u2014 the audio file may have been moved or deleted." })) : (_jsx(RecordingAudioPlayer, { onError: () => setAudioFailed(true), src: mediaStreamUrl(file.path) }))] }), _jsxs("section", { className: "space-y-2.5", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx(PanelSectionLabel, { className: "text-(--ui-text-tertiary)", children: "AI notes" }), hasNote && (_jsx(PanelAction, { icon: "wand", onClick: () => enhanceLectureNote(file.note?.title ?? '', navigate), children: sections?.aiNotes ? 'Re-enhance' : 'Enhance with Nemesis' }))] }), sections?.aiNotes ? (_jsx("p", { className: "max-w-3xl whitespace-pre-wrap text-[0.8125rem] leading-6 text-foreground/90", children: sections.aiNotes })) : (_jsx("p", { className: "max-w-2xl text-xs leading-5 text-muted-foreground", children: hasNote
++                                ? 'Not enhanced yet — click "Enhance with Nemesis" to turn your notes and transcript into structured AI notes.'
++                                : 'No notes linked to this recording — it predates note-linking, or its note was moved or deleted.' }))] }), sections?.myNotes ? (_jsxs("section", { className: "space-y-2.5", children: [_jsx(PanelSectionLabel, { className: "text-(--ui-text-tertiary)", children: "My notes" }), _jsx("p", { className: "max-w-3xl whitespace-pre-wrap text-[0.8125rem] leading-6 text-foreground/90", children: sections.myNotes })] })) : null, _jsxs("section", { className: "space-y-2.5", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx(PanelSectionLabel, { className: "text-(--ui-text-tertiary)", children: "Transcript" }), rawTranscript && !transcribingStatus && (_jsxs("div", { className: "flex flex-wrap items-center justify-end gap-0.5", children: [_jsx(PanelAction, { icon: "checklist", onClick: () => onDraftFlashcards(rawTranscript), children: "Draft flashcards" }), !hasNote && (_jsx(PanelAction, { disabled: savedNote, icon: "save", onClick: () => onSaveTranscriptNote(file, rawTranscript), children: savedNote ? 'Saved' : 'Save as note' }))] }))] }), transcribingStatus ? (_jsxs("div", { className: "flex items-center gap-1.5 text-xs font-medium text-foreground", children: [_jsx("span", { className: "size-1.5 animate-pulse rounded-full bg-foreground" }), transcribingStatus] })) : rawTranscript ? (_jsxs(_Fragment, { children: [_jsx("p", { className: "max-w-3xl whitespace-pre-wrap border-l-2 border-(--ui-stroke-secondary) pl-4 text-[0.8125rem] leading-6 text-foreground/90", children: rawTranscript }), corrections > 0 && (_jsxs("p", { className: "text-[10px] text-muted-foreground", children: [corrections, " pharm term", corrections === 1 ? '' : 's', " auto-corrected"] }))] })) : (_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx("p", { className: "text-xs text-muted-foreground", children: "No transcript yet." }), _jsx(PanelAction, { icon: "sparkle", onClick: onTranscribe, children: "Transcribe" })] }))] })] }) }));
+ }
+diff --git a/apps/desktop/src/app/recorder/archive.tsx b/apps/desktop/src/app/recorder/archive.tsx
+index 93b6d7ef772..50c692e851f 100644
+--- a/apps/desktop/src/app/recorder/archive.tsx
++++ b/apps/desktop/src/app/recorder/archive.tsx
+@@ -1,5 +1,5 @@
+-// Saved recordings — inline master/detail. The list (left) is everything under
+-// ~/Documents/Nemesis Recordings; selecting one (right) shows its audio playback, the
++// Saved recordings — inline expanding list. The rows are everything under
++// ~/Documents/Nemesis Recordings; selecting one expands its audio playback, the
+ // "AI notes" Nemesis wrote when asked to enhance it, and the raw transcript — all pulled
+ // from the auto-saved companion Library note when one exists (see `persist()` in
+ // index.tsx, which writes `*Audio: <filename> (Nemesis Recordings)*` into every lecture
+@@ -12,30 +12,22 @@
+ // is hard-capped at 16MB, which a lecture-length recording routinely exceeds. The custom
+ // protocol goes through the same path-hardening resolver with no size cap and supports
+ // seeking — the same mechanism chat's audio/video attachments already use.
+-import { IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react'
++import { IconFileText, IconPlayerPause, IconPlayerPlay, IconTrash } from '@tabler/icons-react'
+ import { useCallback, useEffect, useRef, useState } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ import type { NavigateFunction } from 'react-router-dom'
+ 
++import { Button } from '@/components/ui/button'
+ import { Checkbox } from '@/components/ui/checkbox'
+ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+ import { mediaStreamUrl } from '@/lib/media'
++import { cn } from '@/lib/utils'
+ import { setComposerDraft } from '@/store/composer'
+ 
+ import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
+ import { loadFolderNotes, saveNote, type VaultNote } from '../library/vault'
+-import {
+-  PanelAction,
+-  PanelBody,
+-  PanelDetail,
+-  PanelEmpty,
+-  PanelList,
+-  PanelListRow,
+-  PanelPill,
+-  PanelRowMenu,
+-  PanelSectionLabel
+-} from '../overlays/panel'
+-import { NEW_CHAT_ROUTE } from '../routes'
++import { PanelAction, PanelPill, PanelSectionLabel } from '../overlays/panel'
++import { LIBRARY_ROUTE, NEW_CHAT_ROUTE } from '../routes'
+ 
+ import { correctPharmTerms } from './pharm-lexicon'
+ import { LECTURE_FOLDER, RECORDINGS_DIR } from './service'
+@@ -81,17 +73,14 @@ export function recordingLabel(name: string): string {
+   return name
+ }
+ 
+-/** Compact time-only form for the dense row list ("8:28 PM"). */
+-function recordingTime(name: string): string {
+-  const match = name.match(/T(\d{2})-(\d{2})-(\d{2})/)
+-
+-  if (!match) {
+-    return ''
++function recordingDisplayName(file: RecordingFile): string {
++  if (file.note?.title) {
++    return file.note.title
+   }
+ 
+-  const date = new Date(2000, 0, 1, Number(match[1]), Number(match[2]))
++  const stem = file.name.replace(/\.(webm|m4a|wav|aiff?|mp3)$/i, '')
+ 
+-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
++  return /^lecture-\d{4}-\d{2}-\d{2}T/.test(stem) ? 'Untitled recording' : stem.replace(/^lecture-/, '')
+ }
+ 
+ /** Load saved recordings and best-effort match each to its auto-saved Library note. */
+@@ -211,7 +200,7 @@ export function RecordingArchive({ reloadToken }: RecordingArchiveProps) {
+   // the selected recording's note snapshot otherwise stays as of the last load.
+   useRefreshHotkey(reload)
+ 
+-  const selected = recordings.find(file => file.path === selectedPath) ?? recordings[0] ?? null
++  const selected = recordings.find(file => file.path === selectedPath) ?? null
+ 
+   const transcribe = useCallback(async (file: RecordingFile) => {
+     setTranscribingStatus(status => ({ ...status, [file.path]: 'Loading model…' }))
+@@ -346,15 +335,9 @@ export function RecordingArchive({ reloadToken }: RecordingArchiveProps) {
+   if (recordings.length === 0) {
+     return (
+       <>
+-        <div className="grid min-h-40 place-content-center rounded-2xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-5 py-8 text-center">
+-          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">
+-            Archive ready
+-          </p>
+-          <p className="mt-1 text-sm font-medium text-foreground">Your first recording will appear here</p>
+-          <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-muted-foreground">
+-            Captures stay in Documents / Nemesis Recordings as ordinary audio files you control.
+-          </p>
+-        </div>
++        <p className="border-t border-(--ui-stroke-tertiary) py-5 text-sm leading-relaxed text-(--ui-text-secondary)">
++          Your first recording will appear here, saved as an ordinary audio file you control.
++        </p>
+         {deleteDialog}
+       </>
+     )
+@@ -362,48 +345,47 @@ export function RecordingArchive({ reloadToken }: RecordingArchiveProps) {
+ 
+   return (
+     <>
+-      <div className="h-[min(34rem,68vh)] min-h-[28rem] min-w-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]">
+-        <PanelBody className="!flex-col !gap-4 lg:!flex-row lg:!gap-5">
+-          <PanelList className="!w-full !max-h-40 lg:!max-h-none lg:!w-56">
+-            {recordings.map(file => (
+-              <PanelListRow
+-                active={selected?.path === file.path}
+-                icon="mic"
+-                key={file.path}
+-                menu={
+-                  <PanelRowMenu
+-                    items={[
+-                      { icon: 'trash', label: 'Move to Trash', onSelect: () => requestDelete(file), tone: 'danger' }
+-                    ]}
+-                    label={`Actions for ${file.note?.title || recordingLabel(file.name)}`}
+-                  />
++      <div className="mb-3">
++        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">Archive</p>
++        <h2 className="mt-1 text-lg font-semibold tracking-tight">Saved recordings</h2>
++        <p className="mt-1 text-xs text-muted-foreground">Play back, transcribe, enhance, or clean up past captures.</p>
++      </div>
++      <div className="min-w-0 border-t border-(--ui-stroke-tertiary)">
++        {recordings.map(file => {
++          const active = selected?.path === file.path
++
++          return (
++            <div className="border-b border-(--ui-stroke-tertiary)" key={file.path}>
++              <RecordingListRow
++                active={active}
++                file={file}
++                onDelete={() => requestDelete(file)}
++                onOpenNote={
++                  file.note
++                    ? () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(file.note?.title ?? '')}`)
++                    : undefined
+                 }
+-                meta={recordingTime(file.name)}
+-                onSelect={() => setSelectedPath(file.path)}
+-                rowKey={file.path}
+-                title={file.note?.title || recordingLabel(file.name)}
++                onSelect={() => setSelectedPath(current => (current === file.path ? null : file.path))}
+               />
+-            ))}
+-          </PanelList>
+-
+-          {selected ? (
+-            <RecordingDetail
+-              corrections={corrections[selected.path] ?? 0}
+-              file={selected}
+-              key={selected.path}
+-              navigate={navigate}
+-              onDelete={() => requestDelete(selected)}
+-              onDraftFlashcards={draftFlashcards}
+-              onSaveTranscriptNote={(file, transcript) => void saveTranscriptNote(file, transcript)}
+-              onTranscribe={() => void transcribe(selected)}
+-              savedNote={Boolean(savedNote[selected.path])}
+-              transcribingStatus={transcribingStatus[selected.path]}
+-              transcript={transcripts[selected.path] ?? ''}
+-            />
+-          ) : (
+-            <PanelEmpty description="Pick a recording on the left." icon="mic" title="No recording selected" />
+-          )}
+-        </PanelBody>
++              {active && (
++                <RecordingDetail
++                  corrections={corrections[file.path] ?? 0}
++                  file={file}
++                  navigate={navigate}
++                  onDelete={() => requestDelete(file)}
++                  onDraftFlashcards={draftFlashcards}
++                  onSaveTranscriptNote={(recordingFile, transcript) =>
++                    void saveTranscriptNote(recordingFile, transcript)
++                  }
++                  onTranscribe={() => void transcribe(file)}
++                  savedNote={Boolean(savedNote[file.path])}
++                  transcribingStatus={transcribingStatus[file.path]}
++                  transcript={transcripts[file.path] ?? ''}
++                />
++              )}
++            </div>
++          )
++        })}
+       </div>
+       {deleteDialog}
+     </>
+@@ -423,6 +405,121 @@ interface RecordingDetailProps {
+   transcript: string
+ }
+ 
++interface RecordingListRowProps {
++  active: boolean
++  file: RecordingFile
++  onDelete: () => void
++  onOpenNote?: () => void
++  onSelect: () => void
++}
++
++function RecordingListRow({ active, file, onDelete, onOpenNote, onSelect }: RecordingListRowProps) {
++  const audioRef = useRef<HTMLAudioElement | null>(null)
++  const [duration, setDuration] = useState(0)
++  const [playing, setPlaying] = useState(false)
++
++  const togglePlayback = () => {
++    const audio = audioRef.current
++
++    if (!audio) {
++      return
++    }
++
++    if (audio.paused) {
++      void audio.play().catch(() => setPlaying(false))
++    } else {
++      audio.pause()
++    }
++  }
++
++  return (
++    <article
++      className={cn(
++        'group/recording relative flex min-w-0 flex-col transition-colors sm:flex-row sm:items-center',
++        active ? 'bg-(--ui-bg-quaternary)' : 'hover:bg-(--ui-row-hover-background)'
++      )}
++    >
++      <audio
++        className="sr-only"
++        onDurationChange={event =>
++          setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)
++        }
++        onEnded={() => setPlaying(false)}
++        onPause={() => setPlaying(false)}
++        onPlay={() => setPlaying(true)}
++        preload="metadata"
++        ref={audioRef}
++        src={mediaStreamUrl(file.path)}
++      />
++      <button
++        aria-expanded={active}
++        className="min-w-0 flex-1 px-3 pb-2 pt-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 sm:py-4 sm:pr-32"
++        onClick={onSelect}
++        type="button"
++      >
++        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
++          <span className="min-w-0 truncate text-sm font-medium tracking-[-0.01em] text-(--ui-text-primary)">
++            {recordingDisplayName(file)}
++          </span>
++          {file.note && (
++            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-(--ui-bg-primary) px-2 py-0.5 text-[0.625rem] font-medium text-(--ui-text-tertiary)">
++              <IconFileText size={11} />
++              Linked note
++            </span>
++          )}
++        </span>
++        <span className="mt-1 block truncate font-mono text-[0.67rem] tabular-nums text-(--ui-text-tertiary)">
++          {recordingLabel(file.name)} · {duration > 0 ? audioTimestamp(duration) : '—:—'}
++        </span>
++      </button>
++
++      <div
++        className={cn(
++          'flex items-center gap-1 px-2 pb-3 sm:absolute sm:right-3 sm:top-1/2 sm:-translate-y-1/2 sm:p-0 sm:transition-opacity',
++          playing
++            ? 'sm:pointer-events-auto sm:opacity-100'
++            : 'sm:pointer-events-none sm:opacity-0 sm:group-focus-within/recording:pointer-events-auto sm:group-focus-within/recording:opacity-100 sm:group-hover/recording:pointer-events-auto sm:group-hover/recording:opacity-100'
++        )}
++      >
++        <Button
++          aria-label={playing ? `Pause ${recordingDisplayName(file)}` : `Play ${recordingDisplayName(file)}`}
++          className={cn(playing && 'bg-(--ui-control-active-background) text-foreground')}
++          onClick={togglePlayback}
++          size="icon-xs"
++          title={playing ? 'Pause' : 'Play inline'}
++          type="button"
++          variant="ghost"
++        >
++          {playing ? <IconPlayerPause /> : <IconPlayerPlay />}
++        </Button>
++        {onOpenNote && (
++          <Button
++            aria-label={`Open linked note for ${recordingDisplayName(file)}`}
++            onClick={onOpenNote}
++            size="icon-xs"
++            title="Open linked note"
++            type="button"
++            variant="ghost"
++          >
++            <IconFileText />
++          </Button>
++        )}
++        <Button
++          aria-label={`Delete ${recordingDisplayName(file)}`}
++          className="hover:text-destructive"
++          onClick={onDelete}
++          size="icon-xs"
++          title="Move to Trash"
++          type="button"
++          variant="ghost"
++        >
++          <IconTrash />
++        </Button>
++      </div>
++    </article>
++  )
++}
++
+ function audioTimestamp(seconds: number): string {
+   if (!Number.isFinite(seconds) || seconds < 0) {
+     return '0:00'
+@@ -474,9 +571,11 @@ function RecordingAudioPlayer({ onError, src }: { onError: () => void; src: stri
+   }
+ 
+   return (
+-    <div className="flex items-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-2">
++    <div className="flex items-center gap-2 rounded-xl bg-(--ui-bg-quaternary) px-3 py-2.5">
+       <audio
+-        onDurationChange={event => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
++        onDurationChange={event =>
++          setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)
++        }
+         onEnded={() => setPlaying(false)}
+         onError={onError}
+         onLoadedMetadata={event => {
+@@ -492,7 +591,7 @@ function RecordingAudioPlayer({ onError, src }: { onError: () => void; src: stri
+       />
+       <button
+         aria-label={playing ? 'Pause recording' : 'Play recording'}
+-        className="grid size-7 shrink-0 place-items-center rounded-full bg-(--theme-primary) text-primary-foreground transition-transform active:scale-[0.96]"
++        className="grid size-7 shrink-0 place-items-center rounded-full bg-foreground text-background transition-transform active:scale-[0.96]"
+         onClick={togglePlayback}
+         type="button"
+       >
+@@ -503,7 +602,7 @@ function RecordingAudioPlayer({ onError, src }: { onError: () => void; src: stri
+       </span>
+       <input
+         aria-label="Recording position"
+-        className="h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-(--ui-stroke-primary) accent-(--theme-primary) disabled:cursor-default disabled:opacity-50"
++        className="h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-(--ui-stroke-primary) accent-foreground disabled:cursor-default disabled:opacity-50"
+         disabled={duration <= 0}
+         max={duration || 0}
+         min={0}
+@@ -554,101 +653,123 @@ function RecordingDetail({
+   useEffect(() => setAudioFailed(false), [file.path])
+ 
+   return (
+-    <PanelDetail>
+-      <header className="flex min-w-0 items-start justify-between gap-3">
+-        <div className="min-w-0 space-y-1">
+-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+-            <h3 className="min-w-0 truncate text-[0.95rem] font-semibold tracking-tight text-foreground">
+-              {file.note?.title || recordingLabel(file.name)}
+-            </h3>
+-            {!hasNote && <PanelPill>No linked note</PanelPill>}
++    <div className="border-t border-(--ui-stroke-tertiary) px-3 pb-9 pt-5 sm:px-5 sm:pt-6">
++      <div className="space-y-7">
++        <header className="flex min-w-0 flex-wrap items-start justify-between gap-3">
++          <div className="min-w-0 space-y-1">
++            <div className="flex min-w-0 flex-wrap items-center gap-2">
++              <h3 className="min-w-0 truncate text-base font-semibold tracking-[-0.015em] text-foreground">
++                {recordingDisplayName(file)}
++              </h3>
++              {!hasNote && <PanelPill>No linked note</PanelPill>}
++            </div>
++            <p className="truncate font-mono text-[0.67rem] tabular-nums text-(--ui-text-tertiary)">
++              {recordingLabel(file.name)}
++            </p>
+           </div>
+-          <p className="truncate text-xs text-muted-foreground">{recordingLabel(file.name)}</p>
+-        </div>
+-        <PanelAction icon="trash" onClick={onDelete}>
+-          Delete
+-        </PanelAction>
+-      </header>
+-
+-      <section className="space-y-1.5">
+-        <PanelSectionLabel>Audio</PanelSectionLabel>
+-        {audioFailed ? (
+-          <p className="rounded bg-destructive/10 p-2.5 text-xs text-destructive">
+-            Couldn&rsquo;t play this recording — the audio file may have been moved or deleted.
+-          </p>
+-        ) : (
+-          <RecordingAudioPlayer onError={() => setAudioFailed(true)} src={mediaStreamUrl(file.path)} />
+-        )}
+-      </section>
+-
+-      <section className="space-y-1.5">
+-        <div className="flex items-center justify-between gap-3">
+-          <PanelSectionLabel>AI notes</PanelSectionLabel>
+-          {hasNote && (
+-            <PanelAction icon="wand" onClick={() => enhanceLectureNote(file.note?.title ?? '', navigate)}>
+-              {sections?.aiNotes ? 'Re-enhance' : 'Enhance with Nemesis'}
++          <div className="flex items-center gap-1">
++            {file.note && (
++              <PanelAction
++                icon="go-to-file"
++                onClick={() => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(file.note?.title ?? '')}`)}
++              >
++                Open note
++              </PanelAction>
++            )}
++            <PanelAction icon="trash" onClick={onDelete}>
++              Delete
+             </PanelAction>
+-          )}
+-        </div>
+-        {sections?.aiNotes ? (
+-          <p className="whitespace-pre-wrap text-[0.8125rem] leading-6 text-foreground/90">{sections.aiNotes}</p>
+-        ) : (
+-          <p className="text-xs text-muted-foreground">
+-            {hasNote
+-              ? 'Not enhanced yet — click "Enhance with Nemesis" to turn your notes and transcript into structured AI notes.'
+-              : 'No notes linked to this recording — it predates note-linking, or its note was moved or deleted.'}
+-          </p>
+-        )}
+-      </section>
++          </div>
++        </header>
+ 
+-      {sections?.myNotes ? (
+-        <section className="space-y-1.5">
+-          <PanelSectionLabel>My notes</PanelSectionLabel>
+-          <p className="whitespace-pre-wrap text-[0.8125rem] leading-6 text-foreground/90">{sections.myNotes}</p>
++        <section className="space-y-2.5">
++          <PanelSectionLabel className="text-(--ui-text-tertiary)">Audio</PanelSectionLabel>
++          {audioFailed ? (
++            <p className="rounded bg-destructive/10 p-2.5 text-xs text-destructive">
++              Couldn&rsquo;t play this recording — the audio file may have been moved or deleted.
++            </p>
++          ) : (
++            <RecordingAudioPlayer onError={() => setAudioFailed(true)} src={mediaStreamUrl(file.path)} />
++          )}
+         </section>
+-      ) : null}
+-
+-      <section className="space-y-1.5">
+-        <div className="flex items-center justify-between gap-3">
+-          <PanelSectionLabel>Transcript</PanelSectionLabel>
+-          {rawTranscript && !transcribingStatus && (
+-            <div className="flex flex-wrap items-center justify-end gap-0.5">
+-              <PanelAction icon="checklist" onClick={() => onDraftFlashcards(rawTranscript)}>
+-                Draft flashcards
++
++        <section className="space-y-2.5">
++          <div className="flex items-center justify-between gap-3">
++            <PanelSectionLabel className="text-(--ui-text-tertiary)">AI notes</PanelSectionLabel>
++            {hasNote && (
++              <PanelAction icon="wand" onClick={() => enhanceLectureNote(file.note?.title ?? '', navigate)}>
++                {sections?.aiNotes ? 'Re-enhance' : 'Enhance with Nemesis'}
+               </PanelAction>
+-              {!hasNote && (
+-                <PanelAction disabled={savedNote} icon="save" onClick={() => onSaveTranscriptNote(file, rawTranscript)}>
+-                  {savedNote ? 'Saved' : 'Save as note'}
+-                </PanelAction>
+-              )}
+-            </div>
+-          )}
+-        </div>
+-        {transcribingStatus ? (
+-          <div className="flex items-center gap-1.5 text-xs font-medium text-(--theme-primary)">
+-            <span className="size-1.5 animate-pulse rounded-full bg-(--theme-primary)" />
+-            {transcribingStatus}
++            )}
+           </div>
+-        ) : rawTranscript ? (
+-          <>
+-            <p className="whitespace-pre-wrap border-l-2 border-(--theme-primary)/25 pl-3 text-[0.8125rem] leading-6 text-foreground/90">
+-              {rawTranscript}
++          {sections?.aiNotes ? (
++            <p className="max-w-3xl whitespace-pre-wrap text-[0.8125rem] leading-6 text-foreground/90">
++              {sections.aiNotes}
+             </p>
+-            {corrections > 0 && (
+-              <p className="text-[10px] text-muted-foreground">
+-                {corrections} pharm term{corrections === 1 ? '' : 's'} auto-corrected
+-              </p>
+-            )}
+-          </>
+-        ) : (
++          ) : (
++            <p className="max-w-2xl text-xs leading-5 text-muted-foreground">
++              {hasNote
++                ? 'Not enhanced yet — click "Enhance with Nemesis" to turn your notes and transcript into structured AI notes.'
++                : 'No notes linked to this recording — it predates note-linking, or its note was moved or deleted.'}
++            </p>
++          )}
++        </section>
++
++        {sections?.myNotes ? (
++          <section className="space-y-2.5">
++            <PanelSectionLabel className="text-(--ui-text-tertiary)">My notes</PanelSectionLabel>
++            <p className="max-w-3xl whitespace-pre-wrap text-[0.8125rem] leading-6 text-foreground/90">
++              {sections.myNotes}
++            </p>
++          </section>
++        ) : null}
++
++        <section className="space-y-2.5">
+           <div className="flex items-center justify-between gap-3">
+-            <p className="text-xs text-muted-foreground">No transcript yet.</p>
+-            <PanelAction icon="sparkle" onClick={onTranscribe}>
+-              Transcribe
+-            </PanelAction>
++            <PanelSectionLabel className="text-(--ui-text-tertiary)">Transcript</PanelSectionLabel>
++            {rawTranscript && !transcribingStatus && (
++              <div className="flex flex-wrap items-center justify-end gap-0.5">
++                <PanelAction icon="checklist" onClick={() => onDraftFlashcards(rawTranscript)}>
++                  Draft flashcards
++                </PanelAction>
++                {!hasNote && (
++                  <PanelAction
++                    disabled={savedNote}
++                    icon="save"
++                    onClick={() => onSaveTranscriptNote(file, rawTranscript)}
++                  >
++                    {savedNote ? 'Saved' : 'Save as note'}
++                  </PanelAction>
++                )}
++              </div>
++            )}
+           </div>
+-        )}
+-      </section>
+-    </PanelDetail>
++          {transcribingStatus ? (
++            <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
++              <span className="size-1.5 animate-pulse rounded-full bg-foreground" />
++              {transcribingStatus}
++            </div>
++          ) : rawTranscript ? (
++            <>
++              <p className="max-w-3xl whitespace-pre-wrap border-l-2 border-(--ui-stroke-secondary) pl-4 text-[0.8125rem] leading-6 text-foreground/90">
++                {rawTranscript}
++              </p>
++              {corrections > 0 && (
++                <p className="text-[10px] text-muted-foreground">
++                  {corrections} pharm term{corrections === 1 ? '' : 's'} auto-corrected
++                </p>
++              )}
++            </>
++          ) : (
++            <div className="flex items-center justify-between gap-3">
++              <p className="text-xs text-muted-foreground">No transcript yet.</p>
++              <PanelAction icon="sparkle" onClick={onTranscribe}>
++                Transcribe
++              </PanelAction>
++            </div>
++          )}
++        </section>
++      </div>
++    </div>
+   )
+ }
+diff --git a/apps/desktop/src/app/recorder/index.js b/apps/desktop/src/app/recorder/index.js
+index d58bea7d9c7..24b184f5fe3 100644
+--- a/apps/desktop/src/app/recorder/index.js
++++ b/apps/desktop/src/app/recorder/index.js
+@@ -108,7 +108,9 @@ export function RecorderView() {
+     }
+     const queuedCount = liveInsights.filter(insight => insight.queued).length;
+     const stopping = recording === 'stopping';
+-    return (_jsxs("main", { className: "flex h-full min-h-0 flex-col overflow-y-auto bg-(--ui-editor-surface-background)", children: [_jsxs("header", { className: "sticky top-0 z-20 flex shrink-0 items-start gap-3 border-b border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background)/95 px-4 pb-2 pt-5 backdrop-blur-sm sm:px-6 sm:pt-6 [@media(max-height:720px)]:pb-2 [@media(max-height:720px)]:pt-3", children: [_jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: "Capture desk" }), _jsx("h1", { className: "mt-1 text-2xl font-semibold tracking-[-0.025em] [@media(max-height:720px)]:text-xl", children: "Recorder" }), _jsxs("p", { className: "mt-1 max-w-3xl text-xs leading-5 text-muted-foreground [@media(max-height:720px)]:hidden", children: ["Capture your microphone", withSystemAudio ? ' and this computer’s audio' : '', " locally. Keep a live notepad, review on-device transcription, and collect the pharmacology terms that matter."] })] }), _jsx(Button, { "aria-label": "Start recording", className: "mt-0.5 shrink-0 active:scale-[0.98]", disabled: stopping || starting, onClick: () => void startRecording(), size: "sm", children: "\u25CF Record" })] }), _jsxs("section", { className: "mx-4 mt-4 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)] sm:mx-6 [@media(max-height:720px)]:mt-2", children: [_jsxs("div", { className: "grid items-stretch lg:grid-cols-[minmax(0,0.9fr)_minmax(20rem,1.1fr)]", children: [_jsxs("div", { className: "flex min-w-0 flex-col items-start gap-5 border-b border-(--ui-stroke-tertiary) p-5 sm:flex-row sm:items-center sm:p-6 lg:border-b-0 lg:border-r [@media(max-height:720px)]:gap-3 [@media(max-height:720px)]:p-3", children: [_jsx("div", { className: "grid size-24 shrink-0 place-items-center rounded-full border border-(--theme-primary)/25 bg-(--ui-bg-primary) shadow-[inset_0_0_0_7px_var(--ui-bg-elevated)] [@media(max-height:720px)]:size-16 [@media(max-height:720px)]:shadow-[inset_0_0_0_4px_var(--ui-bg-elevated)]", children: _jsx(Button, { "aria-label": "Start recording", className: "size-20 rounded-full shadow-lg transition-[transform,opacity] active:scale-[0.96] [@media(max-height:720px)]:size-12", disabled: stopping || starting, onClick: () => void startRecording(), size: "icon-lg", children: _jsx(IconMicrophone, { className: "size-7 [@media(max-height:720px)]:size-5" }) }) }), _jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: stopping ? 'Finishing capture' : starting ? 'Opening audio capture' : 'Ready to record' }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-tight", children: stopping ? 'Saving your lecture' : 'Capture the lecture, keep the context' }), _jsx("p", { className: "mt-1 max-w-sm text-xs leading-5 text-muted-foreground", children: stopping
+-                                                    ? liveStatus || 'Writing audio and notes to disk…'
+-                                                    : 'One click opens the live notepad, audio signal, transcript, and pharmacology mentions.' })] })] }), _jsxs("div", { className: "flex min-w-0 flex-col justify-center gap-2 p-4", children: [_jsxs("label", { className: "group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-(--ui-stroke-tertiary) hover:bg-(--ui-bg-quaternary)", children: [_jsx("input", { checked: withSystemAudio, className: "peer sr-only", disabled: starting || stopping, onChange: event => setSystemAudioEnabled(event.target.checked), type: "checkbox" }), _jsx("span", { className: "relative h-5 w-9 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-(--theme-primary)/35 peer-checked:bg-(--theme-primary) peer-checked:after:translate-x-4 peer-checked:after:bg-primary-foreground peer-disabled:opacity-45" }), _jsxs("span", { className: "min-w-0", children: [_jsx("span", { className: "block text-xs font-semibold", children: "Computer audio" }), _jsx("span", { className: "block text-[0.6875rem] leading-relaxed text-muted-foreground", children: "Capture lecture or meeting audio \u00B7 macOS asks once" })] })] }), _jsxs("label", { className: "group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-(--ui-stroke-tertiary) hover:bg-(--ui-bg-quaternary)", children: [_jsx("input", { checked: liveCaptions, className: "peer sr-only", disabled: starting || stopping, onChange: event => setLiveCaptionsEnabled(event.target.checked), type: "checkbox" }), _jsx("span", { className: "relative h-5 w-9 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-(--theme-primary)/35 peer-checked:bg-(--theme-primary) peer-checked:after:translate-x-4 peer-checked:after:bg-primary-foreground peer-disabled:opacity-45" }), _jsxs("span", { className: "min-w-0", children: [_jsx("span", { className: "block text-xs font-semibold", children: "Live transcript" }), _jsx("span", { className: "block text-[0.6875rem] leading-relaxed text-muted-foreground", children: "Process speech on-device and save a linked lecture note" })] })] }), _jsxs("span", { className: "mx-3 mt-1 inline-flex items-center gap-1.5 self-start rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-3 py-1.5 text-[0.6875rem] text-muted-foreground", children: [_jsx(IconLock, { size: 12 }), "Nothing joins your call \u00B7 processed on this device"] })] })] }), lectureNote && (_jsxs("div", { className: "flex flex-wrap items-center gap-2 border-t border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-5 py-3 text-xs", children: [_jsxs("span", { className: "min-w-0 flex-1 basis-full items-center gap-1.5 font-medium sm:inline-flex sm:basis-auto", children: [_jsx(IconCheck, { className: "mr-1 inline text-(--theme-primary)", size: 13 }), "Saved to Library / ", LECTURE_FOLDER, " as ", lectureNote, ".md"] }), _jsx(Button, { onClick: () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`), size: "xs", variant: "outline", children: "Open note" }), _jsxs(Button, { onClick: enhanceNote, size: "xs", variant: "secondary", children: [_jsx(IconSparkles, { size: 12 }), "Enhance with Nemesis"] }), queuedCount > 0 && (_jsxs(Button, { onClick: askQueued, size: "xs", variant: "outline", children: ["Review ", queuedCount, " queued drug", queuedCount === 1 ? '' : 's'] }))] })), error && _jsx("p", { className: "border-t border-(--ui-stroke-tertiary) px-5 py-3 text-xs text-destructive", children: error })] }), _jsxs("section", { className: "px-4 pb-8 pt-7 sm:px-6", children: [_jsxs("div", { className: "mb-3", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: "Archive" }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-tight", children: "Saved recordings" }), _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: "Play back, transcribe, enhance, or clean up past captures." })] }), _jsx(RecordingArchive, { reloadToken: recordingsVersion }), _jsxs("div", { className: "flex flex-wrap items-center gap-1.5 pt-4 text-[0.6875rem] text-muted-foreground", children: [_jsx(IconLock, { size: 11 }), _jsx("span", { children: "Local by design \u00B7" }), _jsx(Tip, { className: "max-w-sm whitespace-normal text-left leading-relaxed", label: _jsx("span", { children: "Recording other people may require their consent where you live \u2014 check your school\u2019s policy. Nemesis never records on its own and never hides the indicator. Transcription runs on your device; review the draft before relying on it." }), side: "top", children: _jsx("button", { className: "underline decoration-current/30 underline-offset-2 hover:text-foreground", type: "button", children: "Consent & transcription details" }) })] })] })] }));
++    return (_jsxs("main", { className: "flex h-full min-h-0 flex-col overflow-y-auto bg-(--ui-editor-surface-background)", children: [_jsx("header", { className: "sticky top-0 z-20 shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background)/95 backdrop-blur-sm", children: _jsxs("div", { className: "mx-auto flex w-full max-w-[960px] items-start gap-4 px-5 pb-4 pt-6 sm:px-7 [@media(max-height:720px)]:pb-3 [@media(max-height:720px)]:pt-3", children: [_jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)", children: "Capture desk" }), _jsx("h1", { className: "mt-1 text-2xl font-semibold tracking-[-0.025em] [@media(max-height:720px)]:text-xl", children: "Recorder" })] }), _jsx(Button, { "aria-label": "Start recording", className: "mt-0.5 bg-(--ui-red) text-white hover:bg-(--ui-red)/90 active:scale-[0.98]", disabled: stopping || starting, onClick: () => void startRecording(), size: "sm", children: "\u25CF Record" })] }) }), _jsxs("section", { className: "mx-auto flex w-full max-w-[960px] shrink-0 flex-col items-center gap-5 px-5 pb-9 pt-10 text-center sm:px-7 [@media(max-height:720px)]:gap-3 [@media(max-height:720px)]:py-3 [@media(max-height:720px)_and_(min-width:640px)]:flex-row [@media(max-height:720px)_and_(min-width:640px)]:text-left", children: [_jsxs(Button, { "aria-label": "Start recording", className: "group relative size-28 rounded-full bg-(--ui-red) text-white shadow-[0_12px_32px_color-mix(in_srgb,var(--ui-red)_22%,transparent)] transition-[transform,box-shadow,opacity] before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:ring-1 before:ring-white/25 hover:scale-[1.025] hover:bg-(--ui-red)/95 hover:shadow-[0_14px_38px_color-mix(in_srgb,var(--ui-red)_28%,transparent)] active:scale-[0.97] [@media(max-height:720px)]:size-14 [@media(max-height:720px)]:shadow-[0_7px_18px_color-mix(in_srgb,var(--ui-red)_18%,transparent)]", disabled: stopping || starting, onClick: () => void startRecording(), size: "icon-lg", children: [_jsx("span", { className: "pointer-events-none absolute inset-1 rounded-full bg-(--ui-red)/20 opacity-0 group-hover:animate-ping group-hover:opacity-100" }), _jsxs("span", { className: "relative flex flex-col items-center gap-1 [@media(max-height:720px)]:gap-0", children: [_jsx(IconMicrophone, { className: "size-8 [@media(max-height:720px)]:size-5" }), _jsx("span", { className: "text-[0.6875rem] font-semibold tracking-wide [@media(max-height:720px)]:text-[0.55rem]", children: "Record" })] })] }), _jsxs("div", { className: "flex min-w-0 flex-col items-center [@media(max-height:720px)_and_(min-width:640px)]:grid [@media(max-height:720px)_and_(min-width:640px)]:flex-1 [@media(max-height:720px)_and_(min-width:640px)]:grid-cols-[minmax(0,1fr)_auto] [@media(max-height:720px)_and_(min-width:640px)]:items-center [@media(max-height:720px)_and_(min-width:640px)]:gap-x-5", children: [_jsx("p", { className: "max-w-2xl text-sm leading-6 text-(--ui-text-secondary) [@media(max-height:720px)_and_(min-width:640px)]:row-span-2", children: stopping
++                                    ? liveStatus || 'Finishing your capture and saving it on this Mac.'
++                                    : starting
++                                        ? 'Opening audio capture on this Mac.'
++                                        : 'Capture the lecture. Notes, transcript, and terms — all on this Mac.' }), _jsxs("div", { className: "mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 [@media(max-height:720px)]:mt-2 [@media(max-height:720px)_and_(min-width:640px)]:mt-0 [@media(max-height:720px)_and_(min-width:640px)]:justify-end", children: [_jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs font-medium text-(--ui-text-secondary)", children: [_jsx("span", { children: "Computer audio" }), _jsx("input", { checked: withSystemAudio, className: "peer sr-only", disabled: starting || stopping, onChange: event => setSystemAudioEnabled(event.target.checked), type: "checkbox" }), _jsx("span", { className: "relative h-4 w-7 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-3 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-foreground/20 peer-checked:bg-foreground peer-checked:after:translate-x-3 peer-checked:after:bg-background peer-disabled:opacity-45" })] }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs font-medium text-(--ui-text-secondary)", children: [_jsx("span", { children: "Live transcript" }), _jsx("input", { checked: liveCaptions, className: "peer sr-only", disabled: starting || stopping, onChange: event => setLiveCaptionsEnabled(event.target.checked), type: "checkbox" }), _jsx("span", { className: "relative h-4 w-7 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-3 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-foreground/20 peer-checked:bg-foreground peer-checked:after:translate-x-3 peer-checked:after:bg-background peer-disabled:opacity-45" })] })] }), _jsxs("span", { className: "mt-3 inline-flex items-center gap-1.5 rounded-full border border-(--ui-stroke-tertiary) px-2.5 py-1 text-[0.65rem] text-(--ui-text-tertiary) [@media(max-height:720px)]:mt-1 [@media(max-height:720px)_and_(min-width:640px)]:justify-self-end", children: [_jsx(IconLock, { size: 11 }), "Nothing joins your call \u00B7 processed on this device"] })] })] }), (lectureNote || error) && (_jsxs("div", { className: "mx-auto w-full max-w-[960px] px-5 sm:px-7", children: [lectureNote && (_jsxs("div", { className: "flex flex-wrap items-center gap-2 border-y border-(--ui-stroke-tertiary) py-3 text-xs", children: [_jsxs("span", { className: "min-w-0 flex-1 basis-full items-center gap-1.5 font-medium sm:inline-flex sm:basis-auto", children: [_jsx(IconCheck, { className: "mr-1 inline", size: 13 }), "Saved to Library / ", LECTURE_FOLDER, " as ", lectureNote, ".md"] }), _jsx(Button, { onClick: () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`), size: "xs", variant: "outline", children: "Open note" }), _jsxs(Button, { onClick: enhanceNote, size: "xs", variant: "secondary", children: [_jsx(IconSparkles, { size: 12 }), "Enhance with Nemesis"] }), queuedCount > 0 && (_jsxs(Button, { onClick: askQueued, size: "xs", variant: "outline", children: ["Review ", queuedCount, " queued drug", queuedCount === 1 ? '' : 's'] }))] })), error && _jsx("p", { className: "border-b border-(--ui-stroke-tertiary) py-3 text-xs text-destructive", children: error })] })), _jsxs("section", { className: "mx-auto w-full max-w-[960px] px-5 pb-10 pt-7 sm:px-7", children: [_jsx(RecordingArchive, { reloadToken: recordingsVersion }), _jsxs("div", { className: "flex flex-wrap items-center gap-1.5 pt-4 text-[0.6875rem] text-muted-foreground", children: [_jsx(IconLock, { size: 11 }), _jsx("span", { children: "Local by design \u00B7" }), _jsx(Tip, { className: "max-w-sm whitespace-normal text-left leading-relaxed", label: _jsx("span", { children: "Recording other people may require their consent where you live \u2014 check your school\u2019s policy. Nemesis never records on its own and never hides the indicator. Transcription runs on your device; review the draft before relying on it." }), side: "top", children: _jsx("button", { className: "underline decoration-current/30 underline-offset-2 hover:text-foreground", type: "button", children: "Consent & transcription details" }) })] })] })] }));
+ }
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index 3ba5ec6338d..6eaebfaf8a2 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -327,61 +327,59 @@ export function RecorderView() {
+ 
+   return (
+     <main className="flex h-full min-h-0 flex-col overflow-y-auto bg-(--ui-editor-surface-background)">
+-      {/* Short-viewport compaction (high zoom shrinks the effective window):
+-          the record button must sit in the FIRST screenful at every zoom step,
+-          so header + hero tighten below ~720px effective height instead of
+-          pushing the primary control under the fold. */}
+-      <header className="sticky top-0 z-20 flex shrink-0 items-start gap-3 border-b border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background)/95 px-4 pb-2 pt-5 backdrop-blur-sm sm:px-6 sm:pt-6 [@media(max-height:720px)]:pb-2 [@media(max-height:720px)]:pt-3">
+-        <div className="min-w-0 flex-1">
+-          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)">Capture desk</p>
+-          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.025em] [@media(max-height:720px)]:text-xl">Recorder</h1>
+-          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground [@media(max-height:720px)]:hidden">
+-            Capture your microphone{withSystemAudio ? ' and this computer’s audio' : ''} locally. Keep a live notepad,
+-            review on-device transcription, and collect the pharmacology terms that matter.
+-          </p>
++      <header className="sticky top-0 z-20 shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background)/95 backdrop-blur-sm">
++        <div className="mx-auto flex w-full max-w-[960px] items-start gap-4 px-5 pb-4 pt-6 sm:px-7 [@media(max-height:720px)]:pb-3 [@media(max-height:720px)]:pt-3">
++          <div className="min-w-0 flex-1">
++            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">
++              Capture desk
++            </p>
++            <h1 className="mt-1 text-2xl font-semibold tracking-[-0.025em] [@media(max-height:720px)]:text-xl">
++              Recorder
++            </h1>
++          </div>
++          <Button
++            aria-label="Start recording"
++            className="mt-0.5 bg-(--ui-red) text-white hover:bg-(--ui-red)/90 active:scale-[0.98]"
++            disabled={stopping || starting}
++            onClick={() => void startRecording()}
++            size="sm"
++          >
++            ● Record
++          </Button>
+         </div>
++      </header>
++
++      {/* Height compaction only changes flow and dimensions. Both record controls
++          remain rendered and reachable at every viewport height and zoom level. */}
++      <section className="mx-auto flex w-full max-w-[960px] shrink-0 flex-col items-center gap-5 px-5 pb-9 pt-10 text-center sm:px-7 [@media(max-height:720px)]:gap-3 [@media(max-height:720px)]:py-3 [@media(max-height:720px)_and_(min-width:640px)]:flex-row [@media(max-height:720px)_and_(min-width:640px)]:text-left">
+         <Button
+           aria-label="Start recording"
+-          className="mt-0.5 shrink-0 active:scale-[0.98]"
++          className="group relative size-28 rounded-full bg-(--ui-red) text-white shadow-[0_12px_32px_color-mix(in_srgb,var(--ui-red)_22%,transparent)] transition-[transform,box-shadow,opacity] before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:ring-1 before:ring-white/25 hover:scale-[1.025] hover:bg-(--ui-red)/95 hover:shadow-[0_14px_38px_color-mix(in_srgb,var(--ui-red)_28%,transparent)] active:scale-[0.97] [@media(max-height:720px)]:size-14 [@media(max-height:720px)]:shadow-[0_7px_18px_color-mix(in_srgb,var(--ui-red)_18%,transparent)]"
+           disabled={stopping || starting}
+           onClick={() => void startRecording()}
+-          size="sm"
++          size="icon-lg"
+         >
+-          ● Record
++          <span className="pointer-events-none absolute inset-1 rounded-full bg-(--ui-red)/20 opacity-0 group-hover:animate-ping group-hover:opacity-100" />
++          <span className="relative flex flex-col items-center gap-1 [@media(max-height:720px)]:gap-0">
++            <IconMicrophone className="size-8 [@media(max-height:720px)]:size-5" />
++            <span className="text-[0.6875rem] font-semibold tracking-wide [@media(max-height:720px)]:text-[0.55rem]">
++              Record
++            </span>
++          </span>
+         </Button>
+-      </header>
+ 
+-      <section className="mx-4 mt-4 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)] sm:mx-6 [@media(max-height:720px)]:mt-2">
+-        <div className="grid items-stretch lg:grid-cols-[minmax(0,0.9fr)_minmax(20rem,1.1fr)]">
+-          <div className="flex min-w-0 flex-col items-start gap-5 border-b border-(--ui-stroke-tertiary) p-5 sm:flex-row sm:items-center sm:p-6 lg:border-b-0 lg:border-r [@media(max-height:720px)]:gap-3 [@media(max-height:720px)]:p-3">
+-            <div className="grid size-24 shrink-0 place-items-center rounded-full border border-(--theme-primary)/25 bg-(--ui-bg-primary) shadow-[inset_0_0_0_7px_var(--ui-bg-elevated)] [@media(max-height:720px)]:size-16 [@media(max-height:720px)]:shadow-[inset_0_0_0_4px_var(--ui-bg-elevated)]">
+-              <Button
+-                aria-label="Start recording"
+-                className="size-20 rounded-full shadow-lg transition-[transform,opacity] active:scale-[0.96] [@media(max-height:720px)]:size-12"
+-                disabled={stopping || starting}
+-                onClick={() => void startRecording()}
+-                size="icon-lg"
+-              >
+-                <IconMicrophone className="size-7 [@media(max-height:720px)]:size-5" />
+-              </Button>
+-            </div>
+-            <div className="min-w-0">
+-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">
+-                {stopping ? 'Finishing capture' : starting ? 'Opening audio capture' : 'Ready to record'}
+-              </p>
+-              <h2 className="mt-1 text-lg font-semibold tracking-tight">
+-                {stopping ? 'Saving your lecture' : 'Capture the lecture, keep the context'}
+-              </h2>
+-              <p className="mt-1 max-w-sm text-xs leading-5 text-muted-foreground">
+-                {stopping
+-                  ? liveStatus || 'Writing audio and notes to disk…'
+-                  : 'One click opens the live notepad, audio signal, transcript, and pharmacology mentions.'}
+-              </p>
+-            </div>
+-          </div>
++        <div className="flex min-w-0 flex-col items-center [@media(max-height:720px)_and_(min-width:640px)]:grid [@media(max-height:720px)_and_(min-width:640px)]:flex-1 [@media(max-height:720px)_and_(min-width:640px)]:grid-cols-[minmax(0,1fr)_auto] [@media(max-height:720px)_and_(min-width:640px)]:items-center [@media(max-height:720px)_and_(min-width:640px)]:gap-x-5">
++          <p className="max-w-2xl text-sm leading-6 text-(--ui-text-secondary) [@media(max-height:720px)_and_(min-width:640px)]:row-span-2">
++            {stopping
++              ? liveStatus || 'Finishing your capture and saving it on this Mac.'
++              : starting
++                ? 'Opening audio capture on this Mac.'
++                : 'Capture the lecture. Notes, transcript, and terms — all on this Mac.'}
++          </p>
+ 
+-          <div className="flex min-w-0 flex-col justify-center gap-2 p-4">
+-            <label className="group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-(--ui-stroke-tertiary) hover:bg-(--ui-bg-quaternary)">
++          <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 [@media(max-height:720px)]:mt-2 [@media(max-height:720px)_and_(min-width:640px)]:mt-0 [@media(max-height:720px)_and_(min-width:640px)]:justify-end">
++            <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-(--ui-text-secondary)">
++              <span>Computer audio</span>
+               <input
+                 checked={withSystemAudio}
+                 className="peer sr-only"
+@@ -389,15 +387,10 @@ export function RecorderView() {
+                 onChange={event => setSystemAudioEnabled(event.target.checked)}
+                 type="checkbox"
+               />
+-              <span className="relative h-5 w-9 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-(--theme-primary)/35 peer-checked:bg-(--theme-primary) peer-checked:after:translate-x-4 peer-checked:after:bg-primary-foreground peer-disabled:opacity-45" />
+-              <span className="min-w-0">
+-                <span className="block text-xs font-semibold">Computer audio</span>
+-                <span className="block text-[0.6875rem] leading-relaxed text-muted-foreground">
+-                  Capture lecture or meeting audio · macOS asks once
+-                </span>
+-              </span>
++              <span className="relative h-4 w-7 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-3 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-foreground/20 peer-checked:bg-foreground peer-checked:after:translate-x-3 peer-checked:after:bg-background peer-disabled:opacity-45" />
+             </label>
+-            <label className="group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-(--ui-stroke-tertiary) hover:bg-(--ui-bg-quaternary)">
++            <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-(--ui-text-secondary)">
++              <span>Live transcript</span>
+               <input
+                 checked={liveCaptions}
+                 className="peer sr-only"
+@@ -405,56 +398,48 @@ export function RecorderView() {
+                 onChange={event => setLiveCaptionsEnabled(event.target.checked)}
+                 type="checkbox"
+               />
+-              <span className="relative h-5 w-9 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-(--theme-primary)/35 peer-checked:bg-(--theme-primary) peer-checked:after:translate-x-4 peer-checked:after:bg-primary-foreground peer-disabled:opacity-45" />
+-              <span className="min-w-0">
+-                <span className="block text-xs font-semibold">Live transcript</span>
+-                <span className="block text-[0.6875rem] leading-relaxed text-muted-foreground">
+-                  Process speech on-device and save a linked lecture note
+-                </span>
+-              </span>
++              <span className="relative h-4 w-7 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-3 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-foreground/20 peer-checked:bg-foreground peer-checked:after:translate-x-3 peer-checked:after:bg-background peer-disabled:opacity-45" />
+             </label>
+-            <span className="mx-3 mt-1 inline-flex items-center gap-1.5 self-start rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-3 py-1.5 text-[0.6875rem] text-muted-foreground">
+-              <IconLock size={12} />
+-              Nothing joins your call · processed on this device
+-            </span>
+           </div>
+-        </div>
+ 
+-        {lectureNote && (
+-          <div className="flex flex-wrap items-center gap-2 border-t border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-5 py-3 text-xs">
+-            <span className="min-w-0 flex-1 basis-full items-center gap-1.5 font-medium sm:inline-flex sm:basis-auto">
+-              <IconCheck className="mr-1 inline text-(--theme-primary)" size={13} />
+-              Saved to Library / {LECTURE_FOLDER} as {lectureNote}.md
+-            </span>
+-            <Button
+-              onClick={() => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`)}
+-              size="xs"
+-              variant="outline"
+-            >
+-              Open note
+-            </Button>
+-            <Button onClick={enhanceNote} size="xs" variant="secondary">
+-              <IconSparkles size={12} />
+-              Enhance with Nemesis
+-            </Button>
+-            {queuedCount > 0 && (
+-              <Button onClick={askQueued} size="xs" variant="outline">
+-                Review {queuedCount} queued drug{queuedCount === 1 ? '' : 's'}
+-              </Button>
+-            )}
+-          </div>
+-        )}
+-        {error && <p className="border-t border-(--ui-stroke-tertiary) px-5 py-3 text-xs text-destructive">{error}</p>}
++          <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-(--ui-stroke-tertiary) px-2.5 py-1 text-[0.65rem] text-(--ui-text-tertiary) [@media(max-height:720px)]:mt-1 [@media(max-height:720px)_and_(min-width:640px)]:justify-self-end">
++            <IconLock size={11} />
++            Nothing joins your call · processed on this device
++          </span>
++        </div>
+       </section>
+ 
+-      <section className="px-4 pb-8 pt-7 sm:px-6">
+-        <div className="mb-3">
+-          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)">Archive</p>
+-          <h2 className="mt-1 text-lg font-semibold tracking-tight">Saved recordings</h2>
+-          <p className="mt-1 text-xs text-muted-foreground">
+-            Play back, transcribe, enhance, or clean up past captures.
+-          </p>
++      {(lectureNote || error) && (
++        <div className="mx-auto w-full max-w-[960px] px-5 sm:px-7">
++          {lectureNote && (
++            <div className="flex flex-wrap items-center gap-2 border-y border-(--ui-stroke-tertiary) py-3 text-xs">
++              <span className="min-w-0 flex-1 basis-full items-center gap-1.5 font-medium sm:inline-flex sm:basis-auto">
++                <IconCheck className="mr-1 inline" size={13} />
++                Saved to Library / {LECTURE_FOLDER} as {lectureNote}.md
++              </span>
++              <Button
++                onClick={() => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`)}
++                size="xs"
++                variant="outline"
++              >
++                Open note
++              </Button>
++              <Button onClick={enhanceNote} size="xs" variant="secondary">
++                <IconSparkles size={12} />
++                Enhance with Nemesis
++              </Button>
++              {queuedCount > 0 && (
++                <Button onClick={askQueued} size="xs" variant="outline">
++                  Review {queuedCount} queued drug{queuedCount === 1 ? '' : 's'}
++                </Button>
++              )}
++            </div>
++          )}
++          {error && <p className="border-b border-(--ui-stroke-tertiary) py-3 text-xs text-destructive">{error}</p>}
+         </div>
++      )}
++
++      <section className="mx-auto w-full max-w-[960px] px-5 pb-10 pt-7 sm:px-7">
+         <RecordingArchive reloadToken={recordingsVersion} />
+         <div className="flex flex-wrap items-center gap-1.5 pt-4 text-[0.6875rem] text-muted-foreground">
+           <IconLock size={11} />
+-- 
+2.53.0
+
