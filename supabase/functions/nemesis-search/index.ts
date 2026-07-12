@@ -201,6 +201,19 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
 
   const detail = route === '/v2/search' ? String(body.query ?? '') : String(body.url ?? '')
 
+  // Cost routing: Tavily is the cheap search provider, so SEARCHES go there
+  // first (Firecrawl as fallback). SCRAPES are what Firecrawl is actually good
+  // at, so they go straight to Firecrawl (with Tavily having no scrape role).
+  if (route === '/v2/search') {
+    const primary = await tavilySearch(body)
+
+    if (primary) {
+      void recordUsage(ctx, 'search', detail)
+
+      return primary
+    }
+  }
+
   const upstream = FIRECRAWL_KEY
     ? await fetch(`${FIRECRAWL_BASE}${route}`, {
         body: JSON.stringify(body),
@@ -216,18 +229,6 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
       headers: { 'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json' },
       status: upstream.status
     })
-  }
-
-  // Firecrawl down, erroring, or unconfigured — searches fall back to Tavily
-  // (answered in the same shape); scrapes have no second provider.
-  if (route === '/v2/search') {
-    const fallback = await tavilySearch(body)
-
-    if (fallback) {
-      void recordUsage(ctx, 'search', detail)
-
-      return fallback
-    }
   }
 
   if (upstream) {
