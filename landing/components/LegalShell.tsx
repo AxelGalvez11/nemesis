@@ -32,7 +32,7 @@ export function LegalShell({ children }: { children: ReactNode }) {
           </Link>
           <SocialLinks />
           <span className="spacer" />
-          <span className="muted">local-first · never submits · macOS</span>
+          <span className="muted">persistent · scoped · never submits · macOS</span>
         </div>
       </footer>
     </>
