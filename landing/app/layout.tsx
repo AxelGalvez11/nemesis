@@ -17,17 +17,26 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  // Current apex domain; swap when the Nemesis domain is wired up.
-  metadataBase: new URL("https://pharmaorb.app"),
+  metadataBase: new URL("https://www.enternemesis.com"),
   title: "Nemesis — academic operating system for macOS",
   description:
     "Nemesis reads your school accounts, tracks every deadline and change, measures what you know, and drafts your work. It never submits. Local-first, for macOS.",
+  alternates: { canonical: "/" },
   openGraph: {
     title: "Nemesis — academic operating system for macOS",
     description:
       "It knows what changed. It knows what comes next. It knows what you don't. Local-first, never submits.",
     type: "website",
+    url: "/",
+    siteName: "Nemesis",
     images: [{ url: "/nemesis/og.jpg", width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Nemesis — academic operating system for macOS",
+    description:
+      "It knows what changed. It knows what comes next. It knows what you don't. Local-first, never submits.",
+    images: ["/nemesis/og.jpg"],
   },
   robots: { index: true, follow: true },
 };

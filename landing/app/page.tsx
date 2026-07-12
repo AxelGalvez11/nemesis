@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
 
 const APP_SIGN_UP = "https://app.pharmaorb.app/sign-up";
 const APP_SIGN_IN = "https://app.pharmaorb.app/sign-in";
 
-/** Subtle downward drift on the hero mask while scrolling. The image bands get their
+/** Subtle downward drift on the hero art while scrolling. The image bands get their
  *  parallax from CSS (background-attachment: fixed); both effects turn off under
  *  prefers-reduced-motion, and the bands also fall back to plain scroll on mobile. */
 function useHeroParallax() {
@@ -34,11 +35,11 @@ export default function Home() {
     <>
       <nav className="nav">
         <div className="wrap nav-in">
-          <a className="brand" href="/">
+          <Link className="brand" href="/">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/nemesis/logo.png" alt="Nemesis logo" />
             <b>Nemesis</b>
-          </a>
+          </Link>
           <span className="spacer" />
           <a className="ghost" href="#how">System</a>
           <a className="ghost" href="#graph">The graph</a>
@@ -123,7 +124,7 @@ export default function Home() {
           </div>
           <div className="triad">
             <div className="obj">
-              <div className="img intelligence" role="img" aria-label="Interlocking chrome rings" />
+              <div className="img intelligence" role="img" aria-label="Glitched black-chrome clipboard" />
               <div className="cap">
                 <div className="k">Intelligence</div>
                 <h3>It knows your semester</h3>
@@ -135,7 +136,7 @@ export default function Home() {
               </div>
             </div>
             <div className="obj">
-              <div className="img mastery" role="img" aria-label="Ascending chrome spiral" />
+              <div className="img mastery" role="img" aria-label="Glitched open black-chrome textbook" />
               <div className="cap">
                 <div className="k">Mastery</div>
                 <h3>It measures what you know</h3>
@@ -146,7 +147,7 @@ export default function Home() {
               </div>
             </div>
             <div className="obj">
-              <div className="img obelisk" role="img" aria-label="Dark chrome obelisk" />
+              <div className="img calendar" role="img" aria-label="Glitched black-chrome desk calendar" />
               <div className="cap">
                 <div className="k">Nemesis</div>
                 <h3>It does the work around learning</h3>
@@ -264,11 +265,11 @@ export default function Home() {
 
       <footer className="foot">
         <div className="wrap foot-in">
-          <a className="brand" href="/">
+          <Link className="brand" href="/">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/nemesis/logo.png" alt="" style={{ width: 20, height: 20 }} />
             <b style={{ fontSize: "11px" }}>Nemesis</b>
-          </a>
+          </Link>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
           <span className="spacer" />
