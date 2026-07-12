@@ -1,7 +1,7 @@
 ---
 name: nemesis-school-sync
 description: "THE flagship workflow: sync the student's school world end-to-end. Sweep Blackboard + Outlook (read-only, via the school browser), capture new lectures/slides/attachments into the Library, then INTELLIGENTLY produce structured lecture notes and exam-grade flashcards from the new material, and update the semester graph, calendar, Home page, and ledger. Use when the student says 'sync my school', 'check blackboard/outlook', 'what's new in my courses', 'catch me up', or asks for their daily brief."
-version: 1.1.0
+version: 1.3.0
 metadata:
   hermes:
     tags: [school, sync, blackboard, outlook, lectures, notes, flashcards, daily-brief, pipeline, nemesis]
@@ -16,6 +16,27 @@ academic world current — files captured, notes written, flashcards made, deadl
 the calendar. You run the pipeline; the student just studies.
 
 Portals have no APIs. The school browser IS the integration: navigate it read-only.
+
+## The student's own portals (read this FIRST — do NOT hardcode a school)
+
+Every student is at a different university, so **their** LMS and email addresses live in
+`~/Documents/Nemesis Library/.nemesis/portals.json`, written by the app when they set up
+Connections. Read it at the start of every sync and use those exact URLs:
+
+```json
+{ "portals": [
+  { "kind": "lms",   "name": "Canvas",  "url": "https://canvas.myschool.edu/" },
+  { "kind": "email", "name": "Outlook", "url": "https://outlook.cloud.microsoft/mail/" }
+] }
+```
+
+- The `lms` entry may be Blackboard, Canvas, Brightspace, Moodle, Schoology, or anything
+  else — navigate to its `url`, then apply the matching pattern from the school-portal
+  skill (which covers the major LMS families).
+- If the file is missing or has no `lms` entry, don't guess a URL: tell the student
+  "Open Settings → Connections and add your school's course-site address, then say 'sync
+  my school' again." The UTHSC Blackboard address that appears throughout these skills is
+  just the reference example — never assume it is *this* student's school.
 
 ## Hard rules (before anything)
 
@@ -43,15 +64,32 @@ Portals have no APIs. The school browser IS the integration: navigate it read-on
 
 ## Phase 1 — Sweep (read-only)
 
-Per the school-portal skill's navigation notes:
-- **Blackboard** (https://blackboard.uthsc.edu/): for each course the student takes —
-  new announcements, new files under Content/Course Documents (slides, PDFs, docx),
-  assignment/exam entries with due dates.
-- **Outlook web** (https://outlook.cloud.microsoft/mail/): new school emails since
-  lastRun — sender, subject, gist; note attachments worth capturing (syllabi, slides,
-  schedules). Triage per nemesis-email (read-only; never send).
+Navigate to the URLs from `portals.json` (above), per the school-portal skill's notes:
+- **The LMS** (`kind: "lms"` — Blackboard/Canvas/Brightspace/…): for each course the
+  student takes — new announcements, new files under Content/Course Documents (slides,
+  PDFs, docx), assignment/exam entries with due dates. (Addresses like
+  `blackboard.uthsc.edu` in these skills are examples — use the student's own `url`.)
+- **School email** (`kind: "email"` — Outlook/Gmail): new school emails since lastRun —
+  sender, subject, gist; note attachments worth capturing (syllabi, slides, schedules).
+  Triage per nemesis-email (read-only; never send).
+
+**Extract in bulk, don't click row-by-row.** Once you're authenticated on a portal page,
+the FAST path is `browser_console` / `browser_cdp` running one `Runtime.evaluate` that
+returns the whole list at once — every course tile, the full announcements table, all
+unread email rows — as structured text (e.g.
+`[...document.querySelectorAll('article h4')].map(e => e.innerText)`). That is one tool
+call instead of a click → snapshot → click loop, and it's dramatically faster and cheaper.
+Reserve step-by-step `browser_click` + `browser_snapshot` for when you must open a
+specific item (download a file, read one email body). The live browser panel the student
+watches is only the human-facing mirror; you perceive the page as this structured text.
 
 Collect everything into one worklist before producing anything.
+
+**Course name resolution pitfall:** The graph's course names (e.g. "PHCY 1205 · Pharmacology") may not match any Blackboard shell name (e.g. "Spring 2026: Dosage Dsgn, Deliv, Dispens II"). When you sweep Blackboard and find no matching shell for a graph course:
+1. Check ALL terms (Current Courses, Spring 2026, Upcoming Courses, All Terms) — not just "Current Courses"
+2. Use `browser_console` to extract course headings via `document.querySelectorAll('article h4')` when the accessibility snapshot truncates
+3. If still no match after checking all terms, report it plainly in the sync output and ask: "Which Blackboard shell has your [Course Name] materials? The course code might be different from what's in my graph."
+4. Record the mapping in `.nemesis/graph.json` as a `fields.courseCodes` array on the course object so future syncs use the correct shell.
 
 ## Phase 2 — Capture
 

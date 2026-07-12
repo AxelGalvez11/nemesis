@@ -53,6 +53,22 @@ The reading pane shows:
 To close the reading pane and return to the list: click the **Close** button in the
 pane header.
 
+### Cycling through messages with Previous/Next
+
+The reading pane header has **"Open the previous item"** and **"Open the next item"**
+buttons (left and right chevrons). These cycle through ALL messages in the current
+inbox view in date order — they are NOT limited to a single conversation thread.
+
+Use this when:
+- A conversation thread has multiple replies and you want to see each one
+  individually (the summarized conversation view may only show the latest)
+- You need to rapidly scan several emails without returning to the list between each
+
+**Behavior:** clicking "Open the next item" advances to the next email in the
+chronological sequence of the inbox. It works across sections (Pinned → Last week →
+Older). When you reach the newest email and click Next again, it wraps to the next
+inbox section.
+
 ## Conversations vs individual messages
 
 Outlook groups related emails into **conversations** (visible as email threads).

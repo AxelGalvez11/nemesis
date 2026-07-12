@@ -52,11 +52,40 @@ Course page has a toolbar with links: Content, Calendar, Announcements, Discussi
 
 **Announcements** are under their own tab — not shown on the Content page.
 
+## Course discovery pitfalls — integrated curricula (UTHSC P1)
+
+P1 summer courses on UTHSC Blackboard do NOT always match their curriculum-common names or course codes in the agent's graph. **PHCY 1205 (Pharmacology) and PHCY 1210 (Infectious Disease)** — names used in the agent's graph — may not appear as separate Blackboard shells. They are often rolled into a larger integrated course block like:
+- `Spring 2026: Dosage Dsgn, Deliv, Dispens II` (PHCY1210_24948)
+- `Spring 2026: Integrated Pharmacotherapy 3` (PHCY1216_24951)
+- `Spring 2026: Pharmacokinetics & Dose Opt` (PHCY1202_24945)
+
+**Fallback — use browser_console to extract the full course list** when the accessibility snapshot truncates course names or only shows collapsed articles:
+```js
+// Extract all course headings
+Array.from(document.querySelectorAll('article h4, article [role="heading"]'))
+  .map(h => h.textContent.trim()).join('\n')
+
+// Get full article data (name, status, code)
+JSON.stringify(Array.from(document.querySelectorAll('article')).map(a => ({
+  name: a.querySelector('h4')?.textContent?.trim() || 'no-h4',
+  text: a.textContent.replace(/\s+/g, ' ').trim().substring(0, 300)
+})))
+```
+
+**"Current Courses" may not show everything.** UTHSC sometimes groups summer P1 courses under "Spring 2026" term. Always check multiple terms:
+1. **Current Courses** — usually shows HIPAA training, IPPE shells, open courses
+2. **Spring 2026** — likely location for P1 summer course shells (may show "Closed" but content may still be accessible)
+3. **Upcoming Courses** — next term's locked shells (Fall 2026, available from ~Jul 30)
+4. **All Terms** — fallback; search by course code prefix (`"PHCY"`) to filter from 30+ results
+
+**When graph courses don't match any Blackboard shell name** after checking all terms, flag it in the sync report and ask the student for the mapping — they may know the Blackboard course code (e.g. `PHCY1216_24951`) that differs from the curriculum number.
+
 ## Institution Page (notices/announcements)
 URL: `https://blackboard.uthsc.edu/ultra/institution`  
 Contains IT/help announcements from UTHSC:
 - System issues (Simple Syllabus, Safari document errors, Blackboard mobile app)
 - Resource links (CARE Team, TimelyCare, Library, Disability Services, etc.)
+- Usually generic and rarely time-sensitive — check for new headings but don't expect changes every session.
 
 ## Daily brief workflow
 After scanning courses + Institution Page:

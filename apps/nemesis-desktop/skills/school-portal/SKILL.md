@@ -1,19 +1,29 @@
 ---
 name: school-portal
-description: Check Blackboard and Outlook school portals — read courses, announcements, inbox — read-only, no submitting.
-version: 1.1.0
+description: Check the student's LMS (Blackboard/Canvas/Brightspace/…) and school email — read courses, announcements, inbox — read-only, no submitting. Portal addresses come from .nemesis/portals.json.
+version: 1.2.0
 metadata:
   hermes:
     tags: [school, blackboard, outlook, portal, email, courses, academic]
 ---
 
-# School portal extraction (Blackboard + Outlook web)
+# School portal extraction (any LMS + school email)
 
 Use this skill when the student asks you to check their school portal, pull course
 materials, summarize announcements, or triage school email. You have real browser
 automation tools (browser_navigate, browser_snapshot, browser_click, browser_type,
-browser_scroll, browser_press, browser_back) — use them for Blackboard, Outlook on the
-web, and similar school sites that have no public API.
+browser_scroll, browser_press, browser_back, plus browser_console/browser_cdp to run
+JavaScript in the page) — use them for the student's LMS, their web email, and similar
+school sites that have no public API. Blackboard and Outlook are the running EXAMPLES
+throughout this skill, but the student's LMS may be Canvas, Brightspace, Moodle, or
+Schoology; read their actual addresses from `portals.json` (below) and apply the closest
+pattern here.
+
+**Fast extraction:** once authenticated on a list page (course tiles, announcements,
+inbox), prefer ONE `browser_console` call that returns the whole list via
+`Runtime.evaluate` (e.g. `[...document.querySelectorAll('article h4')].map(e => e.innerText)`)
+over a click → snapshot → click loop. Fall back to click+snapshot only to open one
+specific item.
 
 ## Hard rules (non-negotiable)
 
@@ -28,18 +38,23 @@ web, and similar school sites that have no public API.
 4. **Read-only bias.** Navigation, reading, and downloading course materials the student
    already has access to are fine. Anything that writes to the portal is not.
 
-## Portal addresses: ask once, remember forever
+## Portal addresses: read them from portals.json
 
-Before any portal work, check your USER.md memory snapshot for a "School portals"
-entry. If it's missing:
+The app is the source of truth for the student's own portal addresses. Before any portal
+work, read `~/Documents/Nemesis Library/.nemesis/portals.json`:
 
-1. ASK the student for their school's exact Blackboard web address (e.g.
-   `https://learn.<school>.edu`) and whether their school email is plain
-   `outlook.office.com` or a school-specific mail URL.
-2. SAVE the answer immediately with the memory tool (target USER.md), one entry:
-   `School portals — Blackboard: <url> · Mail: <url>`.
-3. Never ask again once saved. If the student corrects an address later, use the
-   memory replace action to update the same entry — don't add duplicates.
+```json
+{ "portals": [
+  { "kind": "lms",   "name": "Canvas",  "url": "https://canvas.myschool.edu/" },
+  { "kind": "email", "name": "Outlook", "url": "https://outlook.cloud.microsoft/mail/" }
+] }
+```
+
+Navigate to those exact `url`s. If the file is missing or has no `lms` entry, tell the
+student to open **Settings → Connections** and add their school's course-site address —
+that's where they set it, and the app keeps this file in sync. Do NOT ask them to paste
+it into chat, and do NOT fall back to the UTHSC example address; a wrong school is worse
+than asking. (Students change it in Connections, not via memory.)
 
 ## Blackboard flow
 
