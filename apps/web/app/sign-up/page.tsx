@@ -35,6 +35,15 @@ const consentStyle: CSSProperties = {
 };
 const checkboxStyle: CSSProperties = { marginTop: 2, width: 16, height: 16, flexShrink: 0, cursor: "pointer" };
 
+/** Post-auth redirect target from ?next=, restricted to same-site relative paths so it
+ *  can never be turned into an open redirect. Used by the enternemesis.com pricing funnel
+ *  to return to /pricing and resume Stripe checkout after sign-up. */
+function safeNext(): string {
+  if (typeof window === "undefined") return "/app";
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/app";
+}
+
 export default function SignUpPage() {
   const { signUp } = useAuth();
   const router = useRouter();
@@ -77,7 +86,7 @@ export default function SignUpPage() {
       setSubmittedEmail(cleanEmail);
       return;
     }
-    router.replace("/app");
+    router.replace(safeNext());
   }
 
   if (submittedEmail) {
@@ -88,7 +97,7 @@ export default function SignUpPage() {
           <h1 style={titleStyle}>Check your email</h1>
           <p className="muted" style={{ ...subStyle, marginBottom: 8 }}>We sent a confirmation link to {submittedEmail}. Open it to finish creating your account.</p>
           <p className="muted" style={subStyle}>After confirming, sign in with the same email and password.</p>
-          <Link className="source-link" href="/sign-in" style={linkActionStyle}>Go to sign in</Link>
+          <Link className="source-link" href={`/sign-in${typeof window !== "undefined" ? window.location.search : ""}`} style={linkActionStyle}>Go to sign in</Link>
         </section>
       </main>
     );
