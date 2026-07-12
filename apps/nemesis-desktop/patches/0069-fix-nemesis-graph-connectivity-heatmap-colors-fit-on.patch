@@ -1,0 +1,644 @@
+From 8bbc0908cf2dcc12cc89e96b8675a189cc0d5555 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sun, 12 Jul 2026 18:08:24 -0500
+Subject: [PATCH 69/70] fix(nemesis): graph connectivity-heatmap colors +
+ fit-once framing; rebrand remaining 'Hermes' UI strings to Nemesis
+
+Graph (apps/desktop/src/app/graph/index.tsx):
+- Node color is now a connectivity heatmap: unconnected/ghost nodes render light
+  gray, connected nodes ramp rose->bright red by degree (was palette colors that
+  made hubs near-black; ghost nodes were 38%-alpha color that parsed to near-black).
+- Camera frames ONCE at first settle (zoomToFit 45px pad) instead of re-fitting on
+  every engine stop, which made the low-gravity layout 'keep zooming out'.
+
+Rebrand: config-settings applies rebrand(/\bHermes\b/->Nemesis) to schema-driven
+field labels/descriptions (catches backend-provided text); cleaned source strings in
+settings/constants.ts and visible strings in chat/index, preview-pane, model menus,
+mcp-tab. Chat settings no longer shows 'Hermes' (verified in-app, 0 hits).
+---
+ apps/desktop/src/app/chat/index.js            |  2 +-
+ apps/desktop/src/app/chat/index.tsx           |  2 +-
+ .../src/app/chat/right-rail/preview-pane.js   |  2 +-
+ .../src/app/chat/right-rail/preview-pane.tsx  |  2 +-
+ apps/desktop/src/app/graph/index.js           | 73 +++++++++++------
+ apps/desktop/src/app/graph/index.tsx          | 82 +++++++++++++------
+ .../src/app/settings/about-settings.tsx       |  4 +-
+ .../src/app/settings/computer-use-panel.js    |  4 +-
+ .../src/app/settings/computer-use-panel.tsx   |  4 +-
+ .../src/app/settings/config-settings.js       | 12 ++-
+ .../src/app/settings/config-settings.tsx      | 26 ++++--
+ apps/desktop/src/app/settings/constants.ts    | 12 +--
+ .../src/app/settings/uninstall-section.js     |  2 +-
+ .../src/app/settings/uninstall-section.tsx    |  2 +-
+ .../src/app/shell/model-edit-submenu.js       |  2 +-
+ .../src/app/shell/model-edit-submenu.tsx      |  2 +-
+ .../desktop/src/app/shell/model-menu-panel.js |  2 +-
+ .../src/app/shell/model-menu-panel.tsx        |  2 +-
+ apps/desktop/src/app/skills/mcp-tab.js        |  2 +-
+ apps/desktop/src/app/skills/mcp-tab.tsx       |  2 +-
+ 20 files changed, 156 insertions(+), 85 deletions(-)
+
+diff --git a/apps/desktop/src/app/chat/index.js b/apps/desktop/src/app/chat/index.js
+index e500cd558d9..684d5a6f9e2 100644
+--- a/apps/desktop/src/app/chat/index.js
++++ b/apps/desktop/src/app/chat/index.js
+@@ -176,7 +176,7 @@ export function ChatView({ className, gateway, modelMenuContent, onToggleSelecte
+                 return getGlobalModelOptions();
+             }
+             if (!gateway) {
+-                throw new Error('Hermes gateway unavailable');
++                throw new Error('Nemesis is unavailable');
+             }
+             return gateway.request('model.options', {
+                 session_id: activeSessionId,
+diff --git a/apps/desktop/src/app/chat/index.tsx b/apps/desktop/src/app/chat/index.tsx
+index bece9b49152..e03ac9314cc 100644
+--- a/apps/desktop/src/app/chat/index.tsx
++++ b/apps/desktop/src/app/chat/index.tsx
+@@ -362,7 +362,7 @@ export function ChatView({
+       }
+ 
+       if (!gateway) {
+-        throw new Error('Hermes gateway unavailable')
++        throw new Error('Nemesis is unavailable')
+       }
+ 
+       return gateway.request<ModelOptionsResponse>('model.options', {
+diff --git a/apps/desktop/src/app/chat/right-rail/preview-pane.js b/apps/desktop/src/app/chat/right-rail/preview-pane.js
+index 25c203ffbaa..9c8bb3fe5b0 100644
+--- a/apps/desktop/src/app/chat/right-rail/preview-pane.js
++++ b/apps/desktop/src/app/chat/right-rail/preview-pane.js
+@@ -127,7 +127,7 @@ export function PreviewPane({ embedded = false, onRestartServer, reloadRequest =
+         }
+         // Auto-open the preview console so the user can see progress events
+         // streaming back from the background agent. Without this, clicking
+-        // "Ask Hermes to restart the server" looked like it did nothing —
++        // "Ask Nemesis to restart the server" looked like it did nothing —
+         // the work was happening, but in a collapsed pane.
+         consoleState.setOpen(true);
+         try {
+diff --git a/apps/desktop/src/app/chat/right-rail/preview-pane.tsx b/apps/desktop/src/app/chat/right-rail/preview-pane.tsx
+index ae9d51d1e74..54a9d55f990 100644
+--- a/apps/desktop/src/app/chat/right-rail/preview-pane.tsx
++++ b/apps/desktop/src/app/chat/right-rail/preview-pane.tsx
+@@ -236,7 +236,7 @@ export function PreviewPane({
+ 
+     // Auto-open the preview console so the user can see progress events
+     // streaming back from the background agent. Without this, clicking
+-    // "Ask Hermes to restart the server" looked like it did nothing —
++    // "Ask Nemesis to restart the server" looked like it did nothing —
+     // the work was happening, but in a collapsed pane.
+     consoleState.setOpen(true)
+ 
+diff --git a/apps/desktop/src/app/graph/index.js b/apps/desktop/src/app/graph/index.js
+index 44d82f17421..595ed1eee69 100644
+--- a/apps/desktop/src/app/graph/index.js
++++ b/apps/desktop/src/app/graph/index.js
+@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+ import { EmptyState } from '@/components/ui/empty-state';
+ import { Switch } from '@/components/ui/switch';
++import { hslToHex } from '@/themes/color';
+ import { useTheme } from '@/themes/context';
+ import { buildIndex, extractWikilinks, loadVault, saveNote } from '../library/vault';
+ import { LIBRARY_ROUTE } from '../routes';
+@@ -106,25 +107,47 @@ function readGraphPalette(mode) {
+         node: resolveCssColor('var(--ui-text-secondary)', dark ? '#c8c8c8' : '#3f3f43')
+     };
+ }
++// The accent's hue, extracted from its resolved rgb() so the glow ramp uses the user's
++// chosen tint but its OWN saturation/lightness (the accent itself is contrast-darkened in
++// light mode, so we can't just ramp toward it — hubs would go dark). Falls back to crimson.
++function accentHue(accent) {
++    const rgb = parseRgbTriplet(accent);
++    if (!rgb) {
++        return 351;
++    }
++    const [r, g, b] = rgb.map(channel => channel / 255);
++    const max = Math.max(r, g, b);
++    const min = Math.min(r, g, b);
++    if (max === min) {
++        return 351;
++    }
++    const d = max - min;
++    const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
++    return (h / 6) * 360;
++}
+ // Node color as a CONNECTIVITY HEATMAP: an unconnected note is a quiet gray that recedes;
+-// the more a note links to others, the brighter it glows in the theme accent, so hubs pop
+-// and orphans fade. `maxDegree` scales the ramp to this graph's busiest node. (Combined with
+-// the size ramp on nodeVal = 1 + degree, well-connected notes read as big and hot.)
++// the more a note links to others, the BRIGHTER it glows in the accent hue — saturation and
++// lightness both ramp up with degree, so a busy hub is a vivid, luminous point and a
++// one-link note is a dim-but-clearly-colored one. Never black. `maxDegree` scales the ramp;
++// combined with the size ramp (nodeVal = 1 + degree), hubs read big AND hot.
+ function graphNodeColor(node, palette, maxDegree) {
+     const graphNode = node;
+     if (graphNode.ghost) {
+-        return palette.ghost;
++        // Uncreated wikilink target → a very light, faded gray placeholder. (palette.ghost is a
++        // 38%-alpha color whose alpha gets dropped on parse, rendering near-BLACK — the "black
++        // nodes" the graph kept showing. A light gray reads correctly as "not made yet".)
++        return hslToHex(accentHue(palette.accent), 0.05, 0.72);
+     }
+     const degree = graphNode.degree ?? 0;
+     if (degree <= 0) {
+-        // Unconnected → soft gray, nudged toward the background so it clearly recedes.
+-        return mixRgb(palette.node, palette.background, 0.35);
++        // Unconnected → a light, nearly-neutral gray (faint accent warmth) so it clearly recedes.
++        return hslToHex(accentHue(palette.accent), 0.05, 0.62);
+     }
+-    // Connected: one link → a soft, dim accent (blended toward the background so it glows
+-    // faintly rather than reading as black); the busiest hub → the full vivid accent.
+     const t = maxDegree > 1 ? Math.min(1, (degree - 1) / (maxDegree - 1)) : 1;
+-    const faint = mixRgb(palette.accent, palette.background, 0.5);
+-    return mixRgb(faint, palette.accent, t);
++    // Lightness stays HIGH the whole ramp (no dark/black nodes); SATURATION climbs with degree,
++    // so a one-link note is a soft rose and the busiest hub is a vivid, hot accent. A small
++    // lightness lift at the top makes hubs read as genuinely glowing.
++    return hslToHex(accentHue(palette.accent), 0.45 + 0.5 * t, 0.56 + 0.08 * t);
+ }
+ function parseRgbTriplet(color) {
+     const match = color.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+@@ -296,10 +319,10 @@ export function GraphView() {
+         let disposed = false;
+         let graph = null;
+         let observer = null;
+-        // Nodes, links, and labels start invisible and ramp in together (~1.6s ease-out) when the
+-        // graph first builds, so it materializes gently instead of snapping on. Cancelled on unmount.
++        // Node spheres + links start invisible and ramp in (~1.6s ease-out) when the graph first
++        // builds, so it materializes gently instead of snapping on. Cancelled on unmount. (Labels
++        // are left alone — fading their sprites left ones created after the window stuck invisible.)
+         let revealRaf = 0;
+-        const revealSprites = [];
+         void (async () => {
+             try {
+                 const [{ default: ForceGraph3D }, { default: SpriteText }, notes] = await Promise.all([
+@@ -388,11 +411,6 @@ export function GraphView() {
+                     // label grows upward from just outside the sphere instead of straddling it.
+                     object3d.center.set(0.5, 0);
+                     object3d.position.set(0, radius * LABEL_OFFSET_SCALE, 0);
+-                    // Start the label transparent so it fades in with its node during the reveal.
+-                    const withMaterial = sprite;
+-                    withMaterial.material.transparent = true;
+-                    withMaterial.material.opacity = 0;
+-                    revealSprites.push(withMaterial);
+                     return sprite;
+                 })
+                     .nodeThreeObjectExtend(true)
+@@ -436,8 +454,20 @@ export function GraphView() {
+                 // Frame the whole graph once the force sim settles (and again as a fallback —
+                 // the container can report 0px at construction inside the flex layout). Generous
+                 // padding keeps the nodes comfortably inside the viewport rather than filling it.
+-                instance.onEngineStop(() => instance.zoomToFit(500, 110));
+-                window.setTimeout(() => instance.zoomToFit(700, 110), 1500);
++                // Frame ONCE, at the first settle. Re-fitting on every onEngineStop made the camera
++                // "keep zooming out" as the low-gravity layout kept drifting wider. A tight padding
++                // keeps the map readable (not a distant speck) on open; the 1.4s fallback covers the
++                // 0px-at-construction case. After this the camera is the user's (scroll to zoom).
++                let framed = false;
++                const frameOnce = () => {
++                    if (framed) {
++                        return;
++                    }
++                    framed = true;
++                    instance.zoomToFit(600, 45);
++                };
++                instance.onEngineStop(frameOnce);
++                window.setTimeout(frameOnce, 1400);
+                 // Reveal: ramp node spheres, links, and label sprites from invisible to their
+                 // resting opacity over ~1.6s (ease-out cubic) so the graph materializes gently.
+                 const REVEAL_MS = 1600;
+@@ -452,9 +482,6 @@ export function GraphView() {
+                     const p = Math.min(1, (now - revealStart) / REVEAL_MS);
+                     const eased = 1 - (1 - p) ** 3;
+                     instance.nodeOpacity(NODE_TARGET * eased).linkOpacity(LINK_TARGET * eased);
+-                    for (const sprite of revealSprites) {
+-                        sprite.material.opacity = eased;
+-                    }
+                     if (p < 1) {
+                         revealRaf = requestAnimationFrame(stepReveal);
+                     }
+diff --git a/apps/desktop/src/app/graph/index.tsx b/apps/desktop/src/app/graph/index.tsx
+index a5c8c35932c..5d9af578d03 100644
+--- a/apps/desktop/src/app/graph/index.tsx
++++ b/apps/desktop/src/app/graph/index.tsx
+@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom'
+ import { Button } from '@/components/ui/button'
+ import { EmptyState } from '@/components/ui/empty-state'
+ import { Switch } from '@/components/ui/switch'
++import { hslToHex } from '@/themes/color'
+ import { useTheme } from '@/themes/context'
+ 
+ import { buildIndex, extractWikilinks, loadVault, saveNote } from '../library/vault'
+@@ -220,30 +221,58 @@ function readGraphPalette(mode: 'dark' | 'light'): GraphPalette {
+   }
+ }
+ 
++// The accent's hue, extracted from its resolved rgb() so the glow ramp uses the user's
++// chosen tint but its OWN saturation/lightness (the accent itself is contrast-darkened in
++// light mode, so we can't just ramp toward it — hubs would go dark). Falls back to crimson.
++function accentHue(accent: string): number {
++  const rgb = parseRgbTriplet(accent)
++
++  if (!rgb) {
++    return 351
++  }
++
++  const [r, g, b] = rgb.map(channel => channel / 255)
++  const max = Math.max(r, g, b)
++  const min = Math.min(r, g, b)
++
++  if (max === min) {
++    return 351
++  }
++
++  const d = max - min
++  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4
++
++  return (h / 6) * 360
++}
++
+ // Node color as a CONNECTIVITY HEATMAP: an unconnected note is a quiet gray that recedes;
+-// the more a note links to others, the brighter it glows in the theme accent, so hubs pop
+-// and orphans fade. `maxDegree` scales the ramp to this graph's busiest node. (Combined with
+-// the size ramp on nodeVal = 1 + degree, well-connected notes read as big and hot.)
++// the more a note links to others, the BRIGHTER it glows in the accent hue — saturation and
++// lightness both ramp up with degree, so a busy hub is a vivid, luminous point and a
++// one-link note is a dim-but-clearly-colored one. Never black. `maxDegree` scales the ramp;
++// combined with the size ramp (nodeVal = 1 + degree), hubs read big AND hot.
+ function graphNodeColor(node: object, palette: GraphPalette, maxDegree: number): string {
+   const graphNode = node as GraphNode
+ 
+   if (graphNode.ghost) {
+-    return palette.ghost
++    // Uncreated wikilink target → a very light, faded gray placeholder. (palette.ghost is a
++    // 38%-alpha color whose alpha gets dropped on parse, rendering near-BLACK — the "black
++    // nodes" the graph kept showing. A light gray reads correctly as "not made yet".)
++    return hslToHex(accentHue(palette.accent), 0.05, 0.72)
+   }
+ 
+   const degree = graphNode.degree ?? 0
+ 
+   if (degree <= 0) {
+-    // Unconnected → soft gray, nudged toward the background so it clearly recedes.
+-    return mixRgb(palette.node, palette.background, 0.35)
++    // Unconnected → a light, nearly-neutral gray (faint accent warmth) so it clearly recedes.
++    return hslToHex(accentHue(palette.accent), 0.05, 0.62)
+   }
+ 
+-  // Connected: one link → a soft, dim accent (blended toward the background so it glows
+-  // faintly rather than reading as black); the busiest hub → the full vivid accent.
+   const t = maxDegree > 1 ? Math.min(1, (degree - 1) / (maxDegree - 1)) : 1
+-  const faint = mixRgb(palette.accent, palette.background, 0.5)
+ 
+-  return mixRgb(faint, palette.accent, t)
++  // Lightness stays HIGH the whole ramp (no dark/black nodes); SATURATION climbs with degree,
++  // so a one-link note is a soft rose and the busiest hub is a vivid, hot accent. A small
++  // lightness lift at the top makes hubs read as genuinely glowing.
++  return hslToHex(accentHue(palette.accent), 0.45 + 0.5 * t, 0.56 + 0.08 * t)
+ }
+ 
+ function parseRgbTriplet(color: string): [number, number, number] | null {
+@@ -494,10 +523,10 @@ export function GraphView() {
+     let disposed = false
+     let graph: { _destructor?: () => void; height: (h: number) => unknown; width: (w: number) => unknown } | null = null
+     let observer: ResizeObserver | null = null
+-    // Nodes, links, and labels start invisible and ramp in together (~1.6s ease-out) when the
+-    // graph first builds, so it materializes gently instead of snapping on. Cancelled on unmount.
++    // Node spheres + links start invisible and ramp in (~1.6s ease-out) when the graph first
++    // builds, so it materializes gently instead of snapping on. Cancelled on unmount. (Labels
++    // are left alone — fading their sprites left ones created after the window stuck invisible.)
+     let revealRaf = 0
+-    const revealSprites: { material: { opacity: number; transparent: boolean } }[] = []
+ 
+     void (async () => {
+       try {
+@@ -617,12 +646,6 @@ export function GraphView() {
+             object3d.center.set(0.5, 0)
+             object3d.position.set(0, radius * LABEL_OFFSET_SCALE, 0)
+ 
+-            // Start the label transparent so it fades in with its node during the reveal.
+-            const withMaterial = sprite as unknown as { material: { opacity: number; transparent: boolean } }
+-            withMaterial.material.transparent = true
+-            withMaterial.material.opacity = 0
+-            revealSprites.push(withMaterial)
+-
+             return sprite
+           })
+           .nodeThreeObjectExtend(true)
+@@ -681,8 +704,21 @@ export function GraphView() {
+         // Frame the whole graph once the force sim settles (and again as a fallback —
+         // the container can report 0px at construction inside the flex layout). Generous
+         // padding keeps the nodes comfortably inside the viewport rather than filling it.
+-        instance.onEngineStop(() => instance.zoomToFit(500, 110))
+-        window.setTimeout(() => instance.zoomToFit(700, 110), 1500)
++        // Frame ONCE, at the first settle. Re-fitting on every onEngineStop made the camera
++        // "keep zooming out" as the low-gravity layout kept drifting wider. A tight padding
++        // keeps the map readable (not a distant speck) on open; the 1.4s fallback covers the
++        // 0px-at-construction case. After this the camera is the user's (scroll to zoom).
++        let framed = false
++        const frameOnce = () => {
++          if (framed) {
++            return
++          }
++
++          framed = true
++          instance.zoomToFit(600, 45)
++        }
++        instance.onEngineStop(frameOnce)
++        window.setTimeout(frameOnce, 1400)
+ 
+         // Reveal: ramp node spheres, links, and label sprites from invisible to their
+         // resting opacity over ~1.6s (ease-out cubic) so the graph materializes gently.
+@@ -700,10 +736,6 @@ export function GraphView() {
+           const eased = 1 - (1 - p) ** 3
+           instance.nodeOpacity(NODE_TARGET * eased).linkOpacity(LINK_TARGET * eased)
+ 
+-          for (const sprite of revealSprites) {
+-            sprite.material.opacity = eased
+-          }
+-
+           if (p < 1) {
+             revealRaf = requestAnimationFrame(stepReveal)
+           }
+diff --git a/apps/desktop/src/app/settings/about-settings.tsx b/apps/desktop/src/app/settings/about-settings.tsx
+index a00d815fa4f..e857a0d4496 100644
+--- a/apps/desktop/src/app/settings/about-settings.tsx
++++ b/apps/desktop/src/app/settings/about-settings.tsx
+@@ -110,9 +110,9 @@ export function AboutSettings() {
+         <SectionHeading icon={RefreshCw} title={a.updates} />
+ 
+         {/* Student build: the source self-updater is DISABLED. It tracks the
+-            upstream Hermes main branch — running it swaps the Nemesis build
++            upstream Nemesis main branch — running it swaps the Nemesis build
+             (UI reskin, school browser, study pipeline, agent patches) for
+-            stock Hermes and discards local work. Nemesis updates ship as new
++            stock Nemesis and discards local work. Nemesis updates ship as new
+             app versions instead. */}
+         {NEMESIS_STUDENT_BUILD ? (
+           <div className="rounded-xl border border-border/70 bg-muted/20 px-4 py-3 text-sm">
+diff --git a/apps/desktop/src/app/settings/computer-use-panel.js b/apps/desktop/src/app/settings/computer-use-panel.js
+index b66720d0c0f..46f8f3ac407 100644
+--- a/apps/desktop/src/app/settings/computer-use-panel.js
++++ b/apps/desktop/src/app/settings/computer-use-panel.js
+@@ -27,7 +27,7 @@ function PermissionRow({ granted, label, hint }) {
+  *
+  * cua-driver runs on macOS, Windows, and Linux, but readiness differs: macOS
+  * needs two TCC grants (Accessibility + Screen Recording) that attach to
+- * cua-driver's own `com.trycua.driver` identity — not Hermes — and are
++ * cua-driver's own `com.trycua.driver` identity — not Nemesis — and are
+  * requested via `cua-driver permissions grant` (dialog attributed to
+  * CuaDriver). Windows/Linux have no TCC toggles, so readiness is driver health
+  * from `cua-driver doctor`. The backend folds both into one `ready` signal.
+@@ -110,5 +110,5 @@ export function ComputerUsePanel({ onConfiguredChange }) {
+         return (_jsxs("p", { className: "px-1 text-xs text-muted-foreground", children: ["Install the cua-driver backend below to drive this machine.", status.can_grant && ' Then grant Accessibility and Screen Recording here.'] }));
+     }
+     const failingChecks = status.checks.filter(c => c.status !== 'ok');
+-    return (_jsxs("div", { className: "grid gap-2", children: [_jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2 px-1", children: [_jsxs("div", { className: "min-w-0", children: [status.can_grant ? (_jsx("p", { className: "text-[0.72rem] text-muted-foreground", children: "Grants attach to CuaDriver's own identity (com.trycua.driver), not Hermes \u2014 so the dialog is attributed to the process that drives your Mac." })) : (_jsx("p", { className: "text-[0.72rem] text-muted-foreground", children: PLATFORM_NOTE[status.platform] ?? '' })), status.version && _jsx("p", { className: "text-[0.68rem] text-muted-foreground/80", children: status.version })] }), _jsxs(Button, { onClick: () => void refresh(), size: "sm", variant: "text", children: [_jsx(RefreshCw, { className: "size-3.5" }), "Recheck"] })] }), status.can_grant ? (_jsxs(_Fragment, { children: [_jsx(PermissionRow, { granted: status.accessibility, hint: "Lets cua-driver post clicks, keystrokes, and read the accessibility tree.", label: "Accessibility" }), _jsx(PermissionRow, { granted: status.screen_recording, hint: "Lets cua-driver capture screenshots of app windows.", label: "Screen Recording" })] })) : (_jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2 rounded-lg bg-background/55 p-2.5", children: [_jsx("span", { className: "text-sm font-medium", children: "Driver health" }), _jsxs(Pill, { tone: tone(status.ready), children: [_jsx(GrantIcon, { granted: status.ready }), status.ready === true ? 'Ready' : status.ready === false ? 'Not ready' : 'Unknown'] })] })), failingChecks.map(c => (_jsxs("p", { className: "px-1 text-[0.7rem] text-muted-foreground", children: [_jsx(AlertTriangle, { className: "mr-1 inline size-3" }), c.label, ": ", c.message] }, c.label))), status.error && (_jsxs("p", { className: "px-1 text-[0.7rem] text-muted-foreground", children: [_jsx(AlertTriangle, { className: "mr-1 inline size-3" }), status.error] })), status.ready ? (_jsxs("div", { className: "flex items-center gap-1.5 px-1 text-xs text-muted-foreground", children: [_jsx(Check, { className: "size-3.5" }), "Computer Use is ready. Ask the agent to capture an app and click around."] })) : (status.can_grant && (_jsxs(Button, { disabled: granting, onClick: () => void grant(), size: "sm", children: [granting ? _jsx(Loader2, { className: "size-3.5 animate-spin" }) : _jsx(ExternalLink, { className: "size-3.5" }), granting ? 'Waiting for approval…' : 'Grant permissions'] })))] }));
++    return (_jsxs("div", { className: "grid gap-2", children: [_jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2 px-1", children: [_jsxs("div", { className: "min-w-0", children: [status.can_grant ? (_jsx("p", { className: "text-[0.72rem] text-muted-foreground", children: "Grants attach to CuaDriver's own identity (com.trycua.driver), not Nemesis \u2014 so the dialog is attributed to the process that drives your Mac." })) : (_jsx("p", { className: "text-[0.72rem] text-muted-foreground", children: PLATFORM_NOTE[status.platform] ?? '' })), status.version && _jsx("p", { className: "text-[0.68rem] text-muted-foreground/80", children: status.version })] }), _jsxs(Button, { onClick: () => void refresh(), size: "sm", variant: "text", children: [_jsx(RefreshCw, { className: "size-3.5" }), "Recheck"] })] }), status.can_grant ? (_jsxs(_Fragment, { children: [_jsx(PermissionRow, { granted: status.accessibility, hint: "Lets cua-driver post clicks, keystrokes, and read the accessibility tree.", label: "Accessibility" }), _jsx(PermissionRow, { granted: status.screen_recording, hint: "Lets cua-driver capture screenshots of app windows.", label: "Screen Recording" })] })) : (_jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2 rounded-lg bg-background/55 p-2.5", children: [_jsx("span", { className: "text-sm font-medium", children: "Driver health" }), _jsxs(Pill, { tone: tone(status.ready), children: [_jsx(GrantIcon, { granted: status.ready }), status.ready === true ? 'Ready' : status.ready === false ? 'Not ready' : 'Unknown'] })] })), failingChecks.map(c => (_jsxs("p", { className: "px-1 text-[0.7rem] text-muted-foreground", children: [_jsx(AlertTriangle, { className: "mr-1 inline size-3" }), c.label, ": ", c.message] }, c.label))), status.error && (_jsxs("p", { className: "px-1 text-[0.7rem] text-muted-foreground", children: [_jsx(AlertTriangle, { className: "mr-1 inline size-3" }), status.error] })), status.ready ? (_jsxs("div", { className: "flex items-center gap-1.5 px-1 text-xs text-muted-foreground", children: [_jsx(Check, { className: "size-3.5" }), "Computer Use is ready. Ask the agent to capture an app and click around."] })) : (status.can_grant && (_jsxs(Button, { disabled: granting, onClick: () => void grant(), size: "sm", children: [granting ? _jsx(Loader2, { className: "size-3.5 animate-spin" }) : _jsx(ExternalLink, { className: "size-3.5" }), granting ? 'Waiting for approval…' : 'Grant permissions'] })))] }));
+ }
+diff --git a/apps/desktop/src/app/settings/computer-use-panel.tsx b/apps/desktop/src/app/settings/computer-use-panel.tsx
+index bf30b3b83f7..73325bd74fe 100644
+--- a/apps/desktop/src/app/settings/computer-use-panel.tsx
++++ b/apps/desktop/src/app/settings/computer-use-panel.tsx
+@@ -52,7 +52,7 @@ function PermissionRow({ granted, label, hint }: { granted: boolean | null; labe
+  *
+  * cua-driver runs on macOS, Windows, and Linux, but readiness differs: macOS
+  * needs two TCC grants (Accessibility + Screen Recording) that attach to
+- * cua-driver's own `com.trycua.driver` identity — not Hermes — and are
++ * cua-driver's own `com.trycua.driver` identity — not Nemesis — and are
+  * requested via `cua-driver permissions grant` (dialog attributed to
+  * CuaDriver). Windows/Linux have no TCC toggles, so readiness is driver health
+  * from `cua-driver doctor`. The backend folds both into one `ready` signal.
+@@ -170,7 +170,7 @@ export function ComputerUsePanel({ onConfiguredChange }: ComputerUsePanelProps)
+         <div className="min-w-0">
+           {status.can_grant ? (
+             <p className="text-[0.72rem] text-muted-foreground">
+-              Grants attach to CuaDriver&apos;s own identity (com.trycua.driver), not Hermes — so the dialog is
++              Grants attach to CuaDriver&apos;s own identity (com.trycua.driver), not Nemesis — so the dialog is
+               attributed to the process that drives your Mac.
+             </p>
+           ) : (
+diff --git a/apps/desktop/src/app/settings/config-settings.js b/apps/desktop/src/app/settings/config-settings.js
+index 0adc070f843..035b99ab243 100644
+--- a/apps/desktop/src/app/settings/config-settings.js
++++ b/apps/desktop/src/app/settings/config-settings.js
+@@ -39,14 +39,18 @@ export function voiceFieldVisible(key, config) {
+ function ConfigField({ schemaKey, schema, value, enumOptions, optionLabels, onChange, descriptionExtra }) {
+     const { t } = useI18n();
+     const c = t.settings.config;
+-    const label = fieldCopyForSchemaKey(t.settings.fieldLabels, schemaKey) ??
++    // Field labels/descriptions can arrive from backend-provided schema text (getHermesConfigSchema),
++    // which still says "Hermes". Rebrand any upstream mention to the student product name so nothing
++    // leaks the engine's internal name in the UI. Word-boundary match keeps identifiers/URLs intact.
++    const rebrand = (v) => v.replace(/\bHermes\b/g, 'Nemesis');
++    const label = rebrand(fieldCopyForSchemaKey(t.settings.fieldLabels, schemaKey) ??
+         fieldCopyForSchemaKey(FIELD_LABELS, schemaKey) ??
+-        prettyName(schemaKey.split('.').pop() ?? schemaKey);
++        prettyName(schemaKey.split('.').pop() ?? schemaKey));
+     const normalize = (v) => v.toLowerCase().replace(/[^a-z0-9]+/g, '');
+-    const rawDescription = (fieldCopyForSchemaKey(t.settings.fieldDescriptions, schemaKey) ??
++    const rawDescription = rebrand((fieldCopyForSchemaKey(t.settings.fieldDescriptions, schemaKey) ??
+         fieldCopyForSchemaKey(FIELD_DESCRIPTIONS, schemaKey) ??
+         schema.description ??
+-        '').trim();
++        '').trim());
+     const normalizedDesc = normalize(rawDescription);
+     const description = rawDescription && normalizedDesc !== normalize(label) && normalizedDesc !== normalize(schemaKey)
+         ? rawDescription
+diff --git a/apps/desktop/src/app/settings/config-settings.tsx b/apps/desktop/src/app/settings/config-settings.tsx
+index 6a87590b3cb..edd69bc60e9 100644
+--- a/apps/desktop/src/app/settings/config-settings.tsx
++++ b/apps/desktop/src/app/settings/config-settings.tsx
+@@ -66,19 +66,27 @@ function ConfigField({
+   const { t } = useI18n()
+   const c = t.settings.config
+ 
+-  const label =
++  // Field labels/descriptions can arrive from backend-provided schema text (getHermesConfigSchema),
++  // which still says "Hermes". Rebrand any upstream mention to the student product name so nothing
++  // leaks the engine's internal name in the UI. Word-boundary match keeps identifiers/URLs intact.
++  const rebrand = (v: string) => v.replace(/\bHermes\b/g, 'Nemesis')
++
++  const label = rebrand(
+     fieldCopyForSchemaKey(t.settings.fieldLabels, schemaKey) ??
+-    fieldCopyForSchemaKey(FIELD_LABELS, schemaKey) ??
+-    prettyName(schemaKey.split('.').pop() ?? schemaKey)
++      fieldCopyForSchemaKey(FIELD_LABELS, schemaKey) ??
++      prettyName(schemaKey.split('.').pop() ?? schemaKey),
++  )
+ 
+   const normalize = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, '')
+ 
+-  const rawDescription = (
+-    fieldCopyForSchemaKey(t.settings.fieldDescriptions, schemaKey) ??
+-    fieldCopyForSchemaKey(FIELD_DESCRIPTIONS, schemaKey) ??
+-    schema.description ??
+-    ''
+-  ).trim()
++  const rawDescription = rebrand(
++    (
++      fieldCopyForSchemaKey(t.settings.fieldDescriptions, schemaKey) ??
++      fieldCopyForSchemaKey(FIELD_DESCRIPTIONS, schemaKey) ??
++      schema.description ??
++      ''
++    ).trim(),
++  )
+ 
+   const normalizedDesc = normalize(rawDescription)
+ 
+diff --git a/apps/desktop/src/app/settings/constants.ts b/apps/desktop/src/app/settings/constants.ts
+index e36f23de822..bf2c869f46c 100644
+--- a/apps/desktop/src/app/settings/constants.ts
++++ b/apps/desktop/src/app/settings/constants.ts
+@@ -41,7 +41,7 @@ export const PROVIDER_GROUPS: ProviderPrefix[] = [
+   {
+     prefix: 'NOUS_',
+     name: 'Nous Portal',
+-    description: 'Hosted Hermes & Nous-trained models',
++    description: 'Hosted Nemesis & Nous-trained models',
+     docsUrl: 'https://portal.nousresearch.com',
+     priority: 0
+   },
+@@ -435,10 +435,10 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
+     personality: 'Default assistant style for new sessions.',
+     showReasoning: 'Show reasoning sections when the backend provides them.'
+   },
+-  timezone: 'Used when Hermes needs local time context. Blank uses the system timezone.',
++  timezone: 'Used when Nemesis needs local time context. Blank uses the system timezone.',
+   agent: {
+     imageInputMode: 'Controls how image attachments are sent to the model.',
+-    maxTurns: 'Upper bound for tool-calling turns before Hermes stops a run.'
++    maxTurns: 'Upper bound for tool-calling turns before Nemesis stops a run.'
+   },
+   terminal: {
+     cwd: 'Default project folder for tool and terminal work.',
+@@ -452,9 +452,9 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
+   codeExecution: {
+     mode: 'How strictly code execution is scoped to the current project.'
+   },
+-  fileReadMaxChars: 'Maximum characters Hermes can read from one file request.',
++  fileReadMaxChars: 'Maximum characters Nemesis can read from one file request.',
+   approvals: {
+-    mode: 'How Hermes handles commands that need explicit approval.',
++    mode: 'How Nemesis handles commands that need explicit approval.',
+     timeout: 'How long approval prompts wait before timing out.'
+   },
+   security: {
+@@ -494,7 +494,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
+   },
+   updates: {
+     nonInteractiveLocalChanges:
+-      'When Hermes updates itself from the app (no terminal prompt), keep local source edits (stash) or throw them away (discard). Terminal updates always ask.'
++      'When Nemesis updates itself from the app (no terminal prompt), keep local source edits (stash) or throw them away (discard). Terminal updates always ask.'
+   }
+ })
+ 
+diff --git a/apps/desktop/src/app/settings/uninstall-section.js b/apps/desktop/src/app/settings/uninstall-section.js
+index d9361de3bd0..89905eaa4ed 100644
+--- a/apps/desktop/src/app/settings/uninstall-section.js
++++ b/apps/desktop/src/app/settings/uninstall-section.js
+@@ -15,7 +15,7 @@ const OPTIONS = [
+     {
+         mode: 'lite',
+         title: 'Uninstall GUI + agent, keep my data',
+-        description: 'Remove the app and the Hermes agent, but keep config, chats, and secrets for a future reinstall.',
++        description: 'Remove the app and the Nemesis agent, but keep config, chats, and secrets for a future reinstall.',
+         consequence: 'the Chat GUI and the Nemesis agent (config, chats, and secrets are kept)',
+         needsAgent: true
+     },
+diff --git a/apps/desktop/src/app/settings/uninstall-section.tsx b/apps/desktop/src/app/settings/uninstall-section.tsx
+index 7ae615c234b..10abdf55219 100644
+--- a/apps/desktop/src/app/settings/uninstall-section.tsx
++++ b/apps/desktop/src/app/settings/uninstall-section.tsx
+@@ -28,7 +28,7 @@ const OPTIONS: ModeOption[] = [
+   {
+     mode: 'lite',
+     title: 'Uninstall GUI + agent, keep my data',
+-    description: 'Remove the app and the Hermes agent, but keep config, chats, and secrets for a future reinstall.',
++    description: 'Remove the app and the Nemesis agent, but keep config, chats, and secrets for a future reinstall.',
+     consequence: 'the Chat GUI and the Nemesis agent (config, chats, and secrets are kept)',
+     needsAgent: true
+   },
+diff --git a/apps/desktop/src/app/shell/model-edit-submenu.js b/apps/desktop/src/app/shell/model-edit-submenu.js
+index 035652f179e..c985a971638 100644
+--- a/apps/desktop/src/app/shell/model-edit-submenu.js
++++ b/apps/desktop/src/app/shell/model-edit-submenu.js
+@@ -114,7 +114,7 @@ export function ModelEditSubmenu({ effort, fastControl, isActive, model, onSelec
+     return (_jsx(DropdownMenuSubContent, { className: "w-52 p-0", sideOffset: 4, children: !hasFast && !reasoning ? (_jsx("div", { className: "px-2.5 py-3 text-xs text-(--ui-text-tertiary)", children: copy.noOptions })) : (_jsxs(_Fragment, { children: [_jsx(DropdownMenuLabel, { className: dropdownMenuSectionLabel, children: copy.options }), reasoning ? (_jsxs(DropdownMenuItem, { className: dropdownMenuRow, onSelect: event => event.preventDefault(), children: [copy.thinking, _jsx(Switch, { checked: thinkingOn, className: "ml-auto", onCheckedChange: checked => void patchReasoning(checked ? effortValue || 'medium' : 'none'), size: "xs" })] })) : null, hasFast ? (_jsxs(DropdownMenuItem, { className: dropdownMenuRow, onSelect: event => event.preventDefault(), children: [copy.fast, _jsx(Switch, { checked: fastOn, className: "ml-auto", onCheckedChange: toggleFast, size: "xs" })] })) : null, reasoning ? (_jsxs(_Fragment, { children: [_jsx(DropdownMenuSeparator, { className: "mx-0" }), _jsx(DropdownMenuLabel, { className: dropdownMenuSectionLabel, children: copy.effort }), _jsx(DropdownMenuRadioGroup, { onValueChange: value => void patchReasoning(value), value: effortValue, children: EFFORT_OPTIONS.map(option => (_jsx(DropdownMenuRadioItem, { className: dropdownMenuRow, onSelect: event => event.preventDefault(), value: option.value, children: copy[option.labelKey] }, option.value))) })] })) : null] })) }));
+ }
+ function isThinkingEnabled(effort) {
+-    // Empty = Hermes default (medium) = on; only an explicit "none" is off.
++    // Empty = Nemesis default (medium) = on; only an explicit "none" is off.
+     return normalize(effort || 'medium') !== 'none';
+ }
+ function normalizeEffort(effort) {
+diff --git a/apps/desktop/src/app/shell/model-edit-submenu.tsx b/apps/desktop/src/app/shell/model-edit-submenu.tsx
+index cf2a8af660f..cf053dcfabb 100644
+--- a/apps/desktop/src/app/shell/model-edit-submenu.tsx
++++ b/apps/desktop/src/app/shell/model-edit-submenu.tsx
+@@ -233,7 +233,7 @@ export function ModelEditSubmenu({
+ }
+ 
+ function isThinkingEnabled(effort: string): boolean {
+-  // Empty = Hermes default (medium) = on; only an explicit "none" is off.
++  // Empty = Nemesis default (medium) = on; only an explicit "none" is off.
+   return normalize(effort || 'medium') !== 'none'
+ }
+ 
+diff --git a/apps/desktop/src/app/shell/model-menu-panel.js b/apps/desktop/src/app/shell/model-menu-panel.js
+index d2429838d8d..c886d6c246b 100644
+--- a/apps/desktop/src/app/shell/model-menu-panel.js
++++ b/apps/desktop/src/app/shell/model-menu-panel.js
+@@ -84,7 +84,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }) {
+         }
+     };
+     // Selecting a model row restores that model's remembered preset onto the
+-    // session (effort/fast), gated by capability. Unset → Hermes defaults.
++    // session (effort/fast), gated by capability. Unset → Nemesis defaults.
+     const selectFamily = async (family, provider) => {
+         const caps = provider.capabilities?.[family.id];
+         const preset = modelPresets[modelPresetKey(provider.slug, family.id)] ?? {};
+diff --git a/apps/desktop/src/app/shell/model-menu-panel.tsx b/apps/desktop/src/app/shell/model-menu-panel.tsx
+index f358a29ffab..997c589a3d5 100644
+--- a/apps/desktop/src/app/shell/model-menu-panel.tsx
++++ b/apps/desktop/src/app/shell/model-menu-panel.tsx
+@@ -155,7 +155,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
+   }
+ 
+   // Selecting a model row restores that model's remembered preset onto the
+-  // session (effort/fast), gated by capability. Unset → Hermes defaults.
++  // session (effort/fast), gated by capability. Unset → Nemesis defaults.
+   const selectFamily = async (family: ModelFamily, provider: ModelOptionProvider) => {
+     const caps = provider.capabilities?.[family.id]
+     const preset = modelPresets[modelPresetKey(provider.slug, family.id)] ?? {}
+diff --git a/apps/desktop/src/app/skills/mcp-tab.js b/apps/desktop/src/app/skills/mcp-tab.js
+index 8161f2e3784..ddcad4e5c25 100644
+--- a/apps/desktop/src/app/skills/mcp-tab.js
++++ b/apps/desktop/src/app/skills/mcp-tab.js
+@@ -33,7 +33,7 @@ const STARTER_ENTRY = { command: 'npx', args: ['-y', '@modelcontextprotocol/serv
+ const pretty = (value) => JSON.stringify(value, null, 2);
+ const wrapDoc = (entries) => pretty({ mcpServers: entries });
+ const isServerShape = (value) => typeof value.command === 'string' || typeof value.url === 'string';
+-// Cursor/Claude write `type`; Hermes reads `transport`. Normalize on the way
++// Cursor/Claude write `type`; Nemesis reads `transport`. Normalize on the way
+ // in so pasted configs behave identically under the CLI/TUI loader.
+ function normalizeEntry(entry) {
+     if (typeof entry.type === 'string' && entry.transport === undefined) {
+diff --git a/apps/desktop/src/app/skills/mcp-tab.tsx b/apps/desktop/src/app/skills/mcp-tab.tsx
+index 6098a7a456e..a2d6104309c 100644
+--- a/apps/desktop/src/app/skills/mcp-tab.tsx
++++ b/apps/desktop/src/app/skills/mcp-tab.tsx
+@@ -65,7 +65,7 @@ const wrapDoc = (entries: McpServers) => pretty({ mcpServers: entries })
+ const isServerShape = (value: Record<string, unknown>) =>
+   typeof value.command === 'string' || typeof value.url === 'string'
+ 
+-// Cursor/Claude write `type`; Hermes reads `transport`. Normalize on the way
++// Cursor/Claude write `type`; Nemesis reads `transport`. Normalize on the way
+ // in so pasted configs behave identically under the CLI/TUI loader.
+ function normalizeEntry(entry: Record<string, unknown>): Record<string, unknown> {
+   if (typeof entry.type === 'string' && entry.transport === undefined) {
+-- 
+2.53.0
+
