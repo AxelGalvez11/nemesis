@@ -9,17 +9,33 @@ Posture: the student should never do work you can do. You find, you fetch, you c
 you file. They approve. Copy, never move; never delete originals. Log every batch in the
 activity ledger (nemesis-ledger). Update the semester graph (nemesis-graph) after ingest.
 
-## 1. Local discovery — "Find my school files"
+## 1. Local discovery — "Find my school files" (ALWAYS scan for Anki too)
 Search ONLY these locations (never the whole disk):
 `~/Documents`, `~/Desktop`, `~/Downloads`, and cloud-synced folders under
 `~/Library/CloudStorage/` (OneDrive-*, GoogleDrive-*).
-Look for pdf/pptx/docx/md whose names or paths suggest coursework (course codes like
-"PHCY 1205", words like syllabus, lecture, slides, exam, notes; modified within the
-current school year). Then:
-1) PROPOSE: show a short summary (counts by course + a few example filenames) and ask
-   which to bring in.
-2) EXECUTE on approval: copy into the right course folders in the Library
-   (`<Course>/Slides`, `<Course>/Syllabus`, `<Course>/Notes`, else `Imports/`).
+
+Discover TWO things in this pass — coursework files AND existing flashcards — and report
+both together, because the student expects you to find their study materials without being
+told where they are:
+
+**a) Coursework files.** pdf/pptx/docx/md whose names or paths suggest coursework (course
+codes like "PHCY 1205", words like syllabus, lecture, slides, exam, notes; modified within
+the current school year).
+
+**b) Anki + exported decks (do this every time, even if they didn't mention Anki).**
+- Check whether Anki is installed and has collections: list
+  `~/Library/Application Support/Anki2/` — every subfolder that is NOT `addons21` and
+  contains a `collection.anki2` is a user profile with cards. Report it: "You have an Anki
+  collection (profile '<name>') — want me to bring those cards in with their study history?"
+- Glob `~/Downloads` and `~/Desktop` for exported decks: `*.apkg`, `*.colpkg` (Anki) and
+  loose `*.tsv`/`*.csv` that look like term/definition pairs (Quizlet exports). Offer to import.
+
+Then:
+1) PROPOSE: one short summary covering BOTH — coursework counts by course, plus any Anki
+   collection / .apkg / export files found — and ask which to bring in.
+2) EXECUTE on approval: copy coursework into the right course folders
+   (`<Course>/Slides`, `<Course>/Syllabus`, `<Course>/Notes`, else `Imports/`); import Anki
+   per section 2 below.
 macOS may show one-time permission dialogs on first access — tell the student that's
 Apple asking, and it's expected.
 
@@ -31,9 +47,11 @@ original. 3) Use the `sqlite3` CLI (ships with macOS) to read decks, notes, card
 - decks/notetypes live in JSON columns of `col` (older) or `decks`/`notetypes` tables (newer)
 - `notes.flds` fields are separated by the 0x1F unit-separator character
 - `revlog` holds review history — use recency/lapses per card to seed a rough mastery
-Write each Anki deck as a Nemesis deck `.tsv` in `Decks/`, note the seeded mastery in the
-graph, and report exactly how many decks/cards came over. If the schema defeats you,
-fall back to asking for a File → Export `.apkg` and say why.
+Write each Anki deck as a Nemesis deck `.tsv` in the Library's `Flashcards/` folder (NOT
+`Decks/` — the Study page reads `Flashcards/`), with `# course: <Course>` as line 1 so it
+groups under the right section (see nemesis-study-decks for the exact format). Note the
+seeded mastery in the graph, and report exactly how many decks/cards came over. If the
+schema defeats you, fall back to asking for a File → Export `.apkg` and say why.
 
 ## 3. Quizlet — fetch their sets from the site
 The student signs into quizlet.com in YOUR browser (same as Blackboard — their login,

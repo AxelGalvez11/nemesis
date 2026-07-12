@@ -1,0 +1,99 @@
+From 811882c95cd3097eb2881517ddd0ec9af53d291a Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sun, 12 Jul 2026 00:08:51 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis-kit):=20round-45=20=E2=80=94=20ope?=
+ =?UTF-8?q?npyxl=20extra=20for=20spreadsheet=20reading=20(.xlsx;=20pandas?=
+ =?UTF-8?q?=20deliberately=20avoided)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ pyproject.toml |  4 ++++
+ uv.lock        | 27 ++++++++++++++++++++++++++-
+ 2 files changed, 30 insertions(+), 1 deletion(-)
+
+diff --git a/pyproject.toml b/pyproject.toml
+index 7030e11a4e7..1d32570e3fd 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -153,6 +153,10 @@ parallel-web = ["parallel-web==0.4.2"]
+ # build so web_search stays available before any paid key is configured
+ # (check_web_api_key gates ALL web tools off when no backend is usable).
+ ddgs = ["ddgs==9.14.4"]
++# Spreadsheet reading for the Nemesis student build — .xlsx gradebooks/lab data.
++# openpyxl only (pure Python + et-xmlfile); deliberately NOT pandas (huge numpy
++# dependency tree, larger supply-chain surface). CSV/TSV need no dep (stdlib csv).
++openpyxl = ["openpyxl==3.1.5"]
+ # Image generation backends
+ fal = ["fal-client==0.13.1"]
+ # Edge TTS — default TTS provider but still optional (users can pick
+diff --git a/uv.lock b/uv.lock
+index 9f7f710b121..556d6640636 100644
+--- a/uv.lock
++++ b/uv.lock
+@@ -1174,6 +1174,15 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/97/a8/c070e1340636acb38d4e6a7e45c46d168a462b48b9b3257e14ca0e5af79b/environs-14.6.0-py3-none-any.whl", hash = "sha256:f8fb3d6c6a55872b0c6db077a28f5a8c7b8984b7c32029613d44cef95cfc0812", size = 17205, upload-time = "2026-02-20T04:02:07.299Z" },
+ ]
+ 
++[[package]]
++name = "et-xmlfile"
++version = "2.0.0"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/d3/38/af70d7ab1ae9d4da450eeec1fa3918940a5fafb9055e934af8d6eb0c2313/et_xmlfile-2.0.0.tar.gz", hash = "sha256:dab3f4764309081ce75662649be815c4c9081e88f0837825f90fd28317d4da54", size = 17234, upload-time = "2024-10-25T17:25:40.039Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/et_xmlfile-2.0.0-py3-none-any.whl", hash = "sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa", size = 18059, upload-time = "2024-10-25T17:25:39.051Z" },
++]
++
+ [[package]]
+ name = "eval-type-backport"
+ version = "0.3.1"
+@@ -1731,6 +1740,9 @@ modal = [
+ nemo-relay = [
+     { name = "nemo-relay" },
+ ]
++openpyxl = [
++    { name = "openpyxl" },
++]
+ parallel-web = [
+     { name = "parallel-web" },
+ ]
+@@ -1874,6 +1886,7 @@ requires-dist = [
+     { name = "nemo-relay", marker = "extra == 'nemo-relay'", specifier = "==0.3" },
+     { name = "numpy", marker = "extra == 'voice'", specifier = "==2.4.3" },
+     { name = "openai", specifier = "==2.24.0" },
++    { name = "openpyxl", marker = "extra == 'openpyxl'", specifier = "==3.1.5" },
+     { name = "packaging", specifier = "==26.0" },
+     { name = "parallel-web", marker = "extra == 'parallel-web'", specifier = "==0.4.2" },
+     { name = "pathspec", specifier = "==1.1.1" },
+@@ -1920,7 +1933,7 @@ requires-dist = [
+     { name = "websockets", specifier = "==15.0.1" },
+     { name = "youtube-transcript-api", marker = "extra == 'youtube'", specifier = "==1.2.4" },
+ ]
+-provides-extras = ["anthropic", "exa", "firecrawl", "parallel-web", "ddgs", "fal", "edge-tts", "modal", "daytona", "hindsight", "dev", "messaging", "cron", "slack", "matrix", "wecom", "cli", "tts-premium", "voice", "pty", "honcho", "supermemory", "mem0", "vision", "mcp", "nemo-relay", "homeassistant", "sms", "teams", "computer-use", "acp", "mistral", "bedrock", "vertex", "azure-identity", "termux", "termux-all", "dingtalk", "feishu", "google", "youtube", "web", "all"]
++provides-extras = ["anthropic", "exa", "firecrawl", "parallel-web", "ddgs", "openpyxl", "fal", "edge-tts", "modal", "daytona", "hindsight", "dev", "messaging", "cron", "slack", "matrix", "wecom", "cli", "tts-premium", "voice", "pty", "honcho", "supermemory", "mem0", "vision", "mcp", "nemo-relay", "homeassistant", "sms", "teams", "computer-use", "acp", "mistral", "bedrock", "vertex", "azure-identity", "termux", "termux-all", "dingtalk", "feishu", "google", "youtube", "web", "all"]
+ 
+ [[package]]
+ name = "hf-xet"
+@@ -2931,6 +2944,18 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/c9/30/844dc675ee6902579b8eef01ed23917cc9319a1c9c0c14ec6e39340c96d0/openai-2.24.0-py3-none-any.whl", hash = "sha256:fed30480d7d6c884303287bde864980a4b137b60553ffbcf9ab4a233b7a73d94", size = 1120122, upload-time = "2026-02-24T20:02:05.669Z" },
+ ]
+ 
++[[package]]
++name = "openpyxl"
++version = "3.1.5"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "et-xmlfile" },
++]
++sdist = { url = "https://files.pythonhosted.org/packages/3d/f9/88d94a75de065ea32619465d2f77b29a0469500e99012523b91cc4141cd1/openpyxl-3.1.5.tar.gz", hash = "sha256:cf0e3cf56142039133628b5acffe8ef0c12bc902d2aadd3e0fe5878dc08d1050", size = 186464, upload-time = "2024-06-28T14:03:44.161Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/c0/da/977ded879c29cbd04de313843e76868e6e13408a94ed6b987245dc7c8506/openpyxl-3.1.5-py2.py3-none-any.whl", hash = "sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2", size = 250910, upload-time = "2024-06-28T14:03:41.161Z" },
++]
++
+ [[package]]
+ name = "opentelemetry-api"
+ version = "1.39.1"
+-- 
+2.53.0
+

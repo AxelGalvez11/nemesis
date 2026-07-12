@@ -70,10 +70,13 @@ For each new lecture file (up to the batch cap), READ it and produce:
 **A structured lecture note** at `<Course>/<Lecture name>.md`:
 - `# <Lecture name>` + one-line "what this lecture is really about".
 - `## Key concepts` — the ideas, not a slide-by-slide transcript.
-- `## Drugs` — for pharmacy content: each drug with mechanism, dosing points, key
-  adverse effects/interactions/monitoring, in tight bullets. Cite slide numbers like
-  `(slide 14)` so the student can verify.
-- `## Clinical pearls & exam-likely points` — what an examiner would ask.
+- A field-appropriate structured section (adapt the heading + shape to the discipline):
+  pharmacology → `## Drugs` (each drug: mechanism, dosing, adverse effects/interactions/
+  monitoring); other sciences → `## Mechanisms` / `## Formulas & when they apply`;
+  humanities/law → `## Arguments & evidence` / `## Cases & holdings`. Tight bullets; cite
+  slide numbers like `(slide 14)` so the student can verify.
+- `## Exam-likely points` — what an examiner would actually ask (call them "clinical
+  pearls" for health sciences).
 - `[[wikilinks]]` to related existing notes (check what exists first; link, don't duplicate).
 
 **A flashcard deck** per nemesis-study-decks (`Flashcards/<Course> — <Lecture name>.tsv`,
