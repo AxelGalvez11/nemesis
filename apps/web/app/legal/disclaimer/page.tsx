@@ -4,7 +4,7 @@ export default function DisclaimerPage() {
   return (
     <main className="legal-page">
       <nav className="legal-nav">
-        <Link className="brand" href="/app">Pharma<span>Orb</span></Link>
+        <Link className="brand" href="/app">Nemesis</Link>
         <div>
           <Link className="source-link" href="/legal/privacy">Privacy</Link>
           <Link className="source-link" href="/legal/terms">Terms</Link>
@@ -16,7 +16,7 @@ export default function DisclaimerPage() {
         <section>
           <h2>Not medical advice</h2>
           <p>
-            PharmaOrb is for educational research only. It does not diagnose, treat, prescribe,
+            Nemesis is for educational research only. It does not diagnose, treat, prescribe,
             recommend a treatment plan, or replace a licensed healthcare professional.
           </p>
         </section>
@@ -24,7 +24,7 @@ export default function DisclaimerPage() {
           <h2>Emergencies</h2>
           <p>
             If you may be experiencing a medical emergency, call emergency services or seek urgent
-            medical care immediately. PharmaOrb is not designed for emergency triage.
+            medical care immediately. Nemesis is not designed for emergency triage.
           </p>
         </section>
         <section>
@@ -39,7 +39,7 @@ export default function DisclaimerPage() {
           <h2>Medication and supplement decisions</h2>
           <p>
             Do not start, stop, combine, dose, or change any medication, supplement, peptide, or
-            health intervention based only on PharmaOrb output.
+            health intervention based only on Nemesis output.
           </p>
         </section>
       </article>

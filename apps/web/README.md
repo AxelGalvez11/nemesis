@@ -1,7 +1,7 @@
-# PharmaOrb Web App
+# Nemesis Web App
 
-Signed-in public beta for `app.pharmaorb.app`. The public marketing/waitlist site remains
-in `landing/` on `pharmaorb.app`.
+Signed-in account and research workspace for `app.enternemesis.com`. The public marketing site is
+in `landing/` on `www.enternemesis.com`.
 
 ## MVP Scope
 
@@ -16,8 +16,8 @@ Public:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_APP_URL` (`https://app.pharmaorb.app` in production)
-- `NEXT_PUBLIC_LANDING_URL` (`https://pharmaorb.app`)
+- `NEXT_PUBLIC_APP_URL` (`https://app.enternemesis.com` in production)
+- `NEXT_PUBLIC_LANDING_URL` (`https://www.enternemesis.com`)
 
 Server-only:
 
@@ -42,11 +42,11 @@ Evidence broker:
 pnpm --filter @pharmaorb/web dev
 pnpm --filter @pharmaorb/web typecheck
 pnpm --filter @pharmaorb/web build
-WEB_SMOKE_BASE_URL=https://app.pharmaorb.app pnpm --filter @pharmaorb/web smoke
+WEB_SMOKE_BASE_URL=https://app.enternemesis.com pnpm --filter @pharmaorb/web smoke
 ```
 
 ## Deployment
 
 Deploy as a separate Vercel project with root directory `apps/web` and alias it to
-`app.pharmaorb.app`. Start with Stripe test keys/price id; switching to live mode should
+`app.enternemesis.com`. Start with Stripe test keys/price id; switching to live mode should
 only require environment variable changes.

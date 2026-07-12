@@ -351,7 +351,7 @@ function ProjectSourcesTab({ projectId, enabled, loadErr, sources, addOpen, onOp
         <SkeletonRows count={2} label="Loading sources…" />
       ) : sources.length === 0 ? (
         <div className="proj-sources-empty">
-          <p className="proj-empty" style={{ margin: 0 }}>Give PharmaOrb more context for this project.</p>
+          <p className="proj-empty" style={{ margin: 0 }}>Give Nemesis more context for this project.</p>
           <p className="proj-empty" style={{ margin: "2px 0 10px" }}>Upload a short text file or paste notes — every chat in this project can draw on it.</p>
           <button type="button" className="mode" onClick={onOpenAdd}>Add sources</button>
         </div>
@@ -565,7 +565,7 @@ function ProjectSettings({ project, onClose, onSaved, onPartialSave, onDeleted }
         <label className="menu-label" htmlFor="proj-instr" style={{ marginTop: 10 }}>Instructions</label>
         <textarea id="proj-instr" className="watch-add-input" value={instructions} maxLength={1000} rows={3}
           onChange={(e) => setInstructions(e.target.value)}
-          placeholder="Set context for how PharmaOrb approaches questions in this project" />
+          placeholder="Set context for how Nemesis approaches questions in this project" />
         {err ? <p className="tmpl-note">{err}</p> : null}
         <div className="confirm-actions" style={{ marginTop: 14, justifyContent: "space-between" }}>
           <button type="button" className="confirm-del" onClick={() => setConfirmDel(true)} disabled={saving}>Delete project</button>

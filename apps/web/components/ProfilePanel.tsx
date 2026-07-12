@@ -48,7 +48,7 @@ export function ProfilePanel() {
     try {
       const payload = await exportMyData();
       const date = new Date().toISOString().slice(0, 10);
-      downloadJson(payload, `pharmaorb-account-export-${date}.json`);
+      downloadJson(payload, `nemesis-account-export-${date}.json`);
       setAccountMessage("Account export downloaded.");
     } catch (error) {
       setAccountError(error instanceof Error ? error.message : "Export failed");

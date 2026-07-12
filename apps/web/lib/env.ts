@@ -1,6 +1,9 @@
 export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-export const isPreviewMode = !supabaseUrl || !supabaseAnonKey;
+export const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
+// The local no-env experience remains useful for design work. A production build must never grant
+// a fake preview session when credentials are missing; it fails closed through the real auth path.
+export const isPreviewMode = process.env.NODE_ENV !== "production" && !hasSupabaseConfig;
 
 export function normalizeBaseUrl(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -16,10 +19,10 @@ export function normalizeBaseUrl(value: string | null | undefined): string | nul
 
 const defaultAppUrl = process.env.NODE_ENV === "development"
   ? "http://localhost:3000"
-  : "https://app.pharmaorb.app";
+  : "https://app.enternemesis.com";
 
 export const appUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL) ?? defaultAppUrl;
-export const landingUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_LANDING_URL) ?? "https://pharmaorb.app";
+export const landingUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_LANDING_URL) ?? "https://www.enternemesis.com";
 
 // Engine data-visuals (study-design mix + publications-by-year on a research report) — DEFAULT OFF.
 // Computed from real citation metadata; shown only when the data warrants. Off ⇒ reports render as today.

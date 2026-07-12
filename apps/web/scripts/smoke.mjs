@@ -50,13 +50,13 @@ function postStatusCheck(path, expectedStatus, body = "{}") {
   });
 }
 
-htmlCheck("/sign-in", ["PharmaOrb", "Sign in"]);
-htmlCheck("/sign-up", ["PharmaOrb", "Create account"]);
-htmlCheck("/app/ask", ["PharmaOrb App", "Loading"]);
-htmlCheck("/app/explore", ["PharmaOrb App", "Loading"]);
-htmlCheck("/app/monitor", ["PharmaOrb App", "Loading"]);
-htmlCheck("/app/profile", ["PharmaOrb App", "Loading"]);
-htmlCheck("/app/billing", ["PharmaOrb App", "Loading"]);
+htmlCheck("/sign-in", ["NEMESIS", "Re-enter the perimeter"]);
+htmlCheck("/sign-up", ["NEMESIS", "Bring Nemesis online"]);
+htmlCheck("/app/ask", ["Nemesis", "Loading"]);
+htmlCheck("/app/explore", ["Nemesis", "Loading"]);
+htmlCheck("/app/monitor", ["Nemesis", "Loading"]);
+htmlCheck("/app/profile", ["Nemesis", "Loading"]);
+htmlCheck("/app/billing", ["Nemesis", "Loading"]);
 htmlCheck("/legal/privacy", ["Privacy Policy", "Service providers"]);
 htmlCheck("/legal/terms", ["Terms of Use", "Subscriptions and billing"]);
 htmlCheck("/legal/disclaimer", ["Medical Disclaimer", "Not medical advice"]);

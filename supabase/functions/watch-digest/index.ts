@@ -22,41 +22,45 @@ import { buildUnsubscribeUrl, signUnsubscribe, verifyUnsubscribe } from "./unsub
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
-const RESEND_FROM = Deno.env.get("RESEND_FROM") ?? ""; // e.g. "PharmaOrb <alerts@pharmaorb.app>"
-const APP_URL = Deno.env.get("APP_URL") ?? "https://app.pharmaorb.app"; // the user-facing app, for watch links
+const RESEND_FROM = Deno.env.get("RESEND_FROM") ?? ""; // must use a sender on a verified domain
+const APP_URL = Deno.env.get("APP_URL") ?? "https://app.enternemesis.com"; // the user-facing app, for watch links
 const MAX_ALERTS_PER_DIGEST = 50;
+const ALLOWED_ORIGINS = [
+  "https://app.enternemesis.com",
+  "https://app.pharmaorb.app",
+];
 
 serve(async (req) => {
   const url = new URL(req.url);
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors() });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors(req) });
 
   // Public, token-gated unsubscribe. Accept GET (the user clicks the link) AND POST (mailbox providers
   // issue a POST per RFC 8058 one-click, driven by the List-Unsubscribe-Post header we send). Routed
   // BEFORE the service-key gate — this path authenticates with the signed token, not the service key.
   if (url.searchParams.has("unsubscribe") && (req.method === "GET" || req.method === "POST")) {
-    return await handleUnsubscribe(url.searchParams.get("unsubscribe") ?? "", url.searchParams.get("token") ?? "");
+    return await handleUnsubscribe(url.searchParams.get("unsubscribe") ?? "", url.searchParams.get("token") ?? "", req);
   }
 
-  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
-  if (!SB_URL || !SERVICE_KEY) return json({ error: "server not configured" }, 500);
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405, req);
+  if (!SB_URL || !SERVICE_KEY) return json({ error: "server not configured" }, 500, req);
 
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (!token || token !== SERVICE_KEY) return json({ error: "service role required" }, 401);
+  if (!token || token !== SERVICE_KEY) return json({ error: "service role required" }, 401, req);
 
   let body: { user_id?: string };
   try {
     body = await req.json();
   } catch {
-    return json({ error: "invalid json" }, 400);
+    return json({ error: "invalid json" }, 400, req);
   }
   const userId = (body.user_id ?? "").trim();
-  if (!userId) return json({ error: "user_id required" }, 400);
+  if (!userId) return json({ error: "user_id required" }, 400, req);
 
   try {
-    return json(await sendUserDigest(userId), 200);
+    return json(await sendUserDigest(userId), 200, req);
   } catch (e) {
     console.error("watch-digest failed:", (e as Error).message);
-    return json({ error: "digest failed" }, 500);
+    return json({ error: "digest failed" }, 500, req);
   }
 });
 
@@ -108,12 +112,12 @@ async function sendUserDigest(userId: string) {
   return { ok: true, sent: true, alerts: digest.alertCount, watches: digest.watchCount, message_id: result.id };
 }
 
-async function handleUnsubscribe(userId: string, token: string): Promise<Response> {
+async function handleUnsubscribe(userId: string, token: string, req?: Request): Promise<Response> {
   if (!userId || !token || !(await verifyUnsubscribe(userId, token, SERVICE_KEY))) {
-    return html("This unsubscribe link is invalid or expired.", 400);
+    return html("This unsubscribe link is invalid or expired.", 400, req);
   }
   await upsertOptOut(userId);
-  return html("You've been unsubscribed from PharmaOrb monitoring emails. You can re-enable them anytime in the app.", 200);
+  return html("You've been unsubscribed from Nemesis monitoring emails. You can re-enable them anytime in the app.", 200, req);
 }
 
 // ── DB I/O (raw PostgREST + auth admin, service role) ─────────────────────────────────────────────
@@ -191,16 +195,18 @@ function authHeaders(): Record<string, string> {
 }
 
 // ── responses ─────────────────────────────────────────────────────────────────────────────────────
-function cors(): Record<string, string> {
+function cors(req?: Request): Record<string, string> {
   // Not a browser-XHR endpoint: POST is service-role (pg_cron) and the unsubscribe link is a
-  // top-level navigation from email (CORS does not gate navigations). So a fixed canonical origin
-  // is sufficient — the wildcard "*" served no purpose and is removed.
-  return { "Access-Control-Allow-Origin": "https://app.pharmaorb.app", "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, GET, OPTIONS" };
+  // top-level navigation from email (CORS does not gate navigations). Keep both product origins
+  // explicit during the transition rather than opening this endpoint to "*".
+  const origin = req?.headers.get("origin") ?? "";
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : "https://app.enternemesis.com";
+  return { "Access-Control-Allow-Origin": allowOrigin, "Access-Control-Allow-Headers": "authorization, content-type", "Access-Control-Allow-Methods": "POST, GET, OPTIONS" };
 }
-function json(payload: unknown, status = 200): Response {
-  return new Response(JSON.stringify(payload), { status, headers: { ...cors(), "Content-Type": "application/json" } });
+function json(payload: unknown, status = 200, req?: Request): Response {
+  return new Response(JSON.stringify(payload), { status, headers: { ...cors(req), "Content-Type": "application/json" } });
 }
-function html(message: string, status: number): Response {
-  const body = `<!doctype html><html><body style="font-family:-apple-system,sans-serif;max-width:480px;margin:80px auto;padding:0 24px;text-align:center;color:#0f172a"><h2>PharmaOrb</h2><p>${message}</p></body></html>`;
-  return new Response(body, { status, headers: { ...cors(), "Content-Type": "text/html" } });
+function html(message: string, status: number, req?: Request): Response {
+  const body = `<!doctype html><html><body style="font-family:-apple-system,sans-serif;max-width:480px;margin:80px auto;padding:0 24px;text-align:center;color:#0f172a"><h2>Nemesis</h2><p>${message}</p></body></html>`;
+  return new Response(body, { status, headers: { ...cors(req), "Content-Type": "text/html" } });
 }

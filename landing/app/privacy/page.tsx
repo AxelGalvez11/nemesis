@@ -19,7 +19,7 @@ export default function PrivacyPage() {
 
       <p className="legal-lead">
         Nemesis is local-first by design. This policy covers this website and the Nemesis
-        product. The web research app maintains its own legal pages inside the app.
+        product. The web research workspace includes additional disclosures inside the app.
       </p>
 
       <h2>What stays on your Mac</h2>
@@ -67,7 +67,7 @@ export default function PrivacyPage() {
 
       <h2>Contact</h2>
       <p>
-        Questions about this policy: <a href="mailto:support@nemesis.app">support@nemesis.app</a>
+        Questions about this policy: <a href="mailto:support@enternemesis.com">support@enternemesis.com</a>
       </p>
     </LegalShell>
   );

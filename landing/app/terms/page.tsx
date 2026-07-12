@@ -69,7 +69,7 @@ export default function TermsPage() {
 
       <h2>Contact</h2>
       <p>
-        Questions about these terms: <a href="mailto:support@nemesis.app">support@nemesis.app</a>
+        Questions about these terms: <a href="mailto:support@enternemesis.com">support@enternemesis.com</a>
       </p>
     </LegalShell>
   );

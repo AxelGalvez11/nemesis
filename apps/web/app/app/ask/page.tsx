@@ -769,7 +769,7 @@ function AskPage() {
                     so this is a simple token-tinted "P" square, not <Orb/>. Purely presentational. */}
                 <div className="agent-head" aria-hidden="true">
                   <span className="agent-avatar">P</span>
-                  <span className="agent-name">PharmaOrb</span>
+                  <span className="agent-name">Nemesis</span>
                 </div>
                 <div className="ai-body">
                   {t.scoping ? (

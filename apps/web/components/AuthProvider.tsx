@@ -2,7 +2,7 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { isPreviewMode } from "@/lib/env";
+import { hasSupabaseConfig, isPreviewMode } from "@/lib/env";
 import { resolveAuthRedirectUrl } from "@/lib/auth-redirect";
 import { supabase } from "@/lib/supabase";
 import { phCapture, phIdentify, phReset } from "@/lib/posthog";
@@ -38,7 +38,7 @@ const previewSession = {
     id: "00000000-0000-4000-8000-000000000000",
     aud: "authenticated",
     role: "authenticated",
-    email: "preview@pharmaorb.app",
+    email: "preview@enternemesis.com",
     app_metadata: { provider: "email", providers: ["email"] },
     user_metadata: {},
     created_at: new Date().toISOString(),
@@ -57,13 +57,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    let alive = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!alive) return;
-      setSession(data.session ?? null);
-      if (data.session?.user) phIdentify(data.session.user.id, { email: data.session.user.email });
+    if (!hasSupabaseConfig) {
+      setSession(null);
       setLoading(false);
-    });
+      return;
+    }
+
+    let alive = true;
+    void supabase.auth.getSession()
+      .then(({ data }) => {
+        if (!alive) return;
+        setSession(data.session ?? null);
+        if (data.session?.user) phIdentify(data.session.user.id, { email: data.session.user.email });
+      })
+      .catch(() => {
+        if (alive) setSession(null);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
       if (next?.user) phIdentify(next.user.id, { email: next.user.email });
@@ -81,6 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(previewSession);
       return null;
     }
+    if (!hasSupabaseConfig) return "Identity service configuration is unavailable.";
     // captchaToken is forwarded only when present; Supabase ignores it until CAPTCHA enforcement is
     // enabled in the dashboard, so this is inert until activated.
     const { error } = await supabase.auth.signInWithPassword({
@@ -96,11 +109,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(previewSession);
       return { error: null, needsEmailConfirmation: false };
     }
+    if (!hasSupabaseConfig) return { error: "Identity service configuration is unavailable.", needsEmailConfirmation: false };
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: resolveAuthRedirectUrl("/app"),
+        emailRedirectTo: resolveAuthRedirectUrl("/auth/callback?next=%2Fapp"),
         // Forwarded only when present; Supabase ignores it until CAPTCHA enforcement is enabled.
         ...(captchaToken ? { captchaToken } : {}),
         // Record the accepted Terms/Disclaimer version on the user (the signup consent gate). The

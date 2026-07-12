@@ -151,7 +151,7 @@ const FEATURES = [
   {
     img: "/art/asclepius.webp",
     title: "Educational, not advice",
-    body: "PharmaOrb helps you ask better questions at your next appointment. It doesn't diagnose, treat, or prescribe. Always consult a professional.",
+    body: "Nemesis helps you ask better questions and inspect the evidence. It doesn't diagnose, treat, or prescribe. Always consult a professional.",
   },
 ];
 
@@ -166,7 +166,7 @@ export function Manifesto() {
           <div className="section-tag">Why we built it</div>
           <h2 className="section-h2">Medicine you can actually check</h2>
           <p className="section-p">
-            Most health answers ask you to just trust them. PharmaOrb does the opposite. Every
+            Most research tools ask you to just trust them. Nemesis does the opposite. Every
             claim is traced back to the FDA label, the study, or the trial it came from, in plain
             English, so you can see the evidence for yourself.
           </p>
@@ -329,7 +329,7 @@ export function Features() {
     <section className="section features" id="features">
       <div className="container">
         <div style={{ textAlign: "center", marginBottom: "52px" }}>
-          <div className="section-tag reveal">Why PharmaOrb</div>
+          <div className="section-tag reveal">Why Nemesis</div>
           <h2 className="section-h2 reveal d1">Built on trust, not vibes</h2>
         </div>
         <div className="feat-grid">
@@ -367,10 +367,10 @@ export function CallToAction() {
           Free to start. Every answer traced to the evidence.
         </p>
         <div className="hero-cta-row reveal d3" style={{ justifyContent: "center" }}>
-          <a className="wbtn" href="https://app.pharmaorb.app/sign-up">
+          <a className="wbtn" href="https://app.enternemesis.com/sign-up">
             Get started — free
           </a>
-          <a className="hero-ghost" href="https://app.pharmaorb.app/sign-in">
+          <a className="hero-ghost" href="https://app.enternemesis.com/sign-in">
             Sign in
           </a>
         </div>
@@ -402,12 +402,12 @@ export function SiteFooter() {
           <a href="/terms#disclaimer">Disclaimer</a>
         </div>
         <p className="footer-disc">
-          PharmaOrb provides educational information from public sources including FDA labels,
+          Nemesis provides educational information from public sources including FDA labels,
           PubMed, and ClinicalTrials.gov. Not medical advice. Does not diagnose, treat, or
           prescribe. Always consult a qualified healthcare professional.
         </p>
         <p className="footer-copy">
-          We only use your email to notify you about the beta. © 2026 PharmaOrb.
+          We only use your email to operate your account and share product updates. © 2026 Nemesis.
         </p>
       </div>
     </footer>

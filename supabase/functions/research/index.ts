@@ -28,6 +28,7 @@ import { buildMissionEmail } from "../../../packages/shared/src/mission-email.ts
 import { sendEmail } from "./resend.ts";
 
 const DEFAULT_ALLOWED_ORIGINS = [
+  "https://app.enternemesis.com",
   "https://app.pharmaorb.app",
   "https://pharmaorb.app",
   "https://www.pharmaorb.app",
@@ -469,7 +470,7 @@ async function sendMissionEmail(mission: MissionRow, savedReportId: string): Pro
   const apiKey = Deno.env.get("RESEND_API_KEY") ?? "";
   const from = Deno.env.get("RESEND_FROM") ?? "";
   if (!apiKey || !from) return;
-  const appUrl = Deno.env.get("APP_URL") ?? "https://app.pharmaorb.app";
+  const appUrl = Deno.env.get("APP_URL") ?? "https://app.enternemesis.com";
 
   // Owner's email via GoTrue admin (service key).
   const uRes = await fetch(`${SB_URL}/auth/v1/admin/users/${mission.user_id}`, {
@@ -650,7 +651,7 @@ function isAllowedOrigin(origin: string): boolean {
 
 function corsHeaders(req?: Request): Record<string, string> {
   const origin = req?.headers.get("origin") ?? "";
-  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.pharmaorb.app";
+  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.enternemesis.com";
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",

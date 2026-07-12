@@ -613,7 +613,7 @@ export async function exportMyData(): Promise<Record<string, unknown>> {
   if (isPreviewMode) {
     return {
       exported_at: new Date().toISOString(),
-      profile: { email: "preview@pharmaorb.app" },
+      profile: { email: "preview@enternemesis.com" },
       subscription: { plan: "free", status: "preview" },
       watchlist: demoWatchlist,
       usage: demoUsage,

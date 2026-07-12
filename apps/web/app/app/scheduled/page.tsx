@@ -341,7 +341,7 @@ export default function ScheduledPage() {
         /* Shared empty state (both tabs): illustration + honest H2 + 3 suggestion rows + create button. */
         <div className="sched-empty">
           <ScheduleIllustration />
-          <h2 className="sched-empty-title">PharmaOrb researches on schedule, without you asking.</h2>
+          <h2 className="sched-empty-title">Nemesis researches on schedule, within the scope you set.</h2>
           <div className="sched-suggestions">
             {SUGGESTIONS.map((s) => (
               <button

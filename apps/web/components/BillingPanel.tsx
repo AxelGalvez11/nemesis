@@ -122,7 +122,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
       <div className="grid two">
         <Card className={isPlus ? "acid" : ""}>
           <div className="row" style={{ marginBottom: 2 }}>
-            <h2 style={{ margin: "0 0 2px" }}>PharmaOrb Plus</h2>
+            <h2 style={{ margin: "0 0 2px" }}>Nemesis Plus</h2>
             {isPlus ? <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>Current</span> : null}
           </div>
           <p style={{ margin: "0 0 12px" }}>
@@ -138,7 +138,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
         </Card>
         <Card className="acid">
           <div className="row" style={{ marginBottom: 2 }}>
-            <h2 style={{ margin: 0 }}>PharmaOrb Pro</h2>
+            <h2 style={{ margin: 0 }}>Nemesis Pro</h2>
             <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>{isPro ? "Current" : "Recommended"}</span>
           </div>
           <p style={{ margin: "0 0 12px" }}>

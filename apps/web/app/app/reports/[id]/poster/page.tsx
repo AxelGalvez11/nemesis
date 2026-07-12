@@ -12,7 +12,7 @@ import { SkeletonRows } from "@/components/Skeleton";
 // of the ResearchPoster component (previously dev-preview only). The board is styled for 48×36
 // landscape; "Print / Save as PDF" uses the browser's print (the @media print + @page rules in
 // shell.css strip the app chrome and lock poster proportions), so the output is a real, cited,
-// print-ready poster. A subtle "Made with PharmaOrb" mark rides the footer — the wedge growth loop.
+// print-ready poster. A subtle Nemesis mark rides the footer — the wedge growth loop.
 export default function PosterPage() {
   const params = useParams<{ id: string }>();
   const id = typeof params.id === "string" ? params.id : "";
