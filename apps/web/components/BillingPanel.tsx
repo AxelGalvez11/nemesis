@@ -122,36 +122,36 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
       <div className="grid two">
         <Card className={isPlus ? "acid" : ""}>
           <div className="row" style={{ marginBottom: 2 }}>
-            <h2 style={{ margin: "0 0 2px" }}>PharmaOrb Plus</h2>
+            <h2 style={{ margin: "0 0 2px" }}>Nemesis Student</h2>
             {isPlus ? <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>Current</span> : null}
           </div>
           <p style={{ margin: "0 0 12px" }}>
-            <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>$20</strong>
+            <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>$9.99</strong>
             <span className="muted" style={{ fontSize: 13 }}> / month</span>
           </p>
           <ul style={billingList}>
-            <li style={billingItem}><span style={billingTick}>✓</span>100 Ask questions per day</li>
-            <li style={billingItem}><span style={billingTick}>✓</span>50 watchlist follows</li>
-            <li style={billingItem}><span style={billingTick}>✓</span>Plus monitoring surfaces as they roll out</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Higher daily limits for answers, notes &amp; decks</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Turn your lectures into notes + exam-ready flashcards</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Sync your school portal + email on a schedule</li>
           </ul>
-          {planCta("plus", "Upgrade to Plus")}
+          {planCta("plus", "Upgrade to Student")}
         </Card>
         <Card className="acid">
           <div className="row" style={{ marginBottom: 2 }}>
-            <h2 style={{ margin: 0 }}>PharmaOrb Pro</h2>
+            <h2 style={{ margin: 0 }}>Nemesis Agent Pro</h2>
             <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>{isPro ? "Current" : "Recommended"}</span>
           </div>
           <p style={{ margin: "0 0 12px" }}>
-            <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>$49</strong>
+            <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>$19.99</strong>
             <span className="muted" style={{ fontSize: 13 }}> / month</span>
           </p>
           <ul style={billingList}>
-            <li style={{ ...billingItem, color: "var(--text-2)", fontWeight: 600, fontSize: 12.5 }}>Everything in Plus, plus:</li>
-            <li style={billingItem}><span style={billingTick}>✓</span><span><strong>Deep Research</strong> — 3 multi-step cited reports per day</span></li>
-            <li style={billingItem}><span style={billingTick}>✓</span>250 Ask questions per day · 100 watchlist follows</li>
-            <li style={billingItem}><span style={billingTick}>✓</span>Literature review &amp; meta-analysis as they roll out</li>
+            <li style={{ ...billingItem, color: "var(--text-2)", fontWeight: 600, fontSize: 12.5 }}>Everything in Student, plus:</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>The agent runs your whole semester end-to-end</li>
+            <li style={billingItem}><span style={billingTick}>✓</span><span><strong>Deep research</strong> reports with real citations</span></li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Live lecture copilot — up to 2 lectures a day</li>
           </ul>
-          {planCta("pro", "Upgrade to Pro")}
+          {planCta("pro", "Upgrade to Agent Pro")}
         </Card>
       </div>
     </>

@@ -66,7 +66,7 @@ export default function SignInPage() {
   return (
     <main className="centered">
       <section className="auth-card" style={cardStyle}>
-        <p className="eyebrow" style={eyebrowStyle}>PharmaOrb beta</p>
+        <p className="eyebrow" style={eyebrowStyle}>Nemesis beta</p>
         <h1 style={titleStyle}>Sign in</h1>
         <p className="muted" style={subStyle}>Use your beta account to access cited Ask, search, and monitoring.</p>
         {deleted ? <p className="success-text">Your account was deleted.</p> : null}

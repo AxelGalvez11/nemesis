@@ -93,7 +93,7 @@ export default function SignUpPage() {
     return (
       <main className="centered">
         <section className="auth-card" style={cardStyle}>
-          <p className="eyebrow" style={eyebrowStyle}>PharmaOrb beta</p>
+          <p className="eyebrow" style={eyebrowStyle}>Nemesis beta</p>
           <h1 style={titleStyle}>Check your email</h1>
           <p className="muted" style={{ ...subStyle, marginBottom: 8 }}>We sent a confirmation link to {submittedEmail}. Open it to finish creating your account.</p>
           <p className="muted" style={subStyle}>After confirming, sign in with the same email and password.</p>
@@ -106,16 +106,16 @@ export default function SignUpPage() {
   return (
     <main className="centered">
       <section className="auth-card" style={cardStyle}>
-        <p className="eyebrow" style={eyebrowStyle}>PharmaOrb beta</p>
+        <p className="eyebrow" style={eyebrowStyle}>Nemesis beta</p>
         <h1 style={titleStyle}>Create account</h1>
-        <p className="muted" style={subStyle}>Educational information only. PharmaOrb does not diagnose, treat, prescribe, or replace a healthcare professional.</p>
+        <p className="muted" style={subStyle}>Educational information only. Nemesis does not diagnose, treat, prescribe, or replace a healthcare professional.</p>
         {isPreviewMode ? <p className="muted" style={subStyle}>Preview mode: no account will be created.</p> : null}
         <form onSubmit={onSubmit} style={formStyle}>
           <input type="email" autoComplete="email" required={!isPreviewMode} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input type="password" autoComplete="new-password" required={!isPreviewMode} minLength={isPreviewMode ? undefined : 8} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
           <label style={consentStyle}>
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} style={checkboxStyle} aria-label="Agree to the Terms and Disclaimer" />
-            <span>I understand PharmaOrb provides educational research information, not medical advice, and I agree to the <Link className="source-link" href="/legal/terms">Terms</Link> and <Link className="source-link" href="/legal/disclaimer">Disclaimer</Link>.</span>
+            <span>I understand Nemesis provides educational research information, not medical advice, and I agree to the <Link className="source-link" href="/legal/terms">Terms</Link> and <Link className="source-link" href="/legal/disclaimer">Disclaimer</Link>.</span>
           </label>
           <TurnstileWidget key={captchaKey} onToken={setCaptchaToken} />
           <button disabled={busy || (!agreed && !isPreviewMode) || (captchaEnabled && !isPreviewMode && !captchaToken)} type="submit" style={submitStyle}>{busy ? "Creating…" : isPreviewMode ? "Enter preview app" : "Create account"}</button>

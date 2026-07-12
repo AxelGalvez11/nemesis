@@ -7,7 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { PostHogProvider } from "@/components/PostHogProvider";
 
 export const metadata: Metadata = {
-  title: "PharmaOrb",
+  title: "Nemesis",
   description: "Source-grounded biomedical evidence — live and cited.",
 };
 

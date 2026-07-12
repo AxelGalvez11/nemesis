@@ -91,7 +91,7 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
         {section === "general" ? (
           <section className="card">
             <h2 style={{ marginBottom: 4 }}>Appearance</h2>
-            <p className="muted" style={{ fontSize: 13, margin: "0 0 16px" }}>Choose how PharmaOrb looks. Saved on this device.</p>
+            <p className="muted" style={{ fontSize: 13, margin: "0 0 16px" }}>Choose how Nemesis looks. Saved on this device.</p>
             <div className="theme-grid">
               {THEME_OPTIONS.map((t) => (
                 <button
@@ -138,7 +138,7 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
           <section className="card">
             <h2 style={{ marginBottom: 4 }}>About</h2>
             <p className="muted" style={{ fontSize: 13, margin: 0, lineHeight: 1.6 }}>
-              PharmaOrb gives source-grounded, cited answers. Every medical claim traces to a real source. Educational use only — not a substitute for professional medical advice.
+              Nemesis gives source-grounded, cited answers. Every medical claim traces to a real source. Educational use only — not a substitute for professional medical advice.
             </p>
             <button type="button" className="mode watch-add-btn" style={{ marginTop: 12 }} onClick={() => setSourcesOpen(true)}>
               <Icon name="shield" size={14} /> View data sources

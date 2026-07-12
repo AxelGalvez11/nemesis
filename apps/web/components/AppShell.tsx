@@ -86,7 +86,7 @@ function titleForPath(path: string): { title: string; sub?: string } {
   if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };
   if (path.startsWith("/app/scheduled")) return { title: "Scheduled", sub: "recurring research + monitors" };
   // Covers both the list (/app/projects) and a project detail page (/app/projects/<id>) — previously
-  // both fell through to the "PharmaOrb" fallback, so the topbar read the app name instead of "Projects".
+  // both fell through to the "Nemesis" fallback, so the topbar read the app name instead of "Projects".
   if (path.startsWith("/app/projects")) return { title: "Projects", sub: "group chats, reports + monitors" };
   if (path.startsWith("/app/score")) return { title: "Score", sub: "your longevity rank" };
   if (path.startsWith("/app/explore")) return { title: "Explore" };
@@ -95,7 +95,7 @@ function titleForPath(path: string): { title: string; sub?: string } {
   if (path.startsWith("/app/settings")) return { title: "Settings" };
   if (path.startsWith("/app/drugs/")) return { title: "Drug" };
   if (path.startsWith("/app/source/")) return { title: "Source" };
-  return { title: "PharmaOrb" };
+  return { title: "Nemesis" };
 }
 
 const FULL_BLEED = ["/app/ask", "/app/research", "/app/reports", "/app/monitor", "/app/scheduled", "/app/explore", "/app/drugs/", "/app/score"];
@@ -432,7 +432,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* ── rail ── */}
         <aside className="rail" id="app-rail">
           <div className="brand">
-            <div className="wordmark">PharmaOrb</div>
+            <div className="wordmark">Nemesis</div>
             {/* Manus-style rail collapse toggle atop the sidebar. Reuses toggleRail (same handler as the
                 topbar hamburger). When expanded it sits right of the wordmark; when collapsed the
                 wordmark hides and this stays centered in the icon rail as the expand affordance. */}
