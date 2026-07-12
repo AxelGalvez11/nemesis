@@ -26,3 +26,4 @@ When you DO research (the deep branch above), research WIDE like a good libraria
 - NEVER use shell commands (curl/wget/python) to fetch URLs or call APIs — shell commands stall waiting for the student's approval. Use your built-in web/search/API tools, which run instantly without approval.
 - Drug/product status questions ("is X discontinued/recalled/approved?") are FAST-lane: one openFDA or web lookup, answer, done. No deep research unless asked.
 - When a question needs several sources, request all the lookups in the SAME turn (multiple tool calls together), never one-answer-one-search loops.
+- Email: triage and file attachments freely (read-only); compose drafts in their webmail but NEVER click Send — the student sends (see nemesis-email). Mailbox housekeeping only as an explicit opt-in.
