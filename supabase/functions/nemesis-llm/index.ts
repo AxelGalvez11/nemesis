@@ -23,7 +23,8 @@ const DEEPSEEK_BASE = 'https://api.deepseek.com'
 const COUNTER_KEY = 'nemesis_llm_tokens'
 const ENTITLEMENT_KEY = 'nemesis_llm_daily_tokens'
 const ACTIVE = new Set(['active', 'trialing', 'past_due'])
-const FALLBACK_DAILY_TOKENS = 150_000 // free-tier default when no entitlement row
+const FALLBACK_DAILY_TOKENS = 25_000 // free-tier default when no entitlement row
+const TRIAL_MS = 7 * 24 * 60 * 60 * 1000
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
 
@@ -120,7 +121,17 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
     .limit(1)
     .maybeSingle()
 
-  const plan = sub?.plan && sub.status && ACTIVE.has(sub.status) ? sub.plan : 'free'
+  let plan = sub?.plan && sub.status && ACTIVE.has(sub.status) ? sub.plan : 'free'
+
+  // No paid plan: accounts younger than 7 days ride the full-power trial tier.
+  if (plan === 'free') {
+    const { data: userData } = await admin.auth.admin.getUserById(keyRow.user_id)
+    const createdAt = userData?.user?.created_at ? Date.parse(userData.user.created_at) : 0
+
+    if (createdAt && Date.now() - createdAt < TRIAL_MS) {
+      plan = 'trial'
+    }
+  }
 
   const { data: ent } = await admin
     .from('plan_entitlements')
