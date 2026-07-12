@@ -13,6 +13,25 @@ Use this skill whenever the student asks you to make flashcards, a deck, or stud
 from the current chat, a lecture note, a topic, or a document. You create decks by
 WRITING A FILE; the Study page imports it automatically.
 
+## First: pick the deliverable that fits the FIELD (don't default to cards)
+
+Flashcards are the right study tool for **memorization-heavy** fields — pharmacology,
+medicine, anatomy, biology, law terms, languages. But the best study material differs by
+discipline, and forcing cards onto a problem-based subject helps no one. Choose:
+
+- **Memorization-heavy** (pharma, med, bio, anatomy, vocab) → **flashcards** (this skill).
+- **Problem-based** (engineering, math, physics, chemistry-quant, CS) → **worked-example
+  problem sets**: a note titled `<Topic> — Worked problems` with, for each problem, the
+  prompt, the full solution METHOD (steps, not just the answer), and the formula used —
+  because these students learn by re-solving. Optionally also a small "flag the formula"
+  deck for the equations themselves. Practice **tests** (Study page tests) suit them well too.
+- **Argument-based** (humanities, law, social science, essays) → **argument outlines**: a
+  note mapping thesis → evidence → counterargument → significance for each topic/reading,
+  plus a few cards for names/dates/definitions only. Mind maps fit these well.
+
+When unsure, ask the student which they prefer, or make the field-default and offer the
+alternative. The rest of this skill is the flashcard mechanics for when cards are the pick.
+
 ## Before you start
 
 Check **USER.md memory** for a default course preference
