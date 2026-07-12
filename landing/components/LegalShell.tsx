@@ -1,5 +1,7 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SocialLinks } from "./SocialLinks";
 
 /**
  * Shared chrome for the static legal pages (privacy, terms): a slim sticky header
@@ -10,9 +12,8 @@ export function LegalShell({ children }: { children: ReactNode }) {
     <>
       <header className="legal-top">
         <div className="container">
-          <Link href="/" className="brand">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/nemesis/logo.png" alt="" style={{ width: 22, height: 22 }} />
+          <Link href="/" className="brand" aria-label="Nemesis home">
+            <Image className="brand-logo-legal" src="/nemesis/logo.png" alt="" width={22} height={22} />
             <b>Nemesis</b>
           </Link>
           <Link href="/" className="legal-back">
@@ -29,6 +30,7 @@ export function LegalShell({ children }: { children: ReactNode }) {
           <Link href="/terms" style={{ color: "var(--iron)", fontFamily: "var(--mono)", fontSize: 12, textDecoration: "none" }}>
             Terms
           </Link>
+          <SocialLinks />
           <span className="spacer" />
           <span className="muted">local-first · never submits · macOS</span>
         </div>
