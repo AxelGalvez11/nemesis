@@ -57,7 +57,11 @@ export const stripeSecretKey = process.env.STRIPE_SECRET_KEY ?? "";
 export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 export const stripePlusPriceId = process.env.STRIPE_PLUS_PRICE_ID ?? "";
 export const stripeProPriceId = process.env.STRIPE_PRO_PRICE_ID ?? "";
+export const stripeMaxPriceId = process.env.STRIPE_MAX_PRICE_ID ?? "";
 export const stripeAllowLive = process.env.STRIPE_ALLOW_LIVE === "true";
+// Every plan starts with a no-charge trial (trial model, not freemium). Card is
+// collected at checkout; the first charge lands after this many days.
+export const stripeTrialDays = Number(process.env.STRIPE_TRIAL_DAYS ?? "7") || 7;
 
 export function requirePublicEnv(): void {
   if (!supabaseUrl || !supabaseAnonKey) {

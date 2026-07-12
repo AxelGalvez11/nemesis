@@ -7,10 +7,10 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { phCapture } from "@/lib/posthog";
 
-type PaidPlan = "plus" | "pro";
+type PaidPlan = "plus" | "pro" | "max";
 
 interface Tier {
-  id: "free" | PaidPlan;
+  id: PaidPlan;
   name: string;
   price: string;
   cadence: string;
@@ -20,32 +20,19 @@ interface Tier {
   featured?: boolean;
 }
 
-// Nemesis founding-member tiers. The two paid plans map to the existing Stripe
-// checkout (plan "plus" | "pro" → STRIPE_PLUS_PRICE_ID / STRIPE_PRO_PRICE_ID). The
-// $ shown here must match the amounts on those Stripe prices.
+// Nemesis tiers — a trial model, not freemium: every plan starts with a no-charge
+// trial (Stripe collects the card, first charge lands after the trial). The plans map
+// to Stripe prices (plan "plus" | "pro" | "max" → STRIPE_{PLUS,PRO,MAX}_PRICE_ID); the
+// $ shown here must match those Stripe prices.
 const TIERS: Tier[] = [
   {
-    cta: "Get Nemesis free",
-    cadence: "forever",
-    features: [
-      "Cited answers from real medical literature",
-      "Turn a lecture into notes + flashcards",
-      "Your Library, Study decks, and Calendar",
-      "A daily allowance of AI work",
-    ],
-    id: "free",
-    name: "Free",
-    price: "$0",
-    tagline: "Try the whole thing, on the house.",
-  },
-  {
-    cta: "Start Student",
+    cta: "Start free trial",
     cadence: "/ month",
     features: [
-      "Everything in Free, with room to actually rely on it",
+      "Cited answers from real medical literature",
+      "Turn your lectures into notes + exam-ready flashcards",
       "Higher daily limits for answers, notes & decks",
       "Sync your school portal + email on a schedule",
-      "Priority research speed",
     ],
     id: "plus",
     name: "Student",
@@ -53,19 +40,33 @@ const TIERS: Tier[] = [
     tagline: "For the student who lives in it.",
   },
   {
-    cta: "Start Agent Pro",
+    cta: "Start free trial",
     cadence: "/ month",
     featured: true,
     features: [
       "Everything in Student, plus the autopilot",
       "The agent runs your whole semester end-to-end",
       "Deep research reports with real citations",
-      "The highest daily limits + first access to new powers",
+      "Live lecture copilot — up to 2 lectures a day",
     ],
     id: "pro",
     name: "Agent Pro",
     price: "$19.99",
     tagline: "The full autopilot for your degree.",
+  },
+  {
+    cta: "Start free trial",
+    cadence: "/ month",
+    features: [
+      "Everything in Agent Pro, with no ceiling",
+      "Unlimited live lecture copilot — real-time, every class",
+      "The highest daily limits on everything",
+      "First access to every new power we ship",
+    ],
+    id: "max",
+    name: "Max",
+    price: "$49.99",
+    tagline: "Real-time AI in every lecture, all day.",
   },
 ];
 
@@ -138,7 +139,9 @@ function PricingInner() {
         return null;
       }
     })();
-    const plan = intentPlan === "plus" || intentPlan === "pro" ? intentPlan : stashed === "plus" || stashed === "pro" ? stashed : null;
+    const asPlan = (value: null | string): PaidPlan | null =>
+      value === "plus" || value === "pro" || value === "max" ? value : null;
+    const plan = asPlan(intentPlan) ?? asPlan(stashed);
     if (plan) {
       void startCheckout(plan);
     }
@@ -147,11 +150,6 @@ function PricingInner() {
   }, [session?.access_token]);
 
   function onCta(tier: Tier) {
-    if (tier.id === "free") {
-      router.push(session?.access_token ? "/app" : "/sign-up");
-
-      return;
-    }
     void startCheckout(tier.id);
   }
 
@@ -173,6 +171,7 @@ function PricingInner() {
           Nemesis syncs your school, turns every lecture into notes and exam-ready flashcards, and answers with real,
           cited sources — a local-first agent that lives on your Mac and stays a step ahead of you.
         </p>
+        <p className="nm-trialline">Every plan starts with a 7-day free trial. No charge until it ends — cancel anytime.</p>
       </section>
 
       {checkoutStatus === "success" ? (
@@ -195,6 +194,7 @@ function PricingInner() {
               <strong>{tier.price}</strong>
               <span className="nm-cadence">{tier.cadence}</span>
             </p>
+            <p className="nm-trialhint">7 days free, then billed monthly</p>
             <button className="nm-cta" disabled={busy === tier.id} onClick={() => onCta(tier)} type="button">
               {busy === tier.id ? "Opening checkout…" : tier.cta}
             </button>
@@ -240,6 +240,7 @@ const PRICING_CSS = `
 .nm-eyebrow { color:var(--nm-red); font-size:12px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; margin:0 0 18px; }
 .nm-title { font-size:clamp(30px,5vw,50px); line-height:1.05; letter-spacing:-0.03em; font-weight:800; margin:0 0 18px; text-wrap:balance; }
 .nm-sub { color:var(--nm-dim); font-size:clamp(15px,2.2vw,18px); line-height:1.6; margin:0 auto; max-width:600px; }
+.nm-trialline { color:var(--nm-red); font-size:13.5px; font-weight:600; margin:20px auto 0; }
 .nm-banner { max-width:1080px; margin:0 auto 24px; padding:13px 16px; border-radius:12px; font-size:14px; background:var(--nm-surface); border:1px solid var(--nm-line); color:var(--nm-dim); text-align:center; }
 .nm-banner-ok { border-color:rgba(52,199,89,0.4); color:#7ee29a; background:rgba(52,199,89,0.08); }
 .nm-banner-err { border-color:rgba(255,59,70,0.45); color:#ff8f97; background:rgba(255,59,70,0.08); }
@@ -252,6 +253,7 @@ const PRICING_CSS = `
 .nm-price { margin:0 0 18px; display:flex; align-items:baseline; gap:6px; }
 .nm-price strong { font-size:36px; font-weight:800; letter-spacing:-0.03em; }
 .nm-cadence { color:var(--nm-dim); font-size:14px; }
+.nm-trialhint { color:var(--nm-dim); font-size:12px; margin:-8px 0 14px; }
 .nm-cta { width:100%; border:none; border-radius:12px; padding:12px 16px; font-size:15px; font-weight:700; cursor:pointer; background:#1f1f22; color:var(--nm-text); border:1px solid var(--nm-line); transition:filter 0.15s, background 0.15s; }
 .nm-cta:hover:not(:disabled) { background:#242427; }
 .nm-cta:disabled { opacity:0.6; cursor:default; }

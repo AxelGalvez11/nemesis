@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { stripeAllowLive, stripePlusPriceId, stripeProPriceId, stripeSecretKey } from "./env";
+import { stripeAllowLive, stripeMaxPriceId, stripePlusPriceId, stripeProPriceId, stripeSecretKey } from "./env";
 
 let cached: Stripe | null = null;
 
@@ -12,10 +12,11 @@ export function stripe(): Stripe {
   return cached;
 }
 
-export type PaidPlan = "free" | "plus" | "pro";
+export type PaidPlan = "free" | "plus" | "pro" | "max";
 
 /** Which plan a Stripe price grants. Unrecognized prices grant nothing (free). */
 export function planForPriceId(priceId: string | null | undefined): PaidPlan {
+  if (priceId && stripeMaxPriceId && priceId === stripeMaxPriceId) return "max";
   if (priceId && stripeProPriceId && priceId === stripeProPriceId) return "pro";
   if (priceId && stripePlusPriceId && priceId === stripePlusPriceId) return "plus";
   return "free";

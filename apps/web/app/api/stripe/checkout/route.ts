@@ -1,6 +1,12 @@
-import { appUrl, stripePlusPriceId, stripeProPriceId } from "@/lib/env";
+import { appUrl, stripeMaxPriceId, stripePlusPriceId, stripeProPriceId, stripeTrialDays } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
 import { stripe, stripeFailureDetail } from "@/lib/stripe";
+
+const PRICE_BY_PLAN: Record<"plus" | "pro" | "max", string> = {
+  max: stripeMaxPriceId,
+  plus: stripePlusPriceId,
+  pro: stripeProPriceId,
+};
 
 export async function POST(req: Request) {
   try {
@@ -8,12 +14,12 @@ export async function POST(req: Request) {
     if (!user) return json({ error: "authentication required" }, 401);
 
     // Which plan to buy. Defaults to plus (no body) for backward compatibility.
-    let plan: "plus" | "pro" = "plus";
+    let plan: "plus" | "pro" | "max" = "plus";
     try {
       const body = await req.json();
-      if (body?.plan === "pro") plan = "pro";
+      if (body?.plan === "pro" || body?.plan === "max") plan = body.plan;
     } catch { /* no body → plus */ }
-    const priceId = plan === "pro" ? stripeProPriceId : stripePlusPriceId;
+    const priceId = PRICE_BY_PLAN[plan];
     if (!priceId) return json({ error: `STRIPE_${plan.toUpperCase()}_PRICE_ID missing` }, 500);
 
     const admin = adminClient();
@@ -46,7 +52,10 @@ export async function POST(req: Request) {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${appUrl}/app/settings?section=billing&checkout=success`,
       cancel_url: `${appUrl}/app/settings?section=billing&checkout=cancelled`,
-      subscription_data: { metadata: { user_id: user.id, plan } },
+      // Trial model (not freemium): every plan starts with a no-charge trial. The card is
+      // collected now; Stripe waits `trial_period_days` before the first charge, and the
+      // subscription webhook still grants the paid plan immediately so the trial is full-featured.
+      subscription_data: { metadata: { user_id: user.id, plan }, trial_period_days: stripeTrialDays },
       metadata: { user_id: user.id, plan },
     });
 
