@@ -110,11 +110,11 @@ export default function Home() {
             <b>Nemesis</b>
           </Link>
           <span className="spacer" />
-          <a className="ghost" href="#how">System</a>
-          <a className="ghost" href="#graph">The graph</a>
-          <a className="ghost" href="#privacy">Privacy</a>
+          <a className="ghost" href="#how">Containment</a>
+          <a className="ghost" href="#graph">Memory</a>
+          <a className="ghost" href="#privacy">Boundaries</a>
           <a className="ghost" href={APP_SIGN_IN}>Sign in</a>
-          <a className="btn btn-primary" href={APP_SIGN_UP}>Get Nemesis</a>
+          <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
         </div>
       </nav>
 
@@ -124,23 +124,24 @@ export default function Home() {
         <div className="wrap">
           <div className="hero-in">
             <p className="eyebrow reveal">
-              Academic operating system<span className="dot"> · </span>macOS
+              Academic agent<span className="dot"> · </span>under containment
+              <span className="dot"> · </span>macOS
             </p>
             <h1 className="reveal r2">Nemesis</h1>
             <p className="phrase reveal r3">
-              Intelligence<span className="dot"> · </span>Precision
-              <span className="dot"> · </span>Relentless
+              It remembers<span className="dot"> · </span>It learns
+              <span className="dot"> · </span>It acts
             </p>
             <div className="hero-cta reveal r4">
-              <a className="btn btn-primary" href={APP_SIGN_UP}>Get Nemesis</a>
-              <a className="btn btn-ghost" href="#how">Watch it work</a>
+              <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
+              <a className="btn btn-ghost" href="#how">Inspect the system</a>
             </div>
             <div className="hero-meta reveal r4">
-              <span>macOS</span>
+              <span>persistent memory</span>
               <span className="rule" />
-              <span>on-device</span>
+              <span>scoped tools</span>
               <span className="rule" />
-              <span>never submits</span>
+              <span>human submission</span>
             </div>
           </div>
         </div>
@@ -149,32 +150,32 @@ export default function Home() {
       <section className="section alt" id="how">
         <div className="wrap">
           <div className="section-head">
-            <p className="eyebrow">The product</p>
-            <h2>A student needs three answers. Nemesis keeps them current.</h2>
+            <p className="eyebrow">Containment brief</p>
+            <h2>Give it the semester. Keep the final authority.</h2>
           </div>
           <div className="qs">
             <div className="q">
               <div className="n">01</div>
-              <h3>It knows what <span className="b">changed</span>.</h3>
+              <h3>It detects what <span className="b">changed</span>.</h3>
               <p>
-                Announcements, moved exams, new grades, new files. It reads them and reports
-                the difference. Nothing slips.
+                Announcements, moved exams, new grades, new files. Nemesis reads the sources
+                you authorize, compares them with the record, and tells you exactly what moved.
               </p>
             </div>
             <div className="q">
               <div className="n">02</div>
-              <h3>It knows what comes <span className="b">next</span>.</h3>
+              <h3>It ranks what comes <span className="b">next</span>.</h3>
               <p>
-                Open work, ranked by deadline, grade weight, and how well you know the
-                material. One task on top. A reason attached.
+                Open work is ranked by deadline, grade weight, and mastery. One task rises
+                to the top, with the reason attached.
               </p>
             </div>
             <div className="q">
               <div className="n">03</div>
-              <h3>It knows what you <span className="b">don&rsquo;t</span>.</h3>
+              <h3>It finds the <span className="b">weak point</span>.</h3>
               <p>
-                Recall tracked per concept. It flags what will cost you, weeks before the
-                exam.
+                Recall is tracked through your review history. Nemesis identifies what is
+                likely to cost you and brings it forward before the exam does.
               </p>
             </div>
           </div>
@@ -185,11 +186,14 @@ export default function Home() {
         <div className="wrap">
           <div className="section-head">
             <p className="eyebrow">
-              Mastery<span className="dot"> · </span>Intelligence
-              <span className="dot"> · </span>Nemesis
+              Memory<span className="dot"> · </span>Skill
+              <span className="dot"> · </span>Agency
             </p>
-            <h2>Three functions. Nothing else.</h2>
-            <p>Every capability serves one of these.</p>
+            <h2>A capable system, held to a narrow mission.</h2>
+            <p>
+              Built on the Hermes agent framework, Nemesis can compound its intelligence.
+              Its permitted scope remains fixed.
+            </p>
           </div>
           <div className="triad">
             <div className="obj">
@@ -197,12 +201,12 @@ export default function Home() {
                 <div className="img intelligence parallax-layer" data-parallax-amount="18" />
               </div>
               <div className="cap">
-                <div className="k">Intelligence</div>
-                <h3>It knows your semester</h3>
+                <div className="k">Persistent memory</div>
+                <h3>It remembers across sessions</h3>
                 <p>
-                  It reads your accounts and builds one model: courses, deadlines, lectures,
-                  concepts. Every fact carries its source. A professor&rsquo;s word never
-                  blurs into a guess.
+                  Courses, deadlines, lectures, concepts, and preferences persist after the
+                  conversation ends. Every academic fact keeps its source and history, so
+                  Nemesis does not wake up blank.
                 </p>
               </div>
             </div>
@@ -211,11 +215,12 @@ export default function Home() {
                 <div className="img mastery parallax-layer" data-parallax-amount="18" />
               </div>
               <div className="cap">
-                <div className="k">Mastery</div>
-                <h3>It measures what you know</h3>
+                <div className="k">Procedural skill</div>
+                <h3>It learns how the work gets done</h3>
                 <p>
-                  Not card counts. Recall, per concept, tracked over time. It schedules
-                  review right before you forget and names where you are weak.
+                  A successful workflow can become a reusable skill: sync a portal, build a
+                  deck, prepare a brief. The procedure can improve without gaining new
+                  authority.
                 </p>
               </div>
             </div>
@@ -224,11 +229,12 @@ export default function Home() {
                 <div className="img calendar parallax-layer" data-parallax-amount="18" />
               </div>
               <div className="cap">
-                <div className="k">Nemesis</div>
-                <h3>It does the work around learning</h3>
+                <div className="k">Controlled agency</div>
+                <h3>It divides the work, then returns it</h3>
                 <p>
-                  It watches your portals, files your materials, keeps your calendar, drafts
-                  your documents. It never submits. That part is yours.
+                  Nemesis can delegate bounded tasks, run recurring prompts on schedule, and
+                  call only the tools in scope. Work runs in isolated task contexts. Results
+                  return to you. Submission does not.
                 </p>
               </div>
             </div>
@@ -241,12 +247,12 @@ export default function Home() {
         <div className="band-veil" />
         <div className="wrap">
           <div className="band-in">
-            <p className="eyebrow">The graph</p>
-            <h2>One model of your semester.</h2>
+            <p className="eyebrow">Persistent memory</p>
+            <h2>The entity remembers the whole semester.</h2>
             <p>
-              Courses, deadlines, lectures, grades, concepts. Every fact carries its source
-              and its history. Ask it anything about your semester; it answers from record,
-              not memory.
+              Courses, deadlines, lectures, grades, and concepts live in one sourced graph
+              that survives the chat. New evidence updates the record without erasing its
+              history. Ask about the semester and Nemesis answers from what it can trace.
             </p>
           </div>
         </div>
@@ -255,48 +261,55 @@ export default function Home() {
       <section className="section">
         <div className="wrap">
           <div className="section-head">
-            <p className="eyebrow">Capabilities</p>
-            <h2>What it does.</h2>
+            <p className="eyebrow">Authorized capabilities</p>
+            <h2>What it is allowed to do.</h2>
           </div>
           <div className="caps">
             <div className="cap">
-              <div className="k">Lectures</div>
-              <h3>Records and transcribes on-device</h3>
+              <div className="k">Signal</div>
+              <h3>Turn lectures into study material</h3>
               <p>
-                Lectures become notes, mind maps, decks, and practice tests. Transcription
-                runs on your Mac. The audio stays there.
+                With microphone access, Nemesis transcribes lectures on-device. From that
+                transcript, it can prepare notes, mind maps, decks, and practice tests. The
+                audio remains on your Mac.
               </p>
             </div>
             <div className="cap">
-              <div className="k">Accounts</div>
-              <h3>Reads Blackboard, Outlook, Canvas, Gmail</h3>
+              <div className="k">Browser</div>
+              <h3>Enter the accounts you authorize</h3>
               <p>
-                You sign in once, in its browser, on your machine. No API keys. It checks
-                your portals so you don&rsquo;t have to.
+                Nemesis uses your logged-in school browser to read Blackboard, Outlook,
+                Canvas, and Gmail. The session stays on your Mac; your password is never
+                handed to the agent.
               </p>
             </div>
             <div className="cap">
-              <div className="k">Study</div>
-              <h3>Schedules review by recall</h3>
+              <div className="k">Automation</div>
+              <h3>Run the mission on schedule</h3>
               <p>
-                Decks, mind maps, and tests per section. It queues each concept right before
-                you would forget it.
+                Set recurring briefs and recall-based review queues. When authorized, each
+                run follows a defined prompt or skill, then records what changed.
               </p>
             </div>
             <div className="cap">
-              <div className="k">Documents</div>
-              <h3>Drafts. Never submits.</h3>
+              <div className="k">Delegation</div>
+              <h3>Split complex work into contained tasks</h3>
               <p>
-                Slides, reports, and handouts with real citations. You review. You submit.
-                There is no code path for it to do that.
+                Research, organizing, and drafting can run in parallel, isolated task
+                contexts. Nemesis returns cited slides, reports, and handouts for review.
+                Submission remains yours.
               </p>
             </div>
           </div>
           <div className="trust" id="privacy">
-            <span className="lock">Local-first</span>
+            <span className="lock">Containment protocol</span>
             <p>
-              Logins stay on your Mac. Audio stays on your Mac.{" "}
-              <span>It sends nothing and submits nothing without you.</span>
+              School sign-ins and lecture audio stay on your Mac. Nemesis uses its configured
+              AI provider for reasoning.{" "}
+              <span>
+                Tools stay within the scope you authorize, material actions are logged, and
+                coursework is never submitted on your behalf.
+              </span>
             </p>
           </div>
         </div>
@@ -311,10 +324,10 @@ export default function Home() {
               Files<span className="dot"> · </span>Calendar
               <span className="dot"> · </span>Inbox
             </p>
-            <h2>Order is maintained.</h2>
+            <h2>Order is maintained inside the perimeter.</h2>
             <p>
-              Notes filed. Decks current. Calendar true. Every action it takes is logged in
-              plain English.
+              Notes filed. Decks current. Calendar reconciled. Browser sweeps and scheduled
+              tasks leave a plain-English trail.
             </p>
           </div>
         </div>
@@ -322,18 +335,19 @@ export default function Home() {
 
       <section className="closer" id="get">
         <div className="wrap">
-          <p className="eyebrow">After graduation</p>
-          <h2>It starts with school. It does not end there.</h2>
+          <p className="eyebrow">Containment doctrine</p>
+          <h2>It grows more capable. The perimeter stays still.</h2>
           <p>
-            Nemesis keeps your knowledge, projects, and record. It follows you into
-            residency, research, and work.
+            The semester ends; its memory does not. Nemesis carries forward the knowledge,
+            procedures, and projects you choose to retain—from school into residency,
+            research, and work. It gains context. Never authority.
           </p>
           <a
             className="btn btn-primary"
             href={APP_SIGN_UP}
             style={{ fontSize: "13px", padding: "14px 30px" }}
           >
-            Get Nemesis
+            Deploy Nemesis
           </a>
         </div>
       </section>
@@ -348,7 +362,7 @@ export default function Home() {
           <a href="/terms">Terms</a>
           <SocialLinks />
           <span className="spacer" />
-          <span className="muted">local-first · never submits · macOS</span>
+          <span className="muted">persistent · scoped · never submits · macOS</span>
         </div>
       </footer>
     </>

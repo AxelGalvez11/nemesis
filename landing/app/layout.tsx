@@ -18,14 +18,14 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.enternemesis.com"),
-  title: "Nemesis — academic operating system for macOS",
+  title: "Nemesis — a contained academic agent for macOS",
   description:
-    "Nemesis reads your school accounts, tracks every deadline and change, measures what you know, and drafts your work. It never submits. Local-first, for macOS.",
+    "Nemesis is an academic agent with persistent memory, reusable skills, scheduled automation, delegated tasks, and authorized browser access—governed by scoped tools, isolated task contexts, and a standing rule: it never submits on your behalf.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "Nemesis — academic operating system for macOS",
+    title: "Nemesis — a contained academic agent for macOS",
     description:
-      "It knows what changed. It knows what comes next. It knows what you don't. Local-first, never submits.",
+      "It remembers. It learns. It acts—inside your scope. Persistent memory, reusable skills, scheduled automation, and one standing rule: you submit.",
     type: "website",
     url: "/",
     siteName: "Nemesis",
@@ -33,9 +33,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Nemesis — academic operating system for macOS",
+    title: "Nemesis — a contained academic agent for macOS",
     description:
-      "It knows what changed. It knows what comes next. It knows what you don't. Local-first, never submits.",
+      "It remembers. It learns. It acts—inside your scope. Persistent memory, reusable skills, scheduled automation, and one standing rule: you submit.",
     images: ["/nemesis/og.jpg"],
   },
   robots: { index: true, follow: true },
