@@ -1,0 +1,1032 @@
+From b40c807cf02b9152b55c07c9d459d861d4d4dbd8 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 21:24:39 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis-kit):=20round-40=20=E2=80=94=20stu?=
+ =?UTF-8?q?dy=20collapsible=20sections=20+=20FSRS=20forgetting=20curves;?=
+ =?UTF-8?q?=20graph=20gravity=20force;=20Made-by-Nemesis=20multi-line=20bl?=
+ =?UTF-8?q?ob=20+=20escaped-path=20filter;=20Cmd+W=20hides=20window=20(doc?=
+ =?UTF-8?q?k=20reopens)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ apps/desktop/electron/main.ts                 |  21 +-
+ .../src/app/artifacts/artifact-utils.js       |  17 ++
+ .../src/app/artifacts/artifact-utils.ts       |  20 ++
+ apps/desktop/src/app/graph/index.js           |  30 ++-
+ apps/desktop/src/app/graph/index.tsx          |  58 ++++-
+ apps/desktop/src/app/study/index.js           |  72 +++++-
+ apps/desktop/src/app/study/index.tsx          | 234 +++++++++++++-----
+ apps/desktop/src/app/study/retention.js       |  24 ++
+ apps/desktop/src/app/study/retention.test.js  |  31 +++
+ apps/desktop/src/app/study/retention.test.ts  |  45 ++++
+ apps/desktop/src/app/study/retention.ts       |  39 +++
+ 11 files changed, 521 insertions(+), 70 deletions(-)
+ create mode 100644 apps/desktop/src/app/study/retention.js
+ create mode 100644 apps/desktop/src/app/study/retention.test.js
+ create mode 100644 apps/desktop/src/app/study/retention.test.ts
+ create mode 100644 apps/desktop/src/app/study/retention.ts
+
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index 5033ef8111c..e1aac0b90e1 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -2264,6 +2264,13 @@ let updateInFlight = false
+ // actually dies and the hand-off script can proceed immediately.
+ let isQuittingForHandoff = false
+ 
++// True once the app is really quitting (Cmd+Q, before-quit fired). On macOS,
++// Cmd+W / the red button must NOT destroy the main window — a destroyed window
++// forced a full createWindow() re-run whose single-init wiring made reopening
++// unreliable. Instead close hides, and the existing app.on('activate') →
++// focusWindow() path (which show()s hidden windows) restores it instantly.
++let isAppQuitting = false
++
+ // Resolve the staged updater binary. The Tauri installer copies itself to
+ // HERMES_HOME/hermes-setup.exe on a successful install (see
+ // apps/bootstrap-installer paths::copy_self_to_hermes_home). That binary owns
+@@ -6871,7 +6878,17 @@ function createWindow() {
+   mainWindow.on('moved', schedulePersistWindowState)
+   mainWindow.on('maximize', schedulePersistWindowState)
+   mainWindow.on('unmaximize', schedulePersistWindowState)
+-  mainWindow.on('close', () => schedulePersistWindowState.flush())
++  mainWindow.on('close', event => {
++    schedulePersistWindowState.flush()
++
++    // macOS convention (Slack/Discord): Cmd+W and the red button hide the
++    // window with all state warm; the Dock icon brings it back. Real quits
++    // and the updater handoff pass through and actually close.
++    if (IS_MAC && !isAppQuitting && !isQuittingForHandoff && mainWindow && !mainWindow.isDestroyed()) {
++      event.preventDefault()
++      mainWindow.hide()
++    }
++  })
+ 
+   // The overlay rides the main window — closing the app's primary window must
+   // tear it down too (otherwise it strands as an orphan that blocks
+@@ -8675,6 +8692,8 @@ function configureSpellChecker() {
+ }
+ 
+ app.on('before-quit', () => {
++  isAppQuitting = true
++
+   // The always-on-top overlay isn't a "real" app window; close it so a stray
+   // pet can't keep the process alive or float over a quit app.
+   closePetOverlay()
+diff --git a/apps/desktop/src/app/artifacts/artifact-utils.js b/apps/desktop/src/app/artifacts/artifact-utils.js
+index 9b18bfb5d48..d8ca91c4c98 100644
+--- a/apps/desktop/src/app/artifacts/artifact-utils.js
++++ b/apps/desktop/src/app/artifacts/artifact-utils.js
+@@ -43,6 +43,13 @@ function looksLikePathOrUrl(value) {
+         value.startsWith('~/'));
+ }
+ function looksLikeArtifact(value) {
++    // A single artifact is one path or URL. Multi-line strings are tool OUTPUT
++    // (e.g. a `find` listing of the whole vault) — treating one as an artifact
++    // gave it the label of its last line and let an Exports/ line anywhere in
++    // the blob defeat the Library work-file filter.
++    if (/[\r\n]/.test(value)) {
++        return false;
++    }
+     if (/^(?:https?:\/\/|data:image\/)/.test(value)) {
+         return true;
+     }
+@@ -197,6 +204,9 @@ export function isLibraryWorkFile(value) {
+             path = path.slice('file://'.length);
+         }
+     }
++    // Agent tool calls often carry shell-escaped paths ("Nemesis\ Library"),
++    // which defeat plain substring hints — unescape before matching.
++    path = path.replace(/\\ /g, ' ');
+     if (path.includes(LIBRARY_EXPORTS_HINT)) {
+         return false;
+     }
+@@ -227,6 +237,13 @@ export function collectArtifactsForSession(session, messages) {
+             if (NEMESIS_STUDENT_BUILD && isLibraryWorkFile(value)) {
+                 return;
+             }
++            // Student build: the agent's own machinery is never a deliverable. It
++            // edits its skills (SKILL.md), SOUL, and memories under ~/.hermes while
++            // answering, and those writes were surfacing here as "Made by Nemesis"
++            // entries named after skills (openfda-drug-label, school-portal, …).
++            if (NEMESIS_STUDENT_BUILD && /[\\/]\.hermes[\\/]/.test(value)) {
++                return;
++            }
+             const key = `${session.id}:${value}`;
+             if (found.has(key)) {
+                 return;
+diff --git a/apps/desktop/src/app/artifacts/artifact-utils.ts b/apps/desktop/src/app/artifacts/artifact-utils.ts
+index 4b4c97e5226..1900fffb925 100644
+--- a/apps/desktop/src/app/artifacts/artifact-utils.ts
++++ b/apps/desktop/src/app/artifacts/artifact-utils.ts
+@@ -66,6 +66,14 @@ function looksLikePathOrUrl(value: string): boolean {
+ }
+ 
+ function looksLikeArtifact(value: string): boolean {
++  // A single artifact is one path or URL. Multi-line strings are tool OUTPUT
++  // (e.g. a `find` listing of the whole vault) — treating one as an artifact
++  // gave it the label of its last line and let an Exports/ line anywhere in
++  // the blob defeat the Library work-file filter.
++  if (/[\r\n]/.test(value)) {
++    return false
++  }
++
+   if (/^(?:https?:\/\/|data:image\/)/.test(value)) {
+     return true
+   }
+@@ -270,6 +278,10 @@ export function isLibraryWorkFile(value: string): boolean {
+     }
+   }
+ 
++  // Agent tool calls often carry shell-escaped paths ("Nemesis\ Library"),
++  // which defeat plain substring hints — unescape before matching.
++  path = path.replace(/\\ /g, ' ')
++
+   if (path.includes(LIBRARY_EXPORTS_HINT)) {
+     return false
+   }
+@@ -308,6 +320,14 @@ export function collectArtifactsForSession(session: SessionInfo, messages: Sessi
+         return
+       }
+ 
++      // Student build: the agent's own machinery is never a deliverable. It
++      // edits its skills (SKILL.md), SOUL, and memories under ~/.hermes while
++      // answering, and those writes were surfacing here as "Made by Nemesis"
++      // entries named after skills (openfda-drug-label, school-portal, …).
++      if (NEMESIS_STUDENT_BUILD && /[\\/]\.hermes[\\/]/.test(value)) {
++        return
++      }
++
+       const key = `${session.id}:${value}`
+ 
+       if (found.has(key)) {
+diff --git a/apps/desktop/src/app/graph/index.js b/apps/desktop/src/app/graph/index.js
+index 7c65525aeb4..d38355dcee4 100644
+--- a/apps/desktop/src/app/graph/index.js
++++ b/apps/desktop/src/app/graph/index.js
+@@ -20,6 +20,7 @@ const MIN_NODE_SIZE = 4;
+ const MIN_LABEL_SIZE = 4;
+ const MAX_LABEL_SIZE = 24;
+ const DEFAULT_CONTROLS = {
++    gravity: 0.3,
+     labelSize: 8,
+     neighborGlow: true,
+     nodeSize: 7,
+@@ -28,6 +29,29 @@ const DEFAULT_CONTROLS = {
+     showNames: true,
+     spread: 34
+ };
++/** Center-pulling force (d3's forceX/Y/Z(0) trio in one): repulsion pushes
++ *  disconnected components and lone notes apart without bound, so gravity
++ *  reels every node back toward the origin and the graph stays one cluster.
++ *  Strength is read through a callback each tick, so the settings slider
++ *  retunes the LIVE simulation without re-registering the force. */
++function makeGravityForce(strengthOf) {
++    let nodes = [];
++    const force = alpha => {
++        const pull = strengthOf() * alpha;
++        if (pull <= 0) {
++            return;
++        }
++        for (const node of nodes) {
++            node.vx = (node.vx ?? 0) - (node.x ?? 0) * pull;
++            node.vy = (node.vy ?? 0) - (node.y ?? 0) * pull;
++            node.vz = (node.vz ?? 0) - (node.z ?? 0) * pull;
++        }
++    };
++    force.initialize = next => {
++        nodes = next;
++    };
++    return force;
++}
+ // Always-visible node label (three-spritetext) tuning.
+ const LABEL_MAX_CHARS = 24;
+ // The label's bottom edge sits this much beyond the node sphere's own radius (see
+@@ -370,6 +394,8 @@ export function GraphView() {
+                     refreshHighlight();
+                 })
+                     .graphData({ links, nodes });
++                // Register gravity once; the force reads the slider live via controlsRef.
++                instance.d3Force('gravity', makeGravityForce(() => controlsRef.current.gravity));
+                 // Frame the whole graph once the force sim settles (and again as a fallback —
+                 // the container can report 0px at construction inside the flex layout). Generous
+                 // padding keeps the nodes comfortably inside the viewport rather than filling it.
+@@ -428,7 +454,7 @@ export function GraphView() {
+         graph.nodeRelSize(controls.nodeSize);
+         graph.d3Force('link')?.distance?.(controls.spread);
+         graph.d3Force('charge')?.strength?.(-controls.repulsion);
+-        const layoutSignature = `${controls.nodeSize}|${controls.spread}|${controls.repulsion}`;
++        const layoutSignature = `${controls.nodeSize}|${controls.spread}|${controls.repulsion}|${controls.gravity}`;
+         if (prevLayoutSignatureRef.current !== layoutSignature) {
+             prevLayoutSignatureRef.current = layoutSignature;
+             graph.d3ReheatSimulation();
+@@ -445,5 +471,5 @@ export function GraphView() {
+     }, [controls, status]);
+     return (_jsxs("div", { className: "relative flex h-full min-h-0 flex-col", children: [_jsxs("header", { className: "pointer-events-none absolute left-6 top-5 z-10", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Graph" }), _jsx("p", { className: "text-xs text-muted-foreground", children: status === 'ready'
+                             ? `${noteCount} notes${ghostCount > 0 ? ` · ${ghostCount} to create` : ''} — click any node`
+-                            : '' }), status === 'ready' && ghostCount > 0 && (_jsx("p", { className: "text-[11px] text-muted-foreground/70", children: "Dim nodes are [[links]] with no note yet \u2014 click one to create it." }))] }), status === 'ready' && (_jsxs("div", { className: "absolute right-6 top-5 z-10 flex flex-col items-end gap-2", children: [_jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { "aria-label": "Graph settings", className: "active:scale-[0.97] motion-reduce:transition-none", onClick: () => setPanelOpen(value => !value), size: "sm", variant: panelOpen ? 'secondary' : 'outline', children: _jsx(IconAdjustmentsHorizontal, { size: 14 }) }), _jsx(Button, { onClick: () => navigate(`${LIBRARY_ROUTE}?create=note`), size: "sm", variant: "outline", children: "+ New note" })] }), panelOpen && (_jsxs("div", { className: "w-64 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-4 text-(--ui-text-primary) shadow-lg", children: [_jsxs("div", { className: "mb-4", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Graph controls" }), _jsx("p", { className: "mt-1 text-xs text-(--ui-text-secondary)", children: "Tune the map without changing your notes." })] }), _jsxs("div", { className: "space-y-4", children: [_jsx(ControlSlider, { label: "Node size", max: 10, min: MIN_NODE_SIZE, onChange: nodeSize => setControls(current => ({ ...current, nodeSize })), step: 0.5, value: controls.nodeSize }), _jsx(ControlSlider, { label: "Label size", max: MAX_LABEL_SIZE, min: MIN_LABEL_SIZE, onChange: labelSize => setControls(current => ({ ...current, labelSize })), step: 1, value: controls.labelSize }), _jsx(ControlSlider, { label: "Spread", max: 120, min: 10, onChange: spread => setControls(current => ({ ...current, spread })), step: 2, value: controls.spread }), _jsx(ControlSlider, { label: "Repulsion", max: 140, min: 0, onChange: repulsion => setControls(current => ({ ...current, repulsion })), step: 5, value: controls.repulsion }), _jsx(ControlSlider, { label: "Rotation speed", max: 3, min: 0, onChange: rotationSpeed => setControls(current => ({ ...current, rotationSpeed })), step: 0.1, value: controls.rotationSpeed })] }), _jsxs("label", { className: "mt-4 flex cursor-pointer items-center justify-between border-t border-(--ui-stroke-tertiary) pt-3 text-xs font-medium text-(--ui-text-primary)", children: ["Node names", _jsx(Switch, { checked: controls.showNames, onCheckedChange: showNames => setControls(current => ({ ...current, showNames })), size: "xs" })] }), _jsxs("label", { className: "mt-3 flex cursor-pointer items-center justify-between text-xs font-medium text-(--ui-text-primary)", children: ["Neighbor glow", _jsx(Switch, { checked: controls.neighborGlow, onCheckedChange: neighborGlow => setControls(current => ({ ...current, neighborGlow })), size: "xs" })] }), _jsx(Button, { className: "mt-3", onClick: () => setControls(DEFAULT_CONTROLS), size: "inline", variant: "text", children: "Reset to defaults" })] }))] })), status === 'error' && (_jsx(EmptyState, { className: "flex-1", description: "Could not read the Library vault.", title: "Graph unavailable" })), status === 'empty' && (_jsx(EmptyState, { className: "flex-1", description: "Write linked notes in the Library first.", title: "Nothing to map yet" })), _jsx("div", { className: status === 'ready' || status === 'loading' ? 'min-h-0 flex-1' : 'hidden', ref: hostRef })] }));
++                            : '' }), status === 'ready' && ghostCount > 0 && (_jsx("p", { className: "text-[11px] text-muted-foreground/70", children: "Dim nodes are [[links]] with no note yet \u2014 click one to create it." }))] }), status === 'ready' && (_jsxs("div", { className: "absolute right-6 top-5 z-10 flex flex-col items-end gap-2", children: [_jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { "aria-label": "Graph settings", className: "active:scale-[0.97] motion-reduce:transition-none", onClick: () => setPanelOpen(value => !value), size: "sm", variant: panelOpen ? 'secondary' : 'outline', children: _jsx(IconAdjustmentsHorizontal, { size: 14 }) }), _jsx(Button, { onClick: () => navigate(`${LIBRARY_ROUTE}?create=note`), size: "sm", variant: "outline", children: "+ New note" })] }), panelOpen && (_jsxs("div", { className: "w-64 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-4 text-(--ui-text-primary) shadow-lg", children: [_jsxs("div", { className: "mb-4", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Graph controls" }), _jsx("p", { className: "mt-1 text-xs text-(--ui-text-secondary)", children: "Tune the map without changing your notes." })] }), _jsxs("div", { className: "space-y-4", children: [_jsx(ControlSlider, { label: "Node size", max: 10, min: MIN_NODE_SIZE, onChange: nodeSize => setControls(current => ({ ...current, nodeSize })), step: 0.5, value: controls.nodeSize }), _jsx(ControlSlider, { label: "Label size", max: MAX_LABEL_SIZE, min: MIN_LABEL_SIZE, onChange: labelSize => setControls(current => ({ ...current, labelSize })), step: 1, value: controls.labelSize }), _jsx(ControlSlider, { label: "Spread", max: 120, min: 10, onChange: spread => setControls(current => ({ ...current, spread })), step: 2, value: controls.spread }), _jsx(ControlSlider, { label: "Repulsion", max: 140, min: 0, onChange: repulsion => setControls(current => ({ ...current, repulsion })), step: 5, value: controls.repulsion }), _jsx(ControlSlider, { label: "Gravity", max: 0.5, min: 0, onChange: gravity => setControls(current => ({ ...current, gravity })), step: 0.02, value: controls.gravity }), _jsx(ControlSlider, { label: "Rotation speed", max: 3, min: 0, onChange: rotationSpeed => setControls(current => ({ ...current, rotationSpeed })), step: 0.1, value: controls.rotationSpeed })] }), _jsxs("label", { className: "mt-4 flex cursor-pointer items-center justify-between border-t border-(--ui-stroke-tertiary) pt-3 text-xs font-medium text-(--ui-text-primary)", children: ["Node names", _jsx(Switch, { checked: controls.showNames, onCheckedChange: showNames => setControls(current => ({ ...current, showNames })), size: "xs" })] }), _jsxs("label", { className: "mt-3 flex cursor-pointer items-center justify-between text-xs font-medium text-(--ui-text-primary)", children: ["Neighbor glow", _jsx(Switch, { checked: controls.neighborGlow, onCheckedChange: neighborGlow => setControls(current => ({ ...current, neighborGlow })), size: "xs" })] }), _jsx(Button, { className: "mt-3", onClick: () => setControls(DEFAULT_CONTROLS), size: "inline", variant: "text", children: "Reset to defaults" })] }))] })), status === 'error' && (_jsx(EmptyState, { className: "flex-1", description: "Could not read the Library vault.", title: "Graph unavailable" })), status === 'empty' && (_jsx(EmptyState, { className: "flex-1", description: "Write linked notes in the Library first.", title: "Nothing to map yet" })), _jsx("div", { className: status === 'ready' || status === 'loading' ? 'min-h-0 flex-1' : 'hidden', ref: hostRef })] }));
+ }
+diff --git a/apps/desktop/src/app/graph/index.tsx b/apps/desktop/src/app/graph/index.tsx
+index 6491d9f2802..85fb3608026 100644
+--- a/apps/desktop/src/app/graph/index.tsx
++++ b/apps/desktop/src/app/graph/index.tsx
+@@ -81,6 +81,7 @@ interface GraphControlsState {
+   nodeSize: number
+   spread: number
+   repulsion: number
++  gravity: number
+   rotationSpeed: number
+   showNames: boolean
+   neighborGlow: boolean
+@@ -92,6 +93,7 @@ const MIN_LABEL_SIZE = 4
+ const MAX_LABEL_SIZE = 24
+ 
+ const DEFAULT_CONTROLS: GraphControlsState = {
++  gravity: 0.3,
+   labelSize: 8,
+   neighborGlow: true,
+   nodeSize: 7,
+@@ -101,6 +103,49 @@ const DEFAULT_CONTROLS: GraphControlsState = {
+   spread: 34
+ }
+ 
++interface GravityNode {
++  vx?: number
++  vy?: number
++  vz?: number
++  x?: number
++  y?: number
++  z?: number
++}
++
++interface GravityForce {
++  (alpha: number): void
++  initialize?: (nodes: GravityNode[]) => void
++}
++
++/** Center-pulling force (d3's forceX/Y/Z(0) trio in one): repulsion pushes
++ *  disconnected components and lone notes apart without bound, so gravity
++ *  reels every node back toward the origin and the graph stays one cluster.
++ *  Strength is read through a callback each tick, so the settings slider
++ *  retunes the LIVE simulation without re-registering the force. */
++function makeGravityForce(strengthOf: () => number): GravityForce {
++  let nodes: GravityNode[] = []
++
++  const force: GravityForce = alpha => {
++    const pull = strengthOf() * alpha
++
++    if (pull <= 0) {
++      return
++    }
++
++    for (const node of nodes) {
++      node.vx = (node.vx ?? 0) - (node.x ?? 0) * pull
++      node.vy = (node.vy ?? 0) - (node.y ?? 0) * pull
++      node.vz = (node.vz ?? 0) - (node.z ?? 0) * pull
++    }
++  }
++
++  force.initialize = next => {
++    nodes = next
++  }
++
++  return force
++}
++
+ // Always-visible node label (three-spritetext) tuning.
+ const LABEL_MAX_CHARS = 24
+ // The label's bottom edge sits this much beyond the node sphere's own radius (see
+@@ -577,6 +622,9 @@ export function GraphView() {
+           })
+           .graphData({ links, nodes })
+ 
++        // Register gravity once; the force reads the slider live via controlsRef.
++        instance.d3Force('gravity', makeGravityForce(() => controlsRef.current.gravity))
++
+         // Frame the whole graph once the force sim settles (and again as a fallback —
+         // the container can report 0px at construction inside the flex layout). Generous
+         // padding keeps the nodes comfortably inside the viewport rather than filling it.
+@@ -642,7 +690,7 @@ export function GraphView() {
+     graph.d3Force('link')?.distance?.(controls.spread)
+     graph.d3Force('charge')?.strength?.(-controls.repulsion)
+ 
+-    const layoutSignature = `${controls.nodeSize}|${controls.spread}|${controls.repulsion}`
++    const layoutSignature = `${controls.nodeSize}|${controls.spread}|${controls.repulsion}|${controls.gravity}`
+ 
+     if (prevLayoutSignatureRef.current !== layoutSignature) {
+       prevLayoutSignatureRef.current = layoutSignature
+@@ -731,6 +779,14 @@ export function GraphView() {
+                   step={5}
+                   value={controls.repulsion}
+                 />
++                <ControlSlider
++                  label="Gravity"
++                  max={0.5}
++                  min={0}
++                  onChange={gravity => setControls(current => ({ ...current, gravity }))}
++                  step={0.02}
++                  value={controls.gravity}
++                />
+                 <ControlSlider
+                   label="Rotation speed"
+                   max={3}
+diff --git a/apps/desktop/src/app/study/index.js b/apps/desktop/src/app/study/index.js
+index 63c93e21080..17a0556008b 100644
+--- a/apps/desktop/src/app/study/index.js
++++ b/apps/desktop/src/app/study/index.js
+@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
+ // note). Interaction model deliberately mirrors what health-science students already have
+ // as muscle memory from Anki: deck browser with due badges → flip card (Space) →
+ // Again/Hard/Good/Easy (1-4), with the next-interval hint under each grade button.
+-import { IconChecklist, IconFolderPlus, IconLayoutGrid, IconList, IconPlayerPause, IconSettings, IconSitemap } from '@tabler/icons-react';
++import { IconChevronDown, IconChecklist, IconFolderPlus, IconLayoutGrid, IconList, IconPlayerPause, IconSettings, IconSitemap } from '@tabler/icons-react';
+ import { useCallback, useEffect, useMemo, useState } from 'react';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
+@@ -21,6 +21,7 @@ import { bestAttempt, groupExtras, lastAttempt, loadTestAttempts, scanMindmapFil
+ import { parseCardPaste } from './import-cards';
+ import { MindmapViewerDialog } from './mindmap-viewer';
+ import { addCard, addSection, adoptLegacyDeckFiles, assignDeckSection, buildQueue, deckStats, DEFAULT_STUDY_SETTINGS, deleteCard, deleteDeck, freshId, getSettings, gradeCard, groupDecks, loadState, previewIntervals, reconcileDeckFiles, reviewHeatmap, saveState, setSettings, studyMotivation, toggleSuspendCard, updateCard } from './model';
++import { deckRetentionCurve } from './retention';
+ import { TestSurface } from './test-mode';
+ const GRADES = [
+     { key: '1', label: 'Again', rating: 'again' },
+@@ -29,6 +30,7 @@ const GRADES = [
+     { key: '4', label: 'Easy', rating: 'easy' }
+ ];
+ const VIEW_MODE_KEY = 'nemesis.study.view';
++const COLLAPSED_SECTIONS_KEY = 'nemesis.study.sections.collapsed.v1';
+ const ORDER_OPTIONS = [
+     { id: 'due', label: 'Due first' },
+     { id: 'random', label: 'Random' }
+@@ -41,6 +43,17 @@ function loadViewMode() {
+         return 'cards';
+     }
+ }
++function loadCollapsedSections() {
++    try {
++        const stored = JSON.parse(window.localStorage.getItem(COLLAPSED_SECTIONS_KEY) ?? '[]');
++        return Array.isArray(stored)
++            ? new Set(stored.filter((course) => typeof course === 'string'))
++            : new Set();
++    }
++    catch {
++        return new Set();
++    }
++}
+ // The flip toggle's persisted value now lives in StudySettings (model.ts migrates
+ // the old standalone key on load — see LEGACY_FLIP_KEY). This only covers the
+ // OS-level accessibility preference, which always overrides the stored setting.
+@@ -63,6 +76,7 @@ export function StudyView() {
+     const [newSectionOpen, setNewSectionOpen] = useState(false);
+     const [settingsOpen, setSettingsOpen] = useState(false);
+     const [view, setView] = useState(() => loadViewMode());
++    const [collapsedSections, setCollapsedSections] = useState(() => loadCollapsedSections());
+     const [reducedMotion] = useState(() => prefersReducedMotion());
+     const [matchDeckId, setMatchDeckId] = useState(null);
+     const [done, setDone] = useState(0);
+@@ -100,6 +114,24 @@ export function StudyView() {
+         setState(next);
+         saveState(next);
+     }, []);
++    const toggleSection = useCallback((course) => {
++        setCollapsedSections(current => {
++            const next = new Set(current);
++            if (next.has(course)) {
++                next.delete(course);
++            }
++            else {
++                next.add(course);
++            }
++            try {
++                window.localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify([...next]));
++            }
++            catch {
++                // A blocked/full localStorage should not prevent the section from toggling.
++            }
++            return next;
++        });
++    }, []);
+     // Agent-managed decks: the vault's Flashcards folder is the source of truth, so
+     // reconcile against it on mount and whenever the window regains focus — the agent
+     // may have renamed, edited, or deleted deck files while you were away. Debounced so
+@@ -271,7 +303,7 @@ export function StudyView() {
+                                                 ? 'bg-accent text-accent-foreground'
+                                                 : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('cards'), title: "Card view", type: "button", children: _jsx(IconLayoutGrid, { size: 14 }) }), _jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'list' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('list'), title: "List view", type: "button", children: _jsx(IconList, { size: 14 }) })] }), _jsx("button", { "aria-label": "Study settings", className: "rounded-md border border-border px-2 py-1.5 text-muted-foreground transition-colors hover:text-foreground", onClick: () => setSettingsOpen(true), title: "Study settings", type: "button", children: _jsx(IconSettings, { size: 14 }) }), _jsxs(Button, { onClick: () => setNewSectionOpen(true), size: "sm", variant: "outline", children: [_jsx(IconFolderPlus, { size: 14 }), "New section"] }), _jsx(Button, { onClick: () => setNewDeckSection(''), size: "sm", variant: "outline", children: "New deck" }), _jsx(Button, { onClick: () => setImportOpen(true), size: "sm", variant: "outline", children: "Import cards" }), _jsx(Button, { disabled: totals.due === 0, onClick: () => startReview(null), size: "sm", children: "Study all" })] })) })] }), autoImported.length > 0 && !reviewing && !browseDeckId && (_jsxs("div", { className: "mx-6 mb-1 flex items-center justify-between rounded-md border border-(--theme-primary)/40 bg-(--theme-primary)/10 px-3 py-1.5 text-xs", children: [_jsxs("span", { children: ["Nemesis added ", autoImported.length === 1 ? 'a new deck' : `${autoImported.length} new decks`, ":", ' ', autoImported.join(', ')] }), _jsx("button", { className: "text-muted-foreground hover:text-foreground", onClick: () => setAutoImported([]), type: "button", children: "Dismiss" })] })), reviewing ? (current ? (_jsx(ReviewSurface, { flip: flip, intervals: previewIntervals(state, current.card.id, now), item: current, onGrade: grade, onReveal: () => setRevealed(true), remainingCounts: remainingCounts, revealed: revealed, showIntervalHints: settings.showIntervalHints })) : (_jsx(EmptyState, { className: "flex-1", description: done > 0
+                     ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.`
+-                    : 'Nothing is due right now.', title: "All caught up" }))) : matchDeckId ? (_jsx(MatchGame, { deck: state.decks.find(deck => deck.id === matchDeckId) ?? null, onExit: () => setMatchDeckId(null) })) : browseDeckId ? (_jsx(CardBrowser, { deck: state.decks.find(deck => deck.id === browseDeckId) ?? null, onChange: update, onDeleteDeck: () => removeDeck(browseDeckId), onMatch: () => startMatch(browseDeckId), onMoveDeck: section => moveDeck(browseDeckId, section), sections: sections, state: state })) : takingTest ? (_jsx(TestSurface, { file: takingTest, onComplete: () => setTestAttempts(loadTestAttempts()), onExit: () => setTakingTest(null) })) : (_jsx(DeckBrowser, { mindmaps: mindmaps, onBrowse: setBrowseDeckId, onCreateDeck: setNewDeckSection, onMatch: startMatch, onOpenMindmap: setViewingMindmap, onStartTest: setTakingTest, onStudy: startReview, state: state, testAttempts: testAttempts, tests: tests, view: view })), _jsx(MindmapViewerDialog, { file: viewingMindmap, onOpenChange: open => !open && setViewingMindmap(null) }), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen, sections: sections }), newDeckSection !== null && (_jsx(NewDeckDialog, { initialSection: newDeckSection, onClose: () => setNewDeckSection(null), onCreate: createDeck, sections: sections })), newSectionOpen && (_jsx(NewSectionDialog, { onClose: () => setNewSectionOpen(false), onCreate: createSection, sections: sections })), _jsx(StudySettingsDialog, { onChange: patch => update(setSettings(state, patch)), onOpenChange: setSettingsOpen, open: settingsOpen, settings: settings })] }));
++                    : 'Nothing is due right now.', title: "All caught up" }))) : matchDeckId ? (_jsx(MatchGame, { deck: state.decks.find(deck => deck.id === matchDeckId) ?? null, onExit: () => setMatchDeckId(null) })) : browseDeckId ? (_jsx(CardBrowser, { deck: state.decks.find(deck => deck.id === browseDeckId) ?? null, onChange: update, onDeleteDeck: () => removeDeck(browseDeckId), onMatch: () => startMatch(browseDeckId), onMoveDeck: section => moveDeck(browseDeckId, section), sections: sections, state: state })) : takingTest ? (_jsx(TestSurface, { file: takingTest, onComplete: () => setTestAttempts(loadTestAttempts()), onExit: () => setTakingTest(null) })) : (_jsx(DeckBrowser, { collapsedSections: collapsedSections, mindmaps: mindmaps, onBrowse: setBrowseDeckId, onCreateDeck: setNewDeckSection, onMatch: startMatch, onOpenMindmap: setViewingMindmap, onStartTest: setTakingTest, onStudy: startReview, onToggleSection: toggleSection, state: state, testAttempts: testAttempts, tests: tests, view: view })), _jsx(MindmapViewerDialog, { file: viewingMindmap, onOpenChange: open => !open && setViewingMindmap(null) }), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen, sections: sections }), newDeckSection !== null && (_jsx(NewDeckDialog, { initialSection: newDeckSection, onClose: () => setNewDeckSection(null), onCreate: createDeck, sections: sections })), newSectionOpen && (_jsx(NewSectionDialog, { onClose: () => setNewSectionOpen(false), onCreate: createSection, sections: sections })), _jsx(StudySettingsDialog, { onChange: patch => update(setSettings(state, patch)), onOpenChange: setSettingsOpen, open: settingsOpen, settings: settings })] }));
+ }
+ const OTHER_SECTION_VALUE = '__other__';
+ function SectionSelect({ label, onChange, sections, value }) {
+@@ -309,8 +341,18 @@ function parseDailyCap(raw) {
+ function StudySettingsDialog({ onChange, onOpenChange, open, settings }) {
+     return (_jsx(Dialog, { onOpenChange: onOpenChange, open: open, children: _jsxs(DialogContent, { className: "sm:max-w-md", children: [_jsxs(DialogHeader, { children: [_jsx(DialogTitle, { children: "Study settings" }), _jsx(DialogDescription, { children: "Limits and behavior for review sessions. Changes apply immediately." })] }), _jsxs("div", { className: "flex flex-col divide-y divide-border", children: [_jsx(SettingRow, { description: "Cards introduced for the first time. 0 = unlimited.", label: "New cards per day", children: _jsx(Input, { className: "w-20 text-right", inputMode: "numeric", min: 0, onChange: event => onChange({ newPerDay: parseDailyCap(event.target.value) }), step: 1, type: "number", value: settings.newPerDay }) }), _jsx(SettingRow, { description: "Cards already in review rotation. 0 = unlimited.", label: "Reviews per day", children: _jsx(Input, { className: "w-20 text-right", inputMode: "numeric", min: 0, onChange: event => onChange({ reviewsPerDay: parseDailyCap(event.target.value) }), step: 1, type: "number", value: settings.reviewsPerDay }) }), _jsx(SettingRow, { label: "Review order", children: _jsx(SegmentedControl, { onChange: order => onChange({ order }), options: ORDER_OPTIONS, value: settings.order }) }), _jsx(SettingRow, { label: "Card flip animation", children: _jsx(Switch, { "aria-label": "Card flip animation", checked: settings.flip, onCheckedChange: flip => onChange({ flip }) }) }), _jsx(SettingRow, { description: "The estimated interval shown on each grade button.", label: "Next-interval hints", children: _jsx(Switch, { "aria-label": "Show next-interval hints", checked: settings.showIntervalHints, onCheckedChange: showIntervalHints => onChange({ showIntervalHints }) }) })] }), _jsxs(DialogFooter, { className: "sm:justify-between", children: [_jsx(Button, { onClick: () => onChange(DEFAULT_STUDY_SETTINGS), size: "sm", variant: "text", children: "Reset to defaults" }), _jsx(Button, { onClick: () => onOpenChange(false), size: "sm", variant: "outline", children: "Done" })] })] }) }));
+ }
+-function DeckBrowser({ mindmaps, onBrowse, onCreateDeck, onMatch, onOpenMindmap, onStartTest, onStudy, state, testAttempts, tests, view }) {
+-    const now = new Date();
++function DeckBrowser({ collapsedSections, mindmaps, onBrowse, onCreateDeck, onMatch, onOpenMindmap, onStartTest, onStudy, onToggleSection, state, testAttempts, tests, view }) {
++    const { curvesByDeck, now } = useMemo(() => {
++        const calculationTime = new Date();
++        const curves = new Map(state.decks.map(deck => [
++            deck.id,
++            deckRetentionCurve(deck.cards.flatMap(card => {
++                const schedule = state.schedule[card.id];
++                return schedule ? [schedule] : [];
++            }), calculationTime)
++        ]));
++        return { curvesByDeck: curves, now: calculationTime };
++    }, [state]);
+     const deckGroups = groupDecks(state, now);
+     const extrasByCourse = useMemo(() => groupExtras(state.sections, mindmaps, tests), [mindmaps, state.sections, tests]);
+     const extraOnlyCourses = [...extrasByCourse.keys()]
+@@ -332,8 +374,9 @@ function DeckBrowser({ mindmaps, onBrowse, onCreateDeck, onMatch, onOpenMindmap,
+                 const groupMindmaps = group.extras?.mindmaps ?? [];
+                 const groupTests = group.extras?.tests ?? [];
+                 const hasExtras = groupMindmaps.length > 0 || groupTests.length > 0;
+-                return (_jsxs("section", { className: "px-8 pt-7", children: [_jsxs("div", { className: "mb-3 flex items-baseline justify-between", children: [_jsx("h2", { className: "text-[15px] font-semibold tracking-tight", children: group.course }), _jsxs("span", { className: "text-xs text-muted-foreground", children: [group.stats.due, " due \u00B7 ", group.decks.length, " deck", group.decks.length === 1 ? '' : 's', " \u00B7", ' ', group.stats.total, " cards", groupMindmaps.length > 0 &&
+-                                            ` · ${groupMindmaps.length} mind map${groupMindmaps.length === 1 ? '' : 's'}`, groupTests.length > 0 && ` · ${groupTests.length} test${groupTests.length === 1 ? '' : 's'}`] })] }), group.decks.length === 0 ? (hasExtras ? null : (_jsxs("div", { className: "rounded-xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-5", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)", children: "Empty section" }), _jsxs("div", { className: "mt-1 flex items-center gap-1 text-xs text-muted-foreground", children: [_jsx("span", { children: "No decks yet \u2014" }), _jsx(Button, { onClick: () => onCreateDeck(group.course), size: "inline", variant: "textStrong", children: "add one" })] })] }))) : view === 'list' ? (_jsx("div", { className: "flex flex-col gap-2", children: group.decks.map(deck => (_jsx(DeckRow, { deck: deck, now: now, onBrowse: onBrowse, onMatch: onMatch, onStudy: onStudy, state: state }, deck.id))) })) : (_jsx("div", { className: "grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3", children: group.decks.map(deck => (_jsx(DeckCard, { deck: deck, now: now, onBrowse: onBrowse, onMatch: onMatch, onStudy: onStudy, state: state }, deck.id))) })), hasExtras && (_jsxs("div", { className: "mt-2 flex flex-col gap-2", children: [groupMindmaps.map(mindmap => (_jsx(MindmapRow, { mindmap: mindmap, onOpen: () => onOpenMindmap(mindmap) }, mindmap.fileName))), groupTests.map(test => (_jsx(TestRow, { attempts: testAttempts[test.fileName]?.attempts ?? [], onStart: () => onStartTest(test), test: test }, test.fileName)))] }))] }, group.course));
++                const isCollapsed = collapsedSections.has(group.course);
++                return (_jsxs("section", { className: "px-8 pt-7", children: [_jsxs("div", { className: "mb-3 flex items-baseline justify-between", children: [_jsx("h2", { className: "text-[15px] font-semibold tracking-tight", children: _jsxs("button", { "aria-expanded": !isCollapsed, className: "flex items-center gap-1.5 rounded-sm text-left hover:text-(--theme-primary) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45", onClick: () => onToggleSection(group.course), type: "button", children: [_jsx(IconChevronDown, { "aria-hidden": "true", className: cn('transition-transform', isCollapsed && '-rotate-90'), size: 15 }), _jsx("span", { children: group.course })] }) }), _jsxs("span", { className: "text-xs text-muted-foreground", children: [group.stats.due, " due \u00B7 ", group.decks.length, " deck", group.decks.length === 1 ? '' : 's', " \u00B7", ' ', group.stats.total, " cards", groupMindmaps.length > 0 &&
++                                            ` · ${groupMindmaps.length} mind map${groupMindmaps.length === 1 ? '' : 's'}`, groupTests.length > 0 && ` · ${groupTests.length} test${groupTests.length === 1 ? '' : 's'}`] })] }), !isCollapsed && (_jsxs(_Fragment, { children: [group.decks.length === 0 ? (hasExtras ? null : (_jsxs("div", { className: "rounded-xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-5", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)", children: "Empty section" }), _jsxs("div", { className: "mt-1 flex items-center gap-1 text-xs text-muted-foreground", children: [_jsx("span", { children: "No decks yet \u2014" }), _jsx(Button, { onClick: () => onCreateDeck(group.course), size: "inline", variant: "textStrong", children: "add one" })] })] }))) : view === 'list' ? (_jsx("div", { className: "flex flex-col gap-2", children: group.decks.map(deck => (_jsx(DeckRow, { deck: deck, now: now, onBrowse: onBrowse, onMatch: onMatch, onStudy: onStudy, state: state }, deck.id))) })) : (_jsx("div", { className: "grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3", children: group.decks.map(deck => (_jsx(DeckCard, { curve: curvesByDeck.get(deck.id) ?? [], deck: deck, now: now, onBrowse: onBrowse, onMatch: onMatch, onStudy: onStudy, state: state }, deck.id))) })), hasExtras && (_jsxs("div", { className: "mt-2 flex flex-col gap-2", children: [groupMindmaps.map(mindmap => (_jsx(MindmapRow, { mindmap: mindmap, onOpen: () => onOpenMindmap(mindmap) }, mindmap.fileName))), groupTests.map(test => (_jsx(TestRow, { attempts: testAttempts[test.fileName]?.attempts ?? [], onStart: () => onStartTest(test), test: test }, test.fileName)))] }))] }))] }, group.course));
+             })] }));
+ }
+ function MindmapRow({ mindmap, onOpen }) {
+@@ -362,6 +405,19 @@ function MasteryBar({ pct }) {
+ function DuePill({ due }) {
+     return (_jsxs("span", { className: "shrink-0 rounded-full bg-(--theme-primary)/15 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-(--theme-primary)", children: [due, " due"] }));
+ }
++function RetentionSparkline({ curve }) {
++    const finalDay = curve.at(-1)?.day ?? 1;
++    const coordinates = curve.map(point => {
++        const x = 2 + (point.day / Math.max(1, finalDay)) * 96;
++        const y = 2 + (1 - point.retention) * 28;
++        return [x, y];
++    });
++    const points = coordinates.map(([x, y]) => `${x},${y}`).join(' ');
++    const area = `M ${coordinates.map(([x, y]) => `${x} ${y}`).join(' L ')} L 98 30 L 2 30 Z`;
++    const first = curve[0];
++    const last = curve.at(-1) ?? first;
++    return (_jsxs("div", { children: [_jsxs("svg", { "aria-hidden": "true", className: "h-8 w-full", preserveAspectRatio: "none", viewBox: "0 0 100 32", children: [_jsx("path", { d: area, fill: "var(--theme-primary)", opacity: "0.1" }), _jsx("polyline", { fill: "none", points: points, stroke: "var(--theme-primary)", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.5", vectorEffect: "non-scaling-stroke" }), _jsx("circle", { cx: coordinates[0][0], cy: coordinates[0][1], fill: "var(--theme-primary)", r: "1.75" })] }), _jsxs("p", { className: "mt-0.5 text-[11px] text-muted-foreground tabular-nums", children: ["Recall ", Math.round(first.retention * 100), "% \u2192 ", Math.round(last.retention * 100), "% in ", finalDay, "d"] })] }));
++}
+ function DeckRow({ deck, now, onBrowse, onMatch, onStudy, state }) {
+     const stats = deckStats(state, deck.id, now);
+     const openDeck = () => onStudy(deck.id);
+@@ -380,7 +436,7 @@ function DeckRow({ deck, now, onBrowse, onMatch, onStudy, state }) {
+                             onBrowse(deck.id);
+                         }, size: "sm", variant: "ghost", children: "Cards" })] })] }));
+ }
+-function DeckCard({ deck, now, onBrowse, onMatch, onStudy, state }) {
++function DeckCard({ curve, deck, now, onBrowse, onMatch, onStudy, state }) {
+     const stats = deckStats(state, deck.id, now);
+     const pct = masteryPct(stats);
+     const openDeck = () => onStudy(deck.id);
+@@ -391,7 +447,7 @@ function DeckCard({ deck, now, onBrowse, onMatch, onStudy, state }) {
+         event.preventDefault();
+         openDeck();
+     };
+-    return (_jsxs("div", { className: "group flex cursor-pointer flex-col gap-4 rounded-2xl border border-border bg-card p-5 outline-none transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-(--theme-primary)/50 hover:ring-2 hover:ring-(--theme-primary)/20 hover:shadow-lg hover:shadow-black/20 focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45", onClick: openDeck, onKeyDown: onKeyDown, role: "button", tabIndex: 0, children: [_jsxs("div", { className: "flex items-start justify-between gap-2", children: [_jsx("h3", { className: "text-[15px] font-semibold leading-snug tracking-tight", children: deck.name }), stats.due > 0 && _jsx(DuePill, { due: stats.due })] }), _jsxs("div", { className: "mt-auto", children: [_jsxs("div", { className: "mb-1.5 flex items-baseline justify-between text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "tabular-nums", children: [stats.total, " card", stats.total === 1 ? '' : 's', " \u00B7 ", stats.fresh, " new"] }), _jsxs("span", { className: "tabular-nums", children: [pct, "% studied"] })] }), _jsx(MasteryBar, { pct: pct })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { disabled: stats.total < 2, onClick: event => {
++    return (_jsxs("div", { className: "group flex cursor-pointer flex-col gap-4 rounded-2xl border border-border bg-card p-5 outline-none transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-(--theme-primary)/50 hover:ring-2 hover:ring-(--theme-primary)/20 hover:shadow-lg hover:shadow-black/20 focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45", onClick: openDeck, onKeyDown: onKeyDown, role: "button", tabIndex: 0, children: [_jsxs("div", { className: "flex items-start justify-between gap-2", children: [_jsx("h3", { className: "text-[15px] font-semibold leading-snug tracking-tight", children: deck.name }), stats.due > 0 && _jsx(DuePill, { due: stats.due })] }), curve.length > 0 && _jsx(RetentionSparkline, { curve: curve }), _jsxs("div", { className: "mt-auto", children: [_jsxs("div", { className: "mb-1.5 flex items-baseline justify-between text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "tabular-nums", children: [stats.total, " card", stats.total === 1 ? '' : 's', " \u00B7 ", stats.fresh, " new"] }), _jsxs("span", { className: "tabular-nums", children: [pct, "% studied"] })] }), _jsx(MasteryBar, { pct: pct })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { disabled: stats.total < 2, onClick: event => {
+                             event.stopPropagation();
+                             onMatch(deck.id);
+                         }, size: "sm", variant: "outline", children: "Match" }), _jsx(Button, { onClick: event => {
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index 142abc5a683..286458b6495 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -3,6 +3,7 @@
+ // as muscle memory from Anki: deck browser with due badges → flip card (Space) →
+ // Again/Hard/Good/Easy (1-4), with the next-interval hint under each grade button.
+ import {
++  IconChevronDown,
+   IconChecklist,
+   IconFolderPlus,
+   IconLayoutGrid,
+@@ -79,6 +80,7 @@ import {
+   toggleSuspendCard,
+   updateCard
+ } from './model'
++import { deckRetentionCurve, type RetentionPoint } from './retention'
+ import { TestSurface } from './test-mode'
+ 
+ const GRADES: { key: string; label: string; rating: StudyRating }[] = [
+@@ -91,6 +93,7 @@ const GRADES: { key: string; label: string; rating: StudyRating }[] = [
+ type DeckViewMode = 'cards' | 'list'
+ 
+ const VIEW_MODE_KEY = 'nemesis.study.view'
++const COLLAPSED_SECTIONS_KEY = 'nemesis.study.sections.collapsed.v1'
+ 
+ const ORDER_OPTIONS: SegmentedControlOption<ReviewOrder>[] = [
+   { id: 'due', label: 'Due first' },
+@@ -105,6 +108,18 @@ function loadViewMode(): DeckViewMode {
+   }
+ }
+ 
++function loadCollapsedSections(): Set<string> {
++  try {
++    const stored: unknown = JSON.parse(window.localStorage.getItem(COLLAPSED_SECTIONS_KEY) ?? '[]')
++
++    return Array.isArray(stored)
++      ? new Set(stored.filter((course): course is string => typeof course === 'string'))
++      : new Set()
++  } catch {
++    return new Set()
++  }
++}
++
+ // The flip toggle's persisted value now lives in StudySettings (model.ts migrates
+ // the old standalone key on load — see LEGACY_FLIP_KEY). This only covers the
+ // OS-level accessibility preference, which always overrides the stored setting.
+@@ -127,6 +142,7 @@ export function StudyView() {
+   const [newSectionOpen, setNewSectionOpen] = useState(false)
+   const [settingsOpen, setSettingsOpen] = useState(false)
+   const [view, setView] = useState<DeckViewMode>(() => loadViewMode())
++  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => loadCollapsedSections())
+   const [reducedMotion] = useState(() => prefersReducedMotion())
+   const [matchDeckId, setMatchDeckId] = useState<null | string>(null)
+   const [done, setDone] = useState(0)
+@@ -185,6 +201,26 @@ export function StudyView() {
+     saveState(next)
+   }, [])
+ 
++  const toggleSection = useCallback((course: string) => {
++    setCollapsedSections(current => {
++      const next = new Set(current)
++
++      if (next.has(course)) {
++        next.delete(course)
++      } else {
++        next.add(course)
++      }
++
++      try {
++        window.localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify([...next]))
++      } catch {
++        // A blocked/full localStorage should not prevent the section from toggling.
++      }
++
++      return next
++    })
++  }, [])
++
+   // Agent-managed decks: the vault's Flashcards folder is the source of truth, so
+   // reconcile against it on mount and whenever the window regains focus — the agent
+   // may have renamed, edited, or deleted deck files while you were away. Debounced so
+@@ -554,6 +590,7 @@ export function StudyView() {
+         />
+       ) : (
+         <DeckBrowser
++          collapsedSections={collapsedSections}
+           mindmaps={mindmaps}
+           onBrowse={setBrowseDeckId}
+           onCreateDeck={setNewDeckSection}
+@@ -561,6 +598,7 @@ export function StudyView() {
+           onOpenMindmap={setViewingMindmap}
+           onStartTest={setTakingTest}
+           onStudy={startReview}
++          onToggleSection={toggleSection}
+           state={state}
+           testAttempts={testAttempts}
+           tests={tests}
+@@ -840,6 +878,7 @@ interface StudySectionGroup {
+ }
+ 
+ function DeckBrowser({
++  collapsedSections,
+   mindmaps,
+   onBrowse,
+   onCreateDeck,
+@@ -847,11 +886,13 @@ function DeckBrowser({
+   onOpenMindmap,
+   onStartTest,
+   onStudy,
++  onToggleSection,
+   state,
+   testAttempts,
+   tests,
+   view
+ }: {
++  collapsedSections: Set<string>
+   mindmaps: MindmapFile[]
+   onBrowse: (deckId: string) => void
+   onCreateDeck: (section: string) => void
+@@ -859,12 +900,30 @@ function DeckBrowser({
+   onOpenMindmap: (file: MindmapFile) => void
+   onStartTest: (file: TestFile) => void
+   onStudy: (deckId: string) => void
++  onToggleSection: (course: string) => void
+   state: StudyState
+   testAttempts: TestAttemptsStore
+   tests: TestFile[]
+   view: DeckViewMode
+ }) {
+-  const now = new Date()
++  const { curvesByDeck, now } = useMemo(() => {
++    const calculationTime = new Date()
++    const curves = new Map(
++      state.decks.map(deck => [
++        deck.id,
++        deckRetentionCurve(
++          deck.cards.flatMap(card => {
++            const schedule = state.schedule[card.id]
++
++            return schedule ? [schedule] : []
++          }),
++          calculationTime
++        )
++      ])
++    )
++
++    return { curvesByDeck: curves, now: calculationTime }
++  }, [state])
+   const deckGroups = groupDecks(state, now)
+   const extrasByCourse = useMemo(() => groupExtras(state.sections, mindmaps, tests), [mindmaps, state.sections, tests])
+ 
+@@ -895,11 +954,26 @@ function DeckBrowser({
+         const groupMindmaps = group.extras?.mindmaps ?? []
+         const groupTests = group.extras?.tests ?? []
+         const hasExtras = groupMindmaps.length > 0 || groupTests.length > 0
++        const isCollapsed = collapsedSections.has(group.course)
+ 
+         return (
+           <section className="px-8 pt-7" key={group.course}>
+             <div className="mb-3 flex items-baseline justify-between">
+-              <h2 className="text-[15px] font-semibold tracking-tight">{group.course}</h2>
++              <h2 className="text-[15px] font-semibold tracking-tight">
++                <button
++                  aria-expanded={!isCollapsed}
++                  className="flex items-center gap-1.5 rounded-sm text-left hover:text-(--theme-primary) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45"
++                  onClick={() => onToggleSection(group.course)}
++                  type="button"
++                >
++                  <IconChevronDown
++                    aria-hidden="true"
++                    className={cn('transition-transform', isCollapsed && '-rotate-90')}
++                    size={15}
++                  />
++                  <span>{group.course}</span>
++                </button>
++              </h2>
+               <span className="text-xs text-muted-foreground">
+                 {group.stats.due} due · {group.decks.length} deck{group.decks.length === 1 ? '' : 's'} ·{' '}
+                 {group.stats.total} cards
+@@ -908,63 +982,68 @@ function DeckBrowser({
+                 {groupTests.length > 0 && ` · ${groupTests.length} test${groupTests.length === 1 ? '' : 's'}`}
+               </span>
+             </div>
+-            {group.decks.length === 0 ? (
+-              hasExtras ? null : (
+-                <div className="rounded-xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-5">
+-                  <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)">
+-                    Empty section
+-                  </p>
+-                  <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+-                    <span>No decks yet —</span>
+-                    <Button onClick={() => onCreateDeck(group.course)} size="inline" variant="textStrong">
+-                      add one
+-                    </Button>
++            {!isCollapsed && (
++              <>
++                {group.decks.length === 0 ? (
++                  hasExtras ? null : (
++                    <div className="rounded-xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-5">
++                      <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)">
++                        Empty section
++                      </p>
++                      <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
++                        <span>No decks yet —</span>
++                        <Button onClick={() => onCreateDeck(group.course)} size="inline" variant="textStrong">
++                          add one
++                        </Button>
++                      </div>
++                    </div>
++                  )
++                ) : view === 'list' ? (
++                  <div className="flex flex-col gap-2">
++                    {group.decks.map(deck => (
++                      <DeckRow
++                        deck={deck}
++                        key={deck.id}
++                        now={now}
++                        onBrowse={onBrowse}
++                        onMatch={onMatch}
++                        onStudy={onStudy}
++                        state={state}
++                      />
++                    ))}
+                   </div>
+-                </div>
+-              )
+-            ) : view === 'list' ? (
+-              <div className="flex flex-col gap-2">
+-                {group.decks.map(deck => (
+-                  <DeckRow
+-                    deck={deck}
+-                    key={deck.id}
+-                    now={now}
+-                    onBrowse={onBrowse}
+-                    onMatch={onMatch}
+-                    onStudy={onStudy}
+-                    state={state}
+-                  />
+-                ))}
+-              </div>
+-            ) : (
+-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+-                {group.decks.map(deck => (
+-                  <DeckCard
+-                    deck={deck}
+-                    key={deck.id}
+-                    now={now}
+-                    onBrowse={onBrowse}
+-                    onMatch={onMatch}
+-                    onStudy={onStudy}
+-                    state={state}
+-                  />
+-                ))}
+-              </div>
+-            )}
+-            {hasExtras && (
+-              <div className="mt-2 flex flex-col gap-2">
+-                {groupMindmaps.map(mindmap => (
+-                  <MindmapRow key={mindmap.fileName} mindmap={mindmap} onOpen={() => onOpenMindmap(mindmap)} />
+-                ))}
+-                {groupTests.map(test => (
+-                  <TestRow
+-                    attempts={testAttempts[test.fileName]?.attempts ?? []}
+-                    key={test.fileName}
+-                    onStart={() => onStartTest(test)}
+-                    test={test}
+-                  />
+-                ))}
+-              </div>
++                ) : (
++                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
++                    {group.decks.map(deck => (
++                      <DeckCard
++                        curve={curvesByDeck.get(deck.id) ?? []}
++                        deck={deck}
++                        key={deck.id}
++                        now={now}
++                        onBrowse={onBrowse}
++                        onMatch={onMatch}
++                        onStudy={onStudy}
++                        state={state}
++                      />
++                    ))}
++                  </div>
++                )}
++                {hasExtras && (
++                  <div className="mt-2 flex flex-col gap-2">
++                    {groupMindmaps.map(mindmap => (
++                      <MindmapRow key={mindmap.fileName} mindmap={mindmap} onOpen={() => onOpenMindmap(mindmap)} />
++                    ))}
++                    {groupTests.map(test => (
++                      <TestRow
++                        attempts={testAttempts[test.fileName]?.attempts ?? []}
++                        key={test.fileName}
++                        onStart={() => onStartTest(test)}
++                        test={test}
++                      />
++                    ))}
++                  </div>
++                )}
++              </>
+             )}
+           </section>
+         )
+@@ -1053,6 +1132,41 @@ function DuePill({ due }: { due: number }) {
+   )
+ }
+ 
++function RetentionSparkline({ curve }: { curve: RetentionPoint[] }) {
++  const finalDay = curve.at(-1)?.day ?? 1
++  const coordinates = curve.map(point => {
++    const x = 2 + (point.day / Math.max(1, finalDay)) * 96
++    const y = 2 + (1 - point.retention) * 28
++
++    return [x, y] as const
++  })
++  const points = coordinates.map(([x, y]) => `${x},${y}`).join(' ')
++  const area = `M ${coordinates.map(([x, y]) => `${x} ${y}`).join(' L ')} L 98 30 L 2 30 Z`
++  const first = curve[0]
++  const last = curve.at(-1) ?? first
++
++  return (
++    <div>
++      <svg aria-hidden="true" className="h-8 w-full" preserveAspectRatio="none" viewBox="0 0 100 32">
++        <path d={area} fill="var(--theme-primary)" opacity="0.1" />
++        <polyline
++          fill="none"
++          points={points}
++          stroke="var(--theme-primary)"
++          strokeLinecap="round"
++          strokeLinejoin="round"
++          strokeWidth="1.5"
++          vectorEffect="non-scaling-stroke"
++        />
++        <circle cx={coordinates[0][0]} cy={coordinates[0][1]} fill="var(--theme-primary)" r="1.75" />
++      </svg>
++      <p className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">
++        Recall {Math.round(first.retention * 100)}% → {Math.round(last.retention * 100)}% in {finalDay}d
++      </p>
++    </div>
++  )
++}
++
+ function DeckRow({
+   deck,
+   now,
+@@ -1130,6 +1244,7 @@ function DeckRow({
+ }
+ 
+ function DeckCard({
++  curve,
+   deck,
+   now,
+   onBrowse,
+@@ -1137,6 +1252,7 @@ function DeckCard({
+   onStudy,
+   state
+ }: {
++  curve: RetentionPoint[]
+   deck: StudyDeck
+   now: Date
+   onBrowse: (deckId: string) => void
+@@ -1170,6 +1286,8 @@ function DeckCard({
+         {stats.due > 0 && <DuePill due={stats.due} />}
+       </div>
+ 
++      {curve.length > 0 && <RetentionSparkline curve={curve} />}
++
+       <div className="mt-auto">
+         <div className="mb-1.5 flex items-baseline justify-between text-[11px] text-muted-foreground">
+           <span className="tabular-nums">
+diff --git a/apps/desktop/src/app/study/retention.js b/apps/desktop/src/app/study/retention.js
+new file mode 100644
+index 00000000000..76a51a77c02
+--- /dev/null
++++ b/apps/desktop/src/app/study/retention.js
+@@ -0,0 +1,24 @@
++const DAY_MS = 24 * 60 * 60 * 1000;
++const FSRS_DECAY = 19 / 81;
++/** Project a deck's mean FSRS-4.5 retrievability from today through `days`. */
++export function deckRetentionCurve(schedules, now, days = 21) {
++    const eligible = schedules.flatMap(schedule => {
++        if (!schedule.last_review || schedule.stability <= 0) {
++            return [];
++        }
++        return [{ lastReview: new Date(schedule.last_review).getTime(), stability: schedule.stability }];
++    });
++    if (eligible.length === 0) {
++        return [];
++    }
++    const finalDay = Math.max(0, Math.floor(days));
++    return Array.from({ length: finalDay + 1 }, (_, day) => {
++        const pointTime = now.getTime() + day * DAY_MS;
++        const retention = eligible.reduce((sum, schedule) => {
++            const elapsedDays = Math.max(0, (pointTime - schedule.lastReview) / DAY_MS);
++            const retrievability = (1 + (FSRS_DECAY * elapsedDays) / schedule.stability) ** -0.5;
++            return sum + retrievability;
++        }, 0) / eligible.length;
++        return { day, retention: Math.min(1, Math.max(0, retention)) };
++    });
++}
+diff --git a/apps/desktop/src/app/study/retention.test.js b/apps/desktop/src/app/study/retention.test.js
+new file mode 100644
+index 00000000000..f32402719b3
+--- /dev/null
++++ b/apps/desktop/src/app/study/retention.test.js
+@@ -0,0 +1,31 @@
++import { describe, expect, it } from 'vitest';
++import { deckRetentionCurve } from './retention';
++const NOW = new Date('2026-07-11T12:00:00.000Z');
++function schedule(stability, lastReview = NOW.toISOString()) {
++    return {
++        due: '2026-07-12T12:00:00.000Z',
++        last_review: lastReview,
++        stability
++    };
++}
++describe('deckRetentionCurve', () => {
++    it('returns no curve for an empty or new-only deck', () => {
++        expect(deckRetentionCurve([], NOW)).toEqual([]);
++        expect(deckRetentionCurve([{ due: NOW.toISOString() }], NOW)).toEqual([]);
++    });
++    it('is monotonically non-increasing over time', () => {
++        const curve = deckRetentionCurve([schedule(5, '2026-07-09T12:00:00.000Z'), schedule(20, '2026-07-10T12:00:00.000Z')], NOW);
++        for (let index = 1; index < curve.length; index++) {
++            expect(curve[index].retention).toBeLessThanOrEqual(curve[index - 1].retention);
++        }
++    });
++    it('decays more slowly for a high-stability deck', () => {
++        const lowStability = deckRetentionCurve([schedule(2)], NOW);
++        const highStability = deckRetentionCurve([schedule(20)], NOW);
++        expect(highStability.at(-1)?.retention).toBeGreaterThan(lowStability.at(-1)?.retention ?? 1);
++    });
++    it('caps day-zero retention at one', () => {
++        const curve = deckRetentionCurve([schedule(10, '2026-07-12T12:00:00.000Z')], NOW);
++        expect(curve[0].retention).toBeLessThanOrEqual(1);
++    });
++});
+diff --git a/apps/desktop/src/app/study/retention.test.ts b/apps/desktop/src/app/study/retention.test.ts
+new file mode 100644
+index 00000000000..c5e1a521a64
+--- /dev/null
++++ b/apps/desktop/src/app/study/retention.test.ts
+@@ -0,0 +1,45 @@
++import { describe, expect, it } from 'vitest'
++
++import type { StoredSchedule } from './model'
++import { deckRetentionCurve } from './retention'
++
++const NOW = new Date('2026-07-11T12:00:00.000Z')
++
++function schedule(stability: number, lastReview = NOW.toISOString()): StoredSchedule {
++  return {
++    due: '2026-07-12T12:00:00.000Z',
++    last_review: lastReview,
++    stability
++  } as StoredSchedule
++}
++
++describe('deckRetentionCurve', () => {
++  it('returns no curve for an empty or new-only deck', () => {
++    expect(deckRetentionCurve([], NOW)).toEqual([])
++    expect(deckRetentionCurve([{ due: NOW.toISOString() } as StoredSchedule], NOW)).toEqual([])
++  })
++
++  it('is monotonically non-increasing over time', () => {
++    const curve = deckRetentionCurve(
++      [schedule(5, '2026-07-09T12:00:00.000Z'), schedule(20, '2026-07-10T12:00:00.000Z')],
++      NOW
++    )
++
++    for (let index = 1; index < curve.length; index++) {
++      expect(curve[index].retention).toBeLessThanOrEqual(curve[index - 1].retention)
++    }
++  })
++
++  it('decays more slowly for a high-stability deck', () => {
++    const lowStability = deckRetentionCurve([schedule(2)], NOW)
++    const highStability = deckRetentionCurve([schedule(20)], NOW)
++
++    expect(highStability.at(-1)?.retention).toBeGreaterThan(lowStability.at(-1)?.retention ?? 1)
++  })
++
++  it('caps day-zero retention at one', () => {
++    const curve = deckRetentionCurve([schedule(10, '2026-07-12T12:00:00.000Z')], NOW)
++
++    expect(curve[0].retention).toBeLessThanOrEqual(1)
++  })
++})
+diff --git a/apps/desktop/src/app/study/retention.ts b/apps/desktop/src/app/study/retention.ts
+new file mode 100644
+index 00000000000..8c68fb6ecef
+--- /dev/null
++++ b/apps/desktop/src/app/study/retention.ts
+@@ -0,0 +1,39 @@
++import type { StoredSchedule } from './model'
++
++export interface RetentionPoint {
++  day: number
++  retention: number
++}
++
++const DAY_MS = 24 * 60 * 60 * 1000
++const FSRS_DECAY = 19 / 81
++
++/** Project a deck's mean FSRS-4.5 retrievability from today through `days`. */
++export function deckRetentionCurve(schedules: StoredSchedule[], now: Date, days = 21): RetentionPoint[] {
++  const eligible = schedules.flatMap(schedule => {
++    if (!schedule.last_review || schedule.stability <= 0) {
++      return []
++    }
++
++    return [{ lastReview: new Date(schedule.last_review).getTime(), stability: schedule.stability }]
++  })
++
++  if (eligible.length === 0) {
++    return []
++  }
++
++  const finalDay = Math.max(0, Math.floor(days))
++
++  return Array.from({ length: finalDay + 1 }, (_, day) => {
++    const pointTime = now.getTime() + day * DAY_MS
++    const retention =
++      eligible.reduce((sum, schedule) => {
++        const elapsedDays = Math.max(0, (pointTime - schedule.lastReview) / DAY_MS)
++        const retrievability = (1 + (FSRS_DECAY * elapsedDays) / schedule.stability) ** -0.5
++
++        return sum + retrievability
++      }, 0) / eligible.length
++
++    return { day, retention: Math.min(1, Math.max(0, retention)) }
++  })
++}
+-- 
+2.53.0
+
