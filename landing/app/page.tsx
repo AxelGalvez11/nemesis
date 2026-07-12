@@ -191,8 +191,7 @@ export default function Home() {
             </p>
             <h2>A capable system, held to a narrow mission.</h2>
             <p>
-              Built on the Hermes agent framework, Nemesis can compound its intelligence.
-              Its permitted scope remains fixed.
+              Nemesis compounds what it learns. Its permitted scope remains fixed.
             </p>
           </div>
           <div className="triad">
