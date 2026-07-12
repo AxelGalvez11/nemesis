@@ -78,7 +78,7 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 .btn-ghost { color: var(--chrome); border: 1px solid var(--line-2); background: transparent; }
 .btn-ghost:hover { border-color: var(--steel); }
 
-/* hero — square mask anchored right, black-on-black blend */
+/* hero — square notebook anchored right, black-on-black blend */
 .hero {
   position: relative; min-height: 92vh; display: flex; align-items: center;
   border-bottom: 1px solid var(--line); overflow: hidden;
@@ -86,7 +86,7 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 .hero-art {
   position: absolute; top: 50%; transform: translateY(calc(-50% + var(--par, 0px)));
   right: -3vw; height: 104%; aspect-ratio: 1 / 1;
-  background-image: url("/nemesis/hero.jpg");
+  background-image: url("/nemesis/hero-notebook.webp");
   background-size: cover; background-position: center; will-change: transform;
 }
 .hero-veil {
@@ -128,9 +128,9 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 }
 .obj:hover { border-color: var(--line-2); }
 .obj .img { aspect-ratio: 1 / 1; background-size: cover; background-position: center; }
-.obj .img.intelligence { background-image: url("/nemesis/intelligence.jpg"); }
-.obj .img.mastery { background-image: url("/nemesis/mastery.jpg"); }
-.obj .img.obelisk { background-image: url("/nemesis/obelisk.jpg"); }
+.obj .img.intelligence { background-image: url("/nemesis/intelligence-clipboard.webp"); }
+.obj .img.mastery { background-image: url("/nemesis/mastery-textbook.webp"); }
+.obj .img.calendar { background-image: url("/nemesis/nemesis-calendar.webp"); }
 .obj .cap { padding: 22px 22px 26px; }
 .obj .k {
   font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em;
@@ -160,8 +160,8 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   position: absolute; inset: 0; background-size: cover; background-position: center;
   background-attachment: fixed;
 }
-.band-art.graph { background-image: url("/nemesis/lattice.jpg"); }
-.band-art.order { background-image: url("/nemesis/plates.jpg"); background-position: 76% center; }
+.band-art.graph { background-image: url("/nemesis/semester-binder.webp"); }
+.band-art.order { background-image: url("/nemesis/order-accordion-folder.webp"); background-position: 76% center; }
 .band-veil {
   position: absolute; inset: 0;
   background: linear-gradient(90deg, var(--ink) 22%, rgba(8, 8, 9, 0.82) 48%, rgba(8, 8, 9, 0.12) 80%);
