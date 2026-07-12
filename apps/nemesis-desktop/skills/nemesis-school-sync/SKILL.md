@@ -1,7 +1,7 @@
 ---
 name: nemesis-school-sync
 description: "THE flagship workflow: sync the student's school world end-to-end. Sweep Blackboard + Outlook (read-only, via the school browser), capture new lectures/slides/attachments into the Library, then INTELLIGENTLY produce structured lecture notes and exam-grade flashcards from the new material, and update the semester graph, calendar, Home page, and ledger. Use when the student says 'sync my school', 'check blackboard/outlook', 'what's new in my courses', 'catch me up', or asks for their daily brief."
-version: 1.0.0
+version: 1.1.0
 metadata:
   hermes:
     tags: [school, sync, blackboard, outlook, lectures, notes, flashcards, daily-brief, pipeline, nemesis]
@@ -25,6 +25,12 @@ Portals have no APIs. The school browser IS the integration: navigate it read-on
   CAPTCHA, STOP that portal's sweep and tell the student plainly: "Blackboard needs you
   to log in once in the browser panel — then say 'sync my school' again." Never ask for
   or type credentials.
+- **When login walls block BOTH portals (session expired):** Do NOT skip the rest of
+  the pipeline. You still need to (a) read the existing local state (graph.json, Home.md,
+  Library) and report what is current, (b) write the state file with this attempt's
+  timestamp as lastRun — prevents wasted re-attempts before the student logs in, and
+  (c) log a ledger entry for the attempted sync (area: browse). If only ONE portal needs
+  login, continue with the other — do not bail on both.
 - **State file:** `~/Documents/Nemesis Library/.nemesis/school-sync.json` —
   `{ "lastRun": ISO, "seen": { "<stable item id or URL>": ISO } }`. Read it first;
   only process items NOT in `seen`; write it back at the end (read-merge-write).
