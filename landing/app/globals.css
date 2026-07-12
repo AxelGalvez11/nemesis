@@ -57,6 +57,8 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 .nav-in { display: flex; align-items: center; gap: 22px; height: 56px; }
 .brand { display: flex; align-items: center; gap: 11px; color: var(--chrome); text-decoration: none; }
 .brand img { width: 26px; height: 26px; object-fit: contain; }
+.brand img.brand-logo-footer { width: 20px; height: 20px; }
+.brand img.brand-logo-legal { width: 22px; height: 22px; }
 .brand b {
   color: var(--chrome); font-weight: 600; letter-spacing: 0.34em; font-size: 13px;
   text-transform: uppercase; font-family: var(--mono); padding-left: 2px;
@@ -84,10 +86,10 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   border-bottom: 1px solid var(--line); overflow: hidden;
 }
 .hero-art {
-  position: absolute; top: 50%; transform: translateY(calc(-50% + var(--par, 0px)));
+  position: absolute; top: 50%; transform: translate3d(0, calc(-50% + var(--parallax-y, 0px)), 0);
   right: -3vw; height: 104%; aspect-ratio: 1 / 1;
   background-image: url("/nemesis/hero-notebook.webp");
-  background-size: cover; background-position: center; will-change: transform;
+  background-size: cover; background-position: center;
 }
 .hero-veil {
   position: absolute; inset: 0;
@@ -127,7 +129,11 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   transition: border-color 0.25s ease;
 }
 .obj:hover { border-color: var(--line-2); }
-.obj .img { aspect-ratio: 1 / 1; background-size: cover; background-position: center; }
+.obj .img-shell { position: relative; aspect-ratio: 1 / 1; overflow: hidden; }
+.obj .img {
+  position: absolute; inset: -6%; background-size: cover; background-position: center;
+  transform: translate3d(0, var(--parallax-y, 0px), 0);
+}
 .obj .img.intelligence { background-image: url("/nemesis/intelligence-clipboard.webp"); }
 .obj .img.mastery { background-image: url("/nemesis/mastery-textbook.webp"); }
 .obj .img.calendar { background-image: url("/nemesis/nemesis-calendar.webp"); }
@@ -157,8 +163,8 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   border-bottom: 1px solid var(--line); overflow: hidden;
 }
 .band-art {
-  position: absolute; inset: 0; background-size: cover; background-position: center;
-  background-attachment: fixed;
+  position: absolute; inset: -10% 0; background-size: cover; background-position: center;
+  transform: translate3d(0, var(--parallax-y, 0px), 0);
 }
 .band-art.graph { background-image: url("/nemesis/semester-binder.webp"); }
 .band-art.order { background-image: url("/nemesis/order-accordion-folder.webp"); background-position: 76% center; }
@@ -218,6 +224,9 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 .foot a:hover { color: var(--steel); }
 .foot .muted { color: var(--iron); font-size: 12.5px; font-family: var(--mono); letter-spacing: 0.04em; }
 .foot .spacer { flex: 1; }
+.social-links { display: inline-flex; align-items: center; gap: 14px; }
+.parallax-layer { --parallax-y: 0px; backface-visibility: hidden; }
+.parallax-layer.is-parallax-active { will-change: transform; }
 
 /* legal pages (LegalShell + /privacy + /terms) */
 .legal-top {
@@ -270,7 +279,8 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 }
 @media (prefers-reduced-motion: reduce) {
   .reveal { animation: none; }
-  .band-art { background-attachment: scroll; }
+  .parallax-layer { --parallax-y: 0px !important; transform: translate3d(0, 0, 0); }
+  .hero-art { transform: translate3d(0, -50%, 0); }
   html { scroll-behavior: auto; }
 }
 
@@ -282,7 +292,6 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   .caps { grid-template-columns: 1fr; }
   .hero-art { height: 88%; right: -34vw; opacity: 0.8; }
   .hero-veil { background: linear-gradient(180deg, rgba(8, 8, 9, 0.42), rgba(8, 8, 9, 0.88)); }
-  .band-art { background-attachment: scroll; }
   .band-veil { background: linear-gradient(180deg, rgba(8, 8, 9, 0.5), rgba(8, 8, 9, 0.88)); }
   .nav a.ghost { display: none; }
 }

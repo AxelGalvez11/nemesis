@@ -1,43 +1,112 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect } from "react";
+import { SocialLinks } from "@/components/SocialLinks";
 
 const APP_SIGN_UP = "https://app.pharmaorb.app/sign-up";
 const APP_SIGN_IN = "https://app.pharmaorb.app/sign-in";
 
-/** Subtle downward drift on the hero art while scrolling. The image bands get their
- *  parallax from CSS (background-attachment: fixed); both effects turn off under
- *  prefers-reduced-motion, and the bands also fall back to plain scroll on mobile. */
-function useHeroParallax() {
+/**
+ * One scroll controller drives every decorative background layer. Each offset is
+ * calculated relative to its own section, clamped to the available overscan, and
+ * disabled when the visitor requests reduced motion.
+ */
+function useBackgroundParallax() {
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const art = document.querySelector<HTMLElement>(".hero-art");
-    if (!art) return;
-    let ticking = false;
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        art.style.setProperty("--par", `${(window.scrollY * 0.14).toFixed(1)}px`);
-        ticking = false;
+    const layers = Array.from(
+      document.querySelectorAll<HTMLElement>(".parallax-layer"),
+    );
+    if (!layers.length) return;
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const visibleLayers = new Set<HTMLElement>();
+    let frame = 0;
+
+    const resetLayers = () => {
+      layers.forEach((layer) => {
+        layer.style.setProperty("--parallax-y", "0px");
+        layer.classList.remove("is-parallax-active");
       });
     };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+
+    const update = () => {
+      frame = 0;
+      if (reducedMotion.matches) {
+        resetLayers();
+        return;
+      }
+
+      const viewportHeight = window.innerHeight;
+      const mobileScale = window.innerWidth <= 820 ? 0.55 : 1;
+
+      visibleLayers.forEach((layer) => {
+        const anchor = layer.closest<HTMLElement>(".hero, .obj, .band") ?? layer;
+        const rect = anchor.getBoundingClientRect();
+        const travel = (viewportHeight + rect.height) / 2;
+        const progress = Math.max(
+          -1,
+          Math.min(1, (viewportHeight / 2 - (rect.top + rect.height / 2)) / travel),
+        );
+        const amount = Number(layer.dataset.parallaxAmount ?? 0) * mobileScale;
+
+        layer.style.setProperty("--parallax-y", `${(progress * amount).toFixed(2)}px`);
+      });
+    };
+
+    const requestUpdate = () => {
+      if (!frame) frame = window.requestAnimationFrame(update);
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const layer = entry.target as HTMLElement;
+          if (entry.isIntersecting && !reducedMotion.matches) {
+            visibleLayers.add(layer);
+            layer.classList.add("is-parallax-active");
+          } else {
+            visibleLayers.delete(layer);
+            layer.classList.remove("is-parallax-active");
+          }
+        });
+        requestUpdate();
+      },
+      { rootMargin: "12% 0px" },
+    );
+
+    const onMotionPreferenceChange = () => {
+      if (reducedMotion.matches) resetLayers();
+      requestUpdate();
+    };
+
+    layers.forEach((layer) => observer.observe(layer));
+    window.addEventListener("scroll", requestUpdate, { passive: true });
+    window.addEventListener("resize", requestUpdate);
+    reducedMotion.addEventListener("change", onMotionPreferenceChange);
+    requestUpdate();
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", requestUpdate);
+      window.removeEventListener("resize", requestUpdate);
+      reducedMotion.removeEventListener("change", onMotionPreferenceChange);
+      if (frame) window.cancelAnimationFrame(frame);
+      resetLayers();
+    };
   }, []);
 }
 
 export default function Home() {
-  useHeroParallax();
+  useBackgroundParallax();
 
   return (
     <>
       <nav className="nav">
         <div className="wrap nav-in">
-          <Link className="brand" href="/">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/nemesis/logo.png" alt="Nemesis logo" />
+          <Link className="brand" href="/" aria-label="Nemesis home">
+            <Image src="/nemesis/logo.png" alt="" width={26} height={26} />
             <b>Nemesis</b>
           </Link>
           <span className="spacer" />
@@ -50,7 +119,7 @@ export default function Home() {
       </nav>
 
       <header className="hero">
-        <div className="hero-art" />
+        <div className="hero-art parallax-layer" data-parallax-amount="64" />
         <div className="hero-veil" />
         <div className="wrap">
           <div className="hero-in">
@@ -124,7 +193,9 @@ export default function Home() {
           </div>
           <div className="triad">
             <div className="obj">
-              <div className="img intelligence" role="img" aria-label="Glitched black-chrome clipboard" />
+              <div className="img-shell" role="img" aria-label="Glitched black-chrome clipboard">
+                <div className="img intelligence parallax-layer" data-parallax-amount="18" />
+              </div>
               <div className="cap">
                 <div className="k">Intelligence</div>
                 <h3>It knows your semester</h3>
@@ -136,7 +207,9 @@ export default function Home() {
               </div>
             </div>
             <div className="obj">
-              <div className="img mastery" role="img" aria-label="Glitched open black-chrome textbook" />
+              <div className="img-shell" role="img" aria-label="Glitched open black-chrome textbook">
+                <div className="img mastery parallax-layer" data-parallax-amount="18" />
+              </div>
               <div className="cap">
                 <div className="k">Mastery</div>
                 <h3>It measures what you know</h3>
@@ -147,7 +220,9 @@ export default function Home() {
               </div>
             </div>
             <div className="obj">
-              <div className="img calendar" role="img" aria-label="Glitched black-chrome desk calendar" />
+              <div className="img-shell" role="img" aria-label="Glitched black-chrome desk calendar">
+                <div className="img calendar parallax-layer" data-parallax-amount="18" />
+              </div>
               <div className="cap">
                 <div className="k">Nemesis</div>
                 <h3>It does the work around learning</h3>
@@ -162,7 +237,7 @@ export default function Home() {
       </section>
 
       <div className="band" id="graph">
-        <div className="band-art graph" />
+        <div className="band-art graph parallax-layer" data-parallax-amount="48" />
         <div className="band-veil" />
         <div className="wrap">
           <div className="band-in">
@@ -228,7 +303,7 @@ export default function Home() {
       </section>
 
       <div className="band">
-        <div className="band-art order" />
+        <div className="band-art order parallax-layer" data-parallax-amount="48" />
         <div className="band-veil" />
         <div className="wrap">
           <div className="band-in">
@@ -265,13 +340,13 @@ export default function Home() {
 
       <footer className="foot">
         <div className="wrap foot-in">
-          <Link className="brand" href="/">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/nemesis/logo.png" alt="" style={{ width: 20, height: 20 }} />
+          <Link className="brand" href="/" aria-label="Nemesis home">
+            <Image className="brand-logo-footer" src="/nemesis/logo.png" alt="" width={20} height={20} />
             <b style={{ fontSize: "11px" }}>Nemesis</b>
           </Link>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
+          <SocialLinks />
           <span className="spacer" />
           <span className="muted">local-first · never submits · macOS</span>
         </div>
