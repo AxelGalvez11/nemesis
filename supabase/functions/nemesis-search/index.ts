@@ -24,7 +24,9 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const FIRECRAWL_KEY = Deno.env.get('FIRECRAWL_API_KEY') ?? ''
+const TAVILY_KEY = Deno.env.get('TAVILY_API_KEY') ?? ''
 const FIRECRAWL_BASE = 'https://api.firecrawl.dev'
+const TAVILY_BASE = 'https://api.tavily.com'
 
 const COUNTER_KEY = 'nemesis_search_units'
 const ENTITLEMENT_KEY = 'nemesis_search_daily_units'
@@ -103,6 +105,47 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
   return { dailyLimit, periodStart, plan, used: counter?.used ?? 0, userId: keyRow.user_id }
 }
 
+/** Tavily fallback for /v2/search, answered in Firecrawl's response shape so the
+ *  desktop SDK parses it identically. Search only — scrape stays Firecrawl. */
+async function tavilySearch(body: Record<string, unknown>): Promise<Response | null> {
+  if (!TAVILY_KEY) {
+    return null
+  }
+
+  const upstream = await fetch(`${TAVILY_BASE}/search`, {
+    body: JSON.stringify({
+      max_results: typeof body.limit === 'number' ? body.limit : 5,
+      query: String(body.query ?? ''),
+      search_depth: 'basic'
+    }),
+    headers: { Authorization: `Bearer ${TAVILY_KEY}`, 'Content-Type': 'application/json' },
+    method: 'POST'
+  }).catch(() => null)
+
+  if (!upstream?.ok) {
+    return null
+  }
+
+  const data = (await upstream.json().catch(() => null)) as {
+    results?: { content?: string; title?: string; url?: string }[]
+  } | null
+
+  if (!data?.results) {
+    return null
+  }
+
+  return json({
+    data: {
+      web: data.results.map(result => ({
+        description: result.content ?? '',
+        title: result.title ?? result.url ?? '',
+        url: result.url ?? ''
+      }))
+    },
+    success: true
+  })
+}
+
 /** Record one spent unit against today's counter + the event ledger. */
 async function recordUsage(ctx: KeyContext, kind: 'scrape' | 'search', detail: string): Promise<void> {
   await admin.from('usage_counters').upsert(
@@ -129,7 +172,7 @@ async function recordUsage(ctx: KeyContext, kind: 'scrape' | 'search', detail: s
 }
 
 async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'): Promise<Response> {
-  if (!FIRECRAWL_KEY) {
+  if (!FIRECRAWL_KEY && !TAVILY_KEY) {
     return json({ success: false, error: 'search provider key not configured on the server' }, 503)
   }
 
@@ -156,23 +199,45 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
     return json({ success: false, error: 'invalid request body' }, 400)
   }
 
-  const upstream = await fetch(`${FIRECRAWL_BASE}${route}`, {
-    body: JSON.stringify(body),
-    headers: { Authorization: `Bearer ${FIRECRAWL_KEY}`, 'Content-Type': 'application/json' },
-    method: 'POST'
-  })
+  const detail = route === '/v2/search' ? String(body.query ?? '') : String(body.url ?? '')
 
-  const text = await upstream.text()
+  const upstream = FIRECRAWL_KEY
+    ? await fetch(`${FIRECRAWL_BASE}${route}`, {
+        body: JSON.stringify(body),
+        headers: { Authorization: `Bearer ${FIRECRAWL_KEY}`, 'Content-Type': 'application/json' },
+        method: 'POST'
+      }).catch(() => null)
+    : null
 
-  if (upstream.ok) {
-    const detail = route === '/v2/search' ? String(body.query ?? '') : String(body.url ?? '')
+  if (upstream?.ok) {
     void recordUsage(ctx, route === '/v2/search' ? 'search' : 'scrape', detail)
+
+    return new Response(await upstream.text(), {
+      headers: { 'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json' },
+      status: upstream.status
+    })
   }
 
-  return new Response(text, {
-    headers: { 'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json' },
-    status: upstream.status
-  })
+  // Firecrawl down, erroring, or unconfigured — searches fall back to Tavily
+  // (answered in the same shape); scrapes have no second provider.
+  if (route === '/v2/search') {
+    const fallback = await tavilySearch(body)
+
+    if (fallback) {
+      void recordUsage(ctx, 'search', detail)
+
+      return fallback
+    }
+  }
+
+  if (upstream) {
+    return new Response(await upstream.text(), {
+      headers: { 'Content-Type': upstream.headers.get('Content-Type') ?? 'application/json' },
+      status: upstream.status
+    })
+  }
+
+  return json({ success: false, error: 'search providers unreachable' }, 502)
 }
 
 Deno.serve((req: Request) => {
