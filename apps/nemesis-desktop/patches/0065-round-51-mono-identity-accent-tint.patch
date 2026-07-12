@@ -1,0 +1,828 @@
+From 2f841ee15b3ab006e8a8fa953b31137d014256ab Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sun, 12 Jul 2026 15:37:17 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis):=20round-51=20=E2=80=94=20one=20m?=
+ =?UTF-8?q?onochrome=20identity=20+=20user-adjustable=20accent=20tint?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Student build drops the multi-theme marketplace for ONE mono look with a user-chosen
+accent. Pick a hue (curated swatch or constrained custom slider); we synthesize the
+accent with fixed saturation + mode-tuned lightness and CONTRAST-GUARD it against the
+surface, so no accent can render unreadable (worst-case label contrast across the whole
+wheel = 4.28:1). Crimson = exact brand red. Semantic tokens (danger red, success green)
+are never touched. accentTokensFor overrides only the accent chain after applyTheme;
+re-applies on boot, theme/mode change, and live picker change. Tests: accent-tint (9).
+---
+ .../src/app/settings/appearance-settings.js   |  34 +++-
+ .../src/app/settings/appearance-settings.tsx  | 105 ++++++++++-
+ apps/desktop/src/themes/accent-tint.js        | 145 +++++++++++++++
+ apps/desktop/src/themes/accent-tint.test.js   |  59 ++++++
+ apps/desktop/src/themes/accent-tint.test.ts   |  69 +++++++
+ apps/desktop/src/themes/accent-tint.ts        | 175 ++++++++++++++++++
+ apps/desktop/src/themes/color.js              |  23 +++
+ apps/desktop/src/themes/color.ts              |  26 +++
+ apps/desktop/src/themes/context.js            |   4 +
+ apps/desktop/src/themes/context.tsx           |   5 +
+ 10 files changed, 642 insertions(+), 3 deletions(-)
+ create mode 100644 apps/desktop/src/themes/accent-tint.js
+ create mode 100644 apps/desktop/src/themes/accent-tint.test.js
+ create mode 100644 apps/desktop/src/themes/accent-tint.test.ts
+ create mode 100644 apps/desktop/src/themes/accent-tint.ts
+
+diff --git a/apps/desktop/src/app/settings/appearance-settings.js b/apps/desktop/src/app/settings/appearance-settings.js
+index 7c3e784a7be..4d65835522f 100644
+--- a/apps/desktop/src/app/settings/appearance-settings.js
++++ b/apps/desktop/src/app/settings/appearance-settings.js
+@@ -17,6 +17,8 @@ import { $activeGatewayProfile, $profiles, normalizeProfileKey } from '@/store/p
+ import { $toolViewMode, setToolViewMode } from '@/store/tool-view';
+ import { $translucency, setTranslucency } from '@/store/translucency';
+ import { $zoomPercent, setZoomPercent } from '@/store/zoom';
++import { ACCENT_CHANGED_EVENT, ACCENT_SWATCHES, accentSwatchHex, DEFAULT_ACCENT_ID, loadAccentSelection, saveAccentCustomHue, saveAccentSwatch } from '@/themes/accent-tint';
++import { readableOn } from '@/themes/color';
+ import { getBaseColors, useTheme } from '@/themes/context';
+ import { installVscodeThemeFromMarketplace } from '@/themes/install';
+ import { $marketplaceInstalls, isUserTheme, removeUserTheme } from '@/themes/user-themes';
+@@ -119,6 +121,34 @@ function MarketplaceThemeResults({ query, installs, onInstalled }) {
+                     return (_jsxs("button", { className: cn('flex items-center gap-2.5 px-2.5 py-2 text-left disabled:opacity-60', selectableCardClass({ prominent: done })), disabled: Boolean(installingId) && !busy, onClick: () => select(item), type: "button", children: [_jsx(Palette, { className: "size-4 shrink-0 text-(--ui-text-tertiary)" }), _jsxs("span", { className: "min-w-0 flex-1", children: [_jsx("span", { className: "block truncate text-[length:var(--conversation-text-font-size)] font-medium", children: item.displayName }), _jsxs("span", { className: "block truncate text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)", children: [item.publisher, item.installs > 0 ? ` · ${copy.installs(compactNumber.format(item.installs))}` : ''] })] }), _jsx("span", { className: "shrink-0 text-(--ui-text-tertiary)", children: busy ? (_jsx(Loader2, { className: "size-4 animate-spin" })) : done ? (_jsx(Check, { className: "size-4 text-(--ui-green)" })) : (_jsx(Download, { className: "size-4" })) })] }, item.extensionId));
+                 }) })] }));
+ }
++// Student build: the ONLY appearance control is the accent tint. A curated swatch row
++// plus one constrained custom-hue slider. Every color is contrast-checked at apply time
++// (accent-tint.ts), so the picker can't produce an unreadable UI, and semantic red/green
++// are never touched. Previews are shown in the currently-selected light/dark mode.
++function AccentPicker() {
++    const [selection, setSelection] = useState(() => loadAccentSelection());
++    useEffect(() => {
++        const sync = () => setSelection(loadAccentSelection());
++        window.addEventListener(ACCENT_CHANGED_EVENT, sync);
++        return () => window.removeEventListener(ACCENT_CHANGED_EVENT, sync);
++    }, []);
++    const isCustom = selection.id === null;
++    const customHue = isCustom ? selection.hue : 210;
++    const customColor = accentSwatchHex(customHue);
++    return (_jsxs("div", { className: "mt-3 flex flex-col gap-4", children: [_jsx("div", { className: "flex flex-wrap gap-2.5", children: ACCENT_SWATCHES.map(swatch => {
++                    const active = selection.id === swatch.id;
++                    const color = swatch.id === DEFAULT_ACCENT_ID ? '#ff2740' : accentSwatchHex(swatch.hue);
++                    return (_jsx("button", { "aria-label": swatch.label, "aria-pressed": active, className: cn('relative size-8 rounded-full outline-none transition-transform duration-150 active:scale-95', active ? 'scale-105' : 'opacity-90 hover:scale-105 hover:opacity-100'), onClick: () => {
++                            triggerHaptic('crisp');
++                            saveAccentSwatch(swatch.id);
++                        }, style: {
++                            backgroundColor: color,
++                            boxShadow: active ? `0 0 0 2px var(--ui-bg-card), 0 0 0 4px ${color}` : undefined
++                        }, title: swatch.label, type: "button", children: active && (_jsx(Check, { className: "absolute inset-0 m-auto size-4", strokeWidth: 3, style: { color: readableOn(color) } })) }, swatch.id));
++                }) }), _jsxs("div", { className: "flex items-center gap-3", children: [_jsx("span", { className: "w-14 shrink-0 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)", children: "Custom" }), _jsx("input", { "aria-label": "Custom accent hue", className: cn('h-2 flex-1 cursor-pointer appearance-none rounded-full outline-none', isCustom && 'ring-2 ring-(--theme-primary)/50'), max: 359, min: 0, onChange: event => saveAccentCustomHue(Number(event.target.value)), style: {
++                            background: 'linear-gradient(to right, hsl(0 82% 50%), hsl(60 82% 50%), hsl(120 82% 50%), hsl(180 82% 50%), hsl(240 82% 50%), hsl(300 82% 50%), hsl(360 82% 50%))'
++                        }, type: "range", value: customHue }), _jsx("span", { "aria-hidden": true, className: "size-7 shrink-0 rounded-full border border-(--ui-stroke-tertiary)", style: { backgroundColor: customColor, boxShadow: isCustom ? `0 0 0 2px ${customColor}` : undefined } })] }), _jsx("p", { className: "text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)", children: "One monochrome look, your accent. Every color is auto-adjusted so it stays readable in both light and dark \u2014 and alert red and success green never change, so warnings always read as warnings." })] }));
++}
+ export function AppearanceSettings() {
+     const { t, isSavingLocale } = useI18n();
+     const { themeName, mode, resolvedMode, availableThemes, setTheme, setMode } = useTheme();
+@@ -159,7 +189,7 @@ export function AppearanceSettings() {
+     ];
+     const uiScaleOptions = UI_SCALE_PRESETS.map(preset => ({ id: preset, label: `${preset}%` }));
+     const matchedScalePreset = matchUiScalePreset(zoomPercent);
+-    return (_jsxs(SettingsContent, { children: [_jsxs("div", { children: [_jsx(SectionHeading, { icon: Palette, title: a.title }), _jsx("p", { className: "max-w-2xl text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)", children: a.intro }), _jsxs("div", { className: "mt-2", children: [_jsx(ListRow, { action: _jsx(LanguageSwitcher, {}), description: isSavingLocale ? t.language.saving : t.language.description, title: t.language.label }), _jsx(ListRow, { below: _jsxs(_Fragment, { children: [_jsx("div", { className: "mt-3", children: _jsx("input", { className: "w-full rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-quinary) px-3 py-1.5 text-[length:var(--conversation-caption-font-size)] outline-none placeholder:text-(--ui-text-tertiary) focus:border-(--ui-stroke-secondary)", onChange: event => setQuery(event.target.value), placeholder: "Search your themes or the VS Code Marketplace\u2026", spellCheck: false, value: query }) }), _jsxs("div", { className: "mt-3 max-h-96 overflow-y-auto pr-1", children: [filteredThemes.length === 0 ? (needle ? (_jsxs("p", { className: "text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)", children: ["No installed themes match \"", query.trim(), "\"."] })) : null) : (_jsx("div", { className: "grid gap-3 sm:grid-cols-2 xl:grid-cols-3", children: filteredThemes.map(theme => {
++    return (_jsxs(SettingsContent, { children: [_jsxs("div", { children: [_jsx(SectionHeading, { icon: Palette, title: a.title }), _jsx("p", { className: "max-w-2xl text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)", children: a.intro }), _jsxs("div", { className: "mt-2", children: [_jsx(ListRow, { action: _jsx(LanguageSwitcher, {}), description: isSavingLocale ? t.language.saving : t.language.description, title: t.language.label }), _jsx(ListRow, { below: NEMESIS_STUDENT_BUILD ? (_jsx(AccentPicker, {})) : (_jsxs(_Fragment, { children: [_jsx("div", { className: "mt-3", children: _jsx("input", { className: "w-full rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-quinary) px-3 py-1.5 text-[length:var(--conversation-caption-font-size)] outline-none placeholder:text-(--ui-text-tertiary) focus:border-(--ui-stroke-secondary)", onChange: event => setQuery(event.target.value), placeholder: "Search your themes or the VS Code Marketplace\u2026", spellCheck: false, value: query }) }), _jsxs("div", { className: "mt-3 max-h-96 overflow-y-auto pr-1", children: [filteredThemes.length === 0 ? (needle ? (_jsxs("p", { className: "text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)", children: ["No installed themes match \"", query.trim(), "\"."] })) : null) : (_jsx("div", { className: "grid gap-3 sm:grid-cols-2 xl:grid-cols-3", children: filteredThemes.map(theme => {
+                                                         const active = themeName === theme.name;
+                                                         const removable = isUserTheme(theme.name);
+                                                         return (_jsxs("div", { className: "group relative", children: [_jsxs("button", { className: cn('w-full p-2 text-left', selectableCardClass({ active, prominent: true })), onClick: () => {
+@@ -173,7 +203,7 @@ export function AppearanceSettings() {
+                                                                             setTheme(theme.name);
+                                                                         }
+                                                                     }, title: a.removeTheme, type: "button", children: _jsx(Trash2, { className: "size-3.5" }) }))] }, theme.name));
+-                                                    }) })), _jsx(MarketplaceThemeResults, { installs: installs, onInstalled: name => setTheme(name), query: query })] }), showProfileNote && (_jsx("p", { className: "mt-3 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)", children: a.themeProfileNote(activeProfileName) }))] }), description: a.themeDesc, title: _jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx("span", { children: a.themeTitle }), _jsx(SegmentedControl, { onChange: id => {
++                                                    }) })), _jsx(MarketplaceThemeResults, { installs: installs, onInstalled: name => setTheme(name), query: query })] }), showProfileNote && (_jsx("p", { className: "mt-3 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)", children: a.themeProfileNote(activeProfileName) }))] })), description: NEMESIS_STUDENT_BUILD ? 'One clean monochrome look. Pick the accent color that runs through it.' : a.themeDesc, title: _jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx("span", { children: a.themeTitle }), _jsx(SegmentedControl, { onChange: id => {
+                                                 triggerHaptic('crisp');
+                                                 setMode(id);
+                                             }, options: modeOptions, value: mode })] }), wide: true }), _jsx(ListRow, { action: _jsx(SegmentedControl, { onChange: id => {
+diff --git a/apps/desktop/src/app/settings/appearance-settings.tsx b/apps/desktop/src/app/settings/appearance-settings.tsx
+index 914e9b49c0f..55bef8cdea2 100644
+--- a/apps/desktop/src/app/settings/appearance-settings.tsx
++++ b/apps/desktop/src/app/settings/appearance-settings.tsx
+@@ -18,6 +18,16 @@ import { $activeGatewayProfile, $profiles, normalizeProfileKey } from '@/store/p
+ import { $toolViewMode, setToolViewMode } from '@/store/tool-view'
+ import { $translucency, setTranslucency } from '@/store/translucency'
+ import { $zoomPercent, setZoomPercent } from '@/store/zoom'
++import {
++  ACCENT_CHANGED_EVENT,
++  ACCENT_SWATCHES,
++  accentSwatchHex,
++  DEFAULT_ACCENT_ID,
++  loadAccentSelection,
++  saveAccentCustomHue,
++  saveAccentSwatch
++} from '@/themes/accent-tint'
++import { readableOn } from '@/themes/color'
+ import { getBaseColors, useTheme } from '@/themes/context'
+ import { installVscodeThemeFromMarketplace } from '@/themes/install'
+ import type { DesktopTheme } from '@/themes/types'
+@@ -241,6 +251,94 @@ function MarketplaceThemeResults({
+   )
+ }
+ 
++// Student build: the ONLY appearance control is the accent tint. A curated swatch row
++// plus one constrained custom-hue slider. Every color is contrast-checked at apply time
++// (accent-tint.ts), so the picker can't produce an unreadable UI, and semantic red/green
++// are never touched. Previews are shown in the currently-selected light/dark mode.
++function AccentPicker() {
++  const [selection, setSelection] = useState(() => loadAccentSelection())
++
++  useEffect(() => {
++    const sync = () => setSelection(loadAccentSelection())
++    window.addEventListener(ACCENT_CHANGED_EVENT, sync)
++
++    return () => window.removeEventListener(ACCENT_CHANGED_EVENT, sync)
++  }, [])
++
++  const isCustom = selection.id === null
++  const customHue = isCustom ? selection.hue : 210
++  const customColor = accentSwatchHex(customHue)
++
++  return (
++    <div className="mt-3 flex flex-col gap-4">
++      <div className="flex flex-wrap gap-2.5">
++        {ACCENT_SWATCHES.map(swatch => {
++          const active = selection.id === swatch.id
++          const color = swatch.id === DEFAULT_ACCENT_ID ? '#ff2740' : accentSwatchHex(swatch.hue)
++
++          return (
++            <button
++              aria-label={swatch.label}
++              aria-pressed={active}
++              className={cn(
++                'relative size-8 rounded-full outline-none transition-transform duration-150 active:scale-95',
++                active ? 'scale-105' : 'opacity-90 hover:scale-105 hover:opacity-100'
++              )}
++              key={swatch.id}
++              onClick={() => {
++                triggerHaptic('crisp')
++                saveAccentSwatch(swatch.id)
++              }}
++              style={{
++                backgroundColor: color,
++                boxShadow: active ? `0 0 0 2px var(--ui-bg-card), 0 0 0 4px ${color}` : undefined
++              }}
++              title={swatch.label}
++              type="button"
++            >
++              {active && (
++                <Check className="absolute inset-0 m-auto size-4" strokeWidth={3} style={{ color: readableOn(color) }} />
++              )}
++            </button>
++          )
++        })}
++      </div>
++
++      <div className="flex items-center gap-3">
++        <span className="w-14 shrink-0 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
++          Custom
++        </span>
++        <input
++          aria-label="Custom accent hue"
++          className={cn(
++            'h-2 flex-1 cursor-pointer appearance-none rounded-full outline-none',
++            isCustom && 'ring-2 ring-(--theme-primary)/50'
++          )}
++          max={359}
++          min={0}
++          onChange={event => saveAccentCustomHue(Number(event.target.value))}
++          style={{
++            background:
++              'linear-gradient(to right, hsl(0 82% 50%), hsl(60 82% 50%), hsl(120 82% 50%), hsl(180 82% 50%), hsl(240 82% 50%), hsl(300 82% 50%), hsl(360 82% 50%))'
++          }}
++          type="range"
++          value={customHue}
++        />
++        <span
++          aria-hidden
++          className="size-7 shrink-0 rounded-full border border-(--ui-stroke-tertiary)"
++          style={{ backgroundColor: customColor, boxShadow: isCustom ? `0 0 0 2px ${customColor}` : undefined }}
++        />
++      </div>
++
++      <p className="text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
++        One monochrome look, your accent. Every color is auto-adjusted so it stays readable in both light and dark — and
++        alert red and success green never change, so warnings always read as warnings.
++      </p>
++    </div>
++  )
++}
++
+ export function AppearanceSettings() {
+   const { t, isSavingLocale } = useI18n()
+   const { themeName, mode, resolvedMode, availableThemes, setTheme, setMode } = useTheme()
+@@ -313,6 +411,10 @@ export function AppearanceSettings() {
+ 
+           <ListRow
+             below={
++              NEMESIS_STUDENT_BUILD ? (
++                // Student build: ONE monochrome identity; the only knob is the accent tint.
++                <AccentPicker />
++              ) : (
+               <>
+                 {/* One search box: filters your installed themes (the grid)
+                     and live-searches the VS Code Marketplace below. */}
+@@ -393,8 +495,9 @@ export function AppearanceSettings() {
+                   </p>
+                 )}
+               </>
++              )
+             }
+-            description={a.themeDesc}
++            description={NEMESIS_STUDENT_BUILD ? 'One clean monochrome look. Pick the accent color that runs through it.' : a.themeDesc}
+             title={
+               <div className="flex items-center justify-between gap-3">
+                 <span>{a.themeTitle}</span>
+diff --git a/apps/desktop/src/themes/accent-tint.js b/apps/desktop/src/themes/accent-tint.js
+new file mode 100644
+index 00000000000..2a992f8fb4a
+--- /dev/null
++++ b/apps/desktop/src/themes/accent-tint.js
+@@ -0,0 +1,145 @@
++// User-adjustable accent tint (student build). Nemesis ships ONE monochrome
++// identity (the 'nemesis' skin — grayscale surfaces) and the ONLY thing a student
++// changes is the accent color. Instead of a raw hex picker (which trivially produces
++// invisible controls or neon garbage), the user picks a HUE — from a curated set or a
++// constrained custom slider — and we synthesize a saturation/lightness-controlled
++// accent that we then CONTRAST-CHECK against the actual surface so it always reads.
++//
++// This overrides ONLY the accent tokens on top of the base theme. Surfaces, text, and
++// especially the semantic tokens (danger red = --dt-destructive, success green) are
++// left untouched, so "error" never turns into "brand" no matter what hue is picked.
++import { contrastRatio, ensureContrast, hslToHex, mix } from './color';
++// Curated, brand-compatible accents. Crimson is the identity (id 'crimson' is a
++// sentinel: it means "use the theme's own accent unchanged", so the default look is
++// byte-identical to today). The rest span the wheel while staying away from the pure
++// green that reads as "success". Danger red stays its own separate token regardless.
++export const ACCENT_SWATCHES = [
++    { hue: 353, id: 'crimson', label: 'Crimson' },
++    { hue: 12, id: 'ember', label: 'Ember' },
++    { hue: 32, id: 'amber', label: 'Amber' },
++    { hue: 265, id: 'violet', label: 'Violet' },
++    { hue: 224, id: 'indigo', label: 'Indigo' },
++    { hue: 205, id: 'azure', label: 'Azure' },
++    { hue: 180, id: 'teal', label: 'Teal' },
++    { hue: 158, id: 'jade', label: 'Jade' },
++    { hue: 320, id: 'magenta', label: 'Magenta' },
++    { hue: 20, id: 'copper', label: 'Copper' }
++];
++export const DEFAULT_ACCENT_ID = 'crimson';
++// The exact designed Nemesis neon-crimson. Crimson applies THIS verbatim (a
++// designer-approved brand color) rather than an HSL re-computation, so the default
++// accent is pixel-identical to the brand — while still being contrast-guarded so it
++// stays legible even in light mode.
++const BRAND_CRIMSON = '#ff2740';
++const STORE_KEY = 'nemesis.accent.tint.v1';
++export const ACCENT_CHANGED_EVENT = 'nemesis:accent-changed';
++// Fixed saturation keeps every hue in the same vivid-but-not-neon family. Lightness
++// is mode-specific: a light surface needs a darker accent to stay legible as text; a
++// near-black surface needs a brighter one. These are STARTING points — the contrast
++// guard below moves them further if a hue still can't meet WCAG on this surface.
++const ACCENT_SAT = 0.82;
++const ACCENT_LIGHT_L = 0.46;
++// Dark-mode accents sit lighter so perceptually-dark hues (blue/indigo) clear contrast
++// BOTH against the near-black surface (as text) AND for a light label on the fill —
++// raising lightness helps both at once, where lowering it trades one for the other.
++const ACCENT_DARK_L = 0.66;
++// --theme-primary doubles as a text color (pills, links) AND a fill. Guard the text
++// use: 4.5:1 is WCAG AA for normal text. ensureContrast preserves the hue and only
++// pushes lightness toward the surface's opposite until it clears.
++const MIN_TEXT_CONTRAST = 4.5;
++/** Resolve a stored value ('crimson' | swatch id | 'custom:<hue>') to a selection. */
++export function parseAccentSelection(raw) {
++    if (!raw) {
++        return { hue: ACCENT_SWATCHES[0].hue, id: DEFAULT_ACCENT_ID };
++    }
++    if (raw.startsWith('custom:')) {
++        const hue = Number.parseInt(raw.slice(7), 10);
++        return Number.isFinite(hue) ? { hue: ((hue % 360) + 360) % 360, id: null } : { hue: ACCENT_SWATCHES[0].hue, id: DEFAULT_ACCENT_ID };
++    }
++    const swatch = ACCENT_SWATCHES.find(entry => entry.id === raw);
++    return swatch ? { hue: swatch.hue, id: swatch.id } : { hue: ACCENT_SWATCHES[0].hue, id: DEFAULT_ACCENT_ID };
++}
++export function loadAccentSelection() {
++    try {
++        return parseAccentSelection(window.localStorage.getItem(STORE_KEY));
++    }
++    catch {
++        return { hue: ACCENT_SWATCHES[0].hue, id: DEFAULT_ACCENT_ID };
++    }
++}
++export function saveAccentSwatch(id) {
++    persist(id);
++}
++export function saveAccentCustomHue(hue) {
++    persist(`custom:${((Math.round(hue) % 360) + 360) % 360}`);
++}
++function persist(value) {
++    try {
++        window.localStorage.setItem(STORE_KEY, value);
++    }
++    catch {
++        // best-effort
++    }
++    reapplyToDocument();
++    try {
++        window.dispatchEvent(new Event(ACCENT_CHANGED_EVENT));
++    }
++    catch {
++        // no window (SSR/tests)
++    }
++}
++/** The CSS-var overrides for a selection on a given surface. Always deterministic:
++ *  Crimson → the exact brand red; any other swatch/custom → its hue, synthesized with
++ *  fixed saturation and mode-tuned lightness. The result is ALWAYS contrast-guarded
++ *  against the surface, so no accent (curated or custom) can render unreadable. Pure. */
++export function accentTokensFor(selection, background, isDark) {
++    // Crimson uses the brand hex verbatim; everything else is HSL-synthesized.
++    const base = selection.id === DEFAULT_ACCENT_ID
++        ? BRAND_CRIMSON
++        : hslToHex(selection.hue, ACCENT_SAT, isDark ? ACCENT_DARK_L : ACCENT_LIGHT_L);
++    const accent = ensureContrast(base, background, MIN_TEXT_CONTRAST);
++    // Label on a solid accent fill: pick the CONTRAST-optimal of black/white, not a
++    // perceptual-luminance guess (readableOn's fixed threshold picks white for light-ish
++    // accents like amber where black reads far better). Guarantees the best available.
++    const onAccent = contrastRatio('#ffffff', accent) >= contrastRatio('#1a1a1a', accent) ? '#ffffff' : '#1a1a1a';
++    return {
++        '--dt-accent-foreground': accent,
++        '--dt-composer-ring': accent,
++        '--dt-midground-foreground': onAccent,
++        '--dt-primary-foreground': onAccent,
++        '--dt-ring': accent,
++        '--theme-accent-soft': mix(background, accent, 0.1),
++        '--theme-midground': accent,
++        '--theme-primary': accent,
++        '--theme-secondary': mix(background, accent, 0.07),
++        '--theme-warm': accent
++    };
++}
++/** Repaint the accent tokens over whatever the base theme just applied. Called at the
++ *  end of applyTheme (every theme/mode change + boot paint) and on live picker changes. */
++export function applyAccentTint(root, background, isDark) {
++    const tokens = accentTokensFor(loadAccentSelection(), background, isDark);
++    for (const [key, value] of Object.entries(tokens)) {
++        root.style.setProperty(key, value);
++    }
++}
++// Live re-tint without a full theme reapply: read the surface + mode the base theme
++// already stamped on <html> and repaint the accent. Falls back silently if the DOM
++// isn't ready (tests).
++function reapplyToDocument() {
++    if (typeof document === 'undefined') {
++        return;
++    }
++    const root = document.documentElement;
++    const isDark = root.dataset.hermesMode === 'dark' || root.classList.contains('dark');
++    const background = getComputedStyle(root).getPropertyValue('--theme-background-seed').trim() || (isDark ? '#0e0e0e' : '#f8faff');
++    applyAccentTint(root, background, isDark);
++}
++/** A vivid, mode-independent representative color for a picker swatch. Swatches are
++ *  decorative fills (not text), so they show the hue's TRUE character at a consistent
++ *  pleasant lightness — the applied accent then adapts + contrast-guards per mode. This
++ *  is the standard color-picker convention (vivid chip, adaptive result) and keeps warm
++ *  hues from rendering muddy-brown just because light mode would darken them as text. */
++export function accentSwatchHex(hue) {
++    return hslToHex(hue, 0.74, 0.52);
++}
+diff --git a/apps/desktop/src/themes/accent-tint.test.js b/apps/desktop/src/themes/accent-tint.test.js
+new file mode 100644
+index 00000000000..a337c9f40c9
+--- /dev/null
++++ b/apps/desktop/src/themes/accent-tint.test.js
+@@ -0,0 +1,59 @@
++import { describe, expect, it } from 'vitest';
++import { accentTokensFor, DEFAULT_ACCENT_ID, parseAccentSelection } from './accent-tint';
++import { contrastRatio, hslToHex } from './color';
++describe('parseAccentSelection', () => {
++    it('defaults to crimson for empty/unknown values', () => {
++        expect(parseAccentSelection(null).id).toBe(DEFAULT_ACCENT_ID);
++        expect(parseAccentSelection('nonsense').id).toBe(DEFAULT_ACCENT_ID);
++    });
++    it('resolves a swatch id to its hue', () => {
++        const teal = parseAccentSelection('teal');
++        expect(teal.id).toBe('teal');
++        expect(teal.hue).toBe(180);
++    });
++    it('parses and wraps a custom hue', () => {
++        expect(parseAccentSelection('custom:220')).toEqual({ hue: 220, id: null });
++        expect(parseAccentSelection('custom:400')).toEqual({ hue: 40, id: null });
++        expect(parseAccentSelection('custom:-30')).toEqual({ hue: 330, id: null });
++    });
++});
++describe('accentTokensFor', () => {
++    it('applies the exact brand crimson for the default (contrast-guarded, not gray)', () => {
++        const tokens = accentTokensFor({ hue: 353, id: DEFAULT_ACCENT_ID }, '#0e0e0e', true);
++        // On the dark surface the brand red passes the guard untouched.
++        expect(tokens['--theme-primary'].toLowerCase()).toBe('#ff2740');
++        expect(contrastRatio(tokens['--theme-primary'], '#0e0e0e')).toBeGreaterThanOrEqual(4.5);
++    });
++    it('produces an accent that meets WCAG AA (4.5:1) on the dark surface', () => {
++        for (const hue of [0, 45, 90, 180, 210, 270, 330]) {
++            const accent = accentTokensFor({ hue, id: null }, '#0e0e0e', true)['--theme-primary'];
++            expect(contrastRatio(accent, '#0e0e0e')).toBeGreaterThanOrEqual(4.5);
++        }
++    });
++    it('produces an accent that meets WCAG AA (4.5:1) on the light surface', () => {
++        for (const hue of [0, 45, 90, 180, 210, 270, 330]) {
++            const accent = accentTokensFor({ hue, id: null }, '#f8faff', false)['--theme-primary'];
++            expect(contrastRatio(accent, '#f8faff')).toBeGreaterThanOrEqual(4.5);
++        }
++    });
++    it('gives on-accent label text at least UI-component contrast (3:1) against the fill', () => {
++        // --dt-primary-foreground is the label on a solid accent button (a UI component,
++        // WCAG AA minimum 3:1), not body text — onAccent picks the higher-contrast of
++        // black/white for whatever fill the surface-contrast guard produced.
++        for (const hue of [0, 90, 210, 300]) {
++            const tokens = accentTokensFor({ hue, id: null }, '#0e0e0e', true);
++            expect(contrastRatio(tokens['--dt-primary-foreground'], tokens['--theme-primary'])).toBeGreaterThanOrEqual(3);
++        }
++    });
++    it('never emits a destructive/danger override (semantic colors are untouched)', () => {
++        const tokens = accentTokensFor({ hue: 210, id: null }, '#0e0e0e', true);
++        expect(Object.keys(tokens).some(k => k.includes('destructive'))).toBe(false);
++    });
++});
++describe('hslToHex', () => {
++    it('round-trips primary hues', () => {
++        expect(hslToHex(0, 1, 0.5).toLowerCase()).toBe('#ff0000');
++        expect(hslToHex(120, 1, 0.5).toLowerCase()).toBe('#00ff00');
++        expect(hslToHex(240, 1, 0.5).toLowerCase()).toBe('#0000ff');
++    });
++});
+diff --git a/apps/desktop/src/themes/accent-tint.test.ts b/apps/desktop/src/themes/accent-tint.test.ts
+new file mode 100644
+index 00000000000..f7e64ef6209
+--- /dev/null
++++ b/apps/desktop/src/themes/accent-tint.test.ts
+@@ -0,0 +1,69 @@
++import { describe, expect, it } from 'vitest'
++
++import { accentTokensFor, DEFAULT_ACCENT_ID, parseAccentSelection } from './accent-tint'
++import { contrastRatio, hslToHex } from './color'
++
++describe('parseAccentSelection', () => {
++  it('defaults to crimson for empty/unknown values', () => {
++    expect(parseAccentSelection(null).id).toBe(DEFAULT_ACCENT_ID)
++    expect(parseAccentSelection('nonsense').id).toBe(DEFAULT_ACCENT_ID)
++  })
++
++  it('resolves a swatch id to its hue', () => {
++    const teal = parseAccentSelection('teal')
++    expect(teal.id).toBe('teal')
++    expect(teal.hue).toBe(180)
++  })
++
++  it('parses and wraps a custom hue', () => {
++    expect(parseAccentSelection('custom:220')).toEqual({ hue: 220, id: null })
++    expect(parseAccentSelection('custom:400')).toEqual({ hue: 40, id: null })
++    expect(parseAccentSelection('custom:-30')).toEqual({ hue: 330, id: null })
++  })
++})
++
++describe('accentTokensFor', () => {
++  it('applies the exact brand crimson for the default (contrast-guarded, not gray)', () => {
++    const tokens = accentTokensFor({ hue: 353, id: DEFAULT_ACCENT_ID }, '#0e0e0e', true)
++    // On the dark surface the brand red passes the guard untouched.
++    expect(tokens['--theme-primary'].toLowerCase()).toBe('#ff2740')
++    expect(contrastRatio(tokens['--theme-primary'], '#0e0e0e')).toBeGreaterThanOrEqual(4.5)
++  })
++
++  it('produces an accent that meets WCAG AA (4.5:1) on the dark surface', () => {
++    for (const hue of [0, 45, 90, 180, 210, 270, 330]) {
++      const accent = accentTokensFor({ hue, id: null }, '#0e0e0e', true)['--theme-primary']
++      expect(contrastRatio(accent, '#0e0e0e')).toBeGreaterThanOrEqual(4.5)
++    }
++  })
++
++  it('produces an accent that meets WCAG AA (4.5:1) on the light surface', () => {
++    for (const hue of [0, 45, 90, 180, 210, 270, 330]) {
++      const accent = accentTokensFor({ hue, id: null }, '#f8faff', false)['--theme-primary']
++      expect(contrastRatio(accent, '#f8faff')).toBeGreaterThanOrEqual(4.5)
++    }
++  })
++
++  it('gives on-accent label text at least UI-component contrast (3:1) against the fill', () => {
++    // --dt-primary-foreground is the label on a solid accent button (a UI component,
++    // WCAG AA minimum 3:1), not body text — onAccent picks the higher-contrast of
++    // black/white for whatever fill the surface-contrast guard produced.
++    for (const hue of [0, 90, 210, 300]) {
++      const tokens = accentTokensFor({ hue, id: null }, '#0e0e0e', true)
++      expect(contrastRatio(tokens['--dt-primary-foreground'], tokens['--theme-primary'])).toBeGreaterThanOrEqual(3)
++    }
++  })
++
++  it('never emits a destructive/danger override (semantic colors are untouched)', () => {
++    const tokens = accentTokensFor({ hue: 210, id: null }, '#0e0e0e', true)
++    expect(Object.keys(tokens).some(k => k.includes('destructive'))).toBe(false)
++  })
++})
++
++describe('hslToHex', () => {
++  it('round-trips primary hues', () => {
++    expect(hslToHex(0, 1, 0.5).toLowerCase()).toBe('#ff0000')
++    expect(hslToHex(120, 1, 0.5).toLowerCase()).toBe('#00ff00')
++    expect(hslToHex(240, 1, 0.5).toLowerCase()).toBe('#0000ff')
++  })
++})
+diff --git a/apps/desktop/src/themes/accent-tint.ts b/apps/desktop/src/themes/accent-tint.ts
+new file mode 100644
+index 00000000000..efc7d56506f
+--- /dev/null
++++ b/apps/desktop/src/themes/accent-tint.ts
+@@ -0,0 +1,175 @@
++// User-adjustable accent tint (student build). Nemesis ships ONE monochrome
++// identity (the 'nemesis' skin — grayscale surfaces) and the ONLY thing a student
++// changes is the accent color. Instead of a raw hex picker (which trivially produces
++// invisible controls or neon garbage), the user picks a HUE — from a curated set or a
++// constrained custom slider — and we synthesize a saturation/lightness-controlled
++// accent that we then CONTRAST-CHECK against the actual surface so it always reads.
++//
++// This overrides ONLY the accent tokens on top of the base theme. Surfaces, text, and
++// especially the semantic tokens (danger red = --dt-destructive, success green) are
++// left untouched, so "error" never turns into "brand" no matter what hue is picked.
++import { contrastRatio, ensureContrast, hslToHex, mix } from './color'
++
++export interface AccentSwatch {
++  id: string
++  label: string
++  hue: number
++}
++
++// Curated, brand-compatible accents. Crimson is the identity (id 'crimson' is a
++// sentinel: it means "use the theme's own accent unchanged", so the default look is
++// byte-identical to today). The rest span the wheel while staying away from the pure
++// green that reads as "success". Danger red stays its own separate token regardless.
++export const ACCENT_SWATCHES: readonly AccentSwatch[] = [
++  { hue: 353, id: 'crimson', label: 'Crimson' },
++  { hue: 12, id: 'ember', label: 'Ember' },
++  { hue: 32, id: 'amber', label: 'Amber' },
++  { hue: 265, id: 'violet', label: 'Violet' },
++  { hue: 224, id: 'indigo', label: 'Indigo' },
++  { hue: 205, id: 'azure', label: 'Azure' },
++  { hue: 180, id: 'teal', label: 'Teal' },
++  { hue: 158, id: 'jade', label: 'Jade' },
++  { hue: 320, id: 'magenta', label: 'Magenta' },
++  { hue: 20, id: 'copper', label: 'Copper' }
++]
++
++export const DEFAULT_ACCENT_ID = 'crimson'
++// The exact designed Nemesis neon-crimson. Crimson applies THIS verbatim (a
++// designer-approved brand color) rather than an HSL re-computation, so the default
++// accent is pixel-identical to the brand — while still being contrast-guarded so it
++// stays legible even in light mode.
++const BRAND_CRIMSON = '#ff2740'
++const STORE_KEY = 'nemesis.accent.tint.v1'
++export const ACCENT_CHANGED_EVENT = 'nemesis:accent-changed'
++
++// Fixed saturation keeps every hue in the same vivid-but-not-neon family. Lightness
++// is mode-specific: a light surface needs a darker accent to stay legible as text; a
++// near-black surface needs a brighter one. These are STARTING points — the contrast
++// guard below moves them further if a hue still can't meet WCAG on this surface.
++const ACCENT_SAT = 0.82
++const ACCENT_LIGHT_L = 0.46
++// Dark-mode accents sit lighter so perceptually-dark hues (blue/indigo) clear contrast
++// BOTH against the near-black surface (as text) AND for a light label on the fill —
++// raising lightness helps both at once, where lowering it trades one for the other.
++const ACCENT_DARK_L = 0.66
++// --theme-primary doubles as a text color (pills, links) AND a fill. Guard the text
++// use: 4.5:1 is WCAG AA for normal text. ensureContrast preserves the hue and only
++// pushes lightness toward the surface's opposite until it clears.
++const MIN_TEXT_CONTRAST = 4.5
++
++export interface AccentSelection {
++  id: null | string
++  hue: number
++}
++
++/** Resolve a stored value ('crimson' | swatch id | 'custom:<hue>') to a selection. */
++export function parseAccentSelection(raw: null | string): AccentSelection {
++  if (!raw) {
++    return { hue: ACCENT_SWATCHES[0].hue, id: DEFAULT_ACCENT_ID }
++  }
++
++  if (raw.startsWith('custom:')) {
++    const hue = Number.parseInt(raw.slice(7), 10)
++
++    return Number.isFinite(hue) ? { hue: ((hue % 360) + 360) % 360, id: null } : { hue: ACCENT_SWATCHES[0].hue, id: DEFAULT_ACCENT_ID }
++  }
++
++  const swatch = ACCENT_SWATCHES.find(entry => entry.id === raw)
++
++  return swatch ? { hue: swatch.hue, id: swatch.id } : { hue: ACCENT_SWATCHES[0].hue, id: DEFAULT_ACCENT_ID }
++}
++
++export function loadAccentSelection(): AccentSelection {
++  try {
++    return parseAccentSelection(window.localStorage.getItem(STORE_KEY))
++  } catch {
++    return { hue: ACCENT_SWATCHES[0].hue, id: DEFAULT_ACCENT_ID }
++  }
++}
++
++export function saveAccentSwatch(id: string): void {
++  persist(id)
++}
++
++export function saveAccentCustomHue(hue: number): void {
++  persist(`custom:${((Math.round(hue) % 360) + 360) % 360}`)
++}
++
++function persist(value: string): void {
++  try {
++    window.localStorage.setItem(STORE_KEY, value)
++  } catch {
++    // best-effort
++  }
++
++  reapplyToDocument()
++  try {
++    window.dispatchEvent(new Event(ACCENT_CHANGED_EVENT))
++  } catch {
++    // no window (SSR/tests)
++  }
++}
++
++/** The CSS-var overrides for a selection on a given surface. Always deterministic:
++ *  Crimson → the exact brand red; any other swatch/custom → its hue, synthesized with
++ *  fixed saturation and mode-tuned lightness. The result is ALWAYS contrast-guarded
++ *  against the surface, so no accent (curated or custom) can render unreadable. Pure. */
++export function accentTokensFor(selection: AccentSelection, background: string, isDark: boolean): Record<string, string> {
++  // Crimson uses the brand hex verbatim; everything else is HSL-synthesized.
++  const base =
++    selection.id === DEFAULT_ACCENT_ID
++      ? BRAND_CRIMSON
++      : hslToHex(selection.hue, ACCENT_SAT, isDark ? ACCENT_DARK_L : ACCENT_LIGHT_L)
++  const accent = ensureContrast(base, background, MIN_TEXT_CONTRAST)
++  // Label on a solid accent fill: pick the CONTRAST-optimal of black/white, not a
++  // perceptual-luminance guess (readableOn's fixed threshold picks white for light-ish
++  // accents like amber where black reads far better). Guarantees the best available.
++  const onAccent = contrastRatio('#ffffff', accent) >= contrastRatio('#1a1a1a', accent) ? '#ffffff' : '#1a1a1a'
++
++  return {
++    '--dt-accent-foreground': accent,
++    '--dt-composer-ring': accent,
++    '--dt-midground-foreground': onAccent,
++    '--dt-primary-foreground': onAccent,
++    '--dt-ring': accent,
++    '--theme-accent-soft': mix(background, accent, 0.1),
++    '--theme-midground': accent,
++    '--theme-primary': accent,
++    '--theme-secondary': mix(background, accent, 0.07),
++    '--theme-warm': accent
++  }
++}
++
++/** Repaint the accent tokens over whatever the base theme just applied. Called at the
++ *  end of applyTheme (every theme/mode change + boot paint) and on live picker changes. */
++export function applyAccentTint(root: HTMLElement, background: string, isDark: boolean): void {
++  const tokens = accentTokensFor(loadAccentSelection(), background, isDark)
++
++  for (const [key, value] of Object.entries(tokens)) {
++    root.style.setProperty(key, value)
++  }
++}
++
++// Live re-tint without a full theme reapply: read the surface + mode the base theme
++// already stamped on <html> and repaint the accent. Falls back silently if the DOM
++// isn't ready (tests).
++function reapplyToDocument(): void {
++  if (typeof document === 'undefined') {
++    return
++  }
++
++  const root = document.documentElement
++  const isDark = root.dataset.hermesMode === 'dark' || root.classList.contains('dark')
++  const background =
++    getComputedStyle(root).getPropertyValue('--theme-background-seed').trim() || (isDark ? '#0e0e0e' : '#f8faff')
++  applyAccentTint(root, background, isDark)
++}
++
++/** A vivid, mode-independent representative color for a picker swatch. Swatches are
++ *  decorative fills (not text), so they show the hue's TRUE character at a consistent
++ *  pleasant lightness — the applied accent then adapts + contrast-guards per mode. This
++ *  is the standard color-picker convention (vivid chip, adaptive result) and keeps warm
++ *  hues from rendering muddy-brown just because light mode would darken them as text. */
++export function accentSwatchHex(hue: number): string {
++  return hslToHex(hue, 0.74, 0.52)
++}
+diff --git a/apps/desktop/src/themes/color.js b/apps/desktop/src/themes/color.js
+index 3a6eeca8714..84094459688 100644
+--- a/apps/desktop/src/themes/color.js
++++ b/apps/desktop/src/themes/color.js
+@@ -18,6 +18,29 @@ export const rgbToHex = ([r, g, b]) => `#${[r, g, b]
+     .toString(16)
+     .padStart(2, '0'))
+     .join('')}`;
++/** HSL → #rrggbb. `h` in degrees (wraps), `s`/`l` in 0..1. Used by the accent
++ *  tint so a user picks a HUE and we synthesize a saturation/lightness-controlled
++ *  color, never a raw arbitrary hex. */
++export function hslToHex(h, s, l) {
++    const hue = (((h % 360) + 360) % 360) / 60;
++    const sat = Math.min(1, Math.max(0, s));
++    const lig = Math.min(1, Math.max(0, l));
++    const c = (1 - Math.abs(2 * lig - 1)) * sat;
++    const x = c * (1 - Math.abs((hue % 2) - 1));
++    const m = lig - c / 2;
++    const [r, g, b] = hue < 1
++        ? [c, x, 0]
++        : hue < 2
++            ? [x, c, 0]
++            : hue < 3
++                ? [0, c, x]
++                : hue < 4
++                    ? [0, x, c]
++                    : hue < 5
++                        ? [x, 0, c]
++                        : [c, 0, x];
++    return rgbToHex([(r + m) * 255, (g + m) * 255, (b + m) * 255]);
++}
+ export function mix(a, b, amount) {
+     const ar = hexToRgb(a);
+     const br = hexToRgb(b);
+diff --git a/apps/desktop/src/themes/color.ts b/apps/desktop/src/themes/color.ts
+index 799200deb36..e31bd1ea01d 100644
+--- a/apps/desktop/src/themes/color.ts
++++ b/apps/desktop/src/themes/color.ts
+@@ -26,6 +26,32 @@ export const rgbToHex = ([r, g, b]: [number, number, number]): string =>
+     )
+     .join('')}`
+ 
++/** HSL → #rrggbb. `h` in degrees (wraps), `s`/`l` in 0..1. Used by the accent
++ *  tint so a user picks a HUE and we synthesize a saturation/lightness-controlled
++ *  color, never a raw arbitrary hex. */
++export function hslToHex(h: number, s: number, l: number): string {
++  const hue = (((h % 360) + 360) % 360) / 60
++  const sat = Math.min(1, Math.max(0, s))
++  const lig = Math.min(1, Math.max(0, l))
++  const c = (1 - Math.abs(2 * lig - 1)) * sat
++  const x = c * (1 - Math.abs((hue % 2) - 1))
++  const m = lig - c / 2
++  const [r, g, b] =
++    hue < 1
++      ? [c, x, 0]
++      : hue < 2
++        ? [x, c, 0]
++        : hue < 3
++          ? [0, c, x]
++          : hue < 4
++            ? [0, x, c]
++            : hue < 5
++              ? [x, 0, c]
++              : [c, 0, x]
++
++  return rgbToHex([(r + m) * 255, (g + m) * 255, (b + m) * 255])
++}
++
+ export function mix(a: string, b: string, amount: number): string {
+   const ar = hexToRgb(a)
+   const br = hexToRgb(b)
+diff --git a/apps/desktop/src/themes/context.js b/apps/desktop/src/themes/context.js
+index 139827900cf..3aadf42d646 100644
+--- a/apps/desktop/src/themes/context.js
++++ b/apps/desktop/src/themes/context.js
+@@ -14,6 +14,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState }
+ import { matchesQuery, useMediaQuery } from '@/hooks/use-media-query';
+ import { persistString, persistStringRecord, storedString, storedStringRecord } from '@/lib/storage';
+ import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile';
++import { applyAccentTint } from './accent-tint';
+ import { hexToRgb, mix, readableOn } from './color';
+ import { BUILTIN_THEME_LIST, BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, nousTheme } from './presets';
+ import { $userThemes, resolveTheme } from './user-themes';
+@@ -189,6 +190,9 @@ function applyTheme(theme, mode) {
+     for (const [k, v] of Object.entries({ ...seeds, ...mixesFor(isDark), ...palette })) {
+         root.style.setProperty(k, v);
+     }
++    // Student build: repaint the accent tokens with the user's chosen tint over this
++    // monochrome base. No-op (keeps the theme's own accent) unless a tint is set.
++    applyAccentTint(root, c.background, isDark);
+     const chromeBg = chromeBackground(c.background, isDark);
+     window.hermesDesktop?.setTitleBarTheme?.({
+         background: chromeBg,
+diff --git a/apps/desktop/src/themes/context.tsx b/apps/desktop/src/themes/context.tsx
+index 575316633fa..94b4c3c8faa 100644
+--- a/apps/desktop/src/themes/context.tsx
++++ b/apps/desktop/src/themes/context.tsx
+@@ -16,6 +16,7 @@ import { matchesQuery, useMediaQuery } from '@/hooks/use-media-query'
+ import { persistString, persistStringRecord, storedString, storedStringRecord } from '@/lib/storage'
+ import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
+ 
++import { applyAccentTint } from './accent-tint'
+ import { hexToRgb, mix, readableOn } from './color'
+ import { BUILTIN_THEME_LIST, BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, nousTheme } from './presets'
+ import type { DesktopTheme, DesktopThemeColors } from './types'
+@@ -228,6 +229,10 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
+     root.style.setProperty(k, v)
+   }
+ 
++  // Student build: repaint the accent tokens with the user's chosen tint over this
++  // monochrome base. No-op (keeps the theme's own accent) unless a tint is set.
++  applyAccentTint(root, c.background, isDark)
++
+   const chromeBg = chromeBackground(c.background, isDark)
+ 
+   window.hermesDesktop?.setTitleBarTheme?.({
+-- 
+2.53.0
+
