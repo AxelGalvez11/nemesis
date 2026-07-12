@@ -1,0 +1,1148 @@
+From 55551d7051a26c9e7b8b470c6cd60f58af87aef3 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 20:32:30 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis-kit):=20round-36=20=E2=80=94=20rec?=
+ =?UTF-8?q?ordings=20auto-name=20from=20transcript;=20Library=20formatting?=
+ =?UTF-8?q?=20toolbar=20(Cmd+B/I,=20heading,=20bullets)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ apps/desktop/src/app/library/note-editor.js   |  26 ++-
+ apps/desktop/src/app/library/note-editor.tsx  |  54 +++++-
+ apps/desktop/src/app/library/note-format.js   | 114 +++++++++++++
+ .../src/app/library/note-format.test.js       |  81 +++++++++
+ .../src/app/library/note-format.test.ts       | 106 ++++++++++++
+ apps/desktop/src/app/library/note-format.ts   | 155 ++++++++++++++++++
+ apps/desktop/src/app/recorder/autoname.js     | 110 +++++++++++++
+ .../desktop/src/app/recorder/autoname.test.js |  36 ++++
+ .../desktop/src/app/recorder/autoname.test.ts |  53 ++++++
+ apps/desktop/src/app/recorder/autoname.ts     | 136 +++++++++++++++
+ apps/desktop/src/app/recorder/service.js      |  23 ++-
+ apps/desktop/src/app/recorder/service.ts      |  27 ++-
+ 12 files changed, 913 insertions(+), 8 deletions(-)
+ create mode 100644 apps/desktop/src/app/library/note-format.js
+ create mode 100644 apps/desktop/src/app/library/note-format.test.js
+ create mode 100644 apps/desktop/src/app/library/note-format.test.ts
+ create mode 100644 apps/desktop/src/app/library/note-format.ts
+ create mode 100644 apps/desktop/src/app/recorder/autoname.js
+ create mode 100644 apps/desktop/src/app/recorder/autoname.test.js
+ create mode 100644 apps/desktop/src/app/recorder/autoname.test.ts
+ create mode 100644 apps/desktop/src/app/recorder/autoname.ts
+
+diff --git a/apps/desktop/src/app/library/note-editor.js b/apps/desktop/src/app/library/note-editor.js
+index a3b74fac4f8..feb2553f0c2 100644
+--- a/apps/desktop/src/app/library/note-editor.js
++++ b/apps/desktop/src/app/library/note-editor.js
+@@ -1,4 +1,4 @@
+-import { jsx as _jsx } from "react/jsx-runtime";
++import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ // NoteEditor — Obsidian-style "live preview" over CodeMirror 6 (the SAME editor engine
+ // Obsidian itself is built on; @codemirror/* + @lezer/markdown, all MIT). The markdown
+ // stays plain text on disk, but formatting marks melt away as you read: `# ` disappears
+@@ -9,7 +9,10 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+ import { syntaxTree } from '@codemirror/language';
+ import { Decoration, EditorView, keymap, placeholder, ViewPlugin, WidgetType } from '@codemirror/view';
++import { IconBold, IconHeading, IconItalic, IconList } from '@tabler/icons-react';
+ import { useEffect, useImperativeHandle, useRef } from 'react';
++import { Button } from '@/components/ui/button';
++import { cycleHeading, toggleBold, toggleBulletList, toggleItalic } from './note-format';
+ const WIKILINK_RE = /\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/g;
+ class BulletWidget extends WidgetType {
+     eq() {
+@@ -277,6 +280,10 @@ export function NoteEditor({ initialValue, onChange, onOpenWikilink, ref }) {
+             doc: initialValue,
+             extensions: [
+                 history(),
++                keymap.of([
++                    { key: 'Mod-b', run: toggleBold },
++                    { key: 'Mod-i', run: toggleItalic }
++                ]),
+                 keymap.of([...defaultKeymap, ...historyKeymap]),
+                 EditorView.lineWrapping,
+                 markdown({ base: markdownLanguage }),
+@@ -300,5 +307,20 @@ export function NoteEditor({ initialValue, onChange, onOpenWikilink, ref }) {
+         // intentionally captured once per mount.
+         // eslint-disable-next-line react-hooks/exhaustive-deps
+     }, []);
+-    return _jsx("div", { className: "h-full min-h-0", ref: hostRef });
++    const runFormat = (command) => {
++        const view = viewRef.current;
++        if (view) {
++            command(view);
++            view.focus();
++        }
++    };
++    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col", children: [_jsx("div", { "aria-label": "Formatting", className: "mx-auto flex w-full max-w-[46rem] shrink-0 items-center gap-0.5 border-b border-(--ui-stroke-tertiary) px-1 py-1", role: "toolbar", children: FORMAT_ACTIONS.map(action => (_jsx(Button, { "aria-label": action.label, 
++                    // Keep focus (and the selection) in the editor while the button is clicked.
++                    onMouseDown: event => event.preventDefault(), onClick: () => runFormat(action.run), size: "icon-xs", title: action.label, type: "button", variant: "ghost", children: _jsx(action.icon, {}) }, action.label))) }), _jsx("div", { className: "min-h-0 flex-1", ref: hostRef })] }));
+ }
++const FORMAT_ACTIONS = [
++    { icon: IconBold, label: 'Bold (⌘B)', run: toggleBold },
++    { icon: IconItalic, label: 'Italic (⌘I)', run: toggleItalic },
++    { icon: IconHeading, label: 'Heading (cycle H1–H3)', run: cycleHeading },
++    { icon: IconList, label: 'Bullet list', run: toggleBulletList }
++];
+diff --git a/apps/desktop/src/app/library/note-editor.tsx b/apps/desktop/src/app/library/note-editor.tsx
+index 5c109f5544f..3a7c38536ee 100644
+--- a/apps/desktop/src/app/library/note-editor.tsx
++++ b/apps/desktop/src/app/library/note-editor.tsx
+@@ -18,7 +18,12 @@ import {
+   type ViewUpdate,
+   WidgetType
+ } from '@codemirror/view'
+-import { type Ref, useEffect, useImperativeHandle, useRef } from 'react'
++import { IconBold, IconHeading, IconItalic, IconList } from '@tabler/icons-react'
++import { type ComponentType, type Ref, useEffect, useImperativeHandle, useRef } from 'react'
++
++import { Button } from '@/components/ui/button'
++
++import { cycleHeading, toggleBold, toggleBulletList, toggleItalic } from './note-format'
+ 
+ const WIKILINK_RE = /\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/g
+ 
+@@ -366,6 +371,10 @@ export function NoteEditor({ initialValue, onChange, onOpenWikilink, ref }: Note
+       doc: initialValue,
+       extensions: [
+         history(),
++        keymap.of([
++          { key: 'Mod-b', run: toggleBold },
++          { key: 'Mod-i', run: toggleItalic }
++        ]),
+         keymap.of([...defaultKeymap, ...historyKeymap]),
+         EditorView.lineWrapping,
+         markdown({ base: markdownLanguage }),
+@@ -392,5 +401,46 @@ export function NoteEditor({ initialValue, onChange, onOpenWikilink, ref }: Note
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [])
+ 
+-  return <div className="h-full min-h-0" ref={hostRef} />
++  const runFormat = (command: (view: EditorView) => boolean) => {
++    const view = viewRef.current
++
++    if (view) {
++      command(view)
++      view.focus()
++    }
++  }
++
++  return (
++    <div className="flex h-full min-h-0 flex-col">
++      <div
++        aria-label="Formatting"
++        className="mx-auto flex w-full max-w-[46rem] shrink-0 items-center gap-0.5 border-b border-(--ui-stroke-tertiary) px-1 py-1"
++        role="toolbar"
++      >
++        {FORMAT_ACTIONS.map(action => (
++          <Button
++            aria-label={action.label}
++            key={action.label}
++            // Keep focus (and the selection) in the editor while the button is clicked.
++            onMouseDown={event => event.preventDefault()}
++            onClick={() => runFormat(action.run)}
++            size="icon-xs"
++            title={action.label}
++            type="button"
++            variant="ghost"
++          >
++            <action.icon />
++          </Button>
++        ))}
++      </div>
++      <div className="min-h-0 flex-1" ref={hostRef} />
++    </div>
++  )
+ }
++
++const FORMAT_ACTIONS: { icon: ComponentType; label: string; run: (view: EditorView) => boolean }[] = [
++  { icon: IconBold, label: 'Bold (⌘B)', run: toggleBold },
++  { icon: IconItalic, label: 'Italic (⌘I)', run: toggleItalic },
++  { icon: IconHeading, label: 'Heading (cycle H1–H3)', run: cycleHeading },
++  { icon: IconList, label: 'Bullet list', run: toggleBulletList }
++]
+diff --git a/apps/desktop/src/app/library/note-format.js b/apps/desktop/src/app/library/note-format.js
+new file mode 100644
+index 00000000000..c0a1a3cedb3
+--- /dev/null
++++ b/apps/desktop/src/app/library/note-format.js
+@@ -0,0 +1,114 @@
++// Markdown formatting commands for the note editor — Cmd+B / Cmd+I and the slim
++// toolbar both land here. Toggles are syntax-tree-aware, not string-guessing: bold
++// looks for an enclosing StrongEmphasis node (so it unwraps `__x__` as happily as
++// `**x**`), italic for Emphasis, and toggling italic inside bold correctly stacks to
++// `***x***` instead of eating a star. The spec builders are pure EditorState → spec
++// functions so they unit-test headlessly; the exported Commands are thin dispatchers.
++import { syntaxTree } from '@codemirror/language';
++import { EditorSelection } from '@codemirror/state';
++const NODE_FOR_MARK = { '*': 'Emphasis', '**': 'StrongEmphasis' };
++/** The Emphasis/StrongEmphasis node fully containing [from, to], if any. */
++function enclosingEmphasis(state, from, to, nodeName) {
++    let node = syntaxTree(state).resolveInner(from, from === to ? 0 : 1);
++    while (node) {
++        if (node.name === nodeName && node.from <= from && node.to >= to) {
++            return node;
++        }
++        node = node.parent;
++    }
++    return null;
++}
++export function inlineToggleSpec(state, mark) {
++    return state.changeByRange(range => {
++        const wrapped = enclosingEmphasis(state, range.from, range.to, NODE_FOR_MARK[mark]);
++        const emphasisMarks = wrapped?.getChildren('EmphasisMark') ?? [];
++        if (wrapped && emphasisMarks.length >= 2) {
++            // Unwrap: delete the opening and closing marker runs, keep the selection on
++            // the same text by shifting positions past each deleted region.
++            const open = emphasisMarks[0];
++            const close = emphasisMarks[emphasisMarks.length - 1];
++            const mapPos = (pos) => pos -
++                Math.min(Math.max(0, pos - open.from), open.to - open.from) -
++                Math.min(Math.max(0, pos - close.from), close.to - close.from);
++            return {
++                changes: [
++                    { from: open.from, to: open.to },
++                    { from: close.from, to: close.to }
++                ],
++                range: EditorSelection.range(mapPos(range.anchor), mapPos(range.head))
++            };
++        }
++        let { from, to } = range;
++        if (from === to) {
++            const word = state.wordAt(from);
++            if (word) {
++                from = word.from;
++                to = word.to;
++            }
++            else {
++                // Nothing to wrap — insert the marker pair and park the caret inside it.
++                return {
++                    changes: { from, insert: mark + mark },
++                    range: EditorSelection.cursor(from + mark.length)
++                };
++            }
++        }
++        // Markdown emphasis breaks when the markers hug whitespace — shrink to the text.
++        const text = state.sliceDoc(from, to);
++        from += text.length - text.trimStart().length;
++        to -= text.length - text.trimEnd().length;
++        if (from >= to) {
++            return { range };
++        }
++        return {
++            changes: [
++                { from, insert: mark },
++                { from: to, insert: mark }
++            ],
++            range: EditorSelection.range(from + mark.length, to + mark.length)
++        };
++    });
++}
++/** Every line any selection range touches, without duplicates, in document order. */
++function selectedLines(state, ranges) {
++    const lines = new Map();
++    for (const range of ranges) {
++        for (let pos = range.from; pos <= range.to;) {
++            const line = state.doc.lineAt(pos);
++            lines.set(line.from, { from: line.from, text: line.text });
++            pos = line.to + 1;
++        }
++    }
++    return [...lines.values()].sort((a, b) => a.from - b.from);
++}
++const HEADING_RE = /^(#{1,6})\s+/;
++const BULLET_RE = /^(\s*)([-*+])\s+/;
++/** Cycle each selected line: plain → # → ## → ### → plain. */
++export function headingCycleChanges(state) {
++    return selectedLines(state, state.selection.ranges).map(line => {
++        const match = HEADING_RE.exec(line.text);
++        const level = match ? match[1].length : 0;
++        const next = level >= 3 ? '' : `${'#'.repeat(level + 1)} `;
++        return match ? { from: line.from, insert: next, to: line.from + match[0].length } : { from: line.from, insert: next };
++    });
++}
++/** Bullet all selected lines, or un-bullet them when every non-empty line already is. */
++export function bulletToggleChanges(state) {
++    const lines = selectedLines(state, state.selection.ranges).filter(line => line.text.trim().length > 0);
++    const allBulleted = lines.length > 0 && lines.every(line => BULLET_RE.test(line.text));
++    return lines.flatMap((line) => {
++        const match = BULLET_RE.exec(line.text);
++        if (allBulleted && match) {
++            return [{ from: line.from + match[1].length, to: line.from + match[0].length }];
++        }
++        return match ? [] : [{ from: line.from, insert: '- ' }];
++    });
++}
++function dispatchSpec(view, spec) {
++    view.dispatch(spec, { scrollIntoView: true, userEvent: 'input' });
++    return true;
++}
++export const toggleBold = view => dispatchSpec(view, inlineToggleSpec(view.state, '**'));
++export const toggleItalic = view => dispatchSpec(view, inlineToggleSpec(view.state, '*'));
++export const cycleHeading = view => dispatchSpec(view, { changes: headingCycleChanges(view.state) });
++export const toggleBulletList = view => dispatchSpec(view, { changes: bulletToggleChanges(view.state) });
+diff --git a/apps/desktop/src/app/library/note-format.test.js b/apps/desktop/src/app/library/note-format.test.js
+new file mode 100644
+index 00000000000..36b0b309c9a
+--- /dev/null
++++ b/apps/desktop/src/app/library/note-format.test.js
+@@ -0,0 +1,81 @@
++import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
++import { EditorSelection, EditorState } from '@codemirror/state';
++import { describe, expect, it } from 'vitest';
++import { bulletToggleChanges, headingCycleChanges, inlineToggleSpec } from './note-format';
++// Same grammar the real editor runs (note-editor.tsx), so syntax-tree lookups match.
++function state(doc, anchor, head = anchor) {
++    return EditorState.create({
++        doc,
++        extensions: [markdown({ base: markdownLanguage })],
++        selection: EditorSelection.single(anchor, head)
++    });
++}
++function applyInline(from, mark) {
++    const next = from.update(inlineToggleSpec(from, mark));
++    return { doc: next.state.doc.toString(), selection: next.state.selection.main, state: next.state };
++}
++describe('inline bold/italic toggle', () => {
++    it('wraps a selection in bold markers and keeps the text selected', () => {
++        const result = applyInline(state('hello world', 0, 5), '**');
++        expect(result.doc).toBe('**hello** world');
++        expect([result.selection.from, result.selection.to]).toEqual([2, 7]);
++    });
++    it('unwraps bold when the caret sits inside an existing **…** run', () => {
++        const result = applyInline(state('**bold** text', 4), '**');
++        expect(result.doc).toBe('bold text');
++        expect(result.selection.from).toBe(2);
++    });
++    it('also unwraps the __underscore__ spelling of bold', () => {
++        expect(applyInline(state('__bold__ text', 4), '**').doc).toBe('bold text');
++    });
++    it('bolds the word under the caret when nothing is selected', () => {
++        expect(applyInline(state('hello world', 2), '**').doc).toBe('**hello** world');
++    });
++    it('inserts an empty marker pair with the caret inside when there is no word', () => {
++        const result = applyInline(state('', 0), '**');
++        expect(result.doc).toBe('****');
++        expect(result.selection.from).toBe(2);
++    });
++    it('italicizes with single markers', () => {
++        expect(applyInline(state('note taking', 0, 4), '*').doc).toBe('*note* taking');
++    });
++    it('stacks italic inside bold instead of stripping a star', () => {
++        expect(applyInline(state('**bold**', 4), '*').doc).toBe('***bold***');
++    });
++    it('round-trips: toggling bold twice restores the original text', () => {
++        const once = applyInline(state('dose response', 0, 4), '**');
++        const twice = applyInline(once.state, '**');
++        expect(once.doc).toBe('**dose** response');
++        expect(twice.doc).toBe('dose response');
++    });
++    it('shrinks past selection whitespace so markers hug the text', () => {
++        expect(applyInline(state('a word here', 1, 7), '**').doc).toBe('a **word** here');
++    });
++});
++describe('heading cycle', () => {
++    function cycle(doc, pos = 0) {
++        const from = state(doc, pos);
++        return from.update({ changes: headingCycleChanges(from) }).state.doc.toString();
++    }
++    it('cycles plain → # → ## → ### → plain', () => {
++        expect(cycle('title')).toBe('# title');
++        expect(cycle('# title')).toBe('## title');
++        expect(cycle('## title')).toBe('### title');
++        expect(cycle('### title')).toBe('title');
++    });
++});
++describe('bullet list toggle', () => {
++    function toggle(doc, anchor, head) {
++        const from = state(doc, anchor, head);
++        return from.update({ changes: bulletToggleChanges(from) }).state.doc.toString();
++    }
++    it('bullets every selected line, skipping blanks', () => {
++        expect(toggle('alpha\n\nbeta', 0, 10)).toBe('- alpha\n\n- beta');
++    });
++    it('un-bullets when every selected line is already a bullet', () => {
++        expect(toggle('- alpha\n- beta', 0, 14)).toBe('alpha\nbeta');
++    });
++    it('completes a mixed selection instead of stripping it', () => {
++        expect(toggle('- alpha\nbeta', 0, 12)).toBe('- alpha\n- beta');
++    });
++});
+diff --git a/apps/desktop/src/app/library/note-format.test.ts b/apps/desktop/src/app/library/note-format.test.ts
+new file mode 100644
+index 00000000000..1acc70db9f7
+--- /dev/null
++++ b/apps/desktop/src/app/library/note-format.test.ts
+@@ -0,0 +1,106 @@
++import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
++import { EditorSelection, EditorState } from '@codemirror/state'
++import { describe, expect, it } from 'vitest'
++
++import { bulletToggleChanges, headingCycleChanges, inlineToggleSpec } from './note-format'
++
++// Same grammar the real editor runs (note-editor.tsx), so syntax-tree lookups match.
++function state(doc: string, anchor: number, head = anchor): EditorState {
++  return EditorState.create({
++    doc,
++    extensions: [markdown({ base: markdownLanguage })],
++    selection: EditorSelection.single(anchor, head)
++  })
++}
++
++function applyInline(from: EditorState, mark: '*' | '**') {
++  const next = from.update(inlineToggleSpec(from, mark))
++
++  return { doc: next.state.doc.toString(), selection: next.state.selection.main, state: next.state }
++}
++
++describe('inline bold/italic toggle', () => {
++  it('wraps a selection in bold markers and keeps the text selected', () => {
++    const result = applyInline(state('hello world', 0, 5), '**')
++
++    expect(result.doc).toBe('**hello** world')
++    expect([result.selection.from, result.selection.to]).toEqual([2, 7])
++  })
++
++  it('unwraps bold when the caret sits inside an existing **…** run', () => {
++    const result = applyInline(state('**bold** text', 4), '**')
++
++    expect(result.doc).toBe('bold text')
++    expect(result.selection.from).toBe(2)
++  })
++
++  it('also unwraps the __underscore__ spelling of bold', () => {
++    expect(applyInline(state('__bold__ text', 4), '**').doc).toBe('bold text')
++  })
++
++  it('bolds the word under the caret when nothing is selected', () => {
++    expect(applyInline(state('hello world', 2), '**').doc).toBe('**hello** world')
++  })
++
++  it('inserts an empty marker pair with the caret inside when there is no word', () => {
++    const result = applyInline(state('', 0), '**')
++
++    expect(result.doc).toBe('****')
++    expect(result.selection.from).toBe(2)
++  })
++
++  it('italicizes with single markers', () => {
++    expect(applyInline(state('note taking', 0, 4), '*').doc).toBe('*note* taking')
++  })
++
++  it('stacks italic inside bold instead of stripping a star', () => {
++    expect(applyInline(state('**bold**', 4), '*').doc).toBe('***bold***')
++  })
++
++  it('round-trips: toggling bold twice restores the original text', () => {
++    const once = applyInline(state('dose response', 0, 4), '**')
++    const twice = applyInline(once.state, '**')
++
++    expect(once.doc).toBe('**dose** response')
++    expect(twice.doc).toBe('dose response')
++  })
++
++  it('shrinks past selection whitespace so markers hug the text', () => {
++    expect(applyInline(state('a word here', 1, 7), '**').doc).toBe('a **word** here')
++  })
++})
++
++describe('heading cycle', () => {
++  function cycle(doc: string, pos = 0): string {
++    const from = state(doc, pos)
++
++    return from.update({ changes: headingCycleChanges(from) }).state.doc.toString()
++  }
++
++  it('cycles plain → # → ## → ### → plain', () => {
++    expect(cycle('title')).toBe('# title')
++    expect(cycle('# title')).toBe('## title')
++    expect(cycle('## title')).toBe('### title')
++    expect(cycle('### title')).toBe('title')
++  })
++})
++
++describe('bullet list toggle', () => {
++  function toggle(doc: string, anchor: number, head: number): string {
++    const from = state(doc, anchor, head)
++
++    return from.update({ changes: bulletToggleChanges(from) }).state.doc.toString()
++  }
++
++  it('bullets every selected line, skipping blanks', () => {
++    expect(toggle('alpha\n\nbeta', 0, 10)).toBe('- alpha\n\n- beta')
++  })
++
++  it('un-bullets when every selected line is already a bullet', () => {
++    expect(toggle('- alpha\n- beta', 0, 14)).toBe('alpha\nbeta')
++  })
++
++  it('completes a mixed selection instead of stripping it', () => {
++    expect(toggle('- alpha\nbeta', 0, 12)).toBe('- alpha\n- beta')
++  })
++})
+diff --git a/apps/desktop/src/app/library/note-format.ts b/apps/desktop/src/app/library/note-format.ts
+new file mode 100644
+index 00000000000..cad9f3c815d
+--- /dev/null
++++ b/apps/desktop/src/app/library/note-format.ts
+@@ -0,0 +1,155 @@
++// Markdown formatting commands for the note editor — Cmd+B / Cmd+I and the slim
++// toolbar both land here. Toggles are syntax-tree-aware, not string-guessing: bold
++// looks for an enclosing StrongEmphasis node (so it unwraps `__x__` as happily as
++// `**x**`), italic for Emphasis, and toggling italic inside bold correctly stacks to
++// `***x***` instead of eating a star. The spec builders are pure EditorState → spec
++// functions so they unit-test headlessly; the exported Commands are thin dispatchers.
++import { syntaxTree } from '@codemirror/language'
++import {
++  type ChangeSpec,
++  EditorSelection,
++  type EditorState,
++  type SelectionRange,
++  type TransactionSpec
++} from '@codemirror/state'
++import type { Command, EditorView } from '@codemirror/view'
++import type { SyntaxNode } from '@lezer/common'
++
++type InlineMark = '*' | '**'
++
++const NODE_FOR_MARK: Record<InlineMark, string> = { '*': 'Emphasis', '**': 'StrongEmphasis' }
++
++/** The Emphasis/StrongEmphasis node fully containing [from, to], if any. */
++function enclosingEmphasis(state: EditorState, from: number, to: number, nodeName: string): null | SyntaxNode {
++  let node: null | SyntaxNode = syntaxTree(state).resolveInner(from, from === to ? 0 : 1)
++
++  while (node) {
++    if (node.name === nodeName && node.from <= from && node.to >= to) {
++      return node
++    }
++
++    node = node.parent
++  }
++
++  return null
++}
++
++export function inlineToggleSpec(state: EditorState, mark: InlineMark): TransactionSpec {
++  return state.changeByRange(range => {
++    const wrapped = enclosingEmphasis(state, range.from, range.to, NODE_FOR_MARK[mark])
++    const emphasisMarks = wrapped?.getChildren('EmphasisMark') ?? []
++
++    if (wrapped && emphasisMarks.length >= 2) {
++      // Unwrap: delete the opening and closing marker runs, keep the selection on
++      // the same text by shifting positions past each deleted region.
++      const open = emphasisMarks[0]
++      const close = emphasisMarks[emphasisMarks.length - 1]
++
++      const mapPos = (pos: number): number =>
++        pos -
++        Math.min(Math.max(0, pos - open.from), open.to - open.from) -
++        Math.min(Math.max(0, pos - close.from), close.to - close.from)
++
++      return {
++        changes: [
++          { from: open.from, to: open.to },
++          { from: close.from, to: close.to }
++        ],
++        range: EditorSelection.range(mapPos(range.anchor), mapPos(range.head))
++      }
++    }
++
++    let { from, to } = range
++
++    if (from === to) {
++      const word = state.wordAt(from)
++
++      if (word) {
++        from = word.from
++        to = word.to
++      } else {
++        // Nothing to wrap — insert the marker pair and park the caret inside it.
++        return {
++          changes: { from, insert: mark + mark },
++          range: EditorSelection.cursor(from + mark.length)
++        }
++      }
++    }
++
++    // Markdown emphasis breaks when the markers hug whitespace — shrink to the text.
++    const text = state.sliceDoc(from, to)
++    from += text.length - text.trimStart().length
++    to -= text.length - text.trimEnd().length
++
++    if (from >= to) {
++      return { range }
++    }
++
++    return {
++      changes: [
++        { from, insert: mark },
++        { from: to, insert: mark }
++      ],
++      range: EditorSelection.range(from + mark.length, to + mark.length)
++    }
++  })
++}
++
++/** Every line any selection range touches, without duplicates, in document order. */
++function selectedLines(state: EditorState, ranges: readonly SelectionRange[]): { from: number; text: string }[] {
++  const lines = new Map<number, { from: number; text: string }>()
++
++  for (const range of ranges) {
++    for (let pos = range.from; pos <= range.to; ) {
++      const line = state.doc.lineAt(pos)
++      lines.set(line.from, { from: line.from, text: line.text })
++      pos = line.to + 1
++    }
++  }
++
++  return [...lines.values()].sort((a, b) => a.from - b.from)
++}
++
++const HEADING_RE = /^(#{1,6})\s+/
++const BULLET_RE = /^(\s*)([-*+])\s+/
++
++/** Cycle each selected line: plain → # → ## → ### → plain. */
++export function headingCycleChanges(state: EditorState): ChangeSpec[] {
++  return selectedLines(state, state.selection.ranges).map(line => {
++    const match = HEADING_RE.exec(line.text)
++    const level = match ? match[1].length : 0
++    const next = level >= 3 ? '' : `${'#'.repeat(level + 1)} `
++
++    return match ? { from: line.from, insert: next, to: line.from + match[0].length } : { from: line.from, insert: next }
++  })
++}
++
++/** Bullet all selected lines, or un-bullet them when every non-empty line already is. */
++export function bulletToggleChanges(state: EditorState): ChangeSpec[] {
++  const lines = selectedLines(state, state.selection.ranges).filter(line => line.text.trim().length > 0)
++  const allBulleted = lines.length > 0 && lines.every(line => BULLET_RE.test(line.text))
++
++  return lines.flatMap((line): ChangeSpec[] => {
++    const match = BULLET_RE.exec(line.text)
++
++    if (allBulleted && match) {
++      return [{ from: line.from + match[1].length, to: line.from + match[0].length }]
++    }
++
++    return match ? [] : [{ from: line.from, insert: '- ' }]
++  })
++}
++
++function dispatchSpec(view: EditorView, spec: TransactionSpec): boolean {
++  view.dispatch(spec, { scrollIntoView: true, userEvent: 'input' })
++
++  return true
++}
++
++export const toggleBold: Command = view => dispatchSpec(view, inlineToggleSpec(view.state, '**'))
++
++export const toggleItalic: Command = view => dispatchSpec(view, inlineToggleSpec(view.state, '*'))
++
++export const cycleHeading: Command = view => dispatchSpec(view, { changes: headingCycleChanges(view.state) })
++
++export const toggleBulletList: Command = view => dispatchSpec(view, { changes: bulletToggleChanges(view.state) })
+diff --git a/apps/desktop/src/app/recorder/autoname.js b/apps/desktop/src/app/recorder/autoname.js
+new file mode 100644
+index 00000000000..34559e1f594
+--- /dev/null
++++ b/apps/desktop/src/app/recorder/autoname.js
+@@ -0,0 +1,110 @@
++// Auto-naming for recordings — derives a human title from the on-device live
++// transcript so the archive reads "Vancomycin & Nephrotoxicity — Jul 11" instead of
++// "Lecture 11 Jul 2026 8.15 PM". Fully local and deterministic: pharm-lexicon terms
++// ranked by how often they were said, falling back to the lecture's opening topic
++// phrase. Returns null when the transcript is too thin to name confidently, so
++// callers keep their timestamp default. Never called when the student typed their
++// own title (see `titleEdited` in service.ts).
++import { detectPharmTerms } from './pharm-lexicon';
++/** Below this much transcript, any derived name is a guess — keep the default. */
++const MIN_TRANSCRIPT_CHARS = 120;
++const MAX_TITLE_CHARS = 48;
++/** Spoken lecture lead-ins ("okay so today we're going to talk about…") that carry
++ *  no topic signal. Stripped repeatedly from the front of the opening sentence. */
++const LEAD_IN_RE = /^(?:okay|ok|so|um|uh|alright|all right|right|welcome(?: back)?|good (?:morning|afternoon|evening)|hi|hello|everyone|everybody|guys|class|today|now|next|first|let's|lets|we're|we are|we'll|we will|i'm|i am|going to|gonna|to talk about|talk about|talking about|to cover|cover|covering|to discuss|discuss|discussing|start with|starting|continue with|continuing|to look at|look at|looking at|move on to|get started(?: with)?|pick up(?: where we left off)?)[,.!;:\s]+/i;
++const TRAILING_STOPWORDS = new Set([
++    'a',
++    'an',
++    'and',
++    'as',
++    'at',
++    'but',
++    'by',
++    'for',
++    'from',
++    'in',
++    'into',
++    'is',
++    'its',
++    'of',
++    'on',
++    'or',
++    'our',
++    'that',
++    'the',
++    'their',
++    'this',
++    'to',
++    'with',
++    'your'
++]);
++function escapeRegExp(raw) {
++    return raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
++}
++function titleCaseTerm(term) {
++    return term
++        .split(/([ -])/)
++        .map(part => (part === ' ' || part === '-' ? part : part.charAt(0).toUpperCase() + part.slice(1)))
++        .join('');
++}
++/** Note titles become Library file names — keep them filesystem- and wikilink-safe. */
++function sanitizeTitle(raw) {
++    return raw
++        .replace(/[\\/:*?"<>|[\]#^]/g, ' ')
++        .replace(/\s+/g, ' ')
++        .replace(/[ .,;]+$/, '')
++        .trim();
++}
++/** Lexicon terms actually said, most-mentioned first (ties: longer term wins —
++ *  "hydrochlorothiazide" beats "aspirin" as the lecture's subject). */
++function rankPharmTerms(transcript) {
++    return detectPharmTerms(transcript)
++        .map(term => ({
++        count: (transcript.match(new RegExp(`\\b${escapeRegExp(term)}\\b`, 'gi')) ?? []).length,
++        term
++    }))
++        .sort((a, b) => b.count - a.count || b.term.length - a.term.length)
++        .map(entry => entry.term);
++}
++/** The lecture's opening topic: first sentence, spoken lead-ins stripped, clipped to
++ *  a few words with dangling stopwords removed. Null when nothing meaningful is left. */
++function topicPhrase(transcript) {
++    let opening = transcript;
++    for (let pass = 0; pass < 10; pass++) {
++        const stripped = opening.replace(LEAD_IN_RE, '');
++        if (stripped === opening) {
++            break;
++        }
++        opening = stripped;
++    }
++    const sentenceEnd = opening.search(/[.!?]/);
++    const sentence = sentenceEnd === -1 ? opening : opening.slice(0, sentenceEnd);
++    const words = sentence.split(/\s+/).filter(Boolean).slice(0, 7);
++    while (words.length > 0 && TRAILING_STOPWORDS.has(words[words.length - 1].toLowerCase().replace(/[^a-z']/g, ''))) {
++        words.pop();
++    }
++    if (words.length < 3) {
++        return null;
++    }
++    let phrase = words.join(' ');
++    if (phrase.length > MAX_TITLE_CHARS) {
++        phrase = phrase.slice(0, MAX_TITLE_CHARS).replace(/\s+\S*$/, '');
++    }
++    phrase = phrase.charAt(0).toUpperCase() + phrase.slice(1);
++    return phrase.length >= 12 ? phrase : null;
++}
++/** "Vancomycin & Nephrotoxicity — Jul 11" | "Renal clearance and dosing — Jul 11" | null. */
++export function deriveRecordingTitle(transcript, at) {
++    const clean = transcript.replace(/\s+/g, ' ').trim();
++    if (clean.length < MIN_TRANSCRIPT_CHARS) {
++        return null;
++    }
++    const dateTag = at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
++    const terms = rankPharmTerms(clean);
++    if (terms.length > 0) {
++        const lead = terms.slice(0, 2).map(titleCaseTerm).join(' & ');
++        return sanitizeTitle(`${lead} — ${dateTag}`);
++    }
++    const topic = topicPhrase(clean);
++    return topic ? sanitizeTitle(`${topic} — ${dateTag}`) : null;
++}
+diff --git a/apps/desktop/src/app/recorder/autoname.test.js b/apps/desktop/src/app/recorder/autoname.test.js
+new file mode 100644
+index 00000000000..c8923e2babf
+--- /dev/null
++++ b/apps/desktop/src/app/recorder/autoname.test.js
+@@ -0,0 +1,36 @@
++import { describe, expect, it } from 'vitest';
++import { deriveRecordingTitle } from './autoname';
++const AT = new Date(2026, 6, 11, 14, 30);
++const DATE_TAG = AT.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
++function pad(text) {
++    // Filler that clears MIN_TRANSCRIPT_CHARS without adding lexicon terms or topic words.
++    return `${text} ${'and then we said more about it '.repeat(6)}`;
++}
++describe('deriveRecordingTitle', () => {
++    it('returns null for transcripts too short to name confidently', () => {
++        expect(deriveRecordingTitle('', AT)).toBeNull();
++        expect(deriveRecordingTitle('vancomycin trough levels', AT)).toBeNull();
++    });
++    it('names by the two most-mentioned pharm terms, title-cased, with the date', () => {
++        const transcript = pad('vancomycin dosing today. vancomycin troughs matter. we adjust vancomycin by weight. ' +
++            'warfarin interactions come up once. gentamicin is dosed alongside vancomycin sometimes, gentamicin peaks too.');
++        expect(deriveRecordingTitle(transcript, AT)).toBe(`Vancomycin & Gentamicin — ${DATE_TAG}`);
++    });
++    it('uses a single pharm term alone when only one is mentioned', () => {
++        const title = deriveRecordingTitle(pad('metoprolol is a beta blocker. metoprolol succinate versus tartrate.'), AT);
++        expect(title).toBe(`Metoprolol — ${DATE_TAG}`);
++    });
++    it('falls back to the opening topic phrase with spoken lead-ins stripped', () => {
++        const transcript = pad("Okay so um today we're going to talk about renal clearance calculations for elderly patients. Take notes.");
++        expect(deriveRecordingTitle(transcript, AT)).toBe(`Renal clearance calculations for elderly — ${DATE_TAG}`);
++    });
++    it('returns null when the transcript is long but has no usable topic', () => {
++        expect(deriveRecordingTitle('okay so um yeah. '.repeat(20), AT)).toBeNull();
++    });
++    it('never emits characters unsafe for Library file names', () => {
++        const transcript = pad('Chapter 3/4: "dosing" [review] #1 next week covers more chapters of this material');
++        const title = deriveRecordingTitle(transcript, AT);
++        expect(title).not.toBeNull();
++        expect(title).not.toMatch(/[\\/:*?"<>|[\]#^]/);
++    });
++});
+diff --git a/apps/desktop/src/app/recorder/autoname.test.ts b/apps/desktop/src/app/recorder/autoname.test.ts
+new file mode 100644
+index 00000000000..67312d55304
+--- /dev/null
++++ b/apps/desktop/src/app/recorder/autoname.test.ts
+@@ -0,0 +1,53 @@
++import { describe, expect, it } from 'vitest'
++
++import { deriveRecordingTitle } from './autoname'
++
++const AT = new Date(2026, 6, 11, 14, 30)
++const DATE_TAG = AT.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
++
++function pad(text: string): string {
++  // Filler that clears MIN_TRANSCRIPT_CHARS without adding lexicon terms or topic words.
++  return `${text} ${'and then we said more about it '.repeat(6)}`
++}
++
++describe('deriveRecordingTitle', () => {
++  it('returns null for transcripts too short to name confidently', () => {
++    expect(deriveRecordingTitle('', AT)).toBeNull()
++    expect(deriveRecordingTitle('vancomycin trough levels', AT)).toBeNull()
++  })
++
++  it('names by the two most-mentioned pharm terms, title-cased, with the date', () => {
++    const transcript = pad(
++      'vancomycin dosing today. vancomycin troughs matter. we adjust vancomycin by weight. ' +
++        'warfarin interactions come up once. gentamicin is dosed alongside vancomycin sometimes, gentamicin peaks too.'
++    )
++
++    expect(deriveRecordingTitle(transcript, AT)).toBe(`Vancomycin & Gentamicin — ${DATE_TAG}`)
++  })
++
++  it('uses a single pharm term alone when only one is mentioned', () => {
++    const title = deriveRecordingTitle(pad('metoprolol is a beta blocker. metoprolol succinate versus tartrate.'), AT)
++
++    expect(title).toBe(`Metoprolol — ${DATE_TAG}`)
++  })
++
++  it('falls back to the opening topic phrase with spoken lead-ins stripped', () => {
++    const transcript = pad(
++      "Okay so um today we're going to talk about renal clearance calculations for elderly patients. Take notes."
++    )
++
++    expect(deriveRecordingTitle(transcript, AT)).toBe(`Renal clearance calculations for elderly — ${DATE_TAG}`)
++  })
++
++  it('returns null when the transcript is long but has no usable topic', () => {
++    expect(deriveRecordingTitle('okay so um yeah. '.repeat(20), AT)).toBeNull()
++  })
++
++  it('never emits characters unsafe for Library file names', () => {
++    const transcript = pad('Chapter 3/4: "dosing" [review] #1 next week covers more chapters of this material')
++    const title = deriveRecordingTitle(transcript, AT)
++
++    expect(title).not.toBeNull()
++    expect(title).not.toMatch(/[\\/:*?"<>|[\]#^]/)
++  })
++})
+diff --git a/apps/desktop/src/app/recorder/autoname.ts b/apps/desktop/src/app/recorder/autoname.ts
+new file mode 100644
+index 00000000000..ad7928dc2a0
+--- /dev/null
++++ b/apps/desktop/src/app/recorder/autoname.ts
+@@ -0,0 +1,136 @@
++// Auto-naming for recordings — derives a human title from the on-device live
++// transcript so the archive reads "Vancomycin & Nephrotoxicity — Jul 11" instead of
++// "Lecture 11 Jul 2026 8.15 PM". Fully local and deterministic: pharm-lexicon terms
++// ranked by how often they were said, falling back to the lecture's opening topic
++// phrase. Returns null when the transcript is too thin to name confidently, so
++// callers keep their timestamp default. Never called when the student typed their
++// own title (see `titleEdited` in service.ts).
++import { detectPharmTerms } from './pharm-lexicon'
++
++/** Below this much transcript, any derived name is a guess — keep the default. */
++const MIN_TRANSCRIPT_CHARS = 120
++const MAX_TITLE_CHARS = 48
++
++/** Spoken lecture lead-ins ("okay so today we're going to talk about…") that carry
++ *  no topic signal. Stripped repeatedly from the front of the opening sentence. */
++const LEAD_IN_RE =
++  /^(?:okay|ok|so|um|uh|alright|all right|right|welcome(?: back)?|good (?:morning|afternoon|evening)|hi|hello|everyone|everybody|guys|class|today|now|next|first|let's|lets|we're|we are|we'll|we will|i'm|i am|going to|gonna|to talk about|talk about|talking about|to cover|cover|covering|to discuss|discuss|discussing|start with|starting|continue with|continuing|to look at|look at|looking at|move on to|get started(?: with)?|pick up(?: where we left off)?)[,.!;:\s]+/i
++
++const TRAILING_STOPWORDS = new Set([
++  'a',
++  'an',
++  'and',
++  'as',
++  'at',
++  'but',
++  'by',
++  'for',
++  'from',
++  'in',
++  'into',
++  'is',
++  'its',
++  'of',
++  'on',
++  'or',
++  'our',
++  'that',
++  'the',
++  'their',
++  'this',
++  'to',
++  'with',
++  'your'
++])
++
++function escapeRegExp(raw: string): string {
++  return raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
++}
++
++function titleCaseTerm(term: string): string {
++  return term
++    .split(/([ -])/)
++    .map(part => (part === ' ' || part === '-' ? part : part.charAt(0).toUpperCase() + part.slice(1)))
++    .join('')
++}
++
++/** Note titles become Library file names — keep them filesystem- and wikilink-safe. */
++function sanitizeTitle(raw: string): string {
++  return raw
++    .replace(/[\\/:*?"<>|[\]#^]/g, ' ')
++    .replace(/\s+/g, ' ')
++    .replace(/[ .,;]+$/, '')
++    .trim()
++}
++
++/** Lexicon terms actually said, most-mentioned first (ties: longer term wins —
++ *  "hydrochlorothiazide" beats "aspirin" as the lecture's subject). */
++function rankPharmTerms(transcript: string): string[] {
++  return detectPharmTerms(transcript)
++    .map(term => ({
++      count: (transcript.match(new RegExp(`\\b${escapeRegExp(term)}\\b`, 'gi')) ?? []).length,
++      term
++    }))
++    .sort((a, b) => b.count - a.count || b.term.length - a.term.length)
++    .map(entry => entry.term)
++}
++
++/** The lecture's opening topic: first sentence, spoken lead-ins stripped, clipped to
++ *  a few words with dangling stopwords removed. Null when nothing meaningful is left. */
++function topicPhrase(transcript: string): null | string {
++  let opening = transcript
++
++  for (let pass = 0; pass < 10; pass++) {
++    const stripped = opening.replace(LEAD_IN_RE, '')
++
++    if (stripped === opening) {
++      break
++    }
++
++    opening = stripped
++  }
++
++  const sentenceEnd = opening.search(/[.!?]/)
++  const sentence = sentenceEnd === -1 ? opening : opening.slice(0, sentenceEnd)
++  const words = sentence.split(/\s+/).filter(Boolean).slice(0, 7)
++
++  while (words.length > 0 && TRAILING_STOPWORDS.has(words[words.length - 1].toLowerCase().replace(/[^a-z']/g, ''))) {
++    words.pop()
++  }
++
++  if (words.length < 3) {
++    return null
++  }
++
++  let phrase = words.join(' ')
++
++  if (phrase.length > MAX_TITLE_CHARS) {
++    phrase = phrase.slice(0, MAX_TITLE_CHARS).replace(/\s+\S*$/, '')
++  }
++
++  phrase = phrase.charAt(0).toUpperCase() + phrase.slice(1)
++
++  return phrase.length >= 12 ? phrase : null
++}
++
++/** "Vancomycin & Nephrotoxicity — Jul 11" | "Renal clearance and dosing — Jul 11" | null. */
++export function deriveRecordingTitle(transcript: string, at: Date): null | string {
++  const clean = transcript.replace(/\s+/g, ' ').trim()
++
++  if (clean.length < MIN_TRANSCRIPT_CHARS) {
++    return null
++  }
++
++  const dateTag = at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
++  const terms = rankPharmTerms(clean)
++
++  if (terms.length > 0) {
++    const lead = terms.slice(0, 2).map(titleCaseTerm).join(' & ')
++
++    return sanitizeTitle(`${lead} — ${dateTag}`)
++  }
++
++  const topic = topicPhrase(clean)
++
++  return topic ? sanitizeTitle(`${topic} — ${dateTag}`) : null
++}
+diff --git a/apps/desktop/src/app/recorder/service.js b/apps/desktop/src/app/recorder/service.js
+index 13993db6a7e..722c6760758 100644
+--- a/apps/desktop/src/app/recorder/service.js
++++ b/apps/desktop/src/app/recorder/service.js
+@@ -3,6 +3,7 @@
+ // running when the student navigates elsewhere in the desktop app.
+ import { atom } from 'nanostores';
+ import { createFolder, saveNote } from '../library/vault';
++import { deriveRecordingTitle } from './autoname';
+ import { correctPharmTerms, detectPharmTerms } from './pharm-lexicon';
+ export const RECORDINGS_DIR = '~/Documents/Nemesis Recordings';
+ export const LECTURE_FOLDER = 'Lectures';
+@@ -39,6 +40,9 @@ let sampleRate = 48_000;
+ let startedAt = 0;
+ let pausedAt = 0;
+ let pausedTotal = 0;
++// True once the student types in the title field this recording — auto-naming then
++// stands down completely (both the live retitle and the final pass in persist()).
++let titleEdited = false;
+ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+ function concatSamples(sampleChunks) {
+     const total = sampleChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+@@ -84,7 +88,16 @@ function lectureNoteTitle(date) {
+     return `Lecture ${day} ${time}`;
+ }
+ function appendLiveSegment(text) {
+-    $liveTranscript.set([...$liveTranscript.get(), text]);
++    const nextTranscript = [...$liveTranscript.get(), text];
++    $liveTranscript.set(nextTranscript);
++    // Live auto-naming: as soon as enough has been said, the title field renames
++    // itself from the transcript — unless the student already typed their own.
++    if (!titleEdited) {
++        const derived = deriveRecordingTitle(nextTranscript.join(' '), new Date(startedAt || Date.now()));
++        if (derived && derived !== $recordingTitle.get()) {
++            $recordingTitle.set(derived);
++        }
++    }
+     const terms = detectPharmTerms(text);
+     if (terms.length === 0) {
+         return;
+@@ -218,7 +231,11 @@ async function persist() {
+         await drainLive(sampleRate);
+         const transcript = $liveTranscript.get().join(' ').replace(/\s+/g, ' ').trim();
+         const typedNotes = $notepadDraft.get().trim();
+-        const noteTitle = $recordingTitle.get().trim() || lectureNoteTitle(at);
++        const typedTitle = $recordingTitle.get().trim();
++        // Final naming pass over the complete transcript; a student-typed title always wins.
++        const noteTitle = titleEdited && typedTitle
++            ? typedTitle
++            : (deriveRecordingTitle(transcript, at) ?? (typedTitle || lectureNoteTitle(at)));
+         await createFolder(LECTURE_FOLDER);
+         await saveNote(noteTitle, `# ${noteTitle}\n\n*Recorded ${at.toLocaleString(undefined, { day: 'numeric', hour: 'numeric', minute: '2-digit', month: 'short' })} — my notes + on-device transcript (a draft; review before relying on it).*\n*Audio: ${fileName} (Nemesis Recordings)*\n\n## My notes\n\n${typedNotes || '_none taken_'}\n\n## Transcript\n\n${transcript || '_no speech captured_'}\n`, LECTURE_FOLDER);
+         $recentLectureNote.set(noteTitle);
+@@ -249,6 +266,7 @@ export async function startRecording() {
+     $liveInsights.set([]);
+     $notepadDraft.set('');
+     $recentLectureNote.set(null);
++    titleEdited = false;
+     $recordingTitle.set(lectureNoteTitle(new Date()));
+     try {
+         const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+@@ -365,6 +383,7 @@ export function setRecordingPaused(paused) {
+     return paused ? pauseRecording() : resumeRecording();
+ }
+ export function setRecordingTitle(title) {
++    titleEdited = true;
+     $recordingTitle.set(title);
+ }
+ export function setNotepadDraft(draft) {
+diff --git a/apps/desktop/src/app/recorder/service.ts b/apps/desktop/src/app/recorder/service.ts
+index b19354b3217..f4a2eab2d3e 100644
+--- a/apps/desktop/src/app/recorder/service.ts
++++ b/apps/desktop/src/app/recorder/service.ts
+@@ -5,6 +5,7 @@ import { atom } from 'nanostores'
+ 
+ import { createFolder, saveNote } from '../library/vault'
+ 
++import { deriveRecordingTitle } from './autoname'
+ import { correctPharmTerms, detectPharmTerms } from './pharm-lexicon'
+ 
+ export const RECORDINGS_DIR = '~/Documents/Nemesis Recordings'
+@@ -53,6 +54,9 @@ let sampleRate = 48_000
+ let startedAt = 0
+ let pausedAt = 0
+ let pausedTotal = 0
++// True once the student types in the title field this recording — auto-naming then
++// stands down completely (both the live retitle and the final pass in persist()).
++let titleEdited = false
+ 
+ const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+ 
+@@ -114,7 +118,19 @@ function lectureNoteTitle(date: Date): string {
+ }
+ 
+ function appendLiveSegment(text: string): void {
+-  $liveTranscript.set([...$liveTranscript.get(), text])
++  const nextTranscript = [...$liveTranscript.get(), text]
++  $liveTranscript.set(nextTranscript)
++
++  // Live auto-naming: as soon as enough has been said, the title field renames
++  // itself from the transcript — unless the student already typed their own.
++  if (!titleEdited) {
++    const derived = deriveRecordingTitle(nextTranscript.join(' '), new Date(startedAt || Date.now()))
++
++    if (derived && derived !== $recordingTitle.get()) {
++      $recordingTitle.set(derived)
++    }
++  }
++
+   const terms = detectPharmTerms(text)
+ 
+   if (terms.length === 0) {
+@@ -283,7 +299,12 @@ async function persist(): Promise<void> {
+     await drainLive(sampleRate)
+     const transcript = $liveTranscript.get().join(' ').replace(/\s+/g, ' ').trim()
+     const typedNotes = $notepadDraft.get().trim()
+-    const noteTitle = $recordingTitle.get().trim() || lectureNoteTitle(at)
++    const typedTitle = $recordingTitle.get().trim()
++    // Final naming pass over the complete transcript; a student-typed title always wins.
++    const noteTitle =
++      titleEdited && typedTitle
++        ? typedTitle
++        : (deriveRecordingTitle(transcript, at) ?? (typedTitle || lectureNoteTitle(at)))
+     await createFolder(LECTURE_FOLDER)
+     await saveNote(
+       noteTitle,
+@@ -318,6 +339,7 @@ export async function startRecording(): Promise<void> {
+   $liveInsights.set([])
+   $notepadDraft.set('')
+   $recentLectureNote.set(null)
++  titleEdited = false
+   $recordingTitle.set(lectureNoteTitle(new Date()))
+ 
+   try {
+@@ -461,6 +483,7 @@ export function setRecordingPaused(paused: boolean): Promise<void> {
+ }
+ 
+ export function setRecordingTitle(title: string): void {
++  titleEdited = true
+   $recordingTitle.set(title)
+ }
+ 
+-- 
+2.53.0
+
