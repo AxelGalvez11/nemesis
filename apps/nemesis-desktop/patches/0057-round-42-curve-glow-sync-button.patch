@@ -1,0 +1,245 @@
+From f16f57b9fbd0931baa24fd720eddaf544507217f Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 22:42:11 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis-kit):=20round-42=20=E2=80=94=20for?=
+ =?UTF-8?q?getting=20curve=20glow-up=20(gradient=20fill=20+=20soft=20halo,?=
+ =?UTF-8?q?=20useId=20defs)=20with=20study-to-light-up=20empty=20state;=20?=
+ =?UTF-8?q?Today=20hero=20'Sync=20school'=20action=20seeding=20the=20schoo?=
+ =?UTF-8?q?l-sync=20pipeline?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ apps/desktop/src/app/study/index.js  | 12 ++---
+ apps/desktop/src/app/study/index.tsx | 67 ++++++++++++++++++++++++----
+ apps/desktop/src/app/today/index.js  |  6 ++-
+ apps/desktop/src/app/today/index.tsx | 23 +++++++---
+ 4 files changed, 89 insertions(+), 19 deletions(-)
+
+diff --git a/apps/desktop/src/app/study/index.js b/apps/desktop/src/app/study/index.js
+index 17a0556008b..b21acb56b5f 100644
+--- a/apps/desktop/src/app/study/index.js
++++ b/apps/desktop/src/app/study/index.js
+@@ -4,7 +4,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
+ // as muscle memory from Anki: deck browser with due badges → flip card (Space) →
+ // Again/Hard/Good/Easy (1-4), with the next-interval hint under each grade button.
+ import { IconChevronDown, IconChecklist, IconFolderPlus, IconLayoutGrid, IconList, IconPlayerPause, IconSettings, IconSitemap } from '@tabler/icons-react';
+-import { useCallback, useEffect, useMemo, useState } from 'react';
++import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
+ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+@@ -406,17 +406,19 @@ function DuePill({ due }) {
+     return (_jsxs("span", { className: "shrink-0 rounded-full bg-(--theme-primary)/15 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-(--theme-primary)", children: [due, " due"] }));
+ }
+ function RetentionSparkline({ curve }) {
++    // SVG defs need document-unique ids — this component renders once per deck card.
++    const gradientId = useId();
+     const finalDay = curve.at(-1)?.day ?? 1;
+     const coordinates = curve.map(point => {
+         const x = 2 + (point.day / Math.max(1, finalDay)) * 96;
+-        const y = 2 + (1 - point.retention) * 28;
++        const y = 4 + (1 - point.retention) * 30;
+         return [x, y];
+     });
+     const points = coordinates.map(([x, y]) => `${x},${y}`).join(' ');
+-    const area = `M ${coordinates.map(([x, y]) => `${x} ${y}`).join(' L ')} L 98 30 L 2 30 Z`;
++    const area = `M ${coordinates.map(([x, y]) => `${x} ${y}`).join(' L ')} L 98 38 L 2 38 Z`;
+     const first = curve[0];
+     const last = curve.at(-1) ?? first;
+-    return (_jsxs("div", { children: [_jsxs("svg", { "aria-hidden": "true", className: "h-8 w-full", preserveAspectRatio: "none", viewBox: "0 0 100 32", children: [_jsx("path", { d: area, fill: "var(--theme-primary)", opacity: "0.1" }), _jsx("polyline", { fill: "none", points: points, stroke: "var(--theme-primary)", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.5", vectorEffect: "non-scaling-stroke" }), _jsx("circle", { cx: coordinates[0][0], cy: coordinates[0][1], fill: "var(--theme-primary)", r: "1.75" })] }), _jsxs("p", { className: "mt-0.5 text-[11px] text-muted-foreground tabular-nums", children: ["Recall ", Math.round(first.retention * 100), "% \u2192 ", Math.round(last.retention * 100), "% in ", finalDay, "d"] })] }));
++    return (_jsxs("div", { children: [_jsxs("svg", { "aria-hidden": "true", className: "h-10 w-full", preserveAspectRatio: "none", viewBox: "0 0 100 40", children: [_jsxs("defs", { children: [_jsxs("linearGradient", { id: `${gradientId}-fade`, x1: "0", x2: "0", y1: "0", y2: "1", children: [_jsx("stop", { offset: "0%", stopColor: "var(--theme-primary)", stopOpacity: "0.38" }), _jsx("stop", { offset: "70%", stopColor: "var(--theme-primary)", stopOpacity: "0.08" }), _jsx("stop", { offset: "100%", stopColor: "var(--theme-primary)", stopOpacity: "0" })] }), _jsx("filter", { height: "300%", id: `${gradientId}-glow`, width: "120%", x: "-10%", y: "-100%", children: _jsx("feGaussianBlur", { in: "SourceGraphic", stdDeviation: "1.6" }) })] }), _jsx("path", { d: area, fill: `url(#${gradientId}-fade)` }), _jsx("polyline", { fill: "none", filter: `url(#${gradientId}-glow)`, opacity: "0.75", points: points, stroke: "var(--theme-primary)", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "2.6" }), _jsx("polyline", { fill: "none", points: points, stroke: "var(--theme-primary)", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "1.4", vectorEffect: "non-scaling-stroke" }), _jsx("circle", { cx: coordinates[0][0], cy: coordinates[0][1], fill: "var(--theme-primary)", filter: `url(#${gradientId}-glow)`, opacity: "0.9", r: "2.6" }), _jsx("circle", { cx: coordinates[0][0], cy: coordinates[0][1], fill: "var(--theme-primary)", r: "1.6" })] }), _jsxs("p", { className: "mt-0.5 text-[11px] text-muted-foreground tabular-nums", children: ["Recall ", Math.round(first.retention * 100), "% \u2192 ", Math.round(last.retention * 100), "% in ", finalDay, "d"] })] }));
+ }
+ function DeckRow({ deck, now, onBrowse, onMatch, onStudy, state }) {
+     const stats = deckStats(state, deck.id, now);
+@@ -447,7 +449,7 @@ function DeckCard({ curve, deck, now, onBrowse, onMatch, onStudy, state }) {
+         event.preventDefault();
+         openDeck();
+     };
+-    return (_jsxs("div", { className: "group flex cursor-pointer flex-col gap-4 rounded-2xl border border-border bg-card p-5 outline-none transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-(--theme-primary)/50 hover:ring-2 hover:ring-(--theme-primary)/20 hover:shadow-lg hover:shadow-black/20 focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45", onClick: openDeck, onKeyDown: onKeyDown, role: "button", tabIndex: 0, children: [_jsxs("div", { className: "flex items-start justify-between gap-2", children: [_jsx("h3", { className: "text-[15px] font-semibold leading-snug tracking-tight", children: deck.name }), stats.due > 0 && _jsx(DuePill, { due: stats.due })] }), curve.length > 0 && _jsx(RetentionSparkline, { curve: curve }), _jsxs("div", { className: "mt-auto", children: [_jsxs("div", { className: "mb-1.5 flex items-baseline justify-between text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "tabular-nums", children: [stats.total, " card", stats.total === 1 ? '' : 's', " \u00B7 ", stats.fresh, " new"] }), _jsxs("span", { className: "tabular-nums", children: [pct, "% studied"] })] }), _jsx(MasteryBar, { pct: pct })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { disabled: stats.total < 2, onClick: event => {
++    return (_jsxs("div", { className: "group flex cursor-pointer flex-col gap-4 rounded-2xl border border-border bg-card p-5 outline-none transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-(--theme-primary)/50 hover:ring-2 hover:ring-(--theme-primary)/20 hover:shadow-lg hover:shadow-black/20 focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45", onClick: openDeck, onKeyDown: onKeyDown, role: "button", tabIndex: 0, children: [_jsxs("div", { className: "flex items-start justify-between gap-2", children: [_jsx("h3", { className: "text-[15px] font-semibold leading-snug tracking-tight", children: deck.name }), stats.due > 0 && _jsx(DuePill, { due: stats.due })] }), curve.length > 0 ? (_jsx(RetentionSparkline, { curve: curve })) : (_jsxs("div", { children: [_jsx("svg", { "aria-hidden": "true", className: "h-10 w-full", preserveAspectRatio: "none", viewBox: "0 0 100 40", children: _jsx("line", { stroke: "var(--ui-stroke-secondary)", strokeDasharray: "3 4", strokeLinecap: "round", strokeWidth: "1.2", x1: "2", x2: "98", y1: "10", y2: "30" }) }), _jsx("p", { className: "mt-0.5 text-[11px] text-muted-foreground/70", children: "Study one card to light up this deck\u2019s forgetting curve." })] })), _jsxs("div", { className: "mt-auto", children: [_jsxs("div", { className: "mb-1.5 flex items-baseline justify-between text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "tabular-nums", children: [stats.total, " card", stats.total === 1 ? '' : 's', " \u00B7 ", stats.fresh, " new"] }), _jsxs("span", { className: "tabular-nums", children: [pct, "% studied"] })] }), _jsx(MasteryBar, { pct: pct })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { disabled: stats.total < 2, onClick: event => {
+                             event.stopPropagation();
+                             onMatch(deck.id);
+                         }, size: "sm", variant: "outline", children: "Match" }), _jsx(Button, { onClick: event => {
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index 286458b6495..3428f9aca34 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -12,7 +12,7 @@ import {
+   IconSettings,
+   IconSitemap
+ } from '@tabler/icons-react'
+-import { useCallback, useEffect, useMemo, useState } from 'react'
++import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+ 
+ import { Badge } from '@/components/ui/badge'
+ import { Button } from '@/components/ui/button'
+@@ -1133,32 +1133,63 @@ function DuePill({ due }: { due: number }) {
+ }
+ 
+ function RetentionSparkline({ curve }: { curve: RetentionPoint[] }) {
++  // SVG defs need document-unique ids — this component renders once per deck card.
++  const gradientId = useId()
+   const finalDay = curve.at(-1)?.day ?? 1
+   const coordinates = curve.map(point => {
+     const x = 2 + (point.day / Math.max(1, finalDay)) * 96
+-    const y = 2 + (1 - point.retention) * 28
++    const y = 4 + (1 - point.retention) * 30
+ 
+     return [x, y] as const
+   })
+   const points = coordinates.map(([x, y]) => `${x},${y}`).join(' ')
+-  const area = `M ${coordinates.map(([x, y]) => `${x} ${y}`).join(' L ')} L 98 30 L 2 30 Z`
++  const area = `M ${coordinates.map(([x, y]) => `${x} ${y}`).join(' L ')} L 98 38 L 2 38 Z`
+   const first = curve[0]
+   const last = curve.at(-1) ?? first
+ 
+   return (
+     <div>
+-      <svg aria-hidden="true" className="h-8 w-full" preserveAspectRatio="none" viewBox="0 0 100 32">
+-        <path d={area} fill="var(--theme-primary)" opacity="0.1" />
++      <svg aria-hidden="true" className="h-10 w-full" preserveAspectRatio="none" viewBox="0 0 100 40">
++        <defs>
++          <linearGradient id={`${gradientId}-fade`} x1="0" x2="0" y1="0" y2="1">
++            <stop offset="0%" stopColor="var(--theme-primary)" stopOpacity="0.38" />
++            <stop offset="70%" stopColor="var(--theme-primary)" stopOpacity="0.08" />
++            <stop offset="100%" stopColor="var(--theme-primary)" stopOpacity="0" />
++          </linearGradient>
++          <filter height="300%" id={`${gradientId}-glow`} width="120%" x="-10%" y="-100%">
++            <feGaussianBlur in="SourceGraphic" stdDeviation="1.6" />
++          </filter>
++        </defs>
++        <path d={area} fill={`url(#${gradientId}-fade)`} />
++        {/* Soft halo under the crisp line — the "glow". */}
+         <polyline
+           fill="none"
++          filter={`url(#${gradientId}-glow)`}
++          opacity="0.75"
+           points={points}
+           stroke="var(--theme-primary)"
+           strokeLinecap="round"
+           strokeLinejoin="round"
+-          strokeWidth="1.5"
++          strokeWidth="2.6"
++        />
++        <polyline
++          fill="none"
++          points={points}
++          stroke="var(--theme-primary)"
++          strokeLinecap="round"
++          strokeLinejoin="round"
++          strokeWidth="1.4"
+           vectorEffect="non-scaling-stroke"
+         />
+-        <circle cx={coordinates[0][0]} cy={coordinates[0][1]} fill="var(--theme-primary)" r="1.75" />
++        <circle
++          cx={coordinates[0][0]}
++          cy={coordinates[0][1]}
++          fill="var(--theme-primary)"
++          filter={`url(#${gradientId}-glow)`}
++          opacity="0.9"
++          r="2.6"
++        />
++        <circle cx={coordinates[0][0]} cy={coordinates[0][1]} fill="var(--theme-primary)" r="1.6" />
+       </svg>
+       <p className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">
+         Recall {Math.round(first.retention * 100)}% → {Math.round(last.retention * 100)}% in {finalDay}d
+@@ -1286,7 +1317,27 @@ function DeckCard({
+         {stats.due > 0 && <DuePill due={stats.due} />}
+       </div>
+ 
+-      {curve.length > 0 && <RetentionSparkline curve={curve} />}
++      {curve.length > 0 ? (
++        <RetentionSparkline curve={curve} />
++      ) : (
++        <div>
++          <svg aria-hidden="true" className="h-10 w-full" preserveAspectRatio="none" viewBox="0 0 100 40">
++            <line
++              stroke="var(--ui-stroke-secondary)"
++              strokeDasharray="3 4"
++              strokeLinecap="round"
++              strokeWidth="1.2"
++              x1="2"
++              x2="98"
++              y1="10"
++              y2="30"
++            />
++          </svg>
++          <p className="mt-0.5 text-[11px] text-muted-foreground/70">
++            Study one card to light up this deck&rsquo;s forgetting curve.
++          </p>
++        </div>
++      )}
+ 
+       <div className="mt-auto">
+         <div className="mb-1.5 flex items-baseline justify-between text-[11px] text-muted-foreground">
+diff --git a/apps/desktop/src/app/today/index.js b/apps/desktop/src/app/today/index.js
+index 02c84a40477..2973f19fbff 100644
+--- a/apps/desktop/src/app/today/index.js
++++ b/apps/desktop/src/app/today/index.js
+@@ -237,6 +237,10 @@ export function TodayView() {
+         setComposerDraft(`Help me study ${nextAction.object.title} — quiz me and find my weak spots.`);
+         navigate(NEW_CHAT_ROUTE);
+     };
++    const startSchoolSync = () => {
++        setComposerDraft('Sync my school — run your school-sync pipeline: sweep Blackboard and Outlook for anything new, capture the files, write lecture notes and flashcards for new material, and update my calendar and Home page. Report what changed.');
++        navigate(NEW_CHAT_ROUTE);
++    };
+     if (!loaded) {
+         return (_jsx("main", { className: "grid h-full min-h-0 place-items-center bg-(--ui-editor-surface-background)", children: _jsxs("div", { className: "flex items-center gap-2 text-xs text-(--ui-text-tertiary)", children: [_jsx(Codicon, { name: "loading", spinning: true }), "Building today"] }) }));
+     }
+@@ -245,7 +249,7 @@ export function TodayView() {
+     }
+     const greeting = now.getHours() < 12 ? 'morning' : now.getHours() < 18 ? 'afternoon' : 'evening';
+     const dateLabel = now.toLocaleDateString(undefined, { day: 'numeric', month: 'short', weekday: 'long' });
+-    return (_jsx("main", { className: "h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background)", children: _jsxs("div", { className: "mx-auto flex w-full max-w-[1180px] flex-col px-5 pb-7 pt-6 sm:px-7", children: [_jsxs("header", { children: [_jsxs("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: ["Today \u00B7 ", dateLabel] }), _jsxs("h1", { className: "mt-2 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl", children: ["Good ", greeting, ", ", graph.student?.name?.trim() || 'there'] }), _jsxs("p", { className: "mt-2 text-sm text-(--ui-text-secondary)", children: [formatDuration(free), " free today \u00B7 ", needsYou, " item", needsYou === 1 ? '' : 's', " need you \u00B7 ", overdue.length, ' ', "overdue"] })] }), _jsx("section", { className: "mt-6 rounded-xl border-2 border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--ui-bg-elevated))] p-5 shadow-[0_0_28px_color-mix(in_srgb,var(--theme-primary)_9%,transparent)]", children: _jsxs("div", { className: "flex flex-col gap-5 sm:flex-row sm:items-center", children: [_jsx("span", { className: "grid size-11 shrink-0 place-items-center rounded-xl bg-(--theme-primary)/15 text-(--theme-primary)", children: _jsx(Codicon, { name: "target", size: "1.2rem" }) }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-(--theme-primary)", children: "Start here" }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-[-0.015em]", children: nextAction?.object.title ?? 'You are clear for the moment' }), _jsx("p", { className: "mt-1 text-xs text-(--ui-text-secondary)", children: nextAction?.reason ?? 'No urgent deadline is competing for your attention.' })] }), nextAction && (_jsxs(Button, { className: "self-start sm:self-auto", onClick: startNextAction, size: "lg", children: [_jsx(Codicon, { name: "play" }), "Start"] }))] }) }), _jsxs("div", { className: "mt-5 grid [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))] gap-4", children: [_jsx(Card, { icon: "history", title: "Changed since yesterday", children: changes.length === 0 ? (_jsx(EmptyCopy, { children: "Nothing new." })) : (_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: changes.slice(0, 4).map(change => (_jsxs("div", { className: "flex gap-2.5 py-2.5 first:pt-0 last:pb-0", children: [_jsx("span", { className: changeIsTrusted(change)
++    return (_jsx("main", { className: "h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background)", children: _jsxs("div", { className: "mx-auto flex w-full max-w-[1180px] flex-col px-5 pb-7 pt-6 sm:px-7", children: [_jsxs("header", { children: [_jsxs("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: ["Today \u00B7 ", dateLabel] }), _jsxs("h1", { className: "mt-2 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl", children: ["Good ", greeting, ", ", graph.student?.name?.trim() || 'there'] }), _jsxs("p", { className: "mt-2 text-sm text-(--ui-text-secondary)", children: [formatDuration(free), " free today \u00B7 ", needsYou, " item", needsYou === 1 ? '' : 's', " need you \u00B7 ", overdue.length, ' ', "overdue"] })] }), _jsx("section", { className: "mt-6 rounded-xl border-2 border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--ui-bg-elevated))] p-5 shadow-[0_0_28px_color-mix(in_srgb,var(--theme-primary)_9%,transparent)]", children: _jsxs("div", { className: "flex flex-col gap-5 sm:flex-row sm:items-center", children: [_jsx("span", { className: "grid size-11 shrink-0 place-items-center rounded-xl bg-(--theme-primary)/15 text-(--theme-primary)", children: _jsx(Codicon, { name: "target", size: "1.2rem" }) }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-(--theme-primary)", children: "Start here" }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-[-0.015em]", children: nextAction?.object.title ?? 'You are clear for the moment' }), _jsx("p", { className: "mt-1 text-xs text-(--ui-text-secondary)", children: nextAction?.reason ?? 'No urgent deadline is competing for your attention.' })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2 self-start sm:self-auto", children: [_jsxs(Button, { onClick: startSchoolSync, size: "lg", variant: "outline", children: [_jsx(Codicon, { name: "sync" }), "Sync school"] }), nextAction && (_jsxs(Button, { onClick: startNextAction, size: "lg", children: [_jsx(Codicon, { name: "play" }), "Start"] }))] })] }) }), _jsxs("div", { className: "mt-5 grid [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))] gap-4", children: [_jsx(Card, { icon: "history", title: "Changed since yesterday", children: changes.length === 0 ? (_jsx(EmptyCopy, { children: "Nothing new." })) : (_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: changes.slice(0, 4).map(change => (_jsxs("div", { className: "flex gap-2.5 py-2.5 first:pt-0 last:pb-0", children: [_jsx("span", { className: changeIsTrusted(change)
+                                                 ? 'mt-1.5 size-1.5 shrink-0 rounded-full bg-(--theme-primary)'
+                                                 : 'mt-1.5 size-1.5 shrink-0 rounded-full bg-(--ui-text-quaternary)' }), _jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "text-xs leading-relaxed text-(--ui-text-primary)", children: change.summary }), changeIsTrusted(change) && (_jsx("p", { className: "mt-1 text-[0.625rem] font-medium uppercase tracking-[0.07em] text-(--theme-primary)", children: change.kind === 'date-changed' ? 'Date changed' : 'Instructor stated' }))] })] }, `${change.objectId}:${change.ts}`))) })) }), _jsx(Card, { icon: "calendar", title: "Due soon", children: upcoming.length === 0 ? (_jsx(EmptyCopy, { children: "Nothing due \u2014 you're clear." })) : (_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: upcoming.slice(0, 5).map(object => (_jsxs("button", { className: "group flex w-full items-start justify-between gap-3 py-2.5 text-left first:pt-0 last:pb-0", onClick: () => navigate(CALENDAR_ROUTE), type: "button", children: [_jsxs("span", { className: "min-w-0", children: [_jsx("span", { className: "block truncate text-xs font-medium group-hover:text-(--theme-primary)", children: object.title }), _jsx("span", { className: "mt-0.5 block truncate text-[0.6875rem] text-(--ui-text-tertiary)", children: courseTitle(graph, object.course) || object.type })] }), _jsx("span", { className: "shrink-0 text-[0.6875rem] font-medium tabular-nums text-(--ui-text-secondary)", children: relativeDate(object.date, now) })] }, object.id))) })) }), _jsx(Card, { icon: "checklist", title: "Today's plan", children: plan.length === 0 ? (_jsx(EmptyCopy, { children: "Your day is open. Add a study block when you know what deserves the time." })) : (_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: plan.slice(0, 5).map(item => (_jsxs("div", { className: "flex gap-3 py-2.5 first:pt-0 last:pb-0", children: [_jsx("span", { className: "w-16 shrink-0 text-[0.6875rem] font-medium tabular-nums text-(--theme-primary)", children: item.time ? formatTime(item.time) : 'Any time' }), _jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "truncate text-xs font-medium", children: item.title }), _jsx("p", { className: "mt-0.5 truncate text-[0.6875rem] capitalize text-(--ui-text-tertiary)", children: [item.kind, item.subtitle].filter(Boolean).join(' · ') })] })] }, item.id))) })) }), _jsx(Card, { icon: "mail", title: "Inbox needs you", children: inbox.length === 0 ? (_jsx(EmptyCopy, { children: "Nothing waiting for you." })) : (_jsxs("div", { children: [_jsx("div", { className: "divide-y divide-(--ui-stroke-tertiary)", children: inbox.slice(0, 3).map(object => (_jsxs("div", { className: "py-2.5 first:pt-0 last:pb-0", children: [_jsx("p", { className: "truncate text-xs font-medium", children: object.title }), _jsx("p", { className: "mt-0.5 truncate text-[0.6875rem] capitalize text-(--ui-text-tertiary)", children: [object.type, courseTitle(graph, object.course)].filter(Boolean).join(' · ') })] }, object.id))) }), inbox.length > 3 && (_jsxs("p", { className: "mt-3 text-[0.6875rem] text-(--ui-text-quaternary)", children: [inbox.length - 3, " more filed"] }))] })) })] }), _jsxs("button", { className: "mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) px-4 py-3 text-center text-[0.6875rem] text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-(--ui-text-secondary)", onClick: () => navigate(LEDGER_ROUTE), type: "button", children: [_jsx(Codicon, { className: "shrink-0 text-(--theme-primary)", name: "shield", size: "0.85rem" }), _jsx("span", { children: "Read your accounts this morning \u00B7 sent nothing \u00B7 submitted nothing." })] })] }) }));
+ }
+diff --git a/apps/desktop/src/app/today/index.tsx b/apps/desktop/src/app/today/index.tsx
+index 604893c9ece..ef3e17cded4 100644
+--- a/apps/desktop/src/app/today/index.tsx
++++ b/apps/desktop/src/app/today/index.tsx
+@@ -359,6 +359,13 @@ export function TodayView() {
+     navigate(NEW_CHAT_ROUTE)
+   }
+ 
++  const startSchoolSync = () => {
++    setComposerDraft(
++      'Sync my school — run your school-sync pipeline: sweep Blackboard and Outlook for anything new, capture the files, write lecture notes and flashcards for new material, and update my calendar and Home page. Report what changed.'
++    )
++    navigate(NEW_CHAT_ROUTE)
++  }
++
+   if (!loaded) {
+     return (
+       <main className="grid h-full min-h-0 place-items-center bg-(--ui-editor-surface-background)">
+@@ -425,12 +432,18 @@ export function TodayView() {
+                 {nextAction?.reason ?? 'No urgent deadline is competing for your attention.'}
+               </p>
+             </div>
+-            {nextAction && (
+-              <Button className="self-start sm:self-auto" onClick={startNextAction} size="lg">
+-                <Codicon name="play" />
+-                Start
++            <div className="flex shrink-0 items-center gap-2 self-start sm:self-auto">
++              <Button onClick={startSchoolSync} size="lg" variant="outline">
++                <Codicon name="sync" />
++                Sync school
+               </Button>
+-            )}
++              {nextAction && (
++                <Button onClick={startNextAction} size="lg">
++                  <Codicon name="play" />
++                  Start
++                </Button>
++              )}
++            </div>
+           </div>
+         </section>
+ 
+-- 
+2.53.0
+
