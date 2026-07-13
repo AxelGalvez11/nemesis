@@ -1,14 +1,20 @@
-# Nemesis Web App
+# Nemesis Account Portal
 
-Signed-in account and research workspace for `app.enternemesis.com`. The public marketing site is
-in `landing/` on `www.enternemesis.com`.
+Browser-based identity and subscription control plane for the desktop-first Nemesis app at
+`app.enternemesis.com`. The public marketing site is in `landing/` on `www.enternemesis.com`.
+
+Normal sign-in, sign-up, email confirmation, `/`, and the legacy `/app` entry land at `/account`.
+The desktop app signs in natively and opens `/account/billing` only when a user chooses or manages a
+subscription. Existing research-workspace routes remain available by direct `/app/*` path while that
+older product is set aside, but they are no longer the default post-auth destination.
 
 ## MVP Scope
 
 - Email/password auth through Supabase.
-- Ask, Explore, Drug page, Source Viewer, Watchlist, Profile, Billing.
-- Free/Plus entitlements read from Supabase (`0122`).
-- Stripe Plus checkout at `$20/month`, mirrored into `subscriptions` by webhook.
+- Account overview and Stripe-backed subscription management.
+- Free/Plus/Pro entitlements read from Supabase (`0122`).
+- Stripe price amounts are read from the configured price IDs so the plan cards match checkout.
+- Existing `/app/*` research surfaces are retained for compatibility, not linked as the primary app.
 
 ## Environment
 
@@ -25,6 +31,7 @@ Server-only:
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PLUS_PRICE_ID`
+- `STRIPE_PRO_PRICE_ID`
 - `STRIPE_ALLOW_LIVE` (`false` for MVP test mode; `true` only when deliberately going live)
 - `NCBI_API_KEY` (optional; raises PubMed E-utilities rate limits)
 - `UNPAYWALL_EMAIL` (optional but recommended; contact email used for Unpaywall/OpenAlex API etiquette)

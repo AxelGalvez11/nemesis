@@ -114,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
-        emailRedirectTo: resolveAuthRedirectUrl("/auth/callback?next=%2Fapp"),
+        emailRedirectTo: resolveAuthRedirectUrl("/auth/callback?next=%2Faccount"),
         // Forwarded only when present; Supabase ignores it until CAPTCHA enforcement is enabled.
         ...(captchaToken ? { captchaToken } : {}),
         // Record the accepted Terms/Disclaimer version on the user (the signup consent gate). The

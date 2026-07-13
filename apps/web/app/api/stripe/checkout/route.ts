@@ -24,7 +24,20 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     let customerId = existing?.stripe_customer_id as string | null | undefined;
-    if (!customerId) {
+    if (customerId) {
+      // Paid users change tiers in Stripe's portal. Starting another subscription checkout for the
+      // same customer can leave both tiers active and double-charge them.
+      const subscriptions = await stripe().subscriptions.list({ customer: customerId, status: "all", limit: 10 });
+      const hasOpenSubscription = subscriptions.data.some((subscription) =>
+        subscription.status !== "canceled" && subscription.status !== "incomplete_expired");
+      if (hasOpenSubscription) {
+        const portal = await stripe().billingPortal.sessions.create({
+          customer: customerId,
+          return_url: `${appUrl}/account/billing`,
+        });
+        return json({ url: portal.url, mode: "portal" });
+      }
+    } else {
       const customer = await stripe().customers.create({
         email: user.email ?? undefined,
         metadata: { user_id: user.id },
@@ -44,8 +57,8 @@ export async function POST(req: Request) {
       customer: customerId,
       client_reference_id: user.id,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${appUrl}/app/settings?section=billing&checkout=success`,
-      cancel_url: `${appUrl}/app/settings?section=billing&checkout=cancelled`,
+      success_url: `${appUrl}/account/billing?checkout=success`,
+      cancel_url: `${appUrl}/account/billing?checkout=cancelled`,
       subscription_data: { metadata: { user_id: user.id, plan } },
       metadata: { user_id: user.id, plan },
     });

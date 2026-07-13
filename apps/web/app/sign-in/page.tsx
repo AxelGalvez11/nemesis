@@ -43,7 +43,7 @@ export default function SignInPage() {
         return;
       }
       const rawNext = new URLSearchParams(window.location.search).get("next");
-      router.replace(sanitizeNextPath(rawNext));
+      router.replace(sanitizeNextPath(rawNext, "/account"));
     } catch {
       setError("Nemesis could not reach the identity service. Check your connection and try again.");
       setCaptchaToken("");
@@ -57,7 +57,7 @@ export default function SignInPage() {
     <AuthFrame
       eyebrow="Nemesis // identity gate"
       title="Re-enter the perimeter."
-      description="Authenticate to restore your contained workspace. Its memory persists; final authority remains yours."
+      description="Authenticate to manage the account and subscription that govern your desktop instance."
       footer={<p>No instance yet? <Link className="nemesis-auth-link" href="/sign-up">Deploy Nemesis.</Link></p>}
     >
         {deleted ? <p className="nemesis-auth-success">Your account and its server-side records were deleted.</p> : null}

@@ -24,12 +24,16 @@ assert.equal(
 );
 
 assert.equal(sanitizeNextPath("/app/ask?c=123"), "/app/ask?c=123");
-assert.equal(sanitizeNextPath("https://evil.example"), "/app");
-assert.equal(sanitizeNextPath("//evil.example"), "/app");
-assert.equal(sanitizeNextPath("/%2f%2fevil.example"), "/app");
-assert.equal(sanitizeNextPath("/%252f%252fevil.example"), "/app");
-assert.equal(sanitizeNextPath("/\\evil.example"), "/app");
-assert.equal(sanitizeNextPath("/app\nhttps://evil.example"), "/app");
-assert.equal(sanitizeNextPath("/%E0%A4%A"), "/app");
+assert.equal(sanitizeNextPath("https://evil.example"), "/account");
+assert.equal(sanitizeNextPath("//evil.example"), "/account");
+assert.equal(sanitizeNextPath("/%2f%2fevil.example"), "/account");
+assert.equal(sanitizeNextPath("/%252f%252fevil.example"), "/account");
+assert.equal(sanitizeNextPath("/%2e//evil.example"), "/account");
+assert.equal(sanitizeNextPath("/\\evil.example"), "/account");
+assert.equal(sanitizeNextPath("/app\nhttps://evil.example"), "/account");
+assert.equal(sanitizeNextPath("/%E0%A4%A"), "/account");
+assert.equal(sanitizeNextPath(null, "/account"), "/account");
+assert.equal(sanitizeNextPath("https://evil.example", "/account"), "/account");
+assert.equal(sanitizeNextPath("/account/billing", "/account"), "/account/billing");
 
 console.log("auth-redirect.test.ts OK");

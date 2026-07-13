@@ -16,7 +16,7 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 /** Restrict post-auth navigation to a same-origin relative path. Repeated decoding catches payloads
  * such as %252f%252fevil.example before a router/browser gets a chance to normalize them. */
-export function sanitizeNextPath(value: string | null | undefined, fallback = "/app"): string {
+export function sanitizeNextPath(value: string | null | undefined, fallback = "/account"): string {
   if (!value || !value.startsWith("/") || CONTROL_CHARS.test(value) || value.includes("\\")) return fallback;
 
   let decoded = value;
@@ -38,6 +38,9 @@ export function sanitizeNextPath(value: string | null | undefined, fallback = "/
     const base = new URL("https://app.enternemesis.com");
     const target = new URL(value, base);
     if (target.origin !== base.origin) return fallback;
+    if (!target.pathname.startsWith("/") || target.pathname.startsWith("//") || target.pathname.includes("\\") || CONTROL_CHARS.test(target.pathname)) {
+      return fallback;
+    }
     return `${target.pathname}${target.search}${target.hash}`;
   } catch {
     return fallback;
