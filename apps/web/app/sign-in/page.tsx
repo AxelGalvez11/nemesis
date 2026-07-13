@@ -5,25 +5,49 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
 import { useAuth } from "@/components/AuthProvider";
+import { OAuthButtons } from "@/components/OAuthButtons";
 import { TurnstileWidget } from "@/components/TurnstileWidget";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
+import { SIGN_IN_PREFILL_KEY } from "@/lib/auth-signup";
 import { captchaEnabled, isPreviewMode } from "@/lib/env";
 
 export default function SignInPage() {
-  const { signIn } = useAuth();
+  const { signIn, session, loading } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [deleted, setDeleted] = useState(false);
+  const [existing, setExisting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
   // Bumped on any auth failure to remount the Turnstile widget (its tokens are single-use).
   const [captchaKey, setCaptchaKey] = useState(0);
 
   useEffect(() => {
-    setDeleted(new URLSearchParams(window.location.search).get("deleted") === "1");
+    const params = new URLSearchParams(window.location.search);
+    setDeleted(params.get("deleted") === "1");
+    setExisting(params.get("existing") === "1");
+    // /sign-up hands the typed email over via sessionStorage (never the URL) when the address
+    // already has an account, so the visitor lands here with their email ready to go.
+    try {
+      const prefill = window.sessionStorage.getItem(SIGN_IN_PREFILL_KEY);
+      if (prefill) {
+        setEmail(prefill);
+        window.sessionStorage.removeItem(SIGN_IN_PREFILL_KEY);
+      }
+    } catch {
+      // sessionStorage can be unavailable (private mode); prefill is a nicety, not a requirement.
+    }
   }, []);
+
+  // Already signed in? There is nothing to authenticate — go straight to the account.
+  // Preview mode is exempt so the page stays viewable for local design work.
+  useEffect(() => {
+    if (loading || !session || isPreviewMode) return;
+    const rawNext = new URLSearchParams(window.location.search).get("next");
+    router.replace(sanitizeNextPath(rawNext, "/account"));
+  }, [loading, session, router]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -61,7 +85,9 @@ export default function SignInPage() {
       footer={<p>No instance yet? <Link className="nemesis-auth-link" href="/sign-up">Deploy Nemesis.</Link></p>}
     >
         {deleted ? <p className="nemesis-auth-success">Your account and its server-side records were deleted.</p> : null}
+        {existing ? <p className="nemesis-auth-notice">That email already commands a Nemesis instance. Sign in below to resume control.</p> : null}
         {isPreviewMode ? <p className="nemesis-auth-notice">Local preview mode: no account credentials are required.</p> : null}
+        <OAuthButtons disabled={busy} onError={setError} showTermsNote />
         <form onSubmit={onSubmit} className="nemesis-auth-form">
           <div className="nemesis-auth-field-group">
             <label htmlFor="signin-email">Account email</label>
