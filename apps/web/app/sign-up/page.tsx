@@ -50,7 +50,7 @@ export default function SignUpPage() {
         setSubmittedEmail(cleanEmail);
         return;
       }
-      router.replace("/app");
+      router.replace("/account");
     } catch {
       setError("Nemesis could not reach the identity service. Check your connection and try again.");
       setCaptchaToken("");

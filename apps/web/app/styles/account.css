@@ -1,0 +1,105 @@
+.nemesis-account-loading,
+.nemesis-account-shell {
+  --bg: #080809;
+  --bg-2: #0d0d0f;
+  --surface: #111114;
+  --surface-2: #18181c;
+  --raised: #111114;
+  --line: rgba(255,255,255,.08);
+  --line-2: rgba(255,255,255,.14);
+  --line-acid: rgba(255,39,64,.32);
+  --text: #e7e9ed;
+  --text-2: #9a9da4;
+  --text-3: #5a5c63;
+  --acid: #ff2740;
+  --acid-dim: #e01732;
+  --acid-deep: #ff6678;
+  --on-acid: #fff;
+  --danger: #ff6678;
+  --shadow: none;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100svh;
+}
+
+.nemesis-account-loading {
+  display: grid;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: .16em;
+  place-items: center;
+  text-transform: uppercase;
+}
+
+.nemesis-account-shell { font-family: Arial, Helvetica, sans-serif; position: relative; }
+.nemesis-account-shell *, .nemesis-account-shell *::before, .nemesis-account-shell *::after { box-sizing: border-box; }
+.nemesis-account-scanlines { background: repeating-linear-gradient(to bottom, transparent 0, transparent 3px, rgba(255,255,255,.014) 4px); inset: 0; pointer-events: none; position: fixed; z-index: 10; }
+
+.nemesis-account-header {
+  align-items: center;
+  background: rgba(8,8,9,.86);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  height: 64px;
+  justify-content: space-between;
+  padding: 0 28px;
+  position: sticky;
+  top: 0;
+  z-index: 8;
+}
+
+.nemesis-account-brand { align-items: center; display: flex; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; font-weight: 600; gap: 11px; letter-spacing: .3em; }
+.nemesis-account-brand img { filter: contrast(1.15); height: 34px; object-fit: contain; width: 34px; }
+.nemesis-account-site-link { color: var(--text-2); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; letter-spacing: .1em; text-decoration: none; text-transform: uppercase; }
+.nemesis-account-site-link:hover { color: var(--text); }
+
+.nemesis-account-layout { display: grid; grid-template-columns: 240px minmax(0,1fr); margin: 0 auto; max-width: 1240px; min-height: calc(100svh - 64px); }
+.nemesis-account-nav { border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 34px; padding: 38px 26px 28px; }
+.nemesis-account-nav-label, .nemesis-account-card-label { color: var(--text-3); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9px; letter-spacing: .17em; margin: 0; text-transform: uppercase; }
+.nemesis-account-nav-email { color: var(--text-2); font-size: 12px; margin: 8px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nemesis-account-nav nav { display: grid; gap: 4px; }
+.nemesis-account-nav nav a { border-left: 2px solid transparent; color: var(--text-2); font-size: 13px; padding: 9px 11px; }
+.nemesis-account-nav nav a:hover { color: var(--text); }
+.nemesis-account-nav nav a.active { background: rgba(255,255,255,.035); border-left-color: var(--acid); color: var(--text); }
+.nemesis-account-signout { background: transparent; border: 1px solid var(--line); border-radius: 2px; color: var(--text-2); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; letter-spacing: .1em; margin-top: auto; padding: 10px 12px; text-align: left; text-transform: uppercase; }
+.nemesis-account-signout:hover { border-color: var(--line-2); color: var(--text); filter: none; }
+
+.nemesis-account-main { padding: clamp(48px,7vw,92px) clamp(28px,7vw,92px); }
+.nemesis-account-heading { max-width: 710px; }
+.nemesis-account-heading > p { color: var(--acid); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; letter-spacing: .18em; margin: 0 0 18px; text-transform: uppercase; }
+.nemesis-account-heading h1 { color: var(--text); font-size: clamp(46px,6vw,78px); letter-spacing: -.055em; line-height: .92; margin: 0; }
+.nemesis-account-heading > span { color: var(--text-2); display: block; font-size: 15px; line-height: 1.6; margin-top: 22px; max-width: 620px; }
+
+.nemesis-account-overview { display: grid; gap: 18px; grid-template-columns: repeat(2,minmax(0,1fr)); margin-top: 52px; }
+.nemesis-account-card { background: var(--surface); border: 1px solid var(--line); border-radius: 2px; min-height: 310px; padding: 28px; }
+.nemesis-account-card h2 { color: var(--text); font-size: 24px; letter-spacing: -.025em; line-height: 1.12; margin: 22px 0 0; overflow-wrap: anywhere; }
+.nemesis-account-card > p:not(.nemesis-account-card-label) { color: var(--text-2); font-size: 13.5px; line-height: 1.6; }
+.nemesis-account-plan-row { align-items: center; border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); display: flex; justify-content: space-between; margin: 30px 0 24px; padding: 13px 0; }
+.nemesis-account-plan-row span { color: var(--text-2); font-size: 12px; }
+.nemesis-account-plan-row strong { color: var(--acid); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+.nemesis-account-primary-action { align-items: center; background: var(--acid); border: 1px solid var(--acid); border-radius: 2px; color: #fff; display: inline-flex; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; justify-content: center; letter-spacing: .12em; min-height: 44px; padding: 10px 16px; text-transform: uppercase; }
+.nemesis-account-primary-action:hover { background: var(--acid-dim); }
+.nemesis-account-boundary { display: grid; gap: 8px 14px; grid-template-columns: auto 1fr; margin-top: 30px; }
+.nemesis-account-boundary span { color: var(--text-3); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
+.nemesis-account-boundary b { color: var(--text-2); font-size: 12px; font-weight: 500; }
+
+.nemesis-account-billing { display: grid; gap: 18px; margin-top: 48px; max-width: 900px; }
+.nemesis-account-billing > .card, .nemesis-account-billing > .grid { margin-top: 0; }
+.nemesis-account-billing .card { border-radius: 2px; padding: 24px; }
+.nemesis-account-billing button { border-radius: 2px; }
+.nemesis-account-billing .grid.two { align-items: stretch; }
+.nemesis-account-billing .success-text { border-left: 2px solid var(--acid); color: var(--text); padding-left: 12px; }
+
+@media (max-width: 760px) {
+  .nemesis-account-header { padding: 0 20px; }
+  .nemesis-account-site-link { display: none; }
+  .nemesis-account-layout { display: block; }
+  .nemesis-account-nav { border-bottom: 1px solid var(--line); border-right: 0; gap: 18px; padding: 22px 20px 18px; }
+  .nemesis-account-nav nav { display: flex; }
+  .nemesis-account-nav nav a { flex: 1; text-align: center; }
+  .nemesis-account-signout { margin-top: 0; text-align: center; }
+  .nemesis-account-main { padding: 46px 20px 64px; }
+  .nemesis-account-heading h1 { font-size: 48px; }
+  .nemesis-account-overview { grid-template-columns: 1fr; margin-top: 38px; }
+  .nemesis-account-card { min-height: 0; }
+}

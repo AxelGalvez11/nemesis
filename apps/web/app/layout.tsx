@@ -3,6 +3,7 @@ import "./globals.css";
 import "./styles/shell.css";
 import "./styles/legacy.css";
 import "./styles/auth.css";
+import "./styles/account.css";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { PostHogProvider } from "@/components/PostHogProvider";

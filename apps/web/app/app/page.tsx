@@ -1,9 +1,7 @@
 import { redirect } from "next/navigation";
 
-// The app entry is the chat. Every way in lands on /app — the root "/" redirect, sign-in,
-// sign-up, and the email-verify link (see app/page.tsx, sign-in, sign-up, AuthProvider) — so send
-// users straight to the Ask chat instead of the old "Evidence workspace" dashboard. Usage, plan,
-// and monitoring live in the rail nav + /app/billing, so nothing is lost by skipping the dashboard.
+// The browser is now an account control plane for the desktop-first Nemesis product. Keep legacy
+// research URLs available by direct path, but retire /app as an implicit entry to the old workspace.
 export default function AppHome() {
-  redirect("/app/ask");
+  redirect("/account");
 }

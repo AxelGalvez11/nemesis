@@ -7,18 +7,32 @@ export async function POST(req: Request) {
     const user = await verifyBearer(req);
     if (!user) return json({ error: "authentication required" }, 401);
 
-    const { data } = await adminClient()
+    const admin = adminClient();
+    const { data } = await admin
       .from("subscriptions")
-      .select("stripe_customer_id")
+      .select("stripe_customer_id, plan, status")
       .eq("user_id", user.id)
       .maybeSingle();
 
-    const customerId = data?.stripe_customer_id as string | null | undefined;
-    if (!customerId) return json({ error: "No Stripe customer for this account yet" }, 400);
+    let customerId = data?.stripe_customer_id as string | null | undefined;
+    if (!customerId) {
+      const customer = await stripe().customers.create({
+        email: user.email ?? undefined,
+        metadata: { user_id: user.id },
+      });
+      customerId = customer.id;
+      await admin.from("subscriptions").upsert({
+        user_id: user.id,
+        plan: data?.plan ?? "free",
+        status: data?.status ?? "active",
+        stripe_customer_id: customerId,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
+    }
 
     const session = await stripe().billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${appUrl}/app/settings?section=billing`,
+      return_url: `${appUrl}/account/billing`,
     });
 
     return json({ url: session.url });

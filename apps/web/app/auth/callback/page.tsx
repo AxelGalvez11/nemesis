@@ -12,13 +12,13 @@ export default function AuthCallbackPage() {
   const router = useRouter();
   const [urlChecked, setUrlChecked] = useState(false);
   const [callbackError, setCallbackError] = useState<string | null>(null);
-  const [nextPath, setNextPath] = useState("/app");
+  const [nextPath, setNextPath] = useState("/account");
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     setCallbackError(hash.get("error_description") ?? query.get("error_description"));
-    setNextPath(sanitizeNextPath(query.get("next")));
+    setNextPath(sanitizeNextPath(query.get("next"), "/account"));
     setUrlChecked(true);
   }, []);
 

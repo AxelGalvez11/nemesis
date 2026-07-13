@@ -16,6 +16,28 @@ const billingTick: React.CSSProperties = { color: "var(--acid)", flex: "0 0 auto
 const PLAN_RANK: Record<string, number> = { free: 0, plus: 1, pro: 2 };
 const rankOf = (plan?: string | null): number => PLAN_RANK[(plan ?? "free").toLowerCase()] ?? 0;
 
+interface CatalogPrice {
+  unitAmount: number | null;
+  currency: string;
+  interval: string | null;
+}
+
+interface BillingCatalog {
+  plus: CatalogPrice;
+  pro: CatalogPrice;
+}
+
+function formatPrice(price: CatalogPrice | undefined): { amount: string; interval: string } {
+  if (!price || price.unitAmount == null) return { amount: "Price in checkout", interval: "" };
+  const amount = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: price.currency.toUpperCase(),
+    minimumFractionDigits: price.unitAmount % 100 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(price.unitAmount / 100);
+  return { amount, interval: price.interval ? ` / ${price.interval}` : "" };
+}
+
 /**
  * Billing content (current plan + Plus/Pro cards), with NO page header — the host supplies the heading.
  * Plan-aware: each card reflects whether it's your current tier, an upgrade, or already included. Stripe
@@ -29,10 +51,27 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [applying, setApplying] = useState(checkoutStatus === "success");
+  const [catalog, setCatalog] = useState<BillingCatalog | null>(null);
 
   useEffect(() => {
     void fetchEntitlements().then(setEnt).catch((e) => setError(e instanceof Error ? e.message : "Billing failed"));
   }, []);
+
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token) return;
+    let cancelled = false;
+    void fetch("/api/stripe/catalog", { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Could not load subscription prices");
+        return res.json() as Promise<{ plans: BillingCatalog }>;
+      })
+      .then((body) => { if (!cancelled) setCatalog(body.plans); })
+      .catch(() => {
+        // Checkout remains authoritative if Stripe's catalog cannot be read momentarily.
+      });
+    return () => { cancelled = true; };
+  }, [session?.access_token]);
 
   // Post-checkout: the plan-update webhook lands a moment after the redirect. Re-read a few times so the
   // new tier appears without a manual reload; clear the "applying" note once a paid plan shows or we time out.
@@ -89,6 +128,13 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
     if (ent && currentRank > tierRank) {
       return <button style={{ width: "100%" }} className="secondary" disabled>Included in your plan</button>;
     }
+    if (ent && currentRank > 0) {
+      return (
+        <button style={{ width: "100%" }} disabled={busy === "portal"} onClick={() => void post("portal", "/api/stripe/portal")}>
+          {busy === "portal" ? "Opening billing…" : "Change plan in billing"}
+        </button>
+      );
+    }
     return (
       <button style={{ width: "100%" }} disabled={busy === tier} onClick={() => void post(tier, "/api/stripe/checkout", { plan: tier })}>
         {busy === tier ? "Opening checkout…" : label}
@@ -98,6 +144,8 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
 
   const isPlus = ent != null && currentRank === rankOf("plus");
   const isPro = ent != null && currentRank === rankOf("pro");
+  const plusPrice = formatPrice(catalog?.plus);
+  const proPrice = formatPrice(catalog?.pro);
 
   return (
     <>
@@ -112,9 +160,15 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
       <Card>
         <div className="row" style={{ marginBottom: 6 }}>
           <h2 style={{ margin: 0 }}>Current plan</h2>
-          <Badge>{ent?.plan ?? "free"}</Badge>
+          <Badge>{ent?.plan ?? "checking…"}</Badge>
         </div>
-        <p className="muted" style={{ margin: "0 0 14px" }}>Manage, change, or cancel your subscription through Stripe.</p>
+        <p className="muted" style={{ margin: "0 0 14px" }}>
+          {!ent
+            ? "Checking subscription status…"
+            : currentRank > 0
+            ? "Manage, change, or cancel your subscription through Stripe."
+            : "Choose a desktop plan below. Your account will update after checkout."}
+        </p>
         <button className="secondary" disabled={busy === "portal"} onClick={() => void post("portal", "/api/stripe/portal")}>
           {busy === "portal" ? "Opening…" : "Manage billing"}
         </button>
@@ -122,36 +176,36 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
       <div className="grid two">
         <Card className={isPlus ? "acid" : ""}>
           <div className="row" style={{ marginBottom: 2 }}>
-            <h2 style={{ margin: "0 0 2px" }}>Nemesis Plus</h2>
+            <h2 style={{ margin: "0 0 2px" }}>Nemesis Student</h2>
             {isPlus ? <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>Current</span> : null}
           </div>
           <p style={{ margin: "0 0 12px" }}>
-            <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>$20</strong>
-            <span className="muted" style={{ fontSize: 13 }}> / month</span>
+            <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{plusPrice.amount}</strong>
+            <span className="muted" style={{ fontSize: 13 }}>{plusPrice.interval}</span>
           </p>
           <ul style={billingList}>
-            <li style={billingItem}><span style={billingTick}>✓</span>100 Ask questions per day</li>
-            <li style={billingItem}><span style={billingTick}>✓</span>50 watchlist follows</li>
-            <li style={billingItem}><span style={billingTick}>✓</span>Plus monitoring surfaces as they roll out</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Higher limits for answers, notes, and study decks</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Turn lectures into organized study material</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Scheduled school portal and email sync</li>
           </ul>
-          {planCta("plus", "Upgrade to Plus")}
+          {planCta("plus", "Upgrade to Student")}
         </Card>
         <Card className="acid">
           <div className="row" style={{ marginBottom: 2 }}>
-            <h2 style={{ margin: 0 }}>Nemesis Pro</h2>
+            <h2 style={{ margin: 0 }}>Nemesis Agent Pro</h2>
             <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>{isPro ? "Current" : "Recommended"}</span>
           </div>
           <p style={{ margin: "0 0 12px" }}>
-            <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>$49</strong>
-            <span className="muted" style={{ fontSize: 13 }}> / month</span>
+            <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{proPrice.amount}</strong>
+            <span className="muted" style={{ fontSize: 13 }}>{proPrice.interval}</span>
           </p>
           <ul style={billingList}>
-            <li style={{ ...billingItem, color: "var(--text-2)", fontWeight: 600, fontSize: 12.5 }}>Everything in Plus, plus:</li>
-            <li style={billingItem}><span style={billingTick}>✓</span><span><strong>Deep Research</strong> — 3 multi-step cited reports per day</span></li>
-            <li style={billingItem}><span style={billingTick}>✓</span>250 Ask questions per day · 100 watchlist follows</li>
-            <li style={billingItem}><span style={billingTick}>✓</span>Literature review &amp; meta-analysis as they roll out</li>
+            <li style={{ ...billingItem, color: "var(--text-2)", fontWeight: 600, fontSize: 12.5 }}>Everything in Student, plus:</li>
+            <li style={billingItem}><span style={billingTick}>✓</span><span><strong>Deep research</strong> with multi-step cited reports</span></li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Higher desktop-agent automation limits</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Expanded lecture copilot access</li>
           </ul>
-          {planCta("pro", "Upgrade to Pro")}
+          {planCta("pro", "Upgrade to Agent Pro")}
         </Card>
       </div>
     </>

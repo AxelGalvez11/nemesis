@@ -50,8 +50,20 @@ function postStatusCheck(path, expectedStatus, body = "{}") {
   });
 }
 
+function getStatusCheck(path, expectedStatus) {
+  addCheck(`GET ${path}`, async () => {
+    const { res, body } = await read(path);
+    expect(
+      res.status === expectedStatus,
+      `expected ${expectedStatus}, got ${res.status}; body: ${body.slice(0, 240)}`,
+    );
+  });
+}
+
 htmlCheck("/sign-in", ["NEMESIS", "Re-enter the perimeter"]);
 htmlCheck("/sign-up", ["NEMESIS", "Bring Nemesis online"]);
+htmlCheck("/account", ["Restoring account perimeter"]);
+htmlCheck("/account/billing", ["Restoring account perimeter"]);
 htmlCheck("/app/ask", ["Nemesis", "Loading"]);
 htmlCheck("/app/explore", ["Nemesis", "Loading"]);
 htmlCheck("/app/monitor", ["Nemesis", "Loading"]);
@@ -63,6 +75,7 @@ htmlCheck("/legal/disclaimer", ["Medical Disclaimer", "Not medical advice"]);
 
 postStatusCheck("/api/stripe/checkout", 401);
 postStatusCheck("/api/stripe/portal", 401);
+getStatusCheck("/api/stripe/catalog", 401);
 postStatusCheck("/api/stripe/webhook", 400);
 
 let failed = 0;
