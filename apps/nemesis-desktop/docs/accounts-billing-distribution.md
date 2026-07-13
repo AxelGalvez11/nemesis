@@ -1,28 +1,34 @@
-# Nemesis — accounts, billing, and distribution (2026-07-10)
+# Nemesis — accounts, billing, and distribution (2026-07-12)
 
 Plain-English map of how the money-and-identity layer works and what remains.
 
-## Accounts (shipped)
+## Desktop-first account model (shipped)
 
-- Students sign into the desktop app with their **PharmaOrb account** — same email/password,
-  same Supabase user pool as the web app. No second signup system.
+- Nemesis is desktop-first. Students enter their email/password in the native desktop
+  sign-in gate; successful sign-in returns them directly to the desktop experience.
+- Identity and subscription entitlements still use the existing Supabase user pool, so
+  current users keep the same account and data. There is no second signup system.
 - The sign-in screen appears on launch (student build). "Create an account" opens the
-  web signup page; "Skip for now" is a temporary owner/dev escape hatch (remove before
-  public launch by deleting `bypassAccount` in `src/nemesis-account.ts`).
+  browser account portal at `https://app.enternemesis.com/sign-up`; it does not replace
+  native desktop sign-in. "Skip for now" is a temporary owner/dev escape hatch (remove
+  before public launch by deleting `bypassAccount` in `src/nemesis-account.ts`).
 - Sessions persist and refresh automatically (`nemesis.account.v1` in localStorage).
 - The status bar shows `email · Plan`; clicking it opens the Account dialog
-  (plan badge, renewal date, Manage billing, Refresh plan, Sign out).
+  (plan badge, renewal date, Manage subscription, Refresh plan, Sign out).
 
 ## Billing (shipped, structure)
 
-- The desktop **reads the student's plan directly from the web app's database**:
+- The desktop **reads the student's plan directly from the account database**:
   the `subscriptions` table, guarded by row-level security (`auth.uid() = user_id`),
   read with the student's own login token + the public anon key. No new backend was
-  deployed; nothing in the web app changed.
+  required for the desktop sign-in flow.
 - Active statuses (`active`, `trialing`, `past_due`) surface the plan code
   (e.g. `health_pro` → "Health Pro"); anything else = Free.
-- **Upgrade / Manage billing** opens `https://app.pharmaorb.app/app/billing` — the web
-  app's existing Stripe checkout/portal. One billing system, owned by the web app.
+- **Choose a plan / Manage subscription** opens
+  `https://app.enternemesis.com/account/billing` in the default browser. This thin
+  browser portal owns Stripe checkout, invoices, payment-method changes, cancellation,
+  and resubscription; after returning to the desktop, **Refresh plan** reloads the
+  entitlement. The browser is an account surface, not a second Nemesis product.
 - Gating hook: read `$account` from `src/nemesis-account.ts` anywhere in the app to
   gate features by `plan` (e.g. `account.plan === 'free'`).
 
@@ -41,7 +47,8 @@ at that proxy. Until that lands, distribute builds only to trusted testers.
   `release/Nemesis-<version>-mac-arm64.dmg` (+ `.zip`).
 - App category is Education; the DMG has the drag-to-Applications window; microphone
   usage descriptions and the hardened-runtime `audio-input` entitlement are in place;
-  an update-feed config points at `https://updates.pharmaorb.app/nemesis` (dormant).
+  the dormant update-feed config still needs a verified Nemesis-owned host before
+  auto-update is enabled.
 - **Unsigned for now**: recipients must right-click → Open the first time
   ("unidentified developer" warning). That's the only install friction.
 

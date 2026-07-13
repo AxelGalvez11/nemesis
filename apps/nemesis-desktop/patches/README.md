@@ -8,3 +8,6 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   run `../reskin/apply-nemesis-reskin.mjs --hermes <checkout>`.
 - `0002-…Study-page…patch` — the Study page v1 (FSRS flashcards): new
   `apps/desktop/src/app/study/`, route/sidebar/i18n wiring, ts-fsrs dep.
+- `0075-feat-nemesis-desktop-first-account-portal-cutover.patch` — keeps sign-in
+  native to the desktop while moving signup and subscription management to the
+  `app.enternemesis.com` account portal.

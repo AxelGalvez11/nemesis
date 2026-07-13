@@ -1,0 +1,225 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sun, 12 Jul 2026 21:00:00 -0500
+Subject: [PATCH 75/75] feat(nemesis): make account flow desktop-first
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Keep credential entry and post-login behavior inside the native desktop app.
+Move only account creation and subscription management to the Nemesis browser
+portal, and remove the remaining PharmaOrb account language from the desktop.
+---
+ apps/desktop/src/components/nemesis-account-gate.js  | 16 ++++++------
+ apps/desktop/src/components/nemesis-account-gate.tsx | 30 ++++++++++++--------
+ apps/desktop/src/nemesis-account.js                   | 16 ++++++------
+ apps/desktop/src/nemesis-account.ts                   | 17 ++++++-----
+ 4 files changed, 43 insertions(+), 36 deletions(-)
+
+diff --git a/apps/desktop/src/components/nemesis-account-gate.js b/apps/desktop/src/components/nemesis-account-gate.js
+index adeacc82d95..4e2e5a7a070 100644
+--- a/apps/desktop/src/components/nemesis-account-gate.js
++++ b/apps/desktop/src/components/nemesis-account-gate.js
+@@ -1,8 +1,8 @@
+ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+-// Account gate + account dialog (student build). Signed out → a full-screen sign-in
+-// card over the app (students use their PharmaOrb account; creating one happens on the
+-// web). Signed in → nothing rendered here except the Account dialog, opened from the
+-// statusbar chip: plan badge, renewal date, Manage billing (web app's Stripe page),
++// Account gate + account dialog (student build). Signed out → a full-screen native
++// sign-in card; account creation happens in the browser. Signed in → nothing rendered
++// here except the Account dialog, opened from the statusbar chip: plan badge, renewal
++// date, browser-based subscription management,
+ // Refresh plan, Sign out.
+ import { useStore } from '@nanostores/react';
+ import { useEffect, useState } from 'react';
+@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
+ import { Input } from '@/components/ui/input';
+ import { Loader } from '@/components/ui/loader';
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+-import { $account, $accountDialogOpen, $deviceKey, BILLING_URL, bypassAccount, initAccount, mintDeviceKey, planLabel, refreshEntitlement, SIGNUP_URL, signIn, signOut } from '@/nemesis-account';
++import { $account, $accountDialogOpen, $deviceKey, BILLING_URL, bypassAccount, initAccount, mintDeviceKey, planLabel, refreshEntitlement, signIn, signOut, SIGNUP_URL } from '@/nemesis-account';
+ export const NemesisAccountGate = () => {
+     const account = useStore($account);
+     const dialogOpen = useStore($accountDialogOpen);
+@@ -52,7 +52,7 @@ export const NemesisAccountGate = () => {
+         return null;
+     }
+     if (account.status === 'signed-out') {
+-        return (_jsx("div", { className: "fixed inset-0 z-[1300] flex items-center justify-center bg-background/95 backdrop-blur-md p-4", children: _jsxs("div", { className: "w-full max-w-sm rounded-2xl border border-border bg-card p-8 shadow-lg", children: [_jsxs("div", { className: "flex flex-col items-center gap-3 pb-5 text-center", children: [_jsx(BrandMark, { className: "size-12" }), _jsxs("div", { children: [_jsx("h2", { className: "text-lg font-semibold tracking-tight", children: "Sign in to Nemesis" }), _jsx("p", { className: "pt-1 text-xs text-muted-foreground", children: "Use your PharmaOrb account \u2014 your plan and billing live there." })] })] }), _jsxs("div", { className: "flex flex-col gap-2.5", children: [_jsx(Input, { autoFocus: true, onChange: event => setEmail(event.target.value), placeholder: "Email", type: "email", value: email }), _jsx(Input, { onChange: event => setPassword(event.target.value), onKeyDown: event => {
++        return (_jsx("div", { className: "fixed inset-0 z-[1300] flex items-center justify-center bg-background/95 backdrop-blur-md p-4", children: _jsxs("div", { className: "w-full max-w-sm rounded-2xl border border-border bg-card p-8 shadow-lg", children: [_jsxs("div", { className: "flex flex-col items-center gap-3 pb-5 text-center", children: [_jsx(BrandMark, { className: "size-12" }), _jsxs("div", { children: [_jsx("h2", { className: "text-lg font-semibold tracking-tight", children: "Sign in to Nemesis" }), _jsx("p", { className: "pt-1 text-xs text-muted-foreground", children: "Use your Nemesis account. Your plan stays in sync across the desktop and account portal." })] })] }), _jsxs("div", { className: "flex flex-col gap-2.5", children: [_jsx(Input, { autoFocus: true, onChange: event => setEmail(event.target.value), placeholder: "Email", type: "email", value: email }), _jsx(Input, { onChange: event => setPassword(event.target.value), onKeyDown: event => {
+                                     if (event.key === 'Enter') {
+                                         void submit();
+                                     }
+@@ -63,7 +63,7 @@ export const NemesisAccountGate = () => {
+                                         ? 'Upgrade for the full study engine.'
+                                         : account.periodEnd
+                                             ? `Renews ${new Date(account.periodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
+-                                            : account.planStatus || 'Active' })] }), _jsx("span", { className: "rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)", children: planLabel(account.plan) })] })), !account.bypass && (_jsxs("div", { className: "rounded-lg border border-border bg-muted/30 px-3 py-2.5", children: [_jsxs("div", { className: "flex items-center justify-between gap-2", children: [_jsxs("div", { children: [_jsx("div", { className: "text-sm font-medium", children: "Metered model key" }), _jsx("div", { className: "text-xs text-muted-foreground", children: deviceKey
++                                            : account.planStatus || 'Active' })] }), _jsx("span", { className: "rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)", children: planLabel(account.plan) })] })), !account.bypass && (_jsx("p", { className: "text-xs text-muted-foreground", children: "Subscription changes open securely in your browser." })), !account.bypass && (_jsxs("div", { className: "rounded-lg border border-border bg-muted/30 px-3 py-2.5", children: [_jsxs("div", { className: "flex items-center justify-between gap-2", children: [_jsxs("div", { children: [_jsx("div", { className: "text-sm font-medium", children: "Metered model key" }), _jsx("div", { className: "text-xs text-muted-foreground", children: deviceKey
+                                                 ? `Active · ends …${deviceKey.slice(-4)} — usage counts against your plan`
+                                                 : 'Bills model usage to your plan instead of a local key.' })] }), _jsxs("div", { className: "flex shrink-0 gap-1.5", children: [deviceKey && (_jsx(Button, { onClick: () => void navigator.clipboard?.writeText(deviceKey).catch(() => { }), size: "sm", variant: "ghost", children: "Copy" })), _jsx(Button, { disabled: keyBusy, onClick: () => {
+                                                 setKeyBusy(true);
+@@ -71,7 +71,7 @@ export const NemesisAccountGate = () => {
+                                                 void mintDeviceKey()
+                                                     .catch(err => setKeyError(err instanceof Error ? err.message : 'failed'))
+                                                     .finally(() => setKeyBusy(false));
+-                                            }, size: "sm", variant: "outline", children: keyBusy ? 'Minting…' : deviceKey ? 'New key' : 'Mint key' })] })] }), keyError && _jsx("p", { className: "pt-1.5 text-xs text-destructive", children: keyError })] })), _jsxs(DialogFooter, { className: "flex-wrap gap-2 sm:justify-between", children: [_jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: () => void window.hermesDesktop?.openExternal?.(BILLING_URL), size: "sm", variant: "secondary", children: account.plan === 'free' ? 'Upgrade' : 'Manage billing' }), !account.bypass && (_jsx(Button, { onClick: () => void refreshEntitlement(), size: "sm", variant: "outline", children: "Refresh plan" }))] }), _jsx(Button, { onClick: () => {
++                                            }, size: "sm", variant: "outline", children: keyBusy ? 'Minting…' : deviceKey ? 'New key' : 'Mint key' })] })] }), keyError && _jsx("p", { className: "pt-1.5 text-xs text-destructive", children: keyError })] })), _jsxs(DialogFooter, { className: "flex-wrap gap-2 sm:justify-between", children: [_jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: () => void window.hermesDesktop?.openExternal?.(BILLING_URL), size: "sm", variant: "secondary", children: account.plan === 'free' ? 'Choose a plan' : 'Manage subscription' }), !account.bypass && (_jsx(Button, { onClick: () => void refreshEntitlement(), size: "sm", variant: "outline", children: "Refresh plan" }))] }), _jsx(Button, { onClick: () => {
+                                 $accountDialogOpen.set(false);
+                                 void signOut();
+                             }, size: "sm", variant: "ghost", children: "Sign out" })] })] }) }));
+diff --git a/apps/desktop/src/components/nemesis-account-gate.tsx b/apps/desktop/src/components/nemesis-account-gate.tsx
+index 306d4f0ac37..a87e7768ac4 100644
+--- a/apps/desktop/src/components/nemesis-account-gate.tsx
++++ b/apps/desktop/src/components/nemesis-account-gate.tsx
+@@ -1,7 +1,7 @@
+-// Account gate + account dialog (student build). Signed out → a full-screen sign-in
+-// card over the app (students use their PharmaOrb account; creating one happens on the
+-// web). Signed in → nothing rendered here except the Account dialog, opened from the
+-// statusbar chip: plan badge, renewal date, Manage billing (web app's Stripe page),
++// Account gate + account dialog (student build). Signed out → a full-screen native
++// sign-in card; account creation happens in the browser. Signed in → nothing rendered
++// here except the Account dialog, opened from the statusbar chip: plan badge, renewal
++// date, browser-based subscription management,
+ // Refresh plan, Sign out.
+ import { useStore } from '@nanostores/react'
+ import { type FC, useEffect, useState } from 'react'
+@@ -29,9 +29,9 @@ import {
+   mintDeviceKey,
+   planLabel,
+   refreshEntitlement,
+-  SIGNUP_URL,
+   signIn,
+-  signOut
++  signOut,
++  SIGNUP_URL
+ } from '@/nemesis-account'
+ 
+ export const NemesisAccountGate: FC = () => {
+@@ -86,7 +86,7 @@ export const NemesisAccountGate: FC = () => {
+             <div>
+               <h2 className="text-lg font-semibold tracking-tight">Sign in to Nemesis</h2>
+               <p className="pt-1 text-xs text-muted-foreground">
+-                Use your PharmaOrb account — your plan and billing live there.
++                Use your Nemesis account. Your plan stays in sync across the desktop and account portal.
+               </p>
+             </div>
+           </div>
+@@ -145,9 +145,7 @@ export const NemesisAccountGate: FC = () => {
+       <DialogContent className="sm:max-w-sm">
+         <DialogHeader>
+           <DialogTitle>Account</DialogTitle>
+-          <DialogDescription>
+-            {account.bypass ? 'Offline mode — not signed in.' : account.email}
+-          </DialogDescription>
++          <DialogDescription>{account.bypass ? 'Offline mode — not signed in.' : account.email}</DialogDescription>
+         </DialogHeader>
+ 
+         {!account.bypass && (
+@@ -168,6 +166,10 @@ export const NemesisAccountGate: FC = () => {
+           </div>
+         )}
+ 
++        {!account.bypass && (
++          <p className="text-xs text-muted-foreground">Subscription changes open securely in your browser.</p>
++        )}
++
+         {!account.bypass && (
+           <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+             <div className="flex items-center justify-between gap-2">
+@@ -211,8 +213,12 @@ export const NemesisAccountGate: FC = () => {
+ 
+         <DialogFooter className="flex-wrap gap-2 sm:justify-between">
+           <div className="flex gap-2">
+-            <Button onClick={() => void window.hermesDesktop?.openExternal?.(BILLING_URL)} size="sm" variant="secondary">
+-              {account.plan === 'free' ? 'Upgrade' : 'Manage billing'}
++            <Button
++              onClick={() => void window.hermesDesktop?.openExternal?.(BILLING_URL)}
++              size="sm"
++              variant="secondary"
++            >
++              {account.plan === 'free' ? 'Choose a plan' : 'Manage subscription'}
+             </Button>
+             {!account.bypass && (
+               <Button onClick={() => void refreshEntitlement()} size="sm" variant="outline">
+diff --git a/apps/desktop/src/nemesis-account.js b/apps/desktop/src/nemesis-account.js
+index 04aaaa34861..5cb018ffcdf 100644
+--- a/apps/desktop/src/nemesis-account.js
++++ b/apps/desktop/src/nemesis-account.js
+@@ -1,21 +1,21 @@
+-// Nemesis accounts + billing structure. Students sign in with their PharmaOrb account
+-// (same Supabase auth pool as the web app); the desktop reads their subscription tier
++// Nemesis accounts + billing structure. Students sign in directly inside the desktop
++// app; the desktop reads their subscription tier
+ // straight from the `subscriptions` table (RLS `auth.uid() = user_id` makes that safe
+-// with just the user's own JWT + the public anon key). Upgrading opens the web app's
+-// existing Stripe billing page — one billing system, owned by the web app.
++// with just the user's own JWT + the public anon key). Account creation and subscription
++// changes open the Nemesis account portal in the user's browser.
+ //
+ // What this deliberately does NOT do yet: meter/bill individual model calls. The agent
+ // still talks to its configured provider directly; moving the model key server-side
+ // behind a usage-metered proxy is the documented next step (docs/design note in the
+ // nemesis kit).
+ import { atom } from 'nanostores';
+-// Public client credentials — the same values the PharmaOrb web bundle ships to every
++// Public client credentials — the same values the Nemesis account portal ships to every
+ // browser. Safe to embed: the anon key only grants what RLS policies allow.
+ export const SUPABASE_URL = 'https://qyjmivntajbigjswhahb.supabase.co';
+ export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5am1pdm50YWpiaWdqc3doYWhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0NjcyMDEsImV4cCI6MjA5NjA0MzIwMX0.N305XZXSciym2q6c6UMoNwdmCIUZWPgW_3jMIVnIPHk';
+-export const PHARMAORB_SITE = 'https://app.pharmaorb.app';
+-export const BILLING_URL = `${PHARMAORB_SITE}/app/billing`;
+-export const SIGNUP_URL = `${PHARMAORB_SITE}/signup`;
++export const NEMESIS_ACCOUNT_SITE = 'https://app.enternemesis.com';
++export const BILLING_URL = `${NEMESIS_ACCOUNT_SITE}/account/billing`;
++export const SIGNUP_URL = `${NEMESIS_ACCOUNT_SITE}/sign-up`;
+ const SESSION_KEY = 'nemesis.account.v1';
+ const BYPASS_KEY = 'nemesis.account.bypass';
+ export const $account = atom({ plan: 'free', status: 'loading' });
+diff --git a/apps/desktop/src/nemesis-account.ts b/apps/desktop/src/nemesis-account.ts
+index 7b84eba81f5..8664efa06ae 100644
+--- a/apps/desktop/src/nemesis-account.ts
++++ b/apps/desktop/src/nemesis-account.ts
+@@ -1,8 +1,8 @@
+-// Nemesis accounts + billing structure. Students sign in with their PharmaOrb account
+-// (same Supabase auth pool as the web app); the desktop reads their subscription tier
++// Nemesis accounts + billing structure. Students sign in directly inside the desktop
++// app; the desktop reads their subscription tier
+ // straight from the `subscriptions` table (RLS `auth.uid() = user_id` makes that safe
+-// with just the user's own JWT + the public anon key). Upgrading opens the web app's
+-// existing Stripe billing page — one billing system, owned by the web app.
++// with just the user's own JWT + the public anon key). Account creation and subscription
++// changes open the Nemesis account portal in the user's browser.
+ //
+ // What this deliberately does NOT do yet: meter/bill individual model calls. The agent
+ // still talks to its configured provider directly; moving the model key server-side
+@@ -10,14 +10,14 @@
+ // nemesis kit).
+ import { atom } from 'nanostores'
+ 
+-// Public client credentials — the same values the PharmaOrb web bundle ships to every
++// Public client credentials — the same values the Nemesis account portal ships to every
+ // browser. Safe to embed: the anon key only grants what RLS policies allow.
+ export const SUPABASE_URL = 'https://qyjmivntajbigjswhahb.supabase.co'
+ export const SUPABASE_ANON_KEY =
+   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5am1pdm50YWpiaWdqc3doYWhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0NjcyMDEsImV4cCI6MjA5NjA0MzIwMX0.N305XZXSciym2q6c6UMoNwdmCIUZWPgW_3jMIVnIPHk'
+-export const PHARMAORB_SITE = 'https://app.pharmaorb.app'
+-export const BILLING_URL = `${PHARMAORB_SITE}/app/billing`
+-export const SIGNUP_URL = `${PHARMAORB_SITE}/signup`
++export const NEMESIS_ACCOUNT_SITE = 'https://app.enternemesis.com'
++export const BILLING_URL = `${NEMESIS_ACCOUNT_SITE}/account/billing`
++export const SIGNUP_URL = `${NEMESIS_ACCOUNT_SITE}/sign-up`
+ 
+ const SESSION_KEY = 'nemesis.account.v1'
+ const BYPASS_KEY = 'nemesis.account.bypass'
+@@ -277,6 +277,7 @@ export async function mintDeviceKey(): Promise<string> {
+   }
+ 
+   const session = await refreshIfNeeded(stored)
++
+   const response = await fetch(`${LLM_PROXY_URL}/device-key`, {
+     body: JSON.stringify({ label: 'Nemesis desktop' }),
+     headers: {
+-- 
+2.51.0
