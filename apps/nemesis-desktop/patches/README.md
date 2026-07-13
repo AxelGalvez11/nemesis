@@ -21,3 +21,8 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   copy replacing stale BYOK text, and Providers/Model settings hidden from the
   student build. Also carries prior in-place account-gate WIP (trial countdown
   reminder + entitlement revalidation).
+- `0078-feat-nemesis-live-recorder-copilot-AI-notes-ask-next.patch` — live lecture
+  copilot in the recorder: running AI notes + "ask next" suggestions through the
+  metered nemesis-llm proxy (event-driven, 5s hard floor, short rolling window,
+  opt-in OFF by default, Max fast / Agent Pro slower / Student excluded). Notes
+  fold into the saved lecture note on stop. Adds llmComplete() device-key caller.
