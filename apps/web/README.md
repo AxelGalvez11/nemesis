@@ -32,7 +32,8 @@ Server-only:
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PLUS_PRICE_ID`
 - `STRIPE_PRO_PRICE_ID`
-- `STRIPE_ALLOW_LIVE` (`false` for MVP test mode; `true` only when deliberately going live)
+- `STRIPE_ALLOW_TEST_BILLING` (non-production only, and only with an isolated test Supabase project)
+- `STRIPE_ALLOW_LIVE` (`true` only when deliberately going live)
 - `NCBI_API_KEY` (optional; raises PubMed E-utilities rate limits)
 - `UNPAYWALL_EMAIL` (optional but recommended; contact email used for Unpaywall/OpenAlex API etiquette)
 

@@ -9,6 +9,7 @@ import { BillingPanel } from "@/components/BillingPanel";
 import { useAuth } from "@/components/AuthProvider";
 import { fetchEntitlements } from "@/lib/api";
 import { landingUrl } from "@/lib/env";
+import { planLabel } from "@/lib/billing-contract";
 
 interface AccountPortalProps {
   section: "overview" | "billing";
@@ -105,7 +106,7 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
                 <h2>{email}</h2>
                 <div className="nemesis-account-plan-row">
                   <span>Plan</span>
-                  <strong>{plan}</strong>
+                  <strong>{plan === "checking…" || plan === "unavailable" ? plan : planLabel(plan)}</strong>
                 </div>
                 <Link className="nemesis-account-primary-action" href="/account/billing">Manage subscription</Link>
               </section>
