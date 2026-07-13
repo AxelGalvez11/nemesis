@@ -106,6 +106,13 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   text-transform: uppercase; color: var(--steel); margin: 26px 0 0;
 }
 .hero .phrase .dot { color: var(--blood); }
+.hero .hero-purpose {
+  margin: 18px auto 0;
+  max-width: 560px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--t65, rgba(235, 237, 240, 0.65));
+}
 .hero-cta { display: flex; gap: 14px; margin-top: 34px; flex-wrap: wrap; }
 .hero-meta {
   margin-top: 30px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;

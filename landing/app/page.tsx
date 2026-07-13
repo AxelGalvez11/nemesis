@@ -134,6 +134,11 @@ export default function Home() {
               It remembers<span className="dot"> · </span>It learns
               <span className="dot"> · </span>It acts
             </p>
+            <p className="hero-purpose reveal r3">
+              Nemesis is a desktop study assistant for students on macOS. It organizes your semester
+              from your school portals, turns lectures into notes and flashcards, and drafts cited
+              research that you review and finish. Create a Nemesis account to use it.
+            </p>
             <div className="hero-cta reveal r4">
               <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
               <a className="btn btn-ghost" href="#how">Inspect the system</a>
