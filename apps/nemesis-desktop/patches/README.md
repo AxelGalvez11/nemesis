@@ -26,3 +26,10 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   metered nemesis-llm proxy (event-driven, 5s hard floor, short rolling window,
   opt-in OFF by default, Max fast / Agent Pro slower / Student excluded). Notes
   fold into the saved lecture note on stop. Adds llmComplete() device-key caller.
+- `0079-feat-nemesis-in-app-update-notice-v0.1.0-beta.2.patch` — version 0.1.0-beta.2
+  + in-app update notice for the student build: checks the public nemesis-desktop
+  GitHub release feed on launch, floats a dismissible card when a newer version
+  exists, and the Download button opens app.enternemesis.com/api/download/mac in
+  the browser. Detection only — nothing self-installs. Also commits the beta
+  identity build config beta.1 actually shipped with (appId, publish target,
+  nemesis:// protocol) so shipped builds are reproducible from the repo.
