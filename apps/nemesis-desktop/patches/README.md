@@ -11,3 +11,6 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
 - `0075-feat-nemesis-desktop-first-account-portal-cutover.patch` — keeps sign-in
   native to the desktop while moving signup and subscription management to the
   `app.enternemesis.com` account portal.
+- `0076-fix-nemesis-ship-no-pre-set-school-portal-blank-firs.patch` — fresh installs
+  ship with NO pre-set school portal (the owner's UTHSC Blackboard/Outlook was the
+  hardcoded default); students connect their own LMS/email in onboarding Step 1.
