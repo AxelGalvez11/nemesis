@@ -6,6 +6,9 @@ import { useEffect, useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
 import { useAuth } from "@/components/AuthProvider";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
+import { isPreviewMode } from "@/lib/env";
+import { TOS_VERSION } from "@/lib/legal";
+import { supabase } from "@/lib/supabase";
 
 export default function AuthCallbackPage() {
   const { loading, session } = useAuth();
@@ -23,7 +26,15 @@ export default function AuthCallbackPage() {
   }, []);
 
   useEffect(() => {
-    if (urlChecked && !loading && session) router.replace(nextPath);
+    if (!urlChecked || loading || !session) return;
+    // OAuth accounts never pass the signup consent form, so stamp the accepted Terms version on
+    // first arrival. Email signups already carry tos_version from the signup form (no-op here).
+    if (!isPreviewMode && !session.user.user_metadata?.tos_version) {
+      void supabase.auth.updateUser({
+        data: { tos_version: TOS_VERSION, tos_accepted_at: new Date().toISOString(), tos_recorded_via: "auth-callback" },
+      });
+    }
+    router.replace(nextPath);
   }, [loading, nextPath, router, session, urlChecked]);
 
   const failed = urlChecked && !loading && !session;

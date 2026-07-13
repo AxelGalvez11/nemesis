@@ -54,6 +54,16 @@ export const streamingEnabled = process.env.NEXT_PUBLIC_STREAMING === "true";
 export const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 export const captchaEnabled = turnstileSiteKey.length > 0;
 
+// Social sign-in (Supabase OAuth) — DEFAULT OFF. Buttons render only for providers listed in
+// NEXT_PUBLIC_AUTH_PROVIDERS (comma-separated, e.g. "google,apple"), so the UI can never offer a
+// provider before it is configured in Supabase (Auth -> Providers). Unset => email/password only.
+export type OAuthProviderId = "google" | "apple";
+const rawAuthProviders = process.env.NEXT_PUBLIC_AUTH_PROVIDERS ?? "";
+export const enabledOAuthProviders: OAuthProviderId[] = rawAuthProviders
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter((value): value is OAuthProviderId => value === "google" || value === "apple");
+
 // PostHog product analytics. Public phc_ project key (write-only ingestion) + host — safe in the
 // browser bundle. Reads happen elsewhere with a personal API key.
 export const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";

@@ -2,7 +2,8 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { hasSupabaseConfig, isPreviewMode } from "@/lib/env";
+import { hasSupabaseConfig, isPreviewMode, type OAuthProviderId } from "@/lib/env";
+import { isAlreadyRegisteredSignUp } from "@/lib/auth-signup";
 import { resolveAuthRedirectUrl } from "@/lib/auth-redirect";
 import { supabase } from "@/lib/supabase";
 import { phCapture, phIdentify, phReset } from "@/lib/posthog";
@@ -10,6 +11,8 @@ import { phCapture, phIdentify, phReset } from "@/lib/posthog";
 export interface SignUpResult {
   error: string | null;
   needsEmailConfirmation: boolean;
+  /** The email already has an account; the caller should route to sign-in instead. */
+  alreadyRegistered: boolean;
 }
 
 /** Consent captured at signup. Recorded in auth user_metadata so we know which Terms/Disclaimer
@@ -23,6 +26,7 @@ interface AuthContextValue {
   loading: boolean;
   signIn: (email: string, password: string, captchaToken?: string) => Promise<string | null>;
   signUp: (email: string, password: string, consent?: SignUpConsent, captchaToken?: string) => Promise<SignUpResult>;
+  signInWithOAuth: (provider: OAuthProviderId, next?: string) => Promise<string | null>;
   signOut: () => Promise<void>;
 }
 
@@ -107,9 +111,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = useCallback(async (email: string, password: string, consent?: SignUpConsent, captchaToken?: string) => {
     if (isPreviewMode) {
       setSession(previewSession);
-      return { error: null, needsEmailConfirmation: false };
+      return { error: null, needsEmailConfirmation: false, alreadyRegistered: false };
     }
-    if (!hasSupabaseConfig) return { error: "Identity service configuration is unavailable.", needsEmailConfirmation: false };
+    if (!hasSupabaseConfig) return { error: "Identity service configuration is unavailable.", needsEmailConfirmation: false, alreadyRegistered: false };
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -124,10 +128,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           : {}),
       },
     });
-    if (error) return { error: error.message, needsEmailConfirmation: false };
+    if (isAlreadyRegisteredSignUp(data?.user ?? null, error?.message ?? null)) {
+      phCapture("signup_existing_email", { method: "email" });
+      return { error: null, needsEmailConfirmation: false, alreadyRegistered: true };
+    }
+    if (error) return { error: error.message, needsEmailConfirmation: false, alreadyRegistered: false };
     phCapture("signup", { method: "email", needs_confirmation: !data.session });
     if (data.session) setSession(data.session);
-    return { error: null, needsEmailConfirmation: !data.session };
+    return { error: null, needsEmailConfirmation: !data.session, alreadyRegistered: false };
+  }, []);
+
+  const signInWithOAuth = useCallback(async (provider: OAuthProviderId, next = "/account") => {
+    if (isPreviewMode) {
+      setSession(previewSession);
+      return null;
+    }
+    if (!hasSupabaseConfig) return "Identity service configuration is unavailable.";
+    phCapture("oauth_start", { provider });
+    // The browser leaves for the provider's consent page; the session lands back on /auth/callback.
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: resolveAuthRedirectUrl(`/auth/callback?next=${encodeURIComponent(next)}`) },
+    });
+    return error?.message ?? null;
   }, []);
 
   const signOut = useCallback(async () => {
@@ -138,7 +161,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
   }, []);
 
-  const value = useMemo(() => ({ session, loading, signIn, signUp, signOut }), [session, loading, signIn, signUp, signOut]);
+  const value = useMemo(
+    () => ({ session, loading, signIn, signUp, signInWithOAuth, signOut }),
+    [session, loading, signIn, signUp, signInWithOAuth, signOut],
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
