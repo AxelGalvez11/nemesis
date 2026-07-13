@@ -106,11 +106,7 @@ export default function SignUpPage() {
       footer={<p>Already contained? <Link className="nemesis-auth-link" href="/sign-in">Return to sign in.</Link></p>}
     >
         {isPreviewMode ? <p className="nemesis-auth-notice">Local preview mode: no account will be created.</p> : null}
-        <OAuthButtons
-          disabled={busy}
-          onError={setError}
-          gate={() => (!agreed && !isPreviewMode ? CONSENT_REQUIRED_MESSAGE : null)}
-        />
+        <OAuthButtons disabled={busy} onError={setError} showTermsNote />
         <form onSubmit={onSubmit} className="nemesis-auth-form">
           <div className="nemesis-auth-field-group">
             <label htmlFor="signup-email">Account email</label>
