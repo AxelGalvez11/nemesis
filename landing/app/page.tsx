@@ -110,6 +110,8 @@ export default function Home() {
             <b>Nemesis</b>
           </Link>
           <span className="spacer" />
+          <a className="ghost" href="#work">Features</a>
+          <a className="ghost" href="#plans">Plans</a>
           <a className="ghost" href="#how">Containment</a>
           <a className="ghost" href="#graph">Memory</a>
           <a className="ghost" href="#privacy">Boundaries</a>
@@ -146,6 +148,66 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      <section className="section" id="work">
+        <div className="wrap">
+          <div className="section-head">
+            <p className="eyebrow">The work</p>
+            <h2>What it does, concretely.</h2>
+            <p>The same agent, any major, any field.</p>
+          </div>
+          <div className="caps">
+            <div className="cap">
+              <div className="k">Semester</div>
+              <h3>It reads your semester</h3>
+              <p>
+                Connect Blackboard or Canvas. Nemesis reads every syllabus, files every
+                slide, and builds your calendar. One afternoon, and the whole term is mapped.
+              </p>
+            </div>
+            <div className="cap">
+              <div className="k">Lectures</div>
+              <h3>Lectures become notes</h3>
+              <p>
+                Record the lecture. It transcribes on your Mac, writes clean notes, and
+                files them to the right course.
+              </p>
+            </div>
+            <div className="cap">
+              <div className="k">Recall</div>
+              <h3>Flashcards that fight back</h3>
+              <p>
+                Study decks are built from your own lectures. Spaced repetition brings back
+                what you are about to forget. Match mode makes the grind a game.
+              </p>
+            </div>
+            <div className="cap">
+              <div className="k">Research</div>
+              <h3>Research with receipts</h3>
+              <p>
+                Ask the hard question. It answers from real papers with real citations,
+                drawn from journals and primary sources you can open.
+              </p>
+            </div>
+            <div className="cap">
+              <div className="k">Drafts</div>
+              <h3>Drafts you finish</h3>
+              <p>
+                Slides, reports, posters. Assembled from your own material, cited, and
+                waiting for your edit.
+              </p>
+            </div>
+            <div className="cap">
+              <div className="k">Authority</div>
+              <h3>Nothing happens without you</h3>
+              <p>
+                Every action lands in a plain English ledger. It never submits anything.
+                You keep the final authority.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="section alt" id="how">
         <div className="wrap">
@@ -332,14 +394,56 @@ export default function Home() {
         </div>
       </div>
 
+      <section className="section" id="plans">
+        <div className="wrap">
+          <div className="section-head">
+            <p className="eyebrow">Plans</p>
+            <h2>Seven days free. Cancel anytime.</h2>
+            <p>
+              Every plan starts with a 7 day trial. Card required, nothing charged until
+              day 7. Prices are per month.
+            </p>
+          </div>
+          <div className="qs">
+            <div className="q">
+              <div className="n">$9.99</div>
+              <h3>Student</h3>
+              <p>
+                Higher limits for answers, notes, and study decks. Lecture capture and
+                scheduled school sync.
+              </p>
+            </div>
+            <div className="q">
+              <div className="n">$19.99</div>
+              <h3>Agent Pro</h3>
+              <p>
+                Everything in Student, plus deep research with cited reports and higher
+                automation limits.
+              </p>
+            </div>
+            <div className="q">
+              <div className="n">$49.99</div>
+              <h3>Max</h3>
+              <p>
+                The highest limits across the agent, unlimited lecture copilot, and first
+                access to new capabilities.
+              </p>
+            </div>
+          </div>
+          <div className="hero-cta" style={{ marginTop: "28px", justifyContent: "center" }}>
+            <a className="btn btn-primary" href={APP_SIGN_UP}>Start the trial</a>
+          </div>
+        </div>
+      </section>
+
       <section className="closer" id="get">
         <div className="wrap">
           <p className="eyebrow">Containment doctrine</p>
           <h2>It grows more capable. The perimeter stays still.</h2>
           <p>
             The semester ends; its memory does not. Nemesis carries forward the knowledge,
-            procedures, and projects you choose to retain—from school into residency,
-            research, and work. It gains context. Never authority.
+            procedures, and projects you choose to retain, from school into whatever comes
+            after. It gains context. Never authority.
           </p>
           <a
             className="btn btn-primary"
