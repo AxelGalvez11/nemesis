@@ -115,8 +115,14 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
                 <p className="nemesis-account-card-label">Desktop first</p>
                 <h2>The work stays with Nemesis.</h2>
                 <p>
-                  This page only governs identity and payment. Close this tab to return to the
-                  desktop agent after updating your plan.
+                  Everything happens in the desktop app. Download it, sign in with this account,
+                  and your plan is live inside the agent.
+                </p>
+                <a className="nemesis-account-primary-action" href="/api/download/mac">
+                  Download for macOS
+                </a>
+                <p className="nemesis-account-fineprint">
+                  Apple Silicon Macs (M1 or newer). New versions announce themselves inside the app.
                 </p>
                 <div className="nemesis-account-boundary">
                   <span>Browser</span><b>Account + billing</b>
