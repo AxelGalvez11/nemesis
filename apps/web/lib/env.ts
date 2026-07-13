@@ -69,6 +69,19 @@ export const enabledOAuthProviders: OAuthProviderId[] = rawAuthProviders
 export const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
 export const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
 
+// Transactional email (Resend REST, server-side). Unset key => sends are skipped with a log
+// line, never a failure — no email is worth breaking a webhook or request over.
+export const resendApiKey = process.env.RESEND_API_KEY ?? "";
+export const emailFrom = process.env.EMAIL_FROM ?? "Nemesis <support@enternemesis.com>";
+
+// Prepaid-AI balance alarm (see app/api/cron/deepseek-balance). CRON_SECRET guards the endpoint
+// (Vercel sends it as a Bearer token on cron invocations). Alerts email the owner.
+export const cronSecret = process.env.CRON_SECRET ?? "";
+export const deepseekApiKey = process.env.DEEPSEEK_API_KEY ?? "";
+export const balanceAlertEmail = process.env.BALANCE_ALERT_EMAIL ?? "axelgalvez1121@gmail.com";
+const rawBalanceThreshold = Number(process.env.DEEPSEEK_BALANCE_ALERT_USD ?? "5");
+export const deepseekBalanceAlertUsd = Number.isFinite(rawBalanceThreshold) ? rawBalanceThreshold : 5;
+
 export const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 export const stripeSecretKey = process.env.STRIPE_SECRET_KEY ?? "";
 export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";

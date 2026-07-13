@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
-import { subscriptionWebhookAction } from "@/lib/billing-contract";
+import { NEMESIS_TRIAL_PERIOD_DAYS, planLabel, subscriptionWebhookAction } from "@/lib/billing-contract";
+import { buildWelcomeEmail, sendEmail } from "@/lib/email";
 import { stripeWebhookSecret } from "@/lib/env";
 import { adminClient, json } from "@/lib/server";
 import {
@@ -46,11 +47,22 @@ export async function POST(req: Request) {
         const customerId = typeof subscription.customer === "string"
           ? subscription.customer
           : subscription.customer.id;
-        await reconcileCustomerSubscriptions(
+        const result = await reconcileCustomerSubscriptions(
           customerId,
           session.client_reference_id ?? session.metadata?.user_id ?? null,
           subscription,
         );
+        // Welcome/confirmation note for the buyer. Strictly best-effort: sendEmail never throws,
+        // so a mail hiccup cannot 500 the webhook and make Stripe re-deliver the event.
+        const recipient = session.customer_details?.email;
+        if (recipient && result.plan !== "free") {
+          const { subject, html, text } = buildWelcomeEmail({
+            planName: planLabel(result.plan),
+            trialing: subscription.status === "trialing",
+            trialDays: NEMESIS_TRIAL_PERIOD_DAYS,
+          });
+          await sendEmail({ to: recipient, subject, html, text });
+        }
       }
     }
 
