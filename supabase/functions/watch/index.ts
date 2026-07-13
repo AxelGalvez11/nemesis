@@ -45,6 +45,7 @@ const OPENFDA_API_KEY = Deno.env.get("OPENFDA_API_KEY") ?? undefined;
 const RECHECK_TIMEOUT_MS = 6000; // bound the retraction recheck like a dated source — never sink the cycle
 
 const DEFAULT_ALLOWED_ORIGINS = [
+  "https://app.enternemesis.com",
   "https://app.pharmaorb.app",
   "https://pharmaorb.app",
   "https://www.pharmaorb.app",
@@ -258,7 +259,7 @@ function isAllowedOrigin(origin: string): boolean {
 
 function corsHeaders(req?: Request): Record<string, string> {
   const origin = req?.headers.get("origin") ?? "";
-  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.pharmaorb.app";
+  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.enternemesis.com";
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",

@@ -28,10 +28,10 @@ export function Hero() {
           labels, PubMed, and ClinicalTrials.gov.
         </p>
         <div className="hero-cta-row" id="get-started">
-          <a className="wbtn" href="https://app.pharmaorb.app/sign-up">
+          <a className="wbtn" href="https://app.enternemesis.com/sign-up">
             Get started — free
           </a>
-          <a className="hero-ghost" href="https://app.pharmaorb.app/sign-in">
+          <a className="hero-ghost" href="https://app.enternemesis.com/sign-in">
             Sign in
           </a>
         </div>

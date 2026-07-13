@@ -159,7 +159,7 @@ export default function DrugPage() {
             Check prices on GoodRx ↗
           </a>
           <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-            Third-party pricing (US). PharmaOrb doesn&apos;t set or verify prices.
+            Third-party pricing (US). Nemesis doesn&apos;t set or verify prices.
           </p>
         </div>
         {drug.classes.length ? (

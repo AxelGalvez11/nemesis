@@ -32,10 +32,10 @@ export function Nav({ theme, onToggleTheme }: NavProps) {
           >
             {theme === "light" ? <MoonIcon /> : <SunIcon />}
           </button>
-          <a className="nav-signin" href="https://app.pharmaorb.app/sign-in">
+          <a className="nav-signin" href="https://app.enternemesis.com/sign-in">
             Sign in
           </a>
-          <a className="nav-cta" href="https://app.pharmaorb.app/sign-up">
+          <a className="nav-cta" href="https://app.enternemesis.com/sign-up">
             Sign up
           </a>
         </div>

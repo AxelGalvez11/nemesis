@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { SocialLinks } from "@/components/SocialLinks";
 
-const APP_SIGN_UP = "https://app.pharmaorb.app/sign-up";
-const APP_SIGN_IN = "https://app.pharmaorb.app/sign-in";
+const APP_SIGN_UP = "https://app.enternemesis.com/sign-up";
+const APP_SIGN_IN = "https://app.enternemesis.com/sign-in";
 
 /**
  * One scroll controller drives every decorative background layer. Each offset is

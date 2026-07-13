@@ -2,26 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CSSProperties, FormEvent, useEffect, useState } from "react";
-import { ErrorText } from "@/components/ui";
+import { FormEvent, useEffect, useState } from "react";
+import { AuthFrame } from "@/components/AuthFrame";
 import { useAuth } from "@/components/AuthProvider";
 import { TurnstileWidget } from "@/components/TurnstileWidget";
+import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { captchaEnabled, isPreviewMode } from "@/lib/env";
-
-const cardStyle: CSSProperties = { padding: "36px 32px", textAlign: "center" };
-const eyebrowStyle: CSSProperties = { marginBottom: 18 };
-const titleStyle: CSSProperties = {
-  fontSize: 27,
-  fontWeight: 600,
-  letterSpacing: "-0.025em",
-  lineHeight: 1.15,
-  margin: "0 0 8px",
-  color: "var(--text)",
-};
-const subStyle: CSSProperties = { margin: "0 auto 24px", maxWidth: 360 };
-const formStyle: CSSProperties = { gap: 14, textAlign: "left" };
-const submitStyle: CSSProperties = { width: "100%", marginTop: 2, minHeight: 44 };
-const footStyle: CSSProperties = { marginTop: 20 };
 
 export default function SignInPage() {
   const { signIn } = useAuth();
@@ -47,39 +33,48 @@ export default function SignInPage() {
     }
     setBusy(true);
     setError(null);
-    const err = await signIn(email.trim(), password, captchaToken || undefined);
-    setBusy(false);
-    if (err) {
-      setError(err);
-      // Turnstile tokens are single-use: reset the widget so the next attempt gets a fresh challenge.
+    try {
+      const err = await signIn(email.trim(), password, captchaToken || undefined);
+      if (err) {
+        setError(err);
+        // Turnstile tokens are single-use: reset the widget so the next attempt gets a fresh challenge.
+        setCaptchaToken("");
+        setCaptchaKey((k) => k + 1);
+        return;
+      }
+      const rawNext = new URLSearchParams(window.location.search).get("next");
+      router.replace(sanitizeNextPath(rawNext));
+    } catch {
+      setError("Nemesis could not reach the identity service. Check your connection and try again.");
       setCaptchaToken("");
       setCaptchaKey((k) => k + 1);
-      return;
+    } finally {
+      setBusy(false);
     }
-    // Open-redirect guard: only follow a same-site RELATIVE path; reject absolute ("https://…") and
-    // protocol-relative ("//evil.com") targets so a crafted ?next= can't bounce a signed-in user offsite.
-    const rawNext = new URLSearchParams(window.location.search).get("next");
-    const safeNext = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/app";
-    router.replace(safeNext);
   }
 
   return (
-    <main className="centered">
-      <section className="auth-card" style={cardStyle}>
-        <p className="eyebrow" style={eyebrowStyle}>PharmaOrb beta</p>
-        <h1 style={titleStyle}>Sign in</h1>
-        <p className="muted" style={subStyle}>Use your beta account to access cited Ask, search, and monitoring.</p>
-        {deleted ? <p className="success-text">Your account was deleted.</p> : null}
-        {isPreviewMode ? <p className="muted" style={subStyle}>Preview mode: no account credentials required.</p> : null}
-        <form onSubmit={onSubmit} style={formStyle}>
-          <input type="email" autoComplete="email" required={!isPreviewMode} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input type="password" autoComplete="current-password" required={!isPreviewMode} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+    <AuthFrame
+      eyebrow="Nemesis // identity gate"
+      title="Re-enter the perimeter."
+      description="Authenticate to restore your contained workspace. Its memory persists; final authority remains yours."
+      footer={<p>No instance yet? <Link className="nemesis-auth-link" href="/sign-up">Deploy Nemesis.</Link></p>}
+    >
+        {deleted ? <p className="nemesis-auth-success">Your account and its server-side records were deleted.</p> : null}
+        {isPreviewMode ? <p className="nemesis-auth-notice">Local preview mode: no account credentials are required.</p> : null}
+        <form onSubmit={onSubmit} className="nemesis-auth-form">
+          <div className="nemesis-auth-field-group">
+            <label htmlFor="signin-email">Account email</label>
+            <input id="signin-email" type="email" autoComplete="email" required={!isPreviewMode} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div className="nemesis-auth-field-group">
+            <label htmlFor="signin-password">Password</label>
+            <input id="signin-password" type="password" autoComplete="current-password" required={!isPreviewMode} placeholder="Enter password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
           <TurnstileWidget key={captchaKey} onToken={setCaptchaToken} />
-          <button disabled={busy || (captchaEnabled && !isPreviewMode && !captchaToken)} type="submit" style={submitStyle}>{busy ? "Signing in…" : isPreviewMode ? "Enter preview app" : "Sign in"}</button>
+          <button className="nemesis-auth-submit" disabled={busy || (captchaEnabled && !isPreviewMode && !captchaToken)} type="submit">{busy ? "Authenticating…" : isPreviewMode ? "Enter preview" : "Enter Nemesis"}</button>
         </form>
-        {error ? <ErrorText>{error}</ErrorText> : null}
-        <p className="muted" style={footStyle}>No account yet? <Link className="source-link" href="/sign-up">Create one</Link></p>
-      </section>
-    </main>
+        {error ? <p className="nemesis-auth-error" role="alert">{error}</p> : null}
+    </AuthFrame>
   );
 }

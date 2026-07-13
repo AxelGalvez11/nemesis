@@ -97,14 +97,23 @@ import {
   type PricingFetchOpts,
 } from "./providers/pricing.ts";
 
-// Service-role-only ingest endpoint — never called from a browser. A fixed canonical
-// origin is sufficient; the wildcard "*" served no purpose and is removed.
-const CORS = {
-  "Access-Control-Allow-Origin": "https://app.pharmaorb.app",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// Service-role-only ingest endpoint — never called from a browser. Keep the explicit
+// product origins during the domain transition rather than opening this endpoint to "*".
+const ALLOWED_ORIGINS = [
+  "https://app.enternemesis.com",
+  "https://app.pharmaorb.app",
+];
+
+function corsHeaders(req?: Request): Record<string, string> {
+  const origin = req?.headers.get("origin") ?? "";
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : "https://app.enternemesis.com";
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
 
 interface SyncRequest {
   provider: CoreSourceProvider;
@@ -173,34 +182,34 @@ function authorize(token: string): boolean {
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405, req);
 
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.replace(/^Bearer\s+/i, "");
-  if (!authorize(token)) return json({ error: "service-role required" }, 401);
+  if (!authorize(token)) return json({ error: "service-role required" }, 401, req);
 
   let body: SyncRequest;
   try {
     body = await req.json();
   } catch {
-    return json({ error: "invalid json" }, 400);
+    return json({ error: "invalid json" }, 400, req);
   }
 
   if (!body.provider) {
-    return json({ error: "provider required" }, 400);
+    return json({ error: "provider required" }, 400, req);
   }
 
   try {
     const result = await runSync(body);
-    return json(result);
+    return json(result, 200, req);
   } catch (e) {
     const err = e as Error;
     captureEdgeException?.(err, {
       functionName: "core-source-sync",
       extra: { provider: body.provider },
     });
-    return json({ error: err.message ?? "sync failed" }, 500);
+    return json({ error: err.message ?? "sync failed" }, 500, req);
   }
 });
 
@@ -425,9 +434,9 @@ function curatedDefault(
   return { provider, license, pages: defaultPages };
 }
 
-function json(data: unknown, status = 200) {
+function json(data: unknown, status = 200, req?: Request) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json", ...CORS },
+    headers: { "content-type": "application/json", ...corsHeaders(req) },
   });
 }
