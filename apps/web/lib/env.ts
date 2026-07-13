@@ -65,6 +65,7 @@ export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 export const stripePlusPriceId = process.env.STRIPE_PLUS_PRICE_ID ?? "";
 export const stripeProPriceId = process.env.STRIPE_PRO_PRICE_ID ?? "";
 export const stripeAllowLive = process.env.STRIPE_ALLOW_LIVE === "true";
+export const stripeAllowTestBilling = process.env.STRIPE_ALLOW_TEST_BILLING === "true";
 
 export function requirePublicEnv(): void {
   if (!supabaseUrl || !supabaseAnonKey) {

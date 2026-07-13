@@ -1,15 +1,40 @@
 import Stripe from "stripe";
-import { stripeAllowLive, stripePlusPriceId, stripeProPriceId, stripeSecretKey } from "./env";
+import {
+  stripeAllowLive,
+  stripeAllowTestBilling,
+  stripePlusPriceId,
+  stripeProPriceId,
+  stripeSecretKey,
+} from "./env";
+import { stripeKeyMode, subscriptionGrantsAccess, type StripeMode } from "./billing-contract";
 
 let cached: Stripe | null = null;
 
 export function stripe(): Stripe {
-  if (!stripeSecretKey) throw new Error("STRIPE_SECRET_KEY is required");
-  if (stripeSecretKey.startsWith("sk_live_") && !stripeAllowLive) {
-    throw new Error("Live Stripe key is disabled for beta. Use test-mode keys or set STRIPE_ALLOW_LIVE=true.");
-  }
+  stripeMode();
   cached ??= new Stripe(stripeSecretKey);
   return cached;
+}
+
+export function stripeMode(): StripeMode {
+  if (!stripeSecretKey) throw new Error("STRIPE_SECRET_KEY is required");
+  const mode = stripeKeyMode(stripeSecretKey);
+  if (mode === "unknown") throw new Error("STRIPE_SECRET_KEY must be a Stripe test or live secret key");
+  if (mode === "live" && !stripeAllowLive) {
+    throw new Error("Live Stripe key is disabled for beta. Use test-mode keys or set STRIPE_ALLOW_LIVE=true.");
+  }
+  return mode;
+}
+
+/** Production Nemesis billing is live-only. Test writers require an explicit
+ * non-production opt-in so a preview cannot overwrite live customer state in
+ * the shared subscriptions table. */
+export function assertStripeBillingWritesAllowed(): StripeMode {
+  const mode = stripeMode();
+  if (mode === "test" && (process.env.VERCEL_ENV === "production" || !stripeAllowTestBilling)) {
+    throw new Error("Stripe test billing writes are disabled. Use an isolated non-production environment.");
+  }
+  return mode;
 }
 
 export type PaidPlan = "free" | "plus" | "pro";
@@ -25,7 +50,7 @@ export function planForPriceId(priceId: string | null | undefined): PaidPlan {
 export function planFromStripeStatus(status: string | null | undefined, priceId: string | null | undefined): PaidPlan {
   const plan = planForPriceId(priceId);
   if (plan === "free") return "free";
-  return status === "active" || status === "trialing" ? plan : "free";
+  return subscriptionGrantsAccess(status) ? plan : "free";
 }
 
 export interface StripeFailureDetail {
