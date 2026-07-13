@@ -14,3 +14,10 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
 - `0076-fix-nemesis-ship-no-pre-set-school-portal-blank-firs.patch` — fresh installs
   ship with NO pre-set school portal (the owner's UTHSC Blackboard/Outlook was the
   hardcoded default); students connect their own LMS/email in onboarding Step 1.
+- `0077-feat-nemesis-consent-gate-bug-report-button-plan-inc.patch` — one-time
+  plain-language privacy/responsibility consent screen after first sign-in
+  (names data processors truthfully; portals read-only; check-your-syllabus
+  line), Report-a-bug button in the Account dialog, plan-includes-intelligence
+  copy replacing stale BYOK text, and Providers/Model settings hidden from the
+  student build. Also carries prior in-place account-gate WIP (trial countdown
+  reminder + entitlement revalidation).
