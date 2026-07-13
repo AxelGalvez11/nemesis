@@ -1,4 +1,4 @@
-export type CheckoutPlan = "plus" | "pro";
+export type CheckoutPlan = "plus" | "pro" | "max";
 export type StripeMode = "test" | "live";
 
 export const NEMESIS_TRIAL_PERIOD_DAYS = 7;
@@ -48,6 +48,8 @@ export function planLabel(plan: string | null | undefined): string {
       return "Nemesis Student";
     case "pro":
       return "Nemesis Agent Pro";
+    case "max":
+      return "Nemesis Max";
     case "professional":
       return "Professional";
     case "enterprise":

@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import {
   stripeAllowLive,
   stripeAllowTestBilling,
+  stripeMaxPriceId,
   stripePlusPriceId,
   stripeProPriceId,
   stripeSecretKey,
@@ -37,10 +38,11 @@ export function assertStripeBillingWritesAllowed(): StripeMode {
   return mode;
 }
 
-export type PaidPlan = "free" | "plus" | "pro";
+export type PaidPlan = "free" | "plus" | "pro" | "max";
 
 /** Which plan a Stripe price grants. Unrecognized prices grant nothing (free). */
 export function planForPriceId(priceId: string | null | undefined): PaidPlan {
+  if (priceId && stripeMaxPriceId && priceId === stripeMaxPriceId) return "max";
   if (priceId && stripeProPriceId && priceId === stripeProPriceId) return "pro";
   if (priceId && stripePlusPriceId && priceId === stripePlusPriceId) return "plus";
   return "free";

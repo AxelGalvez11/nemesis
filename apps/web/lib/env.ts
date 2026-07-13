@@ -64,6 +64,9 @@ export const stripeSecretKey = process.env.STRIPE_SECRET_KEY ?? "";
 export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 export const stripePlusPriceId = process.env.STRIPE_PLUS_PRICE_ID ?? "";
 export const stripeProPriceId = process.env.STRIPE_PRO_PRICE_ID ?? "";
+// Optional top tier: leave unset to sell Plus + Pro only. When set, Max joins the
+// catalog, the billing cards, and checkout accepts plan === "max".
+export const stripeMaxPriceId = process.env.STRIPE_MAX_PRICE_ID ?? "";
 export const stripeAllowLive = process.env.STRIPE_ALLOW_LIVE === "true";
 export const stripeAllowTestBilling = process.env.STRIPE_ALLOW_TEST_BILLING === "true";
 

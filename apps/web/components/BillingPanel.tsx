@@ -20,6 +20,7 @@ const PLAN_RANK: Record<string, number> = {
   student: 1,
   pro: 2,
   professional: 3,
+  max: 4,
   enterprise: 4,
 };
 const rankOf = (plan?: string | null): number => PLAN_RANK[(plan ?? "free").toLowerCase()] ?? 0;
@@ -33,6 +34,7 @@ interface CatalogPrice {
 interface BillingCatalog {
   plus: CatalogPrice;
   pro: CatalogPrice;
+  max?: CatalogPrice;
 }
 
 type TrialEligibility = boolean | null;
@@ -151,7 +153,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
 
   // The per-plan call to action: current tier → disabled "Current plan"; a tier below the one you hold →
   // "Included in your plan" (no re-purchase / mislabeled downgrade); a higher tier → a real upgrade button.
-  function planCta(tier: "plus" | "pro", label: string) {
+  function planCta(tier: "plus" | "pro" | "max", label: string) {
     const tierRank = rankOf(tier);
     if (ent && currentRank === tierRank) {
       return <button style={{ width: "100%" }} className="secondary" disabled>✓ Current plan</button>;
@@ -175,8 +177,10 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
 
   const isPlus = ent != null && currentRank === rankOf("plus");
   const isPro = ent != null && currentRank === rankOf("pro");
+  const isMax = ent != null && currentRank === rankOf("max");
   const plusPrice = formatPrice(catalog?.plus);
   const proPrice = formatPrice(catalog?.pro);
+  const maxPrice = formatPrice(catalog?.max);
 
   return (
     <>
@@ -250,6 +254,30 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
             </p>
           ) : null}
         </Card>
+        {catalog?.max ? (
+          <Card className={isMax ? "acid" : ""}>
+            <div className="row" style={{ marginBottom: 2 }}>
+              <h2 style={{ margin: 0 }}>Nemesis Max</h2>
+              {isMax ? <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>Current</span> : null}
+            </div>
+            <p style={{ margin: "0 0 12px" }}>
+              <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{maxPrice.amount}</strong>
+              <span className="muted" style={{ fontSize: 13 }}>{maxPrice.interval}</span>
+            </p>
+            <ul style={billingList}>
+              <li style={{ ...billingItem, color: "var(--text-2)", fontWeight: 600, fontSize: 12.5 }}>Everything in Agent Pro, plus:</li>
+              <li style={billingItem}><span style={billingTick}>✓</span>Highest usage limits across the agent</li>
+              <li style={billingItem}><span style={billingTick}>✓</span>Unlimited lecture copilot</li>
+              <li style={billingItem}><span style={billingTick}>✓</span>First access to new capabilities</li>
+            </ul>
+            {planCta("max", "Upgrade to Max")}
+            {currentRank === 0 ? (
+              <p className="muted" style={{ fontSize: 11.5, lineHeight: 1.5, margin: "12px 0 0" }}>
+                {checkoutDisclosure(maxPrice, trialEligible)}
+              </p>
+            ) : null}
+          </Card>
+        ) : null}
       </div>
     </>
   );

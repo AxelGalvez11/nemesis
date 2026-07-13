@@ -1,4 +1,4 @@
-import { appUrl, stripePlusPriceId, stripeProPriceId } from "@/lib/env";
+import { appUrl, stripeMaxPriceId, stripePlusPriceId, stripeProPriceId } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
 import { assertStripeBillingWritesAllowed, stripe, stripeFailureDetail } from "@/lib/stripe";
 import {
@@ -15,12 +15,13 @@ export async function POST(req: Request) {
     if (!user) return json({ error: "authentication required" }, 401);
 
     // Which plan to buy. Defaults to plus (no body) for backward compatibility.
-    let plan: "plus" | "pro" = "plus";
+    let plan: "plus" | "pro" | "max" = "plus";
     try {
       const body = await req.json();
-      if (body?.plan === "pro") plan = "pro";
+      if (body?.plan === "pro" || body?.plan === "max") plan = body.plan;
     } catch { /* no body → plus */ }
-    const priceId = plan === "pro" ? stripeProPriceId : stripePlusPriceId;
+    const priceByPlan = { plus: stripePlusPriceId, pro: stripeProPriceId, max: stripeMaxPriceId } as const;
+    const priceId = priceByPlan[plan];
     if (!priceId) return json({ error: `STRIPE_${plan.toUpperCase()}_PRICE_ID missing` }, 500);
 
     const stripeClient = stripe();

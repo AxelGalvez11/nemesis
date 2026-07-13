@@ -20,9 +20,16 @@ UPDATE public.plans
 SET name = CASE code
   WHEN 'plus' THEN 'Nemesis Student'
   WHEN 'pro' THEN 'Nemesis Agent Pro'
+  WHEN 'max' THEN 'Nemesis Max'
   ELSE name
 END
-WHERE code IN ('plus', 'pro');
+WHERE code IN ('plus', 'pro', 'max');
+
+-- Optional top tier: make sure a 'max' plan row exists so entitlement resolution
+-- has a target when STRIPE_MAX_PRICE_ID is configured. No-op on reruns.
+INSERT INTO public.plans (code, name, active, sort_order)
+VALUES ('max', 'Nemesis Max', true, 3)
+ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name;
 
 -- A past-due subscription remains in its Stripe grace period only until the
 -- recorded paid-through date. This helper remains service-role-only below.

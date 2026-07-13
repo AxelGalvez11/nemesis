@@ -1,4 +1,4 @@
-import { stripePlusPriceId, stripeProPriceId } from "@/lib/env";
+import { stripeMaxPriceId, stripePlusPriceId, stripeProPriceId } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
 import { isTrialEligibleForSubscriptionHistory } from "@/lib/billing-contract";
 import { assertStripeBillingWritesAllowed, stripe, stripeFailureDetail } from "@/lib/stripe";
@@ -22,10 +22,11 @@ export async function GET(req: Request) {
     // deliberately read-only, so never advertise a trial the write route
     // would refuse to create.
     const livemode = assertStripeBillingWritesAllowed() === "live";
-    const [plusPrice, proPrice, trialEligible] = await Promise.all([
+    const [plusPrice, proPrice, trialEligible, maxPrice] = await Promise.all([
       stripeClient.prices.retrieve(stripePlusPriceId),
       stripeClient.prices.retrieve(stripeProPriceId),
       trialEligibilityForUser(user.id, livemode),
+      stripeMaxPriceId ? stripeClient.prices.retrieve(stripeMaxPriceId) : Promise.resolve(null),
     ]);
 
     const serialize = (price: typeof plusPrice): CatalogPrice => ({
@@ -38,6 +39,7 @@ export async function GET(req: Request) {
       plans: {
         plus: serialize(plusPrice),
         pro: serialize(proPrice),
+        ...(maxPrice ? { max: serialize(maxPrice) } : {}),
       },
       trialEligible,
     });
