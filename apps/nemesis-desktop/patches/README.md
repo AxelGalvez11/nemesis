@@ -122,3 +122,7 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   rewrite; previous SOUL template added to the legacy list so app-written
   installs upgrade in place; live recorder copilot prompt gains the same
   plain-text rule.
+- `0098-beta11-three-answer-modes.patch` — beta.11: the chat answer-mode
+  picker becomes three plain choices — Instant / Medium / High (owner ask) —
+  mapping to fast-mode / thinking+medium / thinking+high. High's description
+  carries the honest cost note; the composer pill shows the active mode name.
