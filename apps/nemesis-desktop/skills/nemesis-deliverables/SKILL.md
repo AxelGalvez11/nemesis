@@ -1,3 +1,8 @@
+---
+name: nemesis-deliverables
+description: Generate slide decks, reports, handouts, and one-pagers for the student — build files, preview inline, cite real sources
+---
+
 # Generate deliverables (slides, reports, handouts)
 
 Use this skill when the student asks for a slide deck, presentation, report, brief,
@@ -26,11 +31,58 @@ handout, or one-pager. You BUILD A FILE and the app previews it beside the chat.
   this as their own work aid. Neutral, professional design only.
 - Drafts, not submissions: you never submit or upload the deliverable anywhere.
 
+## Image sourcing (drug/clinical slide decks)
+
+When the student asks for a drug literature overview or clinical slide deck:
+
+1. **Search for real web images first** — don't default to hand-drawn SVGs or inline icon-only layouts.
+   - Wikimedia Commons (commons.wikimedia.org) — chemical structures, molecule SVGs
+   - Open-access journal figures (Nature Communications, Cell Discovery, PLOS, BMJ Open, etc.) — cryo-EM structures, mechanism diagrams, trial outcome figures
+   - Pharmaceutical company press release images / infographics
+   - PubMed Central (pmc.ncbi.nlm.nih.gov) — figures from open-access full texts
+2. **Cite the image source** in a caption below each image (journal name, license type, URL).
+3. **Fallback to inline SVGs** only when no freely usable real image exists for that concept.
+4. **Check image loads** — if an image URL 404s, skip that image rather than leaving a broken link.
+
+## References slide — required for literature decks
+
+Every academic/literature overview deck MUST end with a dedicated references slide that includes:
+- Numbered list of all sources cited inline
+- Hyperlinked PMIDs, DOI URLs, or press release URLs
+- A disclaimer line: "Investigational — Not FDA approved" or equivalent for the drug's regulatory status
+
+## Dual-format for inline preview
+
+- If the student asks for **.pptx**: build the pptx file, BUT ALSO create an HTML version in the same pass so it can preview in the side panel. Tell the student both exist.
+- The HTML version is the primary deliverable for preview; the .pptx is for editing in PowerPoint.
+- The final reply MUST include the `[Preview: …](#preview/…)` link to the HTML file.
+
+## Deep-research-to-deck workflow (literature overviews)
+
+For a drug literature overview, do this in order before building slides:
+
+1. **Deep research pass** — launch 4–8 searches simultaneously (PubMed, web, ClinicalTrials.gov, openFDA):
+   - Mechanism / pharmacology search (e.g. "retatrutide mechanism GIP GLP-1 glucagon")
+   - Phase 2/3 trial search (e.g. "retatrutide phase 3 obesity diabetes results")
+   - Safety/tolerability search (e.g. "retatrutide adverse effects")
+   - Meta-analysis/systematic review search
+2. **Extract key data** from the best sources — extract full tables and figures from press releases, meta-analyses, and landmark trials.
+3. **Image search** — Wikimedia Commons, open-access journal figures for that drug.
+4. **Build the deck** in this structure:
+   - Slide 1: Title (drug name, class, subtitle, date)
+   - Slide 2: What is it? / mechanism (with card layout for multi-receptor drugs)
+   - Slide 3: Why it matters / evolution from prior therapies (comparison table)
+   - Slide 4–7: Key trials (phase 2, phase 3 by indication) with data tables
+   - Slide 8: Safety profile (AE table, discontinuation rates)
+   - Slide 9: Meta-analysis / pooled evidence if available
+   - Slide 10: Key takeaways + pipeline
+   - Slide 11+: References (numbered, hyperlinked)
+
 ## Slide deck format
 
 - 16:9 sections, one `<section class="slide">` per slide; first slide = title + subtitle
   + date; content slides ≤ 5 bullets or one focused diagram/table; last slide =
-  references list. 6–10 slides is the sweet spot.
+  references list. 6–11 slides is the sweet spot.
 - Base CSS (adapt colors/spacing, keep structure):
 
 ```html
