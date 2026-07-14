@@ -15,6 +15,7 @@ import {
   IconRepeat,
   IconSplit,
   IconDownload,
+  IconCheck,
 } from "@/components/FeatureIcons";
 
 const APP_SIGN_UP = "https://app.enternemesis.com/sign-up";
@@ -125,9 +126,6 @@ export default function Home() {
           <span className="spacer" />
           <a className="ghost" href="#work">Features</a>
           <a className="ghost" href="#plans">Plans</a>
-          <a className="ghost" href="#how">Containment</a>
-          <a className="ghost" href="#graph">Memory</a>
-          <a className="ghost" href="#privacy">Boundaries</a>
           <a className="ghost" href={APP_DOWNLOAD}>Download</a>
           <a className="ghost" href={APP_SIGN_IN}>Sign in</a>
           <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
@@ -163,13 +161,6 @@ export default function Home() {
             <p className="hero-cta-caption reveal r4">
               Apple Silicon Macs. Sign in with your Nemesis account.
             </p>
-            <div className="hero-meta reveal r4">
-              <span>persistent memory</span>
-              <span className="rule" />
-              <span>scoped tools</span>
-              <span className="rule" />
-              <span>human submission</span>
-            </div>
           </div>
         </div>
       </header>
@@ -179,62 +170,43 @@ export default function Home() {
           <div className="section-head">
             <p className="eyebrow">The work</p>
             <h2>What it does, concretely.</h2>
-            <p>The same agent, any major, any field.</p>
           </div>
           <div className="feature-grid">
             <div className="feature">
               <div className="feature-icon"><IconCalendar /></div>
               <div className="k">Semester</div>
               <h3>It reads your semester</h3>
-              <p>
-                Connect Blackboard or Canvas. Nemesis reads every syllabus, files every
-                slide, and builds your calendar. One afternoon, and the whole term is mapped.
-              </p>
+              <p>Connects to Blackboard or Canvas and builds your calendar.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconWaveform /></div>
               <div className="k">Lectures</div>
               <h3>Lectures become notes</h3>
-              <p>
-                Record the lecture. It transcribes on your Mac, writes clean notes, and
-                files them to the right course.
-              </p>
+              <p>Transcribes on your Mac and files clean notes.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconLayers /></div>
               <div className="k">Recall</div>
               <h3>Flashcards that fight back</h3>
-              <p>
-                Study decks are built from your own lectures. Spaced repetition brings back
-                what you are about to forget. Match mode makes the grind a game.
-              </p>
+              <p>Spaced-repetition decks built from your own lectures.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconSearch /></div>
               <div className="k">Research</div>
               <h3>Research with receipts</h3>
-              <p>
-                Ask the hard question. It answers from real papers with real citations,
-                drawn from journals and primary sources you can open.
-              </p>
+              <p>Real citations from journals you can open.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconDocStack /></div>
               <div className="k">Drafts</div>
               <h3>Drafts you finish</h3>
-              <p>
-                Slides, reports, posters. Assembled from your own material, cited, and
-                waiting for your edit.
-              </p>
+              <p>Slides, reports, and posters, cited and ready to edit.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconShieldCheck /></div>
               <div className="k">Authority</div>
               <h3>Nothing happens without you</h3>
-              <p>
-                Every action lands in a plain English ledger. It never submits anything.
-                You keep the final authority.
-              </p>
+              <p>Every action is logged. Nothing is submitted for you.</p>
             </div>
           </div>
         </div>
@@ -250,26 +222,17 @@ export default function Home() {
             <div className="q">
               <div className="n">01</div>
               <h3>It detects what <span className="b">changed</span>.</h3>
-              <p>
-                Announcements, moved exams, new grades, new files. Nemesis reads the sources
-                you authorize, compares them with the record, and tells you exactly what moved.
-              </p>
+              <p>Nemesis compares your sources with the record and flags what moved.</p>
             </div>
             <div className="q">
               <div className="n">02</div>
               <h3>It ranks what comes <span className="b">next</span>.</h3>
-              <p>
-                Open work is ranked by deadline, grade weight, and mastery. One task rises
-                to the top, with the reason attached.
-              </p>
+              <p>Ranked by deadline, grade weight, and mastery, with the reason attached.</p>
             </div>
             <div className="q">
               <div className="n">03</div>
               <h3>It finds the <span className="b">weak point</span>.</h3>
-              <p>
-                Recall is tracked through your review history. Nemesis identifies what is
-                likely to cost you and brings it forward before the exam does.
-              </p>
+              <p>Tracks recall and surfaces what you are about to forget.</p>
             </div>
           </div>
         </div>
@@ -283,9 +246,6 @@ export default function Home() {
               <span className="dot"> · </span>Agency
             </p>
             <h2>A capable system, held to a narrow mission.</h2>
-            <p>
-              Nemesis compounds what it learns. Its permitted scope remains fixed.
-            </p>
           </div>
           <div className="triad">
             <div className="obj">
@@ -295,11 +255,7 @@ export default function Home() {
               <div className="cap">
                 <div className="k">Persistent memory</div>
                 <h3>It remembers across sessions</h3>
-                <p>
-                  Courses, deadlines, lectures, concepts, and preferences persist after the
-                  conversation ends. Every academic fact keeps its source and history, so
-                  Nemesis does not wake up blank.
-                </p>
+                <p>Courses, deadlines, and concepts persist with their source and history.</p>
               </div>
             </div>
             <div className="obj">
@@ -309,11 +265,7 @@ export default function Home() {
               <div className="cap">
                 <div className="k">Procedural skill</div>
                 <h3>It learns how the work gets done</h3>
-                <p>
-                  A successful workflow can become a reusable skill: sync a portal, build a
-                  deck, prepare a brief. The procedure can improve without gaining new
-                  authority.
-                </p>
+                <p>A successful workflow becomes a reusable skill, without new authority.</p>
               </div>
             </div>
             <div className="obj">
@@ -323,11 +275,7 @@ export default function Home() {
               <div className="cap">
                 <div className="k">Controlled agency</div>
                 <h3>It divides the work, then returns it</h3>
-                <p>
-                  Nemesis can delegate bounded tasks, run recurring prompts on schedule, and
-                  call only the tools in scope. Work runs in isolated task contexts. Results
-                  return to you. Submission does not.
-                </p>
+                <p>Bounded tasks run in isolated contexts. Results return to you.</p>
               </div>
             </div>
           </div>
@@ -341,11 +289,7 @@ export default function Home() {
           <div className="band-in">
             <p className="eyebrow">Persistent memory</p>
             <h2>The entity remembers the whole semester.</h2>
-            <p>
-              Courses, deadlines, lectures, grades, and concepts live in one sourced graph
-              that survives the chat. New evidence updates the record without erasing its
-              history. Ask about the semester and Nemesis answers from what it can trace.
-            </p>
+            <p>Courses, deadlines, and grades live in one graph that survives the chat.</p>
           </div>
         </div>
       </div>
@@ -361,51 +305,31 @@ export default function Home() {
               <div className="feature-icon"><IconWaveform /></div>
               <div className="k">Signal</div>
               <h3>Turn lectures into study material</h3>
-              <p>
-                With microphone access, Nemesis transcribes lectures on-device. From that
-                transcript, it can prepare notes, mind maps, decks, and practice tests. The
-                audio remains on your Mac.
-              </p>
+              <p>Transcribes on-device into notes, decks, and practice tests.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconWindow /></div>
               <div className="k">Browser</div>
               <h3>Enter the accounts you authorize</h3>
-              <p>
-                Nemesis uses your logged-in school browser to read Blackboard, Outlook,
-                Canvas, and Gmail. The session stays on your Mac; your password is never
-                handed to the agent.
-              </p>
+              <p>Reads Blackboard, Outlook, Canvas, and Gmail from your logged-in browser.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconRepeat /></div>
               <div className="k">Automation</div>
               <h3>Run the mission on schedule</h3>
-              <p>
-                Set recurring briefs and recall-based review queues. When authorized, each
-                run follows a defined prompt or skill, then records what changed.
-              </p>
+              <p>Recurring briefs and review queues, logged after every run.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconSplit /></div>
               <div className="k">Delegation</div>
               <h3>Split complex work into contained tasks</h3>
-              <p>
-                Research, organizing, and drafting can run in parallel, isolated task
-                contexts. Nemesis returns cited slides, reports, and handouts for review.
-                Submission remains yours.
-              </p>
+              <p>Parallel research and drafting return cited work for your review.</p>
             </div>
           </div>
           <div className="trust" id="privacy">
-            <span className="lock">Containment protocol</span>
             <p>
-              School sign-ins and lecture audio stay on your Mac. Nemesis uses its configured
-              AI provider for reasoning.{" "}
-              <span>
-                Tools stay within the scope you authorize, material actions are logged, and
-                coursework is never submitted on your behalf.
-              </span>
+              School sign-ins and lecture audio stay on your Mac.{" "}
+              <span>Tools stay in scope, and coursework is never submitted for you.</span>
             </p>
           </div>
         </div>
@@ -421,10 +345,7 @@ export default function Home() {
               <span className="dot"> · </span>Inbox
             </p>
             <h2>Order is maintained inside the perimeter.</h2>
-            <p>
-              Notes filed. Decks current. Calendar reconciled. Browser sweeps and scheduled
-              tasks leave a plain-English trail.
-            </p>
+            <p>Notes filed, decks current, calendar reconciled.</p>
           </div>
         </div>
       </div>
@@ -434,36 +355,36 @@ export default function Home() {
           <div className="section-head">
             <p className="eyebrow">Plans</p>
             <h2>Seven days free. Cancel anytime.</h2>
-            <p>
-              Every plan starts with a 7 day trial. Card required, nothing charged until
-              day 7. Prices are per month.
-            </p>
+            <p>Card required. Nothing charged for 7 days.</p>
           </div>
           <div className="plans">
             <div className="plan">
               <div className="plan-price">$9.99</div>
               <h3>Student</h3>
-              <p>
-                Higher limits for answers, notes, and study decks. Lecture capture and
-                scheduled school sync.
-              </p>
+              <ul className="plan-features">
+                <li><IconCheck size={13} />Higher limits on answers and study decks</li>
+                <li><IconCheck size={13} />Lecture capture</li>
+                <li><IconCheck size={13} />Scheduled school sync</li>
+              </ul>
             </div>
             <div className="plan plan-featured">
               <span className="plan-badge">Featured</span>
               <div className="plan-price">$19.99</div>
               <h3>Agent Pro</h3>
-              <p>
-                Everything in Student, plus deep research with cited reports and higher
-                automation limits.
-              </p>
+              <ul className="plan-features">
+                <li><IconCheck size={13} />Everything in Student</li>
+                <li><IconCheck size={13} />Deep research with cited reports</li>
+                <li><IconCheck size={13} />Higher automation limits</li>
+              </ul>
             </div>
             <div className="plan">
               <div className="plan-price">$49.99</div>
               <h3>Max</h3>
-              <p>
-                The highest limits across the agent, unlimited lecture copilot, and first
-                access to new capabilities.
-              </p>
+              <ul className="plan-features">
+                <li><IconCheck size={13} />Highest limits across the agent</li>
+                <li><IconCheck size={13} />Unlimited lecture copilot</li>
+                <li><IconCheck size={13} />First access to new capabilities</li>
+              </ul>
             </div>
           </div>
           <div className="hero-cta" style={{ marginTop: "28px", justifyContent: "center" }}>
@@ -476,11 +397,7 @@ export default function Home() {
         <div className="wrap">
           <p className="eyebrow">Containment doctrine</p>
           <h2>It grows more capable. The perimeter stays still.</h2>
-          <p>
-            The semester ends; its memory does not. Nemesis carries forward the knowledge,
-            procedures, and projects you choose to retain, from school into whatever comes
-            after. It gains context. Never authority.
-          </p>
+          <p>It carries your knowledge forward, into whatever comes next.</p>
           <div className="closer-cta">
             <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
             <a className="btn btn-secondary" href={APP_DOWNLOAD}>
