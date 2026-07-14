@@ -81,3 +81,8 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   settings entry, Study demo decks removed (fresh installs empty), field-neutral
   persona (any major) w/ auto-upgrade of app-written SOULs, generic consent-partner
   copy, Projects view for students, NSLocalNetworkUsageDescription.
+- `0091-feat-desktop-v0.1.0-beta.6-in-app-auto-update-silent.patch` — beta.6:
+  electron-updater auto-update (background download → "Restart now / On next quit"
+  dialog, autoInstallOnAppQuit, 4h recheck; releases now must ship zip + blockmap +
+  latest-mac.yml with the DMGs) + the intentional provider-sync backend restart no
+  longer flashes the red "Backend stopped" banner (suppressNextBackendExit).
