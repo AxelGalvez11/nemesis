@@ -13,11 +13,11 @@ const billingTick: React.CSSProperties = { color: "var(--acid)", flex: "0 0 auto
 
 // Tier ordering, so a card knows whether it's the user's current plan, an upgrade, or already included
 // in a higher plan they hold. Unknown/legacy plan names fall back to 0 (treated as the base tier).
-const PLAN_RANK: Record<string, number> = { free: 0, plus: 1, pro: 2 };
+const PLAN_RANK: Record<string, number> = { free: 0, plus: 1, pro: 2, max: 3 };
 const rankOf = (plan?: string | null): number => PLAN_RANK[(plan ?? "free").toLowerCase()] ?? 0;
 
 /**
- * Billing content (current plan + Plus/Pro cards), with NO page header — the host supplies the heading.
+ * Billing content (current plan + Student/Agent Pro/Max cards), with NO page header — the host supplies the heading.
  * Plan-aware: each card reflects whether it's your current tier, an upgrade, or already included. Stripe
  * checkout/portal redirect via window.location. After a successful checkout the plan is written by an
  * async Stripe webhook (a few seconds behind the redirect), so when `checkoutStatus === "success"` we
@@ -81,7 +81,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
 
   // The per-plan call to action: current tier → disabled "Current plan"; a tier below the one you hold →
   // "Included in your plan" (no re-purchase / mislabeled downgrade); a higher tier → a real upgrade button.
-  function planCta(tier: "plus" | "pro", label: string) {
+  function planCta(tier: "plus" | "pro" | "max", label: string) {
     const tierRank = rankOf(tier);
     if (ent && currentRank === tierRank) {
       return <button style={{ width: "100%" }} className="secondary" disabled>✓ Current plan</button>;
@@ -98,6 +98,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
 
   const isPlus = ent != null && currentRank === rankOf("plus");
   const isPro = ent != null && currentRank === rankOf("pro");
+  const isMax = ent != null && currentRank === rankOf("max");
 
   return (
     <>
@@ -119,7 +120,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
           {busy === "portal" ? "Opening…" : "Manage billing"}
         </button>
       </Card>
-      <div className="grid two">
+      <div className="grid three">
         <Card className={isPlus ? "acid" : ""}>
           <div className="row" style={{ marginBottom: 2 }}>
             <h2 style={{ margin: "0 0 2px" }}>Nemesis Student</h2>
@@ -139,7 +140,9 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
         <Card className="acid">
           <div className="row" style={{ marginBottom: 2 }}>
             <h2 style={{ margin: 0 }}>Nemesis Agent Pro</h2>
-            <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>{isPro ? "Current" : "Recommended"}</span>
+            {isPro || currentRank < rankOf("pro") ? (
+              <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>{isPro ? "Current" : "Recommended"}</span>
+            ) : null}
           </div>
           <p style={{ margin: "0 0 12px" }}>
             <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>$19.99</strong>
@@ -152,6 +155,23 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
             <li style={billingItem}><span style={billingTick}>✓</span>Live lecture copilot — up to 2 lectures a day</li>
           </ul>
           {planCta("pro", "Upgrade to Agent Pro")}
+        </Card>
+        <Card className={isMax ? "acid" : ""}>
+          <div className="row" style={{ marginBottom: 2 }}>
+            <h2 style={{ margin: 0 }}>Nemesis Max</h2>
+            {isMax ? <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>Current</span> : null}
+          </div>
+          <p style={{ margin: "0 0 12px" }}>
+            <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>$49.99</strong>
+            <span className="muted" style={{ fontSize: 13 }}> / month</span>
+          </p>
+          <ul style={billingList}>
+            <li style={{ ...billingItem, color: "var(--text-2)", fontWeight: 600, fontSize: 12.5 }}>Everything in Agent Pro, with no ceiling:</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>Unlimited live lecture copilot — real-time, every class</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>The highest daily limits on everything</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>First access to every new power we ship</li>
+          </ul>
+          {planCta("max", "Upgrade to Max")}
         </Card>
       </div>
     </>
