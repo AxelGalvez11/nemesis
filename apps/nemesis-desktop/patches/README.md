@@ -158,3 +158,10 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
 - `0103-fix-usage-settings-scroll.patch` — Account & usage settings page gets
   the scroll wrapper every other settings page already had; at short window
   heights it was cut off, leaving the telemetry opt-out switch unreachable.
+- `0104-budget-terminal-no-fallback-mask.patch` — the metering proxy's
+  daily-budget 429 is now TERMINAL in the agent loop (new
+  FailoverReason.entitlement_budget: no retry, no rotation, no fallback) so
+  the budget message surfaces verbatim instead of being buried under a dead
+  stock-fallback slot's noise ("HTTP 401: Authentication Fails (governor)").
+  Also: the sign-in overlay's waiting line swaps to a concrete hint after
+  45s (press "Open Nemesis" in the browser tab / use email+password).

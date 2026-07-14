@@ -1,0 +1,245 @@
+From 8c3e75b697a48563f5f284a4439964753a4de6f0 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 17:16:48 -0500
+Subject: [PATCH] =?UTF-8?q?fix(agent):=20daily=20plan=20budget=20is=20term?=
+ =?UTF-8?q?inal=20=E2=80=94=20never=20masked=20by=20provider=20fallbacks?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The metering proxy answered a budget-exhausted chat with its correct 429
+('Daily token budget reached for the plus plan…'), but the conversation
+loop classified it as a generic rate limit, retried, then walked the
+stock fallback chain — and the user saw the LAST dead slot's noise
+('HTTP 401: Authentication Fails (governor)') instead of the budget
+message. That also defeats the desktop's calm allowance card, which
+matches on 'daily token budget'.
+
+New FailoverReason.entitlement_budget: detected first in the classifier
+pipeline via the proxy's unique code/message, not retryable, no
+credential rotation, no fallback. The conversation loop surfaces the
+proxy's message verbatim and aborts until the UTC-midnight reset.
+
+Also: the sign-in overlay's 'updates automatically' line now swaps to a
+concrete hint after 45s of waiting on the browser handoff (press Open
+Nemesis in the tab / use email+password), instead of promising forever.
+
+193/193 error-classifier tests pass (one new: budget 429 is terminal).
+---
+ agent/conversation_loop.py                    | 28 +++++++++++++++++++
+ agent/error_classifier.py                     | 19 +++++++++++++
+ .../src/components/nemesis-account-gate.js    | 17 ++++++++++-
+ .../src/components/nemesis-account-gate.tsx   | 21 +++++++++++++-
+ tests/agent/test_error_classifier.py          | 25 ++++++++++++++++-
+ 5 files changed, 107 insertions(+), 3 deletions(-)
+
+diff --git a/agent/conversation_loop.py b/agent/conversation_loop.py
+index 4295bdad602..9bfe7de539c 100644
+--- a/agent/conversation_loop.py
++++ b/agent/conversation_loop.py
+@@ -3705,6 +3705,34 @@ def run_conversation(
+                 ) and not is_context_length_error
+ 
+                 if is_client_error:
++                    # Metered-plan daily budget (Nemesis proxy 429) is terminal
++                    # until the UTC-midnight reset: retrying reproduces it and
++                    # the local fallback chain isn't funded by the plan —
++                    # falling back only buried this message under a dead slot's
++                    # auth noise ("HTTP 401: Authentication Fails (governor)",
++                    # owner report 2026-07-14). Surface the proxy's message
++                    # verbatim: the desktop renderer matches "daily token
++                    # budget" on it to swap in its calm allowance card.
++                    if classified.reason == FailoverReason.entitlement_budget:
++                        _budget_message = (classified.message or "").strip() or (
++                            "Daily token budget reached for your plan. It resets at midnight UTC."
++                        )
++                        agent._flush_status_buffer()
++                        agent._emit_status(f"❌ {_budget_message}")
++                        agent._vprint(
++                            f"{agent.log_prefix}❌ Daily plan budget exhausted (HTTP {status_code}); "
++                            f"aborting until the UTC reset.",
++                            force=True,
++                        )
++                        agent._persist_session(messages, conversation_history)
++                        return {
++                            "final_response": _budget_message,
++                            "messages": messages,
++                            "api_calls": api_call_count,
++                            "completed": False,
++                            "failed": True,
++                            "error": _budget_message,
++                        }
+                     # Try fallback before aborting — a different provider may
+                     # not have the same issue (rate limit, auth, etc.). Only
+                     # announce the attempt when a fallback chain actually
+diff --git a/agent/error_classifier.py b/agent/error_classifier.py
+index 4d75502dab4..c6ad1dd3a5c 100644
+--- a/agent/error_classifier.py
++++ b/agent/error_classifier.py
+@@ -34,6 +34,13 @@ class FailoverReason(enum.Enum):
+     # Upstream model rate-limited (aggregator 429) — fallback to a different
+     # model, NOT credential rotation. The user's key is healthy.
+     upstream_rate_limit = "upstream_rate_limit"
++    # Metered-plan daily allowance exhausted (Nemesis proxy 429 with code
++    # daily_token_budget_exhausted). Terminal until the UTC-midnight reset:
++    # retrying reproduces it, no locally configured fallback is funded by the
++    # plan, and falling back buries this message under a dead slot's auth
++    # noise (a budget 429 once surfaced to the user as "HTTP 401:
++    # Authentication Fails (governor)" from a stock fallback provider).
++    entitlement_budget = "entitlement_budget"
+ 
+     # Server-side
+     overloaded = "overloaded"            # 503/529 — provider overloaded, backoff
+@@ -609,6 +616,18 @@ def classify_api_error(
+ 
+     # ── 1. Provider-specific patterns (highest priority) ────────────
+ 
++    # Metered-plan daily budget (Nemesis LLM proxy). The proxy mints a unique
++    # error code, so this is the most specific pattern in the pipeline — it
++    # must run before the generic 429/rate-limit path ever sees the status.
++    # Not retryable (resets at UTC midnight), no credential rotation, no
++    # fallback: the surfaced message must stay the proxy's own budget text.
++    if "daily_token_budget_exhausted" in error_msg or "daily token budget reached" in error_msg:
++        return _result(
++            FailoverReason.entitlement_budget,
++            retryable=False,
++            should_fallback=False,
++        )
++
+     # Provider content-policy / safety-filter block. The provider has made a
+     # deterministic refusal decision about THIS prompt — retrying unchanged
+     # just reproduces the same refusal and burns paid attempts. Must run
+diff --git a/apps/desktop/src/components/nemesis-account-gate.js b/apps/desktop/src/components/nemesis-account-gate.js
+index 7ff31759a41..0966886f056 100644
+--- a/apps/desktop/src/components/nemesis-account-gate.js
++++ b/apps/desktop/src/components/nemesis-account-gate.js
+@@ -21,6 +21,7 @@ export const NemesisAccountGate = () => {
+     const [busy, setBusy] = useState(false);
+     const [error, setError] = useState(null);
+     const [oauthStarted, setOauthStarted] = useState(null);
++    const [oauthSlow, setOauthSlow] = useState(false);
+     const [refreshingPlan, setRefreshingPlan] = useState(false);
+     const [dismissedTrialEnd, setDismissedTrialEnd] = useState(null);
+     const trialTiming = getTrialTiming(account);
+@@ -49,6 +50,18 @@ export const NemesisAccountGate = () => {
+         const timeout = window.setTimeout(() => void refreshEntitlement(), Math.max(0, Math.min(millisecondsUntilExpiry + 250, 2_147_483_647)));
+         return () => window.clearTimeout(timeout);
+     }, [account.bypass, account.periodEnd, account.planStatus, account.status, account.trialEnd]);
++    // The browser handoff can silently die (the deep link back to the app needs
++    // a click in the browser, and people miss it). After 45s of waiting, swap in
++    // a hint that tells them exactly where to look instead of promising the
++    // window will update on its own forever.
++    useEffect(() => {
++        if (!oauthStarted) {
++            setOauthSlow(false);
++            return;
++        }
++        const timeout = window.setTimeout(() => setOauthSlow(true), 45_000);
++        return () => window.clearTimeout(timeout);
++    }, [oauthStarted]);
+     if (!NEMESIS_STUDENT_BUILD) {
+         return null;
+     }
+@@ -76,7 +89,9 @@ export const NemesisAccountGate = () => {
+         return (_jsx("div", { className: "fixed inset-0 z-[1300] flex items-center justify-center bg-background/95 backdrop-blur-md p-4", children: _jsxs("div", { className: "w-full max-w-sm rounded-2xl border border-border bg-card p-8 shadow-lg", children: [_jsxs("div", { className: "flex flex-col items-center gap-3 pb-5 text-center", children: [_jsx(BrandMark, { className: "size-12" }), _jsxs("div", { children: [_jsx("h2", { className: "text-lg font-semibold tracking-tight", children: "Sign in to Nemesis" }), _jsx("p", { className: "pt-1 text-xs text-muted-foreground", children: "Use your Nemesis account. Your plan stays in sync across the desktop and account portal." })] })] }), _jsxs("div", { className: "flex flex-col gap-2.5", children: [['google', 'apple'].map(provider => (_jsxs(Button, { onClick: () => {
+                                     setOauthStarted(provider);
+                                     void window.hermesDesktop?.openExternal?.(desktopOAuthStartUrl(provider));
+-                                }, variant: "secondary", children: ["Continue with ", provider === 'google' ? 'Google' : 'Apple'] }, provider))), oauthStarted && (_jsx("p", { "aria-live": "polite", className: "text-center text-xs text-muted-foreground", children: "Finishing sign-in in your browser \u2014 this window updates automatically when you're done." })), _jsxs("div", { className: "flex items-center gap-3 py-1", children: [_jsx("div", { className: "h-px flex-1 bg-border" }), _jsx("span", { className: "text-[11px] uppercase tracking-wide text-muted-foreground/70", children: "or" }), _jsx("div", { className: "h-px flex-1 bg-border" })] }), _jsx(Input, { autoFocus: true, onChange: event => setEmail(event.target.value), placeholder: "Email", type: "email", value: email }), _jsx(Input, { onChange: event => setPassword(event.target.value), onKeyDown: event => {
++                                }, variant: "secondary", children: ["Continue with ", provider === 'google' ? 'Google' : 'Apple'] }, provider))), oauthStarted && (_jsx("p", { "aria-live": "polite", className: "text-center text-xs text-muted-foreground", children: oauthSlow
++                                    ? 'Still waiting on the browser. In that tab, press "Open Nemesis" (your browser may ask permission — choose Open), or sign in with your email and password below.'
++                                    : 'Finishing sign-in in your browser — this window updates automatically when you’re done.' })), _jsxs("div", { className: "flex items-center gap-3 py-1", children: [_jsx("div", { className: "h-px flex-1 bg-border" }), _jsx("span", { className: "text-[11px] uppercase tracking-wide text-muted-foreground/70", children: "or" }), _jsx("div", { className: "h-px flex-1 bg-border" })] }), _jsx(Input, { autoFocus: true, onChange: event => setEmail(event.target.value), placeholder: "Email", type: "email", value: email }), _jsx(Input, { onChange: event => setPassword(event.target.value), onKeyDown: event => {
+                                     if (event.key === 'Enter') {
+                                         void submit();
+                                     }
+diff --git a/apps/desktop/src/components/nemesis-account-gate.tsx b/apps/desktop/src/components/nemesis-account-gate.tsx
+index f1261fcc379..5a2646b8eab 100644
+--- a/apps/desktop/src/components/nemesis-account-gate.tsx
++++ b/apps/desktop/src/components/nemesis-account-gate.tsx
+@@ -44,6 +44,7 @@ export const NemesisAccountGate: FC = () => {
+   const [busy, setBusy] = useState(false)
+   const [error, setError] = useState<null | string>(null)
+   const [oauthStarted, setOauthStarted] = useState<null | string>(null)
++  const [oauthSlow, setOauthSlow] = useState(false)
+   const [refreshingPlan, setRefreshingPlan] = useState(false)
+   const [dismissedTrialEnd, setDismissedTrialEnd] = useState<null | string>(null)
+   const trialTiming = getTrialTiming(account)
+@@ -85,6 +86,22 @@ export const NemesisAccountGate: FC = () => {
+     return () => window.clearTimeout(timeout)
+   }, [account.bypass, account.periodEnd, account.planStatus, account.status, account.trialEnd])
+ 
++  // The browser handoff can silently die (the deep link back to the app needs
++  // a click in the browser, and people miss it). After 45s of waiting, swap in
++  // a hint that tells them exactly where to look instead of promising the
++  // window will update on its own forever.
++  useEffect(() => {
++    if (!oauthStarted) {
++      setOauthSlow(false)
++
++      return
++    }
++
++    const timeout = window.setTimeout(() => setOauthSlow(true), 45_000)
++
++    return () => window.clearTimeout(timeout)
++  }, [oauthStarted])
++
+   if (!NEMESIS_STUDENT_BUILD) {
+     return null
+   }
+@@ -140,7 +157,9 @@ export const NemesisAccountGate: FC = () => {
+             ))}
+             {oauthStarted && (
+               <p aria-live="polite" className="text-center text-xs text-muted-foreground">
+-                Finishing sign-in in your browser — this window updates automatically when you&apos;re done.
++                {oauthSlow
++                  ? 'Still waiting on the browser. In that tab, press "Open Nemesis" (your browser may ask permission — choose Open), or sign in with your email and password below.'
++                  : 'Finishing sign-in in your browser — this window updates automatically when you’re done.'}
+               </p>
+             )}
+ 
+diff --git a/tests/agent/test_error_classifier.py b/tests/agent/test_error_classifier.py
+index baadfa7e196..cd39ec1b7ba 100644
+--- a/tests/agent/test_error_classifier.py
++++ b/tests/agent/test_error_classifier.py
+@@ -53,7 +53,7 @@ class TestFailoverReason:
+     def test_enum_members_exist(self):
+         expected = {
+             "auth", "auth_permanent", "billing", "rate_limit",
+-            "upstream_rate_limit",
++            "upstream_rate_limit", "entitlement_budget",
+             "overloaded", "server_error", "timeout",
+             "ssl_cert_verification",
+             "context_overflow", "payload_too_large", "image_too_large",
+@@ -337,6 +337,29 @@ class TestClassifyApiError:
+         assert result.reason == FailoverReason.rate_limit
+         assert result.should_fallback is True
+ 
++    def test_429_nemesis_daily_budget_is_terminal(self):
++        """The Nemesis metering proxy's daily-budget 429 must never retry,
++        rotate, or fall back — the budget resets at UTC midnight, and falling
++        back buried the message under a dead fallback slot's auth error
++        ("HTTP 401: Authentication Fails (governor)", owner report 2026-07-14).
++        """
++        e = MockAPIError(
++            "Too Many Requests",
++            status_code=429,
++            body={
++                "error": {
++                    "code": "daily_token_budget_exhausted",
++                    "message": "Daily token budget reached for the plus plan. Upgrade or try again tomorrow.",
++                }
++            },
++        )
++        result = classify_api_error(e)
++        assert result.reason == FailoverReason.entitlement_budget
++        assert result.retryable is False
++        assert result.should_fallback is False
++        assert result.should_rotate_credential is False
++        assert "Daily token budget reached" in result.message
++
+     def test_alibaba_rate_increased_too_quickly(self):
+         """Alibaba/DashScope returns a unique throttling message.
+ 
+-- 
+2.50.1 (Apple Git-155)
+
