@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
+import { AuthModeSwitch } from "@/components/AuthModeSwitch";
 import { useAuth } from "@/components/AuthProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { TurnstileWidget } from "@/components/TurnstileWidget";
@@ -80,10 +81,11 @@ export default function SignInPage() {
   return (
     <AuthFrame
       eyebrow="Nemesis // identity gate"
-      title="Re-enter the perimeter."
-      description="Authenticate to manage the account and subscription that govern your desktop instance."
-      footer={<p>No instance yet? <Link className="nemesis-auth-link" href="/sign-up">Deploy Nemesis.</Link></p>}
+      title="Sign in to Nemesis."
+      description="Re-enter the perimeter — manage the account and subscription that govern your desktop instance."
+      footer={<p>New to Nemesis? <Link className="nemesis-auth-link" href="/sign-up">Create your account.</Link></p>}
     >
+        <AuthModeSwitch active="sign-in" />
         {deleted ? <p className="nemesis-auth-success">Your account and its server-side records were deleted.</p> : null}
         {existing ? <p className="nemesis-auth-notice">That email already commands a Nemesis instance. Sign in below to resume control.</p> : null}
         {isPreviewMode ? <p className="nemesis-auth-notice">Local preview mode: no account credentials are required.</p> : null}
@@ -98,7 +100,7 @@ export default function SignInPage() {
             <input id="signin-password" type="password" autoComplete="current-password" required={!isPreviewMode} placeholder="Enter password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
           <TurnstileWidget key={captchaKey} onToken={setCaptchaToken} />
-          <button className="nemesis-auth-submit" disabled={busy || (captchaEnabled && !isPreviewMode && !captchaToken)} type="submit">{busy ? "Authenticating…" : isPreviewMode ? "Enter preview" : "Enter Nemesis"}</button>
+          <button className="nemesis-auth-submit" disabled={busy || (captchaEnabled && !isPreviewMode && !captchaToken)} type="submit">{busy ? "Signing in…" : isPreviewMode ? "Enter preview" : "Sign in"}</button>
         </form>
         {error ? <p className="nemesis-auth-error" role="alert">{error}</p> : null}
     </AuthFrame>

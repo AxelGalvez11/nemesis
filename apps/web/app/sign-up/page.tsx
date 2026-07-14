@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
+import { AuthModeSwitch } from "@/components/AuthModeSwitch";
 import { useAuth } from "@/components/AuthProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { TurnstileWidget } from "@/components/TurnstileWidget";
@@ -88,12 +89,12 @@ export default function SignUpPage() {
   if (submittedEmail) {
     return (
       <AuthFrame
-        eyebrow="Authorization required"
-        title="Authorize the account."
-        description={<>A secure link was sent to <strong>{submittedEmail}</strong>. Open it to complete deployment and enter the perimeter.</>}
-        footer={<p><Link className="nemesis-auth-link" href="/sign-in">Return to identity gate.</Link></p>}
+        eyebrow="Check your email"
+        title="Confirm your email."
+        description={<>A confirmation link was sent to <strong>{submittedEmail}</strong>. Open it to finish creating your account.</>}
+        footer={<p><Link className="nemesis-auth-link" href="/sign-in">Back to sign in.</Link></p>}
       >
-        <p className="nemesis-auth-success">Awaiting email authorization. You can close this window after opening the secure link.</p>
+        <p className="nemesis-auth-success">Waiting for you to open the link — you can close this tab afterward.</p>
       </AuthFrame>
     );
   }
@@ -101,10 +102,11 @@ export default function SignUpPage() {
   return (
     <AuthFrame
       eyebrow="Nemesis // initial deployment"
-      title="Bring Nemesis online."
-      description="Create the account that governs its memory, tools, and permitted scope."
-      footer={<p>Already contained? <Link className="nemesis-auth-link" href="/sign-in">Return to sign in.</Link></p>}
+      title="Create your account."
+      description="Bring Nemesis online — this account governs its memory, tools, and permitted scope."
+      footer={<p>Already have an account? <Link className="nemesis-auth-link" href="/sign-in">Sign in.</Link></p>}
     >
+        <AuthModeSwitch active="sign-up" />
         {isPreviewMode ? <p className="nemesis-auth-notice">Local preview mode: no account will be created.</p> : null}
         <OAuthButtons disabled={busy} onError={setError} showTermsNote />
         <form onSubmit={onSubmit} className="nemesis-auth-form">
@@ -121,7 +123,7 @@ export default function SignUpPage() {
             <span>I understand Nemesis prepares academic and research material for my review and never submits on my behalf. I agree to the <Link className="nemesis-auth-link" href="/legal/terms">Terms</Link> and <Link className="nemesis-auth-link" href="/legal/privacy">Privacy Policy</Link>.</span>
           </label>
           <TurnstileWidget key={captchaKey} onToken={setCaptchaToken} />
-          <button className="nemesis-auth-submit" disabled={busy || (!agreed && !isPreviewMode) || (captchaEnabled && !isPreviewMode && !captchaToken)} type="submit">{busy ? "Deploying…" : isPreviewMode ? "Enter preview" : "Deploy Nemesis"}</button>
+          <button className="nemesis-auth-submit" disabled={busy || (!agreed && !isPreviewMode) || (captchaEnabled && !isPreviewMode && !captchaToken)} type="submit">{busy ? "Creating account…" : isPreviewMode ? "Enter preview" : "Create account"}</button>
         </form>
         {error ? <p className="nemesis-auth-error" role="alert">{error}</p> : null}
     </AuthFrame>
