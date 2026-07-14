@@ -218,6 +218,10 @@
   width: 100%;
 }
 
+/* The desktop-handoff page renders the submit style on an <a> (the "Open
+   Nemesis" deep-link button) — give the anchor the button's box behavior. */
+a.nemesis-auth-submit { align-items: center; display: inline-flex; justify-content: center; text-decoration: none; }
+
 .nemesis-auth-submit:hover { background: #df1730; filter: none; }
 .nemesis-auth-submit:focus-visible, .nemesis-auth-link:focus-visible, .nemesis-auth-brand:focus-visible { outline: 2px solid var(--auth-red); outline-offset: 3px; }
 
