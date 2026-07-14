@@ -9,6 +9,12 @@
 //   the nemesis:// deep link (with the app's own state nonce echoed back), then
 //   drop the browser-LOCAL copy of the session so exactly one side — the app —
 //   owns the token family. No server-side revoke: the app is about to use it.
+//
+// The deep link is delivered through a VISIBLE "Open Nemesis" button, not only
+// the automatic redirect: Chrome blocks custom-protocol launches that don't come
+// from a user gesture, so the silent `location.href = nemesis://…` hop can be
+// dropped without any error — the page said "Back to your Mac" while the app sat
+// waiting forever (owner-reported, 2026-07-14). A real click always works.
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
@@ -22,7 +28,7 @@ const STATE_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
 export default function DesktopAuthPage() {
   const { loading, session, signInWithOAuth } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const [handedOff, setHandedOff] = useState(false);
+  const [deepLink, setDeepLink] = useState<string | null>(null);
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -50,10 +56,14 @@ export default function DesktopAuthPage() {
           setError("Could not read the signed-in session. Start again from the Nemesis app.");
           return;
         }
-        window.location.href =
+        const link =
           `nemesis://auth/callback?refresh_token=${encodeURIComponent(refreshToken)}` +
           `&state=${encodeURIComponent(state)}`;
-        setHandedOff(true);
+        // Keep the link in state FIRST: once the local session copy is dropped
+        // below, this string is the only remaining path to the app, and the
+        // button must keep working even if the automatic hop was blocked.
+        setDeepLink(link);
+        window.location.href = link;
         // Local-only sign-out: the refresh token now belongs to the desktop app;
         // keeping a browser copy would break the app's session on rotation.
         void supabase.auth.signOut({ scope: "local" });
@@ -79,12 +89,12 @@ export default function DesktopAuthPage() {
   return (
     <AuthFrame
       eyebrow={error ? "Desktop sign-in failed" : "Desktop sign-in"}
-      title={error ? "The perimeter stayed closed." : handedOff ? "Back to your Mac." : "Connecting your Mac."}
+      title={error ? "The perimeter stayed closed." : deepLink ? "One click to finish." : "Connecting your Mac."}
       description={
         error
           ? error
-          : handedOff
-            ? "Your Nemesis app is signing in now. You can close this tab."
+          : deepLink
+            ? "You're signed in. Press Open Nemesis below — your browser may ask permission to open the app; choose Open."
             : "Nemesis is finishing sign-in in your browser and handing the session to the desktop app."
       }
       footer={
@@ -101,9 +111,19 @@ export default function DesktopAuthPage() {
         <p className="nemesis-auth-error" role="alert">
           Open the Nemesis app and press Continue with Google or Apple again.
         </p>
+      ) : deepLink ? (
+        <>
+          <a className="nemesis-auth-submit" href={deepLink}>
+            Open Nemesis
+          </a>
+          <p className="nemesis-auth-notice" role="status">
+            Nothing happening? Make sure the Nemesis app is installed and open, then press the button again. You can
+            close this tab once the app shows your account.
+          </p>
+        </>
       ) : (
         <p className="nemesis-auth-notice" role="status">
-          {handedOff ? "Session handed to the Nemesis app." : "Working…"}
+          Working…
         </p>
       )}
     </AuthFrame>
