@@ -100,3 +100,6 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   recordings, WASM fallback keeps ≤30 min). One-time ~480MB model download to
   userData/asr with streamed progress + disk guard; audio never leaves the machine.
   Build ships sherpa via stage-native-deps (also per-target in before-pack).
+- `0094-beta9-updater-banner-section-delete.patch` — beta.9: update banner narrates
+  the silent auto-updater (downloading → Restart now; manual download only on
+  updater error/unavailable) + Study sections deletable (decks kept, ungrouped).

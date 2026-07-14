@@ -1,0 +1,1390 @@
+From 978ff5be1b5f8bbb0b9c9f6b5f4d27be1ef1e944 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 13:30:54 -0500
+Subject: [PATCH] =?UTF-8?q?feat:=20beta.9=20=E2=80=94=20updater-aware=20ba?=
+ =?UTF-8?q?nner,=20Study=20section=20delete?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Update banner no longer races the silent auto-updater: it now narrates it
+  (downloading in background → Restart now via nemesis:updater:status/install
+  IPC); the manual download link only remains when the updater is unavailable
+  or errored (beta.8: users hand-installed while the download was in flight).
+- Study: sections can be deleted (trash icon on the header + confirm dialog);
+  decks inside are kept and drop back to the ungrouped list. deleteSection in
+  model.ts, case-insensitive, tested.
+---
+ apps/desktop/electron/main.ts                 | 96 ++++++++++++++++++-
+ apps/desktop/electron/preload.ts              |  4 +
+ apps/desktop/package.json                     |  2 +-
+ apps/desktop/src/app/study/index.js           | 20 ++--
+ apps/desktop/src/app/study/index.tsx          | 56 ++++++++++-
+ apps/desktop/src/app/study/model.js           | 13 +++
+ apps/desktop/src/app/study/model.test.js      | 24 ++++-
+ apps/desktop/src/app/study/model.test.ts      | 27 ++++++
+ apps/desktop/src/app/study/model.ts           | 18 ++++
+ .../src/components/nemesis-update-banner.js   | 66 ++++++++++---
+ .../src/components/nemesis-update-banner.tsx  | 86 +++++++++++++----
+ apps/desktop/src/global.d.ts                  |  3 +
+ 12 files changed, 371 insertions(+), 44 deletions(-)
+
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index fc7298b9d2d..bb44e4106dd 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -94,6 +94,7 @@ import {
+   TEXT_PREVIEW_SOURCE_MAX_BYTES
+ } from './hardening'
+ import { createLinkTitleWindow, guardLinkTitleSession, readLinkTitleWindowTitle } from './link-title-window'
++import { registerNemesisAsr } from './nemesis-asr'
+ import {
+   APP_ID,
+   APP_NAME,
+@@ -104,7 +105,6 @@ import {
+   PRIMARY_PROTOCOL,
+   upsertEnvVars
+ } from './nemesis-identity'
+-import { registerNemesisAsr } from './nemesis-asr'
+ import { serializeJsonBody, setJsonRequestHeaders } from './oauth-net-request'
+ import { registerSchoolBrowserIpc } from './school-browser'
+ import { installSchoolView, registerSchoolViewIpc } from './school-view'
+@@ -906,6 +906,7 @@ function planDesktopLogRotation(size) {
+   if (size < DESKTOP_LOG_MAX_BYTES) {
+     return []
+   }
++
+   const backups = n => Array.from({ length: n }, (_, i) => desktopLogBackupPath(i + 1))
+ 
+   // Pathological boot-loop log: reclaim live + every backup outright.
+@@ -973,6 +974,7 @@ function flushDesktopLogBufferSync() {
+   if (!desktopLogBuffer) {
+     return
+   }
++
+   const chunk = desktopLogBuffer
+   desktopLogBuffer = ''
+ 
+@@ -989,6 +991,7 @@ function flushDesktopLogBufferAsync() {
+   if (!desktopLogBuffer) {
+     return desktopLogFlushPromise
+   }
++
+   const chunk = desktopLogBuffer
+   desktopLogBuffer = ''
+ 
+@@ -1009,6 +1012,7 @@ function scheduleDesktopLogFlush() {
+   if (desktopLogFlushTimer) {
+     return
+   }
++
+   desktopLogFlushTimer = setTimeout(() => {
+     desktopLogFlushTimer = null
+     void flushDesktopLogBufferAsync()
+@@ -1021,6 +1025,7 @@ function rememberLog(chunk) {
+   if (!text) {
+     return
+   }
++
+   const lines = text.split(/\r?\n/).map(line => `[hermes] ${line}`)
+   hermesLog.push(...lines)
+ 
+@@ -1219,11 +1224,13 @@ function broadcastBootProgress() {
+   if (!mainWindow || mainWindow.isDestroyed()) {
+     return
+   }
++
+   const { webContents } = mainWindow
+ 
+   if (!webContents || webContents.isDestroyed()) {
+     return
+   }
++
+   webContents.send('hermes:boot-progress', bootProgressState)
+ }
+ 
+@@ -1303,11 +1310,13 @@ function broadcastBootstrapEvent(ev) {
+   if (!mainWindow || mainWindow.isDestroyed()) {
+     return
+   }
++
+   const { webContents } = mainWindow
+ 
+   if (!webContents || webContents.isDestroyed()) {
+     return
+   }
++
+   webContents.send('hermes:bootstrap:event', ev)
+ }
+ 
+@@ -1562,6 +1571,7 @@ function backendSupportsServe(backend) {
+   if (!backend || !backend.command) {
+     return true
+   }
++
+   const key = `${backend.command}::${backend.root || ''}`
+ 
+   if (_serveSupportCache.has(key)) {
+@@ -1839,6 +1849,7 @@ function findGitBash() {
+   // first so users who installed via install.ps1 are detected before we
+   // start probing system-wide locations.
+   const localAppData = process.env.LOCALAPPDATA || ''
++
+   const candidates = [
+     path.join(HERMES_HOME, 'git', 'bin', 'bash.exe'),
+     path.join(HERMES_HOME, 'git', 'usr', 'bin', 'bash.exe')
+@@ -1954,6 +1965,7 @@ function resolveGitBinary() {
+   }
+ 
+   const localAppData = process.env.LOCALAPPDATA || ''
++
+   const candidates = [
+     path.join(HERMES_HOME, 'git', 'cmd', 'git.exe'),
+     path.join(HERMES_HOME, 'git', 'bin', 'git.exe')
+@@ -2365,6 +2377,7 @@ function isShimLocked(shimPath) {
+   if (!IS_WINDOWS) {
+     return false
+   }
++
+   let fd
+ 
+   try {
+@@ -2502,6 +2515,7 @@ async function releaseBackendLock(updateRoot, tag) {
+     for (const pid of stragglers) {
+       forceKillProcessTree(pid)
+     }
++
+     await new Promise(r => setTimeout(r, 300))
+   }
+ 
+@@ -2800,6 +2814,7 @@ function runningAppBundle() {
+   if (!IS_MAC) {
+     return null
+   }
++
+   let dir = path.dirname(app.getPath('exe')) // .../Contents/MacOS
+ 
+   for (let i = 0; i < 2; i++) {
+@@ -3226,6 +3241,7 @@ function resolveRendererIndex() {
+   if (found) {
+     return found
+   }
++
+   // Nothing on disk. A packaged build with no renderer bundle blank-pages with
+   // a bare ERR_FILE_NOT_FOUND and no clue why (see #39484). Surface the cause
+   // and the fix before Electron loads the missing file.
+@@ -3274,6 +3290,7 @@ function resolveHermesCwd() {
+     if (!candidate) {
+       continue
+     }
++
+     const resolved = path.resolve(String(candidate))
+ 
+     if (isPackagedInstallPath(resolved)) {
+@@ -3403,6 +3420,7 @@ function createActiveBackend(backendArgs) {
+ 
+ function resolveHermesBackend(backendArgs) {
+   const allowExternalRuntime = !IS_PACKAGED || process.env.HERMES_DESKTOP_ALLOW_EXTERNAL_RUNTIME === '1'
++
+   // 1. Explicit override -- HERMES_DESKTOP_HERMES_ROOT points at a developer
+   //    checkout. Honour it as-is (no bootstrap; the user is driving).
+   const overrideRoot =
+@@ -3802,6 +3820,7 @@ function fetchJson(url, token, options: any = {}) {
+     if (body) {
+       req.write(body)
+     }
++
+     req.end()
+   })
+ }
+@@ -3891,6 +3910,7 @@ function fetchPublicJson(url, options: any = {}) {
+     if (body) {
+       req.write(body)
+     }
++
+     req.end()
+   })
+ }
+@@ -4008,6 +4028,7 @@ function cacheTitle(key, title) {
+   if (titleCache.size >= TITLE_CACHE_LIMIT) {
+     titleCache.delete(titleCache.keys().next().value)
+   }
++
+   titleCache.set(key, title)
+ }
+ 
+@@ -4062,6 +4083,7 @@ function fetchHtmlTitleWithCurl(rawUrl: string): Promise<string> {
+       if (bytes >= TITLE_BYTE_BUDGET) {
+         return
+       }
++
+       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+       const remaining = TITLE_BYTE_BUDGET - bytes
+       const next = buffer.length > remaining ? buffer.subarray(0, remaining) : buffer
+@@ -4074,6 +4096,7 @@ function fetchHtmlTitleWithCurl(rawUrl: string): Promise<string> {
+       if (!chunks.length) {
+         return resolve('')
+       }
++
+       resolve(parseHtmlTitle(Buffer.concat(chunks).toString('utf8')))
+     })
+   })
+@@ -4083,6 +4106,7 @@ function getLinkTitleSession() {
+   if (linkTitleSession || !app.isReady()) {
+     return linkTitleSession
+   }
++
+   linkTitleSession = session.fromPartition('hermes:link-titles', { cache: false })
+   linkTitleSession.webRequest.onBeforeRequest((details, callback) => {
+     callback({ cancel: RENDER_TITLE_BLOCKED_RESOURCES.has(details.resourceType) })
+@@ -4125,6 +4149,7 @@ function runRenderTitleJob(rawUrl) {
+       if (settled) {
+         return
+       }
++
+       settled = true
+ 
+       if (hardTimer) {
+@@ -4134,6 +4159,7 @@ function runRenderTitleJob(rawUrl) {
+       if (graceTimer) {
+         clearTimeout(graceTimer)
+       }
++
+       const value = (title || '').replace(/\s+/g, ' ').trim()
+ 
+       try {
+@@ -4159,6 +4185,7 @@ function runRenderTitleJob(rawUrl) {
+       if (graceTimer) {
+         clearTimeout(graceTimer)
+       }
++
+       graceTimer = setTimeout(finishWithTitle, RENDER_TITLE_GRACE_MS)
+     }
+ 
+@@ -4240,6 +4267,7 @@ async function resourceBufferFromUrl(rawUrl) {
+     if (!match) {
+       throw new Error('Invalid data URL')
+     }
++
+     const mimeType = match[1] || 'application/octet-stream'
+     const encoded = match[3] || ''
+     const buffer = match[2] ? Buffer.from(encoded, 'base64') : Buffer.from(decodeURIComponent(encoded), 'utf8')
+@@ -4288,6 +4316,7 @@ async function copyImageFromUrl(rawUrl) {
+   if (image.isEmpty()) {
+     throw new Error('Could not read image')
+   }
++
+   clipboard.writeImage(image)
+ }
+ 
+@@ -4303,6 +4332,7 @@ async function saveImageFromUrl(rawUrl) {
+   if (result.canceled || !result.filePath) {
+     return false
+   }
++
+   await fs.promises.writeFile(result.filePath, buffer)
+ 
+   return true
+@@ -4437,11 +4467,13 @@ function sendPreviewFileChanged(payload) {
+   if (!mainWindow || mainWindow.isDestroyed()) {
+     return
+   }
++
+   const { webContents } = mainWindow
+ 
+   if (!webContents || webContents.isDestroyed()) {
+     return
+   }
++
+   webContents.send('hermes:preview-file-changed', payload)
+ }
+ 
+@@ -4462,12 +4494,14 @@ async function watchPreviewFile(rawUrl) {
+     if (timer) {
+       clearTimeout(timer)
+     }
++
+     timer = setTimeout(() => {
+       timer = null
+ 
+       if (!fileExists(filePath)) {
+         return
+       }
++
+       sendPreviewFileChanged({ id, path: filePath, url: pathToFileURL(filePath).toString() })
+     }, PREVIEW_WATCH_DEBOUNCE_MS)
+   })
+@@ -4477,6 +4511,7 @@ async function watchPreviewFile(rawUrl) {
+       if (timer) {
+         clearTimeout(timer)
+       }
++
+       watcher.close()
+     }
+   })
+@@ -4561,11 +4596,13 @@ function sendBackendExit(payload) {
+   if (!mainWindow || mainWindow.isDestroyed()) {
+     return
+   }
++
+   const { webContents } = mainWindow
+ 
+   if (!webContents || webContents.isDestroyed()) {
+     return
+   }
++
+   webContents.send('hermes:backend-exit', payload)
+ }
+ 
+@@ -4573,11 +4610,13 @@ function sendClosePreviewRequested() {
+   if (!mainWindow || mainWindow.isDestroyed()) {
+     return
+   }
++
+   const { webContents } = mainWindow
+ 
+   if (!webContents || webContents.isDestroyed()) {
+     return
+   }
++
+   webContents.send('hermes:close-preview-requested')
+ }
+ 
+@@ -4588,11 +4627,13 @@ function sendPowerResume() {
+   if (!mainWindow || mainWindow.isDestroyed()) {
+     return
+   }
++
+   const { webContents } = mainWindow
+ 
+   if (!webContents || webContents.isDestroyed()) {
+     return
+   }
++
+   webContents.send('hermes:power-resume')
+ }
+ 
+@@ -4602,6 +4643,7 @@ function registerPowerResumeListeners() {
+   if (powerResumeRegistered) {
+     return
+   }
++
+   powerResumeRegistered = true
+ 
+   try {
+@@ -4623,16 +4665,19 @@ function sendOpenUpdatesRequested() {
+   if (!mainWindow || mainWindow.isDestroyed()) {
+     return
+   }
++
+   const { webContents } = mainWindow
+ 
+   if (!webContents || webContents.isDestroyed()) {
+     return
+   }
++
+   webContents.send('hermes:open-updates')
+ 
+   if (!mainWindow.isVisible()) {
+     mainWindow.show()
+   }
++
+   mainWindow.focus()
+ }
+ 
+@@ -4640,11 +4685,13 @@ function sendWindowStateChanged(nextIsFullscreen?: boolean) {
+   if (!mainWindow || mainWindow.isDestroyed()) {
+     return
+   }
++
+   const { webContents } = mainWindow
+ 
+   if (!webContents || webContents.isDestroyed()) {
+     return
+   }
++
+   const state = getWindowState()
+ 
+   if (typeof nextIsFullscreen === 'boolean') {
+@@ -4792,6 +4839,7 @@ function installDevToolsShortcut(window) {
+     if (!isInspectShortcut) {
+       return
+     }
++
+     event.preventDefault()
+     toggleDevTools(window)
+   })
+@@ -4821,6 +4869,7 @@ function setAndPersistZoomLevel(window, zoomLevel) {
+   if (!window || window.isDestroyed()) {
+     return
+   }
++
+   const next = clampZoomLevel(zoomLevel)
+   window.webContents.setZoomLevel(next)
+   // Keep any open settings UI in sync, including changes made via the
+@@ -4840,6 +4889,7 @@ function restorePersistedZoomLevel(window) {
+   if (!window || window.isDestroyed()) {
+     return
+   }
++
+   window.webContents
+     .executeJavaScript(
+       `(() => { try { return localStorage.getItem(${JSON.stringify(ZOOM_STORAGE_KEY)}) } catch { return null } })()`
+@@ -4848,6 +4898,7 @@ function restorePersistedZoomLevel(window) {
+       if (stored == null || !window || window.isDestroyed()) {
+         return
+       }
++
+       const level = clampZoomLevel(Number(stored))
+       window.webContents.setZoomLevel(level)
+     })
+@@ -4924,6 +4975,7 @@ function installContextMenu(window) {
+       if (template.length) {
+         template.push({ type: 'separator' })
+       }
++
+       template.push(
+         {
+           label: 'Open Link',
+@@ -5099,6 +5151,7 @@ function getOauthSession() {
+   if (oauthSession || !app.isReady()) {
+     return oauthSession
+   }
++
+   oauthSession = session.fromPartition(OAUTH_SESSION_PARTITION)
+ 
+   return oauthSession
+@@ -5114,6 +5167,7 @@ async function hasOauthSessionCookie(baseUrl) {
+   if (!sess) {
+     return false
+   }
++
+   const parsed = new URL(baseUrl)
+ 
+   try {
+@@ -5146,6 +5200,7 @@ async function hasLiveOauthSession(baseUrl) {
+   if (!sess) {
+     return false
+   }
++
+   const parsed = new URL(baseUrl)
+ 
+   try {
+@@ -5214,6 +5269,7 @@ function openOauthLoginWindow(baseUrl) {
+       if (settled) {
+         return
+       }
++
+       settled = true
+ 
+       if (pollTimer) {
+@@ -5352,6 +5408,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
+         if (timedOut) {
+           return
+         }
++
+         clearTimeout(timer)
+         const text = Buffer.concat(chunks).toString('utf8')
+         const statusCode = res.statusCode || 500
+@@ -5390,6 +5447,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
+       if (timedOut) {
+         return
+       }
++
+       clearTimeout(timer)
+       reject(error)
+     })
+@@ -5397,6 +5455,7 @@ function fetchJsonViaOauthSession(url, options: any = {}) {
+     if (body) {
+       request.write(body)
+     }
++
+     request.end()
+   })
+ }
+@@ -5492,6 +5551,7 @@ function sanitizeConnectionProfiles(raw: Record<string, any>) {
+     const cleaned: { mode: 'remote' | 'local'; url?: string; authMode?: string; token?: object } = {
+       mode: entry.mode === 'remote' ? 'remote' : 'local'
+     }
++
+     const url = String(entry.url || '').trim()
+ 
+     if (url) {
+@@ -6109,6 +6169,7 @@ function touchPoolBackend(profile) {
+   if (!key) {
+     return
+   }
++
+   const entry = backendPool.get(key)
+ 
+   if (entry) {
+@@ -6124,6 +6185,7 @@ function evictLruPoolBackends(keep) {
+   if (backendPool.size <= keep) {
+     return
+   }
++
+   const now = Date.now()
+ 
+   const evictable = [...backendPool.entries()]
+@@ -6136,6 +6198,7 @@ function evictLruPoolBackends(keep) {
+     if (removable <= 0) {
+       break
+     }
++
+     rememberLog(`Evicting idle profile backend "${profile}" (LRU cap ${POOL_MAX_BACKENDS})`)
+     stopPoolBackend(profile)
+     removable -= 1
+@@ -6146,6 +6209,7 @@ function startPoolIdleReaper() {
+   if (poolIdleReaper) {
+     return
+   }
++
+   poolIdleReaper = setInterval(() => {
+     const now = Date.now()
+ 
+@@ -6298,6 +6362,7 @@ function stopPoolBackend(profile) {
+   if (!entry) {
+     return
+   }
++
+   backendPool.delete(profile)
+   stopBackendChild(entry.process)
+ }
+@@ -6308,6 +6373,7 @@ async function teardownPoolBackendAndWait(profile) {
+   if (!entry) {
+     return
+   }
++
+   backendPool.delete(profile)
+ 
+   stopBackendChild(entry.process)
+@@ -6659,6 +6725,7 @@ function focusWindow(win) {
+   if (!win.isVisible()) {
+     win.show()
+   }
++
+   win.focus()
+ }
+ 
+@@ -7174,6 +7241,7 @@ ipcMain.on('hermes:zoom:set-percent', (event, percent) => {
+   if (!window || window.isDestroyed()) {
+     return
+   }
++
+   setAndPersistZoomLevel(window, percentToZoomLevel(Number(percent)))
+ })
+ 
+@@ -7645,6 +7713,7 @@ ipcMain.handle('hermes:notify', (_event, payload) => {
+   if (!Notification.isSupported()) {
+     return false
+   }
++
+   // Action buttons render only on signed macOS builds; elsewhere they're dropped
+   // and the body click still works.
+   const actions = Array.isArray(payload?.actions) ? payload.actions : []
+@@ -7660,6 +7729,7 @@ ipcMain.handle('hermes:notify', (_event, payload) => {
+     if (!mainWindow || mainWindow.isDestroyed()) {
+       return
+     }
++
+     focusWindow(mainWindow)
+ 
+     if (payload?.sessionId) {
+@@ -7670,6 +7740,7 @@ ipcMain.handle('hermes:notify', (_event, payload) => {
+     if (!mainWindow || mainWindow.isDestroyed()) {
+       return
+     }
++
+     const action = actions[index]
+ 
+     if (action?.id) {
+@@ -8434,6 +8505,7 @@ async function getUninstallSummary() {
+       if (settled) {
+         return
+       }
++
+       settled = true
+       resolve(value)
+     }
+@@ -8619,6 +8691,7 @@ function handleDeepLink(url) {
+   if (!url || typeof url !== 'string') {
+     return
+   }
++
+   let parsed
+ 
+   try {
+@@ -8648,6 +8721,7 @@ function handleDeepLink(url) {
+     if (mainWindow.isMinimized()) {
+       mainWindow.restore()
+     }
++
+     mainWindow.focus()
+     mainWindow.webContents.send('hermes:deep-link', payload)
+     rememberLog(`[deeplink] delivered ${kind}/${name}`)
+@@ -8706,6 +8780,7 @@ if (!_gotSingleInstanceLock) {
+       if (mainWindow.isMinimized()) {
+         mainWindow.restore()
+       }
++
+       mainWindow.focus()
+     }
+   })
+@@ -8728,6 +8803,13 @@ app.on('open-url', (event, url) => {
+ // which electron-updater orders correctly.
+ const AUTO_UPDATE_RECHECK_MS = 4 * 60 * 60 * 1000
+ 
++// Surfaced to the renderer so the update banner reflects the SILENT updater
++// instead of racing it with a "download it yourself" button (beta.8 lesson:
++// the banner appears seconds after launch, the ~150MB background download
++// takes minutes — users clicked the manual link while the updater was already
++// working). 'unavailable' = unpackaged build or updater never armed.
++let autoUpdaterState: 'downloaded' | 'error' | 'unavailable' | 'working' = 'unavailable'
++
+ function startAutoUpdater() {
+   if (!IS_PACKAGED) {
+     return
+@@ -8738,12 +8820,24 @@ function startAutoUpdater() {
+   appUpdater.autoDownload = true
+   appUpdater.autoInstallOnAppQuit = true
+   appUpdater.logger = null
++  autoUpdaterState = 'working'
++
++  ipcMain.handle('nemesis:updater:status', () => autoUpdaterState)
++  ipcMain.handle('nemesis:updater:install', () => {
++    if (autoUpdaterState === 'downloaded') {
++      appUpdater.quitAndInstall()
++    }
++
++    return autoUpdaterState
++  })
+ 
+   appUpdater.on('error', error => {
++    autoUpdaterState = 'error'
+     rememberLog(`[auto-update] ${error?.message || error}`)
+   })
+ 
+   appUpdater.on('update-downloaded', info => {
++    autoUpdaterState = 'downloaded'
+     rememberLog(`[auto-update] downloaded ${info?.version || 'update'}`)
+ 
+     if (!mainWindow || mainWindow.isDestroyed()) {
+diff --git a/apps/desktop/electron/preload.ts b/apps/desktop/electron/preload.ts
+index 6c7f2d1906d..3d3de189eab 100644
+--- a/apps/desktop/electron/preload.ts
++++ b/apps/desktop/electron/preload.ts
+@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
+ 
+     return () => ipcRenderer.removeListener('nemesis:asr:progress', listener)
+   },
++  // Silent auto-updater state, so the update banner cooperates instead of
++  // telling users to download manually while a download is already running.
++  nemesisUpdaterStatus: () => ipcRenderer.invoke('nemesis:updater:status'),
++  nemesisUpdaterInstall: () => ipcRenderer.invoke('nemesis:updater:install'),
+   getGatewayWsUrl: profile => ipcRenderer.invoke('hermes:gateway:ws-url', profile),
+   openSessionWindow: (sessionId, opts) => ipcRenderer.invoke('hermes:window:openSession', sessionId, opts),
+   openNewSessionWindow: () => ipcRenderer.invoke('hermes:window:openNewSession'),
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index 46c12b18623..0de8a36d868 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -2,7 +2,7 @@
+   "name": "nemesis",
+   "productName": "Nemesis",
+   "private": true,
+-  "version": "0.1.0-beta.8",
++  "version": "0.1.0-beta.9",
+   "description": "Native desktop shell for the Nemesis school agent.",
+   "author": "Nemesis",
+   "type": "module",
+diff --git a/apps/desktop/src/app/study/index.js b/apps/desktop/src/app/study/index.js
+index 194daedf7a8..6477cc105cf 100644
+--- a/apps/desktop/src/app/study/index.js
++++ b/apps/desktop/src/app/study/index.js
+@@ -3,10 +3,11 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
+ // note). Interaction model deliberately mirrors what health-science students already have
+ // as muscle memory from Anki: deck browser with due badges → flip card (Space) →
+ // Again/Hard/Good/Easy (1-4), with the next-interval hint under each grade button.
+-import { IconCards, IconChevronDown, IconChecklist, IconDots, IconFileImport, IconFolderPlus, IconLayoutGrid, IconList, IconPencil, IconPlayerPause, IconPlus, IconSettings, IconSitemap } from '@tabler/icons-react';
++import { IconCards, IconChecklist, IconChevronDown, IconDots, IconFileImport, IconFolderPlus, IconLayoutGrid, IconList, IconPencil, IconPlayerPause, IconPlus, IconSettings, IconSitemap, IconTrash } from '@tabler/icons-react';
+ import { useCallback, useEffect, useMemo, useState } from 'react';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
++import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+ import { EmptyState } from '@/components/ui/empty-state';
+@@ -23,7 +24,7 @@ import { DECK_DIR, importedDeckFileNames, scanAllDeckFiles } from './deck-files'
+ import { bestAttempt, groupExtras, lastAttempt, loadTestAttempts, scanMindmapFiles, scanTestFiles } from './extras';
+ import { parseCardPaste } from './import-cards';
+ import { MindmapViewerDialog } from './mindmap-viewer';
+-import { addCard, addSection, adoptLegacyDeckFiles, assignDeckSection, buildQueue, deckStats, DEFAULT_STUDY_SETTINGS, deleteCard, deleteDeck, freshId, getSettings, gradeCard, groupDecks, LEECH_TAG, loadState, localDayKey, previewIntervals, reconcileDeckFiles, renameDeck, reviewHeatmap, saveState, setSettings, studyMotivation, toggleSuspendCard, undoLastGrade, updateCard } from './model';
++import { addCard, addSection, adoptLegacyDeckFiles, assignDeckSection, buildQueue, deckStats, DEFAULT_STUDY_SETTINGS, deleteCard, deleteDeck, deleteSection, freshId, getSettings, gradeCard, groupDecks, LEECH_TAG, loadState, localDayKey, previewIntervals, reconcileDeckFiles, renameDeck, reviewHeatmap, saveState, setSettings, studyMotivation, toggleSuspendCard, undoLastGrade, updateCard } from './model';
+ import { deckRetentionCurve } from './retention';
+ import { TestSurface } from './test-mode';
+ const GRADES = [
+@@ -372,7 +373,7 @@ export function StudyView() {
+                                 setTakingTest(null);
+                             }, size: "sm", variant: "outline", children: "Back to decks" })) : (_jsxs(_Fragment, { children: [_jsxs(DropdownMenu, { children: [_jsx(DropdownMenuTrigger, { asChild: true, children: _jsx(Button, { "aria-label": "Add study material", size: "icon-xs", title: "Add study material", variant: "ghost", children: _jsx(IconPlus, {}) }) }), _jsxs(DropdownMenuContent, { align: "end", className: "w-44", children: [_jsxs(DropdownMenuItem, { onSelect: () => setNewDeckSection(''), children: [_jsx(IconCards, {}), "New deck"] }), _jsxs(DropdownMenuItem, { onSelect: () => setNewSectionOpen(true), children: [_jsx(IconFolderPlus, {}), "New section"] }), _jsxs(DropdownMenuItem, { onSelect: () => setImportOpen(true), children: [_jsx(IconFileImport, {}), "Import cards"] })] })] }), _jsx(Tip, { label: "Study settings", children: _jsx(Button, { "aria-label": "Study settings", onClick: () => setSettingsOpen(true), size: "icon-xs", variant: "ghost", children: _jsx(IconSettings, {}) }) })] })) })] }), !reviewing && !browseDeckId && !matchDeckId && !takingTest && (_jsx(TodaysReviewBrief, { counts: todayCounts, estimatedMinutes: estimatedReviewMinutes, hasScheduledDue: scheduledDue > 0, onStart: () => startReview(null), total: todayQueue.length })), autoImported.length > 0 && !reviewing && !browseDeckId && (_jsxs("div", { className: "mx-6 mb-1 flex items-center justify-between rounded-md border border-(--theme-primary)/40 bg-(--theme-primary)/10 px-3 py-1.5 text-xs", children: [_jsxs("span", { children: ["Nemesis added ", autoImported.length === 1 ? 'a new deck' : `${autoImported.length} new decks`, ":", ' ', autoImported.join(', ')] }), _jsx("button", { className: "text-muted-foreground hover:text-foreground", onClick: () => setAutoImported([]), type: "button", children: "Dismiss" })] })), reviewing ? (current ? (_jsx(ReviewSurface, { activeCategory: categoryForQueueItem(current, state), flip: flip, intervals: previewIntervals(state, current.scheduleKey, now), item: current, onGrade: grade, onReveal: () => setRevealed(true), onUndo: lastUndo ? undoGrade : null, position: Math.min(done + 1, sessionTotal), remainingCounts: remainingCounts, revealed: revealed, sessionTotal: sessionTotal, showIntervalHints: settings.showIntervalHints })) : (_jsx(EmptyState, { className: "flex-1", description: done > 0
+                     ? `${sessionRecapLine(done, sessionGrades)} Come back when the next ones are due.`
+-                    : 'Nothing is due right now.', title: "All caught up" }))) : matchDeckId ? (_jsx(MatchGame, { deck: state.decks.find(deck => deck.id === matchDeckId) ?? null, onExit: () => setMatchDeckId(null) })) : browseDeckId ? (_jsx(CardBrowser, { deck: state.decks.find(deck => deck.id === browseDeckId) ?? null, onChange: update, onDeleteDeck: () => removeDeck(browseDeckId), onMatch: () => startMatch(browseDeckId), onMoveDeck: section => moveDeck(browseDeckId, section), onRename: renameBrowsedDeck, sections: sections, state: state })) : takingTest ? (_jsx(TestSurface, { file: takingTest, onComplete: () => setTestAttempts(loadTestAttempts()), onExit: () => setTakingTest(null) })) : (_jsx(DeckBrowser, { collapsedSections: collapsedSections, mindmaps: mindmaps, onBrowse: setBrowseDeckId, onCreateDeck: setNewDeckSection, onDeleteDeck: removeDeck, onMatch: startMatch, onMoveDeck: moveDeck, onOpenMindmap: setViewingMindmap, onStartTest: setTakingTest, onStudy: startReview, onToggleSection: toggleSection, onViewChange: setViewMode, state: state, testAttempts: testAttempts, tests: tests, view: view })), _jsx(MindmapViewerDialog, { file: viewingMindmap, onOpenChange: open => !open && setViewingMindmap(null) }), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen, sections: sections }), newDeckSection !== null && (_jsx(NewDeckDialog, { initialSection: newDeckSection, onClose: () => setNewDeckSection(null), onCreate: createDeck, sections: sections })), newSectionOpen && (_jsx(NewSectionDialog, { onClose: () => setNewSectionOpen(false), onCreate: createSection, sections: sections })), _jsx(StudySettingsDialog, { onChange: patch => update(setSettings(state, patch)), onOpenChange: setSettingsOpen, open: settingsOpen, settings: settings })] }));
++                    : 'Nothing is due right now.', title: "All caught up" }))) : matchDeckId ? (_jsx(MatchGame, { deck: state.decks.find(deck => deck.id === matchDeckId) ?? null, onExit: () => setMatchDeckId(null) })) : browseDeckId ? (_jsx(CardBrowser, { deck: state.decks.find(deck => deck.id === browseDeckId) ?? null, onChange: update, onDeleteDeck: () => removeDeck(browseDeckId), onMatch: () => startMatch(browseDeckId), onMoveDeck: section => moveDeck(browseDeckId, section), onRename: renameBrowsedDeck, sections: sections, state: state })) : takingTest ? (_jsx(TestSurface, { file: takingTest, onComplete: () => setTestAttempts(loadTestAttempts()), onExit: () => setTakingTest(null) })) : (_jsx(DeckBrowser, { collapsedSections: collapsedSections, mindmaps: mindmaps, onBrowse: setBrowseDeckId, onCreateDeck: setNewDeckSection, onDeleteDeck: removeDeck, onDeleteSection: course => update(deleteSection(state, course)), onMatch: startMatch, onMoveDeck: moveDeck, onOpenMindmap: setViewingMindmap, onStartTest: setTakingTest, onStudy: startReview, onToggleSection: toggleSection, onViewChange: setViewMode, state: state, testAttempts: testAttempts, tests: tests, view: view })), _jsx(MindmapViewerDialog, { file: viewingMindmap, onOpenChange: open => !open && setViewingMindmap(null) }), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen, sections: sections }), newDeckSection !== null && (_jsx(NewDeckDialog, { initialSection: newDeckSection, onClose: () => setNewDeckSection(null), onCreate: createDeck, sections: sections })), newSectionOpen && (_jsx(NewSectionDialog, { onClose: () => setNewSectionOpen(false), onCreate: createSection, sections: sections })), _jsx(StudySettingsDialog, { onChange: patch => update(setSettings(state, patch)), onOpenChange: setSettingsOpen, open: settingsOpen, settings: settings })] }));
+ }
+ function TodaysReviewBrief({ counts, estimatedMinutes, hasScheduledDue, onStart, total }) {
+     const hasFreshCards = counts.new > 0;
+@@ -447,8 +448,9 @@ function parseDailyCap(raw) {
+ function StudySettingsDialog({ onChange, onOpenChange, open, settings }) {
+     return (_jsx(Dialog, { onOpenChange: onOpenChange, open: open, children: _jsxs(DialogContent, { className: "sm:max-w-md", children: [_jsxs(DialogHeader, { children: [_jsx(DialogTitle, { children: "Study settings" }), _jsx(DialogDescription, { children: "Limits and behavior for review sessions. Changes apply immediately." })] }), _jsxs("div", { className: "flex flex-col divide-y divide-border", children: [_jsx(SettingRow, { description: "Cards introduced for the first time. 0 = unlimited.", label: "New cards per day", children: _jsx(Input, { className: "w-20 text-right", inputMode: "numeric", min: 0, onChange: event => onChange({ newPerDay: parseDailyCap(event.target.value) }), step: 1, type: "number", value: settings.newPerDay }) }), _jsx(SettingRow, { description: "Cards already in review rotation. 0 = unlimited.", label: "Reviews per day", children: _jsx(Input, { className: "w-20 text-right", inputMode: "numeric", min: 0, onChange: event => onChange({ reviewsPerDay: parseDailyCap(event.target.value) }), step: 1, type: "number", value: settings.reviewsPerDay }) }), _jsx(SettingRow, { description: "Recall chance targeted when a card comes due. Higher = shorter intervals, more reviews.", label: "Target retention", children: _jsxs(Select, { onValueChange: value => onChange({ desiredRetention: Number(value) }), value: String(settings.desiredRetention), children: [_jsx(SelectTrigger, { "aria-label": "Target retention", className: "w-32", children: _jsx(SelectValue, {}) }), _jsx(SelectContent, { children: RETENTION_OPTIONS.map(option => (_jsx(SelectItem, { value: option.value, children: option.label }, option.value))) })] }) }), _jsx(SettingRow, { label: "Review order", children: _jsx(SegmentedControl, { onChange: order => onChange({ order }), options: ORDER_OPTIONS, value: settings.order }) }), _jsx(SettingRow, { label: "Card flip animation", children: _jsx(Switch, { "aria-label": "Card flip animation", checked: settings.flip, onCheckedChange: flip => onChange({ flip }) }) }), _jsx(SettingRow, { description: "The estimated interval shown on each grade button.", label: "Next-interval hints", children: _jsx(Switch, { "aria-label": "Show next-interval hints", checked: settings.showIntervalHints, onCheckedChange: showIntervalHints => onChange({ showIntervalHints }) }) })] }), _jsxs(DialogFooter, { className: "sm:justify-between", children: [_jsx(Button, { onClick: () => onChange(DEFAULT_STUDY_SETTINGS), size: "sm", variant: "text", children: "Reset to defaults" }), _jsx(Button, { onClick: () => onOpenChange(false), size: "sm", variant: "outline", children: "Done" })] })] }) }));
+ }
+-function DeckBrowser({ collapsedSections, mindmaps, onBrowse, onCreateDeck, onDeleteDeck, onMatch, onMoveDeck, onOpenMindmap, onStartTest, onStudy, onToggleSection, onViewChange, state, testAttempts, tests, view }) {
++function DeckBrowser({ collapsedSections, mindmaps, onBrowse, onCreateDeck, onDeleteDeck, onDeleteSection, onMatch, onMoveDeck, onOpenMindmap, onStartTest, onStudy, onToggleSection, onViewChange, state, testAttempts, tests, view }) {
+     const [deleteDeckTarget, setDeleteDeckTarget] = useState(null);
++    const [deleteSectionTarget, setDeleteSectionTarget] = useState(null);
+     const { curvesByDeck, now } = useMemo(() => {
+         const calculationTime = new Date();
+         const curves = new Map(state.decks.map(deck => [
+@@ -490,8 +492,8 @@ function DeckBrowser({ collapsedSections, mindmaps, onBrowse, onCreateDeck, onDe
+                 const hasExtras = groupMindmaps.length > 0 || groupTests.length > 0;
+                 const hasResources = group.decks.length > 0 || hasExtras;
+                 const isCollapsed = collapsedSections.has(group.course);
+-                return (_jsxs("section", { className: "px-8 pt-5", children: [_jsxs("div", { className: "mb-2 flex items-baseline justify-between gap-4", children: [_jsx("h2", { className: "min-w-0 text-sm font-semibold tracking-tight", children: _jsxs("button", { "aria-expanded": !isCollapsed, className: "flex min-w-0 items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50", onClick: () => onToggleSection(group.course), type: "button", children: [_jsx(IconChevronDown, { "aria-hidden": "true", className: cn('shrink-0 transition-transform', isCollapsed && '-rotate-90'), size: 14 }), _jsx("span", { className: "truncate", children: group.course })] }) }), _jsxs("span", { className: "shrink-0 text-[0.6875rem] tabular-nums text-muted-foreground", children: [group.stats.due, " due \u00B7 ", group.decks.length, " deck", group.decks.length === 1 ? '' : 's', " \u00B7", ' ', group.stats.total, " cards", groupMindmaps.length > 0 &&
+-                                            ` · ${groupMindmaps.length} mind map${groupMindmaps.length === 1 ? '' : 's'}`, groupTests.length > 0 && ` · ${groupTests.length} test${groupTests.length === 1 ? '' : 's'}`] })] }), !isCollapsed &&
++                return (_jsxs("section", { className: "px-8 pt-5", children: [_jsxs("div", { className: "mb-2 flex items-baseline justify-between gap-4", children: [_jsx("h2", { className: "min-w-0 text-sm font-semibold tracking-tight", children: _jsxs("button", { "aria-expanded": !isCollapsed, className: "flex min-w-0 items-center gap-1.5 rounded-sm text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50", onClick: () => onToggleSection(group.course), type: "button", children: [_jsx(IconChevronDown, { "aria-hidden": "true", className: cn('shrink-0 transition-transform', isCollapsed && '-rotate-90'), size: 14 }), _jsx("span", { className: "truncate", children: group.course })] }) }), _jsxs("span", { className: "flex shrink-0 items-center gap-2 text-[0.6875rem] tabular-nums text-muted-foreground", children: [group.stats.due, " due \u00B7 ", group.decks.length, " deck", group.decks.length === 1 ? '' : 's', " \u00B7", ' ', group.stats.total, " cards", groupMindmaps.length > 0 &&
++                                            ` · ${groupMindmaps.length} mind map${groupMindmaps.length === 1 ? '' : 's'}`, groupTests.length > 0 && ` · ${groupTests.length} test${groupTests.length === 1 ? '' : 's'}`, group.course.toLocaleLowerCase() !== 'other' && (_jsx("button", { "aria-label": `Delete section ${group.course}`, className: "rounded-sm p-0.5 text-muted-foreground/70 outline-none hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/50", onClick: () => setDeleteSectionTarget(group.course), title: "Delete section", type: "button", children: _jsx(IconTrash, { size: 13 }) }))] })] }), !isCollapsed &&
+                             (hasResources ? (view === 'list' ? (_jsxs("div", { className: "divide-y divide-(--ui-stroke-tertiary) rounded-md border border-(--ui-stroke-tertiary) bg-(--ui-bg-card)", children: [group.decks.map(deck => (_jsx(DeckRow, { curve: curvesByDeck.get(deck.id) ?? [], deck: deck, now: now, onBrowse: onBrowse, onDelete: () => setDeleteDeckTarget(deck), onMatch: onMatch, onMove: section => onMoveDeck(deck.id, section), onStudy: onStudy, sections: state.sections, state: state }, deck.id))), groupMindmaps.map(mindmap => (_jsx(MindmapRow, { mindmap: mindmap, onOpen: () => onOpenMindmap(mindmap) }, mindmap.fileName))), groupTests.map(test => (_jsx(TestRow, { attempts: testAttempts[test.fileName]?.attempts ?? [], onStart: () => onStartTest(test), test: test }, test.fileName)))] })) : (_jsxs(_Fragment, { children: [group.decks.length > 0 && (_jsx("div", { className: "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3", children: group.decks.map(deck => (_jsx(DeckCard, { curve: curvesByDeck.get(deck.id) ?? [], deck: deck, now: now, onBrowse: onBrowse, onDelete: () => setDeleteDeckTarget(deck), onMatch: onMatch, onMove: section => onMoveDeck(deck.id, section), onStudy: onStudy, sections: state.sections, state: state }, deck.id))) })), hasExtras && (_jsxs("div", { className: cn('divide-y divide-(--ui-stroke-tertiary) rounded-md border border-(--ui-stroke-tertiary) bg-(--ui-bg-card)', group.decks.length > 0 && 'mt-3'), children: [groupMindmaps.map(mindmap => (_jsx(MindmapRow, { mindmap: mindmap, onOpen: () => onOpenMindmap(mindmap) }, mindmap.fileName))), groupTests.map(test => (_jsx(TestRow, { attempts: testAttempts[test.fileName]?.attempts ?? [], onStart: () => onStartTest(test), test: test }, test.fileName)))] }))] }))) : (_jsxs("div", { className: "rounded-md border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-4", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)", children: "Empty section" }), _jsxs("div", { className: "mt-1 flex items-center gap-1 text-xs text-muted-foreground", children: [_jsx("span", { children: "No decks yet \u2014" }), _jsx(Button, { onClick: () => onCreateDeck(group.course), size: "inline", variant: "textStrong", children: "add one" })] })] })))] }, group.course));
+             }), _jsx(Heatmap, { state: state }), _jsx(DeleteDeckDialog, { deck: deleteDeckTarget, onClose: () => setDeleteDeckTarget(null), onConfirm: () => {
+                     if (!deleteDeckTarget) {
+@@ -499,7 +501,11 @@ function DeckBrowser({ collapsedSections, mindmaps, onBrowse, onCreateDeck, onDe
+                     }
+                     onDeleteDeck(deleteDeckTarget.id);
+                     setDeleteDeckTarget(null);
+-                } })] }));
++                } }), _jsx(ConfirmDialog, { confirmLabel: "Delete section", description: "The decks inside are kept \u2014 they move back to the ungrouped list.", destructive: true, dismissOnConfirm: true, onClose: () => setDeleteSectionTarget(null), onConfirm: () => {
++                    if (deleteSectionTarget) {
++                        onDeleteSection(deleteSectionTarget);
++                    }
++                }, open: deleteSectionTarget !== null, title: `Delete "${deleteSectionTarget ?? ''}"?` })] }));
+ }
+ function ResourceIcon({ children }) {
+     return (_jsx("span", { className: "grid size-7 shrink-0 place-items-center rounded-md bg-(--ui-bg-quaternary) text-(--ui-text-tertiary)", children: children }));
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index 9dbef10a1ee..ad65be71d56 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -4,8 +4,8 @@
+ // Again/Hard/Good/Easy (1-4), with the next-interval hint under each grade button.
+ import {
+   IconCards,
+-  IconChevronDown,
+   IconChecklist,
++  IconChevronDown,
+   IconDots,
+   IconFileImport,
+   IconFolderPlus,
+@@ -15,12 +15,14 @@ import {
+   IconPlayerPause,
+   IconPlus,
+   IconSettings,
+-  IconSitemap
++  IconSitemap,
++  IconTrash
+ } from '@tabler/icons-react'
+ import { useCallback, useEffect, useMemo, useState } from 'react'
+ 
+ import { Badge } from '@/components/ui/badge'
+ import { Button } from '@/components/ui/button'
++import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+ import {
+   Dialog,
+   DialogContent,
+@@ -75,6 +77,7 @@ import {
+   DEFAULT_STUDY_SETTINGS,
+   deleteCard,
+   deleteDeck,
++  deleteSection,
+   freshId,
+   getSettings,
+   gradeCard,
+@@ -231,10 +234,12 @@ export function StudyView() {
+   const [takingTest, setTakingTest] = useState<null | TestFile>(null)
+ 
+   const now = useMemo(() => new Date(), [state, reviewing])
++
+   const queue = useMemo(
+     () => (reviewing ? buildQueue(state, reviewDeckId, now) : []),
+     [state, reviewDeckId, reviewing, now]
+   )
++
+   const current: QueueItem | undefined = queue[0]
+ 
+   const remainingCounts = useMemo(
+@@ -243,11 +248,14 @@ export function StudyView() {
+   )
+ 
+   const todayQueue = useMemo(() => buildQueue(state, null, now), [now, state])
++
+   const todayCounts = useMemo(
+     () => countQueueCategories(todayQueue, state),
+     [state, todayQueue]
+   )
++
+   const scheduledDue = todayCounts.learning + todayCounts.review
++
+   const estimatedReviewMinutes =
+     todayQueue.length > 0 ? Math.max(1, Math.ceil((todayQueue.length * 20) / 60)) : 0
+ 
+@@ -300,6 +308,7 @@ export function StudyView() {
+ 
+     const reconcile = async () => {
+       lastRun = Date.now()
++
+       const [candidates, mindmapFiles, testFiles] = await Promise.all([
+         scanAllDeckFiles(),
+         scanMindmapFiles(),
+@@ -723,6 +732,7 @@ export function StudyView() {
+           onBrowse={setBrowseDeckId}
+           onCreateDeck={setNewDeckSection}
+           onDeleteDeck={removeDeck}
++          onDeleteSection={course => update(deleteSection(state, course))}
+           onMatch={startMatch}
+           onMoveDeck={moveDeck}
+           onOpenMindmap={setViewingMindmap}
+@@ -1165,6 +1175,7 @@ function DeckBrowser({
+   onBrowse,
+   onCreateDeck,
+   onDeleteDeck,
++  onDeleteSection,
+   onMatch,
+   onMoveDeck,
+   onOpenMindmap,
+@@ -1182,6 +1193,7 @@ function DeckBrowser({
+   onBrowse: (deckId: string) => void
+   onCreateDeck: (section: string) => void
+   onDeleteDeck: (deckId: string) => void
++  onDeleteSection: (course: string) => void
+   onMatch: (deckId: string) => void
+   onMoveDeck: (deckId: string, section: string) => void
+   onOpenMindmap: (file: MindmapFile) => void
+@@ -1195,9 +1207,11 @@ function DeckBrowser({
+   view: DeckViewMode
+ }) {
+   const [deleteDeckTarget, setDeleteDeckTarget] = useState<StudyDeck | null>(null)
++  const [deleteSectionTarget, setDeleteSectionTarget] = useState<null | string>(null)
+ 
+   const { curvesByDeck, now } = useMemo(() => {
+     const calculationTime = new Date()
++
+     const curves = new Map(
+       state.decks.map(deck => [
+         deck.id,
+@@ -1216,6 +1230,7 @@ function DeckBrowser({
+   }, [state])
+ 
+   const deckGroups = groupDecks(state, now)
++
+   const extrasByCourse = useMemo(
+     () => groupExtras(state.sections, mindmaps, tests),
+     [mindmaps, state.sections, tests]
+@@ -1306,12 +1321,23 @@ function DeckBrowser({
+                   <span className="truncate">{group.course}</span>
+                 </button>
+               </h2>
+-              <span className="shrink-0 text-[0.6875rem] tabular-nums text-muted-foreground">
++              <span className="flex shrink-0 items-center gap-2 text-[0.6875rem] tabular-nums text-muted-foreground">
+                 {group.stats.due} due · {group.decks.length} deck{group.decks.length === 1 ? '' : 's'} ·{' '}
+                 {group.stats.total} cards
+                 {groupMindmaps.length > 0 &&
+                   ` · ${groupMindmaps.length} mind map${groupMindmaps.length === 1 ? '' : 's'}`}
+                 {groupTests.length > 0 && ` · ${groupTests.length} test${groupTests.length === 1 ? '' : 's'}`}
++                {group.course.toLocaleLowerCase() !== 'other' && (
++                  <button
++                    aria-label={`Delete section ${group.course}`}
++                    className="rounded-sm p-0.5 text-muted-foreground/70 outline-none hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/50"
++                    onClick={() => setDeleteSectionTarget(group.course)}
++                    title="Delete section"
++                    type="button"
++                  >
++                    <IconTrash size={13} />
++                  </button>
++                )}
+               </span>
+             </div>
+ 
+@@ -1425,6 +1451,21 @@ function DeckBrowser({
+           setDeleteDeckTarget(null)
+         }}
+       />
++
++      <ConfirmDialog
++        confirmLabel="Delete section"
++        description="The decks inside are kept — they move back to the ungrouped list."
++        destructive
++        dismissOnConfirm
++        onClose={() => setDeleteSectionTarget(null)}
++        onConfirm={() => {
++          if (deleteSectionTarget) {
++            onDeleteSection(deleteSectionTarget)
++          }
++        }}
++        open={deleteSectionTarget !== null}
++        title={`Delete "${deleteSectionTarget ?? ''}"?`}
++      />
+     </div>
+   )
+ }
+@@ -1527,23 +1568,28 @@ function RetentionSparkline({ curve, now }: { curve: RetentionPoint[]; now: Date
+   }
+ 
+   const finalDay = curve.at(-1)?.day ?? 1
++
+   const coordinates = curve.map(point => {
+     const x = 2 + (point.day / Math.max(1, finalDay)) * 96
+     const y = 4 + (1 - point.retention) * 30
+ 
+     return [x, y] as const
+   })
++
+   const points = coordinates.map(([x, y]) => `${x},${y}`).join(' ')
+   const first = curve[0]
+   const last = curve.at(-1) ?? first
+   const safeIndex = Math.min(activeIndex, curve.length - 1)
+   const activePoint = curve[safeIndex]
+   const [activeX, activeY] = coordinates[safeIndex]
++
+   const activeDate = new Date(now.getTime() + activePoint.day * RETENTION_DAY_MS).toLocaleDateString(undefined, {
+     day: 'numeric',
+     month: 'short'
+   })
++
+   const activeLabel = `${activeDate} · estimated recall ${Math.round(activePoint.retention * 100)}%`
++
+   const tooltipTransform =
+     activeX < 22
+       ? 'translate(0, calc(-100% - 8px))'
+@@ -1904,11 +1950,13 @@ function Heatmap({ state }: { state: StudyState }) {
+   const firstDayOffset = cells[0] ? new Date(`${cells[0].date}T00:00:00.000Z`).getUTCDay() : 0
+   const weeks = Math.ceil((firstDayOffset + cells.length) / 7)
+   const daysIntoWeek = new Date(`${todayKey}T00:00:00.000Z`).getUTCDay() + 1
++
+   const reviewsThisWeek = cells
+     .slice(-daysIntoWeek)
+     .reduce((sum, cell) => sum + cell.count, 0)
+ 
+   const monthLabels: { col: number; label: string }[] = []
++
+   if (cells[0]) {
+     monthLabels.push({ col: 0, label: MONTHS[Number(cells[0].date.slice(5, 7)) - 1] })
+ 
+@@ -2060,6 +2108,7 @@ function CardBrowser({
+ 
+   const matchableCount = deck.cards.filter(card => !hasClozeMarker(card.front)).length
+   const needle = query.trim().toLocaleLowerCase()
++
+   const visibleCards = needle
+     ? deck.cards.filter(card =>
+         `${card.front}\n${card.back}\n${card.tags.join('\n')}`.toLocaleLowerCase().includes(needle)
+@@ -2417,6 +2466,7 @@ function MatchGame({ deck, onExit }: { deck: null | StudyDeck; onExit: () => voi
+   const [matchCards] = useState<StudyCard[]>(() =>
+     deck ? deck.cards.filter(card => !hasClozeMarker(card.front)) : []
+   )
++
+   const size = Math.min(6, matchCards.length)
+   const [tiles, setTiles] = useState<MatchTile[]>(() => buildMatchTiles(matchCards, size))
+   const [selected, setSelected] = useState<null | string>(null)
+diff --git a/apps/desktop/src/app/study/model.js b/apps/desktop/src/app/study/model.js
+index 878a7dd85b2..3382a1681fb 100644
+--- a/apps/desktop/src/app/study/model.js
++++ b/apps/desktop/src/app/study/model.js
+@@ -325,6 +325,19 @@ export function addSection(state, name) {
+     }
+     return { ...state, sections: [...state.sections, section] };
+ }
++/** Remove a section (owner ask, beta.9). Decks filed under it are NOT deleted —
++ *  they drop back to the ungrouped bucket by clearing their course tag. */
++export function deleteSection(state, name) {
++    const target = name.trim().toLocaleLowerCase();
++    if (!state.sections.some(existing => existing.toLocaleLowerCase() === target)) {
++        return state;
++    }
++    return {
++        ...state,
++        decks: state.decks.map(deck => (deck.course ?? '').toLocaleLowerCase() === target ? { ...deck, course: undefined } : deck),
++        sections: state.sections.filter(existing => existing.toLocaleLowerCase() !== target)
++    };
++}
+ export function assignDeckSection(state, deckId, section) {
+     const course = section.trim() || undefined;
+     return {
+diff --git a/apps/desktop/src/app/study/model.test.js b/apps/desktop/src/app/study/model.test.js
+index 648551d4d06..f85ee1624e5 100644
+--- a/apps/desktop/src/app/study/model.test.js
++++ b/apps/desktop/src/app/study/model.test.js
+@@ -3,7 +3,7 @@
+ // page drifting — and, critically, without torching FSRS review progress. These tests
+ // pin that contract.
+ import { beforeEach, describe, expect, it } from 'vitest';
+-import { adoptLegacyDeckFiles, buildQueue, deckStats, DEFAULT_STUDY_SETTINGS, deleteCard, getSettings, gradeCard, LEECH_TAG, loadState, localDayKey, reconcileDeckFiles, renameDeck, reviewHeatmap, saveState, setSettings, undoLastGrade } from './model';
++import { adoptLegacyDeckFiles, buildQueue, deckStats, DEFAULT_STUDY_SETTINGS, deleteCard, deleteSection, getSettings, gradeCard, LEECH_TAG, loadState, localDayKey, reconcileDeckFiles, renameDeck, reviewHeatmap, saveState, setSettings, undoLastGrade } from './model';
+ function card(id, front, back, extra = {}) {
+     return { back, front, id, tags: [], ...extra };
+ }
+@@ -618,3 +618,25 @@ describe('renameDeck', () => {
+         expect(after.decks[0].sourceFile).toBe('Cardio essentials.tsv');
+     });
+ });
++// deleteSection (beta.9): removing a course grouping must never delete the decks
++// inside it — they fall back to the ungrouped bucket.
++describe('deleteSection', () => {
++    const base = () => ({
++        ...loadState(),
++        decks: [
++            { cards: [], course: 'Microeconomics', createdAt: 0, id: 'd1', name: 'Supply & demand' },
++            { cards: [], course: 'Pharmacology', createdAt: 0, id: 'd2', name: 'Beta blockers' }
++        ],
++        sections: ['Microeconomics', 'Pharmacology']
++    });
++    it('removes the section and ungroups its decks, leaving others alone', () => {
++        const next = deleteSection(base(), 'Microeconomics');
++        expect(next.sections).toEqual(['Pharmacology']);
++        expect(next.decks.find(deck => deck.id === 'd1')?.course).toBeUndefined();
++        expect(next.decks.find(deck => deck.id === 'd2')?.course).toBe('Pharmacology');
++    });
++    it('matches case-insensitively and returns state untouched for unknown names', () => {
++        expect(deleteSection(base(), 'MICROECONOMICS').sections).toEqual(['Pharmacology']);
++        expect(deleteSection(base(), 'Astrophysics')).toEqual(base());
++    });
++});
+diff --git a/apps/desktop/src/app/study/model.test.ts b/apps/desktop/src/app/study/model.test.ts
+index 65b89a6fc27..830d0a66757 100644
+--- a/apps/desktop/src/app/study/model.test.ts
++++ b/apps/desktop/src/app/study/model.test.ts
+@@ -11,6 +11,7 @@ import {
+   deckStats,
+   DEFAULT_STUDY_SETTINGS,
+   deleteCard,
++  deleteSection,
+   getSettings,
+   gradeCard,
+   LEECH_TAG,
+@@ -817,3 +818,29 @@ describe('renameDeck', () => {
+     expect(after.decks[0].sourceFile).toBe('Cardio essentials.tsv')
+   })
+ })
++
++// deleteSection (beta.9): removing a course grouping must never delete the decks
++// inside it — they fall back to the ungrouped bucket.
++describe('deleteSection', () => {
++  const base = (): StudyState => ({
++    ...loadState(),
++    decks: [
++      { cards: [], course: 'Microeconomics', createdAt: 0, id: 'd1', name: 'Supply & demand' },
++      { cards: [], course: 'Pharmacology', createdAt: 0, id: 'd2', name: 'Beta blockers' }
++    ] as unknown as StudyDeck[],
++    sections: ['Microeconomics', 'Pharmacology']
++  })
++
++  it('removes the section and ungroups its decks, leaving others alone', () => {
++    const next = deleteSection(base(), 'Microeconomics')
++
++    expect(next.sections).toEqual(['Pharmacology'])
++    expect(next.decks.find(deck => deck.id === 'd1')?.course).toBeUndefined()
++    expect(next.decks.find(deck => deck.id === 'd2')?.course).toBe('Pharmacology')
++  })
++
++  it('matches case-insensitively and returns state untouched for unknown names', () => {
++    expect(deleteSection(base(), 'MICROECONOMICS').sections).toEqual(['Pharmacology'])
++    expect(deleteSection(base(), 'Astrophysics')).toEqual(base())
++  })
++})
+diff --git a/apps/desktop/src/app/study/model.ts b/apps/desktop/src/app/study/model.ts
+index 4f65a7b3f75..f1c2c2f88c2 100644
+--- a/apps/desktop/src/app/study/model.ts
++++ b/apps/desktop/src/app/study/model.ts
+@@ -493,6 +493,24 @@ export function addSection(state: StudyState, name: string): StudyState {
+   return { ...state, sections: [...state.sections, section] }
+ }
+ 
++/** Remove a section (owner ask, beta.9). Decks filed under it are NOT deleted —
++ *  they drop back to the ungrouped bucket by clearing their course tag. */
++export function deleteSection(state: StudyState, name: string): StudyState {
++  const target = name.trim().toLocaleLowerCase()
++
++  if (!state.sections.some(existing => existing.toLocaleLowerCase() === target)) {
++    return state
++  }
++
++  return {
++    ...state,
++    decks: state.decks.map(deck =>
++      (deck.course ?? '').toLocaleLowerCase() === target ? { ...deck, course: undefined } : deck
++    ),
++    sections: state.sections.filter(existing => existing.toLocaleLowerCase() !== target)
++  }
++}
++
+ export function assignDeckSection(state: StudyState, deckId: string, section: string): StudyState {
+   const course = section.trim() || undefined
+ 
+diff --git a/apps/desktop/src/components/nemesis-update-banner.js b/apps/desktop/src/components/nemesis-update-banner.js
+index 944ecb75869..3a0a6a28c59 100644
+--- a/apps/desktop/src/components/nemesis-update-banner.js
++++ b/apps/desktop/src/components/nemesis-update-banner.js
+@@ -1,9 +1,10 @@
+-import { jsxs as _jsxs, jsx as _jsx } from "react/jsx-runtime";
+-// New-release notice for the student build. Students run signed DMGs (the git
+-// self-updater is disabled), so this floating card is what tells them a newer
+-// build exists. Detection only: the button opens the download page in their
+-// browser — nothing installs itself. Quiet by design: any network failure or
+-// rate limit simply means no banner this session.
++import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
++// New-release notice for the student build. Since beta.6 the app updates ITSELF
++// (electron-updater downloads in the background), so this card's job is to
++// narrate that: "downloading…" → "Restart now". The manual download link only
++// appears when the silent updater is unavailable or errored (beta.8 lesson: the
++// old always-download button raced the background download and users installed
++// by hand for nothing). Quiet by design: any network failure means no banner.
+ import { useEffect, useState } from 'react';
+ import { Button } from '@/components/ui/button';
+ import { fetchLatestReleaseTag, isNewerVersion, normalizeVersion, UPDATE_DISMISS_STORAGE_KEY, UPDATE_DOWNLOAD_URL } from '@/lib/nemesis-update-check';
+@@ -18,34 +19,62 @@ function readDismissedTag() {
+ }
+ export const NemesisUpdateBanner = () => {
+     const [latestTag, setLatestTag] = useState(null);
++    const [updater, setUpdater] = useState('unavailable');
++    // While the banner is visible, keep an eye on the silent updater so the card
++    // flips from "downloading…" to "Restart now" the moment the download lands.
+     useEffect(() => {
+-        if (!NEMESIS_STUDENT_BUILD)
++        if (!latestTag) {
+             return;
++        }
++        let cancelled = false;
++        const poll = async () => {
++            const status = await window.hermesDesktop?.nemesisUpdaterStatus?.().catch(() => 'unavailable');
++            if (!cancelled && status) {
++                setUpdater(status);
++            }
++        };
++        void poll();
++        const timer = setInterval(() => void poll(), 4000);
++        return () => {
++            cancelled = true;
++            clearInterval(timer);
++        };
++    }, [latestTag]);
++    useEffect(() => {
++        if (!NEMESIS_STUDENT_BUILD) {
++            return;
++        }
+         // Dev servers report no packaged version and would spam the GitHub API on
+         // every reload; opt in with the debug flag when testing the banner itself.
+-        if (import.meta.env.DEV && window.localStorage.getItem('nemesis.update.debug') !== '1')
++        if (import.meta.env.DEV && window.localStorage.getItem('nemesis.update.debug') !== '1') {
+             return;
++        }
+         let cancelled = false;
+         void (async () => {
+             const info = await window.hermesDesktop?.getVersion?.().catch(() => null);
+             const current = info?.appVersion;
+-            if (!current)
++            if (!current) {
+                 return;
++            }
+             const latest = await fetchLatestReleaseTag();
+-            if (cancelled || !latest)
++            if (cancelled || !latest) {
+                 return;
+-            if (!isNewerVersion(latest, current))
++            }
++            if (!isNewerVersion(latest, current)) {
+                 return;
+-            if (readDismissedTag() === latest)
++            }
++            if (readDismissedTag() === latest) {
+                 return;
++            }
+             setLatestTag(latest);
+         })();
+         return () => {
+             cancelled = true;
+         };
+     }, []);
+-    if (!latestTag)
++    if (!latestTag) {
+         return null;
++    }
+     const dismiss = () => {
+         try {
+             window.localStorage.setItem(UPDATE_DISMISS_STORAGE_KEY, latestTag);
+@@ -63,5 +92,14 @@ export const NemesisUpdateBanner = () => {
+             window.open(UPDATE_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
+         }
+     };
+-    return (_jsxs("div", { className: "fixed right-4 bottom-4 z-[80] w-80 rounded-xl border border-border bg-background p-4 shadow-lg", children: [_jsxs("p", { className: "text-sm font-semibold", children: ["Nemesis ", normalizeVersion(latestTag), " is available"] }), _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: "Download the new version and drag it into Applications. Your notes, decks, and settings stay put." }), _jsxs("div", { className: "mt-3 flex items-center gap-2", children: [_jsx(Button, { onClick: download, size: "sm", children: "Download update" }), _jsx(Button, { onClick: dismiss, size: "sm", variant: "ghost", children: "Later" })] })] }));
++    const restart = () => {
++        void window.hermesDesktop?.nemesisUpdaterInstall?.().catch(() => { });
++    };
++    return (_jsxs("div", { className: "fixed right-4 bottom-4 z-[80] w-80 rounded-xl border border-border bg-background p-4 shadow-lg", children: [_jsx("p", { className: "text-sm font-semibold", children: updater === 'downloaded'
++                    ? `Nemesis ${normalizeVersion(latestTag)} is ready`
++                    : `Nemesis ${normalizeVersion(latestTag)} is available` }), _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: updater === 'downloaded'
++                    ? 'The update is downloaded. Restart to use it now — or it installs itself when you quit.'
++                    : updater === 'working'
++                        ? 'Downloading in the background — you can keep working. Your notes, decks, and settings stay put.'
++                        : 'Download the new version and drag it into Applications. Your notes, decks, and settings stay put.' }), _jsxs("div", { className: "mt-3 flex items-center gap-2", children: [updater === 'downloaded' ? (_jsx(Button, { onClick: restart, size: "sm", children: "Restart now" })) : updater === 'working' ? null : (_jsx(Button, { onClick: download, size: "sm", children: "Download update" })), _jsx(Button, { onClick: dismiss, size: "sm", variant: "ghost", children: "Later" })] })] }));
+ };
+diff --git a/apps/desktop/src/components/nemesis-update-banner.tsx b/apps/desktop/src/components/nemesis-update-banner.tsx
+index c824abb46b4..882164ed951 100644
+--- a/apps/desktop/src/components/nemesis-update-banner.tsx
++++ b/apps/desktop/src/components/nemesis-update-banner.tsx
+@@ -1,8 +1,9 @@
+-// New-release notice for the student build. Students run signed DMGs (the git
+-// self-updater is disabled), so this floating card is what tells them a newer
+-// build exists. Detection only: the button opens the download page in their
+-// browser — nothing installs itself. Quiet by design: any network failure or
+-// rate limit simply means no banner this session.
++// New-release notice for the student build. Since beta.6 the app updates ITSELF
++// (electron-updater downloads in the background), so this card's job is to
++// narrate that: "downloading…" → "Restart now". The manual download link only
++// appears when the silent updater is unavailable or errored (beta.8 lesson: the
++// old always-download button raced the background download and users installed
++// by hand for nothing). Quiet by design: any network failure means no banner.
+ import { type FC, useEffect, useState } from 'react'
+ 
+ import { Button } from '@/components/ui/button'
+@@ -23,32 +24,64 @@ function readDismissedTag(): null | string {
+   }
+ }
+ 
++type UpdaterStatus = 'downloaded' | 'error' | 'unavailable' | 'working'
++
+ export const NemesisUpdateBanner: FC = () => {
+   const [latestTag, setLatestTag] = useState<null | string>(null)
++  const [updater, setUpdater] = useState<UpdaterStatus>('unavailable')
++
++  // While the banner is visible, keep an eye on the silent updater so the card
++  // flips from "downloading…" to "Restart now" the moment the download lands.
++  useEffect(() => {
++    if (!latestTag) {return}
++
++    let cancelled = false
++
++    const poll = async () => {
++      const status = await window.hermesDesktop?.nemesisUpdaterStatus?.().catch(() => 'unavailable' as const)
++
++      if (!cancelled && status) {setUpdater(status)}
++    }
++
++    void poll()
++    const timer = setInterval(() => void poll(), 4000)
++
++    return () => {
++      cancelled = true
++      clearInterval(timer)
++    }
++  }, [latestTag])
+ 
+   useEffect(() => {
+-    if (!NEMESIS_STUDENT_BUILD) return
++    if (!NEMESIS_STUDENT_BUILD) {return}
++
+     // Dev servers report no packaged version and would spam the GitHub API on
+     // every reload; opt in with the debug flag when testing the banner itself.
+-    if (import.meta.env.DEV && window.localStorage.getItem('nemesis.update.debug') !== '1') return
++    if (import.meta.env.DEV && window.localStorage.getItem('nemesis.update.debug') !== '1') {return}
+ 
+     let cancelled = false
++
+     void (async () => {
+       const info = await window.hermesDesktop?.getVersion?.().catch(() => null)
+       const current = info?.appVersion
+-      if (!current) return
++
++      if (!current) {return}
+       const latest = await fetchLatestReleaseTag()
+-      if (cancelled || !latest) return
+-      if (!isNewerVersion(latest, current)) return
+-      if (readDismissedTag() === latest) return
++
++      if (cancelled || !latest) {return}
++
++      if (!isNewerVersion(latest, current)) {return}
++
++      if (readDismissedTag() === latest) {return}
+       setLatestTag(latest)
+     })()
++
+     return () => {
+       cancelled = true
+     }
+   }, [])
+ 
+-  if (!latestTag) return null
++  if (!latestTag) {return null}
+ 
+   const dismiss = () => {
+     try {
+@@ -56,6 +89,7 @@ export const NemesisUpdateBanner: FC = () => {
+     } catch {
+       // Storage unavailable: the banner just reappears next launch.
+     }
++
+     setLatestTag(null)
+   }
+ 
+@@ -67,16 +101,34 @@ export const NemesisUpdateBanner: FC = () => {
+     }
+   }
+ 
++  const restart = () => {
++    void window.hermesDesktop?.nemesisUpdaterInstall?.().catch(() => {})
++  }
++
+   return (
+     <div className="fixed right-4 bottom-4 z-[80] w-80 rounded-xl border border-border bg-background p-4 shadow-lg">
+-      <p className="text-sm font-semibold">Nemesis {normalizeVersion(latestTag)} is available</p>
++      <p className="text-sm font-semibold">
++        {updater === 'downloaded'
++          ? `Nemesis ${normalizeVersion(latestTag)} is ready`
++          : `Nemesis ${normalizeVersion(latestTag)} is available`}
++      </p>
+       <p className="mt-1 text-xs text-muted-foreground">
+-        Download the new version and drag it into Applications. Your notes, decks, and settings stay put.
++        {updater === 'downloaded'
++          ? 'The update is downloaded. Restart to use it now — or it installs itself when you quit.'
++          : updater === 'working'
++            ? 'Downloading in the background — you can keep working. Your notes, decks, and settings stay put.'
++            : 'Download the new version and drag it into Applications. Your notes, decks, and settings stay put.'}
+       </p>
+       <div className="mt-3 flex items-center gap-2">
+-        <Button onClick={download} size="sm">
+-          Download update
+-        </Button>
++        {updater === 'downloaded' ? (
++          <Button onClick={restart} size="sm">
++            Restart now
++          </Button>
++        ) : updater === 'working' ? null : (
++          <Button onClick={download} size="sm">
++            Download update
++          </Button>
++        )}
+         <Button onClick={dismiss} size="sm" variant="ghost">
+           Later
+         </Button>
+diff --git a/apps/desktop/src/global.d.ts b/apps/desktop/src/global.d.ts
+index 91eb1ab6cb9..2e9efc5a5db 100644
+--- a/apps/desktop/src/global.d.ts
++++ b/apps/desktop/src/global.d.ts
+@@ -33,6 +33,9 @@ declare global {
+       onNemesisAsrProgress?: (
+         callback: (progress: { pct?: number; phase: 'downloading' | 'preparing' | 'transcribing' }) => void
+       ) => () => void
++      // Silent auto-updater state ('unavailable' when unpackaged or not armed).
++      nemesisUpdaterStatus?: () => Promise<'downloaded' | 'error' | 'unavailable' | 'working'>
++      nemesisUpdaterInstall?: () => Promise<string>
+       getGatewayWsUrl: (profile?: null | string) => Promise<string>
+       // Open (or focus) a standalone OS window for a single chat session so
+       // the user can work with multiple chats side by side. Returns ok:false
+-- 
+2.50.1 (Apple Git-155)
+
