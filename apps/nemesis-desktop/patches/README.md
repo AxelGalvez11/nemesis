@@ -49,3 +49,17 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   agent home exists (Move it here = rename / Start fresh = untouched; nothing moves
   silently). Fixes verified WIP defects (raw i18n keys on boot + update toast, installer
   version drift, stale package-lock that broke npm ci).
+- `0083-fix-nemesis-consent-dialog-ignores-failed-boot-stubs.patch` — migration dialog
+  ignores runtime-less ~/.nemesis stubs from beta.2's failed boots and clears them
+  before an accepted move; commit message carries the beta.2 postmortem (push the
+  branch public BEFORE building).
+- `0084-feat-nemesis-Study-tab-closes-its-Anki-gaps.patch` — cloze cards with per-blank
+  FSRS scheduling, local-day caps (was UTC), card search, deck rename, undo grade,
+  leech auto-suspend, target retention, session recap (101 study tests green).
+- `0085-feat-nemesis-Library-tab-closes-its-Obsidian-gaps.patch` — [[ autocomplete, list
+  continuation, task checkboxes/strikethrough/code styling, unresolved-link create,
+  rename with vault-wide link rewrite + tab remap, delete, global search, inline
+  images (99 library tests green).
+- `0086-chore-nemesis-regenerate-compiled-.js-siblings-for-S.patch` — compiled twins.
+- `0087-chore-nemesis-v0.1.0-beta.3.patch` — version bump; first release stamped past
+  the install-script repoint, fixing beta.2's fatal first boot.

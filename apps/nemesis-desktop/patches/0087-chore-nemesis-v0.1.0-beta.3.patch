@@ -1,0 +1,31 @@
+From ab7cbf9f300bfe1116a62d979a849d1db59a6f03 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Mon, 13 Jul 2026 22:49:17 -0500
+Subject: [PATCH] chore(nemesis): v0.1.0-beta.3
+
+First release stamped past the install-script repoint: fixes the beta.2
+first-boot failure (its pinned install.sh cloned the upstream repo where our
+branch does not exist). Ships the consent-based home migration, Study/Anki
+round (cloze, local-day caps, search, rename, undo, leech, retention), and
+Library/Obsidian round (autocomplete, rename cascade, global search,
+checkboxes, images).
+---
+ apps/desktop/package.json | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index 9fa7f119806..b28f637cef9 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -2,7 +2,7 @@
+   "name": "nemesis",
+   "productName": "Nemesis",
+   "private": true,
+-  "version": "0.1.0-beta.2",
++  "version": "0.1.0-beta.3",
+   "description": "Native desktop shell for the Nemesis school agent.",
+   "author": "Nemesis",
+   "type": "module",
+-- 
+2.50.1 (Apple Git-155)
+
