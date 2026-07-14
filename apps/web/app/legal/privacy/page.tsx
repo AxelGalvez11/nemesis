@@ -13,7 +13,7 @@ export default function PrivacyPage() {
       <article className="legal-content">
         <p className="eyebrow">Legal</p>
         <h1>Privacy Policy</h1>
-        <p className="muted">Effective July 12, 2026</p>
+        <p className="muted">Effective July 14, 2026</p>
         <section>
           <h2>What Nemesis collects</h2>
           <p>
@@ -40,6 +40,15 @@ export default function PrivacyPage() {
           <p>
             The beta uses Supabase for backend/auth, Vercel for hosting, Stripe for billing, and
             model/provider services for source-grounded answer generation.
+          </p>
+        </section>
+        <section>
+          <h2>Analytics &amp; crash reports</h2>
+          <p>
+            The desktop app uses PostHog to collect anonymous usage statistics and crash
+            reports, so we can find bugs and see which features are actually used. This
+            never includes the content of your chats, notes, files, or recordings. You can
+            opt out at any time from Settings → Account &amp; usage.
           </p>
         </section>
         <section>
