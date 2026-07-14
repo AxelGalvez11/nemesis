@@ -1,7 +1,7 @@
 ---
 name: nemesis-school-sync
 description: "THE flagship workflow: sync the student's school world end-to-end. Sweep Blackboard + Outlook (read-only, via the school browser), capture new lectures/slides/attachments into the Library, then INTELLIGENTLY produce structured lecture notes and exam-grade flashcards from the new material, and update the semester graph, calendar, Home page, and ledger. Use when the student says 'sync my school', 'check blackboard/outlook', 'what's new in my courses', 'catch me up', or asks for their daily brief."
-version: 1.3.0
+version: 1.4.0
 metadata:
   hermes:
     tags: [school, sync, blackboard, outlook, lectures, notes, flashcards, daily-brief, pipeline, nemesis]
@@ -71,7 +71,10 @@ Navigate to the URLs from `portals.json` (above), per the school-portal skill's 
   `blackboard.uthsc.edu` in these skills are examples — use the student's own `url`.)
 - **School email** (`kind: "email"` — Outlook/Gmail): new school emails since lastRun —
   sender, subject, gist; note attachments worth capturing (syllabi, slides, schedules).
-  Triage per nemesis-email (read-only; never send).
+  Triage per nemesis-email (read-only; never send). **If Apple Mail has the school
+  account, sweep there FIRST** (one AppleScript bulk read beats a webmail click-loop —
+  see nemesis-email "Which door"); drop to webmail only for attachment downloads or
+  when the account isn't in Mail.app.
 
 **Extract in bulk, don't click row-by-row.** Once you're authenticated on a portal page,
 the FAST path is `browser_console` / `browser_cdp` running one `Runtime.evaluate` that

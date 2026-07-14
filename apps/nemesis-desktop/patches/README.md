@@ -103,3 +103,10 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
 - `0094-beta9-updater-banner-section-delete.patch` — beta.9: update banner narrates
   the silent auto-updater (downloading → Restart now; manual download only on
   updater error/unavailable) + Study sections deletable (decks kept, ungrouped).
+- `0095-beta10-status-below-prose-restart-fix.patch` — beta.10: the running
+  "Working…" status/intent strip renders BELOW the streamed prose (ActivityStrip
+  header/live split — settled "Worked for Xs" toggle stays on top); FIX for
+  restart-to-update never swapping versions (Squirrel.Mac closes windows via
+  'before-quit-for-update' which the macOS hide-on-close handler swallowed —
+  flag flips on the native event + in the install IPC); native update dialog
+  removed — the themed banner is the only update surface.
