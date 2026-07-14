@@ -86,3 +86,10 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   dialog, autoInstallOnAppQuit, 4h recheck; releases now must ship zip + blockmap +
   latest-mac.yml with the DMGs) + the intentional provider-sync backend restart no
   longer flashes the red "Backend stopped" banner (suppressNextBackendExit).
+- `0092-beta7-transcript-refine-telemetry.patch` — beta.7: Recorder saves the note
+  instantly with live captions, then re-transcribes the audio with the accurate
+  batch model (whisper-base.en) in the background and swaps the note's Transcript
+  section (≤30 min recordings; a student edit to the section always wins) + PostHog
+  telemetry behind the consent gate (CONSENT_VERSION 2026-07-14 — real data-practice
+  change) with default-on disclosed checkbox, immediate opt-out switch in Settings →
+  Account & usage, uuid-only identify, feature counters + crash capture only.
