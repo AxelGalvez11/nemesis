@@ -23,6 +23,7 @@ import { Icon } from "./icons";
 import { ForestPlot } from "./ForestPlot";
 import { EvidenceChartsSection } from "./EvidenceCharts";
 import { downloadReportExport } from "@/lib/api";
+import Link from "next/link";
 import { engineVisualsEnabled } from "@/lib/env";
 import { MissionSheet } from "@/components/MissionSheet";
 import { ResearchProgress } from "./ResearchProgress";
@@ -58,20 +59,36 @@ function EvidenceLinkButton({ tag, label, onCite }: { tag: string; label: string
 // A study/evidence-characteristics table — the at-a-glance "body of evidence" a review opens with.
 // Rows come from the shared `evidenceRows` helper (pure, from report.citations metadata already
 // shown in the reference list), so this table is identical to the one in the docx/pptx exports.
-function EvidenceTable({ citations, onCite }: { citations: Citation[]; onCite: (tag: string) => void }) {
-  const rows = evidenceRows(citations);
+function EvidenceTable({ citations, reviewed, onCite }: { citations: Citation[]; reviewed?: Citation[]; onCite: (tag: string) => void }) {
+  const citedRows = evidenceRows(citations);
+  // "Also reviewed": sources gathered into the pool (agentic web loop + wider DB retrieval) that the
+  // writer didn't cite. Surfaced so the evidence base reflects the FULL breadth searched, not just the
+  // handful cited. Display-only — their tags aren't in the citeMap, so they render as plain rows.
+  const reviewedRows = reviewed?.length ? evidenceRows(reviewed) : [];
+  const total = citedRows.length + reviewedRows.length;
   return (
     <section className="research-section">
-      <h4 className="research-heading">Evidence base ({rows.length} sources)</h4>
+      <h4 className="research-heading">Evidence base ({total} sources)</h4>
       <div className="evidence-table-wrap">
         <table className="evidence-table">
           <thead>
             <tr><th>#</th><th>Type</th><th>Source</th><th>Year</th></tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {citedRows.map((r) => (
               <tr key={r.tag}>
                 <td><button type="button" className="cite" onClick={() => onCite(r.tag)} aria-label={`Show source ${r.tag}`}>{r.tag}</button></td>
+                <td>{r.type}</td>
+                <td className="evidence-table-title" title={r.title}>{r.title}</td>
+                <td>{r.year}</td>
+              </tr>
+            ))}
+            {reviewedRows.length ? (
+              <tr className="evidence-reviewed-head"><td colSpan={4}>Also reviewed ({reviewedRows.length})</td></tr>
+            ) : null}
+            {reviewedRows.map((r) => (
+              <tr key={`rev-${r.tag}`} className="evidence-reviewed-row">
+                <td>{r.tag}</td>
                 <td>{r.type}</td>
                 <td className="evidence-table-title" title={r.title}>{r.title}</td>
                 <td>{r.year}</td>
@@ -436,6 +453,12 @@ export function ResearchReportView({ report, reportId, run, style = "vancouver",
             <button type="button" className="chip-action" onClick={() => void downloadReportExport(reportId, "pptx", style)}>
               <Icon name="doc" size={14} />PowerPoint (cited)
             </button>
+            {/* Poster = a print-ready cited conference poster generated from this report (the
+                ResearchPoster component, now wired to a live route). Opens the poster view where
+                Print/Save-as-PDF produces the 48x36 board. */}
+            <Link className="chip-action" href={`/app/reports/${reportId}/poster`}>
+              <Icon name="doc" size={14} />Poster
+            </Link>
             <button type="button" className="chip-action" onClick={() => setShowMission((v) => !v)} aria-expanded={showMission}>
               <Icon name="bell" size={14} />Repeat this research
             </button>
@@ -461,6 +484,14 @@ export function ResearchReportView({ report, reportId, run, style = "vancouver",
           <Icon name="shield" size={14} />
           <span>{labDraftDisclaimer}</span>
         </div>
+      ) : null}
+
+      {report.paper_meta ? (
+        <p className="muted-note appraisal-paper-line">
+          <Icon name="doc" size={13} /> Appraisal of {report.paper_meta.title ?? "an uploaded paper"}
+          {report.paper_meta.pages ? ` · ${report.paper_meta.pages} pages` : ""}
+          {report.paper_meta.truncated ? " · long paper, appraised from its leading text" : ""}
+        </p>
       ) : null}
 
       {abstract ? (
@@ -499,7 +530,7 @@ export function ResearchReportView({ report, reportId, run, style = "vancouver",
         </details>
       ) : null}
 
-      {!report.template && report.citations.length ? <EvidenceTable citations={report.citations} onCite={onCite} /> : null}
+      {!report.template && report.citations.length ? <EvidenceTable citations={report.citations} reviewed={report.reviewed_sources} onCite={onCite} /> : null}
       {/* Evidence-at-a-glance figures (study-design mix + publications-by-year) from the report's real cited
           sources. Each self-suppresses when the data is too thin. Behind NEXT_PUBLIC_ENGINE_VISUALS (default off). */}
       {engineVisualsEnabled && !report.template && report.citations.length ? (
@@ -553,6 +584,15 @@ export function ResearchReportView({ report, reportId, run, style = "vancouver",
               ) : null}
             </p>
           ))}
+        </div>
+      ) : null}
+
+      {report.appraisal_questions?.length ? (
+        <div className="research-questions">
+          <div className="muted-label">Discussion questions</div>
+          <ol>
+            {report.appraisal_questions.map((q, i) => <li key={i}>{renderInline(q)}</li>)}
+          </ol>
         </div>
       ) : null}
 

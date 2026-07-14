@@ -35,7 +35,7 @@ export function WorkPanel({ progress, question }: WorkPanelProps) {
   return (
     <>
       <div className="ev-head wp-head">
-        <b>PharmaOrb is working</b>
+        <b>Nemesis is working</b>
         <div className="spacer" />
         <span className="wp-live"><span className="dot" />Live</span>
       </div>

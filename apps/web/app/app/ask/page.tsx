@@ -4,10 +4,10 @@ import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { AskMode, AskResponse, Citation, ClaimSupport, ReportMode, ResearchProgressStep, ScienceStateSignal, ScopeQuestion } from "@pharmabro/shared";
-import { autoDepth, meterForPoint, scienceState } from "@pharmabro/shared";
-import { deliverablesOnCommandEnabled, simplifiedModesEnabled } from "@/lib/env";
+import { autoDepth, scienceState } from "@pharmabro/shared";
+import { deliverablesOnCommandEnabled, streamingEnabled } from "@/lib/env";
 import { detectDeliverableIntent, type DeliverableFormat } from "@/lib/deliverable-intent";
-import { askQuestion, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchProjectSources, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
+import { askQuestion, askQuestionStream, createConversation, downloadReportExport, fetchConversationTurns, fetchProject, fetchProjectSources, fetchResearchReport, fetchResearchRun, planResearchPreview, saveResearchTurn, saveTurn, scopeResearch, startResearch, type AskQuotaError, type ResearchRunRow, type SavedResearchCard } from "@/lib/api";
 import { normTag, supportQuoteFor } from "@/lib/cite";
 import { renderInline } from "@/lib/inline-md";
 import { countWords, newRevealCtx, revealDelay, wrapWords, REVEAL_BASE, REVEAL_STEP, type RevealCtx } from "@/lib/reveal-text";
@@ -16,7 +16,6 @@ import { phCapture } from "@/lib/posthog";
 import { POINT_OF_USE_DISCLAIMER } from "@/lib/legal";
 import { buildThinkingPreview } from "@/lib/thinking-preview";
 import { citationDomains, faviconUrl, hostnameOf, SEARCH_DOMAINS } from "@/lib/favicon";
-import { composerModeLabel } from "@/lib/ask-mode-label";
 import { getCached, setCached } from "@/lib/cache";
 import { ASK_EXAMPLE_PROMPTS, askPlaceholderFor } from "@/lib/ask-examples";
 import { useAppChrome } from "@/components/AppShell";
@@ -26,6 +25,7 @@ import { AgentRunDock } from "@/components/AgentRunDock";
 import { WorkPanel } from "@/components/WorkPanel";
 import { DomainChips } from "@/components/DomainChips";
 import { MissionSheet } from "@/components/MissionSheet";
+import { PaperUploadSheet } from "@/components/PaperUploadSheet";
 import { ResearchProgress } from "@/components/ResearchProgress";
 import { WatchButton } from "@/components/WatchButton";
 
@@ -40,9 +40,12 @@ function isQuotaError(e: unknown): e is AskQuotaError {
 // "Meta-analysis" is no longer a separate user-facing tool: Deep research runs the meta pipeline,
 // which ALWAYS produces the full structured review and ADDS a computed pooled estimate only when the
 // studies are genuinely comparable (engine degrades to an honest "no pooled estimate" note otherwise).
+// "Fast" is no longer a user-facing option (owner call 2026-07-06): it only changed the answer
+// REGISTER (plain + concise), not the pipeline, so the label over-promised speed. Auto is the
+// default (its quick depth still sends mode:"fast" on the wire — that engine register is kept);
+// Thorough remains the explicit escalation, the ChatGPT default/Thinking split.
 const MODES = [
   { id: "auto", label: "Auto", live: true, pro: false, hint: "Picks the right depth for your question automatically" },
-  { id: "fast", label: "Fast", live: true, pro: false, hint: "Quick, plain-English answer — cited from the library + live sources" },
   { id: "thorough", label: "Thorough", live: true, pro: false, hint: "Thinks longer: a wider source pull and a fuller, more technical answer" },
   { id: "deep", label: "Deep research", live: true, pro: true, hint: "A multi-step, fully cited report — pools comparable studies into a computed estimate when the evidence supports it (Pro)" },
   { id: "structured_review", label: "Systematic review", live: true, pro: true, hint: "A documented-method evidence review: what was searched, what was included, and cited findings in tables (Pro)" },
@@ -52,7 +55,7 @@ const MODES = [
 
 // Where the dial rests when no tool is armed — and what an armed tool resets to after its run
 // launches (tools are single-shot, the ChatGPT behavior; see submit()).
-const DEFAULT_DEPTH: (typeof MODES)[number]["id"] = simplifiedModesEnabled ? "auto" : "fast";
+const DEFAULT_DEPTH: (typeof MODES)[number]["id"] = "auto";
 
 const MIN_THINKING_PREVIEW_MS = 650;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -199,7 +202,7 @@ function AskPage() {
   const [showThinking, setShowThinking] = useState(false);
   const [revealIdx, setRevealIdx] = useState<number | null>(null); // the turn whose answer should type itself in (only the just-arrived one — never reopened/saved turns)
   const [mode, setMode] = useState<(typeof MODES)[number]["id"]>(DEFAULT_DEPTH);
-  const [modeOpen, setModeOpen] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   // The verbatim source sentence backing the claim whose citation was just clicked, shown highlighted
   // in that source's evidence card. null = no claim-specific highlight (e.g. nothing cleared the bar).
@@ -407,6 +410,12 @@ function AskPage() {
     }
   }, []);
 
+  // Appraisal launch: the run id already exists (the upload sheet started it). Append a new turn whose
+  // research card polls it — same card/poll machinery as launchResearch, minus the startResearch call.
+  const launchAppraisal = useCallback((runId: string, title: string) => {
+    setTurns((prev) => [...prev, { q: title, a: null, err: null, research: { runId, mode: "appraisal" as ReportMode, title, error: null, proGate: false } }]);
+  }, []);
+
   // A citation click pins the panel to ITS answer's sources (per-turn evidence) before opening +
   // scrolling. Takes the answer so an older turn's [n] tag resolves against that turn's citations,
   // not the latest answer's (whose tag N may be a different source). `quote` is the verbatim sentence
@@ -489,16 +498,6 @@ function AskPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [turns, busy]);
 
-  // Close the mode menu on Escape / outside click.
-  useEffect(() => {
-    if (!modeOpen) return;
-    const onDoc = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".mode-wrap")) setModeOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setModeOpen(false); };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, [modeOpen]);
-
   function autoGrow() {
     const ta = taRef.current;
     if (!ta) return;
@@ -555,13 +554,15 @@ function AskPage() {
       // launchResearch below, so the chat bubble always shows exactly what they typed.
       const searchText = isDeliverableCommand ? deliverable!.topic : text;
       const displayText = text;
-      const posterFallback = isDeliverableCommand && deliverable!.format === "poster";
+      const isPoster = isDeliverableCommand && deliverable!.format === "poster";
       // Honest surfacing: while scoping/running, this turn's research card shows what's actually
       // happening ("Building your slides on statin safety…"), not a silent reinterpretation. See
       // deliverableLabel/deliverableNote on Turn/ResearchCard and their render in ResearchRunCard.
       const deliverableLabel: DeliverableFormat | undefined = isDeliverableCommand ? (deliverable!.format ?? undefined) : undefined;
-      const deliverableNote = posterFallback
-        ? `Poster export isn't built yet — building a deep-research report on "${searchText}" instead.`
+      // Poster IS built now (the report's "Poster" export opens a print-ready cited board): a poster
+      // command runs the deep-research report and the note points at the poster view.
+      const deliverableNote = isPoster
+        ? `Building the deep-research report on "${searchText}" — open its "Poster" export for a print-ready cited board.`
         : undefined;
       // Show the turn immediately ("scoping…"), then either ask clarifying questions or run.
       setTurns((prev) => [...prev, { q: displayText, a: null, err: null, scoping: true, deliverableLabel, deliverableNote }]);
@@ -598,9 +599,10 @@ function AskPage() {
     const minThinkingPreview = wait(MIN_THINKING_PREVIEW_MS);
     const t0 = Date.now();
     try {
-      // Only fast/thorough/auto reach here — report modes returned above via the research branch.
-      // Auto picks the depth from the question shape (reuses the same fast/thorough engine paths).
-      const askMode: AskMode = mode === "thorough" ? "thorough" : mode === "auto" ? autoDepth(text) : "fast";
+      // Only auto/thorough reach here — report modes returned above via the research branch.
+      // Auto picks the depth from the question shape; its quick depth is the engine's "fast"
+      // register (plain + concise), which is no longer a user-facing label.
+      const askMode: AskMode = mode === "thorough" ? "thorough" : autoDepth(text);
       // Ride the project's user-set instructions AND its attached sources into the question the engine
       // sees — the frozen /ask fn is untouched; the safety scan still sees everything. Never applied to
       // `text` (transcript, saved history) or autoDepth (depth classification) above. Report runs
@@ -619,10 +621,33 @@ function AskPage() {
       const outgoing = contextParts.length
         ? `${contextParts.join("\n\n")}\n\nQuestion: ${text}`
         : text;
-      const res = await askQuestion(outgoing, askMode);
+      // Streaming (flag-gated): the lead paragraph types itself in as the model writes it (real
+      // deltas, safety-gated server-side), and the canonical complete answer then replaces it.
+      // Non-streaming path unchanged. `streamed` decides the reveal: a lead that already streamed
+      // must not re-type itself.
+      let streamed = false;
+      // Real pipeline milestones advance the thinking trail ahead of the synthetic timers —
+      // monotonic (Math.max) so the trail never steps backwards when a timer and a real event race.
+      const STAGE_INDEX: Record<string, number> = { understanding: 1, searching: 2, sources: 2, writing: 3 };
+      const res = streamingEnabled
+        ? await askQuestionStream(outgoing, askMode, {
+          onStage: (evt) => {
+            const target = STAGE_INDEX[evt.stage];
+            if (target !== undefined) setStage((s) => Math.max(s, target));
+          },
+          onDelta: (delta) => {
+            streamed = true;
+            setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, stream: (t.stream ?? "") + delta } : t)));
+          },
+          // Real per-question plan line, in DURING thinking — replaces the template intent line live.
+          onIntent: (line) => setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, intentLine: line } : t))),
+        })
+        : await askQuestion(outgoing, askMode);
       await minThinkingPreview;
-      setLast({ a: res, thinkSecs: Math.max(1, Math.round((Date.now() - t0) / 1000)) });
-      setRevealIdx(idx); // this turn just arrived → type it in (cleared whenever a saved chat loads)
+      // Prefer the streamed line; else the one on the final response (non-streaming path). Undefined
+      // leaves it unset → Thinking shows its template. res.intent_line wins if present (canonical).
+      setLast({ a: res, stream: undefined, thinkSecs: Math.max(1, Math.round((Date.now() - t0) / 1000)), ...(res.intent_line ? { intentLine: res.intent_line } : {}) });
+      setRevealIdx(streamed ? null : idx); // just-arrived turns type in — unless the lead already streamed live
       phCapture("ask_answered", { mode, citations: res.citations.length, evidence_grade: res.evidence_grade, intent: res.intent });
       bumpUsage(); // refresh the shell's account footer + credits chip after this ask consumed a unit
       void persistTurn(idx, text, res); // save the question + cited answer to chat history
@@ -664,7 +689,8 @@ function AskPage() {
       <Composer
         question={question} setQuestion={setQuestion} taRef={taRef} autoGrow={autoGrow}
         submit={submit} busy={busy} mode={mode} setMode={setMode}
-        modeOpen={modeOpen} setModeOpen={setModeOpen}
+        hint={question ? null : hint}
+        onLaunchAppraisal={launchAppraisal}
         error={latest?.err ?? null}
         welcome={!hasThread}
       />
@@ -711,13 +737,15 @@ function AskPage() {
               page, Data sources via Settings. */}
           {!reopenedEmpty ? (
             <div className="chip-row welcome-chips">
-              <button type="button" className="chip-action" onClick={() => { setQuestion("Is it true that "); taRef.current?.focus(); }}>
+              {/* Chips GUIDE, never inject text (owner call 2026-07-07): clicking sets a
+                  placeholder hint + focuses, so the box stays the user's own words. */}
+              <button type="button" className="chip-action" onClick={() => { setHint("Paste the claim you want checked…"); taRef.current?.focus(); }}>
                 <Icon name="check" size={14} />Verify a claim
               </button>
               <button type="button" className="chip-action" onClick={() => { setMode("deep"); taRef.current?.focus(); }}>
                 <Icon name="doc" size={14} />Deep research
               </button>
-              <button type="button" className="chip-action" onClick={() => { setQuestion("Is creatine good for me?"); taRef.current?.focus(); }}>
+              <button type="button" className="chip-action" onClick={() => { setHint("Name the product or supplement you\u2019re wondering about\u2026"); taRef.current?.focus(); }}>
                 <Icon name="search" size={14} />Is this good for me?
               </button>
             </div>
@@ -741,7 +769,7 @@ function AskPage() {
                     so this is a simple token-tinted "P" square, not <Orb/>. Purely presentational. */}
                 <div className="agent-head" aria-hidden="true">
                   <span className="agent-avatar">P</span>
-                  <span className="agent-name">PharmaOrb</span>
+                  <span className="agent-name">Nemesis</span>
                 </div>
                 <div className="ai-body">
                   {t.scoping ? (
@@ -780,11 +808,20 @@ function AskPage() {
                   ) : t.a ? (
                     <>
                       {t.a.intent !== "smalltalk" ? (
-                        <Thinking stage={3} question={t.q} complete secs={t.thinkSecs} domains={citationDomains(t.a.citations, t.a.reviewed_sources)} />
+                        <Thinking stage={3} question={t.q} complete secs={t.thinkSecs} domains={citationDomains(t.a.citations, t.a.reviewed_sources)} intentLine={t.intentLine ?? t.a.intent_line} />
                       ) : null}
                       <Answer answer={t.a} onCite={onCite} question={t.q} reveal={i === revealIdx} />
                     </>
-                  ) : isLast && busy && showThinking ? <Thinking stage={stage} question={t.q} /> : null}
+                  ) : isLast && busy && showThinking ? (
+                    <>
+                      <Thinking stage={stage} question={t.q} intentLine={t.intentLine} />
+                      {t.stream ? (
+                        <div className="answer fade-none" aria-live="polite">
+                          <p className="stream-lead">{t.stream.replace(/\*\*/g, "")}<span className="stream-caret" aria-hidden="true" /></p>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
                   {t.err ? <p className="tmpl-note">{t.err}</p> : null}
                 </div>
               </div>
@@ -815,6 +852,10 @@ interface ResearchCard {
   // deliverableNote (when set) is the poster-fallback disclosure ("Poster export isn't built yet…").
   deliverableLabel?: DeliverableFormat;
   deliverableNote?: string;
+  // Streamed lead text (NEXT_PUBLIC_STREAMING): the safety-gated bottom-line deltas shown while the
+  // engine is still working. Cleared when the canonical answer arrives — the complete response is
+  // authoritative and replaces it.
+  stream?: string;
 }
 
 // A research card loaded from a saved chat is already complete — render the "Report ready" state
@@ -842,6 +883,9 @@ interface Turn {
   q: string;
   a: AskResponse | null;
   err: string | null;
+  // The dynamic per-question plan line (DYNAMIC_INTENT): streamed in during thinking, or read from
+  // the final response. When present, the Thinking component shows THIS instead of its fixed template.
+  intentLine?: string;
   research?: ResearchCard; // present when this turn is a deep-research run instead of a chat answer
   scope?: ScopeTurnState;  // present while clarifying questions await answers
   scoping?: boolean;       // brief: the scope step is running before we know if clarification is needed
@@ -852,6 +896,10 @@ interface Turn {
   // exists yet. Once `research` is set, ResearchCard.deliverableLabel/deliverableNote take over.
   deliverableLabel?: DeliverableFormat;
   deliverableNote?: string;
+  // Streamed lead text (NEXT_PUBLIC_STREAMING): the safety-gated bottom-line deltas shown while the
+  // engine is still working. Cleared when the canonical answer arrives — the complete response is
+  // authoritative and replaces it.
+  stream?: string;
 }
 
 interface ComposerProps {
@@ -863,8 +911,11 @@ interface ComposerProps {
   busy: boolean;
   mode: (typeof MODES)[number]["id"];
   setMode: Dispatch<SetStateAction<(typeof MODES)[number]["id"]>>;
-  modeOpen: boolean;
-  setModeOpen: Dispatch<SetStateAction<boolean>>;
+  // Welcome-chip guidance shown as the textarea PLACEHOLDER (never injected text) until typing starts.
+  hint: string | null;
+  // The Journal Club upload sheet already started the appraisal run (extract → startAppraisal); this
+  // just appends the polling turn — see launchAppraisal in AskPage.
+  onLaunchAppraisal: (runId: string, title: string) => void;
   error: string | null;
   // true only on the empty welcome screen — drives the cycling example placeholders. In an active
   // chat (thread) it's false, so the box shows a calm static "Ask a follow-up…" instead.
@@ -874,13 +925,14 @@ interface ComposerProps {
 // The input pill, shared between the centered welcome screen and the pinned bottom bar. A leading
 // "+" (attachments) and a "mic" (voice) are shown as ChatGPT-style affordances but disabled until
 // those features ship — same honest "coming soon" treatment as the non-live modes.
-function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, modeOpen, setModeOpen, error, welcome }: ComposerProps) {
+function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, setMode, hint, onLaunchAppraisal, error, welcome }: ComposerProps) {
   const activeMode = MODES.find((m) => m.id === mode)!;
   // On the welcome screen, cycle example questions through an animated overlay placeholder (reveals
   // in from the left, fades out) so suggestions live in the chat bar without a hard text swap. Once a
   // chat is active the suggestions stop — the box shows a calm static placeholder instead.
   const [phIdx, setPhIdx] = useState(0);
   const [plusOpen, setPlusOpen] = useState(false); // the "+" tools launcher popover
+  const [journalOpen, setJournalOpen] = useState(false); // the Journal club upload sheet
   // The "+" tools menu flips up/down and caps its height to the free space on that side, so it's never
   // pushed past the window edge — the welcome composer sits low (little room above) while a thread
   // composer sits at the bottom (little room below).
@@ -952,6 +1004,13 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
               <button type="button" role="menuitem" onClick={() => { setMode("deep"); setPlusOpen(false); taRef.current?.focus(); }}>
                 <Icon name="doc" size={14} /><span style={{ flex: 1 }}>Deep research</span><small style={{ color: "var(--text-3)" }}>cited report + pooled stats</small>
               </button>
+              {/* Journal club — upload a paper for a grounded critical appraisal (design/endpoints/
+                  stats/bias), each verdict tied to a verbatim quote. The one real tool added back to
+                  the simplified ChatGPT-parity menu (the old cluttered Discovery/Verify/Monitor/
+                  Skills/Playbooks/filters rows stay removed). */}
+              <button type="button" role="menuitem" onClick={() => { setJournalOpen(true); setPlusOpen(false); }}>
+                <Icon name="doc" size={14} /><span style={{ flex: 1 }}>Journal club — appraise a paper</span><small style={{ color: "var(--text-3)" }}>PDF</small>
+              </button>
             </div>
           ) : null}
         </div>
@@ -962,12 +1021,12 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
             value={question}
             maxLength={500}
             aria-label="Ask a question about a drug, dose, interaction, or monograph"
-            placeholder={welcome ? "Ask anything, or type / for more" : busy ? "Follow up" : "Ask anything"}
+            placeholder={hint ?? (welcome ? "Ask anything — / or @ for tools" : busy ? "Follow up" : "Ask anything")}
             onChange={(e) => { setQuestion(e.target.value); autoGrow(); }}
             onKeyDown={(e) => {
               // Manus's slash affordance: on an empty box, "/" opens the existing "+" tools launcher
               // instead of typing a literal slash. Any non-empty box types "/" normally.
-              if (e.key === "/" && !question) { e.preventDefault(); setPlusOpen(true); return; }
+              if ((e.key === "/" || e.key === "@") && !question) { e.preventDefault(); setPlusOpen(true); return; }
               if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(question); }
             }}
           />
@@ -977,34 +1036,16 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
               standing "/ for more" hint again. Best of both: rotating examples AND a persistent slash hint. */}
           {welcome && !question ? <span className="ph-anim" key={phIdx} aria-hidden="true">{askPlaceholderFor(phIdx)}</span> : null}
         </div>
-        <div className="mode-wrap" style={{ position: "relative" }}>
-          <button className="mode" onClick={() => setModeOpen((v) => !v)} type="button" aria-haspopup="menu" aria-expanded={modeOpen}>
-            <b>{composerModeLabel(activeMode)}</b>
-            <Icon name="chevron-down" size={14} />
+        {/* No depth dial (owner call 2026-07-07 — ChatGPT has none): Auto routing is always on.
+            An armed report tool (from "+"/@) shows as a removable pill, the ChatGPT armed-tool
+            shape; clicking it disarms back to the default depth. */}
+        {mode !== "auto" && mode !== "thorough" ? (
+          <button className="mode tool-armed" type="button" onClick={() => setMode(DEFAULT_DEPTH)}
+            title="Click to remove this tool" aria-label={`Remove ${activeMode.label}`}>
+            <b>{activeMode.label}</b>
+            <span aria-hidden="true">✕</span>
           </button>
-          {modeOpen ? (
-            <div className="acct-menu" role="menu" style={{ bottom: "calc(100% + 6px)", top: "auto", left: 0, right: "auto", width: 230 }}>
-              {/* Depth ONLY — the Pro report tools (Deep research / Discovery) moved to the "+"
-                  launcher on the left, so this dial reads as speed/depth (the ChatGPT split). When a
-                  tool is armed, the dial button shows its name; picking a depth here disarms it.
-                  lab_draft stays out until its engine deploy is owner-gated live. */}
-              {MODES.filter((m) => simplifiedModesEnabled ? m.id === "auto" : (m.id === "fast" || m.id === "thorough")).map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  role="menuitem"
-                  disabled={!m.live}
-                  onClick={() => { if (m.live) { setMode(m.id); setModeOpen(false); } }}
-                  title={m.hint}
-                >
-                  <Icon name={m.live ? (m.id === mode ? "check" : "sparkle") : "lock"} size={14} />
-                  <span style={{ flex: 1 }}>{m.label}</span>
-                  {!m.live ? <small style={{ color: "var(--text-3)" }}>Soon</small> : m.pro ? <small style={{ color: "var(--text-3)" }}>Pro</small> : null}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        ) : null}
         <button
           className={`tool${dictation.listening ? " rec" : ""}`}
           type="button"
@@ -1023,6 +1064,14 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
       {error ? <div className="err">{error}</div> : null}
       {dictation.error ? <div className="err">{dictation.error}</div> : null}
       <div className="composer-disclaimer">{POINT_OF_USE_DISCLAIMER}</div>
+      {/* Journal Club upload sheet: extracts the PDF, starts the appraisal run, then hands the runId
+          back to launchAppraisal (which appends the polling turn). Opened from the "+" tools menu. */}
+      {journalOpen ? (
+        <PaperUploadSheet
+          onClose={() => setJournalOpen(false)}
+          onLaunch={(runId, title) => { onLaunchAppraisal(runId, title); setJournalOpen(false); }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1035,13 +1084,15 @@ function Composer({ question, setQuestion, taRef, autoGrow, submit, busy, mode, 
 //   3. Once answered: a "Thought for Xs ›" disclosure under the plan line that expands into the
 //      activity trail — alternating search blocks (search icon + gerund title + domain chips) and
 //      reasoning blocks (bullet + first-person paragraph), ChatGPT's Activity-panel pattern.
-function Thinking({ stage, question, complete = false, secs, domains }: { stage: number; question: string; complete?: boolean; secs?: number; domains?: string[] }) {
+function Thinking({ stage, question, complete = false, secs, domains, intentLine }: { stage: number; question: string; complete?: boolean; secs?: number; domains?: string[]; intentLine?: string }) {
   const preview = buildThinkingPreview(question, stage);
+  // The dynamic per-question plan line (DYNAMIC_INTENT) supersedes the fixed template when present.
+  const intent = intentLine || preview.intent;
   const [open, setOpen] = useState(false);
   if (!complete) {
     return (
       <div className="thinking engine-preview engine-preview-compact" aria-live="polite" title={preview.preview}>
-        <div className="intent-line">{preview.intent}</div>
+        <div className="intent-line">{intent}</div>
         <span className="engine-preview-title thinking-snippet">
           {stage <= 0 ? "Thinking" : preview.current}
           <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>
@@ -1053,7 +1104,7 @@ function Thinking({ stage, question, complete = false, secs, domains }: { stage:
   const chips = domains?.length ? domains : SEARCH_DOMAINS;
   return (
     <div className="thinking engine-preview engine-preview-compact engine-preview-done">
-      <div className="intent-line">{preview.intent}</div>
+      <div className="intent-line">{intent}</div>
       <button type="button" className="thought-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <span className="engine-preview-title">
           {secs ? `Thought for ${secs}s` : "Thought through evidence"}
@@ -1217,6 +1268,8 @@ function ResearchRunCard({ card, onComplete, onProgress }: { card: ResearchCard;
     ? "Discovery"
     : card.mode === "structured_review"
     ? "Systematic review"
+    : card.mode === "appraisal"
+    ? "Journal club appraisal"
     : "Deep research";
 
   if (err) {
@@ -1328,21 +1381,23 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
   const tailDelayMs = REVEAL_BASE + headSlots * REVEAL_STEP + 150;
   return (
     <div className={`answer${fadeClass}`}>
-      <div className="grade-row">
-        <span className="grade">{answer.evidence_grade.replace(/_/g, " ")}</span>
+      {/* Evidence-grade chip removed (owner call 2026-07-07 — visual noise); the grade still rides
+          the response + sources panel. Row renders only when it has something left to show. */}
+      {science || flags.length ? <div className="grade-row">
         {science ? (
           <span className={`science-state ${science.state}`} title={scienceBasis(science)}>
             {science.state === "well_studied" ? "Well-studied" : "Emerging"}
           </span>
         ) : null}
         {flags.map((f) => <span key={f} className="safety-flag">{f.replace(/_/g, " ")}</span>)}
-      </div>
+      </div> : null}
       {answer.primary_drug && !answer.template && !answer.refused_unsupported ? <MoleculeImage drug={answer.primary_drug} /> : null}
       {answer.plain_english_summary ? <p className="lead">{rt(answer.plain_english_summary)}</p> : <h4 style={{ marginTop: 10 }}>Answer</h4>}
       {answer.template ? <p className="tmpl-note">Conservative response ({answer.template.replace(/_/g, " ")}).</p> : null}
 
       {/* Main explanation, under a quiet section heading (owner wants clearer structure) over the cited body. */}
-      {s.what_we_know?.length ? <div className="ai-block-label">What the evidence shows</div> : null}
+      {/* Fixed section header removed (owner call 2026-07-07): ChatGPT answers flow without
+          template headings — the v16 bold lead-ins already carry the structure. */}
       <Prose points={s.what_we_know} citeMap={citeMap} onCite={cite} citations={answer.citations} ctx={ctx} />
 
       {/* Safety block intentionally NOT rendered in the answer body (owner 2026-06-21: it "reads like
@@ -1513,28 +1568,14 @@ function Prose({ points, citeMap, onCite, citations = [], ctx = null }: PointBlo
     <>
       {points.map((p, i) => {
         const chips = <CiteChips ids={p.citation_ids} support={p.support} citeMap={citeMap} onCite={onCite} />;
-        // Per-claim Evidence Meter chip — deterministic, design-weighted (never vote-counted, see
-        // packages/shared/src/claim-meter.ts). Additive: null when the point has no usable citations,
-        // so the answer renders exactly as before.
-        const meter = (() => {
-          const m = meterForPoint(p.citation_ids, citations);
-          return m ? (
-            <span
-              className={`meter-chip meter-${m.label}`}
-              style={{ "--pct": `${m.score}%` } as CSSProperties}
-              title={`Evidence for this point: ${m.basis}`}
-            >
-              <i />
-              <b>{m.label}</b>
-            </span>
-          ) : null;
-        })();
+        // Per-claim Evidence Meter chip REMOVED from the render (owner call 2026-07-07 — reads as
+        // noise). meterForPoint + claim-meter.ts stay intact for the sources panel / future surfaces.
         return (
           <p className="ai-para" key={i}>
             {ctx ? wrapWords(renderInline(p.text), ctx) : renderInline(p.text)}
-            {/* delay the chips (and the meter, sharing the same slot) so neither appears before the
-                sentence it backs — keeps the single reveal-timeline slot-per-point that headSlots assumes. */}
-            {ctx ? <span className="rv-w" style={{ animationDelay: `${revealDelay(ctx)}ms` }}>{chips}{meter}</span> : <>{chips}{meter}</>}
+            {/* delay the chips so none appears before the sentence it backs — keeps the single
+                reveal-timeline slot-per-point that headSlots assumes. */}
+            {ctx ? <span className="rv-w" style={{ animationDelay: `${revealDelay(ctx)}ms` }}>{chips}</span> : chips}
           </p>
         );
       })}
@@ -1547,7 +1588,8 @@ function UnclearBlock({ points, citeMap, onCite }: PointBlockProps) {
   if (!points?.length) return null;
   return (
     <div className="ai-unclear">
-      <div className="muted-label">Still uncertain</div>
+      {/* "Still uncertain" label removed (owner call 2026-07-07) — the muted styling alone
+          de-emphasizes the caveats without a robotic template heading. */}
       <PointItems points={points} citeMap={citeMap} onCite={onCite} paraClass="" />
     </div>
   );

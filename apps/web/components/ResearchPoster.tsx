@@ -179,6 +179,9 @@ export function ResearchPoster({ report, style = "vancouver" }: { report: Resear
           </section>
         ) : null}
       </div>
+      {/* Growth-loop mark: subtle, single-line, does not
+          compete with the academic content — the credit that spreads the tool when the poster does. */}
+      <footer className="poster-credit">Made with Nemesis · every claim cited &amp; verified · enternemesis.com</footer>
     </article>
   );
 }

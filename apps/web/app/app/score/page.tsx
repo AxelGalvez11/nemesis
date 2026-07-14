@@ -209,7 +209,7 @@ export default function ScorePage() {
             <li><span className="sc-cite">[2]</span><span>Higher dietary fiber is associated with lower ApoB in similar cohorts.</span></li>
             <li><span className="sc-cite">[3]</span><span>Sleep regularity tracks with HRV gains in the trials behind the Recovery pillar.</span></li>
           </ul>
-          <div className="sc-clin">Always discuss any changes with your clinician. PharmaOrb informs; it doesn’t prescribe.</div>
+          <div className="sc-clin">Always discuss any changes with your clinician. Nemesis informs; it doesn’t prescribe.</div>
         </div>
       </div>
 

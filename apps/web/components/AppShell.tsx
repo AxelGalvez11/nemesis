@@ -86,7 +86,7 @@ function titleForPath(path: string): { title: string; sub?: string } {
   if (path.startsWith("/app/monitor")) return { title: "Monitoring", sub: "live evidence watches" };
   if (path.startsWith("/app/scheduled")) return { title: "Scheduled", sub: "recurring research + monitors" };
   // Covers both the list (/app/projects) and a project detail page (/app/projects/<id>) — previously
-  // both fell through to the "Nemesis" fallback, so the topbar read the app name instead of "Projects".
+  // both fell through to the app-name fallback, so the topbar read the brand instead of "Projects".
   if (path.startsWith("/app/projects")) return { title: "Projects", sub: "group chats, reports + monitors" };
   if (path.startsWith("/app/score")) return { title: "Score", sub: "your longevity rank" };
   if (path.startsWith("/app/explore")) return { title: "Explore" };
@@ -419,7 +419,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     .join(" ");
   const appStyle = hasEvidence ? ({ "--evidence": `${evidenceWidth}px` } as CSSProperties) : undefined;
   const defaultTitle = titleForPath(path);
-  const email = session.user.email ?? "preview@pharmaorb.app";
+  const email = session.user.email ?? "preview@enternemesis.com";
   const initials = email.slice(0, 2).toUpperCase();
   // Filter for the "Search chats" MODAL only (title substring, case-insensitive). The rail's own
   // Chats list always shows every chat — it is no longer the thing being filtered.
@@ -469,11 +469,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
 
             <div className="r-label">Projects</div>
-            {/* Projects workspaces (group chats + reports + watches). Lives on its own pages
-                (/app/projects + /app/projects/[id]) rather than inline in the rail. */}
-            <Link href="/app/projects" className="hist">
-              <Icon name="folder" className="hist-ic" />
-              <span style={{ fontSize: 12 }}>Projects</span>
+            {/* ChatGPT anatomy (measured live 2026-07-07): the Projects section lists YOUR projects as
+                folder rows (capped, newest-first as fetched), with one trailing row to the projects
+                home. A generic single "Projects" link is not the ChatGPT shape. */}
+            {(projects ?? []).slice(0, 5).map((p) => (
+              <Link key={p.id} href={`/app/projects/${p.id}`} aria-label={`Project ${p.name}`}
+                className={`hist${isActive(path, `/app/projects/${p.id}`) ? " active" : ""}`}>
+                <Icon name="folder" className="hist-ic" />
+                <span>{p.name}</span>
+              </Link>
+            ))}
+            <Link href="/app/projects" className={`hist${path === "/app/projects" ? " active" : ""}`}>
+              <Icon name="plus" className="hist-ic" />
+              <span>{(projects?.length ?? 0) > 5 ? "All projects" : "New project"}</span>
             </Link>
 
             <div className="rail-recents">

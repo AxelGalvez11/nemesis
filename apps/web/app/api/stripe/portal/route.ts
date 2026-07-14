@@ -1,24 +1,52 @@
 import { appUrl } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
-import { stripe, stripeFailureDetail } from "@/lib/stripe";
+import { customerIdempotencyKey } from "@/lib/billing-contract";
+import { assertStripeBillingWritesAllowed, stripe, stripeFailureDetail } from "@/lib/stripe";
 
 export async function POST(req: Request) {
   try {
     const user = await verifyBearer(req);
     if (!user) return json({ error: "authentication required" }, 401);
 
-    const { data } = await adminClient()
+    const stripeClient = stripe();
+    const mode = assertStripeBillingWritesAllowed();
+    const livemode = mode === "live";
+    const admin = adminClient();
+    const { data, error: subscriptionReadError } = await admin
       .from("subscriptions")
-      .select("stripe_customer_id")
+      .select("stripe_customer_id, stripe_livemode, plan, status")
       .eq("user_id", user.id)
       .maybeSingle();
+    if (subscriptionReadError) throw subscriptionReadError;
 
-    const customerId = data?.stripe_customer_id as string | null | undefined;
-    if (!customerId) return json({ error: "No Stripe customer for this account yet" }, 400);
+    let customerId = data?.stripe_livemode === livemode
+      ? data.stripe_customer_id as string | null | undefined
+      : null;
+    if (!customerId) {
+      const customer = await stripeClient.customers.create({
+        email: user.email ?? undefined,
+        metadata: { user_id: user.id },
+      }, { idempotencyKey: customerIdempotencyKey(user.id, mode) });
+      customerId = customer.id;
+      const { error: customerMirrorError } = await admin.from("subscriptions").upsert({
+        user_id: user.id,
+        plan: "free",
+        status: "active",
+        stripe_customer_id: customerId,
+        stripe_livemode: livemode,
+        stripe_subscription_id: null,
+        stripe_price_id: null,
+        stripe_status: null,
+        current_period_end: null,
+        trial_end: null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
+      if (customerMirrorError) throw customerMirrorError;
+    }
 
-    const session = await stripe().billingPortal.sessions.create({
+    const session = await stripeClient.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${appUrl}/app/settings?section=billing`,
+      return_url: `${appUrl}/account/billing`,
     });
 
     return json({ url: session.url });

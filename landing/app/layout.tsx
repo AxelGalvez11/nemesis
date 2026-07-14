@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
-import { Hanken_Grotesk, JetBrains_Mono, Playfair_Display } from "next/font/google";
+import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-// Type system: Hanken Grotesk for body/UI, JetBrains Mono for labels/accent, and a
-// high-contrast Didone serif (Playfair Display) for the editorial display headings and the
-// giant wordmark — the look adapted from Hermes Agent's landing. All three are variable
-// fonts (full wght axis loads), self-hosted by next/font, exposed as CSS variables that
-// globals.css feeds into --f / --mono / --serif.
+// Type system: Hanken Grotesk (variable, full wght axis — the heavy 800 display weight
+// and body text) + JetBrains Mono for the technical labels. Self-hosted by next/font and
+// exposed as CSS variables that globals.css maps into --sans / --mono.
 const hanken = Hanken_Grotesk({
   subsets: ["latin"],
   variable: "--font-hanken",
@@ -17,21 +15,28 @@ const jetbrains = JetBrains_Mono({
   variable: "--font-jetbrains",
   display: "swap",
 });
-const playfair = Playfair_Display({
-  subsets: ["latin"],
-  variable: "--font-playfair",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
-  title: "PharmaOrb: Drug information that shows its work",
+  metadataBase: new URL("https://www.enternemesis.com"),
+  title: "Nemesis — a contained academic agent for macOS",
   description:
-    "Plain-English answers about any medication or supplement, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Not medical advice. Sign up to start.",
+    "Nemesis is an academic agent with persistent memory, reusable skills, scheduled automation, delegated tasks, and authorized browser access—governed by scoped tools, isolated task contexts, and a standing rule: it never submits on your behalf.",
+  alternates: { canonical: "/" },
   openGraph: {
-    title: "PharmaOrb: Drug information that shows its work",
+    title: "Nemesis — a contained academic agent for macOS",
     description:
-      "Plain-English answers about medications, with every claim traced to FDA labels, PubMed, and ClinicalTrials.gov. Sign up to start.",
+      "It remembers. It learns. It acts—inside your scope. Persistent memory, reusable skills, scheduled automation, and one standing rule: you submit.",
     type: "website",
+    url: "/",
+    siteName: "Nemesis",
+    images: [{ url: "/nemesis/og.jpg", width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Nemesis — a contained academic agent for macOS",
+    description:
+      "It remembers. It learns. It acts—inside your scope. Persistent memory, reusable skills, scheduled automation, and one standing rule: you submit.",
+    images: ["/nemesis/og.jpg"],
   },
   robots: { index: true, follow: true },
 };
@@ -40,13 +45,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    // suppressHydrationWarning: the theme effect may add `class="light"` to <html> after
-    // mount (read from localStorage), which would otherwise trip React's attribute check.
-    <html
-      lang="en"
-      className={`${hanken.variable} ${jetbrains.variable} ${playfair.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang="en" className={`${hanken.variable} ${jetbrains.variable}`}>
       <body>{children}</body>
     </html>
   );

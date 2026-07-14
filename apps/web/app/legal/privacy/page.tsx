@@ -4,7 +4,7 @@ export default function PrivacyPage() {
   return (
     <main className="legal-page">
       <nav className="legal-nav">
-        <Link className="brand" href="/app">Pharma<span>Orb</span></Link>
+        <Link className="brand" href="/app">Nemesis</Link>
         <div>
           <Link className="source-link" href="/legal/terms">Terms</Link>
           <Link className="source-link" href="/legal/disclaimer">Disclaimer</Link>
@@ -13,11 +13,11 @@ export default function PrivacyPage() {
       <article className="legal-content">
         <p className="eyebrow">Legal</p>
         <h1>Privacy Policy</h1>
-        <p className="muted">Effective June 6, 2026</p>
+        <p className="muted">Effective July 14, 2026</p>
         <section>
-          <h2>What PharmaOrb collects</h2>
+          <h2>What Nemesis collects</h2>
           <p>
-            PharmaOrb collects account information, app activity, questions, generated answers,
+            Nemesis collects account information, app activity, questions, generated answers,
             monitoring watches, billing status, and technical logs needed to operate the beta.
           </p>
         </section>
@@ -31,8 +31,8 @@ export default function PrivacyPage() {
         <section>
           <h2>Health-related content</h2>
           <p>
-            PharmaOrb is educational software. Questions and answers may involve health topics, but
-            PharmaOrb does not provide diagnosis, treatment, prescriptions, or emergency support.
+            Nemesis is educational software. Questions and answers may involve health topics, but
+            Nemesis does not provide diagnosis, treatment, prescriptions, or emergency support.
           </p>
         </section>
         <section>
@@ -40,6 +40,15 @@ export default function PrivacyPage() {
           <p>
             The beta uses Supabase for backend/auth, Vercel for hosting, Stripe for billing, and
             model/provider services for source-grounded answer generation.
+          </p>
+        </section>
+        <section>
+          <h2>Analytics &amp; crash reports</h2>
+          <p>
+            The desktop app uses PostHog to collect anonymous usage statistics and crash
+            reports, so we can find bugs and see which features are actually used. This
+            never includes the content of your chats, notes, files, or recordings. You can
+            opt out at any time from Settings → Account &amp; usage.
           </p>
         </section>
         <section>

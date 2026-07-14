@@ -7,26 +7,32 @@
 //
 //   POST /nemesis-search/v2/search   Authorization: Bearer <device key (nmk_...)>
 //     → validates key → plan (subscriptions) → daily unit budget (plan_entitlements
-//       'nemesis_search_daily_units' + usage_counters 'nemesis_search_units') → forwards
-//       body verbatim to https://api.firecrawl.dev/v2/search → records usage_events.
+//       'nemesis_search_daily_units' + usage_counters 'nemesis_search_units') → tries
+//       Tavily, then Linkup, then Firecrawl (first one to answer wins) → records
+//       usage_events. All three are translated to Firecrawl's response shape.
 //   POST /nemesis-search/v2/scrape   Authorization: Bearer <device key>
-//     → same gate, forwards to /v2/scrape. One search or one scrape = one unit.
+//     → same gate, forwards to Firecrawl's /v2/scrape (no scrape role for Tavily/Linkup).
+//       One search or one scrape = one unit.
 //
 // Device keys are the SAME identity nemesis-llm mints and validates (device_keys table,
 // SHA-256 at rest) — one device, one identity, two metered services.
 //
 // Deploy with verify_jwt=false (custom device-key auth here). Secrets: SUPABASE_URL /
-// SUPABASE_SERVICE_ROLE_KEY (platform-injected) and FIRECRAWL_API_KEY (server-side
-// upstream key; when unset this returns 503 with a plain explanation instead of leaking
-// the gap to students as a cryptic parse error).
+// SUPABASE_SERVICE_ROLE_KEY (platform-injected), FIRECRAWL_API_KEY (server-side upstream
+// key; when unset — and no fallback provider is configured either — this returns 503
+// with a plain explanation instead of leaking the gap to students as a cryptic parse
+// error), TAVILY_API_KEY (cheap primary for /v2/search), and LINKUP_API_KEY (search
+// fallback that sits between Tavily and Firecrawl).
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const FIRECRAWL_KEY = Deno.env.get('FIRECRAWL_API_KEY') ?? ''
 const TAVILY_KEY = Deno.env.get('TAVILY_API_KEY') ?? ''
+const LINKUP_KEY = Deno.env.get('LINKUP_API_KEY') ?? ''
 const FIRECRAWL_BASE = 'https://api.firecrawl.dev'
 const TAVILY_BASE = 'https://api.tavily.com'
+const LINKUP_BASE = 'https://api.linkup.so'
 
 const COUNTER_KEY = 'nemesis_search_units'
 const ENTITLEMENT_KEY = 'nemesis_search_daily_units'
@@ -157,6 +163,48 @@ async function tavilySearch(body: Record<string, unknown>): Promise<Response | n
   })
 }
 
+/** Linkup fallback for /v2/search — second in line behind Tavily, ahead of Firecrawl.
+ *  Same Firecrawl-shaped response as tavilySearch so the desktop SDK parses it
+ *  identically; Linkup's {name,url,content} maps to {title,url,description}. */
+async function linkupSearch(body: Record<string, unknown>): Promise<Response | null> {
+  if (!LINKUP_KEY) {
+    return null
+  }
+
+  const upstream = await fetch(`${LINKUP_BASE}/v1/search`, {
+    body: JSON.stringify({
+      depth: 'standard',
+      outputType: 'searchResults',
+      q: String(body.query ?? '')
+    }),
+    headers: { Authorization: `Bearer ${LINKUP_KEY}`, 'Content-Type': 'application/json' },
+    method: 'POST'
+  }).catch(() => null)
+
+  if (!upstream?.ok) {
+    return null
+  }
+
+  const data = (await upstream.json().catch(() => null)) as {
+    results?: { content?: string; name?: string; url?: string }[]
+  } | null
+
+  if (!data?.results) {
+    return null
+  }
+
+  return json({
+    data: {
+      web: data.results.map(result => ({
+        description: result.content ?? '',
+        title: result.name ?? result.url ?? '',
+        url: result.url ?? ''
+      }))
+    },
+    success: true
+  })
+}
+
 /** Record one spent unit against today's counter + the event ledger. */
 async function recordUsage(ctx: KeyContext, kind: 'scrape' | 'search', detail: string): Promise<void> {
   await admin.from('usage_counters').upsert(
@@ -183,7 +231,7 @@ async function recordUsage(ctx: KeyContext, kind: 'scrape' | 'search', detail: s
 }
 
 async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'): Promise<Response> {
-  if (!FIRECRAWL_KEY && !TAVILY_KEY) {
+  if (!FIRECRAWL_KEY && !TAVILY_KEY && !LINKUP_KEY) {
     return json({ success: false, error: 'search provider key not configured on the server' }, 503)
   }
 
@@ -212,9 +260,9 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
 
   const detail = route === '/v2/search' ? String(body.query ?? '') : String(body.url ?? '')
 
-  // Cost routing: Tavily is the cheap search provider, so SEARCHES go there
-  // first (Firecrawl as fallback). SCRAPES are what Firecrawl is actually good
-  // at, so they go straight to Firecrawl (with Tavily having no scrape role).
+  // Cost routing: Tavily is the cheap search provider, so SEARCHES go there first,
+  // Linkup second, and Firecrawl last (with Tavily/Linkup having no scrape role, so
+  // SCRAPES go straight to Firecrawl, which is what it's actually good at).
   if (route === '/v2/search') {
     const primary = await tavilySearch(body)
 
@@ -222,6 +270,14 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
       void recordUsage(ctx, 'search', detail)
 
       return primary
+    }
+
+    const secondary = await linkupSearch(body)
+
+    if (secondary) {
+      void recordUsage(ctx, 'search', detail)
+
+      return secondary
     }
   }
 

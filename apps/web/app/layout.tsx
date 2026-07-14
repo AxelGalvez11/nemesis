@@ -2,13 +2,16 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./styles/shell.css";
 import "./styles/legacy.css";
+import "./styles/auth.css";
+import "./styles/account.css";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { PostHogProvider } from "@/components/PostHogProvider";
 
 export const metadata: Metadata = {
   title: "Nemesis",
-  description: "Source-grounded biomedical evidence — live and cited.",
+  description: "A contained academic agent that turns a semester into order.",
+  icons: { icon: "/nemesis/logo.png" },
 };
 
 // Resolve the theme before first paint to avoid a flash. Only two themes: light, dark (true

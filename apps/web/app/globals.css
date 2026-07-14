@@ -49,14 +49,15 @@
   --orb-color: #62b000; --orb-rgb: 98, 176, 0;
 
   /* ChatGPT accent — blue, measured (docs/design/chatgpt-clone-teardown-2026-07-06.md Probe 3:
-     toggle switch ON = #3a83f7). Reserved for primary actions/links, both themes. */
-  --acid: #3a83f7; --acid-dim: #2f74e0; --acid-deep: #235bb3; --on-acid: #ffffff;
+     retuned to the BRAND GREEN family, owner call 2026-07-07 — light uses the readable
+     brand green (matches --orb-color light / the landing's dark readable greens). */
+  --acid: #62b000; --acid-dim: #559a00; --acid-deep: #3d7a00; --on-acid: #ffffff;
   /* accent as raw RGB channels — lets rgba()-built glows/halos track the accent per theme. */
-  --acid-rgb: 58, 131, 247;
+  --acid-rgb: 98, 176, 0;
   --warn: #b5760a; --danger: #cc3322; --info: #0278c0;
 
   /* layout + type */
-  --radius: 12px; --radius-sm: 10px; --rail: 300px; --rail-collapsed: 64px; --evidence: 344px;
+  --radius: 12px; --radius-sm: 10px; --rail: 260px; --rail-collapsed: 64px; --evidence: 344px;
   /* ChatGPT-measured radii (Probe 3): composer pill 28px · menu/modal 16px. --radius/--radius-sm
      stay as-is (used by ~60 unrelated cards/buttons) — these are dedicated additions so the
      ChatGPT-specific surfaces can opt in without re-skinning every card. */
@@ -68,20 +69,20 @@
      the brand Orb's soft halo — kept modest so the mark stays alive without a page wash. */
   --glow: 0.12;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px -4px rgba(0, 0, 0, 0.07);
-  --shadow-acid: 0 6px 22px -8px rgba(58, 131, 247, 0.4);
+  --shadow-acid: 0 6px 22px -8px rgba(98, 176, 0, 0.4);
   /* Menu/popover shadow (Probe 3, measured): model menu / "+" menu / profile menu. */
   --shadow-menu: 0 8px 16px rgba(0, 0, 0, 0.32), inset 0 0 1px rgba(255, 255, 255, 0.2);
 
   /* legacy aliases (pre-existing pages reference these) */
   --muted: var(--text-2); --muted-2: var(--text-3);
   --accent: var(--acid); --accent-2: var(--acid-dim); --accent-mid: var(--acid-deep); --accent-dark: var(--acid-dim);
-  --line-acid: rgba(58, 131, 247, 0.24); --placeholder: var(--text-3); --button-text: var(--on-acid);
+  --line-acid: rgba(98, 176, 0, 0.24); --placeholder: var(--text-3); --button-text: var(--on-acid);
 
-  /* shadcn HSL triplets (same colors as the hex tokens above; accent #3a83f7 = hsl(217 92% 60%)) */
+  /* shadcn HSL triplets (same colors as the hex tokens above; accent #62b000 = hsl(85 100% 35%)) */
   --background: 0 0% 100%; --foreground: 0 0% 5%;
   --card: 0 0% 100%; --card-foreground: 0 0% 5%;
   --popover: 0 0% 100%; --popover-foreground: 0 0% 5%;
-  --primary: 217 92% 60%; --primary-foreground: 0 0% 100%;
+  --primary: 85 100% 35%; --primary-foreground: 0 0% 100%;
   --secondary: 0 0% 96%; --secondary-foreground: 0 0% 5%;
   --muted-shadcn: 0 0% 96%; --muted-foreground: 0 0% 45%;
   --accent-shadcn: 0 0% 96%; --accent-foreground: 0 0% 5%;
@@ -100,27 +101,28 @@
   --line: #ffffff0f; --line-2: #ffffff1a;
   --text: #ffffff; --text-2: #b4b4b4; --text-3: #8f8f8f;
   --rail-bg: #000000;
-  --fill-hover: rgba(255, 255, 255, 0.04); --fill-active: rgba(255, 255, 255, 0.06);
+  /* ChatGPT dark sidebar fills measured live 2026-07-07: selected row rgba(255,255,255,.1). */
+  --fill-hover: rgba(255, 255, 255, 0.08); --fill-active: rgba(255, 255, 255, 0.10);
   --composer-border: rgba(255, 255, 255, 0.2); --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
   /* PharmaOrb brand mark color, pinned — see --orb-color comment in :root. The orb mark stays
      PharmaOrb's own brand green regardless of the ChatGPT skin retune. */
   --orb-color: #bcff3c; --orb-rgb: 188, 255, 60;
 
-  /* ChatGPT accent — blue, measured (Probe 3: toggle switch ON = #3a83f7, same accent both themes). */
-  --acid: #3a83f7; --acid-dim: #588ff5; --acid-deep: #79a6f6; --on-acid: #ffffff;
-  --acid-rgb: 58, 131, 247;
+  /* Dark accent = the landing's acid lime (#BCFF3C), dark text on acid — the landing's own pairing. */
+  --acid: #bcff3c; --acid-dim: #a8e636; --acid-deep: #8fd028; --on-acid: #0d0d0d;
+  --acid-rgb: 188, 255, 60;
   --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
 
   --glow: 0;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px -6px rgba(0, 0, 0, 0.6);
-  --shadow-acid: 0 8px 28px -8px rgba(58, 131, 247, 0.5);
+  --shadow-acid: 0 8px 28px -8px rgba(188, 255, 60, 0.35);
   --shadow-menu: 0 8px 16px rgba(0, 0, 0, 0.32), inset 0 0 1px rgba(255, 255, 255, 0.2);
-  --line-acid: rgba(58, 131, 247, 0.28);
+  --line-acid: rgba(188, 255, 60, 0.28);
 
   --background: 0 0% 0%; --foreground: 0 0% 100%;
   --card: 0 0% 13%; --card-foreground: 0 0% 100%;
   --popover: 0 0% 21%; --popover-foreground: 0 0% 100%;
-  --primary: 217 92% 60%; --primary-foreground: 0 0% 100%;
+  --primary: 85 100% 62%; --primary-foreground: 0 0% 5%;
   --secondary: 0 0% 18%; --secondary-foreground: 0 0% 100%;
   --muted-shadcn: 0 0% 13%; --muted-foreground: 0 0% 71%;
   --accent-shadcn: 0 0% 21%; --accent-foreground: 0 0% 100%;
@@ -170,3 +172,23 @@ a { color: inherit; text-decoration: none; }
    finish typing, so they don't sit fully-formed while the top reveals. */
 .rv-tail { animation: fade 0.45s both; }
 @media (prefers-reduced-motion: reduce) { .rv-tail { animation: none; } }
+
+/* Streamed answer lead (NEXT_PUBLIC_STREAMING): the safety-gated bottom-line text typing itself in
+   while the engine finishes, with ChatGPT's solid-dot caret. Replaced by the canonical answer. */
+.stream-lead { white-space: pre-wrap; color: var(--text); line-height: 1.65; margin: 10px 0 0; }
+.stream-caret {
+  display: inline-block; width: 9px; height: 9px; margin-left: 4px; border-radius: 50%;
+  background: var(--text); vertical-align: baseline; animation: stream-caret-blink 1s steps(2, start) infinite;
+}
+@keyframes stream-caret-blink { 50% { opacity: 0; } }
+
+/* Armed report tool in the composer (replaces the removed depth dial): ChatGPT's armed-tool pill —
+   accent-tinted, removable on click. */
+.mode.tool-armed { color: var(--acid); gap: 8px; }
+.mode.tool-armed b { font-weight: 500; }
+.mode.tool-armed span { opacity: 0.7; font-size: 12px; }
+.mode.tool-armed:hover span { opacity: 1; }
+
+/* Deep-research "also reviewed" rows: gathered-but-not-cited breadth, de-emphasized under the cited set. */
+.evidence-reviewed-head td { padding-top: 12px; font-size: 12px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.03em; }
+.evidence-reviewed-row td { color: var(--text-2); }

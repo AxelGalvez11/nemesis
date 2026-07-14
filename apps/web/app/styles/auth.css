@@ -1,0 +1,377 @@
+.nemesis-auth-shell {
+  --auth-ink: #080809;
+  --auth-panel: #101013;
+  --auth-chrome: #e7e9ed;
+  --auth-steel: #9a9da4;
+  --auth-iron: #5a5c63;
+  --auth-red: #ff2740;
+  background: var(--auth-ink);
+  color: var(--auth-steel);
+  display: grid;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  grid-template-columns: minmax(0, 1.1fr) minmax(430px, 0.9fr);
+  min-height: 100svh;
+  overflow: hidden;
+  position: relative;
+}
+
+.nemesis-auth-shell *, .nemesis-auth-shell *::before, .nemesis-auth-shell *::after { box-sizing: border-box; }
+
+.nemesis-auth-scanlines {
+  background: repeating-linear-gradient(to bottom, transparent 0, transparent 3px, rgba(255,255,255,.018) 4px);
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 4;
+}
+
+.nemesis-auth-brand {
+  align-items: center;
+  color: var(--auth-chrome);
+  display: flex;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 12px;
+  left: 30px;
+  letter-spacing: .32em;
+  position: absolute;
+  text-decoration: none;
+  top: 28px;
+  z-index: 6;
+}
+
+.nemesis-auth-brand img { filter: contrast(1.16); height: 36px; object-fit: contain; width: 36px; }
+
+.nemesis-auth-field {
+  background: #000;
+  border-right: 1px solid rgba(255,255,255,.08);
+  min-height: 100svh;
+  overflow: hidden;
+  position: relative;
+}
+
+.nemesis-auth-object {
+  background-image: url("/nemesis/hero-notebook.webp");
+  background-position: 58% center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: contrast(1.22) saturate(.72);
+  inset: -5%;
+  position: absolute;
+  transform: scale(1.05);
+}
+
+.nemesis-auth-field::before {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.2), transparent 50%, rgba(0,0,0,.5)),
+    linear-gradient(0deg, #080809 2%, transparent 40%, rgba(0,0,0,.18));
+  content: "";
+  inset: 0;
+  position: absolute;
+  z-index: 1;
+}
+
+.nemesis-auth-field::after {
+  background: rgba(235,238,243,.94);
+  box-shadow: 18px 0 0 #080809, 25px 0 0 rgba(255,39,64,.7), 91px 0 0 rgba(231,233,237,.88);
+  content: "";
+  height: 2px;
+  left: 17%;
+  opacity: .55;
+  position: absolute;
+  right: 20%;
+  top: 35%;
+  transform: skewX(-28deg);
+  z-index: 2;
+}
+
+.nemesis-auth-glitch {
+  background-image: url("/nemesis/hero-notebook.webp");
+  background-position: 58% center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: invert(1) contrast(1.9) grayscale(1);
+  height: 18px;
+  left: 8%;
+  opacity: .82;
+  position: absolute;
+  right: 7%;
+  z-index: 3;
+}
+
+.nemesis-auth-glitch.glitch-a { top: 29%; transform: translateX(28px); }
+.nemesis-auth-glitch.glitch-b { bottom: 29%; height: 9px; transform: translateX(-18px); }
+
+.nemesis-auth-field-copy {
+  bottom: 48px;
+  left: clamp(30px, 5vw, 74px);
+  max-width: 500px;
+  position: absolute;
+  right: 34px;
+  z-index: 5;
+}
+
+.nemesis-auth-status,
+/* Mode tabs — sign-in vs create-account. Both auth screens share one frame,
+   one field set, and one OAuth stack; the active tab is what names the mode
+   plainly, and the inactive tab is the one-click way across. */
+.nemesis-auth-mode {
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 2px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0 0 20px;
+}
+
+.nemesis-auth-mode a {
+  color: var(--auth-steel);
+  font-size: 11px;
+  letter-spacing: .14em;
+  padding: 11px 0;
+  text-align: center;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: color .15s ease, background .15s ease;
+}
+
+.nemesis-auth-mode a.is-active {
+  background: rgba(255, 39, 64, .12);
+  box-shadow: inset 0 -2px 0 var(--auth-red);
+  color: var(--auth-chrome);
+}
+
+.nemesis-auth-mode a:not(.is-active):hover { color: var(--auth-chrome); }
+
+.nemesis-auth-mode a:focus-visible { outline: 2px solid var(--auth-red); outline-offset: -2px; }
+
+.nemesis-auth-eyebrow {
+  color: var(--auth-iron);
+  font-size: 10px;
+  letter-spacing: .2em;
+  margin: 0 0 18px;
+  text-transform: uppercase;
+}
+
+.nemesis-auth-status span {
+  background: var(--auth-red);
+  border-radius: 999px;
+  box-shadow: 0 0 18px rgba(255,39,64,.5);
+  display: inline-block;
+  height: 6px;
+  margin-right: 7px;
+  width: 6px;
+}
+
+.nemesis-auth-field-copy h2 {
+  color: var(--auth-chrome);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: clamp(36px, 4.6vw, 68px);
+  font-weight: 700;
+  letter-spacing: -.045em;
+  line-height: .96;
+  margin: 0;
+  max-width: 8.6em;
+  text-wrap: balance;
+}
+
+.nemesis-auth-field-copy > p:last-child {
+  color: var(--auth-steel);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  margin: 22px 0 0;
+  max-width: 31em;
+}
+
+.nemesis-auth-panel-wrap {
+  align-items: center;
+  background: linear-gradient(135deg, rgba(18,18,21,.98), #080809 72%);
+  display: flex;
+  justify-content: center;
+  min-height: 100svh;
+  padding: 92px clamp(28px, 5vw, 80px) 44px;
+  position: relative;
+  z-index: 2;
+}
+
+.nemesis-auth-panel { max-width: 430px; width: 100%; }
+.nemesis-auth-eyebrow { color: var(--auth-red); margin-bottom: 20px; }
+
+.nemesis-auth-panel h1 {
+  color: var(--auth-chrome);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: clamp(38px, 4vw, 56px);
+  font-weight: 700;
+  letter-spacing: -.045em;
+  line-height: .98;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.nemesis-auth-description {
+  color: var(--auth-steel);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  line-height: 1.58;
+  margin: 18px 0 28px;
+  max-width: 27em;
+}
+
+.nemesis-auth-form { display: grid; gap: 15px; }
+.nemesis-auth-field-group { display: grid; gap: 8px; }
+.nemesis-auth-field-group label { color: var(--auth-steel); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+
+.nemesis-auth-shell input[type="email"],
+.nemesis-auth-shell input[type="password"] {
+  background: rgba(255,255,255,.035);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 2px;
+  color: var(--auth-chrome);
+  min-height: 50px;
+  padding: 13px 14px;
+}
+
+.nemesis-auth-shell input[type="email"]:focus,
+.nemesis-auth-shell input[type="password"]:focus {
+  border-color: rgba(255,39,64,.72);
+  box-shadow: 0 0 0 3px rgba(255,39,64,.1);
+}
+
+.nemesis-auth-submit {
+  background: var(--auth-red);
+  border: 1px solid var(--auth-red);
+  border-radius: 2px;
+  color: #fff;
+  font-size: 11px;
+  letter-spacing: .16em;
+  margin-top: 3px;
+  min-height: 50px;
+  text-transform: uppercase;
+  width: 100%;
+}
+
+/* The desktop-handoff page renders the submit style on an <a> (the "Open
+   Nemesis" deep-link button) — give the anchor the button's box behavior. */
+a.nemesis-auth-submit { align-items: center; display: inline-flex; justify-content: center; text-decoration: none; }
+
+.nemesis-auth-submit:hover { background: #df1730; filter: none; }
+.nemesis-auth-submit:focus-visible, .nemesis-auth-link:focus-visible, .nemesis-auth-brand:focus-visible { outline: 2px solid var(--auth-red); outline-offset: 3px; }
+
+.nemesis-auth-error,
+.nemesis-auth-success,
+.nemesis-auth-notice {
+  border: 1px solid rgba(255,255,255,.1);
+  color: var(--auth-steel);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+}
+
+.nemesis-auth-error { border-left: 2px solid var(--auth-red); color: #f2b9c0; }
+.nemesis-auth-success { border-left: 2px solid #d8dbe0; color: var(--auth-chrome); }
+.nemesis-auth-notice { border-left: 2px solid var(--auth-iron); }
+
+.nemesis-auth-oauth { display: flex; flex-direction: column; gap: 10px; }
+.nemesis-auth-oauth-btn {
+  align-items: center;
+  background: #101114;
+  border: 1px solid var(--auth-iron);
+  border-radius: 2px;
+  color: var(--auth-chrome);
+  display: flex;
+  font-size: 11px;
+  gap: 10px;
+  justify-content: center;
+  letter-spacing: .14em;
+  min-height: 46px;
+  text-transform: uppercase;
+  width: 100%;
+}
+.nemesis-auth-oauth-btn:hover { border-color: var(--auth-steel); }
+.nemesis-auth-oauth-btn:disabled { opacity: .55; }
+.nemesis-auth-oauth-btn:focus-visible { outline: 2px solid var(--auth-red); outline-offset: 3px; }
+.nemesis-auth-oauth-btn svg { flex: none; height: 16px; width: 16px; }
+.nemesis-auth-oauth-note {
+  color: var(--auth-steel);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin: 0;
+}
+.nemesis-auth-divider {
+  align-items: center;
+  color: var(--auth-steel);
+  display: flex;
+  font-size: 10px;
+  gap: 12px;
+  letter-spacing: .18em;
+  margin: 6px 0 2px;
+  text-transform: uppercase;
+}
+.nemesis-auth-divider::before,
+.nemesis-auth-divider::after { background: var(--auth-iron); content: ""; flex: 1; height: 1px; }
+
+.nemesis-auth-consent {
+  align-items: flex-start;
+  color: var(--auth-steel);
+  display: flex;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12.5px;
+  gap: 10px;
+  line-height: 1.5;
+  margin: 1px 0 3px;
+}
+
+.nemesis-auth-consent input { accent-color: var(--auth-red); flex: 0 0 auto; height: 16px; margin-top: 2px; width: 16px; }
+.nemesis-auth-link { color: var(--auth-chrome); text-decoration: underline; text-decoration-color: var(--auth-iron); text-underline-offset: 3px; }
+.nemesis-auth-link:hover { color: #fff; text-decoration-color: var(--auth-red); }
+
+.nemesis-auth-footer {
+  border-top: 1px solid rgba(255,255,255,.08);
+  color: var(--auth-steel);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 13px;
+  margin-top: 24px;
+  padding-top: 20px;
+}
+
+.nemesis-auth-footer p { margin: 0; }
+.nemesis-auth-trust { color: var(--auth-iron); font-size: 9px; letter-spacing: .08em; margin: 22px 0 0; text-transform: uppercase; }
+.nemesis-auth-trust span { color: var(--auth-red); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .nemesis-auth-glitch.glitch-a { animation: nemesis-auth-glitch-a 6s steps(1, end) infinite; }
+  .nemesis-auth-glitch.glitch-b { animation: nemesis-auth-glitch-b 8s steps(1, end) infinite; }
+}
+
+@keyframes nemesis-auth-glitch-a {
+  0%, 7%, 9%, 62%, 64%, 100% { transform: translateX(28px); opacity: .82; }
+  8% { transform: translateX(-48px); opacity: 1; }
+  63% { transform: translateX(62px); opacity: .44; }
+}
+
+@keyframes nemesis-auth-glitch-b {
+  0%, 28%, 30%, 83%, 85%, 100% { transform: translateX(-18px); }
+  29% { transform: translateX(52px); }
+  84% { transform: translateX(-70px); }
+}
+
+@media (max-width: 900px) {
+  .nemesis-auth-shell { display: block; min-height: 100svh; }
+  .nemesis-auth-field { inset: 0; min-height: 100%; position: absolute; width: 100%; z-index: 0; }
+  .nemesis-auth-field::before { background: linear-gradient(0deg, rgba(8,8,9,.98) 8%, rgba(8,8,9,.9) 53%, rgba(8,8,9,.62)); }
+  .nemesis-auth-field::after, .nemesis-auth-glitch { display: none; }
+  .nemesis-auth-object { background-position: 54% center; opacity: .38; }
+  .nemesis-auth-field-copy { display: none; }
+  .nemesis-auth-panel-wrap { background: transparent; justify-content: flex-start; padding: 116px 24px 38px; }
+  .nemesis-auth-panel { max-width: 520px; }
+  .nemesis-auth-brand { left: 24px; top: 24px; }
+}
+
+@media (max-width: 480px) {
+  .nemesis-auth-panel h1 { font-size: 39px; }
+  .nemesis-auth-description { margin-bottom: 22px; }
+  .nemesis-auth-panel-wrap { padding-left: 20px; padding-right: 20px; }
+}

@@ -29,6 +29,9 @@ import { AppModal } from "@/components/AppModal";
 const EMPTY: ProjectContents = { chats: [], reports: [], watches: [] };
 type Tab = "conversation" | "report" | "watch" | "map" | "sources";
 
+// Monitoring + Map hidden from the project surface (owner call 2026-07-07) — flip to restore.
+const LEGACY_PROJECT_TABS = false;
+
 // A project workspace (ChatGPT-Projects style): a "New chat in this project" composer, tabbed contents
 // (Chats / Reports / Monitoring) with the inline add-from-unassigned picker + per-item remove, and a
 // settings modal to rename / set description + instructions / delete. All reads/writes are RLS-scoped.
@@ -165,8 +168,12 @@ export default function ProjectWorkspacePage() {
       {contents ? (
         <>
           {/* Tabs */}
+          {/* Monitoring + Map tabs HIDDEN (owner call 2026-07-07): ChatGPT Projects are chats +
+              context, and these two read as engine clutter there. All their code paths (watch
+              items, ResearchMapView, mapActivated) are kept intact behind this flag for an easy
+              revert — nothing was deleted, the tabs just don't render. */}
           <div className="chip-row" role="tablist" aria-label="Project contents">
-            {(["conversation", "report", "watch"] as Tab[]).map((t) => {
+            {((LEGACY_PROJECT_TABS ? ["conversation", "report", "watch"] : ["conversation", "report"]) as Tab[]).map((t) => {
               const label = t === "conversation" ? "Chats" : t === "report" ? "Reports" : "Monitoring";
               const count = t === "conversation" ? contents.chats.length : t === "report" ? contents.reports.length : contents.watches.length;
               return (
@@ -177,11 +184,13 @@ export default function ProjectWorkspacePage() {
                 </button>
               );
             })}
-            <button type="button" role="tab" aria-selected={tab === "map"}
-              className={`chip-action${tab === "map" ? " active" : ""}`}
-              onClick={() => { setTab("map"); setOpenPicker(false); setMapActivated(true); }}>
-              Map
-            </button>
+            {LEGACY_PROJECT_TABS ? (
+              <button type="button" role="tab" aria-selected={tab === "map"}
+                className={`chip-action${tab === "map" ? " active" : ""}`}
+                onClick={() => { setTab("map"); setOpenPicker(false); setMapActivated(true); }}>
+                Map
+              </button>
+            ) : null}
             <button type="button" role="tab" aria-selected={tab === "sources"}
               className={`chip-action${tab === "sources" ? " active" : ""}`}
               onClick={() => { setTab("sources"); setOpenPicker(false); }}>
@@ -342,7 +351,7 @@ function ProjectSourcesTab({ projectId, enabled, loadErr, sources, addOpen, onOp
         <SkeletonRows count={2} label="Loading sources…" />
       ) : sources.length === 0 ? (
         <div className="proj-sources-empty">
-          <p className="proj-empty" style={{ margin: 0 }}>Give PharmaOrb more context for this project.</p>
+          <p className="proj-empty" style={{ margin: 0 }}>Give Nemesis more context for this project.</p>
           <p className="proj-empty" style={{ margin: "2px 0 10px" }}>Upload a short text file or paste notes — every chat in this project can draw on it.</p>
           <button type="button" className="mode" onClick={onOpenAdd}>Add sources</button>
         </div>
@@ -556,7 +565,7 @@ function ProjectSettings({ project, onClose, onSaved, onPartialSave, onDeleted }
         <label className="menu-label" htmlFor="proj-instr" style={{ marginTop: 10 }}>Instructions</label>
         <textarea id="proj-instr" className="watch-add-input" value={instructions} maxLength={1000} rows={3}
           onChange={(e) => setInstructions(e.target.value)}
-          placeholder="Set context for how PharmaOrb approaches questions in this project" />
+          placeholder="Set context for how Nemesis approaches questions in this project" />
         {err ? <p className="tmpl-note">{err}</p> : null}
         <div className="confirm-actions" style={{ marginTop: 14, justifyContent: "space-between" }}>
           <button type="button" className="confirm-del" onClick={() => setConfirmDel(true)} disabled={saving}>Delete project</button>

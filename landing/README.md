@@ -1,6 +1,6 @@
-# PharmaOrb — landing page
+# Nemesis — landing page
 
-A standalone marketing + waitlist page for **pharmaorb.app**. Static content plus a single
+A standalone marketing page for **enternemesis.com**. Static content plus a single
 email-capture form. **No `/ask`, no health data** — it's safe to run while the LLM provider
 swap is still pending.
 

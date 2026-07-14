@@ -1,6 +1,9 @@
 export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-export const isPreviewMode = !supabaseUrl || !supabaseAnonKey;
+export const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
+// The local no-env experience remains useful for design work. A production build must never grant
+// a fake preview session when credentials are missing; it fails closed through the real auth path.
+export const isPreviewMode = process.env.NODE_ENV !== "production" && !hasSupabaseConfig;
 
 export function normalizeBaseUrl(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -16,19 +19,18 @@ export function normalizeBaseUrl(value: string | null | undefined): string | nul
 
 const defaultAppUrl = process.env.NODE_ENV === "development"
   ? "http://localhost:3000"
-  : "https://app.pharmaorb.app";
+  : "https://app.enternemesis.com";
 
 export const appUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL) ?? defaultAppUrl;
-export const landingUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_LANDING_URL) ?? "https://pharmaorb.app";
+export const landingUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_LANDING_URL) ?? "https://www.enternemesis.com";
 
 // Engine data-visuals (study-design mix + publications-by-year on a research report) — DEFAULT OFF.
 // Computed from real citation metadata; shown only when the data warrants. Off ⇒ reports render as today.
 export const engineVisualsEnabled = process.env.NEXT_PUBLIC_ENGINE_VISUALS === "true";
 
-// Simplified composer dial — DEFAULT OFF. When "true": Fast/Thorough collapse into one "Auto" mode
-// (auto-picks depth), and Meta-analysis drops off the dial (folded into Deep research). Off ⇒ today's
-// 6-mode dial, byte-identical. The Auto routing reuses the existing fast/thorough engine paths.
-export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "true";
+// NEXT_PUBLIC_SIMPLE_MODES is retired (2026-07-06): the simplified dial is now the ONLY dial —
+// Auto (default) + Thorough, hardcoded in the ask page ("Fast" removed as a label; its engine
+// register survives as Auto's quick depth). The env var no longer has any effect.
 
 // Deliverables-on-command — DEFAULT OFF. When "true", a typed message like "make me slides on X" /
 // "write a document about Y" / "make a poster on Z" is detected (see lib/deliverable-intent.ts) and
@@ -36,6 +38,11 @@ export const simplifiedModesEnabled = process.env.NEXT_PUBLIC_SIMPLE_MODES === "
 // user having to open the "+" menu and click a Skill first. Off ⇒ submit() behaves exactly as today
 // (byte-identical) — the SKILLS menu entries remain the only way to arm a deliverable export.
 export const deliverablesOnCommandEnabled = process.env.NEXT_PUBLIC_DELIVERABLES_ON_COMMAND === "true";
+
+// Streamed answers (SSE): the thinking trail rides real pipeline milestones and the lead
+// paragraph types itself in as the model writes it. Requires the ask fn deployed with
+// ASK_STREAMING=on — an eager client against an off server degrades cleanly to normal JSON.
+export const streamingEnabled = process.env.NEXT_PUBLIC_STREAMING === "true";
 
 // Bot-protection CAPTCHA (Cloudflare Turnstile + Supabase native enforcement) — DEFAULT OFF.
 // When NEXT_PUBLIC_TURNSTILE_SITE_KEY is set, the sign-in/sign-up forms render a Turnstile widget
@@ -47,21 +54,44 @@ export const deliverablesOnCommandEnabled = process.env.NEXT_PUBLIC_DELIVERABLES
 export const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 export const captchaEnabled = turnstileSiteKey.length > 0;
 
+// Social sign-in (Supabase OAuth) — DEFAULT OFF. Buttons render only for providers listed in
+// NEXT_PUBLIC_AUTH_PROVIDERS (comma-separated, e.g. "google,apple"), so the UI can never offer a
+// provider before it is configured in Supabase (Auth -> Providers). Unset => email/password only.
+export type OAuthProviderId = "google" | "apple";
+const rawAuthProviders = process.env.NEXT_PUBLIC_AUTH_PROVIDERS ?? "";
+export const enabledOAuthProviders: OAuthProviderId[] = rawAuthProviders
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter((value): value is OAuthProviderId => value === "google" || value === "apple");
+
 // PostHog product analytics. Public phc_ project key (write-only ingestion) + host — safe in the
 // browser bundle. Reads happen elsewhere with a personal API key.
 export const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
 export const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
+
+// Transactional email (Resend REST, server-side). Unset key => sends are skipped with a log
+// line, never a failure — no email is worth breaking a webhook or request over.
+export const resendApiKey = process.env.RESEND_API_KEY ?? "";
+export const emailFrom = process.env.EMAIL_FROM ?? "Nemesis <support@enternemesis.com>";
+
+// Prepaid-AI balance alarm (see app/api/cron/deepseek-balance). CRON_SECRET guards the endpoint
+// (Vercel sends it as a Bearer token on cron invocations). Alerts email the owner.
+export const cronSecret = process.env.CRON_SECRET ?? "";
+export const deepseekApiKey = process.env.DEEPSEEK_API_KEY ?? "";
+export const balanceAlertEmail = process.env.BALANCE_ALERT_EMAIL ?? "axelgalvez1121@gmail.com";
+const rawBalanceThreshold = Number(process.env.DEEPSEEK_BALANCE_ALERT_USD ?? "5");
+export const deepseekBalanceAlertUsd = Number.isFinite(rawBalanceThreshold) ? rawBalanceThreshold : 5;
 
 export const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 export const stripeSecretKey = process.env.STRIPE_SECRET_KEY ?? "";
 export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 export const stripePlusPriceId = process.env.STRIPE_PLUS_PRICE_ID ?? "";
 export const stripeProPriceId = process.env.STRIPE_PRO_PRICE_ID ?? "";
+// Optional top tier: leave unset to sell Plus + Pro only. When set, Max joins the
+// catalog, the billing cards, and checkout accepts plan === "max".
 export const stripeMaxPriceId = process.env.STRIPE_MAX_PRICE_ID ?? "";
 export const stripeAllowLive = process.env.STRIPE_ALLOW_LIVE === "true";
-// Every plan starts with a no-charge trial (trial model, not freemium). Card is
-// collected at checkout; the first charge lands after this many days.
-export const stripeTrialDays = Number(process.env.STRIPE_TRIAL_DAYS ?? "7") || 7;
+export const stripeAllowTestBilling = process.env.STRIPE_ALLOW_TEST_BILLING === "true";
 
 export function requirePublicEnv(): void {
   if (!supabaseUrl || !supabaseAnonKey) {

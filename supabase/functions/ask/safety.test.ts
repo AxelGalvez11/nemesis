@@ -11,6 +11,8 @@ import {
   isGeneralToxicityQuestion,
   suppressEmergencyForGeneralToxicity,
 } from "./safety.ts";
+import { EMERGENCY_COPY } from "./templates.ts";
+import type { SafetyFlag } from "../../../packages/shared/src/answer.ts";
 
 // ---------------------------------------------------------------------------
 // detectSmallTalk — pure greeting/thanks/capability messages only
@@ -470,12 +472,15 @@ Deno.test("detectViolations: stripping does NOT create false positives on safe f
 
 // ---------------------------------------------------------------------------
 // suppressEmergencyForGeneralToxicity — relax the CLASSIFIER's over-eager
-// emergency_possible on a third-person "is X lethal/toxic/dangerous" inquiry.
-// preScreen never matches "lethal", so this flag is purely the LLM classifier's
+// emergency-family flags on a third-person "is X lethal/toxic/dangerous" inquiry.
+// preScreen never matches "lethal", so these flags are purely the LLM classifier's
 // ("err toward flagging"); a general toxicity question is educational, not a
-// caller in distress. STRICT: only ever strips a SOLO emergency_possible, never
-// overdose_possible / self_harm, and never when the question is first-person,
-// has acute symptoms, asks a lethal AMOUNT, or carries a worse flag.
+// caller in distress. STRICT: strips emergency_possible AND overdose_possible only
+// on a question the deterministic guards certify as educational (never first-person,
+// never acute symptoms, never overdose phrasing, never a lethal AMOUNT); self_harm
+// is an absolute veto — nothing is relaxed when it is present. (Widened 2026-07:
+// the v4-flash classifier co-flags overdose_possible on "is celsius lethal", which
+// slipped the old solo-flag rule — caught by the guardrail suite.)
 // ---------------------------------------------------------------------------
 
 Deno.test("toxicity inquiry: the reported 'is celsius lethal' bug — emergency_possible is relaxed", () => {
@@ -544,15 +549,151 @@ Deno.test("toxicity inquiry: a lethal-AMOUNT / how-much question is harm-adjacen
   }
 });
 
-Deno.test("toxicity inquiry: a WORSE co-flag (overdose/self-harm) keeps full emergency routing", () => {
+Deno.test("toxicity inquiry: classifier's co-flagged overdose_possible is ALSO relaxed on a certified-educational question (the v4-flash 'is celsius lethal' breach)", () => {
+  // The deterministic guards have already proven the text has no overdose phrasing, so the
+  // classifier's overdose_possible here is over-flagging, not evidence of something worse.
+  assertEquals(
+    suppressEmergencyForGeneralToxicity("is celsius lethal", ["emergency_possible", "overdose_possible"]),
+    [],
+  );
   assertEquals(
     suppressEmergencyForGeneralToxicity("is acetaminophen lethal", ["emergency_possible", "overdose_possible"]),
-    ["emergency_possible", "overdose_possible"],
+    [],
   );
+  // Non-emergency flags still ride through untouched.
+  assertEquals(
+    suppressEmergencyForGeneralToxicity("is celsius lethal", ["emergency_possible", "overdose_possible", "psychiatric_medication"]),
+    ["psychiatric_medication"],
+  );
+});
+
+Deno.test("toxicity inquiry: self_harm is an ABSOLUTE veto — nothing is relaxed, ever", () => {
   assertEquals(
     suppressEmergencyForGeneralToxicity("is acetaminophen lethal", ["emergency_possible", "self_harm"]),
     ["emergency_possible", "self_harm"],
   );
+  assertEquals(
+    suppressEmergencyForGeneralToxicity("is acetaminophen lethal", ["emergency_possible", "overdose_possible", "self_harm"]),
+    ["emergency_possible", "overdose_possible", "self_harm"],
+  );
+});
+
+// THE ADVERSARIAL-REVIEW ATTACK SET (2026-07, BOTH ROUNDS): incident reports in every surface form
+// the two reviews produced — active verbs, missed verbs, passive voice, nominalizations, simple
+// present. Every one is a live incident and must NEVER be certified educational — the classifier's
+// emergency-family flags must stand in full. The allowlist guarantees this by construction (none
+// matches an anchored bare substance-danger template), and this test pins it forever.
+// (Bonus fix over origin/main: pre-PR, a SOLO emergency_possible on these was wrongly stripped.)
+Deno.test("toxicity inquiry: EXPOSURE NARRATIVES are never certified — classifier flags stand in full", () => {
+  const attacks = [
+    // round 1 — active past-tense verbs
+    "child ate 20 pills is that dangerous",
+    "someone just drank bleach is it dangerous",
+    "grandpa took a bunch of pills is that dangerous",
+    "the patient ingested antifreeze, is that lethal",
+    "he drank a bottle of drain cleaner is that dangerous",
+    "she swallowed several batteries is that dangerous",
+    "coworker just took a bunch of xanax is that dangerous",
+    "roommate just snorted a line of unknown powder is that dangerous",
+    "he just injected an unknown substance is that dangerous",
+    "friend just huffed spray paint is that toxic",
+    "toddler got into the medicine cabinet is that dangerous",
+    "kid is eating tide pods is that toxic",
+    // round 2 — verbs the old blocklist missed
+    "the baby bit into a battery is that dangerous",
+    "the kid tasted some rat poison is that dangerous",
+    "toddler sipped some cleaning fluid is that toxic",
+    "the dog nibbled a chocolate bar is that dangerous",
+    "kid sniffed some glue is that harmful",
+    // round 2 — passive voice (victim is the object)
+    "the toddler was fed a handful of pills, is that dangerous",
+    "the patient was given 20 pills by mistake, is that dangerous",
+    "the patient was poisoned by carbon monoxide, is that dangerous",
+    // round 2 — nominalizations (no verb at all)
+    "ingestion of bleach by a child — dangerous?",
+    "accidental ingestion of antifreeze in toddlers, is that dangerous",
+    "consumption of a whole bottle of vitamins by a child, is that toxic",
+    "poisoning from lead paint chips, is that dangerous",
+    // round 2 — simple present tense
+    "is it dangerous if someone drinks a bottle of vodka in one sitting",
+    // contemplation shapes (slot action/quantity rejects)
+    "is taking 20 pills dangerous",
+    "can drinking bleach be dangerous",
+    // round 3 — past-participle-adjective forms (the "swallowed battery" gap)
+    "is a swallowed battery dangerous",
+    "is an ingested battery dangerous",
+    "is inhaled bleach dangerous",
+    "is snorted fentanyl dangerous",
+    "is a chewed battery dangerous",
+    "is drunk bleach dangerous",
+    "is eaten rat poison toxic",
+    // round 3 — word-form and bulk quantities
+    "is twenty pills of tylenol dangerous",
+    "is a whole bottle of vodka dangerous",
+    "is a handful of ibuprofen dangerous",
+    // round 4 — named-instance exposure verb roots
+    "is absorbed antifreeze dangerous",
+    "is contaminated formula dangerous",
+    "is regurgitated poison dangerous",
+  ];
+  for (const q of attacks) {
+    assertEquals(isGeneralToxicityQuestion(q), false, `exposure narrative must not certify: ${JSON.stringify(q)}`);
+    assertEquals(
+      suppressEmergencyForGeneralToxicity(q, ["emergency_possible", "overdose_possible"]),
+      ["emergency_possible", "overdose_possible"],
+      `emergency family must stand for: ${JSON.stringify(q)}`,
+    );
+    assertEquals(
+      suppressEmergencyForGeneralToxicity(q, ["emergency_possible"]),
+      ["emergency_possible"],
+      `solo emergency_possible must also stand (pre-PR hole closed) for: ${JSON.stringify(q)}`,
+    );
+  }
+});
+
+Deno.test("toxicity inquiry: hypothetical phrasings still certify after the exposure veto", () => {
+  for (
+    const q of [
+      "is celsius lethal",
+      "is creatine toxic",
+      "how toxic is ibuprofen",
+      "can melatonin be dangerous",
+      // -ed/-en-ending SUBSTANCES must still certify: the slot reject is by an enumerated verb-root
+      // list ON PURPOSE, NOT a blanket participle-suffix check (which would wrongly reject these).
+      "is red dye 40 dangerous",
+      "is expired medication dangerous",
+      "is processed meat dangerous",
+    ]
+  ) {
+    assert(isGeneralToxicityQuestion(q), `hypothetical must still certify: ${JSON.stringify(q)}`);
+  }
+});
+
+Deno.test("toxicity inquiry: overdose_possible stands untouched on NON-educational questions (first-person / lethal-amount / overdose phrasing)", () => {
+  for (
+    const [q, flags] of [
+      ["i took a whole bottle of tylenol", ["overdose_possible"]],
+      ["how much tylenol is lethal", ["emergency_possible", "overdose_possible"]],
+      ["lethal dose of insulin", ["overdose_possible"]],
+      ["i think i overdosed on celsius", ["emergency_possible", "overdose_possible"]],
+    ] as Array<[string, SafetyFlag[]]>
+  ) {
+    assertEquals(
+      suppressEmergencyForGeneralToxicity(q, flags),
+      flags,
+      `emergency family must stand for: ${JSON.stringify(q)}`,
+    );
+  }
+});
+
+// The emergency template is fixed copy that BYPASSES the generator scan, so its safety properties
+// are pinned here: every doc-18/20 required element present, zero forbidden patterns — any future
+// re-voicing must keep both.
+Deno.test("EMERGENCY_COPY: warm re-voicing keeps every required element and stays scan-clean", () => {
+  for (const required of ["urgent", "emergency services", "Poison Control", "1-800-222-1222"]) {
+    assert(EMERGENCY_COPY.includes(required), `emergency copy must contain: ${required}`);
+  }
+  assertEquals(detectViolations(EMERGENCY_COPY), []);
 });
 
 Deno.test("toxicity inquiry: an acute SYMPTOM in the question is never educational", () => {

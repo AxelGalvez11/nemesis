@@ -10,6 +10,7 @@ import type {
   MissionCadence,
   MissionDeliver,
   MissionSummary,
+  PaperMeta,
   QuotaExceededError,
   ReportMode,
   ResearchProgressStep,
@@ -285,6 +286,114 @@ export async function askQuestion(question: string, mode?: AskMode): Promise<Ask
   return body as AskResponse;
 }
 
+/** Streamed /ask (SSE): real pipeline milestones + the lead paragraph as the model writes it. */
+export interface AskStreamHandlers {
+  /** Real pipeline milestone ({stage:"understanding"|"searching"|"sources"|"writing", ...}). */
+  onStage?: (stage: { stage: string } & Record<string, unknown>) => void;
+  /** Safety-gated lead-paragraph text, in order. The final response SUPERSEDES streamed text. */
+  onDelta?: (text: string) => void;
+  /** The dynamic per-question plan line (DYNAMIC_INTENT), emitted early so it shows during thinking. */
+  onIntent?: (text: string) => void;
+}
+
+/**
+ * Ask with streaming. Resolves with the SAME canonical AskResponse askQuestion returns — the
+ * terminal `complete` event — after relaying stage/delta events. Degrades cleanly: if the server
+ * flag is off (plain JSON reply) this behaves exactly like askQuestion, so the client flag can
+ * ship ahead of the fn deploy. Quota errors throw the same AskQuotaError shape either way.
+ */
+export async function askQuestionStream(
+  question: string,
+  mode: AskMode | undefined,
+  handlers: AskStreamHandlers,
+): Promise<AskResponse> {
+  if (isPreviewMode) return askQuestion(question, mode);
+
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to ask");
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/ask`, {
+    method: "POST",
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ question, use_health_context: false, stream: true, ...(mode ? { mode } : {}) }),
+  });
+
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/event-stream")) {
+    // Server streaming flag off (or an error status): identical handling to askQuestion.
+    const body = await res.json().catch(() => null);
+    if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
+      const err = new Error("quota_exceeded") as AskQuotaError;
+      err.quota = body as unknown as QuotaExceededError;
+      throw err;
+    }
+    if (!res.ok) throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `ask failed (${res.status})`);
+    return body as AskResponse;
+  }
+
+  if (!res.body) throw new Error("ask stream: empty body");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let complete: AskResponse | null = null;
+  let streamError: Record<string, unknown> | null = null;
+
+  const handleBlock = (block: string) => {
+    let event = "message";
+    const dataLines: string[] = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+    }
+    if (!dataLines.length) return;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return;
+    }
+    if (event === "delta" && isObj(payload) && typeof payload.text === "string") handlers.onDelta?.(payload.text);
+    else if (event === "intent" && isObj(payload) && typeof payload.text === "string") handlers.onIntent?.(payload.text);
+    else if (event === "stage" && isObj(payload) && typeof payload.stage === "string") {
+      handlers.onStage?.(payload as { stage: string } & Record<string, unknown>);
+    } else if (event === "complete") complete = payload as AskResponse;
+    else if (event === "error" && isObj(payload)) streamError = payload;
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let sep: number;
+      while ((sep = buf.indexOf("\n\n")) >= 0) {
+        handleBlock(buf.slice(0, sep));
+        buf = buf.slice(sep + 2);
+      }
+    }
+    if (buf.trim()) handleBlock(buf);
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (streamError) {
+    const errPayload: Record<string, unknown> = streamError;
+    if (errPayload.error === "quota_exceeded") {
+      const err = new Error("quota_exceeded") as AskQuotaError;
+      err.quota = errPayload as unknown as QuotaExceededError;
+      throw err;
+    }
+    throw new Error(typeof errPayload.error === "string" ? errPayload.error : "ask failed");
+  }
+  if (!complete) throw new Error("ask stream ended without a complete answer");
+  return complete;
+}
+
 export async function searchEntities(q: string): Promise<SearchResult[]> {
   const query = q.trim();
   if (!query) return [];
@@ -504,7 +613,7 @@ export async function exportMyData(): Promise<Record<string, unknown>> {
   if (isPreviewMode) {
     return {
       exported_at: new Date().toISOString(),
-      profile: { email: "preview@pharmaorb.app" },
+      profile: { email: "preview@enternemesis.com" },
       subscription: { plan: "free", status: "preview" },
       watchlist: demoWatchlist,
       usage: demoUsage,
@@ -559,7 +668,12 @@ export interface SavedResearchCard {
 }
 
 function parseReportMode(value: unknown): ReportMode {
-  return value === "structured_review" || value === "meta" || value === "lab_draft" || value === "discovery" || value === "standard"
+  return value === "structured_review" ||
+      value === "meta" ||
+      value === "lab_draft" ||
+      value === "discovery" ||
+      value === "appraisal" ||
+      value === "standard"
     ? value
     : "standard";
 }
@@ -779,6 +893,65 @@ export async function startResearch(question: string, mode: ReportMode = "standa
   }
   if (!res.ok || !isObj(body) || typeof body.run_id !== "string") {
     throw new Error(isObj(body) && typeof body.error === "string" ? body.error : `research failed (${res.status})`);
+  }
+  return body.run_id;
+}
+
+/** Extract text from a PDF via the Node route (auth + rate-limit + size guard live server-side). Throws
+ *  a message-bearing Error on any non-2xx so the upload sheet can show the specific reason. */
+export async function extractPaper(file: File): Promise<{ text: string; meta: PaperMeta }> {
+  if (isPreviewMode) throw new Error("Uploading a paper needs a live connection (not available in preview).");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to appraise a paper");
+
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/v1/papers/extract", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !isObj(body) || typeof body.text !== "string") {
+    throw new Error(isObj(body) && typeof body.message === "string" ? body.message : `Extraction failed (${res.status})`);
+  }
+  const meta: Record<string, unknown> = isObj(body.meta) ? body.meta : {};
+  return {
+    text: body.text,
+    meta: {
+      title: typeof meta.title === "string" ? meta.title : null,
+      pages: typeof meta.pages === "number" ? meta.pages : 0,
+      truncated: meta.truncated === true,
+    },
+  };
+}
+
+/** Start a journal-club appraisal run. Same Pro gate + 429 quota shape as startResearch; returns the run
+ *  id to poll. The extracted paper text + meta ride the request (no storage bucket). */
+export async function startAppraisal(paperText: string, paperMeta: PaperMeta): Promise<string> {
+  if (isPreviewMode) throw new Error("Appraisal needs a live connection (not available in preview).");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Sign in to appraise a paper");
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/research`, {
+    method: "POST",
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ mode: "appraisal", paper_text: paperText, paper_meta: paperMeta }),
+  });
+  const body = await res.json().catch(() => null);
+  if (res.status === 429 && isObj(body) && body.error === "quota_exceeded") {
+    const err = new Error("quota_exceeded") as AskQuotaError;
+    err.quota = body as unknown as QuotaExceededError;
+    throw err;
+  }
+  if (!res.ok || !isObj(body) || typeof body.run_id !== "string") {
+    throw new Error(isObj(body) && typeof body.message === "string" ? body.message : isObj(body) && typeof body.error === "string" ? body.error : `appraisal failed (${res.status})`);
   }
   return body.run_id;
 }

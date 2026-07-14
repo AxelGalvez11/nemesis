@@ -228,10 +228,12 @@ export async function checkFaithfulness(
   const block = `SOURCES:\n${sourcesBlock || "(none)"}\n\nCLAIMS:\n${claimsBlock}`;
 
   try {
-    const { input } = await callTool<{ verdicts?: unknown }>(
+    const { input, model } = await callTool<{ verdicts?: unknown }>(
       {
         model: modelFor("verify"),
-        max_tokens: 2048,
+        // Verdicts are tiny ({index,supported} each), but a large report yields many; 4096 keeps the
+        // array from truncating mid-JSON (which would drop verdicts -> under-cover -> false-unverified).
+        max_tokens: 4096,
         temperature: 0,
         system: FAITH_SYSTEM,
         tools: [FAITH_TOOL],
@@ -244,6 +246,22 @@ export async function checkFaithfulness(
     // applyVerdicts only acts on body/safety (collectClaims indices); the summary index is ignored there.
     const pruned = applyVerdicts(report, verdicts);
     const verified = isFullyVerified(judgeItems.map((it) => it.index), summaryIndex, verdicts);
+    // Observability: a report can be UNVERIFIED for three distinct reasons — the judge under-emitted
+    // (missing indices), it marked the aggregate summary unsupported, or a body claim was unsupported.
+    // Log which one, using indices only (no claim/source text), so the mechanism is visible in logs.
+    if (!verified) {
+      const expected = judgeItems.map((it) => it.index);
+      const got = new Set(verdicts.map((v) => v.index));
+      const missing = expected.filter((i) => !got.has(i));
+      const summaryVerdict = summaryIndex === null
+        ? "n/a"
+        : (verdicts.find((v) => v.index === summaryIndex)?.supported ?? "MISSING");
+      const unsupported = verdicts.filter((v) => v.supported === false).map((v) => v.index);
+      console.error(
+        `faithfulness UNVERIFIED (model=${model}): expected ${expected.length} verdicts, got ${verdicts.length}; ` +
+          `missing=[${missing}]; summaryIndex=${summaryIndex} summaryVerdict=${summaryVerdict}; unsupported=[${unsupported}]`,
+      );
+    }
     return { report: pruned, verified };
   } catch (e) {
     console.error("research faithfulness check failed; marking unverified:", (e as Error).message);

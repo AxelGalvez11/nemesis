@@ -2,7 +2,8 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { isPreviewMode } from "@/lib/env";
+import { hasSupabaseConfig, isPreviewMode, type OAuthProviderId } from "@/lib/env";
+import { isAlreadyRegisteredSignUp } from "@/lib/auth-signup";
 import { resolveAuthRedirectUrl } from "@/lib/auth-redirect";
 import { supabase } from "@/lib/supabase";
 import { phCapture, phIdentify, phReset } from "@/lib/posthog";
@@ -10,6 +11,8 @@ import { phCapture, phIdentify, phReset } from "@/lib/posthog";
 export interface SignUpResult {
   error: string | null;
   needsEmailConfirmation: boolean;
+  /** The email already has an account; the caller should route to sign-in instead. */
+  alreadyRegistered: boolean;
 }
 
 /** Consent captured at signup. Recorded in auth user_metadata so we know which Terms/Disclaimer
@@ -23,6 +26,7 @@ interface AuthContextValue {
   loading: boolean;
   signIn: (email: string, password: string, captchaToken?: string) => Promise<string | null>;
   signUp: (email: string, password: string, consent?: SignUpConsent, captchaToken?: string) => Promise<SignUpResult>;
+  signInWithOAuth: (provider: OAuthProviderId, next?: string) => Promise<string | null>;
   signOut: () => Promise<void>;
 }
 
@@ -38,7 +42,7 @@ const previewSession = {
     id: "00000000-0000-4000-8000-000000000000",
     aud: "authenticated",
     role: "authenticated",
-    email: "preview@pharmaorb.app",
+    email: "preview@enternemesis.com",
     app_metadata: { provider: "email", providers: ["email"] },
     user_metadata: {},
     created_at: new Date().toISOString(),
@@ -57,13 +61,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    let alive = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!alive) return;
-      setSession(data.session ?? null);
-      if (data.session?.user) phIdentify(data.session.user.id, { email: data.session.user.email });
+    if (!hasSupabaseConfig) {
+      setSession(null);
       setLoading(false);
-    });
+      return;
+    }
+
+    let alive = true;
+    void supabase.auth.getSession()
+      .then(({ data }) => {
+        if (!alive) return;
+        setSession(data.session ?? null);
+        if (data.session?.user) phIdentify(data.session.user.id, { email: data.session.user.email });
+      })
+      .catch(() => {
+        if (alive) setSession(null);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
       if (next?.user) phIdentify(next.user.id, { email: next.user.email });
@@ -81,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(previewSession);
       return null;
     }
+    if (!hasSupabaseConfig) return "Identity service configuration is unavailable.";
     // captchaToken is forwarded only when present; Supabase ignores it until CAPTCHA enforcement is
     // enabled in the dashboard, so this is inert until activated.
     const { error } = await supabase.auth.signInWithPassword({
@@ -94,13 +111,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = useCallback(async (email: string, password: string, consent?: SignUpConsent, captchaToken?: string) => {
     if (isPreviewMode) {
       setSession(previewSession);
-      return { error: null, needsEmailConfirmation: false };
+      return { error: null, needsEmailConfirmation: false, alreadyRegistered: false };
     }
+    if (!hasSupabaseConfig) return { error: "Identity service configuration is unavailable.", needsEmailConfirmation: false, alreadyRegistered: false };
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: resolveAuthRedirectUrl("/app"),
+        emailRedirectTo: resolveAuthRedirectUrl("/auth/callback?next=%2Faccount"),
         // Forwarded only when present; Supabase ignores it until CAPTCHA enforcement is enabled.
         ...(captchaToken ? { captchaToken } : {}),
         // Record the accepted Terms/Disclaimer version on the user (the signup consent gate). The
@@ -110,10 +128,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           : {}),
       },
     });
-    if (error) return { error: error.message, needsEmailConfirmation: false };
+    if (isAlreadyRegisteredSignUp(data?.user ?? null, error?.message ?? null)) {
+      phCapture("signup_existing_email", { method: "email" });
+      return { error: null, needsEmailConfirmation: false, alreadyRegistered: true };
+    }
+    if (error) return { error: error.message, needsEmailConfirmation: false, alreadyRegistered: false };
     phCapture("signup", { method: "email", needs_confirmation: !data.session });
     if (data.session) setSession(data.session);
-    return { error: null, needsEmailConfirmation: !data.session };
+    return { error: null, needsEmailConfirmation: !data.session, alreadyRegistered: false };
+  }, []);
+
+  const signInWithOAuth = useCallback(async (provider: OAuthProviderId, next = "/account") => {
+    if (isPreviewMode) {
+      setSession(previewSession);
+      return null;
+    }
+    if (!hasSupabaseConfig) return "Identity service configuration is unavailable.";
+    phCapture("oauth_start", { provider });
+    // The browser leaves for the provider's consent page; the session lands back on /auth/callback.
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: resolveAuthRedirectUrl(`/auth/callback?next=${encodeURIComponent(next)}`) },
+    });
+    return error?.message ?? null;
   }, []);
 
   const signOut = useCallback(async () => {
@@ -124,7 +161,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
   }, []);
 
-  const value = useMemo(() => ({ session, loading, signIn, signUp, signOut }), [session, loading, signIn, signUp, signOut]);
+  const value = useMemo(
+    () => ({ session, loading, signIn, signUp, signInWithOAuth, signOut }),
+    [session, loading, signIn, signUp, signInWithOAuth, signOut],
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

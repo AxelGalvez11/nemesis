@@ -30,6 +30,7 @@ import { buildSubQueries, extractSearchTerms } from "./search-query.ts";
 import { expandSymptomQuery } from "./symptom-expansion.ts";
 import { espellCorrect } from "../core-source-sync/providers/pubmed.ts";
 import { normalizeResearchQuery, queryNormalizeEnabled } from "./query-normalize.ts";
+import { dynamicIntentEnabled, generateIntentLine } from "./intent-line.ts";
 import { decideNewsGate } from "./news-gate.ts";
 import { fetchGoogleNews, type NewsItem } from "../news/news-source.ts";
 import { isFabricatedDrugQuery } from "./fabrication.ts";
@@ -54,6 +55,7 @@ import {
   STANDARD_QUESTIONS,
 } from "./templates.ts";
 import { detectFreshInfo, detectGeneralAssistant, generalAssistantEnabled, laneRouterEnabled } from "./lane-router.ts";
+import { type AskEmit, askStreamingEnabled, makeLeadGate, sseAskResponse } from "./stream.ts";
 import type {
   AnswerNewsItem,
   AnswerTemplate,
@@ -67,6 +69,7 @@ import type {
 } from "../../../packages/shared/src/answer.ts";
 
 const DEFAULT_ALLOWED_ORIGINS = [
+  "https://app.enternemesis.com",
   "https://app.pharmaorb.app",
   "https://pharmaorb.app",
   "https://www.pharmaorb.app",
@@ -148,6 +151,9 @@ serve(async (req) => {
     // (a benchmark/judge aid — see SourceText). Default false → normal answers are byte-for-byte
     // unchanged. The sources are the public databases the answer already cites.
     include_source_text?: boolean;
+    // SSE opt-in (ASK_STREAMING=on required): stage + safety-gated lead deltas + terminal complete
+    // event. Ignored (normal JSON body) when the flag is off, so an eager client degrades cleanly.
+    stream?: boolean;
   };
   try {
     body = await req.json();
@@ -164,6 +170,22 @@ serve(async (req) => {
   // Validate the speed/depth dial at the boundary: only the two known modes pass through; an unknown
   // or absent value becomes undefined → current behavior (mobile / older clients / saved-chat replays).
   const mode: AskMode | undefined = body.mode === "fast" || body.mode === "thorough" ? body.mode : undefined;
+
+  // SSE streaming (gated twice: the client asks AND the server flag is on). Same runAsk, same
+  // canonical response — it just also relays real milestones and the safety-gated lead as they
+  // happen. Errors travel as terminal events carrying the exact non-streaming bodies.
+  if (body.stream === true && askStreamingEnabled()) {
+    return sseAskResponse(
+      (emit) => runAsk(question, !!body.use_health_context, userId, !!body.include_source_text, mode, emit),
+      corsHeaders(req),
+      (e) => {
+        // payload already carries error:"quota_exceeded" — the exact 429 body the JSON path sends.
+        if (e instanceof QuotaExceeded) return { ...e.payload };
+        console.error("ask pipeline error:", (e as Error).message);
+        return { error: "ask failed" };
+      },
+    );
+  }
 
   try {
     const resp = await runAsk(question, !!body.use_health_context, userId, !!body.include_source_text, mode);
@@ -183,6 +205,10 @@ async function runAsk(
   userId: string,
   includeSourceText = false,
   mode?: AskMode,
+  // SSE relay (streaming mode only; undefined = byte-identical non-streaming behavior). Stage
+  // milestones + safety-gated lead deltas; the function's RETURN value stays the single source
+  // of truth either way — streaming adds bytes earlier, never a different answer.
+  emit?: AskEmit,
 ): Promise<AskResponse> {
   const answerId = crypto.randomUUID();
   const apiKey = llmApiKey();
@@ -248,23 +274,38 @@ async function runAsk(
 
   // ---- 1. classify ----
   const cls = await classify(question, apiKey);
-  // Relax the classifier's over-eager emergency_possible on a general "is X lethal/toxic/dangerous"
-  // inquiry (the reported "is celsius lethal" over-route). Deterministic + fail-safe: only a SOLO
-  // emergency_possible on a third-person educational toxicity question is dropped; first-person
-  // distress, lethal-amount, overdose_possible, and self_harm all keep full emergency routing. See
-  // safety.ts. preScreen's emergency family already short-circuited above, so this only ever acts on
-  // a flag the LLM added.
+  // Relax the classifier's over-eager emergency-family flags on a general "is X lethal/toxic/
+  // dangerous" inquiry (the "is celsius lethal" over-route). Deterministic + fail-safe: only a
+  // third-person educational toxicity question (no first-person distress, no acute symptom, no
+  // overdose phrasing, no lethal-amount ask) has emergency_possible/overdose_possible dropped;
+  // self_harm always keeps full emergency routing. See safety.ts. preScreen's emergency family
+  // already short-circuited above, so this only ever acts on flags the LLM added.
   const rawFlags = unique<SafetyFlag>([...pre.flags, ...cls.safety_flags]);
   const flags = suppressEmergencyForGeneralToxicity(question, rawFlags);
+  emit?.("stage", { stage: "understanding", intent: cls.intent });
+  // Dynamic thinking line (DYNAMIC_INTENT=on): kick off a real per-question plan line in PARALLEL
+  // with retrieval — it never blocks the answer. When it resolves it streams in via the "intent"
+  // event (so it appears DURING thinking like ChatGPT's) and is also returned on the response for
+  // non-streaming clients + persistence. Flag off / failure → null → client shows its template.
+  const intentLinePromise: Promise<string | null> = dynamicIntentEnabled()
+    ? generateIntentLine(question, apiKey).then((line) => {
+      if (line) emit?.("intent", { text: line });
+      return line;
+    })
+    : Promise.resolve(null);
   const webRecon = await runWebRecon(question);
   const queryUnderstanding = applyReconToUnderstanding(
     understandQuery(question, cls.entity_mentions),
     webRecon,
   );
   // Observability for a SAFETY RELAXATION: a backstop that quietly downgrades an emergency must leave
-  // an audit trail. Logs only when the carve-out actually fired (emergency_possible was present, now isn't).
-  if (rawFlags.includes("emergency_possible") && !flags.includes("emergency_possible")) {
-    console.warn(`ask toxicity carve-out — relaxed classifier emergency_possible on educational toxicity question: ${JSON.stringify(question.slice(0, 120))}`);
+  // an audit trail. Logs only when the carve-out actually fired, naming exactly which flags it relaxed
+  // (emergency_possible and/or overdose_possible — see suppressEmergencyForGeneralToxicity).
+  const relaxedFlags = rawFlags.filter((f) =>
+    (f === "emergency_possible" || f === "overdose_possible") && !flags.includes(f)
+  );
+  if (relaxedFlags.length > 0) {
+    console.warn(`ask toxicity carve-out — relaxed classifier ${relaxedFlags.join("+")} on educational toxicity question: ${JSON.stringify(question.slice(0, 120))}`);
   }
 
   // ---- 1b. news lane (paid-only walled panel) ----
@@ -313,6 +354,7 @@ async function runAsk(
   // sub-query variant — exactly the thin-live case where the extra dense recall helps most.
   const subQueries = LIVE_SOURCES_ON ? buildSubQueries(question, cls.entity_mentions, effectiveIntent) : undefined;
   const recallPool = LIVE_SOURCES_ON ? (mode === "thorough" ? THOROUGH_RECALL_POOL : RECALL_POOL) : matchCount;
+  emit?.("stage", { stage: "searching" });
   let ret = await retrieve({
     question,
     providers: priority,
@@ -356,6 +398,8 @@ async function runAsk(
     guardPool = aug.pool;
     ret = { ...ret, chunks: aug.top };
   }
+
+  emit?.("stage", { stage: "sources", cited: ret.chunks.length, pool: guardPool.length });
 
   if (ret.chunks.length === 0) {
     return await finalizeTemplate(answerId, question, cls.intent,
@@ -404,9 +448,25 @@ async function runAsk(
   // ---- 4. health context (verified-user-scoped) ----
   const healthContext = useHealthContext ? await loadHealthContext(userId) : null;
 
+  // Typo-normalize the question the WRITING model reads (QUERY_NORMALIZE=on). Until now normalization
+  // only fixed the hidden SEARCH string, so retrieval found the right sources but the answer could
+  // still echo the user's typo ("metfrmin"). This runs the same gated LLM correction over genQuestion
+  // (deterministic acceptNormalized gate; entityMentions pinned as mustKeep so a drug can't be
+  // swapped), so the answer reads cleanly. Best-effort: returns genQuestion unchanged on any failure
+  // or shape-changing rewrite; flag off = untouched. It only changes the model's INPUT text — the
+  // deterministic safety scan still runs on the OUTPUT, and preScreen already ran on the raw question.
+  if (queryNormalizeEnabled()) {
+    genQuestion = await normalizeResearchQuery(genQuestion, queryUnderstanding.fieldMentions);
+  }
+
   // ---- 5. generate (graceful: a total LLM failure degrades to a cited refusal,
   //         never a user-facing 500) ----
   let gen: Awaited<ReturnType<typeof generate>>;
+  // Streamed lead deltas pass the SAME detectViolations scan the finished answer faces, via the
+  // holdback gate (stream-gate.ts) — a violating prefix is never emitted and the gate freezes;
+  // the canonical `complete` event (post resolveSafety/enforceCitations) supersedes shown text.
+  const leadGate = emit ? makeLeadGate() : null;
+  emit?.("stage", { stage: "writing" });
   try {
     gen = await generate({
       question: genQuestion,
@@ -415,7 +475,17 @@ async function runAsk(
       healthContext,
       apiKey,
       style,
+      onLead: leadGate
+        ? (delta) => {
+          const safe = leadGate.push(delta);
+          if (safe) emit!("delta", { text: safe });
+        }
+        : undefined,
     });
+    if (leadGate) {
+      const tail = leadGate.finalize();
+      if (tail) emit!("delta", { text: tail });
+    }
   } catch (e) {
     console.error("ask generate failed after retries:", (e as Error).message);
     return await finalizeTemplate(answerId, question, cls.intent,
@@ -529,6 +599,10 @@ async function runAsk(
   // Walled news (paid) / locked teaser (free). Resolved here so its fetch overlapped the work above.
   // It is attached as a SEPARATE field — never folded into citations/reviewed_sources/the chunk pool.
   const news = await newsPromise;
+  // The dynamic plan line resolved while retrieval/generation ran (or is null: flag off / failed /
+  // trumped by the forbidden scan). Attached for non-streaming clients + persistence; streaming
+  // clients already received it via the "intent" event.
+  const intentLine = await intentLinePromise;
   const surfacedAssumption = [
     assumption ? `${assumption}.` : "",
     ...queryUnderstanding.assumptions,
@@ -549,6 +623,7 @@ async function runAsk(
     ...(reviewedSources.length ? { reviewed_sources: reviewedSources } : {}),
     ...(news.length ? { news } : {}),
     ...(newsGate.locked ? { news_locked: true } : {}),
+    ...(intentLine ? { intent_line: intentLine } : {}),
   };
 
   // ---- 8. trace store ----
@@ -1094,7 +1169,7 @@ function isAllowedOrigin(origin: string): boolean {
 
 function corsHeaders(req?: Request): Record<string, string> {
   const origin = req?.headers.get("origin") ?? "";
-  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.pharmaorb.app";
+  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.enternemesis.com";
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",

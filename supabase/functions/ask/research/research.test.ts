@@ -18,6 +18,7 @@ import {
 import {
   assembleReport,
   buildCitations,
+  buildReviewedSources,
   buildSearchMethod,
   hasSupportedContent,
   mergeEvidence,
@@ -252,6 +253,20 @@ Deno.test("assembleSections: blank heading collapses to 'Findings'", () => {
 // ---------------------------------------------------------------------------
 // buildCitations / hasSupportedContent / assembleReport
 // ---------------------------------------------------------------------------
+
+Deno.test("buildReviewedSources: returns the UNCITED pool chunks (the also-reviewed breadth)", () => {
+  const pool = [chunk("1"), chunk("2"), chunk("3"), chunk("4", { provider: "web", url: "https://nejm.org/x" })];
+  const reviewed = buildReviewedSources(["1", "3"], pool);
+  assertEquals(reviewed.map((c) => c.chunk_tag).sort(), ["2", "4"]);
+  const web = reviewed.find((c) => c.chunk_tag === "4");
+  assertEquals(web?.source_type, "web");
+  assertEquals(web?.url, "https://nejm.org/x");
+});
+
+Deno.test("buildReviewedSources: empty when every pool chunk was cited", () => {
+  const pool = [chunk("1"), chunk("2")];
+  assertEquals(buildReviewedSources(["1", "2"], pool).length, 0);
+});
 
 Deno.test("buildCitations: numeric order, deduped, ignores tags with no chunk", () => {
   const cites = buildCitations(["3", "1", "1", "99"], chunks3);

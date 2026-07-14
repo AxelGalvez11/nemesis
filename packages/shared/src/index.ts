@@ -38,6 +38,8 @@ export * from "./mission-email.ts";
 // Deep Research report contract (research-modes): the multi-step, cited REPORT
 // produced by plan -> gather -> synthesize -> faithfulness. Additive, optional.
 export * from "./research.ts";
+// Journal-club appraisal: PURE shaper turning a structured appraisal into a ResearchReport.
+export * from "./appraisal-report.ts";
 // Publishable-reports: PRISMA-overclaim guard + numbered citation formatter (pure).
 export * from "./forbidden-phrases.ts";
 export * from "./citation-format.ts";

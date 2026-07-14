@@ -21,12 +21,14 @@ import { planSubQuestions } from "../ask/research/plan.ts";
 import { hasLlmKey, llmApiKey } from "../ask/llm.ts";
 import { medicalizeSubQuestions } from "./medicalize.ts";
 import { persistDiscoveryProject } from "./discovery-persist.ts";
-import type { ReportMode, ResearchProgressStep, ResearchReport } from "../../../packages/shared/src/research.ts";
+import { runAppraisal } from "./appraise.ts";
+import type { PaperMeta, ReportMode, ResearchProgressStep, ResearchReport } from "../../../packages/shared/src/research.ts";
 import { nextRunAt, type MissionCadence } from "../../../packages/shared/src/missions.ts";
 import { buildMissionEmail } from "../../../packages/shared/src/mission-email.ts";
 import { sendEmail } from "./resend.ts";
 
 const DEFAULT_ALLOWED_ORIGINS = [
+  "https://app.enternemesis.com",
   "https://app.pharmaorb.app",
   "https://pharmaorb.app",
   "https://www.pharmaorb.app",
@@ -57,7 +59,7 @@ serve(async (req) => {
 
   // Parse the body FIRST: the mission_run action authenticates with the service key (cron caller),
   // not a user JWT, so it must branch before user verification.
-  let body: { question?: string; mode?: string; action?: string; mission_id?: string; sub_questions?: unknown };
+  let body: { question?: string; mode?: string; action?: string; mission_id?: string; sub_questions?: unknown; paper_text?: unknown; paper_meta?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -77,7 +79,9 @@ serve(async (req) => {
   if (!userId) return json({ error: "authentication required" }, 401, req);
 
   const question = (body.question ?? "").trim();
-  if (!question) return json({ error: "question required" }, 400, req);
+  // Appraisal requests carry no top-level question (the run's title is derived from paper_meta inside
+  // that branch below) — exempt mode:"appraisal" from this guard so it isn't 400'd before it ever runs.
+  if (!question && body.mode !== "appraisal") return json({ error: "question required" }, 400, req);
   if (question.length > 1000) return json({ error: "question too long" }, 400, req);
   const mode: ReportMode = body.mode === "meta"
     ? "meta"
@@ -87,6 +91,8 @@ serve(async (req) => {
     ? "lab_draft"
     : body.mode === "discovery"
     ? "discovery"
+    : body.mode === "appraisal"
+    ? "appraisal"
     : "standard";
 
   // ---- Scoping pre-step: return clarifying questions only. No quota consumed and no run started — the
@@ -111,6 +117,49 @@ serve(async (req) => {
     } catch {
       return json({ sub_questions: [] }, 200, req);
     }
+  }
+
+  // ---- Journal-club appraisal: a whole different input (an uploaded paper's text, not a live web
+  // search). Requires paper_text (the extraction route produced it). The guard makes version skew SAFE:
+  // if an older web client somehow sends mode:"appraisal" without paper_text, we 400 rather than silently
+  // running a live-source "standard" research on the derived title. Quota + async lifecycle are identical
+  // to a deep-research run (kind stays 'deep_research'; mode 'appraisal' distinguishes it downstream). ----
+  if (mode === "appraisal") {
+    const paperText = typeof body.paper_text === "string" ? body.paper_text.trim() : "";
+    if (paperText.length < 200) {
+      return json({ error: "paper_text required", message: "Upload a text-based PDF to appraise." }, 400, req);
+    }
+    const paperMeta = normalizePaperMeta(body.paper_meta);
+    const quota = await consumeQuota(userId);
+    if (!quota.allowed) {
+      return json({
+        error: "quota_exceeded",
+        counter_key: "deep_research_daily",
+        reason: quota.reason,
+        used: quota.used,
+        limit: quota.limit,
+        plan: quota.plan,
+      }, 429, req);
+    }
+    // The run's "question" is the appraisal title — bounded to satisfy the same validation + saved_reports title.
+    const appraisalQuestion = (paperMeta.title
+      ? `Appraisal of "${paperMeta.title}"`
+      : "Appraisal of the uploaded paper").slice(0, 300);
+    let apRunId: string;
+    try {
+      apRunId = await insertRun(userId, appraisalQuestion, quota.plan);
+    } catch {
+      try {
+        apRunId = await insertRun(userId, appraisalQuestion, quota.plan);
+      } catch (e) {
+        console.error("appraisal insertRun failed after retry:", (e as Error).message);
+        return json({ error: "could not start appraisal" }, 500, req);
+      }
+    }
+    const apJob = executeAppraisalRun(apRunId, userId, appraisalQuestion, paperText, paperMeta);
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(apJob);
+    else void apJob;
+    return json({ run_id: apRunId, status: "running" }, 202, req);
   }
 
   // ---- Pro gate + daily limit (one call): deep_research_daily_limit is 0 for free/plus, 3 for pro ----
@@ -211,6 +260,59 @@ async function executeRun(runId: string, userId: string, question: string, mode:
       status: "failed",
       progress: steps,
       error: "Research could not be completed. Please try again.",
+      completed_at: new Date().toISOString(),
+    }).catch(() => {});
+  }
+}
+
+/** PURE: clamp an untrusted paper_meta from the request body to the PaperMeta contract. */
+function normalizePaperMeta(raw: unknown): PaperMeta {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const title = typeof o.title === "string" && o.title.trim() ? o.title.trim().slice(0, 300) : null;
+  const pages = typeof o.pages === "number" && Number.isFinite(o.pages) && o.pages >= 0 ? Math.floor(o.pages) : 0;
+  const truncated = o.truncated === true;
+  return { title, pages, truncated };
+}
+
+/** Appraisal background worker: mirrors executeRun (stream a couple of progress steps to the run row,
+ *  build the ResearchReport via runAppraisal, save it, flip the run to completed). Never rejects. The
+ *  progress steps reuse the fixed ResearchProgressStep union (planning/writing/checking/done) so the
+ *  existing ResearchRunCard renders live progress with zero client change. */
+async function executeAppraisalRun(
+  runId: string,
+  userId: string,
+  question: string,
+  paperText: string,
+  paperMeta: PaperMeta,
+): Promise<void> {
+  const steps: ResearchProgressStep[] = [];
+  const push = (step: ResearchProgressStep["step"], detail: string) => {
+    steps.push({ step, detail, at: new Date().toISOString() });
+    void patchRun(runId, userId, { progress: steps }).catch((e) =>
+      console.error("appraisal progress patch failed:", (e as Error).message)
+    );
+  };
+  try {
+    push("planning", "Reading the paper");
+    push("writing", "Appraising design, endpoints, statistics, and bias");
+    const report = await runAppraisal(paperText, paperMeta, llmApiKey());
+    push("checking", "Grounding each verdict in a verbatim quote");
+    const savedReportId = await insertSavedReport(userId, question, report);
+    push("done", "Appraisal ready");
+    await patchRun(runId, userId, {
+      status: "completed",
+      progress: steps,
+      saved_report_id: savedReportId,
+      source_ids: report.citations.map((c) => c.source_id),
+      metadata: { report_mode: "appraisal" },
+      completed_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("appraisal run failed (detail):", (e as Error).message);
+    await patchRun(runId, userId, {
+      status: "failed",
+      progress: steps,
+      error: "The appraisal could not be completed. Please try again.",
       completed_at: new Date().toISOString(),
     }).catch(() => {});
   }
@@ -368,7 +470,7 @@ async function sendMissionEmail(mission: MissionRow, savedReportId: string): Pro
   const apiKey = Deno.env.get("RESEND_API_KEY") ?? "";
   const from = Deno.env.get("RESEND_FROM") ?? "";
   if (!apiKey || !from) return;
-  const appUrl = Deno.env.get("APP_URL") ?? "https://app.pharmaorb.app";
+  const appUrl = Deno.env.get("APP_URL") ?? "https://app.enternemesis.com";
 
   // Owner's email via GoTrue admin (service key).
   const uRes = await fetch(`${SB_URL}/auth/v1/admin/users/${mission.user_id}`, {
@@ -549,7 +651,7 @@ function isAllowedOrigin(origin: string): boolean {
 
 function corsHeaders(req?: Request): Record<string, string> {
   const origin = req?.headers.get("origin") ?? "";
-  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.pharmaorb.app";
+  const allowOrigin = origin && isAllowedOrigin(origin) ? origin : "https://app.enternemesis.com";
   return {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",

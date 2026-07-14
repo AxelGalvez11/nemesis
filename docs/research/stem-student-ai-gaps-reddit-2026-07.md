@@ -1,0 +1,110 @@
+# PharmaOrb Market Wedge: Where AI Fails STEM Research Students
+
+*Strategic research report — sourced from Reddit/web student complaints, verified as of July 2026*
+
+## 1. Executive Summary
+
+- **The single biggest, most repeated pain is fabricated citations.** It shows up across every tool and every cohort — undergrad to PhD to postdoc — and it's escalated from "obviously fake papers" to subtler, harder-to-catch fakes (wrong year, wrong journal, real authors on a paper that doesn't exist). A [study discussed on r/science](https://www.reddit.com/r/science/comments/1p2jxl8/study_finds_nearly_twothirds_of_aigenerated/) found nearly two-thirds of AI-generated citations are invented or contain bibliographic errors. This is PharmaOrb's home-field advantage.
+
+- **Every tool with a retrieval step still fails at retrieval.** Perplexity, Gemini, and Claude all have web search, yet users report the citation "doesn't match the source," the model [searches then fabricates anyway](https://www.reddit.com/r/Bard/comments/1m7zr63/gemini_25_pro_searches_google_then_fabricates/), or search is [flat-out unreliable](https://www.reddit.com/r/Anthropic/comments/1pquzb1/claude_sucks_at_gathering_data_in_real_time/). Having sources isn't the moat — *grounding the answer in the sources you actually retrieved* is.
+
+- **The literature review is the killer job-to-be-done, and no one does it well.** PhD and grad students describe lit reviews as ["torture"](https://www.reddit.com/r/PhdProductivity/comments/1t5i2u2/literature_reviews_are_actually_torture/) and call AI output ["surface level slop."](https://www.reddit.com/r/PhD/comments/1twd90m/literature_review_slop/) What they actually want — synthesis across papers, research-gap surfacing, citation networks, querying their own library — is unbuilt.
+
+- **The full-text paywall wall is the deepest structural gap, and it caps everyone.** Elicit [can only screen abstracts, not full text](https://www.threads.com/@mushtaqbilalphd/post/DNDhU9YofaL/elicit-screens-abstracts-but-cant-screen-full-text-of-papersthats-because-it-doe); Perplexity [ignores a user's own institutional VPN access](https://www.reddit.com/r/perplexity_ai/comments/1m32lmw/is_it_possible_to_let_perplexity_search_through/). This is both the biggest opportunity *and* a trap — PharmaOrb faces the same publisher restrictions.
+
+- **Usage limits and price have quietly become a top-tier pain, especially for students.** Claude Pro is called ["basically unusable"](https://www.reddit.com/r/ClaudeAI/comments/1q9va21/pro_plan_is_basically_unusable/) for sustained work; Perplexity [cut Deep Research quota ~99% overnight](https://www.reddit.com/r/perplexity_ai/comments/1qwhej3/9989_reduction_in_research_quota_over_night/); Gemini Pro users [hit caps after 3-4 queries](https://www.reddit.com/r/GeminiAI/comments/1tmtkbs/pro_users_three_deep_research_and_hit_80_limits/). Students specifically [can't afford the $100 tiers](https://www.reddit.com/r/Anthropic/comments/1plnvrq/thinking_of_trying_claude_pro_for_1_month_student/).
+
+- **Over-caution and refusals actively lose the health/STEM user.** Gemini [refuses "normal, safe" biology and coding questions](https://www.reddit.com/r/Bard/comments/1ouine2/gemini_constantly_refuses_to_discuss_normal_safe/) and [derails healthcare professionals on medical questions](https://www.reddit.com/r/GeminiAI/comments/1r071l9/im_a_healthcare_professional_is_there_a_way_to/). There's a wedge for a tool that is *safe without being useless* on health topics.
+
+- **The honest verdict: PharmaOrb wins decisively on citation trust and health-topic answering, but does NOT yet beat these tools on raw math/code correctness, full-text paywall access, or generous free-tier limits.** Positioning should lean hard into the first and be candid about the rest.
+
+## 2. Student Pains by Cohort
+
+### Undergraduate
+- ChatGPT is ["not a good resource for studying biochemistry"](https://www.reddit.com/r/Biochemistry/comments/1kw8ro5/never_asking_chatgpt_for_help_ever_again_fml/) — a text generator, not a knowledge engine; you still have to dig through primary literature yourself.
+- Confidently wrong on math — [wrong answer on a setup engineering problem, confirmed by hand](https://www.reddit.com/r/EngineeringStudents/comments/1fakto0/chatgpt_is_no_joke/); [messes up basic factoring/algebra](https://www.reddit.com/r/learnmath/comments/1k4uiy6/why_does_chatgpt_mess_up_basic_math_like/).
+- Can't read or draw molecular structures — [decent at quantitative chem but unreliable on complex molecules](https://www.reddit.com/r/APChem/comments/1o2bod5/as_an_ap_chemistry_student_in_2025_are_you_more/); [organic reaction mechanisms are "super inaccurate and misleading."](https://www.reddit.com/r/chemhelp/comments/1p3vxty/ai_for_organic_chemistry/)
+- Hallucinated lab results are dangerous — a [lab instructor warned an AI report had made-up results that wouldn't replicate](https://www.reddit.com/r/biology/comments/1ni3w5a/lab_instructor_said_ai_lab_reports_are_dangerous/).
+- Detector false-flags — legitimate structured lab writing [gets mistaken for AI](https://www.reddit.com/r/EngineeringStudents/comments/1ncaown/lab_reports_written_by_ai_are_apparently_super/).
+- MCAT/pre-med students only trust it for basic recall because it ["hallucinates and confidently gives inaccurate answers."](https://www.reddit.com/r/MCAT2/comments/134ea9r/study_using_chat-gpt_trained_with_mcatspecific/)
+- Dependency collapse — a [CS student "got their degree because of ChatGPT" and now can't code independently](https://www.reddit.com/r/cscareerquestions/comments/1pc1hnz/i_got_my_cs_degree_because_of_chatgpt_how_can_i/).
+- Fabricated sources flood real systems — [interlibrary loan "flooded with fake citations since ChatGPT."](https://www.reddit.com/r/Professors/comments/1cblyx5/shining_moment_student_used_ai_to_fabricate/)
+- Price sensitivity — [can't afford Claude Max ($100/mo)](https://www.reddit.com/r/Anthropic/comments/1plnvrq/thinking_of_trying_claude_pro_for_1_month_student/); Gemini [refuses ordinary biology/coding questions](https://www.reddit.com/r/Bard/comments/1ouine2/gemini_constantly_refuses_to_discuss_normal_safe/).
+
+### Master's / Grad
+- Fabricated bibliographies get caught and cost recommendation letters — a professor [discovered an AI-fabricated bibliography across a lit review, essay, and thesis proposal](https://www.reddit.com/r/Professors/comments/1gi9r81/masters_student_used_aifabricated_references_now/).
+- Shallow, verify-it-yourself lit reviews — assignments now [make students check the sources ChatGPT listed](https://www.reddit.com/r/GradSchool/comments/1ojr04m/chatgpt_is_making_my_students_stupider/), exposing how many don't hold up.
+- Outsourcing core analytic work — a student [built an entire qualitative deductive codebook with ChatGPT](https://www.reddit.com/r/GradSchool/comments/1igcarz/he_used_chatgpt_for_everything/) instead of doing the interpretive work.
+- Anxiety over unclear norms — [panic about whether AI use crossed into dishonesty](https://www.reddit.com/r/GradSchool/comments/1gmad2w/used_chatgpt_and_now_im_panicking/).
+- Stats traps — a thesis writer [had to re-run all analyses after discovering wrong normality assumptions](https://www.reddit.com/r/labrats/comments/gb1drp/currently_writing_my_masters_thesis_maths_is_not/) (a class of error AI reproduces or misses).
+- Gemini Deep Research is ["too indiscriminate with sources,"](https://www.reddit.com/r/Bard/comments/1hvlzhr/has_anyone_used_gemini_deep_research_to_write_a/) weighting weak pages the same as strong ones.
+- Subtler fakes now harder to spot — LLMs increasingly [hallucinate wrong year/journal/authors rather than fully fake papers](https://www.reddit.com/r/PhdProductivity/comments/1rbhesv/is_everyone_using_ai_to_write_papers_but_not/).
+
+### PhD / Researcher
+- Hallucinated citations are the defining problem — [citations that "look real but don't exist,"](https://www.reddit.com/r/PhD/comments/1rkgmp8/how_are_you_struggling_against_the_ai/) [every single request "made stuff up,"](https://www.reddit.com/r/PhD/comments/1kn8iza/how_often_do_you_use_chatgpt/) and [lit reviews full of "hallucinated figures, made-up details, and claims with no supporting citations."](https://www.reddit.com/r/PhD/comments/1iyeojs/are_lit_reviews_going_to_die_off_with_ai/)
+- Advisors doing it too — a [PI submitted an AI-written committee document with an entirely hallucinated bibliography](https://www.reddit.com/r/GradSchool/comments/1i4gzmz/i_believe_my_phd_advisor_unethically_utilizes_ai/), embarrassing the student.
+- AI lit reviews are ["surface level slop"](https://www.reddit.com/r/PhD/comments/1twd90m/literature_review_slop/) — not good enough to be a real shortcut.
+- Tool-juggling fatigue — [bouncing between Scholar/PubMed/tabs is tedious](https://www.reddit.com/r/PhdProductivity/comments/1t5i2u2/literature_reviews_are_actually_torture/); people want synthesis, gap-surfacing, and citation networks, not just search.
+- Claude usage limits and PDF cost — [Pro "basically unusable"](https://www.reddit.com/r/ClaudeAI/comments/1q9va21/pro_plan_is_basically_unusable/); [Claude "eats a LOT of tokens" and "PDFs are the bane of its existence."](https://www.reddit.com/r/ClaudeAI/comments/1i7xt9t/i_am_a_phd_student_and_i_love_claude_ai_over_all/)
+- Bioinformatics: Claude [gets stuck on esoteric pipelines](https://www.reddit.com/r/bioinformatics/comments/1rfs7ps/every_day_that_i_choose_ai_makes_me_feel_like_im/); GPT [produces code that looks right but is silently wrong](https://www.reddit.com/r/bioinformatics/comments/1de0fcl/chatgpt_as_a_crutch/).
+- Full-text access ceiling — even the best deep-research agents [can't screen gated full text](https://www.reddit.com/r/singularity/comments/1igg8a1/why_deep_research_sucks_in_comparison_with_real/); Elicit [screens abstracts only](https://www.threads.com/@mushtaqbilalphd/post/DNDhU9YofaL/elicit-screens-abstracts-but-cant-screen-full-text-of-papersthats-because-it-doe).
+- Disclosure/norms anxiety — [unsure whether to declare AL use on a first submission](https://www.reddit.com/r/PhdProductivity/comments/1rbhesv/is_everyone_using_ai_to_write_papers_but_not/).
+
+## 3. Competitor Failure Matrix
+
+| Tool | What students praise | Where it FAILS them | Representative evidence |
+|------|----------------------|---------------------|-------------------------|
+| **ChatGPT** | Fast, good at quantitative problems and basic recall; the default everyone reaches for | Notoriously invents references (real-looking, nonexistent); confidently wrong on math and basic facts; no true primary-literature retrieval; Deep Research quota is stingy and cuts off mid-run | ["Every single time I've asked ChatGPT for papers, it's made stuff up... the paper doesn't exist"](https://www.reddit.com/r/PhD/comments/1kn8iza/how_often_do_you_use_chatgpt/); ["ChatGPT 5 is giving me wrong information on basic facts over half the time"](https://www.reddit.com/r/ChatGPTPro/comments/1n890r6/chatgpt_5_has_become_unreliable_getting_basic/) |
+| **Claude** | Best for long-form writing/analysis; strong reasoning; PhD favorite for document work | Brutal usage limits even on paid plans; chokes on many PDFs; web search unreliable and won't auto-trigger; still fabricates citations without real retrieval; refuses assignment-flavored and some research requests | ["Pro plan is basically unusable"](https://www.reddit.com/r/ClaudeAI/comments/1q9va21/pro_plan_is_basically_unusable/); ["It absolute sucks at getting up-to-date information... web search feature is no use"](https://www.reddit.com/r/Anthropic/comments/1pquzb1/claude_sucks_at_gathering_data_in_real_time/); [Claude grabs an arXiv ID, downloads it, "well this isn't the paper the references said it is... happens a LOT"](https://www.reddit.com/r/technology/comments/1sd0khs/hallucinated_citations_are_polluting_the/) |
+| **Perplexity** | Cites sources by default; feels research-oriented; go-to for "AI with links" | Cited sources frequently don't contain the claim; still fabricates citations; shallow "Google-level" search pulling SEO/forum garbage; ignores institutional paywall access; Deep Research quota gutted overnight | ["almost all of the sources are not true. it will give me a quote from a source, I click on the source"](https://www.reddit.com/r/perplexity_ai/comments/1ma4gmb/made_up_sources/); ["it just does a shallow Google-level search"](https://www.reddit.com/r/academia/comments/1m7vg7m/is_perplexity_actually_that_useful/); ["Going from 600 daily to 20 a month... Pro is effectively a paid trial"](https://www.reddit.com/r/perplexity_ai/comments/1qwhej3/9989_reduction_in_research_quota_over_night/) |
+| **Gemini** | Big context; Deep Research mode; free access for many students | Searches Google then fabricates anyway; insists nonexistent citations are correct; indiscriminate about source quality; over-refuses normal biology/coding and medical questions; tight Deep Research caps and shorter reports | ["Gemini is bad for research: keeps insisting its nonexistent citations are correct and provides fake, nonworking or irrelevant links"](https://www.reddit.com/r/GeminiAI/comments/1nfy7u6/gemini_is_bad_for_research_keeps_insisting_its/); ["searches Google then fabricates"](https://www.reddit.com/r/Bard/comments/1m7zr63/gemini_25_pro_searches_google_then_fabricates/); [refuses "normal, safe topics (like coding/biology)"](https://www.reddit.com/r/Bard/comments/1ouine2/gemini_constantly_refuses_to_discuss_normal_safe/) |
+| **Grok** | Fast; real-time feel; marketed as "PhD-level" | Invents academic sources with precise-but-wrong details; unreliable arithmetic; surfaces Grokipedia (AI-generated, biased) as a source; a reliability regression with rising error rates and prompt-ignoring | ["Grok just invents academic sources... wrong magazine and the wrong decade"](https://www.reddit.com/r/grok/comments/1lyncyx/grok_just_invents_academic_sources/); ["I use Grok for academic research when I want to introduce false narratives into my work. It does a good job!"](https://www.reddit.com/r/OpenAI/comments/1m9qdtv/which_is_better_grok_perplexity_or_chatgpt_for/); ["8-9 error-filled versions, confidently claiming they'd work"](https://www.reddit.com/r/grok/comments/1lytlya/is_grok_4_really_phdlevel_or_just_marketing_hype/) |
+
+*Note on dedicated research tools (limited evidence, but directionally important): SciSpace draws [warnings about hallucinated info and questionable citations](https://www.reddit.com/r/academia/comments/1p85o4a/avoid_scispace_extremely_misleading_overpriced/) plus [hidden auto-renewal billing](https://www.reddit.com/r/academia/comments/1tct9a2/warning_for_studentsresearchers_using_scispace/); Elicit is the most-recommended lit tool but is structurally capped at [abstracts-only screening](https://www.threads.com/@mushtaqbilalphd/post/DNDhU9YofaL/elicit-screens-abstracts-but-cant-screen-full-text-of-papersthats-because-it-doe). Even the "good" specialists have trust and access holes.*
+
+## 4. Cross-Cutting Unmet Needs (the real market hole)
+
+These pains repeat across *every* major tool — which is exactly where a differentiated product can win:
+
+1. **A citation you can trust without personally re-checking every one.** Fabrication appears for ChatGPT, Claude, Perplexity, Gemini, and Grok alike, and users now [verify "the old school way" because they actually want to graduate](https://www.reddit.com/r/WritingWithAI/comments/1r9t75e/got_fake_citations_from_claude_and_chatgpt_how_do/). The unmet need isn't "cite sources" — it's *cite only real sources, and make the claim actually match the source.*
+
+2. **Claim-to-source faithfulness, not just link-attachment.** Perplexity attaches links that [don't support the claim](https://www.reddit.com/r/perplexity_ai/comments/1d5feoe/anyone_getting_answers_not_found_in_linked_sources/); Gemini [searches then hallucinates](https://www.reddit.com/r/Bard/comments/1m7zr63/gemini_25_pro_searches_google_then_fabricates/). Nobody guarantees the sentence is grounded in the cited paper.
+
+3. **Real literature-review synthesis** — across papers, with gap-surfacing and citation networks — versus [surface-level slop](https://www.reddit.com/r/PhD/comments/1twd90m/literature_review_slop/) and [tedious tab-juggling](https://www.reddit.com/r/PhdProductivity/comments/1t5i2u2/literature_reviews_are_actually_torture/).
+
+4. **Full-text access, not abstract-only reasoning.** The [paywall ceiling](https://www.reddit.com/r/academia/comments/1g0r0ma/about_closed_access_articlesjournals_and_ai_tools/) caps Elicit, Perplexity, and every deep-research agent.
+
+5. **Generous, predictable limits at a student price.** Every paid tool has [tightened quotas](https://www.reddit.com/r/perplexity_ai/comments/1qwhej3/9989_reduction_in_research_quota_over_night/) and priced serious use out of student reach.
+
+6. **Safe-but-not-useless on health/medical topics.** Gemini [refuses or derails on medical questions](https://www.reddit.com/r/GeminiAI/comments/1r071l9/im_a_healthcare_professional_is_there_a_way_to/); students need answers that are careful without being blocked.
+
+## 5. What This Means for PharmaOrb
+
+### Gaps PharmaOrb's design is uniquely positioned to close
+
+- **Fabricated citations — this is the whole ballgame, and PharmaOrb should own it.** Real primary-literature retrieval plus per-claim provenance directly attacks the #1 pain across every cohort and every competitor. The honest, defensible pitch is: *"We can only cite papers that actually exist, because we retrieve them first and attach the real source to each claim."* No competitor can say that credibly — they all bolt search onto a generator that still confabulates. This maps cleanly to the "school allows PharmaOrb where ChatGPT is banned" acceptance test: the reason ChatGPT gets banned is fabricated references and academic-integrity risk, and that is precisely what PharmaOrb removes.
+
+- **Claim-to-source faithfulness.** Per-claim provenance is the answer to the Perplexity/Gemini failure where a link is attached but doesn't support the sentence. This is a stronger, more honest promise than "we show sources" — it's "we show *which* source backs *this specific claim*," and users can verify at a glance instead of re-checking everything.
+
+- **Safe-but-usable health answering.** PharmaOrb's deterministic safety layer is a feature here, not a tax — it lets the product answer health/medical questions confidently where Gemini refuses, without the reckless "Dr. GPT" failure mode. The wedge is: careful enough to be trusted in an academic/health setting, useful enough not to derail the user.
+
+- **Cited deliverables (slides, posters, lit-review drafts).** The lit-review-as-torture pain plus the "surface-level slop" complaint is a direct opening for *designed, cited, computed* outputs — non-slop deliverables where every number and claim carries a real citation. This is the wedge already chosen (cited posters/slides for health research students), and the findings strongly validate it.
+
+### Traps to avoid
+
+- **Do not promise to beat ChatGPT/Grok on raw math and code.** Math errors are real and repeated, but they are *not* PharmaOrb's fight — a language model with a citation engine won't out-compute Wolfram. Route math/stats to deterministic tools or stay quiet; don't market correctness you can't guarantee. Over-claiming here invites the exact "confidently wrong" complaint that sinks the competitors.
+
+- **Do not over-promise full-text paywall access.** This is the deepest structural gap *and* a trap: PharmaOrb faces the same publisher restrictions as Elicit and Perplexity. Be candid — lead with what's genuinely retrievable (open-access, PubMed/PMC, preprints, FDA labels) and frame full-text as a roadmap/institutional-integration item, not a solved feature. Claiming "we read every paper" would be the fabrication problem in a new outfit.
+
+- **Do not let deterministic safety curdle into Gemini-style over-refusal.** The safety layer is a differentiator only if it stays *usable*. The moment it blocks "normal, safe biology" questions, PharmaOrb inherits Gemini's worst complaint. Tune for "careful and answers" over "cautious and refuses."
+
+- **Watch the limits/price trap.** Students are acutely price-sensitive and quota-burned. A free student tier (the OpenEvidence pattern already in the plan) is not just growth — it's table stakes given how badly the incumbents have soured users on paid caps. But don't set free-tier limits so tight they reproduce the "paid trial" resentment users feel toward Perplexity Pro.
+
+### Candid: where PharmaOrb would NOT beat these tools today
+
+- **Raw computational correctness** (math, stats, arbitrary code) — ChatGPT and specialized tools are ahead; PharmaOrb shouldn't compete here.
+- **Full-text access breadth** — behind the paywall, PharmaOrb is in the same boat as everyone; it does not yet have a structural advantage on gated content.
+- **General-purpose breadth and speed** — for quick non-cited answers, ChatGPT/Claude are faster and more flexible; PharmaOrb's value only shows up when *citations and trust* are the job.
+- **Free-tier generosity vs. Gemini's currently-free access** — Gemini gives a lot away; PharmaOrb wins on trust, not on being cheaper-than-free.
+
+**Bottom line for positioning:** PharmaOrb should plant its flag on the one pain that is universal, escalating, and career-threatening — *fake citations and unfaithful claims* — and on being the health/STEM tool that is *safe enough for school and useful enough to actually use.* It should stay disciplined about the three areas (math correctness, full-text access, raw breadth) where honesty beats hype, because over-claiming there would reproduce the exact credibility failure that is currently driving students away from every incumbent.

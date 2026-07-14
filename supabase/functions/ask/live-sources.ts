@@ -11,6 +11,7 @@
 
 import type { NormalizedSource } from "../core-source-sync/normalized-source.ts";
 import type { RetrievedChunk } from "./citation.ts";
+import { fetchTrustedWeb, webInChatEnabled } from "./web-source.ts";
 import { fetchPubMedOA } from "../core-source-sync/providers/pubmed.ts";
 import { fetchClinicalTrials } from "../core-source-sync/providers/clinicaltrials.ts";
 import { fetchOpenFdaLabels } from "../core-source-sync/providers/openfda.ts";
@@ -176,6 +177,14 @@ export function isScienceConnectorsOn(): boolean {
   return Deno.env.get("SCIENCE_CONNECTORS") === "on";
 }
 
+// GATED (WEB_IN_CHAT=on, default OFF): a trusted-web source (Tavily, filtered to journals/.gov/
+// guidelines/.edu) searching the RESEARCH query, so normal chat can draw on the scholarly web the way
+// Deep Research does. Appended to the fan-out only when the flag is on; off → byte-identical.
+const WEB_SOURCE: LiveSourceDef = {
+  origin: "web_trusted",
+  fetch: (_q: string, n: number, _m: string[], rq: string) => fetchTrustedWeb(rq, n),
+};
+
 /**
  * Build a field-scoped openFDA `search` value: each drug name matched against generic OR brand name,
  * the names OR'd together. URLSearchParams (in the provider) encodes the spaces to `+`, yielding
@@ -247,10 +256,14 @@ async function fanOut(
   timeoutMs: number,
   mentions: string[],
 ): Promise<LiveCandidate[]> {
-  // SCIENCE_CONNECTORS=on appends the 4 net-new literature sources to the SAME fan-out + dedupe
-  // pass below. With the flag off, `sources` is exactly `LIVE_SOURCES` — byte-identical to this
-  // function's behavior before this change.
-  const sources = isScienceConnectorsOn() ? [...LIVE_SOURCES, ...SCIENCE_CONNECTOR_SOURCES] : LIVE_SOURCES;
+  // SCIENCE_CONNECTORS=on appends the 4 net-new literature sources; WEB_IN_CHAT=on appends the
+  // trusted-web source — both to the SAME fan-out + dedupe pass below. With both flags off, `sources`
+  // is exactly `LIVE_SOURCES` — byte-identical to this function's behavior before either change.
+  const sources = [
+    ...LIVE_SOURCES,
+    ...(isScienceConnectorsOn() ? SCIENCE_CONNECTOR_SOURCES : []),
+    ...(webInChatEnabled() ? [WEB_SOURCE] : []),
+  ];
   const batches = await Promise.all(
     sources.map((def) => withTimeout(fetchOne(def, query, researchQuery, perSourceMax, mentions), timeoutMs, def.origin)),
   );

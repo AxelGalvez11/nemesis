@@ -1,14 +1,20 @@
-# PharmaOrb Web App
+# Nemesis Account Portal
 
-Signed-in public beta for `app.pharmaorb.app`. The public marketing/waitlist site remains
-in `landing/` on `pharmaorb.app`.
+Browser-based identity and subscription control plane for the desktop-first Nemesis app at
+`app.enternemesis.com`. The public marketing site is in `landing/` on `www.enternemesis.com`.
+
+Normal sign-in, sign-up, email confirmation, `/`, and the legacy `/app` entry land at `/account`.
+The desktop app signs in natively and opens `/account/billing` only when a user chooses or manages a
+subscription. Existing research-workspace routes remain available by direct `/app/*` path while that
+older product is set aside, but they are no longer the default post-auth destination.
 
 ## MVP Scope
 
 - Email/password auth through Supabase.
-- Ask, Explore, Drug page, Source Viewer, Watchlist, Profile, Billing.
-- Free/Plus entitlements read from Supabase (`0122`).
-- Stripe Plus checkout at `$20/month`, mirrored into `subscriptions` by webhook.
+- Account overview and Stripe-backed subscription management.
+- Free/Plus/Pro entitlements read from Supabase (`0122`).
+- Stripe price amounts are read from the configured price IDs so the plan cards match checkout.
+- Existing `/app/*` research surfaces are retained for compatibility, not linked as the primary app.
 
 ## Environment
 
@@ -16,8 +22,8 @@ Public:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_APP_URL` (`https://app.pharmaorb.app` in production)
-- `NEXT_PUBLIC_LANDING_URL` (`https://pharmaorb.app`)
+- `NEXT_PUBLIC_APP_URL` (`https://app.enternemesis.com` in production)
+- `NEXT_PUBLIC_LANDING_URL` (`https://www.enternemesis.com`)
 
 Server-only:
 
@@ -25,7 +31,9 @@ Server-only:
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PLUS_PRICE_ID`
-- `STRIPE_ALLOW_LIVE` (`false` for MVP test mode; `true` only when deliberately going live)
+- `STRIPE_PRO_PRICE_ID`
+- `STRIPE_ALLOW_TEST_BILLING` (non-production only, and only with an isolated test Supabase project)
+- `STRIPE_ALLOW_LIVE` (`true` only when deliberately going live)
 - `NCBI_API_KEY` (optional; raises PubMed E-utilities rate limits)
 - `UNPAYWALL_EMAIL` (optional but recommended; contact email used for Unpaywall/OpenAlex API etiquette)
 
@@ -42,11 +50,11 @@ Evidence broker:
 pnpm --filter @pharmaorb/web dev
 pnpm --filter @pharmaorb/web typecheck
 pnpm --filter @pharmaorb/web build
-WEB_SMOKE_BASE_URL=https://app.pharmaorb.app pnpm --filter @pharmaorb/web smoke
+WEB_SMOKE_BASE_URL=https://app.enternemesis.com pnpm --filter @pharmaorb/web smoke
 ```
 
 ## Deployment
 
 Deploy as a separate Vercel project with root directory `apps/web` and alias it to
-`app.pharmaorb.app`. Start with Stripe test keys/price id; switching to live mode should
+`app.enternemesis.com`. Start with Stripe test keys/price id; switching to live mode should
 only require environment variable changes.

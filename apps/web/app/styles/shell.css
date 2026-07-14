@@ -76,13 +76,16 @@
 /* New chat + Search chats: ChatGPT anatomy — plain unboxed rows, NOT filled/bordered buttons. Same
    36px-tall .hist shape as every other sidebar row (Library, Scheduled, Projects, Chats). They sit
    in .rail-top (above the scrolling <nav>) so they stay pinned while only the chats list scrolls. */
-.rail-top { padding: 4px 8px 6px; flex: none; }
-.rail-top .hist { width: 100%; }
-.nav { flex: 1; overflow-y: auto; padding: 2px 8px 10px; }
+.rail-top { padding: 4px 6px 6px; flex: none; }
+/* ChatGPT parity (probe 2026-07-07): ALL sidebar rows are weight 400 — New chat/Search chats
+   were rendering bold via the button element and read as a different control. */
+.rail-top .hist { width: 100%; font-weight: 400; }
+.nav { flex: 1; overflow-y: auto; padding: 2px 6px 10px; }
 .r-label { font-size: 11px; letter-spacing: 0.02em; color: var(--text-2); padding: 14px 10px 6px; font-weight: 600; }
-/* Manus nav row: 36px tall, radius follows --radius-sm (10px), padding 0 2px 0 8px, 8px icon gap. */
+/* ChatGPT nav row measured live 2026-07-07: 36px tall, radius 10px, padding 6px 10px (h fixed ->
+   0 10px), 8px icon gap, full-strength text (rgb 255/255/255 dark, not secondary), 6px rail gutters. */
 .hist {
-  display: flex; align-items: center; gap: 8px; padding: 0 2px 0 8px; height: 36px; border-radius: var(--radius-sm); color: var(--text-2);
+  display: flex; align-items: center; gap: 8px; padding: 0 10px; height: 36px; border-radius: var(--radius-sm); color: var(--text);
   cursor: pointer; position: relative; white-space: nowrap; overflow: hidden; width: 100%; background: none; border: none; text-align: left; font-family: var(--font); font-size: 14px;
   transition: background 0.12s, color 0.12s;
 }
@@ -90,7 +93,7 @@
 /* Manus hover/active tint fills — translucent, not a solid surface swap. */
 .hist:hover { background: var(--fill-hover); color: var(--text); }
 /* Active nav = a plain subtle fill, no accent bar, no glow (Manus-style). */
-.hist.active { background: var(--fill-active); color: var(--text); font-weight: 500; }
+.hist.active { background: var(--fill-active); color: var(--text); font-weight: 400; }
 .hist-ic { width: 16px; height: 16px; flex: none; opacity: 0.75; }
 /* A chat row = the link + a hover-revealed delete control. */
 .hist-row { display: flex; align-items: center; position: relative; }
@@ -1460,6 +1463,23 @@
 .credits-foot { font-size: 12px; color: var(--text-3); line-height: 1.6; margin-top: 14px; }
 .credits-foot a { color: var(--acid-dim); }
 
+/* Journal-club appraisal report view */
+.appraisal-paper-line { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.research-questions { margin-top: 18px; }
+.research-questions ol { margin: 6px 0 0 18px; }
+.research-questions li { margin-bottom: 6px; }
+
+/* Journal-club paper upload sheet — mirrors .confirm-overlay/.confirm-card's centered-modal pattern */
+.upload-sheet-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.46); backdrop-filter: blur(2px); display: grid; place-items: center; padding: 20px; z-index: 80; animation: app-modal-in 0.15s both; }
+.upload-sheet { width: min(440px, 100%); background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 24px 70px -12px rgba(0, 0, 0, 0.6); padding: 18px; animation: app-modal-in 0.15s both; }
+.upload-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.upload-close { background: none; border: none; font-size: 20px; line-height: 1; color: var(--text-2); cursor: pointer; padding: 0 4px; }
+.upload-drop { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 28px 16px; border: 1.5px dashed var(--line-2); border-radius: 12px; color: var(--text-2); cursor: pointer; transition: border-color .15s, background .15s; }
+.upload-drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.upload-drop.busy { cursor: default; opacity: 0.7; }
+.upload-err { color: var(--danger); margin-top: 10px; font-size: 13px; }
+.upload-note { color: var(--text-3); margin-top: 10px; font-size: 12px; }
+
 /* ── AgentRunTracker: Manus-style ordered task-progress checklist ──────────────────────────────────
    Quiet, tight rows (14px label, right-aligned m:ss timer). Three states, deliberately discriminated:
    ACTIVE is the emphasized "you are here" row (solid --acid dot + soft pulse, expandable narration);
@@ -2045,3 +2065,14 @@
 .proj-source-tile small { margin-left: auto; font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-3); }
 
 /* ── END project-sources block ── */
+
+/* Poster view toolbar (live poster route) + the "Made with PharmaOrb" growth-loop credit. */
+.poster-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.poster-toolbar-actions { display: flex; align-items: center; gap: 8px; }
+.chip-action.primary { background: var(--acid); color: var(--on-acid); border-color: transparent; font-weight: 500; }
+.poster-credit {
+  margin-top: auto; padding: 8px 34px; border-top: 1px solid var(--line-2);
+  font-size: 11px; letter-spacing: 0.02em; color: var(--text-3); text-align: center;
+  print-color-adjust: exact; -webkit-print-color-adjust: exact;
+}
+@media print { .poster-toolbar { display: none !important; } }

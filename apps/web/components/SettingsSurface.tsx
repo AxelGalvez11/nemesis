@@ -138,7 +138,7 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
           <section className="card">
             <h2 style={{ marginBottom: 4 }}>About</h2>
             <p className="muted" style={{ fontSize: 13, margin: 0, lineHeight: 1.6 }}>
-              Nemesis gives source-grounded, cited answers. Every medical claim traces to a real source. Educational use only — not a substitute for professional medical advice.
+              Nemesis gives source-grounded, cited answers and keeps its work inside the scope you authorize. Educational use only — verify anything that matters.
             </p>
             <button type="button" className="mode watch-add-btn" style={{ marginTop: 12 }} onClick={() => setSourcesOpen(true)}>
               <Icon name="shield" size={14} /> View data sources

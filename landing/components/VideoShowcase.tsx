@@ -33,7 +33,7 @@ export function VideoShowcase() {
           </span>
           <h2 className="section-h2">See it in action.</h2>
           <p className="section-p">
-            Build a watchlist of any drug, trial, or class. PharmaOrb watches the literature and
+            Build a watchlist of any topic, source, or research thread. Nemesis watches the evidence and
             sends you smart alerts and a weekly digest. Here&apos;s the 30-second tour.
           </p>
         </div>
