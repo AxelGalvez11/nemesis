@@ -7,21 +7,21 @@
 //     → validates key → plan (subscriptions) → daily token budget (plan_entitlements
 //       'nemesis_llm_daily_tokens' + usage_counters 'nemesis_llm_tokens') → forwards to
 //       DeepSeek with the SERVER-side key → records usage_events → returns/streams.
-//       Models requested as 'glm*' route straight to GLM, 'gemini*' straight to
-//       Gemini. Otherwise, if the DeepSeek call throws or comes back out of balance
-//       (402, or an error body containing "Insufficient Balance") and GLM_API_KEY is
-//       set, the same request is retried once on GLM; if that still yields nothing
-//       usable and GEMINI_API_KEY is set, one last retry goes to Gemini.
+//       Models requested as 'glm*' route straight to GLM — the premium "highest"
+//       answer mode, allowed for the pro/max plans only. Otherwise, if the DeepSeek
+//       call throws or comes back out of balance (402, or an error body containing
+//       "Insufficient Balance") and GLM_API_KEY is set, the same request is retried
+//       once on GLM (every plan — that path is outage insurance, not a perk).
 //   GET  /nemesis-llm/v1/models            Authorization: Bearer <device key>
 //     → static model list (keeps OpenAI-compatible clients happy).
 //
 // Deploy with verify_jwt=false (custom auth is implemented here: JWT for minting,
 // device keys for completions). Secrets used: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY
 // (platform-injected), DEEPSEEK_API_KEY (already set for the ask/research functions),
-// GLM_API_KEY (Z.ai — secondary provider + first failover target; GLM_MODEL picks
+// and GLM_API_KEY (Z.ai — premium tier + DeepSeek failover target; GLM_MODEL picks
 // the model used for direct-GLM requests without one and for the failover retry,
-// default 'glm-5.2'), and GEMINI_API_KEY (Google, via its OpenAI-compatibility
-// endpoint — third slot + last-resort failover; GEMINI_MODEL default 'gemini-flash-latest').
+// default 'glm-5.2'). GEMINI_API_KEY also lives in the vault but is RESERVED for
+// image generation (owner decision 2026-07-14) — it plays no part in chat.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -31,12 +31,6 @@ const DEEPSEEK_BASE = 'https://api.deepseek.com'
 const GLM_KEY = Deno.env.get('GLM_API_KEY') ?? ''
 const GLM_MODEL = Deno.env.get('GLM_MODEL') ?? 'glm-5.2'
 const GLM_BASE = 'https://api.z.ai/api/paas/v4'
-const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
-// 'gemini-flash-latest' is Google's evergreen alias for the newest Flash model —
-// fixed ids (e.g. gemini-2.5-flash) get retired for new API keys.
-const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-flash-latest'
-// Google's OpenAI-compatibility layer — speaks the same chat/completions wire shape.
-const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai'
 
 const COUNTER_KEY = 'nemesis_llm_tokens'
 const ENTITLEMENT_KEY = 'nemesis_llm_daily_tokens'
@@ -226,7 +220,7 @@ async function isInsufficientBalance(res: Response): Promise<boolean> {
 }
 
 async function chatCompletions(req: Request): Promise<Response> {
-  if (!DEEPSEEK_KEY && !GLM_KEY && !GEMINI_KEY) {
+  if (!DEEPSEEK_KEY && !GLM_KEY) {
     return json({ error: 'model provider key not configured on the server' }, 500)
   }
 
@@ -251,14 +245,12 @@ async function chatCompletions(req: Request): Promise<Response> {
   }
 
   const requested = typeof body.model === 'string' ? body.model : 'deepseek-chat'
-  const requestedLower = requested.toLowerCase()
-  const useGlm = requestedLower.startsWith('glm')
-  const useGemini = requestedLower.startsWith('gemini')
-  const resolved = useGlm || useGemini ? { model: requested } : resolveModel(requested)
+  const useGlm = requested.toLowerCase().startsWith('glm')
+  const resolved = useGlm ? { model: requested } : resolveModel(requested)
   let model = resolved.model
   body.model = model
 
-  if (!useGlm && !useGemini && resolved.thinking && body.thinking === undefined) {
+  if (!useGlm && resolved.thinking && body.thinking === undefined) {
     body.thinking = resolved.thinking
   }
 
@@ -276,13 +268,17 @@ async function chatCompletions(req: Request): Promise<Response> {
       return json({ error: 'GLM provider key not configured on the server' }, 500)
     }
 
-    upstream = await callProvider(GLM_BASE, GLM_KEY, body)
-  } else if (useGemini) {
-    if (!GEMINI_KEY) {
-      return json({ error: 'Gemini provider key not configured on the server' }, 500)
+    // GLM 5.2 is the premium "highest" answer mode — Agent Pro and Max plans only
+    // (owner pricing decision 2026-07-14). The automatic DeepSeek-outage failover
+    // below is deliberately NOT gated: uptime insurance covers every plan.
+    if (ctx.plan !== 'pro' && ctx.plan !== 'max') {
+      return json(
+        { error: { code: 'plan_required', message: 'The highest answer mode needs the Agent Pro or Max plan.' } },
+        403
+      )
     }
 
-    upstream = await callProvider(GEMINI_BASE, GEMINI_KEY, body)
+    upstream = await callProvider(GLM_BASE, GLM_KEY, body)
   } else {
     upstream = DEEPSEEK_KEY ? await callProvider(DEEPSEEK_BASE, DEEPSEEK_KEY, body) : null
 
@@ -293,15 +289,6 @@ async function chatCompletions(req: Request): Promise<Response> {
       body.model = GLM_MODEL
       delete body.thinking
       upstream = await callProvider(GLM_BASE, GLM_KEY, body)
-    }
-
-    // Last resort: if DeepSeek (and GLM, when configured) still produced nothing
-    // usable, one final retry on Gemini keeps the engine answering.
-    if (GEMINI_KEY && (!upstream || !upstream.ok)) {
-      model = GEMINI_MODEL
-      body.model = GEMINI_MODEL
-      delete body.thinking
-      upstream = await callProvider(GEMINI_BASE, GEMINI_KEY, body)
     }
   }
 
@@ -372,8 +359,7 @@ Deno.serve(async (req: Request) => {
         { id: 'deepseek-reasoner', object: 'model', owned_by: 'nemesis' },
         { id: 'deepseek-v4-flash', object: 'model', owned_by: 'nemesis' },
         { id: 'deepseek-v4-pro', object: 'model', owned_by: 'nemesis' },
-        { id: GLM_MODEL, object: 'model', owned_by: 'nemesis' },
-        { id: GEMINI_MODEL, object: 'model', owned_by: 'nemesis' }
+        { id: GLM_MODEL, object: 'model', owned_by: 'nemesis' }
       ],
       object: 'list'
     })
