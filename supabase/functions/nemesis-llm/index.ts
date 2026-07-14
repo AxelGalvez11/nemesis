@@ -296,5 +296,26 @@ Deno.serve(async (req: Request) => {
     })
   }
 
+  // Today's budget for the in-app Account & usage view (desktop fetchUsage()).
+  // Restored: this route existed pre-GLM-rewrite; dropping it left the app's
+  // "Today's allowance" card permanently on its unavailable state. Returns 200
+  // even when the budget is exhausted — used/remaining ARE the answer.
+  if (req.method === 'GET' && path.endsWith('/usage')) {
+    const deviceKey = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+    const ctx = await resolveKey(deviceKey)
+
+    if (ctx instanceof Response) {
+      return ctx
+    }
+
+    return json({
+      daily_limit: ctx.dailyLimit,
+      period_start: ctx.periodStart,
+      plan: ctx.plan,
+      remaining: Math.max(0, ctx.dailyLimit - ctx.used),
+      used: ctx.used
+    })
+  }
+
   return json({ error: 'not found' }, 404)
 })
