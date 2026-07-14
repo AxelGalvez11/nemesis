@@ -1,0 +1,1177 @@
+From 14adbd36364aee8615964573dd8b4daabffe36e2 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 12:02:02 -0500
+Subject: [PATCH] =?UTF-8?q?feat:=20beta.8=20=E2=80=94=20native=20on-device?=
+ =?UTF-8?q?=20speech=20engine=20(sherpa-onnx=20+=20NVIDIA=20parakeet-tdt-0?=
+ =?UTF-8?q?.6b-v2)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Recorder transcripts move from whisper-base.en WASM (~12% WER, 30-min cap) to
+NVIDIA parakeet-tdt-0.6b-v2 int8 (CC-BY-4.0, ~6% WER — above whisper-large-v3
+on the Open ASR leaderboard) running in an Electron utilityProcess via
+sherpa-onnx-node. Measured on this M-series Mac: 66.6s lecture in 3.4s
+inference (~20x realtime), so refine now covers up to 3h recordings.
+
+- electron/asr-worker.ts: utilityProcess child hosting the engine (warm reuse,
+  jobs serialized); electron/nemesis-asr.ts: one-time ~480MB model download to
+  userData/asr with streamed progress + disk-space guard, worker lifecycle
+  (2-min idle kill), nemesis:asr:transcribe IPC.
+- Renderer: native-asr.ts bridge; refineTranscript and the Recordings
+  Transcribe button go native-first with the existing WASM path as fallback
+  (which keeps its 30-min cap). Audio still never leaves the machine.
+- Build: asr-worker bundled as third esbuild entry; sherpa-onnx-node +
+  sherpa-onnx-darwin-arm64 staged into dist/node_modules like node-pty
+  (also in before-pack for per-target builds).
+---
+ apps/desktop/electron/asr-worker.ts           |  71 +++++
+ apps/desktop/electron/main.ts                 |   4 +
+ apps/desktop/electron/nemesis-asr.ts          | 257 ++++++++++++++++++
+ apps/desktop/electron/preload.ts              |   9 +
+ apps/desktop/package.json                     |   3 +-
+ apps/desktop/scripts/before-pack.mjs          |   5 +-
+ apps/desktop/scripts/bundle-electron-main.mjs |  21 +-
+ apps/desktop/scripts/stage-native-deps.mjs    |  35 +++
+ apps/desktop/src/app/recorder/archive.js      |  32 ++-
+ apps/desktop/src/app/recorder/archive.tsx     |  43 ++-
+ apps/desktop/src/app/recorder/index.js        |   3 +-
+ apps/desktop/src/app/recorder/index.tsx       |   3 +-
+ apps/desktop/src/app/recorder/native-asr.js   |  37 +++
+ apps/desktop/src/app/recorder/native-asr.ts   |  56 ++++
+ apps/desktop/src/app/recorder/service.js      |  42 ++-
+ apps/desktop/src/app/recorder/service.ts      |  50 +++-
+ apps/desktop/src/app/recorder/transcribe.js   |   6 +-
+ apps/desktop/src/app/recorder/transcribe.ts   |   6 +-
+ .../src/app/recorder/transcript-upgrade.js    |   7 +-
+ .../src/app/recorder/transcript-upgrade.ts    |   7 +-
+ apps/desktop/src/global.d.ts                  |   6 +
+ package-lock.json                             |  95 ++++++-
+ 22 files changed, 740 insertions(+), 58 deletions(-)
+ create mode 100644 apps/desktop/electron/asr-worker.ts
+ create mode 100644 apps/desktop/electron/nemesis-asr.ts
+ create mode 100644 apps/desktop/src/app/recorder/native-asr.js
+ create mode 100644 apps/desktop/src/app/recorder/native-asr.ts
+
+diff --git a/apps/desktop/electron/asr-worker.ts b/apps/desktop/electron/asr-worker.ts
+new file mode 100644
+index 00000000000..bbb2c554946
+--- /dev/null
++++ b/apps/desktop/electron/asr-worker.ts
+@@ -0,0 +1,71 @@
++// asr-worker — utilityProcess child hosting the on-device speech engine
++// (sherpa-onnx + NVIDIA parakeet-tdt-0.6b-v2, CC-BY-4.0). Lives OUT of the main
++// process because recognition is a blocking native call: a 1-hour lecture takes
++// ~3 minutes of solid CPU that must never freeze the app. The parent sends one
++// job at a time over parentPort; the recognizer is created once per model dir
++// and reused. Audio never leaves this machine.
++
++interface AsrJob {
++  id: number
++  modelDir: string
++  sampleRate: number
++  samples: Float32Array
++}
++
++type SherpaModule = {
++  OfflineRecognizer: new (config: object) => {
++    createStream: () => { acceptWaveform: (wave: { sampleRate: number; samples: Float32Array }) => void }
++    decode: (stream: unknown) => void
++    getResult: (stream: unknown) => { text: string }
++  }
++}
++
++let sherpa: null | SherpaModule = null
++let recognizer: InstanceType<SherpaModule['OfflineRecognizer']> | null = null
++let recognizerModelDir = ''
++
++function getRecognizer(modelDir: string) {
++   
++  sherpa ??= require('sherpa-onnx-node') as SherpaModule
++
++  if (!recognizer || recognizerModelDir !== modelDir) {
++    recognizer = new sherpa.OfflineRecognizer({
++      featConfig: { featureDim: 80, sampleRate: 16_000 },
++      modelConfig: {
++        debug: 0,
++        modelType: 'nemo_transducer',
++        numThreads: 4,
++        tokens: `${modelDir}/tokens.txt`,
++        transducer: {
++          decoder: `${modelDir}/decoder.int8.onnx`,
++          encoder: `${modelDir}/encoder.int8.onnx`,
++          joiner: `${modelDir}/joiner.int8.onnx`
++        }
++      }
++    })
++    recognizerModelDir = modelDir
++  }
++
++  return recognizer
++}
++
++process.parentPort?.on('message', (event: { data: AsrJob }) => {
++  const { id, modelDir, sampleRate, samples } = event.data
++
++  try {
++    // Structured clone delivers Float32Array views intact; normalize defensively.
++    const wave = samples instanceof Float32Array ? samples : new Float32Array(samples)
++    const engine = getRecognizer(modelDir)
++    const stream = engine.createStream()
++    stream.acceptWaveform({ sampleRate, samples: wave })
++    engine.decode(stream)
++    const { text } = engine.getResult(stream)
++    process.parentPort?.postMessage({ id, ok: true, text: (text || '').trim() })
++  } catch (error) {
++    process.parentPort?.postMessage({
++      error: error instanceof Error ? error.message : String(error),
++      id,
++      ok: false
++    })
++  }
++})
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index 48d3e88a2e8..fc7298b9d2d 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -104,6 +104,7 @@ import {
+   PRIMARY_PROTOCOL,
+   upsertEnvVars
+ } from './nemesis-identity'
++import { registerNemesisAsr } from './nemesis-asr'
+ import { serializeJsonBody, setJsonRequestHeaders } from './oauth-net-request'
+ import { registerSchoolBrowserIpc } from './school-browser'
+ import { installSchoolView, registerSchoolViewIpc } from './school-view'
+@@ -7083,6 +7084,9 @@ ipcMain.handle('hermes:backend:touch', async (_event, profile) => {
+ // server-side. Fixed URL prefix — the renderer cannot point the backend anywhere else.
+ const NEMESIS_LLM_PROXY_BASE = 'https://qyjmivntajbigjswhahb.supabase.co/functions/v1/nemesis-llm/v1'
+ 
++// On-device speech engine (recorder's accurate transcription pass).
++registerNemesisAsr()
++
+ ipcMain.handle('nemesis:llm:sync', async (_event, payload) => {
+   try {
+     const deviceKey = typeof payload?.deviceKey === 'string' ? payload.deviceKey.trim() : ''
+diff --git a/apps/desktop/electron/nemesis-asr.ts b/apps/desktop/electron/nemesis-asr.ts
+new file mode 100644
+index 00000000000..4c7024a63c4
+--- /dev/null
++++ b/apps/desktop/electron/nemesis-asr.ts
+@@ -0,0 +1,257 @@
++// nemesis-asr — main-process side of the on-device speech engine.
++//
++// Owns two things:
++//   1. The MODEL: NVIDIA parakeet-tdt-0.6b-v2 int8 (CC-BY-4.0), fetched ONCE
++//      (~480 MB) from the sherpa-onnx release mirror into userData/asr/ with
++//      progress relayed to the renderer. Nothing is sent anywhere — the model
++//      comes down, audio stays on the machine.
++//   2. The WORKER: a utilityProcess hosting sherpa-onnx (dist/asr-worker.cjs),
++//      kept warm between jobs (model load ≈ 1.4 s) and killed after 2 min idle
++//      (the loaded engine holds real memory). Jobs run one at a time.
++//
++// Renderer contract (see preload):
++//   invoke 'nemesis:asr:transcribe' { samples: Float32Array, sampleRate }
++//     → { ok: true, text } | { ok: false, error }
++//   on 'nemesis:asr:progress' { phase: 'downloading'|'preparing'|'transcribing', pct? }
++import { spawn } from 'node:child_process'
++import { createWriteStream } from 'node:fs'
++import { mkdir, rename, rm, stat, statfs } from 'node:fs/promises'
++import path from 'node:path'
++
++import { app, ipcMain, net, utilityProcess, type UtilityProcess } from 'electron'
++
++const MODEL_NAME = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8'
++const MODEL_URL = `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/${MODEL_NAME}.tar.bz2`
++const MODEL_FILES = ['encoder.int8.onnx', 'decoder.int8.onnx', 'joiner.int8.onnx', 'tokens.txt']
++// Tarball (~482 MB) + extracted model (~640 MB) coexist briefly during setup.
++const REQUIRED_FREE_BYTES = 1_400_000_000
++const WORKER_IDLE_KILL_MS = 120_000
++
++type Progress = { pct?: number; phase: 'downloading' | 'preparing' | 'transcribing' }
++type ProgressSink = (progress: Progress) => void
++
++function modelDir(): string {
++  return path.join(app.getPath('userData'), 'asr', MODEL_NAME)
++}
++
++async function modelReady(): Promise<boolean> {
++  const dir = modelDir()
++
++  const checks = await Promise.all(
++    MODEL_FILES.map(file =>
++      stat(path.join(dir, file)).then(
++        info => info.size > 0,
++        () => false
++      )
++    )
++  )
++
++  return checks.every(Boolean)
++}
++
++async function extractTarball(tarPath: string, intoDir: string): Promise<void> {
++  await new Promise<void>((resolve, reject) => {
++    const child = spawn('tar', ['-xjf', tarPath, '-C', intoDir])
++    child.on('error', reject)
++    child.on('exit', code => (code === 0 ? resolve() : reject(new Error(`tar exited with ${code}`))))
++  })
++}
++
++async function downloadModel(onProgress: ProgressSink): Promise<void> {
++  const parent = path.join(app.getPath('userData'), 'asr')
++  await mkdir(parent, { recursive: true })
++
++  const disk = await statfs(parent)
++
++  if (disk.bavail * disk.bsize < REQUIRED_FREE_BYTES) {
++    throw new Error('Not enough free disk space for the speech model (needs about 1.4 GB free).')
++  }
++
++  const tarPath = path.join(parent, `${MODEL_NAME}.tar.bz2.partial`)
++  const response = await net.fetch(MODEL_URL)
++
++  if (!response.ok || !response.body) {
++    throw new Error(`model download failed: HTTP ${response.status}`)
++  }
++
++  const total = Number(response.headers.get('content-length')) || 0
++  const reader = response.body.getReader()
++  const sink = createWriteStream(tarPath)
++  let received = 0
++  let lastPct = -1
++
++  try {
++    for (;;) {
++      const { done, value } = await reader.read()
++
++      if (done) {
++        break
++      }
++
++      received += value.byteLength
++      await new Promise<void>((resolve, reject) =>
++        sink.write(value, error => (error ? reject(error) : resolve()))
++      )
++
++      if (total > 0) {
++        const pct = Math.floor((received / total) * 100)
++
++        if (pct !== lastPct) {
++          lastPct = pct
++          onProgress({ pct, phase: 'downloading' })
++        }
++      }
++    }
++
++    await new Promise<void>((resolve, reject) => sink.end((error?: Error | null) => (error ? reject(error) : resolve())))
++    onProgress({ phase: 'preparing' })
++
++    // The tarball extracts to MODEL_NAME/ inside `parent`; make it atomic-ish by
++    // extracting first and renaming into place only on success.
++    const extracted = path.join(parent, MODEL_NAME)
++    await rm(extracted, { force: true, recursive: true })
++    await extractTarball(tarPath, parent)
++
++    if (!(await modelReady())) {
++      // extract landed, but not where/what we expect — surface loudly.
++      const finalDir = modelDir()
++
++      if (extracted !== finalDir) {
++        await rename(extracted, finalDir)
++      }
++
++      if (!(await modelReady())) {
++        throw new Error('model archive did not contain the expected files')
++      }
++    }
++  } finally {
++    await rm(tarPath, { force: true }).catch(() => {})
++  }
++}
++
++// ---- worker lifecycle ------------------------------------------------------
++
++let worker: null | UtilityProcess = null
++let idleTimer: null | ReturnType<typeof setTimeout> = null
++let nextJobId = 1
++const pendingJobs = new Map<number, { reject: (error: Error) => void; resolve: (text: string) => void }>()
++
++function workerScriptPath(): string {
++  // dist/** ships asar-UNPACKED; fork from the real files so the worker's
++  // require('sherpa-onnx-node') and its dylibs resolve on disk.
++  return path
++    .join(app.getAppPath(), 'dist', 'asr-worker.cjs')
++    .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`)
++}
++
++function stopWorker(): void {
++  if (idleTimer) {
++    clearTimeout(idleTimer)
++    idleTimer = null
++  }
++
++  worker?.kill()
++  worker = null
++}
++
++function getWorker(): UtilityProcess {
++  if (worker) {
++    return worker
++  }
++
++  const spawned = utilityProcess.fork(workerScriptPath(), [], { serviceName: 'nemesis-asr' })
++
++  spawned.on('message', (message: { error?: string; id: number; ok: boolean; text?: string }) => {
++    const job = pendingJobs.get(message.id)
++
++    if (!job) {
++      return
++    }
++
++    pendingJobs.delete(message.id)
++
++    if (message.ok) {
++      job.resolve(message.text ?? '')
++    } else {
++      job.reject(new Error(message.error ?? 'transcription failed'))
++    }
++  })
++
++  spawned.on('exit', () => {
++    if (worker === spawned) {
++      worker = null
++    }
++
++    for (const [id, job] of pendingJobs) {
++      pendingJobs.delete(id)
++      job.reject(new Error('speech engine stopped unexpectedly'))
++    }
++  })
++
++  worker = spawned
++
++  return spawned
++}
++
++function runJob(samples: Float32Array, sampleRate: number): Promise<string> {
++  return new Promise<string>((resolve, reject) => {
++    const id = nextJobId++
++    pendingJobs.set(id, { reject, resolve })
++
++    if (idleTimer) {
++      clearTimeout(idleTimer)
++      idleTimer = null
++    }
++
++    getWorker().postMessage({ id, modelDir: modelDir(), sampleRate, samples })
++  }).finally(() => {
++    if (pendingJobs.size === 0) {
++      idleTimer = setTimeout(stopWorker, WORKER_IDLE_KILL_MS)
++    }
++  })
++}
++
++// ---- IPC -------------------------------------------------------------------
++
++// One transcription (and at most one model download) at a time, app-wide.
++let chain: Promise<unknown> = Promise.resolve()
++
++export function registerNemesisAsr(): void {
++  ipcMain.handle('nemesis:asr:transcribe', (event, payload: { sampleRate?: number; samples?: Float32Array }) => {
++    const samples = payload?.samples
++    const sampleRate = payload?.sampleRate ?? 16_000
++
++    if (!(samples instanceof Float32Array) || samples.length === 0 || !Number.isFinite(sampleRate)) {
++      return { error: 'invalid audio payload', ok: false }
++    }
++
++    const report: ProgressSink = progress => {
++      if (!event.sender.isDestroyed()) {
++        event.sender.send('nemesis:asr:progress', progress)
++      }
++    }
++
++    const task = chain
++      .catch(() => {})
++      .then(async () => {
++        if (!(await modelReady())) {
++          await downloadModel(report)
++        }
++
++        report({ phase: 'transcribing' })
++
++        const text = await runJob(samples, sampleRate)
++
++        return { ok: true as const, text }
++      })
++
++    chain = task
++
++    return task.catch(error => ({
++      error: error instanceof Error ? error.message : String(error),
++      ok: false as const
++    }))
++  })
++
++  app.on('before-quit', stopWorker)
++}
+diff --git a/apps/desktop/electron/preload.ts b/apps/desktop/electron/preload.ts
+index a6a1787cd36..6c7f2d1906d 100644
+--- a/apps/desktop/electron/preload.ts
++++ b/apps/desktop/electron/preload.ts
+@@ -7,6 +7,15 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
+   // Student build: hand the metering-proxy device key to main so the agent
+   // backend gets pointed at the Nemesis LLM proxy (zero-setup model access).
+   nemesisLlmSync: deviceKey => ipcRenderer.invoke('nemesis:llm:sync', { deviceKey }),
++  // On-device speech engine: accurate transcription in the main process
++  // (model auto-downloads once; progress arrives via nemesis:asr:progress).
++  nemesisAsrTranscribe: (samples, sampleRate) => ipcRenderer.invoke('nemesis:asr:transcribe', { sampleRate, samples }),
++  onNemesisAsrProgress: callback => {
++    const listener = (_event, progress) => callback(progress)
++    ipcRenderer.on('nemesis:asr:progress', listener)
++
++    return () => ipcRenderer.removeListener('nemesis:asr:progress', listener)
++  },
+   getGatewayWsUrl: profile => ipcRenderer.invoke('hermes:gateway:ws-url', profile),
+   openSessionWindow: (sessionId, opts) => ipcRenderer.invoke('hermes:window:openSession', sessionId, opts),
+   openNewSessionWindow: () => ipcRenderer.invoke('hermes:window:openNewSession'),
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index a2bf442faa4..46c12b18623 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -2,7 +2,7 @@
+   "name": "nemesis",
+   "productName": "Nemesis",
+   "private": true,
+-  "version": "0.1.0-beta.7",
++  "version": "0.1.0-beta.8",
+   "description": "Native desktop shell for the Nemesis school agent.",
+   "author": "Nemesis",
+   "type": "module",
+@@ -113,6 +113,7 @@
+     "react-shiki": "^0.9.3",
+     "remark-math": "^6.0.0",
+     "remend": "^1.3.0",
++    "sherpa-onnx-node": "^1.13.4",
+     "shiki": "^4.0.2",
+     "simple-git": "^3.36.0",
+     "streamdown": "^2.5.0",
+diff --git a/apps/desktop/scripts/before-pack.mjs b/apps/desktop/scripts/before-pack.mjs
+index a96b30651dd..d36b8b13b9f 100644
+--- a/apps/desktop/scripts/before-pack.mjs
++++ b/apps/desktop/scripts/before-pack.mjs
+@@ -60,7 +60,7 @@
+  */
+ import { existsSync, rmSync } from 'node:fs'
+ import { Arch } from 'electron-builder'
+-import { stageNodePty } from './stage-native-deps.mjs'
++import { stageNodePty, stageSherpaOnnx } from './stage-native-deps.mjs'
+ 
+ export function cleanStaleAppOutDir(appOutDir) {
+   if (!appOutDir || typeof appOutDir !== 'string') {
+@@ -100,7 +100,8 @@ export default async function beforePack(context) {
+         )
+       } else {
+         await stageNodePty({ platform, arch: archName })
+-        console.log(`[before-pack] re-staged node-pty for target ${platform}-${archName}`)
++        await stageSherpaOnnx({ platform, arch: archName })
++        console.log(`[before-pack] re-staged node-pty + sherpa-onnx for target ${platform}-${archName}`)
+       }
+     }
+   } catch (err) {
+diff --git a/apps/desktop/scripts/bundle-electron-main.mjs b/apps/desktop/scripts/bundle-electron-main.mjs
+index 316d2ce1b18..cc6f6e132f2 100644
+--- a/apps/desktop/scripts/bundle-electron-main.mjs
++++ b/apps/desktop/scripts/bundle-electron-main.mjs
+@@ -24,7 +24,9 @@ const mainOut = resolve(distDir, 'electron-main.mjs')
+ const preloadEntry = resolve(root, 'electron/preload.ts')
+ const preloadOut = resolve(distDir, 'electron-preload.js')
+ 
+-const external = ['electron', 'node-pty', 'fs']
++// sherpa-onnx-node is the on-device speech engine (native addon) — resolved at
++// runtime from dist/node_modules, staged by stage-native-deps like node-pty.
++const external = ['electron', 'node-pty', 'fs', 'sherpa-onnx-node']
+ // Production bundles bake packaged=true so unpackaged `electron .` still
+ // behaves like a packaged build. Dev bundles (`--dev`) leave the env alone
+ // so HERMES_DESKTOP_DEV_SERVER / source-tree resolution keep working.
+@@ -63,3 +65,20 @@ await build({
+   logLevel: 'info',
+ })
+ console.log(`bundled ${preloadOut}${isDev ? ' (dev)' : ''}`)
++
++// Bundle asr-worker.ts → dist/asr-worker.cjs (utilityProcess child that hosts
++// the sherpa-onnx speech engine off the main process)
++const asrWorkerEntry = resolve(root, 'electron/asr-worker.ts')
++const asrWorkerOut = resolve(distDir, 'asr-worker.cjs')
++await build({
++  entryPoints: [asrWorkerEntry],
++  bundle: true,
++  platform: 'node',
++  format: 'cjs',
++  target: 'node20',
++  outfile: asrWorkerOut,
++  external,
++  define,
++  logLevel: 'info',
++})
++console.log(`bundled ${asrWorkerOut}${isDev ? ' (dev)' : ''}`)
+diff --git a/apps/desktop/scripts/stage-native-deps.mjs b/apps/desktop/scripts/stage-native-deps.mjs
+index ef590c6ecbf..36653884829 100644
+--- a/apps/desktop/scripts/stage-native-deps.mjs
++++ b/apps/desktop/scripts/stage-native-deps.mjs
+@@ -130,8 +130,43 @@ export function stageNodePty({ platform = process.platform, arch = process.arch
+   return destRoot
+ }
+ 
++/**
++ * Stages the on-device speech engine: sherpa-onnx-node (JS surface) plus its
++ * per-platform native package (sherpa-onnx.node + onnxruntime dylibs), which
++ * addon.js resolves as a SIBLING package (`../sherpa-onnx-<platform>-<arch>/`).
++ * Both land side by side in dist/node_modules. Missing platform package (e.g.
++ * cross-building) is a warning, not an error — the app falls back to the
++ * in-renderer WASM transcriber at runtime.
++ */
++export function stageSherpaOnnx({ platform = process.platform, arch = process.arch } = {}) {
++  const jsPkgJson = require.resolve('sherpa-onnx-node/package.json', { paths: [projectRoot] })
++  const jsRoot = dirname(jsPkgJson)
++  const jsDest = resolve(projectRoot, 'dist/node_modules/sherpa-onnx-node')
++  rmSync(jsDest, { recursive: true, force: true })
++  cpSync(jsRoot, jsDest, { recursive: true })
++
++  const platformName = platform === 'win32' ? 'win' : platform
++  const nativePkg = `sherpa-onnx-${platformName}-${arch}`
++  const nativeDest = resolve(projectRoot, `dist/node_modules/${nativePkg}`)
++  rmSync(nativeDest, { recursive: true, force: true })
++
++  try {
++    const nativePkgJson = require.resolve(`${nativePkg}/package.json`, { paths: [projectRoot] })
++    cpSync(dirname(nativePkgJson), nativeDest, { recursive: true })
++    console.log(`[stage-native-deps] staged sherpa-onnx (${platform}-${arch}) -> ${nativeDest}`)
++  } catch {
++    console.warn(
++      `[stage-native-deps] ${nativePkg} not installed — on-device speech engine will be ` +
++        `unavailable on this target (recorder falls back to the WASM transcriber).`
++    )
++  }
++
++  return jsDest
++}
++
+ // Allow direct CLI invocation: node scripts/stage-native-deps.mjs [platform] [arch]
+ if (isMain(import.meta.url)) {
+   const [platform, arch] = process.argv.slice(2)
+   stageNodePty({ platform, arch })
++  stageSherpaOnnx({ platform, arch })
+ }
+diff --git a/apps/desktop/src/app/recorder/archive.js b/apps/desktop/src/app/recorder/archive.js
+index 4a6f1cb5c0d..3f6da7824ad 100644
+--- a/apps/desktop/src/app/recorder/archive.js
++++ b/apps/desktop/src/app/recorder/archive.js
+@@ -26,6 +26,7 @@ import { useRefreshHotkey } from '../hooks/use-refresh-hotkey';
+ import { loadFolderNotes, saveNote } from '../library/vault';
+ import { PanelAction, PanelPill, PanelSectionLabel } from '../overlays/panel';
+ import { LIBRARY_ROUTE, NEW_CHAT_ROUTE } from '../routes';
++import { nativeAsrAvailable, nativeAsrStatusLabel, nativeTranscribe } from './native-asr';
+ import { correctPharmTerms } from './pharm-lexicon';
+ import { LECTURE_FOLDER, RECORDINGS_DIR } from './service';
+ import { transcribeAudio } from './transcribe';
+@@ -152,15 +153,28 @@ export function RecordingArchive({ reloadToken }) {
+     const transcribe = useCallback(async (file) => {
+         setTranscribingStatus(status => ({ ...status, [file.path]: 'Loading model…' }));
+         try {
+-            const buffer = await readAudioBuffer(file);
+-            const text = await transcribeAudio(buffer, update => setTranscribingStatus(status => ({
+-                ...status,
+-                [file.path]: update.stage === 'loading-model'
+-                    ? `Loading model… ${Math.round(update.progress ?? 0)}%`
+-                    : update.stage === 'decoding'
+-                        ? 'Decoding audio…'
+-                        : 'Transcribing…'
+-            })));
++            // Native parakeet engine first (accurate + fast); WASM whisper fallback.
++            let text = null;
++            if (nativeAsrAvailable()) {
++                try {
++                    text = await nativeTranscribe(await readAudioBuffer(file), update => setTranscribingStatus(status => ({ ...status, [file.path]: nativeAsrStatusLabel(update) })));
++                }
++                catch {
++                    text = null;
++                }
++            }
++            if (text === null) {
++                // Fresh buffer — the native attempt's decode detaches the previous one.
++                const buffer = await readAudioBuffer(file);
++                text = await transcribeAudio(buffer, update => setTranscribingStatus(status => ({
++                    ...status,
++                    [file.path]: update.stage === 'loading-model'
++                        ? `Loading model… ${Math.round(update.progress ?? 0)}%`
++                        : update.stage === 'decoding'
++                            ? 'Decoding audio…'
++                            : 'Transcribing…'
++                })));
++            }
+             const { changes, corrected } = correctPharmTerms(text || '');
+             setTranscripts(current => ({ ...current, [file.path]: corrected || '(No speech detected.)' }));
+             setCorrections(current => ({ ...current, [file.path]: changes.length }));
+diff --git a/apps/desktop/src/app/recorder/archive.tsx b/apps/desktop/src/app/recorder/archive.tsx
+index 59fbcddee82..a2ffeb8f4ff 100644
+--- a/apps/desktop/src/app/recorder/archive.tsx
++++ b/apps/desktop/src/app/recorder/archive.tsx
+@@ -29,6 +29,7 @@ import { loadFolderNotes, saveNote, type VaultNote } from '../library/vault'
+ import { PanelAction, PanelPill, PanelSectionLabel } from '../overlays/panel'
+ import { LIBRARY_ROUTE, NEW_CHAT_ROUTE } from '../routes'
+ 
++import { nativeAsrAvailable, nativeAsrStatusLabel, nativeTranscribe } from './native-asr'
+ import { correctPharmTerms } from './pharm-lexicon'
+ import { LECTURE_FOLDER, RECORDINGS_DIR } from './service'
+ import { transcribeAudio } from './transcribe'
+@@ -206,19 +207,35 @@ export function RecordingArchive({ reloadToken }: RecordingArchiveProps) {
+     setTranscribingStatus(status => ({ ...status, [file.path]: 'Loading model…' }))
+ 
+     try {
+-      const buffer = await readAudioBuffer(file)
+-
+-      const text = await transcribeAudio(buffer, update =>
+-        setTranscribingStatus(status => ({
+-          ...status,
+-          [file.path]:
+-            update.stage === 'loading-model'
+-              ? `Loading model… ${Math.round(update.progress ?? 0)}%`
+-              : update.stage === 'decoding'
+-                ? 'Decoding audio…'
+-                : 'Transcribing…'
+-        }))
+-      )
++      // Native parakeet engine first (accurate + fast); WASM whisper fallback.
++      let text: null | string = null
++
++      if (nativeAsrAvailable()) {
++        try {
++          text = await nativeTranscribe(await readAudioBuffer(file), update =>
++            setTranscribingStatus(status => ({ ...status, [file.path]: nativeAsrStatusLabel(update) }))
++          )
++        } catch {
++          text = null
++        }
++      }
++
++      if (text === null) {
++        // Fresh buffer — the native attempt's decode detaches the previous one.
++        const buffer = await readAudioBuffer(file)
++
++        text = await transcribeAudio(buffer, update =>
++          setTranscribingStatus(status => ({
++            ...status,
++            [file.path]:
++              update.stage === 'loading-model'
++                ? `Loading model… ${Math.round(update.progress ?? 0)}%`
++                : update.stage === 'decoding'
++                  ? 'Decoding audio…'
++                  : 'Transcribing…'
++          }))
++        )
++      }
+ 
+       const { changes, corrected } = correctPharmTerms(text || '')
+       setTranscripts(current => ({ ...current, [file.path]: corrected || '(No speech detected.)' }))
+diff --git a/apps/desktop/src/app/recorder/index.js b/apps/desktop/src/app/recorder/index.js
+index 3bcf757ae5f..fb915ac74ff 100644
+--- a/apps/desktop/src/app/recorder/index.js
++++ b/apps/desktop/src/app/recorder/index.js
+@@ -126,6 +126,7 @@ export function RecorderView() {
+                                     : starting
+                                         ? 'Opening audio capture on this Mac.'
+                                         : 'Capture the lecture. Notes, transcript, and terms — all on this Mac.' }), _jsxs("div", { className: "mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 [@media(max-height:720px)]:mt-2 [@media(max-height:720px)_and_(min-width:640px)]:mt-0 [@media(max-height:720px)_and_(min-width:640px)]:justify-end", children: [_jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs font-medium text-(--ui-text-secondary)", children: [_jsx("span", { children: "Computer audio" }), _jsx("input", { checked: withSystemAudio, className: "peer sr-only", disabled: starting || stopping, onChange: event => setSystemAudioEnabled(event.target.checked), type: "checkbox" }), _jsx("span", { className: "relative h-4 w-7 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-3 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-foreground/20 peer-checked:bg-foreground peer-checked:after:translate-x-3 peer-checked:after:bg-background peer-disabled:opacity-45" })] }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs font-medium text-(--ui-text-secondary)", children: [_jsx("span", { children: "Live transcript" }), _jsx("input", { checked: liveCaptions, className: "peer sr-only", disabled: starting || stopping, onChange: event => setLiveCaptionsEnabled(event.target.checked), type: "checkbox" }), _jsx("span", { className: "relative h-4 w-7 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors after:absolute after:left-0.5 after:top-0.5 after:size-3 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform peer-focus-visible:ring-2 peer-focus-visible:ring-foreground/20 peer-checked:bg-foreground peer-checked:after:translate-x-3 peer-checked:after:bg-background peer-disabled:opacity-45" })] })] }), _jsxs("span", { className: "mt-3 inline-flex items-center gap-1.5 rounded-full border border-(--ui-stroke-tertiary) px-2.5 py-1 text-[0.65rem] text-(--ui-text-tertiary) [@media(max-height:720px)]:mt-1 [@media(max-height:720px)_and_(min-width:640px)]:justify-self-end", children: [_jsx(IconLock, { size: 11 }), "Nothing joins your call \u00B7 processed on this device"] })] })] }), (lectureNote || error) && (_jsxs("div", { className: "mx-auto w-full max-w-[960px] px-5 sm:px-7", children: [lectureNote && (_jsxs("div", { className: "flex flex-wrap items-center gap-2 border-y border-(--ui-stroke-tertiary) py-3 text-xs", children: [_jsxs("span", { className: "min-w-0 flex-1 basis-full items-center gap-1.5 font-medium sm:inline-flex sm:basis-auto", children: [_jsx(IconCheck, { className: "mr-1 inline", size: 13 }), "Saved to Library / ", LECTURE_FOLDER, " as ", lectureNote, ".md"] }), _jsx(Button, { onClick: () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`), size: "xs", variant: "outline", children: "Open note" }), _jsxs(Button, { onClick: enhanceNote, size: "xs", variant: "secondary", children: [_jsx(IconSparkles, { size: 12 }), "Enhance with Nemesis"] }), queuedCount > 0 && (_jsxs(Button, { onClick: askQueued, size: "xs", variant: "outline", children: ["Review ", queuedCount, " queued drug", queuedCount === 1 ? '' : 's'] })), transcriptRefine && transcriptRefine.title === lectureNote && transcriptRefine.state !== 'failed' && (_jsx("span", { className: "basis-full text-[0.65rem] text-muted-foreground", children: transcriptRefine.state === 'refining'
+-                                    ? 'Refining the transcript with the accurate on-device model — the note updates itself when done.'
++                                    ? (transcriptRefine.detail ??
++                                        'Refining the transcript with the accurate on-device model — the note updates itself when done.')
+                                     : 'Transcript refined with the accurate model.' }))] })), error && _jsx("p", { className: "border-b border-(--ui-stroke-tertiary) py-3 text-xs text-destructive", children: error })] })), _jsxs("section", { className: "mx-auto w-full max-w-[960px] px-5 pb-10 pt-7 sm:px-7", children: [_jsx(RecordingArchive, { reloadToken: recordingsVersion }), _jsxs("div", { className: "flex flex-wrap items-center gap-1.5 pt-4 text-[0.6875rem] text-muted-foreground", children: [_jsx(IconLock, { size: 11 }), _jsx("span", { children: "Local by design \u00B7" }), _jsx(Tip, { className: "max-w-sm whitespace-normal text-left leading-relaxed", label: _jsx("span", { children: "Recording other people may require their consent where you live \u2014 check your school\u2019s policy. Nemesis never records on its own and never hides the indicator. Transcription runs on your device; review the draft before relying on it." }), side: "top", children: _jsx("button", { className: "underline decoration-current/30 underline-offset-2 hover:text-foreground", type: "button", children: "Consent & transcription details" }) })] })] })] }));
+ }
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index 36b772e27c2..0fc7360c3a5 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -522,7 +522,8 @@ export function RecorderView() {
+               {transcriptRefine && transcriptRefine.title === lectureNote && transcriptRefine.state !== 'failed' && (
+                 <span className="basis-full text-[0.65rem] text-muted-foreground">
+                   {transcriptRefine.state === 'refining'
+-                    ? 'Refining the transcript with the accurate on-device model — the note updates itself when done.'
++                    ? (transcriptRefine.detail ??
++                      'Refining the transcript with the accurate on-device model — the note updates itself when done.')
+                     : 'Transcript refined with the accurate model.'}
+                 </span>
+               )}
+diff --git a/apps/desktop/src/app/recorder/native-asr.js b/apps/desktop/src/app/recorder/native-asr.js
+new file mode 100644
+index 00000000000..d58857d4527
+--- /dev/null
++++ b/apps/desktop/src/app/recorder/native-asr.js
+@@ -0,0 +1,37 @@
++export function nativeAsrAvailable() {
++    return typeof window.hermesDesktop?.nemesisAsrTranscribe === 'function';
++}
++/** Human copy for the recorder's status line while the engine works. */
++export function nativeAsrStatusLabel(status) {
++    if (status.phase === 'downloading') {
++        return `Downloading the accurate speech model (one-time, ~480 MB) — ${status.pct ?? 0}%`;
++    }
++    if (status.phase === 'preparing') {
++        return 'Unpacking the speech model…';
++    }
++    return 'Refining the transcript with the accurate on-device model…';
++}
++/**
++ * Transcribes browser-playable audio via the native engine. Returns null when
++ * the engine isn't exposed in this build; throws when it is but the job failed
++ * (model download failed, engine crashed) — callers fall back to WASM either way.
++ */
++export async function nativeTranscribe(audio, onStatus) {
++    const bridge = window.hermesDesktop;
++    if (!bridge?.nemesisAsrTranscribe) {
++        return null;
++    }
++    const { decodeTo16kMono } = await import('./transcribe');
++    const samples = await decodeTo16kMono(audio);
++    const unsubscribe = onStatus && bridge.onNemesisAsrProgress ? bridge.onNemesisAsrProgress(onStatus) : null;
++    try {
++        const result = await bridge.nemesisAsrTranscribe(samples, 16_000);
++        if (!result?.ok) {
++            throw new Error(result?.error || 'transcription failed');
++        }
++        return (result.text ?? '').trim();
++    }
++    finally {
++        unsubscribe?.();
++    }
++}
+diff --git a/apps/desktop/src/app/recorder/native-asr.ts b/apps/desktop/src/app/recorder/native-asr.ts
+new file mode 100644
+index 00000000000..b682b3df88d
+--- /dev/null
++++ b/apps/desktop/src/app/recorder/native-asr.ts
+@@ -0,0 +1,56 @@
++// Renderer bridge to the main-process speech engine (sherpa-onnx + NVIDIA
++// parakeet-tdt-0.6b-v2). Dramatically more accurate than the in-renderer WASM
++// models and ~20x realtime on Apple Silicon CPUs; still 100% on-device. The
++// model itself downloads once (~480 MB) on first use — progress streams back so
++// the recorder can say what's happening. Callers treat `null` / a throw as
++// "use the WASM fallback".
++export type NativeAsrStatus = { pct?: number; phase: 'downloading' | 'preparing' | 'transcribing' }
++
++export function nativeAsrAvailable(): boolean {
++  return typeof window.hermesDesktop?.nemesisAsrTranscribe === 'function'
++}
++
++/** Human copy for the recorder's status line while the engine works. */
++export function nativeAsrStatusLabel(status: NativeAsrStatus): string {
++  if (status.phase === 'downloading') {
++    return `Downloading the accurate speech model (one-time, ~480 MB) — ${status.pct ?? 0}%`
++  }
++
++  if (status.phase === 'preparing') {
++    return 'Unpacking the speech model…'
++  }
++
++  return 'Refining the transcript with the accurate on-device model…'
++}
++
++/**
++ * Transcribes browser-playable audio via the native engine. Returns null when
++ * the engine isn't exposed in this build; throws when it is but the job failed
++ * (model download failed, engine crashed) — callers fall back to WASM either way.
++ */
++export async function nativeTranscribe(
++  audio: ArrayBuffer,
++  onStatus?: (status: NativeAsrStatus) => void
++): Promise<null | string> {
++  const bridge = window.hermesDesktop
++
++  if (!bridge?.nemesisAsrTranscribe) {
++    return null
++  }
++
++  const { decodeTo16kMono } = await import('./transcribe')
++  const samples = await decodeTo16kMono(audio)
++  const unsubscribe = onStatus && bridge.onNemesisAsrProgress ? bridge.onNemesisAsrProgress(onStatus) : null
++
++  try {
++    const result = await bridge.nemesisAsrTranscribe(samples, 16_000)
++
++    if (!result?.ok) {
++      throw new Error(result?.error || 'transcription failed')
++    }
++
++    return (result.text ?? '').trim()
++  } finally {
++    unsubscribe?.()
++  }
++}
+diff --git a/apps/desktop/src/app/recorder/service.js b/apps/desktop/src/app/recorder/service.js
+index 1d8a5306253..8e258570348 100644
+--- a/apps/desktop/src/app/recorder/service.js
++++ b/apps/desktop/src/app/recorder/service.js
+@@ -6,8 +6,9 @@ import { telemetryCapture } from '@/nemesis-telemetry';
+ import { createFolder, loadFolderNotes, saveNote } from '../library/vault';
+ import { deriveRecordingTitle } from './autoname';
+ import { copilotNotesMarkdown } from './live-copilot';
++import { nativeAsrAvailable, nativeAsrStatusLabel, nativeTranscribe } from './native-asr';
+ import { correctPharmTerms, detectPharmTerms } from './pharm-lexicon';
+-import { AUTO_REFINE_MAX_MS, replaceTranscriptSection } from './transcript-upgrade';
++import { AUTO_REFINE_MAX_MS, NATIVE_REFINE_MAX_MS, replaceTranscriptSection } from './transcript-upgrade';
+ export const RECORDINGS_DIR = '~/Documents/Nemesis Recordings';
+ export const LECTURE_FOLDER = 'Lectures';
+ const LIVE_CHUNK_SECONDS = 8;
+@@ -27,7 +28,8 @@ export const $systemAudioEnabled = atom(true);
+ export const $liveCaptionsEnabled = atom(true);
+ export const $recentLectureNote = atom(null);
+ export const $recordingsVersion = atom(0);
+-/** Background accurate-transcription pass over the note that was just saved. */
++/** Background accurate-transcription pass over the note that was just saved.
++ *  `detail` carries live progress copy (model download %, etc.) when present. */
+ export const $transcriptRefine = atom(null);
+ let recorder = null;
+ let streams = [];
+@@ -216,18 +218,40 @@ function releaseCapture() {
+     pausedTotal = 0;
+     $paused.set(false);
+ }
+-/** Post-stop accuracy pass: re-transcribe the finished audio with the batch model
+- *  (whisper-base.en) and swap it into the saved note's Transcript section. Runs in
+- *  the background after the note is already safe on disk; a student edit to the
+- *  section, an over-long recording, or any failure leaves the live transcript as-is. */
++/** Post-stop accuracy pass: re-transcribe the finished audio with the accurate
++ *  engine and swap it into the saved note's Transcript section. Prefers the
++ *  native parakeet engine (~20x realtime, no practical length limit); falls back
++ *  to the in-renderer whisper-base.en WASM model (≤30 min recordings) when the
++ *  native engine is unavailable or fails. Runs in the background after the note
++ *  is already safe on disk; a student edit to the section always wins. */
+ async function refineTranscript(blob, noteTitle, savedLiveTranscript, recordedMs) {
+-    if (recordedMs > AUTO_REFINE_MAX_MS) {
++    const native = nativeAsrAvailable();
++    if (recordedMs > (native ? NATIVE_REFINE_MAX_MS : AUTO_REFINE_MAX_MS)) {
+         return;
+     }
+     $transcriptRefine.set({ state: 'refining', title: noteTitle });
+     try {
+-        const { transcribeAudio } = await import('./transcribe');
+-        const raw = await transcribeAudio(await blob.arrayBuffer());
++        let raw = null;
++        if (native) {
++            try {
++                raw = await nativeTranscribe(await blob.arrayBuffer(), status => {
++                    $transcriptRefine.set({ detail: nativeAsrStatusLabel(status), state: 'refining', title: noteTitle });
++                });
++            }
++            catch {
++                raw = null; // fall through to the WASM model below
++            }
++        }
++        if (raw === null) {
++            if (recordedMs > AUTO_REFINE_MAX_MS) {
++                // Too long for the slow WASM fallback — keep the live transcript.
++                $transcriptRefine.set(null);
++                return;
++            }
++            $transcriptRefine.set({ state: 'refining', title: noteTitle });
++            const { transcribeAudio } = await import('./transcribe');
++            raw = await transcribeAudio(await blob.arrayBuffer());
++        }
+         const { corrected } = correctPharmTerms(raw);
+         if (!corrected.trim()) {
+             $transcriptRefine.set(null);
+diff --git a/apps/desktop/src/app/recorder/service.ts b/apps/desktop/src/app/recorder/service.ts
+index 130d954030d..debfdd30d82 100644
+--- a/apps/desktop/src/app/recorder/service.ts
++++ b/apps/desktop/src/app/recorder/service.ts
+@@ -9,8 +9,9 @@ import { createFolder, loadFolderNotes, saveNote } from '../library/vault'
+ 
+ import { deriveRecordingTitle } from './autoname'
+ import { copilotNotesMarkdown } from './live-copilot'
++import { nativeAsrAvailable, nativeAsrStatusLabel, nativeTranscribe } from './native-asr'
+ import { correctPharmTerms, detectPharmTerms } from './pharm-lexicon'
+-import { AUTO_REFINE_MAX_MS, replaceTranscriptSection } from './transcript-upgrade'
++import { AUTO_REFINE_MAX_MS, NATIVE_REFINE_MAX_MS, replaceTranscriptSection } from './transcript-upgrade'
+ 
+ export const RECORDINGS_DIR = '~/Documents/Nemesis Recordings'
+ export const LECTURE_FOLDER = 'Lectures'
+@@ -41,8 +42,11 @@ export const $systemAudioEnabled = atom(true)
+ export const $liveCaptionsEnabled = atom(true)
+ export const $recentLectureNote = atom<null | string>(null)
+ export const $recordingsVersion = atom(0)
+-/** Background accurate-transcription pass over the note that was just saved. */
+-export const $transcriptRefine = atom<null | { state: 'failed' | 'refined' | 'refining'; title: string }>(null)
++/** Background accurate-transcription pass over the note that was just saved.
++ *  `detail` carries live progress copy (model download %, etc.) when present. */
++export const $transcriptRefine = atom<null | { detail?: string; state: 'failed' | 'refined' | 'refining'; title: string }>(
++  null
++)
+ 
+ let recorder: MediaRecorder | null = null
+ let streams: MediaStream[] = []
+@@ -280,21 +284,47 @@ function releaseCapture(): void {
+   $paused.set(false)
+ }
+ 
+-/** Post-stop accuracy pass: re-transcribe the finished audio with the batch model
+- *  (whisper-base.en) and swap it into the saved note's Transcript section. Runs in
+- *  the background after the note is already safe on disk; a student edit to the
+- *  section, an over-long recording, or any failure leaves the live transcript as-is. */
++/** Post-stop accuracy pass: re-transcribe the finished audio with the accurate
++ *  engine and swap it into the saved note's Transcript section. Prefers the
++ *  native parakeet engine (~20x realtime, no practical length limit); falls back
++ *  to the in-renderer whisper-base.en WASM model (≤30 min recordings) when the
++ *  native engine is unavailable or fails. Runs in the background after the note
++ *  is already safe on disk; a student edit to the section always wins. */
+ async function refineTranscript(blob: Blob, noteTitle: string, savedLiveTranscript: string, recordedMs: number): Promise<void> {
+-  if (recordedMs > AUTO_REFINE_MAX_MS) {
++  const native = nativeAsrAvailable()
++
++  if (recordedMs > (native ? NATIVE_REFINE_MAX_MS : AUTO_REFINE_MAX_MS)) {
+     return
+   }
+ 
+   $transcriptRefine.set({ state: 'refining', title: noteTitle })
+ 
+   try {
+-    const { transcribeAudio } = await import('./transcribe')
++    let raw: null | string = null
++
++    if (native) {
++      try {
++        raw = await nativeTranscribe(await blob.arrayBuffer(), status => {
++          $transcriptRefine.set({ detail: nativeAsrStatusLabel(status), state: 'refining', title: noteTitle })
++        })
++      } catch {
++        raw = null // fall through to the WASM model below
++      }
++    }
++
++    if (raw === null) {
++      if (recordedMs > AUTO_REFINE_MAX_MS) {
++        // Too long for the slow WASM fallback — keep the live transcript.
++        $transcriptRefine.set(null)
++
++        return
++      }
++
++      $transcriptRefine.set({ state: 'refining', title: noteTitle })
++      const { transcribeAudio } = await import('./transcribe')
++      raw = await transcribeAudio(await blob.arrayBuffer())
++    }
+ 
+-    const raw = await transcribeAudio(await blob.arrayBuffer())
+     const { corrected } = correctPharmTerms(raw)
+ 
+     if (!corrected.trim()) {
+diff --git a/apps/desktop/src/app/recorder/transcribe.js b/apps/desktop/src/app/recorder/transcribe.js
+index e7a395a31dd..3b11a9cdf77 100644
+--- a/apps/desktop/src/app/recorder/transcribe.js
++++ b/apps/desktop/src/app/recorder/transcribe.js
+@@ -46,8 +46,10 @@ function getTranscriber(modelId, onStatus) {
+     transcriberPromises.set(modelId, created);
+     return created;
+ }
+-/** Decode any browser-playable audio (webm/opus here) to 16 kHz mono Float32 — Whisper's input. */
+-async function decodeTo16kMono(arrayBuffer) {
++/** Decode any browser-playable audio (webm/opus here) to 16 kHz mono Float32 — the
++ *  input format for both the WASM models here and the native engine (native-asr.ts).
++ *  NOTE: decodeAudioData DETACHES the given ArrayBuffer — pass a fresh copy per call. */
++export async function decodeTo16kMono(arrayBuffer) {
+     const ctx = new AudioContext();
+     try {
+         const decoded = await ctx.decodeAudioData(arrayBuffer);
+diff --git a/apps/desktop/src/app/recorder/transcribe.ts b/apps/desktop/src/app/recorder/transcribe.ts
+index 613cd3cdf9d..6f7cec4f10c 100644
+--- a/apps/desktop/src/app/recorder/transcribe.ts
++++ b/apps/desktop/src/app/recorder/transcribe.ts
+@@ -60,8 +60,10 @@ function getTranscriber(modelId: string, onStatus?: (s: TranscribeStatus) => voi
+   return created
+ }
+ 
+-/** Decode any browser-playable audio (webm/opus here) to 16 kHz mono Float32 — Whisper's input. */
+-async function decodeTo16kMono(arrayBuffer: ArrayBuffer): Promise<Float32Array> {
++/** Decode any browser-playable audio (webm/opus here) to 16 kHz mono Float32 — the
++ *  input format for both the WASM models here and the native engine (native-asr.ts).
++ *  NOTE: decodeAudioData DETACHES the given ArrayBuffer — pass a fresh copy per call. */
++export async function decodeTo16kMono(arrayBuffer: ArrayBuffer): Promise<Float32Array> {
+   const ctx = new AudioContext()
+ 
+   try {
+diff --git a/apps/desktop/src/app/recorder/transcript-upgrade.js b/apps/desktop/src/app/recorder/transcript-upgrade.js
+index e2f8dd8aa5e..d20ddb5f619 100644
+--- a/apps/desktop/src/app/recorder/transcript-upgrade.js
++++ b/apps/desktop/src/app/recorder/transcript-upgrade.js
+@@ -5,10 +5,11 @@
+ // we wrote. A student edit to that section always wins over the refine.
+ export const TRANSCRIPT_HEADING = '\n## Transcript\n\n';
+ export const EMPTY_TRANSCRIPT_BODY = '_no speech captured_';
+-/** Recordings longer than this keep their live transcript; the student can still
+- *  run the accurate pass by hand via "Transcribe" in Recordings (a single-threaded
+- *  on-device model gets slow on very long audio). */
++/** Cap for the WASM fallback only — single-threaded whisper-base.en gets slow on
++ *  long audio. The native parakeet engine (~20x realtime) uses the far higher
++ *  NATIVE_REFINE_MAX_MS, which exists purely to bound renderer decode memory. */
+ export const AUTO_REFINE_MAX_MS = 30 * 60_000;
++export const NATIVE_REFINE_MAX_MS = 3 * 60 * 60_000;
+ /**
+  * Returns the note content with its Transcript section swapped for the refined
+  * text, or null when the swap must not happen (no Transcript section, or the
+diff --git a/apps/desktop/src/app/recorder/transcript-upgrade.ts b/apps/desktop/src/app/recorder/transcript-upgrade.ts
+index fb48dbd4236..4e536d31468 100644
+--- a/apps/desktop/src/app/recorder/transcript-upgrade.ts
++++ b/apps/desktop/src/app/recorder/transcript-upgrade.ts
+@@ -6,10 +6,11 @@
+ export const TRANSCRIPT_HEADING = '\n## Transcript\n\n'
+ export const EMPTY_TRANSCRIPT_BODY = '_no speech captured_'
+ 
+-/** Recordings longer than this keep their live transcript; the student can still
+- *  run the accurate pass by hand via "Transcribe" in Recordings (a single-threaded
+- *  on-device model gets slow on very long audio). */
++/** Cap for the WASM fallback only — single-threaded whisper-base.en gets slow on
++ *  long audio. The native parakeet engine (~20x realtime) uses the far higher
++ *  NATIVE_REFINE_MAX_MS, which exists purely to bound renderer decode memory. */
+ export const AUTO_REFINE_MAX_MS = 30 * 60_000
++export const NATIVE_REFINE_MAX_MS = 3 * 60 * 60_000
+ 
+ /**
+  * Returns the note content with its Transcript section swapped for the refined
+diff --git a/apps/desktop/src/global.d.ts b/apps/desktop/src/global.d.ts
+index caa3be5decd..91eb1ab6cb9 100644
+--- a/apps/desktop/src/global.d.ts
++++ b/apps/desktop/src/global.d.ts
+@@ -27,6 +27,12 @@ declare global {
+       // Student build: hand the metering-proxy device key to main, which points
+       // the agent backend at the Nemesis LLM proxy and restarts it if needed.
+       nemesisLlmSync?: (deviceKey: string) => Promise<{ ok: boolean; changed?: boolean; error?: string }>
++      // On-device speech engine (recorder accuracy pass). Model downloads once
++      // (~480 MB) on first use; progress events stream via onNemesisAsrProgress.
++      nemesisAsrTranscribe?: (samples: Float32Array, sampleRate: number) => Promise<{ ok: boolean; text?: string; error?: string }>
++      onNemesisAsrProgress?: (
++        callback: (progress: { pct?: number; phase: 'downloading' | 'preparing' | 'transcribing' }) => void
++      ) => () => void
+       getGatewayWsUrl: (profile?: null | string) => Promise<string>
+       // Open (or focus) a standalone OS window for a single chat session so
+       // the user can work with multiple chats side by side. Returns ok:false
+diff --git a/package-lock.json b/package-lock.json
+index 168ba401fdf..6b554138d2a 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -59,7 +59,7 @@
+     },
+     "apps/desktop": {
+       "name": "nemesis",
+-      "version": "0.1.0-beta.6",
++      "version": "0.1.0-beta.7",
+       "dependencies": {
+         "@assistant-ui/react": "^0.12.28",
+         "@assistant-ui/react-streamdown": "^0.1.11",
+@@ -127,6 +127,7 @@
+         "react-shiki": "^0.9.3",
+         "remark-math": "^6.0.0",
+         "remend": "^1.3.0",
++        "sherpa-onnx-node": "^1.13.4",
+         "shiki": "^4.0.2",
+         "simple-git": "^3.36.0",
+         "streamdown": "^2.5.0",
+@@ -18796,6 +18797,98 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/sherpa-onnx-darwin-arm64": {
++      "version": "1.13.4",
++      "resolved": "https://registry.npmjs.org/sherpa-onnx-darwin-arm64/-/sherpa-onnx-darwin-arm64-1.13.4.tgz",
++      "integrity": "sha512-QcYKzyrTzGSx6aKCD6hUODgRS1LetqfG57Z/+i5LCyfMlrgCvDc1lRcl9cdB+TozBsLha9QwLTlI0vmDcf5JKg==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "darwin"
++      ]
++    },
++    "node_modules/sherpa-onnx-darwin-x64": {
++      "version": "1.13.4",
++      "resolved": "https://registry.npmjs.org/sherpa-onnx-darwin-x64/-/sherpa-onnx-darwin-x64-1.13.4.tgz",
++      "integrity": "sha512-6RGeis9K9gV/UQWOgd6Rf3iqXr2/YsBQswxHaCR4hrYkHfEIpHMfFmRWLt6nJJCOWgYW2xFxEd9yzjrafAV/Pw==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "darwin"
++      ]
++    },
++    "node_modules/sherpa-onnx-linux-arm64": {
++      "version": "1.13.4",
++      "resolved": "https://registry.npmjs.org/sherpa-onnx-linux-arm64/-/sherpa-onnx-linux-arm64-1.13.4.tgz",
++      "integrity": "sha512-RMjMRqT82BgTXypNNGmLe6ZFYhc3WEvnAGl3DdkK7qB/kuXwkL3iHhV31wAecbnWPsnEpUoD+8cFovWSBzsCuw==",
++      "cpu": [
++        "arm64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/sherpa-onnx-linux-x64": {
++      "version": "1.13.4",
++      "resolved": "https://registry.npmjs.org/sherpa-onnx-linux-x64/-/sherpa-onnx-linux-x64-1.13.4.tgz",
++      "integrity": "sha512-WZh5NCkGPFHHpYSd78iN4OnmxQeSTGyt9uZskH+im/NFHQ7elQ7B0sLzCMeRpvJxiIKvd9C6WxIJ4hYaxClfsQ==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/sherpa-onnx-node": {
++      "version": "1.13.4",
++      "resolved": "https://registry.npmjs.org/sherpa-onnx-node/-/sherpa-onnx-node-1.13.4.tgz",
++      "integrity": "sha512-jHWWdY9f0dbvJpdsfR/C4WNhM57+jT9Os2RyC4/qUz8HKCtj2VYFmJ9s7tue9OCFRAmdoGBkgkqD6aBZ3I8BKw==",
++      "license": "Apache-2.0",
++      "optionalDependencies": {
++        "sherpa-onnx-darwin-arm64": "^1.13.4",
++        "sherpa-onnx-darwin-x64": "^1.13.4",
++        "sherpa-onnx-linux-arm64": "^1.13.4",
++        "sherpa-onnx-linux-x64": "^1.13.4",
++        "sherpa-onnx-win-ia32": "^1.13.4",
++        "sherpa-onnx-win-x64": "^1.13.4"
++      }
++    },
++    "node_modules/sherpa-onnx-win-ia32": {
++      "version": "1.13.4",
++      "resolved": "https://registry.npmjs.org/sherpa-onnx-win-ia32/-/sherpa-onnx-win-ia32-1.13.4.tgz",
++      "integrity": "sha512-/JbPjldrfNv+t+uIS3MlkuhfIf5l3FHUGkRC2oRXgjRqOaVmEyP3vLlQ7dTa4J7raG5oB8c3GoPjuSWSqT9GOQ==",
++      "cpu": [
++        "ia32"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "win32"
++      ]
++    },
++    "node_modules/sherpa-onnx-win-x64": {
++      "version": "1.13.4",
++      "resolved": "https://registry.npmjs.org/sherpa-onnx-win-x64/-/sherpa-onnx-win-x64-1.13.4.tgz",
++      "integrity": "sha512-R0PWby1VxC14TDZPq7GcfSyXSY6SAFO8Y4JwdCdqouFmeXkZ1L7Is9m98C9KxQ0dN7ZtDzhAmE/43FUs/elXRQ==",
++      "cpu": [
++        "x64"
++      ],
++      "license": "Apache-2.0",
++      "optional": true,
++      "os": [
++        "win32"
++      ]
++    },
+     "node_modules/shiki": {
+       "version": "4.3.0",
+       "resolved": "https://registry.npmjs.org/shiki/-/shiki-4.3.0.tgz",
+-- 
+2.50.1 (Apple Git-155)
+

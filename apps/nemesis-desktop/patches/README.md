@@ -93,3 +93,10 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   telemetry behind the consent gate (CONSENT_VERSION 2026-07-14 — real data-practice
   change) with default-on disclosed checkbox, immediate opt-out switch in Settings →
   Account & usage, uuid-only identify, feature counters + crash capture only.
+- `0093-beta8-parakeet-native-asr.patch` — beta.8: native on-device speech engine.
+  sherpa-onnx-node + NVIDIA parakeet-tdt-0.6b-v2 int8 (CC-BY-4.0, ~6% WER — beats
+  whisper-large-v3 on English) in an Electron utilityProcess replaces whisper-base.en
+  as the recorder's accuracy pass (~20x realtime measured; refine now covers ≤3h
+  recordings, WASM fallback keeps ≤30 min). One-time ~480MB model download to
+  userData/asr with streamed progress + disk guard; audio never leaves the machine.
+  Build ships sherpa via stage-native-deps (also per-target in before-pack).
