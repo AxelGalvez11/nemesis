@@ -4,9 +4,22 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect } from "react";
 import { SocialLinks } from "@/components/SocialLinks";
+import {
+  IconCalendar,
+  IconWaveform,
+  IconLayers,
+  IconSearch,
+  IconDocStack,
+  IconShieldCheck,
+  IconWindow,
+  IconRepeat,
+  IconSplit,
+  IconDownload,
+} from "@/components/FeatureIcons";
 
 const APP_SIGN_UP = "https://app.enternemesis.com/sign-up";
 const APP_SIGN_IN = "https://app.enternemesis.com/sign-in";
+const APP_DOWNLOAD = "https://app.enternemesis.com/api/download/mac";
 
 /**
  * One scroll controller drives every decorative background layer. Each offset is
@@ -115,6 +128,7 @@ export default function Home() {
           <a className="ghost" href="#how">Containment</a>
           <a className="ghost" href="#graph">Memory</a>
           <a className="ghost" href="#privacy">Boundaries</a>
+          <a className="ghost" href={APP_DOWNLOAD}>Download</a>
           <a className="ghost" href={APP_SIGN_IN}>Sign in</a>
           <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
         </div>
@@ -141,8 +155,14 @@ export default function Home() {
             </p>
             <div className="hero-cta reveal r4">
               <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
-              <a className="btn btn-ghost" href="#how">Inspect the system</a>
+              <a className="btn btn-secondary" href={APP_DOWNLOAD}>
+                <IconDownload size={15} />
+                Download for macOS
+              </a>
             </div>
+            <p className="hero-cta-caption reveal r4">
+              Apple Silicon Macs. Sign in with your Nemesis account.
+            </p>
             <div className="hero-meta reveal r4">
               <span>persistent memory</span>
               <span className="rule" />
@@ -161,8 +181,9 @@ export default function Home() {
             <h2>What it does, concretely.</h2>
             <p>The same agent, any major, any field.</p>
           </div>
-          <div className="caps">
-            <div className="cap">
+          <div className="feature-grid">
+            <div className="feature">
+              <div className="feature-icon"><IconCalendar /></div>
               <div className="k">Semester</div>
               <h3>It reads your semester</h3>
               <p>
@@ -170,7 +191,8 @@ export default function Home() {
                 slide, and builds your calendar. One afternoon, and the whole term is mapped.
               </p>
             </div>
-            <div className="cap">
+            <div className="feature">
+              <div className="feature-icon"><IconWaveform /></div>
               <div className="k">Lectures</div>
               <h3>Lectures become notes</h3>
               <p>
@@ -178,7 +200,8 @@ export default function Home() {
                 files them to the right course.
               </p>
             </div>
-            <div className="cap">
+            <div className="feature">
+              <div className="feature-icon"><IconLayers /></div>
               <div className="k">Recall</div>
               <h3>Flashcards that fight back</h3>
               <p>
@@ -186,7 +209,8 @@ export default function Home() {
                 what you are about to forget. Match mode makes the grind a game.
               </p>
             </div>
-            <div className="cap">
+            <div className="feature">
+              <div className="feature-icon"><IconSearch /></div>
               <div className="k">Research</div>
               <h3>Research with receipts</h3>
               <p>
@@ -194,7 +218,8 @@ export default function Home() {
                 drawn from journals and primary sources you can open.
               </p>
             </div>
-            <div className="cap">
+            <div className="feature">
+              <div className="feature-icon"><IconDocStack /></div>
               <div className="k">Drafts</div>
               <h3>Drafts you finish</h3>
               <p>
@@ -202,7 +227,8 @@ export default function Home() {
                 waiting for your edit.
               </p>
             </div>
-            <div className="cap">
+            <div className="feature">
+              <div className="feature-icon"><IconShieldCheck /></div>
               <div className="k">Authority</div>
               <h3>Nothing happens without you</h3>
               <p>
@@ -324,14 +350,15 @@ export default function Home() {
         </div>
       </div>
 
-      <section className="section">
+      <section className="section alt">
         <div className="wrap">
           <div className="section-head">
             <p className="eyebrow">Authorized capabilities</p>
             <h2>What it is allowed to do.</h2>
           </div>
-          <div className="caps">
-            <div className="cap">
+          <div className="feature-grid cols-2">
+            <div className="feature">
+              <div className="feature-icon"><IconWaveform /></div>
               <div className="k">Signal</div>
               <h3>Turn lectures into study material</h3>
               <p>
@@ -340,7 +367,8 @@ export default function Home() {
                 audio remains on your Mac.
               </p>
             </div>
-            <div className="cap">
+            <div className="feature">
+              <div className="feature-icon"><IconWindow /></div>
               <div className="k">Browser</div>
               <h3>Enter the accounts you authorize</h3>
               <p>
@@ -349,7 +377,8 @@ export default function Home() {
                 handed to the agent.
               </p>
             </div>
-            <div className="cap">
+            <div className="feature">
+              <div className="feature-icon"><IconRepeat /></div>
               <div className="k">Automation</div>
               <h3>Run the mission on schedule</h3>
               <p>
@@ -357,7 +386,8 @@ export default function Home() {
                 run follows a defined prompt or skill, then records what changed.
               </p>
             </div>
-            <div className="cap">
+            <div className="feature">
+              <div className="feature-icon"><IconSplit /></div>
               <div className="k">Delegation</div>
               <h3>Split complex work into contained tasks</h3>
               <p>
@@ -409,25 +439,26 @@ export default function Home() {
               day 7. Prices are per month.
             </p>
           </div>
-          <div className="qs">
-            <div className="q">
-              <div className="n">$9.99</div>
+          <div className="plans">
+            <div className="plan">
+              <div className="plan-price">$9.99</div>
               <h3>Student</h3>
               <p>
                 Higher limits for answers, notes, and study decks. Lecture capture and
                 scheduled school sync.
               </p>
             </div>
-            <div className="q">
-              <div className="n">$19.99</div>
+            <div className="plan plan-featured">
+              <span className="plan-badge">Featured</span>
+              <div className="plan-price">$19.99</div>
               <h3>Agent Pro</h3>
               <p>
                 Everything in Student, plus deep research with cited reports and higher
                 automation limits.
               </p>
             </div>
-            <div className="q">
-              <div className="n">$49.99</div>
+            <div className="plan">
+              <div className="plan-price">$49.99</div>
               <h3>Max</h3>
               <p>
                 The highest limits across the agent, unlimited lecture copilot, and first
@@ -450,13 +481,13 @@ export default function Home() {
             procedures, and projects you choose to retain, from school into whatever comes
             after. It gains context. Never authority.
           </p>
-          <a
-            className="btn btn-primary"
-            href={APP_SIGN_UP}
-            style={{ fontSize: "13px", padding: "14px 30px" }}
-          >
-            Deploy Nemesis
-          </a>
+          <div className="closer-cta">
+            <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
+            <a className="btn btn-secondary" href={APP_DOWNLOAD}>
+              <IconDownload size={15} />
+              Download for macOS
+            </a>
+          </div>
         </div>
       </section>
 
