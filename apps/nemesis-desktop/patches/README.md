@@ -33,3 +33,19 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   the browser. Detection only — nothing self-installs. Also commits the beta
   identity build config beta.1 actually shipped with (appId, publish target,
   nemesis:// protocol) so shipped builds are reproducible from the repo.
+- `0080-chore-nemesis-commit-files-referenced-by-shipped-bui.patch` — commits files the
+  shipped beta.2 build config referenced but which were never committed (Hermes MIT
+  attribution THIRD_PARTY_NOTICES.md bundled into the DMG, nemesis-identity module used
+  by the platform test script, orphaned account/copilot test files).
+- `0081-test-nemesis-unmask-and-repair-the-renderer-test-sui.patch` — renderer test suite
+  green again (163 files / 1346 tests): vitest scoped to .test.ts{,x} so stale compiled
+  .test.js twins stop double-running, CSS.escape jsdom polyfill, and 13 test files
+  repaired (each failure traced to the commit that changed behavior; zero source
+  regressions found).
+- `0082-feat-nemesis-land-the-.nemesis-identity-migration-Co.patch` — lands Codex's
+  ~80-file rebrand/migration WIP: runtime home ~/.nemesis (packaged builds never adopt a
+  foreign HERMES_HOME), self-update URLs → AxelGalvez11/nemesis-desktop, Nemesis-Setup
+  Tauri installer, i18n rebrand. ADDS a consent dialog on first launch when a legacy
+  agent home exists (Move it here = rename / Start fresh = untouched; nothing moves
+  silently). Fixes verified WIP defects (raw i18n keys on boot + update toast, installer
+  version drift, stale package-lock that broke npm ci).
