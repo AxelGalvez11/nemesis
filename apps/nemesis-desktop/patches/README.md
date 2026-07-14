@@ -110,3 +110,15 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   'before-quit-for-update' which the macOS hide-on-close handler swallowed —
   flag flips on the native event + in the install IPC); native update dialog
   removed — the themed banner is the only update surface.
+- `0096-bundle-nemesis-skills-in-repo.patch` — the 14 nemesis-* school/study/
+  evidence skills committed into the repo's skills/ dir. install.sh seeds
+  $HERMES_HOME/skills from there (tools/skills_sync.py), but these skills only
+  lived on the dev machine + this kit — every fresh install ran the school
+  agent with NO skill files.
+- `0097-agent-voice-nemesis-no-emojis.patch` — agent persona: Nemesis is the
+  only name (never "Hermes" in conversation — it had proposed "a daily Hermes
+  cron job") and no emojis/decorative symbols in answers, notes, or documents
+  unless asked. DEFAULT_SOUL_MD + DEFAULT_AGENT_IDENTITY + help-guidance
+  rewrite; previous SOUL template added to the legacy list so app-written
+  installs upgrade in place; live recorder copilot prompt gains the same
+  plain-text rule.
