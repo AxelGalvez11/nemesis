@@ -63,3 +63,21 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
 - `0086-chore-nemesis-regenerate-compiled-.js-siblings-for-S.patch` — compiled twins.
 - `0087-chore-nemesis-v0.1.0-beta.3.patch` — version bump; first release stamped past
   the install-script repoint, fixing beta.2's fatal first boot.
+- `0088-fix-nemesis-renderer-blank-screen-copilot-wiring-mov.patch` — THE beta.2/3
+  blank-screen root cause: module-scope nanostores listeners in live-copilot.ts
+  crashed the whole prod renderer bundle at load; wiring moved into
+  initCopilotWiring() on recorder mount. Bumps v0.1.0-beta.4. RULE: never attach
+  store listeners at module scope in the desktop renderer; verify packaged
+  bundles by serving dist/ to a plain browser before releasing.
+- `0089-fix-install-explicit-macOS-browser-case-Chromium-ins.patch` — install.sh gets
+  a real macos) case: installs Playwright Chromium during bootstrap (browser
+  automation works out of the box; replaces the false "will not work" warning).
+- `0090-feat-desktop-v0.1.0-beta.5-zero-setup-AI-OAuth-sign-.patch` — beta.5:
+  zero-setup AI (device key → \$HERMES_HOME/.env via nemesis:llm:sync IPC +
+  backend restart; provider onboarding suppressed for students), Google/Apple
+  desktop sign-in via app.enternemesis.com/auth/desktop + nemesis:// deep link
+  (state-nonce checked, refresh token exchanged before trust), Account & usage
+  settings page (plan + 7-day RLS-scoped usage chart), Keyboard-shortcuts
+  settings entry, Study demo decks removed (fresh installs empty), field-neutral
+  persona (any major) w/ auto-upgrade of app-written SOULs, generic consent-partner
+  copy, Projects view for students, NSLocalNetworkUsageDescription.

@@ -1,0 +1,187 @@
+From f9f7de979fd6f7df9a213981a39e0237494aeeca Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Mon, 13 Jul 2026 23:24:42 -0500
+Subject: [PATCH] =?UTF-8?q?fix(nemesis):=20renderer=20blank=20screen=20?=
+ =?UTF-8?q?=E2=80=94=20copilot=20wiring=20moves=20to=20recorder=20mount=20?=
+ =?UTF-8?q?+=20v0.1.0-beta.4?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Module-level $recording.listen/$liveTranscript.listen in live-copilot.ts ran
+at import time; in the single-chunk production bundle a circular import left
+those stores undefined -> TypeError ('reading listen') before React mounted ->
+blank window in beta.2/beta.3 even with a healthy backend (second half of the
+beta.2 blank screen; the bootstrap 404 was the first). Listeners now attach in
+initCopilotWiring(), called once from the recorder page mount. 19/19 recorder
+tests green.
+---
+ apps/desktop/package.json                     |  2 +-
+ apps/desktop/src/app/recorder/index.js        |  5 ++-
+ apps/desktop/src/app/recorder/index.tsx       |  7 ++-
+ apps/desktop/src/app/recorder/live-copilot.js | 45 +++++++++++--------
+ apps/desktop/src/app/recorder/live-copilot.ts | 40 ++++++++++-------
+ 5 files changed, 60 insertions(+), 39 deletions(-)
+
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index b28f637cef9..212b1269bdf 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -2,7 +2,7 @@
+   "name": "nemesis",
+   "productName": "Nemesis",
+   "private": true,
+-  "version": "0.1.0-beta.3",
++  "version": "0.1.0-beta.4",
+   "description": "Native desktop shell for the Nemesis school agent.",
+   "author": "Nemesis",
+   "type": "module",
+diff --git a/apps/desktop/src/app/recorder/index.js b/apps/desktop/src/app/recorder/index.js
+index 8a4d7b5a2f9..1b2575d2122 100644
+--- a/apps/desktop/src/app/recorder/index.js
++++ b/apps/desktop/src/app/recorder/index.js
+@@ -13,10 +13,13 @@ import { NoteEditor } from '../library/note-editor';
+ import { LIBRARY_ROUTE, NEW_CHAT_ROUTE } from '../routes';
+ import { $account } from '@/nemesis-account';
+ import { enhanceLectureNote, RecordingArchive } from './archive';
+-import { $copilotAsk, $copilotEnabled, $copilotError, $copilotNotes, $copilotState, copilotAccess, forceCopilotRefresh, setCopilotEnabled } from './live-copilot';
++import { $copilotAsk, $copilotEnabled, $copilotError, $copilotNotes, $copilotState, copilotAccess, forceCopilotRefresh, setCopilotEnabled, initCopilotWiring } from './live-copilot';
+ import { $elapsedMs, $liveCaptionsEnabled, $liveInsights, $liveStatus, $liveTranscript, $notepadDraft, $paused, $recentLectureNote, $recording, $recordingError, $recordingsVersion, $recordingTitle, $starting, $systemAudioEnabled, formatElapsed, getRecordingAnalyser, LECTURE_FOLDER, setLiveCaptionsEnabled, setNotepadDraft, setRecordingPaused, setRecordingTitle, setSystemAudioEnabled, startRecording, stopRecording, toggleLiveInsight } from './service';
+ function useLiveWaveform(recording) {
+     const canvasRef = useRef(null);
++    useEffect(() => {
++        initCopilotWiring();
++    }, []);
+     useEffect(() => {
+         if (!recording) {
+             return;
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index f3ec9ccba43..82ca4cba26f 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -24,8 +24,7 @@ import {
+   $copilotState,
+   copilotAccess,
+   forceCopilotRefresh,
+-  setCopilotEnabled
+-} from './live-copilot'
++  setCopilotEnabled, initCopilotWiring } from './live-copilot'
+ import {
+   $elapsedMs,
+   $liveCaptionsEnabled,
+@@ -57,6 +56,10 @@ import {
+ function useLiveWaveform(recording: boolean) {
+   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+ 
++  useEffect(() => {
++    initCopilotWiring()
++  }, [])
++
+   useEffect(() => {
+     if (!recording) {
+       return
+diff --git a/apps/desktop/src/app/recorder/live-copilot.js b/apps/desktop/src/app/recorder/live-copilot.js
+index 6d3d3b580c3..7784c6efd4d 100644
+--- a/apps/desktop/src/app/recorder/live-copilot.js
++++ b/apps/desktop/src/app/recorder/live-copilot.js
+@@ -146,23 +146,30 @@ export function forceCopilotRefresh() {
+         return;
+     void refresh(text);
+ }
+-// Self-wiring: reset when a recording starts; consider a refresh whenever new
+-// transcript segments land. Module-level listeners are fine — the recorder
+-// service is an app-lifetime singleton.
+-$recording.listen(state => {
+-    if (state === 'recording')
+-        resetCopilot();
+-});
+-$liveTranscript.listen(segments => {
+-    if (!$copilotEnabled.get() || inFlight)
++// Wiring is attached on first recorder mount, NOT at module load: in the
++// single-chunk production bundle a circular import can leave these stores
++// undefined while this module's body runs (beta.2/3 blank-screen bug —
++// TypeError 'reading listen' killed the whole renderer before React mounted).
++let wired = false;
++export function initCopilotWiring() {
++    if (wired)
+         return;
+-    if ($recording.get() !== 'recording' || $paused.get())
+-        return;
+-    const cadence = copilotAccess($account.get());
+-    if (!cadence)
+-        return;
+-    const text = segments.join(' ');
+-    if (!shouldRefresh(Date.now(), lastCallAt, text.length - lastSeenChars, cadence))
+-        return;
+-    void refresh(text);
+-});
++    wired = true;
++    $recording.listen(state => {
++        if (state === 'recording')
++            resetCopilot();
++    });
++    $liveTranscript.listen(segments => {
++        if (!$copilotEnabled.get() || inFlight)
++            return;
++        if ($recording.get() !== 'recording' || $paused.get())
++            return;
++        const cadence = copilotAccess($account.get());
++        if (!cadence)
++            return;
++        const text = segments.join(' ');
++        if (!shouldRefresh(Date.now(), lastCallAt, text.length - lastSeenChars, cadence))
++            return;
++        void refresh(text);
++    });
++}
+diff --git a/apps/desktop/src/app/recorder/live-copilot.ts b/apps/desktop/src/app/recorder/live-copilot.ts
+index 069b76e6139..7c5dcc92a91 100644
+--- a/apps/desktop/src/app/recorder/live-copilot.ts
++++ b/apps/desktop/src/app/recorder/live-copilot.ts
+@@ -160,19 +160,27 @@ export function forceCopilotRefresh(): void {
+   void refresh(text)
+ }
+ 
+-// Self-wiring: reset when a recording starts; consider a refresh whenever new
+-// transcript segments land. Module-level listeners are fine — the recorder
+-// service is an app-lifetime singleton.
+-$recording.listen(state => {
+-  if (state === 'recording') resetCopilot()
+-})
+-
+-$liveTranscript.listen(segments => {
+-  if (!$copilotEnabled.get() || inFlight) return
+-  if ($recording.get() !== 'recording' || $paused.get()) return
+-  const cadence = copilotAccess($account.get())
+-  if (!cadence) return
+-  const text = segments.join(' ')
+-  if (!shouldRefresh(Date.now(), lastCallAt, text.length - lastSeenChars, cadence)) return
+-  void refresh(text)
+-})
++// Wiring is attached on first recorder mount, NOT at module load: in the
++// single-chunk production bundle a circular import can leave these stores
++// undefined while this module's body runs (beta.2/3 blank-screen bug —
++// TypeError 'reading listen' killed the whole renderer before React mounted).
++let wired = false
++
++export function initCopilotWiring(): void {
++  if (wired) return
++  wired = true
++
++  $recording.listen(state => {
++    if (state === 'recording') resetCopilot()
++  })
++
++  $liveTranscript.listen(segments => {
++    if (!$copilotEnabled.get() || inFlight) return
++    if ($recording.get() !== 'recording' || $paused.get()) return
++    const cadence = copilotAccess($account.get())
++    if (!cadence) return
++    const text = segments.join(' ')
++    if (!shouldRefresh(Date.now(), lastCallAt, text.length - lastSeenChars, cadence)) return
++    void refresh(text)
++  })
++}
+-- 
+2.50.1 (Apple Git-155)
+
