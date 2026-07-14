@@ -112,6 +112,38 @@
 }
 
 .nemesis-auth-status,
+/* Mode tabs — sign-in vs create-account. Both auth screens share one frame,
+   one field set, and one OAuth stack; the active tab is what names the mode
+   plainly, and the inactive tab is the one-click way across. */
+.nemesis-auth-mode {
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 2px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0 0 20px;
+}
+
+.nemesis-auth-mode a {
+  color: var(--auth-steel);
+  font-size: 11px;
+  letter-spacing: .14em;
+  padding: 11px 0;
+  text-align: center;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: color .15s ease, background .15s ease;
+}
+
+.nemesis-auth-mode a.is-active {
+  background: rgba(255, 39, 64, .12);
+  box-shadow: inset 0 -2px 0 var(--auth-red);
+  color: var(--auth-chrome);
+}
+
+.nemesis-auth-mode a:not(.is-active):hover { color: var(--auth-chrome); }
+
+.nemesis-auth-mode a:focus-visible { outline: 2px solid var(--auth-red); outline-offset: -2px; }
+
 .nemesis-auth-eyebrow {
   color: var(--auth-iron);
   font-size: 10px;
