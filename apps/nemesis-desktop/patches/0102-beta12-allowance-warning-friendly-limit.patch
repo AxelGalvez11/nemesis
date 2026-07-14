@@ -1,0 +1,382 @@
+From d2fbeb57fb5a6240015ec5eb38b0f6fce77c0845 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 16:01:52 -0500
+Subject: [PATCH 102/102] =?UTF-8?q?feat:=20beta.12=20=E2=80=94=20allowance?=
+ =?UTF-8?q?=20warning=20strip=20+=20friendly=20daily-limit=20card?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- NemesisBudgetNotice: dismissible strip above the composer once today's AI
+  usage crosses 80% (polls GET /usage every 5 min; per-UTC-day dismissal;
+  copy escalates at 100%). Students see the ceiling coming instead of
+  meeting it as a red API error.
+- The metering proxy's 'Daily token budget reached' 429 renders as a calm
+  designed card (what happened, resets at midnight UTC, nothing saved is
+  lost, upgrade pointer) instead of the raw HTTP error line. All other
+  errors keep the existing red row.
+---
+ apps/desktop/package.json                     |   2 +-
+ apps/desktop/src/app/chat/index.js            |   3 +-
+ apps/desktop/src/app/chat/index.tsx           |   4 +
+ .../assistant-ui/thread/assistant-message.js  |   8 +-
+ .../assistant-ui/thread/assistant-message.tsx |  68 +++++++++---
+ .../src/components/nemesis-budget-notice.js   |  70 ++++++++++++
+ .../src/components/nemesis-budget-notice.tsx  | 102 ++++++++++++++++++
+ 7 files changed, 238 insertions(+), 19 deletions(-)
+ create mode 100644 apps/desktop/src/components/nemesis-budget-notice.js
+ create mode 100644 apps/desktop/src/components/nemesis-budget-notice.tsx
+
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index c06fef45546..48d0c442f1f 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -2,7 +2,7 @@
+   "name": "nemesis",
+   "productName": "Nemesis",
+   "private": true,
+-  "version": "0.1.0-beta.11",
++  "version": "0.1.0-beta.12",
+   "description": "Native desktop shell for the Nemesis school agent.",
+   "author": "Nemesis",
+   "type": "module",
+diff --git a/apps/desktop/src/app/chat/index.js b/apps/desktop/src/app/chat/index.js
+index 684d5a6f9e2..3274c8a8822 100644
+--- a/apps/desktop/src/app/chat/index.js
++++ b/apps/desktop/src/app/chat/index.js
+@@ -6,6 +6,7 @@ import { Suspense, useCallback, useMemo, useRef } from 'react';
+ import { useLocation } from 'react-router-dom';
+ import { Thread } from '@/components/assistant-ui/thread';
+ import { Backdrop } from '@/components/Backdrop';
++import { NemesisBudgetNotice } from '@/components/nemesis-budget-notice';
+ import { PromptOverlays } from '@/components/prompt-overlays';
+ import { Button } from '@/components/ui/button';
+ import { Codicon } from '@/components/ui/codicon';
+@@ -227,5 +228,5 @@ export function ChatView({ className, gateway, modelMenuContent, onToggleSelecte
+         requestComposerInsertRefs([sessionInlineRef(session)], { target: 'main' });
+     }, []);
+     const { dragKind, dropHandlers } = useFileDropZone({ enabled: showChatBar, onDropFiles, onDropSession });
+-    return (_jsxs("div", { className: cn('relative isolate flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)', className), children: [_jsx(Backdrop, {}), _jsx(ChatHeader, { activeSessionId: activeSessionId, isRoutedSessionView: isRoutedSessionView, onDeleteSelectedSession: onDeleteSelectedSession, onToggleSelectedPin: onToggleSelectedPin, selectedSessionId: selectedSessionId }), _jsx(PromptOverlays, {}), _jsxs(ChatRuntimeBoundary, { busy: busy, onCancel: onCancel, onEdit: onEdit, onReload: onReload, onThreadMessagesChange: onThreadMessagesChange, suppressMessages: routeSessionMismatch, children: [_jsxs("div", { className: "relative min-h-0 max-w-full flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]", "data-slot": "composer-bounds", ...dropHandlers, children: [_jsx(Thread, { clampToComposer: showChatBar, cwd: currentCwd, gateway: gateway, intro: showIntro ? { personality: introPersonality, seed: introSeed } : undefined, loading: threadLoading, onBranchInNewChat: onBranchInNewChat, onCancel: onCancel, onDismissError: onDismissError, onRestoreToMessage: onRestoreToMessage, sessionId: activeSessionId, sessionKey: threadKey }), resumeExhausted && routedSessionId && (_jsx("div", { className: "absolute inset-0 z-10 grid place-items-center bg-(--ui-chat-surface-background) px-8 py-10", children: _jsx(ErrorState, { className: "max-w-sm", description: t.desktop.resumeStrandedBody, title: t.desktop.resumeStrandedTitle, children: _jsx("div", { className: "grid justify-items-center", children: _jsx(Button, { onClick: () => onRetryResume(routedSessionId), size: "sm", variant: "outline", children: t.desktop.resumeRetry }) }) }) })), showChatBar && _jsx(ScrollToBottomButton, {}), _jsx(ChatDropOverlay, { kind: dragKind }), _jsx(ChatSwapOverlay, { profile: gatewaySwapTarget })] }), showChatBar && (_jsx(Suspense, { fallback: _jsx(ChatBarFallback, {}), children: _jsx(ChatBar, { busy: busy, cwd: currentCwd, disabled: !gatewayOpen, focusKey: activeSessionId, gateway: gateway, maxRecordingSeconds: maxVoiceRecordingSeconds, onAddContextRef: onAddContextRef, onAddUrl: onAddUrl, onAttachDroppedItems: onAttachDroppedItems, onAttachImageBlob: onAttachImageBlob, onCancel: onCancel, onPasteClipboardImage: onPasteClipboardImage, onPickFiles: onPickFiles, onPickFolders: onPickFolders, onPickImages: onPickImages, onRemoveAttachment: onRemoveAttachment, onSteer: onSteer, onSubmit: onSubmit, onTranscribeAudio: onTranscribeAudio, queueSessionKey: selectedSessionId, sessionId: activeSessionId, state: chatBarState }) }))] })] }));
++    return (_jsxs("div", { className: cn('relative isolate flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)', className), children: [_jsx(Backdrop, {}), _jsx(ChatHeader, { activeSessionId: activeSessionId, isRoutedSessionView: isRoutedSessionView, onDeleteSelectedSession: onDeleteSelectedSession, onToggleSelectedPin: onToggleSelectedPin, selectedSessionId: selectedSessionId }), _jsx(PromptOverlays, {}), _jsxs(ChatRuntimeBoundary, { busy: busy, onCancel: onCancel, onEdit: onEdit, onReload: onReload, onThreadMessagesChange: onThreadMessagesChange, suppressMessages: routeSessionMismatch, children: [_jsxs("div", { className: "relative min-h-0 max-w-full flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]", "data-slot": "composer-bounds", ...dropHandlers, children: [_jsx(Thread, { clampToComposer: showChatBar, cwd: currentCwd, gateway: gateway, intro: showIntro ? { personality: introPersonality, seed: introSeed } : undefined, loading: threadLoading, onBranchInNewChat: onBranchInNewChat, onCancel: onCancel, onDismissError: onDismissError, onRestoreToMessage: onRestoreToMessage, sessionId: activeSessionId, sessionKey: threadKey }), resumeExhausted && routedSessionId && (_jsx("div", { className: "absolute inset-0 z-10 grid place-items-center bg-(--ui-chat-surface-background) px-8 py-10", children: _jsx(ErrorState, { className: "max-w-sm", description: t.desktop.resumeStrandedBody, title: t.desktop.resumeStrandedTitle, children: _jsx("div", { className: "grid justify-items-center", children: _jsx(Button, { onClick: () => onRetryResume(routedSessionId), size: "sm", variant: "outline", children: t.desktop.resumeRetry }) }) }) })), showChatBar && _jsx(ScrollToBottomButton, {}), showChatBar && _jsx(NemesisBudgetNotice, {}), _jsx(ChatDropOverlay, { kind: dragKind }), _jsx(ChatSwapOverlay, { profile: gatewaySwapTarget })] }), showChatBar && (_jsx(Suspense, { fallback: _jsx(ChatBarFallback, {}), children: _jsx(ChatBar, { busy: busy, cwd: currentCwd, disabled: !gatewayOpen, focusKey: activeSessionId, gateway: gateway, maxRecordingSeconds: maxVoiceRecordingSeconds, onAddContextRef: onAddContextRef, onAddUrl: onAddUrl, onAttachDroppedItems: onAttachDroppedItems, onAttachImageBlob: onAttachImageBlob, onCancel: onCancel, onPasteClipboardImage: onPasteClipboardImage, onPickFiles: onPickFiles, onPickFolders: onPickFolders, onPickImages: onPickImages, onRemoveAttachment: onRemoveAttachment, onSteer: onSteer, onSubmit: onSubmit, onTranscribeAudio: onTranscribeAudio, queueSessionKey: selectedSessionId, sessionId: activeSessionId, state: chatBarState }) }))] })] }));
+ }
+diff --git a/apps/desktop/src/app/chat/index.tsx b/apps/desktop/src/app/chat/index.tsx
+index e03ac9314cc..12bef5062f9 100644
+--- a/apps/desktop/src/app/chat/index.tsx
++++ b/apps/desktop/src/app/chat/index.tsx
+@@ -12,6 +12,7 @@ import { useLocation } from 'react-router-dom'
+ 
+ import { Thread } from '@/components/assistant-ui/thread'
+ import { Backdrop } from '@/components/Backdrop'
++import { NemesisBudgetNotice } from '@/components/nemesis-budget-notice'
+ import { PromptOverlays } from '@/components/prompt-overlays'
+ import { Button } from '@/components/ui/button'
+ import { Codicon } from '@/components/ui/codicon'
+@@ -491,6 +492,9 @@ export function ChatView({
+             </div>
+           )}
+           {showChatBar && <ScrollToBottomButton />}
++          {/* Ambient daily-allowance strip (student build): warns at 80% used,
++              before the hard budget stop ever appears in a reply. */}
++          {showChatBar && <NemesisBudgetNotice />}
+           <ChatDropOverlay kind={dragKind} />
+           <ChatSwapOverlay profile={gatewaySwapTarget} />
+         </div>
+diff --git a/apps/desktop/src/components/assistant-ui/thread/assistant-message.js b/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
+index 6165cfda096..2af1f655c44 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
++++ b/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
+@@ -40,6 +40,12 @@ export const AssistantMessage = ({ onBranchInNewChat, onDismissError }) => {
+     // the selector returns '' (stable), so per-token flushes skip the regex
+     // scan and the re-render it would cause.
+     const completedText = useAuiState(s => s.message.status?.type === 'running' ? '' : messageContentText(s.message.content));
++    // Daily-allowance stop (student build): the metering proxy's 429 carries a
++    // stable "Daily token budget reached" message — render it as a calm,
++    // designed card instead of the raw red API error (owner ask, 2026-07-14).
++    const isBudgetError = useAuiState(s => NEMESIS_STUDENT_BUILD &&
++        s.message.status?.type === 'incomplete' &&
++        /daily token budget/i.test(String(s.message.status.error ?? '')));
+     const previewTargets = useMemo(() => {
+         // The cheap pre-test must also admit `#preview/<path>` tokens (deliverable
+         // files carry a bare encoded path — no protocol), or extractPreviewTargets
+@@ -54,7 +60,7 @@ export const AssistantMessage = ({ onBranchInNewChat, onDismissError }) => {
+     if (isPlaceholder) {
+         return null;
+     }
+-    return (_jsxs(MessagePrimitive.Root, { className: "group flex w-full min-w-0 max-w-full flex-col gap-0 self-start overflow-hidden", "data-role": "assistant", "data-slot": "aui_assistant-message-root", "data-streaming": isRunning ? 'true' : undefined, ref: enterRef, children: [_jsxs("div", { className: "wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground", "data-slot": "aui_assistant-message-content", children: [_jsx(ActivityStrip, { placement: "header" }), _jsx(MessagePrimitive.Parts, { components: MESSAGE_PARTS_COMPONENTS }), _jsx(ActivityStrip, { placement: "live" }), isRunning && _jsx(StreamStallIndicator, {}), previewTargets.length > 0 && (_jsx("div", { className: "mt-3 flex flex-wrap gap-2", children: previewTargets.map(target => (_jsx(PreviewAttachment, { source: "explicit-link", target: target }, target))) })), _jsx(MessageSources, { text: completedText }), _jsx(MessagePrimitive.Error, { children: _jsxs(ErrorPrimitive.Root, { className: "mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]", role: "alert", children: [_jsx(ErrorPrimitive.Message, { className: "min-w-0 flex-1" }), onDismissError && (_jsx(TooltipIconButton, { className: "-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100", onClick: () => onDismissError(messageId), side: "top", tooltip: t.assistant.thread.dismissError, children: _jsx(XIcon, { className: "size-3.5" }) }))] }) })] }), hasVisibleText && (_jsx(AssistantFooter, { getMessageText: getMessageText, messageId: messageId, onBranchInNewChat: onBranchInNewChat }))] }));
++    return (_jsxs(MessagePrimitive.Root, { className: "group flex w-full min-w-0 max-w-full flex-col gap-0 self-start overflow-hidden", "data-role": "assistant", "data-slot": "aui_assistant-message-root", "data-streaming": isRunning ? 'true' : undefined, ref: enterRef, children: [_jsxs("div", { className: "wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground", "data-slot": "aui_assistant-message-content", children: [_jsx(ActivityStrip, { placement: "header" }), _jsx(MessagePrimitive.Parts, { components: MESSAGE_PARTS_COMPONENTS }), _jsx(ActivityStrip, { placement: "live" }), isRunning && _jsx(StreamStallIndicator, {}), previewTargets.length > 0 && (_jsx("div", { className: "mt-3 flex flex-wrap gap-2", children: previewTargets.map(target => (_jsx(PreviewAttachment, { source: "explicit-link", target: target }, target))) })), _jsx(MessageSources, { text: completedText }), _jsx(MessagePrimitive.Error, { children: isBudgetError ? (_jsxs("div", { className: "mt-2 flex items-start gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4", role: "alert", children: [_jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-sm font-medium text-foreground", children: "Today's AI allowance is used up" }), _jsx("p", { className: "mt-1 text-xs leading-relaxed text-muted-foreground", children: "It resets at midnight UTC. Everything already saved \u2014 notes, decks, files \u2014 stays available; only new AI work pauses until then. Heavy agent sessions use more: see Settings \u2192 Account & usage, or upgrade your plan for a bigger daily allowance." })] }), onDismissError && (_jsx(TooltipIconButton, { className: "-my-0.5 shrink-0 text-muted-foreground opacity-70 hover:opacity-100", onClick: () => onDismissError(messageId), side: "top", tooltip: t.assistant.thread.dismissError, children: _jsx(XIcon, { className: "size-3.5" }) }))] })) : (_jsxs(ErrorPrimitive.Root, { className: "mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]", role: "alert", children: [_jsx(ErrorPrimitive.Message, { className: "min-w-0 flex-1" }), onDismissError && (_jsx(TooltipIconButton, { className: "-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100", onClick: () => onDismissError(messageId), side: "top", tooltip: t.assistant.thread.dismissError, children: _jsx(XIcon, { className: "size-3.5" }) }))] })) })] }), hasVisibleText && (_jsx(AssistantFooter, { getMessageText: getMessageText, messageId: messageId, onBranchInNewChat: onBranchInNewChat }))] }));
+ };
+ const AssistantActionBar = ({ messageId, getMessageText, onBranchInNewChat }) => {
+     const { t } = useI18n();
+diff --git a/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx b/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
+index 0cf77e472af..39aab95baf6 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
++++ b/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
+@@ -76,6 +76,16 @@ export const AssistantMessage: FC<{
+     s.message.status?.type === 'running' ? '' : messageContentText(s.message.content)
+   )
+ 
++  // Daily-allowance stop (student build): the metering proxy's 429 carries a
++  // stable "Daily token budget reached" message — render it as a calm,
++  // designed card instead of the raw red API error (owner ask, 2026-07-14).
++  const isBudgetError = useAuiState(
++    s =>
++      NEMESIS_STUDENT_BUILD &&
++      s.message.status?.type === 'incomplete' &&
++      /daily token budget/i.test(String(s.message.status.error ?? ''))
++  )
++
+   const previewTargets = useMemo(() => {
+     // The cheap pre-test must also admit `#preview/<path>` tokens (deliverable
+     // files carry a bare encoded path — no protocol), or extractPreviewTargets
+@@ -127,22 +137,48 @@ export const AssistantMessage: FC<{
+             turn streams, so this never renders (or re-renders) mid-stream. */}
+         <MessageSources text={completedText} />
+         <MessagePrimitive.Error>
+-          <ErrorPrimitive.Root
+-            className="mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]"
+-            role="alert"
+-          >
+-            <ErrorPrimitive.Message className="min-w-0 flex-1" />
+-            {onDismissError && (
+-              <TooltipIconButton
+-                className="-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100"
+-                onClick={() => onDismissError(messageId)}
+-                side="top"
+-                tooltip={t.assistant.thread.dismissError}
+-              >
+-                <XIcon className="size-3.5" />
+-              </TooltipIconButton>
+-            )}
+-          </ErrorPrimitive.Root>
++          {isBudgetError ? (
++            <div
++              className="mt-2 flex items-start gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4"
++              role="alert"
++            >
++              <div className="min-w-0 flex-1">
++                <p className="text-sm font-medium text-foreground">Today&apos;s AI allowance is used up</p>
++                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
++                  It resets at midnight UTC. Everything already saved — notes, decks, files — stays available; only
++                  new AI work pauses until then. Heavy agent sessions use more: see Settings → Account &amp; usage,
++                  or upgrade your plan for a bigger daily allowance.
++                </p>
++              </div>
++              {onDismissError && (
++                <TooltipIconButton
++                  className="-my-0.5 shrink-0 text-muted-foreground opacity-70 hover:opacity-100"
++                  onClick={() => onDismissError(messageId)}
++                  side="top"
++                  tooltip={t.assistant.thread.dismissError}
++                >
++                  <XIcon className="size-3.5" />
++                </TooltipIconButton>
++              )}
++            </div>
++          ) : (
++            <ErrorPrimitive.Root
++              className="mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]"
++              role="alert"
++            >
++              <ErrorPrimitive.Message className="min-w-0 flex-1" />
++              {onDismissError && (
++                <TooltipIconButton
++                  className="-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100"
++                  onClick={() => onDismissError(messageId)}
++                  side="top"
++                  tooltip={t.assistant.thread.dismissError}
++                >
++                  <XIcon className="size-3.5" />
++                </TooltipIconButton>
++              )}
++            </ErrorPrimitive.Root>
++          )}
+         </MessagePrimitive.Error>
+       </div>
+       {hasVisibleText && (
+diff --git a/apps/desktop/src/components/nemesis-budget-notice.js b/apps/desktop/src/components/nemesis-budget-notice.js
+new file mode 100644
+index 00000000000..c7be35c5b2d
+--- /dev/null
++++ b/apps/desktop/src/components/nemesis-budget-notice.js
+@@ -0,0 +1,70 @@
++import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
++// Ambient daily-allowance warning (student build). Quietly polls the metering
++// proxy and, once today's AI usage crosses 80%, floats one dismissible strip
++// above the composer — BEFORE the hard stop, so the raw limit error is never
++// the first thing a student learns about budgets (owner ask, 2026-07-14, after
++// burning a full day's allowance in one email-setup session). Dismissal is
++// remembered per UTC day; the strip escalates its copy at 100%.
++import { useEffect, useState } from 'react';
++import { XIcon } from '@/lib/icons';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++import { fetchUsage } from '@/nemesis-account';
++const WARN_RATIO = 0.8;
++const POLL_MS = 5 * 60 * 1000;
++const DISMISS_KEY = 'nemesis.budget.warned';
++function dismissedFor(periodStart) {
++    try {
++        return window.localStorage.getItem(DISMISS_KEY) === periodStart;
++    }
++    catch {
++        return false;
++    }
++}
++export const NemesisBudgetNotice = () => {
++    const [usage, setUsage] = useState(null);
++    const [dismissed, setDismissed] = useState(false);
++    useEffect(() => {
++        if (!NEMESIS_STUDENT_BUILD) {
++            return;
++        }
++        let cancelled = false;
++        const poll = async () => {
++            const snapshot = await fetchUsage();
++            if (!cancelled && snapshot) {
++                setUsage(snapshot);
++                setDismissed(dismissedFor(snapshot.periodStart));
++            }
++        };
++        void poll();
++        const timer = setInterval(() => void poll(), POLL_MS);
++        return () => {
++            cancelled = true;
++            clearInterval(timer);
++        };
++    }, []);
++    if (!NEMESIS_STUDENT_BUILD || !usage || usage.dailyLimit <= 0 || dismissed) {
++        return null;
++    }
++    const ratio = usage.used / usage.dailyLimit;
++    if (ratio < WARN_RATIO) {
++        return null;
++    }
++    const exhausted = usage.remaining <= 0;
++    const pct = Math.min(100, Math.round(ratio * 100));
++    const dismiss = () => {
++        try {
++            window.localStorage.setItem(DISMISS_KEY, usage.periodStart);
++        }
++        catch {
++            // Storage unavailable: the strip just reappears next poll.
++        }
++        setDismissed(true);
++    };
++    return (_jsxs("div", { className: "absolute inset-x-0 z-20 mx-auto flex w-fit max-w-[calc(100%-2rem)] items-center gap-2 rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-3.5 py-1.5 text-xs text-muted-foreground shadow-md", role: "status", style: {
++            // Same clearance the scroll-to-bottom control uses: sit just above the
++            // (docked or floating) composer rather than under it.
++            bottom: 'calc(var(--composer-measured-height) + var(--status-stack-measured-height) + 0.625rem)'
++        }, children: [_jsx("span", { children: exhausted
++                    ? 'Today’s AI allowance is used up — it resets at midnight UTC.'
++                    : `You’ve used ${pct}% of today’s AI allowance.` }), _jsx("button", { "aria-label": "Dismiss allowance notice", className: "grid size-4 place-items-center rounded-full text-muted-foreground transition-colors hover:text-foreground", onClick: dismiss, type: "button", children: _jsx(XIcon, { className: "size-3" }) })] }));
++};
+diff --git a/apps/desktop/src/components/nemesis-budget-notice.tsx b/apps/desktop/src/components/nemesis-budget-notice.tsx
+new file mode 100644
+index 00000000000..87c7f7aa221
+--- /dev/null
++++ b/apps/desktop/src/components/nemesis-budget-notice.tsx
+@@ -0,0 +1,102 @@
++// Ambient daily-allowance warning (student build). Quietly polls the metering
++// proxy and, once today's AI usage crosses 80%, floats one dismissible strip
++// above the composer — BEFORE the hard stop, so the raw limit error is never
++// the first thing a student learns about budgets (owner ask, 2026-07-14, after
++// burning a full day's allowance in one email-setup session). Dismissal is
++// remembered per UTC day; the strip escalates its copy at 100%.
++import { type FC, useEffect, useState } from 'react'
++
++import { XIcon } from '@/lib/icons'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
++import { fetchUsage, type UsageSnapshot } from '@/nemesis-account'
++
++const WARN_RATIO = 0.8
++const POLL_MS = 5 * 60 * 1000
++const DISMISS_KEY = 'nemesis.budget.warned'
++
++function dismissedFor(periodStart: string): boolean {
++  try {
++    return window.localStorage.getItem(DISMISS_KEY) === periodStart
++  } catch {
++    return false
++  }
++}
++
++export const NemesisBudgetNotice: FC = () => {
++  const [usage, setUsage] = useState<null | UsageSnapshot>(null)
++  const [dismissed, setDismissed] = useState(false)
++
++  useEffect(() => {
++    if (!NEMESIS_STUDENT_BUILD) {
++      return
++    }
++
++    let cancelled = false
++
++    const poll = async () => {
++      const snapshot = await fetchUsage()
++
++      if (!cancelled && snapshot) {
++        setUsage(snapshot)
++        setDismissed(dismissedFor(snapshot.periodStart))
++      }
++    }
++
++    void poll()
++    const timer = setInterval(() => void poll(), POLL_MS)
++
++    return () => {
++      cancelled = true
++      clearInterval(timer)
++    }
++  }, [])
++
++  if (!NEMESIS_STUDENT_BUILD || !usage || usage.dailyLimit <= 0 || dismissed) {
++    return null
++  }
++
++  const ratio = usage.used / usage.dailyLimit
++
++  if (ratio < WARN_RATIO) {
++    return null
++  }
++
++  const exhausted = usage.remaining <= 0
++  const pct = Math.min(100, Math.round(ratio * 100))
++
++  const dismiss = () => {
++    try {
++      window.localStorage.setItem(DISMISS_KEY, usage.periodStart)
++    } catch {
++      // Storage unavailable: the strip just reappears next poll.
++    }
++
++    setDismissed(true)
++  }
++
++  return (
++    <div
++      className="absolute inset-x-0 z-20 mx-auto flex w-fit max-w-[calc(100%-2rem)] items-center gap-2 rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-3.5 py-1.5 text-xs text-muted-foreground shadow-md"
++      role="status"
++      style={{
++        // Same clearance the scroll-to-bottom control uses: sit just above the
++        // (docked or floating) composer rather than under it.
++        bottom: 'calc(var(--composer-measured-height) + var(--status-stack-measured-height) + 0.625rem)'
++      }}
++    >
++      <span>
++        {exhausted
++          ? 'Today’s AI allowance is used up — it resets at midnight UTC.'
++          : `You’ve used ${pct}% of today’s AI allowance.`}
++      </span>
++      <button
++        aria-label="Dismiss allowance notice"
++        className="grid size-4 place-items-center rounded-full text-muted-foreground transition-colors hover:text-foreground"
++        onClick={dismiss}
++        type="button"
++      >
++        <XIcon className="size-3" />
++      </button>
++    </div>
++  )
++}
+-- 
+2.50.1 (Apple Git-155)
+

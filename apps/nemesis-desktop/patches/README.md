@@ -126,3 +126,32 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   picker becomes three plain choices — Instant / Medium / High (owner ask) —
   mapping to fast-mode / thinking+medium / thinking+high. High's description
   carries the honest cost note; the composer pill shows the active mode name.
+- `0099-updater-fetch-refspec-single-branch.patch` — backend-update fix, code
+  half: every updater fetch (desktop checkUpdates, `hermes update` apply,
+  `hermes update --check`) passes an explicit
+  `+refs/heads/<branch>:refs/remotes/origin/<branch>` refspec. Installer
+  checkouts are single-branch clones, so `origin/main` never existed in them —
+  the desktop showed a permanent phantom "update available" and applying died
+  with "branch 'main' does not exist". Pairs with the repo-side fix: public
+  `main` fast-forwarded to the release lineage via a bridge merge commit
+  (`chore(release): adopt main as the release branch`); releases push to
+  `main` (mirror to `codex/nemesis-beta-v0.1` until it's retired).
+- `0100-backend-runtime-sync-on-app-update.patch` — backend-update fix, delivery
+  half: when an app update finishes downloading, the desktop checks whether the
+  runtime checkout is behind; on the quit-for-update it spawns a detached
+  `hermes update --yes --branch <branch>` with the update marker (same pattern
+  as the bootstrap recovery hand-off). Next boot parks on the marker until the
+  sync finishes; backend startup re-seeds bundled skills. Closes the "existing
+  installs never get backend/skill updates" gap (owner's was stuck at beta.3-era
+  runtime while the app auto-updated to beta.10).
+- `0101-token-budgets-images-research-skills.patch` — student token-efficiency:
+  tool-output injection caps 100K/200K → 24K/48K chars (oversized results
+  persist to disk with preview; env knobs NEMESIS_TOOL_RESULT_CHARS/_TURN_CHARS;
+  the fix for one email session burning a full 1.5M-token day), web_search
+  default 5→6, + two new skills: nemesis-images (metered Gemini generation via
+  the nemesis-media proxy, MEDIA: inline delivery) and nemesis-research
+  (3-5 query fan-out, 15-25 sources, extract best pages, inline citations).
+- `0102-beta12-allowance-warning-friendly-limit.patch` — beta.12: dismissible
+  80%-of-allowance warning strip above the composer (polls GET /usage, per-day
+  dismissal, escalates at 100%) + the daily-budget 429 renders as a calm
+  designed card instead of the raw red API error.
