@@ -21,7 +21,7 @@
 // GLM_API_KEY (Z.ai — secondary provider + first failover target; GLM_MODEL picks
 // the model used for direct-GLM requests without one and for the failover retry,
 // default 'glm-5.2'), and GEMINI_API_KEY (Google, via its OpenAI-compatibility
-// endpoint — third slot + last-resort failover; GEMINI_MODEL default 'gemini-2.5-flash').
+// endpoint — third slot + last-resort failover; GEMINI_MODEL default 'gemini-flash-latest').
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -32,7 +32,9 @@ const GLM_KEY = Deno.env.get('GLM_API_KEY') ?? ''
 const GLM_MODEL = Deno.env.get('GLM_MODEL') ?? 'glm-5.2'
 const GLM_BASE = 'https://api.z.ai/api/paas/v4'
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') ?? ''
-const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash'
+// 'gemini-flash-latest' is Google's evergreen alias for the newest Flash model —
+// fixed ids (e.g. gemini-2.5-flash) get retired for new API keys.
+const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-flash-latest'
 // Google's OpenAI-compatibility layer — speaks the same chat/completions wire shape.
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai'
 
