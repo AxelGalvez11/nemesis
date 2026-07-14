@@ -1,0 +1,308 @@
+From f6162f78ebf9c962530ba0af2b29f13bd9148e38 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 16:43:40 -0500
+Subject: [PATCH] =?UTF-8?q?fix(settings):=20Account=20&=20usage=20page=20s?=
+ =?UTF-8?q?crolls=20=E2=80=94=20privacy=20toggle=20was=20unreachable?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+OverlayMain clips its children (overflow-hidden) and expects each settings
+page to bring its own scroll container, like Connections and the
+SettingsContent-based pages do. Account & usage was the only page without
+one, so at short window heights the content simply cut off — hiding the
+telemetry opt-out switch at the bottom with no way to reach it (owner
+report, 2026-07-14). Wrap the page in the same overflow-y-auto wrapper
+Connections uses.
+---
+ .../src/app/settings/usage-settings.js        |  14 +-
+ .../src/app/settings/usage-settings.tsx       | 234 +++++++++---------
+ 2 files changed, 127 insertions(+), 121 deletions(-)
+
+diff --git a/apps/desktop/src/app/settings/usage-settings.js b/apps/desktop/src/app/settings/usage-settings.js
+index 7b88128346b..00f32d936d8 100644
+--- a/apps/desktop/src/app/settings/usage-settings.js
++++ b/apps/desktop/src/app/settings/usage-settings.js
+@@ -64,13 +64,13 @@ export function UsageSettings() {
+                 : account.planStatus || 'Active';
+     const weekTotal = week ? week.reduce((sum, day) => sum + day.used, 0) : 0;
+     const weekMax = week ? Math.max(1, ...week.map(day => day.used)) : 1;
+-    return (_jsxs("div", { className: "mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8", children: [_jsxs("div", { className: "flex flex-col gap-1", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70", children: "Account & usage" }), _jsx("h2", { className: "text-lg font-semibold text-foreground", children: "Your account" }), _jsx("p", { className: "text-sm text-muted-foreground", children: "Your plan, this week's AI work, and today's allowance \u2014 all in one place." })] }), _jsxs("div", { className: "flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "truncate text-sm font-medium text-foreground", children: account.bypass ? 'Offline mode — not signed in' : account.email || 'Signed in' }), _jsx("div", { className: "pt-0.5 text-xs text-muted-foreground", children: account.bypass ? 'Local development' : planDetail })] }), _jsx("span", { className: "shrink-0 rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)", children: trialTiming && !trialTiming.expired ? `${planLabel(account.plan)} trial` : `${planLabel(account.plan)} plan` })] }), !account.bypass && (_jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [_jsx(Button, { onClick: () => void window.hermesDesktop?.openExternal?.(BILLING_URL), size: "sm", variant: "secondary", children: account.plan === 'free' ? 'Choose a plan' : 'Manage subscription' }), _jsx(Button, { disabled: refreshingPlan, onClick: () => {
+-                                    setRefreshingPlan(true);
+-                                    void refreshEntitlement().finally(() => {
+-                                        setRefreshingPlan(false);
+-                                        load();
+-                                    });
+-                                }, size: "sm", variant: "outline", children: refreshingPlan ? 'Checking…' : 'Refresh plan' }), _jsx(Button, { onClick: () => void signOut(), size: "sm", variant: "ghost", children: "Sign out" })] }))] }), _jsxs("div", { className: "flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsxs("div", { className: "flex items-baseline justify-between", children: [_jsx("span", { className: "text-sm font-medium text-foreground", children: "This week" }), _jsx("span", { className: "text-sm tabular-nums text-muted-foreground", children: week ? `${formatTokens(weekTotal)} tokens over 7 days` : 'Not available yet' })] }), week ? (_jsx("div", { "aria-label": "AI usage for the last 7 days", className: "flex items-end gap-2", role: "img", children: week.map(day => (_jsxs("div", { className: "flex flex-1 flex-col items-center gap-1", children: [_jsx("div", { className: "flex h-16 w-full items-end overflow-hidden rounded-md bg-(--ui-bg-tertiary)", children: _jsx("div", { className: "w-full rounded-md bg-(--theme-primary)/80 transition-[height] duration-500", style: { height: `${Math.max(day.used > 0 ? 6 : 0, Math.round((day.used / weekMax) * 100))}%` }, title: `${day.periodStart}: ${formatTokens(day.used)} tokens` }) }), _jsx("span", { className: "text-[10px] text-muted-foreground/70", children: dayLetter(day.periodStart) })] }, day.periodStart))) })) : (_jsx("p", { className: "text-xs text-muted-foreground", children: "Weekly usage appears after your first AI request while signed in." }))] }), state === 'ready' && usage ? (_jsxs("div", { className: "flex flex-col gap-4 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsxs("div", { className: "flex items-baseline justify-between", children: [_jsx("span", { className: "text-sm font-medium text-foreground", children: "Used today" }), _jsxs("span", { className: "text-sm tabular-nums text-muted-foreground", children: [formatTokens(usage.used), " / ", usage.dailyLimit > 0 ? formatTokens(usage.dailyLimit) : 'unlimited'] })] }), _jsx("div", { className: "h-2.5 w-full overflow-hidden rounded-full bg-(--ui-bg-tertiary)", children: _jsx("div", { className: "h-full rounded-full bg-(--theme-primary) transition-[width] duration-500", style: { width: `${pct}%` } }) }), _jsxs("div", { className: "flex items-center justify-between text-xs text-muted-foreground", children: [_jsxs("span", { children: [_jsx("span", { className: "font-semibold text-foreground", children: formatTokens(usage.remaining) }), " left today \u00B7 resets at midnight (UTC)"] }), _jsx("span", { className: "rounded-full bg-(--theme-primary)/15 px-2 py-0.5 font-semibold text-(--theme-primary)", children: planName })] })] })) : state === 'loading' ? (_jsx("div", { className: "rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5 text-sm text-muted-foreground", children: "Checking your allowance\u2026" })) : (_jsxs("div", { className: "flex flex-col items-start gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsx("p", { className: "text-sm text-muted-foreground", children: "Today's allowance isn't available yet \u2014 this needs you to be signed in with an active plan and the metering service reachable." }), _jsx(Button, { onClick: load, size: "sm", variant: "secondary", children: "Try again" })] })), _jsx("p", { className: "text-xs leading-relaxed text-muted-foreground/70", children: "\u201CAI work\u201D is measured in tokens \u2014 the units the model reads and writes. Heavy tasks (a full research brief, a slide deck) use more than a quick question. Lecture transcription runs on your own Mac and never counts against this." }), _jsx(PrivacyCard, {})] }));
++    return (_jsx("div", { className: "min-h-0 flex-1 overflow-y-auto overscroll-contain", children: _jsxs("div", { className: "mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8", children: [_jsxs("div", { className: "flex flex-col gap-1", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70", children: "Account & usage" }), _jsx("h2", { className: "text-lg font-semibold text-foreground", children: "Your account" }), _jsx("p", { className: "text-sm text-muted-foreground", children: "Your plan, this week's AI work, and today's allowance \u2014 all in one place." })] }), _jsxs("div", { className: "flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "truncate text-sm font-medium text-foreground", children: account.bypass ? 'Offline mode — not signed in' : account.email || 'Signed in' }), _jsx("div", { className: "pt-0.5 text-xs text-muted-foreground", children: account.bypass ? 'Local development' : planDetail })] }), _jsx("span", { className: "shrink-0 rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)", children: trialTiming && !trialTiming.expired ? `${planLabel(account.plan)} trial` : `${planLabel(account.plan)} plan` })] }), !account.bypass && (_jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [_jsx(Button, { onClick: () => void window.hermesDesktop?.openExternal?.(BILLING_URL), size: "sm", variant: "secondary", children: account.plan === 'free' ? 'Choose a plan' : 'Manage subscription' }), _jsx(Button, { disabled: refreshingPlan, onClick: () => {
++                                        setRefreshingPlan(true);
++                                        void refreshEntitlement().finally(() => {
++                                            setRefreshingPlan(false);
++                                            load();
++                                        });
++                                    }, size: "sm", variant: "outline", children: refreshingPlan ? 'Checking…' : 'Refresh plan' }), _jsx(Button, { onClick: () => void signOut(), size: "sm", variant: "ghost", children: "Sign out" })] }))] }), _jsxs("div", { className: "flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsxs("div", { className: "flex items-baseline justify-between", children: [_jsx("span", { className: "text-sm font-medium text-foreground", children: "This week" }), _jsx("span", { className: "text-sm tabular-nums text-muted-foreground", children: week ? `${formatTokens(weekTotal)} tokens over 7 days` : 'Not available yet' })] }), week ? (_jsx("div", { "aria-label": "AI usage for the last 7 days", className: "flex items-end gap-2", role: "img", children: week.map(day => (_jsxs("div", { className: "flex flex-1 flex-col items-center gap-1", children: [_jsx("div", { className: "flex h-16 w-full items-end overflow-hidden rounded-md bg-(--ui-bg-tertiary)", children: _jsx("div", { className: "w-full rounded-md bg-(--theme-primary)/80 transition-[height] duration-500", style: { height: `${Math.max(day.used > 0 ? 6 : 0, Math.round((day.used / weekMax) * 100))}%` }, title: `${day.periodStart}: ${formatTokens(day.used)} tokens` }) }), _jsx("span", { className: "text-[10px] text-muted-foreground/70", children: dayLetter(day.periodStart) })] }, day.periodStart))) })) : (_jsx("p", { className: "text-xs text-muted-foreground", children: "Weekly usage appears after your first AI request while signed in." }))] }), state === 'ready' && usage ? (_jsxs("div", { className: "flex flex-col gap-4 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsxs("div", { className: "flex items-baseline justify-between", children: [_jsx("span", { className: "text-sm font-medium text-foreground", children: "Used today" }), _jsxs("span", { className: "text-sm tabular-nums text-muted-foreground", children: [formatTokens(usage.used), " / ", usage.dailyLimit > 0 ? formatTokens(usage.dailyLimit) : 'unlimited'] })] }), _jsx("div", { className: "h-2.5 w-full overflow-hidden rounded-full bg-(--ui-bg-tertiary)", children: _jsx("div", { className: "h-full rounded-full bg-(--theme-primary) transition-[width] duration-500", style: { width: `${pct}%` } }) }), _jsxs("div", { className: "flex items-center justify-between text-xs text-muted-foreground", children: [_jsxs("span", { children: [_jsx("span", { className: "font-semibold text-foreground", children: formatTokens(usage.remaining) }), " left today \u00B7 resets at midnight (UTC)"] }), _jsx("span", { className: "rounded-full bg-(--theme-primary)/15 px-2 py-0.5 font-semibold text-(--theme-primary)", children: planName })] })] })) : state === 'loading' ? (_jsx("div", { className: "rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5 text-sm text-muted-foreground", children: "Checking your allowance\u2026" })) : (_jsxs("div", { className: "flex flex-col items-start gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsx("p", { className: "text-sm text-muted-foreground", children: "Today's allowance isn't available yet \u2014 this needs you to be signed in with an active plan and the metering service reachable." }), _jsx(Button, { onClick: load, size: "sm", variant: "secondary", children: "Try again" })] })), _jsx("p", { className: "text-xs leading-relaxed text-muted-foreground/70", children: "\u201CAI work\u201D is measured in tokens \u2014 the units the model reads and writes. Heavy tasks (a full research brief, a slide deck) use more than a quick question. Lecture transcription runs on your own Mac and never counts against this." }), _jsx(PrivacyCard, {})] }) }));
+ }
+ /** Opt-out for the anonymous telemetry disclosed at the consent screen. Applies
+  *  immediately in both directions (see setTelemetryEnabled). */
+diff --git a/apps/desktop/src/app/settings/usage-settings.tsx b/apps/desktop/src/app/settings/usage-settings.tsx
+index 0cd22e2f4e1..07a4c02d0ec 100644
+--- a/apps/desktop/src/app/settings/usage-settings.tsx
++++ b/apps/desktop/src/app/settings/usage-settings.tsx
+@@ -94,134 +94,140 @@ export function UsageSettings() {
+   const weekMax = week ? Math.max(1, ...week.map(day => day.used)) : 1
+ 
+   return (
+-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8">
+-      <div className="flex flex-col gap-1">
+-        <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70">
+-          Account &amp; usage
+-        </span>
+-        <h2 className="text-lg font-semibold text-foreground">Your account</h2>
+-        <p className="text-sm text-muted-foreground">
+-          Your plan, this week&apos;s AI work, and today&apos;s allowance — all in one place.
+-        </p>
+-      </div>
+-
+-      {/* Account status */}
+-      <div className="flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
+-        <div className="flex items-center justify-between gap-3">
+-          <div className="min-w-0">
+-            <div className="truncate text-sm font-medium text-foreground">
+-              {account.bypass ? 'Offline mode — not signed in' : account.email || 'Signed in'}
+-            </div>
+-            <div className="pt-0.5 text-xs text-muted-foreground">{account.bypass ? 'Local development' : planDetail}</div>
+-          </div>
+-          <span className="shrink-0 rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)">
+-            {trialTiming && !trialTiming.expired ? `${planLabel(account.plan)} trial` : `${planLabel(account.plan)} plan`}
++    // OverlayMain clips its children (overflow-hidden) and expects every
++    // settings page to own its scrolling, like Connections does. Without
++    // this wrapper the page was simply cut off at short window heights —
++    // hiding the privacy toggle at the bottom with no way to reach it.
++    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
++      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8">
++        <div className="flex flex-col gap-1">
++          <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70">
++            Account &amp; usage
+           </span>
++          <h2 className="text-lg font-semibold text-foreground">Your account</h2>
++          <p className="text-sm text-muted-foreground">
++            Your plan, this week&apos;s AI work, and today&apos;s allowance — all in one place.
++          </p>
+         </div>
+-        {!account.bypass && (
+-          <div className="flex flex-wrap items-center gap-2">
+-            <Button onClick={() => void window.hermesDesktop?.openExternal?.(BILLING_URL)} size="sm" variant="secondary">
+-              {account.plan === 'free' ? 'Choose a plan' : 'Manage subscription'}
+-            </Button>
+-            <Button
+-              disabled={refreshingPlan}
+-              onClick={() => {
+-                setRefreshingPlan(true)
+-                void refreshEntitlement().finally(() => {
+-                  setRefreshingPlan(false)
+-                  load()
+-                })
+-              }}
+-              size="sm"
+-              variant="outline"
+-            >
+-              {refreshingPlan ? 'Checking…' : 'Refresh plan'}
+-            </Button>
+-            <Button onClick={() => void signOut()} size="sm" variant="ghost">
+-              Sign out
+-            </Button>
+-          </div>
+-        )}
+-      </div>
+ 
+-      {/* This week */}
+-      <div className="flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
+-        <div className="flex items-baseline justify-between">
+-          <span className="text-sm font-medium text-foreground">This week</span>
+-          <span className="text-sm tabular-nums text-muted-foreground">
+-            {week ? `${formatTokens(weekTotal)} tokens over 7 days` : 'Not available yet'}
+-          </span>
+-        </div>
+-        {week ? (
+-          <div aria-label="AI usage for the last 7 days" className="flex items-end gap-2" role="img">
+-            {week.map(day => (
+-              <div className="flex flex-1 flex-col items-center gap-1" key={day.periodStart}>
+-                <div className="flex h-16 w-full items-end overflow-hidden rounded-md bg-(--ui-bg-tertiary)">
+-                  <div
+-                    className="w-full rounded-md bg-(--theme-primary)/80 transition-[height] duration-500"
+-                    style={{ height: `${Math.max(day.used > 0 ? 6 : 0, Math.round((day.used / weekMax) * 100))}%` }}
+-                    title={`${day.periodStart}: ${formatTokens(day.used)} tokens`}
+-                  />
+-                </div>
+-                <span className="text-[10px] text-muted-foreground/70">{dayLetter(day.periodStart)}</span>
++        {/* Account status */}
++        <div className="flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
++          <div className="flex items-center justify-between gap-3">
++            <div className="min-w-0">
++              <div className="truncate text-sm font-medium text-foreground">
++                {account.bypass ? 'Offline mode — not signed in' : account.email || 'Signed in'}
+               </div>
+-            ))}
++              <div className="pt-0.5 text-xs text-muted-foreground">{account.bypass ? 'Local development' : planDetail}</div>
++            </div>
++            <span className="shrink-0 rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)">
++              {trialTiming && !trialTiming.expired ? `${planLabel(account.plan)} trial` : `${planLabel(account.plan)} plan`}
++            </span>
+           </div>
+-        ) : (
+-          <p className="text-xs text-muted-foreground">
+-            Weekly usage appears after your first AI request while signed in.
+-          </p>
+-        )}
+-      </div>
++          {!account.bypass && (
++            <div className="flex flex-wrap items-center gap-2">
++              <Button onClick={() => void window.hermesDesktop?.openExternal?.(BILLING_URL)} size="sm" variant="secondary">
++                {account.plan === 'free' ? 'Choose a plan' : 'Manage subscription'}
++              </Button>
++              <Button
++                disabled={refreshingPlan}
++                onClick={() => {
++                  setRefreshingPlan(true)
++                  void refreshEntitlement().finally(() => {
++                    setRefreshingPlan(false)
++                    load()
++                  })
++                }}
++                size="sm"
++                variant="outline"
++              >
++                {refreshingPlan ? 'Checking…' : 'Refresh plan'}
++              </Button>
++              <Button onClick={() => void signOut()} size="sm" variant="ghost">
++                Sign out
++              </Button>
++            </div>
++          )}
++        </div>
+ 
+-      {/* Today */}
+-      {state === 'ready' && usage ? (
+-        <div className="flex flex-col gap-4 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
++        {/* This week */}
++        <div className="flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
+           <div className="flex items-baseline justify-between">
+-            <span className="text-sm font-medium text-foreground">Used today</span>
++            <span className="text-sm font-medium text-foreground">This week</span>
+             <span className="text-sm tabular-nums text-muted-foreground">
+-              {formatTokens(usage.used)} / {usage.dailyLimit > 0 ? formatTokens(usage.dailyLimit) : 'unlimited'}
++              {week ? `${formatTokens(weekTotal)} tokens over 7 days` : 'Not available yet'}
+             </span>
+           </div>
+-          <div className="h-2.5 w-full overflow-hidden rounded-full bg-(--ui-bg-tertiary)">
+-            <div
+-              className="h-full rounded-full bg-(--theme-primary) transition-[width] duration-500"
+-              style={{ width: `${pct}%` }}
+-            />
++          {week ? (
++            <div aria-label="AI usage for the last 7 days" className="flex items-end gap-2" role="img">
++              {week.map(day => (
++                <div className="flex flex-1 flex-col items-center gap-1" key={day.periodStart}>
++                  <div className="flex h-16 w-full items-end overflow-hidden rounded-md bg-(--ui-bg-tertiary)">
++                    <div
++                      className="w-full rounded-md bg-(--theme-primary)/80 transition-[height] duration-500"
++                      style={{ height: `${Math.max(day.used > 0 ? 6 : 0, Math.round((day.used / weekMax) * 100))}%` }}
++                      title={`${day.periodStart}: ${formatTokens(day.used)} tokens`}
++                    />
++                  </div>
++                  <span className="text-[10px] text-muted-foreground/70">{dayLetter(day.periodStart)}</span>
++                </div>
++              ))}
++            </div>
++          ) : (
++            <p className="text-xs text-muted-foreground">
++              Weekly usage appears after your first AI request while signed in.
++            </p>
++          )}
++        </div>
++
++        {/* Today */}
++        {state === 'ready' && usage ? (
++          <div className="flex flex-col gap-4 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
++            <div className="flex items-baseline justify-between">
++              <span className="text-sm font-medium text-foreground">Used today</span>
++              <span className="text-sm tabular-nums text-muted-foreground">
++                {formatTokens(usage.used)} / {usage.dailyLimit > 0 ? formatTokens(usage.dailyLimit) : 'unlimited'}
++              </span>
++            </div>
++            <div className="h-2.5 w-full overflow-hidden rounded-full bg-(--ui-bg-tertiary)">
++              <div
++                className="h-full rounded-full bg-(--theme-primary) transition-[width] duration-500"
++                style={{ width: `${pct}%` }}
++              />
++            </div>
++            <div className="flex items-center justify-between text-xs text-muted-foreground">
++              <span>
++                <span className="font-semibold text-foreground">{formatTokens(usage.remaining)}</span> left today · resets
++                at midnight (UTC)
++              </span>
++              <span className="rounded-full bg-(--theme-primary)/15 px-2 py-0.5 font-semibold text-(--theme-primary)">
++                {planName}
++              </span>
++            </div>
+           </div>
+-          <div className="flex items-center justify-between text-xs text-muted-foreground">
+-            <span>
+-              <span className="font-semibold text-foreground">{formatTokens(usage.remaining)}</span> left today · resets
+-              at midnight (UTC)
+-            </span>
+-            <span className="rounded-full bg-(--theme-primary)/15 px-2 py-0.5 font-semibold text-(--theme-primary)">
+-              {planName}
+-            </span>
++        ) : state === 'loading' ? (
++          <div className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5 text-sm text-muted-foreground">
++            Checking your allowance…
+           </div>
+-        </div>
+-      ) : state === 'loading' ? (
+-        <div className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5 text-sm text-muted-foreground">
+-          Checking your allowance…
+-        </div>
+-      ) : (
+-        <div className="flex flex-col items-start gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
+-          <p className="text-sm text-muted-foreground">
+-            Today&apos;s allowance isn&apos;t available yet — this needs you to be signed in with an active plan and the
+-            metering service reachable.
+-          </p>
+-          <Button onClick={load} size="sm" variant="secondary">
+-            Try again
+-          </Button>
+-        </div>
+-      )}
++        ) : (
++          <div className="flex flex-col items-start gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
++            <p className="text-sm text-muted-foreground">
++              Today&apos;s allowance isn&apos;t available yet — this needs you to be signed in with an active plan and the
++              metering service reachable.
++            </p>
++            <Button onClick={load} size="sm" variant="secondary">
++              Try again
++            </Button>
++          </div>
++        )}
+ 
+-      <p className="text-xs leading-relaxed text-muted-foreground/70">
+-        &ldquo;AI work&rdquo; is measured in tokens — the units the model reads and writes. Heavy tasks (a full
+-        research brief, a slide deck) use more than a quick question. Lecture transcription runs on your own Mac and
+-        never counts against this.
+-      </p>
++        <p className="text-xs leading-relaxed text-muted-foreground/70">
++          &ldquo;AI work&rdquo; is measured in tokens — the units the model reads and writes. Heavy tasks (a full
++          research brief, a slide deck) use more than a quick question. Lecture transcription runs on your own Mac and
++          never counts against this.
++        </p>
+ 
+-      <PrivacyCard />
++        <PrivacyCard />
++      </div>
+     </div>
+   )
+ }
+-- 
+2.50.1 (Apple Git-155)
+

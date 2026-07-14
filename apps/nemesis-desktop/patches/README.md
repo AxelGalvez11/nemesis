@@ -155,3 +155,6 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   80%-of-allowance warning strip above the composer (polls GET /usage, per-day
   dismissal, escalates at 100%) + the daily-budget 429 renders as a calm
   designed card instead of the raw red API error.
+- `0103-fix-usage-settings-scroll.patch` — Account & usage settings page gets
+  the scroll wrapper every other settings page already had; at short window
+  heights it was cut off, leaving the telemetry opt-out switch unreachable.
