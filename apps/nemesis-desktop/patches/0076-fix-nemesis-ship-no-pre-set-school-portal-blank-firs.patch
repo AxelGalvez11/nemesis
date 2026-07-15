@@ -1,0 +1,127 @@
+From ba6b8ab9457f9cff7c3933fadfbf7909323afdc3 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Mon, 13 Jul 2026 13:18:35 -0500
+Subject: [PATCH] =?UTF-8?q?fix(nemesis):=20ship=20no=20pre-set=20school=20?=
+ =?UTF-8?q?portal=20=E2=80=94=20blank=20first-run=20default?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+A fresh install inherited the owner's own LMS/email (blackboard.uthsc.edu +
+Outlook), so any non-UTHSC student who clicked through onboarding got an agent
+pointed at the wrong school. Default is now empty; the student connects their
+own portals in onboarding Step 1 / Settings → Connections. All consumers
+(connections UI, school-sync scheduler) are empty-safe. Existing installs are
+unaffected (saved portals live in localStorage).
+---
+ .../src/app/today/school-sync-schedule.js     |  3 ++-
+ .../src/app/today/school-sync-schedule.ts     |  3 ++-
+ apps/desktop/src/lib/school-portals.js        | 26 ++++++-------------
+ apps/desktop/src/lib/school-portals.ts        | 26 ++++++-------------
+ 4 files changed, 20 insertions(+), 38 deletions(-)
+
+diff --git a/apps/desktop/src/app/today/school-sync-schedule.js b/apps/desktop/src/app/today/school-sync-schedule.js
+index 7b559bb89e8..2c6a16283f4 100644
+--- a/apps/desktop/src/app/today/school-sync-schedule.js
++++ b/apps/desktop/src/app/today/school-sync-schedule.js
+@@ -12,7 +12,8 @@ const LAST_NUDGE_KEY = 'nemesis.school.autosync.lastNudge.v1';
+ export const SYNC_HOURS_TWICE = [8, 18];
+ export const SYNC_HOURS_DAILY = [8];
+ // The student's configured portals (LMS + school email) — per-student, editable
+-// in Settings → Connections, defaulting to the owner's school on first run.
++// in Settings → Connections. Empty until the student connects their own; a fresh
++// install ships with no pre-set school (see DEFAULT_SCHOOL_PORTALS).
+ export function schoolPortals() {
+     return loadSchoolPortals();
+ }
+diff --git a/apps/desktop/src/app/today/school-sync-schedule.ts b/apps/desktop/src/app/today/school-sync-schedule.ts
+index 9ec1824be46..7fdabb4132e 100644
+--- a/apps/desktop/src/app/today/school-sync-schedule.ts
++++ b/apps/desktop/src/app/today/school-sync-schedule.ts
+@@ -18,7 +18,8 @@ export const SYNC_HOURS_TWICE = [8, 18] as const
+ export const SYNC_HOURS_DAILY = [8] as const
+ 
+ // The student's configured portals (LMS + school email) — per-student, editable
+-// in Settings → Connections, defaulting to the owner's school on first run.
++// in Settings → Connections. Empty until the student connects their own; a fresh
++// install ships with no pre-set school (see DEFAULT_SCHOOL_PORTALS).
+ export function schoolPortals(): SchoolPortal[] {
+   return loadSchoolPortals()
+ }
+diff --git a/apps/desktop/src/lib/school-portals.js b/apps/desktop/src/lib/school-portals.js
+index 9735b78cbfd..ca9b96eb22d 100644
+--- a/apps/desktop/src/lib/school-portals.js
++++ b/apps/desktop/src/lib/school-portals.js
+@@ -9,24 +9,14 @@
+ const STORE_KEY = 'nemesis.school.portals.v1';
+ const PORTALS_FILE = '~/Documents/Nemesis Library/.nemesis/portals.json';
+ export const PORTALS_CHANGED_EVENT = 'nemesis:school-portals-changed';
+-// First-run defaults = the owner's own school, so existing installs behave
+-// exactly as before until a student sets their own portal.
+-export const DEFAULT_SCHOOL_PORTALS = [
+-    {
+-        id: 'lms',
+-        kind: 'lms',
+-        name: 'Blackboard',
+-        origin: 'https://blackboard.uthsc.edu',
+-        url: 'https://blackboard.uthsc.edu/'
+-    },
+-    {
+-        id: 'email',
+-        kind: 'email',
+-        name: 'Outlook',
+-        origin: 'https://outlook.cloud.microsoft',
+-        url: 'https://outlook.cloud.microsoft/mail/'
+-    }
+-];
++// No pre-set school. Nemesis ships to many campuses, so a fresh install must NOT
++// inherit any one school's portal — otherwise a non-UTHSC student would have the
++// agent drive to the wrong Blackboard on day one. The student connects their own
++// LMS + school email in onboarding (Step 1) / Settings → Connections. Empty is the
++// safe default: every consumer (connections UI, school-sync) is null/empty-safe.
++// Existing installs keep their saved portals in localStorage, so only brand-new
++// installs see the blank slate.
++export const DEFAULT_SCHOOL_PORTALS = [];
+ /** Best-effort brand detection so the row reads "Canvas", not a bare URL. */
+ export function lmsNameFor(url) {
+     const host = originOf(url).replace(/^https?:\/\//, '').toLowerCase();
+diff --git a/apps/desktop/src/lib/school-portals.ts b/apps/desktop/src/lib/school-portals.ts
+index 07c666dfe98..3ee23cdf4d4 100644
+--- a/apps/desktop/src/lib/school-portals.ts
++++ b/apps/desktop/src/lib/school-portals.ts
+@@ -20,24 +20,14 @@ const PORTALS_FILE = '~/Documents/Nemesis Library/.nemesis/portals.json'
+ 
+ export const PORTALS_CHANGED_EVENT = 'nemesis:school-portals-changed'
+ 
+-// First-run defaults = the owner's own school, so existing installs behave
+-// exactly as before until a student sets their own portal.
+-export const DEFAULT_SCHOOL_PORTALS: SchoolPortal[] = [
+-  {
+-    id: 'lms',
+-    kind: 'lms',
+-    name: 'Blackboard',
+-    origin: 'https://blackboard.uthsc.edu',
+-    url: 'https://blackboard.uthsc.edu/'
+-  },
+-  {
+-    id: 'email',
+-    kind: 'email',
+-    name: 'Outlook',
+-    origin: 'https://outlook.cloud.microsoft',
+-    url: 'https://outlook.cloud.microsoft/mail/'
+-  }
+-]
++// No pre-set school. Nemesis ships to many campuses, so a fresh install must NOT
++// inherit any one school's portal — otherwise a non-UTHSC student would have the
++// agent drive to the wrong Blackboard on day one. The student connects their own
++// LMS + school email in onboarding (Step 1) / Settings → Connections. Empty is the
++// safe default: every consumer (connections UI, school-sync) is null/empty-safe.
++// Existing installs keep their saved portals in localStorage, so only brand-new
++// installs see the blank slate.
++export const DEFAULT_SCHOOL_PORTALS: SchoolPortal[] = []
+ 
+ /** Best-effort brand detection so the row reads "Canvas", not a bare URL. */
+ export function lmsNameFor(url: string): string {
+-- 
+2.50.1 (Apple Git-155)
+

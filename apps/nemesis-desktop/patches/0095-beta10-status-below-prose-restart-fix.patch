@@ -1,0 +1,440 @@
+From 4230bc665a9a7351ec130efdf791387fccecf155 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 14:14:59 -0500
+Subject: [PATCH] =?UTF-8?q?feat:=20beta.10=20=E2=80=94=20live=20status=20b?=
+ =?UTF-8?q?elow=20prose,=20fix=20restart-to-update,=20banner-only=20update?=
+ =?UTF-8?q?=20UX?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- ActivityStrip renders twice: header instance keeps the settled 'Worked for Xs'
+  toggle + trail collapse; new live instance puts the running shimmer BELOW the
+  streamed prose (intent line suppressed once real prose exists).
+- Fix quitAndInstall never swapping versions: Squirrel.Mac closes windows via
+  'before-quit-for-update' (native autoUpdater event) without 'before-quit', so
+  the macOS hide-on-close handler preventDefaulted the close and stalled the
+  quit — flag now flips on that event AND in the install IPC handler
+  (setImmediate so the IPC reply lands first).
+- Drop the native update dialog: the themed in-app banner is the only update
+  surface; autoInstallOnAppQuit still covers banner-dismissers.
+---
+ apps/desktop/electron/main.ts                 | 54 ++++++++++---------
+ apps/desktop/package.json                     |  2 +-
+ .../assistant-ui/thread/activity-strip.js     | 37 +++++++++----
+ .../assistant-ui/thread/activity-strip.tsx    | 45 ++++++++++++----
+ .../assistant-ui/thread/assistant-message.js  |  6 +--
+ .../assistant-ui/thread/assistant-message.tsx | 11 ++--
+ 6 files changed, 103 insertions(+), 52 deletions(-)
+
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index bb44e4106dd..628cf377524 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -18,6 +18,7 @@ import {
+   net as electronNet,
+   ipcMain,
+   Menu,
++  autoUpdater as nativeAutoUpdater,
+   nativeImage,
+   nativeTheme,
+   Notification,
+@@ -8795,12 +8796,14 @@ app.on('open-url', (event, url) => {
+ 
+ // --- In-app auto-update (beta.6) -------------------------------------------
+ // electron-updater against the public GitHub releases feed (package.json
+-// build.publish). Downloads in the background, then offers ONE dialog:
+-// "Restart now" applies immediately; otherwise the update installs on the
+-// next natural quit (autoInstallOnAppQuit). Packaged builds only; every
+-// failure is log-only — the notify-banner (nemesis-update-banner) remains the
+-// manual fallback path. Version lines are semver prereleases (0.1.0-beta.N),
+-// which electron-updater orders correctly.
++// build.publish). Downloads in the background; the THEMED in-app banner
++// (nemesis-update-banner, polling nemesis:updater:status) is the only update
++// surface — beta.10 dropped the native "Restart now" dialog, which was
++// unthemed and stacked on top of the banner saying the same thing. Users who
++// dismiss the banner still get the update on the next natural quit
++// (autoInstallOnAppQuit). Packaged builds only; every failure is log-only.
++// Version lines are semver prereleases (0.1.0-beta.N), which electron-updater
++// orders correctly.
+ const AUTO_UPDATE_RECHECK_MS = 4 * 60 * 60 * 1000
+ 
+ // Surfaced to the renderer so the update banner reflects the SILENT updater
+@@ -8825,7 +8828,13 @@ function startAutoUpdater() {
+   ipcMain.handle('nemesis:updater:status', () => autoUpdaterState)
+   ipcMain.handle('nemesis:updater:install', () => {
+     if (autoUpdaterState === 'downloaded') {
+-      appUpdater.quitAndInstall()
++      // The updater's window-close must NOT be treated as a Cmd+W hide (see
++      // mainWindow 'close') — a hidden-not-closed window stalls the quit and
++      // leaves the OLD app running headless (beta.9 incident). Flip the quit
++      // flag here AND in before-quit-for-update below; quitAndInstall runs on
++      // the next tick so this handler resolves back to the renderer first.
++      isAppQuitting = true
++      setImmediate(() => appUpdater.quitAndInstall())
+     }
+ 
+     return autoUpdaterState
+@@ -8837,26 +8846,10 @@ function startAutoUpdater() {
+   })
+ 
+   appUpdater.on('update-downloaded', info => {
++    // No dialog: the in-app banner polls nemesis:updater:status and flips to
++    // "Restart now" on its own within seconds.
+     autoUpdaterState = 'downloaded'
+     rememberLog(`[auto-update] downloaded ${info?.version || 'update'}`)
+-
+-    if (!mainWindow || mainWindow.isDestroyed()) {
+-      return
+-    }
+-
+-    const choice = dialog.showMessageBoxSync(mainWindow, {
+-      buttons: ['Restart now', 'On next quit'],
+-      cancelId: 1,
+-      defaultId: 0,
+-      detail: 'The update is downloaded. Restart Nemesis to use it now, or it installs automatically when you quit.',
+-      message: `Nemesis ${info?.version || ''} is ready`.trim(),
+-      type: 'info'
+-    })
+-
+-    if (choice === 0) {
+-      // The quit path SIGTERMs backend children like any normal quit.
+-      appUpdater.quitAndInstall()
+-    }
+   })
+ 
+   const check = () => {
+@@ -8942,6 +8935,17 @@ function configureSpellChecker() {
+   }
+ }
+ 
++// Squirrel.Mac's restart path (electron-updater quitAndInstall drives
++// Electron's NATIVE autoUpdater on macOS) closes all windows after emitting
++// THIS event — plain 'before-quit' does not fire first. Without the flag
++// flip, the macOS hide-on-close handler preventDefaults the close, the quit
++// stalls forever, and the user is left with the OLD version running headless
++// (beta.9 incident: pressed "Restart now", app never came back — process
++// alive, window hidden, no ShipIt ever spawned).
++nativeAutoUpdater.on('before-quit-for-update', () => {
++  isAppQuitting = true
++})
++
+ app.on('before-quit', () => {
+   isAppQuitting = true
+ 
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index 0de8a36d868..ec945f86e71 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -2,7 +2,7 @@
+   "name": "nemesis",
+   "productName": "Nemesis",
+   "private": true,
+-  "version": "0.1.0-beta.9",
++  "version": "0.1.0-beta.10",
+   "description": "Native desktop shell for the Nemesis school agent.",
+   "author": "Nemesis",
+   "type": "module",
+diff --git a/apps/desktop/src/components/assistant-ui/thread/activity-strip.js b/apps/desktop/src/components/assistant-ui/thread/activity-strip.js
+index 5b09b6c35f4..d2595e75688 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/activity-strip.js
++++ b/apps/desktop/src/components/assistant-ui/thread/activity-strip.js
+@@ -1,15 +1,22 @@
+ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ // ChatGPT-style thinking preview (student build). While a turn runs, the strip
+ // shows (1) an INTENT LINE — the model's own first thought sentence(s), readable
+-// body text that tells the student what it's about to do — and (2) below it a
+-// shimmering live status ("Searching PubMed for 'tesamorelin'…", or "Thinking").
++// body text that tells the student what it's about to do — and (2) a shimmering
++// live status ("Searching PubMed for 'tesamorelin'…", or "Thinking").
+ // The raw trail (reasoning disclosure + tool rows) is hidden while running
+ // (styles.css) EXCEPT tool cards waiting on an approval, which must stay
+ // clickable. Once the turn settles, everything folds into one quiet row —
+ // "Worked for 21s" / "Thought for 8s" — that expands the full trail on demand.
++//
++// The strip renders TWICE per message (assistant-message.tsx): a 'header'
++// instance above the prose that owns the settled toggle, the turn clock, and
++// the trail-collapse attribute — and a 'live' instance below the prose so the
++// running status reads as "here's what I said → here's what I'm doing now"
++// instead of floating above text that streamed in after it (owner ask, 3×).
+ import { useAuiState } from '@assistant-ui/react';
+ import { useCallback, useEffect, useRef, useState } from 'react';
+ import { currentActivityEvent, phraseForActivity } from '@/components/assistant-ui/thread/activity-phrase';
++import { contentHasVisibleText } from '@/components/assistant-ui/thread/content';
+ import { Codicon } from '@/components/ui/codicon';
+ import { cn } from '@/lib/utils';
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+@@ -59,7 +66,7 @@ export function extractIntent(raw) {
+     const cut = text.slice(0, 170);
+     return `${cut.slice(0, cut.lastIndexOf(' '))}…`;
+ }
+-export const ActivityStrip = () => {
++export const ActivityStrip = ({ placement = 'header' }) => {
+     const [open, setOpen] = useState(false);
+     // Bumped when the clock stops so the settled label re-renders with a duration
+     // (the settle render itself runs before the effect records `end`).
+@@ -90,10 +97,15 @@ export const ActivityStrip = () => {
+         const first = s.message.parts.find(part => part?.type === 'reasoning' && typeof part.text === 'string' && part.text.trim().length > 0);
+         return first && first.type === 'reasoning' ? extractIntent(first.text) : '';
+     });
++    // Once real prose has streamed, the turn's opening thought is old news —
++    // showing it BELOW that prose would read as a stale stray sentence, so the
++    // live instance drops the intent line and keeps only the status shimmer.
++    const hasProse = useAuiState(s => contentHasVisibleText(s.message.content));
+     const active = NEMESIS_STUDENT_BUILD && (steps > 0 || hasReasoning);
+-    // Wall clock: arm on the first running render, freeze on settle.
++    // Wall clock: arm on the first running render, freeze on settle. The header
++    // instance owns it (exactly one writer per message).
+     useEffect(() => {
+-        if (!NEMESIS_STUDENT_BUILD) {
++        if (!NEMESIS_STUDENT_BUILD || placement !== 'header') {
+             return;
+         }
+         const entry = TURN_CLOCK.get(messageId);
+@@ -106,10 +118,14 @@ export const ActivityStrip = () => {
+             TURN_CLOCK.set(messageId, { ...entry, end: Date.now() });
+             setClockTick(tick => tick + 1);
+         }
+-    }, [messageId, running]);
++    }, [messageId, placement, running]);
+     // The trail lives in a sibling subtree (MessagePrimitive.Parts), so the collapse is
+     // driven by an attribute on the shared message root + a CSS rule in styles.css.
++    // Header-owned: its anchor stays mounted through every phase of the turn.
+     useEffect(() => {
++        if (placement !== 'header') {
++            return;
++        }
+         const root = ref.current?.closest('[data-role="assistant"]');
+         if (!root) {
+             return;
+@@ -119,14 +135,17 @@ export const ActivityStrip = () => {
+             return;
+         }
+         root.setAttribute('data-nemesis-activity', running ? 'live' : open ? 'open' : 'collapsed');
+-    }, [active, open, running]);
++    }, [active, open, placement, running]);
+     // Branches render different elements (div / button), so the ref is a shared
+     // callback rather than a per-element RefObject.
+     const attachRef = useCallback((node) => {
+         ref.current = node;
+     }, []);
+-    if (running && (livePhrase || intent || hasReasoning)) {
+-        return (_jsxs("div", { "aria-live": "polite", className: "mb-1 flex min-w-0 max-w-full flex-col gap-1", "data-slot": "aui_activity-phrase", ref: attachRef, role: "status", children: [intent && (_jsx("p", { className: "nemesis-intent-line text-[0.875rem] leading-relaxed text-(--ui-text-secondary)", children: intent })), _jsx("span", { className: "nemesis-activity-phrase flex min-w-0 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)", children: _jsx("span", { className: "shimmer min-w-0 truncate", children: livePhrase || 'Thinking' }) }, livePhrase || 'thinking')] }));
++    if (placement === 'live') {
++        if (!running || !(livePhrase || intent || hasReasoning)) {
++            return null;
++        }
++        return (_jsxs("div", { "aria-live": "polite", className: "mt-1.5 mb-1 flex min-w-0 max-w-full flex-col gap-1", "data-slot": "aui_activity-phrase", role: "status", children: [intent && !hasProse && (_jsx("p", { className: "nemesis-intent-line text-[0.875rem] leading-relaxed text-(--ui-text-secondary)", children: intent })), _jsx("span", { className: "nemesis-activity-phrase flex min-w-0 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)", children: _jsx("span", { className: "shimmer min-w-0 truncate", children: livePhrase || 'Thinking' }) }, livePhrase || 'thinking')] }));
+     }
+     if (!active || running) {
+         // Zero-size anchor keeps the ref attached so the attribute updates on settle.
+diff --git a/apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx b/apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx
+index e6380e29da4..5c3fe075e3c 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx
++++ b/apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx
+@@ -1,15 +1,22 @@
+ // ChatGPT-style thinking preview (student build). While a turn runs, the strip
+ // shows (1) an INTENT LINE — the model's own first thought sentence(s), readable
+-// body text that tells the student what it's about to do — and (2) below it a
+-// shimmering live status ("Searching PubMed for 'tesamorelin'…", or "Thinking").
++// body text that tells the student what it's about to do — and (2) a shimmering
++// live status ("Searching PubMed for 'tesamorelin'…", or "Thinking").
+ // The raw trail (reasoning disclosure + tool rows) is hidden while running
+ // (styles.css) EXCEPT tool cards waiting on an approval, which must stay
+ // clickable. Once the turn settles, everything folds into one quiet row —
+ // "Worked for 21s" / "Thought for 8s" — that expands the full trail on demand.
++//
++// The strip renders TWICE per message (assistant-message.tsx): a 'header'
++// instance above the prose that owns the settled toggle, the turn clock, and
++// the trail-collapse attribute — and a 'live' instance below the prose so the
++// running status reads as "here's what I said → here's what I'm doing now"
++// instead of floating above text that streamed in after it (owner ask, 3×).
+ import { useAuiState } from '@assistant-ui/react'
+ import { type FC, useCallback, useEffect, useRef, useState } from 'react'
+ 
+ import { currentActivityEvent, phraseForActivity } from '@/components/assistant-ui/thread/activity-phrase'
++import { contentHasVisibleText } from '@/components/assistant-ui/thread/content'
+ import { Codicon } from '@/components/ui/codicon'
+ import { cn } from '@/lib/utils'
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+@@ -73,7 +80,7 @@ export function extractIntent(raw: string): string {
+   return `${cut.slice(0, cut.lastIndexOf(' '))}…`
+ }
+ 
+-export const ActivityStrip: FC = () => {
++export const ActivityStrip: FC<{ placement?: 'header' | 'live' }> = ({ placement = 'header' }) => {
+   const [open, setOpen] = useState(false)
+   // Bumped when the clock stops so the settled label re-renders with a duration
+   // (the settle render itself runs before the effect records `end`).
+@@ -82,6 +89,7 @@ export const ActivityStrip: FC = () => {
+   const messageId = useAuiState(s => s.message.id)
+   const running = useAuiState(s => s.message.status?.type === 'running')
+   const steps = useAuiState(s => s.message.parts.filter(part => part?.type === 'tool-call').length)
++
+   const hasReasoning = useAuiState(s =>
+     s.message.parts.some(part => part?.type === 'reasoning' && typeof part.text === 'string' && part.text.trim().length > 0)
+   )
+@@ -115,11 +123,17 @@ export const ActivityStrip: FC = () => {
+     return first && first.type === 'reasoning' ? extractIntent(first.text) : ''
+   })
+ 
++  // Once real prose has streamed, the turn's opening thought is old news —
++  // showing it BELOW that prose would read as a stale stray sentence, so the
++  // live instance drops the intent line and keeps only the status shimmer.
++  const hasProse = useAuiState(s => contentHasVisibleText(s.message.content))
++
+   const active = NEMESIS_STUDENT_BUILD && (steps > 0 || hasReasoning)
+ 
+-  // Wall clock: arm on the first running render, freeze on settle.
++  // Wall clock: arm on the first running render, freeze on settle. The header
++  // instance owns it (exactly one writer per message).
+   useEffect(() => {
+-    if (!NEMESIS_STUDENT_BUILD) {
++    if (!NEMESIS_STUDENT_BUILD || placement !== 'header') {
+       return
+     }
+ 
+@@ -133,11 +147,16 @@ export const ActivityStrip: FC = () => {
+       TURN_CLOCK.set(messageId, { ...entry, end: Date.now() })
+       setClockTick(tick => tick + 1)
+     }
+-  }, [messageId, running])
++  }, [messageId, placement, running])
+ 
+   // The trail lives in a sibling subtree (MessagePrimitive.Parts), so the collapse is
+   // driven by an attribute on the shared message root + a CSS rule in styles.css.
++  // Header-owned: its anchor stays mounted through every phase of the turn.
+   useEffect(() => {
++    if (placement !== 'header') {
++      return
++    }
++
+     const root = ref.current?.closest('[data-role="assistant"]')
+ 
+     if (!root) {
+@@ -151,7 +170,7 @@ export const ActivityStrip: FC = () => {
+     }
+ 
+     root.setAttribute('data-nemesis-activity', running ? 'live' : open ? 'open' : 'collapsed')
+-  }, [active, open, running])
++  }, [active, open, placement, running])
+ 
+   // Branches render different elements (div / button), so the ref is a shared
+   // callback rather than a per-element RefObject.
+@@ -159,16 +178,19 @@ export const ActivityStrip: FC = () => {
+     ref.current = node
+   }, [])
+ 
+-  if (running && (livePhrase || intent || hasReasoning)) {
++  if (placement === 'live') {
++    if (!running || !(livePhrase || intent || hasReasoning)) {
++      return null
++    }
++
+     return (
+       <div
+         aria-live="polite"
+-        className="mb-1 flex min-w-0 max-w-full flex-col gap-1"
++        className="mt-1.5 mb-1 flex min-w-0 max-w-full flex-col gap-1"
+         data-slot="aui_activity-phrase"
+-        ref={attachRef}
+         role="status"
+       >
+-        {intent && (
++        {intent && !hasProse && (
+           <p className="nemesis-intent-line text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">{intent}</p>
+         )}
+         {/* Keyed by phrase: a new phrase remounts the wrapper, replaying the CSS
+@@ -191,6 +213,7 @@ export const ActivityStrip: FC = () => {
+ 
+   const clock = TURN_CLOCK.get(messageId)
+   const seconds = clock?.end !== undefined ? Math.max(1, Math.round((clock.end - clock.start) / 1000)) : null
++
+   const label = open
+     ? 'Hide work'
+     : seconds !== null
+diff --git a/apps/desktop/src/components/assistant-ui/thread/assistant-message.js b/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
+index 800ffe05144..6165cfda096 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
++++ b/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
+@@ -2,8 +2,8 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ import { ActionBarPrimitive, BranchPickerPrimitive, ErrorPrimitive, MessagePrimitive, useAuiState, useMessageRuntime } from '@assistant-ui/react';
+ import { useStore } from '@nanostores/react';
+ import { useCallback, useMemo, useState } from 'react';
+-import { contentHasVisibleText, messageContentText, pickPrimaryPreviewTarget } from '@/components/assistant-ui/thread/content';
+ import { ActivityStrip } from '@/components/assistant-ui/thread/activity-strip';
++import { contentHasVisibleText, messageContentText, pickPrimaryPreviewTarget } from '@/components/assistant-ui/thread/content';
+ import { MESSAGE_PARTS_COMPONENTS } from '@/components/assistant-ui/thread/message-parts';
+ import { MessageSources } from '@/components/assistant-ui/thread/message-sources';
+ import { StreamStallIndicator } from '@/components/assistant-ui/thread/status';
+@@ -16,11 +16,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+ import { useI18n } from '@/i18n';
+ import { triggerHaptic } from '@/lib/haptics';
+ import { GitBranchIcon, Loader2Icon, Volume2Icon, VolumeXIcon, XIcon } from '@/lib/icons';
+-import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { extractPreviewTargets } from '@/lib/preview-targets';
+ import { useEnterAnimation } from '@/lib/use-enter-animation';
+ import { cn } from '@/lib/utils';
+ import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { notifyError } from '@/store/notifications';
+ import { $voicePlayback } from '@/store/voice-playback';
+ export const AssistantMessage = ({ onBranchInNewChat, onDismissError }) => {
+@@ -54,7 +54,7 @@ export const AssistantMessage = ({ onBranchInNewChat, onDismissError }) => {
+     if (isPlaceholder) {
+         return null;
+     }
+-    return (_jsxs(MessagePrimitive.Root, { className: "group flex w-full min-w-0 max-w-full flex-col gap-0 self-start overflow-hidden", "data-role": "assistant", "data-slot": "aui_assistant-message-root", "data-streaming": isRunning ? 'true' : undefined, ref: enterRef, children: [_jsxs("div", { className: "wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground", "data-slot": "aui_assistant-message-content", children: [_jsx(ActivityStrip, {}), _jsx(MessagePrimitive.Parts, { components: MESSAGE_PARTS_COMPONENTS }), isRunning && _jsx(StreamStallIndicator, {}), previewTargets.length > 0 && (_jsx("div", { className: "mt-3 flex flex-wrap gap-2", children: previewTargets.map(target => (_jsx(PreviewAttachment, { source: "explicit-link", target: target }, target))) })), _jsx(MessageSources, { text: completedText }), _jsx(MessagePrimitive.Error, { children: _jsxs(ErrorPrimitive.Root, { className: "mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]", role: "alert", children: [_jsx(ErrorPrimitive.Message, { className: "min-w-0 flex-1" }), onDismissError && (_jsx(TooltipIconButton, { className: "-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100", onClick: () => onDismissError(messageId), side: "top", tooltip: t.assistant.thread.dismissError, children: _jsx(XIcon, { className: "size-3.5" }) }))] }) })] }), hasVisibleText && (_jsx(AssistantFooter, { getMessageText: getMessageText, messageId: messageId, onBranchInNewChat: onBranchInNewChat }))] }));
++    return (_jsxs(MessagePrimitive.Root, { className: "group flex w-full min-w-0 max-w-full flex-col gap-0 self-start overflow-hidden", "data-role": "assistant", "data-slot": "aui_assistant-message-root", "data-streaming": isRunning ? 'true' : undefined, ref: enterRef, children: [_jsxs("div", { className: "wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground", "data-slot": "aui_assistant-message-content", children: [_jsx(ActivityStrip, { placement: "header" }), _jsx(MessagePrimitive.Parts, { components: MESSAGE_PARTS_COMPONENTS }), _jsx(ActivityStrip, { placement: "live" }), isRunning && _jsx(StreamStallIndicator, {}), previewTargets.length > 0 && (_jsx("div", { className: "mt-3 flex flex-wrap gap-2", children: previewTargets.map(target => (_jsx(PreviewAttachment, { source: "explicit-link", target: target }, target))) })), _jsx(MessageSources, { text: completedText }), _jsx(MessagePrimitive.Error, { children: _jsxs(ErrorPrimitive.Root, { className: "mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]", role: "alert", children: [_jsx(ErrorPrimitive.Message, { className: "min-w-0 flex-1" }), onDismissError && (_jsx(TooltipIconButton, { className: "-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100", onClick: () => onDismissError(messageId), side: "top", tooltip: t.assistant.thread.dismissError, children: _jsx(XIcon, { className: "size-3.5" }) }))] }) })] }), hasVisibleText && (_jsx(AssistantFooter, { getMessageText: getMessageText, messageId: messageId, onBranchInNewChat: onBranchInNewChat }))] }));
+ };
+ const AssistantActionBar = ({ messageId, getMessageText, onBranchInNewChat }) => {
+     const { t } = useI18n();
+diff --git a/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx b/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
+index 47acf5864d2..0cf77e472af 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
++++ b/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
+@@ -9,12 +9,12 @@ import {
+ import { useStore } from '@nanostores/react'
+ import { type FC, useCallback, useMemo, useState } from 'react'
+ 
++import { ActivityStrip } from '@/components/assistant-ui/thread/activity-strip'
+ import {
+   contentHasVisibleText,
+   messageContentText,
+   pickPrimaryPreviewTarget
+ } from '@/components/assistant-ui/thread/content'
+-import { ActivityStrip } from '@/components/assistant-ui/thread/activity-strip'
+ import { MESSAGE_PARTS_COMPONENTS } from '@/components/assistant-ui/thread/message-parts'
+ import { MessageSources } from '@/components/assistant-ui/thread/message-sources'
+ import { StreamStallIndicator } from '@/components/assistant-ui/thread/status'
+@@ -33,11 +33,11 @@ import {
+ import { useI18n } from '@/i18n'
+ import { triggerHaptic } from '@/lib/haptics'
+ import { GitBranchIcon, Loader2Icon, Volume2Icon, VolumeXIcon, XIcon } from '@/lib/icons'
+-import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { extractPreviewTargets } from '@/lib/preview-targets'
+ import { useEnterAnimation } from '@/lib/use-enter-animation'
+ import { cn } from '@/lib/utils'
+ import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { notifyError } from '@/store/notifications'
+ import { $voicePlayback } from '@/store/voice-playback'
+ 
+@@ -108,8 +108,13 @@ export const AssistantMessage: FC<{
+         data-slot="aui_assistant-message-content"
+       >
+         {/* Todos render in the composer status stack now, not inline. */}
+-        <ActivityStrip />
++        {/* Header instance: settled "Worked for Xs" toggle + trail collapse. */}
++        <ActivityStrip placement="header" />
+         <MessagePrimitive.Parts components={MESSAGE_PARTS_COMPONENTS} />
++        {/* Live instance: while the turn runs, the shimmering status renders
++            BELOW whatever the assistant has said so far — "here's the plan →
++            here's what I'm doing", not a status floating above later prose. */}
++        <ActivityStrip placement="live" />
+         {isRunning && <StreamStallIndicator />}
+         {previewTargets.length > 0 && (
+           <div className="mt-3 flex flex-wrap gap-2">
+-- 
+2.50.1 (Apple Git-155)
+

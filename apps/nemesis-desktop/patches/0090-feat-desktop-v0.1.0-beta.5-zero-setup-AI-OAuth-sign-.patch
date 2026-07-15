@@ -1,0 +1,1866 @@
+From ef640c2102999cb152bad1a3a5a3f9fd3517a583 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 00:48:42 -0500
+Subject: [PATCH] =?UTF-8?q?feat(desktop):=20v0.1.0-beta.5=20=E2=80=94=20ze?=
+ =?UTF-8?q?ro-setup=20AI,=20OAuth=20sign-in,=20account/usage=20page,=20stu?=
+ =?UTF-8?q?dent=20polish?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Zero-setup model access: after sign-in the renderer hands its metering-proxy
+device key to main (nemesis:llm:sync IPC), which writes DEEPSEEK_API_KEY +
+DEEPSEEK_BASE_URL into $HERMES_HOME/.env (upsertEnvVars, tested) and restarts
+local backends — chat works on a fresh install with no provider setup. The
+upstream provider onboarding overlay is suppressed in the student build.
+
+Desktop Google/Apple sign-in: account gate buttons open the browser at
+app.enternemesis.com/auth/desktop with a one-shot state nonce; the session
+returns through the nemesis://auth deep link (refresh token only, exchanged
+with Supabase before trust; state checked). Sign-out now drops the device key
+so a second student on the same Mac mints their own.
+
+Account & usage settings: the Usage page (restored for students) gains account
+status (email/plan/trial/renewal, manage/refresh/sign out) and a 7-day usage
+bar chart read from the student's own RLS-scoped counters. Settings also gains
+a Keyboard shortcuts entry that opens the existing keybind panel.
+
+Student empty start: Study no longer seeds demo pharm decks. Persona is field-
+neutral (any major) in SOUL/prompt-builder/recorder prompts; old app-written
+SOULs auto-upgrade. Consent copy: partner categories on screen, named list in
+the linked Privacy Policy. Projects view toggle un-hidden for students (create
+a project mid-session). NSLocalNetworkUsageDescription added.
+---
+ agent/prompt_builder.py                       |  23 +--
+ apps/desktop/electron/main.ts                 |  66 +++++++-
+ .../desktop/electron/nemesis-identity.test.ts |  53 ++++++-
+ apps/desktop/electron/nemesis-identity.ts     |  57 ++++++-
+ apps/desktop/electron/preload.ts              |   3 +
+ apps/desktop/package.json                     |   3 +-
+ apps/desktop/src/app/chat/sidebar/index.js    |   2 +-
+ apps/desktop/src/app/chat/sidebar/index.tsx   |   6 +-
+ apps/desktop/src/app/desktop-controller.js    |  26 +++-
+ apps/desktop/src/app/desktop-controller.tsx   |  36 ++++-
+ apps/desktop/src/app/recorder/archive.js      |   6 +-
+ apps/desktop/src/app/recorder/archive.tsx     |   6 +-
+ apps/desktop/src/app/settings/index.js        |  20 ++-
+ apps/desktop/src/app/settings/index.tsx       |  20 ++-
+ .../src/app/settings/usage-settings.js        |  48 +++++-
+ .../src/app/settings/usage-settings.tsx       | 146 ++++++++++++++++--
+ apps/desktop/src/app/study/index.js           |   2 +-
+ apps/desktop/src/app/study/index.tsx          |   2 +-
+ apps/desktop/src/app/study/model.js           |  44 +-----
+ apps/desktop/src/app/study/model.ts           |  96 +-----------
+ .../src/components/nemesis-account-gate.js    |   8 +-
+ .../src/components/nemesis-account-gate.tsx   |  28 ++++
+ .../src/components/nemesis-consent-gate.js    |  19 ++-
+ .../src/components/nemesis-consent-gate.tsx   |  31 ++--
+ apps/desktop/src/global.d.ts                  |   3 +
+ apps/desktop/src/lib/icons.js                 |   4 +-
+ apps/desktop/src/lib/icons.ts                 |   2 +
+ apps/desktop/src/nemesis-account.js           |  96 ++++++++++++
+ apps/desktop/src/nemesis-account.ts           | 124 +++++++++++++++
+ apps/desktop/src/nemesis.js                   |   4 +
+ apps/desktop/src/nemesis.ts                   |   4 +
+ hermes_cli/default_soul.py                    |  38 +++--
+ 32 files changed, 815 insertions(+), 211 deletions(-)
+
+diff --git a/agent/prompt_builder.py b/agent/prompt_builder.py
+index 3d2abca276e..99933a9f0e9 100644
+--- a/agent/prompt_builder.py
++++ b/agent/prompt_builder.py
+@@ -128,16 +128,19 @@ def _strip_yaml_frontmatter(content: str) -> str:
+ # =========================================================================
+ 
+ DEFAULT_AGENT_IDENTITY = (
+-    "You are Nemesis, an AI study assistant for health-sciences and pharmacy students. "
+-    "You help students understand course material, research evidence-based answers with "
+-    "real citations, and turn lectures and readings into study material — notes, flashcards, "
+-    "summaries, and explanations. You communicate clearly, in plain language, and admit "
+-    "uncertainty when appropriate. For any clinical, drug, or health claim, ground your answer "
+-    "in real retrieved literature (use the pubmed-evidence skill) and cite it; never invent a "
+-    "citation, PMID, dose, or fact. For dosing or any dangerous specific, remind the student to "
+-    "verify against current official labeling and their instructor — you provide study support, "
+-    "not medical advice. Everything you produce is a draft the student reviews; you never submit "
+-    "coursework, assignments, or exams on anyone's behalf."
++    "You are Nemesis, an AI study agent for students in any field — engineering, business, "
++    "health sciences, humanities, law, the arts, and everything between. You help students "
++    "understand course material, research well-sourced answers with real citations, and turn "
++    "lectures and readings into study material — notes, flashcards, summaries, and explanations. "
++    "Adapt to the student's own subject and vocabulary; never assume their major. You communicate "
++    "clearly, in plain language, and admit uncertainty when appropriate. For any factual claim "
++    "that matters — scientific, clinical, legal, historical, statistical — ground your answer in "
++    "real retrieved sources (use the pubmed-evidence skill for biomedical topics) and cite them; "
++    "never invent a citation, identifier, number, or fact. For safety-critical specifics (drug "
++    "doses, legal or medical decisions), remind the student to verify against current official "
++    "sources and their instructor — you provide study support, not professional advice. "
++    "Everything you produce is a draft the student reviews; you never submit coursework, "
++    "assignments, or exams on anyone's behalf."
+ )
+ 
+ HERMES_AGENT_HELP_GUIDANCE = (
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index 2f80a69018c..a05043dbb83 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -100,7 +100,8 @@ import {
+   defaultNemesisHome,
+   detectLegacyHomeMigration,
+   extractNemesisDeepLink,
+-  PRIMARY_PROTOCOL
++  PRIMARY_PROTOCOL,
++  upsertEnvVars
+ } from './nemesis-identity'
+ import { serializeJsonBody, setJsonRequestHeaders } from './oauth-net-request'
+ import { registerSchoolBrowserIpc } from './school-browser'
+@@ -7057,6 +7058,69 @@ ipcMain.handle('hermes:backend:touch', async (_event, profile) => {
+ 
+   return { ok: true }
+ })
++// Zero-setup model access (student build). After sign-in the renderer hands us
++// its metering-proxy device key; we point the agent backend at the Nemesis LLM
++// proxy by writing the two DeepSeek-provider override vars into $HERMES_HOME/.env
++// (the backend reads that file at spawn) and restarting any live local backend.
++// The device key is the only secret and it's the student's own, scoped + revocable
++// server-side. Fixed URL prefix — the renderer cannot point the backend anywhere else.
++const NEMESIS_LLM_PROXY_BASE = 'https://qyjmivntajbigjswhahb.supabase.co/functions/v1/nemesis-llm/v1'
++
++ipcMain.handle('nemesis:llm:sync', async (_event, payload) => {
++  try {
++    const deviceKey = typeof payload?.deviceKey === 'string' ? payload.deviceKey.trim() : ''
++
++    if (!/^nmk_[0-9a-f]{16,128}$/.test(deviceKey)) {
++      return { ok: false, error: 'invalid device key' }
++    }
++
++    const envPath = path.join(HERMES_HOME, '.env')
++    let current = ''
++
++    try {
++      current = fs.readFileSync(envPath, 'utf8')
++    } catch {
++      // No .env yet — first sign-in on a fresh runtime.
++    }
++
++    const next = upsertEnvVars(current, {
++      DEEPSEEK_API_KEY: deviceKey,
++      DEEPSEEK_BASE_URL: NEMESIS_LLM_PROXY_BASE
++    })
++
++    if (next === current) {
++      return { ok: true, changed: false }
++    }
++
++    fs.mkdirSync(path.dirname(envPath), { recursive: true })
++    fs.writeFileSync(envPath, next, { mode: 0o600 })
++    rememberLog('[nemesis-llm] backend provider synced to the Nemesis metering proxy')
++
++    // Restart live local backends so the new env takes effect. If boot (or the
++    // first-launch install) is still in flight, let it settle first — the child
++    // it spawns will already read the freshly written .env, and tearing down a
++    // half-built connection would race the installer.
++    if (connectionPromise) {
++      try {
++        await connectionPromise
++      } catch {
++        // Boot failed on its own; nothing live to restart.
++      }
++
++      await teardownPrimaryBackendAndWait()
++
++      for (const profile of [...backendPool.keys()]) {
++        await teardownPoolBackendAndWait(profile)
++      }
++    }
++
++    return { ok: true, changed: true }
++  } catch (err) {
++    rememberLog(`[nemesis-llm] provider sync failed: ${err.message}`)
++
++    return { ok: false, error: err.message }
++  }
++})
+ ipcMain.handle('hermes:gateway:ws-url', async (_event, profile) => freshGatewayWsUrl(profile))
+ ipcMain.handle('hermes:window:openSession', async (_event, sessionId, opts) => {
+   if (typeof sessionId !== 'string' || !sessionId.trim()) {
+diff --git a/apps/desktop/electron/nemesis-identity.test.ts b/apps/desktop/electron/nemesis-identity.test.ts
+index 79011853575..4bb9b2c2dab 100644
+--- a/apps/desktop/electron/nemesis-identity.test.ts
++++ b/apps/desktop/electron/nemesis-identity.test.ts
+@@ -11,7 +11,9 @@ import {
+   defaultNemesisHome,
+   detectLegacyHomeMigration,
+   extractNemesisDeepLink,
+-  PRIMARY_PROTOCOL
++  NEMESIS_ENV_BANNER,
++  PRIMARY_PROTOCOL,
++  upsertEnvVars
+ } from './nemesis-identity'
+ 
+ const DESKTOP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+@@ -96,3 +98,52 @@ test('legacy home migration maps Windows paths through LOCALAPPDATA', () => {
+   })
+   assert.deepEqual(result, { legacyHome: legacy, nemesisHome: `${local}\\nemesis` })
+ })
++
++// --- upsertEnvVars -----------------------------------------------------------
++
++test('upsertEnvVars appends managed vars to an empty file', () => {
++  const result = upsertEnvVars('', { DEEPSEEK_API_KEY: 'nmk_abc', DEEPSEEK_BASE_URL: 'https://proxy/v1' })
++
++  assert.ok(result.includes('DEEPSEEK_API_KEY=nmk_abc\n'))
++  assert.ok(result.includes('DEEPSEEK_BASE_URL=https://proxy/v1\n'))
++  assert.ok(result.includes(NEMESIS_ENV_BANNER))
++  assert.ok(result.endsWith('\n'))
++})
++
++test('upsertEnvVars rewrites an existing assignment in place', () => {
++  const before = '# my notes\nDEEPSEEK_API_KEY=old_key\nOTHER=1\n'
++  const result = upsertEnvVars(before, { DEEPSEEK_API_KEY: 'nmk_new' })
++
++  assert.equal(result, '# my notes\nDEEPSEEK_API_KEY=nmk_new\nOTHER=1\n')
++})
++
++test('upsertEnvVars leaves commented lookalikes alone and appends the real var', () => {
++  const before = '# DEEPSEEK_API_KEY=commented\n'
++  const result = upsertEnvVars(before, { DEEPSEEK_API_KEY: 'nmk_live' })
++
++  assert.ok(result.includes('# DEEPSEEK_API_KEY=commented'))
++  assert.ok(result.includes('\nDEEPSEEK_API_KEY=nmk_live'))
++})
++
++test('upsertEnvVars handles export-prefixed assignments', () => {
++  const before = 'export DEEPSEEK_BASE_URL=https://old\n'
++  const result = upsertEnvVars(before, { DEEPSEEK_BASE_URL: 'https://new/v1' })
++
++  assert.equal(result, 'DEEPSEEK_BASE_URL=https://new/v1\n')
++})
++
++test('upsertEnvVars is idempotent', () => {
++  const once = upsertEnvVars('KEEP=1\n', { DEEPSEEK_API_KEY: 'nmk_x', DEEPSEEK_BASE_URL: 'https://p/v1' })
++  const twice = upsertEnvVars(once, { DEEPSEEK_API_KEY: 'nmk_x', DEEPSEEK_BASE_URL: 'https://p/v1' })
++
++  assert.equal(once, twice)
++})
++
++test('upsertEnvVars mixed update-and-append keeps unrelated lines byte-identical', () => {
++  const before = 'A=1\nDEEPSEEK_API_KEY=stale\n\n# trailing comment\n'
++  const result = upsertEnvVars(before, { DEEPSEEK_API_KEY: 'nmk_y', DEEPSEEK_BASE_URL: 'https://p/v1' })
++
++  assert.ok(result.startsWith('A=1\nDEEPSEEK_API_KEY=nmk_y\n'))
++  assert.ok(result.includes('# trailing comment'))
++  assert.ok(result.includes('DEEPSEEK_BASE_URL=https://p/v1'))
++})
+diff --git a/apps/desktop/electron/nemesis-identity.ts b/apps/desktop/electron/nemesis-identity.ts
+index 0965d3cab8f..0478dcf01de 100644
+--- a/apps/desktop/electron/nemesis-identity.ts
++++ b/apps/desktop/electron/nemesis-identity.ts
+@@ -52,6 +52,7 @@ function detectLegacyHomeMigration(options: {
+ }): null | { legacyHome: string; nemesisHome: string } {
+   const { exists, home, localAppData, nemesisHome, platform } = options
+   const joiner = platform === 'win32' ? path.win32 : path
++
+   const looksLikeAgentHome = (dir: string) =>
+     exists(joiner.join(dir, 'hermes-agent')) || exists(joiner.join(dir, 'config.yaml'))
+ 
+@@ -71,6 +72,58 @@ function detectLegacyHomeMigration(options: {
+   return looksLikeAgentHome(legacyHome) ? { legacyHome, nemesisHome } : null
+ }
+ 
++// Upsert KEY=value lines into a dotenv-style file body without disturbing any
++// other line (comments, unrelated vars, blank lines, ordering). An existing
++// assignment for a key is rewritten in place — even when commented-out lookalikes
++// exist elsewhere — and missing keys are appended under a managed banner. Pure
++// so the sync IPC handler's file semantics are unit-testable.
++const NEMESIS_ENV_BANNER = '# Managed by Nemesis sign-in — safe to delete; rewritten on next launch.'
++
++function upsertEnvVars(content: string, vars: Record<string, string>): string {
++  const lines = content.length ? content.split('\n') : []
++  const pending = new Map(Object.entries(vars))
++
++  const rewritten = lines.map(line => {
++    const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(line)
++
++    if (!match || !pending.has(match[1])) {
++      return line
++    }
++
++    const key = match[1]
++    const value = pending.get(key)
++    pending.delete(key)
++
++    return `${key}=${value}`
++  })
++
++  if (pending.size === 0) {
++    return rewritten.join('\n')
++  }
++
++  const appended = [...rewritten]
++
++  // Drop a single trailing blank line so the appended block sits flush, then
++  // restore the trailing newline at the end.
++  while (appended.length && appended[appended.length - 1].trim() === '') {
++    appended.pop()
++  }
++
++  if (appended.length) {
++    appended.push('')
++  }
++
++  appended.push(NEMESIS_ENV_BANNER)
++
++  for (const [key, value] of pending) {
++    appended.push(`${key}=${value}`)
++  }
++
++  appended.push('')
++
++  return appended.join('\n')
++}
++
+ export {
+   APP_ID,
+   APP_NAME,
+@@ -80,5 +133,7 @@ export {
+   detectLegacyHomeMigration,
+   extractNemesisDeepLink,
+   LEGACY_PROTOCOL,
+-  PRIMARY_PROTOCOL
++  NEMESIS_ENV_BANNER,
++  PRIMARY_PROTOCOL,
++  upsertEnvVars
+ }
+diff --git a/apps/desktop/electron/preload.ts b/apps/desktop/electron/preload.ts
+index 7b7cbaf6e9a..a6a1787cd36 100644
+--- a/apps/desktop/electron/preload.ts
++++ b/apps/desktop/electron/preload.ts
+@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
+   getConnection: profile => ipcRenderer.invoke('hermes:connection', profile),
+   revalidateConnection: () => ipcRenderer.invoke('hermes:connection:revalidate'),
+   touchBackend: profile => ipcRenderer.invoke('hermes:backend:touch', profile),
++  // Student build: hand the metering-proxy device key to main so the agent
++  // backend gets pointed at the Nemesis LLM proxy (zero-setup model access).
++  nemesisLlmSync: deviceKey => ipcRenderer.invoke('nemesis:llm:sync', { deviceKey }),
+   getGatewayWsUrl: profile => ipcRenderer.invoke('hermes:gateway:ws-url', profile),
+   openSessionWindow: (sessionId, opts) => ipcRenderer.invoke('hermes:window:openSession', sessionId, opts),
+   openNewSessionWindow: () => ipcRenderer.invoke('hermes:window:openNewSession'),
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index 212b1269bdf..6c6e37844f8 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -2,7 +2,7 @@
+   "name": "nemesis",
+   "productName": "Nemesis",
+   "private": true,
+-  "version": "0.1.0-beta.4",
++  "version": "0.1.0-beta.5",
+   "description": "Native desktop shell for the Nemesis school agent.",
+   "author": "Nemesis",
+   "type": "module",
+@@ -222,6 +222,7 @@
+         "CFBundleExecutable": "Nemesis",
+         "CFBundleName": "Nemesis",
+         "NSAudioCaptureUsageDescription": "Nemesis uses audio capture for voice conversations.",
++        "NSLocalNetworkUsageDescription": "Nemesis talks to its own study engine running on this Mac (localhost only).",
+         "NSMicrophoneUsageDescription": "Nemesis uses the microphone for voice input and voice conversations."
+       },
+       "gatekeeperAssess": false,
+diff --git a/apps/desktop/src/app/chat/sidebar/index.js b/apps/desktop/src/app/chat/sidebar/index.js
+index 73cf0eb9133..fda53285493 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.js
++++ b/apps/desktop/src/app/chat/sidebar/index.js
+@@ -752,7 +752,7 @@ export function ChatSidebar({ currentView, onNavigate, onLoadMoreSessions, onLoa
+                                                 else {
+                                                     onNewSessionInWorkspace(null);
+                                                 }
+-                                            }, size: "icon-xs", variant: "ghost", children: _jsx(Codicon, { name: "add", size: "0.75rem" }) })) : null, _jsx("div", { className: "grid size-6 place-items-center", children: !NEMESIS_STUDENT_BUILD && !showAllProfiles && agentSessions.length > 0 ? (_jsx(Button, { "aria-label": agentsGrouped ? s.showSessions : s.showProjects, className: cn(HEADER_NAV_BTN, agentsGrouped && 'bg-(--ui-control-active-background) text-foreground opacity-100'), onClick: event => {
++                                            }, size: "icon-xs", variant: "ghost", children: _jsx(Codicon, { name: "add", size: "0.75rem" }) })) : null, _jsx("div", { className: "grid size-6 place-items-center", children: !showAllProfiles && agentSessions.length > 0 ? (_jsx(Button, { "aria-label": agentsGrouped ? s.showSessions : s.showProjects, className: cn(HEADER_NAV_BTN, agentsGrouped && 'bg-(--ui-control-active-background) text-foreground opacity-100'), onClick: event => {
+                                                     event.stopPropagation();
+                                                     setSidebarRecentsOpen(true);
+                                                     setSidebarAgentsGrouped(!agentsGrouped);
+diff --git a/apps/desktop/src/app/chat/sidebar/index.tsx b/apps/desktop/src/app/chat/sidebar/index.tsx
+index a6125b231e4..9aefa6a4c8c 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.tsx
++++ b/apps/desktop/src/app/chat/sidebar/index.tsx
+@@ -1299,7 +1299,9 @@ export function ChatSidebar({
+                         </Button>
+                       ) : null}
+                       <div className="grid size-6 place-items-center">
+-                        {!NEMESIS_STUDENT_BUILD && !showAllProfiles && agentSessions.length > 0 ? (
++                        {/* beta.5: students get the Projects view too — it was the only way
++                            to create a project once a session was already running. */}
++                        {!showAllProfiles && agentSessions.length > 0 ? (
+                           <Button
+                             aria-label={agentsGrouped ? s.showSessions : s.showProjects}
+                             className={cn(
+@@ -1446,6 +1448,7 @@ interface StudentSidebarFooterProps {
+ 
+ function StudentSidebarFooter({ onOpenSettings }: StudentSidebarFooterProps) {
+   const account = useStore($account)
++
+   const accountEmail = account.bypass
+     ? 'Offline mode'
+     : account.status === 'signed-in'
+@@ -1453,6 +1456,7 @@ function StudentSidebarFooter({ onOpenSettings }: StudentSidebarFooterProps) {
+       : account.status === 'loading'
+         ? 'Account'
+         : 'Sign in'
++
+   const accountInitial = account.email?.trim().charAt(0).toUpperCase() || 'N'
+ 
+   return (
+diff --git a/apps/desktop/src/app/desktop-controller.js b/apps/desktop/src/app/desktop-controller.js
+index ffa0c1ee76d..91c388c6a1e 100644
+--- a/apps/desktop/src/app/desktop-controller.js
++++ b/apps/desktop/src/app/desktop-controller.js
+@@ -18,6 +18,7 @@ import { useMediaQuery } from '@/hooks/use-media-query';
+ import { isFocusWithin } from '@/lib/keybinds/combo';
+ import { cn } from '@/lib/utils';
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++import { adoptOAuthSession, consumeOAuthState } from '@/nemesis-account';
+ import { useSkinCommand } from '@/themes/use-skin-command';
+ import { formatRefValue } from '../components/assistant-ui/directive-text';
+ import { getSessionMessages, triggerCronJob } from '../hermes';
+@@ -256,6 +257,29 @@ export function DesktopController() {
+     // it into the composer — the user reviews/edits, then sends; the agent (or
+     // the shared command handler) creates the job. Signal readiness so a link
+     // that arrived during boot is flushed exactly once.
++    // nemesis://auth/callback?refresh_token=… — Google/Apple sign-in finishing in
++    // the browser hands the session back here. Only the refresh token is used and
++    // it's exchanged with Supabase before anything is trusted (adoptOAuthSession).
++    useEffect(() => {
++        const unsubscribe = window.hermesDesktop?.onDeepLink?.(payload => {
++            if (!payload || payload.kind !== 'auth') {
++                return;
++            }
++            const refreshToken = payload.params?.refresh_token;
++            if (typeof refreshToken !== 'string' || !refreshToken) {
++                return;
++            }
++            // Reject links this app didn't initiate (state must match the one-shot
++            // nonce minted when the student clicked Continue with Google/Apple).
++            if (!consumeOAuthState(payload.params?.state)) {
++                return;
++            }
++            void adoptOAuthSession(refreshToken).catch(() => {
++                // Expired or forged link: the sign-in gate stays up; the student can retry.
++            });
++        });
++        return () => unsubscribe?.();
++    }, []);
+     useEffect(() => {
+         const unsubscribe = window.hermesDesktop?.onDeepLink?.(payload => {
+             if (!payload || payload.kind !== 'blueprint' || !payload.name) {
+@@ -788,7 +812,7 @@ export function DesktopController() {
+     // (incl. a snapshotted cwd) independent of the session, so switching sessions
+     // never rebuilds or closes them; toggling the pane never rebuilds the shells.
+     const mainOverlays = _jsx(PersistentTerminal, { onAddSelectionToChat: composer.addTerminalSelectionAttachment });
+-    const overlays = (_jsxs(_Fragment, { children: [_jsx(RemoteDisplayBanner, {}), !isSecondaryWindow() && _jsx(DesktopInstallOverlay, {}), !isSecondaryWindow() && _jsx(NemesisAccountGate, {}), !isSecondaryWindow() && _jsx(NemesisConsentGate, {}), !isSecondaryWindow() && _jsx(NemesisUpdateBanner, {}), !isSecondaryWindow() && (_jsx(DesktopOnboardingOverlay, { enabled: gatewayState === 'open', onCompleted: () => {
++    const overlays = (_jsxs(_Fragment, { children: [_jsx(RemoteDisplayBanner, {}), !isSecondaryWindow() && _jsx(DesktopInstallOverlay, {}), !isSecondaryWindow() && _jsx(NemesisAccountGate, {}), !isSecondaryWindow() && _jsx(NemesisConsentGate, {}), !isSecondaryWindow() && _jsx(NemesisUpdateBanner, {}), !isSecondaryWindow() && !NEMESIS_STUDENT_BUILD && (_jsx(DesktopOnboardingOverlay, { enabled: gatewayState === 'open', onCompleted: () => {
+                     void refreshHermesConfig();
+                     void refreshCurrentModel();
+                     void queryClient.invalidateQueries({ queryKey: ['model-options'] });
+diff --git a/apps/desktop/src/app/desktop-controller.tsx b/apps/desktop/src/app/desktop-controller.tsx
+index f36c1886abf..9de4335d163 100644
+--- a/apps/desktop/src/app/desktop-controller.tsx
++++ b/apps/desktop/src/app/desktop-controller.tsx
+@@ -18,6 +18,7 @@ import { useMediaQuery } from '@/hooks/use-media-query'
+ import { isFocusWithin } from '@/lib/keybinds/combo'
+ import { cn } from '@/lib/utils'
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
++import { adoptOAuthSession, consumeOAuthState } from '@/nemesis-account'
+ import { useSkinCommand } from '@/themes/use-skin-command'
+ 
+ import { formatRefValue } from '../components/assistant-ui/directive-text'
+@@ -374,6 +375,35 @@ export function DesktopController() {
+   // it into the composer — the user reviews/edits, then sends; the agent (or
+   // the shared command handler) creates the job. Signal readiness so a link
+   // that arrived during boot is flushed exactly once.
++  // nemesis://auth/callback?refresh_token=… — Google/Apple sign-in finishing in
++  // the browser hands the session back here. Only the refresh token is used and
++  // it's exchanged with Supabase before anything is trusted (adoptOAuthSession).
++  useEffect(() => {
++    const unsubscribe = window.hermesDesktop?.onDeepLink?.(payload => {
++      if (!payload || payload.kind !== 'auth') {
++        return
++      }
++
++      const refreshToken = payload.params?.refresh_token
++
++      if (typeof refreshToken !== 'string' || !refreshToken) {
++        return
++      }
++
++      // Reject links this app didn't initiate (state must match the one-shot
++      // nonce minted when the student clicked Continue with Google/Apple).
++      if (!consumeOAuthState(payload.params?.state)) {
++        return
++      }
++
++      void adoptOAuthSession(refreshToken).catch(() => {
++        // Expired or forged link: the sign-in gate stays up; the student can retry.
++      })
++    })
++
++    return () => unsubscribe?.()
++  }, [])
++
+   useEffect(() => {
+     const unsubscribe = window.hermesDesktop?.onDeepLink?.(payload => {
+       if (!payload || payload.kind !== 'blueprint' || !payload.name) {
+@@ -1095,7 +1125,11 @@ export function DesktopController() {
+       {!isSecondaryWindow() && <NemesisAccountGate />}
+       {!isSecondaryWindow() && <NemesisConsentGate />}
+       {!isSecondaryWindow() && <NemesisUpdateBanner />}
+-      {!isSecondaryWindow() && (
++      {/* Student build: never show the upstream "connect a model provider" onboarding.
++          Nemesis provisions the model through the metering proxy at sign-in
++          (nemesis:llm:sync), so a provider/credential error is OUR bug, not a
++          student setup step. */}
++      {!isSecondaryWindow() && !NEMESIS_STUDENT_BUILD && (
+         <DesktopOnboardingOverlay
+           enabled={gatewayState === 'open'}
+           onCompleted={() => {
+diff --git a/apps/desktop/src/app/recorder/archive.js b/apps/desktop/src/app/recorder/archive.js
+index 70abc8e2f5d..4a6f1cb5c0d 100644
+--- a/apps/desktop/src/app/recorder/archive.js
++++ b/apps/desktop/src/app/recorder/archive.js
+@@ -101,7 +101,7 @@ export function parseLectureSections(content) {
+  *  just saved) and the archive detail view below (for any past recording). */
+ export function enhanceLectureNote(noteTitle, navigate) {
+     setComposerDraft(`Open my lecture note "${noteTitle}.md" in ~/Documents/Nemesis Library/${LECTURE_FOLDER}/ and add a clean, structured "AI notes" section immediately above the existing "Transcript" section. ` +
+-        'Use both "My notes" and "Transcript" as source material: keep my wording where it is good, fix transcription garbles against pharmacology vocabulary, ' +
++        'Use both "My notes" and "Transcript" as source material: keep my wording where it is good, fix transcription garbles against the vocabulary of the course subject, ' +
+         'and organize the AI notes with useful headings and bullets. Preserve the original Transcript section, My notes section, and the header lines about the recording date and audio file. Update that same file with the result. ' +
+         'At the end add a "Flashcard candidates" section with 5 exam-style Q&A pairs from this lecture. Tell me when the file is updated.');
+     navigate(NEW_CHAT_ROUTE);
+@@ -117,8 +117,8 @@ async function readAudioBuffer(file) {
+     return response.arrayBuffer();
+ }
+ function draftFlashcardsPrompt(transcript) {
+-    return ('Turn this lecture transcript into 8-15 exam-quality flashcards for a pharmacy/health-sciences student. ' +
+-        'Application-level questions (mechanisms, adverse effects, interactions, monitoring), one concept per card, no "what is X" filler. ' +
++    return ('Turn this lecture transcript into 8-15 exam-quality flashcards for a university student — match the subject of the transcript. ' +
++        'Application-level questions (mechanisms, causes and consequences, trade-offs, applied problems), one concept per card, no "what is X" filler. ' +
+         'Reply with ONLY tab-separated lines, one card per line: front<TAB>back. No headers, no numbering, no commentary — ' +
+         "I'll paste your reply straight into Study → Import cards.\n\nTranscript:\n" +
+         transcript);
+diff --git a/apps/desktop/src/app/recorder/archive.tsx b/apps/desktop/src/app/recorder/archive.tsx
+index 50c692e851f..59fbcddee82 100644
+--- a/apps/desktop/src/app/recorder/archive.tsx
++++ b/apps/desktop/src/app/recorder/archive.tsx
+@@ -138,7 +138,7 @@ export function parseLectureSections(content: string): LectureSections {
+ export function enhanceLectureNote(noteTitle: string, navigate: NavigateFunction): void {
+   setComposerDraft(
+     `Open my lecture note "${noteTitle}.md" in ~/Documents/Nemesis Library/${LECTURE_FOLDER}/ and add a clean, structured "AI notes" section immediately above the existing "Transcript" section. ` +
+-      'Use both "My notes" and "Transcript" as source material: keep my wording where it is good, fix transcription garbles against pharmacology vocabulary, ' +
++      'Use both "My notes" and "Transcript" as source material: keep my wording where it is good, fix transcription garbles against the vocabulary of the course subject, ' +
+       'and organize the AI notes with useful headings and bullets. Preserve the original Transcript section, My notes section, and the header lines about the recording date and audio file. Update that same file with the result. ' +
+       'At the end add a "Flashcard candidates" section with 5 exam-style Q&A pairs from this lecture. Tell me when the file is updated.'
+   )
+@@ -160,8 +160,8 @@ async function readAudioBuffer(file: RecordingFile): Promise<ArrayBuffer> {
+ 
+ function draftFlashcardsPrompt(transcript: string): string {
+   return (
+-    'Turn this lecture transcript into 8-15 exam-quality flashcards for a pharmacy/health-sciences student. ' +
+-    'Application-level questions (mechanisms, adverse effects, interactions, monitoring), one concept per card, no "what is X" filler. ' +
++    'Turn this lecture transcript into 8-15 exam-quality flashcards for a university student — match the subject of the transcript. ' +
++    'Application-level questions (mechanisms, causes and consequences, trade-offs, applied problems), one concept per card, no "what is X" filler. ' +
+     'Reply with ONLY tab-separated lines, one card per line: front<TAB>back. No headers, no numbering, no commentary — ' +
+     "I'll paste your reply straight into Study → Import cards.\n\nTranscript:\n" +
+     transcript
+diff --git a/apps/desktop/src/app/settings/index.js b/apps/desktop/src/app/settings/index.js
+index 51a2d2ea06f..6e03961c3de 100644
+--- a/apps/desktop/src/app/settings/index.js
++++ b/apps/desktop/src/app/settings/index.js
+@@ -3,11 +3,12 @@ import { useEffect, useRef } from 'react';
+ import { useLocation, useNavigate } from 'react-router-dom';
+ import { codiconIcon } from '@/components/ui/codicon';
+ import { Tip } from '@/components/ui/tooltip';
+-import { NEMESIS_STUDENT_BUILD, STUDENT_SETTINGS_KEEP } from '@/nemesis';
+ import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes';
+ import { useI18n } from '@/i18n';
+ import { triggerHaptic } from '@/lib/haptics';
+-import { Activity, Archive, Bell, Download, Globe, Info, KeyRound, Link, RefreshCw, Settings2, Upload, Wrench, Zap } from '@/lib/icons';
++import { Activity, Archive, Bell, Download, Globe, Info, Keyboard, KeyRound, Link, RefreshCw, Settings2, Upload, Wrench, Zap } from '@/lib/icons';
++import { NEMESIS_STUDENT_BUILD, STUDENT_SETTINGS_KEEP } from '@/nemesis';
++import { toggleKeybindPanel } from '@/store/keybinds';
+ import { notifyError } from '@/store/notifications';
+ import { useRouteEnumParam } from '../hooks/use-route-enum-param';
+ import { OverlayIconButton } from '../overlays/overlay-chrome';
+@@ -16,15 +17,15 @@ import { OverlayView } from '../overlays/overlay-view';
+ import { SKILLS_ROUTE } from '../routes';
+ import { AboutSettings } from './about-settings';
+ import { AppearanceSettings } from './appearance-settings';
+-import { ConnectionsSettings } from './connections-settings';
+-import { UsageSettings } from './usage-settings';
+ import { ConfigSettings } from './config-settings';
++import { ConnectionsSettings } from './connections-settings';
+ import { SECTIONS } from './constants';
+ import { GatewaySettings } from './gateway-settings';
+ import { KEYS_VIEWS, KeysSettings } from './keys-settings';
+ import { NotificationsSettings } from './notifications-settings';
+ import { PROVIDER_VIEWS, ProvidersSettings } from './providers-settings';
+ import { SessionsSettings } from './sessions-settings';
++import { UsageSettings } from './usage-settings';
+ const SETTINGS_VIEWS_ALL = [
+     'usage',
+     'connections',
+@@ -111,7 +112,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }) {
+             active: activeView === 'usage',
+             icon: Activity,
+             id: 'usage',
+-            label: 'Usage',
++            label: 'Account & usage',
+             onSelect: () => setActiveView('usage')
+         },
+         {
+@@ -202,6 +203,15 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }) {
+             label: t.settings.nav.archivedChats,
+             onSelect: () => setActiveView('sessions')
+         },
++        {
++            // Opens the shortcuts panel (a dialog) rather than switching the settings
++            // view — the panel is the single source of truth for every hotkey.
++            active: false,
++            icon: Keyboard,
++            id: 'keybinds',
++            label: 'Keyboard shortcuts',
++            onSelect: () => toggleKeybindPanel()
++        },
+         {
+             active: activeView === 'about',
+             gapBefore: true,
+diff --git a/apps/desktop/src/app/settings/index.tsx b/apps/desktop/src/app/settings/index.tsx
+index f2d155fcac1..b428faefced 100644
+--- a/apps/desktop/src/app/settings/index.tsx
++++ b/apps/desktop/src/app/settings/index.tsx
+@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom'
+ 
+ import { codiconIcon } from '@/components/ui/codicon'
+ import { Tip } from '@/components/ui/tooltip'
+-import { NEMESIS_STUDENT_BUILD, STUDENT_SETTINGS_KEEP } from '@/nemesis'
+ import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes'
+ import { useI18n } from '@/i18n'
+ import { triggerHaptic } from '@/lib/haptics'
+@@ -14,6 +13,7 @@ import {
+   Download,
+   Globe,
+   Info,
++  Keyboard,
+   KeyRound,
+   Link,
+   RefreshCw,
+@@ -22,6 +22,8 @@ import {
+   Wrench,
+   Zap
+ } from '@/lib/icons'
++import { NEMESIS_STUDENT_BUILD, STUDENT_SETTINGS_KEEP } from '@/nemesis'
++import { toggleKeybindPanel } from '@/store/keybinds'
+ import { notifyError } from '@/store/notifications'
+ 
+ import { useRouteEnumParam } from '../hooks/use-route-enum-param'
+@@ -32,9 +34,8 @@ import { SKILLS_ROUTE } from '../routes'
+ 
+ import { AboutSettings } from './about-settings'
+ import { AppearanceSettings } from './appearance-settings'
+-import { ConnectionsSettings } from './connections-settings'
+-import { UsageSettings } from './usage-settings'
+ import { ConfigSettings } from './config-settings'
++import { ConnectionsSettings } from './connections-settings'
+ import { SECTIONS } from './constants'
+ import { GatewaySettings } from './gateway-settings'
+ import { KEYS_VIEWS, KeysSettings, type KeysView } from './keys-settings'
+@@ -42,6 +43,7 @@ import { NotificationsSettings } from './notifications-settings'
+ import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './providers-settings'
+ import { SessionsSettings } from './sessions-settings'
+ import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
++import { UsageSettings } from './usage-settings'
+ 
+ const SETTINGS_VIEWS_ALL: readonly SettingsViewId[] = [
+   'usage',
+@@ -83,6 +85,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
+     SETTINGS_VIEWS,
+     (NEMESIS_STUDENT_BUILD ? 'config:appearance' : 'config:model') as SettingsViewId
+   )
++
+   // Providers subnav (Accounts vs API keys) lives in its own param so each
+   // sub-view is deep-linkable and survives a refresh.
+   const [providerView, setProviderView] = useRouteEnumParam<ProviderView>('pview', PROVIDER_VIEWS, 'accounts')
+@@ -146,7 +149,7 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
+       active: activeView === 'usage',
+       icon: Activity,
+       id: 'usage',
+-      label: 'Usage',
++      label: 'Account & usage',
+       onSelect: () => setActiveView('usage')
+     },
+     {
+@@ -238,6 +241,15 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
+       label: t.settings.nav.archivedChats,
+       onSelect: () => setActiveView('sessions')
+     },
++    {
++      // Opens the shortcuts panel (a dialog) rather than switching the settings
++      // view — the panel is the single source of truth for every hotkey.
++      active: false,
++      icon: Keyboard,
++      id: 'keybinds',
++      label: 'Keyboard shortcuts',
++      onSelect: () => toggleKeybindPanel()
++    },
+     {
+       active: activeView === 'about',
+       gapBefore: true,
+diff --git a/apps/desktop/src/app/settings/usage-settings.js b/apps/desktop/src/app/settings/usage-settings.js
+index 6150b3cf630..b4a929da398 100644
+--- a/apps/desktop/src/app/settings/usage-settings.js
++++ b/apps/desktop/src/app/settings/usage-settings.js
+@@ -1,11 +1,13 @@
+ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+-// Usage settings (student build): today's model-token budget for the signed-in
+-// plan, read live from the metering proxy's /usage endpoint. Read-only — the
+-// same key→plan→counter the proxy enforces, so it can't disagree with reality.
++// Account & usage settings (student build). One page answers "who am I signed in
++// as, what plan am I on, and how much AI have I used" — account status from the
++// live subscription read, today's allowance from the metering proxy's /usage
++// endpoint, and a 7-day view read straight from the student's own usage counters
++// (RLS-scoped). All read-only; subscription changes open in the browser.
+ import { useStore } from '@nanostores/react';
+ import { useEffect, useState } from 'react';
+ import { Button } from '@/components/ui/button';
+-import { $account, fetchUsage, planLabel } from '@/nemesis-account';
++import { $account, BILLING_URL, fetchUsage, fetchWeeklyUsage, getTrialTiming, planLabel, refreshEntitlement, signOut, trialCountdownLabel } from '@/nemesis-account';
+ function formatTokens(value) {
+     if (value >= 1_000_000) {
+         return `${(value / 1_000_000).toFixed(1)}M`;
+@@ -15,22 +17,56 @@ function formatTokens(value) {
+     }
+     return String(value);
+ }
++/** The last 7 UTC days (oldest first), each with that day's used tokens (0 when
++ *  the student didn't use Nemesis that day — the table only has rows for active
++ *  days). */
++function fillWeek(rows, now = Date.now()) {
++    const byDay = new Map(rows.map(row => [row.periodStart, row.used]));
++    return Array.from({ length: 7 }, (_, index) => {
++        const day = new Date(now - (6 - index) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
++        return { periodStart: day, used: byDay.get(day) ?? 0 };
++    });
++}
++function dayLetter(isoDate) {
++    const day = new Date(`${isoDate}T00:00:00Z`).getUTCDay();
++    return ['S', 'M', 'T', 'W', 'T', 'F', 'S'][day] ?? '';
++}
+ export function UsageSettings() {
+     const account = useStore($account);
+     const [usage, setUsage] = useState(null);
+     const [state, setState] = useState('loading');
++    const [week, setWeek] = useState(null);
++    const [refreshingPlan, setRefreshingPlan] = useState(false);
+     const load = () => {
+         setState('loading');
+         void fetchUsage().then(result => {
+             setUsage(result);
+             setState(result ? 'ready' : 'error');
+         });
++        void fetchWeeklyUsage().then(rows => {
++            setWeek(rows ? fillWeek(rows) : null);
++        });
+     };
+     useEffect(() => {
+         load();
+-        // eslint-disable-next-line react-hooks/exhaustive-deps
+     }, []);
+     const pct = usage && usage.dailyLimit > 0 ? Math.min(100, Math.round((usage.used / usage.dailyLimit) * 100)) : 0;
+     const planName = usage ? planLabel(usage.plan) : planLabel(account.plan);
+-    return (_jsxs("div", { className: "mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8", children: [_jsxs("div", { className: "flex flex-col gap-1", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70", children: "Usage" }), _jsx("h2", { className: "text-lg font-semibold text-foreground", children: "Today's allowance" }), _jsxs("p", { className: "text-sm text-muted-foreground", children: ["Your ", planName, " plan includes a daily amount of AI work. It resets every day at midnight (UTC)."] })] }), state === 'ready' && usage ? (_jsxs("div", { className: "flex flex-col gap-4 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsxs("div", { className: "flex items-baseline justify-between", children: [_jsx("span", { className: "text-sm font-medium text-foreground", children: "Used today" }), _jsxs("span", { className: "text-sm tabular-nums text-muted-foreground", children: [formatTokens(usage.used), " / ", usage.dailyLimit > 0 ? formatTokens(usage.dailyLimit) : 'unlimited'] })] }), _jsx("div", { className: "h-2.5 w-full overflow-hidden rounded-full bg-(--ui-bg-tertiary)", children: _jsx("div", { className: "h-full rounded-full bg-(--theme-primary) transition-[width] duration-500", style: { width: `${pct}%` } }) }), _jsxs("div", { className: "flex items-center justify-between text-xs text-muted-foreground", children: [_jsxs("span", { children: [_jsx("span", { className: "font-semibold text-foreground", children: formatTokens(usage.remaining) }), " left today"] }), _jsx("span", { className: "rounded-full bg-(--theme-primary)/15 px-2 py-0.5 font-semibold text-(--theme-primary)", children: planName })] })] })) : state === 'loading' ? (_jsx("div", { className: "rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5 text-sm text-muted-foreground", children: "Checking your allowance\u2026" })) : (_jsxs("div", { className: "flex flex-col items-start gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsx("p", { className: "text-sm text-muted-foreground", children: "Usage isn't available yet \u2014 this needs you to be signed in with an active plan and the metering service running." }), _jsx(Button, { onClick: load, size: "sm", variant: "secondary", children: "Try again" })] })), _jsx("p", { className: "text-xs leading-relaxed text-muted-foreground/70", children: "\u201CAI work\u201D is measured in tokens \u2014 the units the model reads and writes. Heavy tasks (a full research brief, a slide deck) use more than a quick question. Lecture transcription runs on your own Mac and never counts against this." })] }));
++    const trialTiming = getTrialTiming(account);
++    const planDetail = trialTiming && !trialTiming.expired
++        ? `${trialCountdownLabel(trialTiming.daysRemaining)} · ${new Date(trialTiming.end).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
++        : account.plan === 'free'
++            ? 'No active plan — upgrade for the full study engine.'
++            : account.periodEnd
++                ? `Renews ${new Date(account.periodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
++                : account.planStatus || 'Active';
++    const weekTotal = week ? week.reduce((sum, day) => sum + day.used, 0) : 0;
++    const weekMax = week ? Math.max(1, ...week.map(day => day.used)) : 1;
++    return (_jsxs("div", { className: "mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8", children: [_jsxs("div", { className: "flex flex-col gap-1", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70", children: "Account & usage" }), _jsx("h2", { className: "text-lg font-semibold text-foreground", children: "Your account" }), _jsx("p", { className: "text-sm text-muted-foreground", children: "Your plan, this week's AI work, and today's allowance \u2014 all in one place." })] }), _jsxs("div", { className: "flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "truncate text-sm font-medium text-foreground", children: account.bypass ? 'Offline mode — not signed in' : account.email || 'Signed in' }), _jsx("div", { className: "pt-0.5 text-xs text-muted-foreground", children: account.bypass ? 'Local development' : planDetail })] }), _jsx("span", { className: "shrink-0 rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)", children: trialTiming && !trialTiming.expired ? `${planLabel(account.plan)} trial` : `${planLabel(account.plan)} plan` })] }), !account.bypass && (_jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [_jsx(Button, { onClick: () => void window.hermesDesktop?.openExternal?.(BILLING_URL), size: "sm", variant: "secondary", children: account.plan === 'free' ? 'Choose a plan' : 'Manage subscription' }), _jsx(Button, { disabled: refreshingPlan, onClick: () => {
++                                    setRefreshingPlan(true);
++                                    void refreshEntitlement().finally(() => {
++                                        setRefreshingPlan(false);
++                                        load();
++                                    });
++                                }, size: "sm", variant: "outline", children: refreshingPlan ? 'Checking…' : 'Refresh plan' }), _jsx(Button, { onClick: () => void signOut(), size: "sm", variant: "ghost", children: "Sign out" })] }))] }), _jsxs("div", { className: "flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsxs("div", { className: "flex items-baseline justify-between", children: [_jsx("span", { className: "text-sm font-medium text-foreground", children: "This week" }), _jsx("span", { className: "text-sm tabular-nums text-muted-foreground", children: week ? `${formatTokens(weekTotal)} tokens over 7 days` : 'Not available yet' })] }), week ? (_jsx("div", { "aria-label": "AI usage for the last 7 days", className: "flex items-end gap-2", role: "img", children: week.map(day => (_jsxs("div", { className: "flex flex-1 flex-col items-center gap-1", children: [_jsx("div", { className: "flex h-16 w-full items-end overflow-hidden rounded-md bg-(--ui-bg-tertiary)", children: _jsx("div", { className: "w-full rounded-md bg-(--theme-primary)/80 transition-[height] duration-500", style: { height: `${Math.max(day.used > 0 ? 6 : 0, Math.round((day.used / weekMax) * 100))}%` }, title: `${day.periodStart}: ${formatTokens(day.used)} tokens` }) }), _jsx("span", { className: "text-[10px] text-muted-foreground/70", children: dayLetter(day.periodStart) })] }, day.periodStart))) })) : (_jsx("p", { className: "text-xs text-muted-foreground", children: "Weekly usage appears after your first AI request while signed in." }))] }), state === 'ready' && usage ? (_jsxs("div", { className: "flex flex-col gap-4 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsxs("div", { className: "flex items-baseline justify-between", children: [_jsx("span", { className: "text-sm font-medium text-foreground", children: "Used today" }), _jsxs("span", { className: "text-sm tabular-nums text-muted-foreground", children: [formatTokens(usage.used), " / ", usage.dailyLimit > 0 ? formatTokens(usage.dailyLimit) : 'unlimited'] })] }), _jsx("div", { className: "h-2.5 w-full overflow-hidden rounded-full bg-(--ui-bg-tertiary)", children: _jsx("div", { className: "h-full rounded-full bg-(--theme-primary) transition-[width] duration-500", style: { width: `${pct}%` } }) }), _jsxs("div", { className: "flex items-center justify-between text-xs text-muted-foreground", children: [_jsxs("span", { children: [_jsx("span", { className: "font-semibold text-foreground", children: formatTokens(usage.remaining) }), " left today \u00B7 resets at midnight (UTC)"] }), _jsx("span", { className: "rounded-full bg-(--theme-primary)/15 px-2 py-0.5 font-semibold text-(--theme-primary)", children: planName })] })] })) : state === 'loading' ? (_jsx("div", { className: "rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5 text-sm text-muted-foreground", children: "Checking your allowance\u2026" })) : (_jsxs("div", { className: "flex flex-col items-start gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5", children: [_jsx("p", { className: "text-sm text-muted-foreground", children: "Today's allowance isn't available yet \u2014 this needs you to be signed in with an active plan and the metering service reachable." }), _jsx(Button, { onClick: load, size: "sm", variant: "secondary", children: "Try again" })] })), _jsx("p", { className: "text-xs leading-relaxed text-muted-foreground/70", children: "\u201CAI work\u201D is measured in tokens \u2014 the units the model reads and writes. Heavy tasks (a full research brief, a slide deck) use more than a quick question. Lecture transcription runs on your own Mac and never counts against this." })] }));
+ }
+diff --git a/apps/desktop/src/app/settings/usage-settings.tsx b/apps/desktop/src/app/settings/usage-settings.tsx
+index 747ec5642b9..895268d0592 100644
+--- a/apps/desktop/src/app/settings/usage-settings.tsx
++++ b/apps/desktop/src/app/settings/usage-settings.tsx
+@@ -1,11 +1,25 @@
+-// Usage settings (student build): today's model-token budget for the signed-in
+-// plan, read live from the metering proxy's /usage endpoint. Read-only — the
+-// same key→plan→counter the proxy enforces, so it can't disagree with reality.
++// Account & usage settings (student build). One page answers "who am I signed in
++// as, what plan am I on, and how much AI have I used" — account status from the
++// live subscription read, today's allowance from the metering proxy's /usage
++// endpoint, and a 7-day view read straight from the student's own usage counters
++// (RLS-scoped). All read-only; subscription changes open in the browser.
+ import { useStore } from '@nanostores/react'
+ import { useEffect, useState } from 'react'
+ 
+ import { Button } from '@/components/ui/button'
+-import { $account, fetchUsage, planLabel, type UsageSnapshot } from '@/nemesis-account'
++import {
++  $account,
++  BILLING_URL,
++  fetchUsage,
++  fetchWeeklyUsage,
++  getTrialTiming,
++  planLabel,
++  refreshEntitlement,
++  signOut,
++  trialCountdownLabel,
++  type UsageSnapshot,
++  type WeeklyUsageDay
++} from '@/nemesis-account'
+ 
+ function formatTokens(value: number): string {
+   if (value >= 1_000_000) {
+@@ -19,10 +33,31 @@ function formatTokens(value: number): string {
+   return String(value)
+ }
+ 
++/** The last 7 UTC days (oldest first), each with that day's used tokens (0 when
++ *  the student didn't use Nemesis that day — the table only has rows for active
++ *  days). */
++function fillWeek(rows: WeeklyUsageDay[], now = Date.now()): WeeklyUsageDay[] {
++  const byDay = new Map(rows.map(row => [row.periodStart, row.used]))
++
++  return Array.from({ length: 7 }, (_, index) => {
++    const day = new Date(now - (6 - index) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
++
++    return { periodStart: day, used: byDay.get(day) ?? 0 }
++  })
++}
++
++function dayLetter(isoDate: string): string {
++  const day = new Date(`${isoDate}T00:00:00Z`).getUTCDay()
++
++  return ['S', 'M', 'T', 'W', 'T', 'F', 'S'][day] ?? ''
++}
++
+ export function UsageSettings() {
+   const account = useStore($account)
+   const [usage, setUsage] = useState<null | UsageSnapshot>(null)
+   const [state, setState] = useState<'error' | 'loading' | 'ready'>('loading')
++  const [week, setWeek] = useState<null | WeeklyUsageDay[]>(null)
++  const [refreshingPlan, setRefreshingPlan] = useState(false)
+ 
+   const load = () => {
+     setState('loading')
+@@ -30,26 +65,114 @@ export function UsageSettings() {
+       setUsage(result)
+       setState(result ? 'ready' : 'error')
+     })
++    void fetchWeeklyUsage().then(rows => {
++      setWeek(rows ? fillWeek(rows) : null)
++    })
+   }
+ 
+   useEffect(() => {
+     load()
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
++     
+   }, [])
+ 
+   const pct = usage && usage.dailyLimit > 0 ? Math.min(100, Math.round((usage.used / usage.dailyLimit) * 100)) : 0
+   const planName = usage ? planLabel(usage.plan) : planLabel(account.plan)
++  const trialTiming = getTrialTiming(account)
++
++  const planDetail =
++    trialTiming && !trialTiming.expired
++      ? `${trialCountdownLabel(trialTiming.daysRemaining)} · ${new Date(trialTiming.end).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
++      : account.plan === 'free'
++        ? 'No active plan — upgrade for the full study engine.'
++        : account.periodEnd
++          ? `Renews ${new Date(account.periodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
++          : account.planStatus || 'Active'
++
++  const weekTotal = week ? week.reduce((sum, day) => sum + day.used, 0) : 0
++  const weekMax = week ? Math.max(1, ...week.map(day => day.used)) : 1
+ 
+   return (
+     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8">
+       <div className="flex flex-col gap-1">
+-        <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70">Usage</span>
+-        <h2 className="text-lg font-semibold text-foreground">Today&apos;s allowance</h2>
++        <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70">
++          Account &amp; usage
++        </span>
++        <h2 className="text-lg font-semibold text-foreground">Your account</h2>
+         <p className="text-sm text-muted-foreground">
+-          Your {planName} plan includes a daily amount of AI work. It resets every day at midnight (UTC).
++          Your plan, this week&apos;s AI work, and today&apos;s allowance — all in one place.
+         </p>
+       </div>
+ 
++      {/* Account status */}
++      <div className="flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
++        <div className="flex items-center justify-between gap-3">
++          <div className="min-w-0">
++            <div className="truncate text-sm font-medium text-foreground">
++              {account.bypass ? 'Offline mode — not signed in' : account.email || 'Signed in'}
++            </div>
++            <div className="pt-0.5 text-xs text-muted-foreground">{account.bypass ? 'Local development' : planDetail}</div>
++          </div>
++          <span className="shrink-0 rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)">
++            {trialTiming && !trialTiming.expired ? `${planLabel(account.plan)} trial` : `${planLabel(account.plan)} plan`}
++          </span>
++        </div>
++        {!account.bypass && (
++          <div className="flex flex-wrap items-center gap-2">
++            <Button onClick={() => void window.hermesDesktop?.openExternal?.(BILLING_URL)} size="sm" variant="secondary">
++              {account.plan === 'free' ? 'Choose a plan' : 'Manage subscription'}
++            </Button>
++            <Button
++              disabled={refreshingPlan}
++              onClick={() => {
++                setRefreshingPlan(true)
++                void refreshEntitlement().finally(() => {
++                  setRefreshingPlan(false)
++                  load()
++                })
++              }}
++              size="sm"
++              variant="outline"
++            >
++              {refreshingPlan ? 'Checking…' : 'Refresh plan'}
++            </Button>
++            <Button onClick={() => void signOut()} size="sm" variant="ghost">
++              Sign out
++            </Button>
++          </div>
++        )}
++      </div>
++
++      {/* This week */}
++      <div className="flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
++        <div className="flex items-baseline justify-between">
++          <span className="text-sm font-medium text-foreground">This week</span>
++          <span className="text-sm tabular-nums text-muted-foreground">
++            {week ? `${formatTokens(weekTotal)} tokens over 7 days` : 'Not available yet'}
++          </span>
++        </div>
++        {week ? (
++          <div aria-label="AI usage for the last 7 days" className="flex items-end gap-2" role="img">
++            {week.map(day => (
++              <div className="flex flex-1 flex-col items-center gap-1" key={day.periodStart}>
++                <div className="flex h-16 w-full items-end overflow-hidden rounded-md bg-(--ui-bg-tertiary)">
++                  <div
++                    className="w-full rounded-md bg-(--theme-primary)/80 transition-[height] duration-500"
++                    style={{ height: `${Math.max(day.used > 0 ? 6 : 0, Math.round((day.used / weekMax) * 100))}%` }}
++                    title={`${day.periodStart}: ${formatTokens(day.used)} tokens`}
++                  />
++                </div>
++                <span className="text-[10px] text-muted-foreground/70">{dayLetter(day.periodStart)}</span>
++              </div>
++            ))}
++          </div>
++        ) : (
++          <p className="text-xs text-muted-foreground">
++            Weekly usage appears after your first AI request while signed in.
++          </p>
++        )}
++      </div>
++
++      {/* Today */}
+       {state === 'ready' && usage ? (
+         <div className="flex flex-col gap-4 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
+           <div className="flex items-baseline justify-between">
+@@ -66,7 +189,8 @@ export function UsageSettings() {
+           </div>
+           <div className="flex items-center justify-between text-xs text-muted-foreground">
+             <span>
+-              <span className="font-semibold text-foreground">{formatTokens(usage.remaining)}</span> left today
++              <span className="font-semibold text-foreground">{formatTokens(usage.remaining)}</span> left today · resets
++              at midnight (UTC)
+             </span>
+             <span className="rounded-full bg-(--theme-primary)/15 px-2 py-0.5 font-semibold text-(--theme-primary)">
+               {planName}
+@@ -80,8 +204,8 @@ export function UsageSettings() {
+       ) : (
+         <div className="flex flex-col items-start gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5">
+           <p className="text-sm text-muted-foreground">
+-            Usage isn&apos;t available yet — this needs you to be signed in with an active plan and the metering
+-            service running.
++            Today&apos;s allowance isn&apos;t available yet — this needs you to be signed in with an active plan and the
++            metering service reachable.
+           </p>
+           <Button onClick={load} size="sm" variant="secondary">
+             Try again
+diff --git a/apps/desktop/src/app/study/index.js b/apps/desktop/src/app/study/index.js
+index 864b521832f..194daedf7a8 100644
+--- a/apps/desktop/src/app/study/index.js
++++ b/apps/desktop/src/app/study/index.js
+@@ -400,7 +400,7 @@ function NewSectionDialog({ onClose, onCreate, sections }) {
+                         if (event.key === 'Enter' && valid) {
+                             onCreate(name);
+                         }
+-                    }, placeholder: "Section name (e.g. Pharmacology)", value: name }), normalized && unavailable && (_jsx("p", { className: "text-xs text-muted-foreground", children: "That section already exists. \u201COther\u201D is reserved for ungrouped decks." })), _jsxs(DialogFooter, { children: [_jsx(Button, { onClick: onClose, variant: "outline", children: "Cancel" }), _jsx(Button, { disabled: !valid, onClick: () => onCreate(name), children: "Create section" })] })] }) }));
++                    }, placeholder: "Section name (e.g. Microeconomics)", value: name }), normalized && unavailable && (_jsx("p", { className: "text-xs text-muted-foreground", children: "That section already exists. \u201COther\u201D is reserved for ungrouped decks." })), _jsxs(DialogFooter, { children: [_jsx(Button, { onClick: onClose, variant: "outline", children: "Cancel" }), _jsx(Button, { disabled: !valid, onClick: () => onCreate(name), children: "Create section" })] })] }) }));
+ }
+ function RenameDeckDialog({ deck, onClose, onRename }) {
+     const [name, setName] = useState(deck.name);
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index dc9c4af61a9..9dbef10a1ee 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -934,7 +934,7 @@ function NewSectionDialog({
+               onCreate(name)
+             }
+           }}
+-          placeholder="Section name (e.g. Pharmacology)"
++          placeholder="Section name (e.g. Microeconomics)"
+           value={name}
+         />
+         {normalized && unavailable && (
+diff --git a/apps/desktop/src/app/study/model.js b/apps/desktop/src/app/study/model.js
+index 9ae1498bc32..878a7dd85b2 100644
+--- a/apps/desktop/src/app/study/model.js
++++ b/apps/desktop/src/app/study/model.js
+@@ -116,13 +116,15 @@ export function loadState() {
+         }
+     }
+     catch {
+-        // corrupted blob → fall through to a fresh seeded state
++        // corrupted blob → fall through to a fresh empty state
+     }
+-    const decks = seedDecks();
++    // Fresh installs start EMPTY (owner decision, beta.5): no demo decks — the
++    // page's empty state points at Create/Import, and the agent can build decks
++    // from the student's own material.
+     return {
+         version: 1,
+-        decks,
+-        sections: normalizeSections([], decks),
++        decks: [],
++        sections: normalizeSections([], []),
+         schedule: {},
+         reviews: [],
+         settings: migrateFlipSetting(undefined)
+@@ -718,37 +720,3 @@ export function freshId(prefix) {
+     idCounter += 1;
+     return `${prefix}-${Date.now().toString(36)}-${idCounter.toString(36)}`;
+ }
+-/** Demo decks across two courses so the page (and its grouping) teaches itself on first open.
+- *  Application-level pharm cards, not "what is X" filler. */
+-function seedDecks() {
+-    const card = (front, back, tags) => ({ id: freshId('card'), front, back, tags });
+-    const cardio = {
+-        id: freshId('deck'),
+-        name: 'Cardio pharm essentials',
+-        course: 'Pharmacology',
+-        createdAt: new Date().toISOString(),
+-        cards: [
+-            card('A patient on lisinopril develops a persistent dry cough. What is the mechanism, and what class do you switch to?', 'ACE inhibition lets bradykinin accumulate in the airways → cough. Switch to an ARB (e.g. losartan): blocks AT1 directly, spares bradykinin degradation.', ['ace-inhibitors', 'adverse-effects']),
+-            card('Why are ACE inhibitors contraindicated in pregnancy?', 'Fetal renal toxicity (oligohydramnios, renal dysgenesis) — all RAAS blockers are contraindicated.', ['ace-inhibitors', 'contraindications']),
+-            card('What two labs do you check after starting an ACE inhibitor, and why?', 'Potassium (hyperkalemia risk) and serum creatinine (efferent-arteriole dilation can drop GFR, especially with renal artery stenosis).', ['ace-inhibitors', 'monitoring']),
+-            card('Furosemide vs hydrochlorothiazide: site of action and the classic electrolyte signature of each.', 'Furosemide — thick ascending limb (Na-K-2Cl); potent, causes hypokalemia + hypocalcemia. HCTZ — distal tubule (Na-Cl); milder, hypokalemia + HYPERcalcemia.', ['diuretics']),
+-            card('A heart-failure patient on spironolactone and lisinopril has K⁺ 6.1. Which drug interaction explains it?', 'Both raise potassium: aldosterone antagonism (spironolactone) + reduced aldosterone via ACE inhibition. Additive hyperkalemia — hold/adjust and recheck.', ['heart-failure', 'interactions']),
+-            card('Metoprolol is preferred over propranolol in an asthmatic patient who needs a beta blocker. Why?', 'Metoprolol is β1-selective at usual doses — less β2 bronchoconstriction. Propranolol is non-selective and can trigger bronchospasm.', ['beta-blockers']),
+-            card('Which statin adverse effect do you screen for when a patient reports new diffuse muscle pain, and with what lab?', 'Myopathy/rhabdomyolysis — check creatine kinase (CK). Risk rises with interacting CYP3A4 inhibitors (e.g. clarithromycin) and high-intensity dosing.', ['statins', 'monitoring']),
+-            card('Warfarin patient starts TMP-SMX for a UTI. What happens to the INR and why?', 'INR rises — TMP-SMX inhibits CYP2C9 (warfarin metabolism) and displaces protein binding. Bleeding risk: monitor INR closely or pick another agent.', ['anticoagulants', 'interactions'])
+-        ]
+-    };
+-    const antimicrobials = {
+-        id: freshId('deck'),
+-        name: 'Antimicrobial pearls',
+-        course: 'Infectious disease',
+-        createdAt: new Date().toISOString(),
+-        cards: [
+-            card('Why is vancomycin trough (or AUC) monitoring required, and what toxicity does it guard against?', 'Narrow therapeutic window — nephrotoxicity (and, classically, ototoxicity). AUC/MIC ≥ 400 targets efficacy while limiting kidney injury.', ['vancomycin', 'monitoring']),
+-            card('A patient on ciprofloxacin should avoid taking it with what common products, and why?', 'Di/trivalent cations — antacids, calcium, iron, dairy — chelate fluoroquinolones and slash absorption. Separate doses by 2-6 hours.', ['fluoroquinolones', 'interactions']),
+-            card('Which antibiotic class carries a disulfiram-like reaction with alcohol, and name the prototype.', 'Nitroimidazoles — metronidazole. Alcohol → flushing, nausea, tachycardia. Counsel to avoid alcohol during and 3 days after.', ['metronidazole', 'counseling']),
+-            card('Cell-wall synthesis inhibitor vs protein-synthesis inhibitor: which bucket do beta-lactams vs macrolides fall in?', 'Beta-lactams (penicillins, cephalosporins) inhibit cell-wall synthesis. Macrolides (azithromycin) bind the 50S ribosome to block protein synthesis.', ['mechanisms'])
+-        ]
+-    };
+-    return [cardio, antimicrobials];
+-}
+diff --git a/apps/desktop/src/app/study/model.ts b/apps/desktop/src/app/study/model.ts
+index c9d1cb60e1b..4f65a7b3f75 100644
+--- a/apps/desktop/src/app/study/model.ts
++++ b/apps/desktop/src/app/study/model.ts
+@@ -216,15 +216,16 @@ export function loadState(): StudyState {
+       }
+     }
+   } catch {
+-    // corrupted blob → fall through to a fresh seeded state
++    // corrupted blob → fall through to a fresh empty state
+   }
+ 
+-  const decks = seedDecks()
+-
++  // Fresh installs start EMPTY (owner decision, beta.5): no demo decks — the
++  // page's empty state points at Create/Import, and the agent can build decks
++  // from the student's own material.
+   return {
+     version: 1,
+-    decks,
+-    sections: normalizeSections([], decks),
++    decks: [],
++    sections: normalizeSections([], []),
+     schedule: {},
+     reviews: [],
+     settings: migrateFlipSetting(undefined)
+@@ -1029,88 +1030,3 @@ export function freshId(prefix: string): string {
+   return `${prefix}-${Date.now().toString(36)}-${idCounter.toString(36)}`
+ }
+ 
+-/** Demo decks across two courses so the page (and its grouping) teaches itself on first open.
+- *  Application-level pharm cards, not "what is X" filler. */
+-function seedDecks(): StudyDeck[] {
+-  const card = (front: string, back: string, tags: string[]): StudyCard => ({ id: freshId('card'), front, back, tags })
+-
+-  const cardio: StudyDeck = {
+-    id: freshId('deck'),
+-    name: 'Cardio pharm essentials',
+-    course: 'Pharmacology',
+-    createdAt: new Date().toISOString(),
+-    cards: [
+-      card(
+-        'A patient on lisinopril develops a persistent dry cough. What is the mechanism, and what class do you switch to?',
+-        'ACE inhibition lets bradykinin accumulate in the airways → cough. Switch to an ARB (e.g. losartan): blocks AT1 directly, spares bradykinin degradation.',
+-        ['ace-inhibitors', 'adverse-effects']
+-      ),
+-      card(
+-        'Why are ACE inhibitors contraindicated in pregnancy?',
+-        'Fetal renal toxicity (oligohydramnios, renal dysgenesis) — all RAAS blockers are contraindicated.',
+-        ['ace-inhibitors', 'contraindications']
+-      ),
+-      card(
+-        'What two labs do you check after starting an ACE inhibitor, and why?',
+-        'Potassium (hyperkalemia risk) and serum creatinine (efferent-arteriole dilation can drop GFR, especially with renal artery stenosis).',
+-        ['ace-inhibitors', 'monitoring']
+-      ),
+-      card(
+-        'Furosemide vs hydrochlorothiazide: site of action and the classic electrolyte signature of each.',
+-        'Furosemide — thick ascending limb (Na-K-2Cl); potent, causes hypokalemia + hypocalcemia. HCTZ — distal tubule (Na-Cl); milder, hypokalemia + HYPERcalcemia.',
+-        ['diuretics']
+-      ),
+-      card(
+-        'A heart-failure patient on spironolactone and lisinopril has K⁺ 6.1. Which drug interaction explains it?',
+-        'Both raise potassium: aldosterone antagonism (spironolactone) + reduced aldosterone via ACE inhibition. Additive hyperkalemia — hold/adjust and recheck.',
+-        ['heart-failure', 'interactions']
+-      ),
+-      card(
+-        'Metoprolol is preferred over propranolol in an asthmatic patient who needs a beta blocker. Why?',
+-        'Metoprolol is β1-selective at usual doses — less β2 bronchoconstriction. Propranolol is non-selective and can trigger bronchospasm.',
+-        ['beta-blockers']
+-      ),
+-      card(
+-        'Which statin adverse effect do you screen for when a patient reports new diffuse muscle pain, and with what lab?',
+-        'Myopathy/rhabdomyolysis — check creatine kinase (CK). Risk rises with interacting CYP3A4 inhibitors (e.g. clarithromycin) and high-intensity dosing.',
+-        ['statins', 'monitoring']
+-      ),
+-      card(
+-        'Warfarin patient starts TMP-SMX for a UTI. What happens to the INR and why?',
+-        'INR rises — TMP-SMX inhibits CYP2C9 (warfarin metabolism) and displaces protein binding. Bleeding risk: monitor INR closely or pick another agent.',
+-        ['anticoagulants', 'interactions']
+-      )
+-    ]
+-  }
+-
+-  const antimicrobials: StudyDeck = {
+-    id: freshId('deck'),
+-    name: 'Antimicrobial pearls',
+-    course: 'Infectious disease',
+-    createdAt: new Date().toISOString(),
+-    cards: [
+-      card(
+-        'Why is vancomycin trough (or AUC) monitoring required, and what toxicity does it guard against?',
+-        'Narrow therapeutic window — nephrotoxicity (and, classically, ototoxicity). AUC/MIC ≥ 400 targets efficacy while limiting kidney injury.',
+-        ['vancomycin', 'monitoring']
+-      ),
+-      card(
+-        'A patient on ciprofloxacin should avoid taking it with what common products, and why?',
+-        'Di/trivalent cations — antacids, calcium, iron, dairy — chelate fluoroquinolones and slash absorption. Separate doses by 2-6 hours.',
+-        ['fluoroquinolones', 'interactions']
+-      ),
+-      card(
+-        'Which antibiotic class carries a disulfiram-like reaction with alcohol, and name the prototype.',
+-        'Nitroimidazoles — metronidazole. Alcohol → flushing, nausea, tachycardia. Counsel to avoid alcohol during and 3 days after.',
+-        ['metronidazole', 'counseling']
+-      ),
+-      card(
+-        'Cell-wall synthesis inhibitor vs protein-synthesis inhibitor: which bucket do beta-lactams vs macrolides fall in?',
+-        'Beta-lactams (penicillins, cephalosporins) inhibit cell-wall synthesis. Macrolides (azithromycin) bind the 50S ribosome to block protein synthesis.',
+-        ['mechanisms']
+-      )
+-    ]
+-  }
+-
+-  return [cardio, antimicrobials]
+-}
+diff --git a/apps/desktop/src/components/nemesis-account-gate.js b/apps/desktop/src/components/nemesis-account-gate.js
+index 37f85a851f7..7ff31759a41 100644
+--- a/apps/desktop/src/components/nemesis-account-gate.js
++++ b/apps/desktop/src/components/nemesis-account-gate.js
+@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
+ import { Input } from '@/components/ui/input';
+ import { Loader } from '@/components/ui/loader';
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+-import { $account, $accountDialogOpen, ACCOUNT_BYPASS_ENABLED, BILLING_URL, bypassAccount, getTrialTiming, initAccount, planLabel, refreshEntitlement, signIn, signOut, SIGNUP_URL, trialCountdownLabel } from '@/nemesis-account';
++import { $account, $accountDialogOpen, ACCOUNT_BYPASS_ENABLED, BILLING_URL, bypassAccount, desktopOAuthStartUrl, getTrialTiming, initAccount, planLabel, refreshEntitlement, signIn, signOut, SIGNUP_URL, trialCountdownLabel } from '@/nemesis-account';
+ export const NemesisAccountGate = () => {
+     const account = useStore($account);
+     const dialogOpen = useStore($accountDialogOpen);
+@@ -20,6 +20,7 @@ export const NemesisAccountGate = () => {
+     const [password, setPassword] = useState('');
+     const [busy, setBusy] = useState(false);
+     const [error, setError] = useState(null);
++    const [oauthStarted, setOauthStarted] = useState(null);
+     const [refreshingPlan, setRefreshingPlan] = useState(false);
+     const [dismissedTrialEnd, setDismissedTrialEnd] = useState(null);
+     const trialTiming = getTrialTiming(account);
+@@ -72,7 +73,10 @@ export const NemesisAccountGate = () => {
+         return null;
+     }
+     if (account.status === 'signed-out') {
+-        return (_jsx("div", { className: "fixed inset-0 z-[1300] flex items-center justify-center bg-background/95 backdrop-blur-md p-4", children: _jsxs("div", { className: "w-full max-w-sm rounded-2xl border border-border bg-card p-8 shadow-lg", children: [_jsxs("div", { className: "flex flex-col items-center gap-3 pb-5 text-center", children: [_jsx(BrandMark, { className: "size-12" }), _jsxs("div", { children: [_jsx("h2", { className: "text-lg font-semibold tracking-tight", children: "Sign in to Nemesis" }), _jsx("p", { className: "pt-1 text-xs text-muted-foreground", children: "Use your Nemesis account. Your plan stays in sync across the desktop and account portal." })] })] }), _jsxs("div", { className: "flex flex-col gap-2.5", children: [_jsx(Input, { autoFocus: true, onChange: event => setEmail(event.target.value), placeholder: "Email", type: "email", value: email }), _jsx(Input, { onChange: event => setPassword(event.target.value), onKeyDown: event => {
++        return (_jsx("div", { className: "fixed inset-0 z-[1300] flex items-center justify-center bg-background/95 backdrop-blur-md p-4", children: _jsxs("div", { className: "w-full max-w-sm rounded-2xl border border-border bg-card p-8 shadow-lg", children: [_jsxs("div", { className: "flex flex-col items-center gap-3 pb-5 text-center", children: [_jsx(BrandMark, { className: "size-12" }), _jsxs("div", { children: [_jsx("h2", { className: "text-lg font-semibold tracking-tight", children: "Sign in to Nemesis" }), _jsx("p", { className: "pt-1 text-xs text-muted-foreground", children: "Use your Nemesis account. Your plan stays in sync across the desktop and account portal." })] })] }), _jsxs("div", { className: "flex flex-col gap-2.5", children: [['google', 'apple'].map(provider => (_jsxs(Button, { onClick: () => {
++                                    setOauthStarted(provider);
++                                    void window.hermesDesktop?.openExternal?.(desktopOAuthStartUrl(provider));
++                                }, variant: "secondary", children: ["Continue with ", provider === 'google' ? 'Google' : 'Apple'] }, provider))), oauthStarted && (_jsx("p", { "aria-live": "polite", className: "text-center text-xs text-muted-foreground", children: "Finishing sign-in in your browser \u2014 this window updates automatically when you're done." })), _jsxs("div", { className: "flex items-center gap-3 py-1", children: [_jsx("div", { className: "h-px flex-1 bg-border" }), _jsx("span", { className: "text-[11px] uppercase tracking-wide text-muted-foreground/70", children: "or" }), _jsx("div", { className: "h-px flex-1 bg-border" })] }), _jsx(Input, { autoFocus: true, onChange: event => setEmail(event.target.value), placeholder: "Email", type: "email", value: email }), _jsx(Input, { onChange: event => setPassword(event.target.value), onKeyDown: event => {
+                                     if (event.key === 'Enter') {
+                                         void submit();
+                                     }
+diff --git a/apps/desktop/src/components/nemesis-account-gate.tsx b/apps/desktop/src/components/nemesis-account-gate.tsx
+index 2fab76ce20a..f1261fcc379 100644
+--- a/apps/desktop/src/components/nemesis-account-gate.tsx
++++ b/apps/desktop/src/components/nemesis-account-gate.tsx
+@@ -25,6 +25,7 @@ import {
+   ACCOUNT_BYPASS_ENABLED,
+   BILLING_URL,
+   bypassAccount,
++  desktopOAuthStartUrl,
+   getTrialTiming,
+   initAccount,
+   planLabel,
+@@ -42,6 +43,7 @@ export const NemesisAccountGate: FC = () => {
+   const [password, setPassword] = useState('')
+   const [busy, setBusy] = useState(false)
+   const [error, setError] = useState<null | string>(null)
++  const [oauthStarted, setOauthStarted] = useState<null | string>(null)
+   const [refreshingPlan, setRefreshingPlan] = useState(false)
+   const [dismissedTrialEnd, setDismissedTrialEnd] = useState<null | string>(null)
+   const trialTiming = getTrialTiming(account)
+@@ -124,6 +126,30 @@ export const NemesisAccountGate: FC = () => {
+           </div>
+ 
+           <div className="flex flex-col gap-2.5">
++            {(['google', 'apple'] as const).map(provider => (
++              <Button
++                key={provider}
++                onClick={() => {
++                  setOauthStarted(provider)
++                  void window.hermesDesktop?.openExternal?.(desktopOAuthStartUrl(provider))
++                }}
++                variant="secondary"
++              >
++                Continue with {provider === 'google' ? 'Google' : 'Apple'}
++              </Button>
++            ))}
++            {oauthStarted && (
++              <p aria-live="polite" className="text-center text-xs text-muted-foreground">
++                Finishing sign-in in your browser — this window updates automatically when you&apos;re done.
++              </p>
++            )}
++
++            <div className="flex items-center gap-3 py-1">
++              <div className="h-px flex-1 bg-border" />
++              <span className="text-[11px] uppercase tracking-wide text-muted-foreground/70">or</span>
++              <div className="h-px flex-1 bg-border" />
++            </div>
++
+             <Input
+               autoFocus
+               onChange={event => setEmail(event.target.value)}
+@@ -304,9 +330,11 @@ export const NemesisAccountGate: FC = () => {
+               <Button
+                 onClick={() => {
+                   const subject = encodeURIComponent('Nemesis bug report')
++
+                   const body = encodeURIComponent(
+                     'What happened:\n\n\nWhat I expected:\n\n\nWhat I was doing right before:\n\n\n(Nemesis beta on macOS)'
+                   )
++
+                   void window.hermesDesktop?.openExternal?.(`mailto:support@enternemesis.com?subject=${subject}&body=${body}`)
+                 }}
+                 size="sm"
+diff --git a/apps/desktop/src/components/nemesis-consent-gate.js b/apps/desktop/src/components/nemesis-consent-gate.js
+index 1b9df57e29b..4b58832382d 100644
+--- a/apps/desktop/src/components/nemesis-consent-gate.js
++++ b/apps/desktop/src/components/nemesis-consent-gate.js
+@@ -1,8 +1,10 @@
+ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ // One-time privacy + responsibility consent (student build). Shown after the first
+-// successful sign-in, before the app is usable. Plain-language and truthful: it names
+-// the data processors (the web privacy policy does too) even though marketing copy
+-// stays white-labeled. Acceptance is stored locally per consent version.
++// successful sign-in, before the app is usable. Plain-language and truthful: the
++// on-screen copy describes partner categories; the named data-processor list lives in
++// the linked Privacy Policy (the legally required disclosure surface). Copy-only edits
++// must NOT bump CONSENT_VERSION — that re-gates every existing install; bump only when
++// the actual data practices change. Acceptance is stored locally per consent version.
+ import { useStore } from '@nanostores/react';
+ import { useEffect, useState } from 'react';
+ import { BrandMark } from '@/components/brand-mark';
+@@ -25,13 +27,16 @@ export const NemesisConsentGate = () => {
+     const [acceptedVersion, setAcceptedVersion] = useState(() => readAcceptedVersion());
+     // Re-check on sign-in transitions so a fresh machine shows the gate exactly once.
+     useEffect(() => {
+-        if (account.status === 'signed-in')
++        if (account.status === 'signed-in') {
+             setAcceptedVersion(readAcceptedVersion());
++        }
+     }, [account.status]);
+-    if (!NEMESIS_STUDENT_BUILD || account.bypass || account.status !== 'signed-in')
++    if (!NEMESIS_STUDENT_BUILD || account.bypass || account.status !== 'signed-in') {
+         return null;
+-    if (acceptedVersion === CONSENT_VERSION)
++    }
++    if (acceptedVersion === CONSENT_VERSION) {
+         return null;
++    }
+     const accept = () => {
+         try {
+             window.localStorage.setItem(CONSENT_STORAGE_KEY, CONSENT_VERSION);
+@@ -41,5 +46,5 @@ export const NemesisConsentGate = () => {
+         }
+         setAcceptedVersion(CONSENT_VERSION);
+     };
+-    return (_jsx("div", { className: "fixed inset-0 z-[1310] flex items-center justify-center overflow-y-auto bg-background/95 p-4 backdrop-blur-md", children: _jsxs("div", { className: "my-6 w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-lg", children: [_jsxs("div", { className: "flex flex-col items-center gap-3 text-center", children: [_jsx(BrandMark, { className: "size-12" }), _jsxs("div", { children: [_jsx("h2", { className: "text-lg font-semibold tracking-tight", children: "Before Nemesis starts working" }), _jsx("p", { className: "pt-1 text-xs leading-relaxed text-muted-foreground", children: "One minute of honesty about what Nemesis reads, what stays on this Mac, and what leaves it." })] })] }), _jsxs("div", { className: "mt-5 flex flex-col gap-3 text-xs leading-relaxed", children: [_jsxs("div", { className: "rounded-lg border border-border bg-muted/30 px-3 py-2.5", children: [_jsx("div", { className: "text-sm font-medium", children: "Stays on this Mac" }), _jsx("p", { className: "pt-1 text-muted-foreground", children: "Your school-portal logins, lecture recordings, and library files live on this computer. Nemesis signs into your portals here, in a browser you can watch \u2014 your passwords are never sent to us." })] }), _jsxs("div", { className: "rounded-lg border border-border bg-muted/30 px-3 py-2.5", children: [_jsx("div", { className: "text-sm font-medium", children: "Leaves this Mac to do the work" }), _jsx("p", { className: "pt-1 text-muted-foreground", children: "To answer and research, the text of your requests and relevant excerpts are processed by our service partners: DeepSeek (AI reasoning), Tavily and Firecrawl (web search and reading), and Supabase (account and plan). Partners can change as the engine improves; the current list always lives in the Privacy Policy." })] }), _jsxs("div", { className: "rounded-lg border border-border bg-muted/30 px-3 py-2.5", children: [_jsx("div", { className: "text-sm font-medium", children: "You stay in charge" }), _jsx("p", { className: "pt-1 text-muted-foreground", children: "Nemesis reads your portals to organize your semester \u2014 it never submits work anywhere without you. You are responsible for how you use Nemesis in your courses; academic policies vary, so check your syllabus." })] })] }), _jsxs("div", { className: "mt-5 flex flex-col gap-2.5", children: [_jsx(Button, { onClick: accept, children: "I understand \u2014 start Nemesis" }), _jsx(Button, { onClick: () => void window.hermesDesktop?.openExternal?.(PRIVACY_URL), variant: "ghost", children: "Read the Privacy Policy" })] })] }) }));
++    return (_jsx("div", { className: "fixed inset-0 z-[1310] flex items-center justify-center overflow-y-auto bg-background/95 p-4 backdrop-blur-md", children: _jsxs("div", { className: "my-6 w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-lg", children: [_jsxs("div", { className: "flex flex-col items-center gap-3 text-center", children: [_jsx(BrandMark, { className: "size-12" }), _jsxs("div", { children: [_jsx("h2", { className: "text-lg font-semibold tracking-tight", children: "Before Nemesis starts working" }), _jsx("p", { className: "pt-1 text-xs leading-relaxed text-muted-foreground", children: "One minute of honesty about what Nemesis reads, what stays on this Mac, and what leaves it." })] })] }), _jsxs("div", { className: "mt-5 flex flex-col gap-3 text-xs leading-relaxed", children: [_jsxs("div", { className: "rounded-lg border border-border bg-muted/30 px-3 py-2.5", children: [_jsx("div", { className: "text-sm font-medium", children: "Stays on this Mac" }), _jsx("p", { className: "pt-1 text-muted-foreground", children: "Your school-portal logins, lecture recordings, and library files live on this computer. Nemesis signs into your portals here, in a browser you can watch \u2014 your passwords are never sent to us." })] }), _jsxs("div", { className: "rounded-lg border border-border bg-muted/30 px-3 py-2.5", children: [_jsx("div", { className: "text-sm font-medium", children: "Leaves this Mac to do the work" }), _jsxs("p", { className: "pt-1 text-muted-foreground", children: ["To answer and research, the text of your requests and relevant excerpts are processed by our vetted service partners \u2014 for AI reasoning, web search and reading, and account management. The full, current list of partners always lives in the", ' ', _jsx("button", { className: "underline underline-offset-2 hover:text-foreground", onClick: () => void window.hermesDesktop?.openExternal?.(PRIVACY_URL), type: "button", children: "Privacy Policy" }), "."] })] }), _jsxs("div", { className: "rounded-lg border border-border bg-muted/30 px-3 py-2.5", children: [_jsx("div", { className: "text-sm font-medium", children: "You stay in charge" }), _jsx("p", { className: "pt-1 text-muted-foreground", children: "Nemesis reads your portals to organize your semester \u2014 it never submits work anywhere without you. You are responsible for how you use Nemesis in your courses; academic policies vary, so check your syllabus." })] })] }), _jsxs("div", { className: "mt-5 flex flex-col gap-2.5", children: [_jsx(Button, { onClick: accept, children: "I understand \u2014 start Nemesis" }), _jsx(Button, { onClick: () => void window.hermesDesktop?.openExternal?.(PRIVACY_URL), variant: "ghost", children: "Read the Privacy Policy" })] })] }) }));
+ };
+diff --git a/apps/desktop/src/components/nemesis-consent-gate.tsx b/apps/desktop/src/components/nemesis-consent-gate.tsx
+index 6fcc7992e16..d4da0153445 100644
+--- a/apps/desktop/src/components/nemesis-consent-gate.tsx
++++ b/apps/desktop/src/components/nemesis-consent-gate.tsx
+@@ -1,7 +1,9 @@
+ // One-time privacy + responsibility consent (student build). Shown after the first
+-// successful sign-in, before the app is usable. Plain-language and truthful: it names
+-// the data processors (the web privacy policy does too) even though marketing copy
+-// stays white-labeled. Acceptance is stored locally per consent version.
++// successful sign-in, before the app is usable. Plain-language and truthful: the
++// on-screen copy describes partner categories; the named data-processor list lives in
++// the linked Privacy Policy (the legally required disclosure surface). Copy-only edits
++// must NOT bump CONSENT_VERSION — that re-gates every existing install; bump only when
++// the actual data practices change. Acceptance is stored locally per consent version.
+ import { useStore } from '@nanostores/react'
+ import { type FC, useEffect, useState } from 'react'
+ 
+@@ -28,11 +30,12 @@ export const NemesisConsentGate: FC = () => {
+ 
+   // Re-check on sign-in transitions so a fresh machine shows the gate exactly once.
+   useEffect(() => {
+-    if (account.status === 'signed-in') setAcceptedVersion(readAcceptedVersion())
++    if (account.status === 'signed-in') {setAcceptedVersion(readAcceptedVersion())}
+   }, [account.status])
+ 
+-  if (!NEMESIS_STUDENT_BUILD || account.bypass || account.status !== 'signed-in') return null
+-  if (acceptedVersion === CONSENT_VERSION) return null
++  if (!NEMESIS_STUDENT_BUILD || account.bypass || account.status !== 'signed-in') {return null}
++
++  if (acceptedVersion === CONSENT_VERSION) {return null}
+ 
+   const accept = () => {
+     try {
+@@ -40,6 +43,7 @@ export const NemesisConsentGate: FC = () => {
+     } catch {
+       // localStorage unavailable: still let the user in for this session.
+     }
++
+     setAcceptedVersion(CONSENT_VERSION)
+   }
+ 
+@@ -67,10 +71,17 @@ export const NemesisConsentGate: FC = () => {
+           <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+             <div className="text-sm font-medium">Leaves this Mac to do the work</div>
+             <p className="pt-1 text-muted-foreground">
+-              To answer and research, the text of your requests and relevant excerpts are processed by our service
+-              partners: DeepSeek (AI reasoning), Tavily and Firecrawl (web search and reading), and Supabase (account
+-              and plan). Partners can change as the engine improves; the current list always lives in the Privacy
+-              Policy.
++              To answer and research, the text of your requests and relevant excerpts are processed by our vetted
++              service partners — for AI reasoning, web search and reading, and account management. The full, current
++              list of partners always lives in the{' '}
++              <button
++                className="underline underline-offset-2 hover:text-foreground"
++                onClick={() => void window.hermesDesktop?.openExternal?.(PRIVACY_URL)}
++                type="button"
++              >
++                Privacy Policy
++              </button>
++              .
+             </p>
+           </div>
+           <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+diff --git a/apps/desktop/src/global.d.ts b/apps/desktop/src/global.d.ts
+index b5f049b9e90..caa3be5decd 100644
+--- a/apps/desktop/src/global.d.ts
++++ b/apps/desktop/src/global.d.ts
+@@ -24,6 +24,9 @@ declare global {
+       // Keepalive: mark a pool profile backend as recently used so the idle
+       // reaper spares it while its chat is active.
+       touchBackend: (profile?: string | null) => Promise<{ ok: boolean }>
++      // Student build: hand the metering-proxy device key to main, which points
++      // the agent backend at the Nemesis LLM proxy and restarts it if needed.
++      nemesisLlmSync?: (deviceKey: string) => Promise<{ ok: boolean; changed?: boolean; error?: string }>
+       getGatewayWsUrl: (profile?: null | string) => Promise<string>
+       // Open (or focus) a standalone OS window for a single chat session so
+       // the user can work with multiple chats side by side. Returns ok:false
+diff --git a/apps/desktop/src/lib/icons.js b/apps/desktop/src/lib/icons.js
+index 90b60b39975..3f87e79d482 100644
+--- a/apps/desktop/src/lib/icons.js
++++ b/apps/desktop/src/lib/icons.js
+@@ -1,5 +1,5 @@
+-import { IconActivity as Activity, IconAlertCircle as AlertCircle, IconAlertTriangle as AlertTriangle, IconArchive as Archive, IconArchiveOff as ArchiveOff, IconArrowUp as ArrowUp, IconArrowUpRight as ArrowUpRight, IconAt as AtSign, IconWaveSine as AudioLines, IconChartBar as BarChart3, IconBell as Bell, IconBookmark as Bookmark, IconBookmarkFilled as BookmarkFilled, IconBox as Box, IconBrain as Brain, IconBug as Bug, IconCheck as Check, IconCircleCheck as CheckCircle2, IconCheck as CheckIcon, IconChevronDown as ChevronDown, IconChevronDown as ChevronDownIcon, IconChevronLeft as ChevronLeft, IconChevronLeft as ChevronLeftIcon, IconChevronRight as ChevronRight, IconChevronRight as ChevronRightIcon, IconCircle as CircleIcon, IconClipboard as Clipboard, IconClock as Clock, IconCommand as Command, IconCopy as Copy, IconCopy as CopyIcon, IconCpu as Cpu, IconDownload as Download, IconEgg as Egg, IconExternalLink as ExternalLink, IconEye as Eye, IconEyeOff as EyeOff, IconPhoto as FileImage, IconFileText as FileText, IconFolderOpen as FolderOpen, IconGitBranch as GitBranch, IconGitBranch as GitBranchIcon, IconGlobe as Globe, IconHash as Hash, IconHelpCircle as HelpCircle, IconPhoto as ImageIcon, IconInfoCircle as Info, IconKey as KeyRound, IconLayersIntersect2 as Layers3, IconLayoutDashboard as LayoutDashboard, IconLink as Link, IconLink as Link2, IconLink as LinkIcon, IconLoader2 as Loader2, IconLoader2 as Loader2Icon, IconLock as Lock, IconLogin as LogIn, IconMail as Mail, IconMaximize as Maximize, IconMessageCircle as MessageCircle, IconMessageQuestion as MessageQuestion, IconMessage2 as MessageSquareText, IconMicrophone as Mic, IconMicrophoneOff as MicOff, IconDeviceDesktop as Monitor, IconDeviceDesktopAnalytics as MonitorPlay, IconMoon as Moon, IconDots as MoreHorizontal, IconDots as MoreHorizontalIcon, IconDotsVertical as MoreVertical, IconNotebook as NotebookTabs, IconPackage as Package, IconPalette as Palette, IconLayoutBottombar as PanelBottom, IconLayoutSidebar as PanelLeftIcon, IconPlayerPause as Pause, IconPaw as PawPrint, IconPencil as Pencil, IconPencil as PencilIcon, IconPencil as PencilLine, IconPin as Pin, IconPlayerPlay as Play, IconPlus as Plus, IconRefresh as RefreshCw, IconRefresh as RefreshCwIcon, IconDeviceFloppy as Save, IconSearch as Search, IconSearch as SearchIcon, IconSend as Send, IconSettings as Settings, IconSettings2 as Settings2, IconAdjustmentsHorizontal as SlidersHorizontal, IconSquare as Square, IconChartDots3 as Starmap, IconSteeringWheel as SteeringWheel, IconPlayerStopFilled as StopFilled, IconSun as Sun, IconTerminal2 as Terminal, IconTrash as Trash2, IconUpload as Upload, IconUsers as Users, IconVolume2 as Volume2, IconVolume2 as Volume2Icon, IconVolumeOff as VolumeX, IconVolumeOff as VolumeXIcon, IconTool as Wrench, IconX as X, IconX as XIcon, IconBolt as Zap, IconBoltFilled as ZapFilled, IconZoomIn as ZoomIn, IconZoomOut as ZoomOut } from '@tabler/icons-react';
+-export { Activity, AlertCircle, AlertTriangle, Archive, ArchiveOff, ArrowUp, ArrowUpRight, AtSign, AudioLines, BarChart3, Bell, Bookmark, BookmarkFilled, Box, Brain, Bug, Check, CheckCircle2, CheckIcon, ChevronDown, ChevronDownIcon, ChevronLeft, ChevronLeftIcon, ChevronRight, ChevronRightIcon, CircleIcon, Clipboard, Clock, Command, Copy, CopyIcon, Cpu, Download, Egg, ExternalLink, Eye, EyeOff, FileImage, FileText, FolderOpen, GitBranch, GitBranchIcon, Globe, Hash, HelpCircle, ImageIcon, Info, KeyRound, Layers3, LayoutDashboard, Link, Link2, LinkIcon, Loader2, Loader2Icon, Lock, LogIn, Mail, Maximize, MessageCircle, MessageQuestion, MessageSquareText, Mic, MicOff, Monitor, MonitorPlay, Moon, MoreHorizontal, MoreHorizontalIcon, MoreVertical, NotebookTabs, Package, Palette, PanelBottom, PanelLeftIcon, Pause, PawPrint, Pencil, PencilIcon, PencilLine, Pin, Play, Plus, RefreshCw, RefreshCwIcon, Save, Search, SearchIcon, Send, Settings, Settings2, SlidersHorizontal, Square, Starmap, SteeringWheel, StopFilled, Sun, Terminal, Trash2, Upload, Users, Volume2, Volume2Icon, VolumeX, VolumeXIcon, Wrench, X, XIcon, Zap, ZapFilled, ZoomIn, ZoomOut };
++import { IconActivity as Activity, IconAlertCircle as AlertCircle, IconAlertTriangle as AlertTriangle, IconArchive as Archive, IconArchiveOff as ArchiveOff, IconArrowUp as ArrowUp, IconArrowUpRight as ArrowUpRight, IconAt as AtSign, IconWaveSine as AudioLines, IconChartBar as BarChart3, IconBell as Bell, IconBookmark as Bookmark, IconBookmarkFilled as BookmarkFilled, IconBox as Box, IconBrain as Brain, IconBug as Bug, IconCheck as Check, IconCircleCheck as CheckCircle2, IconCheck as CheckIcon, IconChevronDown as ChevronDown, IconChevronDown as ChevronDownIcon, IconChevronLeft as ChevronLeft, IconChevronLeft as ChevronLeftIcon, IconChevronRight as ChevronRight, IconChevronRight as ChevronRightIcon, IconCircle as CircleIcon, IconClipboard as Clipboard, IconClock as Clock, IconCommand as Command, IconCopy as Copy, IconCopy as CopyIcon, IconCpu as Cpu, IconDownload as Download, IconEgg as Egg, IconExternalLink as ExternalLink, IconEye as Eye, IconEyeOff as EyeOff, IconPhoto as FileImage, IconFileText as FileText, IconFolderOpen as FolderOpen, IconGitBranch as GitBranch, IconGitBranch as GitBranchIcon, IconGlobe as Globe, IconHash as Hash, IconHelpCircle as HelpCircle, IconPhoto as ImageIcon, IconInfoCircle as Info, IconKeyboard as Keyboard, IconKey as KeyRound, IconLayersIntersect2 as Layers3, IconLayoutDashboard as LayoutDashboard, IconLink as Link, IconLink as Link2, IconLink as LinkIcon, IconLoader2 as Loader2, IconLoader2 as Loader2Icon, IconLock as Lock, IconLogin as LogIn, IconMail as Mail, IconMaximize as Maximize, IconMessageCircle as MessageCircle, IconMessageQuestion as MessageQuestion, IconMessage2 as MessageSquareText, IconMicrophone as Mic, IconMicrophoneOff as MicOff, IconDeviceDesktop as Monitor, IconDeviceDesktopAnalytics as MonitorPlay, IconMoon as Moon, IconDots as MoreHorizontal, IconDots as MoreHorizontalIcon, IconDotsVertical as MoreVertical, IconNotebook as NotebookTabs, IconPackage as Package, IconPalette as Palette, IconLayoutBottombar as PanelBottom, IconLayoutSidebar as PanelLeftIcon, IconPlayerPause as Pause, IconPaw as PawPrint, IconPencil as Pencil, IconPencil as PencilIcon, IconPencil as PencilLine, IconPin as Pin, IconPlayerPlay as Play, IconPlus as Plus, IconRefresh as RefreshCw, IconRefresh as RefreshCwIcon, IconDeviceFloppy as Save, IconSearch as Search, IconSearch as SearchIcon, IconSend as Send, IconSettings as Settings, IconSettings2 as Settings2, IconAdjustmentsHorizontal as SlidersHorizontal, IconSquare as Square, IconChartDots3 as Starmap, IconSteeringWheel as SteeringWheel, IconPlayerStopFilled as StopFilled, IconSun as Sun, IconTerminal2 as Terminal, IconTrash as Trash2, IconUpload as Upload, IconUsers as Users, IconVolume2 as Volume2, IconVolume2 as Volume2Icon, IconVolumeOff as VolumeX, IconVolumeOff as VolumeXIcon, IconTool as Wrench, IconX as X, IconX as XIcon, IconBolt as Zap, IconBoltFilled as ZapFilled, IconZoomIn as ZoomIn, IconZoomOut as ZoomOut } from '@tabler/icons-react';
++export { Activity, AlertCircle, AlertTriangle, Archive, ArchiveOff, ArrowUp, ArrowUpRight, AtSign, AudioLines, BarChart3, Bell, Bookmark, BookmarkFilled, Box, Brain, Bug, Check, CheckCircle2, CheckIcon, ChevronDown, ChevronDownIcon, ChevronLeft, ChevronLeftIcon, ChevronRight, ChevronRightIcon, CircleIcon, Clipboard, Clock, Command, Copy, CopyIcon, Cpu, Download, Egg, ExternalLink, Eye, EyeOff, FileImage, FileText, FolderOpen, GitBranch, GitBranchIcon, Globe, Hash, HelpCircle, ImageIcon, Info, Keyboard, KeyRound, Layers3, LayoutDashboard, Link, Link2, LinkIcon, Loader2, Loader2Icon, Lock, LogIn, Mail, Maximize, MessageCircle, MessageQuestion, MessageSquareText, Mic, MicOff, Monitor, MonitorPlay, Moon, MoreHorizontal, MoreHorizontalIcon, MoreVertical, NotebookTabs, Package, Palette, PanelBottom, PanelLeftIcon, Pause, PawPrint, Pencil, PencilIcon, PencilLine, Pin, Play, Plus, RefreshCw, RefreshCwIcon, Save, Search, SearchIcon, Send, Settings, Settings2, SlidersHorizontal, Square, Starmap, SteeringWheel, StopFilled, Sun, Terminal, Trash2, Upload, Users, Volume2, Volume2Icon, VolumeX, VolumeXIcon, Wrench, X, XIcon, Zap, ZapFilled, ZoomIn, ZoomOut };
+ /**
+  * Named icon-size scale — the single source of truth for SVG icon dimensions,
+  * replacing ad-hoc `h-N w-N` / `size={N}`. Use `<Icon className={iconSize.sm} />`
+diff --git a/apps/desktop/src/lib/icons.ts b/apps/desktop/src/lib/icons.ts
+index e863aa39280..d61af5693be 100644
+--- a/apps/desktop/src/lib/icons.ts
++++ b/apps/desktop/src/lib/icons.ts
+@@ -46,6 +46,7 @@ import {
+   IconHelpCircle as HelpCircle,
+   IconPhoto as ImageIcon,
+   IconInfoCircle as Info,
++  IconKeyboard as Keyboard,
+   IconKey as KeyRound,
+   IconLayersIntersect2 as Layers3,
+   IconLayoutDashboard as LayoutDashboard,
+@@ -161,6 +162,7 @@ export {
+   HelpCircle,
+   ImageIcon,
+   Info,
++  Keyboard,
+   KeyRound,
+   Layers3,
+   LayoutDashboard,
+diff --git a/apps/desktop/src/nemesis-account.js b/apps/desktop/src/nemesis-account.js
+index 02ec1363cd2..ffefd3a09c4 100644
+--- a/apps/desktop/src/nemesis-account.js
++++ b/apps/desktop/src/nemesis-account.js
+@@ -154,6 +154,19 @@ async function refreshIfNeeded(session) {
+     saveSession(merged);
+     return merged;
+ }
++/** Best-effort: point the local agent backend at the Nemesis LLM proxy with this
++ *  device's metering key. Idempotent — main only rewrites env + restarts the
++ *  backend when something actually changed — so it's safe on every sign-in and
++ *  entitlement refresh. Failures are silent; the next refresh retries. */
++async function syncBackendLlm() {
++    try {
++        const key = $deviceKey.get() ?? (await mintDeviceKey());
++        await window.hermesDesktop?.nemesisLlmSync?.(key);
++    }
++    catch {
++        // Offline, signed out, or the proxy is unreachable — retried on the next cycle.
++    }
++}
+ async function applySession(session) {
+     const entitlement = await fetchPlan(session);
+     const trialEnd = entitlement.planStatus === 'trialing'
+@@ -173,6 +186,9 @@ async function applySession(session) {
+         trialEnd,
+         userId: session.userId
+     });
++    // Zero-setup model access: every verified sign-in (re)wires the agent backend
++    // to the metering proxy. Fire-and-forget so account state never waits on it.
++    void syncBackendLlm();
+ }
+ function applyUnavailableSession(session, previous) {
+     const trialEnd = previous?.trialEnd || (previous?.planStatus === 'trialing' ? previous.periodEnd : undefined) || session.trialEnd;
+@@ -235,6 +251,50 @@ export async function signIn(email, password) {
+     }
+     await applySession(session);
+ }
++/** Adopt a session delivered by the nemesis:// OAuth deep link (Google/Apple
++ *  sign-in finishes in the browser). Only the refresh token is trusted from the
++ *  URL: it's exchanged with Supabase for a fresh, server-validated session, so a
++ *  forged link can't inject a fabricated identity. */
++export async function adoptOAuthSession(refreshToken) {
++    const session = await tokenRequest({ refresh_token: refreshToken }, 'refresh_token');
++    saveSession(session);
++    try {
++        window.localStorage.removeItem(BYPASS_KEY);
++    }
++    catch {
++        // ignore
++    }
++    await applySession(session);
++}
++const OAUTH_STATE_KEY = 'nemesis.oauth.state';
++/** Browser URL that starts Google/Apple OAuth for the DESKTOP app: the account
++ *  site finishes the provider flow, then hands the session back through the
++ *  nemesis:// deep link. A one-shot random `state` rides the whole round trip so
++ *  the deep-link handler only accepts sign-ins THIS app started (a malicious
++ *  local page can't sign the student into an attacker's account). */
++export function desktopOAuthStartUrl(provider) {
++    const state = crypto.randomUUID();
++    try {
++        window.localStorage.setItem(OAUTH_STATE_KEY, state);
++    }
++    catch {
++        // Best-effort: without storage the state check below fails closed.
++    }
++    return `${NEMESIS_ACCOUNT_SITE}/auth/desktop?provider=${provider}&state=${state}`;
++}
++/** One-shot check that a returning OAuth deep link carries the state we issued.
++ *  Consumes the stored value either way. */
++export function consumeOAuthState(state) {
++    let stored = null;
++    try {
++        stored = window.localStorage.getItem(OAUTH_STATE_KEY);
++        window.localStorage.removeItem(OAUTH_STATE_KEY);
++    }
++    catch {
++        return false;
++    }
++    return Boolean(state) && Boolean(stored) && state === stored;
++}
+ export async function signOut() {
+     const stored = loadSession();
+     if (stored) {
+@@ -244,6 +304,16 @@ export async function signOut() {
+             method: 'POST'
+         }).catch(() => { });
+     }
++    // Drop the metering device key with the session: a different student signing
++    // in on this Mac must mint their OWN key, or their usage would be billed to
++    // the previous account.
++    try {
++        window.localStorage.removeItem(DEVICE_KEY_STORE);
++    }
++    catch {
++        // ignore
++    }
++    $deviceKey.set(null);
+     saveSession(null);
+     try {
+         window.localStorage.removeItem(BYPASS_KEY);
+@@ -393,6 +463,32 @@ export async function fetchUsage() {
+         return null;
+     }
+ }
++/** The signed-in student's own daily token counters for the last 7 days, read
++ *  straight from the metering table (RLS `auth.uid() = user_id` scopes it to
++ *  their rows). Null when signed out or unreachable — the UI shows "not
++ *  available", never an error. */
++export async function fetchWeeklyUsage() {
++    const stored = loadSession();
++    if (!stored) {
++        return null;
++    }
++    try {
++        const session = await refreshIfNeeded(stored);
++        const since = new Date(Date.now() - 6 * DAY_MS).toISOString().slice(0, 10);
++        const response = await fetch(`${SUPABASE_URL}/rest/v1/usage_counters?select=period_start,used` +
++            `&counter_key=eq.nemesis_llm_tokens&period_start=gte.${since}&order=period_start.asc`, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${session.accessToken}` } });
++        if (!response.ok) {
++            return null;
++        }
++        const rows = (await response.json());
++        return rows
++            .filter(row => typeof row.period_start === 'string' && typeof row.used === 'number')
++            .map(row => ({ periodStart: row.period_start.slice(0, 10), used: row.used }));
++    }
++    catch {
++        return null;
++    }
++}
+ /** Human label for a plan code: 'health_pro' → 'Health Pro'. */
+ export function planLabel(plan) {
+     if (!plan || plan === 'free') {
+diff --git a/apps/desktop/src/nemesis-account.ts b/apps/desktop/src/nemesis-account.ts
+index 8c1f08ab4ba..fdfb907f1b5 100644
+--- a/apps/desktop/src/nemesis-account.ts
++++ b/apps/desktop/src/nemesis-account.ts
+@@ -251,6 +251,19 @@ async function refreshIfNeeded(session: StoredSession): Promise<StoredSession> {
+   return merged
+ }
+ 
++/** Best-effort: point the local agent backend at the Nemesis LLM proxy with this
++ *  device's metering key. Idempotent — main only rewrites env + restarts the
++ *  backend when something actually changed — so it's safe on every sign-in and
++ *  entitlement refresh. Failures are silent; the next refresh retries. */
++async function syncBackendLlm(): Promise<void> {
++  try {
++    const key = $deviceKey.get() ?? (await mintDeviceKey())
++    await window.hermesDesktop?.nemesisLlmSync?.(key)
++  } catch {
++    // Offline, signed out, or the proxy is unreachable — retried on the next cycle.
++  }
++}
++
+ async function applySession(session: StoredSession): Promise<void> {
+   const entitlement = await fetchPlan(session)
+ 
+@@ -274,6 +287,10 @@ async function applySession(session: StoredSession): Promise<void> {
+     trialEnd,
+     userId: session.userId
+   })
++
++  // Zero-setup model access: every verified sign-in (re)wires the agent backend
++  // to the metering proxy. Fire-and-forget so account state never waits on it.
++  void syncBackendLlm()
+ }
+ 
+ function applyUnavailableSession(session: StoredSession, previous?: AccountState): void {
+@@ -351,6 +368,57 @@ export async function signIn(email: string, password: string): Promise<void> {
+   await applySession(session)
+ }
+ 
++/** Adopt a session delivered by the nemesis:// OAuth deep link (Google/Apple
++ *  sign-in finishes in the browser). Only the refresh token is trusted from the
++ *  URL: it's exchanged with Supabase for a fresh, server-validated session, so a
++ *  forged link can't inject a fabricated identity. */
++export async function adoptOAuthSession(refreshToken: string): Promise<void> {
++  const session = await tokenRequest({ refresh_token: refreshToken }, 'refresh_token')
++  saveSession(session)
++
++  try {
++    window.localStorage.removeItem(BYPASS_KEY)
++  } catch {
++    // ignore
++  }
++
++  await applySession(session)
++}
++
++const OAUTH_STATE_KEY = 'nemesis.oauth.state'
++
++/** Browser URL that starts Google/Apple OAuth for the DESKTOP app: the account
++ *  site finishes the provider flow, then hands the session back through the
++ *  nemesis:// deep link. A one-shot random `state` rides the whole round trip so
++ *  the deep-link handler only accepts sign-ins THIS app started (a malicious
++ *  local page can't sign the student into an attacker's account). */
++export function desktopOAuthStartUrl(provider: 'apple' | 'google'): string {
++  const state = crypto.randomUUID()
++
++  try {
++    window.localStorage.setItem(OAUTH_STATE_KEY, state)
++  } catch {
++    // Best-effort: without storage the state check below fails closed.
++  }
++
++  return `${NEMESIS_ACCOUNT_SITE}/auth/desktop?provider=${provider}&state=${state}`
++}
++
++/** One-shot check that a returning OAuth deep link carries the state we issued.
++ *  Consumes the stored value either way. */
++export function consumeOAuthState(state: string | undefined): boolean {
++  let stored: null | string = null
++
++  try {
++    stored = window.localStorage.getItem(OAUTH_STATE_KEY)
++    window.localStorage.removeItem(OAUTH_STATE_KEY)
++  } catch {
++    return false
++  }
++
++  return Boolean(state) && Boolean(stored) && state === stored
++}
++
+ export async function signOut(): Promise<void> {
+   const stored = loadSession()
+ 
+@@ -362,6 +430,17 @@ export async function signOut(): Promise<void> {
+     }).catch(() => {})
+   }
+ 
++  // Drop the metering device key with the session: a different student signing
++  // in on this Mac must mint their OWN key, or their usage would be billed to
++  // the previous account.
++  try {
++    window.localStorage.removeItem(DEVICE_KEY_STORE)
++  } catch {
++    // ignore
++  }
++
++  $deviceKey.set(null)
++
+   saveSession(null)
+ 
+   try {
+@@ -444,6 +523,7 @@ export interface LlmMessage {
+  *  small frequent calls like the recorder's live copilot. Throws on failure. */
+ export async function llmComplete(messages: LlmMessage[], opts: { maxTokens?: number } = {}): Promise<string> {
+   const key = $deviceKey.get() ?? (await mintDeviceKey())
++
+   const response = await fetch(`${LLM_PROXY_URL}/v1/chat/completions`, {
+     body: JSON.stringify({
+       max_tokens: opts.maxTokens ?? 320,
+@@ -459,14 +539,17 @@ export async function llmComplete(messages: LlmMessage[], opts: { maxTokens?: nu
+     },
+     method: 'POST'
+   })
++
+   const data = (await response.json().catch(() => ({}))) as {
+     choices?: { message?: { content?: string } }[]
+     error?: string | { message?: string }
+   }
++
+   if (!response.ok) {
+     const detail = typeof data.error === 'string' ? data.error : data.error?.message
+     throw new Error(detail || `model call failed (${response.status})`)
+   }
++
+   return data.choices?.[0]?.message?.content ?? ''
+ }
+ 
+@@ -564,6 +647,47 @@ export async function fetchUsage(): Promise<null | UsageSnapshot> {
+   }
+ }
+ 
++export interface WeeklyUsageDay {
++  /** YYYY-MM-DD (UTC day, matching the proxy's counters). */
++  periodStart: string
++  used: number
++}
++
++/** The signed-in student's own daily token counters for the last 7 days, read
++ *  straight from the metering table (RLS `auth.uid() = user_id` scopes it to
++ *  their rows). Null when signed out or unreachable — the UI shows "not
++ *  available", never an error. */
++export async function fetchWeeklyUsage(): Promise<null | WeeklyUsageDay[]> {
++  const stored = loadSession()
++
++  if (!stored) {
++    return null
++  }
++
++  try {
++    const session = await refreshIfNeeded(stored)
++    const since = new Date(Date.now() - 6 * DAY_MS).toISOString().slice(0, 10)
++
++    const response = await fetch(
++      `${SUPABASE_URL}/rest/v1/usage_counters?select=period_start,used` +
++        `&counter_key=eq.nemesis_llm_tokens&period_start=gte.${since}&order=period_start.asc`,
++      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${session.accessToken}` } }
++    )
++
++    if (!response.ok) {
++      return null
++    }
++
++    const rows = (await response.json()) as { period_start?: string; used?: number }[]
++
++    return rows
++      .filter(row => typeof row.period_start === 'string' && typeof row.used === 'number')
++      .map(row => ({ periodStart: (row.period_start as string).slice(0, 10), used: row.used as number }))
++  } catch {
++    return null
++  }
++}
++
+ /** Human label for a plan code: 'health_pro' → 'Health Pro'. */
+ export function planLabel(plan: string): string {
+   if (!plan || plan === 'free') {
+diff --git a/apps/desktop/src/nemesis.js b/apps/desktop/src/nemesis.js
+index d75b909747d..8cede022a33 100644
+--- a/apps/desktop/src/nemesis.js
++++ b/apps/desktop/src/nemesis.js
+@@ -11,7 +11,11 @@ export const STUDENT_HIDDEN_PALETTE = new Set(['nav-terminal', 'nav-skills', 'na
+  *  provider, so model/provider controls stay visible and hosted-usage claims stay hidden. */
+ // 2026-07-13: 'providers' and 'config:model' removed — student plans include Nemesis
+ // intelligence via the metered proxy, so provider/key/model settings are not student-facing.
++// 2026-07-14 (beta.5): 'usage' restored — students asked where to see their plan + weekly
++// AI usage; the page now also carries account status (usage-settings.tsx).
+ export const STUDENT_SETTINGS_KEEP = new Set([
++    'usage',
++    'keybinds',
+     'connections',
+     'config:appearance',
+     'config:chat',
+diff --git a/apps/desktop/src/nemesis.ts b/apps/desktop/src/nemesis.ts
+index 26760ac1c40..3687a7e6eca 100644
+--- a/apps/desktop/src/nemesis.ts
++++ b/apps/desktop/src/nemesis.ts
+@@ -14,7 +14,11 @@ export const STUDENT_HIDDEN_PALETTE: ReadonlySet<string> = new Set(['nav-termina
+  *  provider, so model/provider controls stay visible and hosted-usage claims stay hidden. */
+ // 2026-07-13: 'providers' and 'config:model' removed — student plans include Nemesis
+ // intelligence via the metered proxy, so provider/key/model settings are not student-facing.
++// 2026-07-14 (beta.5): 'usage' restored — students asked where to see their plan + weekly
++// AI usage; the page now also carries account status (usage-settings.tsx).
+ export const STUDENT_SETTINGS_KEEP: ReadonlySet<string> = new Set([
++  'usage',
++  'keybinds',
+   'connections',
+   'config:appearance',
+   'config:chat',
+diff --git a/hermes_cli/default_soul.py b/hermes_cli/default_soul.py
+index 29cf757ded2..b939e4d2382 100644
+--- a/hermes_cli/default_soul.py
++++ b/hermes_cli/default_soul.py
+@@ -1,16 +1,19 @@
+ """Default SOUL.md template seeded into HERMES_HOME on first run."""
+ 
+ DEFAULT_SOUL_MD = (
+-    "You are Nemesis, an AI study assistant for health-sciences and pharmacy students. "
+-    "You help students understand course material, research evidence-based answers with "
+-    "real citations, and turn lectures and readings into study material — notes, flashcards, "
+-    "summaries, and explanations. You communicate clearly, in plain language, and admit "
+-    "uncertainty when appropriate. For any clinical, drug, or health claim, ground your answer "
+-    "in real retrieved literature (use the pubmed-evidence skill) and cite it; never invent a "
+-    "citation, PMID, dose, or fact. For dosing or any dangerous specific, remind the student to "
+-    "verify against current official labeling and their instructor — you provide study support, "
+-    "not medical advice. Everything you produce is a draft the student reviews; you never submit "
+-    "coursework, assignments, or exams on anyone's behalf."
++    "You are Nemesis, an AI study agent for students in any field — engineering, business, "
++    "health sciences, humanities, law, the arts, and everything between. You help students "
++    "understand course material, research well-sourced answers with real citations, and turn "
++    "lectures and readings into study material — notes, flashcards, summaries, and explanations. "
++    "Adapt to the student's own subject and vocabulary; never assume their major. You communicate "
++    "clearly, in plain language, and admit uncertainty when appropriate. For any factual claim "
++    "that matters — scientific, clinical, legal, historical, statistical — ground your answer in "
++    "real retrieved sources (use the pubmed-evidence skill for biomedical topics) and cite them; "
++    "never invent a citation, identifier, number, or fact. For safety-critical specifics (drug "
++    "doses, legal or medical decisions), remind the student to verify against current official "
++    "sources and their instructor — you provide study support, not professional advice. "
++    "Everything you produce is a draft the student reviews; you never submit coursework, "
++    "assignments, or exams on anyone's behalf."
+ )
+ 
+ # Legacy SOUL.md boilerplate that older installers (install.sh / install.ps1 /
+@@ -56,6 +59,21 @@ _LEGACY_TEMPLATE_SOULS = (
+         "Delete the contents (or this file) to use the default personality.\n"
+         "-->"
+     ),
++    # The pharmacy-era DEFAULT_SOUL_MD (seeded by builds up to v0.1.0-beta.4).
++    # App-written verbatim, so an exact match carries zero user intent; upgrading
++    # it in place moves existing installs to the field-neutral persona.
++    (
++        "You are Nemesis, an AI study assistant for health-sciences and pharmacy students. "
++        "You help students understand course material, research evidence-based answers with "
++        "real citations, and turn lectures and readings into study material — notes, flashcards, "
++        "summaries, and explanations. You communicate clearly, in plain language, and admit "
++        "uncertainty when appropriate. For any clinical, drug, or health claim, ground your answer "
++        "in real retrieved literature (use the pubmed-evidence skill) and cite it; never invent a "
++        "citation, PMID, dose, or fact. For dosing or any dangerous specific, remind the student to "
++        "verify against current official labeling and their instructor — you provide study support, "
++        "not medical advice. Everything you produce is a draft the student reviews; you never submit "
++        "coursework, assignments, or exams on anyone's behalf."
++    ),
+ )
+ 
+ 
+-- 
+2.50.1 (Apple Git-155)
+

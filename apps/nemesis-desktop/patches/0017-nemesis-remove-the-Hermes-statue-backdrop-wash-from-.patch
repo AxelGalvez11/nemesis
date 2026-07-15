@@ -1,0 +1,57 @@
+From d275be68cb6f22d57e946176a75c30999845cf2b Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Thu, 9 Jul 2026 21:22:17 -0500
+Subject: [PATCH 17/20] nemesis: remove the Hermes statue backdrop wash from
+ the chat UI (student build)
+
+---
+ apps/desktop/src/components/Backdrop.js  | 3 ++-
+ apps/desktop/src/components/Backdrop.tsx | 4 +++-
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/apps/desktop/src/components/Backdrop.js b/apps/desktop/src/components/Backdrop.js
+index 89b6518..875622b 100644
+--- a/apps/desktop/src/components/Backdrop.js
++++ b/apps/desktop/src/components/Backdrop.js
+@@ -1,6 +1,7 @@
+ import { jsx as _jsx, Fragment as _Fragment, jsxs as _jsxs } from "react/jsx-runtime";
+ import { Leva, useControls } from 'leva';
+ import { useEffect, useState } from 'react';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ const BLEND_MODES = [
+     'normal',
+     'multiply',
+@@ -60,7 +61,7 @@ export function Backdrop() {
+         },
+         scale: { value: 160, min: 100, max: 300, step: 5, label: 'height (dvh)' }
+     }, { collapsed: true });
+-    return (_jsxs(_Fragment, { children: [_jsx(Leva, { collapsed: true, hidden: !import.meta.env.DEV || !controlsOpen, titleBar: { title: 'backdrop', drag: true } }), statue.enabled && (_jsx("div", { "aria-hidden": true, className: "pointer-events-none absolute inset-0 z-2", style: {
++    return (_jsxs(_Fragment, { children: [_jsx(Leva, { collapsed: true, hidden: !import.meta.env.DEV || !controlsOpen, titleBar: { title: 'backdrop', drag: true } }), statue.enabled && !NEMESIS_STUDENT_BUILD && (_jsx("div", { "aria-hidden": true, className: "pointer-events-none absolute inset-0 z-2", style: {
+                     mixBlendMode: statue.blendMode,
+                     opacity: statue.opacity
+                 }, children: _jsx("img", { alt: "", className: "w-auto min-w-dvw object-cover", fetchPriority: "low", src: assetPath('ds-assets/filler-bg0.jpg'), style: {
+diff --git a/apps/desktop/src/components/Backdrop.tsx b/apps/desktop/src/components/Backdrop.tsx
+index 1ced2f4..088de93 100644
+--- a/apps/desktop/src/components/Backdrop.tsx
++++ b/apps/desktop/src/components/Backdrop.tsx
+@@ -1,6 +1,8 @@
+ import { Leva, useControls } from 'leva'
+ import { type CSSProperties, useEffect, useState } from 'react'
+ 
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
++
+ const BLEND_MODES = [
+   'normal',
+   'multiply',
+@@ -87,7 +89,7 @@ export function Backdrop() {
+     <>
+       <Leva collapsed hidden={!import.meta.env.DEV || !controlsOpen} titleBar={{ title: 'backdrop', drag: true }} />
+ 
+-      {statue.enabled && (
++      {statue.enabled && !NEMESIS_STUDENT_BUILD && (
+         <div
+           aria-hidden
+           className="pointer-events-none absolute inset-0 z-2"
+-- 
+2.50.1 (Apple Git-155)
+

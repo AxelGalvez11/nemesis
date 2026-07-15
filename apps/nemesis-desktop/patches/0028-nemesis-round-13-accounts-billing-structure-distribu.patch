@@ -1,0 +1,945 @@
+From b9395c3838aae474ded8d72ce1383977c7401fba Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Fri, 10 Jul 2026 11:40:48 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20round-13=20=E2=80=94=20accounts=20+?=
+ =?UTF-8?q?=20billing=20structure,=20distribution=20config?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- nemesis-account.ts: PharmaOrb Supabase auth (password sign-in, token refresh,
+  persisted session), plan read straight from the subscriptions table with the
+  user's own JWT (RLS auth.uid()=user_id — no backend changes, anon key is the
+  same public value the web bundle ships)
+- NemesisAccountGate: full-screen sign-in on launch (student build) with
+  create-account link (web signup) + temporary owner 'Skip for now' bypass;
+  Account dialog (plan badge, renewal, Upgrade/Manage billing → web app's
+  Stripe page, Refresh plan, Sign out)
+- Statusbar account chip: email · Plan (left side), opens the dialog
+- electron-builder: category → education, generic update-feed config
+  (updates.pharmaorb.app/nemesis, dormant until signed builds)
+- DMG artifact builds: Nemesis-0.17.0-mac-arm64.dmg (unsigned; notarize.mjs
+  hook activates when APPLE_API_* env vars exist)
+---
+ apps/desktop/package.json                     |   7 +-
+ apps/desktop/src/app/desktop-controller.js    |   3 +-
+ apps/desktop/src/app/desktop-controller.tsx   |   2 +
+ .../app/shell/hooks/use-statusbar-items.js    |  25 +-
+ .../app/shell/hooks/use-statusbar-items.tsx   |  34 ++-
+ .../src/components/nemesis-account-gate.js    |  67 +++++
+ .../src/components/nemesis-account-gate.tsx   | 191 +++++++++++++
+ apps/desktop/src/nemesis-account.js           | 196 +++++++++++++
+ apps/desktop/src/nemesis-account.ts           | 265 ++++++++++++++++++
+ 9 files changed, 785 insertions(+), 5 deletions(-)
+ create mode 100644 apps/desktop/src/components/nemesis-account-gate.js
+ create mode 100644 apps/desktop/src/components/nemesis-account-gate.tsx
+ create mode 100644 apps/desktop/src/nemesis-account.js
+ create mode 100644 apps/desktop/src/nemesis-account.ts
+
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index 7046c29ed95..abdcd537463 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -199,8 +199,13 @@
+       "**/prebuilds/**",
+       "dist/**"
+     ],
++    "publish": {
++      "provider": "generic",
++      "url": "https://updates.pharmaorb.app/nemesis",
++      "channel": "latest"
++    },
+     "mac": {
+-      "category": "public.app-category.developer-tools",
++      "category": "public.app-category.education",
+       "entitlements": "electron/entitlements.mac.plist",
+       "entitlementsInherit": "electron/entitlements.mac.inherit.plist",
+       "extendInfo": {
+diff --git a/apps/desktop/src/app/desktop-controller.js b/apps/desktop/src/app/desktop-controller.js
+index 4c761bdb074..4055dac3f7f 100644
+--- a/apps/desktop/src/app/desktop-controller.js
++++ b/apps/desktop/src/app/desktop-controller.js
+@@ -5,6 +5,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
+ import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+ import { BootFailureOverlay } from '@/components/boot-failure-overlay';
+ import { DesktopInstallOverlay } from '@/components/desktop-install-overlay';
++import { NemesisAccountGate } from '@/components/nemesis-account-gate';
+ import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay';
+ import { DesktopOnboardingOverlay } from '@/components/onboarding';
+ import { Pane, PaneMain } from '@/components/pane-shell';
+@@ -762,7 +763,7 @@ export function DesktopController() {
+     // (incl. a snapshotted cwd) independent of the session, so switching sessions
+     // never rebuilds or closes them; toggling the pane never rebuilds the shells.
+     const mainOverlays = _jsx(PersistentTerminal, { onAddSelectionToChat: composer.addTerminalSelectionAttachment });
+-    const overlays = (_jsxs(_Fragment, { children: [_jsx(RemoteDisplayBanner, {}), !isSecondaryWindow() && _jsx(DesktopInstallOverlay, {}), !isSecondaryWindow() && (_jsx(DesktopOnboardingOverlay, { enabled: gatewayState === 'open', onCompleted: () => {
++    const overlays = (_jsxs(_Fragment, { children: [_jsx(RemoteDisplayBanner, {}), !isSecondaryWindow() && _jsx(DesktopInstallOverlay, {}), !isSecondaryWindow() && _jsx(NemesisAccountGate, {}), !isSecondaryWindow() && (_jsx(DesktopOnboardingOverlay, { enabled: gatewayState === 'open', onCompleted: () => {
+                     void refreshHermesConfig();
+                     void refreshCurrentModel();
+                     void queryClient.invalidateQueries({ queryKey: ['model-options'] });
+diff --git a/apps/desktop/src/app/desktop-controller.tsx b/apps/desktop/src/app/desktop-controller.tsx
+index 717ce6ed75f..1e27162ccc9 100644
+--- a/apps/desktop/src/app/desktop-controller.tsx
++++ b/apps/desktop/src/app/desktop-controller.tsx
+@@ -5,6 +5,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 're
+ 
+ import { BootFailureOverlay } from '@/components/boot-failure-overlay'
+ import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
++import { NemesisAccountGate } from '@/components/nemesis-account-gate'
+ import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
+ import { DesktopOnboardingOverlay } from '@/components/onboarding'
+ import { Pane, PaneMain } from '@/components/pane-shell'
+@@ -1051,6 +1052,7 @@ export function DesktopController() {
+     <>
+       <RemoteDisplayBanner />
+       {!isSecondaryWindow() && <DesktopInstallOverlay />}
++      {!isSecondaryWindow() && <NemesisAccountGate />}
+       {!isSecondaryWindow() && (
+         <DesktopOnboardingOverlay
+           enabled={gatewayState === 'open'}
+diff --git a/apps/desktop/src/app/shell/hooks/use-statusbar-items.js b/apps/desktop/src/app/shell/hooks/use-statusbar-items.js
+index 6b60d0999ed..0c9225d81c4 100644
+--- a/apps/desktop/src/app/shell/hooks/use-statusbar-items.js
++++ b/apps/desktop/src/app/shell/hooks/use-statusbar-items.js
+@@ -1,8 +1,10 @@
+ import { jsx as _jsx } from "react/jsx-runtime";
+ import { useStore } from '@nanostores/react';
++import { IconUser } from '@tabler/icons-react';
+ import { useCallback, useMemo } from 'react';
+ import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/store';
+ import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_STATUSBAR } from '@/nemesis';
++import { $account, $accountDialogOpen, planLabel } from '@/nemesis-account';
+ import { ContextUsagePanel } from '@/app/shell/context-usage-panel';
+ import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel';
+ import { Codicon } from '@/components/ui/codicon';
+@@ -304,7 +306,28 @@ export function useStatusbarItems({ agentsOpen, chatOpen, commandCenterOpen, ext
+         turnStartedAt,
+         yoloActive
+     ]);
+-    const leftStatusbarItems = useMemo(() => [...coreLeftStatusbarItems, ...extraLeftItems].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_STATUSBAR.has(item.id)), [coreLeftStatusbarItems, extraLeftItems]);
++    // Student build: account chip — email · plan, click opens the Account dialog
++    // (plan badge, upgrade/billing, sign out). Lives left so it reads as identity.
++    const account = useStore($account);
++    const accountItem = useMemo(() => {
++        if (!NEMESIS_STUDENT_BUILD) {
++            return null;
++        }
++        const label = account.status === 'signed-in'
++            ? account.bypass
++                ? 'Offline mode'
++                : `${account.email ?? 'Account'} · ${planLabel(account.plan)}`
++            : 'Sign in';
++        return {
++            icon: _jsx(IconUser, { size: 12 }),
++            id: 'nemesis-account',
++            label,
++            onSelect: () => $accountDialogOpen.set(true),
++            title: 'Account & plan',
++            variant: 'action'
++        };
++    }, [account]);
++    const leftStatusbarItems = useMemo(() => [...(accountItem ? [accountItem] : []), ...coreLeftStatusbarItems, ...extraLeftItems].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_STATUSBAR.has(item.id)), [accountItem, coreLeftStatusbarItems, extraLeftItems]);
+     const statusbarItems = useMemo(() => [...extraRightItems, ...coreRightStatusbarItems].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_STATUSBAR.has(item.id)), [coreRightStatusbarItems, extraRightItems]);
+     return { leftStatusbarItems, statusbarItems };
+ }
+diff --git a/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx b/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
+index 8c5d8116907..cdab8d3f30c 100644
+--- a/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
++++ b/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
+@@ -1,9 +1,11 @@
+ import { useStore } from '@nanostores/react'
++import { IconUser } from '@tabler/icons-react'
+ import { useCallback, useMemo } from 'react'
+ 
+ import type { CommandCenterSection } from '@/app/command-center'
+ import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/store'
+ import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_STATUSBAR } from '@/nemesis'
++import { $account, $accountDialogOpen, planLabel } from '@/nemesis-account'
+ import { ContextUsagePanel } from '@/app/shell/context-usage-panel'
+ import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
+ import { Codicon } from '@/components/ui/codicon'
+@@ -428,9 +430,37 @@ export function useStatusbarItems({
+     ]
+   )
+ 
++  // Student build: account chip — email · plan, click opens the Account dialog
++  // (plan badge, upgrade/billing, sign out). Lives left so it reads as identity.
++  const account = useStore($account)
++  const accountItem = useMemo<null | StatusbarItem>(() => {
++    if (!NEMESIS_STUDENT_BUILD) {
++      return null
++    }
++
++    const label =
++      account.status === 'signed-in'
++        ? account.bypass
++          ? 'Offline mode'
++          : `${account.email ?? 'Account'} · ${planLabel(account.plan)}`
++        : 'Sign in'
++
++    return {
++      icon: <IconUser size={12} />,
++      id: 'nemesis-account',
++      label,
++      onSelect: () => $accountDialogOpen.set(true),
++      title: 'Account & plan',
++      variant: 'action'
++    }
++  }, [account])
++
+   const leftStatusbarItems = useMemo(
+-    () => [...coreLeftStatusbarItems, ...extraLeftItems].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_STATUSBAR.has(item.id)),
+-    [coreLeftStatusbarItems, extraLeftItems]
++    () =>
++      [...(accountItem ? [accountItem] : []), ...coreLeftStatusbarItems, ...extraLeftItems].filter(
++        item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_STATUSBAR.has(item.id)
++      ),
++    [accountItem, coreLeftStatusbarItems, extraLeftItems]
+   )
+ 
+   const statusbarItems = useMemo(
+diff --git a/apps/desktop/src/components/nemesis-account-gate.js b/apps/desktop/src/components/nemesis-account-gate.js
+new file mode 100644
+index 00000000000..5613ab15795
+--- /dev/null
++++ b/apps/desktop/src/components/nemesis-account-gate.js
+@@ -0,0 +1,67 @@
++import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
++// Account gate + account dialog (student build). Signed out → a full-screen sign-in
++// card over the app (students use their PharmaOrb account; creating one happens on the
++// web). Signed in → nothing rendered here except the Account dialog, opened from the
++// statusbar chip: plan badge, renewal date, Manage billing (web app's Stripe page),
++// Refresh plan, Sign out.
++import { useStore } from '@nanostores/react';
++import { useEffect, useState } from 'react';
++import { BrandMark } from '@/components/brand-mark';
++import { Button } from '@/components/ui/button';
++import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
++import { Input } from '@/components/ui/input';
++import { Loader } from '@/components/ui/loader';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++import { $account, $accountDialogOpen, BILLING_URL, bypassAccount, initAccount, planLabel, refreshEntitlement, SIGNUP_URL, signIn, signOut } from '@/nemesis-account';
++export const NemesisAccountGate = () => {
++    const account = useStore($account);
++    const dialogOpen = useStore($accountDialogOpen);
++    const [email, setEmail] = useState('');
++    const [password, setPassword] = useState('');
++    const [busy, setBusy] = useState(false);
++    const [error, setError] = useState(null);
++    useEffect(() => {
++        if (NEMESIS_STUDENT_BUILD) {
++            void initAccount();
++        }
++    }, []);
++    if (!NEMESIS_STUDENT_BUILD) {
++        return null;
++    }
++    const submit = async () => {
++        if (!email.trim() || !password || busy) {
++            return;
++        }
++        setBusy(true);
++        setError(null);
++        try {
++            await signIn(email.trim(), password);
++            setPassword('');
++        }
++        catch (err) {
++            setError(err instanceof Error ? err.message : 'Could not sign in.');
++        }
++        finally {
++            setBusy(false);
++        }
++    };
++    if (account.status === 'loading') {
++        return null;
++    }
++    if (account.status === 'signed-out') {
++        return (_jsx("div", { className: "fixed inset-0 z-[1300] flex items-center justify-center bg-background/95 backdrop-blur-md p-4", children: _jsxs("div", { className: "w-full max-w-sm rounded-2xl border border-border bg-card p-8 shadow-lg", children: [_jsxs("div", { className: "flex flex-col items-center gap-3 pb-5 text-center", children: [_jsx(BrandMark, { className: "size-12" }), _jsxs("div", { children: [_jsx("h2", { className: "text-lg font-semibold tracking-tight", children: "Sign in to Nemesis" }), _jsx("p", { className: "pt-1 text-xs text-muted-foreground", children: "Use your PharmaOrb account \u2014 your plan and billing live there." })] })] }), _jsxs("div", { className: "flex flex-col gap-2.5", children: [_jsx(Input, { autoFocus: true, onChange: event => setEmail(event.target.value), placeholder: "Email", type: "email", value: email }), _jsx(Input, { onChange: event => setPassword(event.target.value), onKeyDown: event => {
++                                    if (event.key === 'Enter') {
++                                        void submit();
++                                    }
++                                }, placeholder: "Password", type: "password", value: password }), error && _jsx("p", { className: "text-xs text-destructive", children: error }), _jsxs(Button, { className: "mt-1 w-full", disabled: busy || !email.trim() || !password, onClick: () => void submit(), children: [busy ? _jsx(Loader, { className: "size-4", type: "fourier-flow" }) : null, busy ? 'Signing in…' : 'Sign in'] })] }), _jsxs("div", { className: "flex items-center justify-between pt-4 text-xs", children: [_jsx("button", { className: "text-muted-foreground underline-offset-2 hover:text-foreground hover:underline", onClick: () => void window.hermesDesktop?.openExternal?.(SIGNUP_URL), type: "button", children: "Create an account" }), _jsx("button", { className: "text-muted-foreground/70 underline-offset-2 hover:text-foreground hover:underline", onClick: bypassAccount, title: "Temporary: use the app without an account (owner/dev escape hatch)", type: "button", children: "Skip for now" })] })] }) }));
++    }
++    // Signed in → only the account dialog (opened from the statusbar chip).
++    return (_jsx(Dialog, { onOpenChange: open => $accountDialogOpen.set(open), open: dialogOpen, children: _jsxs(DialogContent, { className: "sm:max-w-sm", children: [_jsxs(DialogHeader, { children: [_jsx(DialogTitle, { children: "Account" }), _jsx(DialogDescription, { children: account.bypass ? 'Offline mode — not signed in.' : account.email })] }), !account.bypass && (_jsxs("div", { className: "flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2.5", children: [_jsxs("div", { children: [_jsxs("div", { className: "text-sm font-medium", children: [planLabel(account.plan), " plan"] }), _jsx("div", { className: "text-xs text-muted-foreground", children: account.plan === 'free'
++                                        ? 'Upgrade for the full study engine.'
++                                        : account.periodEnd
++                                            ? `Renews ${new Date(account.periodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
++                                            : account.planStatus || 'Active' })] }), _jsx("span", { className: "rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)", children: planLabel(account.plan) })] })), _jsxs(DialogFooter, { className: "flex-wrap gap-2 sm:justify-between", children: [_jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: () => void window.hermesDesktop?.openExternal?.(BILLING_URL), size: "sm", variant: "secondary", children: account.plan === 'free' ? 'Upgrade' : 'Manage billing' }), !account.bypass && (_jsx(Button, { onClick: () => void refreshEntitlement(), size: "sm", variant: "outline", children: "Refresh plan" }))] }), _jsx(Button, { onClick: () => {
++                                $accountDialogOpen.set(false);
++                                void signOut();
++                            }, size: "sm", variant: "ghost", children: "Sign out" })] })] }) }));
++};
+diff --git a/apps/desktop/src/components/nemesis-account-gate.tsx b/apps/desktop/src/components/nemesis-account-gate.tsx
+new file mode 100644
+index 00000000000..27a8f6ac81c
+--- /dev/null
++++ b/apps/desktop/src/components/nemesis-account-gate.tsx
+@@ -0,0 +1,191 @@
++// Account gate + account dialog (student build). Signed out → a full-screen sign-in
++// card over the app (students use their PharmaOrb account; creating one happens on the
++// web). Signed in → nothing rendered here except the Account dialog, opened from the
++// statusbar chip: plan badge, renewal date, Manage billing (web app's Stripe page),
++// Refresh plan, Sign out.
++import { useStore } from '@nanostores/react'
++import { type FC, useEffect, useState } from 'react'
++
++import { BrandMark } from '@/components/brand-mark'
++import { Button } from '@/components/ui/button'
++import {
++  Dialog,
++  DialogContent,
++  DialogDescription,
++  DialogFooter,
++  DialogHeader,
++  DialogTitle
++} from '@/components/ui/dialog'
++import { Input } from '@/components/ui/input'
++import { Loader } from '@/components/ui/loader'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
++import {
++  $account,
++  $accountDialogOpen,
++  BILLING_URL,
++  bypassAccount,
++  initAccount,
++  planLabel,
++  refreshEntitlement,
++  SIGNUP_URL,
++  signIn,
++  signOut
++} from '@/nemesis-account'
++
++export const NemesisAccountGate: FC = () => {
++  const account = useStore($account)
++  const dialogOpen = useStore($accountDialogOpen)
++  const [email, setEmail] = useState('')
++  const [password, setPassword] = useState('')
++  const [busy, setBusy] = useState(false)
++  const [error, setError] = useState<null | string>(null)
++
++  useEffect(() => {
++    if (NEMESIS_STUDENT_BUILD) {
++      void initAccount()
++    }
++  }, [])
++
++  if (!NEMESIS_STUDENT_BUILD) {
++    return null
++  }
++
++  const submit = async () => {
++    if (!email.trim() || !password || busy) {
++      return
++    }
++
++    setBusy(true)
++    setError(null)
++
++    try {
++      await signIn(email.trim(), password)
++      setPassword('')
++    } catch (err) {
++      setError(err instanceof Error ? err.message : 'Could not sign in.')
++    } finally {
++      setBusy(false)
++    }
++  }
++
++  if (account.status === 'loading') {
++    return null
++  }
++
++  if (account.status === 'signed-out') {
++    return (
++      <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-background/95 backdrop-blur-md p-4">
++        <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-8 shadow-lg">
++          <div className="flex flex-col items-center gap-3 pb-5 text-center">
++            <BrandMark className="size-12" />
++            <div>
++              <h2 className="text-lg font-semibold tracking-tight">Sign in to Nemesis</h2>
++              <p className="pt-1 text-xs text-muted-foreground">
++                Use your PharmaOrb account — your plan and billing live there.
++              </p>
++            </div>
++          </div>
++
++          <div className="flex flex-col gap-2.5">
++            <Input
++              autoFocus
++              onChange={event => setEmail(event.target.value)}
++              placeholder="Email"
++              type="email"
++              value={email}
++            />
++            <Input
++              onChange={event => setPassword(event.target.value)}
++              onKeyDown={event => {
++                if (event.key === 'Enter') {
++                  void submit()
++                }
++              }}
++              placeholder="Password"
++              type="password"
++              value={password}
++            />
++            {error && <p className="text-xs text-destructive">{error}</p>}
++            <Button className="mt-1 w-full" disabled={busy || !email.trim() || !password} onClick={() => void submit()}>
++              {busy ? <Loader className="size-4" type="fourier-flow" /> : null}
++              {busy ? 'Signing in…' : 'Sign in'}
++            </Button>
++          </div>
++
++          <div className="flex items-center justify-between pt-4 text-xs">
++            <button
++              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
++              onClick={() => void window.hermesDesktop?.openExternal?.(SIGNUP_URL)}
++              type="button"
++            >
++              Create an account
++            </button>
++            <button
++              className="text-muted-foreground/70 underline-offset-2 hover:text-foreground hover:underline"
++              onClick={bypassAccount}
++              title="Temporary: use the app without an account (owner/dev escape hatch)"
++              type="button"
++            >
++              Skip for now
++            </button>
++          </div>
++        </div>
++      </div>
++    )
++  }
++
++  // Signed in → only the account dialog (opened from the statusbar chip).
++  return (
++    <Dialog onOpenChange={open => $accountDialogOpen.set(open)} open={dialogOpen}>
++      <DialogContent className="sm:max-w-sm">
++        <DialogHeader>
++          <DialogTitle>Account</DialogTitle>
++          <DialogDescription>
++            {account.bypass ? 'Offline mode — not signed in.' : account.email}
++          </DialogDescription>
++        </DialogHeader>
++
++        {!account.bypass && (
++          <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2.5">
++            <div>
++              <div className="text-sm font-medium">{planLabel(account.plan)} plan</div>
++              <div className="text-xs text-muted-foreground">
++                {account.plan === 'free'
++                  ? 'Upgrade for the full study engine.'
++                  : account.periodEnd
++                    ? `Renews ${new Date(account.periodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
++                    : account.planStatus || 'Active'}
++              </div>
++            </div>
++            <span className="rounded-full bg-(--theme-primary)/15 px-2.5 py-1 text-[11px] font-semibold text-(--theme-primary)">
++              {planLabel(account.plan)}
++            </span>
++          </div>
++        )}
++
++        <DialogFooter className="flex-wrap gap-2 sm:justify-between">
++          <div className="flex gap-2">
++            <Button onClick={() => void window.hermesDesktop?.openExternal?.(BILLING_URL)} size="sm" variant="secondary">
++              {account.plan === 'free' ? 'Upgrade' : 'Manage billing'}
++            </Button>
++            {!account.bypass && (
++              <Button onClick={() => void refreshEntitlement()} size="sm" variant="outline">
++                Refresh plan
++              </Button>
++            )}
++          </div>
++          <Button
++            onClick={() => {
++              $accountDialogOpen.set(false)
++              void signOut()
++            }}
++            size="sm"
++            variant="ghost"
++          >
++            Sign out
++          </Button>
++        </DialogFooter>
++      </DialogContent>
++    </Dialog>
++  )
++}
+diff --git a/apps/desktop/src/nemesis-account.js b/apps/desktop/src/nemesis-account.js
+new file mode 100644
+index 00000000000..3e75d47676e
+--- /dev/null
++++ b/apps/desktop/src/nemesis-account.js
+@@ -0,0 +1,196 @@
++// Nemesis accounts + billing structure. Students sign in with their PharmaOrb account
++// (same Supabase auth pool as the web app); the desktop reads their subscription tier
++// straight from the `subscriptions` table (RLS `auth.uid() = user_id` makes that safe
++// with just the user's own JWT + the public anon key). Upgrading opens the web app's
++// existing Stripe billing page — one billing system, owned by the web app.
++//
++// What this deliberately does NOT do yet: meter/bill individual model calls. The agent
++// still talks to its configured provider directly; moving the model key server-side
++// behind a usage-metered proxy is the documented next step (docs/design note in the
++// nemesis kit).
++import { atom } from 'nanostores';
++// Public client credentials — the same values the PharmaOrb web bundle ships to every
++// browser. Safe to embed: the anon key only grants what RLS policies allow.
++export const SUPABASE_URL = 'https://qyjmivntajbigjswhahb.supabase.co';
++export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5am1pdm50YWpiaWdqc3doYWhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0NjcyMDEsImV4cCI6MjA5NjA0MzIwMX0.N305XZXSciym2q6c6UMoNwdmCIUZWPgW_3jMIVnIPHk';
++export const PHARMAORB_SITE = 'https://app.pharmaorb.app';
++export const BILLING_URL = `${PHARMAORB_SITE}/app/billing`;
++export const SIGNUP_URL = `${PHARMAORB_SITE}/signup`;
++const SESSION_KEY = 'nemesis.account.v1';
++const BYPASS_KEY = 'nemesis.account.bypass';
++export const $account = atom({ plan: 'free', status: 'loading' });
++export const $accountDialogOpen = atom(false);
++function loadSession() {
++    try {
++        const raw = window.localStorage.getItem(SESSION_KEY);
++        if (!raw) {
++            return null;
++        }
++        const parsed = JSON.parse(raw);
++        return parsed && typeof parsed.accessToken === 'string' ? parsed : null;
++    }
++    catch {
++        return null;
++    }
++}
++function saveSession(session) {
++    try {
++        if (session) {
++            window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
++        }
++        else {
++            window.localStorage.removeItem(SESSION_KEY);
++        }
++    }
++    catch {
++        // best-effort persistence
++    }
++}
++async function tokenRequest(body, grant) {
++    const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=${grant}`, {
++        body: JSON.stringify(body),
++        headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
++        method: 'POST'
++    });
++    const data = (await response.json().catch(() => ({})));
++    if (!response.ok || !data.access_token) {
++        const reason = data.error_description || data.msg || data.error || `sign-in failed (${response.status})`;
++        throw new Error(reason);
++    }
++    return {
++        accessToken: data.access_token,
++        email: data.user?.email ?? '',
++        expiresAt: Math.floor(Date.now() / 1000) + (data.expires_in || 3600),
++        refreshToken: data.refresh_token,
++        userId: data.user?.id ?? ''
++    };
++}
++/** Active-subscription statuses (Stripe vocabulary, as the web app writes them). */
++const ACTIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
++async function fetchPlan(session) {
++    try {
++        const response = await fetch(`${SUPABASE_URL}/rest/v1/subscriptions?select=plan,status,current_period_end&order=updated_at.desc&limit=1`, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${session.accessToken}` } });
++        if (!response.ok) {
++            return { plan: 'free' };
++        }
++        const rows = (await response.json());
++        const sub = rows[0];
++        if (sub?.plan && sub.status && ACTIVE_STATUSES.has(sub.status)) {
++            return { periodEnd: sub.current_period_end, plan: sub.plan, planStatus: sub.status };
++        }
++        return { plan: 'free', planStatus: sub?.status };
++    }
++    catch {
++        // Offline or unreachable: don't lock the student out of a paid tier they had;
++        // default to free-tier behavior for this session.
++        return { plan: 'free' };
++    }
++}
++async function refreshIfNeeded(session) {
++    const secondsLeft = session.expiresAt - Math.floor(Date.now() / 1000);
++    if (secondsLeft > 120) {
++        return session;
++    }
++    const refreshed = await tokenRequest({ refresh_token: session.refreshToken }, 'refresh_token');
++    const merged = { ...refreshed, email: refreshed.email || session.email, userId: refreshed.userId || session.userId };
++    saveSession(merged);
++    return merged;
++}
++async function applySession(session) {
++    const entitlement = await fetchPlan(session);
++    $account.set({
++        email: session.email,
++        periodEnd: entitlement.periodEnd,
++        plan: entitlement.plan,
++        planStatus: entitlement.planStatus,
++        status: 'signed-in',
++        userId: session.userId
++    });
++}
++export async function initAccount() {
++    try {
++        if (window.localStorage.getItem(BYPASS_KEY) === '1') {
++            $account.set({ bypass: true, plan: 'free', status: 'signed-in' });
++            return;
++        }
++    }
++    catch {
++        // fall through
++    }
++    const stored = loadSession();
++    if (!stored) {
++        $account.set({ plan: 'free', status: 'signed-out' });
++        return;
++    }
++    try {
++        const session = await refreshIfNeeded(stored);
++        await applySession(session);
++    }
++    catch {
++        // Refresh failed (revoked/expired) → ask the student to sign in again.
++        saveSession(null);
++        $account.set({ plan: 'free', status: 'signed-out' });
++    }
++}
++export async function signIn(email, password) {
++    const session = await tokenRequest({ email, password }, 'password');
++    saveSession(session);
++    try {
++        window.localStorage.removeItem(BYPASS_KEY);
++    }
++    catch {
++        // ignore
++    }
++    await applySession(session);
++}
++export async function signOut() {
++    const stored = loadSession();
++    if (stored) {
++        // Best-effort server-side revoke; local clear is what matters.
++        void fetch(`${SUPABASE_URL}/auth/v1/logout`, {
++            headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${stored.accessToken}` },
++            method: 'POST'
++        }).catch(() => { });
++    }
++    saveSession(null);
++    try {
++        window.localStorage.removeItem(BYPASS_KEY);
++    }
++    catch {
++        // ignore
++    }
++    $account.set({ plan: 'free', status: 'signed-out' });
++}
++/** Temporary owner escape hatch: use the app without an account (dev/offline). */
++export function bypassAccount() {
++    try {
++        window.localStorage.setItem(BYPASS_KEY, '1');
++    }
++    catch {
++        // ignore
++    }
++    $account.set({ bypass: true, plan: 'free', status: 'signed-in' });
++}
++export async function refreshEntitlement() {
++    const stored = loadSession();
++    if (!stored) {
++        return;
++    }
++    try {
++        const session = await refreshIfNeeded(stored);
++        await applySession(session);
++    }
++    catch {
++        // keep current state; a later refresh can succeed
++    }
++}
++/** Human label for a plan code: 'health_pro' → 'Health Pro'. */
++export function planLabel(plan) {
++    if (!plan || plan === 'free') {
++        return 'Free';
++    }
++    return plan
++        .split(/[_-]/)
++        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
++        .join(' ');
++}
+diff --git a/apps/desktop/src/nemesis-account.ts b/apps/desktop/src/nemesis-account.ts
+new file mode 100644
+index 00000000000..1f19b092d00
+--- /dev/null
++++ b/apps/desktop/src/nemesis-account.ts
+@@ -0,0 +1,265 @@
++// Nemesis accounts + billing structure. Students sign in with their PharmaOrb account
++// (same Supabase auth pool as the web app); the desktop reads their subscription tier
++// straight from the `subscriptions` table (RLS `auth.uid() = user_id` makes that safe
++// with just the user's own JWT + the public anon key). Upgrading opens the web app's
++// existing Stripe billing page — one billing system, owned by the web app.
++//
++// What this deliberately does NOT do yet: meter/bill individual model calls. The agent
++// still talks to its configured provider directly; moving the model key server-side
++// behind a usage-metered proxy is the documented next step (docs/design note in the
++// nemesis kit).
++import { atom } from 'nanostores'
++
++// Public client credentials — the same values the PharmaOrb web bundle ships to every
++// browser. Safe to embed: the anon key only grants what RLS policies allow.
++export const SUPABASE_URL = 'https://qyjmivntajbigjswhahb.supabase.co'
++export const SUPABASE_ANON_KEY =
++  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5am1pdm50YWpiaWdqc3doYWhiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0NjcyMDEsImV4cCI6MjA5NjA0MzIwMX0.N305XZXSciym2q6c6UMoNwdmCIUZWPgW_3jMIVnIPHk'
++export const PHARMAORB_SITE = 'https://app.pharmaorb.app'
++export const BILLING_URL = `${PHARMAORB_SITE}/app/billing`
++export const SIGNUP_URL = `${PHARMAORB_SITE}/signup`
++
++const SESSION_KEY = 'nemesis.account.v1'
++const BYPASS_KEY = 'nemesis.account.bypass'
++
++export interface AccountState {
++  status: 'loading' | 'signed-in' | 'signed-out'
++  email?: string
++  userId?: string
++  /** Plan code from the subscriptions table; 'free' when no active subscription. */
++  plan: string
++  planStatus?: string
++  periodEnd?: string
++  /** True when the owner used the temporary offline bypass (no account checks). */
++  bypass?: boolean
++}
++
++export const $account = atom<AccountState>({ plan: 'free', status: 'loading' })
++export const $accountDialogOpen = atom(false)
++
++interface StoredSession {
++  accessToken: string
++  refreshToken: string
++  /** Unix seconds. */
++  expiresAt: number
++  userId: string
++  email: string
++}
++
++function loadSession(): StoredSession | null {
++  try {
++    const raw = window.localStorage.getItem(SESSION_KEY)
++
++    if (!raw) {
++      return null
++    }
++
++    const parsed = JSON.parse(raw) as StoredSession
++
++    return parsed && typeof parsed.accessToken === 'string' ? parsed : null
++  } catch {
++    return null
++  }
++}
++
++function saveSession(session: StoredSession | null): void {
++  try {
++    if (session) {
++      window.localStorage.setItem(SESSION_KEY, JSON.stringify(session))
++    } else {
++      window.localStorage.removeItem(SESSION_KEY)
++    }
++  } catch {
++    // best-effort persistence
++  }
++}
++
++interface TokenResponse {
++  access_token: string
++  refresh_token: string
++  expires_in: number
++  user?: { id: string; email?: string }
++  error_description?: string
++  msg?: string
++  error?: string
++}
++
++async function tokenRequest(body: Record<string, string>, grant: string): Promise<StoredSession> {
++  const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=${grant}`, {
++    body: JSON.stringify(body),
++    headers: { apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
++    method: 'POST'
++  })
++
++  const data = (await response.json().catch(() => ({}))) as TokenResponse
++
++  if (!response.ok || !data.access_token) {
++    const reason = data.error_description || data.msg || data.error || `sign-in failed (${response.status})`
++    throw new Error(reason)
++  }
++
++  return {
++    accessToken: data.access_token,
++    email: data.user?.email ?? '',
++    expiresAt: Math.floor(Date.now() / 1000) + (data.expires_in || 3600),
++    refreshToken: data.refresh_token,
++    userId: data.user?.id ?? ''
++  }
++}
++
++/** Active-subscription statuses (Stripe vocabulary, as the web app writes them). */
++const ACTIVE_STATUSES = new Set(['active', 'trialing', 'past_due'])
++
++async function fetchPlan(session: StoredSession): Promise<{ plan: string; planStatus?: string; periodEnd?: string }> {
++  try {
++    const response = await fetch(
++      `${SUPABASE_URL}/rest/v1/subscriptions?select=plan,status,current_period_end&order=updated_at.desc&limit=1`,
++      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${session.accessToken}` } }
++    )
++
++    if (!response.ok) {
++      return { plan: 'free' }
++    }
++
++    const rows = (await response.json()) as { plan?: string; status?: string; current_period_end?: string }[]
++    const sub = rows[0]
++
++    if (sub?.plan && sub.status && ACTIVE_STATUSES.has(sub.status)) {
++      return { periodEnd: sub.current_period_end, plan: sub.plan, planStatus: sub.status }
++    }
++
++    return { plan: 'free', planStatus: sub?.status }
++  } catch {
++    // Offline or unreachable: don't lock the student out of a paid tier they had;
++    // default to free-tier behavior for this session.
++    return { plan: 'free' }
++  }
++}
++
++async function refreshIfNeeded(session: StoredSession): Promise<StoredSession> {
++  const secondsLeft = session.expiresAt - Math.floor(Date.now() / 1000)
++
++  if (secondsLeft > 120) {
++    return session
++  }
++
++  const refreshed = await tokenRequest({ refresh_token: session.refreshToken }, 'refresh_token')
++  const merged = { ...refreshed, email: refreshed.email || session.email, userId: refreshed.userId || session.userId }
++  saveSession(merged)
++
++  return merged
++}
++
++async function applySession(session: StoredSession): Promise<void> {
++  const entitlement = await fetchPlan(session)
++  $account.set({
++    email: session.email,
++    periodEnd: entitlement.periodEnd,
++    plan: entitlement.plan,
++    planStatus: entitlement.planStatus,
++    status: 'signed-in',
++    userId: session.userId
++  })
++}
++
++export async function initAccount(): Promise<void> {
++  try {
++    if (window.localStorage.getItem(BYPASS_KEY) === '1') {
++      $account.set({ bypass: true, plan: 'free', status: 'signed-in' })
++
++      return
++    }
++  } catch {
++    // fall through
++  }
++
++  const stored = loadSession()
++
++  if (!stored) {
++    $account.set({ plan: 'free', status: 'signed-out' })
++
++    return
++  }
++
++  try {
++    const session = await refreshIfNeeded(stored)
++    await applySession(session)
++  } catch {
++    // Refresh failed (revoked/expired) → ask the student to sign in again.
++    saveSession(null)
++    $account.set({ plan: 'free', status: 'signed-out' })
++  }
++}
++
++export async function signIn(email: string, password: string): Promise<void> {
++  const session = await tokenRequest({ email, password }, 'password')
++  saveSession(session)
++
++  try {
++    window.localStorage.removeItem(BYPASS_KEY)
++  } catch {
++    // ignore
++  }
++
++  await applySession(session)
++}
++
++export async function signOut(): Promise<void> {
++  const stored = loadSession()
++
++  if (stored) {
++    // Best-effort server-side revoke; local clear is what matters.
++    void fetch(`${SUPABASE_URL}/auth/v1/logout`, {
++      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${stored.accessToken}` },
++      method: 'POST'
++    }).catch(() => {})
++  }
++
++  saveSession(null)
++
++  try {
++    window.localStorage.removeItem(BYPASS_KEY)
++  } catch {
++    // ignore
++  }
++
++  $account.set({ plan: 'free', status: 'signed-out' })
++}
++
++/** Temporary owner escape hatch: use the app without an account (dev/offline). */
++export function bypassAccount(): void {
++  try {
++    window.localStorage.setItem(BYPASS_KEY, '1')
++  } catch {
++    // ignore
++  }
++
++  $account.set({ bypass: true, plan: 'free', status: 'signed-in' })
++}
++
++export async function refreshEntitlement(): Promise<void> {
++  const stored = loadSession()
++
++  if (!stored) {
++    return
++  }
++
++  try {
++    const session = await refreshIfNeeded(stored)
++    await applySession(session)
++  } catch {
++    // keep current state; a later refresh can succeed
++  }
++}
++
++/** Human label for a plan code: 'health_pro' → 'Health Pro'. */
++export function planLabel(plan: string): string {
++  if (!plan || plan === 'free') {
++    return 'Free'
++  }
++
++  return plan
++    .split(/[_-]/)
++    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
++    .join(' ')
++}
+-- 
+2.50.1 (Apple Git-155)
+

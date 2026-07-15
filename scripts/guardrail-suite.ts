@@ -321,6 +321,10 @@ async function main() {
   // flake, not a real doc-20 breach. An 'enterprise' subscription (1000/day) is
   // cascade-deleted with the user in teardown (subscriptions.user_id ON DELETE
   // CASCADE), so this stays self-contained and leaves no residue.
+  // stripe_livemode + current_period_end are required since the beta subscription
+  // contract (migration 20260713025156): resolve_user_plan only honors rows with
+  // stripe_livemode IS TRUE and an unexpired period — without them this grant is
+  // silently ignored and every case past #10 429s on the free-tier daily cap.
   if (userId) {
     const grant = await fetch(`${SB_URL}/rest/v1/subscriptions`, {
       method: "POST",
@@ -330,7 +334,13 @@ async function main() {
         "Content-Type": "application/json",
         Prefer: "return=minimal",
       },
-      body: JSON.stringify({ user_id: userId, plan: "enterprise", status: "active" }),
+      body: JSON.stringify({
+        user_id: userId,
+        plan: "enterprise",
+        status: "active",
+        stripe_livemode: true,
+        current_period_end: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      }),
     });
     if (!grant.ok) {
       throw new Error(

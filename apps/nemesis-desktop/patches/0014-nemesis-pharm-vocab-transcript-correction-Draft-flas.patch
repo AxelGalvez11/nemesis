@@ -1,0 +1,629 @@
+From 04bac0150e70a95bb91abdd9841163437a3dd5d3 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Thu, 9 Jul 2026 20:39:01 -0500
+Subject: [PATCH 14/20] nemesis: pharm-vocab transcript correction +
+ Draft-flashcards-in-chat
+
+- pharm-lexicon.ts: ~250-term canonical lexicon, edit-distance + consonant-
+  skeleton fuzzy matcher (catches heavy vowel garbling like Lycinepral->
+  lisinopril), pair-matching for split names (Brady Kinden->bradykinin) with
+  small-word guards; zero false positives on plain English (smoke-tested).
+- Recorder: corrections applied post-ASR with an 'n terms auto-corrected'
+  badge; Draft flashcards button prefills a new chat with a strict TSV prompt
+  (output pastes straight into Study Import).
+---
+ apps/desktop/src/app/recorder/index.js        |  28 ++-
+ apps/desktop/src/app/recorder/index.tsx       |  42 +++-
+ .../desktop/src/app/recorder/pharm-lexicon.js | 188 ++++++++++++++
+ .../desktop/src/app/recorder/pharm-lexicon.ts | 231 ++++++++++++++++++
+ 4 files changed, 484 insertions(+), 5 deletions(-)
+ create mode 100644 apps/desktop/src/app/recorder/pharm-lexicon.js
+ create mode 100644 apps/desktop/src/app/recorder/pharm-lexicon.ts
+
+diff --git a/apps/desktop/src/app/recorder/index.js b/apps/desktop/src/app/recorder/index.js
+index e5977bb..31dcef1 100644
+--- a/apps/desktop/src/app/recorder/index.js
++++ b/apps/desktop/src/app/recorder/index.js
+@@ -7,10 +7,14 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
+ // v1 scope: record + save + play back. On-device transcription (whisper) is the
+ // documented next step — see docs/research/nemesis-study-pages-oss-2026-07.md §4.
+ import { useCallback, useEffect, useRef, useState } from 'react';
++import { useNavigate } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+ import { EmptyState } from '@/components/ui/empty-state';
+ import { cn } from '@/lib/utils';
++import { setComposerDraft } from '@/store/composer';
+ import { saveNote } from '../library/vault';
++import { NEW_CHAT_ROUTE } from '../routes';
++import { correctPharmTerms } from './pharm-lexicon';
+ import { transcribeAudio } from './transcribe';
+ const RECORDINGS_DIR = '~/Documents/Nemesis Recordings';
+ export function RecorderView() {
+@@ -21,8 +25,10 @@ export function RecorderView() {
+     const [recordings, setRecordings] = useState([]);
+     const [playing, setPlaying] = useState(null);
+     const [transcripts, setTranscripts] = useState({});
++    const [corrections, setCorrections] = useState({});
+     const [transcribingStatus, setTranscribingStatus] = useState({});
+     const [savedNote, setSavedNote] = useState({});
++    const navigate = useNavigate();
+     const recorderRef = useRef(null);
+     const streamsRef = useRef([]);
+     const chunksRef = useRef([]);
+@@ -167,7 +173,11 @@ export function RecorderView() {
+                         ? 'Decoding audio…'
+                         : 'Transcribing…'
+             })));
+-            setTranscripts(current => ({ ...current, [file.path]: text || '(No speech detected.)' }));
++            // Deterministic pharm-vocabulary pass: fixes garbled drug names ("Lycinepral" →
++            // lisinopril) without any cloud call. See pharm-lexicon.ts.
++            const { changes, corrected } = correctPharmTerms(text || '');
++            setTranscripts(current => ({ ...current, [file.path]: corrected || '(No speech detected.)' }));
++            setCorrections(current => ({ ...current, [file.path]: changes.length }));
+         }
+         catch (err) {
+             setTranscripts(current => ({
+@@ -183,12 +193,24 @@ export function RecorderView() {
+             });
+         }
+     }, []);
++    const draftFlashcards = useCallback((file) => {
++        const text = transcripts[file.path];
++        if (!text) {
++            return;
++        }
++        setComposerDraft('Turn this lecture transcript into 8-15 exam-quality flashcards for a pharmacy/health-sciences student. ' +
++            'Application-level questions (mechanisms, adverse effects, interactions, monitoring), one concept per card, no "what is X" filler. ' +
++            'Reply with ONLY tab-separated lines, one card per line: front<TAB>back. No headers, no numbering, no commentary — ' +
++            "I'll paste your reply straight into Study → Import cards.\n\nTranscript:\n" +
++            text);
++        navigate(NEW_CHAT_ROUTE);
++    }, [navigate, transcripts]);
+     const saveTranscriptNote = useCallback(async (file) => {
+         const text = transcripts[file.path];
+         if (!text) {
+             return;
+         }
+-        const title = `Lecture ${file.name.replace(/\.webm$/i, '').replace(/^lecture-/, '')}`;
++        const title = `Lecture ${file.name.replace(/\.(webm|m4a|wav|aiff?|mp3)$/i, '').replace(/^lecture-/, '')}`;
+         await saveNote(title, `# ${title}\n\n*Transcribed by Nemesis — review before relying on it.*\n\n${text}\n`);
+         setSavedNote(current => ({ ...current, [file.path]: true }));
+     }, [transcripts]);
+@@ -197,6 +219,6 @@ export function RecorderView() {
+     return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "px-6 pb-2 pt-5", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Recorder" }), _jsxs("p", { className: "text-xs text-muted-foreground", children: ["Records your mic", withSystemAudio ? ' + this computer’s audio (the lecture/Zoom)' : ' only', " \u2014 locally, to your own files. You start it, you see it, you keep it."] })] }), _jsxs("section", { className: "mx-6 mt-3 flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-8", children: [state === 'recording' ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex items-center gap-3", children: [_jsxs("span", { className: "relative flex size-4", children: [_jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" }), _jsx("span", { className: "relative inline-flex size-4 rounded-full bg-primary" })] }), _jsxs("span", { className: "text-2xl font-semibold tabular-nums", children: [minutes, ":", seconds] })] }), _jsx("p", { className: "text-xs font-medium uppercase tracking-widest text-primary", children: "Recording \u2014 visible, on purpose" }), _jsx(Button, { onClick: stop, size: "lg", variant: "secondary", children: "Stop & save" })] })) : (_jsxs(_Fragment, { children: [_jsx(Button, { disabled: state === 'saving', onClick: () => void start(), size: "lg", children: state === 'saving' ? 'Saving…' : 'Start recording' }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: withSystemAudio, className: "accent-(--theme-primary)", onChange: event => setWithSystemAudio(event.target.checked), type: "checkbox" }), "Also capture this computer\u2019s audio (lecture, Zoom) \u2014 macOS will ask once"] })] })), error && _jsx("p", { className: "max-w-md text-center text-xs text-destructive", children: error })] }), _jsxs("section", { className: "px-6 pb-8 pt-5", children: [_jsx("h2", { className: "pb-2 text-sm font-medium", children: "Saved recordings" }), recordings.length ? (_jsx("ul", { className: "flex flex-col gap-1.5", children: recordings.map(file => {
+                             const status = transcribingStatus[file.path];
+                             const transcript = transcripts[file.path];
+-                            return (_jsxs("li", { className: "flex flex-col gap-2 rounded-md border border-border px-3 py-2", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx("span", { className: "truncate text-sm", children: file.name }), _jsxs("div", { className: "flex shrink-0 items-center gap-2", children: [_jsx(Button, { disabled: Boolean(status), onClick: () => void transcribe(file), size: "sm", variant: "outline", children: status ?? (transcript ? 'Re-transcribe' : 'Transcribe') }), _jsx(Button, { onClick: () => void play(file), size: "sm", variant: "outline", children: playing?.path === file.path ? 'Hide' : 'Play' })] })] }), transcript && (_jsxs("div", { className: "rounded-md bg-muted/40 p-3", children: [_jsx("p", { className: "whitespace-pre-wrap text-xs leading-relaxed text-foreground", children: transcript }), _jsx("div", { className: "mt-2 flex items-center gap-2", children: _jsx(Button, { disabled: savedNote[file.path], onClick: () => void saveTranscriptNote(file), size: "sm", variant: "secondary", children: savedNote[file.path] ? 'Saved to Library ✓' : 'Save as note' }) })] }))] }, file.path));
++                            return (_jsxs("li", { className: "flex flex-col gap-2 rounded-md border border-border px-3 py-2", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsx("span", { className: "truncate text-sm", children: file.name }), _jsxs("div", { className: "flex shrink-0 items-center gap-2", children: [_jsx(Button, { disabled: Boolean(status), onClick: () => void transcribe(file), size: "sm", variant: "outline", children: status ?? (transcript ? 'Re-transcribe' : 'Transcribe') }), _jsx(Button, { onClick: () => void play(file), size: "sm", variant: "outline", children: playing?.path === file.path ? 'Hide' : 'Play' })] })] }), transcript && (_jsxs("div", { className: "rounded-md bg-muted/40 p-3", children: [_jsx("p", { className: "whitespace-pre-wrap text-xs leading-relaxed text-foreground", children: transcript }), _jsxs("div", { className: "mt-2 flex flex-wrap items-center gap-2", children: [_jsx(Button, { disabled: savedNote[file.path], onClick: () => void saveTranscriptNote(file), size: "sm", variant: "secondary", children: savedNote[file.path] ? 'Saved to Library ✓' : 'Save as note' }), _jsx(Button, { onClick: () => draftFlashcards(file), size: "sm", variant: "secondary", children: "Draft flashcards" }), (corrections[file.path] ?? 0) > 0 && (_jsxs("span", { className: "text-[10px] text-muted-foreground", children: [corrections[file.path], " pharm term", corrections[file.path] === 1 ? '' : 's', " auto-corrected"] }))] })] }))] }, file.path));
+                         }) })) : (_jsx(EmptyState, { className: cn('min-h-28'), description: "Recordings save to Documents / Nemesis Recordings as ordinary audio files.", title: "No recordings yet" })), playing && _jsx("audio", { autoPlay: true, className: "mt-3 w-full", controls: true, src: playing.src }), _jsx("p", { className: "pt-4 text-[11px] leading-relaxed text-muted-foreground", children: "Recording other people may require their consent where you live \u2014 check your school\u2019s policy. Nemesis never records on its own and never hides the indicator. Transcription runs on your device (the first run downloads a small model); the text is a draft \u2014 review it before you rely on it." })] })] }));
+ }
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index a04862b..f618eac 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -6,12 +6,16 @@
+ // v1 scope: record + save + play back. On-device transcription (whisper) is the
+ // documented next step — see docs/research/nemesis-study-pages-oss-2026-07.md §4.
+ import { useCallback, useEffect, useRef, useState } from 'react'
++import { useNavigate } from 'react-router-dom'
+ 
+ import { Button } from '@/components/ui/button'
+ import { EmptyState } from '@/components/ui/empty-state'
+ import { cn } from '@/lib/utils'
++import { setComposerDraft } from '@/store/composer'
+ 
+ import { saveNote } from '../library/vault'
++import { NEW_CHAT_ROUTE } from '../routes'
++import { correctPharmTerms } from './pharm-lexicon'
+ import { transcribeAudio } from './transcribe'
+ 
+ const RECORDINGS_DIR = '~/Documents/Nemesis Recordings'
+@@ -31,8 +35,10 @@ export function RecorderView() {
+   const [recordings, setRecordings] = useState<RecordingFile[]>([])
+   const [playing, setPlaying] = useState<null | { path: string; src: string }>(null)
+   const [transcripts, setTranscripts] = useState<Record<string, string>>({})
++  const [corrections, setCorrections] = useState<Record<string, number>>({})
+   const [transcribingStatus, setTranscribingStatus] = useState<Record<string, string>>({})
+   const [savedNote, setSavedNote] = useState<Record<string, boolean>>({})
++  const navigate = useNavigate()
+ 
+   const recorderRef = useRef<MediaRecorder | null>(null)
+   const streamsRef = useRef<MediaStream[]>([])
+@@ -212,7 +218,11 @@ export function RecorderView() {
+                 : 'Transcribing…'
+         }))
+       )
+-      setTranscripts(current => ({ ...current, [file.path]: text || '(No speech detected.)' }))
++      // Deterministic pharm-vocabulary pass: fixes garbled drug names ("Lycinepral" →
++      // lisinopril) without any cloud call. See pharm-lexicon.ts.
++      const { changes, corrected } = correctPharmTerms(text || '')
++      setTranscripts(current => ({ ...current, [file.path]: corrected || '(No speech detected.)' }))
++      setCorrections(current => ({ ...current, [file.path]: changes.length }))
+     } catch (err) {
+       setTranscripts(current => ({
+         ...current,
+@@ -228,6 +238,26 @@ export function RecorderView() {
+     }
+   }, [])
+ 
++  const draftFlashcards = useCallback(
++    (file: RecordingFile) => {
++      const text = transcripts[file.path]
++
++      if (!text) {
++        return
++      }
++
++      setComposerDraft(
++        'Turn this lecture transcript into 8-15 exam-quality flashcards for a pharmacy/health-sciences student. ' +
++          'Application-level questions (mechanisms, adverse effects, interactions, monitoring), one concept per card, no "what is X" filler. ' +
++          'Reply with ONLY tab-separated lines, one card per line: front<TAB>back. No headers, no numbering, no commentary — ' +
++          "I'll paste your reply straight into Study → Import cards.\n\nTranscript:\n" +
++          text
++      )
++      navigate(NEW_CHAT_ROUTE)
++    },
++    [navigate, transcripts]
++  )
++
+   const saveTranscriptNote = useCallback(
+     async (file: RecordingFile) => {
+       const text = transcripts[file.path]
+@@ -321,7 +351,7 @@ export function RecorderView() {
+                   {transcript && (
+                     <div className="rounded-md bg-muted/40 p-3">
+                       <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{transcript}</p>
+-                      <div className="mt-2 flex items-center gap-2">
++                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                         <Button
+                           disabled={savedNote[file.path]}
+                           onClick={() => void saveTranscriptNote(file)}
+@@ -330,6 +360,14 @@ export function RecorderView() {
+                         >
+                           {savedNote[file.path] ? 'Saved to Library ✓' : 'Save as note'}
+                         </Button>
++                        <Button onClick={() => draftFlashcards(file)} size="sm" variant="secondary">
++                          Draft flashcards
++                        </Button>
++                        {(corrections[file.path] ?? 0) > 0 && (
++                          <span className="text-[10px] text-muted-foreground">
++                            {corrections[file.path]} pharm term{corrections[file.path] === 1 ? '' : 's'} auto-corrected
++                          </span>
++                        )}
+                       </div>
+                     </div>
+                   )}
+diff --git a/apps/desktop/src/app/recorder/pharm-lexicon.js b/apps/desktop/src/app/recorder/pharm-lexicon.js
+new file mode 100644
+index 0000000..a69f94d
+--- /dev/null
++++ b/apps/desktop/src/app/recorder/pharm-lexicon.js
+@@ -0,0 +1,188 @@
++// Deterministic pharm-vocabulary correction for Whisper transcripts. The tiny ASR model
++// nails sentence structure but garbles drug names ("Lycinepral", "Low-Sartan", "Brady
++// Kinden"). Instead of a bigger model (4× slower) or an LLM pass (cloud + cost), we
++// fuzzy-match tokens — and adjacent token PAIRS, for split-up names — against a canonical
++// pharmacy lexicon with a length-scaled edit-distance budget. Pure functions, unit-smokeable.
++const LEXICON_RAW = [
++    // cardio / renal
++    'lisinopril', 'enalapril', 'ramipril', 'captopril', 'losartan', 'valsartan', 'candesartan', 'irbesartan',
++    'amlodipine', 'nifedipine', 'diltiazem', 'verapamil', 'metoprolol', 'atenolol', 'propranolol', 'carvedilol',
++    'bisoprolol', 'labetalol', 'furosemide', 'bumetanide', 'torsemide', 'hydrochlorothiazide', 'chlorthalidone',
++    'spironolactone', 'eplerenone', 'atorvastatin', 'rosuvastatin', 'simvastatin', 'pravastatin', 'ezetimibe',
++    'warfarin', 'apixaban', 'rivaroxaban', 'dabigatran', 'edoxaban', 'heparin', 'enoxaparin', 'clopidogrel',
++    'ticagrelor', 'prasugrel', 'aspirin', 'digoxin', 'amiodarone', 'sotalol', 'sacubitril', 'hydralazine',
++    'isosorbide', 'nitroglycerin', 'dobutamine', 'dopamine', 'norepinephrine', 'epinephrine', 'adenosine',
++    // endocrine / diabetes
++    'metformin', 'insulin', 'glipizide', 'glyburide', 'glimepiride', 'sitagliptin', 'linagliptin',
++    'empagliflozin', 'dapagliflozin', 'canagliflozin', 'semaglutide', 'liraglutide', 'dulaglutide', 'exenatide',
++    'pioglitazone', 'levothyroxine', 'methimazole', 'propylthiouracil', 'prednisone', 'prednisolone',
++    'dexamethasone', 'hydrocortisone', 'fludrocortisone', 'desmopressin',
++    // infectious disease
++    'amoxicillin', 'ampicillin', 'penicillin', 'piperacillin', 'tazobactam', 'cephalexin', 'cefazolin',
++    'ceftriaxone', 'cefepime', 'ceftazidime', 'meropenem', 'ertapenem', 'aztreonam', 'vancomycin', 'linezolid',
++    'daptomycin', 'azithromycin', 'clarithromycin', 'erythromycin', 'doxycycline', 'minocycline', 'tetracycline',
++    'ciprofloxacin', 'levofloxacin', 'moxifloxacin', 'metronidazole', 'clindamycin', 'trimethoprim',
++    'sulfamethoxazole', 'nitrofurantoin', 'fosfomycin', 'gentamicin', 'tobramycin', 'amikacin', 'fluconazole',
++    'voriconazole', 'itraconazole', 'amphotericin', 'nystatin', 'caspofungin', 'acyclovir', 'valacyclovir',
++    'oseltamivir', 'remdesivir', 'rifampin', 'isoniazid', 'pyrazinamide', 'ethambutol', 'dapsone',
++    // neuro / psych
++    'gabapentin', 'pregabalin', 'phenytoin', 'fosphenytoin', 'carbamazepine', 'oxcarbazepine', 'lamotrigine',
++    'levetiracetam', 'valproate', 'topiramate', 'zonisamide', 'sertraline', 'fluoxetine', 'paroxetine',
++    'citalopram', 'escitalopram', 'venlafaxine', 'desvenlafaxine', 'duloxetine', 'bupropion', 'mirtazapine',
++    'trazodone', 'amitriptyline', 'nortriptyline', 'lithium', 'quetiapine', 'risperidone', 'paliperidone',
++    'olanzapine', 'aripiprazole', 'haloperidol', 'clozapine', 'ziprasidone', 'lurasidone', 'buspirone',
++    'lorazepam', 'diazepam', 'alprazolam', 'clonazepam', 'midazolam', 'temazepam', 'zolpidem', 'suvorexant',
++    'sumatriptan', 'rizatriptan', 'levodopa', 'carbidopa', 'pramipexole', 'ropinirole', 'donepezil',
++    'rivastigmine', 'memantine', 'methylphenidate', 'amphetamine', 'atomoxetine',
++    // GI
++    'omeprazole', 'pantoprazole', 'esomeprazole', 'lansoprazole', 'famotidine', 'ondansetron',
++    'metoclopramide', 'prochlorperazine', 'sucralfate', 'misoprostol', 'mesalamine', 'loperamide',
++    'docusate', 'lactulose', 'linaclotide', 'rifaximin',
++    // pain / rheum / heme-onc
++    'ibuprofen', 'naproxen', 'ketorolac', 'celecoxib', 'meloxicam', 'diclofenac', 'indomethacin',
++    'acetaminophen', 'morphine', 'oxycodone', 'hydrocodone', 'hydromorphone', 'fentanyl', 'tramadol',
++    'methadone', 'naloxone', 'naltrexone', 'buprenorphine', 'lidocaine', 'ketamine', 'colchicine',
++    'allopurinol', 'febuxostat', 'probenecid', 'methotrexate', 'hydroxychloroquine', 'sulfasalazine',
++    'leflunomide', 'adalimumab', 'etanercept', 'infliximab', 'rituximab', 'tocilizumab', 'cisplatin',
++    'carboplatin', 'paclitaxel', 'docetaxel', 'doxorubicin', 'cyclophosphamide', 'vincristine', 'tamoxifen',
++    'anastrozole', 'letrozole', 'trastuzumab', 'pembrolizumab', 'nivolumab', 'imatinib', 'filgrastim',
++    'epoetin', 'tacrolimus', 'cyclosporine', 'mycophenolate', 'azathioprine', 'sirolimus', 'basiliximab',
++    // resp / allergy / uro / bone
++    'albuterol', 'levalbuterol', 'ipratropium', 'tiotropium', 'fluticasone', 'budesonide', 'mometasone',
++    'montelukast', 'salmeterol', 'formoterol', 'theophylline', 'diphenhydramine', 'loratadine', 'cetirizine',
++    'fexofenadine', 'hydroxyzine', 'tamsulosin', 'finasteride', 'dutasteride', 'sildenafil', 'tadalafil',
++    'oxybutynin', 'mirabegron', 'tolterodine', 'alendronate', 'risedronate', 'zoledronic', 'denosumab',
++    'raloxifene', 'teriparatide', 'calcitonin',
++    // core pharm/physiology vocabulary the tiny model also garbles
++    'bradykinin', 'angioedema', 'angiotensin', 'aldosterone', 'renin', 'hyperkalemia', 'hypokalemia',
++    'hyponatremia', 'hypernatremia', 'hypercalcemia', 'hypocalcemia', 'hypomagnesemia', 'nephrotoxicity',
++    'ototoxicity', 'hepatotoxicity', 'rhabdomyolysis', 'myopathy', 'agranulocytosis', 'thrombocytopenia',
++    'neutropenia', 'pancytopenia', 'anaphylaxis', 'creatinine', 'tachycardia', 'bradycardia', 'hypotension',
++    'hypertension', 'torsades', 'serotonin', 'tyramine', 'cytochrome', 'prodrug', 'bioavailability',
++    'pharmacokinetics', 'pharmacodynamics', 'teratogenic', 'contraindicated', 'gynecomastia', 'photosensitivity'
++];
++const LEXICON = [...new Set(LEXICON_RAW)];
++/** Consonant skeleton: ASR garbles vowels far more than consonants ("lycinepral" vs
++ *  "lisinopril" differ by 4 edits but share the exact skeleton LSNPRL). c→s before e/i/y,
++ *  ph→f, remaining c→k, drop vowels, collapse doubles. */
++function skeleton(word) {
++    return word
++        .replace(/c(?=[eiy])/g, 's')
++        .replace(/ph/g, 'f')
++        .replace(/c/g, 'k')
++        .replace(/[aeiou]/g, '')
++        .replace(/(.)\1+/g, '$1');
++}
++const LEXICON_SKELETONS = LEXICON.map(term => ({ skeleton: skeleton(term), term }));
++/** Normalize a candidate: lowercase, letters only (drops hyphens/spaces/punctuation). */
++function normalize(raw) {
++    return raw.toLowerCase().replace(/[^a-z]/g, '');
++}
++/** Classic Levenshtein, early-abandoned via band cap. */
++function editDistance(a, b, cap) {
++    if (Math.abs(a.length - b.length) > cap) {
++        return cap + 1;
++    }
++    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
++    for (let i = 1; i <= a.length; i++) {
++        const row = [i];
++        let rowMin = i;
++        for (let j = 1; j <= b.length; j++) {
++            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
++            const value = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + cost);
++            row.push(value);
++            if (value < rowMin) {
++                rowMin = value;
++            }
++        }
++        if (rowMin > cap) {
++            return cap + 1;
++        }
++        prev = row;
++    }
++    return prev[b.length];
++}
++/** Budget scales with word length: short words must be near-exact, long ones get slack. */
++function budgetFor(length) {
++    return length <= 6 ? 1 : length <= 10 ? 2 : 3;
++}
++function bestMatch(candidate) {
++    if (candidate.length < 5) {
++        return null;
++    }
++    let best = null;
++    let bestDistance = Number.POSITIVE_INFINITY;
++    for (const term of LEXICON) {
++        const cap = budgetFor(Math.max(candidate.length, term.length));
++        const distance = editDistance(candidate, term, cap);
++        if (distance <= cap && distance < bestDistance) {
++            bestDistance = distance;
++            best = term;
++            if (distance === 0) {
++                break;
++            }
++        }
++    }
++    if (best) {
++        return best;
++    }
++    // Skeleton fallback for long, heavily vowel-garbled words only (≥8 chars keeps common
++    // English words out of reach). Exact-or-1 skeleton match + similar overall length.
++    if (candidate.length >= 8) {
++        const candidateSkeleton = skeleton(candidate);
++        for (const entry of LEXICON_SKELETONS) {
++            if (Math.abs(entry.term.length - candidate.length) <= 3 &&
++                editDistance(candidateSkeleton, entry.skeleton, 1) <= 1) {
++                return entry.term;
++            }
++        }
++    }
++    return null;
++}
++const TOKEN_SPLIT = /(\s+)/;
++function matchCase(replacement, original) {
++    return /^[A-Z]/.test(original) ? replacement[0].toUpperCase() + replacement.slice(1) : replacement;
++}
++/** Correct garbled pharm terms in a transcript. Tries adjacent token pairs first (split-up
++ *  names like "Brady Kinden"), then single tokens. Whitespace and punctuation preserved. */
++export function correctPharmTerms(text) {
++    const parts = text.split(TOKEN_SPLIT);
++    const changes = [];
++    // parts alternate token / whitespace; token indices are even.
++    for (let i = 0; i < parts.length; i += 2) {
++        const token = parts[i];
++        if (!token) {
++            continue;
++        }
++        const trailing = token.match(/[.,;:!?)]*$/)?.[0] ?? '';
++        const core = trailing ? token.slice(0, token.length - trailing.length) : token;
++        const normalized = normalize(core);
++        if (!normalized || LEXICON.includes(normalized)) {
++            continue;
++        }
++        // Pair attempt: this token + the next one as a single split-up term.
++        const nextIndex = i + 2;
++        const nextToken = parts[nextIndex];
++        if (nextToken && core.length >= 3) {
++            const nextTrailing = nextToken.match(/[.,;:!?)]*$/)?.[0] ?? '';
++            const nextCore = nextTrailing ? nextToken.slice(0, nextToken.length - nextTrailing.length) : nextToken;
++            // Both halves must be substantial — otherwise little words ("as", "an") get
++            // swallowed into a neighboring drug name.
++            const pair = nextCore.length >= 3 ? normalize(core + nextCore) : '';
++            const pairMatch = pair.length >= 7 ? bestMatch(pair) : null;
++            if (pairMatch) {
++                changes.push({ from: `${core} ${nextCore}`, to: pairMatch });
++                parts[i] = matchCase(pairMatch, core) + nextTrailing;
++                parts[i + 1] = ''; // swallow the joining whitespace
++                parts[nextIndex] = '';
++                continue;
++            }
++        }
++        const single = bestMatch(normalized);
++        if (single) {
++            changes.push({ from: core, to: single });
++            parts[i] = matchCase(single, core) + trailing;
++        }
++    }
++    return { changes, corrected: parts.join('') };
++}
+diff --git a/apps/desktop/src/app/recorder/pharm-lexicon.ts b/apps/desktop/src/app/recorder/pharm-lexicon.ts
+new file mode 100644
+index 0000000..3ec4218
+--- /dev/null
++++ b/apps/desktop/src/app/recorder/pharm-lexicon.ts
+@@ -0,0 +1,231 @@
++// Deterministic pharm-vocabulary correction for Whisper transcripts. The tiny ASR model
++// nails sentence structure but garbles drug names ("Lycinepral", "Low-Sartan", "Brady
++// Kinden"). Instead of a bigger model (4× slower) or an LLM pass (cloud + cost), we
++// fuzzy-match tokens — and adjacent token PAIRS, for split-up names — against a canonical
++// pharmacy lexicon with a length-scaled edit-distance budget. Pure functions, unit-smokeable.
++
++const LEXICON_RAW = [
++  // cardio / renal
++  'lisinopril', 'enalapril', 'ramipril', 'captopril', 'losartan', 'valsartan', 'candesartan', 'irbesartan',
++  'amlodipine', 'nifedipine', 'diltiazem', 'verapamil', 'metoprolol', 'atenolol', 'propranolol', 'carvedilol',
++  'bisoprolol', 'labetalol', 'furosemide', 'bumetanide', 'torsemide', 'hydrochlorothiazide', 'chlorthalidone',
++  'spironolactone', 'eplerenone', 'atorvastatin', 'rosuvastatin', 'simvastatin', 'pravastatin', 'ezetimibe',
++  'warfarin', 'apixaban', 'rivaroxaban', 'dabigatran', 'edoxaban', 'heparin', 'enoxaparin', 'clopidogrel',
++  'ticagrelor', 'prasugrel', 'aspirin', 'digoxin', 'amiodarone', 'sotalol', 'sacubitril', 'hydralazine',
++  'isosorbide', 'nitroglycerin', 'dobutamine', 'dopamine', 'norepinephrine', 'epinephrine', 'adenosine',
++  // endocrine / diabetes
++  'metformin', 'insulin', 'glipizide', 'glyburide', 'glimepiride', 'sitagliptin', 'linagliptin',
++  'empagliflozin', 'dapagliflozin', 'canagliflozin', 'semaglutide', 'liraglutide', 'dulaglutide', 'exenatide',
++  'pioglitazone', 'levothyroxine', 'methimazole', 'propylthiouracil', 'prednisone', 'prednisolone',
++  'dexamethasone', 'hydrocortisone', 'fludrocortisone', 'desmopressin',
++  // infectious disease
++  'amoxicillin', 'ampicillin', 'penicillin', 'piperacillin', 'tazobactam', 'cephalexin', 'cefazolin',
++  'ceftriaxone', 'cefepime', 'ceftazidime', 'meropenem', 'ertapenem', 'aztreonam', 'vancomycin', 'linezolid',
++  'daptomycin', 'azithromycin', 'clarithromycin', 'erythromycin', 'doxycycline', 'minocycline', 'tetracycline',
++  'ciprofloxacin', 'levofloxacin', 'moxifloxacin', 'metronidazole', 'clindamycin', 'trimethoprim',
++  'sulfamethoxazole', 'nitrofurantoin', 'fosfomycin', 'gentamicin', 'tobramycin', 'amikacin', 'fluconazole',
++  'voriconazole', 'itraconazole', 'amphotericin', 'nystatin', 'caspofungin', 'acyclovir', 'valacyclovir',
++  'oseltamivir', 'remdesivir', 'rifampin', 'isoniazid', 'pyrazinamide', 'ethambutol', 'dapsone',
++  // neuro / psych
++  'gabapentin', 'pregabalin', 'phenytoin', 'fosphenytoin', 'carbamazepine', 'oxcarbazepine', 'lamotrigine',
++  'levetiracetam', 'valproate', 'topiramate', 'zonisamide', 'sertraline', 'fluoxetine', 'paroxetine',
++  'citalopram', 'escitalopram', 'venlafaxine', 'desvenlafaxine', 'duloxetine', 'bupropion', 'mirtazapine',
++  'trazodone', 'amitriptyline', 'nortriptyline', 'lithium', 'quetiapine', 'risperidone', 'paliperidone',
++  'olanzapine', 'aripiprazole', 'haloperidol', 'clozapine', 'ziprasidone', 'lurasidone', 'buspirone',
++  'lorazepam', 'diazepam', 'alprazolam', 'clonazepam', 'midazolam', 'temazepam', 'zolpidem', 'suvorexant',
++  'sumatriptan', 'rizatriptan', 'levodopa', 'carbidopa', 'pramipexole', 'ropinirole', 'donepezil',
++  'rivastigmine', 'memantine', 'methylphenidate', 'amphetamine', 'atomoxetine',
++  // GI
++  'omeprazole', 'pantoprazole', 'esomeprazole', 'lansoprazole', 'famotidine', 'ondansetron',
++  'metoclopramide', 'prochlorperazine', 'sucralfate', 'misoprostol', 'mesalamine', 'loperamide',
++  'docusate', 'lactulose', 'linaclotide', 'rifaximin',
++  // pain / rheum / heme-onc
++  'ibuprofen', 'naproxen', 'ketorolac', 'celecoxib', 'meloxicam', 'diclofenac', 'indomethacin',
++  'acetaminophen', 'morphine', 'oxycodone', 'hydrocodone', 'hydromorphone', 'fentanyl', 'tramadol',
++  'methadone', 'naloxone', 'naltrexone', 'buprenorphine', 'lidocaine', 'ketamine', 'colchicine',
++  'allopurinol', 'febuxostat', 'probenecid', 'methotrexate', 'hydroxychloroquine', 'sulfasalazine',
++  'leflunomide', 'adalimumab', 'etanercept', 'infliximab', 'rituximab', 'tocilizumab', 'cisplatin',
++  'carboplatin', 'paclitaxel', 'docetaxel', 'doxorubicin', 'cyclophosphamide', 'vincristine', 'tamoxifen',
++  'anastrozole', 'letrozole', 'trastuzumab', 'pembrolizumab', 'nivolumab', 'imatinib', 'filgrastim',
++  'epoetin', 'tacrolimus', 'cyclosporine', 'mycophenolate', 'azathioprine', 'sirolimus', 'basiliximab',
++  // resp / allergy / uro / bone
++  'albuterol', 'levalbuterol', 'ipratropium', 'tiotropium', 'fluticasone', 'budesonide', 'mometasone',
++  'montelukast', 'salmeterol', 'formoterol', 'theophylline', 'diphenhydramine', 'loratadine', 'cetirizine',
++  'fexofenadine', 'hydroxyzine', 'tamsulosin', 'finasteride', 'dutasteride', 'sildenafil', 'tadalafil',
++  'oxybutynin', 'mirabegron', 'tolterodine', 'alendronate', 'risedronate', 'zoledronic', 'denosumab',
++  'raloxifene', 'teriparatide', 'calcitonin',
++  // core pharm/physiology vocabulary the tiny model also garbles
++  'bradykinin', 'angioedema', 'angiotensin', 'aldosterone', 'renin', 'hyperkalemia', 'hypokalemia',
++  'hyponatremia', 'hypernatremia', 'hypercalcemia', 'hypocalcemia', 'hypomagnesemia', 'nephrotoxicity',
++  'ototoxicity', 'hepatotoxicity', 'rhabdomyolysis', 'myopathy', 'agranulocytosis', 'thrombocytopenia',
++  'neutropenia', 'pancytopenia', 'anaphylaxis', 'creatinine', 'tachycardia', 'bradycardia', 'hypotension',
++  'hypertension', 'torsades', 'serotonin', 'tyramine', 'cytochrome', 'prodrug', 'bioavailability',
++  'pharmacokinetics', 'pharmacodynamics', 'teratogenic', 'contraindicated', 'gynecomastia', 'photosensitivity'
++]
++
++const LEXICON = [...new Set(LEXICON_RAW)]
++
++/** Consonant skeleton: ASR garbles vowels far more than consonants ("lycinepral" vs
++ *  "lisinopril" differ by 4 edits but share the exact skeleton LSNPRL). c→s before e/i/y,
++ *  ph→f, remaining c→k, drop vowels, collapse doubles. */
++function skeleton(word: string): string {
++  return word
++    .replace(/c(?=[eiy])/g, 's')
++    .replace(/ph/g, 'f')
++    .replace(/c/g, 'k')
++    .replace(/[aeiou]/g, '')
++    .replace(/(.)\1+/g, '$1')
++}
++
++const LEXICON_SKELETONS = LEXICON.map(term => ({ skeleton: skeleton(term), term }))
++
++/** Normalize a candidate: lowercase, letters only (drops hyphens/spaces/punctuation). */
++function normalize(raw: string): string {
++  return raw.toLowerCase().replace(/[^a-z]/g, '')
++}
++
++/** Classic Levenshtein, early-abandoned via band cap. */
++function editDistance(a: string, b: string, cap: number): number {
++  if (Math.abs(a.length - b.length) > cap) {
++    return cap + 1
++  }
++
++  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
++
++  for (let i = 1; i <= a.length; i++) {
++    const row = [i]
++    let rowMin = i
++
++    for (let j = 1; j <= b.length; j++) {
++      const cost = a[i - 1] === b[j - 1] ? 0 : 1
++      const value = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + cost)
++      row.push(value)
++
++      if (value < rowMin) {
++        rowMin = value
++      }
++    }
++
++    if (rowMin > cap) {
++      return cap + 1
++    }
++
++    prev = row
++  }
++
++  return prev[b.length]
++}
++
++/** Budget scales with word length: short words must be near-exact, long ones get slack. */
++function budgetFor(length: number): number {
++  return length <= 6 ? 1 : length <= 10 ? 2 : 3
++}
++
++function bestMatch(candidate: string): null | string {
++  if (candidate.length < 5) {
++    return null
++  }
++
++  let best: null | string = null
++  let bestDistance = Number.POSITIVE_INFINITY
++
++  for (const term of LEXICON) {
++    const cap = budgetFor(Math.max(candidate.length, term.length))
++    const distance = editDistance(candidate, term, cap)
++
++    if (distance <= cap && distance < bestDistance) {
++      bestDistance = distance
++      best = term
++
++      if (distance === 0) {
++        break
++      }
++    }
++  }
++
++  if (best) {
++    return best
++  }
++
++  // Skeleton fallback for long, heavily vowel-garbled words only (≥8 chars keeps common
++  // English words out of reach). Exact-or-1 skeleton match + similar overall length.
++  if (candidate.length >= 8) {
++    const candidateSkeleton = skeleton(candidate)
++
++    for (const entry of LEXICON_SKELETONS) {
++      if (
++        Math.abs(entry.term.length - candidate.length) <= 3 &&
++        editDistance(candidateSkeleton, entry.skeleton, 1) <= 1
++      ) {
++        return entry.term
++      }
++    }
++  }
++
++  return null
++}
++
++const TOKEN_SPLIT = /(\s+)/
++
++function matchCase(replacement: string, original: string): string {
++  return /^[A-Z]/.test(original) ? replacement[0].toUpperCase() + replacement.slice(1) : replacement
++}
++
++export interface PharmCorrection {
++  corrected: string
++  changes: { from: string; to: string }[]
++}
++
++/** Correct garbled pharm terms in a transcript. Tries adjacent token pairs first (split-up
++ *  names like "Brady Kinden"), then single tokens. Whitespace and punctuation preserved. */
++export function correctPharmTerms(text: string): PharmCorrection {
++  const parts = text.split(TOKEN_SPLIT)
++  const changes: { from: string; to: string }[] = []
++
++  // parts alternate token / whitespace; token indices are even.
++  for (let i = 0; i < parts.length; i += 2) {
++    const token = parts[i]
++
++    if (!token) {
++      continue
++    }
++
++    const trailing = token.match(/[.,;:!?)]*$/)?.[0] ?? ''
++    const core = trailing ? token.slice(0, token.length - trailing.length) : token
++    const normalized = normalize(core)
++
++    if (!normalized || LEXICON.includes(normalized)) {
++      continue
++    }
++
++    // Pair attempt: this token + the next one as a single split-up term.
++    const nextIndex = i + 2
++    const nextToken = parts[nextIndex]
++
++    if (nextToken && core.length >= 3) {
++      const nextTrailing = nextToken.match(/[.,;:!?)]*$/)?.[0] ?? ''
++      const nextCore = nextTrailing ? nextToken.slice(0, nextToken.length - nextTrailing.length) : nextToken
++      // Both halves must be substantial — otherwise little words ("as", "an") get
++      // swallowed into a neighboring drug name.
++      const pair = nextCore.length >= 3 ? normalize(core + nextCore) : ''
++      const pairMatch = pair.length >= 7 ? bestMatch(pair) : null
++
++      if (pairMatch) {
++        changes.push({ from: `${core} ${nextCore}`, to: pairMatch })
++        parts[i] = matchCase(pairMatch, core) + nextTrailing
++        parts[i + 1] = '' // swallow the joining whitespace
++        parts[nextIndex] = ''
++        continue
++      }
++    }
++
++    const single = bestMatch(normalized)
++
++    if (single) {
++      changes.push({ from: core, to: single })
++      parts[i] = matchCase(single, core) + trailing
++    }
++  }
++
++  return { changes, corrected: parts.join('') }
++}
+-- 
+2.50.1 (Apple Git-155)
+

@@ -1,0 +1,757 @@
+From 095f3987786f5d35830f62b61092139551d904b5 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 17:44:50 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis-kit):=20round-32=20=E2=80=94=20/we?=
+ =?UTF-8?q?lcome=20onboarding=20wizard=20(agent-led=20migration)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- First-run gate (nemesis.onboarding.v1) routes cold starts to /welcome (student build)
+- Steps: welcome -> connect accounts (reuses Connections) -> mission cards
+  ('Read my semester' / 'Find my study materials' prefill agent sessions) +
+  Imports drop fallback -> Today
+- Companion agent skill: nemesis-import (local discovery, Anki collection read,
+  Quizlet fetch, Notion/Docs conversion) lives in ~/.hermes/skills
+---
+ apps/desktop/src/app/desktop-controller.js    |  33 ++-
+ apps/desktop/src/app/desktop-controller.tsx   |  71 +++++--
+ apps/desktop/src/app/routes.js                |   2 +
+ apps/desktop/src/app/routes.ts                |   4 +
+ .../src/app/settings/connections-settings.js  |   2 +-
+ .../src/app/settings/connections-settings.tsx |   8 +-
+ apps/desktop/src/app/welcome/index.js         |  32 +++
+ apps/desktop/src/app/welcome/index.tsx        | 193 ++++++++++++++++++
+ apps/desktop/src/app/welcome/onboarding.js    |  10 +
+ apps/desktop/src/app/welcome/onboarding.ts    |  13 ++
+ 10 files changed, 340 insertions(+), 28 deletions(-)
+ create mode 100644 apps/desktop/src/app/welcome/index.js
+ create mode 100644 apps/desktop/src/app/welcome/index.tsx
+ create mode 100644 apps/desktop/src/app/welcome/onboarding.js
+ create mode 100644 apps/desktop/src/app/welcome/onboarding.ts
+
+diff --git a/apps/desktop/src/app/desktop-controller.js b/apps/desktop/src/app/desktop-controller.js
+index daf5550b9a5..17896dfa9ec 100644
+--- a/apps/desktop/src/app/desktop-controller.js
++++ b/apps/desktop/src/app/desktop-controller.js
+@@ -5,17 +5,17 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
+ import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+ import { BootFailureOverlay } from '@/components/boot-failure-overlay';
+ import { DesktopInstallOverlay } from '@/components/desktop-install-overlay';
+-import { NemesisAccountGate } from '@/components/nemesis-account-gate';
+ import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay';
++import { NemesisAccountGate } from '@/components/nemesis-account-gate';
+ import { DesktopOnboardingOverlay } from '@/components/onboarding';
+ import { Pane, PaneMain } from '@/components/pane-shell';
+ import { RemoteDisplayBanner } from '@/components/remote-display-banner';
+ import { useAgentBrowserWatcher } from '@/hooks/use-agent-browser-watcher';
+ import { useExportsPreviewWatcher } from '@/hooks/use-exports-preview-watcher';
+ import { useMediaQuery } from '@/hooks/use-media-query';
+-import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { isFocusWithin } from '@/lib/keybinds/combo';
+ import { cn } from '@/lib/utils';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { useSkinCommand } from '@/themes/use-skin-command';
+ import { formatRefValue } from '../components/assistant-ui/directive-text';
+ import { getSessionMessages, triggerCronJob } from '../hermes';
+@@ -23,6 +23,7 @@ import { chatMessageText, preserveLocalAssistantErrors, toChatMessages } from '.
+ import { storedSessionIdForNotification } from '../lib/session-ids';
+ import { isMessagingSource } from '../lib/session-source';
+ import { latestSessionTodos } from '../lib/todos';
++import { $browserRailOpen } from '../store/browser-rail';
+ import { setCronFocusJobId } from '../store/cron';
+ import { $fileBrowserOpen, $panesFlipped, $pinnedSessionIds, FILE_BROWSER_DEFAULT_WIDTH, FILE_BROWSER_MAX_WIDTH, FILE_BROWSER_MIN_WIDTH, pinSession, PREVIEW_PANE_ID, restoreWorktree, setSidebarOverlayMounted, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MAX_WIDTH, unpinSession } from '../store/layout';
+ import { respondToApprovalAction } from '../store/native-notifications';
+@@ -30,18 +31,17 @@ import { $paneOpen } from '../store/panes';
+ import { setPetActivity } from '../store/pet';
+ import { setPetScale } from '../store/pet-gallery';
+ import { setPetOverlayOpenAppHandler, setPetOverlayScaleHandler, setPetOverlaySubmitHandler } from '../store/pet-overlay';
+-import { $browserRailOpen } from '../store/browser-rail';
+ import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview';
+ import { $activeGatewayProfile, $freshSessionRequest, $profileScope, refreshActiveProfile } from '../store/profile';
+ import { $startWorkSessionRequest, followActiveSessionCwd, resolveNewSessionCwd } from '../store/projects';
+ import { $reviewOpen, REVIEW_PANE_ID } from '../store/review';
+-import { $activeSessionId, $attentionSessionIds, $currentCwd, $freshDraftReady, $gatewayState, $messages, $messagingSessions, $resumeExhaustedSessionId, $resumeFailedSessionId, $selectedStoredSessionId, $sessions, getRememberedSessionId, sessionPinId, setAwaitingResponse, setBusy, setCurrentBranch, setCurrentCwd, setCurrentModel, setCurrentProvider, setMessages, setRememberedSessionId } from '../store/session';
++import { $activeSessionId, $attentionSessionIds, $currentCwd, $freshDraftReady, $gatewayState, $messages, $messagingSessions, $resumeExhaustedSessionId, $resumeFailedSessionId, $selectedStoredSessionId, $sessions, $sessionsLoading, $sessionsTotal, getRememberedSessionId, sessionPinId, setAwaitingResponse, setBusy, setCurrentBranch, setCurrentCwd, setCurrentModel, setCurrentProvider, setMessages, setRememberedSessionId } from '../store/session';
+ import { onSessionsChanged } from '../store/session-sync';
+ import { clearSessionTodos, setSessionTodos, todosForHydration } from '../store/todos';
+ import { openUpdatesWindow, startUpdatePoller, stopUpdatePoller } from '../store/updates';
+ import { isSecondaryWindow } from '../store/windows';
+ import { ChatView } from './chat';
+-import { requestComposerFocus, requestComposerInsert } from './chat/composer/focus';
++import { requestComposerFocus, requestComposerInsert, requestComposerSubmit } from './chat/composer/focus';
+ import { useComposerActions } from './chat/hooks/use-composer-actions';
+ import { ChatPreviewRail, PREVIEW_RAIL_MAX_WIDTH, PREVIEW_RAIL_MIN_WIDTH, PREVIEW_RAIL_PANE_WIDTH } from './chat/right-rail';
+ import { ChatSidebar } from './chat/sidebar';
+@@ -61,7 +61,7 @@ import { $terminalTakeover } from './right-sidebar/store';
+ import { TerminalPaneChrome } from './right-sidebar/terminal/chrome';
+ import { PersistentTerminal } from './right-sidebar/terminal/persistent';
+ import { closeActiveTerminal } from './right-sidebar/terminal/terminals';
+-import { CRON_ROUTE, NEW_CHAT_ROUTE, routeSessionId, sessionRoute, SETTINGS_ROUTE, TODAY_ROUTE } from './routes';
++import { CRON_ROUTE, NEW_CHAT_ROUTE, routeSessionId, sessionRoute, SETTINGS_ROUTE, TODAY_ROUTE, WELCOME_ROUTE } from './routes';
+ import { SessionPickerOverlay } from './session-picker-overlay';
+ import { SessionSwitcher } from './session-switcher';
+ import { useContextSuggestions } from './session/hooks/use-context-suggestions';
+@@ -82,6 +82,7 @@ import { useStatusbarItems } from './shell/hooks/use-statusbar-items';
+ import { ModelMenuPanel } from './shell/model-menu-panel';
+ import { useGroupRegistry } from './shell/use-group-registry';
+ import { UpdatesOverlay } from './updates-overlay';
++import { onboardingComplete } from './welcome/onboarding';
+ const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }));
+ const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts')).ArtifactsView }));
+ const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }));
+@@ -98,6 +99,7 @@ const RecorderView = lazy(async () => ({ default: (await import('./recorder')).R
+ const CalendarView = lazy(async () => ({ default: (await import('./calendar')).CalendarView }));
+ const TodayView = lazy(async () => ({ default: (await import('./today')).TodayView }));
+ const LedgerView = lazy(async () => ({ default: (await import('./ledger')).LedgerView }));
++const WelcomeView = lazy(async () => ({ default: (await import('./welcome')).WelcomeView }));
+ // Latest cron-job sessions surfaced in the collapsed "Cron jobs" section. The
+ // Cron sessions are written by a background scheduler tick (the desktop
+ // backend), so no user action signals the UI. Poll the bounded cron list on
+@@ -152,6 +154,8 @@ export function DesktopController() {
+     const browserRailOpen = useStore($browserRailOpen);
+     const selectedStoredSessionId = useStore($selectedStoredSessionId);
+     const messagingSessions = useStore($messagingSessions);
++    const sessionsLoading = useStore($sessionsLoading);
++    const sessionsTotal = useStore($sessionsTotal);
+     const terminalTakeover = useStore($terminalTakeover);
+     const reviewOpen = useStore($reviewOpen);
+     const fileBrowserOpen = useStore($fileBrowserOpen);
+@@ -174,6 +178,8 @@ export function DesktopController() {
+     const getRouteToken = useCallback(() => routeTokenRef.current, []);
+     const { agentsOpen, chatOpen, closeOverlayToPreviousRoute, commandCenterInitialSection, commandCenterOpen, cronOpen, currentView, openAgents, openCommandCenterSection, openStarmap, profilesOpen, settingsOpen, starmapOpen, toggleCommandCenter } = useOverlayRouting();
+     const terminalSidebarOpen = chatOpen && terminalTakeover;
++    const welcomeOpen = currentView === 'welcome';
++    const browserSurfaceOpen = chatOpen || (welcomeOpen && browserRailOpen);
+     const titlebarToolGroups = useGroupRegistry();
+     const statusbarItemGroups = useGroupRegistry();
+     const setTitlebarToolGroup = titlebarToolGroups.set;
+@@ -800,21 +806,27 @@ export function DesktopController() {
+                 void removeSession(selectedStoredSessionId);
+             }
+         }, onDismissError: dismissError, onEdit: editMessage, onPasteClipboardImage: opts => composer.pasteClipboardImage(opts), onPickFiles: () => void composer.pickContextPaths('file'), onPickFolders: () => void composer.pickContextPaths('folder'), onPickImages: () => void composer.pickImages(), onReload: reloadFromMessage, onRemoveAttachment: id => void composer.removeAttachment(id), onRestoreToMessage: restoreToMessage, onRetryResume: sessionId => void resumeSession(sessionId, true), onSteer: steerPrompt, onSubmit: submitText, onThreadMessagesChange: handleThreadMessagesChange, onToggleSelectedPin: toggleSelectedPin, onTranscribeAudio: transcribeVoiceAudio }));
++    const startOnboardingSweep = (prompt) => {
++        startFreshSessionDraft();
++        requestComposerSubmit(prompt, { target: 'main' });
++    };
++    const coldStartView = studentColdStart ? (sessionsLoading ? null : !onboardingComplete() && sessionsTotal === 0 ? (_jsx(Navigate, { replace: true, to: WELCOME_ROUTE })) : (_jsx(Navigate, { replace: true, to: TODAY_ROUTE }))) : (chatView);
+     // Flipped layout mirrors the default: sessions sidebar → right, file
+     // browser + preview rail → left. Same panes, swapped sides.
+     const sidebarSide = panesFlipped ? 'right' : 'left';
+     const railSide = panesFlipped ? 'left' : 'right';
+     // Other sidebars docked as real columns on the terminal's rail. Force-collapsed
+     // hover-reveal overlays (narrow window) don't take a column, so they don't count.
+-    const railColumnOpen = (chatOpen &&
+-        (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)) &&
++    const railColumnOpen = (browserSurfaceOpen &&
++        (welcomeOpen || NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)) &&
+         previewPaneOpen) ||
+         (chatOpen && !NEMESIS_STUDENT_BUILD && !narrowViewport && fileBrowserOpen) ||
+         (chatOpen && Boolean(currentCwd.trim()) && !narrowViewport && reviewOpen);
+     // Once the terminal would share its rail with another sidebar, drop it to a
+     // full-width row beneath them rather than cramming in one more skinny column.
+     const terminalAsRow = terminalSidebarOpen && railColumnOpen;
+-    const previewPane = (_jsx(Pane, { disabled: !chatOpen || (!NEMESIS_STUDENT_BUILD && !previewTarget && !filePreviewTarget && !browserRailOpen), id: PREVIEW_PANE_ID, maxWidth: PREVIEW_RAIL_MAX_WIDTH, minWidth: PREVIEW_RAIL_MIN_WIDTH, resizable: true, side: railSide, width: PREVIEW_RAIL_PANE_WIDTH, children: chatOpen ? (_jsx(ChatPreviewRail, { onRestartServer: restartPreviewServer, setTitlebarToolGroup: setTitlebarToolGroup })) : null }, "preview"));
++    const previewPane = (_jsx(Pane, { disabled: !browserSurfaceOpen ||
++            (!welcomeOpen && !NEMESIS_STUDENT_BUILD && !previewTarget && !filePreviewTarget && !browserRailOpen), id: PREVIEW_PANE_ID, maxWidth: PREVIEW_RAIL_MAX_WIDTH, minWidth: PREVIEW_RAIL_MIN_WIDTH, resizable: true, side: railSide, width: PREVIEW_RAIL_PANE_WIDTH, children: browserSurfaceOpen ? (_jsx(ChatPreviewRail, { onRestartServer: restartPreviewServer, setTitlebarToolGroup: setTitlebarToolGroup })) : null }, "preview"));
+     // Student build has exactly ONE right panel — the tabbed rail (Sources |
+     // Browser | Preview). The developer file-browser column never mounts.
+     const fileBrowserPane = NEMESIS_STUDENT_BUILD ? null : (_jsx(Pane, { defaultOpen: false, disabled: !chatOpen, forceCollapsed: narrowViewport, hoverReveal: true, id: "file-browser", maxWidth: FILE_BROWSER_MAX_WIDTH, minWidth: FILE_BROWSER_MIN_WIDTH, resizable: true, side: railSide, width: FILE_BROWSER_DEFAULT_WIDTH, children: _jsx(RightSidebarPane, { onActivateFile: path => composer.insertContextPathInlineRef(path), onActivateFolder: path => composer.insertContextPathInlineRef(path, true) }, currentCwd || 'no-cwd') }, "file-browser"));
+@@ -830,7 +842,8 @@ export function DesktopController() {
+         // Mobile overlay sits at its min width — compact, doesn't bury the chat.
+         overlayWidth: FILE_BROWSER_MIN_WIDTH, resizable: true, side: railSide, width: FILE_BROWSER_DEFAULT_WIDTH, children: _jsx(ReviewPane, {}, currentCwd || 'no-cwd') }, "review"));
+     const terminalPane = (_jsx(Pane, { bottomRow: terminalAsRow, defaultOpen: true, disabled: !terminalSidebarOpen, divider: true, height: "38vh", id: "terminal-sidebar", maxHeight: "80vh", maxWidth: "80vw", minHeight: "8rem", minWidth: "22vw", resizable: true, side: railSide, width: "42vw", children: _jsx("div", { className: cn('relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-(--ui-editor-surface-background)', terminalAsRow ? 'border-l border-(--ui-stroke-secondary) pt-0' : 'pt-(--titlebar-height)'), children: _jsx(TerminalPaneChrome, {}) }) }, "terminal-sidebar"));
+-    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: chatOpen && (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: studentColdStart ? _jsx(Navigate, { replace: true, to: TODAY_ROUTE }) : chatView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(TodayView, {}) }), path: "today" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LedgerView, {}) }), path: "ledger" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(CalendarView, {}) }), path: "calendar" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
++    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: browserSurfaceOpen &&
++            (welcomeOpen || NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { disabled: welcomeOpen, forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: coldStartView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: NEMESIS_STUDENT_BUILD ? (_jsx(Suspense, { fallback: null, children: _jsx(WelcomeView, { onStartSweep: startOnboardingSweep }) })) : (_jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE })), path: "welcome" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(TodayView, {}) }), path: "today" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LedgerView, {}) }), path: "ledger" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(CalendarView, {}) }), path: "calendar" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
+ }
+ function LegacySessionRedirect() {
+     const { sessionId } = useParams();
+diff --git a/apps/desktop/src/app/desktop-controller.tsx b/apps/desktop/src/app/desktop-controller.tsx
+index 094a8f3a6b2..869513f73dc 100644
+--- a/apps/desktop/src/app/desktop-controller.tsx
++++ b/apps/desktop/src/app/desktop-controller.tsx
+@@ -5,17 +5,17 @@ import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 're
+ 
+ import { BootFailureOverlay } from '@/components/boot-failure-overlay'
+ import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
+-import { NemesisAccountGate } from '@/components/nemesis-account-gate'
+ import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
++import { NemesisAccountGate } from '@/components/nemesis-account-gate'
+ import { DesktopOnboardingOverlay } from '@/components/onboarding'
+ import { Pane, PaneMain } from '@/components/pane-shell'
+ import { RemoteDisplayBanner } from '@/components/remote-display-banner'
+ import { useAgentBrowserWatcher } from '@/hooks/use-agent-browser-watcher'
+ import { useExportsPreviewWatcher } from '@/hooks/use-exports-preview-watcher'
+ import { useMediaQuery } from '@/hooks/use-media-query'
+-import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { isFocusWithin } from '@/lib/keybinds/combo'
+ import { cn } from '@/lib/utils'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { useSkinCommand } from '@/themes/use-skin-command'
+ 
+ import { formatRefValue } from '../components/assistant-ui/directive-text'
+@@ -24,6 +24,7 @@ import { type ChatMessage, chatMessageText, preserveLocalAssistantErrors, toChat
+ import { storedSessionIdForNotification } from '../lib/session-ids'
+ import { isMessagingSource } from '../lib/session-source'
+ import { latestSessionTodos } from '../lib/todos'
++import { $browserRailOpen } from '../store/browser-rail'
+ import { setCronFocusJobId } from '../store/cron'
+ import {
+   $fileBrowserOpen,
+@@ -49,7 +50,6 @@ import {
+   setPetOverlayScaleHandler,
+   setPetOverlaySubmitHandler
+ } from '../store/pet-overlay'
+-import { $browserRailOpen } from '../store/browser-rail'
+ import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
+ import { $activeGatewayProfile, $freshSessionRequest, $profileScope, refreshActiveProfile } from '../store/profile'
+ import { $startWorkSessionRequest, followActiveSessionCwd, resolveNewSessionCwd } from '../store/projects'
+@@ -66,6 +66,8 @@ import {
+   $resumeFailedSessionId,
+   $selectedStoredSessionId,
+   $sessions,
++  $sessionsLoading,
++  $sessionsTotal,
+   getRememberedSessionId,
+   sessionPinId,
+   setAwaitingResponse,
+@@ -83,7 +85,7 @@ import { openUpdatesWindow, startUpdatePoller, stopUpdatePoller } from '../store
+ import { isSecondaryWindow } from '../store/windows'
+ 
+ import { ChatView } from './chat'
+-import { requestComposerFocus, requestComposerInsert } from './chat/composer/focus'
++import { requestComposerFocus, requestComposerInsert, requestComposerSubmit } from './chat/composer/focus'
+ import { useComposerActions } from './chat/hooks/use-composer-actions'
+ import {
+   ChatPreviewRail,
+@@ -108,7 +110,15 @@ import { $terminalTakeover } from './right-sidebar/store'
+ import { TerminalPaneChrome } from './right-sidebar/terminal/chrome'
+ import { PersistentTerminal } from './right-sidebar/terminal/persistent'
+ import { closeActiveTerminal } from './right-sidebar/terminal/terminals'
+-import { CRON_ROUTE, NEW_CHAT_ROUTE, routeSessionId, sessionRoute, SETTINGS_ROUTE, TODAY_ROUTE } from './routes'
++import {
++  CRON_ROUTE,
++  NEW_CHAT_ROUTE,
++  routeSessionId,
++  sessionRoute,
++  SETTINGS_ROUTE,
++  TODAY_ROUTE,
++  WELCOME_ROUTE
++} from './routes'
+ import { SessionPickerOverlay } from './session-picker-overlay'
+ import { SessionSwitcher } from './session-switcher'
+ import { useContextSuggestions } from './session/hooks/use-context-suggestions'
+@@ -131,6 +141,7 @@ import type { StatusbarItem } from './shell/statusbar-controls'
+ import type { TitlebarTool } from './shell/titlebar-controls'
+ import { useGroupRegistry } from './shell/use-group-registry'
+ import { UpdatesOverlay } from './updates-overlay'
++import { onboardingComplete } from './welcome/onboarding'
+ 
+ const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
+ const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts')).ArtifactsView }))
+@@ -148,6 +159,7 @@ const RecorderView = lazy(async () => ({ default: (await import('./recorder')).R
+ const CalendarView = lazy(async () => ({ default: (await import('./calendar')).CalendarView }))
+ const TodayView = lazy(async () => ({ default: (await import('./today')).TodayView }))
+ const LedgerView = lazy(async () => ({ default: (await import('./ledger')).LedgerView }))
++const WelcomeView = lazy(async () => ({ default: (await import('./welcome')).WelcomeView }))
+ 
+ // Latest cron-job sessions surfaced in the collapsed "Cron jobs" section. The
+ // Cron sessions are written by a background scheduler tick (the desktop
+@@ -214,6 +226,8 @@ export function DesktopController() {
+   const browserRailOpen = useStore($browserRailOpen)
+   const selectedStoredSessionId = useStore($selectedStoredSessionId)
+   const messagingSessions = useStore($messagingSessions)
++  const sessionsLoading = useStore($sessionsLoading)
++  const sessionsTotal = useStore($sessionsTotal)
+   const terminalTakeover = useStore($terminalTakeover)
+   const reviewOpen = useStore($reviewOpen)
+   const fileBrowserOpen = useStore($fileBrowserOpen)
+@@ -231,8 +245,7 @@ export function DesktopController() {
+   // that to distinguish a cold boot at `/` from an intentional later trip to
+   // NEW_CHAT_ROUTE (Today "Start", New session, etc.), which must still open
+   // the composer in the student build.
+-  const studentColdStart =
+-    NEMESIS_STUDENT_BUILD && location.pathname === NEW_CHAT_ROUTE && location.key === 'default'
++  const studentColdStart = NEMESIS_STUDENT_BUILD && location.pathname === NEW_CHAT_ROUTE && location.key === 'default'
+ 
+   const routeToken = `${location.pathname}:${location.search}:${location.hash}`
+   const routeTokenRef = useRef(routeToken)
+@@ -257,6 +270,8 @@ export function DesktopController() {
+   } = useOverlayRouting()
+ 
+   const terminalSidebarOpen = chatOpen && terminalTakeover
++  const welcomeOpen = currentView === 'welcome'
++  const browserSurfaceOpen = chatOpen || (welcomeOpen && browserRailOpen)
+ 
+   const titlebarToolGroups = useGroupRegistry<TitlebarTool>()
+   const statusbarItemGroups = useGroupRegistry<StatusbarItem>()
+@@ -1195,6 +1210,21 @@ export function DesktopController() {
+     />
+   )
+ 
++  const startOnboardingSweep = (prompt: string) => {
++    startFreshSessionDraft()
++    requestComposerSubmit(prompt, { target: 'main' })
++  }
++
++  const coldStartView = studentColdStart ? (
++    sessionsLoading ? null : !onboardingComplete() && sessionsTotal === 0 ? (
++      <Navigate replace to={WELCOME_ROUTE} />
++    ) : (
++      <Navigate replace to={TODAY_ROUTE} />
++    )
++  ) : (
++    chatView
++  )
++
+   // Flipped layout mirrors the default: sessions sidebar → right, file
+   // browser + preview rail → left. Same panes, swapped sides.
+   const sidebarSide = panesFlipped ? 'right' : 'left'
+@@ -1203,8 +1233,8 @@ export function DesktopController() {
+   // Other sidebars docked as real columns on the terminal's rail. Force-collapsed
+   // hover-reveal overlays (narrow window) don't take a column, so they don't count.
+   const railColumnOpen =
+-    (chatOpen &&
+-      (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)) &&
++    (browserSurfaceOpen &&
++      (welcomeOpen || NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)) &&
+       previewPaneOpen) ||
+     (chatOpen && !NEMESIS_STUDENT_BUILD && !narrowViewport && fileBrowserOpen) ||
+     (chatOpen && Boolean(currentCwd.trim()) && !narrowViewport && reviewOpen)
+@@ -1216,7 +1246,8 @@ export function DesktopController() {
+   const previewPane = (
+     <Pane
+       disabled={
+-        !chatOpen || (!NEMESIS_STUDENT_BUILD && !previewTarget && !filePreviewTarget && !browserRailOpen)
++        !browserSurfaceOpen ||
++        (!welcomeOpen && !NEMESIS_STUDENT_BUILD && !previewTarget && !filePreviewTarget && !browserRailOpen)
+       }
+       id={PREVIEW_PANE_ID}
+       key="preview"
+@@ -1226,7 +1257,7 @@ export function DesktopController() {
+       side={railSide}
+       width={PREVIEW_RAIL_PANE_WIDTH}
+     >
+-      {chatOpen ? (
++      {browserSurfaceOpen ? (
+         <ChatPreviewRail onRestartServer={restartPreviewServer} setTitlebarToolGroup={setTitlebarToolGroup} />
+       ) : null}
+     </Pane>
+@@ -1325,7 +1356,8 @@ export function DesktopController() {
+       onOpenSettings={openSettings}
+       overlays={overlays}
+       previewPaneOpen={
+-        chatOpen && (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen))
++        browserSurfaceOpen &&
++        (welcomeOpen || NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen))
+       }
+       statusbarItems={statusbarItems}
+       terminalPaneOpen={terminalSidebarOpen}
+@@ -1333,6 +1365,7 @@ export function DesktopController() {
+     >
+       {!isSecondaryWindow() && (
+         <Pane
++          disabled={welcomeOpen}
+           forceCollapsed={narrowViewport}
+           hoverReveal
+           id="chat-sidebar"
+@@ -1348,8 +1381,20 @@ export function DesktopController() {
+       )}
+       <PaneMain>
+         <Routes>
+-          <Route element={studentColdStart ? <Navigate replace to={TODAY_ROUTE} /> : chatView} index />
++          <Route element={coldStartView} index />
+           <Route element={chatView} path=":sessionId" />
++          <Route
++            element={
++              NEMESIS_STUDENT_BUILD ? (
++                <Suspense fallback={null}>
++                  <WelcomeView onStartSweep={startOnboardingSweep} />
++                </Suspense>
++              ) : (
++                <Navigate replace to={NEW_CHAT_ROUTE} />
++              )
++            }
++            path="welcome"
++          />
+           <Route
+             element={
+               <Suspense fallback={null}>
+diff --git a/apps/desktop/src/app/routes.js b/apps/desktop/src/app/routes.js
+index 39a1088aa5e..2287f2dceb2 100644
+--- a/apps/desktop/src/app/routes.js
++++ b/apps/desktop/src/app/routes.js
+@@ -1,6 +1,7 @@
+ export const SESSION_ROUTE_PREFIX = '/';
+ export const NEW_CHAT_ROUTE = '/';
+ export const TODAY_ROUTE = '/today';
++export const WELCOME_ROUTE = '/welcome';
+ export const LEDGER_ROUTE = '/ledger';
+ export const SETTINGS_ROUTE = '/settings';
+ export const COMMAND_CENTER_ROUTE = '/command-center';
+@@ -19,6 +20,7 @@ export const STARMAP_ROUTE = '/starmap';
+ export const APP_ROUTES = [
+     { id: 'new', path: NEW_CHAT_ROUTE, view: 'chat' },
+     { id: 'today', path: TODAY_ROUTE, view: 'today' },
++    { id: 'welcome', path: WELCOME_ROUTE, view: 'welcome' },
+     { id: 'ledger', path: LEDGER_ROUTE, view: 'ledger' },
+     { id: 'settings', path: SETTINGS_ROUTE, view: 'settings' },
+     { id: 'command-center', path: COMMAND_CENTER_ROUTE, view: 'command-center' },
+diff --git a/apps/desktop/src/app/routes.ts b/apps/desktop/src/app/routes.ts
+index a1e1adadaed..4c99a31ad9b 100644
+--- a/apps/desktop/src/app/routes.ts
++++ b/apps/desktop/src/app/routes.ts
+@@ -1,6 +1,7 @@
+ export const SESSION_ROUTE_PREFIX = '/'
+ export const NEW_CHAT_ROUTE = '/'
+ export const TODAY_ROUTE = '/today'
++export const WELCOME_ROUTE = '/welcome'
+ export const LEDGER_ROUTE = '/ledger'
+ export const SETTINGS_ROUTE = '/settings'
+ export const COMMAND_CENTER_ROUTE = '/command-center'
+@@ -35,6 +36,7 @@ export type AppView =
+   | 'starmap'
+   | 'study'
+   | 'today'
++  | 'welcome'
+ 
+ export type AppRouteId =
+   | 'agents'
+@@ -54,6 +56,7 @@ export type AppRouteId =
+   | 'starmap'
+   | 'study'
+   | 'today'
++  | 'welcome'
+ 
+ export interface AppRoute {
+   id: AppRouteId
+@@ -64,6 +67,7 @@ export interface AppRoute {
+ export const APP_ROUTES = [
+   { id: 'new', path: NEW_CHAT_ROUTE, view: 'chat' },
+   { id: 'today', path: TODAY_ROUTE, view: 'today' },
++  { id: 'welcome', path: WELCOME_ROUTE, view: 'welcome' },
+   { id: 'ledger', path: LEDGER_ROUTE, view: 'ledger' },
+   { id: 'settings', path: SETTINGS_ROUTE, view: 'settings' },
+   { id: 'command-center', path: COMMAND_CENTER_ROUTE, view: 'command-center' },
+diff --git a/apps/desktop/src/app/settings/connections-settings.js b/apps/desktop/src/app/settings/connections-settings.js
+index 095e06ca6d3..2eda3100ee5 100644
+--- a/apps/desktop/src/app/settings/connections-settings.js
++++ b/apps/desktop/src/app/settings/connections-settings.js
+@@ -74,7 +74,7 @@ export function ConnectionsSettings({ onClose }) {
+     const connect = (url) => {
+         void api?.newTab?.(url);
+         openBrowserRail();
+-        onClose();
++        onClose?.();
+     };
+     const disconnect = (origin) => {
+         void api?.disconnect?.(origin).then(refresh);
+diff --git a/apps/desktop/src/app/settings/connections-settings.tsx b/apps/desktop/src/app/settings/connections-settings.tsx
+index 57bd40f620b..59fbaf9eaad 100644
+--- a/apps/desktop/src/app/settings/connections-settings.tsx
++++ b/apps/desktop/src/app/settings/connections-settings.tsx
+@@ -59,7 +59,7 @@ function originOf(url: string): string {
+   }
+ }
+ 
+-export function ConnectionsSettings({ onClose }: { onClose: () => void }) {
++export function ConnectionsSettings({ onClose }: { onClose?: () => void }) {
+   const [status, setStatus] = useState<Record<string, boolean>>({})
+   const [customUrl, setCustomUrl] = useState('')
+   const api = window.hermesDesktop?.schoolView
+@@ -89,7 +89,7 @@ export function ConnectionsSettings({ onClose }: { onClose: () => void }) {
+   const connect = (url: string) => {
+     void api?.newTab?.(url)
+     openBrowserRail()
+-    onClose()
++    onClose?.()
+   }
+ 
+   const disconnect = (origin: string) => {
+@@ -114,8 +114,8 @@ export function ConnectionsSettings({ onClose }: { onClose: () => void }) {
+         </span>
+         <h2 className="text-lg font-semibold text-foreground">Connect your school accounts</h2>
+         <p className="text-sm text-muted-foreground">
+-          No API keys, no setup codes. You just sign in once in Nemesis&apos;s own browser — then the agent works
+-          inside that signed-in session for you. Your passwords are never shown to or stored by the agent.
++          No API keys, no setup codes. You just sign in once in Nemesis&apos;s own browser — then the agent works inside
++          that signed-in session for you. Your passwords are never shown to or stored by the agent.
+         </p>
+       </div>
+ 
+diff --git a/apps/desktop/src/app/welcome/index.js b/apps/desktop/src/app/welcome/index.js
+new file mode 100644
+index 00000000000..dbcfb13c6ba
+--- /dev/null
++++ b/apps/desktop/src/app/welcome/index.js
+@@ -0,0 +1,32 @@
++import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
++import { useState } from 'react';
++import { useNavigate } from 'react-router-dom';
++import { ConnectionsSettings } from '@/app/settings/connections-settings';
++import { Button } from '@/components/ui/button';
++import { Codicon } from '@/components/ui/codicon';
++import { cn } from '@/lib/utils';
++import { TODAY_ROUTE } from '../routes';
++import { completeOnboarding } from './onboarding';
++export const READ_SEMESTER_PROMPT = 'Connect to my school accounts and read my semester: every course on Blackboard — syllabi, slides, lecture files, announcements, due dates. File everything into my Library, update my calendar and semester graph, and show me what you found. Use the nemesis-graph and nemesis-ledger skills.';
++export const FIND_MATERIALS_PROMPT = 'Find my existing school files on this Mac (Documents, Desktop, Downloads, OneDrive/Google Drive folders), read my Anki collection, and fetch my Quizlet sets — propose what you find, then bring it into my Library. Use the nemesis-import skill.';
++const IMPORTS_PATH = '~/Documents/Nemesis Library/Imports/';
++const STEP_LABELS = ['Welcome', 'Connect', 'First sweep', 'Done'];
++function Progress({ step }) {
++    return (_jsx("div", { "aria-label": `Step ${step + 1} of ${STEP_LABELS.length}: ${STEP_LABELS[step]}`, className: "flex gap-2", children: STEP_LABELS.map((label, index) => (_jsx("span", { "aria-label": label, className: cn('h-1 w-7 rounded-full transition-colors', index <= step ? 'bg-(--theme-primary)' : 'bg-(--ui-bg-quaternary)') }, label))) }));
++}
++function SweepCard({ icon, onClick, text, title }) {
++    return (_jsxs("button", { className: "group flex min-h-40 flex-col items-start rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5 text-left transition-colors hover:border-(--theme-primary)/45 hover:bg-(--ui-bg-quaternary) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--theme-primary)/50", onClick: onClick, type: "button", children: [_jsx("span", { className: "mb-8 grid size-9 place-items-center rounded-lg bg-(--theme-primary)/10 text-(--theme-primary)", children: _jsx(Codicon, { name: icon, size: "1rem" }) }), _jsx("span", { className: "text-base font-semibold tracking-[-0.015em] text-(--ui-text-primary)", children: title }), _jsx("span", { className: "mt-1 text-xs leading-relaxed text-(--ui-text-tertiary)", children: text }), _jsxs("span", { className: "mt-4 inline-flex items-center gap-1 text-[0.6875rem] font-semibold text-(--theme-primary)", children: ["Let Nemesis handle it ", _jsx(Codicon, { name: "arrow-right", size: "0.7rem" })] })] }));
++}
++export function WelcomeView({ onStartSweep }) {
++    const navigate = useNavigate();
++    const [step, setStep] = useState(0);
++    const finish = () => {
++        completeOnboarding();
++        navigate(TODAY_ROUTE, { replace: true });
++    };
++    const startSweep = (prompt) => {
++        completeOnboarding();
++        onStartSweep(prompt);
++    };
++    return (_jsx("main", { className: "h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background) font-mono text-(--ui-text-primary)", children: _jsxs("div", { className: "mx-auto flex min-h-full w-full max-w-[960px] flex-col px-6 pb-10 pt-16 sm:px-10 sm:pt-20", children: [_jsxs("div", { className: "flex items-center justify-between gap-4", children: [_jsx(Progress, { step: step }), step > 0 && (_jsxs(Button, { onClick: () => setStep(current => current - 1), size: "inline", variant: "text", children: [_jsx(Codicon, { name: "arrow-left" }), " Back"] }))] }), step === 0 && (_jsxs("section", { className: "my-auto flex max-w-2xl flex-col items-start py-16", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-(--theme-primary)", children: "Nemesis \u00B7 Student agent" }), _jsx("h1", { className: "mt-5 text-4xl font-semibold tracking-[-0.045em] sm:text-5xl", children: "Your semester, under watch." }), _jsx("p", { className: "mt-5 max-w-xl text-base leading-relaxed text-(--ui-text-secondary)", children: "It runs the work around school. Let's connect your semester." }), _jsxs("div", { className: "mt-10 flex items-center gap-4", children: [_jsx(Button, { onClick: () => setStep(1), size: "lg", children: "Begin" }), _jsx(Button, { onClick: finish, size: "inline", variant: "text", children: "Skip for now" })] })] })), step === 1 && (_jsxs("section", { className: "mt-10 flex flex-1 flex-col", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)", children: "Connect" }), _jsx("h1", { className: "mt-2 text-2xl font-semibold tracking-[-0.03em]", children: "Bring your school within reach." }), _jsx("p", { className: "mt-2 max-w-2xl text-sm leading-relaxed text-(--ui-text-secondary)", children: "Sign in on the real site, in Nemesis's own browser. Your logins stay on this Mac." })] }), _jsx("div", { className: "-mx-6 mt-2 sm:-mx-6", children: _jsx(ConnectionsSettings, {}) }), _jsx("div", { className: "mt-auto flex justify-end pt-4", children: _jsx(Button, { onClick: () => setStep(2), size: "lg", children: "Continue" }) })] })), step === 2 && (_jsxs("section", { className: "mt-10 flex flex-1 flex-col", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)", children: "First sweep" }), _jsx("h1", { className: "mt-2 text-2xl font-semibold tracking-[-0.03em]", children: "Choose the first job." }), _jsx("p", { className: "mt-2 text-sm text-(--ui-text-secondary)", children: "Nemesis will gather the material. You approve what comes into your Library." })] }), _jsxs("div", { className: "mt-8 grid gap-4 md:grid-cols-2", children: [_jsx(SweepCard, { icon: "book", onClick: () => startSweep(READ_SEMESTER_PROMPT), text: "Read Blackboard, organize every course, and build the semester plan.", title: "Read my semester" }), _jsx(SweepCard, { icon: "folder-opened", onClick: () => startSweep(FIND_MATERIALS_PROMPT), text: "Survey local files, Anki, and Quizlet before importing anything.", title: "Find my study materials" })] }), _jsxs("div", { className: "mt-4 flex items-center gap-3 rounded-lg border border-dashed border-(--ui-stroke-tertiary) px-4 py-3", children: [_jsx(Codicon, { className: "text-(--ui-text-tertiary)", name: "files" }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-xs text-(--ui-text-secondary)", children: "Manual import folder" }), _jsx("p", { className: "truncate text-[0.6875rem] text-(--ui-text-quaternary)", title: IMPORTS_PATH, children: IMPORTS_PATH })] }), _jsx("span", { className: "hidden text-[0.65rem] text-(--ui-text-quaternary) sm:block", children: "Place files here to import them later." })] }), _jsx("div", { className: "mt-auto flex justify-end pt-8", children: _jsx(Button, { onClick: () => setStep(3), size: "inline", variant: "text", children: "Choose a sweep later" }) })] })), step === 3 && (_jsxs("section", { className: "my-auto flex max-w-2xl flex-col items-start py-16", children: [_jsx("span", { className: "grid size-12 place-items-center rounded-full bg-(--theme-primary)/10 text-(--theme-primary)", children: _jsx(Codicon, { name: "check", size: "1.15rem" }) }), _jsx("p", { className: "mt-8 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)", children: "Ready" }), _jsx("h1", { className: "mt-3 text-3xl font-semibold tracking-[-0.04em]", children: "Nemesis is watching your semester now." }), _jsx("p", { className: "mt-4 max-w-xl text-sm leading-relaxed text-(--ui-text-secondary)", children: "Your Today view stays quiet until there is something worth your attention." }), _jsx(Button, { className: "mt-9", onClick: finish, size: "lg", children: "Go to Today" })] }))] }) }));
++}
+diff --git a/apps/desktop/src/app/welcome/index.tsx b/apps/desktop/src/app/welcome/index.tsx
+new file mode 100644
+index 00000000000..c0059beb9eb
+--- /dev/null
++++ b/apps/desktop/src/app/welcome/index.tsx
+@@ -0,0 +1,193 @@
++import { useState } from 'react'
++import { useNavigate } from 'react-router-dom'
++
++import { ConnectionsSettings } from '@/app/settings/connections-settings'
++import { Button } from '@/components/ui/button'
++import { Codicon } from '@/components/ui/codicon'
++import { cn } from '@/lib/utils'
++
++import { TODAY_ROUTE } from '../routes'
++
++import { completeOnboarding } from './onboarding'
++
++export const READ_SEMESTER_PROMPT =
++  'Connect to my school accounts and read my semester: every course on Blackboard — syllabi, slides, lecture files, announcements, due dates. File everything into my Library, update my calendar and semester graph, and show me what you found. Use the nemesis-graph and nemesis-ledger skills.'
++
++export const FIND_MATERIALS_PROMPT =
++  'Find my existing school files on this Mac (Documents, Desktop, Downloads, OneDrive/Google Drive folders), read my Anki collection, and fetch my Quizlet sets — propose what you find, then bring it into my Library. Use the nemesis-import skill.'
++
++const IMPORTS_PATH = '~/Documents/Nemesis Library/Imports/'
++const STEP_LABELS = ['Welcome', 'Connect', 'First sweep', 'Done'] as const
++
++interface WelcomeViewProps {
++  onStartSweep: (prompt: string) => void
++}
++
++function Progress({ step }: { step: number }) {
++  return (
++    <div aria-label={`Step ${step + 1} of ${STEP_LABELS.length}: ${STEP_LABELS[step]}`} className="flex gap-2">
++      {STEP_LABELS.map((label, index) => (
++        <span
++          aria-label={label}
++          className={cn(
++            'h-1 w-7 rounded-full transition-colors',
++            index <= step ? 'bg-(--theme-primary)' : 'bg-(--ui-bg-quaternary)'
++          )}
++          key={label}
++        />
++      ))}
++    </div>
++  )
++}
++
++function SweepCard({ icon, onClick, text, title }: { icon: string; onClick: () => void; text: string; title: string }) {
++  return (
++    <button
++      className="group flex min-h-40 flex-col items-start rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5 text-left transition-colors hover:border-(--theme-primary)/45 hover:bg-(--ui-bg-quaternary) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--theme-primary)/50"
++      onClick={onClick}
++      type="button"
++    >
++      <span className="mb-8 grid size-9 place-items-center rounded-lg bg-(--theme-primary)/10 text-(--theme-primary)">
++        <Codicon name={icon} size="1rem" />
++      </span>
++      <span className="text-base font-semibold tracking-[-0.015em] text-(--ui-text-primary)">{title}</span>
++      <span className="mt-1 text-xs leading-relaxed text-(--ui-text-tertiary)">{text}</span>
++      <span className="mt-4 inline-flex items-center gap-1 text-[0.6875rem] font-semibold text-(--theme-primary)">
++        Let Nemesis handle it <Codicon name="arrow-right" size="0.7rem" />
++      </span>
++    </button>
++  )
++}
++
++export function WelcomeView({ onStartSweep }: WelcomeViewProps) {
++  const navigate = useNavigate()
++  const [step, setStep] = useState(0)
++
++  const finish = () => {
++    completeOnboarding()
++    navigate(TODAY_ROUTE, { replace: true })
++  }
++
++  const startSweep = (prompt: string) => {
++    completeOnboarding()
++    onStartSweep(prompt)
++  }
++
++  return (
++    <main className="h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background) font-mono text-(--ui-text-primary)">
++      <div className="mx-auto flex min-h-full w-full max-w-[960px] flex-col px-6 pb-10 pt-16 sm:px-10 sm:pt-20">
++        <div className="flex items-center justify-between gap-4">
++          <Progress step={step} />
++          {step > 0 && (
++            <Button onClick={() => setStep(current => current - 1)} size="inline" variant="text">
++              <Codicon name="arrow-left" /> Back
++            </Button>
++          )}
++        </div>
++
++        {step === 0 && (
++          <section className="my-auto flex max-w-2xl flex-col items-start py-16">
++            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-(--theme-primary)">
++              Nemesis · Student agent
++            </p>
++            <h1 className="mt-5 text-4xl font-semibold tracking-[-0.045em] sm:text-5xl">Your semester, under watch.</h1>
++            <p className="mt-5 max-w-xl text-base leading-relaxed text-(--ui-text-secondary)">
++              It runs the work around school. Let&apos;s connect your semester.
++            </p>
++            <div className="mt-10 flex items-center gap-4">
++              <Button onClick={() => setStep(1)} size="lg">
++                Begin
++              </Button>
++              <Button onClick={finish} size="inline" variant="text">
++                Skip for now
++              </Button>
++            </div>
++          </section>
++        )}
++
++        {step === 1 && (
++          <section className="mt-10 flex flex-1 flex-col">
++            <div>
++              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)">Connect</p>
++              <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">Bring your school within reach.</h1>
++              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-(--ui-text-secondary)">
++                Sign in on the real site, in Nemesis&apos;s own browser. Your logins stay on this Mac.
++              </p>
++            </div>
++            <div className="-mx-6 mt-2 sm:-mx-6">
++              <ConnectionsSettings />
++            </div>
++            <div className="mt-auto flex justify-end pt-4">
++              <Button onClick={() => setStep(2)} size="lg">
++                Continue
++              </Button>
++            </div>
++          </section>
++        )}
++
++        {step === 2 && (
++          <section className="mt-10 flex flex-1 flex-col">
++            <div>
++              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)">
++                First sweep
++              </p>
++              <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">Choose the first job.</h1>
++              <p className="mt-2 text-sm text-(--ui-text-secondary)">
++                Nemesis will gather the material. You approve what comes into your Library.
++              </p>
++            </div>
++            <div className="mt-8 grid gap-4 md:grid-cols-2">
++              <SweepCard
++                icon="book"
++                onClick={() => startSweep(READ_SEMESTER_PROMPT)}
++                text="Read Blackboard, organize every course, and build the semester plan."
++                title="Read my semester"
++              />
++              <SweepCard
++                icon="folder-opened"
++                onClick={() => startSweep(FIND_MATERIALS_PROMPT)}
++                text="Survey local files, Anki, and Quizlet before importing anything."
++                title="Find my study materials"
++              />
++            </div>
++            <div className="mt-4 flex items-center gap-3 rounded-lg border border-dashed border-(--ui-stroke-tertiary) px-4 py-3">
++              <Codicon className="text-(--ui-text-tertiary)" name="files" />
++              <div className="min-w-0 flex-1">
++                <p className="text-xs text-(--ui-text-secondary)">Manual import folder</p>
++                <p className="truncate text-[0.6875rem] text-(--ui-text-quaternary)" title={IMPORTS_PATH}>
++                  {IMPORTS_PATH}
++                </p>
++              </div>
++              <span className="hidden text-[0.65rem] text-(--ui-text-quaternary) sm:block">
++                Place files here to import them later.
++              </span>
++            </div>
++            <div className="mt-auto flex justify-end pt-8">
++              <Button onClick={() => setStep(3)} size="inline" variant="text">
++                Choose a sweep later
++              </Button>
++            </div>
++          </section>
++        )}
++
++        {step === 3 && (
++          <section className="my-auto flex max-w-2xl flex-col items-start py-16">
++            <span className="grid size-12 place-items-center rounded-full bg-(--theme-primary)/10 text-(--theme-primary)">
++              <Codicon name="check" size="1.15rem" />
++            </span>
++            <p className="mt-8 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)">
++              Ready
++            </p>
++            <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">Nemesis is watching your semester now.</h1>
++            <p className="mt-4 max-w-xl text-sm leading-relaxed text-(--ui-text-secondary)">
++              Your Today view stays quiet until there is something worth your attention.
++            </p>
++            <Button className="mt-9" onClick={finish} size="lg">
++              Go to Today
++            </Button>
++          </section>
++        )}
++      </div>
++    </main>
++  )
++}
+diff --git a/apps/desktop/src/app/welcome/onboarding.js b/apps/desktop/src/app/welcome/onboarding.js
+new file mode 100644
+index 00000000000..5d2561788d6
+--- /dev/null
++++ b/apps/desktop/src/app/welcome/onboarding.js
+@@ -0,0 +1,10 @@
++export const NEMESIS_ONBOARDING_KEY = 'nemesis.onboarding.v1';
++export function onboardingComplete() {
++    return window.localStorage.getItem(NEMESIS_ONBOARDING_KEY) !== null;
++}
++export function completeOnboarding() {
++    window.localStorage.setItem(NEMESIS_ONBOARDING_KEY, 'complete');
++}
++export function resetOnboarding() {
++    window.localStorage.removeItem(NEMESIS_ONBOARDING_KEY);
++}
+diff --git a/apps/desktop/src/app/welcome/onboarding.ts b/apps/desktop/src/app/welcome/onboarding.ts
+new file mode 100644
+index 00000000000..8aafb4bb74e
+--- /dev/null
++++ b/apps/desktop/src/app/welcome/onboarding.ts
+@@ -0,0 +1,13 @@
++export const NEMESIS_ONBOARDING_KEY = 'nemesis.onboarding.v1'
++
++export function onboardingComplete(): boolean {
++  return window.localStorage.getItem(NEMESIS_ONBOARDING_KEY) !== null
++}
++
++export function completeOnboarding(): void {
++  window.localStorage.setItem(NEMESIS_ONBOARDING_KEY, 'complete')
++}
++
++export function resetOnboarding(): void {
++  window.localStorage.removeItem(NEMESIS_ONBOARDING_KEY)
++}
+-- 
+2.53.0
+

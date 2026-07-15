@@ -1,0 +1,95 @@
+From fe9f13c503692031fbad1733a04019edb5fb6037 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 23:07:22 -0500
+Subject: [PATCH] =?UTF-8?q?fix(nemesis-kit):=20round-43=20=E2=80=94=20wiki?=
+ =?UTF-8?q?links=20resolve=20path-qualified=20[[Folder/Title]]=20targets?=
+ =?UTF-8?q?=20(agent=20writes=20them=20in=20Home.md);=20missing=20path-qua?=
+ =?UTF-8?q?lified=20notes=20are=20created=20in=20their=20folder,=20not=20a?=
+ =?UTF-8?q?s=20root=20junk?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ apps/desktop/src/app/library/index.js  | 17 ++++++++++++++---
+ apps/desktop/src/app/library/index.tsx | 23 ++++++++++++++++++++---
+ 2 files changed, 34 insertions(+), 6 deletions(-)
+
+diff --git a/apps/desktop/src/app/library/index.js b/apps/desktop/src/app/library/index.js
+index 0c1f1246e74..63de0538fb0 100644
+--- a/apps/desktop/src/app/library/index.js
++++ b/apps/desktop/src/app/library/index.js
+@@ -214,14 +214,25 @@ export function LibraryView() {
+         if (!loaded) {
+             return;
+         }
+-        const existing = loaded.notes.find(n => n.title.toLowerCase() === target.toLowerCase());
++        // Obsidian-style targets: plain [[Title]] or path-qualified
++        // [[Folder/Title]] (the agent writes the latter into Home.md). Resolve
++        // both; a missing path-qualified note is created IN its folder rather
++        // than as a root note with a slash jammed into the name.
++        const wanted = target.toLowerCase();
++        const existing = loaded.notes.find(n => n.title.toLowerCase() === wanted || `${n.folder}/${n.title}`.toLowerCase() === wanted);
+         if (existing) {
+             openSelection({ kind: 'note', note: existing });
+             return;
+         }
+-        await saveNote(target, `# ${target}\n\n`);
++        const slash = target.lastIndexOf('/');
++        const folder = slash > 0 ? target.slice(0, slash) : '';
++        const title = slash > 0 ? target.slice(slash + 1) : target;
++        if (folder) {
++            await createFolder(folder);
++        }
++        await saveNote(title, `# ${title}\n\n`, folder);
+         const after = await refresh();
+-        const created = after?.notes.find(n => n.title.toLowerCase() === target.toLowerCase());
++        const created = after?.notes.find(n => n.title.toLowerCase() === title.toLowerCase() && (!folder || n.folder.toLowerCase() === folder.toLowerCase()));
+         if (created) {
+             openSelection({ kind: 'note', note: created });
+         }
+diff --git a/apps/desktop/src/app/library/index.tsx b/apps/desktop/src/app/library/index.tsx
+index 1bc99fd1048..8d43ed450b0 100644
+--- a/apps/desktop/src/app/library/index.tsx
++++ b/apps/desktop/src/app/library/index.tsx
+@@ -307,7 +307,14 @@ export function LibraryView() {
+         return
+       }
+ 
+-      const existing = loaded.notes.find(n => n.title.toLowerCase() === target.toLowerCase())
++      // Obsidian-style targets: plain [[Title]] or path-qualified
++      // [[Folder/Title]] (the agent writes the latter into Home.md). Resolve
++      // both; a missing path-qualified note is created IN its folder rather
++      // than as a root note with a slash jammed into the name.
++      const wanted = target.toLowerCase()
++      const existing = loaded.notes.find(
++        n => n.title.toLowerCase() === wanted || `${n.folder}/${n.title}`.toLowerCase() === wanted
++      )
+ 
+       if (existing) {
+         openSelection({ kind: 'note', note: existing })
+@@ -315,9 +322,19 @@ export function LibraryView() {
+         return
+       }
+ 
+-      await saveNote(target, `# ${target}\n\n`)
++      const slash = target.lastIndexOf('/')
++      const folder = slash > 0 ? target.slice(0, slash) : ''
++      const title = slash > 0 ? target.slice(slash + 1) : target
++
++      if (folder) {
++        await createFolder(folder)
++      }
++
++      await saveNote(title, `# ${title}\n\n`, folder)
+       const after = await refresh()
+-      const created = after?.notes.find(n => n.title.toLowerCase() === target.toLowerCase())
++      const created = after?.notes.find(
++        n => n.title.toLowerCase() === title.toLowerCase() && (!folder || n.folder.toLowerCase() === folder.toLowerCase())
++      )
+ 
+       if (created) {
+         openSelection({ kind: 'note', note: created })
+-- 
+2.53.0
+

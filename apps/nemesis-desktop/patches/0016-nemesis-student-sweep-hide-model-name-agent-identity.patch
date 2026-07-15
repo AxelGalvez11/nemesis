@@ -1,0 +1,522 @@
+From 300cc4b40fefd7d0ab923c5d7e26cba630539d9f Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Thu, 9 Jul 2026 20:56:17 -0500
+Subject: [PATCH 16/20] =?UTF-8?q?nemesis:=20student=20sweep=20=E2=80=94=20?=
+ =?UTF-8?q?hide=20model=20name,=20agent=20identity,=20all=20dev=20surfaces?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Composer model pill: student build shows Fast/Thinking + effort (Light/
+  Balanced/Deep) via new StudentModelMenu; never shows deepseek/provider/model.
+- Agent identity -> Nemesis (SOUL.md + default_soul.py + prompt_builder
+  DEFAULT_AGENT_IDENTITY): health-student study assistant, evidence+citations,
+  drafts-not-submissions, no code framing.
+- Hide for students (src/nemesis.ts sets): statusbar version/hash, gateway
+  health, context/token meter, YOLO, command-center, agents, cron, terminal;
+  palette command-center + gateway + cron/agents/profiles/starmap + git branch
+  group (empty groups dropped); sidebar cron section + profile rail.
+---
+ agent/prompt_builder.py                       | 17 +++--
+ .../src/app/chat/composer/model-pill.js       |  9 ++-
+ .../src/app/chat/composer/model-pill.tsx      | 29 ++++++++-
+ .../app/chat/composer/student-model-menu.js   | 20 ++++++
+ .../app/chat/composer/student-model-menu.tsx  | 65 +++++++++++++++++++
+ apps/desktop/src/app/chat/sidebar/index.js    |  2 +-
+ apps/desktop/src/app/chat/sidebar/index.tsx   |  4 +-
+ apps/desktop/src/app/command-palette/index.js | 21 ++++--
+ .../desktop/src/app/command-palette/index.tsx | 23 +++++--
+ .../app/shell/hooks/use-statusbar-items.js    |  6 +-
+ .../app/shell/hooks/use-statusbar-items.tsx   |  6 +-
+ apps/desktop/src/nemesis.js                   | 23 +++++++
+ apps/desktop/src/nemesis.ts                   | 27 ++++++++
+ hermes_cli/default_soul.py                    | 17 +++--
+ 14 files changed, 236 insertions(+), 33 deletions(-)
+ create mode 100644 apps/desktop/src/app/chat/composer/student-model-menu.js
+ create mode 100644 apps/desktop/src/app/chat/composer/student-model-menu.tsx
+
+diff --git a/agent/prompt_builder.py b/agent/prompt_builder.py
+index b5b2b58..3d2abca 100644
+--- a/agent/prompt_builder.py
++++ b/agent/prompt_builder.py
+@@ -128,13 +128,16 @@ def _strip_yaml_frontmatter(content: str) -> str:
+ # =========================================================================
+ 
+ DEFAULT_AGENT_IDENTITY = (
+-    "You are Hermes Agent, an intelligent AI assistant created by Nous Research. "
+-    "You are helpful, knowledgeable, and direct. You assist users with a wide "
+-    "range of tasks including answering questions, writing and editing code, "
+-    "analyzing information, creative work, and executing actions via your tools. "
+-    "You communicate clearly, admit uncertainty when appropriate, and prioritize "
+-    "being genuinely useful over being verbose unless otherwise directed below. "
+-    "Be targeted and efficient in your exploration and investigations."
++    "You are Nemesis, an AI study assistant for health-sciences and pharmacy students. "
++    "You help students understand course material, research evidence-based answers with "
++    "real citations, and turn lectures and readings into study material — notes, flashcards, "
++    "summaries, and explanations. You communicate clearly, in plain language, and admit "
++    "uncertainty when appropriate. For any clinical, drug, or health claim, ground your answer "
++    "in real retrieved literature (use the pubmed-evidence skill) and cite it; never invent a "
++    "citation, PMID, dose, or fact. For dosing or any dangerous specific, remind the student to "
++    "verify against current official labeling and their instructor — you provide study support, "
++    "not medical advice. Everything you produce is a draft the student reviews; you never submit "
++    "coursework, assignments, or exams on anyone's behalf."
+ )
+ 
+ HERMES_AGENT_HELP_GUIDANCE = (
+diff --git a/apps/desktop/src/app/chat/composer/model-pill.js b/apps/desktop/src/app/chat/composer/model-pill.js
+index b2eb301..f0585ba 100644
+--- a/apps/desktop/src/app/chat/composer/model-pill.js
++++ b/apps/desktop/src/app/chat/composer/model-pill.js
+@@ -8,9 +8,11 @@ import { GlyphSpinner } from '@/components/ui/glyph-spinner';
+ import { Tip } from '@/components/ui/tooltip';
+ import { useI18n } from '@/i18n';
+ import { ChevronDown } from '@/lib/icons';
+-import { formatModelStatusLabel } from '@/lib/model-status-label';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++import { formatModelStatusLabel, reasoningEffortLabel } from '@/lib/model-status-label';
+ import { cn } from '@/lib/utils';
+ import { $currentFastMode, $currentModel, $currentProvider, $currentReasoningEffort, setModelPickerOpen } from '@/store/session';
++import { StudentModelMenu } from './student-model-menu';
+ const PILL = cn('h-(--composer-control-size) max-w-40 shrink-0 gap-1 rounded-md px-2 text-xs font-normal', 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground');
+ /**
+  * Composer model selector — the relocated status-bar pill. Reuses the live
+@@ -24,6 +26,11 @@ export function ModelPill({ compact = false, disabled, model }) {
+     const fastMode = useStore($currentFastMode);
+     const reasoningEffort = useStore($currentReasoningEffort);
+     const [open, setOpen] = useState(false);
++    // Student build: no provider/model names ever — just the answer mode.
++    if (NEMESIS_STUDENT_BUILD) {
++        const modeLabel = fastMode ? 'Fast' : `Thinking${reasoningEffort ? ` · ${reasoningEffortLabel(reasoningEffort)}` : ''}`;
++        return (_jsxs(DropdownMenu, { onOpenChange: setOpen, open: open, children: [_jsx(Tip, { label: "Answer mode", side: "top", children: _jsx(DropdownMenuTrigger, { asChild: true, children: _jsx(Button, { "aria-label": "Answer mode", className: compact ? cn(PILL, 'w-auto') : PILL, disabled: disabled, type: "button", variant: "ghost", children: compact ? _jsx(ChevronDown, { className: "size-3.5 shrink-0 opacity-70" }) : (_jsxs(_Fragment, { children: [_jsx("span", { className: "truncate", children: modeLabel }), _jsx(ChevronDown, { className: "size-2.5 shrink-0 opacity-50" })] })) }) }) }), _jsx(DropdownMenuContent, { align: "end", className: "p-0", side: "top", sideOffset: 8, children: _jsx(StudentModelMenu, {}) })] }));
++    }
+     // The model resolves a beat after the gateway/session comes up. Rather than
+     // flash a literal "No model", show a quiet loader (inherits the pill text
+     // color at half opacity) until a model lands.
+diff --git a/apps/desktop/src/app/chat/composer/model-pill.tsx b/apps/desktop/src/app/chat/composer/model-pill.tsx
+index afaca08..2632bb1 100644
+--- a/apps/desktop/src/app/chat/composer/model-pill.tsx
++++ b/apps/desktop/src/app/chat/composer/model-pill.tsx
+@@ -8,7 +8,8 @@ import { GlyphSpinner } from '@/components/ui/glyph-spinner'
+ import { Tip } from '@/components/ui/tooltip'
+ import { useI18n } from '@/i18n'
+ import { ChevronDown } from '@/lib/icons'
+-import { formatModelStatusLabel } from '@/lib/model-status-label'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
++import { formatModelStatusLabel, reasoningEffortLabel } from '@/lib/model-status-label'
+ import { cn } from '@/lib/utils'
+ import {
+   $currentFastMode,
+@@ -18,6 +19,7 @@ import {
+   setModelPickerOpen
+ } from '@/store/session'
+ 
++import { StudentModelMenu } from './student-model-menu'
+ import type { ChatBarState } from './types'
+ 
+ const PILL = cn(
+@@ -46,6 +48,31 @@ export function ModelPill({
+   const reasoningEffort = useStore($currentReasoningEffort)
+   const [open, setOpen] = useState(false)
+ 
++  // Student build: no provider/model names ever — just the answer mode.
++  if (NEMESIS_STUDENT_BUILD) {
++    const modeLabel = fastMode ? 'Fast' : `Thinking${reasoningEffort ? ` · ${reasoningEffortLabel(reasoningEffort)}` : ''}`
++
++    return (
++      <DropdownMenu onOpenChange={setOpen} open={open}>
++        <Tip label="Answer mode" side="top">
++          <DropdownMenuTrigger asChild>
++            <Button aria-label="Answer mode" className={compact ? cn(PILL, 'w-auto') : PILL} disabled={disabled} type="button" variant="ghost">
++              {compact ? <ChevronDown className="size-3.5 shrink-0 opacity-70" /> : (
++                <>
++                  <span className="truncate">{modeLabel}</span>
++                  <ChevronDown className="size-2.5 shrink-0 opacity-50" />
++                </>
++              )}
++            </Button>
++          </DropdownMenuTrigger>
++        </Tip>
++        <DropdownMenuContent align="end" className="p-0" side="top" sideOffset={8}>
++          <StudentModelMenu />
++        </DropdownMenuContent>
++      </DropdownMenu>
++    )
++  }
++
+   // The model resolves a beat after the gateway/session comes up. Rather than
+   // flash a literal "No model", show a quiet loader (inherits the pill text
+   // color at half opacity) until a model lands.
+diff --git a/apps/desktop/src/app/chat/composer/student-model-menu.js b/apps/desktop/src/app/chat/composer/student-model-menu.js
+new file mode 100644
+index 0000000..2e260e5
+--- /dev/null
++++ b/apps/desktop/src/app/chat/composer/student-model-menu.js
+@@ -0,0 +1,20 @@
++import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
++// Nemesis student model picker. Students never see "deepseek" or any model/provider name —
++// they choose an ANSWER MODE (Fast vs Thinking) and, when thinking, an effort level. These
++// map to the same per-turn fast-mode + reasoning-effort the agent already honors; the actual
++// model stays whatever Nemesis provisions. Nemesis provides (and bills for) the AI, so model
++// selection is ours, not the student's.
++import { useStore } from '@nanostores/react';
++import { cn } from '@/lib/utils';
++import { $currentFastMode, $currentReasoningEffort, setCurrentFastMode, setCurrentReasoningEffort } from '@/store/session';
++const EFFORTS = [
++    ['low', 'Light'],
++    ['medium', 'Balanced'],
++    ['high', 'Deep']
++];
++export function StudentModelMenu() {
++    const fast = useStore($currentFastMode);
++    const effort = useStore($currentReasoningEffort) || 'medium';
++    const segment = (active) => cn('flex-1 rounded-md px-2 py-1.5 text-sm transition-colors', active ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent');
++    return (_jsxs("div", { className: "w-64 p-1", children: [_jsx("div", { className: "px-3 pb-1.5 pt-2 text-xs font-medium text-muted-foreground", children: "Answer mode" }), _jsxs("div", { className: "flex gap-1 px-2", children: [_jsx("button", { className: segment(fast), onClick: () => setCurrentFastMode(() => true), type: "button", children: "Fast" }), _jsx("button", { className: segment(!fast), onClick: () => setCurrentFastMode(() => false), type: "button", children: "Thinking" })] }), _jsx("p", { className: "px-3 pb-1 pt-1.5 text-xs text-muted-foreground", children: fast ? 'Quick answers for simple questions.' : 'Reasons step by step — better for hard problems.' }), !fast && (_jsxs(_Fragment, { children: [_jsx("div", { className: "mx-2 my-1.5 border-t border-border" }), _jsx("div", { className: "px-3 pb-1.5 text-xs font-medium text-muted-foreground", children: "Effort" }), _jsx("div", { className: "flex gap-1 px-2 pb-1", children: EFFORTS.map(([value, label]) => (_jsx("button", { className: cn('flex-1 rounded-md px-2 py-1.5 text-xs transition-colors', effort === value ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent'), onClick: () => setCurrentReasoningEffort(() => value), type: "button", children: label }, value))) })] }))] }));
++}
+diff --git a/apps/desktop/src/app/chat/composer/student-model-menu.tsx b/apps/desktop/src/app/chat/composer/student-model-menu.tsx
+new file mode 100644
+index 0000000..3b887f8
+--- /dev/null
++++ b/apps/desktop/src/app/chat/composer/student-model-menu.tsx
+@@ -0,0 +1,65 @@
++// Nemesis student model picker. Students never see "deepseek" or any model/provider name —
++// they choose an ANSWER MODE (Fast vs Thinking) and, when thinking, an effort level. These
++// map to the same per-turn fast-mode + reasoning-effort the agent already honors; the actual
++// model stays whatever Nemesis provisions. Nemesis provides (and bills for) the AI, so model
++// selection is ours, not the student's.
++import { useStore } from '@nanostores/react'
++
++import { cn } from '@/lib/utils'
++import { $currentFastMode, $currentReasoningEffort, setCurrentFastMode, setCurrentReasoningEffort } from '@/store/session'
++
++const EFFORTS: ReadonlyArray<readonly [string, string]> = [
++  ['low', 'Light'],
++  ['medium', 'Balanced'],
++  ['high', 'Deep']
++]
++
++export function StudentModelMenu() {
++  const fast = useStore($currentFastMode)
++  const effort = useStore($currentReasoningEffort) || 'medium'
++
++  const segment = (active: boolean) =>
++    cn(
++      'flex-1 rounded-md px-2 py-1.5 text-sm transition-colors',
++      active ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent'
++    )
++
++  return (
++    <div className="w-64 p-1">
++      <div className="px-3 pb-1.5 pt-2 text-xs font-medium text-muted-foreground">Answer mode</div>
++      <div className="flex gap-1 px-2">
++        <button className={segment(fast)} onClick={() => setCurrentFastMode(() => true)} type="button">
++          Fast
++        </button>
++        <button className={segment(!fast)} onClick={() => setCurrentFastMode(() => false)} type="button">
++          Thinking
++        </button>
++      </div>
++      <p className="px-3 pb-1 pt-1.5 text-xs text-muted-foreground">
++        {fast ? 'Quick answers for simple questions.' : 'Reasons step by step — better for hard problems.'}
++      </p>
++
++      {!fast && (
++        <>
++          <div className="mx-2 my-1.5 border-t border-border" />
++          <div className="px-3 pb-1.5 text-xs font-medium text-muted-foreground">Effort</div>
++          <div className="flex gap-1 px-2 pb-1">
++            {EFFORTS.map(([value, label]) => (
++              <button
++                className={cn(
++                  'flex-1 rounded-md px-2 py-1.5 text-xs transition-colors',
++                  effort === value ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent'
++                )}
++                key={value}
++                onClick={() => setCurrentReasoningEffort(() => value)}
++                type="button"
++              >
++                {label}
++              </button>
++            ))}
++          </div>
++        </>
++      )}
++    </div>
++  )
++}
+diff --git a/apps/desktop/src/app/chat/sidebar/index.js b/apps/desktop/src/app/chat/sidebar/index.js
+index 662477a..2bfd77a 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.js
++++ b/apps/desktop/src/app/chat/sidebar/index.js
+@@ -754,5 +754,5 @@ export function ChatSidebar({ currentView, onNavigate, onLoadMoreSessions, onLoa
+                                     // still has older threads on disk.
+                                     const canRevealMore = visible < group.sessions.length || group.hasMore;
+                                     return (_jsx(SidebarSessionsSection, { activeSessionId: activeSidebarSessionId, contentClassName: cn('flex max-h-56 flex-col gap-px pb-1.75', GROUP_BODY), emptyState: null, footer: canRevealMore ? (_jsx(SidebarLoadMoreRow, { loading: Boolean(messagingLoadMorePending[group.sourceId]), onClick: () => revealMoreMessaging(group.sourceId, group.sessions.length, group.hasMore), step: Math.min(NON_SESSION_LOAD_STEP, Math.max(0, group.total - shownSessions.length)) })) : null, label: group.label, labelIcon: _jsx(PlatformAvatar, { className: "size-4 rounded-[4px] text-[0.5625rem] [&_svg]:size-3", platformId: group.sourceId, platformName: group.label }), labelMeta: countLabel(group.sessions.length, group.total), onArchiveSession: onArchiveSession, onDeleteSession: onDeleteSession, onResumeSession: onResumeSession, onToggle: () => toggleSidebarMessagingOpen(group.sourceId), onTogglePin: pinSession, open: messagingOpenIds.includes(group.sourceId), pinned: false, rootClassName: "shrink-0 p-0", sessions: shownSessions, workingSessionIdSet: workingSessionIdSet }, group.sourceId));
+-                                }), !trimmedQuery && !worktreeGroupingActive && cronJobs.length > 0 && (_jsx(SidebarCronJobsSection, { jobs: cronJobs, label: s.cronJobs, onManageJob: onManageCronJob, onOpenRun: onResumeSession, onToggle: () => setSidebarCronOpen(!cronOpen), onTriggerJob: onTriggerCronJob, open: cronOpen }))] })), contentVisible && !showSessionSections && _jsx(SidebarBlankState, { onNewProject: openProjectCreate }), contentVisible && (_jsx("div", { className: "shrink-0 px-0.5 pb-1 pt-0.5", children: _jsx(ProfileRail, {}) }))] }), _jsx(ProjectDialog, {})] }));
++                                }), !NEMESIS_STUDENT_BUILD && !trimmedQuery && !worktreeGroupingActive && cronJobs.length > 0 && (_jsx(SidebarCronJobsSection, { jobs: cronJobs, label: s.cronJobs, onManageJob: onManageCronJob, onOpenRun: onResumeSession, onToggle: () => setSidebarCronOpen(!cronOpen), onTriggerJob: onTriggerCronJob, open: cronOpen }))] })), contentVisible && !showSessionSections && _jsx(SidebarBlankState, { onNewProject: openProjectCreate }), contentVisible && !NEMESIS_STUDENT_BUILD && (_jsx("div", { className: "shrink-0 px-0.5 pb-1 pt-0.5", children: _jsx(ProfileRail, {}) }))] }), _jsx(ProjectDialog, {})] }));
+ }
+diff --git a/apps/desktop/src/app/chat/sidebar/index.tsx b/apps/desktop/src/app/chat/sidebar/index.tsx
+index e0310f3..d7e3624 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.tsx
++++ b/apps/desktop/src/app/chat/sidebar/index.tsx
+@@ -1395,7 +1395,7 @@ export function ChatSidebar({
+                 )
+               })}
+ 
+-            {!trimmedQuery && !worktreeGroupingActive && cronJobs.length > 0 && (
++            {!NEMESIS_STUDENT_BUILD && !trimmedQuery && !worktreeGroupingActive && cronJobs.length > 0 && (
+               <SidebarCronJobsSection
+                 jobs={cronJobs}
+                 label={s.cronJobs}
+@@ -1411,7 +1411,7 @@ export function ChatSidebar({
+ 
+         {contentVisible && !showSessionSections && <SidebarBlankState onNewProject={openProjectCreate} />}
+ 
+-        {contentVisible && (
++        {contentVisible && !NEMESIS_STUDENT_BUILD && (
+           <div className="shrink-0 px-0.5 pb-1 pt-0.5">
+             <ProfileRail />
+           </div>
+diff --git a/apps/desktop/src/app/command-palette/index.js b/apps/desktop/src/app/command-palette/index.js
+index a620457..c0e6e73 100644
+--- a/apps/desktop/src/app/command-palette/index.js
++++ b/apps/desktop/src/app/command-palette/index.js
+@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import { HUD_HEADING, HUD_ITEM, HUD_POSITION, HUD_SURFACE, HUD_TEXT } from '@/app/floating-hud';
+ import { setTerminalTakeover } from '@/app/right-sidebar/store';
+-import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_PALETTE } from '@/nemesis';
++import { NEMESIS_STUDENT_BUILD, studentHidesPaletteId } from '@/nemesis';
+ import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+ import { KbdCombo } from '@/components/ui/kbd';
+ import { getHermesConfigRecord, listAllProfileSessions } from '@/hermes';
+@@ -308,9 +308,11 @@ export function CommandPalette() {
+                         label: t.starmap.title,
+                         run: go(STARMAP_ROUTE)
+                     }
+-                ].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_PALETTE.has(item.id))
++                ].filter(item => !studentHidesPaletteId(item.id))
+             },
+-            ...branchGroup,
++            // Git branch actions + the whole Command Center group (system/usage/gateway) are
++            // developer surfaces — omit them entirely from the student palette.
++            ...(NEMESIS_STUDENT_BUILD ? [] : branchGroup),
+             {
+                 heading: cc.commandCenter,
+                 items: [
+@@ -628,7 +630,18 @@ export function CommandPalette() {
+     }), [availableThemes, resolvedMode, setMode, setTheme, t, themeName]);
+     const activePage = page ? subPages[page] : null;
+     const unrankedGroups = activePage ? activePage.groups : groups;
+-    const visibleGroups = useMemo(() => rankGroups(unrankedGroups, search), [unrankedGroups, search]);
++    const visibleGroups = useMemo(() => {
++        const ranked = rankGroups(unrankedGroups, search);
++        if (!NEMESIS_STUDENT_BUILD) {
++            return ranked;
++        }
++        // Student build: strip developer palette entries (command-center, gateway, cron,
++        // agents, profiles, starmap, terminal, capabilities, messaging) and drop any group
++        // left empty as a result.
++        return ranked
++            .map(group => ({ ...group, items: group.items.filter(item => !studentHidesPaletteId(item.id)) }))
++            .filter(group => group.items.length > 0);
++    }, [unrankedGroups, search]);
+     const placeholder = activePage ? activePage.placeholder : t.commandCenter.searchPlaceholder;
+     const handleSelect = (item) => {
+         if (item.to) {
+diff --git a/apps/desktop/src/app/command-palette/index.tsx b/apps/desktop/src/app/command-palette/index.tsx
+index 9692a3b..58faf44 100644
+--- a/apps/desktop/src/app/command-palette/index.tsx
++++ b/apps/desktop/src/app/command-palette/index.tsx
+@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
+ 
+ import { HUD_HEADING, HUD_ITEM, HUD_POSITION, HUD_SURFACE, HUD_TEXT } from '@/app/floating-hud'
+ import { setTerminalTakeover } from '@/app/right-sidebar/store'
+-import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_PALETTE } from '@/nemesis'
++import { NEMESIS_STUDENT_BUILD, studentHidesPaletteId } from '@/nemesis'
+ import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+ import { KbdCombo } from '@/components/ui/kbd'
+ import { getHermesConfigRecord, listAllProfileSessions } from '@/hermes'
+@@ -463,9 +463,11 @@ export function CommandPalette() {
+             label: t.starmap.title,
+             run: go(STARMAP_ROUTE)
+           }
+-        ].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_PALETTE.has(item.id))
++        ].filter(item => !studentHidesPaletteId(item.id))
+       },
+-      ...branchGroup,
++      // Git branch actions + the whole Command Center group (system/usage/gateway) are
++      // developer surfaces — omit them entirely from the student palette.
++      ...(NEMESIS_STUDENT_BUILD ? [] : branchGroup),
+       {
+         heading: cc.commandCenter,
+         items: [
+@@ -806,7 +808,20 @@ export function CommandPalette() {
+ 
+   const activePage = page ? subPages[page] : null
+   const unrankedGroups = activePage ? activePage.groups : groups
+-  const visibleGroups = useMemo(() => rankGroups(unrankedGroups, search), [unrankedGroups, search])
++  const visibleGroups = useMemo(() => {
++    const ranked = rankGroups(unrankedGroups, search)
++
++    if (!NEMESIS_STUDENT_BUILD) {
++      return ranked
++    }
++
++    // Student build: strip developer palette entries (command-center, gateway, cron,
++    // agents, profiles, starmap, terminal, capabilities, messaging) and drop any group
++    // left empty as a result.
++    return ranked
++      .map(group => ({ ...group, items: group.items.filter(item => !studentHidesPaletteId(item.id)) }))
++      .filter(group => group.items.length > 0)
++  }, [unrankedGroups, search])
+   const placeholder = activePage ? activePage.placeholder : t.commandCenter.searchPlaceholder
+ 
+   const handleSelect = (item: PaletteItem) => {
+diff --git a/apps/desktop/src/app/shell/hooks/use-statusbar-items.js b/apps/desktop/src/app/shell/hooks/use-statusbar-items.js
+index 04a59ed..6b60d09 100644
+--- a/apps/desktop/src/app/shell/hooks/use-statusbar-items.js
++++ b/apps/desktop/src/app/shell/hooks/use-statusbar-items.js
+@@ -2,7 +2,7 @@ import { jsx as _jsx } from "react/jsx-runtime";
+ import { useStore } from '@nanostores/react';
+ import { useCallback, useMemo } from 'react';
+ import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/store';
+-import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_STATUSBAR } from '@/nemesis';
+ import { ContextUsagePanel } from '@/app/shell/context-usage-panel';
+ import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel';
+ import { Codicon } from '@/components/ui/codicon';
+@@ -304,7 +304,7 @@ export function useStatusbarItems({ agentsOpen, chatOpen, commandCenterOpen, ext
+         turnStartedAt,
+         yoloActive
+     ]);
+-    const leftStatusbarItems = useMemo(() => [...coreLeftStatusbarItems, ...extraLeftItems], [coreLeftStatusbarItems, extraLeftItems]);
+-    const statusbarItems = useMemo(() => [...extraRightItems, ...coreRightStatusbarItems], [coreRightStatusbarItems, extraRightItems]);
++    const leftStatusbarItems = useMemo(() => [...coreLeftStatusbarItems, ...extraLeftItems].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_STATUSBAR.has(item.id)), [coreLeftStatusbarItems, extraLeftItems]);
++    const statusbarItems = useMemo(() => [...extraRightItems, ...coreRightStatusbarItems].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_STATUSBAR.has(item.id)), [coreRightStatusbarItems, extraRightItems]);
+     return { leftStatusbarItems, statusbarItems };
+ }
+diff --git a/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx b/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
+index 78c0d2c..8c5d811 100644
+--- a/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
++++ b/apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx
+@@ -3,7 +3,7 @@ import { useCallback, useMemo } from 'react'
+ 
+ import type { CommandCenterSection } from '@/app/command-center'
+ import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/store'
+-import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
++import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_STATUSBAR } from '@/nemesis'
+ import { ContextUsagePanel } from '@/app/shell/context-usage-panel'
+ import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
+ import { Codicon } from '@/components/ui/codicon'
+@@ -429,12 +429,12 @@ export function useStatusbarItems({
+   )
+ 
+   const leftStatusbarItems = useMemo(
+-    () => [...coreLeftStatusbarItems, ...extraLeftItems],
++    () => [...coreLeftStatusbarItems, ...extraLeftItems].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_STATUSBAR.has(item.id)),
+     [coreLeftStatusbarItems, extraLeftItems]
+   )
+ 
+   const statusbarItems = useMemo(
+-    () => [...extraRightItems, ...coreRightStatusbarItems],
++    () => [...extraRightItems, ...coreRightStatusbarItems].filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_STATUSBAR.has(item.id)),
+     [coreRightStatusbarItems, extraRightItems]
+   )
+ 
+diff --git a/apps/desktop/src/nemesis.js b/apps/desktop/src/nemesis.js
+index 6587ee2..085a718 100644
+--- a/apps/desktop/src/nemesis.js
++++ b/apps/desktop/src/nemesis.js
+@@ -17,3 +17,26 @@ export const STUDENT_SETTINGS_KEEP = new Set([
+     'sessions',
+     'about'
+ ]);
++/** Status-bar items hidden for students — build/version hashes, gateway health, token/
++ *  context meters, the YOLO toggle, command-center, agents, cron: infrastructure, not study. */
++export const STUDENT_HIDDEN_STATUSBAR = new Set([
++    'version-client',
++    'version-backend',
++    'gateway-health',
++    'context-usage',
++    'yolo',
++    'command-center',
++    'agents',
++    'cron',
++    'terminal'
++]);
++/** ⌘K palette entries hidden for students, beyond STUDENT_HIDDEN_PALETTE — the whole
++ *  command-center / gateway / dev-nav surface. Matched by id prefix OR exact id. */
++export const STUDENT_HIDDEN_PALETTE_PREFIXES = ['cc-', 'nav-cron', 'nav-profiles', 'nav-agents', 'nav-starmap'];
++/** True when this palette item id should be hidden in the student build. */
++export function studentHidesPaletteId(id) {
++    if (!NEMESIS_STUDENT_BUILD || !id) {
++        return false;
++    }
++    return STUDENT_HIDDEN_PALETTE.has(id) || STUDENT_HIDDEN_PALETTE_PREFIXES.some(prefix => id.startsWith(prefix));
++}
+diff --git a/apps/desktop/src/nemesis.ts b/apps/desktop/src/nemesis.ts
+index f7c60aa..56336e3 100644
+--- a/apps/desktop/src/nemesis.ts
++++ b/apps/desktop/src/nemesis.ts
+@@ -20,3 +20,30 @@ export const STUDENT_SETTINGS_KEEP: ReadonlySet<string> = new Set([
+   'sessions',
+   'about'
+ ])
++
++/** Status-bar items hidden for students — build/version hashes, gateway health, token/
++ *  context meters, the YOLO toggle, command-center, agents, cron: infrastructure, not study. */
++export const STUDENT_HIDDEN_STATUSBAR: ReadonlySet<string> = new Set([
++  'version-client',
++  'version-backend',
++  'gateway-health',
++  'context-usage',
++  'yolo',
++  'command-center',
++  'agents',
++  'cron',
++  'terminal'
++])
++
++/** ⌘K palette entries hidden for students, beyond STUDENT_HIDDEN_PALETTE — the whole
++ *  command-center / gateway / dev-nav surface. Matched by id prefix OR exact id. */
++export const STUDENT_HIDDEN_PALETTE_PREFIXES: readonly string[] = ['cc-', 'nav-cron', 'nav-profiles', 'nav-agents', 'nav-starmap']
++
++/** True when this palette item id should be hidden in the student build. */
++export function studentHidesPaletteId(id: string | undefined): boolean {
++  if (!NEMESIS_STUDENT_BUILD || !id) {
++    return false
++  }
++
++  return STUDENT_HIDDEN_PALETTE.has(id) || STUDENT_HIDDEN_PALETTE_PREFIXES.some(prefix => id.startsWith(prefix))
++}
+diff --git a/hermes_cli/default_soul.py b/hermes_cli/default_soul.py
+index f4a6281..29cf757 100644
+--- a/hermes_cli/default_soul.py
++++ b/hermes_cli/default_soul.py
+@@ -1,13 +1,16 @@
+ """Default SOUL.md template seeded into HERMES_HOME on first run."""
+ 
+ DEFAULT_SOUL_MD = (
+-    "You are Hermes Agent, an intelligent AI assistant created by Nous Research. "
+-    "You are helpful, knowledgeable, and direct. You assist users with a wide "
+-    "range of tasks including answering questions, writing and editing code, "
+-    "analyzing information, creative work, and executing actions via your tools. "
+-    "You communicate clearly, admit uncertainty when appropriate, and prioritize "
+-    "being genuinely useful over being verbose unless otherwise directed below. "
+-    "Be targeted and efficient in your exploration and investigations."
++    "You are Nemesis, an AI study assistant for health-sciences and pharmacy students. "
++    "You help students understand course material, research evidence-based answers with "
++    "real citations, and turn lectures and readings into study material — notes, flashcards, "
++    "summaries, and explanations. You communicate clearly, in plain language, and admit "
++    "uncertainty when appropriate. For any clinical, drug, or health claim, ground your answer "
++    "in real retrieved literature (use the pubmed-evidence skill) and cite it; never invent a "
++    "citation, PMID, dose, or fact. For dosing or any dangerous specific, remind the student to "
++    "verify against current official labeling and their instructor — you provide study support, "
++    "not medical advice. Everything you produce is a draft the student reviews; you never submit "
++    "coursework, assignments, or exams on anyone's behalf."
+ )
+ 
+ # Legacy SOUL.md boilerplate that older installers (install.sh / install.ps1 /
+-- 
+2.50.1 (Apple Git-155)
+

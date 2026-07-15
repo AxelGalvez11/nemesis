@@ -1,0 +1,132 @@
+From 17df73a0545eeca162d10a1a75437c321efc3311 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Fri, 10 Jul 2026 15:24:40 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20round-19=20=E2=80=94=20headless=20ag?=
+ =?UTF-8?q?ent=20browser=20(no=20duplicate=20window)=20+=20fill=20on=20nav?=
+ =?UTF-8?q?igation?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- school-browser: spawn Chromium with --headless=new. The chat rail mirror is
+  now the browser's ONLY surface — no second Chrome window floating on the
+  desktop (the 'why is it mirroring an open tab' complaint), and screencast
+  frames match the emulated viewport with no window-shaped letterbox. Cookies
+  persist in the profile so logins survive; portrait window-size hint.
+- BrowserMirror: re-assert the panel-shaped viewport on every top-frame
+  navigation (url-changed) and self-heal when a frame arrives >24px off the
+  target width — an SPA nav was dropping the metrics override, leaving the new
+  page rendered small-in-corner. Now Blackboard/Outlook fill the panel after
+  navigating, not just on first attach.
+---
+ apps/desktop/electron/school-browser.ts       |  9 +++-
+ .../app/chat/right-rail/browser-mirror.tsx    | 51 ++++++++++++-------
+ 2 files changed, 42 insertions(+), 18 deletions(-)
+
+diff --git a/apps/desktop/electron/school-browser.ts b/apps/desktop/electron/school-browser.ts
+index 75555e9a0c0..4328d56d603 100644
+--- a/apps/desktop/electron/school-browser.ts
++++ b/apps/desktop/electron/school-browser.ts
+@@ -116,11 +116,18 @@ async function ensureBrowser(): Promise<{ ok: boolean; reason?: string }> {
+     const child = spawn(
+       bin,
+       [
++        // Headless on purpose: the chat rail mirror IS the browser's only
++        // window — no duplicate Chrome floating on the desktop, and screencast
++        // frames match the emulated viewport exactly (no window-shaped
++        // letterboxing). Cookies persist in the profile either way; if a login
++        // page ever refuses headless, the runbook has a one-off headed command
++        // against this same profile.
++        '--headless=new',
+         `--remote-debugging-port=${PORT}`,
+         `--user-data-dir=${PROFILE_DIR}`,
+         '--no-first-run',
+         '--no-default-browser-check',
+-        '--window-size=1280,860',
++        '--window-size=1000,1400',
+         START_URL
+       ],
+       { detached: true, stdio: 'ignore' }
+diff --git a/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx b/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
+index ed766e84d60..ed61e985837 100644
+--- a/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
++++ b/apps/desktop/src/app/chat/right-rail/browser-mirror.tsx
+@@ -72,27 +72,32 @@ export function BrowserMirror() {
+ 
+   // Match the PAGE's viewport to the mirror surface so sites lay out at the
+   // panel's exact shape and frames fill it edge-to-edge (no letterboxing).
+-  const syncViewport = useCallback(() => {
+-    const box = surfaceRef.current?.getBoundingClientRect()
++  // `force` re-sends even when the panel size hasn't changed — needed after a
++  // navigation, which drops the per-page metrics override in some SPAs.
++  const syncViewport = useCallback(
++    (force = false) => {
++      const box = surfaceRef.current?.getBoundingClientRect()
+ 
+-    if (!box || box.width < 80 || box.height < 80) {
+-      return
+-    }
++      if (!box || box.width < 80 || box.height < 80) {
++        return
++      }
+ 
+-    const width = Math.round(box.width)
+-    const height = Math.round(box.height)
+-    const last = lastViewportRef.current
++      const width = Math.round(box.width)
++      const height = Math.round(box.height)
++      const last = lastViewportRef.current
+ 
+-    if (Math.abs(width - last.width) < 4 && Math.abs(height - last.height) < 4) {
+-      return
+-    }
++      if (!force && Math.abs(width - last.width) < 4 && Math.abs(height - last.height) < 4) {
++        return
++      }
+ 
+-    lastViewportRef.current = { height, width }
+-    exec({
+-      method: 'Emulation.setDeviceMetricsOverride',
+-      params: { deviceScaleFactor: 1, height, mobile: false, width }
+-    })
+-  }, [exec])
++      lastViewportRef.current = { height, width }
++      exec({
++        method: 'Emulation.setDeviceMetricsOverride',
++        params: { deviceScaleFactor: 1, height, mobile: false, width }
++      })
++    },
++    [exec]
++  )
+ 
+   const attach = useCallback(
+     async (targetId: string) => {
+@@ -178,6 +183,15 @@ export function BrowserMirror() {
+       frameSizeRef.current = { height: frame.metadata.deviceHeight, width: frame.metadata.deviceWidth }
+       imgRef.current.src = `data:image/jpeg;base64,${frame.data}`
+       setStatus('live')
++
++      // Self-heal: if a frame arrives at a size far from the panel's viewport
++      // (a navigation dropped the override, or the browser fell back to its
++      // window size), re-assert the panel-shaped viewport once.
++      const want = lastViewportRef.current
++
++      if (want.width && Math.abs(frame.metadata.deviceWidth - want.width) > 24) {
++        syncViewport(true)
++      }
+     })
+ 
+     const offEvent = api()?.onEvent(event => {
+@@ -187,6 +201,9 @@ export function BrowserMirror() {
+ 
+       if (event.type === 'url-changed' && event.url) {
+         setUrl(event.url)
++        // A top-frame navigation can drop the metrics override — re-assert the
++        // panel-shaped viewport so the new page fills the mirror too.
++        syncViewport(true)
+       }
+ 
+       if (event.type === 'detached') {
+-- 
+2.50.1 (Apple Git-155)
+

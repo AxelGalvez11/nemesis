@@ -1,0 +1,1936 @@
+From e61f3d229d4e069f599b28803b4df1506b28a4d5 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Mon, 13 Jul 2026 22:34:37 -0500
+Subject: [PATCH] feat(nemesis): Study tab closes its Anki gaps
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Audited against docs.ankiweb.net; FSRS core was already right. Added:
+- Cloze cards {{c1::text}} / {{c1::text::hint}} — one FSRS schedule per blank
+  (cardId#cN), active blank shows [...] or [hint], others revealed; import
+  keeps cloze lines whole; Match game excludes them (new cloze.ts, 17 tests).
+- Local-day fix: daily caps/shuffle/streaks/heatmap keyed to the student's
+  local calendar day, not UTC (reset was ~6-7pm US Central before).
+- Card browser live search (front/back/tags) + deck rename (file-backed decks
+  rename the vault file first via IPC, reconcile stays linked).
+- Undo last grade (button + u key, session-scoped snapshot, tally-aware).
+- Leech handling: 8th lapse auto-suspends + tags 'leech', badge in browser.
+- Target retention setting (80/85/90/95%) driving fsrs request_retention.
+- Session recap in the all-caught-up state (per-grade tallies).
+
+Authored by a subagent; 101/101 study tests green, tsc clean.
+---
+ apps/desktop/src/app/study/cloze.test.ts   | 119 ++++++++
+ apps/desktop/src/app/study/cloze.ts        |  90 ++++++
+ apps/desktop/src/app/study/import-cards.ts |  12 +-
+ apps/desktop/src/app/study/index.tsx       | 322 ++++++++++++++++++---
+ apps/desktop/src/app/study/model.test.ts   | 313 ++++++++++++++++++--
+ apps/desktop/src/app/study/model.ts        | 309 +++++++++++++++-----
+ 6 files changed, 1033 insertions(+), 132 deletions(-)
+ create mode 100644 apps/desktop/src/app/study/cloze.test.ts
+ create mode 100644 apps/desktop/src/app/study/cloze.ts
+
+diff --git a/apps/desktop/src/app/study/cloze.test.ts b/apps/desktop/src/app/study/cloze.test.ts
+new file mode 100644
+index 00000000000..5f0d9c23535
+--- /dev/null
++++ b/apps/desktop/src/app/study/cloze.test.ts
+@@ -0,0 +1,119 @@
++// Cloze parsing/rendering contract: Anki's {{cN::text}} / {{cN::text::hint}}
++// syntax, one prompt per index, garbage passes through untouched. The queue
++// expansion side (one schedule slot per index) is pinned in model.test.ts.
++import { describe, expect, it } from 'vitest'
++
++import { clozeIndexes, clozeScheduleKey, hasClozeMarker, parseCloze, renderClozeAnswer, renderClozePrompt } from './cloze'
++import { parseCardPaste } from './import-cards'
++
++describe('parseCloze', () => {
++  it('splits literals and markers, collecting distinct indexes ascending', () => {
++    const { indexes, segments } = parseCloze('The {{c2::thick ascending limb}} pump is {{c1::Na-K-2Cl}}')
++
++    expect(indexes).toEqual([1, 2])
++    expect(segments).toEqual([
++      { text: 'The ' },
++      { hint: undefined, index: 2, text: 'thick ascending limb' },
++      { text: ' pump is ' },
++      { hint: undefined, index: 1, text: 'Na-K-2Cl' }
++    ])
++  })
++
++  it('reports a duplicated index once', () => {
++    expect(parseCloze('{{c1::A}} then {{c1::B}}').indexes).toEqual([1])
++  })
++
++  it('parses hints', () => {
++    const { segments } = parseCloze('{{c1::furosemide::loop diuretic}}')
++
++    expect(segments).toEqual([{ hint: 'loop diuretic', index: 1, text: 'furosemide' }])
++  })
++
++  it('treats an empty hint as no hint', () => {
++    expect(parseCloze('{{c1::A::}}').segments[0].hint).toBeUndefined()
++  })
++
++  it('passes garbage through as literal text (no nesting, no partial markers)', () => {
++    for (const junk of ['plain text', '{{c1:broken}', '{{x1::nope}}', 'ends {{c1::open']) {
++      const { indexes, segments } = parseCloze(junk)
++
++      expect(indexes).toEqual([])
++      expect(segments).toEqual([{ text: junk }])
++    }
++  })
++
++  it('allows multiline deletion text', () => {
++    const { indexes } = parseCloze('{{c1::line one\nline two}}')
++
++    expect(indexes).toEqual([1])
++  })
++})
++
++describe('renderClozePrompt / renderClozeAnswer', () => {
++  const front = '{{c1::Lisinopril}} causes cough via {{c2::bradykinin::peptide}} buildup'
++
++  it('blanks only the active index and reveals the others', () => {
++    expect(renderClozePrompt(front, 1)).toBe('[...] causes cough via bradykinin buildup')
++    expect(renderClozePrompt(front, 2)).toBe('Lisinopril causes cough via [peptide] buildup')
++  })
++
++  it('blanks every span of a repeated index at once', () => {
++    expect(renderClozePrompt('{{c1::A}} then {{c1::B}}', 1)).toBe('[...] then [...]')
++  })
++
++  it('reveals everything in the answer', () => {
++    expect(renderClozeAnswer(front)).toBe('Lisinopril causes cough via bradykinin buildup')
++  })
++
++  it('returns garbage unchanged', () => {
++    expect(renderClozeAnswer('{{c1:broken}')).toBe('{{c1:broken}')
++  })
++})
++
++describe('helpers', () => {
++  it('hasClozeMarker spots markers cheaply', () => {
++    expect(hasClozeMarker('{{c1::x}}')).toBe(true)
++    expect(hasClozeMarker('{{c12::x')).toBe(true)
++    expect(hasClozeMarker('no markers')).toBe(false)
++    expect(hasClozeMarker('{{d1::x}}')).toBe(false)
++  })
++
++  it('clozeIndexes is empty for plain fronts', () => {
++    expect(clozeIndexes('plain')).toEqual([])
++    expect(clozeIndexes('{{c3::x}} {{c1::y}}')).toEqual([1, 3])
++  })
++
++  it('clozeScheduleKey formats the per-index slot key', () => {
++    expect(clozeScheduleKey('card-abc', 2)).toBe('card-abc#c2')
++  })
++})
++
++// Import rule: a front carrying {{cN::…}} keeps the WHOLE line (back optional) —
++// the separators splitLine hunts for (tab, " - ", comma) may sit inside markers.
++describe('parseCardPaste with cloze lines', () => {
++  it('keeps a separator-free cloze line whole with an empty back', () => {
++    expect(parseCardPaste('{{c1::Furosemide}} blocks Na-K-2Cl')).toEqual([
++      { back: '', front: '{{c1::Furosemide}} blocks Na-K-2Cl' }
++    ])
++  })
++
++  it('does not shred a cloze whose text contains a comma', () => {
++    const line = 'ACE inhibitors cause {{c1::cough, angioedema}}'
++
++    expect(parseCardPaste(line)).toEqual([{ back: '', front: line }])
++  })
++
++  it('keeps the whole line when a separator follows the marker', () => {
++    const line = '{{c1::metoprolol}} - beta-1 selective'
++
++    expect(parseCardPaste(line)).toEqual([{ back: '', front: line }])
++  })
++
++  it('leaves plain lines and cloze-free splitting untouched', () => {
++    expect(parseCardPaste('term\tdefinition')).toEqual([{ back: 'definition', front: 'term' }])
++    // A marker only in the BACK is not a cloze card; the split stands.
++    expect(parseCardPaste('plain front\t{{c1::in back}}')).toEqual([
++      { back: '{{c1::in back}}', front: 'plain front' }
++    ])
++  })
++})
+diff --git a/apps/desktop/src/app/study/cloze.ts b/apps/desktop/src/app/study/cloze.ts
+new file mode 100644
+index 00000000000..1f25dd69a2e
+--- /dev/null
++++ b/apps/desktop/src/app/study/cloze.ts
+@@ -0,0 +1,90 @@
++// Anki-style cloze deletions for Study cards: {{c1::text}} / {{c1::text::hint}}
++// inside card.front. A card with markers is studied one cloze index at a time —
++// the active index's spans are blanked to [...] (or [hint]) while every other
++// index shows its text — and each distinct index gets its own FSRS schedule
++// slot (`${cardId}#c${n}`, see model.ts scheduleTargets). Only the syntax is
++// shared with Anki (students' muscle memory and existing decks carry over);
++// no Anki code is used — same licensing stance as model.ts.
++
++export interface ClozeSegment {
++  /** Literal text between markers, or the inner text of a marker. */
++  text: string
++  /** Cloze index (the N of {{cN::…}}); absent for literal segments. */
++  index?: number
++  /** Optional hint ({{cN::text::hint}}), shown inside the blank. */
++  hint?: string
++}
++
++export interface ParsedCloze {
++  segments: ClozeSegment[]
++  /** Distinct cloze indexes, ascending. Empty = not a cloze card. */
++  indexes: number[]
++}
++
++// {{cN::text}} or {{cN::text::hint}}. Non-greedy so several markers on one
++// front split correctly; nesting is not supported. Anything that doesn't match
++// (unclosed braces, wrong letter) stays literal text — garbage passes through.
++const CLOZE_PATTERN = /\{\{c(\d+)::([\s\S]*?)(?:::([\s\S]*?))?\}\}/g
++const CLOZE_MARKER = /\{\{c\d+::/
++
++/** Cheap "does this front contain cloze markers?" probe (hot paths). */
++export function hasClozeMarker(front: string): boolean {
++  return CLOZE_MARKER.test(front)
++}
++
++/** Schedule/log key for one cloze slot. Card ids never contain '#'. */
++export function clozeScheduleKey(cardId: string, index: number): string {
++  return `${cardId}#c${index}`
++}
++
++export function parseCloze(front: string): ParsedCloze {
++  const segments: ClozeSegment[] = []
++  const indexes = new Set<number>()
++  let cursor = 0
++
++  CLOZE_PATTERN.lastIndex = 0
++
++  for (let match = CLOZE_PATTERN.exec(front); match; match = CLOZE_PATTERN.exec(front)) {
++    if (match.index > cursor) {
++      segments.push({ text: front.slice(cursor, match.index) })
++    }
++
++    const index = Number(match[1])
++
++    indexes.add(index)
++    segments.push({ hint: match[3] || undefined, index, text: match[2] })
++    cursor = match.index + match[0].length
++  }
++
++  if (cursor < front.length) {
++    segments.push({ text: front.slice(cursor) })
++  }
++
++  return { indexes: [...indexes].sort((a, b) => a - b), segments }
++}
++
++/** Distinct cloze indexes in a card front (empty = plain card). */
++export function clozeIndexes(front: string): number[] {
++  return hasClozeMarker(front) ? parseCloze(front).indexes : []
++}
++
++/** The study prompt for one cloze index: that index's spans become [...] (or
++ *  [hint]); every other index shows its text revealed; literals pass through. */
++export function renderClozePrompt(front: string, activeIndex: number): string {
++  return parseCloze(front)
++    .segments.map(segment => {
++      if (segment.index === undefined || segment.index !== activeIndex) {
++        return segment.text
++      }
++
++      return segment.hint ? `[${segment.hint}]` : '[...]'
++    })
++    .join('')
++}
++
++/** The answer text: every cloze marker replaced by its revealed text. */
++export function renderClozeAnswer(front: string): string {
++  return parseCloze(front)
++    .segments.map(segment => segment.text)
++    .join('')
++}
+diff --git a/apps/desktop/src/app/study/import-cards.ts b/apps/desktop/src/app/study/import-cards.ts
+index eabbd1b8126..520780c7991 100644
+--- a/apps/desktop/src/app/study/import-cards.ts
++++ b/apps/desktop/src/app/study/import-cards.ts
+@@ -3,6 +3,7 @@
+ // one card per line, term/definition split by TAB (Quizlet's default), " - " (its
+ // common custom separator), or a comma as the last resort. Also fine for hand-typed
+ // lists and CSV-ish exports from other tools.
++import { hasClozeMarker } from './cloze'
+ 
+ export interface ParsedCard {
+   front: string
+@@ -23,8 +24,17 @@ export function parseCardPaste(text: string): ParsedCard[] {
+ 
+     const parsed = splitLine(line)
+ 
+-    if (parsed) {
++    if (parsed && !hasClozeMarker(parsed.front)) {
+       cards.push(parsed)
++
++      continue
++    }
++
++    // A front carrying {{cN::…}} keeps the whole line: cloze cards are one-sided
++    // (the blank IS the answer, back optional), and separators inside markers —
++    // commas, " - " — would otherwise shred the deletion text.
++    if (hasClozeMarker(line)) {
++      cards.push({ back: '', front: line })
+     }
+   }
+ 
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index 28de2fe0317..dc9c4af61a9 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -11,6 +11,7 @@ import {
+   IconFolderPlus,
+   IconLayoutGrid,
+   IconList,
++  IconPencil,
+   IconPlayerPause,
+   IconPlus,
+   IconSettings,
+@@ -44,9 +45,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
+ import { Switch } from '@/components/ui/switch'
+ import { Textarea } from '@/components/ui/textarea'
+ import { Tip } from '@/components/ui/tooltip'
++import { renameDesktopPath } from '@/lib/desktop-fs'
+ import { cn } from '@/lib/utils'
+ 
+-import { importedDeckFileNames, scanAllDeckFiles } from './deck-files'
++import { hasClozeMarker, renderClozeAnswer, renderClozePrompt } from './cloze'
++import { DECK_DIR, importedDeckFileNames, scanAllDeckFiles } from './deck-files'
+ import {
+   bestAttempt,
+   groupExtras,
+@@ -75,11 +78,15 @@ import {
+   freshId,
+   getSettings,
+   gradeCard,
++  type GradeUndo,
+   groupDecks,
++  LEECH_TAG,
+   loadState,
++  localDayKey,
+   previewIntervals,
+   type QueueItem,
+   reconcileDeckFiles,
++  renameDeck,
+   reviewHeatmap,
+   type ReviewOrder,
+   saveState,
+@@ -91,6 +98,7 @@ import {
+   type StudySettings,
+   type StudyState,
+   toggleSuspendCard,
++  undoLastGrade,
+   updateCard
+ } from './model'
+ import { deckRetentionCurve, type RetentionPoint } from './retention'
+@@ -113,6 +121,28 @@ const ORDER_OPTIONS: SegmentedControlOption<ReviewOrder>[] = [
+   { id: 'random', label: 'Random' }
+ ]
+ 
++// FSRS request_retention choices (see StudySettings.desiredRetention). Values
++// are stringified for the Select; String(0.9) round-trips exactly.
++const RETENTION_OPTIONS: { label: string; value: string }[] = [
++  { label: '80%', value: '0.8' },
++  { label: '85%', value: '0.85' },
++  { label: '90% (default)', value: '0.9' },
++  { label: '95%', value: '0.95' }
++]
++
++/** "3 cards reviewed — 2 Good · 1 Again." for the end-of-session recap. */
++function sessionRecapLine(done: number, grades: Record<StudyRating, number>): string {
++  const parts = GRADES.filter(option => grades[option.rating] > 0)
++    .map(option => `${grades[option.rating]} ${option.label}`)
++    .join(' · ')
++
++  return `${done} card${done === 1 ? '' : 's'} reviewed${parts ? ` — ${parts}` : ''}.`
++}
++
++function zeroSessionGrades(): Record<StudyRating, number> {
++  return { again: 0, easy: 0, good: 0, hard: 0 }
++}
++
+ type ReviewCategory = 'learning' | 'new' | 'review'
+ 
+ interface ReviewCategoryCounts {
+@@ -126,7 +156,7 @@ function categoryForQueueItem(item: QueueItem, state: StudyState): ReviewCategor
+     return 'new'
+   }
+ 
+-  const cardState = state.schedule[item.card.id]?.state
++  const cardState = state.schedule[item.scheduleKey]?.state
+ 
+   return cardState === 1 || cardState === 3 ? 'learning' : 'review'
+ }
+@@ -189,6 +219,10 @@ export function StudyView() {
+   const [matchDeckId, setMatchDeckId] = useState<null | string>(null)
+   const [done, setDone] = useState(0)
+   const [sessionTotal, setSessionTotal] = useState(0)
++  // Session-only (deliberately unpersisted): the pre-grade snapshot for Undo
++  // and the per-grade tallies for the end-of-session recap.
++  const [lastUndo, setLastUndo] = useState<null | (GradeUndo & { rating: StudyRating })>(null)
++  const [sessionGrades, setSessionGrades] = useState<Record<StudyRating, number>>(() => zeroSessionGrades())
+   const [autoImported, setAutoImported] = useState<string[]>([])
+   const [mindmaps, setMindmaps] = useState<MindmapFile[]>([])
+   const [tests, setTests] = useState<TestFile[]>([])
+@@ -341,6 +375,8 @@ export function StudyView() {
+       setReviewing(true)
+       setRevealed(false)
+       setDone(0)
++      setLastUndo(null)
++      setSessionGrades(zeroSessionGrades())
+     },
+     [state]
+   )
+@@ -356,13 +392,31 @@ export function StudyView() {
+         return
+       }
+ 
+-      update(gradeCard(state, current.card.id, rating, new Date()))
++      // Snapshot BEFORE grading so Undo can restore the exact schedule entry
++      // (or its absence, for a never-studied card).
++      const previous = state.schedule[current.scheduleKey]
++
++      setLastUndo({ rating, scheduleKey: current.scheduleKey, ...(previous ? { previous } : {}) })
++      setSessionGrades(counts => ({ ...counts, [rating]: counts[rating] + 1 }))
++      update(gradeCard(state, current.scheduleKey, rating, new Date()))
+       setRevealed(false)
+       setDone(count => count + 1)
+     },
+     [current, state, update]
+   )
+ 
++  const undoGrade = useCallback(() => {
++    if (!lastUndo) {
++      return
++    }
++
++    update(undoLastGrade(state, lastUndo))
++    setSessionGrades(counts => ({ ...counts, [lastUndo.rating]: Math.max(0, counts[lastUndo.rating] - 1) }))
++    setDone(count => Math.max(0, count - 1))
++    setLastUndo(null)
++    setRevealed(false)
++  }, [lastUndo, state, update])
++
+   // Anki muscle memory: Space/Enter flips, 1-4 grades, Escape leaves the session.
+   useEffect(() => {
+     if (!reviewing) {
+@@ -386,6 +440,14 @@ export function StudyView() {
+         return
+       }
+ 
++      // Anki's `u`: take back the last grade (only while a next card is shown).
++      if (event.key === 'u' && lastUndo) {
++        event.preventDefault()
++        undoGrade()
++
++        return
++      }
++
+       if (!revealed && (event.key === ' ' || event.key === 'Enter')) {
+         event.preventDefault()
+         setRevealed(true)
+@@ -406,7 +468,7 @@ export function StudyView() {
+     window.addEventListener('keydown', onKey)
+ 
+     return () => window.removeEventListener('keydown', onKey)
+-  }, [current, exitReview, grade, revealed, reviewing])
++  }, [current, exitReview, grade, lastUndo, revealed, reviewing, undoGrade])
+ 
+   const setViewMode = useCallback((mode: DeckViewMode) => {
+     setView(mode)
+@@ -466,6 +528,32 @@ export function StudyView() {
+     [state, update]
+   )
+ 
++  const renameBrowsedDeck = useCallback(
++    async (name: string) => {
++      const deck = state.decks.find(candidate => candidate.id === browseDeckId)
++
++      if (!deck || deck.name === name) {
++        return
++      }
++
++      if (!deck.sourceFile) {
++        update(renameDeck(state, deck.id, name))
++
++        return
++      }
++
++      // File-backed deck: rename the vault file FIRST — reconcile relinks by
++      // file name, so state only changes once the disk rename succeeded. A
++      // thrown IPC error surfaces in the dialog and the old name stands.
++      const extension = deck.sourceFile.match(/\.(tsv|txt|md)$/i)?.[0] ?? '.tsv'
++      const fileName = `${name}${extension}`
++
++      await renameDesktopPath(`${DECK_DIR}/${deck.sourceFile}`, fileName)
++      update(renameDeck(state, deck.id, name, fileName))
++    },
++    [browseDeckId, state, update]
++  )
++
+   const importCards = useCallback(
+     (name: string, course: string, text: string) => {
+       const parsed = parseCardPaste(text)
+@@ -584,10 +672,11 @@ export function StudyView() {
+           <ReviewSurface
+             activeCategory={categoryForQueueItem(current, state)}
+             flip={flip}
+-            intervals={previewIntervals(state, current.card.id, now)}
++            intervals={previewIntervals(state, current.scheduleKey, now)}
+             item={current}
+             onGrade={grade}
+             onReveal={() => setRevealed(true)}
++            onUndo={lastUndo ? undoGrade : null}
+             position={Math.min(done + 1, sessionTotal)}
+             remainingCounts={remainingCounts}
+             revealed={revealed}
+@@ -599,7 +688,7 @@ export function StudyView() {
+             className="flex-1"
+             description={
+               done > 0
+-                ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.`
++                ? `${sessionRecapLine(done, sessionGrades)} Come back when the next ones are due.`
+                 : 'Nothing is due right now.'
+             }
+             title="All caught up"
+@@ -617,6 +706,7 @@ export function StudyView() {
+           onDeleteDeck={() => removeDeck(browseDeckId)}
+           onMatch={() => startMatch(browseDeckId)}
+           onMoveDeck={section => moveDeck(browseDeckId, section)}
++          onRename={renameBrowsedDeck}
+           sections={sections}
+           state={state}
+         />
+@@ -865,6 +955,80 @@ function NewSectionDialog({
+   )
+ }
+ 
++function RenameDeckDialog({
++  deck,
++  onClose,
++  onRename
++}: {
++  deck: StudyDeck
++  onClose: () => void
++  onRename: (name: string) => Promise<void>
++}) {
++  const [name, setName] = useState(deck.name)
++  const [busy, setBusy] = useState(false)
++  const [error, setError] = useState<null | string>(null)
++  const trimmed = name.trim()
++
++  const submit = async () => {
++    if (!trimmed || busy) {
++      return
++    }
++
++    if (trimmed === deck.name) {
++      onClose()
++
++      return
++    }
++
++    setBusy(true)
++    setError(null)
++
++    try {
++      await onRename(trimmed)
++      onClose()
++    } catch (err) {
++      // Nothing changed (the file rename failed first) — keep the old name.
++      setError(err instanceof Error ? err.message : 'Could not rename the deck.')
++      setBusy(false)
++    }
++  }
++
++  return (
++    <Dialog onOpenChange={open => !open && !busy && onClose()} open>
++      <DialogContent className="sm:max-w-md">
++        <DialogHeader>
++          <DialogTitle>Rename deck</DialogTitle>
++          <DialogDescription>
++            {deck.sourceFile
++              ? `Also renames “${deck.sourceFile}” in your Flashcards folder, so the agent keeps this deck in sync.`
++              : 'Review progress stays with the deck.'}
++          </DialogDescription>
++        </DialogHeader>
++        <Input
++          autoFocus
++          onChange={event => setName(event.target.value)}
++          onKeyDown={event => {
++            if (event.key === 'Enter') {
++              void submit()
++            }
++          }}
++          placeholder="Deck name"
++          value={name}
++        />
++        {error && <p className="text-xs text-destructive">{error}</p>}
++        <DialogFooter>
++          <Button disabled={busy} onClick={onClose} variant="outline">
++            Cancel
++          </Button>
++          <Button disabled={!trimmed || busy} onClick={() => void submit()}>
++            {busy ? 'Renaming…' : 'Rename'}
++          </Button>
++        </DialogFooter>
++      </DialogContent>
++    </Dialog>
++  )
++}
++
+ function SettingRow({
+   children,
+   description,
+@@ -934,6 +1098,26 @@ function StudySettingsDialog({
+               value={settings.reviewsPerDay}
+             />
+           </SettingRow>
++          <SettingRow
++            description="Recall chance targeted when a card comes due. Higher = shorter intervals, more reviews."
++            label="Target retention"
++          >
++            <Select
++              onValueChange={value => onChange({ desiredRetention: Number(value) })}
++              value={String(settings.desiredRetention)}
++            >
++              <SelectTrigger aria-label="Target retention" className="w-32">
++                <SelectValue />
++              </SelectTrigger>
++              <SelectContent>
++                {RETENTION_OPTIONS.map(option => (
++                  <SelectItem key={option.value} value={option.value}>
++                    {option.label}
++                  </SelectItem>
++                ))}
++              </SelectContent>
++            </Select>
++          </SettingRow>
+           <SettingRow label="Review order">
+             <SegmentedControl onChange={order => onChange({ order })} options={ORDER_OPTIONS} value={settings.order} />
+           </SettingRow>
+@@ -1471,20 +1655,21 @@ function RetentionSparkline({ curve, now }: { curve: RetentionPoint[]; now: Date
+ 
+ function DeckActionsMenu({
+   deck,
++  matchableCount,
+   onBrowse,
+   onDelete,
+   onMatch,
+   onMove,
+-  sections,
+-  total
++  sections
+ }: {
+   deck: StudyDeck
++  /** Non-cloze cards only — Match needs term/definition pairs. */
++  matchableCount: number
+   onBrowse: () => void
+   onDelete: () => void
+   onMatch: () => void
+   onMove: (section: string) => void
+   sections: string[]
+-  total: number
+ }) {
+   const currentSection =
+     !deck.course?.trim() || deck.course.trim().toLocaleLowerCase() === 'other' ? 'Other' : deck.course.trim()
+@@ -1498,7 +1683,7 @@ function DeckActionsMenu({
+       </DropdownMenuTrigger>
+       <DropdownMenuContent align="end" className="w-44">
+         <DropdownMenuItem onSelect={onBrowse}>Cards</DropdownMenuItem>
+-        <DropdownMenuItem disabled={total < 2} onSelect={onMatch}>
++        <DropdownMenuItem disabled={matchableCount < 2} onSelect={onMatch}>
+           Match
+         </DropdownMenuItem>
+         <DropdownMenuSub>
+@@ -1557,6 +1742,7 @@ function DeckRow({
+   state: StudyState
+ }) {
+   const stats = deckStats(state, deck.id, now)
++  const matchableCount = deck.cards.filter(card => !hasClozeMarker(card.front)).length
+ 
+   return (
+     <div className="flex w-full items-center gap-3 px-3 py-2.5">
+@@ -1584,12 +1770,12 @@ function DeckRow({
+ 
+       <DeckActionsMenu
+         deck={deck}
++        matchableCount={matchableCount}
+         onBrowse={() => onBrowse(deck.id)}
+         onDelete={onDelete}
+         onMatch={() => onMatch(deck.id)}
+         onMove={onMove}
+         sections={sections}
+-        total={stats.total}
+       />
+     </div>
+   )
+@@ -1619,6 +1805,7 @@ function DeckCard({
+   state: StudyState
+ }) {
+   const stats = deckStats(state, deck.id, now)
++  const matchableCount = deck.cards.filter(card => !hasClozeMarker(card.front)).length
+ 
+   return (
+     <div className="flex flex-col gap-3 rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4">
+@@ -1643,12 +1830,12 @@ function DeckCard({
+         </Button>
+         <DeckActionsMenu
+           deck={deck}
++          matchableCount={matchableCount}
+           onBrowse={() => onBrowse(deck.id)}
+           onDelete={onDelete}
+           onMatch={() => onMatch(deck.id)}
+           onMove={onMove}
+           sections={sections}
+-          total={stats.total}
+         />
+       </div>
+     </div>
+@@ -1712,7 +1899,8 @@ function Heatmap({ state }: { state: StudyState }) {
+   const todayIso = new Date().toISOString()
+   const { cells, total } = useMemo(() => reviewHeatmap(state, todayIso), [state, todayIso])
+   const stats = useMemo(() => studyMotivation(state, todayIso), [state, todayIso])
+-  const todayKey = todayIso.slice(0, 10)
++  // Local calendar day — must match the cell dates reviewHeatmap now emits.
++  const todayKey = localDayKey(new Date(todayIso))
+   const firstDayOffset = cells[0] ? new Date(`${cells[0].date}T00:00:00.000Z`).getUTCDay() : 0
+   const weeks = Math.ceil((firstDayOffset + cells.length) / 7)
+   const daysIntoWeek = new Date(`${todayKey}T00:00:00.000Z`).getUTCDay() + 1
+@@ -1847,6 +2035,7 @@ function CardBrowser({
+   onDeleteDeck,
+   onMatch,
+   onMoveDeck,
++  onRename,
+   sections,
+   state
+ }: {
+@@ -1855,22 +2044,40 @@ function CardBrowser({
+   onDeleteDeck: () => void
+   onMatch: () => void
+   onMoveDeck: (section: string) => void
++  onRename: (name: string) => Promise<void>
+   sections: string[]
+   state: StudyState
+ }) {
+   const [editing, setEditing] = useState<null | StudyCard>(null)
+   const [adding, setAdding] = useState(false)
+   const [armDelete, setArmDelete] = useState(false)
++  const [renaming, setRenaming] = useState(false)
++  const [query, setQuery] = useState('')
+ 
+   if (!deck) {
+     return <EmptyState className="flex-1" description="This deck no longer exists." title="Deck not found" />
+   }
+ 
++  const matchableCount = deck.cards.filter(card => !hasClozeMarker(card.front)).length
++  const needle = query.trim().toLocaleLowerCase()
++  const visibleCards = needle
++    ? deck.cards.filter(card =>
++        `${card.front}\n${card.back}\n${card.tags.join('\n')}`.toLocaleLowerCase().includes(needle)
++      )
++    : deck.cards
++
+   return (
+     <div className="px-6 pb-8">
+       <div className="mb-2 flex items-center justify-between gap-3 border-b border-border pb-1.5">
+-        <div>
+-          <h2 className="text-sm font-semibold">{deck.name}</h2>
++        <div className="min-w-0">
++          <div className="flex min-w-0 items-center gap-1">
++            <h2 className="truncate text-sm font-semibold">{deck.name}</h2>
++            <Tip label="Rename deck">
++              <Button aria-label="Rename deck" onClick={() => setRenaming(true)} size="icon-xs" variant="ghost">
++                <IconPencil />
++              </Button>
++            </Tip>
++          </div>
+           <p className="text-xs text-muted-foreground">
+             {deck.course ? `${deck.course} · ` : ''}
+             {deck.cards.length} card{deck.cards.length === 1 ? '' : 's'}
+@@ -1894,7 +2101,7 @@ function CardBrowser({
+           >
+             {armDelete ? 'Really delete?' : 'Delete deck'}
+           </Button>
+-          <Button disabled={deck.cards.length < 2} onClick={onMatch} size="sm" variant="outline">
++          <Button disabled={matchableCount < 2} onClick={onMatch} size="sm" variant="outline">
+             Match
+           </Button>
+           <Button onClick={() => setAdding(true)} size="sm" variant="outline">
+@@ -1903,8 +2110,27 @@ function CardBrowser({
+         </div>
+       </div>
+ 
++      {deck.cards.length > 0 && (
++        <div className="mb-2 flex items-center gap-2">
++          <Input
++            aria-label="Search cards"
++            className="h-8 max-w-64"
++            onChange={event => setQuery(event.target.value)}
++            placeholder="Search front, back, or tags"
++            value={query}
++          />
++          {needle && (
++            <span className="text-xs tabular-nums text-muted-foreground">
++              {visibleCards.length} of {deck.cards.length}
++            </span>
++          )}
++        </div>
++      )}
++
+       {deck.cards.length === 0 ? (
+         <EmptyState className="min-h-40" description="Add a card or import a set." title="No cards in this deck" />
++      ) : visibleCards.length === 0 ? (
++        <EmptyState className="min-h-40" description="Try different text or clear the search." title="No cards match" />
+       ) : (
+         <div className="overflow-hidden rounded-lg border border-border">
+           <table className="w-full text-sm">
+@@ -1917,7 +2143,7 @@ function CardBrowser({
+               </tr>
+             </thead>
+             <tbody>
+-              {deck.cards.map(card => (
++              {visibleCards.map(card => (
+                 <tr
+                   className={cn(
+                     'cursor-pointer border-t border-border hover:bg-accent',
+@@ -1930,6 +2156,11 @@ function CardBrowser({
+                     {card.suspended && (
+                       <IconPlayerPause className="-mt-px mr-1 inline text-muted-foreground" size={12} />
+                     )}
++                    {card.tags.includes(LEECH_TAG) && (
++                      <Badge className="mr-1.5 border-destructive/40 text-destructive" variant="outline">
++                        leech
++                      </Badge>
++                    )}
+                     {card.front}
+                   </td>
+                   <td className="hidden max-w-xs truncate px-3 py-2 text-muted-foreground md:table-cell">
+@@ -1979,6 +2210,7 @@ function CardBrowser({
+           }}
+         />
+       )}
++      {renaming && <RenameDeckDialog deck={deck} onClose={() => setRenaming(false)} onRename={onRename} />}
+     </div>
+   )
+ }
+@@ -2032,7 +2264,7 @@ function EditCardDialog({
+             </Button>
+           </div>
+           <Button
+-            disabled={!front.trim() || !back.trim()}
++            disabled={!front.trim() || (!back.trim() && !hasClozeMarker(front))}
+             onClick={() =>
+               onSave({
+                 ...card,
+@@ -2069,13 +2301,16 @@ function AddCardDialog({
+       <DialogContent className="sm:max-w-lg">
+         <DialogHeader>
+           <DialogTitle>Add card</DialogTitle>
+-          <DialogDescription>New cards enter the review queue as “new”.</DialogDescription>
++          <DialogDescription>
++            New cards enter the review queue as “new”. Wrap text in {'{{c1::…}}'} for cloze blanks — each index
++            becomes its own card, and the back is optional.
++          </DialogDescription>
+         </DialogHeader>
+         <div className="flex flex-col gap-3">
+           <Textarea
+             className="min-h-20"
+             onChange={event => setFront(event.target.value)}
+-            placeholder="Front"
++            placeholder={'Front — plain, or cloze: {{c1::furosemide}} blocks {{c2::Na-K-2Cl}}'}
+             value={front}
+           />
+           <Textarea
+@@ -2091,7 +2326,7 @@ function AddCardDialog({
+             Cancel
+           </Button>
+           <Button
+-            disabled={!front.trim() || !back.trim()}
++            disabled={!front.trim() || (!back.trim() && !hasClozeMarker(front))}
+             onClick={() =>
+               onCreate(
+                 front.trim(),
+@@ -2144,10 +2379,10 @@ interface MatchTile {
+   side: 'front' | 'back'
+ }
+ 
+-function buildMatchTiles(deck: StudyDeck, size: number): MatchTile[] {
++function buildMatchTiles(cards: StudyCard[], size: number): MatchTile[] {
+   // Deterministic-enough shuffle without RNG dependence on the module: seed off the
+   // clock once per round (fresh each mount).
+-  const pool = [...deck.cards]
++  const pool = [...cards]
+   const seed = Date.now()
+ 
+   for (let i = pool.length - 1; i > 0; i--) {
+@@ -2178,8 +2413,12 @@ function buildMatchTiles(deck: StudyDeck, size: number): MatchTile[] {
+ }
+ 
+ function MatchGame({ deck, onExit }: { deck: null | StudyDeck; onExit: () => void }) {
+-  const size = deck ? Math.min(6, deck.cards.length) : 0
+-  const [tiles, setTiles] = useState<MatchTile[]>(() => (deck ? buildMatchTiles(deck, size) : []))
++  // Cloze cards are fill-in-the-blank, not term/definition pairs — exclude them.
++  const [matchCards] = useState<StudyCard[]>(() =>
++    deck ? deck.cards.filter(card => !hasClozeMarker(card.front)) : []
++  )
++  const size = Math.min(6, matchCards.length)
++  const [tiles, setTiles] = useState<MatchTile[]>(() => buildMatchTiles(matchCards, size))
+   const [selected, setSelected] = useState<null | string>(null)
+   const [matched, setMatched] = useState<Set<string>>(new Set())
+   const [wrong, setWrong] = useState<[string, string] | null>(null)
+@@ -2187,17 +2426,17 @@ function MatchGame({ deck, onExit }: { deck: null | StudyDeck; onExit: () => voi
+   const [won, setWon] = useState(false)
+ 
+   const restart = useCallback(() => {
+-    if (!deck) {
++    if (!matchCards.length) {
+       return
+     }
+ 
+-    setTiles(buildMatchTiles(deck, size))
++    setTiles(buildMatchTiles(matchCards, size))
+     setSelected(null)
+     setMatched(new Set())
+     setWrong(null)
+     setElapsed(0)
+     setWon(false)
+-  }, [deck, size])
++  }, [matchCards, size])
+ 
+   // Timer runs until the board is cleared.
+   useEffect(() => {
+@@ -2320,6 +2559,7 @@ function ReviewSurface({
+   item,
+   onGrade,
+   onReveal,
++  onUndo,
+   position,
+   remainingCounts,
+   revealed,
+@@ -2332,6 +2572,8 @@ function ReviewSurface({
+   item: QueueItem
+   onGrade: (rating: StudyRating) => void
+   onReveal: () => void
++  /** Take back the previous grade; null hides the affordance (nothing graded yet). */
++  onUndo: (() => void) | null
+   position: number
+   remainingCounts: ReviewCategoryCounts
+   revealed: boolean
+@@ -2344,6 +2586,13 @@ function ReviewSurface({
+     { category: 'review', label: 'Review', value: remainingCounts.review }
+   ]
+ 
++  // Cloze cards drill one index: blank it in the prompt, reveal everything in
++  // the answer, and show the (optional) back as a footnote under the answer.
++  const isCloze = item.clozeIndex !== undefined
++  const prompt = isCloze ? renderClozePrompt(item.card.front, item.clozeIndex ?? 0) : item.card.front
++  const answer = isCloze ? renderClozeAnswer(item.card.front) : item.card.back
++  const answerNote = isCloze && item.card.back.trim() ? item.card.back : null
++
+   return (
+     <div className="flex flex-1 flex-col items-center px-6 pb-8">
+       <div className="flex w-full max-w-2xl flex-1 flex-col">
+@@ -2358,6 +2607,11 @@ function ReviewSurface({
+           </span>
+ 
+           <div className="flex shrink-0 items-center gap-4">
++            {onUndo && (
++              <Button onClick={onUndo} size="inline" variant="text">
++                Undo <span className="text-[10px] opacity-60">u</span>
++              </Button>
++            )}
+             <span className="tabular-nums">
+               {position} of {sessionTotal}
+             </span>
+@@ -2386,16 +2640,17 @@ function ReviewSurface({
+ 
+         {flip ? (
+           <button
+-            aria-label={revealed ? item.card.back : 'Show answer'}
++            aria-label={revealed ? answer : 'Show answer'}
+             className="nemesis-flip flex-1 [perspective:1600px]"
+             data-flipped={revealed ? 'true' : undefined}
+             onClick={() => !revealed && onReveal()}
+             type="button"
+           >
+             <div className="nemesis-flip-inner relative h-full min-h-64 w-full">
+-              <FlipFace label="Question">{item.card.front}</FlipFace>
++              <FlipFace label="Question">{prompt}</FlipFace>
+               <FlipFace back label="Answer" muted>
+-                {item.card.back}
++                {answer}
++                {answerNote && <div className="pt-3 text-sm text-muted-foreground">{answerNote}</div>}
+               </FlipFace>
+             </div>
+           </button>
+@@ -2405,7 +2660,7 @@ function ReviewSurface({
+               <div className="pb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+                 Question
+               </div>
+-              <div className="text-lg leading-relaxed">{item.card.front}</div>
++              <div className="text-lg leading-relaxed">{prompt}</div>
+             </div>
+             {revealed && (
+               <>
+@@ -2414,7 +2669,8 @@ function ReviewSurface({
+                   <div className="pb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+                     Answer
+                   </div>
+-                  <div className="text-lg leading-relaxed text-foreground/80">{item.card.back}</div>
++                  <div className="text-lg leading-relaxed text-foreground/80">{answer}</div>
++                  {answerNote && <div className="pt-2 text-sm text-muted-foreground">{answerNote}</div>}
+                 </div>
+               </>
+             )}
+diff --git a/apps/desktop/src/app/study/model.test.ts b/apps/desktop/src/app/study/model.test.ts
+index e28e53e4498..65b89a6fc27 100644
+--- a/apps/desktop/src/app/study/model.test.ts
++++ b/apps/desktop/src/app/study/model.test.ts
+@@ -8,17 +8,24 @@ import type { DeckFileCandidate } from './deck-files'
+ import {
+   adoptLegacyDeckFiles,
+   buildQueue,
++  deckStats,
+   DEFAULT_STUDY_SETTINGS,
++  deleteCard,
+   getSettings,
++  gradeCard,
++  LEECH_TAG,
+   loadState,
++  localDayKey,
+   reconcileDeckFiles,
++  renameDeck,
+   reviewHeatmap,
+   saveState,
+   setSettings,
+   type StoredSchedule,
+   type StudyCard,
+   type StudyDeck,
+-  type StudyState
++  type StudyState,
++  undoLastGrade
+ } from './model'
+ 
+ function card(id: string, front: string, back: string, extra: Partial<StudyCard> = {}): StudyCard {
+@@ -42,9 +49,24 @@ function scheduled(): StoredSchedule {
+   return { due: '2026-07-09T00:00:00.000Z' } as StoredSchedule
+ }
+ 
++// Day-based features key on the LOCAL calendar (localDayKey), so these tests
++// build instants with the local Date constructor — a hardcoded UTC string
++// would land on different days depending on the machine's timezone.
++describe('localDayKey', () => {
++  it('keys a 23:30 local time to that local calendar date, not the next UTC day', () => {
++    expect(localDayKey(new Date(2026, 6, 10, 23, 30))).toBe('2026-07-10')
++  })
++
++  it('pads single-digit months and days', () => {
++    expect(localDayKey(new Date(2026, 0, 5, 8, 0))).toBe('2026-01-05')
++  })
++})
++
+ describe('reviewHeatmap', () => {
++  const todayIso = new Date(2026, 5, 10, 18, 30).toISOString()
++
+   it('renders exactly 52 rolling weeks and ends on today without future padding', () => {
+-    const result = reviewHeatmap(state([]), '2026-06-10T18:30:00.000Z')
++    const result = reviewHeatmap(state([]), todayIso)
+ 
+     expect(result.cells).toHaveLength(52 * 7)
+     expect(result.cells[0]?.date).toBe('2025-06-12')
+@@ -55,18 +77,28 @@ describe('reviewHeatmap', () => {
+     const result = reviewHeatmap(
+       state([], {
+         reviews: [
+-          { at: '2025-06-11T23:59:00.000Z', cardId: 'too-old', rating: 'good' },
+-          { at: '2025-06-12T00:01:00.000Z', cardId: 'first', rating: 'good' },
+-          { at: '2026-06-10T23:59:00.000Z', cardId: 'today', rating: 'easy' }
++          { at: new Date(2025, 5, 11, 23, 59).toISOString(), cardId: 'too-old', rating: 'good' },
++          { at: new Date(2025, 5, 12, 0, 1).toISOString(), cardId: 'first', rating: 'good' },
++          { at: new Date(2026, 5, 10, 23, 59).toISOString(), cardId: 'today', rating: 'easy' }
+         ]
+       }),
+-      '2026-06-10T18:30:00.000Z'
++      todayIso
+     )
+ 
+     expect(result.total).toBe(2)
+     expect(result.cells[0]?.count).toBe(1)
+     expect(result.cells.at(-1)?.count).toBe(1)
+   })
++
++  it('counts a 23:30 local review toward that local day, not the next UTC day', () => {
++    const result = reviewHeatmap(
++      state([], { reviews: [{ at: new Date(2026, 5, 10, 23, 30).toISOString(), cardId: 'late', rating: 'good' }] }),
++      new Date(2026, 5, 10, 23, 45).toISOString()
++    )
++
++    expect(result.cells.at(-1)?.date).toBe('2026-06-10')
++    expect(result.cells.at(-1)?.count).toBe(1)
++  })
+ })
+ 
+ describe('reconcileDeckFiles', () => {
+@@ -400,7 +432,8 @@ describe('loadState settings migration', () => {
+ })
+ 
+ describe('buildQueue daily caps', () => {
+-  const now = new Date('2026-07-10T12:00:00.000Z')
++  // Local-constructed dates: the caps count "today" by the LOCAL calendar.
++  const now = new Date(2026, 6, 10, 12, 0)
+ 
+   it('caps new and review cards independently per day', () => {
+     const newCards = ['n1', 'n2', 'n3'].map(id => card(id, `Q-${id}`, `A-${id}`))
+@@ -422,12 +455,12 @@ describe('buildQueue daily caps', () => {
+     const studiedToday = ['done1', 'done2'].map(id => card(id, `Q-${id}`, `A-${id}`))
+     const waiting = ['w1', 'w2', 'w3'].map(id => card(id, `Q-${id}`, `A-${id}`))
+     const testDeck = deck({ cards: [...studiedToday, ...waiting], id: 'd1', name: 'Deck' })
+-    const future = { due: '2026-07-11T00:00:00.000Z' } as StoredSchedule
++    const future = { due: new Date(2026, 6, 11).toISOString() } as StoredSchedule
+ 
+     const before = state([testDeck], {
+       reviews: [
+-        { at: '2026-07-10T09:00:00.000Z', cardId: 'done1', rating: 'good' },
+-        { at: '2026-07-10T10:00:00.000Z', cardId: 'done2', rating: 'good' }
++        { at: new Date(2026, 6, 10, 9, 0).toISOString(), cardId: 'done1', rating: 'good' },
++        { at: new Date(2026, 6, 10, 10, 0).toISOString(), cardId: 'done2', rating: 'good' }
+       ],
+       schedule: { done1: future, done2: future },
+       settings: { newPerDay: 3 }
+@@ -440,12 +473,12 @@ describe('buildQueue daily caps', () => {
+ 
+   it('counts a same-day repeat review as a review, not a second "new" slot', () => {
+     const testDeck = deck({ cards: [card('r1', 'Q', 'A'), card('n1', 'Q2', 'A2')], id: 'd1', name: 'Deck' })
+-    const future = { due: '2026-07-11T00:00:00.000Z' } as StoredSchedule
++    const future = { due: new Date(2026, 6, 11).toISOString() } as StoredSchedule
+ 
+     const before = state([testDeck], {
+       reviews: [
+-        { at: '2026-07-10T08:00:00.000Z', cardId: 'r1', rating: 'again' },
+-        { at: '2026-07-10T09:00:00.000Z', cardId: 'r1', rating: 'good' }
++        { at: new Date(2026, 6, 10, 8, 0).toISOString(), cardId: 'r1', rating: 'again' },
++        { at: new Date(2026, 6, 10, 9, 0).toISOString(), cardId: 'r1', rating: 'good' }
+       ],
+       schedule: { r1: future },
+       settings: { newPerDay: 2 }
+@@ -458,6 +491,25 @@ describe('buildQueue daily caps', () => {
+     expect(queue.map(item => item.card.id)).toEqual(['n1'])
+   })
+ 
++  it('a review just before local midnight counts toward THAT day, so the next morning starts fresh', () => {
++    const lateCard = card('late1', 'Q', 'A')
++    const waiting = card('w1', 'Q2', 'A2')
++    const testDeck = deck({ cards: [lateCard, waiting], id: 'd1', name: 'Deck' })
++
++    const before = state([testDeck], {
++      reviews: [{ at: new Date(2026, 6, 9, 23, 30).toISOString(), cardId: 'late1', rating: 'good' }],
++      schedule: { late1: { due: new Date(2026, 6, 20).toISOString() } as StoredSchedule },
++      settings: { newPerDay: 1 }
++    })
++
++    // Next local morning: yesterday's 23:30 grade must NOT eat today's new slot.
++    // (The old UTC keying pushed a late-evening review into "tomorrow" for
++    // students west of UTC, silently halving their next-day new cards.)
++    const queue = buildQueue(before, null, new Date(2026, 6, 10, 8, 0))
++
++    expect(queue.map(item => item.card.id)).toEqual(['w1'])
++  })
++
+   it('treats a cap of 0 as unlimited for both new and review counts', () => {
+     const newCards = Array.from({ length: 5 }, (_, i) => card(`n${i}`, `Q${i}`, `A${i}`))
+     const reviewCards = Array.from({ length: 5 }, (_, i) => card(`r${i}`, `Q${i}`, `A${i}`))
+@@ -491,20 +543,22 @@ describe('buildQueue review order', () => {
+   // 2026-07-12/13 (not -10/-11) are picked deliberately: verified to hash-order
+   // these 6 ids into a genuinely mixed permutation, not a coincidental identity
+   // or pure-reverse order that would make the "differs from due order" /
+-  // "differs from the other day" assertions below vacuously true.
+-  it('is deterministic within the same UTC day', () => {
++  // "differs from the other day" assertions below vacuously true. Times are
++  // local-constructed because the day-stable shuffle keys on the LOCAL day —
++  // the hash inputs stay the exact strings '2026-07-12'/'2026-07-13'.
++  it('is deterministic within the same local day', () => {
+     const { deck: testDeck, schedule } = dueSet(6)
+     const before = state([testDeck], { schedule, settings: { order: 'random' } })
+ 
+-    const morning = buildQueue(before, null, new Date('2026-07-12T01:00:00.000Z'))
+-    const evening = buildQueue(before, null, new Date('2026-07-12T23:00:00.000Z'))
++    const morning = buildQueue(before, null, new Date(2026, 6, 12, 1, 0))
++    const evening = buildQueue(before, null, new Date(2026, 6, 12, 23, 0))
+ 
+     expect(morning.map(item => item.card.id)).toEqual(evening.map(item => item.card.id))
+   })
+ 
+   it('shuffles relative to due-first order, without dropping or duplicating cards', () => {
+     const { deck: testDeck, schedule } = dueSet(6)
+-    const now = new Date('2026-07-12T12:00:00.000Z')
++    const now = new Date(2026, 6, 12, 12, 0)
+ 
+     const dueOrder = buildQueue(state([testDeck], { schedule, settings: { order: 'due' } }), null, now).map(
+       item => item.card.id
+@@ -520,7 +574,7 @@ describe('buildQueue review order', () => {
+ 
+   it('reorders independently of which other cards are present (no reshuffle on grading)', () => {
+     const { deck: testDeck, schedule } = dueSet(6)
+-    const now = new Date('2026-07-12T12:00:00.000Z')
++    const now = new Date(2026, 6, 12, 12, 0)
+     const before = state([testDeck], { schedule, settings: { order: 'random' } })
+ 
+     const full = buildQueue(before, null, now).map(item => item.card.id)
+@@ -531,7 +585,7 @@ describe('buildQueue review order', () => {
+     const gradedId = full[0]
+ 
+     const afterGrading = state([testDeck], {
+-      schedule: { ...schedule, [gradedId]: { due: '2026-07-13T00:00:00.000Z' } as StoredSchedule },
++      schedule: { ...schedule, [gradedId]: { due: new Date(2026, 6, 13).toISOString() } as StoredSchedule },
+       settings: { order: 'random' }
+     })
+ 
+@@ -540,13 +594,226 @@ describe('buildQueue review order', () => {
+     expect(remaining).toEqual(full.slice(1))
+   })
+ 
+-  it('reshuffles on a different UTC day', () => {
++  it('reshuffles on a different local day', () => {
+     const { deck: testDeck, schedule } = dueSet(6)
+     const before = state([testDeck], { schedule, settings: { order: 'random' } })
+ 
+-    const day1 = buildQueue(before, null, new Date('2026-07-12T12:00:00.000Z')).map(item => item.card.id)
+-    const day2 = buildQueue(before, null, new Date('2026-07-13T12:00:00.000Z')).map(item => item.card.id)
++    const day1 = buildQueue(before, null, new Date(2026, 6, 12, 12, 0)).map(item => item.card.id)
++    const day2 = buildQueue(before, null, new Date(2026, 6, 13, 12, 0)).map(item => item.card.id)
+ 
+     expect(day2).not.toEqual(day1)
+   })
+ })
++
++// Cloze cards ({{c1::…}} in the front) become one queue/schedule item per
++// distinct index, keyed `${cardId}#c${n}` — grading one index never moves its
++// siblings. Plain cards keep the bare card id (nothing changes for them).
++describe('cloze scheduling', () => {
++  const now = new Date(2026, 6, 10, 12, 0)
++
++  function clozeDeck(): StudyDeck {
++    return deck({
++      cards: [card('cz', 'The {{c1::thick ascending limb}} pump is {{c2::Na-K-2Cl}}', '')],
++      id: 'd1',
++      name: 'Deck'
++    })
++  }
++
++  it('expands a cloze card into one queue item per distinct index', () => {
++    const queue = buildQueue(state([clozeDeck()]), null, now)
++
++    expect(queue.map(item => item.scheduleKey)).toEqual(['cz#c1', 'cz#c2'])
++    expect(queue.map(item => item.clozeIndex)).toEqual([1, 2])
++    expect(queue.every(item => item.isNew && item.card.id === 'cz')).toBe(true)
++  })
++
++  it('keeps plain cards on their bare card id', () => {
++    const queue = buildQueue(state([deck({ cards: [card('p1', 'Q', 'A')], id: 'd1', name: 'Deck' })]), null, now)
++
++    expect(queue.map(item => item.scheduleKey)).toEqual(['p1'])
++    expect(queue[0].clozeIndex).toBeUndefined()
++  })
++
++  it('grading one cloze slot leaves its siblings untouched', () => {
++    const after = gradeCard(state([clozeDeck()]), 'cz#c1', 'good', now)
++
++    expect(after.schedule['cz#c1']).toBeDefined()
++    expect(after.schedule['cz#c2']).toBeUndefined()
++
++    // c1 is rescheduled into the future; only c2 stays in the queue.
++    const queue = buildQueue(after, null, now)
++    expect(queue.map(item => item.scheduleKey)).toEqual(['cz#c2'])
++  })
++
++  it('deckStats counts cloze slots individually', () => {
++    const withPlain = deck({
++      cards: [card('cz', '{{c1::A}} vs {{c2::B}}', ''), card('p1', 'Q', 'A')],
++      id: 'd1',
++      name: 'Deck'
++    })
++
++    expect(deckStats(state([withPlain]), null, now)).toEqual({ due: 3, fresh: 3, total: 3 })
++  })
++
++  it('deleteCard prunes every cloze slot schedule', () => {
++    const before = state([clozeDeck()], { schedule: { 'cz#c1': scheduled(), 'cz#c2': scheduled() } })
++    const after = deleteCard(before, 'd1', 'cz')
++
++    expect(after.schedule).toEqual({})
++  })
++})
++
++describe('undoLastGrade', () => {
++  const now = new Date(2026, 6, 10, 12, 0)
++
++  function plainDeck(): StudyDeck {
++    return deck({ cards: [card('c1', 'Q', 'A')], id: 'd1', name: 'Deck' })
++  }
++
++  it('restores a never-studied card to unscheduled and pops the log entry', () => {
++    const before = state([plainDeck()])
++    const graded = gradeCard(before, 'c1', 'good', now)
++
++    expect(graded.schedule.c1).toBeDefined()
++    expect(graded.reviews).toHaveLength(1)
++
++    const undone = undoLastGrade(graded, { scheduleKey: 'c1' })
++
++    expect(undone.schedule.c1).toBeUndefined()
++    expect(undone.reviews).toHaveLength(0)
++    // Counts recover: the card is new + due again, exactly as before the grade.
++    expect(deckStats(undone, null, now)).toEqual(deckStats(before, null, now))
++    expect(buildQueue(undone, null, now).map(item => item.scheduleKey)).toEqual(['c1'])
++  })
++
++  it('restores the previous schedule snapshot for a re-graded card', () => {
++    const first = gradeCard(state([plainDeck()]), 'c1', 'good', now)
++    const snapshot = first.schedule.c1
++    const second = gradeCard(first, 'c1', 'again', new Date(now.getTime() + 60_000))
++
++    const undone = undoLastGrade(second, { previous: snapshot, scheduleKey: 'c1' })
++
++    expect(undone.schedule.c1).toEqual(snapshot)
++    expect(undone.reviews).toHaveLength(1)
++  })
++
++  it('refuses when the last log entry belongs to a different card', () => {
++    const first = gradeCard(state([deck({ cards: [card('c1', 'Q', 'A'), card('c2', 'Q2', 'A2')], id: 'd1', name: 'Deck' })]), 'c1', 'good', now)
++    const second = gradeCard(first, 'c2', 'good', now)
++
++    expect(undoLastGrade(second, { scheduleKey: 'c1' })).toBe(second)
++  })
++})
++
++describe('leech auto-suspend', () => {
++  const now = new Date(2026, 6, 10, 12, 0)
++
++  // A realistic Review-state FSRS payload one lapse away from the threshold:
++  // grading 'again' increments lapses to 8 and must trip the leech rule.
++  function nearLeechSchedule(lapses: number): StoredSchedule {
++    return {
++      difficulty: 6,
++      due: new Date(2026, 6, 9).toISOString(),
++      elapsed_days: 1,
++      lapses,
++      last_review: new Date(2026, 6, 8).toISOString(),
++      learning_steps: 0,
++      reps: 12,
++      scheduled_days: 1,
++      stability: 2,
++      state: 2
++    } as StoredSchedule
++  }
++
++  it('suspends and tags the card on its 8th lapse', () => {
++    const before = state([deck({ cards: [card('c1', 'Q', 'A')], id: 'd1', name: 'Deck' })], {
++      schedule: { c1: nearLeechSchedule(7) }
++    })
++
++    const after = gradeCard(before, 'c1', 'again', now)
++    const suspect = after.decks[0].cards[0]
++
++    expect(suspect.suspended).toBe(true)
++    expect(suspect.tags).toContain(LEECH_TAG)
++    // Suspended cards drop out of the queue immediately.
++    expect(buildQueue(after, null, new Date(now.getTime() + 60 * 60_000))).toHaveLength(0)
++  })
++
++  it('a lapsed cloze slot suspends its parent card', () => {
++    const before = state([deck({ cards: [card('cz', '{{c1::A}} and {{c2::B}}', '')], id: 'd1', name: 'Deck' })], {
++      schedule: { 'cz#c1': nearLeechSchedule(7) }
++    })
++
++    const after = gradeCard(before, 'cz#c1', 'again', now)
++
++    expect(after.decks[0].cards[0].suspended).toBe(true)
++    expect(after.decks[0].cards[0].tags).toContain(LEECH_TAG)
++  })
++
++  it('does not re-suspend an unsuspended old leech on a successful review', () => {
++    const before = state([deck({ cards: [card('c1', 'Q', 'A', { tags: [LEECH_TAG] })], id: 'd1', name: 'Deck' })], {
++      schedule: { c1: nearLeechSchedule(9) }
++    })
++
++    const after = gradeCard(before, 'c1', 'good', now)
++
++    expect(after.decks[0].cards[0].suspended).toBeUndefined()
++    expect(after.decks[0].cards[0].tags).toEqual([LEECH_TAG])
++  })
++})
++
++describe('desired retention', () => {
++  const now = new Date(2026, 6, 10, 12, 0)
++
++  it('defaults to 90%', () => {
++    expect(getSettings(state([])).desiredRetention).toBe(0.9)
++  })
++
++  it('higher retention schedules the same card sooner (shorter interval)', () => {
++    const reviewCard: StoredSchedule = {
++      difficulty: 5,
++      due: new Date(2026, 6, 9).toISOString(),
++      elapsed_days: 10,
++      lapses: 0,
++      last_review: new Date(2026, 5, 30).toISOString(),
++      learning_steps: 0,
++      reps: 3,
++      scheduled_days: 10,
++      stability: 10,
++      state: 2
++    } as StoredSchedule
++
++    const base = state([deck({ cards: [card('c1', 'Q', 'A')], id: 'd1', name: 'Deck' })], {
++      schedule: { c1: reviewCard }
++    })
++
++    const relaxed = gradeCard(setSettings(base, { desiredRetention: 0.8 }), 'c1', 'good', now)
++    const strict = gradeCard(setSettings(base, { desiredRetention: 0.95 }), 'c1', 'good', now)
++
++    const relaxedDue = new Date(relaxed.schedule.c1.due).getTime()
++    const strictDue = new Date(strict.schedule.c1.due).getTime()
++
++    expect(strictDue).toBeLessThan(relaxedDue)
++    expect(strictDue).toBeGreaterThan(now.getTime())
++  })
++})
++
++describe('renameDeck', () => {
++  it('renames an in-app deck and leaves the others alone', () => {
++    const mine = deck({ id: 'd1', name: 'Old name' })
++    const other = deck({ id: 'd2', name: 'Untouched' })
++    const after = renameDeck(state([mine, other]), 'd1', 'New name')
++
++    expect(after.decks[0].name).toBe('New name')
++    expect(after.decks[0].sourceFile).toBeUndefined()
++    expect(after.decks[1]).toBe(other)
++  })
++
++  it('retargets the source file for a file-backed rename', () => {
++    const linked = deck({ id: 'd1', name: 'Cardio', sourceFile: 'Cardio.tsv' })
++    const after = renameDeck(state([linked]), 'd1', 'Cardio essentials', 'Cardio essentials.tsv')
++
++    expect(after.decks[0].name).toBe('Cardio essentials')
++    expect(after.decks[0].sourceFile).toBe('Cardio essentials.tsv')
++  })
++})
+diff --git a/apps/desktop/src/app/study/model.ts b/apps/desktop/src/app/study/model.ts
+index 6494ee3d43a..c9d1cb60e1b 100644
+--- a/apps/desktop/src/app/study/model.ts
++++ b/apps/desktop/src/app/study/model.ts
+@@ -6,6 +6,7 @@
+ // the upgrade path is backend/vault storage once Nemesis accounts land.
+ import { createEmptyCard, fsrs, type Card as FsrsCard, type Grade, Rating } from 'ts-fsrs'
+ 
++import { clozeIndexes, clozeScheduleKey } from './cloze'
+ import type { DeckFileCandidate } from './deck-files'
+ 
+ export interface StudyCard {
+@@ -32,6 +33,7 @@ export interface StudyDeck {
+ export type StoredSchedule = Omit<FsrsCard, 'due' | 'last_review'> & { due: string; last_review?: string }
+ 
+ export interface ReviewEntry {
++  /** Schedule key: the card id, or `${cardId}#c${n}` for one cloze slot. */
+   cardId: string
+   rating: StudyRating
+   at: string
+@@ -44,6 +46,9 @@ export interface StudySettings {
+   newPerDay: number
+   /** Already-scheduled review cards per day. 0 = unlimited. */
+   reviewsPerDay: number
++  /** FSRS request_retention: the recall probability targeted when a card comes
++   *  due. Higher = shorter intervals = more daily reviews. */
++  desiredRetention: number
+   /** 'due' studies overdue cards before new ones (today's behavior); 'random'
+    *  shuffles the capped queue, stably for the whole day (see buildQueue). */
+   order: ReviewOrder
+@@ -56,6 +61,7 @@ export interface StudySettings {
+ export const DEFAULT_STUDY_SETTINGS: StudySettings = {
+   newPerDay: 20,
+   reviewsPerDay: 0,
++  desiredRetention: 0.9,
+   order: 'due',
+   flip: true,
+   showIntervalHints: true
+@@ -83,6 +89,10 @@ export interface QueueItem {
+   deckId: string
+   deckName: string
+   isNew: boolean
++  /** Schedule/log key: the card id, or `${cardId}#c${n}` for one cloze index. */
++  scheduleKey: string
++  /** The active {{cN::…}} index this item drills; absent for plain cards. */
++  clozeIndex?: number
+ }
+ 
+ // Bumped to v2 for grouped decks + review activity. Pre-release, so discarding the old
+@@ -93,7 +103,19 @@ const QUEUE_LIMIT = 200
+ // migrates it into settings.flip once, then this key is never consulted again.
+ const LEGACY_FLIP_KEY = 'nemesis.study.flip'
+ 
+-const scheduler = fsrs()
++// One FSRS scheduler per desired retention (see StudySettings.desiredRetention),
++// rebuilt only when the setting changes — grading and interval previews are hot.
++let scheduler = fsrs({ request_retention: DEFAULT_STUDY_SETTINGS.desiredRetention })
++let schedulerRetention = DEFAULT_STUDY_SETTINGS.desiredRetention
++
++function schedulerFor(desiredRetention: number) {
++  if (desiredRetention !== schedulerRetention) {
++    scheduler = fsrs({ request_retention: desiredRetention })
++    schedulerRetention = desiredRetention
++  }
++
++  return scheduler
++}
+ 
+ const RATING: Record<StudyRating, Grade> = {
+   again: Rating.Again,
+@@ -127,6 +149,22 @@ function isDue(stored: StoredSchedule | undefined, now: Date): boolean {
+   return new Date(stored.due).getTime() <= now.getTime()
+ }
+ 
++/** Local calendar day key (yyyy-mm-dd). Day-based features — daily caps, the
++ *  day-stable shuffle, streaks, the heatmap — follow the student's clock, so a
++ *  23:30 review belongs to today, not to tomorrow's UTC date. */
++export function localDayKey(date: Date): string {
++  const month = String(date.getMonth() + 1).padStart(2, '0')
++  const day = String(date.getDate()).padStart(2, '0')
++
++  return `${date.getFullYear()}-${month}-${day}`
++}
++
++/** The local calendar day `offset` days from `date` (constructor arithmetic —
++ *  safe across month ends and DST shifts, where fixed 24h math drifts). */
++function shiftLocalDay(date: Date, offset: number): Date {
++  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + offset)
++}
++
+ function normalizeSections(sections: string[] | undefined, decks: StudyDeck[]): string[] {
+   const names: string[] = []
+   const seen = new Set<string>()
+@@ -228,19 +266,20 @@ function hashSeed(key: string): number {
+   return hash >>> 0
+ }
+ 
+-/** Deterministic per-card order for a UTC day key: each card's rank comes from
+- *  hashing (dayKey, its own id), never from the other cards in the queue — so
+- *  grading a card away doesn't reshuffle the rest (a plain Fisher-Yates reseeded
++/** Deterministic per-item order for a local day key: each item's rank comes from
++ *  hashing (dayKey, its own schedule key), never from the other cards in the queue —
++ *  so grading a card away doesn't reshuffle the rest (a plain Fisher-Yates reseeded
+  *  on every shrinking queue would: the same seed applied to an (n-1)-length array
+  *  is a different permutation, not "the old one minus a card"). A fresh dayKey
+  *  gives every card a fresh rank the next day. */
+ function orderForDay(items: QueueItem[], dayKey: string): QueueItem[] {
+-  return [...items].sort((a, b) => hashSeed(`${dayKey}:${a.card.id}`) - hashSeed(`${dayKey}:${b.card.id}`))
++  return [...items].sort((a, b) => hashSeed(`${dayKey}:${a.scheduleKey}`) - hashSeed(`${dayKey}:${b.scheduleKey}`))
+ }
+ 
+-/** New-vs-review split of everything graded on `dayKey` (UTC yyyy-mm-dd). An entry
+- *  counts as "new" the first time its cardId ever appears in the log — matching the
+- *  isNew: !stored rule below — and as a "review" every time after that. */
++/** New-vs-review split of everything graded on `dayKey` (local yyyy-mm-dd, see
++ *  localDayKey). An entry counts as "new" the first time its cardId ever appears
++ *  in the log — matching the isNew: !stored rule below — and as a "review" every
++ *  time after that. */
+ function todayActivity(reviews: ReviewEntry[], dayKey: string): { newCount: number; reviewCount: number } {
+   const seenBefore = new Set<string>()
+   let newCount = 0
+@@ -250,7 +289,7 @@ function todayActivity(reviews: ReviewEntry[], dayKey: string): { newCount: numb
+     const isFirstEver = !seenBefore.has(entry.cardId)
+     seenBefore.add(entry.cardId)
+ 
+-    if (entry.at.slice(0, 10) !== dayKey) {
++    if (localDayKey(new Date(entry.at)) !== dayKey) {
+       continue
+     }
+ 
+@@ -264,11 +303,23 @@ function todayActivity(reviews: ReviewEntry[], dayKey: string): { newCount: numb
+   return { newCount, reviewCount }
+ }
+ 
++/** A card's schedule slots: the card itself, or one slot per distinct cloze
++ *  index — each drilled and scheduled independently (Anki cloze semantics). */
++function scheduleTargets(card: StudyCard): { clozeIndex?: number; key: string }[] {
++  const indexes = clozeIndexes(card.front)
++
++  if (!indexes.length) {
++    return [{ key: card.id }]
++  }
++
++  return indexes.map(index => ({ clozeIndex: index, key: clozeScheduleKey(card.id, index) }))
++}
++
+ /** Review queue: due reviews first, then new cards (or a day-stable shuffle of
+  *  both, in 'random' order), capped by today's new/review daily limits. Pure. */
+ export function buildQueue(state: StudyState, deckId: null | string, now: Date): QueueItem[] {
+   const settings = getSettings(state)
+-  const dayKey = now.toISOString().slice(0, 10)
++  const dayKey = localDayKey(now)
+   const { newCount, reviewCount } = todayActivity(state.reviews, dayKey)
+ 
+   const dueItems: QueueItem[] = []
+@@ -284,15 +335,24 @@ export function buildQueue(state: StudyState, deckId: null | string, now: Date):
+         continue
+       }
+ 
+-      const stored = state.schedule[card.id]
++      for (const target of scheduleTargets(card)) {
++        const stored = state.schedule[target.key]
+ 
+-      if (!isDue(stored, now)) {
+-        continue
+-      }
++        if (!isDue(stored, now)) {
++          continue
++        }
+ 
+-      const item: QueueItem = { card, deckId: deck.id, deckName: deck.name, isNew: !stored }
++        const item: QueueItem = {
++          card,
++          clozeIndex: target.clozeIndex,
++          deckId: deck.id,
++          deckName: deck.name,
++          isNew: !stored,
++          scheduleKey: target.key
++        }
+ 
+-      ;(item.isNew ? newItems : dueItems).push(item)
++        ;(item.isNew ? newItems : dueItems).push(item)
++      }
+     }
+   }
+ 
+@@ -321,19 +381,22 @@ export function deckStats(state: StudyState, deckId: null | string, now: Date):
+     }
+ 
+     for (const card of deck.cards) {
+-      total++
++      const targets = scheduleTargets(card)
++      total += targets.length
+ 
+       if (card.suspended) {
+         continue
+       }
+ 
+-      const stored = state.schedule[card.id]
++      for (const target of targets) {
++        const stored = state.schedule[target.key]
+ 
+-      if (!stored) {
+-        fresh++
+-        due++
+-      } else if (isDue(stored, now)) {
+-        due++
++        if (!stored) {
++          fresh++
++          due++
++        } else if (isDue(stored, now)) {
++          due++
++        }
+       }
+     }
+   }
+@@ -360,13 +423,32 @@ export function addCard(state: StudyState, deckId: string, front: string, back:
+   return mapDeckCards(state, deckId, cards => [...cards, card])
+ }
+ 
+-/** Delete a card AND its FSRS schedule so state doesn't leak. */
++/** Drop schedule entries for the given card ids — each card's own key AND any
++ *  of its cloze slots (`${id}#c${n}`). Returns a fresh map. */
++function pruneCardSchedules(
++  schedule: Record<string, StoredSchedule>,
++  cardIds: readonly string[]
++): Record<string, StoredSchedule> {
++  const ids = new Set(cardIds)
++  const next: Record<string, StoredSchedule> = {}
++
++  for (const [key, entry] of Object.entries(schedule)) {
++    const at = key.indexOf('#c')
++    const baseId = at >= 0 ? key.slice(0, at) : key
++
++    if (!ids.has(baseId)) {
++      next[key] = entry
++    }
++  }
++
++  return next
++}
++
++/** Delete a card AND its FSRS schedule (incl. cloze slots) so state doesn't leak. */
+ export function deleteCard(state: StudyState, deckId: string, cardId: string): StudyState {
+   const next = mapDeckCards(state, deckId, cards => cards.filter(card => card.id !== cardId))
+-  const schedule = { ...next.schedule }
+-  delete schedule[cardId]
+ 
+-  return { ...next, schedule }
++  return { ...next, schedule: pruneCardSchedules(next.schedule, [cardId]) }
+ }
+ 
+ export function toggleSuspendCard(state: StudyState, deckId: string, cardId: string): StudyState {
+@@ -386,13 +468,14 @@ export function deleteDeck(state: StudyState, deckId: string): StudyState {
+     return state
+   }
+ 
+-  const schedule = { ...state.schedule }
+-
+-  for (const card of deck.cards) {
+-    delete schedule[card.id]
++  return {
++    ...state,
++    decks: state.decks.filter(candidate => candidate.id !== deckId),
++    schedule: pruneCardSchedules(
++      state.schedule,
++      deck.cards.map(card => card.id)
++    )
+   }
+-
+-  return { ...state, decks: state.decks.filter(candidate => candidate.id !== deckId), schedule }
+ }
+ 
+ export function addSection(state: StudyState, name: string): StudyState {
+@@ -418,6 +501,19 @@ export function assignDeckSection(state: StudyState, deckId: string, section: st
+   }
+ }
+ 
++/** Rename a deck. For file-backed decks pass the renamed vault file name so the
++ *  next reconcile matches it instead of treating the old link as deleted — the
++ *  caller renames the actual file FIRST (see the Study rename dialog), so state
++ *  only changes once the disk rename succeeded. */
++export function renameDeck(state: StudyState, deckId: string, name: string, sourceFile?: string): StudyState {
++  return {
++    ...state,
++    decks: state.decks.map(deck =>
++      deck.id === deckId ? { ...deck, name, ...(sourceFile ? { sourceFile } : {}) } : deck
++    )
++  }
++}
++
+ // --- Deck-file reconcile (agent-managed decks) --------------------------------
+ // The vault's Flashcards folder is the source of truth for agent-written decks:
+ // the agent renames, edits, and deletes deck files while organizing, and Study
+@@ -618,15 +714,7 @@ export function reconcileDeckFiles(state: StudyState, candidates: DeckFileCandid
+     return state
+   }
+ 
+-  let schedule = state.schedule
+-
+-  if (prunedIds.length) {
+-    schedule = { ...schedule }
+-
+-    for (const id of prunedIds) {
+-      delete schedule[id]
+-    }
+-  }
++  const schedule = prunedIds.length ? pruneCardSchedules(state.schedule, prunedIds) : state.schedule
+ 
+   // Same section rules as everywhere else: new courses appear, manually-added
+   // (now empty) sections stay. The review log keeps its history — see deleteDeck.
+@@ -674,24 +762,22 @@ export interface StudyMotivation {
+ 
+ export function studyMotivation(state: StudyState, todayIso: string, windowDays = 90): StudyMotivation {
+   const DAY = 86_400_000
+-  const days = new Set(state.reviews.map(review => review.at.slice(0, 10)))
+-  const todayMs = new Date(`${todayIso.slice(0, 10)}T00:00:00.000Z`).getTime()
++  const days = new Set(state.reviews.map(review => localDayKey(new Date(review.at))))
++  const today = new Date(todayIso)
+ 
+-  // Current streak: consecutive days ending today (or yesterday, so an unstudied
+-  // "today so far" doesn't zero the streak before the student sits down).
++  // Current streak: consecutive local days ending today (or yesterday, so an
++  // unstudied "today so far" doesn't zero the streak before the student sits down).
+   let currentStreak = 0
+-  let cursor = todayMs
+-
+-  if (!days.has(new Date(cursor).toISOString().slice(0, 10))) {
+-    cursor -= DAY
+-  }
++  let offset = days.has(localDayKey(today)) ? 0 : -1
+ 
+-  while (days.has(new Date(cursor).toISOString().slice(0, 10))) {
++  while (days.has(localDayKey(shiftLocalDay(today, offset)))) {
+     currentStreak++
+-    cursor -= DAY
++    offset--
+   }
+ 
+-  // Longest streak across all history.
++  // Longest streak across all history. Keys are local calendar dates; parsing
++  // them at UTC midnight is a pure calendar trick — consecutive dates sit
++  // exactly one DAY apart in that mapping, whatever the machine's timezone.
+   const sorted = [...days].sort()
+   let longestStreak = 0
+   let run = 0
+@@ -707,12 +793,12 @@ export function studyMotivation(state: StudyState, todayIso: string, windowDays
+   let learned = 0
+ 
+   for (let i = 0; i < windowDays; i++) {
+-    if (days.has(new Date(todayMs - i * DAY).toISOString().slice(0, 10))) {
++    if (days.has(localDayKey(shiftLocalDay(today, -i)))) {
+       learned++
+     }
+   }
+ 
+-  const cutoff = new Date(todayMs - 30 * DAY).toISOString()
++  const cutoff = shiftLocalDay(today, -30).toISOString()
+   const recent = state.reviews.filter(review => review.at >= cutoff)
+ 
+   const retentionPct = recent.length
+@@ -727,17 +813,91 @@ export function studyMotivation(state: StudyState, todayIso: string, windowDays
+   }
+ }
+ 
+-/** Grade a card → next state (immutable: returns a new StudyState). */
+-export function gradeCard(state: StudyState, cardId: string, rating: StudyRating, now: Date): StudyState {
+-  const stored = state.schedule[cardId]
+-  const current = stored ? revive(stored) : createEmptyCard(now)
+-  const outcome = scheduler.repeat(current, now)[RATING[rating]]
++// Anki leech semantics: a card that keeps lapsing is wasting review time. Once
++// its lapse count reaches the threshold it is auto-suspended and tagged so the
++// student rewrites (or re-learns) it before it re-enters the queue. Suspension
++// is per-card here, so a leeched cloze slot parks its whole parent card.
++const LEECH_LAPSES = 8
++export const LEECH_TAG = 'leech'
++
++function applyLeech(state: StudyState, scheduleKey: string): StudyState {
++  const at = scheduleKey.indexOf('#c')
++  const cardId = at >= 0 ? scheduleKey.slice(0, at) : scheduleKey
+ 
+   return {
+     ...state,
+-    schedule: { ...state.schedule, [cardId]: freeze(outcome.card) },
+-    reviews: [...state.reviews, { cardId, rating, at: now.toISOString() }]
++    decks: state.decks.map(deck => {
++      const card = deck.cards.find(candidate => candidate.id === cardId)
++
++      if (!card || card.suspended) {
++        return deck
++      }
++
++      return {
++        ...deck,
++        cards: deck.cards.map(candidate =>
++          candidate.id === cardId
++            ? {
++                ...candidate,
++                suspended: true,
++                tags: candidate.tags.includes(LEECH_TAG) ? candidate.tags : [...candidate.tags, LEECH_TAG]
++              }
++            : candidate
++        )
++      }
++    })
++  }
++}
++
++/** Grade a card (or one cloze slot) → next state (immutable). `scheduleKey` is
++ *  the queue item's schedule key (QueueItem.scheduleKey). A lapse that crosses
++ *  the leech threshold auto-suspends + tags the card (see applyLeech). */
++export function gradeCard(state: StudyState, scheduleKey: string, rating: StudyRating, now: Date): StudyState {
++  const stored = state.schedule[scheduleKey]
++  const current = stored ? revive(stored) : createEmptyCard(now)
++  const outcome = schedulerFor(getSettings(state).desiredRetention).repeat(current, now)[RATING[rating]]
++
++  const next: StudyState = {
++    ...state,
++    schedule: { ...state.schedule, [scheduleKey]: freeze(outcome.card) },
++    reviews: [...state.reviews, { cardId: scheduleKey, rating, at: now.toISOString() }]
+   }
++
++  // Only a real lapse (one that increments the count) can newly cross the
++  // threshold — re-grading an unsuspended old leech as Good must not re-park it.
++  return outcome.card.lapses > current.lapses && outcome.card.lapses >= LEECH_LAPSES
++    ? applyLeech(next, scheduleKey)
++    : next
++}
++
++export interface GradeUndo {
++  /** The graded queue item's schedule key (card id or cloze slot). */
++  scheduleKey: string
++  /** Schedule entry before the grade; absent = the card had never been studied. */
++  previous?: StoredSchedule
++}
++
++/** Reverse the most recent gradeCard: restore the pre-grade schedule snapshot
++ *  and pop that review-log entry. Deliberately session-only — the snapshot lives
++ *  in component state, never in the persisted blob, so it cannot survive a
++ *  reload. Leech suspension is not reverted (matching Anki, where unsuspending
++ *  is an explicit act in the browser). */
++export function undoLastGrade(state: StudyState, undo: GradeUndo): StudyState {
++  const last = state.reviews.at(-1)
++
++  if (!last || last.cardId !== undo.scheduleKey) {
++    return state // something else was graded since the snapshot — refuse quietly
++  }
++
++  const schedule = { ...state.schedule }
++
++  if (undo.previous) {
++    schedule[undo.scheduleKey] = undo.previous
++  } else {
++    delete schedule[undo.scheduleKey]
++  }
++
++  return { ...state, reviews: state.reviews.slice(0, -1), schedule }
+ }
+ 
+ export interface DeckGroup {
+@@ -799,23 +959,22 @@ export function reviewHeatmap(state: StudyState, todayIso: string, weeks = 52):
+   const perDay = new Map<string, number>()
+ 
+   for (const review of state.reviews) {
+-    const day = review.at.slice(0, 10) // UTC calendar day from the ISO timestamp
++    const day = localDayKey(new Date(review.at)) // the student's calendar day
+     perDay.set(day, (perDay.get(day) ?? 0) + 1)
+   }
+ 
+-  // Work entirely in UTC so the per-day keys (UTC) and cell dates (UTC) always agree,
+-  // regardless of the machine's timezone. Do not pad forward to Saturday: the
+-  // rolling window ends on today, so no future cells displace an older month.
+-  const DAY = 86_400_000
+-  const todayUtc = new Date(`${todayIso.slice(0, 10)}T00:00:00.000Z`)
++  // Work entirely in the machine's LOCAL calendar so the per-day keys and cell
++  // dates always agree with the daily caps and streaks (localDayKey everywhere).
++  // Do not pad forward to Saturday: the rolling window ends on today, so no
++  // future cells displace an older month.
++  const today = new Date(todayIso)
+   const dayCount = weeks * 7
+-  const startMs = todayUtc.getTime() - (dayCount - 1) * DAY
+ 
+   const cells: HeatCell[] = []
+   let total = 0
+ 
+-  for (let i = 0; i < dayCount; i++) {
+-    const iso = new Date(startMs + i * DAY).toISOString().slice(0, 10)
++  for (let i = dayCount - 1; i >= 0; i--) {
++    const iso = localDayKey(shiftLocalDay(today, -i))
+     const count = perDay.get(iso) ?? 0
+     total += count
+     cells.push({ count, date: iso, level: count === 0 ? 0 : count < 5 ? 1 : count < 12 ? 2 : count < 25 ? 3 : 4 })
+@@ -825,10 +984,10 @@ export function reviewHeatmap(state: StudyState, todayIso: string, weeks = 52):
+ }
+ 
+ /** Interval each grade would schedule, humanized — the hint row under the grade buttons. */
+-export function previewIntervals(state: StudyState, cardId: string, now: Date): Record<StudyRating, string> {
+-  const stored = state.schedule[cardId]
++export function previewIntervals(state: StudyState, scheduleKey: string, now: Date): Record<StudyRating, string> {
++  const stored = state.schedule[scheduleKey]
+   const current = stored ? revive(stored) : createEmptyCard(now)
+-  const outcome = scheduler.repeat(current, now)
++  const outcome = schedulerFor(getSettings(state).desiredRetention).repeat(current, now)
+ 
+   const label = (grade: Grade): string => humanizeGap(outcome[grade].card.due.getTime() - now.getTime())
+ 
+-- 
+2.50.1 (Apple Git-155)
+

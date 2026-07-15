@@ -1,0 +1,2329 @@
+From 283525721b9a02e6a992a79a721e9d8de6a8a4bc Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 19:01:54 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis-kit):=20round-35=20=E2=80=94=207-f?=
+ =?UTF-8?q?ix=20batch?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Study: deck/test cards fully clickable (Study / Take test buttons removed)
+- Heatmap: true rolling 12 months ending today (GitHub-style)
+- Fullscreen rail: header clears macOS traffic lights; close X in chrome bar
+- Artifacts nav removed; Library gains 'Made by Nemesis' deliverables section
+- Connections: content scrolls; retitled 'Connect to apps & websites'
+- Mind map: FLIP relayout animation (180ms ease-out) + fade-in subtrees,
+  reduced-motion respected
+---
+ .../src/app/artifacts/artifact-utils.js       |  31 +-
+ .../src/app/artifacts/artifact-utils.ts       |  36 ++-
+ apps/desktop/src/app/artifacts/index.js       |  31 +-
+ apps/desktop/src/app/artifacts/index.tsx      |  36 +--
+ .../src/app/chat/right-rail/preview.js        |  13 +-
+ .../src/app/chat/right-rail/preview.tsx       |  21 +-
+ apps/desktop/src/app/library/index.js         |  77 +++--
+ apps/desktop/src/app/library/index.tsx        | 142 +++++++--
+ .../src/app/settings/connections-settings.js  |  16 +-
+ .../src/app/settings/connections-settings.tsx | 141 ++++-----
+ apps/desktop/src/app/study/index.js           |  94 ++++--
+ apps/desktop/src/app/study/index.tsx          | 288 ++++++++++++++----
+ apps/desktop/src/app/study/mindmap-viewer.js  |  80 ++++-
+ apps/desktop/src/app/study/mindmap-viewer.tsx | 125 +++++++-
+ apps/desktop/src/app/study/model.js           |  24 +-
+ apps/desktop/src/app/study/model.test.js      |  22 +-
+ apps/desktop/src/app/study/model.test.ts      |  28 ++
+ apps/desktop/src/app/study/model.ts           |  24 +-
+ apps/desktop/src/nemesis.js                   |  10 +-
+ apps/desktop/src/nemesis.ts                   |  10 +-
+ apps/desktop/src/styles.css                   |   4 +
+ 21 files changed, 922 insertions(+), 331 deletions(-)
+
+diff --git a/apps/desktop/src/app/artifacts/artifact-utils.js b/apps/desktop/src/app/artifacts/artifact-utils.js
+index f56aeec8e06..9b18bfb5d48 100644
+--- a/apps/desktop/src/app/artifacts/artifact-utils.js
++++ b/apps/desktop/src/app/artifacts/artifact-utils.js
+@@ -1,5 +1,6 @@
++import { getSessionMessages, listAllProfileSessions } from '@/hermes';
+ import { readDesktopFileDataUrl } from '@/lib/desktop-fs';
+-import { filePathFromMediaPath, isRemoteGateway, mediaExternalUrl } from '@/lib/media';
++import { downloadGatewayMediaFile, filePathFromMediaPath, isRemoteGateway, mediaExternalUrl } from '@/lib/media';
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ // Student build: Artifacts = things the agent MADE (files, images). Web links —
+ // including every cited source URL — live in the chat's Sources rail instead, so
+@@ -244,3 +245,31 @@ export function collectArtifactsForSession(session, messages) {
+     }
+     return Array.from(found.values());
+ }
++/** The shared Artifacts/Library indexer. Keep the fetch breadth and ordering in
++ * one place so the student Library's deliverables match the legacy route. */
++export async function loadRecentArtifacts(sessionLimit = 30) {
++    const sessions = (await listAllProfileSessions(sessionLimit, 1)).sessions;
++    const results = await Promise.allSettled(sessions.map(session => getSessionMessages(session.id, session.profile)));
++    const artifacts = [];
++    results.forEach((result, index) => {
++        if (result.status === 'fulfilled') {
++            artifacts.push(...collectArtifactsForSession(sessions[index], result.value.messages));
++        }
++    });
++    return artifacts.sort((left, right) => right.timestamp - left.timestamp);
++}
++/** Open a collected deliverable through the same local/remote path used by
++ * Artifacts. Remote gateway files must be downloaded through the authenticated
++ * bridge because their file:// URL does not exist on this machine. */
++export async function openArtifactHref(href) {
++    if (isRemoteGateway() && /^file:/i.test(href)) {
++        await downloadGatewayMediaFile(href);
++        return;
++    }
++    if (window.hermesDesktop?.openExternal) {
++        await window.hermesDesktop.openExternal(href);
++    }
++    else {
++        window.open(href, '_blank', 'noopener,noreferrer');
++    }
++}
+diff --git a/apps/desktop/src/app/artifacts/artifact-utils.ts b/apps/desktop/src/app/artifacts/artifact-utils.ts
+index 132490355ef..4b4c97e5226 100644
+--- a/apps/desktop/src/app/artifacts/artifact-utils.ts
++++ b/apps/desktop/src/app/artifacts/artifact-utils.ts
+@@ -1,5 +1,6 @@
++import { getSessionMessages, listAllProfileSessions } from '@/hermes'
+ import { readDesktopFileDataUrl } from '@/lib/desktop-fs'
+-import { filePathFromMediaPath, isRemoteGateway, mediaExternalUrl } from '@/lib/media'
++import { downloadGatewayMediaFile, filePathFromMediaPath, isRemoteGateway, mediaExternalUrl } from '@/lib/media'
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import type { SessionInfo, SessionMessage } from '@/types/hermes'
+ 
+@@ -328,3 +329,36 @@ export function collectArtifactsForSession(session: SessionInfo, messages: Sessi
+ 
+   return Array.from(found.values())
+ }
++
++/** The shared Artifacts/Library indexer. Keep the fetch breadth and ordering in
++ * one place so the student Library's deliverables match the legacy route. */
++export async function loadRecentArtifacts(sessionLimit = 30): Promise<ArtifactRecord[]> {
++  const sessions = (await listAllProfileSessions(sessionLimit, 1)).sessions
++  const results = await Promise.allSettled(sessions.map(session => getSessionMessages(session.id, session.profile)))
++  const artifacts: ArtifactRecord[] = []
++
++  results.forEach((result, index) => {
++    if (result.status === 'fulfilled') {
++      artifacts.push(...collectArtifactsForSession(sessions[index], result.value.messages))
++    }
++  })
++
++  return artifacts.sort((left, right) => right.timestamp - left.timestamp)
++}
++
++/** Open a collected deliverable through the same local/remote path used by
++ * Artifacts. Remote gateway files must be downloaded through the authenticated
++ * bridge because their file:// URL does not exist on this machine. */
++export async function openArtifactHref(href: string): Promise<void> {
++  if (isRemoteGateway() && /^file:/i.test(href)) {
++    await downloadGatewayMediaFile(href)
++
++    return
++  }
++
++  if (window.hermesDesktop?.openExternal) {
++    await window.hermesDesktop.openExternal(href)
++  } else {
++    window.open(href, '_blank', 'noopener,noreferrer')
++  }
++}
+diff --git a/apps/desktop/src/app/artifacts/index.js b/apps/desktop/src/app/artifacts/index.js
+index 27c3f378882..bb95e6f52d0 100644
+--- a/apps/desktop/src/app/artifacts/index.js
++++ b/apps/desktop/src/app/artifacts/index.js
+@@ -8,11 +8,9 @@ import { CopyButton } from '@/components/ui/copy-button';
+ import { Pagination, PaginationButton, PaginationContent, PaginationEllipsis, PaginationItem, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+ import { RowButton } from '@/components/ui/row-button';
+ import { Tip } from '@/components/ui/tooltip';
+-import { getSessionMessages, listAllProfileSessions } from '@/hermes';
+ import { useI18n } from '@/i18n';
+ import { ExternalLink, ExternalLinkIcon, hostPathLabel, urlSlugTitleLabel, useLinkTitle } from '@/lib/external-link';
+ import { FileImage, FileText, FolderOpen, Link2, Loader2, RefreshCw } from '@/lib/icons';
+-import { downloadGatewayMediaFile, isRemoteGateway } from '@/lib/media';
+ import { normalize } from '@/lib/text';
+ import { fmtDayTime } from '@/lib/time';
+ import { cn } from '@/lib/utils';
+@@ -21,7 +19,7 @@ import { useRefreshHotkey } from '../hooks/use-refresh-hotkey';
+ import { useRouteEnumParam } from '../hooks/use-route-enum-param';
+ import { PageSearchShell } from '../page-search-shell';
+ import { sessionRoute } from '../routes';
+-import { ARTIFACT_FILTERS, artifactImageSrc, collectArtifactsForSession } from './artifact-utils';
++import { ARTIFACT_FILTERS, artifactImageSrc, loadRecentArtifacts, openArtifactHref } from './artifact-utils';
+ function formatArtifactTime(timestamp) {
+     return fmtDayTime.format(new Date(timestamp));
+ }
+@@ -67,17 +65,7 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
+     const refreshArtifacts = useCallback(async () => {
+         setRefreshing(true);
+         try {
+-            const sessions = (await listAllProfileSessions(30, 1)).sessions;
+-            const results = await Promise.allSettled(sessions.map(session => getSessionMessages(session.id, session.profile)));
+-            const nextArtifacts = [];
+-            results.forEach((result, index) => {
+-                if (result.status !== 'fulfilled') {
+-                    return;
+-                }
+-                const session = sessions[index];
+-                nextArtifacts.push(...collectArtifactsForSession(session, result.value.messages));
+-            });
+-            setArtifacts(nextArtifacts.sort((left, right) => right.timestamp - left.timestamp));
++            setArtifacts(await loadRecentArtifacts());
+         }
+         catch (err) {
+             notifyError(err, a.failedLoad);
+@@ -147,20 +135,7 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
+     }, [artifacts]);
+     const openArtifact = useCallback(async (href) => {
+         try {
+-            // A gateway-local file resolves to file:// in remote mode (the file
+-            // lives on the gateway, not this disk). Opening that locally fails —
+-            // and an OAuth remote connection has no query token to build a download
+-            // URL. Fetch the bytes over the authenticated fs bridge instead.
+-            if (isRemoteGateway() && /^file:/i.test(href)) {
+-                await downloadGatewayMediaFile(href);
+-                return;
+-            }
+-            if (window.hermesDesktop?.openExternal) {
+-                await window.hermesDesktop.openExternal(href);
+-            }
+-            else {
+-                window.open(href, '_blank', 'noopener,noreferrer');
+-            }
++            await openArtifactHref(href);
+         }
+         catch (err) {
+             notifyError(err, a.openFailed);
+diff --git a/apps/desktop/src/app/artifacts/index.tsx b/apps/desktop/src/app/artifacts/index.tsx
+index 70a6a0338ca..0b19656efc7 100644
+--- a/apps/desktop/src/app/artifacts/index.tsx
++++ b/apps/desktop/src/app/artifacts/index.tsx
+@@ -17,11 +17,9 @@ import {
+ } from '@/components/ui/pagination'
+ import { RowButton } from '@/components/ui/row-button'
+ import { Tip } from '@/components/ui/tooltip'
+-import { getSessionMessages, listAllProfileSessions } from '@/hermes'
+ import { type Translations, useI18n } from '@/i18n'
+ import { ExternalLink, ExternalLinkIcon, hostPathLabel, urlSlugTitleLabel, useLinkTitle } from '@/lib/external-link'
+ import { FileImage, FileText, FolderOpen, Link2, Loader2, RefreshCw } from '@/lib/icons'
+-import { downloadGatewayMediaFile, isRemoteGateway } from '@/lib/media'
+ import { normalize } from '@/lib/text'
+ import { fmtDayTime } from '@/lib/time'
+ import { cn } from '@/lib/utils'
+@@ -38,7 +36,8 @@ import {
+   type ArtifactFilter,
+   artifactImageSrc,
+   type ArtifactRecord,
+-  collectArtifactsForSession
++  loadRecentArtifacts,
++  openArtifactHref
+ } from './artifact-utils'
+ 
+ function formatArtifactTime(timestamp: number): string {
+@@ -121,20 +120,7 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
+     setRefreshing(true)
+ 
+     try {
+-      const sessions = (await listAllProfileSessions(30, 1)).sessions
+-      const results = await Promise.allSettled(sessions.map(session => getSessionMessages(session.id, session.profile)))
+-      const nextArtifacts: ArtifactRecord[] = []
+-
+-      results.forEach((result, index) => {
+-        if (result.status !== 'fulfilled') {
+-          return
+-        }
+-
+-        const session = sessions[index]
+-        nextArtifacts.push(...collectArtifactsForSession(session, result.value.messages))
+-      })
+-
+-      setArtifacts(nextArtifacts.sort((left, right) => right.timestamp - left.timestamp))
++      setArtifacts(await loadRecentArtifacts())
+     } catch (err) {
+       notifyError(err, a.failedLoad)
+       setArtifacts([])
+@@ -238,21 +224,7 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
+   const openArtifact = useCallback(
+     async (href: string) => {
+       try {
+-        // A gateway-local file resolves to file:// in remote mode (the file
+-        // lives on the gateway, not this disk). Opening that locally fails —
+-        // and an OAuth remote connection has no query token to build a download
+-        // URL. Fetch the bytes over the authenticated fs bridge instead.
+-        if (isRemoteGateway() && /^file:/i.test(href)) {
+-          await downloadGatewayMediaFile(href)
+-
+-          return
+-        }
+-
+-        if (window.hermesDesktop?.openExternal) {
+-          await window.hermesDesktop.openExternal(href)
+-        } else {
+-          window.open(href, '_blank', 'noopener,noreferrer')
+-        }
++        await openArtifactHref(href)
+       } catch (err) {
+         notifyError(err, a.openFailed)
+       }
+diff --git a/apps/desktop/src/app/chat/right-rail/preview.js b/apps/desktop/src/app/chat/right-rail/preview.js
+index a82ef37375d..be253b07b97 100644
+--- a/apps/desktop/src/app/chat/right-rail/preview.js
++++ b/apps/desktop/src/app/chat/right-rail/preview.js
+@@ -1,15 +1,15 @@
+ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ import { useStore } from '@nanostores/react';
+ import { useEffect, useMemo, useState } from 'react';
++import { SourcesTab } from '@/app/right-sidebar/sources';
+ import { Button } from '@/components/ui/button';
+ import { Codicon } from '@/components/ui/codicon';
+ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu';
+-import { Tip } from '@/components/ui/tooltip';
+ import { SegmentedControl } from '@/components/ui/segmented-control';
++import { Tip } from '@/components/ui/tooltip';
+ import { translateNow, useI18n } from '@/i18n';
+ import { formatCombo } from '@/lib/keybinds/combo';
+ import { cn } from '@/lib/utils';
+-import { SourcesTab } from '@/app/right-sidebar/sources';
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { $browserRailOpen } from '@/store/browser-rail';
+ import { $panesFlipped, $rightRailActiveTabId, RIGHT_RAIL_BROWSER_TAB_ID, RIGHT_RAIL_PREVIEW_TAB_ID, RIGHT_RAIL_SOURCES_TAB_ID, selectRightRailTab } from '@/store/layout';
+@@ -34,6 +34,7 @@ const SOURCES_TAB_TARGET = {
+ export const PREVIEW_RAIL_MIN_WIDTH = '18rem';
+ export const PREVIEW_RAIL_MAX_WIDTH = '38rem';
+ const INTRINSIC = `clamp(${PREVIEW_RAIL_MIN_WIDTH}, 36vw, 32rem)`;
++const IS_MACOS = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac');
+ // Track for <Pane id="preview">. Folds the intrinsic clamp with a min-floor
+ // against --chat-min-width so the chat surface never gets squeezed below it.
+ // Subtracts the project browser width so preview yields rather than crushing
+@@ -127,11 +128,9 @@ function StudentChatPreviewRail({ onRestartServer, setTitlebarToolGroup }) {
+         window.addEventListener('keydown', onKey);
+         return () => window.removeEventListener('keydown', onKey);
+     }, [fullscreen]);
+-    return (_jsxs("aside", { className: cn('flex min-w-0 flex-col overflow-hidden border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background) text-(--ui-text-tertiary)', fullscreen
++    return (_jsxs("aside", { className: cn('isolate flex min-w-0 flex-col overflow-hidden border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background) text-(--ui-text-tertiary)', fullscreen
+             ? 'fixed inset-0 z-40 border-none'
+-            : cn('relative h-full w-full', panesFlipped ? 'border-r' : 'border-l')), style: fullscreen ? undefined : { paddingTop: 'var(--right-rail-top-inset, 0px)' }, children: [_jsxs("div", { className: "flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-2 [-webkit-app-region:no-drag]", children: [_jsx(SegmentedControl, { className: "min-w-0 max-w-full bg-(--ui-bg-tertiary) [&>button]:min-w-0 [&>button]:truncate [&>button]:transition-none [&>button]:active:scale-[0.98] [&>button]:motion-reduce:active:scale-100 [&>button[aria-pressed=true]]:bg-(--theme-primary)/15 [&>button[aria-pressed=true]]:text-(--theme-primary) [&>button[aria-pressed=true]]:shadow-none", onChange: selectSegment, options: segments, value: activeSegmentId }), _jsx(Tip, { label: fullscreen ? 'Exit full screen' : 'Full screen', children: _jsx(Button, { "aria-label": fullscreen ? 'Exit full screen' : 'Full screen', className: "ml-auto shrink-0 text-(--ui-text-tertiary) transition-colors duration-100 ease active:scale-[0.97] motion-reduce:active:scale-100", onClick: () => setFullscreen(current => !current), size: "icon-xs", type: "button", variant: "ghost", children: _jsx(Codicon, { name: fullscreen ? 'screen-normal' : 'screen-full', size: "0.75rem" }) }) }), _jsx(Tip, { label: activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID
+-                            ? t.preview.closePane
+-                            : t.preview.closeTab(activeSegmentLabel), children: _jsx(Button, { "aria-label": activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID
++            : cn('relative h-full w-full', panesFlipped ? 'border-r' : 'border-l')), style: fullscreen ? undefined : { paddingTop: 'var(--right-rail-top-inset, 0px)' }, children: [_jsxs("div", { className: cn('relative z-10 flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) pr-3 [-webkit-app-region:no-drag]', fullscreen && IS_MACOS ? 'pl-[84px]' : 'pl-2'), "data-rail-chrome": "", children: [_jsx(SegmentedControl, { className: "min-w-0 max-w-full bg-(--ui-bg-tertiary) [&>button]:min-w-0 [&>button]:truncate [&>button]:transition-none [&>button]:active:scale-[0.98] [&>button]:motion-reduce:active:scale-100 [&>button[aria-pressed=true]]:bg-(--theme-primary)/15 [&>button[aria-pressed=true]]:text-(--theme-primary) [&>button[aria-pressed=true]]:shadow-none", onChange: selectSegment, options: segments, value: activeSegmentId }), _jsx(Tip, { label: fullscreen ? 'Exit full screen' : 'Full screen', children: _jsx(Button, { "aria-label": fullscreen ? 'Exit full screen' : 'Full screen', className: "ml-auto shrink-0 text-(--ui-text-tertiary) transition-colors duration-100 ease active:scale-[0.97] motion-reduce:active:scale-100", onClick: () => setFullscreen(current => !current), size: "icon-xs", type: "button", variant: "ghost", children: _jsx(Codicon, { name: fullscreen ? 'screen-normal' : 'screen-full', size: "0.75rem" }) }) }), _jsx(Tip, { label: activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID ? t.preview.closePane : t.preview.closeTab(activeSegmentLabel), children: _jsx(Button, { "aria-label": activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID
+                                 ? t.preview.closePane
+                                 : t.preview.closeTab(activeSegmentLabel), className: "shrink-0 text-(--ui-text-tertiary) transition-colors duration-100 ease active:scale-[0.97] motion-reduce:active:scale-100", onClick: () => {
+                                 setFullscreen(false);
+@@ -142,7 +141,7 @@ function StudentChatPreviewRail({ onRestartServer, setTitlebarToolGroup }) {
+                     return (_jsxs("div", { className: cn('group/file-tab relative flex h-full min-w-24 max-w-40 shrink-0 items-center border-r border-(--ui-stroke-quaternary) text-[0.65rem] font-medium [-webkit-app-region:no-drag]', active
+                             ? 'bg-(--ui-editor-surface-background) text-foreground'
+                             : 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'), children: [active && (_jsx("span", { "aria-hidden": "true", className: "absolute inset-x-0 bottom-0 h-px bg-(--theme-primary)" })), _jsx(Tip, { label: tab.target.path || tab.target.url || tab.label, children: _jsx("button", { "aria-selected": active, className: "min-w-0 flex-1 truncate py-1 pl-2 pr-1 text-left outline-none active:scale-[0.98] motion-reduce:active:scale-100", onClick: () => selectRightRailTab(tab.id), role: "tab", type: "button", children: tab.label }) }), dirty && _jsx("span", { "aria-hidden": "true", className: "size-1.5 shrink-0 rounded-full bg-(--theme-primary)" }), _jsx("button", { "aria-label": t.preview.closeTab(tab.label), className: "mx-1 grid size-4 shrink-0 place-items-center rounded-sm text-(--ui-text-tertiary) opacity-0 hover:bg-(--ui-control-hover-background) hover:text-foreground focus-visible:opacity-100 group-hover/file-tab:opacity-100 active:scale-[0.97] motion-reduce:active:scale-100", onClick: () => closeRightRailTab(tab.id), type: "button", children: _jsx(Codicon, { name: "close", size: "0.65rem" }) })] }, tab.id));
+-                }) })), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden", children: activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID ? (_jsx("div", { className: "flex h-full min-h-0 flex-col bg-(--ui-sidebar-surface-background)", children: _jsx(SourcesTab, {}) })) : activeSegmentId === RIGHT_RAIL_BROWSER_TAB_ID ? (_jsx(SchoolBrowserPanel, {})) : activePreviewTarget ? (_jsx(PreviewPane, { embedded: true, onRestartServer: activeTabId === RIGHT_RAIL_PREVIEW_TAB_ID ? onRestartServer : undefined, reloadRequest: previewReloadRequest, setTitlebarToolGroup: setTitlebarToolGroup, target: activePreviewTarget })) : null })] }));
++                }) })), _jsx("div", { className: "relative z-0 min-h-0 flex-1 overflow-hidden", children: activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID ? (_jsx("div", { className: "flex h-full min-h-0 flex-col bg-(--ui-sidebar-surface-background)", children: _jsx(SourcesTab, {}) })) : activeSegmentId === RIGHT_RAIL_BROWSER_TAB_ID ? (_jsx(SchoolBrowserPanel, {})) : activePreviewTarget ? (_jsx(PreviewPane, { embedded: true, onRestartServer: activeTabId === RIGHT_RAIL_PREVIEW_TAB_ID ? onRestartServer : undefined, reloadRequest: previewReloadRequest, setTitlebarToolGroup: setTitlebarToolGroup, target: activePreviewTarget })) : null })] }));
+ }
+ function DefaultChatPreviewRail({ onRestartServer, setTitlebarToolGroup }) {
+     const { t } = useI18n();
+diff --git a/apps/desktop/src/app/chat/right-rail/preview.tsx b/apps/desktop/src/app/chat/right-rail/preview.tsx
+index edf2523f801..f01f48d69fb 100644
+--- a/apps/desktop/src/app/chat/right-rail/preview.tsx
++++ b/apps/desktop/src/app/chat/right-rail/preview.tsx
+@@ -1,6 +1,7 @@
+ import { useStore } from '@nanostores/react'
+ import { useEffect, useMemo, useState } from 'react'
+ 
++import { SourcesTab } from '@/app/right-sidebar/sources'
+ import type { SetTitlebarToolGroup } from '@/app/shell/titlebar-controls'
+ import { Button } from '@/components/ui/button'
+ import { Codicon } from '@/components/ui/codicon'
+@@ -11,12 +12,11 @@ import {
+   ContextMenuSeparator,
+   ContextMenuTrigger
+ } from '@/components/ui/context-menu'
+-import { Tip } from '@/components/ui/tooltip'
+ import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control'
++import { Tip } from '@/components/ui/tooltip'
+ import { translateNow, useI18n } from '@/i18n'
+ import { formatCombo } from '@/lib/keybinds/combo'
+ import { cn } from '@/lib/utils'
+-import { SourcesTab } from '@/app/right-sidebar/sources'
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import { $browserRailOpen } from '@/store/browser-rail'
+ import {
+@@ -63,6 +63,7 @@ export const PREVIEW_RAIL_MIN_WIDTH = '18rem'
+ export const PREVIEW_RAIL_MAX_WIDTH = '38rem'
+ 
+ const INTRINSIC = `clamp(${PREVIEW_RAIL_MIN_WIDTH}, 36vw, 32rem)`
++const IS_MACOS = typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
+ 
+ // Track for <Pane id="preview">. Folds the intrinsic clamp with a min-floor
+ // against --chat-min-width so the chat surface never gets squeezed below it.
+@@ -211,14 +212,20 @@ function StudentChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
+   return (
+     <aside
+       className={cn(
+-        'flex min-w-0 flex-col overflow-hidden border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background) text-(--ui-text-tertiary)',
++        'isolate flex min-w-0 flex-col overflow-hidden border-(--ui-stroke-tertiary) bg-(--ui-editor-surface-background) text-(--ui-text-tertiary)',
+         fullscreen
+           ? 'fixed inset-0 z-40 border-none'
+           : cn('relative h-full w-full', panesFlipped ? 'border-r' : 'border-l')
+       )}
+       style={fullscreen ? undefined : { paddingTop: 'var(--right-rail-top-inset, 0px)' }}
+     >
+-      <div className="flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-2 [-webkit-app-region:no-drag]">
++      <div
++        className={cn(
++          'relative z-10 flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) pr-3 [-webkit-app-region:no-drag]',
++          fullscreen && IS_MACOS ? 'pl-[84px]' : 'pl-2'
++        )}
++        data-rail-chrome=""
++      >
+         <SegmentedControl
+           className="min-w-0 max-w-full bg-(--ui-bg-tertiary) [&>button]:min-w-0 [&>button]:truncate [&>button]:transition-none [&>button]:active:scale-[0.98] [&>button]:motion-reduce:active:scale-100 [&>button[aria-pressed=true]]:bg-(--theme-primary)/15 [&>button[aria-pressed=true]]:text-(--theme-primary) [&>button[aria-pressed=true]]:shadow-none"
+           onChange={selectSegment}
+@@ -239,9 +246,7 @@ function StudentChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
+         </Tip>
+         <Tip
+           label={
+-            activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID
+-              ? t.preview.closePane
+-              : t.preview.closeTab(activeSegmentLabel)
++            activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID ? t.preview.closePane : t.preview.closeTab(activeSegmentLabel)
+           }
+         >
+           <Button
+@@ -312,7 +317,7 @@ function StudentChatPreviewRail({ onRestartServer, setTitlebarToolGroup }: ChatP
+         </div>
+       )}
+ 
+-      <div className="min-h-0 flex-1 overflow-hidden">
++      <div className="relative z-0 min-h-0 flex-1 overflow-hidden">
+         {activeSegmentId === RIGHT_RAIL_SOURCES_TAB_ID ? (
+           <div className="flex h-full min-h-0 flex-col bg-(--ui-sidebar-surface-background)">
+             <SourcesTab />
+diff --git a/apps/desktop/src/app/library/index.js b/apps/desktop/src/app/library/index.js
+index 124d8e926a2..0c1f1246e74 100644
+--- a/apps/desktop/src/app/library/index.js
++++ b/apps/desktop/src/app/library/index.js
+@@ -11,6 +11,8 @@ import { EmptyState } from '@/components/ui/empty-state';
+ import { Input } from '@/components/ui/input';
+ import { Tip } from '@/components/ui/tooltip';
+ import { cn } from '@/lib/utils';
++import { notifyError } from '@/store/notifications';
++import { loadRecentArtifacts, openArtifactHref } from '../artifacts/artifact-utils';
+ import { NoteEditor } from './note-editor';
+ import { NoteRail } from './note-rail';
+ import { PdfViewer } from './pdf-viewer';
+@@ -37,7 +39,13 @@ function buildTree(contents) {
+                 node = next;
+             }
+             else {
+-                const created = { files: [], folders: [], name: part, notes: [], path: node.path ? `${node.path}/${part}` : part };
++                const created = {
++                    files: [],
++                    folders: [],
++                    name: part,
++                    notes: [],
++                    path: node.path ? `${node.path}/${part}` : part
++                };
+                 node.folders.push(created);
+                 node = created;
+             }
+@@ -57,6 +65,7 @@ function buildTree(contents) {
+ }
+ export function LibraryView() {
+     const [contents, setContents] = useState(null);
++    const [deliverables, setDeliverables] = useState(null);
+     const [error, setError] = useState(null);
+     // Obsidian-style tabs: every opened note/file gets (or refocuses) a tab.
+     const [tabs, setTabs] = useState([]);
+@@ -86,6 +95,23 @@ export function LibraryView() {
+             return null;
+         }
+     }, []);
++    const refreshDeliverables = useCallback(async () => {
++        try {
++            setDeliverables(await loadRecentArtifacts());
++        }
++        catch (err) {
++            setDeliverables([]);
++            notifyError(err, 'Could not load files made by Nemesis.');
++        }
++    }, []);
++    const openDeliverable = useCallback(async (artifact) => {
++        try {
++            await openArtifactHref(artifact.href);
++        }
++        catch (err) {
++            notifyError(err, 'Could not open this deliverable.');
++        }
++    }, []);
+     const openSelection = useCallback((next) => {
+         const key = tabKey(next);
+         setTabs(current => {
+@@ -109,13 +135,14 @@ export function LibraryView() {
+                 openSelection({ kind: 'note', note: loaded.notes[0] });
+             }
+         })();
++        void refreshDeliverables();
+         return () => {
+             if (saveTimer.current) {
+                 clearTimeout(saveTimer.current);
+             }
+         };
+         // eslint-disable-next-line react-hooks/exhaustive-deps
+-    }, [refresh]);
++    }, [refresh, refreshDeliverables]);
+     // Re-read the vault when the window regains focus so files the agent moved,
+     // renamed, or created while you were away show up without a manual reload.
+     // Debounced so an incidental refocus doesn't hammer the disk.
+@@ -128,10 +155,11 @@ export function LibraryView() {
+             }
+             last = now;
+             void refresh();
++            void refreshDeliverables();
+         };
+         window.addEventListener('focus', onFocus);
+         return () => window.removeEventListener('focus', onFocus);
+-    }, [refresh]);
++    }, [refresh, refreshDeliverables]);
+     const tree = useMemo(() => (contents ? buildTree(contents) : null), [contents]);
+     const index = useMemo(() => (contents ? buildIndex(contents.notes) : null), [contents]);
+     // Deep links from the Graph page: /library?note=Title opens a note,
+@@ -164,9 +192,7 @@ export function LibraryView() {
+     }, [activeTab, contents, tabs]);
+     const activeNote = selection?.kind === 'note' ? selection.note : null;
+     const scheduleSave = useCallback((note, content) => {
+-        setContents(current => current
+-            ? { ...current, notes: current.notes.map(n => (n.path === note.path ? { ...n, content } : n)) }
+-            : current);
++        setContents(current => current ? { ...current, notes: current.notes.map(n => (n.path === note.path ? { ...n, content } : n)) } : current);
+         if (saveTimer.current) {
+             clearTimeout(saveTimer.current);
+         }
+@@ -230,21 +256,32 @@ export function LibraryView() {
+     }
+     const noteCount = contents.notes.length;
+     const fileCount = contents.files.length;
+-    return (_jsxs("div", { className: "flex h-full min-h-0 bg-(--ui-editor-surface-background)", children: [_jsxs("aside", { className: "flex w-64 shrink-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background)", children: [_jsxs("div", { className: "flex items-center justify-between gap-3 px-4 pb-3 pt-5", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("h1", { className: "text-lg font-semibold tracking-tight", children: "Library" }), _jsxs("p", { className: "mt-0.5 text-[0.65rem] font-medium tabular-nums text-(--ui-text-tertiary)", children: [noteCount, " note", noteCount === 1 ? '' : 's', " \u00B7 ", fileCount, " file", fileCount === 1 ? '' : 's'] })] }), _jsxs("div", { className: "flex gap-0.5", children: [_jsx(Tip, { label: "New note", children: _jsx(Button, { "aria-label": "New note", className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => { setCreating('note'); setDraft(''); }, size: "icon-xs", variant: "ghost", children: _jsx(IconFilePlus, {}) }) }), _jsx(Tip, { label: "New folder", children: _jsx(Button, { "aria-label": "New folder", className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => { setCreating('folder'); setDraft(''); }, size: "icon-xs", variant: "ghost", children: _jsx(IconFolderPlus, {}) }) })] })] }), creating && (_jsxs("div", { className: "mx-3 mb-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-2 shadow-sm", children: [_jsx(Input, { autoFocus: true, onChange: event => setDraft(event.target.value), onKeyDown: event => {
+-                                    if (event.key === 'Enter')
++    return (_jsxs("div", { className: "flex h-full min-h-0 bg-(--ui-editor-surface-background)", children: [_jsxs("aside", { className: "flex w-64 shrink-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background)", children: [_jsxs("div", { className: "flex items-center justify-between gap-3 px-4 pb-3 pt-5", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("h1", { className: "text-lg font-semibold tracking-tight", children: "Library" }), _jsxs("p", { className: "mt-0.5 text-[0.65rem] font-medium tabular-nums text-(--ui-text-tertiary)", children: [noteCount, " note", noteCount === 1 ? '' : 's', " \u00B7 ", fileCount, " file", fileCount === 1 ? '' : 's'] })] }), _jsxs("div", { className: "flex gap-0.5", children: [_jsx(Tip, { label: "New note", children: _jsx(Button, { "aria-label": "New note", className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => {
++                                                setCreating('note');
++                                                setDraft('');
++                                            }, size: "icon-xs", variant: "ghost", children: _jsx(IconFilePlus, {}) }) }), _jsx(Tip, { label: "New folder", children: _jsx(Button, { "aria-label": "New folder", className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => {
++                                                setCreating('folder');
++                                                setDraft('');
++                                            }, size: "icon-xs", variant: "ghost", children: _jsx(IconFolderPlus, {}) }) })] })] }), creating && (_jsxs("div", { className: "mx-3 mb-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-2 shadow-sm", children: [_jsx(Input, { autoFocus: true, onChange: event => setDraft(event.target.value), onKeyDown: event => {
++                                    if (event.key === 'Enter') {
+                                         void submitCreate();
+-                                    if (event.key === 'Escape')
++                                    }
++                                    if (event.key === 'Escape') {
+                                         setCreating(null);
+-                                }, placeholder: creating === 'folder' ? 'Folder name' : 'Note title', value: draft }), targetFolder && _jsxs("p", { className: "px-1 pt-1.5 text-[10px] text-muted-foreground", children: ["in ", targetFolder] })] })), _jsx("nav", { className: "min-h-0 flex-1 overflow-y-auto px-2.5 pb-4", children: _jsx(TreeLevel, { collapsed: collapsed, depth: 0, node: tree, onSelect: next => next && openSelection(next), onToggle: path => setCollapsed(current => {
+-                                const next = new Set(current);
+-                                next.has(path) ? next.delete(path) : next.add(path);
+-                                return next;
+-                            }), selection: selection }) })] }), _jsxs("main", { className: "flex min-w-0 flex-1 flex-col bg-(--ui-bg-editor)", children: [tabs.length > 0 && (_jsx("div", { className: "flex h-(--titlebar-height) shrink-0 overflow-x-auto overflow-y-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", role: "tablist", children: tabs.map((tab, i) => (_jsxs("div", { className: cn('group/tab relative flex h-full min-w-0 max-w-48 shrink-0 cursor-pointer items-center border-r border-(--ui-stroke-quaternary) text-[0.6875rem] font-medium transition-colors duration-200 ease-out', i === activeTab
++                                    }
++                                }, placeholder: creating === 'folder' ? 'Folder name' : 'Note title', value: draft }), targetFolder && _jsxs("p", { className: "px-1 pt-1.5 text-[10px] text-muted-foreground", children: ["in ", targetFolder] })] })), _jsxs("nav", { className: "min-h-0 flex-1 overflow-y-auto px-2.5 pb-4", children: [_jsxs("section", { className: "mb-3 border-b border-(--ui-stroke-quaternary) pb-3", children: [_jsxs("div", { className: "mb-1.5 flex items-center justify-between gap-2 px-2", children: [_jsx("h2", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-tertiary)", children: "Made by Nemesis" }), deliverables && deliverables.length > 0 && (_jsx("span", { className: "text-[0.625rem] tabular-nums text-(--ui-text-quaternary)", children: deliverables.length }))] }), !deliverables ? (_jsx("p", { className: "px-2 py-1 text-xs text-(--ui-text-tertiary)", children: "Finding deliverables\u2026" })) : deliverables.length === 0 ? (_jsx("p", { className: "px-2 py-1 text-xs text-(--ui-text-tertiary)", children: "Chat-made files will appear here." })) : (_jsx("div", { className: "space-y-0.5", children: deliverables.map(artifact => (_jsxs("button", { className: "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-row-hover-background) hover:text-foreground", onClick: () => void openDeliverable(artifact), title: `${artifact.label} · ${artifact.sessionTitle}`, type: "button", children: [artifact.kind === 'image' ? (_jsx(IconPhoto, { className: "shrink-0 text-(--theme-primary)", size: 14 })) : (_jsx(IconFileText, { className: "shrink-0 text-(--theme-primary)", size: 14 })), _jsxs("span", { className: "min-w-0 flex-1", children: [_jsx("span", { className: "block truncate", children: artifact.label }), _jsx("span", { className: "block truncate text-[0.625rem] text-(--ui-text-tertiary)", children: artifact.sessionTitle })] })] }, artifact.id))) }))] }), _jsx(TreeLevel, { collapsed: collapsed, depth: 0, node: tree, onSelect: next => next && openSelection(next), onToggle: path => setCollapsed(current => {
++                                    const next = new Set(current);
++                                    next.has(path) ? next.delete(path) : next.add(path);
++                                    return next;
++                                }), selection: selection })] })] }), _jsxs("main", { className: "flex min-w-0 flex-1 flex-col bg-(--ui-bg-editor)", children: [tabs.length > 0 && (_jsx("div", { className: "flex h-(--titlebar-height) shrink-0 overflow-x-auto overflow-y-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", role: "tablist", children: tabs.map((tab, i) => (_jsxs("div", { className: cn('group/tab relative flex h-full min-w-0 max-w-48 shrink-0 cursor-pointer items-center border-r border-(--ui-stroke-quaternary) text-[0.6875rem] font-medium transition-colors duration-200 ease-out', i === activeTab
+                                 ? 'bg-(--ui-bg-editor) text-foreground'
+-                                : 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'), onClick: () => setActiveTab(i), role: "tab", children: [i === activeTab && _jsx("span", { "aria-hidden": true, className: "absolute inset-x-0 top-0 h-px bg-(--theme-primary)" }), _jsxs("span", { className: "flex min-w-0 items-center gap-1.5 py-2 pl-3 pr-8", children: [tab.kind === 'note' ? _jsx(IconFileText, { className: "shrink-0 opacity-60", size: 13 }) : _jsx(FileGlyph, { kind: tab.file.kind }), _jsx("span", { className: "truncate", children: tabLabel(tab) })] }), _jsx("button", { "aria-label": "Close tab", className: "absolute right-1.5 grid size-5 place-items-center rounded opacity-0 transition-[opacity,color] duration-200 ease-out hover:bg-(--chrome-action-hover) group-hover/tab:opacity-100 group-focus-within/tab:opacity-100", onClick: event => {
++                                : 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'), onClick: () => setActiveTab(i), role: "tab", children: [i === activeTab && _jsx("span", { "aria-hidden": true, className: "absolute inset-x-0 top-0 h-px bg-(--theme-primary)" }), _jsxs("span", { className: "flex min-w-0 items-center gap-1.5 py-2 pl-3 pr-8", children: [tab.kind === 'note' ? (_jsx(IconFileText, { className: "shrink-0 opacity-60", size: 13 })) : (_jsx(FileGlyph, { kind: tab.file.kind })), _jsx("span", { className: "truncate", children: tabLabel(tab) })] }), _jsx("button", { "aria-label": "Close tab", className: "absolute right-1.5 grid size-5 place-items-center rounded opacity-0 transition-[opacity,color] duration-200 ease-out hover:bg-(--chrome-action-hover) group-hover/tab:opacity-100 group-focus-within/tab:opacity-100", onClick: event => {
+                                         event.stopPropagation();
+                                         closeTab(i);
+-                                    }, type: "button", children: _jsx(IconX, { size: 11 }) })] }, tabKey(tab)))) })), selection?.kind === 'note' ? (_jsxs(_Fragment, { children: [_jsx("div", { className: "shrink-0 border-b border-(--ui-stroke-quaternary) px-7 pb-4 pt-6", children: _jsxs("div", { className: "flex items-end justify-between gap-6", children: [_jsxs("div", { className: "min-w-0", children: [_jsxs("div", { className: "mb-2 flex min-w-0 items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-tertiary)", children: [_jsx("span", { children: "Library" }), selection.note.folder.split('/').filter(Boolean).map((part, index) => (_jsxs("span", { className: "contents", children: [_jsx(IconChevronRight, { className: "shrink-0 opacity-50", size: 11 }), _jsx("span", { className: "truncate", children: part })] }, `${part}-${index}`)))] }), _jsx("h2", { className: "truncate text-2xl font-semibold tracking-[-0.025em]", children: selection.note.title })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)", children: [_jsxs("span", { className: "tabular-nums", children: [countWords(selection.note.content), " words"] }), _jsx("span", { className: "rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-1 font-medium", children: saving ? 'Saving…' : 'Saved to disk' })] })] }) }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden px-7 pb-3", children: _jsx(NoteEditor, { initialValue: selection.note.content, onChange: value => scheduleSave(selection.note, value), onOpenWikilink: target => void openWikilink(target), ref: noteEditorRef }, selection.note.path) })] })) : selection?.kind === 'file' ? (_jsx(FilePreview, { file: selection.file })) : (_jsx(EmptyState, { className: "flex-1", description: "Pick a note on the left, or create one.", title: "No note open" }))] }), activeNote && index && (_jsx(NoteRail, { activeNote: activeNote, index: index, notes: contents.notes, onOpenNote: note => openSelection({ kind: 'note', note }), onSelectHeading: handleSelectHeading }))] }));
++                                    }, type: "button", children: _jsx(IconX, { size: 11 }) })] }, tabKey(tab)))) })), selection?.kind === 'note' ? (_jsxs(_Fragment, { children: [_jsx("div", { className: "shrink-0 border-b border-(--ui-stroke-quaternary) px-7 pb-4 pt-6", children: _jsxs("div", { className: "flex items-end justify-between gap-6", children: [_jsxs("div", { className: "min-w-0", children: [_jsxs("div", { className: "mb-2 flex min-w-0 items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-tertiary)", children: [_jsx("span", { children: "Library" }), selection.note.folder
++                                                            .split('/')
++                                                            .filter(Boolean)
++                                                            .map((part, index) => (_jsxs("span", { className: "contents", children: [_jsx(IconChevronRight, { className: "shrink-0 opacity-50", size: 11 }), _jsx("span", { className: "truncate", children: part })] }, `${part}-${index}`)))] }), _jsx("h2", { className: "truncate text-2xl font-semibold tracking-[-0.025em]", children: selection.note.title })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)", children: [_jsxs("span", { className: "tabular-nums", children: [countWords(selection.note.content), " words"] }), _jsx("span", { className: "rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-1 font-medium", children: saving ? 'Saving…' : 'Saved to disk' })] })] }) }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden px-7 pb-3", children: _jsx(NoteEditor, { initialValue: selection.note.content, onChange: value => scheduleSave(selection.note, value), onOpenWikilink: target => void openWikilink(target), ref: noteEditorRef }, selection.note.path) })] })) : selection?.kind === 'file' ? (_jsx(FilePreview, { file: selection.file })) : (_jsx(EmptyState, { className: "flex-1", description: "Pick a note on the left, or create one.", title: "No note open" }))] }), activeNote && index && (_jsx(NoteRail, { activeNote: activeNote, index: index, notes: contents.notes, onOpenNote: note => openSelection({ kind: 'note', note }), onSelectHeading: handleSelectHeading }))] }));
+ }
+ function FileGlyph({ kind }) {
+     const Icon = kind === 'pdf'
+@@ -270,10 +307,14 @@ function TreeLevel({ collapsed, depth, node, onSelect, onToggle, selection }) {
+             }), node.notes
+                 .slice()
+                 .sort((a, b) => a.title.localeCompare(b.title))
+-                .map(note => (_jsxs("button", { className: cn('relative flex w-full items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-secondary) transition-[transform,color,background-color] duration-200 ease-out before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]', selection?.kind === 'note' && selection.note.path === note.path && 'font-semibold text-foreground before:bg-(--theme-primary)'), onClick: () => onSelect({ kind: 'note', note }), type: "button", children: [_jsx(IconFileText, { className: "shrink-0 opacity-55", size: 14 }), _jsx("span", { className: "truncate", children: note.title })] }, note.path))), node.files
++                .map(note => (_jsxs("button", { className: cn('relative flex w-full items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-secondary) transition-[transform,color,background-color] duration-200 ease-out before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]', selection?.kind === 'note' &&
++                    selection.note.path === note.path &&
++                    'font-semibold text-foreground before:bg-(--theme-primary)'), onClick: () => onSelect({ kind: 'note', note }), type: "button", children: [_jsx(IconFileText, { className: "shrink-0 opacity-55", size: 14 }), _jsx("span", { className: "truncate", children: note.title })] }, note.path))), node.files
+                 .slice()
+                 .sort((a, b) => a.name.localeCompare(b.name))
+-                .map(file => (_jsxs("button", { className: cn('relative flex w-full items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-tertiary) transition-[transform,color,background-color] duration-200 ease-out before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]', selection?.kind === 'file' && selection.file.path === file.path && 'font-semibold text-foreground before:bg-(--theme-primary)'), onClick: () => onSelect({ file, kind: 'file' }), type: "button", children: [_jsx(FileGlyph, { kind: file.kind }), _jsx("span", { className: "truncate", children: file.name })] }, file.path)))] }));
++                .map(file => (_jsxs("button", { className: cn('relative flex w-full items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-tertiary) transition-[transform,color,background-color] duration-200 ease-out before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]', selection?.kind === 'file' &&
++                    selection.file.path === file.path &&
++                    'font-semibold text-foreground before:bg-(--theme-primary)'), onClick: () => onSelect({ file, kind: 'file' }), type: "button", children: [_jsx(FileGlyph, { kind: file.kind }), _jsx("span", { className: "truncate", children: file.name })] }, file.path)))] }));
+ }
+ function fileUrl(path) {
+     return `file://${encodeURI(path).replace(/#/g, '%23')}`;
+diff --git a/apps/desktop/src/app/library/index.tsx b/apps/desktop/src/app/library/index.tsx
+index fba58742e4a..1bc99fd1048 100644
+--- a/apps/desktop/src/app/library/index.tsx
++++ b/apps/desktop/src/app/library/index.tsx
+@@ -23,6 +23,9 @@ import { EmptyState } from '@/components/ui/empty-state'
+ import { Input } from '@/components/ui/input'
+ import { Tip } from '@/components/ui/tooltip'
+ import { cn } from '@/lib/utils'
++import { notifyError } from '@/store/notifications'
++
++import { type ArtifactRecord, loadRecentArtifacts, openArtifactHref } from '../artifacts/artifact-utils'
+ 
+ import { NoteEditor, type NoteEditorHandle } from './note-editor'
+ import { NoteRail } from './note-rail'
+@@ -77,7 +80,13 @@ function buildTree(contents: VaultContents): TreeNode {
+       if (next) {
+         node = next
+       } else {
+-        const created: TreeNode = { files: [], folders: [], name: part, notes: [], path: node.path ? `${node.path}/${part}` : part }
++        const created: TreeNode = {
++          files: [],
++          folders: [],
++          name: part,
++          notes: [],
++          path: node.path ? `${node.path}/${part}` : part
++        }
+         node.folders.push(created)
+         node = created
+       }
+@@ -103,6 +112,7 @@ function buildTree(contents: VaultContents): TreeNode {
+ 
+ export function LibraryView() {
+   const [contents, setContents] = useState<VaultContents | null>(null)
++  const [deliverables, setDeliverables] = useState<ArtifactRecord[] | null>(null)
+   const [error, setError] = useState<null | string>(null)
+   // Obsidian-style tabs: every opened note/file gets (or refocuses) a tab.
+   const [tabs, setTabs] = useState<TabItem[]>([])
+@@ -138,6 +148,23 @@ export function LibraryView() {
+     }
+   }, [])
+ 
++  const refreshDeliverables = useCallback(async () => {
++    try {
++      setDeliverables(await loadRecentArtifacts())
++    } catch (err) {
++      setDeliverables([])
++      notifyError(err, 'Could not load files made by Nemesis.')
++    }
++  }, [])
++
++  const openDeliverable = useCallback(async (artifact: ArtifactRecord) => {
++    try {
++      await openArtifactHref(artifact.href)
++    } catch (err) {
++      notifyError(err, 'Could not open this deliverable.')
++    }
++  }, [])
++
+   const openSelection = useCallback((next: TabItem) => {
+     const key = tabKey(next)
+     setTabs(current => {
+@@ -155,10 +182,13 @@ export function LibraryView() {
+     })
+   }, [])
+ 
+-  const closeTab = useCallback((index: number) => {
+-    setTabs(current => current.filter((_, i) => i !== index))
+-    setActiveTab(current => (index < current ? current - 1 : Math.max(0, Math.min(current, tabs.length - 2))))
+-  }, [tabs.length])
++  const closeTab = useCallback(
++    (index: number) => {
++      setTabs(current => current.filter((_, i) => i !== index))
++      setActiveTab(current => (index < current ? current - 1 : Math.max(0, Math.min(current, tabs.length - 2))))
++    },
++    [tabs.length]
++  )
+ 
+   useEffect(() => {
+     void (async () => {
+@@ -168,6 +198,7 @@ export function LibraryView() {
+         openSelection({ kind: 'note', note: loaded.notes[0] })
+       }
+     })()
++    void refreshDeliverables()
+ 
+     return () => {
+       if (saveTimer.current) {
+@@ -175,7 +206,7 @@ export function LibraryView() {
+       }
+     }
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [refresh])
++  }, [refresh, refreshDeliverables])
+ 
+   // Re-read the vault when the window regains focus so files the agent moved,
+   // renamed, or created while you were away show up without a manual reload.
+@@ -192,12 +223,13 @@ export function LibraryView() {
+ 
+       last = now
+       void refresh()
++      void refreshDeliverables()
+     }
+ 
+     window.addEventListener('focus', onFocus)
+ 
+     return () => window.removeEventListener('focus', onFocus)
+-  }, [refresh])
++  }, [refresh, refreshDeliverables])
+ 
+   const tree = useMemo(() => (contents ? buildTree(contents) : null), [contents])
+   const index = useMemo(() => (contents ? buildIndex(contents.notes) : null), [contents])
+@@ -243,9 +275,7 @@ export function LibraryView() {
+ 
+   const scheduleSave = useCallback((note: VaultNote, content: string) => {
+     setContents(current =>
+-      current
+-        ? { ...current, notes: current.notes.map(n => (n.path === note.path ? { ...n, content } : n)) }
+-        : current
++      current ? { ...current, notes: current.notes.map(n => (n.path === note.path ? { ...n, content } : n)) } : current
+     )
+ 
+     if (saveTimer.current) {
+@@ -350,7 +380,10 @@ export function LibraryView() {
+               <Button
+                 aria-label="New note"
+                 className="transition-transform duration-200 ease-out active:scale-[0.98]"
+-                onClick={() => { setCreating('note'); setDraft('') }}
++                onClick={() => {
++                  setCreating('note')
++                  setDraft('')
++                }}
+                 size="icon-xs"
+                 variant="ghost"
+               >
+@@ -361,7 +394,10 @@ export function LibraryView() {
+               <Button
+                 aria-label="New folder"
+                 className="transition-transform duration-200 ease-out active:scale-[0.98]"
+-                onClick={() => { setCreating('folder'); setDraft('') }}
++                onClick={() => {
++                  setCreating('folder')
++                  setDraft('')
++                }}
+                 size="icon-xs"
+                 variant="ghost"
+               >
+@@ -376,8 +412,13 @@ export function LibraryView() {
+               autoFocus
+               onChange={event => setDraft(event.target.value)}
+               onKeyDown={event => {
+-                if (event.key === 'Enter') void submitCreate()
+-                if (event.key === 'Escape') setCreating(null)
++                if (event.key === 'Enter') {
++                  void submitCreate()
++                }
++
++                if (event.key === 'Escape') {
++                  setCreating(null)
++                }
+               }}
+               placeholder={creating === 'folder' ? 'Folder name' : 'Note title'}
+               value={draft}
+@@ -386,6 +427,45 @@ export function LibraryView() {
+           </div>
+         )}
+         <nav className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
++          <section className="mb-3 border-b border-(--ui-stroke-quaternary) pb-3">
++            <div className="mb-1.5 flex items-center justify-between gap-2 px-2">
++              <h2 className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-tertiary)">
++                Made by Nemesis
++              </h2>
++              {deliverables && deliverables.length > 0 && (
++                <span className="text-[0.625rem] tabular-nums text-(--ui-text-quaternary)">{deliverables.length}</span>
++              )}
++            </div>
++            {!deliverables ? (
++              <p className="px-2 py-1 text-xs text-(--ui-text-tertiary)">Finding deliverables…</p>
++            ) : deliverables.length === 0 ? (
++              <p className="px-2 py-1 text-xs text-(--ui-text-tertiary)">Chat-made files will appear here.</p>
++            ) : (
++              <div className="space-y-0.5">
++                {deliverables.map(artifact => (
++                  <button
++                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-row-hover-background) hover:text-foreground"
++                    key={artifact.id}
++                    onClick={() => void openDeliverable(artifact)}
++                    title={`${artifact.label} · ${artifact.sessionTitle}`}
++                    type="button"
++                  >
++                    {artifact.kind === 'image' ? (
++                      <IconPhoto className="shrink-0 text-(--theme-primary)" size={14} />
++                    ) : (
++                      <IconFileText className="shrink-0 text-(--theme-primary)" size={14} />
++                    )}
++                    <span className="min-w-0 flex-1">
++                      <span className="block truncate">{artifact.label}</span>
++                      <span className="block truncate text-[0.625rem] text-(--ui-text-tertiary)">
++                        {artifact.sessionTitle}
++                      </span>
++                    </span>
++                  </button>
++                ))}
++              </div>
++            )}
++          </section>
+           <TreeLevel
+             collapsed={collapsed}
+             depth={0}
+@@ -425,7 +505,11 @@ export function LibraryView() {
+               >
+                 {i === activeTab && <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-(--theme-primary)" />}
+                 <span className="flex min-w-0 items-center gap-1.5 py-2 pl-3 pr-8">
+-                  {tab.kind === 'note' ? <IconFileText className="shrink-0 opacity-60" size={13} /> : <FileGlyph kind={tab.file.kind} />}
++                  {tab.kind === 'note' ? (
++                    <IconFileText className="shrink-0 opacity-60" size={13} />
++                  ) : (
++                    <FileGlyph kind={tab.file.kind} />
++                  )}
+                   <span className="truncate">{tabLabel(tab)}</span>
+                 </span>
+                 <button
+@@ -450,12 +534,15 @@ export function LibraryView() {
+                 <div className="min-w-0">
+                   <div className="mb-2 flex min-w-0 items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-tertiary)">
+                     <span>Library</span>
+-                    {selection.note.folder.split('/').filter(Boolean).map((part, index) => (
+-                      <span className="contents" key={`${part}-${index}`}>
+-                        <IconChevronRight className="shrink-0 opacity-50" size={11} />
+-                        <span className="truncate">{part}</span>
+-                      </span>
+-                    ))}
++                    {selection.note.folder
++                      .split('/')
++                      .filter(Boolean)
++                      .map((part, index) => (
++                        <span className="contents" key={`${part}-${index}`}>
++                          <IconChevronRight className="shrink-0 opacity-50" size={11} />
++                          <span className="truncate">{part}</span>
++                        </span>
++                      ))}
+                   </div>
+                   <h2 className="truncate text-2xl font-semibold tracking-[-0.025em]">{selection.note.title}</h2>
+                 </div>
+@@ -550,7 +637,10 @@ function TreeLevel({
+                   size={12}
+                 />
+                 {isCollapsed ? (
+-                  <IconFolder className="shrink-0 text-(--ui-text-tertiary) group-hover/folder:text-(--theme-primary)" size={14} />
++                  <IconFolder
++                    className="shrink-0 text-(--ui-text-tertiary) group-hover/folder:text-(--theme-primary)"
++                    size={14}
++                  />
+                 ) : (
+                   <IconFolderOpen className="shrink-0 text-(--theme-primary)" size={14} />
+                 )}
+@@ -576,7 +666,9 @@ function TreeLevel({
+           <button
+             className={cn(
+               'relative flex w-full items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-secondary) transition-[transform,color,background-color] duration-200 ease-out before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]',
+-              selection?.kind === 'note' && selection.note.path === note.path && 'font-semibold text-foreground before:bg-(--theme-primary)'
++              selection?.kind === 'note' &&
++                selection.note.path === note.path &&
++                'font-semibold text-foreground before:bg-(--theme-primary)'
+             )}
+             key={note.path}
+             onClick={() => onSelect({ kind: 'note', note })}
+@@ -593,7 +685,9 @@ function TreeLevel({
+           <button
+             className={cn(
+               'relative flex w-full items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-tertiary) transition-[transform,color,background-color] duration-200 ease-out before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]',
+-              selection?.kind === 'file' && selection.file.path === file.path && 'font-semibold text-foreground before:bg-(--theme-primary)'
++              selection?.kind === 'file' &&
++                selection.file.path === file.path &&
++                'font-semibold text-foreground before:bg-(--theme-primary)'
+             )}
+             key={file.path}
+             onClick={() => onSelect({ file, kind: 'file' })}
+diff --git a/apps/desktop/src/app/settings/connections-settings.js b/apps/desktop/src/app/settings/connections-settings.js
+index bf5c8820354..5f8f8389fcf 100644
+--- a/apps/desktop/src/app/settings/connections-settings.js
++++ b/apps/desktop/src/app/settings/connections-settings.js
+@@ -121,13 +121,13 @@ export function ConnectionsSettings({ onClose }) {
+         }
+         connect(/^https?:\/\//i.test(url) ? url : `https://${url}`);
+     };
+-    return (_jsxs("div", { className: "mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8", children: [_jsxs("div", { className: "flex flex-col gap-1", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70", children: "Connections" }), _jsx("h2", { className: "text-lg font-semibold text-foreground", children: "Connect your school accounts" }), _jsx("p", { className: "text-sm text-muted-foreground", children: "No API keys, no setup codes. You just sign in once in Nemesis's own browser \u2014 then the agent works inside that signed-in session for you. Your passwords are never shown to or stored by the agent." })] }), _jsx("div", { className: "flex flex-col gap-2", children: PORTALS.map(portal => {
+-                    const connected = status[portal.origin];
+-                    return (_jsxs("div", { className: "flex items-center gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-3", children: [_jsxs("div", { className: "min-w-0 flex-1", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "truncate text-sm font-medium text-foreground", children: portal.name }), connected && (_jsxs("span", { className: "inline-flex shrink-0 items-center gap-1 rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-(--theme-primary)", children: [_jsx(Codicon, { name: "check", size: "0.6rem" }), "Connected"] }))] }), _jsx("div", { className: "truncate text-xs text-muted-foreground", children: portal.hint })] }), connected ? (_jsx(Button, { onClick: () => disconnect(portal.origin), size: "sm", variant: "ghost", children: "Sign out" })) : (_jsx(Button, { onClick: () => connect(portal.url), size: "sm", variant: "secondary", children: "Connect" }))] }, portal.id));
+-                }) }), _jsxs("div", { className: "flex flex-col gap-2 rounded-xl border border-dashed border-(--ui-stroke-tertiary) px-4 py-4", children: [_jsx("span", { className: "text-xs font-medium text-foreground", children: "Another site" }), _jsx("span", { className: "text-xs text-muted-foreground", children: "A different school portal, a library database, anything you log into on the web." }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx(Input, { className: "flex-1", onChange: event => setCustomUrl(event.target.value), onKeyDown: event => {
+-                                    if (event.key === 'Enter') {
+-                                        connectCustom();
+-                                    }
+-                                }, placeholder: "paste the site's address", value: customUrl }), _jsx(Button, { disabled: !customUrl.trim(), onClick: connectCustom, size: "sm", variant: "secondary", children: "Open & sign in" })] })] }), _jsx("p", { className: "text-xs leading-relaxed text-muted-foreground/70", children: "Once connected, ask Nemesis things like \u201Cwhat's due this week?\u201D or \u201Cpull my new lecture slides into the Library.\u201D It reads these accounts for you \u2014 it never sends email or submits anything without you saying so." })] }));
++    return (_jsx("div", { className: "min-h-0 flex-1 overflow-y-auto overscroll-contain", children: _jsxs("div", { className: "mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8", children: [_jsxs("div", { className: "flex flex-col gap-1", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70", children: "Connections" }), _jsx("h2", { className: "text-lg font-semibold text-foreground", children: "Connect to apps & websites" }), _jsx("p", { className: "text-sm text-muted-foreground", children: "No API keys or setup codes \u2014 sign in once in Nemesis's own browser to any app or website you use for school. Then the agent works inside that signed-in session for you. Your passwords are never shown to or stored by the agent." })] }), _jsx("div", { className: "flex flex-col gap-2", children: PORTALS.map(portal => {
++                        const connected = status[portal.origin];
++                        return (_jsxs("div", { className: "flex items-center gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-3", children: [_jsxs("div", { className: "min-w-0 flex-1", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "truncate text-sm font-medium text-foreground", children: portal.name }), connected && (_jsxs("span", { className: "inline-flex shrink-0 items-center gap-1 rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-(--theme-primary)", children: [_jsx(Codicon, { name: "check", size: "0.6rem" }), "Connected"] }))] }), _jsx("div", { className: "truncate text-xs text-muted-foreground", children: portal.hint })] }), connected ? (_jsx(Button, { onClick: () => disconnect(portal.origin), size: "sm", variant: "ghost", children: "Sign out" })) : (_jsx(Button, { onClick: () => connect(portal.url), size: "sm", variant: "secondary", children: "Connect" }))] }, portal.id));
++                    }) }), _jsxs("div", { className: "flex flex-col gap-2 rounded-xl border border-dashed border-(--ui-stroke-tertiary) px-4 py-4", children: [_jsx("span", { className: "text-xs font-medium text-foreground", children: "Another site" }), _jsx("span", { className: "text-xs text-muted-foreground", children: "A different school portal, a library database, anything you log into on the web." }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx(Input, { className: "flex-1", onChange: event => setCustomUrl(event.target.value), onKeyDown: event => {
++                                        if (event.key === 'Enter') {
++                                            connectCustom();
++                                        }
++                                    }, placeholder: "paste the site's address", value: customUrl }), _jsx(Button, { disabled: !customUrl.trim(), onClick: connectCustom, size: "sm", variant: "secondary", children: "Open & sign in" })] })] }), _jsx("p", { className: "text-xs leading-relaxed text-muted-foreground/70", children: "Once connected, ask Nemesis things like \u201Cwhat's due this week?\u201D or \u201Cpull my new lecture slides into the Library.\u201D It reads these accounts for you \u2014 it never sends email or submits anything without you saying so." })] }) }));
+ }
+ export { originOf as connectionOriginOf };
+diff --git a/apps/desktop/src/app/settings/connections-settings.tsx b/apps/desktop/src/app/settings/connections-settings.tsx
+index 6f8968de870..1de977ffcae 100644
+--- a/apps/desktop/src/app/settings/connections-settings.tsx
++++ b/apps/desktop/src/app/settings/connections-settings.tsx
+@@ -142,81 +142,84 @@ export function ConnectionsSettings({ onClose }: { onClose?: () => void }) {
+   }
+ 
+   return (
+-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8">
+-      <div className="flex flex-col gap-1">
+-        <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70">
+-          Connections
+-        </span>
+-        <h2 className="text-lg font-semibold text-foreground">Connect your school accounts</h2>
+-        <p className="text-sm text-muted-foreground">
+-          No API keys, no setup codes. You just sign in once in Nemesis&apos;s own browser — then the agent works inside
+-          that signed-in session for you. Your passwords are never shown to or stored by the agent.
+-        </p>
+-      </div>
++    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
++      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8">
++        <div className="flex flex-col gap-1">
++          <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70">
++            Connections
++          </span>
++          <h2 className="text-lg font-semibold text-foreground">Connect to apps &amp; websites</h2>
++          <p className="text-sm text-muted-foreground">
++            No API keys or setup codes — sign in once in Nemesis&apos;s own browser to any app or website you use for
++            school. Then the agent works inside that signed-in session for you. Your passwords are never shown to or
++            stored by the agent.
++          </p>
++        </div>
+ 
+-      <div className="flex flex-col gap-2">
+-        {PORTALS.map(portal => {
+-          const connected = status[portal.origin]
+-
+-          return (
+-            <div
+-              className="flex items-center gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-3"
+-              key={portal.id}
+-            >
+-              <div className="min-w-0 flex-1">
+-                <div className="flex items-center gap-2">
+-                  <span className="truncate text-sm font-medium text-foreground">{portal.name}</span>
+-                  {connected && (
+-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-(--theme-primary)">
+-                      <Codicon name="check" size="0.6rem" />
+-                      Connected
+-                    </span>
+-                  )}
++        <div className="flex flex-col gap-2">
++          {PORTALS.map(portal => {
++            const connected = status[portal.origin]
++
++            return (
++              <div
++                className="flex items-center gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-3"
++                key={portal.id}
++              >
++                <div className="min-w-0 flex-1">
++                  <div className="flex items-center gap-2">
++                    <span className="truncate text-sm font-medium text-foreground">{portal.name}</span>
++                    {connected && (
++                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-(--theme-primary)">
++                        <Codicon name="check" size="0.6rem" />
++                        Connected
++                      </span>
++                    )}
++                  </div>
++                  <div className="truncate text-xs text-muted-foreground">{portal.hint}</div>
+                 </div>
+-                <div className="truncate text-xs text-muted-foreground">{portal.hint}</div>
++                {connected ? (
++                  <Button onClick={() => disconnect(portal.origin)} size="sm" variant="ghost">
++                    Sign out
++                  </Button>
++                ) : (
++                  <Button onClick={() => connect(portal.url)} size="sm" variant="secondary">
++                    Connect
++                  </Button>
++                )}
+               </div>
+-              {connected ? (
+-                <Button onClick={() => disconnect(portal.origin)} size="sm" variant="ghost">
+-                  Sign out
+-                </Button>
+-              ) : (
+-                <Button onClick={() => connect(portal.url)} size="sm" variant="secondary">
+-                  Connect
+-                </Button>
+-              )}
+-            </div>
+-          )
+-        })}
+-      </div>
++            )
++          })}
++        </div>
+ 
+-      <div className="flex flex-col gap-2 rounded-xl border border-dashed border-(--ui-stroke-tertiary) px-4 py-4">
+-        <span className="text-xs font-medium text-foreground">Another site</span>
+-        <span className="text-xs text-muted-foreground">
+-          A different school portal, a library database, anything you log into on the web.
+-        </span>
+-        <div className="flex items-center gap-2">
+-          <Input
+-            className="flex-1"
+-            onChange={event => setCustomUrl(event.target.value)}
+-            onKeyDown={event => {
+-              if (event.key === 'Enter') {
+-                connectCustom()
+-              }
+-            }}
+-            placeholder="paste the site's address"
+-            value={customUrl}
+-          />
+-          <Button disabled={!customUrl.trim()} onClick={connectCustom} size="sm" variant="secondary">
+-            Open &amp; sign in
+-          </Button>
++        <div className="flex flex-col gap-2 rounded-xl border border-dashed border-(--ui-stroke-tertiary) px-4 py-4">
++          <span className="text-xs font-medium text-foreground">Another site</span>
++          <span className="text-xs text-muted-foreground">
++            A different school portal, a library database, anything you log into on the web.
++          </span>
++          <div className="flex items-center gap-2">
++            <Input
++              className="flex-1"
++              onChange={event => setCustomUrl(event.target.value)}
++              onKeyDown={event => {
++                if (event.key === 'Enter') {
++                  connectCustom()
++                }
++              }}
++              placeholder="paste the site's address"
++              value={customUrl}
++            />
++            <Button disabled={!customUrl.trim()} onClick={connectCustom} size="sm" variant="secondary">
++              Open &amp; sign in
++            </Button>
++          </div>
+         </div>
+-      </div>
+ 
+-      <p className="text-xs leading-relaxed text-muted-foreground/70">
+-        Once connected, ask Nemesis things like &ldquo;what&apos;s due this week?&rdquo; or &ldquo;pull my new lecture
+-        slides into the Library.&rdquo; It reads these accounts for you — it never sends email or submits anything
+-        without you saying so.
+-      </p>
++        <p className="text-xs leading-relaxed text-muted-foreground/70">
++          Once connected, ask Nemesis things like &ldquo;what&apos;s due this week?&rdquo; or &ldquo;pull my new lecture
++          slides into the Library.&rdquo; It reads these accounts for you — it never sends email or submits anything
++          without you saying so.
++        </p>
++      </div>
+     </div>
+   )
+ }
+diff --git a/apps/desktop/src/app/study/index.js b/apps/desktop/src/app/study/index.js
+index 1a320ed0521..63c93e21080 100644
+--- a/apps/desktop/src/app/study/index.js
++++ b/apps/desktop/src/app/study/index.js
+@@ -91,7 +91,9 @@ export function StudyView() {
+         return counts;
+     }, { learning: 0, new: 0, review: 0 }), [queue, state.schedule]);
+     const totals = deckStats(state, null, now);
+-    const sections = useMemo(() => groupDecks(state, now).map(group => group.course).filter(course => course.toLocaleLowerCase() !== 'other'), [now, state]);
++    const sections = useMemo(() => groupDecks(state, now)
++        .map(group => group.course)
++        .filter(course => course.toLocaleLowerCase() !== 'other'), [now, state]);
+     const settings = getSettings(state);
+     const flip = settings.flip && !reducedMotion;
+     const update = useCallback((next) => {
+@@ -108,7 +110,11 @@ export function StudyView() {
+         let lastRun = 0;
+         const reconcile = async () => {
+             lastRun = Date.now();
+-            const [candidates, mindmapFiles, testFiles] = await Promise.all([scanAllDeckFiles(), scanMindmapFiles(), scanTestFiles()]);
++            const [candidates, mindmapFiles, testFiles] = await Promise.all([
++                scanAllDeckFiles(),
++                scanMindmapFiles(),
++                scanTestFiles()
++            ]);
+             if (cancelled) {
+                 return;
+             }
+@@ -261,7 +267,11 @@ export function StudyView() {
+                                 setBrowseDeckId(null);
+                                 setMatchDeckId(null);
+                                 setTakingTest(null);
+-                            }, size: "sm", variant: "outline", children: "Back to decks" })) : (_jsxs(_Fragment, { children: [_jsxs("div", { className: "mr-1 flex items-center overflow-hidden rounded-md border border-border", children: [_jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'cards' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('cards'), title: "Card view", type: "button", children: _jsx(IconLayoutGrid, { size: 14 }) }), _jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'list' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('list'), title: "List view", type: "button", children: _jsx(IconList, { size: 14 }) })] }), _jsx("button", { "aria-label": "Study settings", className: "rounded-md border border-border px-2 py-1.5 text-muted-foreground transition-colors hover:text-foreground", onClick: () => setSettingsOpen(true), title: "Study settings", type: "button", children: _jsx(IconSettings, { size: 14 }) }), _jsxs(Button, { onClick: () => setNewSectionOpen(true), size: "sm", variant: "outline", children: [_jsx(IconFolderPlus, { size: 14 }), "New section"] }), _jsx(Button, { onClick: () => setNewDeckSection(''), size: "sm", variant: "outline", children: "New deck" }), _jsx(Button, { onClick: () => setImportOpen(true), size: "sm", variant: "outline", children: "Import cards" }), _jsx(Button, { disabled: totals.due === 0, onClick: () => startReview(null), size: "sm", children: "Study all" })] })) })] }), autoImported.length > 0 && !reviewing && !browseDeckId && (_jsxs("div", { className: "mx-6 mb-1 flex items-center justify-between rounded-md border border-(--theme-primary)/40 bg-(--theme-primary)/10 px-3 py-1.5 text-xs", children: [_jsxs("span", { children: ["Nemesis added ", autoImported.length === 1 ? 'a new deck' : `${autoImported.length} new decks`, ":", ' ', autoImported.join(', ')] }), _jsx("button", { className: "text-muted-foreground hover:text-foreground", onClick: () => setAutoImported([]), type: "button", children: "Dismiss" })] })), reviewing ? (current ? (_jsx(ReviewSurface, { flip: flip, intervals: previewIntervals(state, current.card.id, now), item: current, onGrade: grade, onReveal: () => setRevealed(true), remainingCounts: remainingCounts, revealed: revealed, showIntervalHints: settings.showIntervalHints })) : (_jsx(EmptyState, { className: "flex-1", description: done > 0 ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.` : 'Nothing is due right now.', title: "All caught up" }))) : matchDeckId ? (_jsx(MatchGame, { deck: state.decks.find(deck => deck.id === matchDeckId) ?? null, onExit: () => setMatchDeckId(null) })) : browseDeckId ? (_jsx(CardBrowser, { deck: state.decks.find(deck => deck.id === browseDeckId) ?? null, onChange: update, onDeleteDeck: () => removeDeck(browseDeckId), onMatch: () => startMatch(browseDeckId), onMoveDeck: section => moveDeck(browseDeckId, section), sections: sections, state: state })) : takingTest ? (_jsx(TestSurface, { file: takingTest, onComplete: () => setTestAttempts(loadTestAttempts()), onExit: () => setTakingTest(null) })) : (_jsx(DeckBrowser, { mindmaps: mindmaps, onBrowse: setBrowseDeckId, onCreateDeck: setNewDeckSection, onMatch: startMatch, onOpenMindmap: setViewingMindmap, onStartTest: setTakingTest, onStudy: startReview, state: state, testAttempts: testAttempts, tests: tests, view: view })), _jsx(MindmapViewerDialog, { file: viewingMindmap, onOpenChange: open => !open && setViewingMindmap(null) }), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen, sections: sections }), newDeckSection !== null && (_jsx(NewDeckDialog, { initialSection: newDeckSection, onClose: () => setNewDeckSection(null), onCreate: createDeck, sections: sections })), newSectionOpen && (_jsx(NewSectionDialog, { onClose: () => setNewSectionOpen(false), onCreate: createSection, sections: sections })), _jsx(StudySettingsDialog, { onChange: patch => update(setSettings(state, patch)), onOpenChange: setSettingsOpen, open: settingsOpen, settings: settings })] }));
++                            }, size: "sm", variant: "outline", children: "Back to decks" })) : (_jsxs(_Fragment, { children: [_jsxs("div", { className: "mr-1 flex items-center overflow-hidden rounded-md border border-border", children: [_jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'cards'
++                                                ? 'bg-accent text-accent-foreground'
++                                                : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('cards'), title: "Card view", type: "button", children: _jsx(IconLayoutGrid, { size: 14 }) }), _jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'list' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('list'), title: "List view", type: "button", children: _jsx(IconList, { size: 14 }) })] }), _jsx("button", { "aria-label": "Study settings", className: "rounded-md border border-border px-2 py-1.5 text-muted-foreground transition-colors hover:text-foreground", onClick: () => setSettingsOpen(true), title: "Study settings", type: "button", children: _jsx(IconSettings, { size: 14 }) }), _jsxs(Button, { onClick: () => setNewSectionOpen(true), size: "sm", variant: "outline", children: [_jsx(IconFolderPlus, { size: 14 }), "New section"] }), _jsx(Button, { onClick: () => setNewDeckSection(''), size: "sm", variant: "outline", children: "New deck" }), _jsx(Button, { onClick: () => setImportOpen(true), size: "sm", variant: "outline", children: "Import cards" }), _jsx(Button, { disabled: totals.due === 0, onClick: () => startReview(null), size: "sm", children: "Study all" })] })) })] }), autoImported.length > 0 && !reviewing && !browseDeckId && (_jsxs("div", { className: "mx-6 mb-1 flex items-center justify-between rounded-md border border-(--theme-primary)/40 bg-(--theme-primary)/10 px-3 py-1.5 text-xs", children: [_jsxs("span", { children: ["Nemesis added ", autoImported.length === 1 ? 'a new deck' : `${autoImported.length} new decks`, ":", ' ', autoImported.join(', ')] }), _jsx("button", { className: "text-muted-foreground hover:text-foreground", onClick: () => setAutoImported([]), type: "button", children: "Dismiss" })] })), reviewing ? (current ? (_jsx(ReviewSurface, { flip: flip, intervals: previewIntervals(state, current.card.id, now), item: current, onGrade: grade, onReveal: () => setRevealed(true), remainingCounts: remainingCounts, revealed: revealed, showIntervalHints: settings.showIntervalHints })) : (_jsx(EmptyState, { className: "flex-1", description: done > 0
++                    ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.`
++                    : 'Nothing is due right now.', title: "All caught up" }))) : matchDeckId ? (_jsx(MatchGame, { deck: state.decks.find(deck => deck.id === matchDeckId) ?? null, onExit: () => setMatchDeckId(null) })) : browseDeckId ? (_jsx(CardBrowser, { deck: state.decks.find(deck => deck.id === browseDeckId) ?? null, onChange: update, onDeleteDeck: () => removeDeck(browseDeckId), onMatch: () => startMatch(browseDeckId), onMoveDeck: section => moveDeck(browseDeckId, section), sections: sections, state: state })) : takingTest ? (_jsx(TestSurface, { file: takingTest, onComplete: () => setTestAttempts(loadTestAttempts()), onExit: () => setTakingTest(null) })) : (_jsx(DeckBrowser, { mindmaps: mindmaps, onBrowse: setBrowseDeckId, onCreateDeck: setNewDeckSection, onMatch: startMatch, onOpenMindmap: setViewingMindmap, onStartTest: setTakingTest, onStudy: startReview, state: state, testAttempts: testAttempts, tests: tests, view: view })), _jsx(MindmapViewerDialog, { file: viewingMindmap, onOpenChange: open => !open && setViewingMindmap(null) }), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen, sections: sections }), newDeckSection !== null && (_jsx(NewDeckDialog, { initialSection: newDeckSection, onClose: () => setNewDeckSection(null), onCreate: createDeck, sections: sections })), newSectionOpen && (_jsx(NewSectionDialog, { onClose: () => setNewSectionOpen(false), onCreate: createSection, sections: sections })), _jsx(StudySettingsDialog, { onChange: patch => update(setSettings(state, patch)), onOpenChange: setSettingsOpen, open: settingsOpen, settings: settings })] }));
+ }
+ const OTHER_SECTION_VALUE = '__other__';
+ function SectionSelect({ label, onChange, sections, value }) {
+@@ -316,13 +326,14 @@ function DeckBrowser({ mindmaps, onBrowse, onCreateDeck, onMatch, onOpenMindmap,
+         }))
+     ];
+     if (!groups.length) {
+-        return _jsx(EmptyState, { className: "flex-1", description: "Create a deck or import cards to get going.", title: "No decks yet" });
++        return (_jsx(EmptyState, { className: "flex-1", description: "Create a deck or import cards to get going.", title: "No decks yet" }));
+     }
+     return (_jsxs("div", { className: "pb-10", children: [_jsx(Heatmap, { state: state }), groups.map(group => {
+                 const groupMindmaps = group.extras?.mindmaps ?? [];
+                 const groupTests = group.extras?.tests ?? [];
+                 const hasExtras = groupMindmaps.length > 0 || groupTests.length > 0;
+-                return (_jsxs("section", { className: "px-8 pt-7", children: [_jsxs("div", { className: "mb-3 flex items-baseline justify-between", children: [_jsx("h2", { className: "text-[15px] font-semibold tracking-tight", children: group.course }), _jsxs("span", { className: "text-xs text-muted-foreground", children: [group.stats.due, " due \u00B7 ", group.decks.length, " deck", group.decks.length === 1 ? '' : 's', " \u00B7 ", group.stats.total, " cards", groupMindmaps.length > 0 && ` · ${groupMindmaps.length} mind map${groupMindmaps.length === 1 ? '' : 's'}`, groupTests.length > 0 && ` · ${groupTests.length} test${groupTests.length === 1 ? '' : 's'}`] })] }), group.decks.length === 0 ? (hasExtras ? null : (_jsxs("div", { className: "rounded-xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-5", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)", children: "Empty section" }), _jsxs("div", { className: "mt-1 flex items-center gap-1 text-xs text-muted-foreground", children: [_jsx("span", { children: "No decks yet \u2014" }), _jsx(Button, { onClick: () => onCreateDeck(group.course), size: "inline", variant: "textStrong", children: "add one" })] })] }))) : view === 'list' ? (_jsx("div", { className: "flex flex-col gap-2", children: group.decks.map(deck => (_jsx(DeckRow, { deck: deck, now: now, onBrowse: onBrowse, onMatch: onMatch, onStudy: onStudy, state: state }, deck.id))) })) : (_jsx("div", { className: "grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3", children: group.decks.map(deck => (_jsx(DeckCard, { deck: deck, now: now, onBrowse: onBrowse, onMatch: onMatch, onStudy: onStudy, state: state }, deck.id))) })), hasExtras && (_jsxs("div", { className: "mt-2 flex flex-col gap-2", children: [groupMindmaps.map(mindmap => (_jsx(MindmapRow, { mindmap: mindmap, onOpen: () => onOpenMindmap(mindmap) }, mindmap.fileName))), groupTests.map(test => (_jsx(TestRow, { attempts: testAttempts[test.fileName]?.attempts ?? [], onStart: () => onStartTest(test), test: test }, test.fileName)))] }))] }, group.course));
++                return (_jsxs("section", { className: "px-8 pt-7", children: [_jsxs("div", { className: "mb-3 flex items-baseline justify-between", children: [_jsx("h2", { className: "text-[15px] font-semibold tracking-tight", children: group.course }), _jsxs("span", { className: "text-xs text-muted-foreground", children: [group.stats.due, " due \u00B7 ", group.decks.length, " deck", group.decks.length === 1 ? '' : 's', " \u00B7", ' ', group.stats.total, " cards", groupMindmaps.length > 0 &&
++                                            ` · ${groupMindmaps.length} mind map${groupMindmaps.length === 1 ? '' : 's'}`, groupTests.length > 0 && ` · ${groupTests.length} test${groupTests.length === 1 ? '' : 's'}`] })] }), group.decks.length === 0 ? (hasExtras ? null : (_jsxs("div", { className: "rounded-xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-5", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)", children: "Empty section" }), _jsxs("div", { className: "mt-1 flex items-center gap-1 text-xs text-muted-foreground", children: [_jsx("span", { children: "No decks yet \u2014" }), _jsx(Button, { onClick: () => onCreateDeck(group.course), size: "inline", variant: "textStrong", children: "add one" })] })] }))) : view === 'list' ? (_jsx("div", { className: "flex flex-col gap-2", children: group.decks.map(deck => (_jsx(DeckRow, { deck: deck, now: now, onBrowse: onBrowse, onMatch: onMatch, onStudy: onStudy, state: state }, deck.id))) })) : (_jsx("div", { className: "grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3", children: group.decks.map(deck => (_jsx(DeckCard, { deck: deck, now: now, onBrowse: onBrowse, onMatch: onMatch, onStudy: onStudy, state: state }, deck.id))) })), hasExtras && (_jsxs("div", { className: "mt-2 flex flex-col gap-2", children: [groupMindmaps.map(mindmap => (_jsx(MindmapRow, { mindmap: mindmap, onOpen: () => onOpenMindmap(mindmap) }, mindmap.fileName))), groupTests.map(test => (_jsx(TestRow, { attempts: testAttempts[test.fileName]?.attempts ?? [], onStart: () => onStartTest(test), test: test }, test.fileName)))] }))] }, group.course));
+             })] }));
+ }
+ function MindmapRow({ mindmap, onOpen }) {
+@@ -332,7 +343,14 @@ function TestRow({ attempts, onStart, test }) {
+     const best = bestAttempt(attempts);
+     const last = lastAttempt(attempts);
+     const count = test.questions.length;
+-    return (_jsxs("div", { className: "group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5", children: [_jsx(IconChecklist, { className: "shrink-0 text-muted-foreground", size: 16 }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("div", { className: "truncate text-sm font-medium", children: test.title }), _jsxs("div", { className: "mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground", children: [_jsxs("span", { children: [count, " question", count === 1 ? '' : 's'] }), best && (_jsxs("span", { children: ["\u00B7 best ", best.score, "/", best.total] })), last && last !== best && (_jsxs("span", { children: ["\u00B7 last ", last.score, "/", last.total] }))] })] }), _jsx(Button, { onClick: onStart, size: "sm", variant: "secondary", children: "Take test" })] }));
++    const onKeyDown = (event) => {
++        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
++            return;
++        }
++        event.preventDefault();
++        onStart();
++    };
++    return (_jsxs("div", { className: "group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 outline-none transition-[box-shadow,border-color] hover:border-(--theme-primary)/50 hover:ring-2 hover:ring-(--theme-primary)/20 focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45", onClick: onStart, onKeyDown: onKeyDown, role: "button", tabIndex: 0, children: [_jsx(IconChecklist, { className: "shrink-0 text-muted-foreground", size: 16 }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("div", { className: "truncate text-sm font-medium", children: test.title }), _jsxs("div", { className: "mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground", children: [_jsxs("span", { children: [count, " question", count === 1 ? '' : 's'] }), best && (_jsxs("span", { children: ["\u00B7 best ", best.score, "/", best.total] })), last && last !== best && (_jsxs("span", { children: ["\u00B7 last ", last.score, "/", last.total] }))] })] })] }));
+ }
+ // Fraction of a deck's cards that have been studied at least once (not "new").
+ function masteryPct(stats) {
+@@ -346,12 +364,40 @@ function DuePill({ due }) {
+ }
+ function DeckRow({ deck, now, onBrowse, onMatch, onStudy, state }) {
+     const stats = deckStats(state, deck.id, now);
+-    return (_jsxs("div", { className: "group flex items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-(--theme-primary)/40", children: [_jsxs("div", { className: "min-w-0 flex-1", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "truncate text-sm font-medium", children: deck.name }), stats.due > 0 && _jsx(DuePill, { due: stats.due })] }), _jsxs("div", { className: "mt-1.5 flex items-center gap-2", children: [_jsx("div", { className: "h-1 w-28 max-w-[40%] overflow-hidden rounded-full bg-(--ui-bg-tertiary,color-mix(in_srgb,gray_18%,transparent))", children: _jsx("div", { className: "h-full rounded-full bg-(--theme-primary)", style: { width: `${masteryPct(stats)}%` } }) }), _jsxs("span", { className: "text-[11px] text-muted-foreground tabular-nums", children: [stats.total, " cards \u00B7 ", stats.fresh, " new"] })] })] }), _jsxs("div", { className: "flex shrink-0 gap-1.5 opacity-80 transition-opacity group-hover:opacity-100", children: [_jsx(Button, { disabled: stats.due === 0, onClick: () => onStudy(deck.id), size: "sm", variant: "secondary", children: "Study" }), _jsx(Button, { disabled: stats.total < 2, onClick: () => onMatch(deck.id), size: "sm", variant: "ghost", children: "Match" }), _jsx(Button, { onClick: () => onBrowse(deck.id), size: "sm", variant: "ghost", children: "Cards" })] })] }));
++    const openDeck = () => onStudy(deck.id);
++    const onKeyDown = (event) => {
++        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
++            return;
++        }
++        event.preventDefault();
++        openDeck();
++    };
++    return (_jsxs("div", { className: "group flex cursor-pointer items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 outline-none transition-[box-shadow,border-color] hover:border-(--theme-primary)/50 hover:ring-2 hover:ring-(--theme-primary)/20 focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45", onClick: openDeck, onKeyDown: onKeyDown, role: "button", tabIndex: 0, children: [_jsxs("div", { className: "min-w-0 flex-1", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "truncate text-sm font-medium", children: deck.name }), stats.due > 0 && _jsx(DuePill, { due: stats.due })] }), _jsxs("div", { className: "mt-1.5 flex items-center gap-2", children: [_jsx("div", { className: "h-1 w-28 max-w-[40%] overflow-hidden rounded-full bg-(--ui-bg-tertiary,color-mix(in_srgb,gray_18%,transparent))", children: _jsx("div", { className: "h-full rounded-full bg-(--theme-primary)", style: { width: `${masteryPct(stats)}%` } }) }), _jsxs("span", { className: "text-[11px] text-muted-foreground tabular-nums", children: [stats.total, " cards \u00B7 ", stats.fresh, " new"] })] })] }), _jsxs("div", { className: "flex shrink-0 gap-1.5 opacity-80 transition-opacity group-hover:opacity-100", children: [_jsx(Button, { disabled: stats.total < 2, onClick: event => {
++                            event.stopPropagation();
++                            onMatch(deck.id);
++                        }, size: "sm", variant: "ghost", children: "Match" }), _jsx(Button, { onClick: event => {
++                            event.stopPropagation();
++                            onBrowse(deck.id);
++                        }, size: "sm", variant: "ghost", children: "Cards" })] })] }));
+ }
+ function DeckCard({ deck, now, onBrowse, onMatch, onStudy, state }) {
+     const stats = deckStats(state, deck.id, now);
+     const pct = masteryPct(stats);
+-    return (_jsxs("div", { className: "group flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-(--theme-primary)/40 hover:shadow-lg hover:shadow-black/20", children: [_jsxs("div", { className: "flex items-start justify-between gap-2", children: [_jsx("h3", { className: "text-[15px] font-semibold leading-snug tracking-tight", children: deck.name }), stats.due > 0 && _jsx(DuePill, { due: stats.due })] }), _jsxs("div", { className: "mt-auto", children: [_jsxs("div", { className: "mb-1.5 flex items-baseline justify-between text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "tabular-nums", children: [stats.total, " card", stats.total === 1 ? '' : 's', " \u00B7 ", stats.fresh, " new"] }), _jsxs("span", { className: "tabular-nums", children: [pct, "% studied"] })] }), _jsx(MasteryBar, { pct: pct })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { className: "flex-1", disabled: stats.due === 0, onClick: () => onStudy(deck.id), size: "sm", children: stats.due > 0 ? 'Study' : 'Done for now' }), _jsx(Button, { disabled: stats.total < 2, onClick: () => onMatch(deck.id), size: "sm", variant: "outline", children: "Match" }), _jsx(Button, { onClick: () => onBrowse(deck.id), size: "sm", variant: "ghost", children: "Cards" })] })] }));
++    const openDeck = () => onStudy(deck.id);
++    const onKeyDown = (event) => {
++        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
++            return;
++        }
++        event.preventDefault();
++        openDeck();
++    };
++    return (_jsxs("div", { className: "group flex cursor-pointer flex-col gap-4 rounded-2xl border border-border bg-card p-5 outline-none transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-(--theme-primary)/50 hover:ring-2 hover:ring-(--theme-primary)/20 hover:shadow-lg hover:shadow-black/20 focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45", onClick: openDeck, onKeyDown: onKeyDown, role: "button", tabIndex: 0, children: [_jsxs("div", { className: "flex items-start justify-between gap-2", children: [_jsx("h3", { className: "text-[15px] font-semibold leading-snug tracking-tight", children: deck.name }), stats.due > 0 && _jsx(DuePill, { due: stats.due })] }), _jsxs("div", { className: "mt-auto", children: [_jsxs("div", { className: "mb-1.5 flex items-baseline justify-between text-[11px] text-muted-foreground", children: [_jsxs("span", { className: "tabular-nums", children: [stats.total, " card", stats.total === 1 ? '' : 's', " \u00B7 ", stats.fresh, " new"] }), _jsxs("span", { className: "tabular-nums", children: [pct, "% studied"] })] }), _jsx(MasteryBar, { pct: pct })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { disabled: stats.total < 2, onClick: event => {
++                            event.stopPropagation();
++                            onMatch(deck.id);
++                        }, size: "sm", variant: "outline", children: "Match" }), _jsx(Button, { onClick: event => {
++                            event.stopPropagation();
++                            onBrowse(deck.id);
++                        }, size: "sm", variant: "ghost", children: "Cards" })] })] }));
+ }
+ // Contribution grid of review activity with streak stats, month labels, hover tooltips,
+ // legend, and a today marker — the "dynamic" upgrade.
+@@ -371,20 +417,22 @@ function Heatmap({ state }) {
+     const { cells, total } = useMemo(() => reviewHeatmap(state, todayIso), [state, todayIso]);
+     const stats = useMemo(() => studyMotivation(state, todayIso), [state, todayIso]);
+     const todayKey = todayIso.slice(0, 10);
+-    const weeks = Math.ceil(cells.length / 7);
++    const firstDayOffset = cells[0] ? new Date(`${cells[0].date}T00:00:00.000Z`).getUTCDay() : 0;
++    const weeks = Math.ceil((firstDayOffset + cells.length) / 7);
+     const monthLabels = [];
+-    let lastMonth = -1;
+-    for (let w = 0; w < weeks; w++) {
+-        const first = cells[w * 7];
+-        if (first) {
+-            const month = Number(first.date.slice(5, 7)) - 1;
+-            if (month !== lastMonth) {
+-                monthLabels.push({ col: w, label: MONTHS[month] });
+-                lastMonth = month;
++    if (cells[0]) {
++        monthLabels.push({ col: 0, label: MONTHS[Number(cells[0].date.slice(5, 7)) - 1] });
++        for (let index = 1; index < cells.length; index++) {
++            const cell = cells[index];
++            if (cell.date.endsWith('-01')) {
++                monthLabels.push({
++                    col: Math.floor((firstDayOffset + index) / 7),
++                    label: MONTHS[Number(cell.date.slice(5, 7)) - 1]
++                });
+             }
+         }
+     }
+-    return (_jsx("div", { className: "px-8 pt-2", children: _jsxs("div", { className: "rounded-2xl border border-border bg-card p-5", children: [_jsxs("div", { className: "mb-4", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Review activity" }), _jsxs("div", { className: "mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs", children: [_jsx(Stat, { label: "day streak", value: stats.currentStreak }), _jsx(Stat, { label: "longest", value: stats.longestStreak }), _jsx(Stat, { label: "days active", value: `${stats.daysLearnedPct}%` }), stats.retentionPct !== null && _jsx(Stat, { label: "retention (30d)", value: `${stats.retentionPct}%` }), _jsxs("span", { className: "text-muted-foreground", children: [total, " reviews \u00B7 past 53 weeks"] })] }), total === 0 && _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: "Your year fills in as you grade cards." })] }), _jsx("div", { className: "overflow-x-auto pb-1", children: _jsxs("div", { className: "min-w-max", children: [_jsxs("div", { className: "grid grid-cols-[2rem_auto] gap-x-2 gap-y-1", children: [_jsx("div", {}), _jsx("div", { className: "relative h-3 text-[9px] text-muted-foreground", style: { width: `${weeks * 14}px` }, children: monthLabels.map(month => (_jsx("span", { className: "absolute", style: { left: `${month.col * 14}px` }, children: month.label }, `${month.label}-${month.col}`))) }), _jsx("div", { className: "grid grid-rows-7 gap-[3px] text-[9px] leading-[11px] text-muted-foreground", style: { gridTemplateRows: 'repeat(7, 11px)' }, children: WEEKDAYS.map(day => (_jsx("span", { children: day }, day))) }), _jsx("div", { className: "grid grid-flow-col grid-rows-7 gap-[3px]", style: { gridAutoColumns: '11px', gridTemplateRows: 'repeat(7, 11px)' }, children: cells.map(cell => (_jsx(Tip, { label: `${cell.count} review${cell.count === 1 ? '' : 's'} · ${new Date(`${cell.date}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' })}`, side: "top", children: _jsx("div", { className: cn('rounded-[2px]', cell.date === todayKey && 'ring-1 ring-foreground/60'), style: { backgroundColor: heatColor(cell.level) } }) }, cell.date))) })] }), _jsxs("div", { className: "mt-2 flex items-center justify-end gap-1 text-[9px] text-muted-foreground", children: [_jsx("span", { children: "Less" }), [0, 1, 2, 3, 4].map(level => (_jsx("span", { className: "size-2.5 rounded-[2px]", style: { backgroundColor: heatColor(level) } }, level))), _jsx("span", { children: "More" })] })] }) })] }) }));
++    return (_jsx("div", { className: "px-8 pt-2", children: _jsxs("div", { className: "rounded-2xl border border-border bg-card p-5", children: [_jsxs("div", { className: "mb-4", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Review activity" }), _jsxs("div", { className: "mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs", children: [_jsx(Stat, { label: "day streak", value: stats.currentStreak }), _jsx(Stat, { label: "longest", value: stats.longestStreak }), _jsx(Stat, { label: "days active", value: `${stats.daysLearnedPct}%` }), stats.retentionPct !== null && _jsx(Stat, { label: "retention (30d)", value: `${stats.retentionPct}%` }), _jsxs("span", { className: "text-muted-foreground", children: [total, " reviews \u00B7 past 12 months"] })] }), total === 0 && _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: "Your year fills in as you grade cards." })] }), _jsx("div", { className: "overflow-x-auto pb-1", children: _jsxs("div", { className: "min-w-max", children: [_jsxs("div", { className: "grid grid-cols-[2rem_auto] gap-x-2 gap-y-1", children: [_jsx("div", {}), _jsx("div", { className: "relative h-3 text-[9px] text-muted-foreground", style: { width: `${weeks * 14}px` }, children: monthLabels.map(month => (_jsx("span", { className: "absolute", style: { left: `${month.col * 14}px` }, children: month.label }, `${month.label}-${month.col}`))) }), _jsx("div", { className: "grid grid-rows-7 gap-[3px] text-[9px] leading-[11px] text-muted-foreground", style: { gridTemplateRows: 'repeat(7, 11px)' }, children: WEEKDAYS.map(day => (_jsx("span", { children: day }, day))) }), _jsxs("div", { className: "grid grid-flow-col grid-rows-7 gap-[3px]", style: { gridAutoColumns: '11px', gridTemplateRows: 'repeat(7, 11px)' }, children: [Array.from({ length: firstDayOffset }, (_, index) => (_jsx("span", { "aria-hidden": "true" }, `leading-${index}`))), cells.map(cell => (_jsx(Tip, { label: `${cell.count} review${cell.count === 1 ? '' : 's'} · ${new Date(`${cell.date}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' })}`, side: "top", children: _jsx("div", { className: cn('rounded-[2px]', cell.date === todayKey && 'ring-1 ring-foreground/60'), style: { backgroundColor: heatColor(cell.level) } }) }, cell.date)))] })] }), _jsxs("div", { className: "mt-2 flex items-center justify-end gap-1 text-[9px] text-muted-foreground", children: [_jsx("span", { children: "Less" }), [0, 1, 2, 3, 4].map(level => (_jsx("span", { className: "size-2.5 rounded-[2px]", style: { backgroundColor: heatColor(level) } }, level))), _jsx("span", { children: "More" })] })] }) })] }) }));
+ }
+ function CardBrowser({ deck, onChange, onDeleteDeck, onMatch, onMoveDeck, sections, state }) {
+     const [editing, setEditing] = useState(null);
+@@ -415,14 +463,20 @@ function EditCardDialog({ card, onClose, onDelete, onSave, onToggleSuspend }) {
+                                 ...card,
+                                 back: back.trim(),
+                                 front: front.trim(),
+-                                tags: tags.split(',').map(tag => tag.trim()).filter(Boolean)
++                                tags: tags
++                                    .split(',')
++                                    .map(tag => tag.trim())
++                                    .filter(Boolean)
+                             }), children: "Save" })] })] }) }));
+ }
+ function AddCardDialog({ onClose, onCreate }) {
+     const [front, setFront] = useState('');
+     const [back, setBack] = useState('');
+     const [tags, setTags] = useState('');
+-    return (_jsx(Dialog, { onOpenChange: open => !open && onClose(), open: true, children: _jsxs(DialogContent, { className: "sm:max-w-lg", children: [_jsxs(DialogHeader, { children: [_jsx(DialogTitle, { children: "Add card" }), _jsx(DialogDescription, { children: "New cards enter the review queue as \u201Cnew\u201D." })] }), _jsxs("div", { className: "flex flex-col gap-3", children: [_jsx(Textarea, { className: "min-h-20", onChange: event => setFront(event.target.value), placeholder: "Front", value: front }), _jsx(Textarea, { className: "min-h-20", onChange: event => setBack(event.target.value), placeholder: "Back", value: back }), _jsx(Input, { onChange: event => setTags(event.target.value), placeholder: "Tags (comma-separated)", value: tags })] }), _jsxs(DialogFooter, { children: [_jsx(Button, { onClick: onClose, variant: "outline", children: "Cancel" }), _jsx(Button, { disabled: !front.trim() || !back.trim(), onClick: () => onCreate(front.trim(), back.trim(), tags.split(',').map(tag => tag.trim()).filter(Boolean)), children: "Add card" })] })] }) }));
++    return (_jsx(Dialog, { onOpenChange: open => !open && onClose(), open: true, children: _jsxs(DialogContent, { className: "sm:max-w-lg", children: [_jsxs(DialogHeader, { children: [_jsx(DialogTitle, { children: "Add card" }), _jsx(DialogDescription, { children: "New cards enter the review queue as \u201Cnew\u201D." })] }), _jsxs("div", { className: "flex flex-col gap-3", children: [_jsx(Textarea, { className: "min-h-20", onChange: event => setFront(event.target.value), placeholder: "Front", value: front }), _jsx(Textarea, { className: "min-h-20", onChange: event => setBack(event.target.value), placeholder: "Back", value: back }), _jsx(Input, { onChange: event => setTags(event.target.value), placeholder: "Tags (comma-separated)", value: tags })] }), _jsxs(DialogFooter, { children: [_jsx(Button, { onClick: onClose, variant: "outline", children: "Cancel" }), _jsx(Button, { disabled: !front.trim() || !back.trim(), onClick: () => onCreate(front.trim(), back.trim(), tags
++                                .split(',')
++                                .map(tag => tag.trim())
++                                .filter(Boolean)), children: "Add card" })] })] }) }));
+ }
+ function FlipFace({ back, children, label, muted }) {
+     return (_jsxs("div", { className: cn('absolute inset-0 flex min-h-64 flex-col justify-center gap-3 rounded-xl border border-border bg-card p-8 text-left [backface-visibility:hidden]', back && '[transform:rotateY(180deg)]'), children: [_jsx("div", { className: "text-[10px] font-medium uppercase tracking-widest text-muted-foreground", children: label }), _jsx("div", { className: cn('text-lg leading-relaxed', muted ? 'text-foreground/80' : 'text-foreground'), children: children })] }));
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index 96d7e102f76..142abc5a683 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -138,7 +138,10 @@ export function StudyView() {
+   const [takingTest, setTakingTest] = useState<null | TestFile>(null)
+ 
+   const now = useMemo(() => new Date(), [state, reviewing])
+-  const queue = useMemo(() => (reviewing ? buildQueue(state, reviewDeckId, now) : []), [state, reviewDeckId, reviewing, now])
++  const queue = useMemo(
++    () => (reviewing ? buildQueue(state, reviewDeckId, now) : []),
++    [state, reviewDeckId, reviewing, now]
++  )
+   const current: QueueItem | undefined = queue[0]
+ 
+   const remainingCounts = useMemo(
+@@ -167,7 +170,10 @@ export function StudyView() {
+   const totals = deckStats(state, null, now)
+ 
+   const sections = useMemo(
+-    () => groupDecks(state, now).map(group => group.course).filter(course => course.toLocaleLowerCase() !== 'other'),
++    () =>
++      groupDecks(state, now)
++        .map(group => group.course)
++        .filter(course => course.toLocaleLowerCase() !== 'other'),
+     [now, state]
+   )
+ 
+@@ -190,7 +196,11 @@ export function StudyView() {
+ 
+     const reconcile = async () => {
+       lastRun = Date.now()
+-      const [candidates, mindmapFiles, testFiles] = await Promise.all([scanAllDeckFiles(), scanMindmapFiles(), scanTestFiles()])
++      const [candidates, mindmapFiles, testFiles] = await Promise.all([
++        scanAllDeckFiles(),
++        scanMindmapFiles(),
++        scanTestFiles()
++      ])
+ 
+       if (cancelled) {
+         return
+@@ -433,7 +443,9 @@ export function StudyView() {
+                 <button
+                   className={cn(
+                     'px-2 py-1.5 transition-colors',
+-                    view === 'cards' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
++                    view === 'cards'
++                      ? 'bg-accent text-accent-foreground'
++                      : 'text-muted-foreground hover:text-foreground'
+                   )}
+                   onClick={() => setViewMode('cards')}
+                   title="Card view"
+@@ -511,12 +523,19 @@ export function StudyView() {
+         ) : (
+           <EmptyState
+             className="flex-1"
+-            description={done > 0 ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.` : 'Nothing is due right now.'}
++            description={
++              done > 0
++                ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.`
++                : 'Nothing is due right now.'
++            }
+             title="All caught up"
+           />
+         )
+       ) : matchDeckId ? (
+-        <MatchGame deck={state.decks.find(deck => deck.id === matchDeckId) ?? null} onExit={() => setMatchDeckId(null)} />
++        <MatchGame
++          deck={state.decks.find(deck => deck.id === matchDeckId) ?? null}
++          onExit={() => setMatchDeckId(null)}
++        />
+       ) : browseDeckId ? (
+         <CardBrowser
+           deck={state.decks.find(deck => deck.id === browseDeckId) ?? null}
+@@ -560,11 +579,7 @@ export function StudyView() {
+         />
+       )}
+       {newSectionOpen && (
+-        <NewSectionDialog
+-          onClose={() => setNewSectionOpen(false)}
+-          onCreate={createSection}
+-          sections={sections}
+-        />
++        <NewSectionDialog onClose={() => setNewSectionOpen(false)} onCreate={createSection} sections={sections} />
+       )}
+       <StudySettingsDialog
+         onChange={patch => update(setSettings(state, patch))}
+@@ -681,7 +696,9 @@ function NewSectionDialog({
+       <DialogContent className="sm:max-w-md">
+         <DialogHeader>
+           <DialogTitle>New section</DialogTitle>
+-          <DialogDescription>Create a home for related decks. Empty sections remain visible until you add one.</DialogDescription>
++          <DialogDescription>
++            Create a home for related decks. Empty sections remain visible until you add one.
++          </DialogDescription>
+         </DialogHeader>
+         <Input
+           autoFocus
+@@ -695,7 +712,9 @@ function NewSectionDialog({
+           value={name}
+         />
+         {normalized && unavailable && (
+-          <p className="text-xs text-muted-foreground">That section already exists. “Other” is reserved for ungrouped decks.</p>
++          <p className="text-xs text-muted-foreground">
++            That section already exists. “Other” is reserved for ungrouped decks.
++          </p>
+         )}
+         <DialogFooter>
+           <Button onClick={onClose} variant="outline">
+@@ -864,7 +883,9 @@ function DeckBrowser({
+   ]
+ 
+   if (!groups.length) {
+-    return <EmptyState className="flex-1" description="Create a deck or import cards to get going." title="No decks yet" />
++    return (
++      <EmptyState className="flex-1" description="Create a deck or import cards to get going." title="No decks yet" />
++    )
+   }
+ 
+   return (
+@@ -880,8 +901,10 @@ function DeckBrowser({
+             <div className="mb-3 flex items-baseline justify-between">
+               <h2 className="text-[15px] font-semibold tracking-tight">{group.course}</h2>
+               <span className="text-xs text-muted-foreground">
+-                {group.stats.due} due · {group.decks.length} deck{group.decks.length === 1 ? '' : 's'} · {group.stats.total} cards
+-                {groupMindmaps.length > 0 && ` · ${groupMindmaps.length} mind map${groupMindmaps.length === 1 ? '' : 's'}`}
++                {group.stats.due} due · {group.decks.length} deck{group.decks.length === 1 ? '' : 's'} ·{' '}
++                {group.stats.total} cards
++                {groupMindmaps.length > 0 &&
++                  ` · ${groupMindmaps.length} mind map${groupMindmaps.length === 1 ? '' : 's'}`}
+                 {groupTests.length > 0 && ` · ${groupTests.length} test${groupTests.length === 1 ? '' : 's'}`}
+               </span>
+             </div>
+@@ -902,13 +925,29 @@ function DeckBrowser({
+             ) : view === 'list' ? (
+               <div className="flex flex-col gap-2">
+                 {group.decks.map(deck => (
+-                  <DeckRow deck={deck} key={deck.id} now={now} onBrowse={onBrowse} onMatch={onMatch} onStudy={onStudy} state={state} />
++                  <DeckRow
++                    deck={deck}
++                    key={deck.id}
++                    now={now}
++                    onBrowse={onBrowse}
++                    onMatch={onMatch}
++                    onStudy={onStudy}
++                    state={state}
++                  />
+                 ))}
+               </div>
+             ) : (
+               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                 {group.decks.map(deck => (
+-                  <DeckCard deck={deck} key={deck.id} now={now} onBrowse={onBrowse} onMatch={onMatch} onStudy={onStudy} state={state} />
++                  <DeckCard
++                    deck={deck}
++                    key={deck.id}
++                    now={now}
++                    onBrowse={onBrowse}
++                    onMatch={onMatch}
++                    onStudy={onStudy}
++                    state={state}
++                  />
+                 ))}
+               </div>
+             )}
+@@ -948,21 +987,28 @@ function MindmapRow({ mindmap, onOpen }: { mindmap: MindmapFile; onOpen: () => v
+   )
+ }
+ 
+-function TestRow({
+-  attempts,
+-  onStart,
+-  test
+-}: {
+-  attempts: TestAttempt[]
+-  onStart: () => void
+-  test: TestFile
+-}) {
++function TestRow({ attempts, onStart, test }: { attempts: TestAttempt[]; onStart: () => void; test: TestFile }) {
+   const best = bestAttempt(attempts)
+   const last = lastAttempt(attempts)
+   const count = test.questions.length
+ 
++  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
++    if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
++      return
++    }
++
++    event.preventDefault()
++    onStart()
++  }
++
+   return (
+-    <div className="group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5">
++    <div
++      className="group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 outline-none transition-[box-shadow,border-color] hover:border-(--theme-primary)/50 hover:ring-2 hover:ring-(--theme-primary)/20 focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45"
++      onClick={onStart}
++      onKeyDown={onKeyDown}
++      role="button"
++      tabIndex={0}
++    >
+       <IconChecklist className="shrink-0 text-muted-foreground" size={16} />
+       <div className="min-w-0 flex-1">
+         <div className="truncate text-sm font-medium">{test.title}</div>
+@@ -982,9 +1028,6 @@ function TestRow({
+           )}
+         </div>
+       </div>
+-      <Button onClick={onStart} size="sm" variant="secondary">
+-        Take test
+-      </Button>
+     </div>
+   )
+ }
+@@ -1027,8 +1070,24 @@ function DeckRow({
+ }) {
+   const stats = deckStats(state, deck.id, now)
+ 
++  const openDeck = () => onStudy(deck.id)
++  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
++    if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
++      return
++    }
++
++    event.preventDefault()
++    openDeck()
++  }
++
+   return (
+-    <div className="group flex items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-(--theme-primary)/40">
++    <div
++      className="group flex cursor-pointer items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 outline-none transition-[box-shadow,border-color] hover:border-(--theme-primary)/50 hover:ring-2 hover:ring-(--theme-primary)/20 focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45"
++      onClick={openDeck}
++      onKeyDown={onKeyDown}
++      role="button"
++      tabIndex={0}
++    >
+       <div className="min-w-0 flex-1">
+         <div className="flex items-center gap-2">
+           <span className="truncate text-sm font-medium">{deck.name}</span>
+@@ -1044,13 +1103,25 @@ function DeckRow({
+         </div>
+       </div>
+       <div className="flex shrink-0 gap-1.5 opacity-80 transition-opacity group-hover:opacity-100">
+-        <Button disabled={stats.due === 0} onClick={() => onStudy(deck.id)} size="sm" variant="secondary">
+-          Study
+-        </Button>
+-        <Button disabled={stats.total < 2} onClick={() => onMatch(deck.id)} size="sm" variant="ghost">
++        <Button
++          disabled={stats.total < 2}
++          onClick={event => {
++            event.stopPropagation()
++            onMatch(deck.id)
++          }}
++          size="sm"
++          variant="ghost"
++        >
+           Match
+         </Button>
+-        <Button onClick={() => onBrowse(deck.id)} size="sm" variant="ghost">
++        <Button
++          onClick={event => {
++            event.stopPropagation()
++            onBrowse(deck.id)
++          }}
++          size="sm"
++          variant="ghost"
++        >
+           Cards
+         </Button>
+       </div>
+@@ -1076,8 +1147,24 @@ function DeckCard({
+   const stats = deckStats(state, deck.id, now)
+   const pct = masteryPct(stats)
+ 
++  const openDeck = () => onStudy(deck.id)
++  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
++    if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
++      return
++    }
++
++    event.preventDefault()
++    openDeck()
++  }
++
+   return (
+-    <div className="group flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-(--theme-primary)/40 hover:shadow-lg hover:shadow-black/20">
++    <div
++      className="group flex cursor-pointer flex-col gap-4 rounded-2xl border border-border bg-card p-5 outline-none transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-(--theme-primary)/50 hover:ring-2 hover:ring-(--theme-primary)/20 hover:shadow-lg hover:shadow-black/20 focus-visible:ring-2 focus-visible:ring-(--theme-primary)/45"
++      onClick={openDeck}
++      onKeyDown={onKeyDown}
++      role="button"
++      tabIndex={0}
++    >
+       <div className="flex items-start justify-between gap-2">
+         <h3 className="text-[15px] font-semibold leading-snug tracking-tight">{deck.name}</h3>
+         {stats.due > 0 && <DuePill due={stats.due} />}
+@@ -1094,13 +1181,25 @@ function DeckCard({
+       </div>
+ 
+       <div className="flex gap-2">
+-        <Button className="flex-1" disabled={stats.due === 0} onClick={() => onStudy(deck.id)} size="sm">
+-          {stats.due > 0 ? 'Study' : 'Done for now'}
+-        </Button>
+-        <Button disabled={stats.total < 2} onClick={() => onMatch(deck.id)} size="sm" variant="outline">
++        <Button
++          disabled={stats.total < 2}
++          onClick={event => {
++            event.stopPropagation()
++            onMatch(deck.id)
++          }}
++          size="sm"
++          variant="outline"
++        >
+           Match
+         </Button>
+-        <Button onClick={() => onBrowse(deck.id)} size="sm" variant="ghost">
++        <Button
++          onClick={event => {
++            event.stopPropagation()
++            onBrowse(deck.id)
++          }}
++          size="sm"
++          variant="ghost"
++        >
+           Cards
+         </Button>
+       </div>
+@@ -1134,20 +1233,21 @@ function Heatmap({ state }: { state: StudyState }) {
+   const { cells, total } = useMemo(() => reviewHeatmap(state, todayIso), [state, todayIso])
+   const stats = useMemo(() => studyMotivation(state, todayIso), [state, todayIso])
+   const todayKey = todayIso.slice(0, 10)
+-  const weeks = Math.ceil(cells.length / 7)
++  const firstDayOffset = cells[0] ? new Date(`${cells[0].date}T00:00:00.000Z`).getUTCDay() : 0
++  const weeks = Math.ceil((firstDayOffset + cells.length) / 7)
+ 
+   const monthLabels: { col: number; label: string }[] = []
+-  let lastMonth = -1
++  if (cells[0]) {
++    monthLabels.push({ col: 0, label: MONTHS[Number(cells[0].date.slice(5, 7)) - 1] })
+ 
+-  for (let w = 0; w < weeks; w++) {
+-    const first = cells[w * 7]
++    for (let index = 1; index < cells.length; index++) {
++      const cell = cells[index]
+ 
+-    if (first) {
+-      const month = Number(first.date.slice(5, 7)) - 1
+-
+-      if (month !== lastMonth) {
+-        monthLabels.push({ col: w, label: MONTHS[month] })
+-        lastMonth = month
++      if (cell.date.endsWith('-01')) {
++        monthLabels.push({
++          col: Math.floor((firstDayOffset + index) / 7),
++          label: MONTHS[Number(cell.date.slice(5, 7)) - 1]
++        })
+       }
+     }
+   }
+@@ -1156,13 +1256,15 @@ function Heatmap({ state }: { state: StudyState }) {
+     <div className="px-8 pt-2">
+       <div className="rounded-2xl border border-border bg-card p-5">
+         <div className="mb-4">
+-          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">Review activity</p>
++          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">
++            Review activity
++          </p>
+           <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs">
+             <Stat label="day streak" value={stats.currentStreak} />
+             <Stat label="longest" value={stats.longestStreak} />
+             <Stat label="days active" value={`${stats.daysLearnedPct}%`} />
+             {stats.retentionPct !== null && <Stat label="retention (30d)" value={`${stats.retentionPct}%`} />}
+-            <span className="text-muted-foreground">{total} reviews · past 53 weeks</span>
++            <span className="text-muted-foreground">{total} reviews · past 12 months</span>
+           </div>
+           {total === 0 && <p className="mt-1 text-xs text-muted-foreground">Your year fills in as you grade cards.</p>}
+         </div>
+@@ -1194,6 +1296,9 @@ function Heatmap({ state }: { state: StudyState }) {
+                 className="grid grid-flow-col grid-rows-7 gap-[3px]"
+                 style={{ gridAutoColumns: '11px', gridTemplateRows: 'repeat(7, 11px)' }}
+               >
++                {Array.from({ length: firstDayOffset }, (_, index) => (
++                  <span aria-hidden="true" key={`leading-${index}`} />
++                ))}
+                 {cells.map(cell => (
+                   <Tip
+                     key={cell.date}
+@@ -1259,7 +1364,12 @@ function CardBrowser({
+         </div>
+         <div className="flex flex-wrap items-center justify-end gap-2">
+           <div className="w-40">
+-            <SectionSelect label="Move deck to section" onChange={onMoveDeck} sections={sections} value={deck.course ?? ''} />
++            <SectionSelect
++              label="Move deck to section"
++              onChange={onMoveDeck}
++              sections={sections}
++              value={deck.course ?? ''}
++            />
+           </div>
+           <Button
+             className={cn(armDelete && 'text-destructive')}
+@@ -1295,7 +1405,10 @@ function CardBrowser({
+             <tbody>
+               {deck.cards.map(card => (
+                 <tr
+-                  className={cn('cursor-pointer border-t border-border hover:bg-accent', card.suspended && 'opacity-45')}
++                  className={cn(
++                    'cursor-pointer border-t border-border hover:bg-accent',
++                    card.suspended && 'opacity-45'
++                  )}
+                   key={card.id}
+                   onClick={() => setEditing(card)}
+                 >
+@@ -1305,7 +1418,9 @@ function CardBrowser({
+                     )}
+                     {card.front}
+                   </td>
+-                  <td className="hidden max-w-xs truncate px-3 py-2 text-muted-foreground md:table-cell">{card.back}</td>
++                  <td className="hidden max-w-xs truncate px-3 py-2 text-muted-foreground md:table-cell">
++                    {card.back}
++                  </td>
+                   <td className="px-3 py-2">
+                     <div className="flex flex-wrap gap-1">
+                       {card.tags.map(tag => (
+@@ -1379,8 +1494,18 @@ function EditCardDialog({
+           <DialogDescription>Suspend hides a card from review without deleting it.</DialogDescription>
+         </DialogHeader>
+         <div className="flex flex-col gap-3">
+-          <Textarea className="min-h-20" onChange={event => setFront(event.target.value)} placeholder="Front" value={front} />
+-          <Textarea className="min-h-20" onChange={event => setBack(event.target.value)} placeholder="Back" value={back} />
++          <Textarea
++            className="min-h-20"
++            onChange={event => setFront(event.target.value)}
++            placeholder="Front"
++            value={front}
++          />
++          <Textarea
++            className="min-h-20"
++            onChange={event => setBack(event.target.value)}
++            placeholder="Back"
++            value={back}
++          />
+           <Input onChange={event => setTags(event.target.value)} placeholder="Tags (comma-separated)" value={tags} />
+         </div>
+         <DialogFooter className="flex-wrap gap-2 sm:justify-between">
+@@ -1399,7 +1524,10 @@ function EditCardDialog({
+                 ...card,
+                 back: back.trim(),
+                 front: front.trim(),
+-                tags: tags.split(',').map(tag => tag.trim()).filter(Boolean)
++                tags: tags
++                  .split(',')
++                  .map(tag => tag.trim())
++                  .filter(Boolean)
+               })
+             }
+           >
+@@ -1430,8 +1558,18 @@ function AddCardDialog({
+           <DialogDescription>New cards enter the review queue as “new”.</DialogDescription>
+         </DialogHeader>
+         <div className="flex flex-col gap-3">
+-          <Textarea className="min-h-20" onChange={event => setFront(event.target.value)} placeholder="Front" value={front} />
+-          <Textarea className="min-h-20" onChange={event => setBack(event.target.value)} placeholder="Back" value={back} />
++          <Textarea
++            className="min-h-20"
++            onChange={event => setFront(event.target.value)}
++            placeholder="Front"
++            value={front}
++          />
++          <Textarea
++            className="min-h-20"
++            onChange={event => setBack(event.target.value)}
++            placeholder="Back"
++            value={back}
++          />
+           <Input onChange={event => setTags(event.target.value)} placeholder="Tags (comma-separated)" value={tags} />
+         </div>
+         <DialogFooter>
+@@ -1440,7 +1578,16 @@ function AddCardDialog({
+           </Button>
+           <Button
+             disabled={!front.trim() || !back.trim()}
+-            onClick={() => onCreate(front.trim(), back.trim(), tags.split(',').map(tag => tag.trim()).filter(Boolean))}
++            onClick={() =>
++              onCreate(
++                front.trim(),
++                back.trim(),
++                tags
++                  .split(',')
++                  .map(tag => tag.trim())
++                  .filter(Boolean)
++              )
++            }
+           >
+             Add card
+           </Button>
+@@ -1683,7 +1830,10 @@ function ReviewSurface({
+               </Badge>
+             )}
+           </span>
+-          <span aria-label="Cards remaining" className="flex shrink-0 items-center gap-3 font-mono text-[0.6875rem] tabular-nums">
++          <span
++            aria-label="Cards remaining"
++            className="flex shrink-0 items-center gap-3 font-mono text-[0.6875rem] tabular-nums"
++          >
+             <span className="text-(--ui-blue)" title="New cards remaining">
+               {remainingCounts.new} <span className="font-sans text-muted-foreground">New</span>
+             </span>
+@@ -1716,14 +1866,18 @@ function ReviewSurface({
+         ) : (
+           <div className="flex min-h-64 flex-1 flex-col justify-center gap-5 rounded-xl border border-border bg-card p-8">
+             <div>
+-              <div className="pb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Question</div>
++              <div className="pb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
++                Question
++              </div>
+               <div className="text-lg leading-relaxed">{item.card.front}</div>
+             </div>
+             {revealed && (
+               <>
+                 <div className="border-t border-border" />
+                 <div>
+-                  <div className="pb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">Answer</div>
++                  <div className="pb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
++                    Answer
++                  </div>
+                   <div className="text-lg leading-relaxed text-foreground/80">{item.card.back}</div>
+                 </div>
+               </>
+diff --git a/apps/desktop/src/app/study/mindmap-viewer.js b/apps/desktop/src/app/study/mindmap-viewer.js
+index 5da11679304..78640a77d2e 100644
+--- a/apps/desktop/src/app/study/mindmap-viewer.js
++++ b/apps/desktop/src/app/study/mindmap-viewer.js
+@@ -11,6 +11,8 @@ import { LIBRARY_ROUTE } from '../routes';
+ import { MINDMAP_DIR } from './extras';
+ import { parseMindmapMarkdown } from './mindmap-parser';
+ const LAYOUT_STORAGE_PREFIX = 'nemesis.study.mindmap.layout:';
++const LAYOUT_MOTION_MS = 180;
++const LAYOUT_EASING = 'cubic-bezier(0, 0, 0.2, 1)';
+ const MINDMAP_THEME = {
+     cssVar: {
+         '--accent-color': 'var(--theme-primary)',
+@@ -33,6 +35,63 @@ const MINDMAP_THEME = {
+     palette: ['#b3382e', '#94683c', '#54745f', '#4e7082', '#735f86', '#8b5c66'],
+     type: 'light'
+ };
++function reducedMotionRequested() {
++    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
++}
++function mindmapTopics(host) {
++    return Array.from(host.querySelectorAll('me-parent > me-tpc'));
++}
++/** mind-elixir reflows nested inline/flex custom elements and directly removes a
++ * collapsed subtree, so CSS top/left transitions never see changing properties
++ * and an exit fade cannot run. FLIP the surviving me-parent wrappers after the
++ * synchronous re-layout, and fade the newly-created subtree wrappers in. */
++function animateMindmapRelayout(host, updateLayout) {
++    if (reducedMotionRequested()) {
++        updateLayout();
++        return;
++    }
++    const before = new Map(mindmapTopics(host).flatMap(topic => {
++        const id = topic.nodeObj?.id;
++        return id ? [[id, topic.getBoundingClientRect()]] : [];
++    }));
++    updateLayout();
++    window.requestAnimationFrame(() => {
++        for (const topic of mindmapTopics(host)) {
++            const wrapper = topic.parentElement;
++            const id = topic.nodeObj?.id;
++            if (!wrapper || !id) {
++                continue;
++            }
++            const previous = before.get(id);
++            if (!previous) {
++                wrapper.animate([
++                    { opacity: 0, transform: 'scale(0.97)' },
++                    { opacity: 1, transform: 'scale(1)' }
++                ], { duration: LAYOUT_MOTION_MS, easing: LAYOUT_EASING });
++                continue;
++            }
++            const current = topic.getBoundingClientRect();
++            const deltaX = previous.left - current.left;
++            const deltaY = previous.top - current.top;
++            if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
++                wrapper.animate([{ transform: `translate(${deltaX}px, ${deltaY}px)` }, { transform: 'translate(0, 0)' }], {
++                    duration: LAYOUT_MOTION_MS,
++                    easing: LAYOUT_EASING
++                });
++            }
++        }
++    });
++}
++function scaleFitSmooth(host, mind) {
++    const canvas = host.querySelector('.map-canvas');
++    if (!canvas || reducedMotionRequested()) {
++        mind.scaleFit();
++        return;
++    }
++    canvas.classList.add('mindmap-smooth-transform');
++    mind.scaleFit();
++    window.setTimeout(() => canvas.classList.remove('mindmap-smooth-transform'), LAYOUT_MOTION_MS);
++}
+ function mapPath(file) {
+     return `${MINDMAP_DIR}/${file.fileName}`;
+ }
+@@ -219,15 +278,16 @@ function MindmapCanvas({ file }) {
+                 pointerOrigin = { x: event.clientX, y: event.clientY };
+             };
+             const onTopicClick = (event) => {
+-                const dragged = pointerOrigin &&
+-                    Math.hypot(event.clientX - pointerOrigin.x, event.clientY - pointerOrigin.y) > 6;
++                const dragged = pointerOrigin && Math.hypot(event.clientX - pointerOrigin.x, event.clientY - pointerOrigin.y) > 6;
+                 if (dragged) {
+                     return;
+                 }
+                 const topic = event.target.closest('me-tpc');
+                 const node = topic?.nodeObj;
+                 if (mind && topic && node?.children?.length) {
+-                    mind.expandNode(topic, node.expanded === false);
++                    animateMindmapRelayout(host, () => {
++                        mind?.expandNode(topic, node.expanded === false);
++                    });
+                     persistLayout(file, mind);
+                 }
+             };
+@@ -238,12 +298,14 @@ function MindmapCanvas({ file }) {
+                 host.removeEventListener('click', onTopicClick);
+             };
+             mind.bus.addListener('operation', (operation) => {
+-                if (operation.name === 'moveNodeAfter' || operation.name === 'moveNodeBefore' || operation.name === 'moveNodeIn') {
++                if (operation.name === 'moveNodeAfter' ||
++                    operation.name === 'moveNodeBefore' ||
++                    operation.name === 'moveNodeIn') {
+                     persistLayout(file, mind);
+                 }
+             });
+-            animationFrame = window.requestAnimationFrame(() => mind?.scaleFit());
+-            resizeObserver = new ResizeObserver(() => mind?.scaleFit());
++            animationFrame = window.requestAnimationFrame(() => mind && scaleFitSmooth(host, mind));
++            resizeObserver = new ResizeObserver(() => mind && scaleFitSmooth(host, mind));
+             resizeObserver.observe(host);
+         }
+         catch {
+@@ -260,7 +322,11 @@ function MindmapCanvas({ file }) {
+     if (failed) {
+         return _jsx(OutlineFallback, { file: file });
+     }
+-    return (_jsxs("div", { className: "flex min-h-0 flex-1 bg-(--ui-editor-surface-background)", children: [_jsxs("div", { className: "relative min-w-0 flex-1", children: [_jsx("div", { className: "study-mindmap-host h-full w-full", ref: hostRef }), _jsx("div", { className: "pointer-events-none absolute bottom-3 left-3 rounded-md border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/90 px-2.5 py-1.5 text-[0.6875rem] text-(--ui-text-tertiary) shadow-sm", children: "Drag nodes to arrange \u00B7 scroll to pan \u00B7 Ctrl/\u2318 + scroll to zoom" }), _jsx(Button, { className: "absolute bottom-3 right-3", onClick: () => mindRef.current?.scaleFit(), size: "sm", variant: "outline", children: "Fit" })] }), selectedDetail && (_jsxs("aside", { className: "w-72 shrink-0 overflow-y-auto border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-5 py-6", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-(--theme-primary)", children: "Explanation" }), _jsx("h3", { className: "mt-2 text-base font-semibold tracking-tight text-(--ui-text-primary)", children: selectedDetail.topic }), _jsx("p", { className: "mt-3 whitespace-pre-wrap text-sm leading-6 text-(--ui-text-secondary)", children: selectedDetail.note })] }))] }));
++    return (_jsxs("div", { className: "flex min-h-0 flex-1 bg-(--ui-editor-surface-background)", children: [_jsxs("div", { className: "relative min-w-0 flex-1", children: [_jsx("div", { className: "study-mindmap-host h-full w-full", ref: hostRef }), _jsx("div", { className: "pointer-events-none absolute bottom-3 left-3 rounded-md border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/90 px-2.5 py-1.5 text-[0.6875rem] text-(--ui-text-tertiary) shadow-sm", children: "Drag nodes to arrange \u00B7 scroll to pan \u00B7 Ctrl/\u2318 + scroll to zoom" }), _jsx(Button, { className: "absolute bottom-3 right-3", onClick: () => {
++                            if (mindRef.current && hostRef.current) {
++                                scaleFitSmooth(hostRef.current, mindRef.current);
++                            }
++                        }, size: "sm", variant: "outline", children: "Fit" })] }), selectedDetail && (_jsxs("aside", { className: "w-72 shrink-0 overflow-y-auto border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-5 py-6", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-(--theme-primary)", children: "Explanation" }), _jsx("h3", { className: "mt-2 text-base font-semibold tracking-tight text-(--ui-text-primary)", children: selectedDetail.topic }), _jsx("p", { className: "mt-3 whitespace-pre-wrap text-sm leading-6 text-(--ui-text-secondary)", children: selectedDetail.note })] }))] }));
+ }
+ export function MindmapViewerDialog({ file, onOpenChange }) {
+     const navigate = useNavigate();
+diff --git a/apps/desktop/src/app/study/mindmap-viewer.tsx b/apps/desktop/src/app/study/mindmap-viewer.tsx
+index 9c1eaf3c64b..f961d441611 100644
+--- a/apps/desktop/src/app/study/mindmap-viewer.tsx
++++ b/apps/desktop/src/app/study/mindmap-viewer.tsx
+@@ -15,6 +15,8 @@ import { MINDMAP_DIR, type MindmapFile } from './extras'
+ import { parseMindmapMarkdown } from './mindmap-parser'
+ 
+ const LAYOUT_STORAGE_PREFIX = 'nemesis.study.mindmap.layout:'
++const LAYOUT_MOTION_MS = 180
++const LAYOUT_EASING = 'cubic-bezier(0, 0, 0.2, 1)'
+ 
+ const MINDMAP_THEME: Theme = {
+   cssVar: {
+@@ -57,6 +59,88 @@ interface NodeDetail {
+   topic: string
+ }
+ 
++type MindmapTopicElement = HTMLElement & { nodeObj?: NodeObj }
++
++function reducedMotionRequested(): boolean {
++  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
++}
++
++function mindmapTopics(host: HTMLElement): MindmapTopicElement[] {
++  return Array.from(host.querySelectorAll<MindmapTopicElement>('me-parent > me-tpc'))
++}
++
++/** mind-elixir reflows nested inline/flex custom elements and directly removes a
++ * collapsed subtree, so CSS top/left transitions never see changing properties
++ * and an exit fade cannot run. FLIP the surviving me-parent wrappers after the
++ * synchronous re-layout, and fade the newly-created subtree wrappers in. */
++function animateMindmapRelayout(host: HTMLElement, updateLayout: () => void): void {
++  if (reducedMotionRequested()) {
++    updateLayout()
++
++    return
++  }
++
++  const before = new Map(
++    mindmapTopics(host).flatMap(topic => {
++      const id = topic.nodeObj?.id
++
++      return id ? [[id, topic.getBoundingClientRect()] as const] : []
++    })
++  )
++
++  updateLayout()
++
++  window.requestAnimationFrame(() => {
++    for (const topic of mindmapTopics(host)) {
++      const wrapper = topic.parentElement as HTMLElement | null
++      const id = topic.nodeObj?.id
++
++      if (!wrapper || !id) {
++        continue
++      }
++
++      const previous = before.get(id)
++
++      if (!previous) {
++        wrapper.animate(
++          [
++            { opacity: 0, transform: 'scale(0.97)' },
++            { opacity: 1, transform: 'scale(1)' }
++          ],
++          { duration: LAYOUT_MOTION_MS, easing: LAYOUT_EASING }
++        )
++
++        continue
++      }
++
++      const current = topic.getBoundingClientRect()
++      const deltaX = previous.left - current.left
++      const deltaY = previous.top - current.top
++
++      if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
++        wrapper.animate([{ transform: `translate(${deltaX}px, ${deltaY}px)` }, { transform: 'translate(0, 0)' }], {
++          duration: LAYOUT_MOTION_MS,
++          easing: LAYOUT_EASING
++        })
++      }
++    }
++  })
++}
++
++function scaleFitSmooth(host: HTMLElement, mind: MindElixirInstance): void {
++  const canvas = host.querySelector<HTMLElement>('.map-canvas')
++
++  if (!canvas || reducedMotionRequested()) {
++    mind.scaleFit()
++
++    return
++  }
++
++  canvas.classList.add('mindmap-smooth-transform')
++  mind.scaleFit()
++  window.setTimeout(() => canvas.classList.remove('mindmap-smooth-transform'), LAYOUT_MOTION_MS)
++}
++
+ function mapPath(file: MindmapFile): string {
+   return `${MINDMAP_DIR}/${file.fileName}`
+ }
+@@ -188,8 +272,10 @@ function applyStoredLayout(root: NodeObj, stored: null | StoredLayout): NodeObj
+     parent.children?.sort((left, right) => {
+       const leftEntry = storedById.get(left.id)
+       const rightEntry = storedById.get(right.id)
+-      const leftOrder = leftEntry?.parentId === parent.id ? leftEntry.index : 1_000_000 + (canonicalOrder.get(left.id) ?? 0)
+-      const rightOrder = rightEntry?.parentId === parent.id ? rightEntry.index : 1_000_000 + (canonicalOrder.get(right.id) ?? 0)
++      const leftOrder =
++        leftEntry?.parentId === parent.id ? leftEntry.index : 1_000_000 + (canonicalOrder.get(left.id) ?? 0)
++      const rightOrder =
++        rightEntry?.parentId === parent.id ? rightEntry.index : 1_000_000 + (canonicalOrder.get(right.id) ?? 0)
+ 
+       return leftOrder - rightOrder
+     })
+@@ -224,7 +310,9 @@ function OutlineFallback({ file }: { file: MindmapFile }) {
+ 
+   return (
+     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+-      <p className="mb-3 text-xs text-muted-foreground">Showing the plain outline — the interactive mind map couldn’t load.</p>
++      <p className="mb-3 text-xs text-muted-foreground">
++        Showing the plain outline — the interactive mind map couldn’t load.
++      </p>
+       <div className="space-y-1 text-[0.8125rem] leading-relaxed">
+         {lines.map(({ depth, node }) => (
+           <div key={node.id} style={{ paddingLeft: `${depth * 1.25}rem` }}>
+@@ -311,20 +399,19 @@ function MindmapCanvas({ file }: { file: MindmapFile }) {
+       }
+       const onTopicClick = (event: MouseEvent) => {
+         const dragged =
+-          pointerOrigin &&
+-          Math.hypot(event.clientX - pointerOrigin.x, event.clientY - pointerOrigin.y) > 6
++          pointerOrigin && Math.hypot(event.clientX - pointerOrigin.x, event.clientY - pointerOrigin.y) > 6
+ 
+         if (dragged) {
+           return
+         }
+ 
+-        const topic = (event.target as HTMLElement).closest('me-tpc') as
+-          | (HTMLElement & { nodeObj?: NodeObj })
+-          | null
++        const topic = (event.target as HTMLElement).closest('me-tpc') as (HTMLElement & { nodeObj?: NodeObj }) | null
+         const node = topic?.nodeObj
+ 
+         if (mind && topic && node?.children?.length) {
+-          mind.expandNode(topic as Parameters<typeof mind.expandNode>[0], node.expanded === false)
++          animateMindmapRelayout(host, () => {
++            mind?.expandNode(topic as Parameters<MindElixirInstance['expandNode']>[0], node.expanded === false)
++          })
+           persistLayout(file, mind)
+         }
+       }
+@@ -336,13 +423,17 @@ function MindmapCanvas({ file }: { file: MindmapFile }) {
+         host.removeEventListener('click', onTopicClick)
+       }
+       mind.bus.addListener('operation', (operation: Operation) => {
+-        if (operation.name === 'moveNodeAfter' || operation.name === 'moveNodeBefore' || operation.name === 'moveNodeIn') {
++        if (
++          operation.name === 'moveNodeAfter' ||
++          operation.name === 'moveNodeBefore' ||
++          operation.name === 'moveNodeIn'
++        ) {
+           persistLayout(file, mind as MindElixirInstance)
+         }
+       })
+ 
+-      animationFrame = window.requestAnimationFrame(() => mind?.scaleFit())
+-      resizeObserver = new ResizeObserver(() => mind?.scaleFit())
++      animationFrame = window.requestAnimationFrame(() => mind && scaleFitSmooth(host, mind))
++      resizeObserver = new ResizeObserver(() => mind && scaleFitSmooth(host, mind))
+       resizeObserver.observe(host)
+     } catch {
+       setFailed(true)
+@@ -370,7 +461,11 @@ function MindmapCanvas({ file }: { file: MindmapFile }) {
+         </div>
+         <Button
+           className="absolute bottom-3 right-3"
+-          onClick={() => mindRef.current?.scaleFit()}
++          onClick={() => {
++            if (mindRef.current && hostRef.current) {
++              scaleFitSmooth(hostRef.current, mindRef.current)
++            }
++          }}
+           size="sm"
+           variant="outline"
+         >
+@@ -380,7 +475,9 @@ function MindmapCanvas({ file }: { file: MindmapFile }) {
+       {selectedDetail && (
+         <aside className="w-72 shrink-0 overflow-y-auto border-l border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-5 py-6">
+           <p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-(--theme-primary)">Explanation</p>
+-          <h3 className="mt-2 text-base font-semibold tracking-tight text-(--ui-text-primary)">{selectedDetail.topic}</h3>
++          <h3 className="mt-2 text-base font-semibold tracking-tight text-(--ui-text-primary)">
++            {selectedDetail.topic}
++          </h3>
+           <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-(--ui-text-secondary)">{selectedDetail.note}</p>
+         </aside>
+       )}
+diff --git a/apps/desktop/src/app/study/model.js b/apps/desktop/src/app/study/model.js
+index 30a3cf5d94b..179a72be165 100644
+--- a/apps/desktop/src/app/study/model.js
++++ b/apps/desktop/src/app/study/model.js
+@@ -332,7 +332,9 @@ function reconcileCards(existing, parsed) {
+             : { ...match, back: entry.back, front: entry.front };
+     });
+     const removedIds = [...pool.values()].flat().map(card => card.id);
+-    const unchanged = removedIds.length === 0 && cards.length === existing.length && cards.every((card, index) => card === existing[index]);
++    const unchanged = removedIds.length === 0 &&
++        cards.length === existing.length &&
++        cards.every((card, index) => card === existing[index]);
+     return { cards: unchanged ? existing : cards, removedIds };
+ }
+ /** Reconcile agent-managed decks against the vault's deck files. Pure.
+@@ -539,27 +541,27 @@ export function groupDecks(state, now) {
+             return { due: sum.due + s.due, fresh: sum.fresh + s.fresh, total: sum.total + s.total };
+         }, { due: 0, fresh: 0, total: 0 })
+     }))
+-        .sort((a, b) => (b.stats.due - a.stats.due) || a.course.localeCompare(b.course));
++        .sort((a, b) => b.stats.due - a.stats.due || a.course.localeCompare(b.course));
+ }
+-/** GitHub-style contribution grid: review counts per day for the last `weeks` weeks,
+- *  laid out oldest→newest, each column a Sun-anchored week. Pure. */
+-export function reviewHeatmap(state, todayIso, weeks = 53) {
++/** Rolling GitHub-style contribution window: exactly `weeks` weeks ending today,
++ *  laid out oldest→newest. The view supplies blank leading cells to keep the
++ *  dates aligned with Sunday-anchored columns. Pure. */
++export function reviewHeatmap(state, todayIso, weeks = 52) {
+     const perDay = new Map();
+     for (const review of state.reviews) {
+         const day = review.at.slice(0, 10); // UTC calendar day from the ISO timestamp
+         perDay.set(day, (perDay.get(day) ?? 0) + 1);
+     }
+     // Work entirely in UTC so the per-day keys (UTC) and cell dates (UTC) always agree,
+-    // regardless of the machine's timezone. Anchor on the UTC Sunday that starts the window.
++    // regardless of the machine's timezone. Do not pad forward to Saturday: the
++    // rolling window ends on today, so no future cells displace an older month.
+     const DAY = 86_400_000;
+     const todayUtc = new Date(`${todayIso.slice(0, 10)}T00:00:00.000Z`);
+-    // End the grid on this week's Saturday (so today is always in the last column, GitHub-style)
+-    // and start `weeks` Sundays back — columns stay Sun→Sat aligned.
+-    const endMs = todayUtc.getTime() + (6 - todayUtc.getUTCDay()) * DAY;
+-    const startMs = endMs - (weeks * 7 - 1) * DAY;
++    const dayCount = weeks * 7;
++    const startMs = todayUtc.getTime() - (dayCount - 1) * DAY;
+     const cells = [];
+     let total = 0;
+-    for (let i = 0; i < weeks * 7; i++) {
++    for (let i = 0; i < dayCount; i++) {
+         const iso = new Date(startMs + i * DAY).toISOString().slice(0, 10);
+         const count = perDay.get(iso) ?? 0;
+         total += count;
+diff --git a/apps/desktop/src/app/study/model.test.js b/apps/desktop/src/app/study/model.test.js
+index 7c6e0ef3f6f..8403fdee30d 100644
+--- a/apps/desktop/src/app/study/model.test.js
++++ b/apps/desktop/src/app/study/model.test.js
+@@ -3,7 +3,7 @@
+ // page drifting — and, critically, without torching FSRS review progress. These tests
+ // pin that contract.
+ import { beforeEach, describe, expect, it } from 'vitest';
+-import { adoptLegacyDeckFiles, buildQueue, DEFAULT_STUDY_SETTINGS, getSettings, loadState, reconcileDeckFiles, saveState, setSettings } from './model';
++import { adoptLegacyDeckFiles, buildQueue, DEFAULT_STUDY_SETTINGS, getSettings, loadState, reconcileDeckFiles, reviewHeatmap, saveState, setSettings } from './model';
+ function card(id, front, back, extra = {}) {
+     return { back, front, id, tags: [], ...extra };
+ }
+@@ -20,6 +20,26 @@ function candidate(fileName, cards, course) {
+ function scheduled() {
+     return { due: '2026-07-09T00:00:00.000Z' };
+ }
++describe('reviewHeatmap', () => {
++    it('renders exactly 52 rolling weeks and ends on today without future padding', () => {
++        const result = reviewHeatmap(state([]), '2026-06-10T18:30:00.000Z');
++        expect(result.cells).toHaveLength(52 * 7);
++        expect(result.cells[0]?.date).toBe('2025-06-12');
++        expect(result.cells.at(-1)?.date).toBe('2026-06-10');
++    });
++    it('keeps reviews on both ends of the rolling window and excludes the day before it', () => {
++        const result = reviewHeatmap(state([], {
++            reviews: [
++                { at: '2025-06-11T23:59:00.000Z', cardId: 'too-old', rating: 'good' },
++                { at: '2025-06-12T00:01:00.000Z', cardId: 'first', rating: 'good' },
++                { at: '2026-06-10T23:59:00.000Z', cardId: 'today', rating: 'easy' }
++            ]
++        }), '2026-06-10T18:30:00.000Z');
++        expect(result.total).toBe(2);
++        expect(result.cells[0]?.count).toBe(1);
++        expect(result.cells.at(-1)?.count).toBe(1);
++    });
++});
+ describe('reconcileDeckFiles', () => {
+     it('imports a new deck file with fresh ids and files it under its course', () => {
+         const before = state([]);
+diff --git a/apps/desktop/src/app/study/model.test.ts b/apps/desktop/src/app/study/model.test.ts
+index 66e4c2c6dd5..e28e53e4498 100644
+--- a/apps/desktop/src/app/study/model.test.ts
++++ b/apps/desktop/src/app/study/model.test.ts
+@@ -12,6 +12,7 @@ import {
+   getSettings,
+   loadState,
+   reconcileDeckFiles,
++  reviewHeatmap,
+   saveState,
+   setSettings,
+   type StoredSchedule,
+@@ -41,6 +42,33 @@ function scheduled(): StoredSchedule {
+   return { due: '2026-07-09T00:00:00.000Z' } as StoredSchedule
+ }
+ 
++describe('reviewHeatmap', () => {
++  it('renders exactly 52 rolling weeks and ends on today without future padding', () => {
++    const result = reviewHeatmap(state([]), '2026-06-10T18:30:00.000Z')
++
++    expect(result.cells).toHaveLength(52 * 7)
++    expect(result.cells[0]?.date).toBe('2025-06-12')
++    expect(result.cells.at(-1)?.date).toBe('2026-06-10')
++  })
++
++  it('keeps reviews on both ends of the rolling window and excludes the day before it', () => {
++    const result = reviewHeatmap(
++      state([], {
++        reviews: [
++          { at: '2025-06-11T23:59:00.000Z', cardId: 'too-old', rating: 'good' },
++          { at: '2025-06-12T00:01:00.000Z', cardId: 'first', rating: 'good' },
++          { at: '2026-06-10T23:59:00.000Z', cardId: 'today', rating: 'easy' }
++        ]
++      }),
++      '2026-06-10T18:30:00.000Z'
++    )
++
++    expect(result.total).toBe(2)
++    expect(result.cells[0]?.count).toBe(1)
++    expect(result.cells.at(-1)?.count).toBe(1)
++  })
++})
++
+ describe('reconcileDeckFiles', () => {
+   it('imports a new deck file with fresh ids and files it under its course', () => {
+     const before = state([])
+diff --git a/apps/desktop/src/app/study/model.ts b/apps/desktop/src/app/study/model.ts
+index 11cd5585437..6494ee3d43a 100644
+--- a/apps/desktop/src/app/study/model.ts
++++ b/apps/desktop/src/app/study/model.ts
+@@ -500,7 +500,9 @@ function reconcileCards(
+   const removedIds = [...pool.values()].flat().map(card => card.id)
+ 
+   const unchanged =
+-    removedIds.length === 0 && cards.length === existing.length && cards.every((card, index) => card === existing[index])
++    removedIds.length === 0 &&
++    cards.length === existing.length &&
++    cards.every((card, index) => card === existing[index])
+ 
+   return { cards: unchanged ? existing : cards, removedIds }
+ }
+@@ -780,7 +782,7 @@ export function groupDecks(state: StudyState, now: Date): DeckGroup[] {
+         { due: 0, fresh: 0, total: 0 }
+       )
+     }))
+-    .sort((a, b) => (b.stats.due - a.stats.due) || a.course.localeCompare(b.course))
++    .sort((a, b) => b.stats.due - a.stats.due || a.course.localeCompare(b.course))
+ }
+ 
+ export interface HeatCell {
+@@ -790,9 +792,10 @@ export interface HeatCell {
+   level: number
+ }
+ 
+-/** GitHub-style contribution grid: review counts per day for the last `weeks` weeks,
+- *  laid out oldest→newest, each column a Sun-anchored week. Pure. */
+-export function reviewHeatmap(state: StudyState, todayIso: string, weeks = 53): { cells: HeatCell[]; total: number } {
++/** Rolling GitHub-style contribution window: exactly `weeks` weeks ending today,
++ *  laid out oldest→newest. The view supplies blank leading cells to keep the
++ *  dates aligned with Sunday-anchored columns. Pure. */
++export function reviewHeatmap(state: StudyState, todayIso: string, weeks = 52): { cells: HeatCell[]; total: number } {
+   const perDay = new Map<string, number>()
+ 
+   for (const review of state.reviews) {
+@@ -801,18 +804,17 @@ export function reviewHeatmap(state: StudyState, todayIso: string, weeks = 53):
+   }
+ 
+   // Work entirely in UTC so the per-day keys (UTC) and cell dates (UTC) always agree,
+-  // regardless of the machine's timezone. Anchor on the UTC Sunday that starts the window.
++  // regardless of the machine's timezone. Do not pad forward to Saturday: the
++  // rolling window ends on today, so no future cells displace an older month.
+   const DAY = 86_400_000
+   const todayUtc = new Date(`${todayIso.slice(0, 10)}T00:00:00.000Z`)
+-  // End the grid on this week's Saturday (so today is always in the last column, GitHub-style)
+-  // and start `weeks` Sundays back — columns stay Sun→Sat aligned.
+-  const endMs = todayUtc.getTime() + (6 - todayUtc.getUTCDay()) * DAY
+-  const startMs = endMs - (weeks * 7 - 1) * DAY
++  const dayCount = weeks * 7
++  const startMs = todayUtc.getTime() - (dayCount - 1) * DAY
+ 
+   const cells: HeatCell[] = []
+   let total = 0
+ 
+-  for (let i = 0; i < weeks * 7; i++) {
++  for (let i = 0; i < dayCount; i++) {
+     const iso = new Date(startMs + i * DAY).toISOString().slice(0, 10)
+     const count = perDay.get(iso) ?? 0
+     total += count
+diff --git a/apps/desktop/src/nemesis.js b/apps/desktop/src/nemesis.js
+index 90924852c86..55085785848 100644
+--- a/apps/desktop/src/nemesis.js
++++ b/apps/desktop/src/nemesis.js
+@@ -4,7 +4,7 @@
+ // docs/design/nemesis-product-reskin-plan-2026-07.md). Flip to false → stock Hermes UI.
+ export const NEMESIS_STUDENT_BUILD = true;
+ /** Sidebar pages hidden for students (machinery stays alive underneath). */
+-export const STUDENT_HIDDEN_NAV = new Set(['skills', 'messaging']);
++export const STUDENT_HIDDEN_NAV = new Set(['skills', 'messaging', 'artifacts']);
+ /** ⌘K palette entries hidden for students. */
+ export const STUDENT_HIDDEN_PALETTE = new Set(['nav-terminal', 'nav-skills', 'nav-messaging']);
+ /** Settings sections students see. Everything else (model/providers/keys/gateway/workspace/
+@@ -34,7 +34,13 @@ export const STUDENT_HIDDEN_STATUSBAR = new Set([
+ ]);
+ /** ⌘K palette entries hidden for students, beyond STUDENT_HIDDEN_PALETTE — the whole
+  *  command-center / gateway / dev-nav surface. Matched by id prefix OR exact id. */
+-export const STUDENT_HIDDEN_PALETTE_PREFIXES = ['cc-', 'nav-cron', 'nav-profiles', 'nav-agents', 'nav-starmap'];
++export const STUDENT_HIDDEN_PALETTE_PREFIXES = [
++    'cc-',
++    'nav-cron',
++    'nav-profiles',
++    'nav-agents',
++    'nav-starmap'
++];
+ /** True when this palette item id should be hidden in the student build. */
+ export function studentHidesPaletteId(id) {
+     if (!NEMESIS_STUDENT_BUILD || !id) {
+diff --git a/apps/desktop/src/nemesis.ts b/apps/desktop/src/nemesis.ts
+index 7daa6b28ba1..15c90e6e48a 100644
+--- a/apps/desktop/src/nemesis.ts
++++ b/apps/desktop/src/nemesis.ts
+@@ -5,7 +5,7 @@
+ export const NEMESIS_STUDENT_BUILD = true
+ 
+ /** Sidebar pages hidden for students (machinery stays alive underneath). */
+-export const STUDENT_HIDDEN_NAV: ReadonlySet<string> = new Set(['skills', 'messaging'])
++export const STUDENT_HIDDEN_NAV: ReadonlySet<string> = new Set(['skills', 'messaging', 'artifacts'])
+ 
+ /** ⌘K palette entries hidden for students. */
+ export const STUDENT_HIDDEN_PALETTE: ReadonlySet<string> = new Set(['nav-terminal', 'nav-skills', 'nav-messaging'])
+@@ -39,7 +39,13 @@ export const STUDENT_HIDDEN_STATUSBAR: ReadonlySet<string> = new Set([
+ 
+ /** ⌘K palette entries hidden for students, beyond STUDENT_HIDDEN_PALETTE — the whole
+  *  command-center / gateway / dev-nav surface. Matched by id prefix OR exact id. */
+-export const STUDENT_HIDDEN_PALETTE_PREFIXES: readonly string[] = ['cc-', 'nav-cron', 'nav-profiles', 'nav-agents', 'nav-starmap']
++export const STUDENT_HIDDEN_PALETTE_PREFIXES: readonly string[] = [
++  'cc-',
++  'nav-cron',
++  'nav-profiles',
++  'nav-agents',
++  'nav-starmap'
++]
+ 
+ /** True when this palette item id should be hidden in the student build. */
+ export function studentHidesPaletteId(id: string | undefined): boolean {
+diff --git a/apps/desktop/src/styles.css b/apps/desktop/src/styles.css
+index d48b3088d50..9cbd52cf344 100644
+--- a/apps/desktop/src/styles.css
++++ b/apps/desktop/src/styles.css
+@@ -1909,6 +1909,9 @@ text-* variant utilities. */ .btn-arc {
+ .study-mindmap-host .map-container me-parent me-tpc {
+   padding: 0.25rem 0.45rem;
+ }
++.study-mindmap-host .map-container .map-canvas.mindmap-smooth-transform {
++  transition: transform 180ms cubic-bezier(0, 0, 0.2, 1);
++}
+ .study-mindmap-host .map-container .selected {
+   outline-width: 1px;
+   outline-offset: 3px;
+@@ -1932,4 +1935,5 @@ text-* variant utilities. */ .btn-arc {
+   .nemesis-flip-inner { transition: none; }
+   .nemesis-shake { animation: none; }
+   .nemesis-activity-phrase { animation: none; }
++  .study-mindmap-host .map-container .map-canvas.mindmap-smooth-transform { transition: none; }
+ }
+-- 
+2.53.0
+

@@ -1,0 +1,536 @@
+From 8a1aa66da9a4541a24f81d011d704c04923440ae Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sun, 12 Jul 2026 13:34:19 -0500
+Subject: [PATCH] =?UTF-8?q?fix(nemesis-kit):=20round-49=20Library=20bugs?=
+ =?UTF-8?q?=20=E2=80=94=20(1)=20render=20markdown=20tables=20in=20note=20e?=
+ =?UTF-8?q?ditor=20via=20StateField=20(block=20widget;=20ViewPlugins=20can?=
+ =?UTF-8?q?'t=20replace=20line=20breaks);=20(2)=20stop=20harvesting=20remo?=
+ =?UTF-8?q?te=20web=20images=20as=20'Made=20by=20Nemesis'=20deliverables;?=
+ =?UTF-8?q?=20(3)=20deliverables=20open=20IN-APP=20(local=20files=20?=
+ =?UTF-8?q?=E2=86=92=20preview=20pane,=20web=20=E2=86=92=20rail=20browser)?=
+ =?UTF-8?q?=20not=20Chrome;=20resolve=20vault-relative=20deliverable=20pat?=
+ =?UTF-8?q?hs?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../src/app/artifacts/artifact-utils.js       |  31 ++++
+ .../src/app/artifacts/artifact-utils.ts       |  39 +++++
+ apps/desktop/src/app/library/index.js         |   7 +-
+ apps/desktop/src/app/library/index.tsx        |   9 +-
+ apps/desktop/src/app/library/note-editor.js   | 118 ++++++++++++++
+ apps/desktop/src/app/library/note-editor.tsx  | 147 +++++++++++++++++-
+ 6 files changed, 348 insertions(+), 3 deletions(-)
+
+diff --git a/apps/desktop/src/app/artifacts/artifact-utils.js b/apps/desktop/src/app/artifacts/artifact-utils.js
+index d8ca91c4c98..9478a4531dd 100644
+--- a/apps/desktop/src/app/artifacts/artifact-utils.js
++++ b/apps/desktop/src/app/artifacts/artifact-utils.js
+@@ -1,7 +1,10 @@
+ import { getSessionMessages, listAllProfileSessions } from '@/hermes';
+ import { readDesktopFileDataUrl } from '@/lib/desktop-fs';
+ import { downloadGatewayMediaFile, filePathFromMediaPath, isRemoteGateway, mediaExternalUrl } from '@/lib/media';
++import { localPreviewTarget } from '@/lib/local-preview';
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++import { openBrowserRail } from '@/store/browser-rail';
++import { setPreviewTarget } from '@/store/preview';
+ // Student build: Artifacts = things the agent MADE (files, images). Web links —
+ // including every cited source URL — live in the chat's Sources rail instead, so
+ // they don't double-report here as "artifacts".
+@@ -228,6 +231,14 @@ export function collectArtifactsForSession(session, messages) {
+             if (NEMESIS_STUDENT_BUILD && artifactKind(value) === 'link' && /^https?:\/\//.test(value)) {
+                 return;
+             }
++            // Student build: a REMOTE image URL (https://cdn…/photo.jpg) is something the
++            // agent SAW while browsing — an article image, a favicon, a CDN asset — not
++            // something it MADE. These were flooding "Made by Nemesis" with hash-named
++            // web images from research sessions. A real image deliverable is one the agent
++            // generated (a data:image) or wrote into the vault; keep only those.
++            if (NEMESIS_STUDENT_BUILD && artifactKind(value) === 'image' && /^https?:\/\//.test(value)) {
++                return;
++            }
+             // Student build: the Library pages already own the student's working
+             // files — notes, decks, calendar, captured course files, recordings.
+             // Echoing every vault path the agent touched here made Artifacts a
+@@ -283,6 +294,26 @@ export async function openArtifactHref(href) {
+         await downloadGatewayMediaFile(href);
+         return;
+     }
++    // Student build: keep everything INSIDE Nemesis, never the system browser.
++    // A local file (an HTML report/handout the agent made) opens in the PREVIEW
++    // pane, which renders local HTML/images/text — the browser rail's school
++    // partition can't load local-file URLs. A web link opens in the rail browser.
++    if (NEMESIS_STUDENT_BUILD) {
++        const isLocalFile = /^file:/i.test(href) || href.startsWith('/') || href.startsWith('~');
++        if (isLocalFile) {
++            const target = localPreviewTarget(href);
++            if (target) {
++                setPreviewTarget(target);
++                return;
++            }
++        }
++        const railTab = window.hermesDesktop?.schoolView?.newTab;
++        if (railTab && /^https?:\/\//i.test(href)) {
++            openBrowserRail();
++            await railTab(href);
++            return;
++        }
++    }
+     if (window.hermesDesktop?.openExternal) {
+         await window.hermesDesktop.openExternal(href);
+     }
+diff --git a/apps/desktop/src/app/artifacts/artifact-utils.ts b/apps/desktop/src/app/artifacts/artifact-utils.ts
+index 1900fffb925..754df030cb3 100644
+--- a/apps/desktop/src/app/artifacts/artifact-utils.ts
++++ b/apps/desktop/src/app/artifacts/artifact-utils.ts
+@@ -1,7 +1,10 @@
+ import { getSessionMessages, listAllProfileSessions } from '@/hermes'
+ import { readDesktopFileDataUrl } from '@/lib/desktop-fs'
+ import { downloadGatewayMediaFile, filePathFromMediaPath, isRemoteGateway, mediaExternalUrl } from '@/lib/media'
++import { localPreviewTarget } from '@/lib/local-preview'
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
++import { openBrowserRail } from '@/store/browser-rail'
++import { setPreviewTarget } from '@/store/preview'
+ import type { SessionInfo, SessionMessage } from '@/types/hermes'
+ 
+ export type ArtifactKind = 'image' | 'file' | 'link'
+@@ -310,6 +313,15 @@ export function collectArtifactsForSession(session: SessionInfo, messages: Sessi
+         return
+       }
+ 
++      // Student build: a REMOTE image URL (https://cdn…/photo.jpg) is something the
++      // agent SAW while browsing — an article image, a favicon, a CDN asset — not
++      // something it MADE. These were flooding "Made by Nemesis" with hash-named
++      // web images from research sessions. A real image deliverable is one the agent
++      // generated (a data:image) or wrote into the vault; keep only those.
++      if (NEMESIS_STUDENT_BUILD && artifactKind(value) === 'image' && /^https?:\/\//.test(value)) {
++        return
++      }
++
+       // Student build: the Library pages already own the student's working
+       // files — notes, decks, calendar, captured course files, recordings.
+       // Echoing every vault path the agent touched here made Artifacts a
+@@ -376,6 +388,33 @@ export async function openArtifactHref(href: string): Promise<void> {
+     return
+   }
+ 
++  // Student build: keep everything INSIDE Nemesis, never the system browser.
++  // A local file (an HTML report/handout the agent made) opens in the PREVIEW
++  // pane, which renders local HTML/images/text — the browser rail's school
++  // partition can't load local-file URLs. A web link opens in the rail browser.
++  if (NEMESIS_STUDENT_BUILD) {
++    const isLocalFile = /^file:/i.test(href) || href.startsWith('/') || href.startsWith('~')
++
++    if (isLocalFile) {
++      const target = localPreviewTarget(href)
++
++      if (target) {
++        setPreviewTarget(target)
++
++        return
++      }
++    }
++
++    const railTab = window.hermesDesktop?.schoolView?.newTab
++
++    if (railTab && /^https?:\/\//i.test(href)) {
++      openBrowserRail()
++      await railTab(href)
++
++      return
++    }
++  }
++
+   if (window.hermesDesktop?.openExternal) {
+     await window.hermesDesktop.openExternal(href)
+   } else {
+diff --git a/apps/desktop/src/app/library/index.js b/apps/desktop/src/app/library/index.js
+index 63de0538fb0..78549f48c18 100644
+--- a/apps/desktop/src/app/library/index.js
++++ b/apps/desktop/src/app/library/index.js
+@@ -106,7 +106,12 @@ export function LibraryView() {
+     }, []);
+     const openDeliverable = useCallback(async (artifact) => {
+         try {
+-            await openArtifactHref(artifact.href);
++            // A vault file deliverable is often recorded as a vault-RELATIVE path
++            // ("Exports/report.html"); resolve it against the vault root so it opens in
++            // the preview pane rather than falling through to an unresolvable href.
++            const isSchemeOrAbsolute = /^(?:[a-z]+:|\/|~)/i.test(artifact.value);
++            const target = artifact.kind === 'file' && !isSchemeOrAbsolute ? `${VAULT_DIR}/${artifact.value}` : artifact.href;
++            await openArtifactHref(target);
+         }
+         catch (err) {
+             notifyError(err, 'Could not open this deliverable.');
+diff --git a/apps/desktop/src/app/library/index.tsx b/apps/desktop/src/app/library/index.tsx
+index 8d43ed450b0..365231e0a38 100644
+--- a/apps/desktop/src/app/library/index.tsx
++++ b/apps/desktop/src/app/library/index.tsx
+@@ -159,7 +159,14 @@ export function LibraryView() {
+ 
+   const openDeliverable = useCallback(async (artifact: ArtifactRecord) => {
+     try {
+-      await openArtifactHref(artifact.href)
++      // A vault file deliverable is often recorded as a vault-RELATIVE path
++      // ("Exports/report.html"); resolve it against the vault root so it opens in
++      // the preview pane rather than falling through to an unresolvable href.
++      const isSchemeOrAbsolute = /^(?:[a-z]+:|\/|~)/i.test(artifact.value)
++      const target =
++        artifact.kind === 'file' && !isSchemeOrAbsolute ? `${VAULT_DIR}/${artifact.value}` : artifact.href
++
++      await openArtifactHref(target)
+     } catch (err) {
+       notifyError(err, 'Could not open this deliverable.')
+     }
+diff --git a/apps/desktop/src/app/library/note-editor.js b/apps/desktop/src/app/library/note-editor.js
+index feb2553f0c2..ffa51aee5fd 100644
+--- a/apps/desktop/src/app/library/note-editor.js
++++ b/apps/desktop/src/app/library/note-editor.js
+@@ -8,6 +8,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+ import { syntaxTree } from '@codemirror/language';
++import { StateField } from '@codemirror/state';
+ import { Decoration, EditorView, keymap, placeholder, ViewPlugin, WidgetType } from '@codemirror/view';
+ import { IconBold, IconHeading, IconItalic, IconList } from '@tabler/icons-react';
+ import { useEffect, useImperativeHandle, useRef } from 'react';
+@@ -63,6 +64,72 @@ class WikilinkWidget extends WidgetType {
+         return span;
+     }
+ }
++/** Split a markdown table row into trimmed cell strings ("| a | b |" → ["a","b"]). */
++function tableCells(line) {
++    return line
++        .replace(/^\s*\|/, '')
++        .replace(/\|\s*$/, '')
++        .split('|')
++        .map(cell => cell.trim());
++}
++const TABLE_SEP_RE = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$/;
++class TableWidget extends WidgetType {
++    header;
++    rows;
++    constructor(header, rows) {
++        super();
++        this.header = header;
++        this.rows = rows;
++    }
++    eq(other) {
++        return JSON.stringify([this.header, this.rows]) === JSON.stringify([other.header, other.rows]);
++    }
++    toDOM() {
++        const table = document.createElement('table');
++        table.className = 'cm-np-table';
++        const thead = table.createTHead();
++        const hr = thead.insertRow();
++        for (const cell of this.header) {
++            const th = document.createElement('th');
++            th.textContent = cell;
++            hr.appendChild(th);
++        }
++        const tbody = table.createTBody();
++        for (const row of this.rows) {
++            const tr = tbody.insertRow();
++            for (let i = 0; i < this.header.length; i++) {
++                tr.insertCell().textContent = row[i] ?? '';
++            }
++        }
++        return table;
++    }
++}
++/** GFM table blocks in the doc: a header row, a `|---|` separator, then body rows.
++ *  Returned as whole-line ranges so the caller can block-replace or skip them. */
++function findTableBlocks(doc) {
++    const blocks = [];
++    const total = doc.lines;
++    for (let n = 1; n < total; n++) {
++        const header = doc.line(n);
++        const sep = doc.line(n + 1);
++        if (!header.text.includes('|') || !TABLE_SEP_RE.test(sep.text)) {
++            continue;
++        }
++        let last = n + 1;
++        const rows = [];
++        for (let m = n + 2; m <= total; m++) {
++            const body = doc.line(m);
++            if (!body.text.includes('|') || body.text.trim() === '') {
++                break;
++            }
++            rows.push(tableCells(body.text));
++            last = m;
++        }
++        blocks.push({ from: header.from, header: tableCells(header.text), rows, to: doc.line(last).to });
++        n = last;
++    }
++    return blocks;
++}
+ function buildDecorations(view, onOpen) {
+     const decorations = [];
+     const doc = view.state.doc;
+@@ -161,8 +228,39 @@ function buildDecorations(view, onOpen) {
+             }
+         }
+     }
++    // Tables render via a separate StateField (tableField below) — CodeMirror forbids
++    // block-replace-across-lines decorations from a ViewPlugin. Here we only DROP the
++    // inline decorations that fall inside a rendered table block so they don't collide
++    // with the StateField's block widget.
++    const renderedTables = findTableBlocks(doc).filter(block => !selectionTouches(block.from, block.to));
++    if (renderedTables.length > 0) {
++        const inRendered = (pos) => renderedTables.some(block => pos >= block.from && pos <= block.to);
++        return Decoration.set(decorations.filter(range => !inRendered(range.from)), true);
++    }
+     return Decoration.set(decorations, true);
+ }
++/** Table block-replace decorations. In a StateField (not the ViewPlugin) because
++ *  CodeMirror only allows line-break-replacing block decorations from state, not
++ *  plugins. Recomputes on doc + selection changes so the raw markdown reappears
++ *  when the caret enters the table. */
++const tableField = StateField.define({
++    create: state => buildTableDecorations(state),
++    provide: field => EditorView.decorations.from(field),
++    update(value, tr) {
++        return tr.docChanged || tr.selection ? buildTableDecorations(tr.state) : value;
++    }
++});
++function buildTableDecorations(state) {
++    const doc = state.doc;
++    const ranges = [];
++    for (const block of findTableBlocks(doc)) {
++        const touched = state.selection.ranges.some(r => r.to >= block.from && r.from <= block.to);
++        if (!touched) {
++            ranges.push(Decoration.replace({ block: true, widget: new TableWidget(block.header, block.rows) }).range(block.from, block.to));
++        }
++    }
++    return Decoration.set(ranges, true);
++}
+ function livePreview(onOpen) {
+     return ViewPlugin.fromClass(class {
+         decorations;
+@@ -247,6 +345,25 @@ const noteTheme = EditorView.theme({
+         margin: '0.75em 0',
+         verticalAlign: 'middle',
+         width: '100%'
++    },
++    '.cm-np-table': {
++        borderCollapse: 'collapse',
++        fontSize: '0.9em',
++        margin: '0.5em 0',
++        width: '100%'
++    },
++    '.cm-np-table th, .cm-np-table td': {
++        border: '1px solid var(--ui-stroke-tertiary)',
++        padding: '0.35em 0.6em',
++        textAlign: 'left',
++        verticalAlign: 'top'
++    },
++    '.cm-np-table th': {
++        backgroundColor: 'var(--ui-bg-quaternary)',
++        fontWeight: '600'
++    },
++    '.cm-np-table tbody tr:nth-child(even)': {
++        backgroundColor: 'color-mix(in srgb, var(--ui-bg-quaternary) 45%, transparent)'
+     }
+ });
+ export function NoteEditor({ initialValue, onChange, onOpenWikilink, ref }) {
+@@ -287,6 +404,7 @@ export function NoteEditor({ initialValue, onChange, onOpenWikilink, ref }) {
+                 keymap.of([...defaultKeymap, ...historyKeymap]),
+                 EditorView.lineWrapping,
+                 markdown({ base: markdownLanguage }),
++                tableField,
+                 livePreview(target => onOpenRef.current(target)),
+                 placeholder('Write. # heading, **bold**, - list, [[link another note]]'),
+                 noteTheme,
+diff --git a/apps/desktop/src/app/library/note-editor.tsx b/apps/desktop/src/app/library/note-editor.tsx
+index 3a7c38536ee..9f552299a39 100644
+--- a/apps/desktop/src/app/library/note-editor.tsx
++++ b/apps/desktop/src/app/library/note-editor.tsx
+@@ -7,7 +7,7 @@
+ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+ import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
+ import { syntaxTree } from '@codemirror/language'
+-import type { Extension, Range } from '@codemirror/state'
++import { type EditorState, type Extension, type Range, StateField } from '@codemirror/state'
+ import {
+   Decoration,
+   type DecorationSet,
+@@ -85,6 +85,87 @@ class WikilinkWidget extends WidgetType {
+   }
+ }
+ 
++/** Split a markdown table row into trimmed cell strings ("| a | b |" → ["a","b"]). */
++function tableCells(line: string): string[] {
++  return line
++    .replace(/^\s*\|/, '')
++    .replace(/\|\s*$/, '')
++    .split('|')
++    .map(cell => cell.trim())
++}
++
++const TABLE_SEP_RE = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$/
++
++class TableWidget extends WidgetType {
++  constructor(readonly header: string[], readonly rows: string[][]) {
++    super()
++  }
++
++  eq(other: TableWidget): boolean {
++    return JSON.stringify([this.header, this.rows]) === JSON.stringify([other.header, other.rows])
++  }
++
++  toDOM(): HTMLElement {
++    const table = document.createElement('table')
++    table.className = 'cm-np-table'
++    const thead = table.createTHead()
++    const hr = thead.insertRow()
++
++    for (const cell of this.header) {
++      const th = document.createElement('th')
++      th.textContent = cell
++      hr.appendChild(th)
++    }
++
++    const tbody = table.createTBody()
++
++    for (const row of this.rows) {
++      const tr = tbody.insertRow()
++
++      for (let i = 0; i < this.header.length; i++) {
++        tr.insertCell().textContent = row[i] ?? ''
++      }
++    }
++
++    return table
++  }
++}
++
++/** GFM table blocks in the doc: a header row, a `|---|` separator, then body rows.
++ *  Returned as whole-line ranges so the caller can block-replace or skip them. */
++function findTableBlocks(doc: EditorView['state']['doc']): { from: number; to: number; header: string[]; rows: string[][] }[] {
++  const blocks: { from: number; to: number; header: string[]; rows: string[][] }[] = []
++  const total = doc.lines
++
++  for (let n = 1; n < total; n++) {
++    const header = doc.line(n)
++    const sep = doc.line(n + 1)
++
++    if (!header.text.includes('|') || !TABLE_SEP_RE.test(sep.text)) {
++      continue
++    }
++
++    let last = n + 1
++    const rows: string[][] = []
++
++    for (let m = n + 2; m <= total; m++) {
++      const body = doc.line(m)
++
++      if (!body.text.includes('|') || body.text.trim() === '') {
++        break
++      }
++
++      rows.push(tableCells(body.text))
++      last = m
++    }
++
++    blocks.push({ from: header.from, header: tableCells(header.text), rows, to: doc.line(last).to })
++    n = last
++  }
++
++  return blocks
++}
++
+ function buildDecorations(view: EditorView, onOpen: (target: string) => void): DecorationSet {
+   const decorations: Range<Decoration>[] = []
+   const doc = view.state.doc
+@@ -220,9 +301,53 @@ function buildDecorations(view: EditorView, onOpen: (target: string) => void): D
+     }
+   }
+ 
++  // Tables render via a separate StateField (tableField below) — CodeMirror forbids
++  // block-replace-across-lines decorations from a ViewPlugin. Here we only DROP the
++  // inline decorations that fall inside a rendered table block so they don't collide
++  // with the StateField's block widget.
++  const renderedTables = findTableBlocks(doc).filter(block => !selectionTouches(block.from, block.to))
++
++  if (renderedTables.length > 0) {
++    const inRendered = (pos: number) => renderedTables.some(block => pos >= block.from && pos <= block.to)
++
++    return Decoration.set(decorations.filter(range => !inRendered(range.from)), true)
++  }
++
+   return Decoration.set(decorations, true)
+ }
+ 
++/** Table block-replace decorations. In a StateField (not the ViewPlugin) because
++ *  CodeMirror only allows line-break-replacing block decorations from state, not
++ *  plugins. Recomputes on doc + selection changes so the raw markdown reappears
++ *  when the caret enters the table. */
++const tableField = StateField.define<DecorationSet>({
++  create: state => buildTableDecorations(state),
++  provide: field => EditorView.decorations.from(field),
++  update(value, tr) {
++    return tr.docChanged || tr.selection ? buildTableDecorations(tr.state) : value
++  }
++})
++
++function buildTableDecorations(state: EditorState): DecorationSet {
++  const doc = state.doc
++  const ranges: Range<Decoration>[] = []
++
++  for (const block of findTableBlocks(doc)) {
++    const touched = state.selection.ranges.some(r => r.to >= block.from && r.from <= block.to)
++
++    if (!touched) {
++      ranges.push(
++        Decoration.replace({ block: true, widget: new TableWidget(block.header, block.rows) }).range(
++          block.from,
++          block.to
++        )
++      )
++    }
++  }
++
++  return Decoration.set(ranges, true)
++}
++
+ function livePreview(onOpen: (target: string) => void): Extension {
+   return ViewPlugin.fromClass(
+     class {
+@@ -313,6 +438,25 @@ const noteTheme = EditorView.theme({
+     margin: '0.75em 0',
+     verticalAlign: 'middle',
+     width: '100%'
++  },
++  '.cm-np-table': {
++    borderCollapse: 'collapse',
++    fontSize: '0.9em',
++    margin: '0.5em 0',
++    width: '100%'
++  },
++  '.cm-np-table th, .cm-np-table td': {
++    border: '1px solid var(--ui-stroke-tertiary)',
++    padding: '0.35em 0.6em',
++    textAlign: 'left',
++    verticalAlign: 'top'
++  },
++  '.cm-np-table th': {
++    backgroundColor: 'var(--ui-bg-quaternary)',
++    fontWeight: '600'
++  },
++  '.cm-np-table tbody tr:nth-child(even)': {
++    backgroundColor: 'color-mix(in srgb, var(--ui-bg-quaternary) 45%, transparent)'
+   }
+ })
+ 
+@@ -378,6 +522,7 @@ export function NoteEditor({ initialValue, onChange, onOpenWikilink, ref }: Note
+         keymap.of([...defaultKeymap, ...historyKeymap]),
+         EditorView.lineWrapping,
+         markdown({ base: markdownLanguage }),
++        tableField,
+         livePreview(target => onOpenRef.current(target)),
+         placeholder('Write. # heading, **bold**, - list, [[link another note]]'),
+         noteTheme,
+-- 
+2.53.0
+

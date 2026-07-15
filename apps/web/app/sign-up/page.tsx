@@ -8,6 +8,7 @@ import { AuthModeSwitch } from "@/components/AuthModeSwitch";
 import { useAuth } from "@/components/AuthProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { TurnstileWidget } from "@/components/TurnstileWidget";
+import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { SIGN_IN_PREFILL_KEY } from "@/lib/auth-signup";
 import { captchaEnabled, isPreviewMode } from "@/lib/env";
 import { TOS_VERSION } from "@/lib/legal";
@@ -27,21 +28,30 @@ export default function SignUpPage() {
   // Bumped on any auth failure to remount the Turnstile widget (its tokens are single-use).
   const [captchaKey, setCaptchaKey] = useState(0);
 
+  // Post-auth destination from ?next= (same-site paths only) — the enternemesis.com
+  // pricing funnel routes strangers through here and resumes Stripe checkout on return.
+  function nextPath(): string {
+    const raw = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
+    return sanitizeNextPath(raw, "/account");
+  }
+
   // Already signed in? An account exists and is active — this page has nothing to create.
   // Preview mode is exempt so the page stays viewable for local design work.
   useEffect(() => {
-    if (!loading && session && !isPreviewMode) router.replace("/account");
+    if (!loading && session && !isPreviewMode) router.replace(nextPath());
   }, [loading, session, router]);
 
   function routeToSignIn(existingEmail: string) {
     // The email already has an account: hand it to /sign-in via sessionStorage (never the URL)
-    // and bounce there with a friendly notice instead of a dead-end error.
+    // and bounce there with a friendly notice instead of a dead-end error. Keep the funnel's
+    // ?next= so checkout still resumes after they sign in.
     try {
       window.sessionStorage.setItem(SIGN_IN_PREFILL_KEY, existingEmail);
     } catch {
       // sessionStorage can be unavailable (private mode); the notice on /sign-in still explains.
     }
-    router.replace("/sign-in?existing=1");
+    const next = nextPath();
+    router.replace(next === "/account" ? "/sign-in?existing=1" : `/sign-in?existing=1&next=${encodeURIComponent(next)}`);
   }
 
   async function onSubmit(e: FormEvent) {
@@ -76,7 +86,7 @@ export default function SignUpPage() {
         setSubmittedEmail(cleanEmail);
         return;
       }
-      router.replace("/account");
+      router.replace(nextPath());
     } catch {
       setError("Nemesis could not reach the identity service. Check your connection and try again.");
       setCaptchaToken("");

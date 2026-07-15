@@ -1,0 +1,342 @@
+From a4a06c4e79f6fbc4aca1c89c48a730f7b4b40f77 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sat, 11 Jul 2026 20:07:39 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis-kit):=20round-35b=20=E2=80=94=20br?=
+ =?UTF-8?q?owser=20tabs=20are=20per-conversation?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- TabState.sessionKey; renderer syncs $activeSessionId -> setSession IPC
+- serializeState/applyLayout filter to the active session; per-session active
+  tab remembered and restored on switch
+- window.open children inherit the OPENER's session (background agents can't
+  push tabs into the chat being viewed); min-one-tab invariant now per-session,
+  applied lazily when the rail opens; startup 'global' tabs adopted by the
+  first real session
+E2E-verified: A=2 tabs w/ example.com, B=0 tabs, back to A=2 w/ example active
+---
+ apps/desktop/electron/preload.ts              |   1 +
+ apps/desktop/electron/school-view.ts          | 130 +++++++++++++++---
+ .../chat/right-rail/native-browser-panel.js   |  11 ++
+ .../chat/right-rail/native-browser-panel.tsx  |  12 ++
+ apps/desktop/src/global.d.ts                  |   1 +
+ 5 files changed, 138 insertions(+), 17 deletions(-)
+
+diff --git a/apps/desktop/electron/preload.ts b/apps/desktop/electron/preload.ts
+index 34bbc4774d6..7b7cbaf6e9a 100644
+--- a/apps/desktop/electron/preload.ts
++++ b/apps/desktop/electron/preload.ts
+@@ -123,6 +123,7 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
+     connectionStatus: origins => ipcRenderer.invoke('hermes:schoolView:connectionStatus', origins),
+     disconnect: origin => ipcRenderer.invoke('hermes:schoolView:disconnect', origin),
+     newTab: url => ipcRenderer.invoke('hermes:schoolView:newTab', url),
++    setSession: key => ipcRenderer.invoke('hermes:schoolView:setSession', key),
+     closeTab: id => ipcRenderer.invoke('hermes:schoolView:closeTab', id),
+     activate: id => ipcRenderer.invoke('hermes:schoolView:activate', id),
+     navigate: url => ipcRenderer.invoke('hermes:schoolView:navigate', url),
+diff --git a/apps/desktop/electron/school-view.ts b/apps/desktop/electron/school-view.ts
+index 5498ebeff0d..080bf67b48e 100644
+--- a/apps/desktop/electron/school-view.ts
++++ b/apps/desktop/electron/school-view.ts
+@@ -36,6 +36,10 @@ interface TabState {
+   view: WebContentsView
+   url: string
+   title: string
++  // Chat session this tab belongs to. Tabs are per-conversation: switching
++  // chats switches the visible tab set. 'global' = created before any chat
++  // claimed the browser (startup home tab); adopted by the first session.
++  sessionKey: string
+ }
+ 
+ interface PanelRect {
+@@ -84,6 +88,14 @@ if (SCHOOL_VIEW_MODE === 'native') {
+ const tabs = new Map<number, TabState>()
+ const tabOrder: number[] = []
+ let activeTabId: null | number = null
++let activeSessionKey = 'global'
++// Remembered active tab per session, so switching back to a chat restores the
++// tab that chat was looking at.
++const activeTabBySession = new Map<string, number>()
++
++function sessionTabIds(sessionKey = activeSessionKey): number[] {
++  return tabOrder.filter(id => tabs.get(id)?.sessionKey === sessionKey)
++}
+ let hostWindow: BrowserWindow | null = null
+ let panelRect: PanelRect | null = null
+ let panelVisible = false
+@@ -151,7 +163,8 @@ function serializeState() {
+   return {
+     activeId: activeTabId,
+     mode: SCHOOL_VIEW_MODE,
+-    tabs: tabOrder
++    sessionKey: activeSessionKey,
++    tabs: sessionTabIds()
+       .map(id => tabs.get(id))
+       .filter((tab): tab is TabState => Boolean(tab))
+       .map(tab => ({ id: tab.id, title: tab.title, url: tab.url })),
+@@ -169,7 +182,7 @@ function applyLayout() {
+   }
+ 
+   for (const tab of tabs.values()) {
+-    const isActive = tab.id === activeTabId
++    const isActive = tab.id === activeTabId && tab.sessionKey === activeSessionKey
+     const show = panelVisible && isActive && Boolean(panelRect)
+     tab.view.setVisible(show)
+ 
+@@ -211,7 +224,7 @@ function normalizeUrl(raw: string): null | string {
+   return null
+ }
+ 
+-function createTab(rawUrl?: string): null | TabState {
++function createTab(rawUrl?: string, sessionKey = activeSessionKey): null | TabState {
+   if (!hostWindow || hostWindow.isDestroyed()) {
+     return null
+   }
+@@ -228,21 +241,27 @@ function createTab(rawUrl?: string): null | TabState {
+   })
+ 
+   const id = view.webContents.id
+-  const tab: TabState = { id, title: '', url: '', view }
++  const tab: TabState = { id, sessionKey, title: '', url: '', view }
+   tabs.set(id, tab)
+   tabOrder.push(id)
+ 
+   // window.open from any school page becomes a sibling tab. This doubles as
+   // the agent's only tab-creation path (Target.createTarget is unsupported
+-  // in Electron), so it must stay allow-by-default for http(s).
++  // in Electron), so it must stay allow-by-default for http(s). The child
++  // inherits the opener's session so a background chat's agent can't push
++  // tabs into whichever conversation the student happens to be viewing.
+   view.webContents.setWindowOpenHandler(details => {
+     const target = normalizeUrl(details.url) ?? 'about:blank'
+-    const created = createTab(target)
++    const created = createTab(target, tab.sessionKey)
+ 
+     if (created) {
+-      activeTabId = created.id
+-      applyLayout()
+-      pushState()
++      activeTabBySession.set(created.sessionKey, created.id)
++
++      if (created.sessionKey === activeSessionKey) {
++        activeTabId = created.id
++        applyLayout()
++        pushState()
++      }
+     }
+ 
+     return { action: 'deny' }
+@@ -302,16 +321,32 @@ function closeTab(id: number) {
+     // Already gone.
+   }
+ 
++  const remaining = sessionTabIds(tab.sessionKey)
++
++  if (activeTabBySession.get(tab.sessionKey) === id) {
++    const fallback = remaining[Math.min(orderIndex, remaining.length - 1)] ?? remaining.at(-1)
++
++    if (fallback != null) {
++      activeTabBySession.set(tab.sessionKey, fallback)
++    } else {
++      activeTabBySession.delete(tab.sessionKey)
++    }
++  }
++
+   if (activeTabId === id) {
+-    activeTabId = tabOrder[Math.min(orderIndex, tabOrder.length - 1)] ?? null
++    activeTabId = activeTabBySession.get(tab.sessionKey) ?? null
+   }
+ 
+-  // Min-one-tab invariant: the panel always has something to show and the
+-  // agent always has a school tab to window.open() from — never the app
+-  // shell's file:// target.
+-  if (tabOrder.length === 0) {
+-    const fresh = createTab(START_URL)
++  // Min-one-tab invariant, per session: the CURRENT session's panel always has
++  // something to show and the agent always has a school tab to window.open()
++  // from — never the app shell's file:// target. Other sessions may go empty.
++  if (tab.sessionKey === activeSessionKey && remaining.length === 0) {
++    const fresh = createTab(START_URL, tab.sessionKey)
+     activeTabId = fresh?.id ?? null
++
++    if (fresh) {
++      activeTabBySession.set(tab.sessionKey, fresh.id)
++    }
+   }
+ 
+   applyLayout()
+@@ -349,6 +384,11 @@ export function installSchoolView(win: BrowserWindow) {
+     if (tabOrder.length === 0 && hostWindow && !hostWindow.isDestroyed()) {
+       const tab = createTab(START_URL)
+       activeTabId = tab?.id ?? null
++
++      if (tab) {
++        activeTabBySession.set(tab.sessionKey, tab.id)
++      }
++
+       pushState()
+     }
+   }
+@@ -460,6 +500,7 @@ export function registerSchoolViewIpc() {
+ 
+     if (tab) {
+       activeTabId = tab.id
++      activeTabBySession.set(tab.sessionKey, tab.id)
+       applyLayout()
+       pushState()
+     }
+@@ -467,6 +508,46 @@ export function registerSchoolViewIpc() {
+     return serializeState()
+   })
+ 
++  // Chat switch: the renderer tells us which conversation owns the browser
++  // rail now. Tabs created before any chat claimed the browser ('global',
++  // e.g. the startup home tab) are adopted by the first real session.
++  ipcMain.handle('hermes:schoolView:setSession', (_event, rawKey) => {
++    const key = typeof rawKey === 'string' && rawKey.trim() ? rawKey.trim() : 'global'
++
++    if (key !== 'global') {
++      for (const tab of tabs.values()) {
++        if (tab.sessionKey === 'global') {
++          tab.sessionKey = key
++        }
++      }
++
++      const adoptedActive = activeTabBySession.get('global')
++
++      if (adoptedActive != null) {
++        activeTabBySession.delete('global')
++        activeTabBySession.set(key, adoptedActive)
++      }
++    }
++
++    activeSessionKey = key
++    activeTabId = activeTabBySession.get(key) ?? sessionTabIds(key)[0] ?? null
++
++    // The session the student is looking at keeps the min-one-tab invariant.
++    if (activeTabId == null && panelVisible) {
++      const fresh = createTab(START_URL, key)
++      activeTabId = fresh?.id ?? null
++
++      if (fresh) {
++        activeTabBySession.set(key, fresh.id)
++      }
++    }
++
++    applyLayout()
++    pushState()
++
++    return serializeState()
++  })
++
+   ipcMain.handle('hermes:schoolView:closeTab', (_event, id) => {
+     closeTab(Number(id))
+ 
+@@ -474,8 +555,11 @@ export function registerSchoolViewIpc() {
+   })
+ 
+   ipcMain.handle('hermes:schoolView:activate', (_event, id) => {
+-    if (tabs.has(Number(id))) {
+-      activeTabId = Number(id)
++    const tab = tabs.get(Number(id))
++
++    if (tab && tab.sessionKey === activeSessionKey) {
++      activeTabId = tab.id
++      activeTabBySession.set(tab.sessionKey, tab.id)
+       applyLayout()
+       pushState()
+     }
+@@ -550,6 +634,18 @@ export function registerSchoolViewIpc() {
+     }
+ 
+     panelVisible = Boolean(visible)
++
++    // Becoming visible in a session with no tabs (a chat that never browsed):
++    // apply the min-one-tab invariant lazily, right when the rail opens.
++    if (panelVisible && sessionTabIds().length === 0) {
++      const fresh = createTab(START_URL)
++      activeTabId = fresh?.id ?? null
++
++      if (fresh) {
++        activeTabBySession.set(fresh.sessionKey, fresh.id)
++      }
++    }
++
+     applyLayout()
+     pushState()
+ 
+diff --git a/apps/desktop/src/app/chat/right-rail/native-browser-panel.js b/apps/desktop/src/app/chat/right-rail/native-browser-panel.js
+index d2ecfe02159..a4e99344110 100644
+--- a/apps/desktop/src/app/chat/right-rail/native-browser-panel.js
++++ b/apps/desktop/src/app/chat/right-rail/native-browser-panel.js
+@@ -20,6 +20,7 @@ import { Codicon } from '@/components/ui/codicon';
+ import { cn } from '@/lib/utils';
+ import { $rightRailActiveTabId, PREVIEW_PANE_ID, RIGHT_RAIL_BROWSER_TAB_ID } from '@/store/layout';
+ import { $paneOpen } from '@/store/panes';
++import { $activeSessionId } from '@/store/session';
+ import { $zoomPercent } from '@/store/zoom';
+ import { BrowserMirror } from './browser-mirror';
+ // ResizeObserver only fires on SIZE changes; pure position shifts (another
+@@ -101,6 +102,16 @@ function NativeBrowserPanel({ railVisible }) {
+     const [state, setState] = useState(null);
+     const [urlDraft, setUrlDraft] = useState(null);
+     const zoomPercent = useStore($zoomPercent);
++    const activeSessionId = useStore($activeSessionId);
++    // Tabs are per-conversation: tell the main process which chat owns the
++    // browser whenever the student switches sessions, so the rail swaps to that
++    // chat's tabs (and a chat that never browsed starts clean).
++    useEffect(() => {
++        void api()
++            ?.setSession?.(activeSessionId ?? 'global')
++            .then(next => setState(next))
++            .catch(() => undefined);
++    }, [activeSessionId]);
+     const placeholderRef = useRef(null);
+     // Last rect actually SENT — drift is measured against it, so slow 1px-a-beat
+     // creep still converges on a send instead of being skipped forever.
+diff --git a/apps/desktop/src/app/chat/right-rail/native-browser-panel.tsx b/apps/desktop/src/app/chat/right-rail/native-browser-panel.tsx
+index bab72aaf8c7..65a44524f5c 100644
+--- a/apps/desktop/src/app/chat/right-rail/native-browser-panel.tsx
++++ b/apps/desktop/src/app/chat/right-rail/native-browser-panel.tsx
+@@ -21,6 +21,7 @@ import type { HermesSchoolViewState } from '@/global'
+ import { cn } from '@/lib/utils'
+ import { $rightRailActiveTabId, PREVIEW_PANE_ID, RIGHT_RAIL_BROWSER_TAB_ID } from '@/store/layout'
+ import { $paneOpen } from '@/store/panes'
++import { $activeSessionId } from '@/store/session'
+ import { $zoomPercent } from '@/store/zoom'
+ 
+ import { BrowserMirror } from './browser-mirror'
+@@ -126,6 +127,17 @@ function NativeBrowserPanel({ railVisible }: { railVisible: boolean }) {
+   const [state, setState] = useState<HermesSchoolViewState | null>(null)
+   const [urlDraft, setUrlDraft] = useState<null | string>(null)
+   const zoomPercent = useStore($zoomPercent)
++  const activeSessionId = useStore($activeSessionId)
++
++  // Tabs are per-conversation: tell the main process which chat owns the
++  // browser whenever the student switches sessions, so the rail swaps to that
++  // chat's tabs (and a chat that never browsed starts clean).
++  useEffect(() => {
++    void api()
++      ?.setSession?.(activeSessionId ?? 'global')
++      .then(next => setState(next))
++      .catch(() => undefined)
++  }, [activeSessionId])
+ 
+   const placeholderRef = useRef<HTMLDivElement | null>(null)
+   // Last rect actually SENT — drift is measured against it, so slow 1px-a-beat
+diff --git a/apps/desktop/src/global.d.ts b/apps/desktop/src/global.d.ts
+index 5930e47b3af..21613cbbfab 100644
+--- a/apps/desktop/src/global.d.ts
++++ b/apps/desktop/src/global.d.ts
+@@ -129,6 +129,7 @@ declare global {
+           visible: boolean
+         }>
+         newTab: (url?: string) => Promise<HermesSchoolViewState>
++        setSession: (key: string) => Promise<HermesSchoolViewState>
+         closeTab: (id: number) => Promise<HermesSchoolViewState>
+         activate: (id: number) => Promise<HermesSchoolViewState>
+         navigate: (url: string) => Promise<HermesSchoolViewState>
+-- 
+2.53.0
+

@@ -1,0 +1,292 @@
+From 8c0df16a81bf1785a2879b5a465c26a6cc820955 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 16:01:26 -0500
+Subject: [PATCH 101/102] feat: student token-efficiency budgets + image-gen
+ and research skills
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- tools/budget_config.py: tool-output injection caps drop 100K/200K chars →
+  24K/48K (student build; env knobs NEMESIS_TOOL_RESULT_CHARS/_TURN_CHARS).
+  One inbox-dump session burned a full 1.5M-token day (2026-07-14); oversized
+  results already persist to disk with a preview, so nothing is lost — the
+  agent reads slices on demand. Tests updated to the student contract; full
+  tools suite verified no new failures vs baseline (68 pre-existing, same
+  both trees, all unrelated fork drift).
+- web_search default limit 5 → 6.
+- skills/nemesis-images: metered image generation via nemesis-media proxy
+  (device key auth, save to Library/Media, MEDIA: inline delivery, budget +
+  integrity rules).
+- skills/nemesis-research: research fan-out — 3-5 query variants, 15-25
+  sources, dedupe, extract the best 4-6 pages, inline citations (pills);
+  triggers on research questions and the High answer mode.
+---
+ skills/nemesis-images/SKILL.md    | 56 +++++++++++++++++++++++++++++++
+ skills/nemesis-research/SKILL.md  | 47 ++++++++++++++++++++++++++
+ tests/tools/test_budget_config.py | 35 +++++++++++--------
+ tools/budget_config.py            | 28 +++++++++++++---
+ tools/web_tools.py                |  2 +-
+ 5 files changed, 149 insertions(+), 19 deletions(-)
+ create mode 100644 skills/nemesis-images/SKILL.md
+ create mode 100644 skills/nemesis-research/SKILL.md
+
+diff --git a/skills/nemesis-images/SKILL.md b/skills/nemesis-images/SKILL.md
+new file mode 100644
+index 00000000000..15968e81794
+--- /dev/null
++++ b/skills/nemesis-images/SKILL.md
+@@ -0,0 +1,56 @@
++---
++name: nemesis-images
++description: Generate images (diagrams, illustrations, study visuals) through the metered Nemesis image service and deliver them inline in chat or into the Library
++---
++
++# Image generation
++
++Nemesis provides (and bills for) image generation — the student never needs an API key.
++Use it when the student asks for an illustration, a visual explainer, deck art, or when
++a study material genuinely benefits from a generated picture. Prefer REAL sourced images
++(per nemesis-deliverables "Image sourcing") for factual/clinical figures — generate when
++no real image fits (custom diagrams, mnemonics, stylized study art).
++
++## How to generate (one shell call)
++
++The metering device key is already in the backend environment (`DEEPSEEK_API_KEY`, a
++`nmk_...` key — it authenticates ALL Nemesis services, not just chat). Fallback: read it
++from `$HERMES_HOME/.env`.
++
++```bash
++KEY="${DEEPSEEK_API_KEY:-$(grep -o 'nmk_[0-9a-f]*' "${HERMES_HOME:-$HOME/.nemesis}/.env" 2>/dev/null | head -1)}"
++OUT="$HOME/Documents/Nemesis Library/Media/gen-$(date +%s).png"
++curl -s -m 120 "https://qyjmivntajbigjswhahb.supabase.co/functions/v1/nemesis-media/images/generations" \
++  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
++  -d "$(python3 -c 'import json,sys; print(json.dumps({"prompt": sys.argv[1]}))' "YOUR PROMPT HERE")" \
++| python3 -c "
++import sys, json, base64, pathlib
++r = json.load(sys.stdin)
++if 'error' in r:
++    print('GENERATION FAILED:', r['error'].get('message', r['error']) if isinstance(r['error'], dict) else r['error'])
++    raise SystemExit(1)
++p = pathlib.Path('$OUT'); p.parent.mkdir(parents=True, exist_ok=True)
++p.write_bytes(base64.b64decode(r['data'][0]['b64_json']))
++print(p)
++"
++```
++
++- On success the script prints the saved file path. Deliver it inline by including
++  `MEDIA:/absolute/path/to/file.png` on its own line in your reply.
++- Save into `~/Documents/Nemesis Library/Media/` with a DESCRIPTIVE name
++  (`synapse-diagram.png`, not `gen-123.png`) when the image belongs to coursework;
++  ledger-log the creation (nemesis-ledger).
++
++## Rules
++
++- **Write a real prompt.** Describe subject, style ("clean textbook diagram", "flat
++  illustration"), background, and any labels. One retry with a refined prompt if the
++  first result misses; don't loop.
++- **Budget:** image generation is metered per plan per day (the response includes
++  `remaining`). On `daily_image_budget_exhausted` (429), tell the student plainly it
++  resets at midnight UTC — don't retry.
++- **If the service says billing/not configured:** say image generation isn't enabled
++  yet and move on — never ask the student for an API key.
++- **Academic integrity unchanged:** generated images are study aids and drafts; never
++  pass one off as real data, a real micrograph, or a real clinical photo — say it's
++  AI-generated in the caption when it appears in a deliverable.
+diff --git a/skills/nemesis-research/SKILL.md b/skills/nemesis-research/SKILL.md
+new file mode 100644
+index 00000000000..49e41571071
+--- /dev/null
++++ b/skills/nemesis-research/SKILL.md
+@@ -0,0 +1,47 @@
++---
++name: nemesis-research
++description: Research-grade web answers — fan out multiple search queries (15-25 sources), read the best pages, and answer with real inline citations. Use for any question that deserves sources, comparisons, "verify this claim", current events, or when the student picked the High answer mode.
++---
++
++# Research fan-out — never answer a research question from one search
++
++A single `web_search` with 5 results reads like a guess. A research-grade answer sweeps
++the topic from several angles, reads the best pages, and cites what it actually used.
++ChatGPT-class research pulls 20+ sources; that is the bar.
++
++## When this applies
++
++- The question asks for evidence, comparisons, current facts, statistics, or "is X true?"
++- The student picked the **High** answer mode, or says "research", "sources", "look it up".
++- A deliverable (report, poster, deck) needs a sourced section.
++
++Quick factual lookups (one date, one definition) stay a single search — don't ceremony them.
++
++## Procedure
++
++1. **Plan 3–5 query variants** that attack the topic differently: the plain question,
++   a synonym/technical phrasing, a counter-angle ("X criticism", "X limitations"),
++   a recency angle ("X 2026"), and when relevant a site-specific angle
++   ("X site:nih.gov" style). Distinct angles beat rewordings.
++2. **Run them all** with `web_search(query, limit=6)` — batch the calls in ONE turn
++   where possible. That yields 18–30 raw results.
++3. **Dedupe and rank** by URL/domain: drop repeats, prefer primary and reputable
++   sources (journals, .gov/.edu, standards bodies, major outlets, official docs)
++   over SEO blogs and content farms.
++4. **Read the best 4–6 pages** with `web_extract` — snippets are not evidence. Read
++   enough to quote accurately; you do not need to extract all 25 results (extracts
++   cost tokens — spend them on the pages you will actually cite).
++5. **Answer with inline citations**: every factual claim that matters links its source
++   as a markdown link right where the claim is made — the app renders these as source
++   pills. Never cite a page you didn't at least see in results; NEVER invent a URL,
++   title, author, or identifier.
++6. **Say what you found AND didn't**: if sources disagree or coverage is thin, say so
++   plainly instead of papering over it.
++
++## Budget notes
++
++- Each search query costs one search unit (plans have daily units — Student 75/day);
++  a 4-query fan-out is cheap. The token cost lives in the EXTRACTS — cap them at the
++  4–6 pages you cite.
++- On a search-limit error, fall back to fewer queries and tell the student today's
++  search allowance is running low.
+diff --git a/tests/tools/test_budget_config.py b/tests/tools/test_budget_config.py
+index 4c78d3d6c41..6a039273c0b 100644
+--- a/tests/tools/test_budget_config.py
++++ b/tests/tools/test_budget_config.py
+@@ -28,13 +28,18 @@ from tools.budget_config import (
+ 
+ 
+ class TestModuleConstants:
+-    """Verify documented default values haven't drifted."""
++    """Verify documented default values haven't drifted.
++
++    Student build (Nemesis): metered plans get tight tool-output budgets —
++    24K chars per result / 48K per turn (upstream ships 100K/200K). Oversized
++    results persist to disk with a preview instead of flooding the context.
++    """
+ 
+     def test_default_result_size(self):
+-        assert DEFAULT_RESULT_SIZE_CHARS == 100_000
++        assert DEFAULT_RESULT_SIZE_CHARS == 24_000
+ 
+     def test_default_turn_budget(self):
+-        assert DEFAULT_TURN_BUDGET_CHARS == 200_000
++        assert DEFAULT_TURN_BUDGET_CHARS == 48_000
+ 
+     def test_default_preview_size(self):
+         assert DEFAULT_PREVIEW_SIZE_CHARS == 1_500
+@@ -152,14 +157,16 @@ class TestResolveThreshold:
+ 
+     @patch("tools.registry.registry")
+     def test_falls_back_to_registry(self, mock_registry):
+-        """When not pinned and not in overrides, delegate to registry."""
++        """When not pinned and not in overrides, delegate to registry —
++        capped at the (student-tight) default so a tool's registered 77K
++        can't re-inflate a metered budget."""
+         mock_registry.get_max_result_size.return_value = 77_777
+         cfg = BudgetConfig()
+         result = cfg.resolve_threshold("some_tool")
+         mock_registry.get_max_result_size.assert_called_once_with(
+             "some_tool", default=DEFAULT_RESULT_SIZE_CHARS
+         )
+-        assert result == 77_777
++        assert result == min(77_777, DEFAULT_RESULT_SIZE_CHARS)
+ 
+     @patch("tools.registry.registry")
+     def test_registry_receives_custom_default(self, mock_registry):
+@@ -196,10 +203,11 @@ class TestResolveThreshold:
+ 
+     @patch("tools.registry.registry")
+     def test_default_budget_unchanged_for_100k_tool(self, mock_registry):
+-        """Default budget keeps 100K registry tools at 100K (no behavior change)."""
++        """Registry tools that register 100K are capped at the student default —
++        web/terminal dumps were the 1.5M-token-day culprit (2026-07-14)."""
+         mock_registry.get_max_result_size.return_value = 100_000
+-        cfg = BudgetConfig()  # default_result_size == 100_000
+-        assert cfg.resolve_threshold("web_search") == 100_000
++        cfg = BudgetConfig()
++        assert cfg.resolve_threshold("web_search") == DEFAULT_RESULT_SIZE_CHARS
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -230,16 +238,15 @@ class TestBudgetForContextWindow:
+         assert cfg.turn_budget == DEFAULT_TURN_BUDGET_CHARS
+ 
+     def test_small_model_scaled_down(self):
+-        """A 65K-token model gets a budget proportional to its window.
++        """A 65K-token model's proportional budget clamps at the defaults.
+ 
+         window_chars = 65_536*4 = 262_144; per_result = 15% = 39_321;
+-        per_turn = 30% = 78_643. Both below the 100K/200K defaults.
++        per_turn = 30% = 78_643. Both ABOVE the student 24K/48K defaults,
++        so the clamp keeps the tighter numbers (scaling never raises the cap).
+         """
+         cfg = budget_for_context_window(65_536)
+-        assert cfg.default_result_size < DEFAULT_RESULT_SIZE_CHARS
+-        assert cfg.turn_budget < DEFAULT_TURN_BUDGET_CHARS
+-        assert cfg.default_result_size == int(65_536 * 4 * 0.15)
+-        assert cfg.turn_budget == int(65_536 * 4 * 0.30)
++        assert cfg.default_result_size == min(int(65_536 * 4 * 0.15), DEFAULT_RESULT_SIZE_CHARS)
++        assert cfg.turn_budget == min(int(65_536 * 4 * 0.30), DEFAULT_TURN_BUDGET_CHARS)
+ 
+     def test_tiny_model_floored(self):
+         """A tiny window can't drop below the floor (usable preview survives)."""
+diff --git a/tools/budget_config.py b/tools/budget_config.py
+index 8e47479446e..9acefa075b8 100644
+--- a/tools/budget_config.py
++++ b/tools/budget_config.py
+@@ -3,6 +3,7 @@
+ Per-tool resolution: pinned > config overrides > registry > default.
+ """
+ 
++import os
+ from dataclasses import dataclass, field
+ from typing import Dict
+ 
+@@ -12,10 +13,29 @@ PINNED_THRESHOLDS: Dict[str, float] = {
+     "read_file": float("inf"),
+ }
+ 
+-# Defaults matching the current hardcoded values in tool_result_storage.py.
+-# Kept here as the single source of truth; tool_result_storage.py imports these.
+-DEFAULT_RESULT_SIZE_CHARS: int = 100_000
+-DEFAULT_TURN_BUDGET_CHARS: int = 200_000
++
++def _env_int(name: str, fallback: int) -> int:
++    """Env-tunable budget knob (positive int) with a code fallback."""
++    raw = os.getenv(name, "").strip()
++    if raw:
++        try:
++            value = int(raw)
++            if value > 0:
++                return value
++        except ValueError:
++            pass
++    return fallback
++
++
++# Student-build defaults (Nemesis). Upstream hermes ships 100K/200K chars —
++# right for a power user on their own API key, ruinous on a METERED student
++# plan: 100K chars ≈ 25K tokens injected by ONE tool result, and every later
++# step re-sends it (a single inbox-dump session burned a full 1.5M-token daily
++# budget, 2026-07-14). Oversized results are NOT lost — they persist to disk
++# with an inline preview and the agent reads slices via read_file on demand.
++# Env knobs allow raising a given install without a release.
++DEFAULT_RESULT_SIZE_CHARS: int = _env_int("NEMESIS_TOOL_RESULT_CHARS", 24_000)
++DEFAULT_TURN_BUDGET_CHARS: int = _env_int("NEMESIS_TOOL_TURN_CHARS", 48_000)
+ DEFAULT_PREVIEW_SIZE_CHARS: int = 1_500
+ 
+ 
+diff --git a/tools/web_tools.py b/tools/web_tools.py
+index 409b46fa606..ea3c0c8a3e5 100644
+--- a/tools/web_tools.py
++++ b/tools/web_tools.py
+@@ -597,7 +597,7 @@ def _ensure_web_plugins_loaded() -> None:
+         logger.warning("Web plugin discovery failed (non-fatal): %s", exc)
+ 
+ 
+-def web_search_tool(query: str, limit: int = 5) -> str:
++def web_search_tool(query: str, limit: int = 6) -> str:
+     """
+     Search the web for information using available search API backend.
+ 
+-- 
+2.50.1 (Apple Git-155)
+

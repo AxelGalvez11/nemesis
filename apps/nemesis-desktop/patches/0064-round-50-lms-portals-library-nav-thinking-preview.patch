@@ -1,0 +1,1886 @@
+From 3b05e9bac90352230e271ffb655f02811cd9d919 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Sun, 12 Jul 2026 15:06:17 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis):=20round-50=20=E2=80=94=20per-stu?=
+ =?UTF-8?q?dent=20LMS=20portals=20+=20Library=20nav=20(sidebar/back-forwar?=
+ =?UTF-8?q?d/new-note)=20+=20ChatGPT-style=20thinking=20preview?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- school-portals.ts: per-student LMS+email store, mirrored to .nemesis/portals.json
+  for the agent; Connections gets an editable 'Your school' card (Blackboard/Canvas/
+  Brightspace/…), replacing the hardcoded UTHSC row. Today reads the same list.
+- Library: collapsible file list (persisted), browser-style back/forward over visit
+  history (Cmd+[ / Cmd+]), Cmd+N new note, empty-state New note button.
+- ActivityStrip: model intent line (suppresses meta-narration) + live status phrase +
+  'Worked/Thought for Xs' settled collapse; running trail hidden except approval cards.
+- Tests: extractIntent (7), nav-history (3).
+---
+ apps/desktop/src/app/library/index.js         | 116 +++++++--
+ apps/desktop/src/app/library/index.tsx        | 230 +++++++++++++++---
+ .../src/app/library/nav-history.test.js       |  29 +++
+ .../src/app/library/nav-history.test.ts       |  37 +++
+ .../src/app/settings/connections-settings.js  |  47 +++-
+ .../src/app/settings/connections-settings.tsx | 103 +++++++-
+ apps/desktop/src/app/today/index.js           |  19 +-
+ apps/desktop/src/app/today/index.tsx          |  21 +-
+ .../src/app/today/school-sync-schedule.js     |  14 +-
+ .../src/app/today/school-sync-schedule.ts     |  15 +-
+ .../assistant-ui/thread/activity-strip.js     | 110 +++++++--
+ .../thread/activity-strip.test.js             |  36 +++
+ .../thread/activity-strip.test.ts             |  55 +++++
+ .../assistant-ui/thread/activity-strip.tsx    | 143 +++++++++--
+ apps/desktop/src/lib/school-portals.js        | 136 +++++++++++
+ apps/desktop/src/lib/school-portals.ts        | 177 ++++++++++++++
+ apps/desktop/src/styles.css                   |  20 +-
+ 17 files changed, 1183 insertions(+), 125 deletions(-)
+ create mode 100644 apps/desktop/src/app/library/nav-history.test.js
+ create mode 100644 apps/desktop/src/app/library/nav-history.test.ts
+ create mode 100644 apps/desktop/src/components/assistant-ui/thread/activity-strip.test.js
+ create mode 100644 apps/desktop/src/components/assistant-ui/thread/activity-strip.test.ts
+ create mode 100644 apps/desktop/src/lib/school-portals.js
+ create mode 100644 apps/desktop/src/lib/school-portals.ts
+
+diff --git a/apps/desktop/src/app/library/index.js b/apps/desktop/src/app/library/index.js
+index 78549f48c18..4e32d3f55d7 100644
+--- a/apps/desktop/src/app/library/index.js
++++ b/apps/desktop/src/app/library/index.js
+@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
+ // Markdown, a prose-styled CodeMirror editor (middle, de-code-ified via .nemesis-prose-editor
+ // CSS), and a collapsible Outline/Links rail (right). Non-markdown files (PDF/images inline;
+ // slides/docs open externally) preview in place. Autosaves 800ms after typing.
+-import { IconChevronRight, IconFilePlus, IconFileText, IconFileTypePdf, IconFolder, IconFolderOpen, IconFolderPlus, IconPaperclip, IconPhoto, IconPresentation, IconX } from '@tabler/icons-react';
++import { IconArrowLeft, IconArrowRight, IconChevronRight, IconFilePlus, IconFileText, IconFileTypePdf, IconFolder, IconFolderOpen, IconFolderPlus, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconPaperclip, IconPhoto, IconPresentation, IconX } from '@tabler/icons-react';
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+ import { useSearchParams } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+@@ -26,6 +26,15 @@ function tabLabel(tab) {
+ function countWords(value) {
+     return value.trim().match(/\S+/g)?.length ?? 0;
+ }
++const SIDEBAR_KEY = 'nemesis.library.sidebar.v1';
++export function recordNavVisit(current, next) {
++    const atCursor = current.pos >= 0 ? current.stack[current.pos] : undefined;
++    if (atCursor && tabKey(atCursor) === tabKey(next)) {
++        return current;
++    }
++    const stack = [...current.stack.slice(0, current.pos + 1), next].slice(-60);
++    return { pos: stack.length - 1, stack };
++}
+ function buildTree(contents) {
+     const root = { files: [], folders: [], name: '', notes: [], path: '' };
+     const nodeFor = (folder) => {
+@@ -77,6 +86,41 @@ export function LibraryView() {
+     const [searchParams] = useSearchParams();
+     const saveTimer = useRef(null);
+     const noteEditorRef = useRef(null);
++    // Folder-tree sidebar visibility (persisted) + browser-style visit history.
++    const [sidebarOpen, setSidebarOpen] = useState(() => {
++        try {
++            return window.localStorage.getItem(SIDEBAR_KEY) !== '0';
++        }
++        catch {
++            return true;
++        }
++    });
++    const [nav, setNavState] = useState({ pos: -1, stack: [] });
++    const navRef = useRef(nav);
++    navRef.current = nav;
++    // Set while a back/forward jump re-opens an entry, so the jump itself
++    // doesn't get recorded as a fresh visit.
++    const navigatingRef = useRef(false);
++    const setSidebar = useCallback((open) => {
++        setSidebarOpen(open);
++        try {
++            window.localStorage.setItem(SIDEBAR_KEY, open ? '1' : '0');
++        }
++        catch {
++            // persistence is best-effort
++        }
++    }, []);
++    const startCreating = useCallback((mode) => {
++        setSidebar(true);
++        setCreating(mode);
++        setDraft('');
++    }, [setSidebar]);
++    const recordVisit = useCallback((next) => {
++        if (navigatingRef.current) {
++            return;
++        }
++        setNavState(current => recordNavVisit(current, next));
++    }, []);
+     const refresh = useCallback(async () => {
+         try {
+             let loaded = await loadVaultContents();
+@@ -128,7 +172,45 @@ export function LibraryView() {
+             setActiveTab(current.length);
+             return [...current, next];
+         });
+-    }, []);
++        recordVisit(next);
++    }, [recordVisit]);
++    // Back/forward over the visit history — re-opens the entry (restoring its
++    // tab if it was closed) without recording the jump as a new visit.
++    const goHistory = useCallback((delta) => {
++        const { pos, stack } = navRef.current;
++        const target = stack[pos + delta];
++        if (!target) {
++            return;
++        }
++        navigatingRef.current = true;
++        openSelection(target);
++        navigatingRef.current = false;
++        setNavState({ pos: pos + delta, stack });
++    }, [openSelection]);
++    // Cmd+N = new note, Cmd+[ / Cmd+] = back / forward (skipped while typing in
++    // the editor, where CodeMirror owns bracket shortcuts for indentation).
++    useEffect(() => {
++        const onKey = (event) => {
++            if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) {
++                return;
++            }
++            const inEditor = event.target instanceof HTMLElement && Boolean(event.target.closest('.cm-editor'));
++            if (event.key === 'n') {
++                event.preventDefault();
++                startCreating('note');
++            }
++            else if (event.key === '[' && !inEditor) {
++                event.preventDefault();
++                goHistory(-1);
++            }
++            else if (event.key === ']' && !inEditor) {
++                event.preventDefault();
++                goHistory(1);
++            }
++        };
++        window.addEventListener('keydown', onKey);
++        return () => window.removeEventListener('keydown', onKey);
++    }, [goHistory, startCreating]);
+     const closeTab = useCallback((index) => {
+         setTabs(current => current.filter((_, i) => i !== index));
+         setActiveTab(current => (index < current ? current - 1 : Math.max(0, Math.min(current, tabs.length - 2))));
+@@ -178,10 +260,9 @@ export function LibraryView() {
+             }
+         }
+         if (searchParams.get('create') === 'note') {
+-            setCreating('note');
+-            setDraft('');
++            startCreating('note');
+         }
+-    }, [contents, openSelection, searchParams]);
++    }, [contents, openSelection, searchParams, startCreating]);
+     // Tabs hold snapshots; always render the freshest note object from `contents`
+     // so switching back to a tab shows the edits made since it was opened.
+     const selection = useMemo(() => {
+@@ -272,13 +353,7 @@ export function LibraryView() {
+     }
+     const noteCount = contents.notes.length;
+     const fileCount = contents.files.length;
+-    return (_jsxs("div", { className: "flex h-full min-h-0 bg-(--ui-editor-surface-background)", children: [_jsxs("aside", { className: "flex w-64 shrink-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background)", children: [_jsxs("div", { className: "flex items-center justify-between gap-3 px-4 pb-3 pt-5", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("h1", { className: "text-lg font-semibold tracking-tight", children: "Library" }), _jsxs("p", { className: "mt-0.5 text-[0.65rem] font-medium tabular-nums text-(--ui-text-tertiary)", children: [noteCount, " note", noteCount === 1 ? '' : 's', " \u00B7 ", fileCount, " file", fileCount === 1 ? '' : 's'] })] }), _jsxs("div", { className: "flex gap-0.5", children: [_jsx(Tip, { label: "New note", children: _jsx(Button, { "aria-label": "New note", className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => {
+-                                                setCreating('note');
+-                                                setDraft('');
+-                                            }, size: "icon-xs", variant: "ghost", children: _jsx(IconFilePlus, {}) }) }), _jsx(Tip, { label: "New folder", children: _jsx(Button, { "aria-label": "New folder", className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => {
+-                                                setCreating('folder');
+-                                                setDraft('');
+-                                            }, size: "icon-xs", variant: "ghost", children: _jsx(IconFolderPlus, {}) }) })] })] }), creating && (_jsxs("div", { className: "mx-3 mb-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-2 shadow-sm", children: [_jsx(Input, { autoFocus: true, onChange: event => setDraft(event.target.value), onKeyDown: event => {
++    return (_jsxs("div", { className: "flex h-full min-h-0 bg-(--ui-editor-surface-background)", children: [sidebarOpen && (_jsxs("aside", { className: "flex w-64 shrink-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background)", children: [_jsxs("div", { className: "flex items-center justify-between gap-3 px-4 pb-3 pt-5", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("h1", { className: "text-lg font-semibold tracking-tight", children: "Library" }), _jsxs("p", { className: "mt-0.5 text-[0.65rem] font-medium tabular-nums text-(--ui-text-tertiary)", children: [noteCount, " note", noteCount === 1 ? '' : 's', " \u00B7 ", fileCount, " file", fileCount === 1 ? '' : 's'] })] }), _jsxs("div", { className: "flex gap-0.5", children: [_jsx(Tip, { label: "New note (\u2318N)", children: _jsx(Button, { "aria-label": "New note", className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => startCreating('note'), size: "icon-xs", variant: "ghost", children: _jsx(IconFilePlus, {}) }) }), _jsx(Tip, { label: "New folder", children: _jsx(Button, { "aria-label": "New folder", className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => startCreating('folder'), size: "icon-xs", variant: "ghost", children: _jsx(IconFolderPlus, {}) }) }), _jsx(Tip, { label: "Hide file list", children: _jsx(Button, { "aria-label": "Hide file list", className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => setSidebar(false), size: "icon-xs", variant: "ghost", children: _jsx(IconLayoutSidebarLeftCollapse, {}) }) })] })] }), creating && (_jsxs("div", { className: "mx-3 mb-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-2 shadow-sm", children: [_jsx(Input, { autoFocus: true, onChange: event => setDraft(event.target.value), onKeyDown: event => {
+                                     if (event.key === 'Enter') {
+                                         void submitCreate();
+                                     }
+@@ -289,15 +364,18 @@ export function LibraryView() {
+                                     const next = new Set(current);
+                                     next.has(path) ? next.delete(path) : next.add(path);
+                                     return next;
+-                                }), selection: selection })] })] }), _jsxs("main", { className: "flex min-w-0 flex-1 flex-col bg-(--ui-bg-editor)", children: [tabs.length > 0 && (_jsx("div", { className: "flex h-(--titlebar-height) shrink-0 overflow-x-auto overflow-y-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", role: "tablist", children: tabs.map((tab, i) => (_jsxs("div", { className: cn('group/tab relative flex h-full min-w-0 max-w-48 shrink-0 cursor-pointer items-center border-r border-(--ui-stroke-quaternary) text-[0.6875rem] font-medium transition-colors duration-200 ease-out', i === activeTab
+-                                ? 'bg-(--ui-bg-editor) text-foreground'
+-                                : 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'), onClick: () => setActiveTab(i), role: "tab", children: [i === activeTab && _jsx("span", { "aria-hidden": true, className: "absolute inset-x-0 top-0 h-px bg-(--theme-primary)" }), _jsxs("span", { className: "flex min-w-0 items-center gap-1.5 py-2 pl-3 pr-8", children: [tab.kind === 'note' ? (_jsx(IconFileText, { className: "shrink-0 opacity-60", size: 13 })) : (_jsx(FileGlyph, { kind: tab.file.kind })), _jsx("span", { className: "truncate", children: tabLabel(tab) })] }), _jsx("button", { "aria-label": "Close tab", className: "absolute right-1.5 grid size-5 place-items-center rounded opacity-0 transition-[opacity,color] duration-200 ease-out hover:bg-(--chrome-action-hover) group-hover/tab:opacity-100 group-focus-within/tab:opacity-100", onClick: event => {
+-                                        event.stopPropagation();
+-                                        closeTab(i);
+-                                    }, type: "button", children: _jsx(IconX, { size: 11 }) })] }, tabKey(tab)))) })), selection?.kind === 'note' ? (_jsxs(_Fragment, { children: [_jsx("div", { className: "shrink-0 border-b border-(--ui-stroke-quaternary) px-7 pb-4 pt-6", children: _jsxs("div", { className: "flex items-end justify-between gap-6", children: [_jsxs("div", { className: "min-w-0", children: [_jsxs("div", { className: "mb-2 flex min-w-0 items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-tertiary)", children: [_jsx("span", { children: "Library" }), selection.note.folder
++                                }), selection: selection })] })] })), _jsxs("main", { className: "flex min-w-0 flex-1 flex-col bg-(--ui-bg-editor)", children: [(tabs.length > 0 || !sidebarOpen) && (_jsxs("div", { className: "flex h-(--titlebar-height) shrink-0 items-stretch border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background)", children: [_jsxs("div", { className: "flex shrink-0 items-center gap-0.5 border-r border-(--ui-stroke-quaternary) px-1.5", children: [!sidebarOpen && (_jsx(Tip, { label: "Show file list", children: _jsx(Button, { "aria-label": "Show file list", onClick: () => setSidebar(true), size: "icon-xs", variant: "ghost", children: _jsx(IconLayoutSidebarLeftExpand, {}) }) })), _jsx(Tip, { label: "Back (\u2318[)", children: _jsx(Button, { "aria-label": "Back", disabled: nav.pos <= 0, onClick: () => goHistory(-1), size: "icon-xs", variant: "ghost", children: _jsx(IconArrowLeft, {}) }) }), _jsx(Tip, { label: "Forward (\u2318])", children: _jsx(Button, { "aria-label": "Forward", disabled: nav.pos >= nav.stack.length - 1, onClick: () => goHistory(1), size: "icon-xs", variant: "ghost", children: _jsx(IconArrowRight, {}) }) })] }), _jsx("div", { className: "flex min-w-0 flex-1 overflow-x-auto overflow-y-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", role: "tablist", children: tabs.map((tab, i) => (_jsxs("div", { className: cn('group/tab relative flex h-full min-w-0 max-w-48 shrink-0 cursor-pointer items-center border-r border-(--ui-stroke-quaternary) text-[0.6875rem] font-medium transition-colors duration-200 ease-out', i === activeTab
++                                        ? 'bg-(--ui-bg-editor) text-foreground'
++                                        : 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'), onClick: () => {
++                                        setActiveTab(i);
++                                        recordVisit(tab);
++                                    }, role: "tab", children: [i === activeTab && _jsx("span", { "aria-hidden": true, className: "absolute inset-x-0 top-0 h-px bg-(--theme-primary)" }), _jsxs("span", { className: "flex min-w-0 items-center gap-1.5 py-2 pl-3 pr-8", children: [tab.kind === 'note' ? (_jsx(IconFileText, { className: "shrink-0 opacity-60", size: 13 })) : (_jsx(FileGlyph, { kind: tab.file.kind })), _jsx("span", { className: "truncate", children: tabLabel(tab) })] }), _jsx("button", { "aria-label": "Close tab", className: "absolute right-1.5 grid size-5 place-items-center rounded opacity-0 transition-[opacity,color] duration-200 ease-out hover:bg-(--chrome-action-hover) group-hover/tab:opacity-100 group-focus-within/tab:opacity-100", onClick: event => {
++                                                event.stopPropagation();
++                                                closeTab(i);
++                                            }, type: "button", children: _jsx(IconX, { size: 11 }) })] }, tabKey(tab)))) })] })), selection?.kind === 'note' ? (_jsxs(_Fragment, { children: [_jsx("div", { className: "shrink-0 border-b border-(--ui-stroke-quaternary) px-7 pb-4 pt-6", children: _jsxs("div", { className: "flex items-end justify-between gap-6", children: [_jsxs("div", { className: "min-w-0", children: [_jsxs("div", { className: "mb-2 flex min-w-0 items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-tertiary)", children: [_jsx("span", { children: "Library" }), selection.note.folder
+                                                             .split('/')
+                                                             .filter(Boolean)
+-                                                            .map((part, index) => (_jsxs("span", { className: "contents", children: [_jsx(IconChevronRight, { className: "shrink-0 opacity-50", size: 11 }), _jsx("span", { className: "truncate", children: part })] }, `${part}-${index}`)))] }), _jsx("h2", { className: "truncate text-2xl font-semibold tracking-[-0.025em]", children: selection.note.title })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)", children: [_jsxs("span", { className: "tabular-nums", children: [countWords(selection.note.content), " words"] }), _jsx("span", { className: "rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-1 font-medium", children: saving ? 'Saving…' : 'Saved to disk' })] })] }) }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden px-7 pb-3", children: _jsx(NoteEditor, { initialValue: selection.note.content, onChange: value => scheduleSave(selection.note, value), onOpenWikilink: target => void openWikilink(target), ref: noteEditorRef }, selection.note.path) })] })) : selection?.kind === 'file' ? (_jsx(FilePreview, { file: selection.file })) : (_jsx(EmptyState, { className: "flex-1", description: "Pick a note on the left, or create one.", title: "No note open" }))] }), activeNote && index && (_jsx(NoteRail, { activeNote: activeNote, index: index, notes: contents.notes, onOpenNote: note => openSelection({ kind: 'note', note }), onSelectHeading: handleSelectHeading }))] }));
++                                                            .map((part, index) => (_jsxs("span", { className: "contents", children: [_jsx(IconChevronRight, { className: "shrink-0 opacity-50", size: 11 }), _jsx("span", { className: "truncate", children: part })] }, `${part}-${index}`)))] }), _jsx("h2", { className: "truncate text-2xl font-semibold tracking-[-0.025em]", children: selection.note.title })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)", children: [_jsxs("span", { className: "tabular-nums", children: [countWords(selection.note.content), " words"] }), _jsx("span", { className: "rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-1 font-medium", children: saving ? 'Saving…' : 'Saved to disk' })] })] }) }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden px-7 pb-3", children: _jsx(NoteEditor, { initialValue: selection.note.content, onChange: value => scheduleSave(selection.note, value), onOpenWikilink: target => void openWikilink(target), ref: noteEditorRef }, selection.note.path) })] })) : selection?.kind === 'file' ? (_jsx(FilePreview, { file: selection.file })) : (_jsx("div", { className: "grid flex-1 place-items-center text-center", children: _jsxs("div", { className: "flex flex-col items-center gap-3", children: [_jsxs("div", { children: [_jsx("div", { className: "text-sm font-medium", children: "No note open" }), _jsx("div", { className: "mt-1 text-xs text-muted-foreground", children: "Pick a note on the left, or start a fresh one." })] }), _jsxs(Button, { onClick: () => startCreating('note'), size: "sm", variant: "secondary", children: [_jsx(IconFilePlus, { size: 15 }), "New note"] })] }) }))] }), activeNote && index && (_jsx(NoteRail, { activeNote: activeNote, index: index, notes: contents.notes, onOpenNote: note => openSelection({ kind: 'note', note }), onSelectHeading: handleSelectHeading }))] }));
+ }
+ function FileGlyph({ kind }) {
+     const Icon = kind === 'pdf'
+diff --git a/apps/desktop/src/app/library/index.tsx b/apps/desktop/src/app/library/index.tsx
+index 365231e0a38..4e3011d05d7 100644
+--- a/apps/desktop/src/app/library/index.tsx
++++ b/apps/desktop/src/app/library/index.tsx
+@@ -3,6 +3,8 @@
+ // CSS), and a collapsible Outline/Links rail (right). Non-markdown files (PDF/images inline;
+ // slides/docs open externally) preview in place. Autosaves 800ms after typing.
+ import {
++  IconArrowLeft,
++  IconArrowRight,
+   IconChevronRight,
+   IconFilePlus,
+   IconFileText,
+@@ -10,6 +12,8 @@ import {
+   IconFolder,
+   IconFolderOpen,
+   IconFolderPlus,
++  IconLayoutSidebarLeftCollapse,
++  IconLayoutSidebarLeftExpand,
+   IconPaperclip,
+   IconPhoto,
+   IconPresentation,
+@@ -57,6 +61,27 @@ function countWords(value: string): number {
+   return value.trim().match(/\S+/g)?.length ?? 0
+ }
+ 
++const SIDEBAR_KEY = 'nemesis.library.sidebar.v1'
++
++/** Browser-style visit history over opened notes/files. Pure: visit/step in,
++ *  new state out — unit-testable without React. */
++export interface NavHistory {
++  stack: TabItem[]
++  pos: number
++}
++
++export function recordNavVisit(current: NavHistory, next: TabItem): NavHistory {
++  const atCursor = current.pos >= 0 ? current.stack[current.pos] : undefined
++
++  if (atCursor && tabKey(atCursor) === tabKey(next)) {
++    return current
++  }
++
++  const stack = [...current.stack.slice(0, current.pos + 1), next].slice(-60)
++
++  return { pos: stack.length - 1, stack }
++}
++
+ interface TreeNode {
+   name: string
+   path: string
+@@ -124,6 +149,47 @@ export function LibraryView() {
+   const [searchParams] = useSearchParams()
+   const saveTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
+   const noteEditorRef = useRef<NoteEditorHandle>(null)
++  // Folder-tree sidebar visibility (persisted) + browser-style visit history.
++  const [sidebarOpen, setSidebarOpen] = useState(() => {
++    try {
++      return window.localStorage.getItem(SIDEBAR_KEY) !== '0'
++    } catch {
++      return true
++    }
++  })
++  const [nav, setNavState] = useState<NavHistory>({ pos: -1, stack: [] })
++  const navRef = useRef(nav)
++  navRef.current = nav
++  // Set while a back/forward jump re-opens an entry, so the jump itself
++  // doesn't get recorded as a fresh visit.
++  const navigatingRef = useRef(false)
++
++  const setSidebar = useCallback((open: boolean) => {
++    setSidebarOpen(open)
++
++    try {
++      window.localStorage.setItem(SIDEBAR_KEY, open ? '1' : '0')
++    } catch {
++      // persistence is best-effort
++    }
++  }, [])
++
++  const startCreating = useCallback(
++    (mode: 'folder' | 'note') => {
++      setSidebar(true)
++      setCreating(mode)
++      setDraft('')
++    },
++    [setSidebar]
++  )
++
++  const recordVisit = useCallback((next: TabItem) => {
++    if (navigatingRef.current) {
++      return
++    }
++
++    setNavState(current => recordNavVisit(current, next))
++  }, [])
+ 
+   const refresh = useCallback(async () => {
+     try {
+@@ -172,22 +238,72 @@ export function LibraryView() {
+     }
+   }, [])
+ 
+-  const openSelection = useCallback((next: TabItem) => {
+-    const key = tabKey(next)
+-    setTabs(current => {
+-      const existing = current.findIndex(tab => tabKey(tab) === key)
++  const openSelection = useCallback(
++    (next: TabItem) => {
++      const key = tabKey(next)
++      setTabs(current => {
++        const existing = current.findIndex(tab => tabKey(tab) === key)
+ 
+-      if (existing >= 0) {
+-        setActiveTab(existing)
++        if (existing >= 0) {
++          setActiveTab(existing)
++
++          return current
++        }
+ 
+-        return current
++        setActiveTab(current.length)
++
++        return [...current, next]
++      })
++      recordVisit(next)
++    },
++    [recordVisit]
++  )
++
++  // Back/forward over the visit history — re-opens the entry (restoring its
++  // tab if it was closed) without recording the jump as a new visit.
++  const goHistory = useCallback(
++    (delta: -1 | 1) => {
++      const { pos, stack } = navRef.current
++      const target = stack[pos + delta]
++
++      if (!target) {
++        return
+       }
+ 
+-      setActiveTab(current.length)
++      navigatingRef.current = true
++      openSelection(target)
++      navigatingRef.current = false
++      setNavState({ pos: pos + delta, stack })
++    },
++    [openSelection]
++  )
+ 
+-      return [...current, next]
+-    })
+-  }, [])
++  // Cmd+N = new note, Cmd+[ / Cmd+] = back / forward (skipped while typing in
++  // the editor, where CodeMirror owns bracket shortcuts for indentation).
++  useEffect(() => {
++    const onKey = (event: KeyboardEvent) => {
++      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) {
++        return
++      }
++
++      const inEditor = event.target instanceof HTMLElement && Boolean(event.target.closest('.cm-editor'))
++
++      if (event.key === 'n') {
++        event.preventDefault()
++        startCreating('note')
++      } else if (event.key === '[' && !inEditor) {
++        event.preventDefault()
++        goHistory(-1)
++      } else if (event.key === ']' && !inEditor) {
++        event.preventDefault()
++        goHistory(1)
++      }
++    }
++
++    window.addEventListener('keydown', onKey)
++
++    return () => window.removeEventListener('keydown', onKey)
++  }, [goHistory, startCreating])
+ 
+   const closeTab = useCallback(
+     (index: number) => {
+@@ -255,10 +371,9 @@ export function LibraryView() {
+     }
+ 
+     if (searchParams.get('create') === 'note') {
+-      setCreating('note')
+-      setDraft('')
++      startCreating('note')
+     }
+-  }, [contents, openSelection, searchParams])
++  }, [contents, openSelection, searchParams, startCreating])
+ 
+   // Tabs hold snapshots; always render the freshest note object from `contents`
+   // so switching back to a tab shows the edits made since it was opened.
+@@ -391,6 +506,7 @@ export function LibraryView() {
+   return (
+     <div className="flex h-full min-h-0 bg-(--ui-editor-surface-background)">
+       {/* Folder tree */}
++      {sidebarOpen && (
+       <aside className="flex w-64 shrink-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background)">
+         <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-5">
+           <div className="min-w-0">
+@@ -400,14 +516,11 @@ export function LibraryView() {
+             </p>
+           </div>
+           <div className="flex gap-0.5">
+-            <Tip label="New note">
++            <Tip label="New note (⌘N)">
+               <Button
+                 aria-label="New note"
+                 className="transition-transform duration-200 ease-out active:scale-[0.98]"
+-                onClick={() => {
+-                  setCreating('note')
+-                  setDraft('')
+-                }}
++                onClick={() => startCreating('note')}
+                 size="icon-xs"
+                 variant="ghost"
+               >
+@@ -418,16 +531,24 @@ export function LibraryView() {
+               <Button
+                 aria-label="New folder"
+                 className="transition-transform duration-200 ease-out active:scale-[0.98]"
+-                onClick={() => {
+-                  setCreating('folder')
+-                  setDraft('')
+-                }}
++                onClick={() => startCreating('folder')}
+                 size="icon-xs"
+                 variant="ghost"
+               >
+                 <IconFolderPlus />
+               </Button>
+             </Tip>
++            <Tip label="Hide file list">
++              <Button
++                aria-label="Hide file list"
++                className="transition-transform duration-200 ease-out active:scale-[0.98]"
++                onClick={() => setSidebar(false)}
++                size="icon-xs"
++                variant="ghost"
++              >
++                <IconLayoutSidebarLeftCollapse />
++              </Button>
++            </Tip>
+           </div>
+         </div>
+         {creating && (
+@@ -507,14 +628,48 @@ export function LibraryView() {
+           />
+         </nav>
+       </aside>
++      )}
+ 
+       {/* Editor / preview */}
+       <main className="flex min-w-0 flex-1 flex-col bg-(--ui-bg-editor)">
+-        {tabs.length > 0 && (
+-          <div
+-            className="flex h-(--titlebar-height) shrink-0 overflow-x-auto overflow-y-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+-            role="tablist"
+-          >
++        {(tabs.length > 0 || !sidebarOpen) && (
++          <div className="flex h-(--titlebar-height) shrink-0 items-stretch border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background)">
++            {/* Navigation cluster: sidebar re-open + browser-style back/forward */}
++            <div className="flex shrink-0 items-center gap-0.5 border-r border-(--ui-stroke-quaternary) px-1.5">
++              {!sidebarOpen && (
++                <Tip label="Show file list">
++                  <Button aria-label="Show file list" onClick={() => setSidebar(true)} size="icon-xs" variant="ghost">
++                    <IconLayoutSidebarLeftExpand />
++                  </Button>
++                </Tip>
++              )}
++              <Tip label="Back (⌘[)">
++                <Button
++                  aria-label="Back"
++                  disabled={nav.pos <= 0}
++                  onClick={() => goHistory(-1)}
++                  size="icon-xs"
++                  variant="ghost"
++                >
++                  <IconArrowLeft />
++                </Button>
++              </Tip>
++              <Tip label="Forward (⌘])">
++                <Button
++                  aria-label="Forward"
++                  disabled={nav.pos >= nav.stack.length - 1}
++                  onClick={() => goHistory(1)}
++                  size="icon-xs"
++                  variant="ghost"
++                >
++                  <IconArrowRight />
++                </Button>
++              </Tip>
++            </div>
++            <div
++              className="flex min-w-0 flex-1 overflow-x-auto overflow-y-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
++              role="tablist"
++            >
+             {tabs.map((tab, i) => (
+               <div
+                 className={cn(
+@@ -524,7 +679,10 @@ export function LibraryView() {
+                     : 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'
+                 )}
+                 key={tabKey(tab)}
+-                onClick={() => setActiveTab(i)}
++                onClick={() => {
++                  setActiveTab(i)
++                  recordVisit(tab)
++                }}
+                 role="tab"
+               >
+                 {i === activeTab && <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-(--theme-primary)" />}
+@@ -549,6 +707,7 @@ export function LibraryView() {
+                 </button>
+               </div>
+             ))}
++            </div>
+           </div>
+         )}
+         {selection?.kind === 'note' ? (
+@@ -591,7 +750,18 @@ export function LibraryView() {
+         ) : selection?.kind === 'file' ? (
+           <FilePreview file={selection.file} />
+         ) : (
+-          <EmptyState className="flex-1" description="Pick a note on the left, or create one." title="No note open" />
++          <div className="grid flex-1 place-items-center text-center">
++            <div className="flex flex-col items-center gap-3">
++              <div>
++                <div className="text-sm font-medium">No note open</div>
++                <div className="mt-1 text-xs text-muted-foreground">Pick a note on the left, or start a fresh one.</div>
++              </div>
++              <Button onClick={() => startCreating('note')} size="sm" variant="secondary">
++                <IconFilePlus size={15} />
++                New note
++              </Button>
++            </div>
++          </div>
+         )}
+       </main>
+ 
+diff --git a/apps/desktop/src/app/library/nav-history.test.js b/apps/desktop/src/app/library/nav-history.test.js
+new file mode 100644
+index 00000000000..dc059871195
+--- /dev/null
++++ b/apps/desktop/src/app/library/nav-history.test.js
+@@ -0,0 +1,29 @@
++import { describe, expect, it } from 'vitest';
++import { recordNavVisit } from './index';
++const note = (path) => ({ kind: 'note', note: { content: '', folder: '', path, title: path } });
++describe('recordNavVisit', () => {
++    it('appends a new visit and advances the cursor', () => {
++        let h = { pos: -1, stack: [] };
++        h = recordNavVisit(h, note('a'));
++        h = recordNavVisit(h, note('b'));
++        expect(h.stack.map(t => (t.kind === 'note' ? t.note.path : ''))).toEqual(['a', 'b']);
++        expect(h.pos).toBe(1);
++    });
++    it('ignores a repeat of the current entry (no duplicate visits)', () => {
++        let h = { pos: -1, stack: [] };
++        h = recordNavVisit(h, note('a'));
++        const same = recordNavVisit(h, note('a'));
++        expect(same).toBe(h);
++    });
++    it('truncates the forward stack when visiting after going back', () => {
++        let h = { pos: -1, stack: [] };
++        h = recordNavVisit(h, note('a'));
++        h = recordNavVisit(h, note('b'));
++        h = recordNavVisit(h, note('c'));
++        // simulate two Back presses landing the cursor on 'a'
++        h = { ...h, pos: 0 };
++        h = recordNavVisit(h, note('d'));
++        expect(h.stack.map(t => (t.kind === 'note' ? t.note.path : ''))).toEqual(['a', 'd']);
++        expect(h.pos).toBe(1);
++    });
++});
+diff --git a/apps/desktop/src/app/library/nav-history.test.ts b/apps/desktop/src/app/library/nav-history.test.ts
+new file mode 100644
+index 00000000000..4434c24a8f5
+--- /dev/null
++++ b/apps/desktop/src/app/library/nav-history.test.ts
+@@ -0,0 +1,37 @@
++import { describe, expect, it } from 'vitest'
++
++import { type NavHistory, recordNavVisit } from './index'
++
++const note = (path: string) => ({ kind: 'note' as const, note: { content: '', folder: '', path, title: path } })
++
++describe('recordNavVisit', () => {
++  it('appends a new visit and advances the cursor', () => {
++    let h: NavHistory = { pos: -1, stack: [] }
++    h = recordNavVisit(h, note('a'))
++    h = recordNavVisit(h, note('b'))
++
++    expect(h.stack.map(t => (t.kind === 'note' ? t.note.path : ''))).toEqual(['a', 'b'])
++    expect(h.pos).toBe(1)
++  })
++
++  it('ignores a repeat of the current entry (no duplicate visits)', () => {
++    let h: NavHistory = { pos: -1, stack: [] }
++    h = recordNavVisit(h, note('a'))
++    const same = recordNavVisit(h, note('a'))
++
++    expect(same).toBe(h)
++  })
++
++  it('truncates the forward stack when visiting after going back', () => {
++    let h: NavHistory = { pos: -1, stack: [] }
++    h = recordNavVisit(h, note('a'))
++    h = recordNavVisit(h, note('b'))
++    h = recordNavVisit(h, note('c'))
++    // simulate two Back presses landing the cursor on 'a'
++    h = { ...h, pos: 0 }
++    h = recordNavVisit(h, note('d'))
++
++    expect(h.stack.map(t => (t.kind === 'note' ? t.note.path : ''))).toEqual(['a', 'd'])
++    expect(h.pos).toBe(1)
++  })
++})
+diff --git a/apps/desktop/src/app/settings/connections-settings.js b/apps/desktop/src/app/settings/connections-settings.js
+index 5f8f8389fcf..198e6b5131c 100644
+--- a/apps/desktop/src/app/settings/connections-settings.js
++++ b/apps/desktop/src/app/settings/connections-settings.js
+@@ -8,17 +8,13 @@ import { useEffect, useState } from 'react';
+ import { Button } from '@/components/ui/button';
+ import { Codicon } from '@/components/ui/codicon';
+ import { Input } from '@/components/ui/input';
++import { loadSchoolPortals, normalizePortalUrl, setSchoolLms } from '@/lib/school-portals';
+ import { openBrowserRail } from '@/store/browser-rail';
+-// Curated first-run set. UTHSC is the owner's school; the rest are the common
+-// student accounts. "Custom" (below) covers any other portal by URL.
++// Curated first-run set of COMMON student accounts. The student's own LMS is
++// not in this list — every school's address is different, so it lives in the
++// editable "Your school" card above (see school-portals.ts). "Custom" (below)
++// covers any other portal by URL.
+ const PORTALS = [
+-    {
+-        hint: 'Courses, announcements, assignments',
+-        id: 'blackboard',
+-        name: 'Blackboard (UTHSC)',
+-        origin: 'https://blackboard.uthsc.edu',
+-        url: 'https://blackboard.uthsc.edu/'
+-    },
+     {
+         hint: 'School email',
+         id: 'outlook',
+@@ -87,12 +83,30 @@ function originOf(url) {
+ export function ConnectionsSettings({ onClose }) {
+     const [status, setStatus] = useState({});
+     const [customUrl, setCustomUrl] = useState('');
++    // The student's own LMS (Blackboard/Canvas/Brightspace/…) — editable, persisted,
++    // and mirrored to the agent so "sync my school" goes to THEIR school.
++    const [lms, setLms] = useState(() => loadSchoolPortals().find(portal => portal.kind === 'lms') ?? null);
++    const [editingLms, setEditingLms] = useState(false);
++    const [lmsDraft, setLmsDraft] = useState('');
+     const api = window.hermesDesktop?.schoolView;
+     const refresh = () => {
+         if (!api?.connectionStatus) {
+             return;
+         }
+-        void api.connectionStatus(PORTALS.map(p => p.origin)).then(setStatus);
++        // Read the LMS from the store (not the `lms` state) so a just-saved URL is
++        // checked immediately instead of waiting for the next window refocus.
++        const savedLms = loadSchoolPortals().find(portal => portal.kind === 'lms');
++        const origins = [...(savedLms ? [savedLms.origin] : []), ...PORTALS.map(p => p.origin)];
++        void api.connectionStatus(origins).then(setStatus);
++    };
++    const saveLms = () => {
++        if (!normalizePortalUrl(lmsDraft)) {
++            return;
++        }
++        const next = setSchoolLms(lmsDraft).find(portal => portal.kind === 'lms') ?? null;
++        setLms(next);
++        setEditingLms(false);
++        refresh();
+     };
+     useEffect(() => {
+         refresh();
+@@ -121,7 +135,18 @@ export function ConnectionsSettings({ onClose }) {
+         }
+         connect(/^https?:\/\//i.test(url) ? url : `https://${url}`);
+     };
+-    return (_jsx("div", { className: "min-h-0 flex-1 overflow-y-auto overscroll-contain", children: _jsxs("div", { className: "mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8", children: [_jsxs("div", { className: "flex flex-col gap-1", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70", children: "Connections" }), _jsx("h2", { className: "text-lg font-semibold text-foreground", children: "Connect to apps & websites" }), _jsx("p", { className: "text-sm text-muted-foreground", children: "No API keys or setup codes \u2014 sign in once in Nemesis's own browser to any app or website you use for school. Then the agent works inside that signed-in session for you. Your passwords are never shown to or stored by the agent." })] }), _jsx("div", { className: "flex flex-col gap-2", children: PORTALS.map(portal => {
++    return (_jsx("div", { className: "min-h-0 flex-1 overflow-y-auto overscroll-contain", children: _jsxs("div", { className: "mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-8", children: [_jsxs("div", { className: "flex flex-col gap-1", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground/70", children: "Connections" }), _jsx("h2", { className: "text-lg font-semibold text-foreground", children: "Connect to apps & websites" }), _jsx("p", { className: "text-sm text-muted-foreground", children: "No API keys or setup codes \u2014 sign in once in Nemesis's own browser to any app or website you use for school. Then the agent works inside that signed-in session for you. Your passwords are never shown to or stored by the agent." })] }), _jsxs("div", { className: "flex flex-col gap-2 rounded-xl border border-(--theme-primary)/25 bg-(--ui-bg-card) px-4 py-3", children: [_jsxs("div", { className: "flex items-center gap-3", children: [_jsxs("div", { className: "min-w-0 flex-1", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "truncate text-sm font-medium text-foreground", children: lms ? `${lms.name} — your school` : 'Your school portal' }), lms && status[lms.origin] && (_jsxs("span", { className: "inline-flex shrink-0 items-center gap-1 rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-(--theme-primary)", children: [_jsx(Codicon, { name: "check", size: "0.6rem" }), "Connected"] }))] }), _jsx("div", { className: "truncate text-xs text-muted-foreground", children: lms ? lms.origin.replace(/^https?:\/\//, '') : 'Courses, announcements, assignments' })] }), _jsx(Button, { onClick: () => {
++                                        setLmsDraft(lms?.url ?? '');
++                                        setEditingLms(current => !current);
++                                    }, size: "sm", variant: "ghost", children: editingLms ? 'Cancel' : 'Change school' }), lms &&
++                                    (status[lms.origin] ? (_jsx(Button, { onClick: () => disconnect(lms.origin), size: "sm", variant: "ghost", children: "Sign out" })) : (_jsx(Button, { onClick: () => connect(lms.url), size: "sm", variant: "secondary", children: "Connect" })))] }), editingLms && (_jsxs("div", { className: "flex items-center gap-2 border-t border-(--ui-stroke-quaternary) pt-2", children: [_jsx(Input, { autoFocus: true, className: "flex-1", onChange: event => setLmsDraft(event.target.value), onKeyDown: event => {
++                                        if (event.key === 'Enter') {
++                                            saveLms();
++                                        }
++                                        if (event.key === 'Escape') {
++                                            setEditingLms(false);
++                                        }
++                                    }, placeholder: "your school's course site, e.g. blackboard.myschool.edu or canvas.myschool.edu", value: lmsDraft }), _jsx(Button, { disabled: !normalizePortalUrl(lmsDraft), onClick: saveLms, size: "sm", variant: "secondary", children: "Save" })] }))] }), _jsx("div", { className: "flex flex-col gap-2", children: PORTALS.map(portal => {
+                         const connected = status[portal.origin];
+                         return (_jsxs("div", { className: "flex items-center gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-4 py-3", children: [_jsxs("div", { className: "min-w-0 flex-1", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("span", { className: "truncate text-sm font-medium text-foreground", children: portal.name }), connected && (_jsxs("span", { className: "inline-flex shrink-0 items-center gap-1 rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-(--theme-primary)", children: [_jsx(Codicon, { name: "check", size: "0.6rem" }), "Connected"] }))] }), _jsx("div", { className: "truncate text-xs text-muted-foreground", children: portal.hint })] }), connected ? (_jsx(Button, { onClick: () => disconnect(portal.origin), size: "sm", variant: "ghost", children: "Sign out" })) : (_jsx(Button, { onClick: () => connect(portal.url), size: "sm", variant: "secondary", children: "Connect" }))] }, portal.id));
+                     }) }), _jsxs("div", { className: "flex flex-col gap-2 rounded-xl border border-dashed border-(--ui-stroke-tertiary) px-4 py-4", children: [_jsx("span", { className: "text-xs font-medium text-foreground", children: "Another site" }), _jsx("span", { className: "text-xs text-muted-foreground", children: "A different school portal, a library database, anything you log into on the web." }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsx(Input, { className: "flex-1", onChange: event => setCustomUrl(event.target.value), onKeyDown: event => {
+diff --git a/apps/desktop/src/app/settings/connections-settings.tsx b/apps/desktop/src/app/settings/connections-settings.tsx
+index 1de977ffcae..e40e1d01217 100644
+--- a/apps/desktop/src/app/settings/connections-settings.tsx
++++ b/apps/desktop/src/app/settings/connections-settings.tsx
+@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
+ import { Button } from '@/components/ui/button'
+ import { Codicon } from '@/components/ui/codicon'
+ import { Input } from '@/components/ui/input'
++import { loadSchoolPortals, normalizePortalUrl, setSchoolLms } from '@/lib/school-portals'
+ import { openBrowserRail } from '@/store/browser-rail'
+ 
+ interface Portal {
+@@ -18,16 +19,11 @@ interface Portal {
+   origin: string
+ }
+ 
+-// Curated first-run set. UTHSC is the owner's school; the rest are the common
+-// student accounts. "Custom" (below) covers any other portal by URL.
++// Curated first-run set of COMMON student accounts. The student's own LMS is
++// not in this list — every school's address is different, so it lives in the
++// editable "Your school" card above (see school-portals.ts). "Custom" (below)
++// covers any other portal by URL.
+ const PORTALS: Portal[] = [
+-  {
+-    hint: 'Courses, announcements, assignments',
+-    id: 'blackboard',
+-    name: 'Blackboard (UTHSC)',
+-    origin: 'https://blackboard.uthsc.edu',
+-    url: 'https://blackboard.uthsc.edu/'
+-  },
+   {
+     hint: 'School email',
+     id: 'outlook',
+@@ -97,6 +93,11 @@ function originOf(url: string): string {
+ export function ConnectionsSettings({ onClose }: { onClose?: () => void }) {
+   const [status, setStatus] = useState<Record<string, boolean>>({})
+   const [customUrl, setCustomUrl] = useState('')
++  // The student's own LMS (Blackboard/Canvas/Brightspace/…) — editable, persisted,
++  // and mirrored to the agent so "sync my school" goes to THEIR school.
++  const [lms, setLms] = useState(() => loadSchoolPortals().find(portal => portal.kind === 'lms') ?? null)
++  const [editingLms, setEditingLms] = useState(false)
++  const [lmsDraft, setLmsDraft] = useState('')
+   const api = window.hermesDesktop?.schoolView
+ 
+   const refresh = () => {
+@@ -104,7 +105,23 @@ export function ConnectionsSettings({ onClose }: { onClose?: () => void }) {
+       return
+     }
+ 
+-    void api.connectionStatus(PORTALS.map(p => p.origin)).then(setStatus)
++    // Read the LMS from the store (not the `lms` state) so a just-saved URL is
++    // checked immediately instead of waiting for the next window refocus.
++    const savedLms = loadSchoolPortals().find(portal => portal.kind === 'lms')
++    const origins = [...(savedLms ? [savedLms.origin] : []), ...PORTALS.map(p => p.origin)]
++
++    void api.connectionStatus(origins).then(setStatus)
++  }
++
++  const saveLms = () => {
++    if (!normalizePortalUrl(lmsDraft)) {
++      return
++    }
++
++    const next = setSchoolLms(lmsDraft).find(portal => portal.kind === 'lms') ?? null
++    setLms(next)
++    setEditingLms(false)
++    refresh()
+   }
+ 
+   useEffect(() => {
+@@ -156,6 +173,72 @@ export function ConnectionsSettings({ onClose }: { onClose?: () => void }) {
+           </p>
+         </div>
+ 
++        {/* The student's own school LMS — the one connection whose address is
++            different at every school, so it's editable rather than curated. */}
++        <div className="flex flex-col gap-2 rounded-xl border border-(--theme-primary)/25 bg-(--ui-bg-card) px-4 py-3">
++          <div className="flex items-center gap-3">
++            <div className="min-w-0 flex-1">
++              <div className="flex items-center gap-2">
++                <span className="truncate text-sm font-medium text-foreground">
++                  {lms ? `${lms.name} — your school` : 'Your school portal'}
++                </span>
++                {lms && status[lms.origin] && (
++                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-(--theme-primary)">
++                    <Codicon name="check" size="0.6rem" />
++                    Connected
++                  </span>
++                )}
++              </div>
++              <div className="truncate text-xs text-muted-foreground">
++                {lms ? lms.origin.replace(/^https?:\/\//, '') : 'Courses, announcements, assignments'}
++              </div>
++            </div>
++            <Button
++              onClick={() => {
++                setLmsDraft(lms?.url ?? '')
++                setEditingLms(current => !current)
++              }}
++              size="sm"
++              variant="ghost"
++            >
++              {editingLms ? 'Cancel' : 'Change school'}
++            </Button>
++            {lms &&
++              (status[lms.origin] ? (
++                <Button onClick={() => disconnect(lms.origin)} size="sm" variant="ghost">
++                  Sign out
++                </Button>
++              ) : (
++                <Button onClick={() => connect(lms.url)} size="sm" variant="secondary">
++                  Connect
++                </Button>
++              ))}
++          </div>
++          {editingLms && (
++            <div className="flex items-center gap-2 border-t border-(--ui-stroke-quaternary) pt-2">
++              <Input
++                autoFocus
++                className="flex-1"
++                onChange={event => setLmsDraft(event.target.value)}
++                onKeyDown={event => {
++                  if (event.key === 'Enter') {
++                    saveLms()
++                  }
++
++                  if (event.key === 'Escape') {
++                    setEditingLms(false)
++                  }
++                }}
++                placeholder="your school's course site, e.g. blackboard.myschool.edu or canvas.myschool.edu"
++                value={lmsDraft}
++              />
++              <Button disabled={!normalizePortalUrl(lmsDraft)} onClick={saveLms} size="sm" variant="secondary">
++                Save
++              </Button>
++            </div>
++          )}
++        </div>
++
+         <div className="flex flex-col gap-2">
+           {PORTALS.map(portal => {
+             const connected = status[portal.origin]
+diff --git a/apps/desktop/src/app/today/index.js b/apps/desktop/src/app/today/index.js
+index 6eb2b4902a0..fd55617deaa 100644
+--- a/apps/desktop/src/app/today/index.js
++++ b/apps/desktop/src/app/today/index.js
+@@ -4,11 +4,12 @@ import { useNavigate } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+ import { Codicon } from '@/components/ui/codicon';
+ import { courseTitle, dueSoon, emptyGraph, eventsOnDay, loadAcademicGraph, recentChanges, scoreNextAction } from '@/lib/academic-graph';
++import { ensurePortalsMirrored, PORTALS_CHANGED_EVENT } from '@/lib/school-portals';
+ import { cn } from '@/lib/utils';
+ import { setComposerDraft } from '@/store/composer';
+ import { dateKey, loadCalendarState, parseDateKey } from '../calendar/model';
+ import { CALENDAR_ROUTE, LEDGER_ROUTE, NEW_CHAT_ROUTE, SETTINGS_ROUTE } from '../routes';
+-import { dueSlot, loadCadence, portalSignInStatus, readLastNudge, saveCadence, SCHOOL_PORTALS, writeLastNudge } from './school-sync-schedule';
++import { dueSlot, loadCadence, portalSignInStatus, readLastNudge, saveCadence, schoolPortals, writeLastNudge } from './school-sync-schedule';
+ const SYNC_CADENCE_LABEL = {
+     daily: 'Once a day',
+     off: 'Manual only',
+@@ -253,17 +254,29 @@ export function TodayView() {
+         navigate(NEW_CHAT_ROUTE);
+     };
+     const [cadence, setCadence] = useState(() => loadCadence());
++    const [portals, setPortals] = useState(() => schoolPortals());
+     const [portalStatus, setPortalStatus] = useState({});
+     // Refresh the signed-in status when Today mounts/refocuses — the student may
+-    // have logged into a portal in the browser panel since last time.
++    // have logged into a portal in the browser panel since last time — and re-read
++    // the portal list when it's edited in Settings → Connections. Mount also
++    // re-mirrors the list to .nemesis/portals.json so the agent always finds it.
+     useEffect(() => {
+         let alive = true;
++        ensurePortalsMirrored();
+         const refresh = () => void portalSignInStatus().then(status => alive && setPortalStatus(status));
++        const onPortalsChanged = () => {
++            if (alive) {
++                setPortals(schoolPortals());
++            }
++            refresh();
++        };
+         refresh();
+         window.addEventListener('focus', refresh);
++        window.addEventListener(PORTALS_CHANGED_EVENT, onPortalsChanged);
+         return () => {
+             alive = false;
+             window.removeEventListener('focus', refresh);
++            window.removeEventListener(PORTALS_CHANGED_EVENT, onPortalsChanged);
+         };
+     }, []);
+     // The scheduler: while the app is open, check each minute whether a scheduled
+@@ -300,7 +313,7 @@ export function TodayView() {
+     }
+     const greeting = now.getHours() < 12 ? 'morning' : now.getHours() < 18 ? 'afternoon' : 'evening';
+     const dateLabel = now.toLocaleDateString(undefined, { day: 'numeric', month: 'short', weekday: 'long' });
+-    return (_jsx("main", { className: "h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background)", children: _jsxs("div", { className: "mx-auto flex w-full max-w-[1180px] flex-col px-5 pb-7 pt-6 sm:px-7", children: [_jsxs("header", { children: [_jsxs("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: ["Today \u00B7 ", dateLabel] }), _jsxs("h1", { className: "mt-2 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl", children: ["Good ", greeting, ", ", graph.student?.name?.trim() || 'there'] }), _jsxs("p", { className: "mt-2 text-sm text-(--ui-text-secondary)", children: [formatDuration(free), " free today \u00B7 ", needsYou, " item", needsYou === 1 ? '' : 's', " need you \u00B7 ", overdue.length, ' ', "overdue"] })] }), _jsxs("section", { className: "mt-6 rounded-xl border-2 border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--ui-bg-elevated))] p-5 shadow-[0_0_28px_color-mix(in_srgb,var(--theme-primary)_9%,transparent)]", children: [_jsxs("div", { className: "flex flex-col gap-5 sm:flex-row sm:items-center", children: [_jsx("span", { className: "grid size-11 shrink-0 place-items-center rounded-xl bg-(--theme-primary)/15 text-(--theme-primary)", children: _jsx(Codicon, { name: "target", size: "1.2rem" }) }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-(--theme-primary)", children: "Start here" }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-[-0.015em]", children: nextAction?.object.title ?? 'You are clear for the moment' }), _jsx("p", { className: "mt-1 text-xs text-(--ui-text-secondary)", children: nextAction?.reason ?? 'No urgent deadline is competing for your attention.' })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2 self-start sm:self-auto", children: [_jsxs(Button, { onClick: startSchoolSync, size: "lg", variant: "outline", children: [_jsx(Codicon, { name: "sync" }), "Sync school"] }), nextAction && (_jsxs(Button, { onClick: startNextAction, size: "lg", children: [_jsx(Codicon, { name: "play" }), "Start"] }))] })] }), _jsxs("div", { className: "mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-(--theme-primary)/20 pt-3.5 text-xs", children: [_jsx("span", { className: "flex flex-wrap items-center gap-2.5", children: SCHOOL_PORTALS.map(portal => {
++    return (_jsx("main", { className: "h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background)", children: _jsxs("div", { className: "mx-auto flex w-full max-w-[1180px] flex-col px-5 pb-7 pt-6 sm:px-7", children: [_jsxs("header", { children: [_jsxs("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: ["Today \u00B7 ", dateLabel] }), _jsxs("h1", { className: "mt-2 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl", children: ["Good ", greeting, ", ", graph.student?.name?.trim() || 'there'] }), _jsxs("p", { className: "mt-2 text-sm text-(--ui-text-secondary)", children: [formatDuration(free), " free today \u00B7 ", needsYou, " item", needsYou === 1 ? '' : 's', " need you \u00B7 ", overdue.length, ' ', "overdue"] })] }), _jsxs("section", { className: "mt-6 rounded-xl border-2 border-(--theme-primary) bg-[color-mix(in_srgb,var(--theme-primary)_7%,var(--ui-bg-elevated))] p-5 shadow-[0_0_28px_color-mix(in_srgb,var(--theme-primary)_9%,transparent)]", children: [_jsxs("div", { className: "flex flex-col gap-5 sm:flex-row sm:items-center", children: [_jsx("span", { className: "grid size-11 shrink-0 place-items-center rounded-xl bg-(--theme-primary)/15 text-(--theme-primary)", children: _jsx(Codicon, { name: "target", size: "1.2rem" }) }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.11em] text-(--theme-primary)", children: "Start here" }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-[-0.015em]", children: nextAction?.object.title ?? 'You are clear for the moment' }), _jsx("p", { className: "mt-1 text-xs text-(--ui-text-secondary)", children: nextAction?.reason ?? 'No urgent deadline is competing for your attention.' })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2 self-start sm:self-auto", children: [_jsxs(Button, { onClick: startSchoolSync, size: "lg", variant: "outline", children: [_jsx(Codicon, { name: "sync" }), "Sync school"] }), nextAction && (_jsxs(Button, { onClick: startNextAction, size: "lg", children: [_jsx(Codicon, { name: "play" }), "Start"] }))] })] }), _jsxs("div", { className: "mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-(--theme-primary)/20 pt-3.5 text-xs", children: [_jsx("span", { className: "flex flex-wrap items-center gap-2.5", children: portals.map(portal => {
+                                         const signedIn = portalStatus[portal.origin] === true;
+                                         const known = portal.origin in portalStatus;
+                                         return (_jsxs("span", { className: "flex items-center gap-1.5 text-(--ui-text-secondary)", children: [_jsx("span", { className: cn('size-1.5 rounded-full', signedIn ? 'bg-emerald-500' : known ? 'bg-amber-500' : 'bg-(--ui-text-quaternary)') }), portal.name, _jsx("span", { className: "text-(--ui-text-tertiary)", children: signedIn ? 'signed in' : known ? 'needs login' : '—' })] }, portal.id));
+diff --git a/apps/desktop/src/app/today/index.tsx b/apps/desktop/src/app/today/index.tsx
+index 3ad636e9a7c..34e70c1ff2b 100644
+--- a/apps/desktop/src/app/today/index.tsx
++++ b/apps/desktop/src/app/today/index.tsx
+@@ -15,6 +15,7 @@ import {
+   recentChanges,
+   scoreNextAction
+ } from '@/lib/academic-graph'
++import { ensurePortalsMirrored, PORTALS_CHANGED_EVENT } from '@/lib/school-portals'
+ import { cn } from '@/lib/utils'
+ import { setComposerDraft } from '@/store/composer'
+ 
+@@ -26,7 +27,7 @@ import {
+   portalSignInStatus,
+   readLastNudge,
+   saveCadence,
+-  SCHOOL_PORTALS,
++  schoolPortals,
+   type SyncCadence,
+   writeLastNudge
+ } from './school-sync-schedule'
+@@ -391,19 +392,33 @@ export function TodayView() {
+   }
+ 
+   const [cadence, setCadence] = useState<SyncCadence>(() => loadCadence())
++  const [portals, setPortals] = useState(() => schoolPortals())
+   const [portalStatus, setPortalStatus] = useState<Record<string, boolean>>({})
+ 
+   // Refresh the signed-in status when Today mounts/refocuses — the student may
+-  // have logged into a portal in the browser panel since last time.
++  // have logged into a portal in the browser panel since last time — and re-read
++  // the portal list when it's edited in Settings → Connections. Mount also
++  // re-mirrors the list to .nemesis/portals.json so the agent always finds it.
+   useEffect(() => {
+     let alive = true
++    ensurePortalsMirrored()
+     const refresh = () => void portalSignInStatus().then(status => alive && setPortalStatus(status))
++    const onPortalsChanged = () => {
++      if (alive) {
++        setPortals(schoolPortals())
++      }
++
++      refresh()
++    }
++
+     refresh()
+     window.addEventListener('focus', refresh)
++    window.addEventListener(PORTALS_CHANGED_EVENT, onPortalsChanged)
+ 
+     return () => {
+       alive = false
+       window.removeEventListener('focus', refresh)
++      window.removeEventListener(PORTALS_CHANGED_EVENT, onPortalsChanged)
+     }
+   }, [])
+ 
+@@ -537,7 +552,7 @@ export function TodayView() {
+               the sweep on a schedule. */}
+           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-(--theme-primary)/20 pt-3.5 text-xs">
+             <span className="flex flex-wrap items-center gap-2.5">
+-              {SCHOOL_PORTALS.map(portal => {
++              {portals.map(portal => {
+                 const signedIn = portalStatus[portal.origin] === true
+                 const known = portal.origin in portalStatus
+ 
+diff --git a/apps/desktop/src/app/today/school-sync-schedule.js b/apps/desktop/src/app/today/school-sync-schedule.js
+index f2be49257d0..7b559bb89e8 100644
+--- a/apps/desktop/src/app/today/school-sync-schedule.js
++++ b/apps/desktop/src/app/today/school-sync-schedule.js
+@@ -4,16 +4,18 @@
+ // cloud-agent add-on), and portal login walls with 2FA are always the student's
+ // to clear, so a scheduled slot NUDGES via a native notification rather than
+ // silently spending tokens on a turn the student can't see.
++import { loadSchoolPortals } from '@/lib/school-portals';
+ export const SYNC_CADENCE_KEY = 'nemesis.school.autosync.cadence.v1';
+ const LAST_NUDGE_KEY = 'nemesis.school.autosync.lastNudge.v1';
+ // The two slots a twice-daily cadence fires at (local hours): morning brief and
+ // early-evening catch-up — when new lecture posts and assignments actually land.
+ export const SYNC_HOURS_TWICE = [8, 18];
+ export const SYNC_HOURS_DAILY = [8];
+-export const SCHOOL_PORTALS = [
+-    { id: 'blackboard', name: 'Blackboard', origin: 'https://blackboard.uthsc.edu' },
+-    { id: 'outlook', name: 'Outlook', origin: 'https://outlook.cloud.microsoft' }
+-];
++// The student's configured portals (LMS + school email) — per-student, editable
++// in Settings → Connections, defaulting to the owner's school on first run.
++export function schoolPortals() {
++    return loadSchoolPortals();
++}
+ export function loadCadence() {
+     const raw = (() => {
+         try {
+@@ -77,13 +79,13 @@ export function writeLastNudge(slot) {
+     }
+ }
+ /** Are the school portals signed in? Cookie presence per origin (best-effort). */
+-export async function portalSignInStatus() {
++export async function portalSignInStatus(portals = schoolPortals()) {
+     const check = window.hermesDesktop?.schoolView?.connectionStatus;
+     if (!check) {
+         return {};
+     }
+     try {
+-        return await check(SCHOOL_PORTALS.map(portal => portal.origin));
++        return await check(portals.map(portal => portal.origin));
+     }
+     catch {
+         return {};
+diff --git a/apps/desktop/src/app/today/school-sync-schedule.ts b/apps/desktop/src/app/today/school-sync-schedule.ts
+index b19032b5dd2..9ec1824be46 100644
+--- a/apps/desktop/src/app/today/school-sync-schedule.ts
++++ b/apps/desktop/src/app/today/school-sync-schedule.ts
+@@ -5,6 +5,8 @@
+ // to clear, so a scheduled slot NUDGES via a native notification rather than
+ // silently spending tokens on a turn the student can't see.
+ 
++import { loadSchoolPortals, type SchoolPortal } from '@/lib/school-portals'
++
+ export type SyncCadence = 'off' | 'daily' | 'twice'
+ 
+ export const SYNC_CADENCE_KEY = 'nemesis.school.autosync.cadence.v1'
+@@ -15,10 +17,11 @@ const LAST_NUDGE_KEY = 'nemesis.school.autosync.lastNudge.v1'
+ export const SYNC_HOURS_TWICE = [8, 18] as const
+ export const SYNC_HOURS_DAILY = [8] as const
+ 
+-export const SCHOOL_PORTALS: { id: string; name: string; origin: string }[] = [
+-  { id: 'blackboard', name: 'Blackboard', origin: 'https://blackboard.uthsc.edu' },
+-  { id: 'outlook', name: 'Outlook', origin: 'https://outlook.cloud.microsoft' }
+-]
++// The student's configured portals (LMS + school email) — per-student, editable
++// in Settings → Connections, defaulting to the owner's school on first run.
++export function schoolPortals(): SchoolPortal[] {
++  return loadSchoolPortals()
++}
+ 
+ export function loadCadence(): SyncCadence {
+   const raw = (() => {
+@@ -92,7 +95,7 @@ export function writeLastNudge(slot: string): void {
+ }
+ 
+ /** Are the school portals signed in? Cookie presence per origin (best-effort). */
+-export async function portalSignInStatus(): Promise<Record<string, boolean>> {
++export async function portalSignInStatus(portals: SchoolPortal[] = schoolPortals()): Promise<Record<string, boolean>> {
+   const check = window.hermesDesktop?.schoolView?.connectionStatus
+ 
+   if (!check) {
+@@ -100,7 +103,7 @@ export async function portalSignInStatus(): Promise<Record<string, boolean>> {
+   }
+ 
+   try {
+-    return await check(SCHOOL_PORTALS.map(portal => portal.origin))
++    return await check(portals.map(portal => portal.origin))
+   } catch {
+     return {}
+   }
+diff --git a/apps/desktop/src/components/assistant-ui/thread/activity-strip.js b/apps/desktop/src/components/assistant-ui/thread/activity-strip.js
+index 40ab9ae1d67..5b09b6c35f4 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/activity-strip.js
++++ b/apps/desktop/src/components/assistant-ui/thread/activity-strip.js
+@@ -1,20 +1,71 @@
+ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+-// Claude-style activity collapse (student build). While a turn runs, the strip is a
+-// LIVE one-liner — a human phrase for the current tool call / thought ("Searching
+-// PubMed for 'tesamorelin'…") that cross-fades as the activity changes, the way
+-// ChatGPT/Claude narrate work. The full trail below stays visible exactly as before —
+-// reasoning previews shimmer and tool approvals remain clickable. Once the turn
+-// settles, the whole trail folds into this one quiet row ("Worked through N steps")
+-// and expands only on demand, so finished answers read as answers, not terminal logs.
++// ChatGPT-style thinking preview (student build). While a turn runs, the strip
++// shows (1) an INTENT LINE — the model's own first thought sentence(s), readable
++// body text that tells the student what it's about to do — and (2) below it a
++// shimmering live status ("Searching PubMed for 'tesamorelin'…", or "Thinking").
++// The raw trail (reasoning disclosure + tool rows) is hidden while running
++// (styles.css) EXCEPT tool cards waiting on an approval, which must stay
++// clickable. Once the turn settles, everything folds into one quiet row —
++// "Worked for 21s" / "Thought for 8s" — that expands the full trail on demand.
+ import { useAuiState } from '@assistant-ui/react';
+ import { useCallback, useEffect, useRef, useState } from 'react';
+ import { currentActivityEvent, phraseForActivity } from '@/components/assistant-ui/thread/activity-phrase';
+ import { Codicon } from '@/components/ui/codicon';
+ import { cn } from '@/lib/utils';
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++// Wall-clock per message, module-level so it survives remounts (scrolling a
++// message out and back). Old messages restored from disk have no entry and
++// fall back to the step-count label.
++const TURN_CLOCK = new Map();
++/** "Worked for 21s" / "Worked for 1m 2s" — ChatGPT's duration phrasing. */
++function formatDuration(totalSeconds) {
++    if (totalSeconds < 60) {
++        return `${totalSeconds}s`;
++    }
++    const minutes = Math.floor(totalSeconds / 60);
++    const seconds = totalSeconds % 60;
++    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
++}
++// Reasoning that opens by narrating the QUESTION ("The user is asking…", "They
++// want…", "So the question is…") is meta-narration, not a plan. ChatGPT's intent
++// line reads like a first-person plan ("I'll compare…"); raw DeepSeek CoT usually
++// restates the ask instead. Showing that restatement as a headline reads wrong, so
++// we suppress it and let the live status line carry the turn. (A dedicated
++// plan-writer that always produces a clean first-person line is a backend follow-up.)
++const META_NARRATION_RE = /^(the (user|student|person)\b|they'?re? (asking|want)|this (is|question)|so,? the|okay,? (the|so)|the question|hmm\b|let me (think|see|first understand)|we need to (figure|understand))/i;
++/** The intent line: the model's opening thought, but ONLY when it reads like a
++ *  first-person plan — cleaned of markdown, capped near 170 chars. Empty for
++ *  meta-narration and for anything too short to read as a real statement (a
++ *  half-word flicker is worse than a beat of plain "Thinking"). */
++export function extractIntent(raw) {
++    const text = raw
++        .replace(/```[\s\S]*?```/g, ' ')
++        .replace(/^#{1,6}\s+/gm, '')
++        .replace(/\*\*([^*]+)\*\*/g, '$1')
++        .replace(/`([^`]+)`/g, '$1')
++        .replace(/\s+/g, ' ')
++        .trim();
++    if (text.length < 24 || META_NARRATION_RE.test(text)) {
++        return '';
++    }
++    const sentence = /^.{0,200}?[.!?](?=\s|$)/.exec(text)?.[0] ?? '';
++    if (sentence.length >= 24) {
++        return sentence;
++    }
++    // No sentence boundary yet — only show once there's a solid chunk, cut on a word.
++    if (text.length < 140) {
++        return '';
++    }
++    const cut = text.slice(0, 170);
++    return `${cut.slice(0, cut.lastIndexOf(' '))}…`;
++}
+ export const ActivityStrip = () => {
+     const [open, setOpen] = useState(false);
++    // Bumped when the clock stops so the settled label re-renders with a duration
++    // (the settle render itself runs before the effect records `end`).
++    const [, setClockTick] = useState(0);
+     const ref = useRef(null);
++    const messageId = useAuiState(s => s.message.id);
+     const running = useAuiState(s => s.message.status?.type === 'running');
+     const steps = useAuiState(s => s.message.parts.filter(part => part?.type === 'tool-call').length);
+     const hasReasoning = useAuiState(s => s.message.parts.some(part => part?.type === 'reasoning' && typeof part.text === 'string' && part.text.trim().length > 0));
+@@ -29,7 +80,33 @@ export const ActivityStrip = () => {
+         const event = currentActivityEvent(s.message.parts);
+         return event ? phraseForActivity(event) : '';
+     });
++    // The model's own opening thought — ChatGPT's "I'll scan today's major
++    // developments…" line. Derived (never fabricated) from the real reasoning
++    // stream; empty for turns that never think out loud.
++    const intent = useAuiState(s => {
++        if (!NEMESIS_STUDENT_BUILD || s.message.status?.type !== 'running') {
++            return '';
++        }
++        const first = s.message.parts.find(part => part?.type === 'reasoning' && typeof part.text === 'string' && part.text.trim().length > 0);
++        return first && first.type === 'reasoning' ? extractIntent(first.text) : '';
++    });
+     const active = NEMESIS_STUDENT_BUILD && (steps > 0 || hasReasoning);
++    // Wall clock: arm on the first running render, freeze on settle.
++    useEffect(() => {
++        if (!NEMESIS_STUDENT_BUILD) {
++            return;
++        }
++        const entry = TURN_CLOCK.get(messageId);
++        if (running) {
++            if (!entry) {
++                TURN_CLOCK.set(messageId, { start: Date.now() });
++            }
++        }
++        else if (entry && entry.end === undefined) {
++            TURN_CLOCK.set(messageId, { ...entry, end: Date.now() });
++            setClockTick(tick => tick + 1);
++        }
++    }, [messageId, running]);
+     // The trail lives in a sibling subtree (MessagePrimitive.Parts), so the collapse is
+     // driven by an attribute on the shared message root + a CSS rule in styles.css.
+     useEffect(() => {
+@@ -48,16 +125,21 @@ export const ActivityStrip = () => {
+     const attachRef = useCallback((node) => {
+         ref.current = node;
+     }, []);
+-    if (running && livePhrase) {
+-        return (_jsx("div", { "aria-live": "polite", className: "mb-1 flex min-w-0 max-w-full items-center gap-1 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)", "data-slot": "aui_activity-phrase", ref: attachRef, role: "status", children: _jsx("span", { className: "nemesis-activity-phrase flex min-w-0", children: _jsx("span", { className: "shimmer min-w-0 truncate", children: livePhrase }) }, livePhrase) }));
++    if (running && (livePhrase || intent || hasReasoning)) {
++        return (_jsxs("div", { "aria-live": "polite", className: "mb-1 flex min-w-0 max-w-full flex-col gap-1", "data-slot": "aui_activity-phrase", ref: attachRef, role: "status", children: [intent && (_jsx("p", { className: "nemesis-intent-line text-[0.875rem] leading-relaxed text-(--ui-text-secondary)", children: intent })), _jsx("span", { className: "nemesis-activity-phrase flex min-w-0 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)", children: _jsx("span", { className: "shimmer min-w-0 truncate", children: livePhrase || 'Thinking' }) }, livePhrase || 'thinking')] }));
+     }
+     if (!active || running) {
+         // Zero-size anchor keeps the ref attached so the attribute updates on settle.
+         return _jsx("button", { "aria-hidden": true, className: "hidden", ref: attachRef, tabIndex: -1, type: "button" });
+     }
+-    return (_jsxs("button", { className: cn('mb-1 flex items-center gap-1 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary) transition-colors hover:text-foreground'), onClick: () => setOpen(value => !value), ref: attachRef, type: "button", children: [_jsx(Codicon, { name: open ? 'chevron-down' : 'chevron-right', size: "0.8125rem" }), _jsx("span", { children: open
+-                    ? 'Hide steps'
+-                    : steps > 0
+-                        ? `Worked through ${steps} step${steps === 1 ? '' : 's'}`
+-                        : 'Show thinking' })] }));
++    const clock = TURN_CLOCK.get(messageId);
++    const seconds = clock?.end !== undefined ? Math.max(1, Math.round((clock.end - clock.start) / 1000)) : null;
++    const label = open
++        ? 'Hide work'
++        : seconds !== null
++            ? `${steps > 0 ? 'Worked' : 'Thought'} for ${formatDuration(seconds)}`
++            : steps > 0
++                ? `Worked through ${steps} step${steps === 1 ? '' : 's'}`
++                : 'Show thinking';
++    return (_jsxs("button", { className: cn('mb-1 flex items-center gap-1 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary) transition-colors hover:text-foreground'), onClick: () => setOpen(value => !value), ref: attachRef, type: "button", children: [_jsx(Codicon, { name: open ? 'chevron-down' : 'chevron-right', size: "0.8125rem" }), _jsx("span", { children: label })] }));
+ };
+diff --git a/apps/desktop/src/components/assistant-ui/thread/activity-strip.test.js b/apps/desktop/src/components/assistant-ui/thread/activity-strip.test.js
+new file mode 100644
+index 00000000000..4eac7cd7a95
+--- /dev/null
++++ b/apps/desktop/src/components/assistant-ui/thread/activity-strip.test.js
+@@ -0,0 +1,36 @@
++import { describe, expect, it } from 'vitest';
++import { extractIntent } from './activity-strip';
++describe('extractIntent', () => {
++    it('returns the first full sentence of the reasoning', () => {
++        expect(extractIntent("I'll compare the 2025 guideline against the 2017 framework, then separate what changed. After that…")).toBe("I'll compare the 2025 guideline against the 2017 framework, then separate what changed.");
++    });
++    it('is empty until enough has streamed to read as a statement', () => {
++        expect(extractIntent('I')).toBe('');
++        expect(extractIntent("I'll che")).toBe('');
++    });
++    it('suppresses meta-narration that restates the question instead of stating a plan', () => {
++        expect(extractIntent('The user is asking a clinical pharmacology question about ACE inhibitors vs ARBs, specifically the cough.')).toBe('');
++        expect(extractIntent("They're asking about warfarin interactions, so I should look those up.")).toBe('');
++        expect(extractIntent('So the question is really about renal dosing thresholds.')).toBe('');
++        expect(extractIntent('Let me think about what they actually need here first.')).toBe('');
++    });
++    it('still shows a genuine first-person plan', () => {
++        expect(extractIntent("I'll compare the two drug classes, then lay out the monitoring. Next step…")).toBe("I'll compare the two drug classes, then lay out the monitoring.");
++    });
++    it('word-cuts a long run-on (>=140 chars) that has no sentence boundary yet', () => {
++        const long = 'I should look at the latest biopharma developments across company releases and regulators and reputable trade reporting before I actually answer this question here';
++        const out = extractIntent(long);
++        expect(out.endsWith('…')).toBe(true);
++        expect(out.length).toBeLessThanOrEqual(174);
++        expect(out).not.toMatch(/\s…$/); // trailing space trimmed before the ellipsis
++    });
++    it('strips markdown and inline code so the line reads as plain prose', () => {
++        expect(extractIntent('**First** I will check the `label` for dosing. Then more.')).toBe('First I will check the label for dosing.');
++    });
++    it('truncates an over-long first sentence to ~170 chars rather than a paragraph', () => {
++        const wall = `${'word '.repeat(80)}.`;
++        const out = extractIntent(wall);
++        expect(out.endsWith('…')).toBe(true);
++        expect(out.length).toBeLessThanOrEqual(174);
++    });
++});
+diff --git a/apps/desktop/src/components/assistant-ui/thread/activity-strip.test.ts b/apps/desktop/src/components/assistant-ui/thread/activity-strip.test.ts
+new file mode 100644
+index 00000000000..ec342d0b526
+--- /dev/null
++++ b/apps/desktop/src/components/assistant-ui/thread/activity-strip.test.ts
+@@ -0,0 +1,55 @@
++import { describe, expect, it } from 'vitest'
++
++import { extractIntent } from './activity-strip'
++
++describe('extractIntent', () => {
++  it('returns the first full sentence of the reasoning', () => {
++    expect(
++      extractIntent("I'll compare the 2025 guideline against the 2017 framework, then separate what changed. After that…")
++    ).toBe("I'll compare the 2025 guideline against the 2017 framework, then separate what changed.")
++  })
++
++  it('is empty until enough has streamed to read as a statement', () => {
++    expect(extractIntent('I')).toBe('')
++    expect(extractIntent("I'll che")).toBe('')
++  })
++
++  it('suppresses meta-narration that restates the question instead of stating a plan', () => {
++    expect(
++      extractIntent('The user is asking a clinical pharmacology question about ACE inhibitors vs ARBs, specifically the cough.')
++    ).toBe('')
++    expect(extractIntent("They're asking about warfarin interactions, so I should look those up.")).toBe('')
++    expect(extractIntent('So the question is really about renal dosing thresholds.')).toBe('')
++    expect(extractIntent('Let me think about what they actually need here first.')).toBe('')
++  })
++
++  it('still shows a genuine first-person plan', () => {
++    expect(extractIntent("I'll compare the two drug classes, then lay out the monitoring. Next step…")).toBe(
++      "I'll compare the two drug classes, then lay out the monitoring."
++    )
++  })
++
++  it('word-cuts a long run-on (>=140 chars) that has no sentence boundary yet', () => {
++    const long =
++      'I should look at the latest biopharma developments across company releases and regulators and reputable trade reporting before I actually answer this question here'
++    const out = extractIntent(long)
++
++    expect(out.endsWith('…')).toBe(true)
++    expect(out.length).toBeLessThanOrEqual(174)
++    expect(out).not.toMatch(/\s…$/) // trailing space trimmed before the ellipsis
++  })
++
++  it('strips markdown and inline code so the line reads as plain prose', () => {
++    expect(extractIntent('**First** I will check the `label` for dosing. Then more.')).toBe(
++      'First I will check the label for dosing.'
++    )
++  })
++
++  it('truncates an over-long first sentence to ~170 chars rather than a paragraph', () => {
++    const wall = `${'word '.repeat(80)}.`
++    const out = extractIntent(wall)
++
++    expect(out.endsWith('…')).toBe(true)
++    expect(out.length).toBeLessThanOrEqual(174)
++  })
++})
+diff --git a/apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx b/apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx
+index 2c99d1ce42b..e6380e29da4 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx
++++ b/apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx
+@@ -1,10 +1,11 @@
+-// Claude-style activity collapse (student build). While a turn runs, the strip is a
+-// LIVE one-liner — a human phrase for the current tool call / thought ("Searching
+-// PubMed for 'tesamorelin'…") that cross-fades as the activity changes, the way
+-// ChatGPT/Claude narrate work. The full trail below stays visible exactly as before —
+-// reasoning previews shimmer and tool approvals remain clickable. Once the turn
+-// settles, the whole trail folds into this one quiet row ("Worked through N steps")
+-// and expands only on demand, so finished answers read as answers, not terminal logs.
++// ChatGPT-style thinking preview (student build). While a turn runs, the strip
++// shows (1) an INTENT LINE — the model's own first thought sentence(s), readable
++// body text that tells the student what it's about to do — and (2) below it a
++// shimmering live status ("Searching PubMed for 'tesamorelin'…", or "Thinking").
++// The raw trail (reasoning disclosure + tool rows) is hidden while running
++// (styles.css) EXCEPT tool cards waiting on an approval, which must stay
++// clickable. Once the turn settles, everything folds into one quiet row —
++// "Worked for 21s" / "Thought for 8s" — that expands the full trail on demand.
+ import { useAuiState } from '@assistant-ui/react'
+ import { type FC, useCallback, useEffect, useRef, useState } from 'react'
+ 
+@@ -13,9 +14,72 @@ import { Codicon } from '@/components/ui/codicon'
+ import { cn } from '@/lib/utils'
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ 
++// Wall-clock per message, module-level so it survives remounts (scrolling a
++// message out and back). Old messages restored from disk have no entry and
++// fall back to the step-count label.
++const TURN_CLOCK = new Map<string, { start: number; end?: number }>()
++
++/** "Worked for 21s" / "Worked for 1m 2s" — ChatGPT's duration phrasing. */
++function formatDuration(totalSeconds: number): string {
++  if (totalSeconds < 60) {
++    return `${totalSeconds}s`
++  }
++
++  const minutes = Math.floor(totalSeconds / 60)
++  const seconds = totalSeconds % 60
++
++  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`
++}
++
++// Reasoning that opens by narrating the QUESTION ("The user is asking…", "They
++// want…", "So the question is…") is meta-narration, not a plan. ChatGPT's intent
++// line reads like a first-person plan ("I'll compare…"); raw DeepSeek CoT usually
++// restates the ask instead. Showing that restatement as a headline reads wrong, so
++// we suppress it and let the live status line carry the turn. (A dedicated
++// plan-writer that always produces a clean first-person line is a backend follow-up.)
++const META_NARRATION_RE =
++  /^(the (user|student|person)\b|they'?re? (asking|want)|this (is|question)|so,? the|okay,? (the|so)|the question|hmm\b|let me (think|see|first understand)|we need to (figure|understand))/i
++
++/** The intent line: the model's opening thought, but ONLY when it reads like a
++ *  first-person plan — cleaned of markdown, capped near 170 chars. Empty for
++ *  meta-narration and for anything too short to read as a real statement (a
++ *  half-word flicker is worse than a beat of plain "Thinking"). */
++export function extractIntent(raw: string): string {
++  const text = raw
++    .replace(/```[\s\S]*?```/g, ' ')
++    .replace(/^#{1,6}\s+/gm, '')
++    .replace(/\*\*([^*]+)\*\*/g, '$1')
++    .replace(/`([^`]+)`/g, '$1')
++    .replace(/\s+/g, ' ')
++    .trim()
++
++  if (text.length < 24 || META_NARRATION_RE.test(text)) {
++    return ''
++  }
++
++  const sentence = /^.{0,200}?[.!?](?=\s|$)/.exec(text)?.[0] ?? ''
++
++  if (sentence.length >= 24) {
++    return sentence
++  }
++
++  // No sentence boundary yet — only show once there's a solid chunk, cut on a word.
++  if (text.length < 140) {
++    return ''
++  }
++
++  const cut = text.slice(0, 170)
++
++  return `${cut.slice(0, cut.lastIndexOf(' '))}…`
++}
++
+ export const ActivityStrip: FC = () => {
+   const [open, setOpen] = useState(false)
++  // Bumped when the clock stops so the settled label re-renders with a duration
++  // (the settle render itself runs before the effect records `end`).
++  const [, setClockTick] = useState(0)
+   const ref = useRef<HTMLElement | null>(null)
++  const messageId = useAuiState(s => s.message.id)
+   const running = useAuiState(s => s.message.status?.type === 'running')
+   const steps = useAuiState(s => s.message.parts.filter(part => part?.type === 'tool-call').length)
+   const hasReasoning = useAuiState(s =>
+@@ -36,8 +100,41 @@ export const ActivityStrip: FC = () => {
+     return event ? phraseForActivity(event) : ''
+   })
+ 
++  // The model's own opening thought — ChatGPT's "I'll scan today's major
++  // developments…" line. Derived (never fabricated) from the real reasoning
++  // stream; empty for turns that never think out loud.
++  const intent = useAuiState(s => {
++    if (!NEMESIS_STUDENT_BUILD || s.message.status?.type !== 'running') {
++      return ''
++    }
++
++    const first = s.message.parts.find(
++      part => part?.type === 'reasoning' && typeof part.text === 'string' && part.text.trim().length > 0
++    )
++
++    return first && first.type === 'reasoning' ? extractIntent(first.text) : ''
++  })
++
+   const active = NEMESIS_STUDENT_BUILD && (steps > 0 || hasReasoning)
+ 
++  // Wall clock: arm on the first running render, freeze on settle.
++  useEffect(() => {
++    if (!NEMESIS_STUDENT_BUILD) {
++      return
++    }
++
++    const entry = TURN_CLOCK.get(messageId)
++
++    if (running) {
++      if (!entry) {
++        TURN_CLOCK.set(messageId, { start: Date.now() })
++      }
++    } else if (entry && entry.end === undefined) {
++      TURN_CLOCK.set(messageId, { ...entry, end: Date.now() })
++      setClockTick(tick => tick + 1)
++    }
++  }, [messageId, running])
++
+   // The trail lives in a sibling subtree (MessagePrimitive.Parts), so the collapse is
+   // driven by an attribute on the shared message root + a CSS rule in styles.css.
+   useEffect(() => {
+@@ -62,20 +159,26 @@ export const ActivityStrip: FC = () => {
+     ref.current = node
+   }, [])
+ 
+-  if (running && livePhrase) {
++  if (running && (livePhrase || intent || hasReasoning)) {
+     return (
+       <div
+         aria-live="polite"
+-        className="mb-1 flex min-w-0 max-w-full items-center gap-1 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)"
++        className="mb-1 flex min-w-0 max-w-full flex-col gap-1"
+         data-slot="aui_activity-phrase"
+         ref={attachRef}
+         role="status"
+       >
++        {intent && (
++          <p className="nemesis-intent-line text-[0.875rem] leading-relaxed text-(--ui-text-secondary)">{intent}</p>
++        )}
+         {/* Keyed by phrase: a new phrase remounts the wrapper, replaying the CSS
+             fade (styles.css .nemesis-activity-phrase) — a quiet cross-fade with
+             no animation library. The inner span carries the live shimmer. */}
+-        <span className="nemesis-activity-phrase flex min-w-0" key={livePhrase}>
+-          <span className="shimmer min-w-0 truncate">{livePhrase}</span>
++        <span
++          className="nemesis-activity-phrase flex min-w-0 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)"
++          key={livePhrase || 'thinking'}
++        >
++          <span className="shimmer min-w-0 truncate">{livePhrase || 'Thinking'}</span>
+         </span>
+       </div>
+     )
+@@ -86,6 +189,16 @@ export const ActivityStrip: FC = () => {
+     return <button aria-hidden className="hidden" ref={attachRef} tabIndex={-1} type="button" />
+   }
+ 
++  const clock = TURN_CLOCK.get(messageId)
++  const seconds = clock?.end !== undefined ? Math.max(1, Math.round((clock.end - clock.start) / 1000)) : null
++  const label = open
++    ? 'Hide work'
++    : seconds !== null
++      ? `${steps > 0 ? 'Worked' : 'Thought'} for ${formatDuration(seconds)}`
++      : steps > 0
++        ? `Worked through ${steps} step${steps === 1 ? '' : 's'}`
++        : 'Show thinking'
++
+   return (
+     <button
+       className={cn(
+@@ -96,13 +209,7 @@ export const ActivityStrip: FC = () => {
+       type="button"
+     >
+       <Codicon name={open ? 'chevron-down' : 'chevron-right'} size="0.8125rem" />
+-      <span>
+-        {open
+-          ? 'Hide steps'
+-          : steps > 0
+-            ? `Worked through ${steps} step${steps === 1 ? '' : 's'}`
+-            : 'Show thinking'}
+-      </span>
++      <span>{label}</span>
+     </button>
+   )
+ }
+diff --git a/apps/desktop/src/lib/school-portals.js b/apps/desktop/src/lib/school-portals.js
+new file mode 100644
+index 00000000000..9735b78cbfd
+--- /dev/null
++++ b/apps/desktop/src/lib/school-portals.js
+@@ -0,0 +1,136 @@
++// The student's OWN school portals (LMS + school email) — the one piece of school
++// identity that differs per student. Blackboard-at-UTHSC was hardcoded while Nemesis
++// had a single user (the owner); every other student needs their own address here.
++// localStorage is the UI's source of truth; every save is mirrored to
++// ~/Documents/Nemesis Library/.nemesis/portals.json so the AGENT navigates to the
++// same portal the app shows (see the nemesis-school-sync skill). The mirror is
++// one-way (app → file): the agent reads it and sends students to Settings →
++// Connections to change it.
++const STORE_KEY = 'nemesis.school.portals.v1';
++const PORTALS_FILE = '~/Documents/Nemesis Library/.nemesis/portals.json';
++export const PORTALS_CHANGED_EVENT = 'nemesis:school-portals-changed';
++// First-run defaults = the owner's own school, so existing installs behave
++// exactly as before until a student sets their own portal.
++export const DEFAULT_SCHOOL_PORTALS = [
++    {
++        id: 'lms',
++        kind: 'lms',
++        name: 'Blackboard',
++        origin: 'https://blackboard.uthsc.edu',
++        url: 'https://blackboard.uthsc.edu/'
++    },
++    {
++        id: 'email',
++        kind: 'email',
++        name: 'Outlook',
++        origin: 'https://outlook.cloud.microsoft',
++        url: 'https://outlook.cloud.microsoft/mail/'
++    }
++];
++/** Best-effort brand detection so the row reads "Canvas", not a bare URL. */
++export function lmsNameFor(url) {
++    const host = originOf(url).replace(/^https?:\/\//, '').toLowerCase();
++    if (host.includes('blackboard')) {
++        return 'Blackboard';
++    }
++    if (host.includes('canvas') || host.includes('instructure')) {
++        return 'Canvas';
++    }
++    if (host.includes('brightspace') || host.includes('d2l')) {
++        return 'Brightspace';
++    }
++    if (host.includes('moodle')) {
++        return 'Moodle';
++    }
++    if (host.includes('schoology')) {
++        return 'Schoology';
++    }
++    return 'School portal';
++}
++function originOf(url) {
++    try {
++        return new URL(url).origin;
++    }
++    catch {
++        return url;
++    }
++}
++/** "blackboard.myschool.edu" → "https://blackboard.myschool.edu/", or null if unparseable. */
++export function normalizePortalUrl(raw) {
++    const trimmed = raw.trim();
++    if (!trimmed) {
++        return null;
++    }
++    const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
++    try {
++        return new URL(withScheme).toString();
++    }
++    catch {
++        return null;
++    }
++}
++export function loadSchoolPortals() {
++    try {
++        const raw = window.localStorage.getItem(STORE_KEY);
++        if (!raw) {
++            return DEFAULT_SCHOOL_PORTALS;
++        }
++        const parsed = JSON.parse(raw);
++        if (!Array.isArray(parsed) || parsed.length === 0) {
++            return DEFAULT_SCHOOL_PORTALS;
++        }
++        const portals = parsed.filter((entry) => Boolean(entry) &&
++            typeof entry.url === 'string' &&
++            typeof entry.name === 'string');
++        return portals.length > 0 ? portals : DEFAULT_SCHOOL_PORTALS;
++    }
++    catch {
++        return DEFAULT_SCHOOL_PORTALS;
++    }
++}
++export function saveSchoolPortals(portals) {
++    try {
++        window.localStorage.setItem(STORE_KEY, JSON.stringify(portals));
++    }
++    catch {
++        // persistence is best-effort
++    }
++    void mirrorToVault(portals);
++    window.dispatchEvent(new Event(PORTALS_CHANGED_EVENT));
++}
++/** Replace the LMS entry with the given URL; returns the new list (already saved). */
++export function setSchoolLms(url) {
++    const normalized = normalizePortalUrl(url);
++    if (!normalized) {
++        return loadSchoolPortals();
++    }
++    const lms = {
++        id: 'lms',
++        kind: 'lms',
++        name: lmsNameFor(normalized),
++        origin: originOf(normalized),
++        url: normalized
++    };
++    const next = [lms, ...loadSchoolPortals().filter(portal => portal.kind !== 'lms')];
++    saveSchoolPortals(next);
++    return next;
++}
++/** Keep the agent-facing file current even if the student never edits anything. */
++export function ensurePortalsMirrored() {
++    void mirrorToVault(loadSchoolPortals());
++}
++// The agent-facing mirror. Shape is deliberately plain JSON the skill documents:
++// { "portals": [{ "kind": "lms", "name": "Canvas", "url": "https://..." }] }
++async function mirrorToVault(portals) {
++    const api = window.hermesDesktop;
++    if (!api?.writeTextFile) {
++        return;
++    }
++    try {
++        await api.makeDir?.('~/Documents/Nemesis Library/.nemesis');
++        await api.writeTextFile(PORTALS_FILE, `${JSON.stringify({ portals: portals.map(({ kind, name, url }) => ({ kind, name, url })) }, null, 2)}\n`);
++    }
++    catch {
++        // best-effort: the agent falls back to asking the student
++    }
++}
+diff --git a/apps/desktop/src/lib/school-portals.ts b/apps/desktop/src/lib/school-portals.ts
+new file mode 100644
+index 00000000000..07c666dfe98
+--- /dev/null
++++ b/apps/desktop/src/lib/school-portals.ts
+@@ -0,0 +1,177 @@
++// The student's OWN school portals (LMS + school email) — the one piece of school
++// identity that differs per student. Blackboard-at-UTHSC was hardcoded while Nemesis
++// had a single user (the owner); every other student needs their own address here.
++// localStorage is the UI's source of truth; every save is mirrored to
++// ~/Documents/Nemesis Library/.nemesis/portals.json so the AGENT navigates to the
++// same portal the app shows (see the nemesis-school-sync skill). The mirror is
++// one-way (app → file): the agent reads it and sends students to Settings →
++// Connections to change it.
++
++export interface SchoolPortal {
++  id: string
++  kind: 'email' | 'lms'
++  name: string
++  origin: string
++  url: string
++}
++
++const STORE_KEY = 'nemesis.school.portals.v1'
++const PORTALS_FILE = '~/Documents/Nemesis Library/.nemesis/portals.json'
++
++export const PORTALS_CHANGED_EVENT = 'nemesis:school-portals-changed'
++
++// First-run defaults = the owner's own school, so existing installs behave
++// exactly as before until a student sets their own portal.
++export const DEFAULT_SCHOOL_PORTALS: SchoolPortal[] = [
++  {
++    id: 'lms',
++    kind: 'lms',
++    name: 'Blackboard',
++    origin: 'https://blackboard.uthsc.edu',
++    url: 'https://blackboard.uthsc.edu/'
++  },
++  {
++    id: 'email',
++    kind: 'email',
++    name: 'Outlook',
++    origin: 'https://outlook.cloud.microsoft',
++    url: 'https://outlook.cloud.microsoft/mail/'
++  }
++]
++
++/** Best-effort brand detection so the row reads "Canvas", not a bare URL. */
++export function lmsNameFor(url: string): string {
++  const host = originOf(url).replace(/^https?:\/\//, '').toLowerCase()
++
++  if (host.includes('blackboard')) {
++    return 'Blackboard'
++  }
++
++  if (host.includes('canvas') || host.includes('instructure')) {
++    return 'Canvas'
++  }
++
++  if (host.includes('brightspace') || host.includes('d2l')) {
++    return 'Brightspace'
++  }
++
++  if (host.includes('moodle')) {
++    return 'Moodle'
++  }
++
++  if (host.includes('schoology')) {
++    return 'Schoology'
++  }
++
++  return 'School portal'
++}
++
++function originOf(url: string): string {
++  try {
++    return new URL(url).origin
++  } catch {
++    return url
++  }
++}
++
++/** "blackboard.myschool.edu" → "https://blackboard.myschool.edu/", or null if unparseable. */
++export function normalizePortalUrl(raw: string): null | string {
++  const trimmed = raw.trim()
++
++  if (!trimmed) {
++    return null
++  }
++
++  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
++
++  try {
++    return new URL(withScheme).toString()
++  } catch {
++    return null
++  }
++}
++
++export function loadSchoolPortals(): SchoolPortal[] {
++  try {
++    const raw = window.localStorage.getItem(STORE_KEY)
++
++    if (!raw) {
++      return DEFAULT_SCHOOL_PORTALS
++    }
++
++    const parsed: unknown = JSON.parse(raw)
++
++    if (!Array.isArray(parsed) || parsed.length === 0) {
++      return DEFAULT_SCHOOL_PORTALS
++    }
++
++    const portals = parsed.filter(
++      (entry): entry is SchoolPortal =>
++        Boolean(entry) &&
++        typeof (entry as SchoolPortal).url === 'string' &&
++        typeof (entry as SchoolPortal).name === 'string'
++    )
++
++    return portals.length > 0 ? portals : DEFAULT_SCHOOL_PORTALS
++  } catch {
++    return DEFAULT_SCHOOL_PORTALS
++  }
++}
++
++export function saveSchoolPortals(portals: SchoolPortal[]): void {
++  try {
++    window.localStorage.setItem(STORE_KEY, JSON.stringify(portals))
++  } catch {
++    // persistence is best-effort
++  }
++
++  void mirrorToVault(portals)
++  window.dispatchEvent(new Event(PORTALS_CHANGED_EVENT))
++}
++
++/** Replace the LMS entry with the given URL; returns the new list (already saved). */
++export function setSchoolLms(url: string): SchoolPortal[] {
++  const normalized = normalizePortalUrl(url)
++
++  if (!normalized) {
++    return loadSchoolPortals()
++  }
++
++  const lms: SchoolPortal = {
++    id: 'lms',
++    kind: 'lms',
++    name: lmsNameFor(normalized),
++    origin: originOf(normalized),
++    url: normalized
++  }
++
++  const next = [lms, ...loadSchoolPortals().filter(portal => portal.kind !== 'lms')]
++  saveSchoolPortals(next)
++
++  return next
++}
++
++/** Keep the agent-facing file current even if the student never edits anything. */
++export function ensurePortalsMirrored(): void {
++  void mirrorToVault(loadSchoolPortals())
++}
++
++// The agent-facing mirror. Shape is deliberately plain JSON the skill documents:
++// { "portals": [{ "kind": "lms", "name": "Canvas", "url": "https://..." }] }
++async function mirrorToVault(portals: SchoolPortal[]): Promise<void> {
++  const api = window.hermesDesktop
++
++  if (!api?.writeTextFile) {
++    return
++  }
++
++  try {
++    await api.makeDir?.('~/Documents/Nemesis Library/.nemesis')
++    await api.writeTextFile(
++      PORTALS_FILE,
++      `${JSON.stringify({ portals: portals.map(({ kind, name, url }) => ({ kind, name, url })) }, null, 2)}\n`
++    )
++  } catch {
++    // best-effort: the agent falls back to asking the student
++  }
++}
+diff --git a/apps/desktop/src/styles.css b/apps/desktop/src/styles.css
+index 9cbd52cf344..e4a6f89692e 100644
+--- a/apps/desktop/src/styles.css
++++ b/apps/desktop/src/styles.css
+@@ -1854,16 +1854,26 @@ text-* variant utilities. */ .btn-arc {
+   outline: none !important;
+ }
+ 
+-/* Nemesis student build: once a turn settles, its activity trail (thinking
+-   disclosures + tool rows) folds behind the ActivityStrip's "Worked through
+-   N steps" toggle. While running (data-nemesis-activity='live') nothing hides,
+-   so live previews and tool-approval buttons stay fully interactive. */
++/* Nemesis student build: the activity trail (thinking disclosures + tool rows)
++   folds behind the ActivityStrip. Settled turns collapse behind the "Worked
++   for Xs" toggle. While running ('live') the trail ALSO hides — the strip
++   narrates instead, ChatGPT-style, with the model's intent line + a live
++   status phrase — EXCEPT any tool block waiting on an approval decision,
++   which must stay visible and clickable or the turn deadlocks. */
+ [data-nemesis-activity='collapsed'] [data-slot='aui_thinking-disclosure'],
+ [data-nemesis-activity='collapsed'] [data-slot='tool-block'],
+-[data-nemesis-activity='collapsed'] [data-tool-group] {
++[data-nemesis-activity='collapsed'] [data-tool-group],
++[data-nemesis-activity='live'] [data-slot='aui_thinking-disclosure'],
++[data-nemesis-activity='live'] [data-slot='tool-block']:not(:has([data-slot^='tool-approval'])),
++[data-nemesis-activity='live'] [data-tool-group]:not(:has([data-slot^='tool-approval'])) {
+   display: none;
+ }
+ 
++/* The intent line fades in once the model's opening thought is readable. */
++.nemesis-intent-line {
++  animation: nemesis-phrase-in 0.4s ease-out;
++}
++
+ /* Nemesis student build: live activity phrase in the ActivityStrip. The phrase
+    wrapper remounts whenever the text changes (React key), so this enter fade
+    plays between phrases — a subtle CSS-only cross-fade, no motion library. It
+-- 
+2.53.0
+

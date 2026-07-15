@@ -1,0 +1,2953 @@
+From 62320eb3d45a942ac5670c4b04f8aa92e850f89d Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Thu, 9 Jul 2026 19:02:13 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20Study=20page=20v1=20=E2=80=94=20FSRS?=
+ =?UTF-8?q?=20flashcards=20(ts-fsrs),=20deck=20browser,=20review=20flow,?=
+ =?UTF-8?q?=20paste=20import?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- src/app/study/{model.ts,import-cards.ts,index.tsx}: FSRS-6 scheduling (same
+  algorithm family as modern Anki; zero AGPL code), deck grid with due badges,
+  flip-card review with Again/Hard/Good/Easy + next-interval hints + Space/1-4
+  keys, Quizlet-paste importer (tab / ' - ' / comma), seeded pharm demo deck,
+  localStorage v1 persistence.
+- wired: routes.ts (STUDY_ROUTE + view), sidebar nav item (mortar-board),
+  desktop-controller lazy route, sidebar.nav i18n (en/zh/ja/zh-hant).
+- dep: ts-fsrs ^5.4.1 (MIT).
+---
+ apps/desktop/package.json                     |   1 +
+ apps/desktop/src/app/chat/sidebar/index.js    |   5 +-
+ apps/desktop/src/app/chat/sidebar/index.tsx   |   5 +-
+ apps/desktop/src/app/desktop-controller.js    |   3 +-
+ apps/desktop/src/app/desktop-controller.tsx   |   9 +
+ .../src/app/pet-overlay/pet-overlay-app.js    |   4 +-
+ apps/desktop/src/app/routes.js                |   2 +
+ apps/desktop/src/app/routes.ts                |   4 +
+ .../src/app/settings/model-settings.js        |   2 +-
+ .../src/app/settings/uninstall-section.js     |   8 +-
+ apps/desktop/src/app/study/import-cards.js    |  33 ++
+ apps/desktop/src/app/study/import-cards.ts    |  49 +++
+ apps/desktop/src/app/study/index.js           | 132 +++++++
+ apps/desktop/src/app/study/index.tsx          | 374 ++++++++++++++++++
+ apps/desktop/src/app/study/model.js           | 163 ++++++++
+ apps/desktop/src/app/study/model.ts           | 280 +++++++++++++
+ apps/desktop/src/app/types.ts                 |   2 +-
+ apps/desktop/src/i18n/en.js                   | 177 ++++-----
+ apps/desktop/src/i18n/en.ts                   |   3 +-
+ apps/desktop/src/i18n/ja.js                   |   3 +-
+ apps/desktop/src/i18n/ja.ts                   |   3 +-
+ apps/desktop/src/i18n/zh-hant.js              |   3 +-
+ apps/desktop/src/i18n/zh-hant.ts              |   3 +-
+ apps/desktop/src/i18n/zh.js                   | 197 ++++-----
+ apps/desktop/src/i18n/zh.ts                   |   3 +-
+ apps/desktop/src/themes/presets.js            |   2 +-
+ package-lock.json                             |  46 +--
+ 27 files changed, 1279 insertions(+), 237 deletions(-)
+ create mode 100644 apps/desktop/src/app/study/import-cards.js
+ create mode 100644 apps/desktop/src/app/study/import-cards.ts
+ create mode 100644 apps/desktop/src/app/study/index.js
+ create mode 100644 apps/desktop/src/app/study/index.tsx
+ create mode 100644 apps/desktop/src/app/study/model.js
+ create mode 100644 apps/desktop/src/app/study/model.ts
+
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index de3e6ee..357fba5 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -108,6 +108,7 @@
+     "streamdown": "^2.5.0",
+     "tailwind-merge": "^3.5.0",
+     "tailwindcss": "^4.2.4",
++    "ts-fsrs": "^5.4.1",
+     "tw-shimmer": "^0.4.11",
+     "unicode-animations": "^1.0.3",
+     "unified": "^11.0.5",
+diff --git a/apps/desktop/src/app/chat/sidebar/index.js b/apps/desktop/src/app/chat/sidebar/index.js
+index 0bb787f..50a18db 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.js
++++ b/apps/desktop/src/app/chat/sidebar/index.js
+@@ -22,7 +22,7 @@ import { $dismissedAutoProjectIds, $panesFlipped, $pinnedSessionIds, $sidebarAge
+ import { $newChatProfile, $profiles, $profileScope, ALL_PROFILES, normalizeProfileKey } from '@/store/profile';
+ import { $activeProjectId, $projects, $projectScope, $projectTree, $projectTreeLoading, $removedSessionIds, $reposScanning, ALL_PROJECTS, enterProject, exitProjectScope, fetchProjectSessions, openProjectCreate, refreshProjects, refreshProjectTree, refreshWorktrees, scanAndRecordRepos } from '@/store/projects';
+ import { $cronSessions, $currentCwd, $gatewayState, $messagingPlatformTotals, $messagingSessions, $messagingTruncated, $selectedStoredSessionId, $sessionProfileTotals, $sessions, $sessionsLoading, $sessionsTotal, $workingSessionIds, sessionPinId, setCurrentCwd } from '@/store/session';
+-import { ARTIFACTS_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE } from '../../routes';
++import { ARTIFACTS_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE, STUDY_ROUTE } from '../../routes';
+ import { countLabel } from './chrome';
+ import { SidebarCronJobsSection } from './cron-jobs-section';
+ import { SidebarLoadMoreRow } from './load-more-row';
+@@ -52,7 +52,8 @@ const SIDEBAR_NAV = [
+         route: SKILLS_ROUTE
+     },
+     { id: 'messaging', label: '', icon: props => _jsx(Codicon, { name: "comment", ...props }), route: MESSAGING_ROUTE },
+-    { id: 'artifacts', label: '', icon: props => _jsx(Codicon, { name: "files", ...props }), route: ARTIFACTS_ROUTE }
++    { id: 'artifacts', label: '', icon: props => _jsx(Codicon, { name: "files", ...props }), route: ARTIFACTS_ROUTE },
++    { id: 'study', label: 'Study', icon: props => _jsx(Codicon, { name: "mortar-board", ...props }), route: STUDY_ROUTE }
+ ];
+ // Two modes via the `compact` height variant (styles.css):
+ //   tall    → each section is shrink-0, capped, its own scroller; Sessions is flex-1.
+diff --git a/apps/desktop/src/app/chat/sidebar/index.tsx b/apps/desktop/src/app/chat/sidebar/index.tsx
+index 416483d..40c6d58 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.tsx
++++ b/apps/desktop/src/app/chat/sidebar/index.tsx
+@@ -95,7 +95,7 @@ import {
+   setCurrentCwd
+ } from '@/store/session'
+ 
+-import { type AppView, ARTIFACTS_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE } from '../../routes'
++import { type AppView, ARTIFACTS_ROUTE, MESSAGING_ROUTE, SKILLS_ROUTE, STUDY_ROUTE } from '../../routes'
+ import type { SidebarNavItem } from '../../types'
+ 
+ import { countLabel } from './chrome'
+@@ -144,7 +144,8 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
+     route: SKILLS_ROUTE
+   },
+   { id: 'messaging', label: '', icon: props => <Codicon name="comment" {...props} />, route: MESSAGING_ROUTE },
+-  { id: 'artifacts', label: '', icon: props => <Codicon name="files" {...props} />, route: ARTIFACTS_ROUTE }
++  { id: 'artifacts', label: '', icon: props => <Codicon name="files" {...props} />, route: ARTIFACTS_ROUTE },
++  { id: 'study', label: 'Study', icon: props => <Codicon name="mortar-board" {...props} />, route: STUDY_ROUTE }
+ ]
+ 
+ // Two modes via the `compact` height variant (styles.css):
+diff --git a/apps/desktop/src/app/desktop-controller.js b/apps/desktop/src/app/desktop-controller.js
+index 05b7868..20ac0e9 100644
+--- a/apps/desktop/src/app/desktop-controller.js
++++ b/apps/desktop/src/app/desktop-controller.js
+@@ -86,6 +86,7 @@ const MessagingView = lazy(async () => ({ default: (await import('./messaging'))
+ const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }));
+ const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }));
+ const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }));
++const StudyView = lazy(async () => ({ default: (await import('./study')).StudyView }));
+ // Latest cron-job sessions surfaced in the collapsed "Cron jobs" section. The
+ // Cron sessions are written by a background scheduler tick (the desktop
+ // backend), so no user action signals the UI. Poll the bounded cron list on
+@@ -804,7 +805,7 @@ export function DesktopController() {
+         // Mobile overlay sits at its min width — compact, doesn't bury the chat.
+         overlayWidth: FILE_BROWSER_MIN_WIDTH, resizable: true, side: railSide, width: FILE_BROWSER_DEFAULT_WIDTH, children: _jsx(ReviewPane, {}, currentCwd || 'no-cwd') }, "review"));
+     const terminalPane = (_jsx(Pane, { bottomRow: terminalAsRow, defaultOpen: true, disabled: !terminalSidebarOpen, divider: true, height: "38vh", id: "terminal-sidebar", maxHeight: "80vh", maxWidth: "80vw", minHeight: "8rem", minWidth: "22vw", resizable: true, side: railSide, width: "42vw", children: _jsx("div", { className: cn('relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-(--ui-editor-surface-background)', terminalAsRow ? 'border-l border-(--ui-stroke-secondary) pt-0' : 'pt-(--titlebar-height)'), children: _jsx(TerminalPaneChrome, {}) }) }, "terminal-sidebar"));
+-    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: chatOpen && Boolean(previewTarget || filePreviewTarget), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: chatView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
++    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: chatOpen && Boolean(previewTarget || filePreviewTarget), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: chatView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
+ }
+ function LegacySessionRedirect() {
+     const { sessionId } = useParams();
+diff --git a/apps/desktop/src/app/desktop-controller.tsx b/apps/desktop/src/app/desktop-controller.tsx
+index cb7b10f..bcbf688 100644
+--- a/apps/desktop/src/app/desktop-controller.tsx
++++ b/apps/desktop/src/app/desktop-controller.tsx
+@@ -136,6 +136,7 @@ const MessagingView = lazy(async () => ({ default: (await import('./messaging'))
+ const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
+ const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
+ const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
++const StudyView = lazy(async () => ({ default: (await import('./study')).StudyView }))
+ 
+ // Latest cron-job sessions surfaced in the collapsed "Cron jobs" section. The
+ // Cron sessions are written by a background scheduler tick (the desktop
+@@ -1337,6 +1338,14 @@ export function DesktopController() {
+             }
+             path="artifacts"
+           />
++          <Route
++            element={
++              <Suspense fallback={null}>
++                <StudyView />
++              </Suspense>
++            }
++            path="study"
++          />
+           <Route element={null} path="cron" />
+           <Route element={null} path="profiles" />
+           <Route element={null} path="settings" />
+diff --git a/apps/desktop/src/app/pet-overlay/pet-overlay-app.js b/apps/desktop/src/app/pet-overlay/pet-overlay-app.js
+index bc5e969..c66c824 100644
+--- a/apps/desktop/src/app/pet-overlay/pet-overlay-app.js
++++ b/apps/desktop/src/app/pet-overlay/pet-overlay-app.js
+@@ -314,7 +314,7 @@ export function PetOverlayApp() {
+                     flexDirection: 'column',
+                     position: 'relative',
+                     touchAction: 'none'
+-                }, children: [_jsx("div", { style: { marginBottom: 4 }, children: _jsx(PetBubble, {}) }), _jsxs("div", { style: { lineHeight: 0, position: 'relative' }, children: [_jsx(PetSprite, { info: info }), unread && (_jsx("button", { "aria-label": "Open in Hermes", onClick: openApp, onPointerDown: e => e.stopPropagation(), onPointerUp: e => e.stopPropagation(), style: {
++                }, children: [_jsx("div", { style: { marginBottom: 4 }, children: _jsx(PetBubble, {}) }), _jsxs("div", { style: { lineHeight: 0, position: 'relative' }, children: [_jsx(PetSprite, { info: info }), unread && (_jsx("button", { "aria-label": "Open in Nemesis", onClick: openApp, onPointerDown: e => e.stopPropagation(), onPointerUp: e => e.stopPropagation(), style: {
+                                     alignItems: 'center',
+                                     background: 'var(--ui-bg-elevated)',
+                                     border: '1px solid var(--ui-stroke-secondary)',
+@@ -330,5 +330,5 @@ export function PetOverlayApp() {
+                                     right: 0,
+                                     top: 0,
+                                     width: 24
+-                                }, title: "Open in Hermes", type: "button", children: _jsx(Mail, { style: { height: 13, width: 13 } }) }))] })] })] }));
++                                }, title: "Open in Nemesis", type: "button", children: _jsx(Mail, { style: { height: 13, width: 13 } }) }))] })] })] }));
+ }
+diff --git a/apps/desktop/src/app/routes.js b/apps/desktop/src/app/routes.js
+index e138d32..e5995e5 100644
+--- a/apps/desktop/src/app/routes.js
++++ b/apps/desktop/src/app/routes.js
+@@ -5,6 +5,7 @@ export const COMMAND_CENTER_ROUTE = '/command-center';
+ export const SKILLS_ROUTE = '/skills';
+ export const MESSAGING_ROUTE = '/messaging';
+ export const ARTIFACTS_ROUTE = '/artifacts';
++export const STUDY_ROUTE = '/study';
+ export const CRON_ROUTE = '/cron';
+ export const PROFILES_ROUTE = '/profiles';
+ export const AGENTS_ROUTE = '/agents';
+@@ -16,6 +17,7 @@ export const APP_ROUTES = [
+     { id: 'skills', path: SKILLS_ROUTE, view: 'skills' },
+     { id: 'messaging', path: MESSAGING_ROUTE, view: 'messaging' },
+     { id: 'artifacts', path: ARTIFACTS_ROUTE, view: 'artifacts' },
++    { id: 'study', path: STUDY_ROUTE, view: 'study' },
+     { id: 'cron', path: CRON_ROUTE, view: 'cron' },
+     { id: 'profiles', path: PROFILES_ROUTE, view: 'profiles' },
+     { id: 'agents', path: AGENTS_ROUTE, view: 'agents' },
+diff --git a/apps/desktop/src/app/routes.ts b/apps/desktop/src/app/routes.ts
+index 66ab264..dbc894a 100644
+--- a/apps/desktop/src/app/routes.ts
++++ b/apps/desktop/src/app/routes.ts
+@@ -5,6 +5,7 @@ export const COMMAND_CENTER_ROUTE = '/command-center'
+ export const SKILLS_ROUTE = '/skills'
+ export const MESSAGING_ROUTE = '/messaging'
+ export const ARTIFACTS_ROUTE = '/artifacts'
++export const STUDY_ROUTE = '/study'
+ export const CRON_ROUTE = '/cron'
+ export const PROFILES_ROUTE = '/profiles'
+ export const AGENTS_ROUTE = '/agents'
+@@ -21,6 +22,7 @@ export type AppView =
+   | 'settings'
+   | 'skills'
+   | 'starmap'
++  | 'study'
+ 
+ export type AppRouteId =
+   | 'agents'
+@@ -33,6 +35,7 @@ export type AppRouteId =
+   | 'settings'
+   | 'skills'
+   | 'starmap'
++  | 'study'
+ 
+ export interface AppRoute {
+   id: AppRouteId
+@@ -47,6 +50,7 @@ export const APP_ROUTES = [
+   { id: 'skills', path: SKILLS_ROUTE, view: 'skills' },
+   { id: 'messaging', path: MESSAGING_ROUTE, view: 'messaging' },
+   { id: 'artifacts', path: ARTIFACTS_ROUTE, view: 'artifacts' },
++  { id: 'study', path: STUDY_ROUTE, view: 'study' },
+   { id: 'cron', path: CRON_ROUTE, view: 'cron' },
+   { id: 'profiles', path: PROFILES_ROUTE, view: 'profiles' },
+   { id: 'agents', path: AGENTS_ROUTE, view: 'agents' },
+diff --git a/apps/desktop/src/app/settings/model-settings.js b/apps/desktop/src/app/settings/model-settings.js
+index 0264bdd..a2fa42a 100644
+--- a/apps/desktop/src/app/settings/model-settings.js
++++ b/apps/desktop/src/app/settings/model-settings.js
+@@ -417,7 +417,7 @@ export function ModelSettings({ onMainModelChanged }) {
+                                             }
+                                         }, placeholder: `Paste ${selectedProviderRow?.key_env ?? 'API key'}`, type: "password", value: apiKeyDraft }), _jsxs(Button, { disabled: !apiKeyDraft.trim() || activating, onClick: () => void activateApiKeyProvider(), size: "sm", children: [activating && _jsx(Loader2, { className: "size-3.5 animate-spin" }), activating ? 'Activating...' : 'Activate'] })] })) : (_jsxs(Button, { onClick: startProviderSetup, size: "sm", variant: "textStrong", children: ["Set up ", selectedProviderRow?.name ?? 'provider'] }))) : (_jsxs(_Fragment, { children: [_jsxs(Select, { onValueChange: setSelectedModel, value: selectedModel, children: [_jsx(SelectTrigger, { className: cn('min-w-60', CONTROL_TEXT), children: _jsx(SelectValue, { placeholder: m.model }) }), _jsx(SelectContent, { children: withActive(selectedProviderModels, selectedModel).map(model => (_jsx(SelectItem, { value: model, children: model }, model))) })] }), _jsxs(Button, { disabled: !selectedProvider || !selectedModel || applying, onClick: () => void applyMainModel(), size: "sm", children: [applying && _jsx(Loader2, { className: "size-3.5 animate-spin" }), applying ? m.applying : t.common.apply] })] }))] }), needsSetup && !setupIsApiKey && (_jsx("p", { className: "mt-2 text-xs text-muted-foreground", children: selectedProviderRow?.auth_type === 'api_key'
+                             ? `${selectedProviderRow?.name} needs an API key — set it up to choose a model.`
+-                            : `${selectedProviderRow?.name} signs in through your browser — Hermes runs the flow for you.` })), config && mainModel && (reasoningSupported || fastSupported) && (_jsxs("div", { className: "mt-3 flex flex-wrap items-center gap-x-6 gap-y-3", children: [_jsx("span", { className: "text-xs text-muted-foreground", children: m.defaultsLabel }), reasoningSupported && (_jsxs("div", { className: "flex items-center gap-2 text-xs", children: [m.reasoning, _jsxs(Select, { onValueChange: value => void writeAgentDefault('agent.reasoning_effort', value), value: effortValue, children: [_jsx(SelectTrigger, { className: cn('min-w-28', CONTROL_TEXT), children: _jsx(SelectValue, {}) }), _jsx(SelectContent, { children: EFFORT_VALUES.map(value => (_jsx(SelectItem, { value: value, children: value === 'none' ? m.reasoningOff : t.shell.modelOptions[effortLabelKey(value)] }, value))) })] })] })), fastSupported && (_jsxs("label", { className: "flex items-center gap-2 text-xs", children: [t.shell.modelOptions.fast, _jsx(Switch, { checked: fastOn, onCheckedChange: checked => void writeAgentDefault('agent.service_tier', checked ? 'fast' : 'normal'), size: "xs" })] }))] })), error && _jsx("div", { className: "mt-2 text-xs text-destructive", children: error }), switchStaleAux.length > 0 && (_jsx("div", { className: "mt-2", children: _jsx(StaleAuxWarning, { applying: applying, onReset: () => void resetAuxiliaryModels(), slots: switchStaleAux, taskLabel: auxiliaryTaskLabel }) }))] }), _jsxs("section", { children: [_jsxs("div", { className: "mb-2.5 flex items-center justify-between", children: [_jsx(SectionHeading, { icon: Cpu, title: m.auxiliaryTitle }), _jsx(Button, { disabled: !mainModel || applying, onClick: () => void resetAuxiliaryModels(), size: "sm", variant: "textStrong", children: m.resetAllToMain })] }), _jsx("p", { className: "mb-2 text-xs text-muted-foreground", children: m.auxiliaryDesc }), switchStaleAux.length === 0 && persistentStaleAux.length > 0 && (_jsx("div", { className: "mb-2.5", children: _jsx(StaleAuxWarning, { applying: applying, onReset: () => void resetAuxiliaryModels(), slots: persistentStaleAux, taskLabel: auxiliaryTaskLabel }) })), _jsx("div", { className: "grid gap-1", children: AUX_TASKS.map(meta => {
++                            : `${selectedProviderRow?.name} signs in through your browser — Nemesis runs the flow for you.` })), config && mainModel && (reasoningSupported || fastSupported) && (_jsxs("div", { className: "mt-3 flex flex-wrap items-center gap-x-6 gap-y-3", children: [_jsx("span", { className: "text-xs text-muted-foreground", children: m.defaultsLabel }), reasoningSupported && (_jsxs("div", { className: "flex items-center gap-2 text-xs", children: [m.reasoning, _jsxs(Select, { onValueChange: value => void writeAgentDefault('agent.reasoning_effort', value), value: effortValue, children: [_jsx(SelectTrigger, { className: cn('min-w-28', CONTROL_TEXT), children: _jsx(SelectValue, {}) }), _jsx(SelectContent, { children: EFFORT_VALUES.map(value => (_jsx(SelectItem, { value: value, children: value === 'none' ? m.reasoningOff : t.shell.modelOptions[effortLabelKey(value)] }, value))) })] })] })), fastSupported && (_jsxs("label", { className: "flex items-center gap-2 text-xs", children: [t.shell.modelOptions.fast, _jsx(Switch, { checked: fastOn, onCheckedChange: checked => void writeAgentDefault('agent.service_tier', checked ? 'fast' : 'normal'), size: "xs" })] }))] })), error && _jsx("div", { className: "mt-2 text-xs text-destructive", children: error }), switchStaleAux.length > 0 && (_jsx("div", { className: "mt-2", children: _jsx(StaleAuxWarning, { applying: applying, onReset: () => void resetAuxiliaryModels(), slots: switchStaleAux, taskLabel: auxiliaryTaskLabel }) }))] }), _jsxs("section", { children: [_jsxs("div", { className: "mb-2.5 flex items-center justify-between", children: [_jsx(SectionHeading, { icon: Cpu, title: m.auxiliaryTitle }), _jsx(Button, { disabled: !mainModel || applying, onClick: () => void resetAuxiliaryModels(), size: "sm", variant: "textStrong", children: m.resetAllToMain })] }), _jsx("p", { className: "mb-2 text-xs text-muted-foreground", children: m.auxiliaryDesc }), switchStaleAux.length === 0 && persistentStaleAux.length > 0 && (_jsx("div", { className: "mb-2.5", children: _jsx(StaleAuxWarning, { applying: applying, onReset: () => void resetAuxiliaryModels(), slots: persistentStaleAux, taskLabel: auxiliaryTaskLabel }) })), _jsx("div", { className: "grid gap-1", children: AUX_TASKS.map(meta => {
+                             const copy = m.tasks[meta.key] ?? { label: meta.key, hint: meta.key };
+                             const current = auxiliary?.tasks.find(entry => entry.task === meta.key);
+                             const isAuto = !current || !current.provider || current.provider === 'auto';
+diff --git a/apps/desktop/src/app/settings/uninstall-section.js b/apps/desktop/src/app/settings/uninstall-section.js
+index fe757c4..d9361de 100644
+--- a/apps/desktop/src/app/settings/uninstall-section.js
++++ b/apps/desktop/src/app/settings/uninstall-section.js
+@@ -8,7 +8,7 @@ const OPTIONS = [
+     {
+         mode: 'gui',
+         title: 'Uninstall Chat GUI only',
+-        description: 'Remove this desktop app. The Hermes agent, your config, and chats all stay.',
++        description: 'Remove this desktop app. The Nemesis agent, your config, and chats all stay.',
+         consequence: 'the desktop Chat GUI (this app and its data)',
+         needsAgent: false
+     },
+@@ -16,14 +16,14 @@ const OPTIONS = [
+         mode: 'lite',
+         title: 'Uninstall GUI + agent, keep my data',
+         description: 'Remove the app and the Hermes agent, but keep config, chats, and secrets for a future reinstall.',
+-        consequence: 'the Chat GUI and the Hermes agent (config, chats, and secrets are kept)',
++        consequence: 'the Chat GUI and the Nemesis agent (config, chats, and secrets are kept)',
+         needsAgent: true
+     },
+     {
+         mode: 'full',
+         title: 'Uninstall everything',
+         description: 'Remove the app, the agent, and all user data — config, chats, scheduled jobs, secrets, logs.',
+-        consequence: 'EVERYTHING — the Chat GUI, the Hermes agent, and all of your config, chats, secrets, and logs',
++        consequence: 'EVERYTHING — the Chat GUI, the Nemesis agent, and all of your config, chats, secrets, and logs',
+         // full removes the agent (and user data), so it's an agent-removing option:
+         // hide it on a lite client with no local agent, same as lite. A lite client
+         // connecting to a remote backend has no local agent OR local user data the
+@@ -93,7 +93,7 @@ export function UninstallSection() {
+         }
+     };
+     const pendingOption = OPTIONS.find(opt => opt.mode === pending) ?? null;
+-    return (_jsxs("div", { className: "mx-auto mt-8 w-full max-w-2xl", children: [_jsx(SectionHeading, { icon: AlertTriangle, title: "Danger zone" }), _jsx("div", { className: "rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3", children: loading ? (_jsxs("div", { className: "flex items-center gap-2 py-2 text-sm text-muted-foreground", children: [_jsx(Loader2, { className: "size-3.5 animate-spin" }), "Checking what's installed\u2026"] })) : pendingOption ? (_jsxs("div", { children: [_jsx("p", { className: "text-sm font-medium text-destructive", children: "Confirm uninstall" }), _jsxs("p", { className: "mt-1 text-xs text-muted-foreground", children: ["This removes ", pendingOption.consequence, ". This can't be undone."] }), summary?.running_app_path && (_jsxs("p", { className: "mt-1 font-mono text-[0.68rem] text-muted-foreground/60", children: ["App: ", summary.running_app_path] })), error && _jsx("p", { className: "mt-2 text-xs text-destructive", children: error }), _jsxs("div", { className: "mt-3 flex flex-wrap items-center gap-3", children: [_jsxs(Button, { disabled: running, onClick: () => void handleConfirm(), size: "sm", variant: "destructive", children: [running && _jsx(Loader2, { className: "size-3 animate-spin" }), running ? 'Uninstalling…' : 'Yes, uninstall'] }), _jsx(Button, { disabled: running, onClick: () => setPending(null), size: "sm", variant: "text", children: "Cancel" })] })] })) : (_jsxs("div", { className: "flex flex-col gap-2", children: [_jsx("p", { className: "text-sm font-medium", children: "Uninstall Hermes" }), _jsx("p", { className: "text-xs text-muted-foreground", children: "Choose how much to remove. The app closes to finish the job; reopen the installer any time to come back." }), _jsx("div", { className: "mt-1 flex flex-col gap-2", children: visibleOptions.map(opt => (_jsxs("button", { className: cn('flex items-start gap-3 rounded-lg border border-border/60 bg-background/40 px-3 py-2.5 text-left transition', 'hover:border-destructive/40 hover:bg-destructive/5'), onClick: () => {
++    return (_jsxs("div", { className: "mx-auto mt-8 w-full max-w-2xl", children: [_jsx(SectionHeading, { icon: AlertTriangle, title: "Danger zone" }), _jsx("div", { className: "rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3", children: loading ? (_jsxs("div", { className: "flex items-center gap-2 py-2 text-sm text-muted-foreground", children: [_jsx(Loader2, { className: "size-3.5 animate-spin" }), "Checking what's installed\u2026"] })) : pendingOption ? (_jsxs("div", { children: [_jsx("p", { className: "text-sm font-medium text-destructive", children: "Confirm uninstall" }), _jsxs("p", { className: "mt-1 text-xs text-muted-foreground", children: ["This removes ", pendingOption.consequence, ". This can't be undone."] }), summary?.running_app_path && (_jsxs("p", { className: "mt-1 font-mono text-[0.68rem] text-muted-foreground/60", children: ["App: ", summary.running_app_path] })), error && _jsx("p", { className: "mt-2 text-xs text-destructive", children: error }), _jsxs("div", { className: "mt-3 flex flex-wrap items-center gap-3", children: [_jsxs(Button, { disabled: running, onClick: () => void handleConfirm(), size: "sm", variant: "destructive", children: [running && _jsx(Loader2, { className: "size-3 animate-spin" }), running ? 'Uninstalling…' : 'Yes, uninstall'] }), _jsx(Button, { disabled: running, onClick: () => setPending(null), size: "sm", variant: "text", children: "Cancel" })] })] })) : (_jsxs("div", { className: "flex flex-col gap-2", children: [_jsx("p", { className: "text-sm font-medium", children: "Uninstall Nemesis" }), _jsx("p", { className: "text-xs text-muted-foreground", children: "Choose how much to remove. The app closes to finish the job; reopen the installer any time to come back." }), _jsx("div", { className: "mt-1 flex flex-col gap-2", children: visibleOptions.map(opt => (_jsxs("button", { className: cn('flex items-start gap-3 rounded-lg border border-border/60 bg-background/40 px-3 py-2.5 text-left transition', 'hover:border-destructive/40 hover:bg-destructive/5'), onClick: () => {
+                                     setError(null);
+                                     setPending(opt.mode);
+                                 }, type: "button", children: [_jsx(Trash2, { className: "mt-0.5 size-4 shrink-0 text-muted-foreground" }), _jsxs("span", { className: "min-w-0", children: [_jsx("span", { className: "block text-sm font-medium text-foreground", children: opt.title }), _jsx("span", { className: "mt-0.5 block text-xs text-muted-foreground", children: opt.description })] })] }, opt.mode))) })] })) })] }));
+diff --git a/apps/desktop/src/app/study/import-cards.js b/apps/desktop/src/app/study/import-cards.js
+new file mode 100644
+index 0000000..7ab4394
+--- /dev/null
++++ b/apps/desktop/src/app/study/import-cards.js
+@@ -0,0 +1,33 @@
++// Paste-import parser for the Study page. Quizlet has no public API (2026) and its
++// export is copy-paste text, so this accepts exactly what students can get out of it:
++// one card per line, term/definition split by TAB (Quizlet's default), " - " (its
++// common custom separator), or a comma as the last resort. Also fine for hand-typed
++// lists and CSV-ish exports from other tools.
++const LINE_SPLIT = /\r?\n/;
++export function parseCardPaste(text) {
++    const cards = [];
++    for (const rawLine of text.split(LINE_SPLIT)) {
++        const line = rawLine.trim();
++        if (!line) {
++            continue;
++        }
++        const parsed = splitLine(line);
++        if (parsed) {
++            cards.push(parsed);
++        }
++    }
++    return cards;
++}
++function splitLine(line) {
++    for (const separator of ['\t', ' - ', ',']) {
++        const at = line.indexOf(separator);
++        if (at > 0 && at < line.length - separator.length) {
++            const front = line.slice(0, at).trim();
++            const back = line.slice(at + separator.length).trim();
++            if (front && back) {
++                return { back, front };
++            }
++        }
++    }
++    return null;
++}
+diff --git a/apps/desktop/src/app/study/import-cards.ts b/apps/desktop/src/app/study/import-cards.ts
+new file mode 100644
+index 0000000..eabbd1b
+--- /dev/null
++++ b/apps/desktop/src/app/study/import-cards.ts
+@@ -0,0 +1,49 @@
++// Paste-import parser for the Study page. Quizlet has no public API (2026) and its
++// export is copy-paste text, so this accepts exactly what students can get out of it:
++// one card per line, term/definition split by TAB (Quizlet's default), " - " (its
++// common custom separator), or a comma as the last resort. Also fine for hand-typed
++// lists and CSV-ish exports from other tools.
++
++export interface ParsedCard {
++  front: string
++  back: string
++}
++
++const LINE_SPLIT = /\r?\n/
++
++export function parseCardPaste(text: string): ParsedCard[] {
++  const cards: ParsedCard[] = []
++
++  for (const rawLine of text.split(LINE_SPLIT)) {
++    const line = rawLine.trim()
++
++    if (!line) {
++      continue
++    }
++
++    const parsed = splitLine(line)
++
++    if (parsed) {
++      cards.push(parsed)
++    }
++  }
++
++  return cards
++}
++
++function splitLine(line: string): ParsedCard | null {
++  for (const separator of ['\t', ' - ', ',']) {
++    const at = line.indexOf(separator)
++
++    if (at > 0 && at < line.length - separator.length) {
++      const front = line.slice(0, at).trim()
++      const back = line.slice(at + separator.length).trim()
++
++      if (front && back) {
++        return { back, front }
++      }
++    }
++  }
++
++  return null
++}
+diff --git a/apps/desktop/src/app/study/index.js b/apps/desktop/src/app/study/index.js
+new file mode 100644
+index 0000000..4329c66
+--- /dev/null
++++ b/apps/desktop/src/app/study/index.js
+@@ -0,0 +1,132 @@
++import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
++// Study — Anki-style spaced repetition over FSRS (see model.ts for the algorithm/licensing
++// note). Interaction model deliberately mirrors what health-science students already have
++// as muscle memory from Anki: deck browser with due badges → flip card (Space) →
++// Again/Hard/Good/Easy (1-4), with the next-interval hint under each grade button.
++import { useCallback, useEffect, useMemo, useState } from 'react';
++import { Badge } from '@/components/ui/badge';
++import { Button } from '@/components/ui/button';
++import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
++import { EmptyState } from '@/components/ui/empty-state';
++import { Input } from '@/components/ui/input';
++import { Textarea } from '@/components/ui/textarea';
++import { cn } from '@/lib/utils';
++import { parseCardPaste } from './import-cards';
++import { buildQueue, deckStats, freshId, gradeCard, loadState, previewIntervals, saveState } from './model';
++const GRADES = [
++    { key: '1', label: 'Again', rating: 'again' },
++    { key: '2', label: 'Hard', rating: 'hard' },
++    { key: '3', label: 'Good', rating: 'good' },
++    { key: '4', label: 'Easy', rating: 'easy' }
++];
++export function StudyView() {
++    const [state, setState] = useState(() => loadState());
++    const [reviewDeckId, setReviewDeckId] = useState(null);
++    const [reviewing, setReviewing] = useState(false);
++    const [revealed, setRevealed] = useState(false);
++    const [importOpen, setImportOpen] = useState(false);
++    const [done, setDone] = useState(0);
++    const now = useMemo(() => new Date(), [state, reviewing]);
++    const queue = useMemo(() => (reviewing ? buildQueue(state, reviewDeckId, now) : []), [state, reviewDeckId, reviewing, now]);
++    const current = queue[0];
++    const totals = deckStats(state, null, now);
++    const update = useCallback((next) => {
++        setState(next);
++        saveState(next);
++    }, []);
++    const startReview = useCallback((deckId) => {
++        setReviewDeckId(deckId);
++        setReviewing(true);
++        setRevealed(false);
++        setDone(0);
++    }, []);
++    const exitReview = useCallback(() => {
++        setReviewing(false);
++        setRevealed(false);
++    }, []);
++    const grade = useCallback((rating) => {
++        if (!current) {
++            return;
++        }
++        update(gradeCard(state, current.card.id, rating, new Date()));
++        setRevealed(false);
++        setDone(count => count + 1);
++    }, [current, state, update]);
++    // Anki muscle memory: Space/Enter flips, 1-4 grades, Escape leaves the session.
++    useEffect(() => {
++        if (!reviewing) {
++            return;
++        }
++        const onKey = (event) => {
++            const target = event.target;
++            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
++                return;
++            }
++            if (event.key === 'Escape') {
++                exitReview();
++                return;
++            }
++            if (!current) {
++                return;
++            }
++            if (!revealed && (event.key === ' ' || event.key === 'Enter')) {
++                event.preventDefault();
++                setRevealed(true);
++                return;
++            }
++            if (revealed) {
++                const match = GRADES.find(option => option.key === event.key);
++                if (match) {
++                    event.preventDefault();
++                    grade(match.rating);
++                }
++            }
++        };
++        window.addEventListener('keydown', onKey);
++        return () => window.removeEventListener('keydown', onKey);
++    }, [current, exitReview, grade, revealed, reviewing]);
++    const importCards = useCallback((name, course, text) => {
++        const parsed = parseCardPaste(text);
++        if (!parsed.length) {
++            return false;
++        }
++        const deck = {
++            id: freshId('deck'),
++            name: name.trim() || 'Imported deck',
++            course: course.trim() || undefined,
++            createdAt: new Date().toISOString(),
++            cards: parsed.map(card => ({ id: freshId('card'), front: card.front, back: card.back, tags: [] }))
++        };
++        update({ ...state, decks: [...state.decks, deck] });
++        setImportOpen(false);
++        return true;
++    }, [state, update]);
++    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "flex shrink-0 items-center justify-between gap-3 px-6 pb-3 pt-5", children: [_jsxs("div", { children: [_jsx("h1", { className: "text-lg font-semibold", children: "Study" }), _jsxs("p", { className: "text-xs text-muted-foreground", children: [totals.due, " due \u00B7 ", totals.fresh, " new \u00B7 ", totals.total, " cards"] })] }), _jsx("div", { className: "flex items-center gap-2", children: reviewing ? (_jsx(Button, { onClick: exitReview, size: "sm", variant: "outline", children: "Back to decks" })) : (_jsxs(_Fragment, { children: [_jsx(Button, { onClick: () => setImportOpen(true), size: "sm", variant: "outline", children: "Import cards" }), _jsx(Button, { disabled: totals.due === 0, onClick: () => startReview(null), size: "sm", children: "Study all" })] })) })] }), reviewing ? (current ? (_jsx(ReviewSurface, { done: done, item: current, intervals: previewIntervals(state, current.card.id, now), onGrade: grade, onReveal: () => setRevealed(true), remaining: queue.length, revealed: revealed })) : (_jsx(EmptyState, { className: "flex-1", description: done > 0 ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.` : 'Nothing is due right now.', title: "All caught up" }))) : (_jsx(DeckGrid, { onStudy: startReview, state: state })), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen })] }));
++}
++function DeckGrid({ onStudy, state }) {
++    const now = new Date();
++    if (!state.decks.length) {
++        return _jsx(EmptyState, { className: "flex-1", description: "Import cards to build your first deck.", title: "No decks yet" });
++    }
++    return (_jsx("div", { className: "grid grid-cols-1 gap-3 px-6 pb-6 md:grid-cols-2 xl:grid-cols-3", children: state.decks.map(deck => {
++            const stats = deckStats(state, deck.id, now);
++            return (_jsxs("div", { className: "flex flex-col gap-3 rounded-lg border border-border bg-card p-4", children: [_jsxs("div", { className: "min-w-0", children: [_jsxs("div", { className: "flex items-start justify-between gap-2", children: [_jsx("div", { className: "truncate text-sm font-medium", children: deck.name }), stats.due > 0 && _jsxs(Badge, { variant: "muted", children: [stats.due, " due"] })] }), _jsxs("div", { className: "mt-1 text-xs text-muted-foreground", children: [deck.course ? `${deck.course} · ` : '', stats.total, " cards \u00B7 ", stats.fresh, " new"] })] }), _jsx("div", { className: "mt-auto", children: _jsx(Button, { disabled: stats.due === 0, onClick: () => onStudy(deck.id), size: "sm", variant: "secondary", children: stats.due > 0 ? 'Study' : 'Done for now' }) })] }, deck.id));
++        }) }));
++}
++function ReviewSurface({ done, intervals, item, onGrade, onReveal, remaining, revealed }) {
++    return (_jsx("div", { className: "flex flex-1 flex-col items-center px-6 pb-8", children: _jsxs("div", { className: "flex w-full max-w-2xl flex-1 flex-col", children: [_jsxs("div", { className: "flex items-center justify-between pb-3 text-xs text-muted-foreground", children: [_jsxs("span", { className: "truncate", children: [item.deckName, item.isNew && (_jsx(Badge, { className: "ml-2", variant: "outline", children: "new" }))] }), _jsxs("span", { children: [done, " done \u00B7 ", remaining, " left"] })] }), _jsxs("div", { className: "flex min-h-64 flex-1 flex-col justify-center gap-5 rounded-lg border border-border bg-card p-8", children: [_jsx("div", { className: "text-base leading-relaxed", children: item.card.front }), revealed && (_jsxs(_Fragment, { children: [_jsx("div", { className: "border-t border-border" }), _jsx("div", { className: "text-base leading-relaxed text-muted-foreground", children: item.card.back })] }))] }), _jsx("div", { className: "pt-4", children: revealed ? (_jsx("div", { className: "grid grid-cols-4 gap-2", children: GRADES.map(option => (_jsxs(Button, { className: cn('flex-col gap-0.5 py-5', option.rating === 'again' && 'text-destructive'), onClick: () => onGrade(option.rating), variant: "secondary", children: [_jsx("span", { children: option.label }), _jsxs("span", { className: "text-[10px] opacity-60", children: [intervals[option.rating], " \u00B7 ", option.key] })] }, option.rating))) })) : (_jsxs(Button, { className: "w-full py-5", onClick: onReveal, variant: "secondary", children: ["Show answer ", _jsx("span", { className: "ml-2 text-[10px] opacity-60", children: "Space" })] })) })] }) }));
++}
++function ImportDialog({ onImport, onOpenChange, open }) {
++    const [name, setName] = useState('');
++    const [course, setCourse] = useState('');
++    const [text, setText] = useState('');
++    const parsedCount = useMemo(() => parseCardPaste(text).length, [text]);
++    const submit = () => {
++        if (onImport(name, course, text)) {
++            setName('');
++            setCourse('');
++            setText('');
++        }
++    };
++    return (_jsx(Dialog, { onOpenChange: onOpenChange, open: open, children: _jsxs(DialogContent, { className: "sm:max-w-lg", children: [_jsxs(DialogHeader, { children: [_jsx(DialogTitle, { children: "Import cards" }), _jsx(DialogDescription, { children: "Paste one card per line \u2014 term and definition separated by a tab (Quizlet export), \u201C - \u201D, or a comma." })] }), _jsxs("div", { className: "flex flex-col gap-3", children: [_jsx(Input, { onChange: event => setName(event.target.value), placeholder: "Deck name", value: name }), _jsx(Input, { onChange: event => setCourse(event.target.value), placeholder: "Course (optional)", value: course }), _jsx(Textarea, { className: "min-h-40 font-mono text-xs", onChange: event => setText(event.target.value), placeholder: 'lisinopril\tACE inhibitor — dry cough via bradykinin\nmetoprolol - beta-1 selective blocker', value: text }), _jsx("div", { className: "text-xs text-muted-foreground", children: parsedCount > 0 ? `${parsedCount} card${parsedCount === 1 ? '' : 's'} detected` : 'No cards detected yet' })] }), _jsxs(DialogFooter, { children: [_jsx(Button, { onClick: () => onOpenChange(false), variant: "outline", children: "Cancel" }), _jsx(Button, { disabled: parsedCount === 0, onClick: submit, children: "Create deck" })] })] }) }));
++}
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+new file mode 100644
+index 0000000..c91be57
+--- /dev/null
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -0,0 +1,374 @@
++// Study — Anki-style spaced repetition over FSRS (see model.ts for the algorithm/licensing
++// note). Interaction model deliberately mirrors what health-science students already have
++// as muscle memory from Anki: deck browser with due badges → flip card (Space) →
++// Again/Hard/Good/Easy (1-4), with the next-interval hint under each grade button.
++import { useCallback, useEffect, useMemo, useState } from 'react'
++
++import { Badge } from '@/components/ui/badge'
++import { Button } from '@/components/ui/button'
++import {
++  Dialog,
++  DialogContent,
++  DialogDescription,
++  DialogFooter,
++  DialogHeader,
++  DialogTitle
++} from '@/components/ui/dialog'
++import { EmptyState } from '@/components/ui/empty-state'
++import { Input } from '@/components/ui/input'
++import { Textarea } from '@/components/ui/textarea'
++import { cn } from '@/lib/utils'
++
++import { parseCardPaste } from './import-cards'
++import {
++  buildQueue,
++  deckStats,
++  freshId,
++  gradeCard,
++  loadState,
++  previewIntervals,
++  type QueueItem,
++  saveState,
++  type StudyDeck,
++  type StudyRating,
++  type StudyState
++} from './model'
++
++const GRADES: { key: string; label: string; rating: StudyRating }[] = [
++  { key: '1', label: 'Again', rating: 'again' },
++  { key: '2', label: 'Hard', rating: 'hard' },
++  { key: '3', label: 'Good', rating: 'good' },
++  { key: '4', label: 'Easy', rating: 'easy' }
++]
++
++export function StudyView() {
++  const [state, setState] = useState<StudyState>(() => loadState())
++  const [reviewDeckId, setReviewDeckId] = useState<null | string>(null)
++  const [reviewing, setReviewing] = useState(false)
++  const [revealed, setRevealed] = useState(false)
++  const [importOpen, setImportOpen] = useState(false)
++  const [done, setDone] = useState(0)
++
++  const now = useMemo(() => new Date(), [state, reviewing])
++  const queue = useMemo(() => (reviewing ? buildQueue(state, reviewDeckId, now) : []), [state, reviewDeckId, reviewing, now])
++  const current: QueueItem | undefined = queue[0]
++  const totals = deckStats(state, null, now)
++
++  const update = useCallback((next: StudyState) => {
++    setState(next)
++    saveState(next)
++  }, [])
++
++  const startReview = useCallback((deckId: null | string) => {
++    setReviewDeckId(deckId)
++    setReviewing(true)
++    setRevealed(false)
++    setDone(0)
++  }, [])
++
++  const exitReview = useCallback(() => {
++    setReviewing(false)
++    setRevealed(false)
++  }, [])
++
++  const grade = useCallback(
++    (rating: StudyRating) => {
++      if (!current) {
++        return
++      }
++
++      update(gradeCard(state, current.card.id, rating, new Date()))
++      setRevealed(false)
++      setDone(count => count + 1)
++    },
++    [current, state, update]
++  )
++
++  // Anki muscle memory: Space/Enter flips, 1-4 grades, Escape leaves the session.
++  useEffect(() => {
++    if (!reviewing) {
++      return
++    }
++
++    const onKey = (event: KeyboardEvent) => {
++      const target = event.target as HTMLElement | null
++
++      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
++        return
++      }
++
++      if (event.key === 'Escape') {
++        exitReview()
++
++        return
++      }
++
++      if (!current) {
++        return
++      }
++
++      if (!revealed && (event.key === ' ' || event.key === 'Enter')) {
++        event.preventDefault()
++        setRevealed(true)
++
++        return
++      }
++
++      if (revealed) {
++        const match = GRADES.find(option => option.key === event.key)
++
++        if (match) {
++          event.preventDefault()
++          grade(match.rating)
++        }
++      }
++    }
++
++    window.addEventListener('keydown', onKey)
++
++    return () => window.removeEventListener('keydown', onKey)
++  }, [current, exitReview, grade, revealed, reviewing])
++
++  const importCards = useCallback(
++    (name: string, course: string, text: string) => {
++      const parsed = parseCardPaste(text)
++
++      if (!parsed.length) {
++        return false
++      }
++
++      const deck: StudyDeck = {
++        id: freshId('deck'),
++        name: name.trim() || 'Imported deck',
++        course: course.trim() || undefined,
++        createdAt: new Date().toISOString(),
++        cards: parsed.map(card => ({ id: freshId('card'), front: card.front, back: card.back, tags: [] }))
++      }
++
++      update({ ...state, decks: [...state.decks, deck] })
++      setImportOpen(false)
++
++      return true
++    },
++    [state, update]
++  )
++
++  return (
++    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
++      <header className="flex shrink-0 items-center justify-between gap-3 px-6 pb-3 pt-5">
++        <div>
++          <h1 className="text-lg font-semibold">Study</h1>
++          <p className="text-xs text-muted-foreground">
++            {totals.due} due · {totals.fresh} new · {totals.total} cards
++          </p>
++        </div>
++        <div className="flex items-center gap-2">
++          {reviewing ? (
++            <Button onClick={exitReview} size="sm" variant="outline">
++              Back to decks
++            </Button>
++          ) : (
++            <>
++              <Button onClick={() => setImportOpen(true)} size="sm" variant="outline">
++                Import cards
++              </Button>
++              <Button disabled={totals.due === 0} onClick={() => startReview(null)} size="sm">
++                Study all
++              </Button>
++            </>
++          )}
++        </div>
++      </header>
++
++      {reviewing ? (
++        current ? (
++          <ReviewSurface
++            done={done}
++            item={current}
++            intervals={previewIntervals(state, current.card.id, now)}
++            onGrade={grade}
++            onReveal={() => setRevealed(true)}
++            remaining={queue.length}
++            revealed={revealed}
++          />
++        ) : (
++          <EmptyState
++            className="flex-1"
++            description={done > 0 ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.` : 'Nothing is due right now.'}
++            title="All caught up"
++          />
++        )
++      ) : (
++        <DeckGrid onStudy={startReview} state={state} />
++      )}
++
++      <ImportDialog onImport={importCards} onOpenChange={setImportOpen} open={importOpen} />
++    </div>
++  )
++}
++
++function DeckGrid({ onStudy, state }: { onStudy: (deckId: string) => void; state: StudyState }) {
++  const now = new Date()
++
++  if (!state.decks.length) {
++    return <EmptyState className="flex-1" description="Import cards to build your first deck." title="No decks yet" />
++  }
++
++  return (
++    <div className="grid grid-cols-1 gap-3 px-6 pb-6 md:grid-cols-2 xl:grid-cols-3">
++      {state.decks.map(deck => {
++        const stats = deckStats(state, deck.id, now)
++
++        return (
++          <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4" key={deck.id}>
++            <div className="min-w-0">
++              <div className="flex items-start justify-between gap-2">
++                <div className="truncate text-sm font-medium">{deck.name}</div>
++                {stats.due > 0 && <Badge variant="muted">{stats.due} due</Badge>}
++              </div>
++              <div className="mt-1 text-xs text-muted-foreground">
++                {deck.course ? `${deck.course} · ` : ''}
++                {stats.total} cards · {stats.fresh} new
++              </div>
++            </div>
++            <div className="mt-auto">
++              <Button disabled={stats.due === 0} onClick={() => onStudy(deck.id)} size="sm" variant="secondary">
++                {stats.due > 0 ? 'Study' : 'Done for now'}
++              </Button>
++            </div>
++          </div>
++        )
++      })}
++    </div>
++  )
++}
++
++function ReviewSurface({
++  done,
++  intervals,
++  item,
++  onGrade,
++  onReveal,
++  remaining,
++  revealed
++}: {
++  done: number
++  intervals: Record<StudyRating, string>
++  item: QueueItem
++  onGrade: (rating: StudyRating) => void
++  onReveal: () => void
++  remaining: number
++  revealed: boolean
++}) {
++  return (
++    <div className="flex flex-1 flex-col items-center px-6 pb-8">
++      <div className="flex w-full max-w-2xl flex-1 flex-col">
++        <div className="flex items-center justify-between pb-3 text-xs text-muted-foreground">
++          <span className="truncate">
++            {item.deckName}
++            {item.isNew && (
++              <Badge className="ml-2" variant="outline">
++                new
++              </Badge>
++            )}
++          </span>
++          <span>
++            {done} done · {remaining} left
++          </span>
++        </div>
++
++        <div className="flex min-h-64 flex-1 flex-col justify-center gap-5 rounded-lg border border-border bg-card p-8">
++          <div className="text-base leading-relaxed">{item.card.front}</div>
++          {revealed && (
++            <>
++              <div className="border-t border-border" />
++              <div className="text-base leading-relaxed text-muted-foreground">{item.card.back}</div>
++            </>
++          )}
++        </div>
++
++        <div className="pt-4">
++          {revealed ? (
++            <div className="grid grid-cols-4 gap-2">
++              {GRADES.map(option => (
++                <Button
++                  className={cn('flex-col gap-0.5 py-5', option.rating === 'again' && 'text-destructive')}
++                  key={option.rating}
++                  onClick={() => onGrade(option.rating)}
++                  variant="secondary"
++                >
++                  <span>{option.label}</span>
++                  <span className="text-[10px] opacity-60">
++                    {intervals[option.rating]} · {option.key}
++                  </span>
++                </Button>
++              ))}
++            </div>
++          ) : (
++            <Button className="w-full py-5" onClick={onReveal} variant="secondary">
++              Show answer <span className="ml-2 text-[10px] opacity-60">Space</span>
++            </Button>
++          )}
++        </div>
++      </div>
++    </div>
++  )
++}
++
++function ImportDialog({
++  onImport,
++  onOpenChange,
++  open
++}: {
++  onImport: (name: string, course: string, text: string) => boolean
++  onOpenChange: (open: boolean) => void
++  open: boolean
++}) {
++  const [name, setName] = useState('')
++  const [course, setCourse] = useState('')
++  const [text, setText] = useState('')
++
++  const parsedCount = useMemo(() => parseCardPaste(text).length, [text])
++
++  const submit = () => {
++    if (onImport(name, course, text)) {
++      setName('')
++      setCourse('')
++      setText('')
++    }
++  }
++
++  return (
++    <Dialog onOpenChange={onOpenChange} open={open}>
++      <DialogContent className="sm:max-w-lg">
++        <DialogHeader>
++          <DialogTitle>Import cards</DialogTitle>
++          <DialogDescription>
++            Paste one card per line — term and definition separated by a tab (Quizlet export), “ - ”, or a comma.
++          </DialogDescription>
++        </DialogHeader>
++        <div className="flex flex-col gap-3">
++          <Input onChange={event => setName(event.target.value)} placeholder="Deck name" value={name} />
++          <Input onChange={event => setCourse(event.target.value)} placeholder="Course (optional)" value={course} />
++          <Textarea
++            className="min-h-40 font-mono text-xs"
++            onChange={event => setText(event.target.value)}
++            placeholder={'lisinopril\tACE inhibitor — dry cough via bradykinin\nmetoprolol - beta-1 selective blocker'}
++            value={text}
++          />
++          <div className="text-xs text-muted-foreground">
++            {parsedCount > 0 ? `${parsedCount} card${parsedCount === 1 ? '' : 's'} detected` : 'No cards detected yet'}
++          </div>
++        </div>
++        <DialogFooter>
++          <Button onClick={() => onOpenChange(false)} variant="outline">
++            Cancel
++          </Button>
++          <Button disabled={parsedCount === 0} onClick={submit}>
++            Create deck
++          </Button>
++        </DialogFooter>
++      </DialogContent>
++    </Dialog>
++  )
++}
+diff --git a/apps/desktop/src/app/study/model.js b/apps/desktop/src/app/study/model.js
+new file mode 100644
+index 0000000..4f23487
+--- /dev/null
++++ b/apps/desktop/src/app/study/model.js
+@@ -0,0 +1,163 @@
++// Study page data model: decks + FSRS spaced-repetition scheduling + persistence.
++// Scheduling is ts-fsrs (MIT) — the same FSRS algorithm modern Anki defaults to. We
++// deliberately embed zero Anki code (AGPL); only the algorithm family is shared, so
++// review math stays compatible with the decks students already know.
++// v1 persistence is a small localStorage JSON blob (same pattern as store/onboarding);
++// the upgrade path is backend/vault storage once Nemesis accounts land.
++import { createEmptyCard, fsrs, Rating } from 'ts-fsrs';
++const STORAGE_KEY = 'nemesis.study.v1';
++const QUEUE_LIMIT = 200;
++const scheduler = fsrs();
++const RATING = {
++    again: Rating.Again,
++    easy: Rating.Easy,
++    good: Rating.Good,
++    hard: Rating.Hard
++};
++/** JSON round-trips turn the FSRS Dates into strings; ts-fsrs needs real Dates back. */
++function revive(stored) {
++    return {
++        ...stored,
++        due: new Date(stored.due),
++        last_review: stored.last_review ? new Date(stored.last_review) : undefined
++    };
++}
++function freeze(card) {
++    return {
++        ...card,
++        due: card.due.toISOString(),
++        last_review: card.last_review ? card.last_review.toISOString() : undefined
++    };
++}
++function isDue(stored, now) {
++    if (!stored) {
++        return true; // never studied → new → due
++    }
++    return new Date(stored.due).getTime() <= now.getTime();
++}
++export function loadState() {
++    try {
++        const raw = window.localStorage.getItem(STORAGE_KEY);
++        if (raw) {
++            const parsed = JSON.parse(raw);
++            if (parsed && parsed.version === 1 && Array.isArray(parsed.decks)) {
++                return parsed;
++            }
++        }
++    }
++    catch {
++        // corrupted blob → fall through to a fresh seeded state
++    }
++    return { version: 1, decks: [seedDeck()], schedule: {}, reviews: [] };
++}
++export function saveState(state) {
++    try {
++        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
++    }
++    catch {
++        // quota/private-mode failures are non-fatal; the session keeps working in memory
++    }
++}
++/** Review queue: due reviews first, then new cards, capped. Pure. */
++export function buildQueue(state, deckId, now) {
++    const queue = [];
++    for (const deck of state.decks) {
++        if (deckId && deck.id !== deckId) {
++            continue;
++        }
++        for (const card of deck.cards) {
++            const stored = state.schedule[card.id];
++            if (isDue(stored, now)) {
++                queue.push({ card, deckId: deck.id, deckName: deck.name, isNew: !stored });
++            }
++        }
++    }
++    queue.sort((a, b) => (a.isNew ? 1 : 0) - (b.isNew ? 1 : 0));
++    return queue.slice(0, QUEUE_LIMIT);
++}
++export function deckStats(state, deckId, now) {
++    let due = 0;
++    let fresh = 0;
++    let total = 0;
++    for (const deck of state.decks) {
++        if (deckId && deck.id !== deckId) {
++            continue;
++        }
++        for (const card of deck.cards) {
++            total++;
++            const stored = state.schedule[card.id];
++            if (!stored) {
++                fresh++;
++                due++;
++            }
++            else if (isDue(stored, now)) {
++                due++;
++            }
++        }
++    }
++    return { due, fresh, total };
++}
++/** Grade a card → next state (immutable: returns a new StudyState). */
++export function gradeCard(state, cardId, rating, now) {
++    const stored = state.schedule[cardId];
++    const current = stored ? revive(stored) : createEmptyCard(now);
++    const outcome = scheduler.repeat(current, now)[RATING[rating]];
++    return {
++        ...state,
++        schedule: { ...state.schedule, [cardId]: freeze(outcome.card) },
++        reviews: [...state.reviews, { cardId, rating, at: now.toISOString() }]
++    };
++}
++/** Interval each grade would schedule, humanized — the hint row under the grade buttons. */
++export function previewIntervals(state, cardId, now) {
++    const stored = state.schedule[cardId];
++    const current = stored ? revive(stored) : createEmptyCard(now);
++    const outcome = scheduler.repeat(current, now);
++    const label = (grade) => humanizeGap(outcome[grade].card.due.getTime() - now.getTime());
++    return {
++        again: label(Rating.Again),
++        easy: label(Rating.Easy),
++        good: label(Rating.Good),
++        hard: label(Rating.Hard)
++    };
++}
++function humanizeGap(ms) {
++    const minutes = Math.max(1, Math.round(ms / 60_000));
++    if (minutes < 60) {
++        return `${minutes}m`;
++    }
++    const hours = Math.round(minutes / 60);
++    if (hours < 24) {
++        return `${hours}h`;
++    }
++    const days = Math.round(hours / 24);
++    if (days < 31) {
++        return `${days}d`;
++    }
++    return `${Math.round(days / 30)}mo`;
++}
++let idCounter = 0;
++export function freshId(prefix) {
++    idCounter += 1;
++    return `${prefix}-${Date.now().toString(36)}-${idCounter.toString(36)}`;
++}
++/** Demo deck so the page teaches itself on first open. Application-level pharm cards, not "what is X" filler. */
++function seedDeck() {
++    const card = (front, back, tags) => ({ id: freshId('card'), front, back, tags });
++    return {
++        id: freshId('deck'),
++        name: 'Cardio pharm essentials (demo)',
++        course: 'Pharmacology',
++        createdAt: new Date().toISOString(),
++        cards: [
++            card('A patient on lisinopril develops a persistent dry cough. What is the mechanism, and what class do you switch to?', 'ACE inhibition lets bradykinin accumulate in the airways → cough. Switch to an ARB (e.g. losartan): blocks AT1 directly, spares bradykinin degradation.', ['ace-inhibitors', 'adverse-effects']),
++            card('Why are ACE inhibitors contraindicated in pregnancy?', 'Fetal renal toxicity (oligohydramnios, renal dysgenesis) — all RAAS blockers are contraindicated.', ['ace-inhibitors', 'contraindications']),
++            card('What two labs do you check after starting an ACE inhibitor, and why?', 'Potassium (hyperkalemia risk) and serum creatinine (efferent-arteriole dilation can drop GFR, especially with renal artery stenosis).', ['ace-inhibitors', 'monitoring']),
++            card('Furosemide vs hydrochlorothiazide: site of action and the classic electrolyte signature of each.', 'Furosemide — thick ascending limb (Na-K-2Cl); potent, causes hypokalemia + hypocalcemia. HCTZ — distal tubule (Na-Cl); milder, hypokalemia + HYPERcalcemia.', ['diuretics']),
++            card('A heart-failure patient on spironolactone and lisinopril has K⁺ 6.1. Which drug interaction explains it?', 'Both raise potassium: aldosterone antagonism (spironolactone) + reduced aldosterone via ACE inhibition. Additive hyperkalemia — hold/adjust and recheck.', ['heart-failure', 'interactions']),
++            card('Metoprolol is preferred over propranolol in an asthmatic patient who needs a beta blocker. Why?', 'Metoprolol is β1-selective at usual doses — less β2 bronchoconstriction. Propranolol is non-selective and can trigger bronchospasm.', ['beta-blockers']),
++            card('Which statin adverse effect do you screen for when a patient reports new diffuse muscle pain, and with what lab?', 'Myopathy/rhabdomyolysis — check creatine kinase (CK). Risk rises with interacting CYP3A4 inhibitors (e.g. clarithromycin) and high-intensity dosing.', ['statins', 'monitoring']),
++            card('Warfarin patient starts TMP-SMX for a UTI. What happens to the INR and why?', 'INR rises — TMP-SMX inhibits CYP2C9 (warfarin metabolism) and displaces protein binding. Bleeding risk: monitor INR closely or pick another agent.', ['anticoagulants', 'interactions'])
++        ]
++    };
++}
+diff --git a/apps/desktop/src/app/study/model.ts b/apps/desktop/src/app/study/model.ts
+new file mode 100644
+index 0000000..40096fa
+--- /dev/null
++++ b/apps/desktop/src/app/study/model.ts
+@@ -0,0 +1,280 @@
++// Study page data model: decks + FSRS spaced-repetition scheduling + persistence.
++// Scheduling is ts-fsrs (MIT) — the same FSRS algorithm modern Anki defaults to. We
++// deliberately embed zero Anki code (AGPL); only the algorithm family is shared, so
++// review math stays compatible with the decks students already know.
++// v1 persistence is a small localStorage JSON blob (same pattern as store/onboarding);
++// the upgrade path is backend/vault storage once Nemesis accounts land.
++import { createEmptyCard, fsrs, type Card as FsrsCard, type Grade, Rating } from 'ts-fsrs'
++
++export interface StudyCard {
++  id: string
++  front: string
++  back: string
++  tags: string[]
++}
++
++export interface StudyDeck {
++  id: string
++  name: string
++  course?: string
++  createdAt: string
++  cards: StudyCard[]
++}
++
++/** JSON-safe FSRS card state (Dates serialized to ISO strings). */
++export type StoredSchedule = Omit<FsrsCard, 'due' | 'last_review'> & { due: string; last_review?: string }
++
++export interface ReviewEntry {
++  cardId: string
++  rating: StudyRating
++  at: string
++}
++
++export interface StudyState {
++  version: 1
++  decks: StudyDeck[]
++  /** cardId → FSRS schedule. Absent = never studied (new). */
++  schedule: Record<string, StoredSchedule>
++  /** Append-only review log (feeds the future heatmap). */
++  reviews: ReviewEntry[]
++}
++
++export type StudyRating = 'again' | 'easy' | 'good' | 'hard'
++
++export interface QueueItem {
++  card: StudyCard
++  deckId: string
++  deckName: string
++  isNew: boolean
++}
++
++const STORAGE_KEY = 'nemesis.study.v1'
++const QUEUE_LIMIT = 200
++
++const scheduler = fsrs()
++
++const RATING: Record<StudyRating, Grade> = {
++  again: Rating.Again,
++  easy: Rating.Easy,
++  good: Rating.Good,
++  hard: Rating.Hard
++}
++
++/** JSON round-trips turn the FSRS Dates into strings; ts-fsrs needs real Dates back. */
++function revive(stored: StoredSchedule): FsrsCard {
++  return {
++    ...stored,
++    due: new Date(stored.due),
++    last_review: stored.last_review ? new Date(stored.last_review) : undefined
++  } as FsrsCard
++}
++
++function freeze(card: FsrsCard): StoredSchedule {
++  return {
++    ...card,
++    due: card.due.toISOString(),
++    last_review: card.last_review ? card.last_review.toISOString() : undefined
++  } as StoredSchedule
++}
++
++function isDue(stored: StoredSchedule | undefined, now: Date): boolean {
++  if (!stored) {
++    return true // never studied → new → due
++  }
++
++  return new Date(stored.due).getTime() <= now.getTime()
++}
++
++export function loadState(): StudyState {
++  try {
++    const raw = window.localStorage.getItem(STORAGE_KEY)
++
++    if (raw) {
++      const parsed = JSON.parse(raw) as StudyState
++
++      if (parsed && parsed.version === 1 && Array.isArray(parsed.decks)) {
++        return parsed
++      }
++    }
++  } catch {
++    // corrupted blob → fall through to a fresh seeded state
++  }
++
++  return { version: 1, decks: [seedDeck()], schedule: {}, reviews: [] }
++}
++
++export function saveState(state: StudyState): void {
++  try {
++    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
++  } catch {
++    // quota/private-mode failures are non-fatal; the session keeps working in memory
++  }
++}
++
++/** Review queue: due reviews first, then new cards, capped. Pure. */
++export function buildQueue(state: StudyState, deckId: null | string, now: Date): QueueItem[] {
++  const queue: QueueItem[] = []
++
++  for (const deck of state.decks) {
++    if (deckId && deck.id !== deckId) {
++      continue
++    }
++
++    for (const card of deck.cards) {
++      const stored = state.schedule[card.id]
++
++      if (isDue(stored, now)) {
++        queue.push({ card, deckId: deck.id, deckName: deck.name, isNew: !stored })
++      }
++    }
++  }
++
++  queue.sort((a, b) => (a.isNew ? 1 : 0) - (b.isNew ? 1 : 0))
++
++  return queue.slice(0, QUEUE_LIMIT)
++}
++
++export interface DeckStats {
++  due: number
++  fresh: number
++  total: number
++}
++
++export function deckStats(state: StudyState, deckId: null | string, now: Date): DeckStats {
++  let due = 0
++  let fresh = 0
++  let total = 0
++
++  for (const deck of state.decks) {
++    if (deckId && deck.id !== deckId) {
++      continue
++    }
++
++    for (const card of deck.cards) {
++      total++
++      const stored = state.schedule[card.id]
++
++      if (!stored) {
++        fresh++
++        due++
++      } else if (isDue(stored, now)) {
++        due++
++      }
++    }
++  }
++
++  return { due, fresh, total }
++}
++
++/** Grade a card → next state (immutable: returns a new StudyState). */
++export function gradeCard(state: StudyState, cardId: string, rating: StudyRating, now: Date): StudyState {
++  const stored = state.schedule[cardId]
++  const current = stored ? revive(stored) : createEmptyCard(now)
++  const outcome = scheduler.repeat(current, now)[RATING[rating]]
++
++  return {
++    ...state,
++    schedule: { ...state.schedule, [cardId]: freeze(outcome.card) },
++    reviews: [...state.reviews, { cardId, rating, at: now.toISOString() }]
++  }
++}
++
++/** Interval each grade would schedule, humanized — the hint row under the grade buttons. */
++export function previewIntervals(state: StudyState, cardId: string, now: Date): Record<StudyRating, string> {
++  const stored = state.schedule[cardId]
++  const current = stored ? revive(stored) : createEmptyCard(now)
++  const outcome = scheduler.repeat(current, now)
++
++  const label = (grade: Grade): string => humanizeGap(outcome[grade].card.due.getTime() - now.getTime())
++
++  return {
++    again: label(Rating.Again),
++    easy: label(Rating.Easy),
++    good: label(Rating.Good),
++    hard: label(Rating.Hard)
++  }
++}
++
++function humanizeGap(ms: number): string {
++  const minutes = Math.max(1, Math.round(ms / 60_000))
++
++  if (minutes < 60) {
++    return `${minutes}m`
++  }
++
++  const hours = Math.round(minutes / 60)
++
++  if (hours < 24) {
++    return `${hours}h`
++  }
++
++  const days = Math.round(hours / 24)
++
++  if (days < 31) {
++    return `${days}d`
++  }
++
++  return `${Math.round(days / 30)}mo`
++}
++
++let idCounter = 0
++
++export function freshId(prefix: string): string {
++  idCounter += 1
++
++  return `${prefix}-${Date.now().toString(36)}-${idCounter.toString(36)}`
++}
++
++/** Demo deck so the page teaches itself on first open. Application-level pharm cards, not "what is X" filler. */
++function seedDeck(): StudyDeck {
++  const card = (front: string, back: string, tags: string[]): StudyCard => ({ id: freshId('card'), front, back, tags })
++
++  return {
++    id: freshId('deck'),
++    name: 'Cardio pharm essentials (demo)',
++    course: 'Pharmacology',
++    createdAt: new Date().toISOString(),
++    cards: [
++      card(
++        'A patient on lisinopril develops a persistent dry cough. What is the mechanism, and what class do you switch to?',
++        'ACE inhibition lets bradykinin accumulate in the airways → cough. Switch to an ARB (e.g. losartan): blocks AT1 directly, spares bradykinin degradation.',
++        ['ace-inhibitors', 'adverse-effects']
++      ),
++      card(
++        'Why are ACE inhibitors contraindicated in pregnancy?',
++        'Fetal renal toxicity (oligohydramnios, renal dysgenesis) — all RAAS blockers are contraindicated.',
++        ['ace-inhibitors', 'contraindications']
++      ),
++      card(
++        'What two labs do you check after starting an ACE inhibitor, and why?',
++        'Potassium (hyperkalemia risk) and serum creatinine (efferent-arteriole dilation can drop GFR, especially with renal artery stenosis).',
++        ['ace-inhibitors', 'monitoring']
++      ),
++      card(
++        'Furosemide vs hydrochlorothiazide: site of action and the classic electrolyte signature of each.',
++        'Furosemide — thick ascending limb (Na-K-2Cl); potent, causes hypokalemia + hypocalcemia. HCTZ — distal tubule (Na-Cl); milder, hypokalemia + HYPERcalcemia.',
++        ['diuretics']
++      ),
++      card(
++        'A heart-failure patient on spironolactone and lisinopril has K⁺ 6.1. Which drug interaction explains it?',
++        'Both raise potassium: aldosterone antagonism (spironolactone) + reduced aldosterone via ACE inhibition. Additive hyperkalemia — hold/adjust and recheck.',
++        ['heart-failure', 'interactions']
++      ),
++      card(
++        'Metoprolol is preferred over propranolol in an asthmatic patient who needs a beta blocker. Why?',
++        'Metoprolol is β1-selective at usual doses — less β2 bronchoconstriction. Propranolol is non-selective and can trigger bronchospasm.',
++        ['beta-blockers']
++      ),
++      card(
++        'Which statin adverse effect do you screen for when a patient reports new diffuse muscle pain, and with what lab?',
++        'Myopathy/rhabdomyolysis — check creatine kinase (CK). Risk rises with interacting CYP3A4 inhibitors (e.g. clarithromycin) and high-intensity dosing.',
++        ['statins', 'monitoring']
++      ),
++      card(
++        'Warfarin patient starts TMP-SMX for a UTI. What happens to the INR and why?',
++        'INR rises — TMP-SMX inhibits CYP2C9 (warfarin metabolism) and displaces protein binding. Bleeding risk: monitor INR closely or pick another agent.',
++        ['anticoagulants', 'interactions']
++      )
++    ]
++  }
++}
+diff --git a/apps/desktop/src/app/types.ts b/apps/desktop/src/app/types.ts
+index 1adc2bd..3d5dfb7 100644
+--- a/apps/desktop/src/app/types.ts
++++ b/apps/desktop/src/app/types.ts
+@@ -122,7 +122,7 @@ export type CommandDispatchResponse =
+   | SendCommandDispatchResponse
+   | PrefillCommandDispatchResponse
+ 
+-export type SidebarNavId = 'artifacts' | 'command-center' | 'messaging' | 'new-session' | 'settings' | 'skills'
++export type SidebarNavId = 'artifacts' | 'command-center' | 'messaging' | 'new-session' | 'settings' | 'skills' | 'study'
+ 
+ export interface SidebarNavItem {
+   id: SidebarNavId
+diff --git a/apps/desktop/src/i18n/en.js b/apps/desktop/src/i18n/en.js
+index a0786f4..273d434 100644
+--- a/apps/desktop/src/i18n/en.js
++++ b/apps/desktop/src/i18n/en.js
+@@ -57,18 +57,18 @@ export const en = {
+         pathCopied: 'Path copied'
+     },
+     boot: {
+-        ready: 'Hermes Desktop is ready',
++        ready: 'Nemesis Desktop is ready',
+         desktopBootFailedWithMessage: message => `Desktop boot failed: ${message}`,
+         steps: {
+             connectingGateway: 'Connecting live desktop gateway',
+-            loadingSettings: 'Loading Hermes settings',
++            loadingSettings: 'Loading Nemesis settings',
+             loadingSessions: 'Loading recent sessions',
+             startingDesktopConnection: 'Starting desktop connection',
+-            startingHermesDesktop: 'Starting Hermes Desktop…'
++            startingHermesDesktop: 'Starting Nemesis Desktop…'
+         },
+         errors: {
+-            backgroundExited: 'Hermes background process exited.',
+-            backgroundExitedDuringStartup: 'Hermes background process exited during startup.',
++            backgroundExited: 'Nemesis background process exited.',
++            backgroundExitedDuringStartup: 'Nemesis background process exited during startup.',
+             backendStopped: 'Backend stopped',
+             desktopBootFailed: 'Desktop boot failed',
+             gatewayConnectionLost: 'Lost connection to the gateway',
+@@ -76,7 +76,7 @@ export const en = {
+             ipcBridgeUnavailable: 'Desktop IPC bridge is unavailable.'
+         },
+         failure: {
+-            title: "Hermes couldn't start",
++            title: "Nemesis couldn't start",
+             description: "The background gateway didn't come up. Try one of the recovery steps below. Nothing here deletes your chats or settings.",
+             remoteTitle: 'Remote gateway sign-in required',
+             remoteDescription: 'Your remote gateway session has expired. Sign in again to reconnect. Nothing here deletes your chats or settings.',
+@@ -109,16 +109,16 @@ export const en = {
+         copyDetail: 'Copy detail',
+         copyDetailFailed: 'Could not copy notification detail',
+         backendOutOfDateTitle: 'Backend out of date',
+-        backendOutOfDateMessage: 'Your Hermes backend is older than this desktop build and may not work correctly. Update to align them.',
++        backendOutOfDateMessage: 'Your Nemesis backend is older than this desktop build and may not work correctly. Update to align them.',
+         installMethodUnsupportedTitle: 'Unsupported install method',
+-        updateHermes: 'Update Hermes',
++        updateHermes: 'Update Nemesis',
+         updateReadyTitle: 'Update ready',
+         updateReadyMessage: count => `${count} new change${count === 1 ? '' : 's'} available.`,
+         seeWhatsNew: "See what's new",
+         errors: {
+             elevenLabsNeedsKey: 'ElevenLabs STT needs ELEVENLABS_API_KEY.',
+             elevenLabsRejectedKey: 'ElevenLabs rejected the API key (401).',
+-            methodNotAllowed: 'The desktop backend rejected that request (405 Method Not Allowed). Try restarting Hermes Desktop.',
++            methodNotAllowed: 'The desktop backend rejected that request (405 Method Not Allowed). Try restarting Nemesis Desktop.',
+             microphonePermission: 'Microphone permission was denied.',
+             openaiRejectedApiKey: 'OpenAI rejected the API key.',
+             openaiRejectedApiKeyWithStatus: status => `OpenAI rejected the API key (${status} invalid_api_key).`,
+@@ -148,8 +148,8 @@ export const en = {
+             approveAction: 'Approve',
+             rejectAction: 'Reject',
+             inputTitle: 'Input needed',
+-            inputBody: 'Hermes is waiting for your response.',
+-            turnDoneTitle: 'Hermes finished',
++            inputBody: 'Nemesis is waiting for your response.',
++            turnDoneTitle: 'Nemesis finished',
+             turnDoneBody: 'The response is ready.',
+             turnErrorTitle: 'Turn failed',
+             backgroundDoneTitle: 'Background task finished',
+@@ -281,7 +281,7 @@ export const en = {
+         exportConfig: 'Export config',
+         importConfig: 'Import config',
+         resetToDefaults: 'Reset to defaults',
+-        resetConfirm: 'Reset all settings to Hermes defaults?',
++        resetConfirm: 'Reset all settings to Nemesis defaults?',
+         exportFailed: 'Export failed',
+         resetFailed: 'Reset failed',
+         nav: {
+@@ -302,7 +302,7 @@ export const en = {
+             intro: 'Native desktop notifications, separate from in-app toasts. These are device-local — each computer keeps its own settings.',
+             enableAll: 'Enable notifications',
+             enableAllDesc: 'Master switch. Turn this off to silence every notification below.',
+-            focusedHint: 'Completion alerts only fire while Hermes is in the background.',
++            focusedHint: 'Completion alerts only fire while Nemesis is in the background.',
+             kinds: {
+                 approval: {
+                     label: 'Approval needed',
+@@ -310,11 +310,11 @@ export const en = {
+                 },
+                 input: {
+                     label: 'Input needed',
+-                    description: 'Hermes asked a question or needs a password or secret.'
++                    description: 'Nemesis asked a question or needs a password or secret.'
+                 },
+                 turnDone: {
+                     label: 'Response ready',
+-                    description: 'A turn finished while Hermes was in the background.'
++                    description: 'A turn finished while Nemesis was in the background.'
+                 },
+                 turnError: {
+                     label: 'Turn failed',
+@@ -326,7 +326,7 @@ export const en = {
+                 }
+             },
+             test: 'Send test notification',
+-            testTitle: 'Hermes',
++            testTitle: 'Nemesis',
+             testBody: 'Notifications are working.',
+             testSent: 'Test sent. If nothing appears, check your OS notification permissions and Focus/Do Not Disturb.',
+             testUnsupported: 'This system does not support native notifications.',
+@@ -345,7 +345,7 @@ export const en = {
+             advanced: 'Advanced'
+         },
+         searchPlaceholder: {
+-            about: 'About Hermes Desktop',
++            about: 'About Nemesis Desktop',
+             config: 'Search settings...',
+             gateway: 'Gateway connection...',
+             keys: 'Search API keys...',
+@@ -361,7 +361,7 @@ export const en = {
+             title: 'Appearance',
+             intro: 'These are desktop-only display preferences. Mode controls brightness; theme controls the accent palette and chat surface styling.',
+             colorMode: 'Color Mode',
+-            colorModeDesc: 'Pick a fixed mode or let Hermes follow your system setting.',
++            colorModeDesc: 'Pick a fixed mode or let Nemesis follow your system setting.',
+             toolViewTitle: 'Tool Call Display',
+             toolViewDesc: 'Product hides raw tool payloads; Technical shows full input/output.',
+             uiScaleTitle: 'UI Scale',
+@@ -392,8 +392,8 @@ export const en = {
+             importedBadge: 'Imported',
+             pet: {
+                 title: 'Pet',
+-                intro: 'Adopt an animated petdex mascot that floats over the app and reacts to what Hermes is doing — running while tools execute, celebrating on success, sulking on errors.',
+-                restartHint: 'Pets need a quick restart — the running app started before this feature was added. Quit and reopen Hermes, then come back here.',
++                intro: 'Adopt an animated petdex mascot that floats over the app and reacts to what Nemesis is doing — running while tools execute, celebrating on success, sulking on errors.',
++                restartHint: 'Pets need a quick restart — the running app started before this feature was added. Quit and reopen Nemesis, then come back here.',
+                 on: 'On',
+                 off: 'Off',
+                 scaleTitle: 'Size',
+@@ -431,7 +431,7 @@ export const en = {
+         fieldLabels: FIELD_LABELS,
+         fieldDescriptions: FIELD_DESCRIPTIONS,
+         about: {
+-            heading: 'Hermes Desktop',
++            heading: 'Nemesis Desktop',
+             version: value => `Version ${value}`,
+             versionUnavailable: 'Version unavailable',
+             updates: 'Updates',
+@@ -449,7 +449,7 @@ export const en = {
+             lastChecked: age => `Last checked ${age}`,
+             justNowSuffix: ' · just now',
+             automaticUpdates: 'Automatic updates',
+-            automaticUpdatesDesc: 'Hermes checks for updates automatically in the background and lets you know when one is ready.',
++            automaticUpdatesDesc: 'Nemesis checks for updates automatically in the background and lets you know when one is ready.',
+             branchCommit: (branch, commit) => `Branch ${branch} · Commit ${commit}`,
+             never: 'never',
+             justNow: 'just now',
+@@ -462,7 +462,7 @@ export const en = {
+             noneParen: '(none)',
+             notSet: 'Not set',
+             commaSeparated: 'comma-separated values',
+-            loading: 'Loading Hermes configuration...',
++            loading: 'Loading Nemesis configuration...',
+             emptyTitle: 'Nothing to configure',
+             emptyDesc: 'This section has no adjustable settings.',
+             failedLoad: 'Settings failed to load',
+@@ -496,7 +496,7 @@ export const en = {
+             unavailableDesc: 'The desktop IPC bridge does not expose gateway settings.',
+             title: 'Gateway Connection',
+             envOverride: 'env override',
+-            intro: 'Hermes Desktop starts its own local gateway by default. Use a remote gateway when you want this app to control an already-running Hermes backend on another machine or behind a trusted proxy. Pick a profile below to give it its own remote host.',
++            intro: 'Nemesis Desktop starts its own local gateway by default. Use a remote gateway when you want this app to control an already-running Nemesis backend on another machine or behind a trusted proxy. Pick a profile below to give it its own remote host.',
+             appliesTo: 'Applies to',
+             allProfiles: 'All profiles',
+             defaultConnection: 'Default connection for every profile that has no override of its own.',
+@@ -504,9 +504,9 @@ export const en = {
+             envOverrideTitle: 'Environment variables are controlling this desktop session.',
+             envOverrideDesc: 'Unset HERMES_DESKTOP_REMOTE_URL and HERMES_DESKTOP_REMOTE_TOKEN to use the saved setting below.',
+             localTitle: 'Local gateway',
+-            localDesc: 'Start a private Hermes backend on localhost. This is the default and works offline.',
++            localDesc: 'Start a private Nemesis backend on localhost. This is the default and works offline.',
+             remoteTitle: 'Remote gateway',
+-            remoteDesc: 'Connect this desktop shell to a remote Hermes backend. Hosted gateways use OAuth or a username and password; self-hosted ones may use a session token.',
++            remoteDesc: 'Connect this desktop shell to a remote Nemesis backend. Hosted gateways use OAuth or a username and password; self-hosted ones may use a session token.',
+             remoteUrlTitle: 'Remote URL',
+             remoteUrlDesc: 'Base URL for the remote dashboard backend. Path prefixes are supported, for example /hermes.',
+             probing: 'Checking how this gateway authenticates…',
+@@ -539,9 +539,9 @@ export const en = {
+             enterUrlFirst: 'Enter a remote URL first.',
+             restartingTitle: 'Gateway connection restarting',
+             savedTitle: 'Gateway settings saved',
+-            restartingMessage: 'Hermes Desktop will reconnect using the saved settings.',
++            restartingMessage: 'Nemesis Desktop will reconnect using the saved settings.',
+             savedMessage: 'Saved for the next restart.',
+-            connectedTo: (baseUrl, version) => `Connected to ${baseUrl}${version ? ` · Hermes ${version}` : ''}`,
++            connectedTo: (baseUrl, version) => `Connected to ${baseUrl}${version ? ` · Nemesis ${version}` : ''}`,
+             reachableTitle: 'Remote gateway reachable',
+             signedOutTitle: 'Signed out',
+             signedOutMessage: 'Cleared the remote gateway session.',
+@@ -653,7 +653,7 @@ export const en = {
+         providers: {
+             connectAccount: 'Connect an account',
+             haveApiKey: 'Have an API key instead?',
+-            intro: 'Sign in with a subscription — no API key to copy. Hermes runs the browser sign-in for you, right here in the app.',
++            intro: 'Sign in with a subscription — no API key to copy. Nemesis runs the browser sign-in for you, right here in the app.',
+             connected: 'Connected',
+             collapse: 'Collapse',
+             connectAnother: 'Connect another provider',
+@@ -853,7 +853,7 @@ export const en = {
+         loadFailed: 'Could not load memory graph',
+         loading: 'Loading…',
+         emptyTitle: 'Nothing learned yet',
+-        emptyDesc: 'As Hermes builds skills and memories for your work, they appear here.',
++        emptyDesc: 'As Nemesis builds skills and memories for your work, they appear here.',
+         share: 'Share map',
+         shareHint: 'Copy the code to share this map, or paste one to load. It only includes the layout, not your memory or skill text.',
+         shareTitle: 'Import / export map',
+@@ -915,7 +915,7 @@ export const en = {
+             placeholder: 'Search pets…',
+             loading: 'Loading petdex gallery…',
+             error: 'Could not reach the petdex gallery.',
+-            staleBackend: 'Restart Hermes to use pets — the backend predates this feature.',
++            staleBackend: 'Restart Nemesis to use pets — the backend predates this feature.',
+             empty: 'No matching pets.',
+             turnOff: 'Turn off',
+             turnOn: 'Turn on',
+@@ -942,8 +942,8 @@ export const en = {
+             hatchComposing: 'Piecing it together…',
+             hatchSaving: 'Almost there…',
+             namePlaceholder: 'Name your pet',
+-            staleBackend: 'Update Hermes to generate pets.',
+-            backgroundHint: 'You can close this — Hermes will notify you when it’s done.',
++            staleBackend: 'Update Nemesis to generate pets.',
++            backgroundHint: 'You can close this — Nemesis will notify you when it’s done.',
+             slowProviderHint: 'This can take several minutes',
+             remix: 'Remix',
+             remixConfirmTitle: 'Remix this look?',
+@@ -978,7 +978,7 @@ export const en = {
+         },
+         nav: {
+             newChat: { title: 'New session', detail: 'Start a fresh session' },
+-            settings: { title: 'Settings', detail: 'Configure Hermes desktop' },
++            settings: { title: 'Settings', detail: 'Configure Nemesis desktop' },
+             skills: { title: 'Capabilities', detail: 'Skills, tools, and MCP servers' },
+             messaging: { title: 'Messaging', detail: 'Set up Telegram, Slack, Discord, and more' },
+             artifacts: { title: 'Artifacts', detail: 'Browse generated outputs' }
+@@ -1000,10 +1000,10 @@ export const en = {
+         noSessions: 'No sessions yet.',
+         gatewayRunning: 'Messaging gateway running',
+         gatewayStopped: 'Messaging gateway stopped',
+-        hermesActiveSessions: (version, count) => `Hermes ${version} · Active sessions ${count}`,
++        hermesActiveSessions: (version, count) => `Nemesis ${version} · Active sessions ${count}`,
+         restartGateway: 'Restart gateway',
+         gatewayRestartFailed: 'Gateway restart failed.',
+-        updateHermes: 'Update Hermes',
++        updateHermes: 'Update Nemesis',
+         actionRunning: 'running',
+         actionDone: 'done',
+         actionFailed: 'failed',
+@@ -1257,7 +1257,7 @@ export const en = {
+         deleteDescMid: ' and remove its ',
+         deleteDescSuffix: ' directory. This cannot be undone.',
+         deleting: 'Deleting...',
+-        createDesc: 'Profiles are independent Hermes environments: separate config, skills, and SOUL.md.',
++        createDesc: 'Profiles are independent Nemesis environments: separate config, skills, and SOUL.md.',
+         nameLabel: 'Name',
+         cloneFrom: 'Clone from',
+         cloneFromNone: 'None (blank)',
+@@ -1344,7 +1344,7 @@ export const en = {
+         topOfHour: 'At the top of every hour',
+         everyHourAt: minute => `Every hour at :${minute}`,
+         newCron: 'New cron',
+-        emptyDescNew: 'Schedule a prompt to run on a cron expression. Hermes will run it and deliver results to the destination you pick.',
++        emptyDescNew: 'Schedule a prompt to run on a cron expression. Nemesis will run it and deliver results to the destination you pick.',
+         emptyDescSearch: 'Try a broader search query.',
+         emptyTitleNew: 'No scheduled jobs yet',
+         emptyTitleSearch: 'No matches',
+@@ -1435,7 +1435,8 @@ export const en = {
+             'new-session': 'New session',
+             skills: 'Capabilities',
+             messaging: 'Messaging',
+-            artifacts: 'Artifacts'
++            artifacts: 'Artifacts',
++            study: 'Study'
+         },
+         searchAria: 'Search sessions',
+         searchPlaceholder: 'Search sessions…',
+@@ -1487,8 +1488,8 @@ export const en = {
+             copyPath: 'Copy path',
+             removeFromSidebar: 'Hide from sidebar',
+             createFailed: 'Could not create project',
+-            staleBackend: 'Update the Hermes backend to create projects — your backend is older than this desktop app (Settings → Updates → Backend).',
+-            deleteConfirm: 'This removes the saved project from Hermes. Files, git repos, and worktrees stay untouched.',
++            staleBackend: 'Update the Nemesis backend to create projects — your backend is older than this desktop app (Settings → Updates → Backend).',
++            deleteConfirm: 'This removes the saved project from Nemesis. Files, git repos, and worktrees stay untouched.',
+             startWork: 'New worktree',
+             newWorktreeTitle: 'New worktree',
+             newWorktreeDesc: 'Name the branch for this worktree.',
+@@ -1549,12 +1550,12 @@ export const en = {
+     composer: {
+         message: 'Message',
+         wakingProfile: profile => `Waking up ${profile}…`,
+-        placeholderStarting: 'Starting Hermes...',
+-        placeholderReconnecting: 'Reconnecting to Hermes…',
++        placeholderStarting: 'Starting Nemesis...',
++        placeholderReconnecting: 'Reconnecting to Nemesis…',
+         placeholderFollowUp: 'Send follow-up',
+         newSessionPlaceholders: [
+             'What are we building?',
+-            'Give Hermes a task',
++            'Give Nemesis a task',
+             "What's on your mind?",
+             'Describe what you need',
+             'What should we tackle?',
+@@ -1617,7 +1618,7 @@ export const en = {
+             'composer.history': 'cycle popover / history'
+         },
+         attachUrlTitle: 'Attach a URL',
+-        attachUrlDesc: 'Hermes will fetch the page and include it as context for this turn.',
++        attachUrlDesc: 'Nemesis will fetch the page and include it as context for this turn.',
+         urlPlaceholder: 'https://example.com/post',
+         urlHintPre: 'Include the full URL, e.g. ',
+         attach: 'Attach',
+@@ -1721,7 +1722,7 @@ export const en = {
+             createPr: 'Create PR',
+             openPr: 'Open PR',
+             ghMissing: 'Install the GitHub CLI (gh) and sign in to open PRs',
+-            agentShip: 'Ask Hermes to open PR',
++            agentShip: 'Ask Nemesis to open PR',
+             agentShipPrompt: 'Review the current changes, commit them with a clear conventional-commit message, push the branch, and open a pull request.',
+             newBranch: 'New branch',
+             branchOffFrom: base => `New branch from ${base}`,
+@@ -1737,9 +1738,9 @@ export const en = {
+             fetch: 'Downloading…',
+             pull: 'Almost there…',
+             pydeps: 'Finishing up…',
+-            update: 'Updating Hermes…',
++            update: 'Updating Nemesis…',
+             rebuild: 'Rebuilding the desktop app…',
+-            restart: 'Restarting Hermes…',
++            restart: 'Restarting Nemesis…',
+             done: 'Update complete',
+             manual: 'Update from your terminal',
+             guiSkew: 'Update the desktop app',
+@@ -1749,30 +1750,30 @@ export const en = {
+         checkFailedTitle: 'Couldn’t check for updates',
+         tryAgain: 'Try again',
+         notAvailableTitle: 'Update not available',
+-        unsupportedMessage: 'This version of Hermes can’t update itself from inside the app.',
++        unsupportedMessage: 'This version of Nemesis can’t update itself from inside the app.',
+         connectionRetry: 'Check your connection and try again.',
+         latestBody: 'You’re running the latest version.',
+         latestBodyBackend: 'The backend is running the latest version.',
+         allSetTitle: 'You’re all set',
+         availableTitle: 'New update available',
+-        availableBody: 'A new version of Hermes is ready to install.',
++        availableBody: 'A new version of Nemesis is ready to install.',
+         availableTitleBackend: 'Backend update available',
+-        availableBodyBackend: 'A newer version of the connected Hermes backend is ready to install.',
++        availableBodyBackend: 'A newer version of the connected Nemesis backend is ready to install.',
+         availableBodyNoChangelog: 'A newer version is ready. Release notes aren’t available for this install type.',
+         updateNow: 'Update now',
+         maybeLater: 'Maybe later',
+         moreChanges: count => `+ ${count} more change${count === 1 ? '' : 's'} included.`,
+         manualTitle: 'Update from your terminal',
+-        manualBody: 'You installed Hermes from the command line, so updates run there too. Paste this into your terminal:',
+-        manualPickedUp: 'Hermes will pick up the new version next time you launch it.',
++        manualBody: 'You installed Nemesis from the command line, so updates run there too. Paste this into your terminal:',
++        manualPickedUp: 'Nemesis will pick up the new version next time you launch it.',
+         guiSkewTitle: 'Update the desktop app',
+-        guiSkewBody: 'The backend was updated, but this desktop app package wasn’t changed. Update or reinstall the Hermes desktop app (your AppImage / .deb / .rpm) to match.',
++        guiSkewBody: 'The backend was updated, but this desktop app package wasn’t changed. Update or reinstall the Nemesis desktop app (your AppImage / .deb / .rpm) to match.',
+         copy: 'Copy',
+         copied: 'Copied',
+         done: 'Done',
+-        applyingBody: 'The Hermes updater takes over in its own window and reopens Hermes automatically when it’s done. Please don’t reopen Hermes yourself while it’s updating.',
+-        applyingBodyBackend: 'The remote backend is applying the update and will restart. Hermes reconnects automatically when it’s back.',
+-        applyingClose: 'This window will close while the update runs, then Hermes reopens on its own.',
++        applyingBody: 'The Nemesis updater takes over in its own window and reopens Nemesis automatically when it’s done. Please don’t reopen Nemesis yourself while it’s updating.',
++        applyingBodyBackend: 'The remote backend is applying the update and will restart. Nemesis reconnects automatically when it’s back.',
++        applyingClose: 'This window will close while the update runs, then Nemesis reopens on its own.',
+         errorTitle: 'Update didn’t finish',
+         errorBody: 'No worries — nothing was lost. You can try again now.',
+         notNow: 'Not now',
+@@ -1793,7 +1794,7 @@ export const en = {
+             skipped: 'Skipped',
+             failed: 'Failed'
+         },
+-        oneTimeTitle: 'Hermes needs a one-time install',
++        oneTimeTitle: 'Nemesis needs a one-time install',
+         unsupportedDesc: platform => `Automated first-launch install isn’t available on ${platform} yet. Open Terminal and run the command below, then relaunch this app. Subsequent launches will skip this step.`,
+         installCommand: 'Install command',
+         copyCommand: 'Copy command',
+@@ -1801,10 +1802,10 @@ export const en = {
+         installTo: 'Will install to',
+         retryAfterRun: 'I’ve run it -- retry',
+         failedTitle: 'Installation failed',
+-        settingUpTitle: 'Setting up Hermes Agent',
++        settingUpTitle: 'Setting up Nemesis Agent',
+         finishingTitle: 'Finishing up',
+-        failedDesc: 'One of the install steps failed. On Windows, this can happen if another Hermes CLI or desktop instance is running. Stop any running Hermes instances, then retry. Check the details below or the desktop log for the full transcript.',
+-        activeDesc: 'This is a one-time setup. The Hermes installer is downloading dependencies and configuring your machine. Subsequent launches will skip this step.',
++        failedDesc: 'One of the install steps failed. On Windows, this can happen if another Nemesis CLI or desktop instance is running. Stop any running Nemesis instances, then retry. Check the details below or the desktop log for the full transcript.',
++        activeDesc: 'This is a one-time setup. The Nemesis installer is downloading dependencies and configuring your machine. Subsequent launches will skip this step.',
+         progress: (completed, total) => `${completed} of ${total} steps complete`,
+         currentStage: stage => ` -- now: ${stage}`,
+         fetchingManifest: 'Fetching installer manifest...',
+@@ -1821,10 +1822,10 @@ export const en = {
+         reloadRetry: 'Reload and retry'
+     },
+     onboarding: {
+-        headerTitle: "Let's get you setup with Hermes Agent",
++        headerTitle: "Let's get you setup with Nemesis Agent",
+         headerDesc: 'Connect a model provider to start chatting. Most options take one click.',
+-        preparingInstall: 'Hermes is finishing install. This usually takes under a minute on first run.',
+-        starting: 'Starting Hermes…',
++        preparingInstall: 'Nemesis is finishing install. This usually takes under a minute on first run.',
++        starting: 'Starting Nemesis…',
+         lookingUpProviders: 'Looking up providers...',
+         collapse: 'Collapse',
+         otherProviders: 'Other providers',
+@@ -1832,7 +1833,7 @@ export const en = {
+         chooseLater: "I'll choose a provider later",
+         recommended: 'Recommended',
+         connected: 'Connected',
+-        featuredPitch: 'One subscription, 300+ frontier models — the recommended way to run Hermes',
++        featuredPitch: 'One subscription, 300+ frontier models — the recommended way to run Nemesis',
+         openRouterPitch: 'One key, hundreds of models — a solid default',
+         apiKeyOptions: {
+             openrouter: {
+@@ -1844,7 +1845,7 @@ export const en = {
+             xai: { short: 'Grok models', description: 'Direct access to xAI Grok models.' },
+             local: {
+                 short: 'self-hosted',
+-                description: 'Point Hermes at a local or self-hosted OpenAI-compatible endpoint (vLLM, llama.cpp, Ollama, etc).'
++                description: 'Point Nemesis at a local or self-hosted OpenAI-compatible endpoint (vLLM, llama.cpp, Ollama, etc).'
+             }
+         },
+         backToSignIn: 'Back to sign in',
+@@ -1857,7 +1858,7 @@ export const en = {
+         update: 'Update',
+         flowSubtitles: {
+             pkce: 'Opens your browser to sign in, then continues here',
+-            device_code: 'Opens a verification page in your browser — Hermes connects automatically',
++            device_code: 'Opens a verification page in your browser — Nemesis connects automatically',
+             external: 'Sign in once in your terminal, then come back to chat'
+         },
+         startingSignIn: provider => `Starting sign-in for ${provider}...`,
+@@ -1868,11 +1869,11 @@ export const en = {
+         pickDifferentProvider: 'Pick a different provider',
+         signInWith: provider => `Sign in with ${provider}`,
+         openedBrowser: provider => `We opened ${provider} in your browser.`,
+-        authorizeThere: 'Authorize Hermes there.',
++        authorizeThere: 'Authorize Nemesis there.',
+         copyAuthCode: 'Copy the authorization code and paste it below.',
+         pasteAuthCode: 'Paste authorization code',
+         reopenAuthPage: 'Re-open authorization page',
+-        autoBrowser: provider => `We opened ${provider} in your browser. Authorize Hermes there and you'll be connected automatically — nothing to copy or paste.`,
++        autoBrowser: provider => `We opened ${provider} in your browser. Authorize Nemesis there and you'll be connected automatically — nothing to copy or paste.`,
+         reopenSignInPage: 'Re-open sign-in page',
+         waitingAuthorize: 'Waiting for you to authorize...',
+         externalPending: provider => `${provider} signs in through its own CLI. Run this command in a terminal, then come back and pick "I've signed in":`,
+@@ -1957,7 +1958,7 @@ export const en = {
+             update: 'update',
+             updateInProgress: 'Update in progress',
+             commitsBehind: (count, branch) => `${count} commit${count === 1 ? '' : 's'} behind ${branch}`,
+-            desktopVersion: version => `Hermes Desktop v${version}`,
++            desktopVersion: version => `Nemesis Desktop v${version}`,
+             backendVersion: version => `Backend v${version}`,
+             clientLabel: version => `client v${version}`,
+             backendLabel: version => `backend v${version}`,
+@@ -1974,7 +1975,7 @@ export const en = {
+             gatewayConnecting: 'connecting',
+             gatewayOffline: 'offline',
+             gatewayRestarting: 'restarting…',
+-            gatewayTitle: 'Hermes inference gateway status',
++            gatewayTitle: 'Nemesis inference gateway status',
+             agents: 'Agents',
+             closeAgents: 'Close agents',
+             openAgents: 'Open agents',
+@@ -2076,7 +2077,7 @@ export const en = {
+         binaryTitle: 'This looks like a binary file',
+         binaryBody: label => `Previewing ${label} may show unreadable text.`,
+         largeTitle: 'This file is large',
+-        largeBody: (label, size) => `${label} is ${size}. Hermes will only show the first 512 KB.`,
++        largeBody: (label, size) => `${label} is ${size}. Nemesis will only show the first 512 KB.`,
+         previewAnyway: 'Preview anyway',
+         truncated: 'Showing first 512 KB.',
+         noInlineTitle: 'No inline preview',
+@@ -2114,25 +2115,25 @@ export const en = {
+             serverNotFound: 'Server not found',
+             failedToLoad: 'Preview failed to load',
+             tryAgain: 'Try again',
+-            restarting: 'Hermes is restarting...',
+-            askRestart: 'Ask Hermes to restart the server',
+-            lookingRestart: taskId => `Hermes is looking for a preview server to restart (${taskId})`,
++            restarting: 'Nemesis is restarting...',
++            askRestart: 'Ask Nemesis to restart the server',
++            lookingRestart: taskId => `Nemesis is looking for a preview server to restart (${taskId})`,
+             restartingTitle: 'Restarting preview server',
+-            restartingMessage: 'Hermes is working in the background. Watch the preview console for progress.',
++            restartingMessage: 'Nemesis is working in the background. Watch the preview console for progress.',
+             startRestartFailed: message => `Could not start server restart: ${message}`,
+             restartFailed: 'Server restart failed',
+             hideConsole: 'Hide preview console',
+             showConsole: 'Show preview console',
+             hideDevTools: 'Hide preview DevTools',
+             openDevTools: 'Open preview DevTools',
+-            finishedRestarting: message => `Hermes finished restarting the preview server${message ? `: ${message}` : ''}`,
++            finishedRestarting: message => `Nemesis finished restarting the preview server${message ? `: ${message}` : ''}`,
+             failedRestarting: message => `Server restart failed: ${message}`,
+             unknownError: 'unknown error',
+             restartedTitle: 'Preview server restarted',
+             reloadingNow: 'Reloading the preview now.',
+             restartFailedTitle: 'Preview restart failed',
+-            restartFailedMessage: 'Hermes could not restart the server.',
+-            stillWorking: 'Hermes is still working, but no restart result has arrived yet. The server command may be running in the foreground.',
++            restartFailedMessage: 'Nemesis could not restart the server.',
++            stillWorking: 'Nemesis is still working, but no restart result has arrived yet. The server command may be running in the foreground.',
+             workspaceReloading: 'Workspace changed, reloading preview',
+             fileChanged: url => `File changed, reloading preview: ${url}`,
+             filesChanged: (count, url) => `${count} file changes, reloading preview: ${url}`,
+@@ -2148,7 +2149,7 @@ export const en = {
+         thread: {
+             loadingSession: 'Loading session',
+             showEarlier: 'Show earlier messages',
+-            loadingResponse: 'Hermes is loading a response',
++            loadingResponse: 'Nemesis is loading a response',
+             resumeWhenBackgroundDone: count => count === 1
+                 ? 'Will resume when the background task finishes'
+                 : `Will resume when ${count} background tasks finish`,
+@@ -2180,7 +2181,7 @@ export const en = {
+             attachingFile: 'Attaching…'
+         },
+         approval: {
+-            gatewayDisconnected: 'Hermes gateway is not connected',
++            gatewayDisconnected: 'Nemesis gateway is not connected',
+             sendFailed: 'Could not send approval response',
+             run: 'Run',
+             command: 'Command',
+@@ -2190,12 +2191,12 @@ export const en = {
+             jumpToApproval: 'Approval needed',
+             reject: 'Reject',
+             alwaysTitle: 'Always allow this command?',
+-            alwaysDescription: pattern => `This adds the “${pattern}” pattern to your permanent allowlist (~/.hermes/config.yaml). Hermes won’t ask again for commands like this — in this session or any future one.`,
++            alwaysDescription: pattern => `This adds the “${pattern}” pattern to your permanent allowlist (~/.hermes/config.yaml). Nemesis won’t ask again for commands like this — in this session or any future one.`,
+             alwaysAllow: 'Always allow'
+         },
+         clarify: {
+             notReady: 'Clarify request is not ready yet',
+-            gatewayDisconnected: 'Hermes gateway is not connected',
++            gatewayDisconnected: 'Nemesis gateway is not connected',
+             sendFailed: 'Could not send clarify response',
+             loadingQuestion: 'Loading question…',
+             other: 'Other (type your answer)',
+@@ -2290,14 +2291,14 @@ export const en = {
+         }
+     },
+     prompts: {
+-        gatewayDisconnected: 'Hermes gateway is not connected',
++        gatewayDisconnected: 'Nemesis gateway is not connected',
+         sudoSendFailed: 'Could not send sudo password',
+         secretSendFailed: 'Could not send secret',
+         sudoTitle: 'Administrator password',
+-        sudoDesc: 'Hermes needs your sudo password to run a privileged command. It is sent only to your local agent.',
++        sudoDesc: 'Nemesis needs your sudo password to run a privileged command. It is sent only to your local agent.',
+         sudoPlaceholder: 'sudo password',
+         secretTitle: 'Secret required',
+-        secretDesc: 'Hermes needs a credential to continue.',
++        secretDesc: 'Nemesis needs a credential to continue.',
+         secretPlaceholder: 'secret value'
+     },
+     desktop: {
+@@ -2346,8 +2347,8 @@ export const en = {
+         sessionExportFailed: 'Could not export session',
+         imageSaved: 'Image saved',
+         downloadStarted: 'Download started',
+-        restartToUseSaveImage: 'Restart Hermes Desktop to use Save Image.',
+-        restartToSaveImages: 'Restart Hermes Desktop to save images',
++        restartToUseSaveImage: 'Restart Nemesis Desktop to use Save Image.',
++        restartToSaveImages: 'Restart Nemesis Desktop to save images',
+         imageDownloadFailed: 'Image download failed',
+         openImage: 'Open image',
+         downloadImage: 'Download image',
+diff --git a/apps/desktop/src/i18n/en.ts b/apps/desktop/src/i18n/en.ts
+index f972fe9..dfb2294 100644
+--- a/apps/desktop/src/i18n/en.ts
++++ b/apps/desktop/src/i18n/en.ts
+@@ -1482,7 +1482,8 @@ export const en: Translations = {
+       'new-session': 'New session',
+       skills: 'Capabilities',
+       messaging: 'Messaging',
+-      artifacts: 'Artifacts'
++      artifacts: 'Artifacts',
++      study: 'Study'
+     },
+     searchAria: 'Search sessions',
+     searchPlaceholder: 'Search sessions…',
+diff --git a/apps/desktop/src/i18n/ja.js b/apps/desktop/src/i18n/ja.js
+index eb79756..e058475 100644
+--- a/apps/desktop/src/i18n/ja.js
++++ b/apps/desktop/src/i18n/ja.js
+@@ -1404,7 +1404,8 @@ export const ja = defineLocale({
+             'new-session': '新しいセッション',
+             skills: 'スキルとツール',
+             messaging: 'メッセージング',
+-            artifacts: 'アーティファクト'
++            artifacts: 'アーティファクト',
++            study: '学習'
+         },
+         searchAria: 'セッションを検索',
+         searchPlaceholder: 'セッションを検索…',
+diff --git a/apps/desktop/src/i18n/ja.ts b/apps/desktop/src/i18n/ja.ts
+index 1008883..d157f17 100644
+--- a/apps/desktop/src/i18n/ja.ts
++++ b/apps/desktop/src/i18n/ja.ts
+@@ -1460,7 +1460,8 @@ export const ja = defineLocale({
+       'new-session': '新しいセッション',
+       skills: 'スキルとツール',
+       messaging: 'メッセージング',
+-      artifacts: 'アーティファクト'
++      artifacts: 'アーティファクト',
++      study: '学習'
+     },
+     searchAria: 'セッションを検索',
+     searchPlaceholder: 'セッションを検索…',
+diff --git a/apps/desktop/src/i18n/zh-hant.js b/apps/desktop/src/i18n/zh-hant.js
+index ff37ecb..8d1cbba 100644
+--- a/apps/desktop/src/i18n/zh-hant.js
++++ b/apps/desktop/src/i18n/zh-hant.js
+@@ -1389,7 +1389,8 @@ export const zhHant = defineLocale({
+             'new-session': '新工作階段',
+             skills: '技能與工具',
+             messaging: '訊息平台',
+-            artifacts: '成品'
++            artifacts: '成品',
++            study: '學習'
+         },
+         searchAria: '搜尋工作階段',
+         searchPlaceholder: '搜尋工作階段…',
+diff --git a/apps/desktop/src/i18n/zh-hant.ts b/apps/desktop/src/i18n/zh-hant.ts
+index 5dbec60..be836ae 100644
+--- a/apps/desktop/src/i18n/zh-hant.ts
++++ b/apps/desktop/src/i18n/zh-hant.ts
+@@ -1413,7 +1413,8 @@ export const zhHant = defineLocale({
+       'new-session': '新工作階段',
+       skills: '技能與工具',
+       messaging: '訊息平台',
+-      artifacts: '成品'
++      artifacts: '成品',
++      study: '學習'
+     },
+     searchAria: '搜尋工作階段',
+     searchPlaceholder: '搜尋工作階段…',
+diff --git a/apps/desktop/src/i18n/zh.js b/apps/desktop/src/i18n/zh.js
+index 73c8ed4..ff22eed 100644
+--- a/apps/desktop/src/i18n/zh.js
++++ b/apps/desktop/src/i18n/zh.js
+@@ -57,18 +57,18 @@ export const zh = {
+         pathCopied: '已复制路径'
+     },
+     boot: {
+-        ready: 'Hermes 桌面版已就绪',
++        ready: 'Nemesis 桌面版已就绪',
+         desktopBootFailedWithMessage: message => `桌面启动失败：${message}`,
+         steps: {
+             connectingGateway: '正在连接桌面网关',
+-            loadingSettings: '正在加载 Hermes 设置',
++            loadingSettings: '正在加载 Nemesis 设置',
+             loadingSessions: '正在加载最近会话',
+             startingDesktopConnection: '正在启动桌面连接',
+-            startingHermesDesktop: '正在启动 Hermes 桌面版…'
++            startingHermesDesktop: '正在启动 Nemesis 桌面版…'
+         },
+         errors: {
+-            backgroundExited: 'Hermes 后台进程已退出。',
+-            backgroundExitedDuringStartup: 'Hermes 后台进程在启动期间退出。',
++            backgroundExited: 'Nemesis 后台进程已退出。',
++            backgroundExitedDuringStartup: 'Nemesis 后台进程在启动期间退出。',
+             backendStopped: '后端已停止',
+             desktopBootFailed: '桌面启动失败',
+             gatewayConnectionLost: '与网关的连接已断开',
+@@ -76,7 +76,7 @@ export const zh = {
+             ipcBridgeUnavailable: '桌面 IPC 桥不可用。'
+         },
+         failure: {
+-            title: 'Hermes 无法启动',
++            title: 'Nemesis 无法启动',
+             description: '后台网关没有启动。请尝试下面的恢复步骤；这里不会删除你的对话或设置。',
+             remoteTitle: '需要重新登录远程网关',
+             remoteDescription: '你的远程网关会话已过期。请重新登录以恢复连接。这些操作不会删除你的对话或设置。',
+@@ -109,16 +109,16 @@ export const zh = {
+         copyDetail: '复制详情',
+         copyDetailFailed: '无法复制通知详情',
+         backendOutOfDateTitle: '后端版本过旧',
+-        backendOutOfDateMessage: '你的 Hermes 后端早于当前桌面构建，可能无法正常工作。请更新以保持一致。',
++        backendOutOfDateMessage: '你的 Nemesis 后端早于当前桌面构建，可能无法正常工作。请更新以保持一致。',
+         installMethodUnsupportedTitle: '不受支持的安装方式',
+-        updateHermes: '更新 Hermes',
++        updateHermes: '更新 Nemesis',
+         updateReadyTitle: '有可用更新',
+         updateReadyMessage: count => `有 ${count} 项新更改可用。`,
+         seeWhatsNew: '查看更新内容',
+         errors: {
+             elevenLabsNeedsKey: 'ElevenLabs STT 需要 ELEVENLABS_API_KEY。',
+             elevenLabsRejectedKey: 'ElevenLabs 拒绝了该 API key (401)。',
+-            methodNotAllowed: '桌面后端拒绝了该请求 (405 Method Not Allowed)。请尝试重启 Hermes Desktop。',
++            methodNotAllowed: '桌面后端拒绝了该请求 (405 Method Not Allowed)。请尝试重启 Nemesis Desktop。',
+             microphonePermission: '麦克风权限已被拒绝。',
+             openaiRejectedApiKey: 'OpenAI 拒绝了该 API key。',
+             openaiRejectedApiKeyWithStatus: status => `OpenAI 拒绝了该 API key (${status} invalid_api_key)。`,
+@@ -148,8 +148,8 @@ export const zh = {
+             approveAction: '批准',
+             rejectAction: '拒绝',
+             inputTitle: '需要输入',
+-            inputBody: 'Hermes 正在等待你的回应。',
+-            turnDoneTitle: 'Hermes 已完成',
++            inputBody: 'Nemesis 正在等待你的回应。',
++            turnDoneTitle: 'Nemesis 已完成',
+             turnDoneBody: '回复已就绪。',
+             turnErrorTitle: '本轮失败',
+             backgroundDoneTitle: '后台任务已完成',
+@@ -277,7 +277,7 @@ export const zh = {
+         exportConfig: '导出配置',
+         importConfig: '导入配置',
+         resetToDefaults: '恢复默认',
+-        resetConfirm: '将所有设置恢复为 Hermes 默认值？',
++        resetConfirm: '将所有设置恢复为 Nemesis 默认值？',
+         exportFailed: '导出失败',
+         resetFailed: '重置失败',
+         nav: {
+@@ -298,7 +298,7 @@ export const zh = {
+             intro: '原生桌面通知，区别于应用内提示。设置按设备保存，每台电脑各自独立。',
+             enableAll: '启用通知',
+             enableAllDesc: '总开关。关闭后将静音下方所有通知。',
+-            focusedHint: '完成提醒仅在 Hermes 处于后台时触发。',
++            focusedHint: '完成提醒仅在 Nemesis 处于后台时触发。',
+             kinds: {
+                 approval: {
+                     label: '需要批准',
+@@ -306,11 +306,11 @@ export const zh = {
+                 },
+                 input: {
+                     label: '需要输入',
+-                    description: 'Hermes 提出了问题，或需要密码或密钥。'
++                    description: 'Nemesis 提出了问题，或需要密码或密钥。'
+                 },
+                 turnDone: {
+                     label: '回复就绪',
+-                    description: 'Hermes 在后台时完成了一轮对话。'
++                    description: 'Nemesis 在后台时完成了一轮对话。'
+                 },
+                 turnError: {
+                     label: '本轮失败',
+@@ -322,7 +322,7 @@ export const zh = {
+                 }
+             },
+             test: '发送测试通知',
+-            testTitle: 'Hermes',
++            testTitle: 'Nemesis',
+             testBody: '通知工作正常。',
+             testSent: '测试已发送。如果没有出现，请检查系统通知权限和专注模式／勿扰模式。',
+             testUnsupported: '此系统不支持原生通知。',
+@@ -341,7 +341,7 @@ export const zh = {
+             advanced: '高级'
+         },
+         searchPlaceholder: {
+-            about: '关于 Hermes Desktop',
++            about: '关于 Nemesis Desktop',
+             config: '搜索设置…',
+             gateway: '网关连接…',
+             keys: '搜索 API 密钥…',
+@@ -357,7 +357,7 @@ export const zh = {
+             title: '外观',
+             intro: '这些是仅桌面端的显示偏好。模式控制明暗；主题控制强调色与对话界面样式。',
+             colorMode: '颜色模式',
+-            colorModeDesc: '选择固定模式，或让 Hermes 跟随系统设置。',
++            colorModeDesc: '选择固定模式，或让 Nemesis 跟随系统设置。',
+             toolViewTitle: '工具调用显示',
+             toolViewDesc: '产品模式隐藏原始工具数据；技术模式显示完整输入/输出。',
+             uiScaleTitle: '界面缩放',
+@@ -388,8 +388,8 @@ export const zh = {
+             importedBadge: '已导入',
+             pet: {
+                 title: '宠物',
+-                intro: '领养一只悬浮在应用上的 petdex 动画宠物，它会根据 Hermes 的状态做出反应——工具执行时奔跑、成功时欢呼、出错时沮丧。',
+-                restartHint: '宠物功能需要重启——当前运行的应用在此功能加入前启动。请退出并重新打开 Hermes，然后回到此处。',
++                intro: '领养一只悬浮在应用上的 petdex 动画宠物，它会根据 Nemesis 的状态做出反应——工具执行时奔跑、成功时欢呼、出错时沮丧。',
++                restartHint: '宠物功能需要重启——当前运行的应用在此功能加入前启动。请退出并重新打开 Nemesis，然后回到此处。',
+                 scaleTitle: '大小',
+                 scaleDesc: '调整悬浮宠物的大小，所有界面即时生效。',
+                 roamTitle: '漫游',
+@@ -584,10 +584,10 @@ export const zh = {
+                 personality: '新会话的默认助手风格。',
+                 showReasoning: '当后端提供推理内容时予以显示。'
+             },
+-            timezone: '当 Hermes 需要本地时间上下文时使用。留空则使用系统时区。',
++            timezone: '当 Nemesis 需要本地时间上下文时使用。留空则使用系统时区。',
+             agent: {
+                 imageInputMode: '控制图片附件如何发送给模型。',
+-                maxTurns: 'Hermes 停止一次运行前工具调用轮次的上限。'
++                maxTurns: 'Nemesis 停止一次运行前工具调用轮次的上限。'
+             },
+             terminal: {
+                 cwd: '工具与终端操作的默认项目目录。',
+@@ -597,9 +597,9 @@ export const zh = {
+             codeExecution: {
+                 mode: '代码执行被限定到当前项目的严格程度。'
+             },
+-            fileReadMaxChars: 'Hermes 单次文件读取可读取的最大字符数。',
++            fileReadMaxChars: 'Nemesis 单次文件读取可读取的最大字符数。',
+             approvals: {
+-                mode: 'Hermes 如何处理需要显式审批的命令。',
++                mode: 'Nemesis 如何处理需要显式审批的命令。',
+                 timeout: '审批提示在超时前等待的时长。'
+             },
+             security: {
+@@ -628,11 +628,11 @@ export const zh = {
+                 }
+             },
+             updates: {
+-                nonInteractiveLocalChanges: 'Hermes 从应用内更新时（无终端提示），保留本地源码修改（暂存）或丢弃（放弃）。通过终端更新时始终会询问。'
++                nonInteractiveLocalChanges: 'Nemesis 从应用内更新时（无终端提示），保留本地源码修改（暂存）或丢弃（放弃）。通过终端更新时始终会询问。'
+             }
+         }),
+         about: {
+-            heading: 'Hermes Desktop',
++            heading: 'Nemesis Desktop',
+             version: value => `版本 ${value}`,
+             versionUnavailable: '版本不可用',
+             updates: '更新',
+@@ -650,7 +650,7 @@ export const zh = {
+             lastChecked: age => `上次检查:${age}`,
+             justNowSuffix: ' · 刚刚',
+             automaticUpdates: '自动更新',
+-            automaticUpdatesDesc: 'Hermes 会在后台自动检查更新，并在有可用更新时通知你。',
++            automaticUpdatesDesc: 'Nemesis 会在后台自动检查更新，并在有可用更新时通知你。',
+             branchCommit: (branch, commit) => `分支 ${branch} · 提交 ${commit}`,
+             never: '从未',
+             justNow: '刚刚',
+@@ -663,7 +663,7 @@ export const zh = {
+             noneParen: '(无)',
+             notSet: '未设置',
+             commaSeparated: '逗号分隔的值',
+-            loading: '正在加载 Hermes 配置...',
++            loading: '正在加载 Nemesis 配置...',
+             emptyTitle: '无可配置项',
+             emptyDesc: '此分区没有可调整的设置。',
+             failedLoad: '设置加载失败',
+@@ -697,7 +697,7 @@ export const zh = {
+             unavailableDesc: '桌面 IPC 桥未暴露网关设置。',
+             title: '网关连接',
+             envOverride: '环境变量覆盖',
+-            intro: 'Hermes Desktop 默认会启动自己的本地网关。当你希望此应用控制另一台机器上或可信代理后的现有 Hermes 后端时，可以使用远程网关。下面可按 profile 指定各自的远程主机。',
++            intro: 'Nemesis Desktop 默认会启动自己的本地网关。当你希望此应用控制另一台机器上或可信代理后的现有 Nemesis 后端时，可以使用远程网关。下面可按 profile 指定各自的远程主机。',
+             appliesTo: '应用于',
+             allProfiles: '所有 profile',
+             defaultConnection: '默认连接会用于所有没有自定义覆盖的 profile。',
+@@ -705,9 +705,9 @@ export const zh = {
+             envOverrideTitle: '环境变量正在控制此桌面会话。',
+             envOverrideDesc: '取消设置 HERMES_DESKTOP_REMOTE_URL 和 HERMES_DESKTOP_REMOTE_TOKEN 后才会使用下面保存的设置。',
+             localTitle: '本地网关',
+-            localDesc: '在 localhost 启动私有 Hermes 后端。这是默认方式，并且可离线工作。',
++            localDesc: '在 localhost 启动私有 Nemesis 后端。这是默认方式，并且可离线工作。',
+             remoteTitle: '远程网关',
+-            remoteDesc: '将此桌面外壳连接到远程 Hermes 后端。托管网关使用 OAuth 或用户名密码；自托管网关也可能使用会话 token。',
++            remoteDesc: '将此桌面外壳连接到远程 Nemesis 后端。托管网关使用 OAuth 或用户名密码；自托管网关也可能使用会话 token。',
+             remoteUrlTitle: '远程 URL',
+             remoteUrlDesc: '远程 dashboard 后端的基础 URL。支持路径前缀，例如 /hermes。',
+             probing: '正在检查此网关的认证方式…',
+@@ -740,9 +740,9 @@ export const zh = {
+             enterUrlFirst: '请先输入远程 URL。',
+             restartingTitle: '网关连接正在重启',
+             savedTitle: '网关设置已保存',
+-            restartingMessage: 'Hermes Desktop 将使用已保存设置重新连接。',
++            restartingMessage: 'Nemesis Desktop 将使用已保存设置重新连接。',
+             savedMessage: '已保存，下一次重启生效。',
+-            connectedTo: (baseUrl, version) => `已连接到 ${baseUrl}${version ? ` · Hermes ${version}` : ''}`,
++            connectedTo: (baseUrl, version) => `已连接到 ${baseUrl}${version ? ` · Nemesis ${version}` : ''}`,
+             reachableTitle: '远程网关可访问',
+             signedOutTitle: '已退出登录',
+             signedOutMessage: '已清除远程网关会话。',
+@@ -854,7 +854,7 @@ export const zh = {
+         providers: {
+             connectAccount: '连接账号',
+             haveApiKey: '改用 API 密钥？',
+-            intro: '使用订阅登录，无需复制 API 密钥。Hermes 会在应用中为你完成浏览器登录。',
++            intro: '使用订阅登录，无需复制 API 密钥。Nemesis 会在应用中为你完成浏览器登录。',
+             connected: '已连接',
+             collapse: '收起',
+             connectAnother: '连接其他提供方',
+@@ -1054,7 +1054,7 @@ export const zh = {
+         loadFailed: '无法加载记忆图谱',
+         loading: '加载中…',
+         emptyTitle: '尚无学习内容',
+-        emptyDesc: '当 Hermes 为你的工作构建技能和记忆时，会显示在这里。',
++        emptyDesc: '当 Nemesis 为你的工作构建技能和记忆时，会显示在这里。',
+         share: '分享图谱',
+         shareHint: '复制代码以分享此图谱，或粘贴代码以载入。仅包含布局，不含你的记忆或技能内容。',
+         shareTitle: '导入 / 导出图谱',
+@@ -1116,7 +1116,7 @@ export const zh = {
+             placeholder: '搜索宠物…',
+             loading: '正在加载 petdex 画廊…',
+             error: '无法连接到 petdex 画廊。',
+-            staleBackend: '请重启 Hermes 以使用宠物功能——当前后端版本过旧。',
++            staleBackend: '请重启 Nemesis 以使用宠物功能——当前后端版本过旧。',
+             empty: '没有匹配的宠物。',
+             turnOff: '关闭',
+             turnOn: '开启',
+@@ -1143,8 +1143,8 @@ export const zh = {
+             hatchComposing: '正在拼合……',
+             hatchSaving: '马上就好……',
+             namePlaceholder: '给宠物起个名字',
+-            staleBackend: '请更新 Hermes 以生成宠物。',
+-            backgroundHint: '你可以关闭此窗口——完成后 Hermes 会通知你。',
++            staleBackend: '请更新 Nemesis 以生成宠物。',
++            backgroundHint: '你可以关闭此窗口——完成后 Nemesis 会通知你。',
+             slowProviderHint: '这可能需要几分钟',
+             remix: '混合生成',
+             remixConfirmTitle: '以此造型混合生成？',
+@@ -1179,7 +1179,7 @@ export const zh = {
+         },
+         nav: {
+             newChat: { title: '新建会话', detail: '开始一个新会话' },
+-            settings: { title: '设置', detail: '配置 Hermes 桌面端' },
++            settings: { title: '设置', detail: '配置 Nemesis 桌面端' },
+             skills: { title: '技能与工具', detail: '启用技能、工具集与提供方' },
+             messaging: { title: '消息平台', detail: '配置 Telegram、Slack、Discord 等' },
+             artifacts: { title: '产物', detail: '浏览生成的输出' }
+@@ -1201,10 +1201,10 @@ export const zh = {
+         noSessions: '暂无会话。',
+         gatewayRunning: '消息网关运行中',
+         gatewayStopped: '消息网关已停止',
+-        hermesActiveSessions: (version, count) => `Hermes ${version} · 活跃会话 ${count}`,
++        hermesActiveSessions: (version, count) => `Nemesis ${version} · 活跃会话 ${count}`,
+         restartGateway: '重启网关',
+         gatewayRestartFailed: '网关重启失败。',
+-        updateHermes: '更新 Hermes',
++        updateHermes: '更新 Nemesis',
+         actionRunning: '运行中',
+         actionDone: '完成',
+         actionFailed: '失败',
+@@ -1387,9 +1387,9 @@ export const zh = {
+             slack: '创建 Slack 应用，启用 Socket Mode，安装到你的工作区，然后复制 bot 令牌和 app 级令牌。',
+             mattermost: '在你的 Mattermost 服务器上，创建机器人账户或个人访问令牌，然后在此粘贴服务器 URL 和令牌。',
+             matrix: '用机器人账户登录你的 homeserver，然后复制访问令牌、用户 ID 和 homeserver URL。',
+-            signal: '在可访问的位置运行 signal-cli REST 桥接，然后把 Hermes 指向该 URL 和已注册的电话号码。',
+-            whatsapp: '启动 Hermes 自带的 WhatsApp 桥接，首次运行时扫描二维码，然后启用该平台。',
+-            bluebubbles: '在装有 iMessage 的 Mac 上运行 BlueBubbles Server，暴露其 API，然后用服务器密码把 Hermes 指向该 URL。',
++            signal: '在可访问的位置运行 signal-cli REST 桥接，然后把 Nemesis 指向该 URL 和已注册的电话号码。',
++            whatsapp: '启动 Nemesis 自带的 WhatsApp 桥接，首次运行时扫描二维码，然后启用该平台。',
++            bluebubbles: '在装有 iMessage 的 Mac 上运行 BlueBubbles Server，暴露其 API，然后用服务器密码把 Nemesis 指向该 URL。',
+             homeassistant: '在 Home Assistant 中打开你的个人资料并创建长期访问令牌。把它连同你的 HA URL 一起粘贴到这里。',
+             email: '使用专用邮箱。对于 Gmail/Workspace,创建应用专用密码并使用 imap.gmail.com / smtp.gmail.com。',
+             sms: '从 Twilio 控制台获取你的 Account SID 和 Auth Token，以及一个可发送短信的电话号码。',
+@@ -1397,9 +1397,9 @@ export const zh = {
+             feishu: '创建飞书 / Lark 应用，配置机器人能力，复制 App ID、App secret 和事件加密密钥。',
+             wecom: '在企业微信中添加群机器人，复制其 webhook key 作为 WECOM_BOT_ID。仅可发送——双向请用企业微信 (应用) 选项。',
+             wecom_callback: '设置一个企业微信自建应用，暴露其回调 URL，并提供 corp ID、secret、agent ID 和 AES key。',
+-            weixin: '运行 `hermes gateway setup`，选择 Weixin，然后使用个人微信账号扫描并确认二维码。Hermes 会通过腾讯 iLink Bot API 连接并保存凭据。',
++            weixin: '运行 `hermes gateway setup`，选择 Weixin，然后使用个人微信账号扫描并确认二维码。Nemesis 会通过腾讯 iLink Bot API 连接并保存凭据。',
+             qqbot: '在 QQ 开放平台 (q.qq.com) 注册一个应用，复制 App ID 和 Client Secret。',
+-            api_server: '把 Hermes 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向 host:port。',
++            api_server: '把 Nemesis 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向 host:port。',
+             webhook: '运行一个 HTTP 服务器，供其他工具 (GitHub、GitLab、自定义应用)POST。用 secret 验证签名。'
+         }
+     },
+@@ -1451,7 +1451,7 @@ export const zh = {
+         deleteDescMid: ' 并移除其 ',
+         deleteDescSuffix: ' 目录。此操作无法撤销。',
+         deleting: '删除中…',
+-        createDesc: '配置档案是相互独立的 Hermes 环境：各自拥有独立的配置、技能和 SOUL.md。',
++        createDesc: '配置档案是相互独立的 Nemesis 环境：各自拥有独立的配置、技能和 SOUL.md。',
+         nameLabel: '名称',
+         cloneFrom: '克隆来源',
+         cloneFromNone: '无（空白）',
+@@ -1538,7 +1538,7 @@ export const zh = {
+         topOfHour: '每个整点',
+         everyHourAt: minute => `每小时的 :${minute}`,
+         newCron: '新建定时任务',
+-        emptyDescNew: '按 cron 表达式排程一个提示词。Hermes 会运行它，并把结果发送到你选择的目的地。',
++        emptyDescNew: '按 cron 表达式排程一个提示词。Nemesis 会运行它，并把结果发送到你选择的目的地。',
+         emptyDescSearch: '尝试更宽泛的搜索词。',
+         emptyTitleNew: '暂无排程任务',
+         emptyTitleSearch: '无匹配项',
+@@ -1629,7 +1629,8 @@ export const zh = {
+             'new-session': '新建会话',
+             skills: '技能与工具',
+             messaging: '消息平台',
+-            artifacts: '产物'
++            artifacts: '产物',
++            study: '学习'
+         },
+         searchAria: '搜索会话',
+         searchPlaceholder: '搜索会话…',
+@@ -1681,8 +1682,8 @@ export const zh = {
+             copyPath: '复制路径',
+             removeFromSidebar: '从侧边栏移除',
+             createFailed: '无法创建项目',
+-            staleBackend: '请更新 Hermes 后端以创建项目——当前后端比桌面应用旧（设置 → 更新 → 后端）。',
+-            deleteConfirm: '这会从 Hermes 中移除已保存的项目。文件、git 仓库和工作树保持不变。',
++            staleBackend: '请更新 Nemesis 后端以创建项目——当前后端比桌面应用旧（设置 → 更新 → 后端）。',
++            deleteConfirm: '这会从 Nemesis 中移除已保存的项目。文件、git 仓库和工作树保持不变。',
+             startWork: '新建工作树',
+             newWorktreeTitle: '新建工作树',
+             newWorktreeDesc: '为这个工作树命名分支。',
+@@ -1743,12 +1744,12 @@ export const zh = {
+     composer: {
+         message: '消息',
+         wakingProfile: profile => `正在唤醒 ${profile}…`,
+-        placeholderStarting: '正在启动 Hermes…',
+-        placeholderReconnecting: '正在重新连接 Hermes…',
++        placeholderStarting: '正在启动 Nemesis…',
++        placeholderReconnecting: '正在重新连接 Nemesis…',
+         placeholderFollowUp: '发送后续消息',
+         newSessionPlaceholders: [
+             '我们要构建什么？',
+-            '给 Hermes 一个任务',
++            '给 Nemesis 一个任务',
+             '你在想什么？',
+             '描述你需要什么',
+             '我们该处理什么？',
+@@ -1811,7 +1812,7 @@ export const zh = {
+             'composer.history': '循环弹窗 / 历史'
+         },
+         attachUrlTitle: '附加 URL',
+-        attachUrlDesc: 'Hermes 将抓取该页面并作为本回合的上下文。',
++        attachUrlDesc: 'Nemesis 将抓取该页面并作为本回合的上下文。',
+         urlPlaceholder: 'https://example.com/post',
+         urlHintPre: '请包含完整 URL，例如 ',
+         attach: '附加',
+@@ -1915,7 +1916,7 @@ export const zh = {
+             createPr: '创建 PR',
+             openPr: '打开 PR',
+             ghMissing: '安装 GitHub CLI (gh) 并登录后可打开 PR',
+-            agentShip: '让 Hermes 提交并开 PR',
++            agentShip: '让 Nemesis 提交并开 PR',
+             agentShipPrompt: '检查当前更改，使用清晰的约定式提交信息提交，推送分支，并开启一个拉取请求。',
+             newBranch: '新建分支',
+             branchOffFrom: base => `从 ${base} 新建分支`,
+@@ -1931,9 +1932,9 @@ export const zh = {
+             fetch: '下载中…',
+             pull: '马上完成…',
+             pydeps: '收尾中…',
+-            update: '正在更新 Hermes…',
++            update: '正在更新 Nemesis…',
+             rebuild: '正在重新构建桌面应用…',
+-            restart: '正在重启 Hermes…',
++            restart: '正在重启 Nemesis…',
+             done: '更新完成',
+             manual: '从终端更新',
+             guiSkew: '请更新桌面应用',
+@@ -1943,30 +1944,30 @@ export const zh = {
+         checkFailedTitle: '无法检查更新',
+         tryAgain: '重试',
+         notAvailableTitle: '更新不可用',
+-        unsupportedMessage: '此版本的 Hermes 无法在应用内自行更新。',
++        unsupportedMessage: '此版本的 Nemesis 无法在应用内自行更新。',
+         connectionRetry: '请检查网络连接后重试。',
+         latestBody: '你正在运行最新版本。',
+         latestBodyBackend: '后端正在运行最新版本。',
+         allSetTitle: '已是最新',
+         availableTitle: '有可用更新',
+-        availableBody: '新版 Hermes 已可安装。',
++        availableBody: '新版 Nemesis 已可安装。',
+         availableTitleBackend: '后端有可用更新',
+-        availableBodyBackend: '已连接的 Hermes 后端有新版本可安装。',
++        availableBodyBackend: '已连接的 Nemesis 后端有新版本可安装。',
+         availableBodyNoChangelog: '已有新版本可用。此安装方式无法显示更新日志。',
+         updateNow: '立即更新',
+         maybeLater: '稍后再说',
+         moreChanges: count => `另有 ${count} 项更改。`,
+         manualTitle: '从终端更新',
+-        manualBody: '你是从命令行安装的 Hermes，因此更新也需要在那里运行。请将此命令粘贴到终端：',
+-        manualPickedUp: '下次启动 Hermes 时会使用新版本。',
++        manualBody: '你是从命令行安装的 Nemesis，因此更新也需要在那里运行。请将此命令粘贴到终端：',
++        manualPickedUp: '下次启动 Nemesis 时会使用新版本。',
+         guiSkewTitle: '请更新桌面应用',
+-        guiSkewBody: '后端已更新，但此桌面应用包未更改。请更新或重新安装 Hermes 桌面应用（你的 AppImage / .deb / .rpm）以保持一致。',
++        guiSkewBody: '后端已更新，但此桌面应用包未更改。请更新或重新安装 Nemesis 桌面应用（你的 AppImage / .deb / .rpm）以保持一致。',
+         copy: '复制',
+         copied: '已复制',
+         done: '完成',
+-        applyingBody: 'Hermes 更新器会在自己的窗口中接管，并在完成后自动重新打开 Hermes。更新期间请不要自行重新打开 Hermes。',
+-        applyingBodyBackend: '远程后端正在应用更新并将重启。恢复后 Hermes 会自动重新连接。',
+-        applyingClose: '此窗口会在更新期间关闭，随后 Hermes 会自动重新打开。',
++        applyingBody: 'Nemesis 更新器会在自己的窗口中接管，并在完成后自动重新打开 Nemesis。更新期间请不要自行重新打开 Nemesis。',
++        applyingBodyBackend: '远程后端正在应用更新并将重启。恢复后 Nemesis 会自动重新连接。',
++        applyingClose: '此窗口会在更新期间关闭，随后 Nemesis 会自动重新打开。',
+         errorTitle: '更新未完成',
+         errorBody: '没有数据丢失。你可以现在重试。',
+         notNow: '暂不',
+@@ -1987,7 +1988,7 @@ export const zh = {
+             skipped: '已跳过',
+             failed: '失败'
+         },
+-        oneTimeTitle: 'Hermes 需要一次性安装',
++        oneTimeTitle: 'Nemesis 需要一次性安装',
+         unsupportedDesc: platform => `${platform} 暂不支持自动首次启动安装。请打开终端并运行下面的命令，然后重新启动此应用。之后启动会跳过此步骤。`,
+         installCommand: '安装命令',
+         copyCommand: '复制命令',
+@@ -1995,10 +1996,10 @@ export const zh = {
+         installTo: '将安装到',
+         retryAfterRun: '我已运行 -- 重试',
+         failedTitle: '安装失败',
+-        settingUpTitle: '正在设置 Hermes Agent',
++        settingUpTitle: '正在设置 Nemesis Agent',
+         finishingTitle: '正在收尾',
+-        failedDesc: '某个安装步骤失败。在 Windows 上，如果另一个 Hermes CLI 或桌面实例正在运行，可能会出现这种情况。请停止正在运行的 Hermes 实例后重试。可查看下面的详情或 desktop 日志中的完整记录。',
+-        activeDesc: '这是一次性设置。Hermes 安装器正在下载依赖并配置你的机器。之后启动会跳过此步骤。',
++        failedDesc: '某个安装步骤失败。在 Windows 上，如果另一个 Nemesis CLI 或桌面实例正在运行，可能会出现这种情况。请停止正在运行的 Nemesis 实例后重试。可查看下面的详情或 desktop 日志中的完整记录。',
++        activeDesc: '这是一次性设置。Nemesis 安装器正在下载依赖并配置你的机器。之后启动会跳过此步骤。',
+         progress: (completed, total) => `${completed}/${total} 个步骤已完成`,
+         currentStage: stage => ` -- 当前：${stage}`,
+         fetchingManifest: '正在获取安装器 manifest...',
+@@ -2015,10 +2016,10 @@ export const zh = {
+         reloadRetry: '重新加载并重试'
+     },
+     onboarding: {
+-        headerTitle: '开始设置 Hermes Agent',
++        headerTitle: '开始设置 Nemesis Agent',
+         headerDesc: '连接模型提供方即可开始对话。大多数选项只需一次点击。',
+-        preparingInstall: 'Hermes 正在完成安装。首次运行通常不到一分钟。',
+-        starting: '正在启动 Hermes…',
++        preparingInstall: 'Nemesis 正在完成安装。首次运行通常不到一分钟。',
++        starting: '正在启动 Nemesis…',
+         lookingUpProviders: '正在查找提供方...',
+         collapse: '收起',
+         otherProviders: '其他提供方',
+@@ -2026,7 +2027,7 @@ export const zh = {
+         chooseLater: '稍后再选择提供方',
+         recommended: '推荐',
+         connected: '已连接',
+-        featuredPitch: '一个订阅，300+ 前沿模型 — 运行 Hermes 的推荐方式',
++        featuredPitch: '一个订阅，300+ 前沿模型 — 运行 Nemesis 的推荐方式',
+         openRouterPitch: '一个密钥，数百个模型 — 稳妥的默认选择',
+         apiKeyOptions: {
+             openrouter: { short: '一个密钥，多个模型', description: '用一个密钥访问数百个模型。适合新安装的默认选择。' },
+@@ -2035,7 +2036,7 @@ export const zh = {
+             xai: { short: 'Grok 模型', description: '直接访问 xAI Grok 模型。' },
+             local: {
+                 short: '自托管',
+-                description: '将 Hermes 指向本地或自托管的 OpenAI 兼容端点 (vLLM、llama.cpp、Ollama 等)。'
++                description: '将 Nemesis 指向本地或自托管的 OpenAI 兼容端点 (vLLM、llama.cpp、Ollama 等)。'
+             }
+         },
+         backToSignIn: '返回登录',
+@@ -2048,7 +2049,7 @@ export const zh = {
+         update: '更新',
+         flowSubtitles: {
+             pkce: '打开浏览器登录，然后回到这里继续',
+-            device_code: '在浏览器中打开验证页面 — Hermes 会自动连接',
++            device_code: '在浏览器中打开验证页面 — Nemesis 会自动连接',
+             external: '先在终端登录一次，然后回来继续对话'
+         },
+         startingSignIn: provider => `正在为 ${provider} 启动登录...`,
+@@ -2059,11 +2060,11 @@ export const zh = {
+         pickDifferentProvider: '选择其他提供方',
+         signInWith: provider => `使用 ${provider} 登录`,
+         openedBrowser: provider => `已在浏览器中打开 ${provider}。`,
+-        authorizeThere: '请在那里授权 Hermes。',
++        authorizeThere: '请在那里授权 Nemesis。',
+         copyAuthCode: '复制授权码并粘贴到下面。',
+         pasteAuthCode: '粘贴授权码',
+         reopenAuthPage: '重新打开授权页面',
+-        autoBrowser: provider => `已在浏览器中打开 ${provider}。请在那里授权 Hermes，连接会自动完成，无需复制或粘贴。`,
++        autoBrowser: provider => `已在浏览器中打开 ${provider}。请在那里授权 Nemesis，连接会自动完成，无需复制或粘贴。`,
+         reopenSignInPage: '重新打开登录页面',
+         waitingAuthorize: '等待你授权...',
+         externalPending: provider => `${provider} 通过自己的 CLI 登录。请在终端运行此命令，然后回来选择“我已登录”：`,
+@@ -2148,7 +2149,7 @@ export const zh = {
+             update: '更新',
+             updateInProgress: '正在更新',
+             commitsBehind: (count, branch) => `落后 ${branch} ${count} 个提交`,
+-            desktopVersion: version => `Hermes Desktop v${version}`,
++            desktopVersion: version => `Nemesis Desktop v${version}`,
+             backendVersion: version => `后端 v${version}`,
+             clientLabel: version => `客户端 v${version}`,
+             backendLabel: version => `后端 v${version}`,
+@@ -2165,7 +2166,7 @@ export const zh = {
+             gatewayConnecting: '连接中',
+             gatewayOffline: '离线',
+             gatewayRestarting: '重启中…',
+-            gatewayTitle: 'Hermes 推理网关状态',
++            gatewayTitle: 'Nemesis 推理网关状态',
+             agents: '代理',
+             closeAgents: '关闭代理',
+             openAgents: '打开代理',
+@@ -2267,7 +2268,7 @@ export const zh = {
+         binaryTitle: '这看起来像二进制文件',
+         binaryBody: label => `预览 ${label} 可能会显示不可读文本。`,
+         largeTitle: '此文件较大',
+-        largeBody: (label, size) => `${label} 大小为 ${size}。Hermes 只会显示前 512 KB。`,
++        largeBody: (label, size) => `${label} 大小为 ${size}。Nemesis 只会显示前 512 KB。`,
+         previewAnyway: '仍然预览',
+         truncated: '显示前 512 KB。',
+         noInlineTitle: '没有内联预览',
+@@ -2305,25 +2306,25 @@ export const zh = {
+             serverNotFound: '未找到服务器',
+             failedToLoad: '预览加载失败',
+             tryAgain: '重试',
+-            restarting: 'Hermes 正在重启...',
+-            askRestart: '让 Hermes 重启服务器',
+-            lookingRestart: taskId => `Hermes 正在查找要重启的预览服务器 (${taskId})`,
++            restarting: 'Nemesis 正在重启...',
++            askRestart: '让 Nemesis 重启服务器',
++            lookingRestart: taskId => `Nemesis 正在查找要重启的预览服务器 (${taskId})`,
+             restartingTitle: '正在重启预览服务器',
+-            restartingMessage: 'Hermes 正在后台工作。可在预览控制台查看进度。',
++            restartingMessage: 'Nemesis 正在后台工作。可在预览控制台查看进度。',
+             startRestartFailed: message => `无法启动服务器重启：${message}`,
+             restartFailed: '服务器重启失败',
+             hideConsole: '隐藏预览控制台',
+             showConsole: '显示预览控制台',
+             hideDevTools: '隐藏预览 DevTools',
+             openDevTools: '打开预览 DevTools',
+-            finishedRestarting: message => `Hermes 已完成预览服务器重启${message ? `: ${message}` : ''}`,
++            finishedRestarting: message => `Nemesis 已完成预览服务器重启${message ? `: ${message}` : ''}`,
+             failedRestarting: message => `服务器重启失败：${message}`,
+             unknownError: '未知错误',
+             restartedTitle: '预览服务器已重启',
+             reloadingNow: '正在重新加载预览。',
+             restartFailedTitle: '预览重启失败',
+-            restartFailedMessage: 'Hermes 无法重启服务器。',
+-            stillWorking: 'Hermes 仍在工作，但还没有收到重启结果。服务器命令可能正在前台运行。',
++            restartFailedMessage: 'Nemesis 无法重启服务器。',
++            stillWorking: 'Nemesis 仍在工作，但还没有收到重启结果。服务器命令可能正在前台运行。',
+             workspaceReloading: '工作区已变更，正在重新加载预览',
+             fileChanged: url => `文件已变更，正在重新加载预览：${url}`,
+             filesChanged: (count, url) => `${count} 个文件变更，正在重新加载预览：${url}`,
+@@ -2339,7 +2340,7 @@ export const zh = {
+         thread: {
+             loadingSession: '正在加载会话',
+             showEarlier: '显示更早的消息',
+-            loadingResponse: 'Hermes 正在加载回复',
++            loadingResponse: 'Nemesis 正在加载回复',
+             resumeWhenBackgroundDone: count => count === 1 ? '后台任务完成后将自动继续' : `${count} 个后台任务完成后将自动继续`,
+             thinking: '思考中',
+             today: time => `今天，${time}`,
+@@ -2369,7 +2370,7 @@ export const zh = {
+             attachingFile: '正在附加…'
+         },
+         approval: {
+-            gatewayDisconnected: 'Hermes 网关未连接',
++            gatewayDisconnected: 'Nemesis 网关未连接',
+             sendFailed: '无法发送审批响应',
+             run: '运行',
+             command: '命令',
+@@ -2379,12 +2380,12 @@ export const zh = {
+             jumpToApproval: '需要审批',
+             reject: '拒绝',
+             alwaysTitle: '始终允许此命令？',
+-            alwaysDescription: pattern => `这会将“${pattern}”模式加入永久允许列表 (~/.hermes/config.yaml)。Hermes 对类似命令将不再询问，包括当前会话和未来会话。`,
++            alwaysDescription: pattern => `这会将“${pattern}”模式加入永久允许列表 (~/.hermes/config.yaml)。Nemesis 对类似命令将不再询问，包括当前会话和未来会话。`,
+             alwaysAllow: '始终允许'
+         },
+         clarify: {
+             notReady: '澄清请求尚未就绪',
+-            gatewayDisconnected: 'Hermes 网关未连接',
++            gatewayDisconnected: 'Nemesis 网关未连接',
+             sendFailed: '无法发送澄清响应',
+             loadingQuestion: '正在加载问题…',
+             other: '其他 (输入你的答案)',
+@@ -2467,14 +2468,14 @@ export const zh = {
+         }
+     },
+     prompts: {
+-        gatewayDisconnected: 'Hermes 网关未连接',
++        gatewayDisconnected: 'Nemesis 网关未连接',
+         sudoSendFailed: '无法发送 sudo 密码',
+         secretSendFailed: '无法发送密钥',
+         sudoTitle: '管理员密码',
+-        sudoDesc: 'Hermes 需要你的 sudo 密码来运行特权命令。它只会发送给你的本地 agent。',
++        sudoDesc: 'Nemesis 需要你的 sudo 密码来运行特权命令。它只会发送给你的本地 agent。',
+         sudoPlaceholder: 'sudo 密码',
+         secretTitle: '需要密钥',
+-        secretDesc: 'Hermes 需要一个凭据才能继续。',
++        secretDesc: 'Nemesis 需要一个凭据才能继续。',
+         secretPlaceholder: '密钥值'
+     },
+     desktop: {
+@@ -2523,8 +2524,8 @@ export const zh = {
+         sessionExportFailed: '无法导出会话',
+         imageSaved: '图片已保存',
+         downloadStarted: '下载已开始',
+-        restartToUseSaveImage: '重启 Hermes 桌面版后可使用保存图片。',
+-        restartToSaveImages: '重启 Hermes 桌面版以保存图片',
++        restartToUseSaveImage: '重启 Nemesis 桌面版后可使用保存图片。',
++        restartToSaveImages: '重启 Nemesis 桌面版以保存图片',
+         imageDownloadFailed: '图片下载失败',
+         openImage: '打开图片',
+         downloadImage: '下载图片',
+diff --git a/apps/desktop/src/i18n/zh.ts b/apps/desktop/src/i18n/zh.ts
+index 59e614c..1930f0d 100644
+--- a/apps/desktop/src/i18n/zh.ts
++++ b/apps/desktop/src/i18n/zh.ts
+@@ -1660,7 +1660,8 @@ export const zh: Translations = {
+       'new-session': '新建会话',
+       skills: '技能与工具',
+       messaging: '消息平台',
+-      artifacts: '产物'
++      artifacts: '产物',
++      study: '学习'
+     },
+     searchAria: '搜索会话',
+     searchPlaceholder: '搜索会话…',
+diff --git a/apps/desktop/src/themes/presets.js b/apps/desktop/src/themes/presets.js
+index 939550b..f61ec2c 100644
+--- a/apps/desktop/src/themes/presets.js
++++ b/apps/desktop/src/themes/presets.js
+@@ -270,4 +270,4 @@ export const BUILTIN_THEMES = {
+ };
+ export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES);
+ /** Skin used when nothing is persisted or the persisted name is retired. */
+-export const DEFAULT_SKIN_NAME = 'nous';
++export const DEFAULT_SKIN_NAME = 'mono';
+diff --git a/package-lock.json b/package-lock.json
+index 1c25cb2..77913cc 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -58,7 +58,7 @@
+       }
+     },
+     "apps/desktop": {
+-      "name": "hermes",
++      "name": "nemesis",
+       "version": "0.17.0",
+       "dependencies": {
+         "@assistant-ui/react": "^0.12.28",
+@@ -122,6 +122,7 @@
+         "streamdown": "^2.5.0",
+         "tailwind-merge": "^3.5.0",
+         "tailwindcss": "^4.2.4",
++        "ts-fsrs": "^5.4.1",
+         "tw-shimmer": "^0.4.11",
+         "unicode-animations": "^1.0.3",
+         "unified": "^11.0.5",
+@@ -1903,7 +1904,6 @@
+       "os": [
+         "aix"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -1920,7 +1920,6 @@
+       "os": [
+         "android"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -1937,7 +1936,6 @@
+       "os": [
+         "android"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -1954,7 +1952,6 @@
+       "os": [
+         "android"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -1971,7 +1968,6 @@
+       "os": [
+         "darwin"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -1988,7 +1984,6 @@
+       "os": [
+         "darwin"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2005,7 +2000,6 @@
+       "os": [
+         "freebsd"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2022,7 +2016,6 @@
+       "os": [
+         "freebsd"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2039,7 +2032,6 @@
+       "os": [
+         "linux"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2056,7 +2048,6 @@
+       "os": [
+         "linux"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2073,7 +2064,6 @@
+       "os": [
+         "linux"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2090,7 +2080,6 @@
+       "os": [
+         "linux"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2107,7 +2096,6 @@
+       "os": [
+         "linux"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2124,7 +2112,6 @@
+       "os": [
+         "linux"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2141,7 +2128,6 @@
+       "os": [
+         "linux"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2158,7 +2144,6 @@
+       "os": [
+         "linux"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2175,7 +2160,6 @@
+       "os": [
+         "linux"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2192,7 +2176,6 @@
+       "os": [
+         "netbsd"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2209,7 +2192,6 @@
+       "os": [
+         "netbsd"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2226,7 +2208,6 @@
+       "os": [
+         "openbsd"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2243,7 +2224,6 @@
+       "os": [
+         "openbsd"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2260,7 +2240,6 @@
+       "os": [
+         "openharmony"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2277,7 +2256,6 @@
+       "os": [
+         "sunos"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2294,7 +2272,6 @@
+       "os": [
+         "win32"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2311,7 +2288,6 @@
+       "os": [
+         "win32"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -2328,7 +2304,6 @@
+       "os": [
+         "win32"
+       ],
+-      "peer": true,
+       "engines": {
+         "node": ">=18"
+       }
+@@ -11867,10 +11842,6 @@
+         "url": "https://opencollective.com/unified"
+       }
+     },
+-    "node_modules/hermes": {
+-      "resolved": "apps/desktop",
+-      "link": true
+-    },
+     "node_modules/hermes-estree": {
+       "version": "0.25.1",
+       "resolved": "https://registry.npmjs.org/hermes-estree/-/hermes-estree-0.25.1.tgz",
+@@ -14866,6 +14837,10 @@
+         "node": ">=18"
+       }
+     },
++    "node_modules/nemesis": {
++      "resolved": "apps/desktop",
++      "link": true
++    },
+     "node_modules/node-abi": {
+       "version": "4.31.0",
+       "resolved": "https://registry.npmjs.org/node-abi/-/node-abi-4.31.0.tgz",
+@@ -18186,6 +18161,15 @@
+         "node": ">=6.10"
+       }
+     },
++    "node_modules/ts-fsrs": {
++      "version": "5.4.1",
++      "resolved": "https://registry.npmjs.org/ts-fsrs/-/ts-fsrs-5.4.1.tgz",
++      "integrity": "sha512-mOp9+oexJexBTkwjg/jQI1aSUQRLIAvbimeKHLSmVdNJPwObugFNKmZkoggH5d6kZ0uaWLboP1Al1DnXAfIb9w==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=20.0.0"
++      }
++    },
+     "node_modules/tslib": {
+       "version": "2.8.1",
+       "resolved": "https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz",
+-- 
+2.50.1 (Apple Git-155)
+

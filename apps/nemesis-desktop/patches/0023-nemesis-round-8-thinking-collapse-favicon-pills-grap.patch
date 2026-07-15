@@ -1,0 +1,968 @@
+From ad2530a82825704f8bdc63a7216aea243b7cfdaf Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Fri, 10 Jul 2026 00:05:07 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20round-8=20=E2=80=94=20thinking=20col?=
+ =?UTF-8?q?lapse,=20favicon=20pills,=20graph=20tuning,=20live=20insights?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- ActivityStrip (student): settled turns fold their reasoning+tool trail behind
+  one 'Worked through N steps' row; live turns keep previews + approvals visible
+- Source pills: domain favicon with letter-badge fallback (rail + inline)
+- Graph: settings panel (node size / spread / repulsion sliders, auto-rotate,
+  reset), applied live via d3Force + reheat, persisted to localStorage
+- Recorder live insights: on-device lexicon spotting of drugs as they're spoken,
+  tap-to-queue chips, post-stop 'Ask about N queued drugs' prefills the chat
+- pharm-lexicon: detectPharmTerms() word-boundary scanner over the canonical list
+- SOUL + evidence skills rewritten: cite inline only (no trailing Sources list —
+  pills render automatically), no boilerplate disclaimers, thorough-by-default
+  research-agent voice
+---
+ apps/desktop/src/app/graph/index.js           |  54 +++++-
+ apps/desktop/src/app/graph/index.tsx          | 166 +++++++++++++++++-
+ apps/desktop/src/app/recorder/index.js        |  36 +++-
+ apps/desktop/src/app/recorder/index.tsx       |  86 ++++++++-
+ .../desktop/src/app/recorder/pharm-lexicon.js |  11 ++
+ .../desktop/src/app/recorder/pharm-lexicon.ts |  14 ++
+ apps/desktop/src/app/right-sidebar/sources.js |  13 +-
+ .../desktop/src/app/right-sidebar/sources.tsx |  31 +++-
+ .../assistant-ui/thread/activity-strip.js     |  41 +++++
+ .../assistant-ui/thread/activity-strip.tsx    |  66 +++++++
+ .../assistant-ui/thread/assistant-message.js  |   3 +-
+ .../assistant-ui/thread/assistant-message.tsx |   2 +
+ .../assistant-ui/thread/message-sources.js    |   4 +-
+ .../assistant-ui/thread/message-sources.tsx   |   3 +-
+ apps/desktop/src/styles.css                   |  10 ++
+ 15 files changed, 510 insertions(+), 30 deletions(-)
+ create mode 100644 apps/desktop/src/components/assistant-ui/thread/activity-strip.js
+ create mode 100644 apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx
+
+diff --git a/apps/desktop/src/app/graph/index.js b/apps/desktop/src/app/graph/index.js
+index ba21054..a1e9643 100644
+--- a/apps/desktop/src/app/graph/index.js
++++ b/apps/desktop/src/app/graph/index.js
+@@ -4,18 +4,41 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ // community 3D graph plugin). Clicking a node opens that note in the Library; wikilink
+ // targets that don't exist yet render as dim "ghost" nodes and a click CREATES the note
+ // (Obsidian's edit affordance), so the graph is a place to grow the vault, not just view it.
++import { IconAdjustmentsHorizontal } from '@tabler/icons-react';
+ import { useEffect, useRef, useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+ import { EmptyState } from '@/components/ui/empty-state';
+ import { LIBRARY_ROUTE } from '../routes';
+ import { buildIndex, extractWikilinks, loadVault, saveNote } from '../library/vault';
++const GRAPH_SETTINGS_KEY = 'nemesis.graph.settings.v1';
++const DEFAULT_CONTROLS = { nodeSize: 4, repulsion: 40, rotate: true, spread: 34 };
++function loadControls() {
++    try {
++        const raw = window.localStorage.getItem(GRAPH_SETTINGS_KEY);
++        if (raw) {
++            return { ...DEFAULT_CONTROLS, ...JSON.parse(raw) };
++        }
++    }
++    catch {
++        // fall through to defaults
++    }
++    return DEFAULT_CONTROLS;
++}
++function ControlSlider({ label, max, min, onChange, step, value }) {
++    return (_jsxs("label", { className: "mb-2 block", children: [_jsxs("span", { className: "flex items-center justify-between text-xs text-muted-foreground", children: [label, _jsx("span", { className: "tabular-nums", children: value })] }), _jsx("input", { className: "w-full accent-(--theme-primary)", max: max, min: min, onChange: event => onChange(Number(event.target.value)), step: step, type: "range", value: value })] }));
++}
+ export function GraphView() {
+     const hostRef = useRef(null);
++    const graphRef = useRef(null);
+     const navigate = useNavigate();
+     const [status, setStatus] = useState('loading');
+     const [noteCount, setNoteCount] = useState(0);
+     const [ghostCount, setGhostCount] = useState(0);
++    const [controls, setControls] = useState(() => loadControls());
++    const [panelOpen, setPanelOpen] = useState(false);
++    const controlsRef = useRef(controls);
++    controlsRef.current = controls;
+     useEffect(() => {
+         const host = hostRef.current;
+         if (!host) {
+@@ -68,7 +91,7 @@ export function GraphView() {
+                         ? `<div style="font: 12px sans-serif; color:#aaa">${graphNode.id} — click to create this note</div>`
+                         : `<div style="font: 12px sans-serif; color:#eee">${graphNode.id}</div>`;
+                 })
+-                    .nodeRelSize(4)
++                    .nodeRelSize(controlsRef.current.nodeSize)
+                     .nodeColor((node) => {
+                     const graphNode = node;
+                     if (graphNode.ghost) {
+@@ -102,15 +125,16 @@ export function GraphView() {
+                 // padding keeps the nodes comfortably inside the viewport rather than filling it.
+                 instance.onEngineStop(() => instance.zoomToFit(500, 110));
+                 window.setTimeout(() => instance.zoomToFit(700, 110), 1500);
+-                const controls = instance.controls();
+-                controls.autoRotate = true;
+-                controls.autoRotateSpeed = 0.5;
++                const orbit = instance.controls();
++                orbit.autoRotate = controlsRef.current.rotate;
++                orbit.autoRotateSpeed = 0.5;
+                 observer = new ResizeObserver(() => {
+                     instance.width(host.clientWidth || 800);
+                     instance.height(host.clientHeight || 600);
+                 });
+                 observer.observe(host);
+                 graph = instance;
++                graphRef.current = instance;
+                 setNoteCount(notes.length);
+                 setGhostCount(ghostByLower.size);
+                 setStatus('ready');
+@@ -124,10 +148,30 @@ export function GraphView() {
+         return () => {
+             disposed = true;
+             observer?.disconnect();
++            graphRef.current = null;
+             graph?._destructor?.();
+         };
+     }, [navigate]);
++    // Live-apply the tuning panel: size, spread (link distance), repulsion (charge),
++    // rotation — then reheat so the layout actually re-settles.
++    useEffect(() => {
++        try {
++            window.localStorage.setItem(GRAPH_SETTINGS_KEY, JSON.stringify(controls));
++        }
++        catch {
++            // persistence is best-effort
++        }
++        const graph = graphRef.current;
++        if (!graph || status !== 'ready') {
++            return;
++        }
++        graph.nodeRelSize(controls.nodeSize);
++        graph.d3Force('link')?.distance?.(controls.spread);
++        graph.d3Force('charge')?.strength?.(-controls.repulsion);
++        graph.d3ReheatSimulation();
++        graph.controls().autoRotate = controls.rotate;
++    }, [controls, status]);
+     return (_jsxs("div", { className: "relative flex h-full min-h-0 flex-col", children: [_jsxs("header", { className: "pointer-events-none absolute left-6 top-5 z-10", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Graph" }), _jsx("p", { className: "text-xs text-muted-foreground", children: status === 'ready'
+                             ? `${noteCount} notes${ghostCount > 0 ? ` · ${ghostCount} to create` : ''} — click any node`
+-                            : '' }), status === 'ready' && ghostCount > 0 && (_jsx("p", { className: "text-[11px] text-muted-foreground/70", children: "Dim nodes are [[links]] with no note yet \u2014 click one to create it." }))] }), status === 'ready' && (_jsx("div", { className: "absolute right-6 top-5 z-10", children: _jsx(Button, { onClick: () => navigate(`${LIBRARY_ROUTE}?create=note`), size: "sm", variant: "outline", children: "+ New note" }) })), status === 'error' && (_jsx(EmptyState, { className: "flex-1", description: "Could not read the Library vault.", title: "Graph unavailable" })), status === 'empty' && (_jsx(EmptyState, { className: "flex-1", description: "Write linked notes in the Library first.", title: "Nothing to map yet" })), _jsx("div", { className: status === 'ready' || status === 'loading' ? 'min-h-0 flex-1' : 'hidden', ref: hostRef })] }));
++                            : '' }), status === 'ready' && ghostCount > 0 && (_jsx("p", { className: "text-[11px] text-muted-foreground/70", children: "Dim nodes are [[links]] with no note yet \u2014 click one to create it." }))] }), status === 'ready' && (_jsxs("div", { className: "absolute right-6 top-5 z-10 flex flex-col items-end gap-2", children: [_jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { "aria-label": "Graph settings", onClick: () => setPanelOpen(value => !value), size: "sm", variant: panelOpen ? 'secondary' : 'outline', children: _jsx(IconAdjustmentsHorizontal, { size: 14 }) }), _jsx(Button, { onClick: () => navigate(`${LIBRARY_ROUTE}?create=note`), size: "sm", variant: "outline", children: "+ New note" })] }), panelOpen && (_jsxs("div", { className: "w-60 rounded-lg border border-border bg-card/95 p-3 backdrop-blur", children: [_jsx(ControlSlider, { label: "Node size", max: 10, min: 1, onChange: nodeSize => setControls(current => ({ ...current, nodeSize })), step: 0.5, value: controls.nodeSize }), _jsx(ControlSlider, { label: "Spread", max: 120, min: 10, onChange: spread => setControls(current => ({ ...current, spread })), step: 2, value: controls.spread }), _jsx(ControlSlider, { label: "Repulsion", max: 140, min: 0, onChange: repulsion => setControls(current => ({ ...current, repulsion })), step: 5, value: controls.repulsion }), _jsxs("label", { className: "mt-2 flex cursor-pointer items-center justify-between text-xs text-muted-foreground", children: ["Slow auto-rotate", _jsx("input", { checked: controls.rotate, className: "accent-(--theme-primary)", onChange: event => setControls(current => ({ ...current, rotate: event.target.checked })), type: "checkbox" })] }), _jsx("button", { className: "mt-2 text-[11px] text-muted-foreground underline-offset-2 hover:underline", onClick: () => setControls(DEFAULT_CONTROLS), type: "button", children: "Reset to defaults" })] }))] })), status === 'error' && (_jsx(EmptyState, { className: "flex-1", description: "Could not read the Library vault.", title: "Graph unavailable" })), status === 'empty' && (_jsx(EmptyState, { className: "flex-1", description: "Write linked notes in the Library first.", title: "Nothing to map yet" })), _jsx("div", { className: status === 'ready' || status === 'loading' ? 'min-h-0 flex-1' : 'hidden', ref: hostRef })] }));
+ }
+diff --git a/apps/desktop/src/app/graph/index.tsx b/apps/desktop/src/app/graph/index.tsx
+index 905f1e3..cfc0c2d 100644
+--- a/apps/desktop/src/app/graph/index.tsx
++++ b/apps/desktop/src/app/graph/index.tsx
+@@ -3,6 +3,7 @@
+ // community 3D graph plugin). Clicking a node opens that note in the Library; wikilink
+ // targets that don't exist yet render as dim "ghost" nodes and a click CREATES the note
+ // (Obsidian's edit affordance), so the graph is a place to grow the vault, not just view it.
++import { IconAdjustmentsHorizontal } from '@tabler/icons-react'
+ import { useEffect, useRef, useState } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ 
+@@ -18,12 +19,83 @@ interface GraphNode {
+   ghost?: boolean
+ }
+ 
++// Structural slice of the 3d-force-graph instance we tune at runtime.
++interface TunableGraph {
++  nodeRelSize: (n: number) => unknown
++  d3Force: (name: string) => undefined | { distance?: (n: number) => unknown; strength?: (n: number) => unknown }
++  d3ReheatSimulation: () => unknown
++  controls: () => { autoRotate?: boolean }
++}
++
++interface GraphControlsState {
++  nodeSize: number
++  spread: number
++  repulsion: number
++  rotate: boolean
++}
++
++const GRAPH_SETTINGS_KEY = 'nemesis.graph.settings.v1'
++const DEFAULT_CONTROLS: GraphControlsState = { nodeSize: 4, repulsion: 40, rotate: true, spread: 34 }
++
++function loadControls(): GraphControlsState {
++  try {
++    const raw = window.localStorage.getItem(GRAPH_SETTINGS_KEY)
++
++    if (raw) {
++      return { ...DEFAULT_CONTROLS, ...(JSON.parse(raw) as Partial<GraphControlsState>) }
++    }
++  } catch {
++    // fall through to defaults
++  }
++
++  return DEFAULT_CONTROLS
++}
++
++function ControlSlider({
++  label,
++  max,
++  min,
++  onChange,
++  step,
++  value
++}: {
++  label: string
++  max: number
++  min: number
++  onChange: (value: number) => void
++  step: number
++  value: number
++}) {
++  return (
++    <label className="mb-2 block">
++      <span className="flex items-center justify-between text-xs text-muted-foreground">
++        {label}
++        <span className="tabular-nums">{value}</span>
++      </span>
++      <input
++        className="w-full accent-(--theme-primary)"
++        max={max}
++        min={min}
++        onChange={event => onChange(Number(event.target.value))}
++        step={step}
++        type="range"
++        value={value}
++      />
++    </label>
++  )
++}
++
+ export function GraphView() {
+   const hostRef = useRef<HTMLDivElement | null>(null)
++  const graphRef = useRef<null | TunableGraph>(null)
+   const navigate = useNavigate()
+   const [status, setStatus] = useState<'empty' | 'error' | 'loading' | 'ready'>('loading')
+   const [noteCount, setNoteCount] = useState(0)
+   const [ghostCount, setGhostCount] = useState(0)
++  const [controls, setControls] = useState<GraphControlsState>(() => loadControls())
++  const [panelOpen, setPanelOpen] = useState(false)
++  const controlsRef = useRef(controls)
++  controlsRef.current = controls
+ 
+   useEffect(() => {
+     const host = hostRef.current
+@@ -92,7 +164,7 @@ export function GraphView() {
+               ? `<div style="font: 12px sans-serif; color:#aaa">${graphNode.id} — click to create this note</div>`
+               : `<div style="font: 12px sans-serif; color:#eee">${graphNode.id}</div>`
+           })
+-          .nodeRelSize(4)
++          .nodeRelSize(controlsRef.current.nodeSize)
+           .nodeColor((node: object) => {
+             const graphNode = node as GraphNode
+ 
+@@ -131,9 +203,9 @@ export function GraphView() {
+         instance.onEngineStop(() => instance.zoomToFit(500, 110))
+         window.setTimeout(() => instance.zoomToFit(700, 110), 1500)
+ 
+-        const controls = instance.controls() as { autoRotate?: boolean; autoRotateSpeed?: number }
+-        controls.autoRotate = true
+-        controls.autoRotateSpeed = 0.5
++        const orbit = instance.controls() as { autoRotate?: boolean; autoRotateSpeed?: number }
++        orbit.autoRotate = controlsRef.current.rotate
++        orbit.autoRotateSpeed = 0.5
+ 
+         observer = new ResizeObserver(() => {
+           instance.width(host.clientWidth || 800)
+@@ -142,6 +214,7 @@ export function GraphView() {
+         observer.observe(host)
+ 
+         graph = instance
++        graphRef.current = instance as unknown as TunableGraph
+         setNoteCount(notes.length)
+         setGhostCount(ghostByLower.size)
+         setStatus('ready')
+@@ -155,10 +228,33 @@ export function GraphView() {
+     return () => {
+       disposed = true
+       observer?.disconnect()
++      graphRef.current = null
+       graph?._destructor?.()
+     }
+   }, [navigate])
+ 
++  // Live-apply the tuning panel: size, spread (link distance), repulsion (charge),
++  // rotation — then reheat so the layout actually re-settles.
++  useEffect(() => {
++    try {
++      window.localStorage.setItem(GRAPH_SETTINGS_KEY, JSON.stringify(controls))
++    } catch {
++      // persistence is best-effort
++    }
++
++    const graph = graphRef.current
++
++    if (!graph || status !== 'ready') {
++      return
++    }
++
++    graph.nodeRelSize(controls.nodeSize)
++    graph.d3Force('link')?.distance?.(controls.spread)
++    graph.d3Force('charge')?.strength?.(-controls.repulsion)
++    graph.d3ReheatSimulation()
++    graph.controls().autoRotate = controls.rotate
++  }, [controls, status])
++
+   return (
+     <div className="relative flex h-full min-h-0 flex-col">
+       <header className="pointer-events-none absolute left-6 top-5 z-10">
+@@ -173,10 +269,64 @@ export function GraphView() {
+         )}
+       </header>
+       {status === 'ready' && (
+-        <div className="absolute right-6 top-5 z-10">
+-          <Button onClick={() => navigate(`${LIBRARY_ROUTE}?create=note`)} size="sm" variant="outline">
+-            + New note
+-          </Button>
++        <div className="absolute right-6 top-5 z-10 flex flex-col items-end gap-2">
++          <div className="flex gap-2">
++            <Button
++              aria-label="Graph settings"
++              onClick={() => setPanelOpen(value => !value)}
++              size="sm"
++              variant={panelOpen ? 'secondary' : 'outline'}
++            >
++              <IconAdjustmentsHorizontal size={14} />
++            </Button>
++            <Button onClick={() => navigate(`${LIBRARY_ROUTE}?create=note`)} size="sm" variant="outline">
++              + New note
++            </Button>
++          </div>
++          {panelOpen && (
++            <div className="w-60 rounded-lg border border-border bg-card/95 p-3 backdrop-blur">
++              <ControlSlider
++                label="Node size"
++                max={10}
++                min={1}
++                onChange={nodeSize => setControls(current => ({ ...current, nodeSize }))}
++                step={0.5}
++                value={controls.nodeSize}
++              />
++              <ControlSlider
++                label="Spread"
++                max={120}
++                min={10}
++                onChange={spread => setControls(current => ({ ...current, spread }))}
++                step={2}
++                value={controls.spread}
++              />
++              <ControlSlider
++                label="Repulsion"
++                max={140}
++                min={0}
++                onChange={repulsion => setControls(current => ({ ...current, repulsion }))}
++                step={5}
++                value={controls.repulsion}
++              />
++              <label className="mt-2 flex cursor-pointer items-center justify-between text-xs text-muted-foreground">
++                Slow auto-rotate
++                <input
++                  checked={controls.rotate}
++                  className="accent-(--theme-primary)"
++                  onChange={event => setControls(current => ({ ...current, rotate: event.target.checked }))}
++                  type="checkbox"
++                />
++              </label>
++              <button
++                className="mt-2 text-[11px] text-muted-foreground underline-offset-2 hover:underline"
++                onClick={() => setControls(DEFAULT_CONTROLS)}
++                type="button"
++              >
++                Reset to defaults
++              </button>
++            </div>
++          )}
+         </div>
+       )}
+       {status === 'error' && (
+diff --git a/apps/desktop/src/app/recorder/index.js b/apps/desktop/src/app/recorder/index.js
+index 02afea8..073eb7c 100644
+--- a/apps/desktop/src/app/recorder/index.js
++++ b/apps/desktop/src/app/recorder/index.js
+@@ -6,7 +6,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
+ // ~/Documents/Nemesis Recordings — and, while recording, streams ~8s chunks of the live
+ // mix through the local Whisper model so the transcript scrolls in as the lecture happens.
+ // On stop, the transcript auto-saves as a Library note (Lectures folder).
+-import { IconLock, IconMicrophone } from '@tabler/icons-react';
++import { IconCheck, IconLock, IconMicrophone, IconSparkles } from '@tabler/icons-react';
+ import { useCallback, useEffect, useRef, useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
+ import { setComposerDraft } from '@/store/composer';
+ import { createFolder, saveNote } from '../library/vault';
+ import { LIBRARY_ROUTE, NEW_CHAT_ROUTE } from '../routes';
+-import { correctPharmTerms } from './pharm-lexicon';
++import { correctPharmTerms, detectPharmTerms } from './pharm-lexicon';
+ import { preloadTranscriber, transcribeAudio, transcribeSamples } from './transcribe';
+ const RECORDINGS_DIR = '~/Documents/Nemesis Recordings';
+ const LECTURE_FOLDER = 'Lectures';
+@@ -97,6 +97,9 @@ export function RecorderView() {
+     const [liveSegments, setLiveSegments] = useState([]);
+     const [liveStatus, setLiveStatus] = useState('');
+     const [lectureNote, setLectureNote] = useState(null);
++    // Live insights: drugs the lecture just touched (lexicon spotting, fully on-device).
++    // Tapping queues them; after Stop, one click asks Nemesis about the whole queue.
++    const [insights, setInsights] = useState([]);
+     const [recordings, setRecordings] = useState([]);
+     const [playing, setPlaying] = useState(null);
+     const [transcripts, setTranscripts] = useState({});
+@@ -180,7 +183,31 @@ export function RecorderView() {
+     const appendLiveSegment = useCallback((text) => {
+         liveSegmentsRef.current = [...liveSegmentsRef.current, text];
+         setLiveSegments(liveSegmentsRef.current);
++        const terms = detectPharmTerms(text);
++        if (terms.length) {
++            const at = new Date().toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
++            setInsights(current => {
++                const known = new Set(current.map(insight => insight.term));
++                const fresh = terms.filter(term => !known.has(term)).map(term => ({ at, queued: false, term }));
++                return fresh.length ? [...fresh, ...current].slice(0, 30) : current;
++            });
++        }
++    }, []);
++    const toggleQueued = useCallback((term) => {
++        setInsights(current => current.map(insight => (insight.term === term ? { ...insight, queued: !insight.queued } : insight)));
+     }, []);
++    const askQueued = useCallback(() => {
++        const queued = insights.filter(insight => insight.queued).map(insight => insight.term);
++        if (!queued.length) {
++            return;
++        }
++        const context = liveSegmentsRef.current.slice(-6).join(' ').slice(-1200);
++        setComposerDraft(`These drugs came up in the lecture I just recorded: ${queued.join(', ')}. ` +
++            'For each, give me the exam-relevant rundown: drug class, mechanism in one line, the classic adverse effect, ' +
++            'and the single interaction I must know — cite PMIDs inline where it matters.' +
++            (context ? `\n\nTranscript context:\n"${context}"` : ''));
++        navigate(NEW_CHAT_ROUTE);
++    }, [insights, navigate]);
+     const pumpLive = useCallback(async () => {
+         if (livePumpingRef.current || liveFailedRef.current) {
+             return;
+@@ -281,6 +308,7 @@ export function RecorderView() {
+         setLiveSegments([]);
+         setLiveStatus('');
+         setLectureNote(null);
++        setInsights([]);
+         try {
+             const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+             streamsRef.current.push(mic);
+@@ -484,7 +512,9 @@ export function RecorderView() {
+     }, [transcripts]);
+     const minutes = String(Math.floor(elapsed / 60)).padStart(2, '0');
+     const seconds = String(elapsed % 60).padStart(2, '0');
+-    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "px-6 pb-2 pt-5", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Recorder" }), _jsxs("p", { className: "text-xs text-muted-foreground", children: ["Records your mic", withSystemAudio ? ' + this computer’s audio (the lecture/Zoom)' : ' only', " \u2014 locally, to your own files. You start it, you see it, you keep it."] })] }), _jsxs("section", { className: "mx-6 mt-3 flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-8", children: [state === 'recording' ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex items-center gap-3", children: [_jsxs("span", { className: "relative flex size-3", children: [_jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" }), _jsx("span", { className: "relative inline-flex size-3 rounded-full bg-primary" })] }), _jsx("span", { className: "text-xs font-medium uppercase tracking-widest text-primary", children: "On air \u2014 visible, on purpose" })] }), _jsx("canvas", { className: "h-16 w-full max-w-xl", height: 64, ref: canvasRef, width: 640 }), _jsxs("span", { className: "text-2xl font-semibold tabular-nums", children: [minutes, ":", seconds] }), liveCaptions && (_jsxs("div", { className: "w-full max-w-xl rounded-md border border-border bg-muted/30 px-3 py-2 text-left", children: [_jsxs("div", { className: "flex items-center justify-between pb-1", children: [_jsx("span", { className: "text-[10px] font-medium uppercase tracking-widest text-muted-foreground", children: "Live transcript \u2014 on this device" }), _jsx("span", { className: "text-[10px] text-muted-foreground", children: liveStatus })] }), _jsx("div", { className: "max-h-36 overflow-y-auto text-sm leading-relaxed", ref: liveScrollRef, children: liveSegments.length ? (liveSegments.join(' ')) : (_jsx("span", { className: "text-muted-foreground", children: "Listening for speech\u2026" })) })] })), _jsx(Button, { onClick: stop, size: "lg", variant: "secondary", children: "Stop & save" })] })) : (_jsxs(_Fragment, { children: [_jsx(Button, { disabled: state === 'saving', onClick: () => void start(), size: "lg", children: state === 'saving' ? 'Saving…' : 'Start recording' }), state === 'saving' && liveStatus && _jsx("p", { className: "text-xs text-muted-foreground", children: liveStatus }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: withSystemAudio, className: "accent-(--theme-primary)", onChange: event => setWithSystemAudio(event.target.checked), type: "checkbox" }), "Also capture this computer\u2019s audio (lecture, Zoom) \u2014 macOS will ask once"] }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: liveCaptions, className: "accent-(--theme-primary)", onChange: event => setLiveCaptions(event.target.checked), type: "checkbox" }), "Live transcript while recording \u2014 auto-saves a lecture note to the Library"] }), lectureNote && (_jsxs("div", { className: "flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs", children: [_jsxs("span", { children: ["Lecture note saved to Library \u2192 ", LECTURE_FOLDER, " ", _jsx("span", { className: "text-primary", children: "\u2713" })] }), _jsx(Button, { className: "h-6 px-2 text-xs", onClick: () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`), size: "sm", variant: "outline", children: "Open note" })] })), _jsxs("span", { className: "inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground", children: [_jsx(IconLock, { size: 12 }), "Nothing joins your call \u2014 capture & transcription happen on this device only"] })] })), error && _jsx("p", { className: "max-w-md text-center text-xs text-destructive", children: error })] }), _jsxs("section", { className: "px-6 pb-8 pt-5", children: [_jsx("h2", { className: "pb-2 text-sm font-medium", children: "Saved recordings" }), recordings.length ? (_jsx("ul", { className: "flex flex-col gap-1.5", children: recordings.map(file => {
++    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "px-6 pb-2 pt-5", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Recorder" }), _jsxs("p", { className: "text-xs text-muted-foreground", children: ["Records your mic", withSystemAudio ? ' + this computer’s audio (the lecture/Zoom)' : ' only', " \u2014 locally, to your own files. You start it, you see it, you keep it."] })] }), _jsxs("section", { className: "mx-6 mt-3 flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-8", children: [state === 'recording' ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex items-center gap-3", children: [_jsxs("span", { className: "relative flex size-3", children: [_jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" }), _jsx("span", { className: "relative inline-flex size-3 rounded-full bg-primary" })] }), _jsx("span", { className: "text-xs font-medium uppercase tracking-widest text-primary", children: "On air \u2014 visible, on purpose" })] }), _jsx("canvas", { className: "h-16 w-full max-w-xl", height: 64, ref: canvasRef, width: 640 }), _jsxs("span", { className: "text-2xl font-semibold tabular-nums", children: [minutes, ":", seconds] }), liveCaptions && (_jsxs("div", { className: "w-full max-w-xl rounded-md border border-border bg-muted/30 px-3 py-2 text-left", children: [_jsxs("div", { className: "flex items-center justify-between pb-1", children: [_jsx("span", { className: "text-[10px] font-medium uppercase tracking-widest text-muted-foreground", children: "Live transcript \u2014 on this device" }), _jsx("span", { className: "text-[10px] text-muted-foreground", children: liveStatus })] }), _jsx("div", { className: "max-h-36 overflow-y-auto text-sm leading-relaxed", ref: liveScrollRef, children: liveSegments.length ? (liveSegments.join(' ')) : (_jsx("span", { className: "text-muted-foreground", children: "Listening for speech\u2026" })) })] })), liveCaptions && insights.length > 0 && (_jsxs("div", { className: "w-full max-w-xl rounded-md border border-border bg-muted/30 px-3 py-2 text-left", children: [_jsxs("div", { className: "flex items-center justify-between pb-1.5", children: [_jsxs("span", { className: "inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-widest text-primary", children: [_jsx(IconSparkles, { size: 11 }), "Live insights \u2014 drugs just mentioned"] }), _jsx("span", { className: "text-[10px] text-muted-foreground", children: "tap to queue for Nemesis" })] }), _jsx("div", { className: "flex max-h-24 flex-wrap gap-1.5 overflow-y-auto", children: insights.map(insight => (_jsxs("button", { className: cn('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors', insight.queued
++                                                ? 'border-(--theme-primary) text-foreground'
++                                                : 'border-border text-muted-foreground hover:text-foreground'), onClick: () => toggleQueued(insight.term), type: "button", children: [insight.queued && _jsx(IconCheck, { size: 11 }), insight.term, _jsx("span", { className: "text-[9px] opacity-60", children: insight.at })] }, insight.term))) })] })), _jsx(Button, { onClick: stop, size: "lg", variant: "secondary", children: "Stop & save" })] })) : (_jsxs(_Fragment, { children: [_jsx(Button, { disabled: state === 'saving', onClick: () => void start(), size: "lg", children: state === 'saving' ? 'Saving…' : 'Start recording' }), state === 'saving' && liveStatus && _jsx("p", { className: "text-xs text-muted-foreground", children: liveStatus }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: withSystemAudio, className: "accent-(--theme-primary)", onChange: event => setWithSystemAudio(event.target.checked), type: "checkbox" }), "Also capture this computer\u2019s audio (lecture, Zoom) \u2014 macOS will ask once"] }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: liveCaptions, className: "accent-(--theme-primary)", onChange: event => setLiveCaptions(event.target.checked), type: "checkbox" }), "Live transcript while recording \u2014 auto-saves a lecture note to the Library"] }), lectureNote && (_jsxs("div", { className: "flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs", children: [_jsxs("span", { className: "inline-flex items-center gap-1", children: ["Lecture note saved to Library \u2192 ", LECTURE_FOLDER, " ", _jsx(IconCheck, { className: "text-primary", size: 12 })] }), _jsx(Button, { className: "h-6 px-2 text-xs", onClick: () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`), size: "sm", variant: "outline", children: "Open note" }), insights.some(insight => insight.queued) && (_jsxs(Button, { className: "h-6 px-2 text-xs", onClick: askQueued, size: "sm", variant: "secondary", children: [_jsx(IconSparkles, { size: 12 }), "Ask about ", insights.filter(insight => insight.queued).length, " queued drug", insights.filter(insight => insight.queued).length === 1 ? '' : 's'] }))] })), _jsxs("span", { className: "inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground", children: [_jsx(IconLock, { size: 12 }), "Nothing joins your call \u2014 capture & transcription happen on this device only"] })] })), error && _jsx("p", { className: "max-w-md text-center text-xs text-destructive", children: error })] }), _jsxs("section", { className: "px-6 pb-8 pt-5", children: [_jsx("h2", { className: "pb-2 text-sm font-medium", children: "Saved recordings" }), recordings.length ? (_jsx("ul", { className: "flex flex-col gap-1.5", children: recordings.map(file => {
+                             const status = transcribingStatus[file.path];
+                             const transcript = transcripts[file.path];
+                             return (_jsxs("li", { className: "flex flex-col gap-2 rounded-md border border-border px-3 py-2", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsxs("div", { className: "flex min-w-0 items-center gap-2", children: [_jsx(IconMicrophone, { className: "shrink-0 text-muted-foreground", size: 16 }), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "truncate text-sm", children: recordingLabel(file.name) }), status && _jsx("div", { className: "text-[11px] text-primary", children: status })] })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2", children: [_jsx(Button, { disabled: Boolean(status), onClick: () => void transcribe(file), size: "sm", variant: "outline", children: status ? '…' : transcript ? 'Re-transcribe' : 'Transcribe' }), _jsx(Button, { onClick: () => void play(file), size: "sm", variant: "outline", children: playing?.path === file.path ? 'Hide' : 'Play' })] })] }), transcript && (_jsxs("div", { className: "rounded-md bg-muted/40 p-3", children: [_jsx("p", { className: "whitespace-pre-wrap text-xs leading-relaxed text-foreground", children: transcript }), _jsxs("div", { className: "mt-2 flex flex-wrap items-center gap-2", children: [_jsx(Button, { disabled: savedNote[file.path], onClick: () => void saveTranscriptNote(file), size: "sm", variant: "secondary", children: savedNote[file.path] ? 'Saved to Library ✓' : 'Save as note' }), _jsx(Button, { onClick: () => draftFlashcards(file), size: "sm", variant: "secondary", children: "Draft flashcards" }), (corrections[file.path] ?? 0) > 0 && (_jsxs("span", { className: "text-[10px] text-muted-foreground", children: [corrections[file.path], " pharm term", corrections[file.path] === 1 ? '' : 's', " auto-corrected"] }))] })] }))] }, file.path));
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index 542bfc1..3e68335 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -5,7 +5,7 @@
+ // ~/Documents/Nemesis Recordings — and, while recording, streams ~8s chunks of the live
+ // mix through the local Whisper model so the transcript scrolls in as the lecture happens.
+ // On stop, the transcript auto-saves as a Library note (Lectures folder).
+-import { IconLock, IconMicrophone } from '@tabler/icons-react'
++import { IconCheck, IconLock, IconMicrophone, IconSparkles } from '@tabler/icons-react'
+ import { useCallback, useEffect, useRef, useState } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ 
+@@ -16,7 +16,7 @@ import { setComposerDraft } from '@/store/composer'
+ 
+ import { createFolder, saveNote } from '../library/vault'
+ import { LIBRARY_ROUTE, NEW_CHAT_ROUTE } from '../routes'
+-import { correctPharmTerms } from './pharm-lexicon'
++import { correctPharmTerms, detectPharmTerms } from './pharm-lexicon'
+ import { preloadTranscriber, transcribeAudio, transcribeSamples } from './transcribe'
+ 
+ const RECORDINGS_DIR = '~/Documents/Nemesis Recordings'
+@@ -126,6 +126,9 @@ export function RecorderView() {
+   const [liveSegments, setLiveSegments] = useState<string[]>([])
+   const [liveStatus, setLiveStatus] = useState('')
+   const [lectureNote, setLectureNote] = useState<null | string>(null)
++  // Live insights: drugs the lecture just touched (lexicon spotting, fully on-device).
++  // Tapping queues them; after Stop, one click asks Nemesis about the whole queue.
++  const [insights, setInsights] = useState<{ term: string; at: string; queued: boolean }[]>([])
+   const [recordings, setRecordings] = useState<RecordingFile[]>([])
+   const [playing, setPlaying] = useState<null | { path: string; src: string }>(null)
+   const [transcripts, setTranscripts] = useState<Record<string, string>>({})
+@@ -223,8 +226,43 @@ export function RecorderView() {
+   const appendLiveSegment = useCallback((text: string) => {
+     liveSegmentsRef.current = [...liveSegmentsRef.current, text]
+     setLiveSegments(liveSegmentsRef.current)
++
++    const terms = detectPharmTerms(text)
++
++    if (terms.length) {
++      const at = new Date().toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
++      setInsights(current => {
++        const known = new Set(current.map(insight => insight.term))
++        const fresh = terms.filter(term => !known.has(term)).map(term => ({ at, queued: false, term }))
++
++        return fresh.length ? [...fresh, ...current].slice(0, 30) : current
++      })
++    }
+   }, [])
+ 
++  const toggleQueued = useCallback((term: string) => {
++    setInsights(current =>
++      current.map(insight => (insight.term === term ? { ...insight, queued: !insight.queued } : insight))
++    )
++  }, [])
++
++  const askQueued = useCallback(() => {
++    const queued = insights.filter(insight => insight.queued).map(insight => insight.term)
++
++    if (!queued.length) {
++      return
++    }
++
++    const context = liveSegmentsRef.current.slice(-6).join(' ').slice(-1200)
++    setComposerDraft(
++      `These drugs came up in the lecture I just recorded: ${queued.join(', ')}. ` +
++        'For each, give me the exam-relevant rundown: drug class, mechanism in one line, the classic adverse effect, ' +
++        'and the single interaction I must know — cite PMIDs inline where it matters.' +
++        (context ? `\n\nTranscript context:\n"${context}"` : '')
++    )
++    navigate(NEW_CHAT_ROUTE)
++  }, [insights, navigate])
++
+   const pumpLive = useCallback(async () => {
+     if (livePumpingRef.current || liveFailedRef.current) {
+       return
+@@ -354,6 +392,7 @@ export function RecorderView() {
+     setLiveSegments([])
+     setLiveStatus('')
+     setLectureNote(null)
++    setInsights([])
+ 
+     try {
+       const mic = await navigator.mediaDevices.getUserMedia({ audio: true })
+@@ -655,6 +694,36 @@ export function RecorderView() {
+                 </div>
+               </div>
+             )}
++            {liveCaptions && insights.length > 0 && (
++              <div className="w-full max-w-xl rounded-md border border-border bg-muted/30 px-3 py-2 text-left">
++                <div className="flex items-center justify-between pb-1.5">
++                  <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-widest text-primary">
++                    <IconSparkles size={11} />
++                    Live insights — drugs just mentioned
++                  </span>
++                  <span className="text-[10px] text-muted-foreground">tap to queue for Nemesis</span>
++                </div>
++                <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">
++                  {insights.map(insight => (
++                    <button
++                      className={cn(
++                        'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors',
++                        insight.queued
++                          ? 'border-(--theme-primary) text-foreground'
++                          : 'border-border text-muted-foreground hover:text-foreground'
++                      )}
++                      key={insight.term}
++                      onClick={() => toggleQueued(insight.term)}
++                      type="button"
++                    >
++                      {insight.queued && <IconCheck size={11} />}
++                      {insight.term}
++                      <span className="text-[9px] opacity-60">{insight.at}</span>
++                    </button>
++                  ))}
++                </div>
++              </div>
++            )}
+             <Button onClick={stop} size="lg" variant="secondary">
+               Stop &amp; save
+             </Button>
+@@ -684,9 +753,9 @@ export function RecorderView() {
+               Live transcript while recording — auto-saves a lecture note to the Library
+             </label>
+             {lectureNote && (
+-              <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs">
+-                <span>
+-                  Lecture note saved to Library → {LECTURE_FOLDER} <span className="text-primary">✓</span>
++              <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs">
++                <span className="inline-flex items-center gap-1">
++                  Lecture note saved to Library → {LECTURE_FOLDER} <IconCheck className="text-primary" size={12} />
+                 </span>
+                 <Button
+                   className="h-6 px-2 text-xs"
+@@ -696,6 +765,13 @@ export function RecorderView() {
+                 >
+                   Open note
+                 </Button>
++                {insights.some(insight => insight.queued) && (
++                  <Button className="h-6 px-2 text-xs" onClick={askQueued} size="sm" variant="secondary">
++                    <IconSparkles size={12} />
++                    Ask about {insights.filter(insight => insight.queued).length} queued drug
++                    {insights.filter(insight => insight.queued).length === 1 ? '' : 's'}
++                  </Button>
++                )}
+               </div>
+             )}
+             <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground">
+diff --git a/apps/desktop/src/app/recorder/pharm-lexicon.js b/apps/desktop/src/app/recorder/pharm-lexicon.js
+index a69f94d..044b581 100644
+--- a/apps/desktop/src/app/recorder/pharm-lexicon.js
++++ b/apps/desktop/src/app/recorder/pharm-lexicon.js
+@@ -186,3 +186,14 @@ export function correctPharmTerms(text) {
+     }
+     return { changes, corrected: parts.join('') };
+ }
++/** Canonical lexicon terms literally present in `text` (word-boundary, case-insensitive).
++ *  Fuel for the Recorder's live-insights pane: cheap enough to run per caption chunk. */
++export function detectPharmTerms(text) {
++    const found = [];
++    for (const term of LEXICON) {
++        if (new RegExp(`\\b${term}\\b`, 'i').test(text)) {
++            found.push(term);
++        }
++    }
++    return found;
++}
+diff --git a/apps/desktop/src/app/recorder/pharm-lexicon.ts b/apps/desktop/src/app/recorder/pharm-lexicon.ts
+index 3ec4218..8b5f5dc 100644
+--- a/apps/desktop/src/app/recorder/pharm-lexicon.ts
++++ b/apps/desktop/src/app/recorder/pharm-lexicon.ts
+@@ -229,3 +229,17 @@ export function correctPharmTerms(text: string): PharmCorrection {
+ 
+   return { changes, corrected: parts.join('') }
+ }
++
++/** Canonical lexicon terms literally present in `text` (word-boundary, case-insensitive).
++ *  Fuel for the Recorder's live-insights pane: cheap enough to run per caption chunk. */
++export function detectPharmTerms(text: string): string[] {
++  const found: string[] = []
++
++  for (const term of LEXICON) {
++    if (new RegExp(`\\b${term}\\b`, 'i').test(text)) {
++      found.push(term)
++    }
++  }
++
++  return found
++}
+diff --git a/apps/desktop/src/app/right-sidebar/sources.js b/apps/desktop/src/app/right-sidebar/sources.js
+index 078f336..940be40 100644
+--- a/apps/desktop/src/app/right-sidebar/sources.js
++++ b/apps/desktop/src/app/right-sidebar/sources.js
+@@ -4,7 +4,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ // list. This replaces the developer file-tree as the default right-sidebar pane: students
+ // ask evidence questions, so the rail should answer "where did that come from?".
+ import { useStore } from '@nanostores/react';
+-import { useMemo } from 'react';
++import { useMemo, useState } from 'react';
+ import { chatMessageText } from '@/lib/chat-messages';
+ import { $messages } from '@/store/session';
+ const MD_LINK = /\[([^\]\n]{1,160})\]\((https?:\/\/[^\s)]+)\)/g;
+@@ -159,11 +159,20 @@ export function extractSources(messages) {
+     }
+     return out.slice(0, 100);
+ }
++/** Site icon for a pill — the domain's own favicon, falling back to a letter badge
++ *  (api subdomains and offline mode often have no icon to fetch). */
++export function SourceFavicon({ domain }) {
++    const [failed, setFailed] = useState(false);
++    if (failed) {
++        return (_jsx("span", { className: "grid size-4 shrink-0 place-items-center rounded-sm bg-(--theme-primary)/15 text-[9px] font-bold text-(--theme-primary)", children: domain.charAt(0).toUpperCase() }));
++    }
++    return (_jsx("img", { alt: "", className: "size-4 shrink-0 rounded-sm", loading: "lazy", onError: () => setFailed(true), src: `https://${domain}/favicon.ico` }));
++}
+ export function SourcesTab() {
+     const messages = useStore($messages);
+     const sources = useMemo(() => extractSources(messages), [messages]);
+     const openExternal = (url) => {
+         void window.hermesDesktop?.openExternal?.(url);
+     };
+-    return (_jsx("div", { className: "flex min-h-0 flex-1 flex-col pt-1", children: sources.length === 0 ? (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 text-center", children: [_jsx("div", { className: "text-[0.7rem] font-semibold uppercase tracking-[0.07em] text-muted-foreground/75", children: "No sources yet" }), _jsx("div", { className: "text-[0.68rem] leading-relaxed text-muted-foreground/65", children: "Ask a research question \u2014 every paper, label, and trial the agent cites lands here." })] })) : (_jsx("div", { className: "min-h-0 flex-1 overflow-y-auto px-2.5 pb-4", children: _jsx("div", { className: "flex flex-wrap gap-1.5", children: sources.map(source => (_jsxs("button", { className: "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground", onClick: () => openExternal(source.url), title: `${source.title}\n${source.url}`, type: "button", children: [_jsx("span", { className: "font-semibold uppercase tracking-wide text-[10px] text-(--theme-primary)", children: source.badge }), _jsx("span", { className: "max-w-[9.5rem] truncate text-muted-foreground", children: source.title })] }, source.url))) }) })) }));
++    return (_jsx("div", { className: "flex min-h-0 flex-1 flex-col pt-1", children: sources.length === 0 ? (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 text-center", children: [_jsx("div", { className: "text-[0.7rem] font-semibold uppercase tracking-[0.07em] text-muted-foreground/75", children: "No sources yet" }), _jsx("div", { className: "text-[0.68rem] leading-relaxed text-muted-foreground/65", children: "Ask a research question \u2014 every paper, label, and trial the agent cites lands here." })] })) : (_jsx("div", { className: "min-h-0 flex-1 overflow-y-auto px-2.5 pb-4", children: _jsx("div", { className: "flex flex-wrap gap-1.5", children: sources.map(source => (_jsxs("button", { className: "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground", onClick: () => openExternal(source.url), title: `${source.title}\n${source.url}`, type: "button", children: [_jsx(SourceFavicon, { domain: source.domain }), _jsx("span", { className: "font-semibold uppercase tracking-wide text-[10px] text-(--theme-primary)", children: source.badge }), _jsx("span", { className: "max-w-[8.5rem] truncate text-muted-foreground", children: source.title })] }, source.url))) }) })) }));
+ }
+diff --git a/apps/desktop/src/app/right-sidebar/sources.tsx b/apps/desktop/src/app/right-sidebar/sources.tsx
+index 9c19161..3487533 100644
+--- a/apps/desktop/src/app/right-sidebar/sources.tsx
++++ b/apps/desktop/src/app/right-sidebar/sources.tsx
+@@ -3,7 +3,7 @@
+ // list. This replaces the developer file-tree as the default right-sidebar pane: students
+ // ask evidence questions, so the rail should answer "where did that come from?".
+ import { useStore } from '@nanostores/react'
+-import { useMemo } from 'react'
++import { useMemo, useState } from 'react'
+ 
+ import { type ChatMessage, chatMessageText } from '@/lib/chat-messages'
+ import { $messages } from '@/store/session'
+@@ -210,6 +210,30 @@ export function extractSources(messages: readonly ChatMessage[]): SourceRef[] {
+   return out.slice(0, 100)
+ }
+ 
++/** Site icon for a pill — the domain's own favicon, falling back to a letter badge
++ *  (api subdomains and offline mode often have no icon to fetch). */
++export function SourceFavicon({ domain }: { domain: string }) {
++  const [failed, setFailed] = useState(false)
++
++  if (failed) {
++    return (
++      <span className="grid size-4 shrink-0 place-items-center rounded-sm bg-(--theme-primary)/15 text-[9px] font-bold text-(--theme-primary)">
++        {domain.charAt(0).toUpperCase()}
++      </span>
++    )
++  }
++
++  return (
++    <img
++      alt=""
++      className="size-4 shrink-0 rounded-sm"
++      loading="lazy"
++      onError={() => setFailed(true)}
++      src={`https://${domain}/favicon.ico`}
++    />
++  )
++}
++
+ export function SourcesTab() {
+   const messages = useStore($messages)
+   const sources = useMemo(() => extractSources(messages), [messages])
+@@ -234,16 +258,17 @@ export function SourcesTab() {
+           <div className="flex flex-wrap gap-1.5">
+             {sources.map(source => (
+               <button
+-                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground"
++                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground"
+                 key={source.url}
+                 onClick={() => openExternal(source.url)}
+                 title={`${source.title}\n${source.url}`}
+                 type="button"
+               >
++                <SourceFavicon domain={source.domain} />
+                 <span className="font-semibold uppercase tracking-wide text-[10px] text-(--theme-primary)">
+                   {source.badge}
+                 </span>
+-                <span className="max-w-[9.5rem] truncate text-muted-foreground">{source.title}</span>
++                <span className="max-w-[8.5rem] truncate text-muted-foreground">{source.title}</span>
+               </button>
+             ))}
+           </div>
+diff --git a/apps/desktop/src/components/assistant-ui/thread/activity-strip.js b/apps/desktop/src/components/assistant-ui/thread/activity-strip.js
+new file mode 100644
+index 0000000..ea6ac00
+--- /dev/null
++++ b/apps/desktop/src/components/assistant-ui/thread/activity-strip.js
+@@ -0,0 +1,41 @@
++import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
++// Claude-style activity collapse (student build). While a turn runs, the live trail
++// stays visible exactly as before — reasoning previews shimmer and tool approvals remain
++// clickable. Once the turn settles, the whole trail folds into this one quiet row
++// ("Worked through N steps") and expands only on demand, so finished answers read as
++// answers, not as terminal logs.
++import { useAuiState } from '@assistant-ui/react';
++import { useEffect, useRef, useState } from 'react';
++import { Codicon } from '@/components/ui/codicon';
++import { cn } from '@/lib/utils';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
++export const ActivityStrip = () => {
++    const [open, setOpen] = useState(false);
++    const ref = useRef(null);
++    const running = useAuiState(s => s.message.status?.type === 'running');
++    const steps = useAuiState(s => s.message.parts.filter(part => part?.type === 'tool-call').length);
++    const hasReasoning = useAuiState(s => s.message.parts.some(part => part?.type === 'reasoning' && typeof part.text === 'string' && part.text.trim().length > 0));
++    const active = NEMESIS_STUDENT_BUILD && (steps > 0 || hasReasoning);
++    // The trail lives in a sibling subtree (MessagePrimitive.Parts), so the collapse is
++    // driven by an attribute on the shared message root + a CSS rule in styles.css.
++    useEffect(() => {
++        const root = ref.current?.closest('[data-role="assistant"]');
++        if (!root) {
++            return;
++        }
++        if (!active) {
++            root.removeAttribute('data-nemesis-activity');
++            return;
++        }
++        root.setAttribute('data-nemesis-activity', running ? 'live' : open ? 'open' : 'collapsed');
++    }, [active, open, running]);
++    if (!active || running) {
++        // Zero-size anchor keeps the ref attached so the attribute updates on settle.
++        return _jsx("button", { "aria-hidden": true, className: "hidden", ref: ref, tabIndex: -1, type: "button" });
++    }
++    return (_jsxs("button", { className: cn('mb-1 flex items-center gap-1 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary) transition-colors hover:text-foreground'), onClick: () => setOpen(value => !value), ref: ref, type: "button", children: [_jsx(Codicon, { name: open ? 'chevron-down' : 'chevron-right', size: "0.8125rem" }), _jsx("span", { children: open
++                    ? 'Hide steps'
++                    : steps > 0
++                        ? `Worked through ${steps} step${steps === 1 ? '' : 's'}`
++                        : 'Show thinking' })] }));
++};
+diff --git a/apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx b/apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx
+new file mode 100644
+index 0000000..163bbb3
+--- /dev/null
++++ b/apps/desktop/src/components/assistant-ui/thread/activity-strip.tsx
+@@ -0,0 +1,66 @@
++// Claude-style activity collapse (student build). While a turn runs, the live trail
++// stays visible exactly as before — reasoning previews shimmer and tool approvals remain
++// clickable. Once the turn settles, the whole trail folds into this one quiet row
++// ("Worked through N steps") and expands only on demand, so finished answers read as
++// answers, not as terminal logs.
++import { useAuiState } from '@assistant-ui/react'
++import { type FC, useEffect, useRef, useState } from 'react'
++
++import { Codicon } from '@/components/ui/codicon'
++import { cn } from '@/lib/utils'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
++
++export const ActivityStrip: FC = () => {
++  const [open, setOpen] = useState(false)
++  const ref = useRef<HTMLButtonElement | null>(null)
++  const running = useAuiState(s => s.message.status?.type === 'running')
++  const steps = useAuiState(s => s.message.parts.filter(part => part?.type === 'tool-call').length)
++  const hasReasoning = useAuiState(s =>
++    s.message.parts.some(part => part?.type === 'reasoning' && typeof part.text === 'string' && part.text.trim().length > 0)
++  )
++
++  const active = NEMESIS_STUDENT_BUILD && (steps > 0 || hasReasoning)
++
++  // The trail lives in a sibling subtree (MessagePrimitive.Parts), so the collapse is
++  // driven by an attribute on the shared message root + a CSS rule in styles.css.
++  useEffect(() => {
++    const root = ref.current?.closest('[data-role="assistant"]')
++
++    if (!root) {
++      return
++    }
++
++    if (!active) {
++      root.removeAttribute('data-nemesis-activity')
++
++      return
++    }
++
++    root.setAttribute('data-nemesis-activity', running ? 'live' : open ? 'open' : 'collapsed')
++  }, [active, open, running])
++
++  if (!active || running) {
++    // Zero-size anchor keeps the ref attached so the attribute updates on settle.
++    return <button aria-hidden className="hidden" ref={ref} tabIndex={-1} type="button" />
++  }
++
++  return (
++    <button
++      className={cn(
++        'mb-1 flex items-center gap-1 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary) transition-colors hover:text-foreground'
++      )}
++      onClick={() => setOpen(value => !value)}
++      ref={ref}
++      type="button"
++    >
++      <Codicon name={open ? 'chevron-down' : 'chevron-right'} size="0.8125rem" />
++      <span>
++        {open
++          ? 'Hide steps'
++          : steps > 0
++            ? `Worked through ${steps} step${steps === 1 ? '' : 's'}`
++            : 'Show thinking'}
++      </span>
++    </button>
++  )
++}
+diff --git a/apps/desktop/src/components/assistant-ui/thread/assistant-message.js b/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
+index a6d2a89..00f6b9e 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
++++ b/apps/desktop/src/components/assistant-ui/thread/assistant-message.js
+@@ -3,6 +3,7 @@ import { ActionBarPrimitive, BranchPickerPrimitive, ErrorPrimitive, MessagePrimi
+ import { useStore } from '@nanostores/react';
+ import { useCallback, useMemo, useState } from 'react';
+ import { contentHasVisibleText, messageContentText, pickPrimaryPreviewTarget } from '@/components/assistant-ui/thread/content';
++import { ActivityStrip } from '@/components/assistant-ui/thread/activity-strip';
+ import { MESSAGE_PARTS_COMPONENTS } from '@/components/assistant-ui/thread/message-parts';
+ import { MessageSources } from '@/components/assistant-ui/thread/message-sources';
+ import { StreamStallIndicator } from '@/components/assistant-ui/thread/status';
+@@ -50,7 +51,7 @@ export const AssistantMessage = ({ onBranchInNewChat, onDismissError }) => {
+     if (isPlaceholder) {
+         return null;
+     }
+-    return (_jsxs(MessagePrimitive.Root, { className: "group flex w-full min-w-0 max-w-full flex-col gap-0 self-start overflow-hidden", "data-role": "assistant", "data-slot": "aui_assistant-message-root", "data-streaming": isRunning ? 'true' : undefined, ref: enterRef, children: [_jsxs("div", { className: "wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground", "data-slot": "aui_assistant-message-content", children: [_jsx(MessagePrimitive.Parts, { components: MESSAGE_PARTS_COMPONENTS }), isRunning && _jsx(StreamStallIndicator, {}), previewTargets.length > 0 && (_jsx("div", { className: "mt-3 flex flex-wrap gap-2", children: previewTargets.map(target => (_jsx(PreviewAttachment, { source: "explicit-link", target: target }, target))) })), _jsx(MessageSources, { text: completedText }), _jsx(MessagePrimitive.Error, { children: _jsxs(ErrorPrimitive.Root, { className: "mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]", role: "alert", children: [_jsx(ErrorPrimitive.Message, { className: "min-w-0 flex-1" }), onDismissError && (_jsx(TooltipIconButton, { className: "-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100", onClick: () => onDismissError(messageId), side: "top", tooltip: t.assistant.thread.dismissError, children: _jsx(XIcon, { className: "size-3.5" }) }))] }) })] }), hasVisibleText && (_jsx(AssistantFooter, { getMessageText: getMessageText, messageId: messageId, onBranchInNewChat: onBranchInNewChat }))] }));
++    return (_jsxs(MessagePrimitive.Root, { className: "group flex w-full min-w-0 max-w-full flex-col gap-0 self-start overflow-hidden", "data-role": "assistant", "data-slot": "aui_assistant-message-root", "data-streaming": isRunning ? 'true' : undefined, ref: enterRef, children: [_jsxs("div", { className: "wrap-anywhere min-w-0 max-w-full overflow-hidden text-pretty text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground", "data-slot": "aui_assistant-message-content", children: [_jsx(ActivityStrip, {}), _jsx(MessagePrimitive.Parts, { components: MESSAGE_PARTS_COMPONENTS }), isRunning && _jsx(StreamStallIndicator, {}), previewTargets.length > 0 && (_jsx("div", { className: "mt-3 flex flex-wrap gap-2", children: previewTargets.map(target => (_jsx(PreviewAttachment, { source: "explicit-link", target: target }, target))) })), _jsx(MessageSources, { text: completedText }), _jsx(MessagePrimitive.Error, { children: _jsxs(ErrorPrimitive.Root, { className: "mt-1.5 flex items-start gap-1.5 text-[0.78rem] leading-5 text-[color-mix(in_srgb,var(--dt-destructive)_78%,var(--ui-text-secondary))]", role: "alert", children: [_jsx(ErrorPrimitive.Message, { className: "min-w-0 flex-1" }), onDismissError && (_jsx(TooltipIconButton, { className: "-my-0.5 shrink-0 text-current opacity-70 hover:opacity-100", onClick: () => onDismissError(messageId), side: "top", tooltip: t.assistant.thread.dismissError, children: _jsx(XIcon, { className: "size-3.5" }) }))] }) })] }), hasVisibleText && (_jsx(AssistantFooter, { getMessageText: getMessageText, messageId: messageId, onBranchInNewChat: onBranchInNewChat }))] }));
+ };
+ const AssistantActionBar = ({ messageId, getMessageText, onBranchInNewChat }) => {
+     const { t } = useI18n();
+diff --git a/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx b/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
+index 4682d7a..941ae21 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
++++ b/apps/desktop/src/components/assistant-ui/thread/assistant-message.tsx
+@@ -14,6 +14,7 @@ import {
+   messageContentText,
+   pickPrimaryPreviewTarget
+ } from '@/components/assistant-ui/thread/content'
++import { ActivityStrip } from '@/components/assistant-ui/thread/activity-strip'
+ import { MESSAGE_PARTS_COMPONENTS } from '@/components/assistant-ui/thread/message-parts'
+ import { MessageSources } from '@/components/assistant-ui/thread/message-sources'
+ import { StreamStallIndicator } from '@/components/assistant-ui/thread/status'
+@@ -104,6 +105,7 @@ export const AssistantMessage: FC<{
+         data-slot="aui_assistant-message-content"
+       >
+         {/* Todos render in the composer status stack now, not inline. */}
++        <ActivityStrip />
+         <MessagePrimitive.Parts components={MESSAGE_PARTS_COMPONENTS} />
+         {isRunning && <StreamStallIndicator />}
+         {previewTargets.length > 0 && (
+diff --git a/apps/desktop/src/components/assistant-ui/thread/message-sources.js b/apps/desktop/src/components/assistant-ui/thread/message-sources.js
+index c918946..7844d5b 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/message-sources.js
++++ b/apps/desktop/src/components/assistant-ui/thread/message-sources.js
+@@ -4,12 +4,12 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ // The right-sidebar Sources rail stays the whole-chat view (it also digs through tool
+ // traffic); this is the per-answer receipt.
+ import { useMemo } from 'react';
+-import { sourcesFromText } from '@/app/right-sidebar/sources';
++import { SourceFavicon, sourcesFromText } from '@/app/right-sidebar/sources';
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ export const MessageSources = ({ text }) => {
+     const sources = useMemo(() => (text ? sourcesFromText(text) : []), [text]);
+     if (!NEMESIS_STUDENT_BUILD || sources.length === 0) {
+         return null;
+     }
+-    return (_jsx("div", { className: "mt-3 flex flex-wrap gap-1.5", "data-slot": "nemesis_message-sources", children: sources.map(source => (_jsxs("button", { className: "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground", onClick: () => void window.hermesDesktop?.openExternal?.(source.url), title: `${source.title}\n${source.url}`, type: "button", children: [_jsx("span", { className: "text-[10px] font-semibold uppercase tracking-wide text-(--theme-primary)", children: source.badge }), _jsx("span", { className: "max-w-[14rem] truncate text-muted-foreground", children: source.title })] }, source.url))) }));
++    return (_jsx("div", { className: "mt-3 flex flex-wrap gap-1.5", "data-slot": "nemesis_message-sources", children: sources.map(source => (_jsxs("button", { className: "inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-foreground/85 transition-colors hover:border-(--theme-primary) hover:text-foreground", onClick: () => void window.hermesDesktop?.openExternal?.(source.url), title: `${source.title}\n${source.url}`, type: "button", children: [_jsx(SourceFavicon, { domain: source.domain }), _jsx("span", { className: "text-[10px] font-semibold uppercase tracking-wide text-(--theme-primary)", children: source.badge }), _jsx("span", { className: "max-w-[14rem] truncate text-muted-foreground", children: source.title })] }, source.url))) }));
+ };
+diff --git a/apps/desktop/src/components/assistant-ui/thread/message-sources.tsx b/apps/desktop/src/components/assistant-ui/thread/message-sources.tsx
+index 9d42a9b..9bd7522 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/message-sources.tsx
++++ b/apps/desktop/src/components/assistant-ui/thread/message-sources.tsx
+@@ -4,7 +4,7 @@
+ // traffic); this is the per-answer receipt.
+ import { type FC, useMemo } from 'react'
+ 
+-import { sourcesFromText } from '@/app/right-sidebar/sources'
++import { SourceFavicon, sourcesFromText } from '@/app/right-sidebar/sources'
+ import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ 
+ export const MessageSources: FC<{ text: string }> = ({ text }) => {
+@@ -24,6 +24,7 @@ export const MessageSources: FC<{ text: string }> = ({ text }) => {
+           title={`${source.title}\n${source.url}`}
+           type="button"
+         >
++          <SourceFavicon domain={source.domain} />
+           <span className="text-[10px] font-semibold uppercase tracking-wide text-(--theme-primary)">
+             {source.badge}
+           </span>
+diff --git a/apps/desktop/src/styles.css b/apps/desktop/src/styles.css
+index 838d17d..5299ccf 100644
+--- a/apps/desktop/src/styles.css
++++ b/apps/desktop/src/styles.css
+@@ -1853,3 +1853,13 @@ text-* variant utilities. */ .btn-arc {
+ .nemesis-prose-editor .cm-editor.cm-focused {
+   outline: none !important;
+ }
++
++/* Nemesis student build: once a turn settles, its activity trail (thinking
++   disclosures + tool rows) folds behind the ActivityStrip's "Worked through
++   N steps" toggle. While running (data-nemesis-activity='live') nothing hides,
++   so live previews and tool-approval buttons stay fully interactive. */
++[data-nemesis-activity='collapsed'] [data-slot='aui_thinking-disclosure'],
++[data-nemesis-activity='collapsed'] [data-slot='tool-block'],
++[data-nemesis-activity='collapsed'] [data-tool-group] {
++  display: none;
++}
+-- 
+2.50.1 (Apple Git-155)
+

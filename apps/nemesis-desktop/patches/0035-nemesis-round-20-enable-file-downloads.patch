@@ -1,0 +1,118 @@
+From 47f70e507b17b5b8742b0e7f46867cf33cd4cf61 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Fri, 10 Jul 2026 15:37:58 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20round-20=20=E2=80=94=20enable=20file?=
+ =?UTF-8?q?=20downloads=20to=20disk=20(headless=20browser=20scope)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Headless Chromium blocks downloads by default, so a click on a Blackboard
+slide/PDF or an Outlook attachment silently no-oped. Hold one browser-scope
+CDP connection open and set Browser.setDownloadBehavior(allow, ~/Downloads,
+eventsEnabled) — browser scope so it covers the AGENT's own download clicks,
+not just the mirror session. Re-armed on every ensureBrowser().
+---
+ apps/desktop/electron/school-browser.ts | 70 +++++++++++++++++++++++++
+ 1 file changed, 70 insertions(+)
+
+diff --git a/apps/desktop/electron/school-browser.ts b/apps/desktop/electron/school-browser.ts
+index 4328d56d603..ca1db8f3ffa 100644
+--- a/apps/desktop/electron/school-browser.ts
++++ b/apps/desktop/electron/school-browser.ts
+@@ -21,6 +21,12 @@ const PROFILE_DIR = path.join(os.homedir(), '.hermes', 'browser_auth', 'school-p
+ const START_URL = 'https://www.google.com'
+ const HTTP_TIMEOUT_MS = 2_500
+ const SPAWN_WAIT_MS = 12_000
++// Headless Chromium blocks file downloads by default — a click on a Blackboard
++// slide/PDF or an Outlook attachment would silently no-op. We set download
++// behavior at BROWSER scope (applies to the agent's own CDP session too, not
++// just the mirror) so captured files land here; the school-portal skill moves
++// them into Library/School/<Course>.
++const DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads')
+ 
+ // Only these CDP methods may be forwarded from the renderer — the mirror needs
+ // input + navigation + viewport-matching, nothing else (no Runtime.evaluate
+@@ -100,8 +106,70 @@ async function isRunning(): Promise<boolean> {
+   }
+ }
+ 
++// One long-lived browser-scope CDP connection whose only job is to keep
++// download-to-disk enabled. Held open because the behavior can reset when the
++// setting client disconnects; re-armed by ensureBrowser().
++let downloadWs: WebSocket | null = null
++
++async function enableDownloads(): Promise<void> {
++  if (downloadWs && downloadWs.readyState === WebSocket.OPEN) {
++    return
++  }
++
++  let version: unknown
++
++  try {
++    version = await httpJson(`${ORIGIN}/json/version`)
++  } catch {
++    return
++  }
++
++  const wsUrl =
++    version && typeof version === 'object' ? (version as Record<string, unknown>).webSocketDebuggerUrl : null
++
++  if (typeof wsUrl !== 'string') {
++    return
++  }
++
++  try {
++    fs.mkdirSync(DOWNLOAD_DIR, { recursive: true })
++  } catch {
++    // Downloads dir almost always exists; ignore.
++  }
++
++  const ws = new WebSocket(wsUrl)
++
++  const opened = await new Promise<boolean>(resolve => {
++    ws.onopen = () => resolve(true)
++    ws.onerror = () => resolve(false)
++    setTimeout(() => resolve(false), HTTP_TIMEOUT_MS)
++  })
++
++  if (!opened) {
++    return
++  }
++
++  downloadWs = ws
++  ws.onclose = () => {
++    if (downloadWs === ws) {
++      downloadWs = null
++    }
++  }
++  // 'allow' keeps the site's suggested filename (the skill's move step needs a
++  // human name, not a GUID). Browser scope → covers the agent's download clicks.
++  ws.send(
++    JSON.stringify({
++      id: 1,
++      method: 'Browser.setDownloadBehavior',
++      params: { behavior: 'allow', downloadPath: DOWNLOAD_DIR, eventsEnabled: true }
++    })
++  )
++}
++
+ async function ensureBrowser(): Promise<{ ok: boolean; reason?: string }> {
+   if (await isRunning()) {
++    await enableDownloads()
++
+     return { ok: true }
+   }
+ 
+@@ -141,6 +209,8 @@ async function ensureBrowser(): Promise<{ ok: boolean; reason?: string }> {
+ 
+   while (Date.now() < deadline) {
+     if (await isRunning()) {
++      await enableDownloads()
++
+       return { ok: true }
+     }
+ 
+-- 
+2.50.1 (Apple Git-155)
+

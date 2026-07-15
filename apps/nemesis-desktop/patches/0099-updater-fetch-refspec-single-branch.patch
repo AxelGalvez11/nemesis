@@ -1,0 +1,164 @@
+From f578a51ff471effa6fb13c92739b730effa5d6b9 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 15:21:43 -0500
+Subject: [PATCH] fix(updater): fetch with explicit refspec so single-branch
+ clones can track main
+
+Installer checkouts are single-branch clones pinned to the build branch, so
+a plain 'git fetch origin main' never creates origin/main. Consequences:
+the desktop's checkUpdates rev-parse resolved to the literal string
+'origin/main' (permanent phantom 'update available' banner), and
+'hermes update --branch main' aborted with 'branch does not exist'.
+
+Fetch with +refs/heads/<branch>:refs/remotes/origin/<branch> in the desktop
+check, the CLI update apply, and the CLI update --check paths. Helper +
+tests in update-remote.ts, verified against shallow single-branch clone
+simulations of all three install shapes.
+---
+ apps/desktop/electron/main.ts               |  8 +++++--
+ apps/desktop/electron/update-remote.test.ts | 12 +++++++++++
+ apps/desktop/electron/update-remote.ts      | 23 +++++++++++++++++++-
+ hermes_cli/main.py                          | 24 +++++++++++++++++----
+ 4 files changed, 60 insertions(+), 7 deletions(-)
+
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index 628cf3775..bf001bb8a 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -129,7 +129,7 @@ import {
+   sandboxFallbackFromEnv,
+   sandboxPreflight
+ } from './update-relaunch'
+-import { isOfficialSshRemote, OFFICIAL_REPO_HTTPS_URL } from './update-remote'
++import { fetchRefspecFor, isOfficialSshRemote, OFFICIAL_REPO_HTTPS_URL } from './update-remote'
+ import { fetchMarketplaceThemes, searchMarketplaceThemes } from './vscode-marketplace'
+ import {
+   computeWindowOptions,
+@@ -2219,7 +2219,11 @@ async function checkUpdates() {
+     }
+   }
+ 
+-  const fetched = await runGit(['fetch', '--quiet', 'origin', branch], { cwd: updateRoot })
++  // Fetch with an explicit refspec: installer checkouts are single-branch
++  // clones, and without it `origin/<branch>` never materializes for any
++  // branch other than the pinned one — the rev-parse below then "resolves"
++  // to the literal string and the app shows a permanent phantom update.
++  const fetched = await runGit(['fetch', '--quiet', 'origin', fetchRefspecFor(branch)], { cwd: updateRoot })
+ 
+   if (fetched.code !== 0) {
+     return {
+diff --git a/apps/desktop/electron/update-remote.test.ts b/apps/desktop/electron/update-remote.test.ts
+index 5f124e99b..6dca8a773 100644
+--- a/apps/desktop/electron/update-remote.test.ts
++++ b/apps/desktop/electron/update-remote.test.ts
+@@ -20,6 +20,7 @@ import test from 'node:test'
+ 
+ import {
+   canonicalGitHubRemote,
++  fetchRefspecFor,
+   isOfficialSshRemote,
+   isSshRemote,
+   OFFICIAL_REPO_CANONICAL,
+@@ -76,3 +77,14 @@ test('OFFICIAL_REPO_HTTPS_URL canonicalizes to OFFICIAL_REPO_CANONICAL', () => {
+   // Invariant: the URL we substitute in must be the same repo we detect.
+   assert.equal(canonicalGitHubRemote(OFFICIAL_REPO_HTTPS_URL), OFFICIAL_REPO_CANONICAL)
+ })
++
++test('fetchRefspecFor force-maps a branch into refs/remotes/origin', () => {
++  // Single-branch installer clones have a narrow remote.origin.fetch; the
++  // explicit refspec is what guarantees origin/<branch> exists after a fetch
++  // (checkUpdates' rev-parse and hermes update's checkout -B depend on it).
++  assert.equal(fetchRefspecFor('main'), '+refs/heads/main:refs/remotes/origin/main')
++  assert.equal(
++    fetchRefspecFor('codex/nemesis-beta-v0.1'),
++    '+refs/heads/codex/nemesis-beta-v0.1:refs/remotes/origin/codex/nemesis-beta-v0.1'
++  )
++})
+diff --git a/apps/desktop/electron/update-remote.ts b/apps/desktop/electron/update-remote.ts
+index 07e67c729..b159826a1 100644
+--- a/apps/desktop/electron/update-remote.ts
++++ b/apps/desktop/electron/update-remote.ts
+@@ -61,4 +61,25 @@ function isOfficialSshRemote(url) {
+   return isSshRemote(url) && canonicalGitHubRemote(url) === OFFICIAL_REPO_CANONICAL
+ }
+ 
+-export { canonicalGitHubRemote, isOfficialSshRemote, isSshRemote, OFFICIAL_REPO_CANONICAL, OFFICIAL_REPO_HTTPS_URL }
++// Explicit fetch refspec that force-creates refs/remotes/origin/<branch>.
++//
++// Installer checkouts are SINGLE-BRANCH clones (`git clone --depth 1
++// --branch <pinned>`), so remote.origin.fetch only maps the pinned branch.
++// A plain `git fetch origin main` on such a clone updates FETCH_HEAD but
++// never creates origin/main — every downstream consumer then breaks:
++// checkUpdates' `rev-parse origin/main` yields garbage (a permanent phantom
++// "update available"), and `hermes update`'s `checkout -B main origin/main`
++// aborts with "branch does not exist". Passing the full refspec on the
++// command line sidesteps the clone's narrow config without mutating it.
++function fetchRefspecFor(branch) {
++  return `+refs/heads/${branch}:refs/remotes/origin/${branch}`
++}
++
++export {
++  canonicalGitHubRemote,
++  fetchRefspecFor,
++  isOfficialSshRemote,
++  isSshRemote,
++  OFFICIAL_REPO_CANONICAL,
++  OFFICIAL_REPO_HTTPS_URL
++}
+diff --git a/hermes_cli/main.py b/hermes_cli/main.py
+index 1996fc141..213c3400d 100644
+--- a/hermes_cli/main.py
++++ b/hermes_cli/main.py
+@@ -8482,10 +8482,15 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
+             text=True,
+         )
+         if fetch_result.returncode != 0:
+-            # Fallback to origin if upstream doesn't exist
++            # Fallback to origin if upstream doesn't exist. Explicit refspec so
++            # origin/<branch> exists afterwards even on single-branch clones
++            # (the rev-parse --verify guard below depends on it).
+             print("→ Fetching from origin...")
+             fetch_result = subprocess.run(
+-                git_cmd + ["fetch"] + depth_args + ["origin", branch],
++                git_cmd
++                + ["fetch"]
++                + depth_args
++                + ["origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}"],
+                 cwd=PROJECT_ROOT,
+                 capture_output=True,
+                 text=True,
+@@ -8497,9 +8502,13 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
+             compare_branch = f"upstream/{branch}"
+     else:
+         # Non-default branch: compare against origin/<branch> directly.
++        # Explicit refspec — see the origin fetch above.
+         print("→ Fetching from origin...")
+         fetch_result = subprocess.run(
+-            git_cmd + ["fetch"] + depth_args + ["origin", branch],
++            git_cmd
++            + ["fetch"]
++            + depth_args
++            + ["origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}"],
+             cwd=PROJECT_ROOT,
+             capture_output=True,
+             text=True,
+@@ -9571,8 +9580,15 @@ def _cmd_update_impl(args, gateway_mode: bool):
+         branch = _resolve_update_branch(args)
+ 
+         print("→ Fetching updates...")
++        # Explicit refspec: installer checkouts are single-branch clones, so a
++        # plain `git fetch origin <branch>` only writes FETCH_HEAD for any
++        # branch other than the pinned one. The `checkout -B <branch>
++        # origin/<branch>` below then fails with "branch does not exist" even
++        # though the fetch succeeded. Force-mapping the remote-tracking ref on
++        # the command line works regardless of the clone's fetch config.
+         fetch_result = subprocess.run(
+-            git_cmd + ["fetch", "origin", branch],
++            git_cmd
++            + ["fetch", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}"],
+             cwd=PROJECT_ROOT,
+             capture_output=True,
+             text=True,
+-- 
+2.50.1 (Apple Git-155)
+

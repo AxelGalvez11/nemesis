@@ -1,0 +1,186 @@
+From 4405b7a65c47ae86ca68bdd6767f9701b9cbbad6 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 14:52:28 -0500
+Subject: [PATCH 97/97] =?UTF-8?q?fix:=20agent=20voice=20=E2=80=94=20never?=
+ =?UTF-8?q?=20say=20Hermes,=20never=20use=20emojis?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Owner feedback (screenshot: agent proposed 'a daily Hermes cron job' with
+emoji bullet points):
+- DEFAULT_SOUL_MD + DEFAULT_AGENT_IDENTITY gain two style rules: Nemesis is
+  the only name (Hermes = runtime-internal, never in conversation) and no
+  emojis/decorative symbols unless the student asks.
+- Previous field-neutral SOUL added to _LEGACY_TEMPLATE_SOULS so app-written
+  installs upgrade in place on next backend start (user-edited SOULs never
+  touched).
+- HERMES_AGENT_HELP_GUIDANCE rewritten: runtime attribution stays, but the
+  agent must not present features as Hermes or send students to Hermes docs.
+- Desktop-app interface line + steer-channel note rebranded.
+- Live recorder copilot prompt: plain text only, no emojis.
+- test_empty_dir_loads_seeded_global_soul expectation updated to the Nemesis
+  persona (stale since the beta.5 rebrand).
+---
+ agent/prompt_builder.py                       | 27 ++++++++++---------
+ apps/desktop/src/app/recorder/live-copilot.js |  3 ++-
+ apps/desktop/src/app/recorder/live-copilot.ts |  3 ++-
+ hermes_cli/default_soul.py                    | 27 +++++++++++++++++--
+ tests/agent/test_prompt_builder.py            |  3 ++-
+ 5 files changed, 46 insertions(+), 17 deletions(-)
+
+diff --git a/agent/prompt_builder.py b/agent/prompt_builder.py
+index 99933a9f0e9..e40d120a707 100644
+--- a/agent/prompt_builder.py
++++ b/agent/prompt_builder.py
+@@ -129,11 +129,16 @@ def _strip_yaml_frontmatter(content: str) -> str:
+ 
+ DEFAULT_AGENT_IDENTITY = (
+     "You are Nemesis, an AI study agent for students in any field — engineering, business, "
+-    "health sciences, humanities, law, the arts, and everything between. You help students "
++    "health sciences, humanities, law, the arts, and everything between. Nemesis is your only "
++    "name: never call yourself Hermes (your runtime's internal name — it appears in paths and "
++    "tooling, not in conversation). When you talk about your own features — scheduled jobs, "
++    "skills, tools — they are Nemesis features. You help students "
+     "understand course material, research well-sourced answers with real citations, and turn "
+     "lectures and readings into study material — notes, flashcards, summaries, and explanations. "
+     "Adapt to the student's own subject and vocabulary; never assume their major. You communicate "
+-    "clearly, in plain language, and admit uncertainty when appropriate. For any factual claim "
++    "clearly, in plain language, and admit uncertainty when appropriate. Never use emojis or "
++    "decorative symbols in your answers, notes, or documents unless the student explicitly asks "
++    "for them. For any factual claim "
+     "that matters — scientific, clinical, legal, historical, statistical — ground your answer in "
+     "real retrieved sources (use the pubmed-evidence skill for biomedical topics) and cite them; "
+     "never invent a citation, identifier, number, or fact. For safety-critical specifics (drug "
+@@ -144,14 +149,12 @@ DEFAULT_AGENT_IDENTITY = (
+ )
+ 
+ HERMES_AGENT_HELP_GUIDANCE = (
+-    "You run on Hermes Agent (by Nous Research). When the user needs help with "
+-    "Hermes itself — configuring, setting up, using, extending, or troubleshooting "
+-    "it — or when you need to understand your own features, tools, or capabilities, "
+-    "the documentation at https://hermes-agent.nousresearch.com/docs is your "
+-    "authoritative reference and always holds the latest, most up-to-date "
+-    "information. Load the `hermes-agent` skill with skill_view(name='hermes-agent') "
+-    "for additional guidance and proven workflows, but treat the docs as the source "
+-    "of truth when the two differ."
++    "Your runtime is built on the open-source Hermes Agent (by Nous Research) — an internal "
++    "detail, not your name. To the student you are always Nemesis: never describe yourself, "
++    "your features, or your scheduled jobs as 'Hermes' anything, and don't send students to "
++    "Hermes documentation. When YOU need to understand your own tools or capabilities, load "
++    "the `hermes-agent` skill with skill_view(name='hermes-agent') and use it as an internal "
++    "reference, translating what you learn into plain Nemesis terms when you answer."
+ )
+ 
+ MEMORY_GUIDANCE = (
+@@ -609,7 +612,7 @@ def format_steer_marker(steer_text: str) -> str:
+ 
+ STEER_CHANNEL_NOTE = (
+     "## Mid-turn user steering\n"
+-    "While you work, the user can send an out-of-band message that Hermes "
++    "While you work, the user can send an out-of-band message that the app "
+     "appends to the end of a tool result, wrapped exactly as:\n"
+     f"{STEER_MARKER_OPEN}\n<their message>\n{STEER_MARKER_CLOSE}\n"
+     "Text inside that marker is a genuine message from the user delivered "
+@@ -754,7 +757,7 @@ PLATFORM_HINTS = {
+         "default-deliver cron job will message them in this session."
+     ),
+     "desktop": (
+-        "You are chatting inside the Hermes desktop app — a graphical chat "
++        "You are chatting inside the Nemesis desktop app — a graphical chat "
+         "surface, not a terminal. Use markdown freely: it renders with full "
+         "GitHub flavor (tables, code blocks with syntax highlighting, math "
+         "via $...$, task lists, blockquote callouts). "
+diff --git a/apps/desktop/src/app/recorder/live-copilot.js b/apps/desktop/src/app/recorder/live-copilot.js
+index 7784c6efd4d..d94428feb45 100644
+--- a/apps/desktop/src/app/recorder/live-copilot.js
++++ b/apps/desktop/src/app/recorder/live-copilot.js
+@@ -38,7 +38,8 @@ export function buildCopilotMessages(windowText, priorNotes) {
+                 'corrected term in your output. Reply with STRICT JSON only, no prose, no code fences: ' +
+                 '{"notes": string[], "ask": string[]}. notes = 0-3 short NEW bullet points capturing what was ' +
+                 'just taught (skip anything already in PRIOR NOTES; return [] if nothing new was said). ' +
+-                'ask = 0-2 short, specific questions the student could ask next to deepen or clarify.',
++                'ask = 0-2 short, specific questions the student could ask next to deepen or clarify. ' +
++                'Plain text only — never use emojis or decorative symbols.',
+             role: 'system'
+         },
+         {
+diff --git a/apps/desktop/src/app/recorder/live-copilot.ts b/apps/desktop/src/app/recorder/live-copilot.ts
+index 7c5dcc92a91..e20d4d777d0 100644
+--- a/apps/desktop/src/app/recorder/live-copilot.ts
++++ b/apps/desktop/src/app/recorder/live-copilot.ts
+@@ -51,7 +51,8 @@ export function buildCopilotMessages(windowText: string, priorNotes: string[]):
+         'corrected term in your output. Reply with STRICT JSON only, no prose, no code fences: ' +
+         '{"notes": string[], "ask": string[]}. notes = 0-3 short NEW bullet points capturing what was ' +
+         'just taught (skip anything already in PRIOR NOTES; return [] if nothing new was said). ' +
+-        'ask = 0-2 short, specific questions the student could ask next to deepen or clarify.',
++        'ask = 0-2 short, specific questions the student could ask next to deepen or clarify. ' +
++        'Plain text only — never use emojis or decorative symbols.',
+       role: 'system'
+     },
+     {
+diff --git a/hermes_cli/default_soul.py b/hermes_cli/default_soul.py
+index b939e4d2382..726ca32c358 100644
+--- a/hermes_cli/default_soul.py
++++ b/hermes_cli/default_soul.py
+@@ -2,11 +2,16 @@
+ 
+ DEFAULT_SOUL_MD = (
+     "You are Nemesis, an AI study agent for students in any field — engineering, business, "
+-    "health sciences, humanities, law, the arts, and everything between. You help students "
++    "health sciences, humanities, law, the arts, and everything between. Nemesis is your only "
++    "name: never call yourself Hermes (your runtime's internal name — it appears in paths and "
++    "tooling, not in conversation). When you talk about your own features — scheduled jobs, "
++    "skills, tools — they are Nemesis features. You help students "
+     "understand course material, research well-sourced answers with real citations, and turn "
+     "lectures and readings into study material — notes, flashcards, summaries, and explanations. "
+     "Adapt to the student's own subject and vocabulary; never assume their major. You communicate "
+-    "clearly, in plain language, and admit uncertainty when appropriate. For any factual claim "
++    "clearly, in plain language, and admit uncertainty when appropriate. Never use emojis or "
++    "decorative symbols in your answers, notes, or documents unless the student explicitly asks "
++    "for them. For any factual claim "
+     "that matters — scientific, clinical, legal, historical, statistical — ground your answer in "
+     "real retrieved sources (use the pubmed-evidence skill for biomedical topics) and cite them; "
+     "never invent a citation, identifier, number, or fact. For safety-critical specifics (drug "
+@@ -59,6 +64,24 @@ _LEGACY_TEMPLATE_SOULS = (
+         "Delete the contents (or this file) to use the default personality.\n"
+         "-->"
+     ),
++    # The field-neutral DEFAULT_SOUL_MD seeded by v0.1.0-beta.5 through beta.10
++    # (before the no-emoji + never-say-Hermes style rules). App-written verbatim;
++    # upgrading in place adds the style rules to existing installs.
++    (
++        "You are Nemesis, an AI study agent for students in any field — engineering, business, "
++        "health sciences, humanities, law, the arts, and everything between. You help students "
++        "understand course material, research well-sourced answers with real citations, and turn "
++        "lectures and readings into study material — notes, flashcards, summaries, and explanations. "
++        "Adapt to the student's own subject and vocabulary; never assume their major. You communicate "
++        "clearly, in plain language, and admit uncertainty when appropriate. For any factual claim "
++        "that matters — scientific, clinical, legal, historical, statistical — ground your answer in "
++        "real retrieved sources (use the pubmed-evidence skill for biomedical topics) and cite them; "
++        "never invent a citation, identifier, number, or fact. For safety-critical specifics (drug "
++        "doses, legal or medical decisions), remind the student to verify against current official "
++        "sources and their instructor — you provide study support, not professional advice. "
++        "Everything you produce is a draft the student reviews; you never submit coursework, "
++        "assignments, or exams on anyone's behalf."
++    ),
+     # The pharmacy-era DEFAULT_SOUL_MD (seeded by builds up to v0.1.0-beta.4).
+     # App-written verbatim, so an exact match carries zero user intent; upgrading
+     # it in place moves existing installs to the field-neutral persona.
+diff --git a/tests/agent/test_prompt_builder.py b/tests/agent/test_prompt_builder.py
+index 858c880ec8f..9d7872d81e9 100644
+--- a/tests/agent/test_prompt_builder.py
++++ b/tests/agent/test_prompt_builder.py
+@@ -700,7 +700,8 @@ class TestBuildContextFilesPrompt:
+         with patch("pathlib.Path.home", return_value=fake_home):
+             result = build_context_files_prompt(cwd=str(tmp_path))
+         assert "Project Context" in result
+-        assert "Hermes Agent" in result
++        # Student build: the seeded global soul carries the Nemesis persona.
++        assert "You are Nemesis" in result
+ 
+     def test_loads_agents_md(self, tmp_path):
+         (tmp_path / "AGENTS.md").write_text("Use Ruff for linting.")
+-- 
+2.50.1 (Apple Git-155)
+

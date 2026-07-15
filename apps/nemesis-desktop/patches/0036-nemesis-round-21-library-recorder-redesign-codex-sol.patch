@@ -1,0 +1,1287 @@
+From 6164dffec2c2360e48a49c0e75ea2683baff866d Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Fri, 10 Jul 2026 16:42:26 -0500
+Subject: [PATCH] =?UTF-8?q?nemesis:=20round-21=20=E2=80=94=20Library=20+?=
+ =?UTF-8?q?=20Recorder=20UI=20redesign=20(Codex/GPT-5.6-Sol=20pass)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Authored by Codex (gpt-5.6-sol, xhigh) from a scoped brief; verified live via CDP.
+
+- Library: hierarchical tree (folder kickers + glyphs, indent guides, crimson
+  active bar), header stats + icon actions, document header (kicker breadcrumb,
+  word count, saved-state pill), chat-rail-style tabs, card Links/Backlinks
+  panels with counts; note-editor prose scale/heading/wikilink polish;
+  pdf-viewer toolbar touch-up
+- Recorder: capture-desk hero (circular record button, ready kicker, headline),
+  toggle-switch option rows, privacy pill, ARCHIVE kicker + count badge,
+  recording cards (tinted mic tile, meta line, tooltipped icon actions),
+  legal paragraph -> one-line 'Local by design' + details tooltip
+- visual-only: no behavior/IPC/storage changes; tokens + existing primitives
+---
+ apps/desktop/src/app/library/index.js        |  37 +-
+ apps/desktop/src/app/library/index.tsx       | 194 ++++++++---
+ apps/desktop/src/app/library/note-editor.js  |  66 ++--
+ apps/desktop/src/app/library/note-editor.tsx |  66 ++--
+ apps/desktop/src/app/library/pdf-viewer.js   |   4 +-
+ apps/desktop/src/app/library/pdf-viewer.tsx  |  18 +-
+ apps/desktop/src/app/recorder/index.js       |  20 +-
+ apps/desktop/src/app/recorder/index.tsx      | 335 ++++++++++++-------
+ 8 files changed, 472 insertions(+), 268 deletions(-)
+
+diff --git a/apps/desktop/src/app/library/index.js b/apps/desktop/src/app/library/index.js
+index a15fd6df660..70d54f8858f 100644
+--- a/apps/desktop/src/app/library/index.js
++++ b/apps/desktop/src/app/library/index.js
+@@ -3,12 +3,13 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
+ // Markdown, a prose-styled CodeMirror editor (middle, de-code-ified via .nemesis-prose-editor
+ // CSS), and a Links/Backlinks rail. Non-markdown files (PDF/images inline; slides/docs open
+ // externally) preview in place. Autosaves 800ms after typing.
+-import { IconFileText, IconFileTypePdf, IconPaperclip, IconPhoto, IconPresentation, IconX } from '@tabler/icons-react';
++import { IconChevronRight, IconFilePlus, IconFileText, IconFileTypePdf, IconFolder, IconFolderOpen, IconFolderPlus, IconPaperclip, IconPhoto, IconPresentation, IconX } from '@tabler/icons-react';
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+ import { useSearchParams } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+ import { EmptyState } from '@/components/ui/empty-state';
+ import { Input } from '@/components/ui/input';
++import { Tip } from '@/components/ui/tooltip';
+ import { cn } from '@/lib/utils';
+ import { NoteEditor } from './note-editor';
+ import { PdfViewer } from './pdf-viewer';
+@@ -19,6 +20,9 @@ function tabKey(tab) {
+ function tabLabel(tab) {
+     return tab.kind === 'note' ? tab.note.title : tab.file.name;
+ }
++function countWords(value) {
++    return value.trim().match(/\S+/g)?.length ?? 0;
++}
+ function buildTree(contents) {
+     const root = { files: [], folders: [], name: '', notes: [], path: '' };
+     const nodeFor = (folder) => {
+@@ -206,21 +210,23 @@ export function LibraryView() {
+     const unresolved = activeNote
+         ? extractWikilinks(activeNote.content).filter(target => !contents.notes.some(note => note.title.toLowerCase() === target.toLowerCase()))
+         : [];
+-    return (_jsxs("div", { className: "flex h-full min-h-0", children: [_jsxs("aside", { className: "flex w-64 shrink-0 flex-col border-r border-border", children: [_jsxs("div", { className: "flex items-center justify-between gap-2 px-4 pb-2 pt-5", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Library" }), _jsxs("div", { className: "flex gap-1", children: [_jsx(Button, { className: "h-7 px-2 text-xs", onClick: () => { setCreating('note'); setDraft(''); }, size: "sm", variant: "outline", children: "+ Note" }), _jsx(Button, { className: "h-7 px-2 text-xs", onClick: () => { setCreating('folder'); setDraft(''); }, size: "sm", variant: "outline", children: "+ Folder" })] })] }), creating && (_jsxs("div", { className: "px-3 pb-2", children: [_jsx(Input, { autoFocus: true, onChange: event => setDraft(event.target.value), onKeyDown: event => {
++    const noteCount = contents.notes.length;
++    const fileCount = contents.files.length;
++    return (_jsxs("div", { className: "flex h-full min-h-0 bg-(--ui-editor-surface-background)", children: [_jsxs("aside", { className: "flex w-64 shrink-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background)", children: [_jsxs("div", { className: "flex items-center justify-between gap-3 px-4 pb-3 pt-5", children: [_jsxs("div", { className: "min-w-0", children: [_jsx("h1", { className: "text-lg font-semibold tracking-tight", children: "Library" }), _jsxs("p", { className: "mt-0.5 text-[0.65rem] font-medium tabular-nums text-(--ui-text-tertiary)", children: [noteCount, " note", noteCount === 1 ? '' : 's', " \u00B7 ", fileCount, " file", fileCount === 1 ? '' : 's'] })] }), _jsxs("div", { className: "flex gap-0.5", children: [_jsx(Tip, { label: "New note", children: _jsx(Button, { "aria-label": "New note", className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => { setCreating('note'); setDraft(''); }, size: "icon-xs", variant: "ghost", children: _jsx(IconFilePlus, {}) }) }), _jsx(Tip, { label: "New folder", children: _jsx(Button, { "aria-label": "New folder", className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => { setCreating('folder'); setDraft(''); }, size: "icon-xs", variant: "ghost", children: _jsx(IconFolderPlus, {}) }) })] })] }), creating && (_jsxs("div", { className: "mx-3 mb-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-2 shadow-sm", children: [_jsx(Input, { autoFocus: true, onChange: event => setDraft(event.target.value), onKeyDown: event => {
+                                     if (event.key === 'Enter')
+                                         void submitCreate();
+                                     if (event.key === 'Escape')
+                                         setCreating(null);
+-                                }, placeholder: creating === 'folder' ? 'Folder name' : 'Note title', value: draft }), targetFolder && _jsxs("p", { className: "px-1 pt-1 text-[10px] text-muted-foreground", children: ["in ", targetFolder] })] })), _jsx("nav", { className: "min-h-0 flex-1 overflow-y-auto px-2 pb-4", children: _jsx(TreeLevel, { collapsed: collapsed, depth: 0, node: tree, onSelect: next => next && openSelection(next), onToggle: path => setCollapsed(current => {
++                                }, placeholder: creating === 'folder' ? 'Folder name' : 'Note title', value: draft }), targetFolder && _jsxs("p", { className: "px-1 pt-1.5 text-[10px] text-muted-foreground", children: ["in ", targetFolder] })] })), _jsx("nav", { className: "min-h-0 flex-1 overflow-y-auto px-2.5 pb-4", children: _jsx(TreeLevel, { collapsed: collapsed, depth: 0, node: tree, onSelect: next => next && openSelection(next), onToggle: path => setCollapsed(current => {
+                                 const next = new Set(current);
+                                 next.has(path) ? next.delete(path) : next.add(path);
+                                 return next;
+-                            }), selection: selection }) })] }), _jsxs("main", { className: "flex min-w-0 flex-1 flex-col", children: [tabs.length > 0 && (_jsx("div", { className: "flex shrink-0 items-end gap-0.5 overflow-x-auto border-b border-border px-2 pt-2", children: tabs.map((tab, i) => (_jsxs("div", { className: cn('group/tab flex max-w-[13rem] shrink-0 cursor-pointer items-center gap-1 rounded-t-md border border-b-0 px-2.5 py-1.5 text-xs transition-colors', i === activeTab
+-                                ? 'border-border bg-card text-foreground'
+-                                : 'border-transparent text-muted-foreground hover:text-foreground'), onClick: () => setActiveTab(i), children: [_jsx("span", { className: "truncate", children: tabLabel(tab) }), _jsx("button", { "aria-label": "Close tab", className: "rounded p-0.5 opacity-0 transition-opacity hover:bg-accent group-hover/tab:opacity-100", onClick: event => {
++                            }), selection: selection }) })] }), _jsxs("main", { className: "flex min-w-0 flex-1 flex-col bg-(--ui-bg-editor)", children: [tabs.length > 0 && (_jsx("div", { className: "flex h-(--titlebar-height) shrink-0 overflow-x-auto overflow-y-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", role: "tablist", children: tabs.map((tab, i) => (_jsxs("div", { className: cn('group/tab relative flex h-full min-w-0 max-w-48 shrink-0 cursor-pointer items-center border-r border-(--ui-stroke-quaternary) text-[0.6875rem] font-medium transition-colors duration-200 ease-out', i === activeTab
++                                ? 'bg-(--ui-bg-editor) text-foreground'
++                                : 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'), onClick: () => setActiveTab(i), role: "tab", children: [i === activeTab && _jsx("span", { "aria-hidden": true, className: "absolute inset-x-0 top-0 h-px bg-(--theme-primary)" }), _jsxs("span", { className: "flex min-w-0 items-center gap-1.5 py-2 pl-3 pr-8", children: [tab.kind === 'note' ? _jsx(IconFileText, { className: "shrink-0 opacity-60", size: 13 }) : _jsx(FileGlyph, { kind: tab.file.kind }), _jsx("span", { className: "truncate", children: tabLabel(tab) })] }), _jsx("button", { "aria-label": "Close tab", className: "absolute right-1.5 grid size-5 place-items-center rounded opacity-0 transition-[opacity,color] duration-200 ease-out hover:bg-(--chrome-action-hover) group-hover/tab:opacity-100 group-focus-within/tab:opacity-100", onClick: event => {
+                                         event.stopPropagation();
+                                         closeTab(i);
+-                                    }, type: "button", children: _jsx(IconX, { size: 11 }) })] }, tabKey(tab)))) })), selection?.kind === 'note' ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex items-center justify-between px-5 pb-1 pt-5", children: [_jsx("h2", { className: "truncate text-base font-medium", children: selection.note.title }), _jsx("span", { className: "text-xs text-muted-foreground", children: saving ? 'Saving…' : 'Saved to disk' })] }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden px-6 pb-3", children: _jsx(NoteEditor, { initialValue: selection.note.content, onChange: value => scheduleSave(selection.note, value), onOpenWikilink: target => void openWikilink(target) }, selection.note.path) })] })) : selection?.kind === 'file' ? (_jsx(FilePreview, { file: selection.file })) : (_jsx(EmptyState, { className: "flex-1", description: "Pick a note on the left, or create one.", title: "No note open" }))] }), activeNote && (_jsxs("aside", { className: "hidden w-56 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border px-4 pb-4 pt-5 lg:flex", children: [_jsx(LinkGroup, { emptyLabel: "Write [[Note title]] to connect ideas.", onOpen: title => {
++                                    }, type: "button", children: _jsx(IconX, { size: 11 }) })] }, tabKey(tab)))) })), selection?.kind === 'note' ? (_jsxs(_Fragment, { children: [_jsx("div", { className: "shrink-0 border-b border-(--ui-stroke-quaternary) px-7 pb-4 pt-6", children: _jsxs("div", { className: "flex items-end justify-between gap-6", children: [_jsxs("div", { className: "min-w-0", children: [_jsxs("div", { className: "mb-2 flex min-w-0 items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-tertiary)", children: [_jsx("span", { children: "Library" }), selection.note.folder.split('/').filter(Boolean).map((part, index) => (_jsxs("span", { className: "contents", children: [_jsx(IconChevronRight, { className: "shrink-0 opacity-50", size: 11 }), _jsx("span", { className: "truncate", children: part })] }, `${part}-${index}`)))] }), _jsx("h2", { className: "truncate text-2xl font-semibold tracking-[-0.025em]", children: selection.note.title })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)", children: [_jsxs("span", { className: "tabular-nums", children: [countWords(selection.note.content), " words"] }), _jsx("span", { className: "rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-1 font-medium", children: saving ? 'Saving…' : 'Saved to disk' })] })] }) }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden px-7 pb-3", children: _jsx(NoteEditor, { initialValue: selection.note.content, onChange: value => scheduleSave(selection.note, value), onOpenWikilink: target => void openWikilink(target) }, selection.note.path) })] })) : selection?.kind === 'file' ? (_jsx(FilePreview, { file: selection.file })) : (_jsx(EmptyState, { className: "flex-1", description: "Pick a note on the left, or create one.", title: "No note open" }))] }), activeNote && (_jsxs("aside", { className: "hidden w-64 shrink-0 flex-col gap-3 overflow-y-auto border-l border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-3 pb-4 pt-4 lg:flex", children: [_jsx(LinkGroup, { emptyLabel: "Write [[Note title]] to connect ideas.", onOpen: title => {
+                             const note = contents.notes.find(n => n.title === title);
+                             if (note)
+                                 openSelection({ kind: 'note', note });
+@@ -228,7 +234,7 @@ export function LibraryView() {
+                             const note = contents.notes.find(n => n.title === title);
+                             if (note)
+                                 openSelection({ kind: 'note', note });
+-                        }, title: "Backlinks", titles: incoming }), unresolved.length > 0 && (_jsxs("div", { children: [_jsx("h3", { className: "pb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground", children: "Unresolved" }), _jsx("div", { className: "flex flex-wrap gap-1.5", children: unresolved.map(target => (_jsx("span", { className: "rounded-md border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground", children: target }, target))) })] }))] }))] }));
++                        }, title: "Backlinks", titles: incoming }), unresolved.length > 0 && (_jsxs("div", { className: "rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("div", { className: "mb-2 flex items-center justify-between", children: [_jsx("h3", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground", children: "Unresolved" }), _jsx("span", { className: "text-[0.65rem] tabular-nums text-(--ui-text-quaternary)", children: unresolved.length })] }), _jsx("div", { className: "flex flex-wrap gap-1.5", children: unresolved.map(target => (_jsx("span", { className: "rounded-full border border-dashed border-(--ui-stroke-secondary) px-2.5 py-1 text-[0.6875rem] text-muted-foreground", children: target }, target))) })] }))] }))] }));
+ }
+ function FileGlyph({ kind }) {
+     const Icon = kind === 'pdf'
+@@ -242,23 +248,22 @@ function FileGlyph({ kind }) {
+                     : kind === 'doc'
+                         ? IconFileText
+                         : IconPaperclip;
+-    return _jsx(Icon, { className: "-mt-px mr-1.5 inline shrink-0 opacity-70", size: 14 });
++    return _jsx(Icon, { className: "shrink-0 opacity-60", size: 14 });
+ }
+ function TreeLevel({ collapsed, depth, node, onSelect, onToggle, selection }) {
+-    const pad = { paddingLeft: `${depth * 12 + 8}px` };
+-    return (_jsxs(_Fragment, { children: [node.folders
++    return (_jsxs("div", { className: cn('space-y-0.5', depth > 0 && 'ml-3 border-l border-(--ui-stroke-quaternary) pl-1.5'), children: [node.folders
+                 .slice()
+                 .sort((a, b) => a.name.localeCompare(b.name))
+                 .map(folder => {
+                 const isCollapsed = collapsed.has(folder.path);
+-                return (_jsxs("div", { children: [_jsxs("button", { className: "flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-sm text-foreground hover:bg-accent", onClick: () => onToggle(folder.path), style: pad, type: "button", children: [_jsx("span", { className: cn('inline-block transition-transform', !isCollapsed && 'rotate-90'), children: "\u25B8" }), _jsx("span", { className: "truncate", children: folder.name })] }), !isCollapsed && (_jsx(TreeLevel, { collapsed: collapsed, depth: depth + 1, node: folder, onSelect: onSelect, onToggle: onToggle, selection: selection }))] }, folder.path));
++                return (_jsxs("div", { className: "pb-0.5", children: [_jsxs("button", { className: "group/folder flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[0.68rem] font-semibold uppercase tracking-[0.075em] text-(--ui-text-secondary) transition-[transform,color,background-color] duration-200 ease-out hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]", onClick: () => onToggle(folder.path), type: "button", children: [_jsx(IconChevronRight, { className: cn('shrink-0 transition-transform duration-200 ease-out', !isCollapsed && 'rotate-90'), size: 12 }), isCollapsed ? (_jsx(IconFolder, { className: "shrink-0 text-(--ui-text-tertiary) group-hover/folder:text-(--theme-primary)", size: 14 })) : (_jsx(IconFolderOpen, { className: "shrink-0 text-(--theme-primary)", size: 14 })), _jsx("span", { className: "truncate", children: folder.name })] }), !isCollapsed && (_jsx(TreeLevel, { collapsed: collapsed, depth: depth + 1, node: folder, onSelect: onSelect, onToggle: onToggle, selection: selection }))] }, folder.path));
+             }), node.notes
+                 .slice()
+                 .sort((a, b) => a.title.localeCompare(b.title))
+-                .map(note => (_jsx("button", { className: cn('block w-full truncate rounded-md py-1.5 pr-2 text-left text-sm hover:bg-accent', selection?.kind === 'note' && selection.note.path === note.path && 'bg-accent text-accent-foreground'), onClick: () => onSelect({ kind: 'note', note }), style: pad, type: "button", children: note.title }, note.path))), node.files
++                .map(note => (_jsxs("button", { className: cn('relative flex w-full items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-secondary) transition-[transform,color,background-color] duration-200 ease-out before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]', selection?.kind === 'note' && selection.note.path === note.path && 'font-semibold text-foreground before:bg-(--theme-primary)'), onClick: () => onSelect({ kind: 'note', note }), type: "button", children: [_jsx(IconFileText, { className: "shrink-0 opacity-55", size: 14 }), _jsx("span", { className: "truncate", children: note.title })] }, note.path))), node.files
+                 .slice()
+                 .sort((a, b) => a.name.localeCompare(b.name))
+-                .map(file => (_jsxs("button", { className: cn('block w-full truncate rounded-md py-1.5 pr-2 text-left text-sm text-muted-foreground hover:bg-accent', selection?.kind === 'file' && selection.file.path === file.path && 'bg-accent text-accent-foreground'), onClick: () => onSelect({ file, kind: 'file' }), style: pad, type: "button", children: [_jsx(FileGlyph, { kind: file.kind }), file.name] }, file.path)))] }));
++                .map(file => (_jsxs("button", { className: cn('relative flex w-full items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-tertiary) transition-[transform,color,background-color] duration-200 ease-out before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]', selection?.kind === 'file' && selection.file.path === file.path && 'font-semibold text-foreground before:bg-(--theme-primary)'), onClick: () => onSelect({ file, kind: 'file' }), type: "button", children: [_jsx(FileGlyph, { kind: file.kind }), _jsx("span", { className: "truncate", children: file.name })] }, file.path)))] }));
+ }
+ function fileUrl(path) {
+     return `file://${encodeURI(path).replace(/#/g, '%23')}`;
+@@ -267,10 +272,10 @@ function FilePreview({ file }) {
+     const url = fileUrl(file.path);
+     const openExternal = () => void window.hermesDesktop?.openExternal?.(url);
+     const reveal = () => void window.hermesDesktop?.revealPath?.(file.path);
+-    return (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col", children: [_jsxs("div", { className: "flex items-center justify-between gap-2 px-5 pb-2 pt-5", children: [_jsx("h2", { className: "truncate text-base font-medium", children: file.name }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: openExternal, size: "sm", variant: "outline", children: "Open in default app" }), _jsx(Button, { onClick: reveal, size: "sm", variant: "outline", children: "Reveal" })] })] }), _jsx("div", { className: "min-h-0 flex-1 px-5 pb-5", children: file.kind === 'pdf' ? (_jsx(PdfViewer, { path: file.path })) : file.kind === 'html' ? (_jsx("iframe", { className: "h-full w-full rounded-lg border border-border bg-white", sandbox: "", src: url, title: file.name })) : file.kind === 'image' ? (_jsx("div", { className: "grid h-full place-items-center rounded-lg border border-border bg-card p-4", children: _jsx("img", { alt: file.name, className: "max-h-full max-w-full object-contain", src: url }) })) : (_jsx(EmptyState, { className: "h-full", description: file.kind === 'slides'
++    return (_jsxs("div", { className: "flex min-h-0 flex-1 flex-col bg-(--ui-bg-editor)", children: [_jsxs("div", { className: "flex items-end justify-between gap-4 border-b border-(--ui-stroke-quaternary) px-6 pb-4 pt-6", children: [_jsxs("div", { className: "min-w-0", children: [_jsxs("p", { className: "mb-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-tertiary)", children: [file.folder || 'Library', " \u00B7 ", file.kind] }), _jsx("h2", { className: "truncate text-xl font-semibold tracking-tight", children: file.name })] }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: openExternal, size: "sm", variant: "outline", children: "Open in default app" }), _jsx(Button, { onClick: reveal, size: "sm", variant: "outline", children: "Reveal" })] })] }), _jsx("div", { className: "min-h-0 flex-1 px-5 pb-5", children: file.kind === 'pdf' ? (_jsx(PdfViewer, { path: file.path })) : file.kind === 'html' ? (_jsx("iframe", { className: "h-full w-full rounded-lg border border-border bg-white", sandbox: "", src: url, title: file.name })) : file.kind === 'image' ? (_jsx("div", { className: "grid h-full place-items-center rounded-lg border border-border bg-card p-4", children: _jsx("img", { alt: file.name, className: "max-h-full max-w-full object-contain", src: url }) })) : (_jsx(EmptyState, { className: "h-full", description: file.kind === 'slides'
+                         ? 'PowerPoint/Keynote files open in their own app — click “Open in default app”.'
+                         : 'This file type opens in its own app — click “Open in default app”.', title: file.name })) })] }));
+ }
+ function LinkGroup({ emptyLabel, onOpen, title, titles }) {
+-    return (_jsxs("div", { children: [_jsx("h3", { className: "pb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground", children: title }), titles.length ? (_jsx("div", { className: "flex flex-wrap gap-1.5", children: titles.map(target => (_jsx("button", { className: "rounded-md border border-border px-2 py-0.5 text-xs hover:bg-accent", onClick: () => onOpen(target), type: "button", children: target }, target))) })) : (_jsx("p", { className: "text-xs text-muted-foreground", children: emptyLabel }))] }));
++    return (_jsxs("div", { className: "rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("div", { className: "mb-2.5 flex items-center justify-between gap-2", children: [_jsx("h3", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground", children: title }), _jsx("span", { className: "rounded-full bg-(--ui-bg-quaternary) px-1.5 py-0.5 text-[0.625rem] font-medium tabular-nums text-(--ui-text-tertiary)", children: titles.length })] }), titles.length ? (_jsx("div", { className: "flex flex-wrap gap-1.5", children: titles.map(target => (_jsx("button", { className: "rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2.5 py-1 text-[0.6875rem] text-(--ui-text-secondary) transition-[transform,color,border-color,background-color] duration-200 ease-out hover:border-(--theme-primary)/40 hover:bg-(--ui-bg-primary) hover:text-foreground active:scale-[0.98]", onClick: () => onOpen(target), type: "button", children: target }, target))) })) : (_jsxs("div", { className: "rounded-lg border border-dashed border-(--ui-stroke-tertiary) px-3 py-3", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)", children: "None yet" }), _jsx("p", { className: "mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground", children: emptyLabel })] }))] }));
+ }
+diff --git a/apps/desktop/src/app/library/index.tsx b/apps/desktop/src/app/library/index.tsx
+index 8e07b5bb90a..74abbed0fdb 100644
+--- a/apps/desktop/src/app/library/index.tsx
++++ b/apps/desktop/src/app/library/index.tsx
+@@ -2,13 +2,26 @@
+ // Markdown, a prose-styled CodeMirror editor (middle, de-code-ified via .nemesis-prose-editor
+ // CSS), and a Links/Backlinks rail. Non-markdown files (PDF/images inline; slides/docs open
+ // externally) preview in place. Autosaves 800ms after typing.
+-import { IconFileText, IconFileTypePdf, IconPaperclip, IconPhoto, IconPresentation, IconX } from '@tabler/icons-react'
++import {
++  IconChevronRight,
++  IconFilePlus,
++  IconFileText,
++  IconFileTypePdf,
++  IconFolder,
++  IconFolderOpen,
++  IconFolderPlus,
++  IconPaperclip,
++  IconPhoto,
++  IconPresentation,
++  IconX
++} from '@tabler/icons-react'
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+ import { useSearchParams } from 'react-router-dom'
+ 
+ import { Button } from '@/components/ui/button'
+ import { EmptyState } from '@/components/ui/empty-state'
+ import { Input } from '@/components/ui/input'
++import { Tip } from '@/components/ui/tooltip'
+ import { cn } from '@/lib/utils'
+ 
+ import { NoteEditor } from './note-editor'
+@@ -37,6 +50,10 @@ function tabLabel(tab: TabItem): string {
+   return tab.kind === 'note' ? tab.note.title : tab.file.name
+ }
+ 
++function countWords(value: string): number {
++  return value.trim().match(/\S+/g)?.length ?? 0
++}
++
+ interface TreeNode {
+   name: string
+   path: string
+@@ -292,24 +309,47 @@ export function LibraryView() {
+         target => !contents.notes.some(note => note.title.toLowerCase() === target.toLowerCase())
+       )
+     : []
++  const noteCount = contents.notes.length
++  const fileCount = contents.files.length
+ 
+   return (
+-    <div className="flex h-full min-h-0">
++    <div className="flex h-full min-h-0 bg-(--ui-editor-surface-background)">
+       {/* Folder tree */}
+-      <aside className="flex w-64 shrink-0 flex-col border-r border-border">
+-        <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-5">
+-          <h1 className="text-lg font-semibold">Library</h1>
+-          <div className="flex gap-1">
+-            <Button className="h-7 px-2 text-xs" onClick={() => { setCreating('note'); setDraft('') }} size="sm" variant="outline">
+-              + Note
+-            </Button>
+-            <Button className="h-7 px-2 text-xs" onClick={() => { setCreating('folder'); setDraft('') }} size="sm" variant="outline">
+-              + Folder
+-            </Button>
++      <aside className="flex w-64 shrink-0 flex-col border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background)">
++        <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-5">
++          <div className="min-w-0">
++            <h1 className="text-lg font-semibold tracking-tight">Library</h1>
++            <p className="mt-0.5 text-[0.65rem] font-medium tabular-nums text-(--ui-text-tertiary)">
++              {noteCount} note{noteCount === 1 ? '' : 's'} · {fileCount} file{fileCount === 1 ? '' : 's'}
++            </p>
++          </div>
++          <div className="flex gap-0.5">
++            <Tip label="New note">
++              <Button
++                aria-label="New note"
++                className="transition-transform duration-200 ease-out active:scale-[0.98]"
++                onClick={() => { setCreating('note'); setDraft('') }}
++                size="icon-xs"
++                variant="ghost"
++              >
++                <IconFilePlus />
++              </Button>
++            </Tip>
++            <Tip label="New folder">
++              <Button
++                aria-label="New folder"
++                className="transition-transform duration-200 ease-out active:scale-[0.98]"
++                onClick={() => { setCreating('folder'); setDraft('') }}
++                size="icon-xs"
++                variant="ghost"
++              >
++                <IconFolderPlus />
++              </Button>
++            </Tip>
+           </div>
+         </div>
+         {creating && (
+-          <div className="px-3 pb-2">
++          <div className="mx-3 mb-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-2 shadow-sm">
+             <Input
+               autoFocus
+               onChange={event => setDraft(event.target.value)}
+@@ -320,10 +360,10 @@ export function LibraryView() {
+               placeholder={creating === 'folder' ? 'Folder name' : 'Note title'}
+               value={draft}
+             />
+-            {targetFolder && <p className="px-1 pt-1 text-[10px] text-muted-foreground">in {targetFolder}</p>}
++            {targetFolder && <p className="px-1 pt-1.5 text-[10px] text-muted-foreground">in {targetFolder}</p>}
+           </div>
+         )}
+-        <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
++        <nav className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
+           <TreeLevel
+             collapsed={collapsed}
+             depth={0}
+@@ -343,24 +383,32 @@ export function LibraryView() {
+       </aside>
+ 
+       {/* Editor / preview */}
+-      <main className="flex min-w-0 flex-1 flex-col">
++      <main className="flex min-w-0 flex-1 flex-col bg-(--ui-bg-editor)">
+         {tabs.length > 0 && (
+-          <div className="flex shrink-0 items-end gap-0.5 overflow-x-auto border-b border-border px-2 pt-2">
++          <div
++            className="flex h-(--titlebar-height) shrink-0 overflow-x-auto overflow-y-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
++            role="tablist"
++          >
+             {tabs.map((tab, i) => (
+               <div
+                 className={cn(
+-                  'group/tab flex max-w-[13rem] shrink-0 cursor-pointer items-center gap-1 rounded-t-md border border-b-0 px-2.5 py-1.5 text-xs transition-colors',
++                  'group/tab relative flex h-full min-w-0 max-w-48 shrink-0 cursor-pointer items-center border-r border-(--ui-stroke-quaternary) text-[0.6875rem] font-medium transition-colors duration-200 ease-out',
+                   i === activeTab
+-                    ? 'border-border bg-card text-foreground'
+-                    : 'border-transparent text-muted-foreground hover:text-foreground'
++                    ? 'bg-(--ui-bg-editor) text-foreground'
++                    : 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'
+                 )}
+                 key={tabKey(tab)}
+                 onClick={() => setActiveTab(i)}
++                role="tab"
+               >
+-                <span className="truncate">{tabLabel(tab)}</span>
++                {i === activeTab && <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-(--theme-primary)" />}
++                <span className="flex min-w-0 items-center gap-1.5 py-2 pl-3 pr-8">
++                  {tab.kind === 'note' ? <IconFileText className="shrink-0 opacity-60" size={13} /> : <FileGlyph kind={tab.file.kind} />}
++                  <span className="truncate">{tabLabel(tab)}</span>
++                </span>
+                 <button
+                   aria-label="Close tab"
+-                  className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent group-hover/tab:opacity-100"
++                  className="absolute right-1.5 grid size-5 place-items-center rounded opacity-0 transition-[opacity,color] duration-200 ease-out hover:bg-(--chrome-action-hover) group-hover/tab:opacity-100 group-focus-within/tab:opacity-100"
+                   onClick={event => {
+                     event.stopPropagation()
+                     closeTab(i)
+@@ -375,11 +423,29 @@ export function LibraryView() {
+         )}
+         {selection?.kind === 'note' ? (
+           <>
+-            <div className="flex items-center justify-between px-5 pb-1 pt-5">
+-              <h2 className="truncate text-base font-medium">{selection.note.title}</h2>
+-              <span className="text-xs text-muted-foreground">{saving ? 'Saving…' : 'Saved to disk'}</span>
++            <div className="shrink-0 border-b border-(--ui-stroke-quaternary) px-7 pb-4 pt-6">
++              <div className="flex items-end justify-between gap-6">
++                <div className="min-w-0">
++                  <div className="mb-2 flex min-w-0 items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-tertiary)">
++                    <span>Library</span>
++                    {selection.note.folder.split('/').filter(Boolean).map((part, index) => (
++                      <span className="contents" key={`${part}-${index}`}>
++                        <IconChevronRight className="shrink-0 opacity-50" size={11} />
++                        <span className="truncate">{part}</span>
++                      </span>
++                    ))}
++                  </div>
++                  <h2 className="truncate text-2xl font-semibold tracking-[-0.025em]">{selection.note.title}</h2>
++                </div>
++                <div className="flex shrink-0 items-center gap-2 text-[0.6875rem] text-(--ui-text-tertiary)">
++                  <span className="tabular-nums">{countWords(selection.note.content)} words</span>
++                  <span className="rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-1 font-medium">
++                    {saving ? 'Saving…' : 'Saved to disk'}
++                  </span>
++                </div>
++              </div>
+             </div>
+-            <div className="min-h-0 flex-1 overflow-hidden px-6 pb-3">
++            <div className="min-h-0 flex-1 overflow-hidden px-7 pb-3">
+               <NoteEditor
+                 initialValue={selection.note.content}
+                 key={selection.note.path}
+@@ -397,7 +463,7 @@ export function LibraryView() {
+ 
+       {/* Links rail (notes only) */}
+       {activeNote && (
+-        <aside className="hidden w-56 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border px-4 pb-4 pt-5 lg:flex">
++        <aside className="hidden w-64 shrink-0 flex-col gap-3 overflow-y-auto border-l border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-3 pb-4 pt-4 lg:flex">
+           <LinkGroup
+             emptyLabel="Write [[Note title]] to connect ideas."
+             onOpen={title => {
+@@ -417,11 +483,14 @@ export function LibraryView() {
+             titles={incoming}
+           />
+           {unresolved.length > 0 && (
+-            <div>
+-              <h3 className="pb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Unresolved</h3>
++            <div className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]">
++              <div className="mb-2 flex items-center justify-between">
++                <h3 className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">Unresolved</h3>
++                <span className="text-[0.65rem] tabular-nums text-(--ui-text-quaternary)">{unresolved.length}</span>
++              </div>
+               <div className="flex flex-wrap gap-1.5">
+                 {unresolved.map(target => (
+-                  <span className="rounded-md border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground" key={target}>
++                  <span className="rounded-full border border-dashed border-(--ui-stroke-secondary) px-2.5 py-1 text-[0.6875rem] text-muted-foreground" key={target}>
+                     {target}
+                   </span>
+                 ))}
+@@ -448,7 +517,7 @@ function FileGlyph({ kind }: { kind: VaultFile['kind'] }) {
+               ? IconFileText
+               : IconPaperclip
+ 
+-  return <Icon className="-mt-px mr-1.5 inline shrink-0 opacity-70" size={14} />
++  return <Icon className="shrink-0 opacity-60" size={14} />
+ }
+ 
+ function TreeLevel({
+@@ -466,10 +535,8 @@ function TreeLevel({
+   onToggle: (path: string) => void
+   selection: Selection
+ }) {
+-  const pad = { paddingLeft: `${depth * 12 + 8}px` }
+-
+   return (
+-    <>
++    <div className={cn('space-y-0.5', depth > 0 && 'ml-3 border-l border-(--ui-stroke-quaternary) pl-1.5')}>
+       {node.folders
+         .slice()
+         .sort((a, b) => a.name.localeCompare(b.name))
+@@ -477,14 +544,21 @@ function TreeLevel({
+           const isCollapsed = collapsed.has(folder.path)
+ 
+           return (
+-            <div key={folder.path}>
++            <div className="pb-0.5" key={folder.path}>
+               <button
+-                className="flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-sm text-foreground hover:bg-accent"
++                className="group/folder flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[0.68rem] font-semibold uppercase tracking-[0.075em] text-(--ui-text-secondary) transition-[transform,color,background-color] duration-200 ease-out hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]"
+                 onClick={() => onToggle(folder.path)}
+-                style={pad}
+                 type="button"
+               >
+-                <span className={cn('inline-block transition-transform', !isCollapsed && 'rotate-90')}>▸</span>
++                <IconChevronRight
++                  className={cn('shrink-0 transition-transform duration-200 ease-out', !isCollapsed && 'rotate-90')}
++                  size={12}
++                />
++                {isCollapsed ? (
++                  <IconFolder className="shrink-0 text-(--ui-text-tertiary) group-hover/folder:text-(--theme-primary)" size={14} />
++                ) : (
++                  <IconFolderOpen className="shrink-0 text-(--theme-primary)" size={14} />
++                )}
+                 <span className="truncate">{folder.name}</span>
+               </button>
+               {!isCollapsed && (
+@@ -506,15 +580,15 @@ function TreeLevel({
+         .map(note => (
+           <button
+             className={cn(
+-              'block w-full truncate rounded-md py-1.5 pr-2 text-left text-sm hover:bg-accent',
+-              selection?.kind === 'note' && selection.note.path === note.path && 'bg-accent text-accent-foreground'
++              'relative flex w-full items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-secondary) transition-[transform,color,background-color] duration-200 ease-out before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]',
++              selection?.kind === 'note' && selection.note.path === note.path && 'font-semibold text-foreground before:bg-(--theme-primary)'
+             )}
+             key={note.path}
+             onClick={() => onSelect({ kind: 'note', note })}
+-            style={pad}
+             type="button"
+           >
+-            {note.title}
++            <IconFileText className="shrink-0 opacity-55" size={14} />
++            <span className="truncate">{note.title}</span>
+           </button>
+         ))}
+       {node.files
+@@ -523,19 +597,18 @@ function TreeLevel({
+         .map(file => (
+           <button
+             className={cn(
+-              'block w-full truncate rounded-md py-1.5 pr-2 text-left text-sm text-muted-foreground hover:bg-accent',
+-              selection?.kind === 'file' && selection.file.path === file.path && 'bg-accent text-accent-foreground'
++              'relative flex w-full items-center gap-2 truncate rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-(--ui-text-tertiary) transition-[transform,color,background-color] duration-200 ease-out before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-transparent hover:bg-(--ui-row-hover-background) hover:text-foreground active:scale-[0.98]',
++              selection?.kind === 'file' && selection.file.path === file.path && 'font-semibold text-foreground before:bg-(--theme-primary)'
+             )}
+             key={file.path}
+             onClick={() => onSelect({ file, kind: 'file' })}
+-            style={pad}
+             type="button"
+           >
+             <FileGlyph kind={file.kind} />
+-            {file.name}
++            <span className="truncate">{file.name}</span>
+           </button>
+         ))}
+-    </>
++    </div>
+   )
+ }
+ 
+@@ -549,9 +622,14 @@ function FilePreview({ file }: { file: VaultFile }) {
+   const reveal = () => void window.hermesDesktop?.revealPath?.(file.path)
+ 
+   return (
+-    <div className="flex min-h-0 flex-1 flex-col">
+-      <div className="flex items-center justify-between gap-2 px-5 pb-2 pt-5">
+-        <h2 className="truncate text-base font-medium">{file.name}</h2>
++    <div className="flex min-h-0 flex-1 flex-col bg-(--ui-bg-editor)">
++      <div className="flex items-end justify-between gap-4 border-b border-(--ui-stroke-quaternary) px-6 pb-4 pt-6">
++        <div className="min-w-0">
++          <p className="mb-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-tertiary)">
++            {file.folder || 'Library'} · {file.kind}
++          </p>
++          <h2 className="truncate text-xl font-semibold tracking-tight">{file.name}</h2>
++        </div>
+         <div className="flex gap-2">
+           <Button onClick={openExternal} size="sm" variant="outline">
+             Open in default app
+@@ -605,13 +683,18 @@ function LinkGroup({
+   titles: string[]
+ }) {
+   return (
+-    <div>
+-      <h3 className="pb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</h3>
++    <div className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]">
++      <div className="mb-2.5 flex items-center justify-between gap-2">
++        <h3 className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">{title}</h3>
++        <span className="rounded-full bg-(--ui-bg-quaternary) px-1.5 py-0.5 text-[0.625rem] font-medium tabular-nums text-(--ui-text-tertiary)">
++          {titles.length}
++        </span>
++      </div>
+       {titles.length ? (
+         <div className="flex flex-wrap gap-1.5">
+           {titles.map(target => (
+             <button
+-              className="rounded-md border border-border px-2 py-0.5 text-xs hover:bg-accent"
++              className="rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2.5 py-1 text-[0.6875rem] text-(--ui-text-secondary) transition-[transform,color,border-color,background-color] duration-200 ease-out hover:border-(--theme-primary)/40 hover:bg-(--ui-bg-primary) hover:text-foreground active:scale-[0.98]"
+               key={target}
+               onClick={() => onOpen(target)}
+               type="button"
+@@ -621,7 +704,10 @@ function LinkGroup({
+           ))}
+         </div>
+       ) : (
+-        <p className="text-xs text-muted-foreground">{emptyLabel}</p>
++        <div className="rounded-lg border border-dashed border-(--ui-stroke-tertiary) px-3 py-3">
++          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)">None yet</p>
++          <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted-foreground">{emptyLabel}</p>
++        </div>
+       )}
+     </div>
+   )
+diff --git a/apps/desktop/src/app/library/note-editor.js b/apps/desktop/src/app/library/note-editor.js
+index 1689a69acd2..18468508425 100644
+--- a/apps/desktop/src/app/library/note-editor.js
++++ b/apps/desktop/src/app/library/note-editor.js
+@@ -177,61 +177,71 @@ const noteTheme = EditorView.theme({
+     '&': {
+         backgroundColor: 'transparent',
+         fontFamily: 'var(--dt-font-sans, ui-sans-serif, system-ui, sans-serif)',
+-        fontSize: '0.95rem',
++        color: 'var(--ui-text-primary)',
++        fontSize: '1rem',
+         height: '100%'
+     },
+     '&.cm-focused': { outline: 'none' },
+-    '.cm-scroller': { fontFamily: 'inherit', lineHeight: '1.75', overflow: 'auto' },
++    '.cm-scroller': { fontFamily: 'inherit', lineHeight: '1.8', overflow: 'auto' },
+     '.cm-content': {
+-        caretColor: 'var(--theme-primary, #b3382e)',
++        caretColor: 'var(--theme-primary)',
+         margin: '0 auto',
+-        maxWidth: '44rem',
+-        padding: '0.75rem 0 35vh',
++        maxWidth: '46rem',
++        padding: '1.5rem 0 35vh',
+         width: '100%'
+     },
+-    '.cm-line': { padding: '0 2px' },
+-    '.cm-cursor': { borderLeftColor: 'var(--theme-primary, #b3382e)', borderLeftWidth: '2px' },
++    '.cm-line': { padding: '0 0.25rem' },
++    '.cm-cursor': { borderLeftColor: 'var(--theme-primary)', borderLeftWidth: '2px' },
+     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
+-        backgroundColor: 'color-mix(in srgb, var(--theme-primary, #b3382e) 20%, transparent)'
++        backgroundColor: 'color-mix(in srgb, var(--theme-primary) 18%, transparent)'
+     },
+-    '.cm-np-h': { fontWeight: '650', letterSpacing: '-0.01em' },
+-    '.cm-np-h1': { fontSize: '1.6em', lineHeight: '1.35', paddingTop: '0.4em' },
+-    '.cm-np-h2': { fontSize: '1.35em', lineHeight: '1.35', paddingTop: '0.35em' },
+-    '.cm-np-h3': { fontSize: '1.18em', paddingTop: '0.3em' },
+-    '.cm-np-h4, .cm-np-h5, .cm-np-h6': { fontSize: '1.05em' },
+-    '.cm-np-strong': { fontWeight: '650' },
++    '.cm-np-h': { color: 'var(--ui-text-primary)', fontWeight: '700', letterSpacing: '-0.025em' },
++    '.cm-np-h1': { fontSize: '1.85em', lineHeight: '1.25', paddingBottom: '0.12em', paddingTop: '0.7em' },
++    '.cm-np-h2': { fontSize: '1.45em', lineHeight: '1.3', paddingBottom: '0.1em', paddingTop: '0.65em' },
++    '.cm-np-h3': { fontSize: '1.2em', lineHeight: '1.4', paddingTop: '0.5em' },
++    '.cm-np-h4, .cm-np-h5, .cm-np-h6': {
++        fontSize: '0.88em',
++        letterSpacing: '0.07em',
++        paddingTop: '0.45em',
++        textTransform: 'uppercase'
++    },
++    '.cm-np-strong': { fontWeight: '700' },
+     '.cm-np-em': { fontStyle: 'italic' },
+     '.cm-np-code': {
+-        backgroundColor: 'color-mix(in srgb, currentColor 9%, transparent)',
+-        borderRadius: '4px',
++        backgroundColor: 'var(--ui-bg-quaternary)',
++        border: '1px solid var(--ui-stroke-quaternary)',
++        borderRadius: '5px',
+         fontFamily: 'var(--dt-font-mono, ui-monospace, monospace)',
+-        fontSize: '0.9em',
+-        padding: '0.08em 0.3em'
++        fontSize: '0.88em',
++        padding: '0.1em 0.34em'
+     },
+     '.cm-np-quote': {
+-        borderLeft: '3px solid color-mix(in srgb, currentColor 25%, transparent)',
+-        color: 'color-mix(in srgb, currentColor 78%, transparent)',
+-        paddingLeft: '0.75rem'
++        backgroundColor: 'var(--ui-bg-quaternary)',
++        borderLeft: '3px solid var(--theme-primary)',
++        color: 'var(--ui-text-secondary)',
++        padding: '0.14em 0.75rem'
+     },
+     '.cm-np-bullet': {
+-        color: 'var(--theme-primary, #b3382e)',
++        color: 'var(--theme-primary)',
+         display: 'inline-block',
+         fontWeight: '700',
+         width: '1ch'
+     },
+     '.cm-np-wikilink': {
+-        color: 'var(--theme-primary, #b3382e)',
++        color: 'var(--theme-primary)',
+         cursor: 'pointer',
+-        textDecorationColor: 'color-mix(in srgb, var(--theme-primary, #b3382e) 45%, transparent)',
++        fontWeight: '600',
++        textDecorationColor: 'color-mix(in srgb, var(--theme-primary) 40%, transparent)',
+         textDecorationLine: 'underline',
+         textUnderlineOffset: '3px'
+     },
+-    '.cm-np-wikilink:hover': { textDecorationColor: 'var(--theme-primary, #b3382e)' },
+-    '.cm-np-wikilink-src': { color: 'var(--theme-primary, #b3382e)' },
+-    '.cm-np-link': { color: 'var(--theme-primary, #b3382e)' },
++    '.cm-np-wikilink:hover': { textDecorationColor: 'var(--theme-primary)' },
++    '.cm-np-wikilink-src': { color: 'var(--theme-primary)' },
++    '.cm-np-link': { color: 'var(--theme-primary)', textUnderlineOffset: '3px' },
+     '.cm-np-hr': {
+-        borderTop: '1px solid color-mix(in srgb, currentColor 25%, transparent)',
++        borderTop: '1px solid var(--ui-stroke-secondary)',
+         display: 'inline-block',
++        margin: '0.75em 0',
+         verticalAlign: 'middle',
+         width: '100%'
+     }
+diff --git a/apps/desktop/src/app/library/note-editor.tsx b/apps/desktop/src/app/library/note-editor.tsx
+index e1de40ba1cb..cbe36edadec 100644
+--- a/apps/desktop/src/app/library/note-editor.tsx
++++ b/apps/desktop/src/app/library/note-editor.tsx
+@@ -241,61 +241,71 @@ const noteTheme = EditorView.theme({
+   '&': {
+     backgroundColor: 'transparent',
+     fontFamily: 'var(--dt-font-sans, ui-sans-serif, system-ui, sans-serif)',
+-    fontSize: '0.95rem',
++    color: 'var(--ui-text-primary)',
++    fontSize: '1rem',
+     height: '100%'
+   },
+   '&.cm-focused': { outline: 'none' },
+-  '.cm-scroller': { fontFamily: 'inherit', lineHeight: '1.75', overflow: 'auto' },
++  '.cm-scroller': { fontFamily: 'inherit', lineHeight: '1.8', overflow: 'auto' },
+   '.cm-content': {
+-    caretColor: 'var(--theme-primary, #b3382e)',
++    caretColor: 'var(--theme-primary)',
+     margin: '0 auto',
+-    maxWidth: '44rem',
+-    padding: '0.75rem 0 35vh',
++    maxWidth: '46rem',
++    padding: '1.5rem 0 35vh',
+     width: '100%'
+   },
+-  '.cm-line': { padding: '0 2px' },
+-  '.cm-cursor': { borderLeftColor: 'var(--theme-primary, #b3382e)', borderLeftWidth: '2px' },
++  '.cm-line': { padding: '0 0.25rem' },
++  '.cm-cursor': { borderLeftColor: 'var(--theme-primary)', borderLeftWidth: '2px' },
+   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
+-    backgroundColor: 'color-mix(in srgb, var(--theme-primary, #b3382e) 20%, transparent)'
++    backgroundColor: 'color-mix(in srgb, var(--theme-primary) 18%, transparent)'
+   },
+-  '.cm-np-h': { fontWeight: '650', letterSpacing: '-0.01em' },
+-  '.cm-np-h1': { fontSize: '1.6em', lineHeight: '1.35', paddingTop: '0.4em' },
+-  '.cm-np-h2': { fontSize: '1.35em', lineHeight: '1.35', paddingTop: '0.35em' },
+-  '.cm-np-h3': { fontSize: '1.18em', paddingTop: '0.3em' },
+-  '.cm-np-h4, .cm-np-h5, .cm-np-h6': { fontSize: '1.05em' },
+-  '.cm-np-strong': { fontWeight: '650' },
++  '.cm-np-h': { color: 'var(--ui-text-primary)', fontWeight: '700', letterSpacing: '-0.025em' },
++  '.cm-np-h1': { fontSize: '1.85em', lineHeight: '1.25', paddingBottom: '0.12em', paddingTop: '0.7em' },
++  '.cm-np-h2': { fontSize: '1.45em', lineHeight: '1.3', paddingBottom: '0.1em', paddingTop: '0.65em' },
++  '.cm-np-h3': { fontSize: '1.2em', lineHeight: '1.4', paddingTop: '0.5em' },
++  '.cm-np-h4, .cm-np-h5, .cm-np-h6': {
++    fontSize: '0.88em',
++    letterSpacing: '0.07em',
++    paddingTop: '0.45em',
++    textTransform: 'uppercase'
++  },
++  '.cm-np-strong': { fontWeight: '700' },
+   '.cm-np-em': { fontStyle: 'italic' },
+   '.cm-np-code': {
+-    backgroundColor: 'color-mix(in srgb, currentColor 9%, transparent)',
+-    borderRadius: '4px',
++    backgroundColor: 'var(--ui-bg-quaternary)',
++    border: '1px solid var(--ui-stroke-quaternary)',
++    borderRadius: '5px',
+     fontFamily: 'var(--dt-font-mono, ui-monospace, monospace)',
+-    fontSize: '0.9em',
+-    padding: '0.08em 0.3em'
++    fontSize: '0.88em',
++    padding: '0.1em 0.34em'
+   },
+   '.cm-np-quote': {
+-    borderLeft: '3px solid color-mix(in srgb, currentColor 25%, transparent)',
+-    color: 'color-mix(in srgb, currentColor 78%, transparent)',
+-    paddingLeft: '0.75rem'
++    backgroundColor: 'var(--ui-bg-quaternary)',
++    borderLeft: '3px solid var(--theme-primary)',
++    color: 'var(--ui-text-secondary)',
++    padding: '0.14em 0.75rem'
+   },
+   '.cm-np-bullet': {
+-    color: 'var(--theme-primary, #b3382e)',
++    color: 'var(--theme-primary)',
+     display: 'inline-block',
+     fontWeight: '700',
+     width: '1ch'
+   },
+   '.cm-np-wikilink': {
+-    color: 'var(--theme-primary, #b3382e)',
++    color: 'var(--theme-primary)',
+     cursor: 'pointer',
+-    textDecorationColor: 'color-mix(in srgb, var(--theme-primary, #b3382e) 45%, transparent)',
++    fontWeight: '600',
++    textDecorationColor: 'color-mix(in srgb, var(--theme-primary) 40%, transparent)',
+     textDecorationLine: 'underline',
+     textUnderlineOffset: '3px'
+   },
+-  '.cm-np-wikilink:hover': { textDecorationColor: 'var(--theme-primary, #b3382e)' },
+-  '.cm-np-wikilink-src': { color: 'var(--theme-primary, #b3382e)' },
+-  '.cm-np-link': { color: 'var(--theme-primary, #b3382e)' },
++  '.cm-np-wikilink:hover': { textDecorationColor: 'var(--theme-primary)' },
++  '.cm-np-wikilink-src': { color: 'var(--theme-primary)' },
++  '.cm-np-link': { color: 'var(--theme-primary)', textUnderlineOffset: '3px' },
+   '.cm-np-hr': {
+-    borderTop: '1px solid color-mix(in srgb, currentColor 25%, transparent)',
++    borderTop: '1px solid var(--ui-stroke-secondary)',
+     display: 'inline-block',
++    margin: '0.75em 0',
+     verticalAlign: 'middle',
+     width: '100%'
+   }
+diff --git a/apps/desktop/src/app/library/pdf-viewer.js b/apps/desktop/src/app/library/pdf-viewer.js
+index ac5dd1d807c..59137b841ba 100644
+--- a/apps/desktop/src/app/library/pdf-viewer.js
++++ b/apps/desktop/src/app/library/pdf-viewer.js
+@@ -120,9 +120,9 @@ export function PdfViewer({ path }) {
+         pageHostsRef.current.get(pageNumber)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+     }, []);
+     if (error) {
+-        return (_jsx("div", { className: "grid h-full place-items-center rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground", children: error }));
++        return (_jsx("div", { className: "grid h-full place-items-center rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-6 text-center text-sm text-muted-foreground", children: error }));
+     }
+-    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-(--ui-bg-secondary,var(--color-muted))", children: [_jsxs("div", { className: "flex shrink-0 items-center justify-between gap-2 border-b border-border bg-card/70 px-3 py-1.5 backdrop-blur", children: [_jsx("span", { className: "text-xs tabular-nums text-muted-foreground", children: doc ? `Page ${currentPage} / ${doc.numPages}` : 'Opening…' }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsx(Button, { "aria-label": "Zoom out", className: "h-6 w-6 p-0", onClick: () => step(-1), size: "sm", variant: "ghost", children: "\u2212" }), _jsxs("span", { className: "w-12 text-center text-xs tabular-nums text-muted-foreground", children: [Math.round(scale * 100), "%"] }), _jsx(Button, { "aria-label": "Zoom in", className: "h-6 w-6 p-0", onClick: () => step(1), size: "sm", variant: "ghost", children: "+" }), _jsx(Button, { className: "h-6 px-2 text-xs", onClick: () => setZoom('fit'), size: "sm", variant: zoom === 'fit' ? 'secondary' : 'ghost', children: "Fit" })] })] }), _jsxs("div", { className: "flex min-h-0 flex-1", children: [doc && baseSize && doc.numPages > 1 && (_jsx("div", { className: "w-[6.5rem] shrink-0 overflow-y-auto border-r border-border px-2 py-2", ref: railRef, children: Array.from({ length: doc.numPages }, (_, i) => (_jsx(PdfThumb, { active: currentPage === i + 1, baseSize: baseSize, doc: doc, onSelect: jumpToPage, pageNumber: i + 1, root: railRef.current }, i + 1))) })), _jsx("div", { className: "min-h-0 flex-1 overflow-y-auto px-4 py-2", onScroll: onScroll, ref: containerRef, children: doc && baseSize ? (Array.from({ length: doc.numPages }, (_, i) => (_jsx(PdfPage, { baseSize: baseSize, doc: doc, onHost: registerPageHost, pageNumber: i + 1, root: containerRef.current, scale: scale }, `${i + 1}@${scale.toFixed(3)}`)))) : (_jsx("div", { className: "grid h-full place-items-center text-sm text-muted-foreground", children: "Opening\u2026" })) })] })] }));
++    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary,var(--color-muted)) shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("div", { className: "flex shrink-0 items-center justify-between gap-2 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-3 py-2", children: [_jsx("span", { className: "text-[0.6875rem] font-medium tabular-nums text-muted-foreground", children: doc ? `Page ${currentPage} / ${doc.numPages}` : 'Opening…' }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsx(Button, { "aria-label": "Zoom out", onClick: () => step(-1), size: "icon-xs", variant: "ghost", children: "\u2212" }), _jsxs("span", { className: "w-12 text-center text-[0.6875rem] font-medium tabular-nums text-muted-foreground", children: [Math.round(scale * 100), "%"] }), _jsx(Button, { "aria-label": "Zoom in", onClick: () => step(1), size: "icon-xs", variant: "ghost", children: "+" }), _jsx(Button, { onClick: () => setZoom('fit'), size: "xs", variant: zoom === 'fit' ? 'secondary' : 'ghost', children: "Fit" })] })] }), _jsxs("div", { className: "flex min-h-0 flex-1", children: [doc && baseSize && doc.numPages > 1 && (_jsx("div", { className: "w-[6.5rem] shrink-0 overflow-y-auto border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-2 py-2", ref: railRef, children: Array.from({ length: doc.numPages }, (_, i) => (_jsx(PdfThumb, { active: currentPage === i + 1, baseSize: baseSize, doc: doc, onSelect: jumpToPage, pageNumber: i + 1, root: railRef.current }, i + 1))) })), _jsx("div", { className: "min-h-0 flex-1 overflow-y-auto px-4 py-2", onScroll: onScroll, ref: containerRef, children: doc && baseSize ? (Array.from({ length: doc.numPages }, (_, i) => (_jsx(PdfPage, { baseSize: baseSize, doc: doc, onHost: registerPageHost, pageNumber: i + 1, root: containerRef.current, scale: scale }, `${i + 1}@${scale.toFixed(3)}`)))) : (_jsx("div", { className: "grid h-full place-items-center text-sm text-muted-foreground", children: "Opening\u2026" })) })] })] }));
+ }
+ const THUMB_WIDTH = 80;
+ function PdfThumb({ active, baseSize, doc, onSelect, pageNumber, root }) {
+diff --git a/apps/desktop/src/app/library/pdf-viewer.tsx b/apps/desktop/src/app/library/pdf-viewer.tsx
+index 64017df7acc..b1b43e5a9d6 100644
+--- a/apps/desktop/src/app/library/pdf-viewer.tsx
++++ b/apps/desktop/src/app/library/pdf-viewer.tsx
+@@ -156,34 +156,34 @@ export function PdfViewer({ path }: PdfViewerProps) {
+ 
+   if (error) {
+     return (
+-      <div className="grid h-full place-items-center rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
++      <div className="grid h-full place-items-center rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-6 text-center text-sm text-muted-foreground">
+         {error}
+       </div>
+     )
+   }
+ 
+   return (
+-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-(--ui-bg-secondary,var(--color-muted))">
+-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-card/70 px-3 py-1.5 backdrop-blur">
+-        <span className="text-xs tabular-nums text-muted-foreground">
++    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary,var(--color-muted)) shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]">
++      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-3 py-2">
++        <span className="text-[0.6875rem] font-medium tabular-nums text-muted-foreground">
+           {doc ? `Page ${currentPage} / ${doc.numPages}` : 'Opening…'}
+         </span>
+         <div className="flex items-center gap-1">
+-          <Button aria-label="Zoom out" className="h-6 w-6 p-0" onClick={() => step(-1)} size="sm" variant="ghost">
++          <Button aria-label="Zoom out" onClick={() => step(-1)} size="icon-xs" variant="ghost">
+             −
+           </Button>
+-          <span className="w-12 text-center text-xs tabular-nums text-muted-foreground">{Math.round(scale * 100)}%</span>
+-          <Button aria-label="Zoom in" className="h-6 w-6 p-0" onClick={() => step(1)} size="sm" variant="ghost">
++          <span className="w-12 text-center text-[0.6875rem] font-medium tabular-nums text-muted-foreground">{Math.round(scale * 100)}%</span>
++          <Button aria-label="Zoom in" onClick={() => step(1)} size="icon-xs" variant="ghost">
+             +
+           </Button>
+-          <Button className="h-6 px-2 text-xs" onClick={() => setZoom('fit')} size="sm" variant={zoom === 'fit' ? 'secondary' : 'ghost'}>
++          <Button onClick={() => setZoom('fit')} size="xs" variant={zoom === 'fit' ? 'secondary' : 'ghost'}>
+             Fit
+           </Button>
+         </div>
+       </div>
+       <div className="flex min-h-0 flex-1">
+         {doc && baseSize && doc.numPages > 1 && (
+-          <div className="w-[6.5rem] shrink-0 overflow-y-auto border-r border-border px-2 py-2" ref={railRef}>
++          <div className="w-[6.5rem] shrink-0 overflow-y-auto border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-2 py-2" ref={railRef}>
+             {Array.from({ length: doc.numPages }, (_, i) => (
+               <PdfThumb
+                 active={currentPage === i + 1}
+diff --git a/apps/desktop/src/app/recorder/index.js b/apps/desktop/src/app/recorder/index.js
+index 13432d48b27..26f270ba7c3 100644
+--- a/apps/desktop/src/app/recorder/index.js
++++ b/apps/desktop/src/app/recorder/index.js
+@@ -10,7 +10,8 @@ import { IconCheck, IconLock, IconMicrophone, IconSparkles } from '@tabler/icons
+ import { useCallback, useEffect, useRef, useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+-import { EmptyState } from '@/components/ui/empty-state';
++import { Codicon } from '@/components/ui/codicon';
++import { Tip } from '@/components/ui/tooltip';
+ import { cn } from '@/lib/utils';
+ import { setComposerDraft } from '@/store/composer';
+ import { NoteEditor } from '../library/note-editor';
+@@ -168,7 +169,8 @@ export function RecorderView() {
+             return;
+         }
+         const buffer = new Uint8Array(analyser.frequencyBinCount);
+-        const accent = getComputedStyle(document.documentElement).getPropertyValue('--theme-primary').trim() || '#b3382e';
++        const rootStyle = getComputedStyle(document.documentElement);
++        const accent = rootStyle.getPropertyValue('--theme-primary').trim() || rootStyle.getPropertyValue('--ui-text-primary').trim();
+         const render = () => {
+             rafRef.current = requestAnimationFrame(render);
+             analyser.getByteTimeDomainData(buffer);
+@@ -542,13 +544,15 @@ export function RecorderView() {
+     // Recording = a full-page notepad workspace (Hyprnote/Granola pattern: an AI notepad
+     // that listens while you write). Idle = the start card + saved recordings.
+     if (state === 'recording') {
+-        return (_jsxs("div", { className: "flex h-full min-h-0 flex-col px-5 pb-4 pt-4", children: [_jsxs("div", { className: "flex shrink-0 flex-wrap items-center gap-3 pb-3", children: [_jsxs("span", { className: "relative flex size-3 shrink-0", children: [_jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" }), _jsx("span", { className: "relative inline-flex size-3 rounded-full bg-primary" })] }), _jsx("span", { className: "shrink-0 text-[10px] font-medium uppercase tracking-widest text-primary", children: "On air" }), _jsx("input", { "aria-label": "Lecture title", className: "min-w-40 flex-1 border-none bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground/50", onChange: event => setTitle(event.target.value), placeholder: "Lecture title", value: title }), _jsxs("span", { className: "shrink-0 text-sm tabular-nums text-muted-foreground", children: [minutes, ":", seconds] }), _jsx(Button, { onClick: stop, size: "sm", variant: "secondary", children: "Stop & save" })] }), _jsxs("div", { className: "grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_340px]", children: [_jsxs("div", { className: "flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card", children: [_jsx("div", { className: "shrink-0 border-b border-border px-4 py-1.5", children: _jsx("span", { className: "text-[10px] font-medium uppercase tracking-widest text-muted-foreground", children: "My notes \u2014 type while it listens" }) }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden px-4", children: _jsx(NoteEditor, { initialValue: "", onChange: onNotesChange, onOpenWikilink: () => { } }) })] }), _jsxs("div", { className: "flex min-h-0 flex-col gap-3 overflow-y-auto", children: [_jsx("canvas", { className: "h-12 w-full shrink-0 rounded-md border border-border bg-card", height: 48, ref: canvasRef, width: 340 }), liveCaptions ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex min-h-24 shrink-0 flex-col rounded-md border border-border bg-card px-3 py-2", children: [_jsxs("div", { className: "flex items-center justify-between pb-1", children: [_jsx("span", { className: "text-[10px] font-medium uppercase tracking-widest text-muted-foreground", children: "Live transcript" }), _jsx("span", { className: "text-[10px] text-muted-foreground", children: liveStatus })] }), _jsx("div", { className: "max-h-64 overflow-y-auto text-[13px] leading-relaxed", ref: liveScrollRef, children: liveSegments.length ? (liveSegments.join(' ')) : (_jsx("span", { className: "text-muted-foreground", children: "Listening for speech\u2026" })) })] }), insights.length > 0 && (_jsxs("div", { className: "shrink-0 rounded-md border border-border bg-card px-3 py-2", children: [_jsxs("div", { className: "flex items-center justify-between pb-1.5", children: [_jsxs("span", { className: "inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-widest text-primary", children: [_jsx(IconSparkles, { size: 11 }), "Drugs just mentioned"] }), _jsx("span", { className: "text-[10px] text-muted-foreground", children: "tap to queue" })] }), _jsx("div", { className: "flex flex-wrap gap-1.5", children: insights.map(insight => (_jsxs("button", { className: cn('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors', insight.queued
+-                                                            ? 'border-(--theme-primary) text-foreground'
+-                                                            : 'border-border text-muted-foreground hover:text-foreground'), onClick: () => toggleQueued(insight.term), type: "button", children: [insight.queued && _jsx(IconCheck, { size: 11 }), insight.term, _jsx("span", { className: "text-[9px] opacity-60", children: insight.at })] }, insight.term))) })] }))] })) : (_jsx("p", { className: "rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground", children: "Live transcript is off \u2014 the audio still records and you can transcribe it after." })), _jsxs("span", { className: "inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground", children: [_jsx(IconLock, { size: 12 }), "On this device only \u2014 nothing joins your call"] })] })] }), error && _jsx("p", { className: "pt-2 text-center text-xs text-destructive", children: error })] }));
++        return (_jsxs("div", { className: "flex h-full min-h-0 flex-col bg-(--ui-editor-surface-background) px-5 pb-5 pt-4", children: [_jsxs("div", { className: "mb-4 flex shrink-0 flex-wrap items-center gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-4 py-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("span", { className: "relative flex size-3 shrink-0", children: [_jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-(--theme-primary) opacity-50" }), _jsx("span", { className: "relative inline-flex size-3 rounded-full bg-(--theme-primary)" })] }), _jsx("span", { className: "shrink-0 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "On air" }), _jsx("input", { "aria-label": "Lecture title", className: "min-w-40 flex-1 border-none bg-transparent text-lg font-semibold tracking-tight outline-none placeholder:text-muted-foreground/50", onChange: event => setTitle(event.target.value), placeholder: "Lecture title", value: title }), _jsxs("span", { className: "shrink-0 rounded-full bg-(--ui-bg-quaternary) px-3 py-1 text-sm font-semibold tabular-nums text-(--ui-text-secondary)", children: [minutes, ":", seconds] }), _jsx(Button, { className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: stop, size: "sm", variant: "destructive", children: "Stop & save" })] }), _jsxs("div", { className: "grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(19rem,0.82fr)_minmax(0,1.18fr)]", children: [_jsxs("div", { className: "flex min-h-0 flex-col gap-3 overflow-y-auto", children: [_jsxs("div", { className: "shrink-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("div", { className: "mb-2 flex items-center justify-between", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground", children: "Audio signal" }), _jsxs("span", { className: "text-[0.65rem] text-(--ui-text-quaternary)", children: ["Mic", withSystemAudio ? ' + system' : ''] })] }), _jsx("canvas", { className: "h-16 w-full rounded-xl bg-(--ui-bg-quaternary)", height: 64, ref: canvasRef, width: 420 })] }), liveCaptions ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex min-h-40 shrink-0 flex-col rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("div", { className: "mb-3 flex items-center justify-between gap-3", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Live transcript" }), _jsx("span", { className: "truncate text-[0.65rem] text-muted-foreground", children: liveStatus })] }), _jsx("div", { className: "max-h-72 space-y-2 overflow-y-auto text-[13px] leading-relaxed", ref: liveScrollRef, children: liveSegments.length ? (liveSegments.map((segment, index) => (_jsx("p", { className: "animate-in fade-in-0 border-l border-(--ui-stroke-quaternary) pl-3 duration-200 ease-out", children: segment }, `${index}-${segment.slice(0, 18)}`)))) : (_jsxs("div", { children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)", children: "Listening" }), _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: "Speech will appear here as the lecture continues." })] })) })] }), insights.length > 0 && (_jsxs("div", { className: "shrink-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("div", { className: "mb-2.5 flex items-center justify-between gap-3", children: [_jsxs("span", { className: "inline-flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: [_jsx(IconSparkles, { size: 12 }), "Mentioned"] }), _jsx("span", { className: "text-[0.65rem] text-muted-foreground", children: "Tap to queue" })] }), _jsx("div", { className: "flex flex-wrap gap-1.5", children: insights.map(insight => (_jsxs("button", { className: cn('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-[transform,color,border-color,background-color] duration-200 ease-out active:scale-[0.98]', insight.queued
++                                                            ? 'border-(--theme-primary)/45 bg-(--ui-bg-primary) text-foreground'
++                                                            : 'border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) text-muted-foreground hover:border-(--theme-primary)/35 hover:text-foreground'), onClick: () => toggleQueued(insight.term), type: "button", children: [insight.queued && _jsx(IconCheck, { size: 11 }), insight.term, _jsx("span", { className: "text-[9px] tabular-nums opacity-60", children: insight.at })] }, insight.term))) })] }))] })) : (_jsxs("div", { className: "rounded-2xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)", children: "Live transcript off" }), _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: "Audio is still recording and can be transcribed later." })] })), _jsxs("span", { className: "inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-3 py-1.5 text-[0.6875rem] text-muted-foreground", children: [_jsx(IconLock, { size: 12 }), "On this device only \u2014 nothing joins your call"] })] }), _jsxs("div", { className: "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsx("div", { className: "shrink-0 border-b border-(--ui-stroke-tertiary) px-5 py-3", children: _jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground", children: "My notes \u00B7 type while it listens" }) }), _jsx("div", { className: "min-h-0 flex-1 overflow-hidden px-5", children: _jsx(NoteEditor, { initialValue: "", onChange: onNotesChange, onOpenWikilink: () => { } }) })] })] }), error && _jsx("p", { className: "pt-2 text-center text-xs text-destructive", children: error })] }));
+     }
+-    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "px-6 pb-2 pt-5", children: [_jsx("h1", { className: "text-lg font-semibold", children: "Recorder" }), _jsxs("p", { className: "text-xs text-muted-foreground", children: ["Records your mic", withSystemAudio ? ' + this computer’s audio (the lecture/Zoom)' : ' only', " \u2014 locally, to your own files. You start it, you see it, you keep it. While it records, you get a notepad, a live transcript, and the drugs mentioned \u2014 as they happen."] })] }), _jsxs("section", { className: "mx-6 mt-3 flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-8", children: [(_jsxs(_Fragment, { children: [_jsx(Button, { disabled: state === 'saving', onClick: () => void start(), size: "lg", children: state === 'saving' ? 'Saving…' : 'Start recording' }), state === 'saving' && liveStatus && _jsx("p", { className: "text-xs text-muted-foreground", children: liveStatus }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: withSystemAudio, className: "accent-(--theme-primary)", onChange: event => setWithSystemAudio(event.target.checked), type: "checkbox" }), "Also capture this computer\u2019s audio (lecture, Zoom) \u2014 macOS will ask once"] }), _jsxs("label", { className: "flex cursor-pointer items-center gap-2 text-xs text-muted-foreground", children: [_jsx("input", { checked: liveCaptions, className: "accent-(--theme-primary)", onChange: event => setLiveCaptions(event.target.checked), type: "checkbox" }), "Live transcript while recording \u2014 auto-saves a lecture note to the Library"] }), lectureNote && (_jsxs("div", { className: "flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs", children: [_jsxs("span", { className: "inline-flex items-center gap-1", children: ["Lecture note saved to Library \u2192 ", LECTURE_FOLDER, " ", _jsx(IconCheck, { className: "text-primary", size: 12 })] }), _jsx(Button, { className: "h-6 px-2 text-xs", onClick: () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`), size: "sm", variant: "outline", children: "Open note" }), _jsxs(Button, { className: "h-6 px-2 text-xs", onClick: enhanceNote, size: "sm", variant: "secondary", children: [_jsx(IconSparkles, { size: 12 }), "Enhance with Nemesis"] }), insights.some(insight => insight.queued) && (_jsxs(Button, { className: "h-6 px-2 text-xs", onClick: askQueued, size: "sm", variant: "outline", children: ["Ask about ", insights.filter(insight => insight.queued).length, " queued drug", insights.filter(insight => insight.queued).length === 1 ? '' : 's'] }))] })), _jsxs("span", { className: "inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground", children: [_jsx(IconLock, { size: 12 }), "Nothing joins your call \u2014 capture & transcription happen on this device only"] })] })), error && _jsx("p", { className: "max-w-md text-center text-xs text-destructive", children: error })] }), _jsxs("section", { className: "px-6 pb-8 pt-5", children: [_jsx("h2", { className: "pb-2 text-sm font-medium", children: "Saved recordings" }), recordings.length ? (_jsx("ul", { className: "flex flex-col gap-1.5", children: recordings.map(file => {
++    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto bg-(--ui-editor-surface-background)", children: [_jsxs("header", { className: "px-6 pb-2 pt-6", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Capture desk" }), _jsx("h1", { className: "mt-1 text-2xl font-semibold tracking-[-0.025em]", children: "Recorder" }), _jsxs("p", { className: "mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground", children: ["Records your mic", withSystemAudio ? ' + this computer’s audio (the lecture/Zoom)' : ' only', " \u2014 locally, to your own files. You start it, you see it, you keep it. While it records, you get a notepad, a live transcript, and the drugs mentioned \u2014 as they happen."] })] }), _jsxs("section", { className: "mx-6 mt-4 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("div", { className: "grid items-stretch lg:grid-cols-[minmax(0,0.9fr)_minmax(22rem,1.1fr)]", children: [_jsxs("div", { className: "flex items-center gap-5 border-b border-(--ui-stroke-tertiary) p-6 lg:border-b-0 lg:border-r", children: [_jsx("div", { className: "grid size-24 shrink-0 place-items-center rounded-full border border-(--theme-primary)/25 bg-(--ui-bg-primary) shadow-[inset_0_0_0_7px_var(--ui-bg-elevated)]", children: _jsx(Button, { "aria-label": "Start recording", className: "size-20 rounded-full shadow-lg transition-[transform,opacity] duration-200 ease-out active:scale-[0.96]", disabled: state === 'saving', onClick: () => void start(), size: "icon-lg", children: _jsx(IconMicrophone, { className: "size-7" }) }) }), _jsxs("div", { className: "min-w-0", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: state === 'saving' ? 'Finishing capture' : 'Ready to record' }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-tight", children: state === 'saving' ? 'Saving your lecture' : 'Capture the lecture, keep the context' }), _jsx("p", { className: "mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground", children: state === 'saving'
++                                                    ? (liveStatus || 'Writing audio and notes to disk…')
++                                                    : 'One click opens a live notepad, waveform, transcript, and pharmacology mentions.' })] })] }), _jsxs("div", { className: "flex flex-col justify-center gap-2 p-4", children: [_jsxs("label", { className: "group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors duration-200 ease-out hover:border-(--ui-stroke-tertiary) hover:bg-(--ui-bg-quaternary)", children: [_jsx("input", { checked: withSystemAudio, className: "peer sr-only", onChange: event => setWithSystemAudio(event.target.checked), type: "checkbox" }), _jsx("span", { className: "relative h-5 w-9 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors duration-200 ease-out after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform after:duration-200 after:ease-out peer-focus-visible:ring-2 peer-focus-visible:ring-(--theme-primary)/35 peer-checked:bg-(--theme-primary) peer-checked:after:translate-x-4 peer-checked:after:bg-primary-foreground" }), _jsxs("span", { className: "min-w-0", children: [_jsx("span", { className: "block text-xs font-semibold", children: "Computer audio" }), _jsx("span", { className: "block text-[0.6875rem] leading-relaxed text-muted-foreground", children: "Capture the lecture or Zoom audio \u00B7 macOS asks once" })] })] }), _jsxs("label", { className: "group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors duration-200 ease-out hover:border-(--ui-stroke-tertiary) hover:bg-(--ui-bg-quaternary)", children: [_jsx("input", { checked: liveCaptions, className: "peer sr-only", onChange: event => setLiveCaptions(event.target.checked), type: "checkbox" }), _jsx("span", { className: "relative h-5 w-9 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors duration-200 ease-out after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform after:duration-200 after:ease-out peer-focus-visible:ring-2 peer-focus-visible:ring-(--theme-primary)/35 peer-checked:bg-(--theme-primary) peer-checked:after:translate-x-4 peer-checked:after:bg-primary-foreground" }), _jsxs("span", { className: "min-w-0", children: [_jsx("span", { className: "block text-xs font-semibold", children: "Live transcript" }), _jsx("span", { className: "block text-[0.6875rem] leading-relaxed text-muted-foreground", children: "Auto-save a lecture note to the Library" })] })] }), _jsxs("span", { className: "mx-3 mt-1 inline-flex items-center gap-1.5 self-start rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-3 py-1.5 text-[0.6875rem] text-muted-foreground", children: [_jsx(IconLock, { size: 12 }), "Nothing joins your call \u00B7 processed on this device"] })] })] }), lectureNote && (_jsxs("div", { className: "flex flex-wrap items-center gap-2 border-t border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-5 py-3 text-xs", children: [_jsxs("span", { className: "mr-auto inline-flex items-center gap-1.5 font-medium", children: [_jsx(IconCheck, { className: "text-(--theme-primary)", size: 13 }), "Lecture note saved to Library \u2192 ", LECTURE_FOLDER] }), _jsx(Button, { onClick: () => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`), size: "xs", variant: "outline", children: "Open note" }), _jsxs(Button, { onClick: enhanceNote, size: "xs", variant: "secondary", children: [_jsx(IconSparkles, { size: 12 }), "Enhance with Nemesis"] }), insights.some(insight => insight.queued) && (_jsxs(Button, { onClick: askQueued, size: "xs", variant: "outline", children: ["Ask about ", insights.filter(insight => insight.queued).length, " queued drug", insights.filter(insight => insight.queued).length === 1 ? '' : 's'] }))] })), error && _jsx("p", { className: "border-t border-(--ui-stroke-tertiary) px-5 py-3 text-xs text-destructive", children: error })] }), _jsxs("section", { className: "px-6 pb-8 pt-7", children: [_jsxs("div", { className: "mb-3 flex items-end justify-between gap-3", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Archive" }), _jsx("h2", { className: "mt-1 text-lg font-semibold tracking-tight", children: "Saved recordings" })] }), _jsxs("span", { className: "rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-1 text-[0.6875rem] font-medium tabular-nums text-muted-foreground", children: [recordings.length, " recording", recordings.length === 1 ? '' : 's'] })] }), recordings.length ? (_jsx("ul", { className: "flex flex-col gap-2", children: recordings.map(file => {
+                             const status = transcribingStatus[file.path];
+                             const transcript = transcripts[file.path];
+-                            return (_jsxs("li", { className: "flex flex-col gap-2 rounded-md border border-border px-3 py-2", children: [_jsxs("div", { className: "flex items-center justify-between gap-3", children: [_jsxs("div", { className: "flex min-w-0 items-center gap-2", children: [_jsx(IconMicrophone, { className: "shrink-0 text-muted-foreground", size: 16 }), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "truncate text-sm", children: recordingLabel(file.name) }), status && _jsx("div", { className: "text-[11px] text-primary", children: status })] })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-2", children: [_jsx(Button, { disabled: Boolean(status), onClick: () => void transcribe(file), size: "sm", variant: "outline", children: status ? '…' : transcript ? 'Re-transcribe' : 'Transcribe' }), _jsx(Button, { onClick: () => void play(file), size: "sm", variant: "outline", children: playing?.path === file.path ? 'Hide' : 'Play' })] })] }), transcript && (_jsxs("div", { className: "rounded-md bg-muted/40 p-3", children: [_jsx("p", { className: "whitespace-pre-wrap text-xs leading-relaxed text-foreground", children: transcript }), _jsxs("div", { className: "mt-2 flex flex-wrap items-center gap-2", children: [_jsx(Button, { disabled: savedNote[file.path], onClick: () => void saveTranscriptNote(file), size: "sm", variant: "secondary", children: savedNote[file.path] ? 'Saved to Library ✓' : 'Save as note' }), _jsx(Button, { onClick: () => draftFlashcards(file), size: "sm", variant: "secondary", children: "Draft flashcards" }), (corrections[file.path] ?? 0) > 0 && (_jsxs("span", { className: "text-[10px] text-muted-foreground", children: [corrections[file.path], " pharm term", corrections[file.path] === 1 ? '' : 's', " auto-corrected"] }))] })] }))] }, file.path));
+-                        }) })) : (_jsx(EmptyState, { className: cn('min-h-28'), description: "Recordings save to Documents / Nemesis Recordings as ordinary audio files.", title: "No recordings yet" })), playing && _jsx("audio", { autoPlay: true, className: "mt-3 w-full", controls: true, src: playing.src }), _jsx("p", { className: "pt-4 text-[11px] leading-relaxed text-muted-foreground", children: "Recording other people may require their consent where you live \u2014 check your school\u2019s policy. Nemesis never records on its own and never hides the indicator. Transcription runs on your device (the first run downloads a small model); the text is a draft \u2014 review it before you rely on it." })] })] }));
++                            return (_jsxs("li", { className: "group flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 transition-[transform,border-color] duration-200 ease-out hover:border-(--theme-primary)/25 active:scale-[0.995]", children: [_jsxs("div", { className: "flex items-center justify-between gap-4", children: [_jsxs("div", { className: "flex min-w-0 items-center gap-3", children: [_jsx("div", { className: "grid size-10 shrink-0 place-items-center rounded-xl border border-(--ui-stroke-quaternary) bg-(--ui-bg-quaternary) text-(--theme-primary)", children: _jsx(IconMicrophone, { size: 17 }) }), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "truncate text-sm font-semibold", children: "Lecture recording" }), _jsx("div", { className: "truncate text-[0.6875rem] tabular-nums text-muted-foreground", children: recordingLabel(file.name) }), status && (_jsxs("div", { className: "mt-1 inline-flex items-center gap-1.5 text-[0.6875rem] font-medium text-(--theme-primary)", children: [_jsx("span", { className: "size-1.5 animate-pulse rounded-full bg-(--theme-primary)" }), status] }))] })] }), _jsxs("div", { className: "flex shrink-0 items-center gap-1", children: [_jsx(Tip, { label: transcript ? 'Re-transcribe' : 'Transcribe', children: _jsx(Button, { "aria-label": transcript ? 'Re-transcribe' : 'Transcribe', className: "transition-transform duration-200 ease-out active:scale-[0.98]", disabled: Boolean(status), onClick: () => void transcribe(file), size: "icon-sm", variant: "outline", children: _jsx(Codicon, { name: "sparkle" }) }) }), _jsx(Tip, { label: playing?.path === file.path ? 'Hide player' : 'Play', children: _jsx(Button, { "aria-label": playing?.path === file.path ? 'Hide player' : 'Play', className: "transition-transform duration-200 ease-out active:scale-[0.98]", onClick: () => void play(file), size: "icon-sm", variant: "outline", children: _jsx(Codicon, { name: playing?.path === file.path ? 'debug-pause' : 'play' }) }) })] })] }), transcript && (_jsxs("div", { className: "rounded-xl border border-(--ui-stroke-quaternary) bg-(--ui-bg-quaternary) p-3", children: [_jsx("p", { className: "mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground", children: "Transcript" }), _jsx("p", { className: "whitespace-pre-wrap text-xs leading-relaxed text-foreground", children: transcript }), _jsxs("div", { className: "mt-2 flex flex-wrap items-center gap-2", children: [_jsx(Button, { disabled: savedNote[file.path], onClick: () => void saveTranscriptNote(file), size: "sm", variant: "secondary", children: savedNote[file.path] ? 'Saved to Library ✓' : 'Save as note' }), _jsx(Button, { onClick: () => draftFlashcards(file), size: "sm", variant: "secondary", children: "Draft flashcards" }), (corrections[file.path] ?? 0) > 0 && (_jsxs("span", { className: "text-[10px] text-muted-foreground", children: [corrections[file.path], " pharm term", corrections[file.path] === 1 ? '' : 's', " auto-corrected"] }))] })] }))] }, file.path));
++                        }) })) : (_jsxs("div", { className: "rounded-2xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-5 py-7", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)", children: "Nothing captured" }), _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: "Recordings save to Documents / Nemesis Recordings as ordinary audio files." })] })), playing && _jsx("audio", { autoPlay: true, className: "mt-3 w-full", controls: true, src: playing.src }), _jsxs("div", { className: "flex items-center gap-1.5 pt-4 text-[0.6875rem] text-muted-foreground", children: [_jsx(IconLock, { size: 11 }), _jsx("span", { children: "Local by design \u00B7" }), _jsx(Tip, { className: "max-w-sm whitespace-normal text-left leading-relaxed", label: _jsx("span", { children: "Recording other people may require their consent where you live \u2014 check your school\u2019s policy. Nemesis never records on its own and never hides the indicator. Transcription runs on your device (the first run downloads a small model); the text is a draft \u2014 review it before you rely on it." }), side: "top", children: _jsx("button", { className: "underline decoration-current/30 underline-offset-2 hover:text-foreground", type: "button", children: "Consent & transcription details" }) })] })] })] }));
+ }
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index ed5e147806b..d611f89c291 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -10,7 +10,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ 
+ import { Button } from '@/components/ui/button'
+-import { EmptyState } from '@/components/ui/empty-state'
++import { Codicon } from '@/components/ui/codicon'
++import { Tip } from '@/components/ui/tooltip'
+ import { cn } from '@/lib/utils'
+ import { setComposerDraft } from '@/store/composer'
+ 
+@@ -205,7 +206,9 @@ export function RecorderView() {
+     }
+ 
+     const buffer = new Uint8Array(analyser.frequencyBinCount)
+-    const accent = getComputedStyle(document.documentElement).getPropertyValue('--theme-primary').trim() || '#b3382e'
++    const rootStyle = getComputedStyle(document.documentElement)
++    const accent =
++      rootStyle.getPropertyValue('--theme-primary').trim() || rootStyle.getPropertyValue('--ui-text-primary').trim()
+ 
+     const render = () => {
+       rafRef.current = requestAnimationFrame(render)
+@@ -688,78 +691,80 @@ export function RecorderView() {
+   // that listens while you write). Idle = the start card + saved recordings.
+   if (state === 'recording') {
+     return (
+-      <div className="flex h-full min-h-0 flex-col px-5 pb-4 pt-4">
+-        <div className="flex shrink-0 flex-wrap items-center gap-3 pb-3">
++      <div className="flex h-full min-h-0 flex-col bg-(--ui-editor-surface-background) px-5 pb-5 pt-4">
++        <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-4 py-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]">
+           <span className="relative flex size-3 shrink-0">
+-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60" />
+-            <span className="relative inline-flex size-3 rounded-full bg-primary" />
++            <span className="absolute inline-flex size-full animate-ping rounded-full bg-(--theme-primary) opacity-50" />
++            <span className="relative inline-flex size-3 rounded-full bg-(--theme-primary)" />
+           </span>
+-          <span className="shrink-0 text-[10px] font-medium uppercase tracking-widest text-primary">On air</span>
++          <span className="shrink-0 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">On air</span>
+           <input
+             aria-label="Lecture title"
+-            className="min-w-40 flex-1 border-none bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground/50"
++            className="min-w-40 flex-1 border-none bg-transparent text-lg font-semibold tracking-tight outline-none placeholder:text-muted-foreground/50"
+             onChange={event => setTitle(event.target.value)}
+             placeholder="Lecture title"
+             value={title}
+           />
+-          <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
++          <span className="shrink-0 rounded-full bg-(--ui-bg-quaternary) px-3 py-1 text-sm font-semibold tabular-nums text-(--ui-text-secondary)">
+             {minutes}:{seconds}
+           </span>
+-          <Button onClick={stop} size="sm" variant="secondary">
++          <Button className="transition-transform duration-200 ease-out active:scale-[0.98]" onClick={stop} size="sm" variant="destructive">
+             Stop &amp; save
+           </Button>
+         </div>
+ 
+-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_340px]">
+-          {/* Notepad — type while it listens */}
+-          <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+-            <div className="shrink-0 border-b border-border px-4 py-1.5">
+-              <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+-                My notes — type while it listens
+-              </span>
+-            </div>
+-            <div className="min-h-0 flex-1 overflow-hidden px-4">
+-              <NoteEditor initialValue="" onChange={onNotesChange} onOpenWikilink={() => {}} />
++        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(19rem,0.82fr)_minmax(0,1.18fr)]">
++          {/* Live capture: waveform, transcript, and insights */}
++          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
++            <div className="shrink-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]">
++              <div className="mb-2 flex items-center justify-between">
++                <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">Audio signal</span>
++                <span className="text-[0.65rem] text-(--ui-text-quaternary)">Mic{withSystemAudio ? ' + system' : ''}</span>
++              </div>
++              <canvas className="h-16 w-full rounded-xl bg-(--ui-bg-quaternary)" height={64} ref={canvasRef} width={420} />
+             </div>
+-          </div>
+ 
+-          {/* Sidecar: waveform, live transcript, live insights */}
+-          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+-            <canvas className="h-12 w-full shrink-0 rounded-md border border-border bg-card" height={48} ref={canvasRef} width={340} />
+             {liveCaptions ? (
+               <>
+-                <div className="flex min-h-24 shrink-0 flex-col rounded-md border border-border bg-card px-3 py-2">
+-                  <div className="flex items-center justify-between pb-1">
+-                    <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
++                <div className="flex min-h-40 shrink-0 flex-col rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]">
++                  <div className="mb-3 flex items-center justify-between gap-3">
++                    <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">
+                       Live transcript
+                     </span>
+-                    <span className="text-[10px] text-muted-foreground">{liveStatus}</span>
++                    <span className="truncate text-[0.65rem] text-muted-foreground">{liveStatus}</span>
+                   </div>
+-                  <div className="max-h-64 overflow-y-auto text-[13px] leading-relaxed" ref={liveScrollRef}>
++                  <div className="max-h-72 space-y-2 overflow-y-auto text-[13px] leading-relaxed" ref={liveScrollRef}>
+                     {liveSegments.length ? (
+-                      liveSegments.join(' ')
++                      liveSegments.map((segment, index) => (
++                        <p className="animate-in fade-in-0 border-l border-(--ui-stroke-quaternary) pl-3 duration-200 ease-out" key={`${index}-${segment.slice(0, 18)}`}>
++                          {segment}
++                        </p>
++                      ))
+                     ) : (
+-                      <span className="text-muted-foreground">Listening for speech…</span>
++                      <div>
++                        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)">Listening</p>
++                        <p className="mt-1 text-xs text-muted-foreground">Speech will appear here as the lecture continues.</p>
++                      </div>
+                     )}
+                   </div>
+                 </div>
+                 {insights.length > 0 && (
+-                  <div className="shrink-0 rounded-md border border-border bg-card px-3 py-2">
+-                    <div className="flex items-center justify-between pb-1.5">
+-                      <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-widest text-primary">
+-                        <IconSparkles size={11} />
+-                        Drugs just mentioned
++                  <div className="shrink-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]">
++                    <div className="mb-2.5 flex items-center justify-between gap-3">
++                      <span className="inline-flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">
++                        <IconSparkles size={12} />
++                        Mentioned
+                       </span>
+-                      <span className="text-[10px] text-muted-foreground">tap to queue</span>
++                      <span className="text-[0.65rem] text-muted-foreground">Tap to queue</span>
+                     </div>
+                     <div className="flex flex-wrap gap-1.5">
+                       {insights.map(insight => (
+                         <button
+                           className={cn(
+-                            'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors',
++                            'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-[transform,color,border-color,background-color] duration-200 ease-out active:scale-[0.98]',
+                             insight.queued
+-                              ? 'border-(--theme-primary) text-foreground'
+-                              : 'border-border text-muted-foreground hover:text-foreground'
++                              ? 'border-(--theme-primary)/45 bg-(--ui-bg-primary) text-foreground'
++                              : 'border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) text-muted-foreground hover:border-(--theme-primary)/35 hover:text-foreground'
+                           )}
+                           key={insight.term}
+                           onClick={() => toggleQueued(insight.term)}
+@@ -767,7 +772,7 @@ export function RecorderView() {
+                         >
+                           {insight.queued && <IconCheck size={11} />}
+                           {insight.term}
+-                          <span className="text-[9px] opacity-60">{insight.at}</span>
++                          <span className="text-[9px] tabular-nums opacity-60">{insight.at}</span>
+                         </button>
+                       ))}
+                     </div>
+@@ -775,15 +780,28 @@ export function RecorderView() {
+                 )}
+               </>
+             ) : (
+-              <p className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+-                Live transcript is off — the audio still records and you can transcribe it after.
+-              </p>
++              <div className="rounded-2xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4">
++                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)">Live transcript off</p>
++                <p className="mt-1 text-xs text-muted-foreground">Audio is still recording and can be transcribed later.</p>
++              </div>
+             )}
+-            <span className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground">
++            <span className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-3 py-1.5 text-[0.6875rem] text-muted-foreground">
+               <IconLock size={12} />
+               On this device only — nothing joins your call
+             </span>
+           </div>
++
++          {/* Notepad — type while it listens */}
++          <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]">
++            <div className="shrink-0 border-b border-(--ui-stroke-tertiary) px-5 py-3">
++              <span className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
++                My notes · type while it listens
++              </span>
++            </div>
++            <div className="min-h-0 flex-1 overflow-hidden px-5">
++              <NoteEditor initialValue="" onChange={onNotesChange} onOpenWikilink={() => {}} />
++            </div>
++          </div>
+         </div>
+         {error && <p className="pt-2 text-center text-xs text-destructive">{error}</p>}
+       </div>
+@@ -791,109 +809,167 @@ export function RecorderView() {
+   }
+ 
+   return (
+-    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+-      <header className="px-6 pb-2 pt-5">
+-        <h1 className="text-lg font-semibold">Recorder</h1>
+-        <p className="text-xs text-muted-foreground">
++    <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-(--ui-editor-surface-background)">
++      <header className="px-6 pb-2 pt-6">
++        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">Capture desk</p>
++        <h1 className="mt-1 text-2xl font-semibold tracking-[-0.025em]">Recorder</h1>
++        <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
+           Records your mic{withSystemAudio ? ' + this computer’s audio (the lecture/Zoom)' : ' only'} — locally, to
+           your own files. You start it, you see it, you keep it. While it records, you get a notepad, a live
+           transcript, and the drugs mentioned — as they happen.
+         </p>
+       </header>
+ 
+-      <section className="mx-6 mt-3 flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-8">
+-        {(
+-          <>
+-            <Button disabled={state === 'saving'} onClick={() => void start()} size="lg">
+-              {state === 'saving' ? 'Saving…' : 'Start recording'}
+-            </Button>
+-            {state === 'saving' && liveStatus && <p className="text-xs text-muted-foreground">{liveStatus}</p>}
+-            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
++      <section className="mx-6 mt-4 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]">
++        <div className="grid items-stretch lg:grid-cols-[minmax(0,0.9fr)_minmax(22rem,1.1fr)]">
++          <div className="flex items-center gap-5 border-b border-(--ui-stroke-tertiary) p-6 lg:border-b-0 lg:border-r">
++            <div className="grid size-24 shrink-0 place-items-center rounded-full border border-(--theme-primary)/25 bg-(--ui-bg-primary) shadow-[inset_0_0_0_7px_var(--ui-bg-elevated)]">
++              <Button
++                aria-label="Start recording"
++                className="size-20 rounded-full shadow-lg transition-[transform,opacity] duration-200 ease-out active:scale-[0.96]"
++                disabled={state === 'saving'}
++                onClick={() => void start()}
++                size="icon-lg"
++              >
++                <IconMicrophone className="size-7" />
++              </Button>
++            </div>
++            <div className="min-w-0">
++              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">
++                {state === 'saving' ? 'Finishing capture' : 'Ready to record'}
++              </p>
++              <h2 className="mt-1 text-lg font-semibold tracking-tight">
++                {state === 'saving' ? 'Saving your lecture' : 'Capture the lecture, keep the context'}
++              </h2>
++              <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
++                {state === 'saving'
++                  ? (liveStatus || 'Writing audio and notes to disk…')
++                  : 'One click opens a live notepad, waveform, transcript, and pharmacology mentions.'}
++              </p>
++            </div>
++          </div>
++
++          <div className="flex flex-col justify-center gap-2 p-4">
++            <label className="group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors duration-200 ease-out hover:border-(--ui-stroke-tertiary) hover:bg-(--ui-bg-quaternary)">
+               <input
+                 checked={withSystemAudio}
+-                className="accent-(--theme-primary)"
++                className="peer sr-only"
+                 onChange={event => setWithSystemAudio(event.target.checked)}
+                 type="checkbox"
+               />
+-              Also capture this computer&rsquo;s audio (lecture, Zoom) — macOS will ask once
++              <span className="relative h-5 w-9 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors duration-200 ease-out after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform after:duration-200 after:ease-out peer-focus-visible:ring-2 peer-focus-visible:ring-(--theme-primary)/35 peer-checked:bg-(--theme-primary) peer-checked:after:translate-x-4 peer-checked:after:bg-primary-foreground" />
++              <span className="min-w-0">
++                <span className="block text-xs font-semibold">Computer audio</span>
++                <span className="block text-[0.6875rem] leading-relaxed text-muted-foreground">Capture the lecture or Zoom audio · macOS asks once</span>
++              </span>
+             </label>
+-            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
++            <label className="group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors duration-200 ease-out hover:border-(--ui-stroke-tertiary) hover:bg-(--ui-bg-quaternary)">
+               <input
+                 checked={liveCaptions}
+-                className="accent-(--theme-primary)"
++                className="peer sr-only"
+                 onChange={event => setLiveCaptions(event.target.checked)}
+                 type="checkbox"
+               />
+-              Live transcript while recording — auto-saves a lecture note to the Library
++              <span className="relative h-5 w-9 shrink-0 rounded-full bg-(--ui-bg-primary) shadow-[inset_0_0_0_1px_var(--ui-stroke-secondary)] transition-colors duration-200 ease-out after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-(--ui-text-quaternary) after:transition-transform after:duration-200 after:ease-out peer-focus-visible:ring-2 peer-focus-visible:ring-(--theme-primary)/35 peer-checked:bg-(--theme-primary) peer-checked:after:translate-x-4 peer-checked:after:bg-primary-foreground" />
++              <span className="min-w-0">
++                <span className="block text-xs font-semibold">Live transcript</span>
++                <span className="block text-[0.6875rem] leading-relaxed text-muted-foreground">Auto-save a lecture note to the Library</span>
++              </span>
+             </label>
+-            {lectureNote && (
+-              <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs">
+-                <span className="inline-flex items-center gap-1">
+-                  Lecture note saved to Library → {LECTURE_FOLDER} <IconCheck className="text-primary" size={12} />
+-                </span>
+-                <Button
+-                  className="h-6 px-2 text-xs"
+-                  onClick={() => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`)}
+-                  size="sm"
+-                  variant="outline"
+-                >
+-                  Open note
+-                </Button>
+-                <Button className="h-6 px-2 text-xs" onClick={enhanceNote} size="sm" variant="secondary">
+-                  <IconSparkles size={12} />
+-                  Enhance with Nemesis
+-                </Button>
+-                {insights.some(insight => insight.queued) && (
+-                  <Button className="h-6 px-2 text-xs" onClick={askQueued} size="sm" variant="outline">
+-                    Ask about {insights.filter(insight => insight.queued).length} queued drug
+-                    {insights.filter(insight => insight.queued).length === 1 ? '' : 's'}
+-                  </Button>
+-                )}
+-              </div>
+-            )}
+-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground">
++            <span className="mx-3 mt-1 inline-flex items-center gap-1.5 self-start rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-3 py-1.5 text-[0.6875rem] text-muted-foreground">
+               <IconLock size={12} />
+-              Nothing joins your call — capture &amp; transcription happen on this device only
++              Nothing joins your call · processed on this device
++            </span>
++          </div>
++        </div>
++
++        {lectureNote && (
++          <div className="flex flex-wrap items-center gap-2 border-t border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-5 py-3 text-xs">
++            <span className="mr-auto inline-flex items-center gap-1.5 font-medium">
++              <IconCheck className="text-(--theme-primary)" size={13} />
++              Lecture note saved to Library → {LECTURE_FOLDER}
+             </span>
+-          </>
++            <Button onClick={() => navigate(`${LIBRARY_ROUTE}?note=${encodeURIComponent(lectureNote)}`)} size="xs" variant="outline">
++              Open note
++            </Button>
++            <Button onClick={enhanceNote} size="xs" variant="secondary">
++              <IconSparkles size={12} />
++              Enhance with Nemesis
++            </Button>
++            {insights.some(insight => insight.queued) && (
++              <Button onClick={askQueued} size="xs" variant="outline">
++                Ask about {insights.filter(insight => insight.queued).length} queued drug
++                {insights.filter(insight => insight.queued).length === 1 ? '' : 's'}
++              </Button>
++            )}
++          </div>
+         )}
+-        {error && <p className="max-w-md text-center text-xs text-destructive">{error}</p>}
++        {error && <p className="border-t border-(--ui-stroke-tertiary) px-5 py-3 text-xs text-destructive">{error}</p>}
+       </section>
+ 
+-      <section className="px-6 pb-8 pt-5">
+-        <h2 className="pb-2 text-sm font-medium">Saved recordings</h2>
++      <section className="px-6 pb-8 pt-7">
++        <div className="mb-3 flex items-end justify-between gap-3">
++          <div>
++            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">Archive</p>
++            <h2 className="mt-1 text-lg font-semibold tracking-tight">Saved recordings</h2>
++          </div>
++          <span className="rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-quaternary) px-2.5 py-1 text-[0.6875rem] font-medium tabular-nums text-muted-foreground">
++            {recordings.length} recording{recordings.length === 1 ? '' : 's'}
++          </span>
++        </div>
+         {recordings.length ? (
+-          <ul className="flex flex-col gap-1.5">
++          <ul className="flex flex-col gap-2">
+             {recordings.map(file => {
+               const status = transcribingStatus[file.path]
+               const transcript = transcripts[file.path]
+ 
+               return (
+-                <li className="flex flex-col gap-2 rounded-md border border-border px-3 py-2" key={file.path}>
+-                  <div className="flex items-center justify-between gap-3">
+-                    <div className="flex min-w-0 items-center gap-2">
+-                      <IconMicrophone className="shrink-0 text-muted-foreground" size={16} />
++                <li className="group flex flex-col gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 transition-[transform,border-color] duration-200 ease-out hover:border-(--theme-primary)/25 active:scale-[0.995]" key={file.path}>
++                  <div className="flex items-center justify-between gap-4">
++                    <div className="flex min-w-0 items-center gap-3">
++                      <div className="grid size-10 shrink-0 place-items-center rounded-xl border border-(--ui-stroke-quaternary) bg-(--ui-bg-quaternary) text-(--theme-primary)">
++                        <IconMicrophone size={17} />
++                      </div>
+                       <div className="min-w-0">
+-                        <div className="truncate text-sm">{recordingLabel(file.name)}</div>
+-                        {status && <div className="text-[11px] text-primary">{status}</div>}
++                        <div className="truncate text-sm font-semibold">Lecture recording</div>
++                        <div className="truncate text-[0.6875rem] tabular-nums text-muted-foreground">{recordingLabel(file.name)}</div>
++                        {status && (
++                          <div className="mt-1 inline-flex items-center gap-1.5 text-[0.6875rem] font-medium text-(--theme-primary)">
++                            <span className="size-1.5 animate-pulse rounded-full bg-(--theme-primary)" />
++                            {status}
++                          </div>
++                        )}
+                       </div>
+                     </div>
+-                    <div className="flex shrink-0 items-center gap-2">
+-                      <Button
+-                        disabled={Boolean(status)}
+-                        onClick={() => void transcribe(file)}
+-                        size="sm"
+-                        variant="outline"
+-                      >
+-                        {status ? '…' : transcript ? 'Re-transcribe' : 'Transcribe'}
+-                      </Button>
+-                      <Button onClick={() => void play(file)} size="sm" variant="outline">
+-                        {playing?.path === file.path ? 'Hide' : 'Play'}
+-                      </Button>
++                    <div className="flex shrink-0 items-center gap-1">
++                      <Tip label={transcript ? 'Re-transcribe' : 'Transcribe'}>
++                        <Button
++                          aria-label={transcript ? 'Re-transcribe' : 'Transcribe'}
++                          className="transition-transform duration-200 ease-out active:scale-[0.98]"
++                          disabled={Boolean(status)}
++                          onClick={() => void transcribe(file)}
++                          size="icon-sm"
++                          variant="outline"
++                        >
++                          <Codicon name="sparkle" />
++                        </Button>
++                      </Tip>
++                      <Tip label={playing?.path === file.path ? 'Hide player' : 'Play'}>
++                        <Button
++                          aria-label={playing?.path === file.path ? 'Hide player' : 'Play'}
++                          className="transition-transform duration-200 ease-out active:scale-[0.98]"
++                          onClick={() => void play(file)}
++                          size="icon-sm"
++                          variant="outline"
++                        >
++                          <Codicon name={playing?.path === file.path ? 'debug-pause' : 'play'} />
++                        </Button>
++                      </Tip>
+                     </div>
+                   </div>
+                   {transcript && (
+-                    <div className="rounded-md bg-muted/40 p-3">
++                    <div className="rounded-xl border border-(--ui-stroke-quaternary) bg-(--ui-bg-quaternary) p-3">
++                      <p className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">Transcript</p>
+                       <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{transcript}</p>
+                       <div className="mt-2 flex flex-wrap items-center gap-2">
+                         <Button
+@@ -920,18 +996,31 @@ export function RecorderView() {
+             })}
+           </ul>
+         ) : (
+-          <EmptyState
+-            className={cn('min-h-28')}
+-            description="Recordings save to Documents / Nemesis Recordings as ordinary audio files."
+-            title="No recordings yet"
+-          />
++          <div className="rounded-2xl border border-dashed border-(--ui-stroke-tertiary) bg-(--ui-bg-card) px-5 py-7">
++            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)">Nothing captured</p>
++            <p className="mt-1 text-xs text-muted-foreground">Recordings save to Documents / Nemesis Recordings as ordinary audio files.</p>
++          </div>
+         )}
+         {playing && <audio autoPlay className="mt-3 w-full" controls src={playing.src} />}
+-        <p className="pt-4 text-[11px] leading-relaxed text-muted-foreground">
+-          Recording other people may require their consent where you live — check your school&rsquo;s policy. Nemesis
+-          never records on its own and never hides the indicator. Transcription runs on your device (the first run
+-          downloads a small model); the text is a draft — review it before you rely on it.
+-        </p>
++        <div className="flex items-center gap-1.5 pt-4 text-[0.6875rem] text-muted-foreground">
++          <IconLock size={11} />
++          <span>Local by design ·</span>
++          <Tip
++            className="max-w-sm whitespace-normal text-left leading-relaxed"
++            label={
++              <span>
++                Recording other people may require their consent where you live — check your school&rsquo;s policy.
++                Nemesis never records on its own and never hides the indicator. Transcription runs on your device
++                (the first run downloads a small model); the text is a draft — review it before you rely on it.
++              </span>
++            }
++            side="top"
++          >
++            <button className="underline decoration-current/30 underline-offset-2 hover:text-foreground" type="button">
++              Consent &amp; transcription details
++            </button>
++          </Tip>
++        </div>
+       </section>
+     </div>
+   )
+-- 
+2.50.1 (Apple Git-155)
+

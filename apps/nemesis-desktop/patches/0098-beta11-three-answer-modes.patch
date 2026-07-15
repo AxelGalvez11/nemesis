@@ -1,0 +1,286 @@
+From 5ff5df422a719b5725c1ca78b37c6cf5d9e45dd3 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 15:16:15 -0500
+Subject: [PATCH] =?UTF-8?q?feat:=20beta.11=20=E2=80=94=20three=20answer=20?=
+ =?UTF-8?q?modes:=20Instant=20/=20Medium=20/=20High?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Replaces the Fast/Thinking + effort matrix with the three modes the owner
+asked for (4th ask). Instant = fast mode; Medium/High = thinking with that
+effort — same per-turn switches the agent already honors, no model names
+shown. High's description carries the honest cost note (slower, uses more
+of the daily allowance). Composer pill shows the active mode name.
+(When per-turn model plumbing lands, High additionally routes pro/max to
+the premium model — server plan-gate already live.)
+---
+ apps/desktop/package.json                     |   2 +-
+ .../src/app/chat/composer/model-pill.js       |   8 +-
+ .../src/app/chat/composer/model-pill.tsx      |   8 +-
+ .../app/chat/composer/student-model-menu.js   |  42 +++++--
+ .../app/chat/composer/student-model-menu.tsx  | 104 ++++++++++--------
+ 5 files changed, 98 insertions(+), 66 deletions(-)
+
+diff --git a/apps/desktop/package.json b/apps/desktop/package.json
+index ec945f86e71..c06fef45546 100644
+--- a/apps/desktop/package.json
++++ b/apps/desktop/package.json
+@@ -2,7 +2,7 @@
+   "name": "nemesis",
+   "productName": "Nemesis",
+   "private": true,
+-  "version": "0.1.0-beta.10",
++  "version": "0.1.0-beta.11",
+   "description": "Native desktop shell for the Nemesis school agent.",
+   "author": "Nemesis",
+   "type": "module",
+diff --git a/apps/desktop/src/app/chat/composer/model-pill.js b/apps/desktop/src/app/chat/composer/model-pill.js
+index f0585bae96a..737ffba0e58 100644
+--- a/apps/desktop/src/app/chat/composer/model-pill.js
++++ b/apps/desktop/src/app/chat/composer/model-pill.js
+@@ -8,11 +8,11 @@ import { GlyphSpinner } from '@/components/ui/glyph-spinner';
+ import { Tip } from '@/components/ui/tooltip';
+ import { useI18n } from '@/i18n';
+ import { ChevronDown } from '@/lib/icons';
+-import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+-import { formatModelStatusLabel, reasoningEffortLabel } from '@/lib/model-status-label';
++import { formatModelStatusLabel } from '@/lib/model-status-label';
+ import { cn } from '@/lib/utils';
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis';
+ import { $currentFastMode, $currentModel, $currentProvider, $currentReasoningEffort, setModelPickerOpen } from '@/store/session';
+-import { StudentModelMenu } from './student-model-menu';
++import { answerModeLabel, currentAnswerMode, StudentModelMenu } from './student-model-menu';
+ const PILL = cn('h-(--composer-control-size) max-w-40 shrink-0 gap-1 rounded-md px-2 text-xs font-normal', 'text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground');
+ /**
+  * Composer model selector — the relocated status-bar pill. Reuses the live
+@@ -28,7 +28,7 @@ export function ModelPill({ compact = false, disabled, model }) {
+     const [open, setOpen] = useState(false);
+     // Student build: no provider/model names ever — just the answer mode.
+     if (NEMESIS_STUDENT_BUILD) {
+-        const modeLabel = fastMode ? 'Fast' : `Thinking${reasoningEffort ? ` · ${reasoningEffortLabel(reasoningEffort)}` : ''}`;
++        const modeLabel = answerModeLabel(currentAnswerMode(fastMode, reasoningEffort || 'medium'));
+         return (_jsxs(DropdownMenu, { onOpenChange: setOpen, open: open, children: [_jsx(Tip, { label: "Answer mode", side: "top", children: _jsx(DropdownMenuTrigger, { asChild: true, children: _jsx(Button, { "aria-label": "Answer mode", className: compact ? cn(PILL, 'w-auto') : PILL, disabled: disabled, type: "button", variant: "ghost", children: compact ? _jsx(ChevronDown, { className: "size-3.5 shrink-0 opacity-70" }) : (_jsxs(_Fragment, { children: [_jsx("span", { className: "truncate", children: modeLabel }), _jsx(ChevronDown, { className: "size-2.5 shrink-0 opacity-50" })] })) }) }) }), _jsx(DropdownMenuContent, { align: "end", className: "p-0", side: "top", sideOffset: 8, children: _jsx(StudentModelMenu, {}) })] }));
+     }
+     // The model resolves a beat after the gateway/session comes up. Rather than
+diff --git a/apps/desktop/src/app/chat/composer/model-pill.tsx b/apps/desktop/src/app/chat/composer/model-pill.tsx
+index 2632bb14718..decfe0841cc 100644
+--- a/apps/desktop/src/app/chat/composer/model-pill.tsx
++++ b/apps/desktop/src/app/chat/composer/model-pill.tsx
+@@ -8,9 +8,9 @@ import { GlyphSpinner } from '@/components/ui/glyph-spinner'
+ import { Tip } from '@/components/ui/tooltip'
+ import { useI18n } from '@/i18n'
+ import { ChevronDown } from '@/lib/icons'
+-import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+-import { formatModelStatusLabel, reasoningEffortLabel } from '@/lib/model-status-label'
++import { formatModelStatusLabel } from '@/lib/model-status-label'
+ import { cn } from '@/lib/utils'
++import { NEMESIS_STUDENT_BUILD } from '@/nemesis'
+ import {
+   $currentFastMode,
+   $currentModel,
+@@ -19,7 +19,7 @@ import {
+   setModelPickerOpen
+ } from '@/store/session'
+ 
+-import { StudentModelMenu } from './student-model-menu'
++import { answerModeLabel, currentAnswerMode, StudentModelMenu } from './student-model-menu'
+ import type { ChatBarState } from './types'
+ 
+ const PILL = cn(
+@@ -50,7 +50,7 @@ export function ModelPill({
+ 
+   // Student build: no provider/model names ever — just the answer mode.
+   if (NEMESIS_STUDENT_BUILD) {
+-    const modeLabel = fastMode ? 'Fast' : `Thinking${reasoningEffort ? ` · ${reasoningEffortLabel(reasoningEffort)}` : ''}`
++    const modeLabel = answerModeLabel(currentAnswerMode(fastMode, reasoningEffort || 'medium'))
+ 
+     return (
+       <DropdownMenu onOpenChange={setOpen} open={open}>
+diff --git a/apps/desktop/src/app/chat/composer/student-model-menu.js b/apps/desktop/src/app/chat/composer/student-model-menu.js
+index 2e260e5906e..dcbabb2e0c1 100644
+--- a/apps/desktop/src/app/chat/composer/student-model-menu.js
++++ b/apps/desktop/src/app/chat/composer/student-model-menu.js
+@@ -1,20 +1,42 @@
+-import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
++import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ // Nemesis student model picker. Students never see "deepseek" or any model/provider name —
+-// they choose an ANSWER MODE (Fast vs Thinking) and, when thinking, an effort level. These
+-// map to the same per-turn fast-mode + reasoning-effort the agent already honors; the actual
+-// model stays whatever Nemesis provisions. Nemesis provides (and bills for) the AI, so model
++// they choose one of THREE answer modes (owner ask, 2026-07-14): Instant / Medium / High.
++// These map to the per-turn fast-mode + reasoning-effort the agent already honors
++// (Instant = fast mode on; Medium/High = thinking with that effort). The actual model
++// stays whatever Nemesis provisions — Nemesis provides (and bills for) the AI, so model
+ // selection is ours, not the student's.
+ import { useStore } from '@nanostores/react';
+ import { cn } from '@/lib/utils';
+ import { $currentFastMode, $currentReasoningEffort, setCurrentFastMode, setCurrentReasoningEffort } from '@/store/session';
+-const EFFORTS = [
+-    ['low', 'Light'],
+-    ['medium', 'Balanced'],
+-    ['high', 'Deep']
++export function currentAnswerMode(fast, effort) {
++    if (fast) {
++        return 'instant';
++    }
++    return effort === 'high' ? 'high' : 'medium';
++}
++export function answerModeLabel(mode) {
++    return mode === 'instant' ? 'Instant' : mode === 'high' ? 'High' : 'Medium';
++}
++const MODES = [
++    { description: 'Fastest answers for quick questions.', label: 'Instant', mode: 'instant' },
++    { description: 'Thinks it through first — the everyday default.', label: 'Medium', mode: 'medium' },
++    {
++        description: 'Deepest reasoning for hard problems. Slower and uses more of your daily allowance.',
++        label: 'High',
++        mode: 'high'
++    }
+ ];
++function applyAnswerMode(mode) {
++    if (mode === 'instant') {
++        setCurrentFastMode(() => true);
++        return;
++    }
++    setCurrentFastMode(() => false);
++    setCurrentReasoningEffort(() => (mode === 'high' ? 'high' : 'medium'));
++}
+ export function StudentModelMenu() {
+     const fast = useStore($currentFastMode);
+     const effort = useStore($currentReasoningEffort) || 'medium';
+-    const segment = (active) => cn('flex-1 rounded-md px-2 py-1.5 text-sm transition-colors', active ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent');
+-    return (_jsxs("div", { className: "w-64 p-1", children: [_jsx("div", { className: "px-3 pb-1.5 pt-2 text-xs font-medium text-muted-foreground", children: "Answer mode" }), _jsxs("div", { className: "flex gap-1 px-2", children: [_jsx("button", { className: segment(fast), onClick: () => setCurrentFastMode(() => true), type: "button", children: "Fast" }), _jsx("button", { className: segment(!fast), onClick: () => setCurrentFastMode(() => false), type: "button", children: "Thinking" })] }), _jsx("p", { className: "px-3 pb-1 pt-1.5 text-xs text-muted-foreground", children: fast ? 'Quick answers for simple questions.' : 'Reasons step by step — better for hard problems.' }), !fast && (_jsxs(_Fragment, { children: [_jsx("div", { className: "mx-2 my-1.5 border-t border-border" }), _jsx("div", { className: "px-3 pb-1.5 text-xs font-medium text-muted-foreground", children: "Effort" }), _jsx("div", { className: "flex gap-1 px-2 pb-1", children: EFFORTS.map(([value, label]) => (_jsx("button", { className: cn('flex-1 rounded-md px-2 py-1.5 text-xs transition-colors', effort === value ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent'), onClick: () => setCurrentReasoningEffort(() => value), type: "button", children: label }, value))) })] }))] }));
++    const active = currentAnswerMode(fast, effort);
++    return (_jsxs("div", { className: "w-72 p-1", children: [_jsx("div", { className: "px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground", children: "Answer mode" }), _jsx("div", { className: "flex flex-col gap-0.5 px-1 pb-1", children: MODES.map(({ description, label, mode }) => (_jsxs("button", { className: cn('flex flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors', active === mode ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent'), onClick: () => applyAnswerMode(mode), type: "button", children: [_jsx("span", { className: "text-sm font-medium", children: label }), _jsx("span", { className: cn('text-xs', active === mode ? 'text-primary-foreground/75' : 'text-muted-foreground'), children: description })] }, mode))) })] }));
+ }
+diff --git a/apps/desktop/src/app/chat/composer/student-model-menu.tsx b/apps/desktop/src/app/chat/composer/student-model-menu.tsx
+index 3b887f86324..503c23a33bd 100644
+--- a/apps/desktop/src/app/chat/composer/student-model-menu.tsx
++++ b/apps/desktop/src/app/chat/composer/student-model-menu.tsx
+@@ -1,65 +1,75 @@
+ // Nemesis student model picker. Students never see "deepseek" or any model/provider name —
+-// they choose an ANSWER MODE (Fast vs Thinking) and, when thinking, an effort level. These
+-// map to the same per-turn fast-mode + reasoning-effort the agent already honors; the actual
+-// model stays whatever Nemesis provisions. Nemesis provides (and bills for) the AI, so model
++// they choose one of THREE answer modes (owner ask, 2026-07-14): Instant / Medium / High.
++// These map to the per-turn fast-mode + reasoning-effort the agent already honors
++// (Instant = fast mode on; Medium/High = thinking with that effort). The actual model
++// stays whatever Nemesis provisions — Nemesis provides (and bills for) the AI, so model
+ // selection is ours, not the student's.
+ import { useStore } from '@nanostores/react'
+ 
+ import { cn } from '@/lib/utils'
+ import { $currentFastMode, $currentReasoningEffort, setCurrentFastMode, setCurrentReasoningEffort } from '@/store/session'
+ 
+-const EFFORTS: ReadonlyArray<readonly [string, string]> = [
+-  ['low', 'Light'],
+-  ['medium', 'Balanced'],
+-  ['high', 'Deep']
++type AnswerMode = 'high' | 'instant' | 'medium'
++
++export function currentAnswerMode(fast: boolean, effort: string): AnswerMode {
++  if (fast) {
++    return 'instant'
++  }
++
++  return effort === 'high' ? 'high' : 'medium'
++}
++
++export function answerModeLabel(mode: AnswerMode): string {
++  return mode === 'instant' ? 'Instant' : mode === 'high' ? 'High' : 'Medium'
++}
++
++const MODES: ReadonlyArray<{ description: string; label: string; mode: AnswerMode }> = [
++  { description: 'Fastest answers for quick questions.', label: 'Instant', mode: 'instant' },
++  { description: 'Thinks it through first — the everyday default.', label: 'Medium', mode: 'medium' },
++  {
++    description: 'Deepest reasoning for hard problems. Slower and uses more of your daily allowance.',
++    label: 'High',
++    mode: 'high'
++  }
+ ]
+ 
++function applyAnswerMode(mode: AnswerMode) {
++  if (mode === 'instant') {
++    setCurrentFastMode(() => true)
++
++    return
++  }
++
++  setCurrentFastMode(() => false)
++  setCurrentReasoningEffort(() => (mode === 'high' ? 'high' : 'medium'))
++}
++
+ export function StudentModelMenu() {
+   const fast = useStore($currentFastMode)
+   const effort = useStore($currentReasoningEffort) || 'medium'
+-
+-  const segment = (active: boolean) =>
+-    cn(
+-      'flex-1 rounded-md px-2 py-1.5 text-sm transition-colors',
+-      active ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent'
+-    )
++  const active = currentAnswerMode(fast, effort)
+ 
+   return (
+-    <div className="w-64 p-1">
+-      <div className="px-3 pb-1.5 pt-2 text-xs font-medium text-muted-foreground">Answer mode</div>
+-      <div className="flex gap-1 px-2">
+-        <button className={segment(fast)} onClick={() => setCurrentFastMode(() => true)} type="button">
+-          Fast
+-        </button>
+-        <button className={segment(!fast)} onClick={() => setCurrentFastMode(() => false)} type="button">
+-          Thinking
+-        </button>
++    <div className="w-72 p-1">
++      <div className="px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground">Answer mode</div>
++      <div className="flex flex-col gap-0.5 px-1 pb-1">
++        {MODES.map(({ description, label, mode }) => (
++          <button
++            className={cn(
++              'flex flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors',
++              active === mode ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent'
++            )}
++            key={mode}
++            onClick={() => applyAnswerMode(mode)}
++            type="button"
++          >
++            <span className="text-sm font-medium">{label}</span>
++            <span className={cn('text-xs', active === mode ? 'text-primary-foreground/75' : 'text-muted-foreground')}>
++              {description}
++            </span>
++          </button>
++        ))}
+       </div>
+-      <p className="px-3 pb-1 pt-1.5 text-xs text-muted-foreground">
+-        {fast ? 'Quick answers for simple questions.' : 'Reasons step by step — better for hard problems.'}
+-      </p>
+-
+-      {!fast && (
+-        <>
+-          <div className="mx-2 my-1.5 border-t border-border" />
+-          <div className="px-3 pb-1.5 text-xs font-medium text-muted-foreground">Effort</div>
+-          <div className="flex gap-1 px-2 pb-1">
+-            {EFFORTS.map(([value, label]) => (
+-              <button
+-                className={cn(
+-                  'flex-1 rounded-md px-2 py-1.5 text-xs transition-colors',
+-                  effort === value ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-accent'
+-                )}
+-                key={value}
+-                onClick={() => setCurrentReasoningEffort(() => value)}
+-                type="button"
+-              >
+-                {label}
+-              </button>
+-            ))}
+-          </div>
+-        </>
+-      )}
+     </div>
+   )
+ }
+-- 
+2.50.1 (Apple Git-155)
+

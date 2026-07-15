@@ -1,0 +1,616 @@
+From 1868fb2730e9a84010638f5306a405c8706bb925 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Mon, 13 Jul 2026 20:13:44 -0500
+Subject: [PATCH] chore(nemesis): commit files referenced by shipped build
+ config
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- THIRD_PARTY_NOTICES.md: MIT attribution for the Hermes Agent upstream —
+  referenced by package.json extraResources and bundled into the beta.2 DMG,
+  but was never committed.
+- electron/nemesis-identity.ts + test: referenced by the committed
+  test:desktop:platforms script; a fresh checkout could not run the suite.
+- Account/account-gate/live-copilot test files that were left untracked when
+  their subjects were committed (all pass: identity via tsx --test, 7 vitest).
+
+All pre-existing uncommitted work by Codex; committed as-is after verifying.
+---
+ THIRD_PARTY_NOTICES.md                        |  31 +++++
+ .../desktop/electron/nemesis-identity.test.ts |  37 ++++++
+ apps/desktop/electron/nemesis-identity.ts     |  42 ++++++
+ .../src/app/recorder/live-copilot.test.js     |  67 ++++++++++
+ .../components/nemesis-account-gate.test.js   |  61 +++++++++
+ .../components/nemesis-account-gate.test.tsx  |  79 +++++++++++
+ apps/desktop/src/nemesis-account.test.js      |  86 ++++++++++++
+ apps/desktop/src/nemesis-account.test.ts      | 125 ++++++++++++++++++
+ 8 files changed, 528 insertions(+)
+ create mode 100644 THIRD_PARTY_NOTICES.md
+ create mode 100644 apps/desktop/electron/nemesis-identity.test.ts
+ create mode 100644 apps/desktop/electron/nemesis-identity.ts
+ create mode 100644 apps/desktop/src/app/recorder/live-copilot.test.js
+ create mode 100644 apps/desktop/src/components/nemesis-account-gate.test.js
+ create mode 100644 apps/desktop/src/components/nemesis-account-gate.test.tsx
+ create mode 100644 apps/desktop/src/nemesis-account.test.js
+ create mode 100644 apps/desktop/src/nemesis-account.test.ts
+
+diff --git a/THIRD_PARTY_NOTICES.md b/THIRD_PARTY_NOTICES.md
+new file mode 100644
+index 00000000000..e8a287749ca
+--- /dev/null
++++ b/THIRD_PARTY_NOTICES.md
+@@ -0,0 +1,31 @@
++# Third-Party Notices
++
++Nemesis Desktop includes and modifies Hermes Agent, originally developed by Nous Research and distributed under the MIT License.
++
++Upstream source: https://github.com/NousResearch/hermes-agent at commit `540f90190f50f9518bf36632a724e0e58877a10b`.
++
++## Hermes Agent
++
++Copyright (c) 2025 Nous Research
++
++MIT License
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
++
++The repository's existing dependency license files and package metadata provide additional notices for bundled third-party libraries.
+diff --git a/apps/desktop/electron/nemesis-identity.test.ts b/apps/desktop/electron/nemesis-identity.test.ts
+new file mode 100644
+index 00000000000..cebf7e0c813
+--- /dev/null
++++ b/apps/desktop/electron/nemesis-identity.test.ts
+@@ -0,0 +1,37 @@
++import assert from 'node:assert/strict'
++import fs from 'node:fs'
++import path from 'node:path'
++import test from 'node:test'
++import { fileURLToPath } from 'node:url'
++
++import {
++  APP_ID,
++  APP_NAME,
++  DEEP_LINK_PROTOCOLS,
++  defaultNemesisHome,
++  extractNemesisDeepLink,
++  PRIMARY_PROTOCOL
++} from './nemesis-identity'
++
++const DESKTOP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
++const DESKTOP_PACKAGE = JSON.parse(fs.readFileSync(path.join(DESKTOP_ROOT, 'package.json'), 'utf8'))
++
++test('native identity stays aligned with installer metadata', () => {
++  assert.equal(DESKTOP_PACKAGE.productName, APP_NAME)
++  assert.equal(DESKTOP_PACKAGE.build.appId, APP_ID)
++  assert.deepEqual(DESKTOP_PACKAGE.build.protocols[0].schemes, DEEP_LINK_PROTOCOLS)
++  assert.equal(DEEP_LINK_PROTOCOLS[0], PRIMARY_PROTOCOL)
++})
++
++test('default runtime home is isolated from a Hermes installation', () => {
++  assert.equal(defaultNemesisHome('darwin', '/Users/student'), '/Users/student/.nemesis')
++  assert.equal(defaultNemesisHome('linux', '/home/student'), '/home/student/.nemesis')
++  assert.equal(defaultNemesisHome('win32', 'C:\\Users\\student', 'C:\\Users\\student\\AppData\\Local'),
++    'C:\\Users\\student\\AppData\\Local\\nemesis')
++})
++
++test('Nemesis links are primary while legacy Hermes links remain compatible', () => {
++  assert.equal(extractNemesisDeepLink(['Nemesis', 'nemesis://blueprint/review']), 'nemesis://blueprint/review')
++  assert.equal(extractNemesisDeepLink(['Nemesis', 'hermes://blueprint/review']), 'hermes://blueprint/review')
++  assert.equal(extractNemesisDeepLink(['Nemesis', 'https://enternemesis.com']), null)
++})
+diff --git a/apps/desktop/electron/nemesis-identity.ts b/apps/desktop/electron/nemesis-identity.ts
+new file mode 100644
+index 00000000000..8c7080ba0c0
+--- /dev/null
++++ b/apps/desktop/electron/nemesis-identity.ts
+@@ -0,0 +1,42 @@
++import path from 'node:path'
++
++const APP_NAME = 'Nemesis'
++const APP_ID = 'com.enternemesis.desktop'
++const PRIMARY_PROTOCOL = 'nemesis'
++const LEGACY_PROTOCOL = 'hermes'
++// Only the Nemesis scheme is registered with the OS. We still parse legacy
++// links so an old saved URL can be handed to Nemesis explicitly without
++// stealing hermes:// ownership from a separately installed app.
++const DEEP_LINK_PROTOCOLS = [PRIMARY_PROTOCOL]
++const ACCEPTED_DEEP_LINK_PROTOCOLS = [PRIMARY_PROTOCOL, LEGACY_PROTOCOL]
++
++function extractNemesisDeepLink(argv: unknown) {
++  if (!Array.isArray(argv)) {
++    return null
++  }
++
++  return (
++    argv.find(
++      value =>
++        typeof value === 'string' && ACCEPTED_DEEP_LINK_PROTOCOLS.some(protocol => value.startsWith(`${protocol}://`))
++    ) || null
++  )
++}
++
++function defaultNemesisHome(platform: NodeJS.Platform, home: string, localAppData?: string) {
++  if (platform === 'win32' && localAppData) {
++    return path.win32.join(localAppData, 'nemesis')
++  }
++
++  return path.join(home, '.nemesis')
++}
++
++export {
++  APP_ID,
++  APP_NAME,
++  DEEP_LINK_PROTOCOLS,
++  defaultNemesisHome,
++  extractNemesisDeepLink,
++  LEGACY_PROTOCOL,
++  PRIMARY_PROTOCOL
++}
+diff --git a/apps/desktop/src/app/recorder/live-copilot.test.js b/apps/desktop/src/app/recorder/live-copilot.test.js
+new file mode 100644
+index 00000000000..5673506e532
+--- /dev/null
++++ b/apps/desktop/src/app/recorder/live-copilot.test.js
+@@ -0,0 +1,67 @@
++import { describe, expect, it } from 'vitest';
++import { buildCopilotMessages, copilotAccess, parseCopilotReply, shouldRefresh } from './live-copilot';
++describe('copilotAccess', () => {
++    it('gives Max the fast cadence', () => {
++        expect(copilotAccess({ plan: 'max' })).toEqual({ minIntervalMs: 7000, minNewChars: 140 });
++    });
++    it('gives Agent Pro a slower cadence', () => {
++        expect(copilotAccess({ plan: 'pro' })).toEqual({ minIntervalMs: 15000, minNewChars: 300 });
++    });
++    it('excludes Student, free, and unknown plans', () => {
++        expect(copilotAccess({ plan: 'plus' })).toBeNull();
++        expect(copilotAccess({ plan: 'free' })).toBeNull();
++        expect(copilotAccess({ plan: 'anything-else' })).toBeNull();
++    });
++    it('treats local-dev bypass as Max for testing', () => {
++        expect(copilotAccess({ bypass: true, plan: 'free' })).not.toBeNull();
++    });
++});
++describe('shouldRefresh', () => {
++    const cadence = { minIntervalMs: 7000, minNewChars: 140 };
++    it('fires when enough new speech has landed after the interval', () => {
++        expect(shouldRefresh(20_000, 10_000, 200, cadence)).toBe(true);
++    });
++    it('never fires on silence or tiny additions', () => {
++        expect(shouldRefresh(60_000, 0, 0, cadence)).toBe(false);
++        expect(shouldRefresh(60_000, 0, 139, cadence)).toBe(false);
++    });
++    it('respects the interval even with lots of new speech', () => {
++        expect(shouldRefresh(12_000, 10_000, 5000, cadence)).toBe(false);
++    });
++    it('enforces the hard 5s floor even for aggressive cadences', () => {
++        expect(shouldRefresh(3000, 0, 5000, { minIntervalMs: 1000, minNewChars: 10 })).toBe(false);
++        expect(shouldRefresh(5000, 0, 5000, { minIntervalMs: 1000, minNewChars: 10 })).toBe(true);
++    });
++});
++describe('parseCopilotReply', () => {
++    it('parses clean JSON', () => {
++        expect(parseCopilotReply('{"notes":["Beta blockers lower heart rate"],"ask":["Which are cardioselective?"]}')).toEqual({
++            ask: ['Which are cardioselective?'],
++            notes: ['Beta blockers lower heart rate']
++        });
++    });
++    it('extracts JSON wrapped in fences or prose', () => {
++        const raw = 'Sure! ```json\n{"notes":["A"],"ask":[]}\n``` hope that helps';
++        expect(parseCopilotReply(raw)).toEqual({ ask: [], notes: ['A'] });
++    });
++    it('caps notes at 3 and ask at 2, drops blanks and non-strings', () => {
++        const raw = JSON.stringify({ ask: ['q1', 'q2', 'q3'], notes: ['a', '', 'b', 42, 'c', 'd'] });
++        expect(parseCopilotReply(raw)).toEqual({ ask: ['q1', 'q2'], notes: ['a', 'b', 'c'] });
++    });
++    it('returns empty on garbage instead of throwing', () => {
++        expect(parseCopilotReply('no json here')).toEqual({ ask: [], notes: [] });
++        expect(parseCopilotReply('{broken')).toEqual({ ask: [], notes: [] });
++        expect(parseCopilotReply('')).toEqual({ ask: [], notes: [] });
++    });
++});
++describe('buildCopilotMessages', () => {
++    it('demands strict JSON, includes prior notes tail and the transcript window', () => {
++        const messages = buildCopilotMessages('today we cover warfarin dosing', ['n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7']);
++        expect(messages[0].role).toBe('system');
++        expect(messages[0].content).toContain('STRICT JSON');
++        expect(messages[0].content).toContain('misrecognizes');
++        expect(messages[1].content).toContain('warfarin dosing');
++        expect(messages[1].content).toContain('- n7');
++        expect(messages[1].content).not.toContain('- n1');
++    });
++});
+diff --git a/apps/desktop/src/components/nemesis-account-gate.test.js b/apps/desktop/src/components/nemesis-account-gate.test.js
+new file mode 100644
+index 00000000000..cbaedf39b6d
+--- /dev/null
++++ b/apps/desktop/src/components/nemesis-account-gate.test.js
+@@ -0,0 +1,61 @@
++import { jsx as _jsx } from "react/jsx-runtime";
++// @vitest-environment jsdom
++import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++vi.mock('@/nemesis-account', async () => {
++    const actual = await vi.importActual('@/nemesis-account');
++    return {
++        ...actual,
++        initAccount: vi.fn(async () => { }),
++        refreshEntitlement: vi.fn(async () => { })
++    };
++});
++import { $account, $accountDialogOpen } from '@/nemesis-account';
++import { NemesisAccountGate } from './nemesis-account-gate';
++const NOW = new Date('2026-07-12T18:00:00.000Z');
++const DAY_MS = 24 * 60 * 60 * 1000;
++beforeEach(() => {
++    vi.useFakeTimers();
++    vi.setSystemTime(NOW);
++    $accountDialogOpen.set(false);
++});
++afterEach(() => {
++    cleanup();
++    vi.useRealTimers();
++    $account.set({ plan: 'free', status: 'loading' });
++    $accountDialogOpen.set(false);
++});
++describe('NemesisAccountGate trial UX', () => {
++    it('shows one dismissible reminder during the final three days', () => {
++        const trialEnd = new Date(NOW.getTime() + 2 * DAY_MS).toISOString();
++        const trialAccount = {
++            email: 'student@example.com',
++            periodEnd: trialEnd,
++            plan: 'plus',
++            planStatus: 'trialing',
++            status: 'signed-in',
++            trialEnd
++        };
++        $account.set(trialAccount);
++        render(_jsx(NemesisAccountGate, {}));
++        expect(screen.getByRole('status').textContent).toContain('Trial ends in 2 days');
++        fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
++        expect(screen.queryByRole('status')).toBeNull();
++        act(() => $account.set({ ...trialAccount }));
++        expect(screen.queryByRole('status')).toBeNull();
++    });
++    it('uses a specific upgrade gate after the trial boundary', () => {
++        const trialEnd = new Date(NOW.getTime() - DAY_MS).toISOString();
++        $account.set({
++            email: 'student@example.com',
++            periodEnd: trialEnd,
++            plan: 'free',
++            planStatus: 'canceled',
++            status: 'signed-in',
++            trialEnd
++        });
++        render(_jsx(NemesisAccountGate, {}));
++        expect(screen.getByRole('heading', { name: 'Your Nemesis trial has ended' })).toBeTruthy();
++        expect(screen.getByRole('button', { name: 'Upgrade Nemesis' })).toBeTruthy();
++    });
++});
+diff --git a/apps/desktop/src/components/nemesis-account-gate.test.tsx b/apps/desktop/src/components/nemesis-account-gate.test.tsx
+new file mode 100644
+index 00000000000..7f8ddc90d91
+--- /dev/null
++++ b/apps/desktop/src/components/nemesis-account-gate.test.tsx
+@@ -0,0 +1,79 @@
++// @vitest-environment jsdom
++
++import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
++
++import type * as NemesisAccountModule from '@/nemesis-account'
++
++vi.mock('@/nemesis-account', async () => {
++  const actual = await vi.importActual<typeof NemesisAccountModule>('@/nemesis-account')
++
++  return {
++    ...actual,
++    initAccount: vi.fn(async () => {}),
++    refreshEntitlement: vi.fn(async () => {})
++  }
++})
++
++import { $account, $accountDialogOpen } from '@/nemesis-account'
++
++import { NemesisAccountGate } from './nemesis-account-gate'
++
++const NOW = new Date('2026-07-12T18:00:00.000Z')
++const DAY_MS = 24 * 60 * 60 * 1000
++
++beforeEach(() => {
++  vi.useFakeTimers()
++  vi.setSystemTime(NOW)
++  $accountDialogOpen.set(false)
++})
++
++afterEach(() => {
++  cleanup()
++  vi.useRealTimers()
++  $account.set({ plan: 'free', status: 'loading' })
++  $accountDialogOpen.set(false)
++})
++
++describe('NemesisAccountGate trial UX', () => {
++  it('shows one dismissible reminder during the final three days', () => {
++    const trialEnd = new Date(NOW.getTime() + 2 * DAY_MS).toISOString()
++
++    const trialAccount = {
++      email: 'student@example.com',
++      periodEnd: trialEnd,
++      plan: 'plus',
++      planStatus: 'trialing',
++      status: 'signed-in' as const,
++      trialEnd
++    }
++
++    $account.set(trialAccount)
++    render(<NemesisAccountGate />)
++
++    expect(screen.getByRole('status').textContent).toContain('Trial ends in 2 days')
++
++    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
++    expect(screen.queryByRole('status')).toBeNull()
++
++    act(() => $account.set({ ...trialAccount }))
++    expect(screen.queryByRole('status')).toBeNull()
++  })
++
++  it('uses a specific upgrade gate after the trial boundary', () => {
++    const trialEnd = new Date(NOW.getTime() - DAY_MS).toISOString()
++
++    $account.set({
++      email: 'student@example.com',
++      periodEnd: trialEnd,
++      plan: 'free',
++      planStatus: 'canceled',
++      status: 'signed-in',
++      trialEnd
++    })
++    render(<NemesisAccountGate />)
++
++    expect(screen.getByRole('heading', { name: 'Your Nemesis trial has ended' })).toBeTruthy()
++    expect(screen.getByRole('button', { name: 'Upgrade Nemesis' })).toBeTruthy()
++  })
++})
+diff --git a/apps/desktop/src/nemesis-account.test.js b/apps/desktop/src/nemesis-account.test.js
+new file mode 100644
+index 00000000000..433192247ac
+--- /dev/null
++++ b/apps/desktop/src/nemesis-account.test.js
+@@ -0,0 +1,86 @@
++// @vitest-environment jsdom
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { $account, getTrialTiming, initAccount, trialCountdownLabel } from './nemesis-account';
++const DAY_MS = 24 * 60 * 60 * 1000;
++const NOW = Date.parse('2026-07-12T18:00:00.000Z');
++afterEach(() => {
++    vi.restoreAllMocks();
++    window.localStorage.clear();
++    $account.set({ plan: 'free', status: 'loading' });
++});
++describe('Nemesis trial timing', () => {
++    it('uses Stripe trial_end for a live trial countdown', () => {
++        const trialEnd = new Date(NOW + 7 * DAY_MS).toISOString();
++        const timing = getTrialTiming({
++            periodEnd: new Date(NOW + 30 * DAY_MS).toISOString(),
++            plan: 'plus',
++            planStatus: 'trialing',
++            trialEnd
++        }, NOW);
++        expect(timing).toEqual({
++            daysRemaining: 7,
++            end: trialEnd,
++            expired: false,
++            inFinalThreeDays: false
++        });
++    });
++    it('marks the final three days for one dismissible in-app reminder', () => {
++        const timing = getTrialTiming({
++            periodEnd: new Date(NOW + 3 * DAY_MS).toISOString(),
++            plan: 'plus',
++            planStatus: 'trialing'
++        }, NOW);
++        expect(timing?.daysRemaining).toBe(3);
++        expect(timing?.inFinalThreeDays).toBe(true);
++        expect(trialCountdownLabel(timing?.daysRemaining ?? 0)).toBe('Trial ends in 3 days');
++        expect(trialCountdownLabel(1)).toBe('Trial ends in 1 day');
++    });
++    it('recognizes a trial that ended at its recorded subscription boundary', () => {
++        const trialEnd = new Date(NOW - DAY_MS).toISOString();
++        const timing = getTrialTiming({
++            periodEnd: trialEnd,
++            plan: 'free',
++            planStatus: 'canceled',
++            trialEnd
++        }, NOW);
++        expect(timing).toMatchObject({ daysRemaining: 0, expired: true, inFinalThreeDays: false });
++    });
++    it('does not label a later paid cancellation as an expired trial', () => {
++        const timing = getTrialTiming({
++            periodEnd: new Date(NOW + 20 * DAY_MS).toISOString(),
++            plan: 'free',
++            planStatus: 'canceled',
++            trialEnd: new Date(NOW - 20 * DAY_MS).toISOString()
++        }, NOW);
++        expect(timing).toBeNull();
++    });
++    it('falls back to current_period_end when an older schema has no trial_end column', async () => {
++        const fallbackTrialEnd = new Date(Date.now() + 7 * DAY_MS).toISOString();
++        window.localStorage.setItem('nemesis.account.v1', JSON.stringify({
++            accessToken: 'access-token',
++            email: 'student@example.com',
++            expiresAt: Math.floor(Date.now() / 1000) + 3600,
++            refreshToken: 'refresh-token',
++            userId: 'student-id'
++        }));
++        const fetchMock = vi
++            .spyOn(globalThis, 'fetch')
++            .mockResolvedValueOnce(new Response('{}', { status: 400 }))
++            .mockResolvedValueOnce(new Response(JSON.stringify([
++            {
++                current_period_end: fallbackTrialEnd,
++                plan: 'plus',
++                status: 'trialing',
++                stripe_livemode: true
++            }
++        ]), { status: 200 }));
++        await initAccount();
++        expect(String(fetchMock.mock.calls[0]?.[0])).toContain('trial_end');
++        expect(String(fetchMock.mock.calls[1]?.[0])).not.toContain('trial_end');
++        expect($account.get()).toMatchObject({
++            plan: 'plus',
++            planStatus: 'trialing',
++            trialEnd: fallbackTrialEnd
++        });
++    });
++});
+diff --git a/apps/desktop/src/nemesis-account.test.ts b/apps/desktop/src/nemesis-account.test.ts
+new file mode 100644
+index 00000000000..1b204820d91
+--- /dev/null
++++ b/apps/desktop/src/nemesis-account.test.ts
+@@ -0,0 +1,125 @@
++// @vitest-environment jsdom
++
++import { afterEach, describe, expect, it, vi } from 'vitest'
++
++import { $account, getTrialTiming, initAccount, trialCountdownLabel } from './nemesis-account'
++
++const DAY_MS = 24 * 60 * 60 * 1000
++const NOW = Date.parse('2026-07-12T18:00:00.000Z')
++
++afterEach(() => {
++  vi.restoreAllMocks()
++  window.localStorage.clear()
++  $account.set({ plan: 'free', status: 'loading' })
++})
++
++describe('Nemesis trial timing', () => {
++  it('uses Stripe trial_end for a live trial countdown', () => {
++    const trialEnd = new Date(NOW + 7 * DAY_MS).toISOString()
++
++    const timing = getTrialTiming(
++      {
++        periodEnd: new Date(NOW + 30 * DAY_MS).toISOString(),
++        plan: 'plus',
++        planStatus: 'trialing',
++        trialEnd
++      },
++      NOW
++    )
++
++    expect(timing).toEqual({
++      daysRemaining: 7,
++      end: trialEnd,
++      expired: false,
++      inFinalThreeDays: false
++    })
++  })
++
++  it('marks the final three days for one dismissible in-app reminder', () => {
++    const timing = getTrialTiming(
++      {
++        periodEnd: new Date(NOW + 3 * DAY_MS).toISOString(),
++        plan: 'plus',
++        planStatus: 'trialing'
++      },
++      NOW
++    )
++
++    expect(timing?.daysRemaining).toBe(3)
++    expect(timing?.inFinalThreeDays).toBe(true)
++    expect(trialCountdownLabel(timing?.daysRemaining ?? 0)).toBe('Trial ends in 3 days')
++    expect(trialCountdownLabel(1)).toBe('Trial ends in 1 day')
++  })
++
++  it('recognizes a trial that ended at its recorded subscription boundary', () => {
++    const trialEnd = new Date(NOW - DAY_MS).toISOString()
++
++    const timing = getTrialTiming(
++      {
++        periodEnd: trialEnd,
++        plan: 'free',
++        planStatus: 'canceled',
++        trialEnd
++      },
++      NOW
++    )
++
++    expect(timing).toMatchObject({ daysRemaining: 0, expired: true, inFinalThreeDays: false })
++  })
++
++  it('does not label a later paid cancellation as an expired trial', () => {
++    const timing = getTrialTiming(
++      {
++        periodEnd: new Date(NOW + 20 * DAY_MS).toISOString(),
++        plan: 'free',
++        planStatus: 'canceled',
++        trialEnd: new Date(NOW - 20 * DAY_MS).toISOString()
++      },
++      NOW
++    )
++
++    expect(timing).toBeNull()
++  })
++
++  it('falls back to current_period_end when an older schema has no trial_end column', async () => {
++    const fallbackTrialEnd = new Date(Date.now() + 7 * DAY_MS).toISOString()
++
++    window.localStorage.setItem(
++      'nemesis.account.v1',
++      JSON.stringify({
++        accessToken: 'access-token',
++        email: 'student@example.com',
++        expiresAt: Math.floor(Date.now() / 1000) + 3600,
++        refreshToken: 'refresh-token',
++        userId: 'student-id'
++      })
++    )
++
++    const fetchMock = vi
++      .spyOn(globalThis, 'fetch')
++      .mockResolvedValueOnce(new Response('{}', { status: 400 }))
++      .mockResolvedValueOnce(
++        new Response(
++          JSON.stringify([
++            {
++              current_period_end: fallbackTrialEnd,
++              plan: 'plus',
++              status: 'trialing',
++              stripe_livemode: true
++            }
++          ]),
++          { status: 200 }
++        )
++      )
++
++    await initAccount()
++
++    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('trial_end')
++    expect(String(fetchMock.mock.calls[1]?.[0])).not.toContain('trial_end')
++    expect($account.get()).toMatchObject({
++      plan: 'plus',
++      planStatus: 'trialing',
++      trialEnd: fallbackTrialEnd
++    })
++  })
++})
+-- 
+2.50.1 (Apple Git-155)
+

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "panel-preview",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /private/tmp/claude-501/-Users-axelgalvez-Desktop-AIcodingProjects-PharmaBro/785f2118-10a1-48c4-a33d-97a7f9d924b8/scratchpad/panel-preview && python3 -m http.server 8934"],
+      "port": 8934
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/axelgalvez/Desktop/AIcodingProjects/PharmaBro/apps/web && npx next dev -p 3200"],
+      "port": 3200
+    }
+  ]
+}

@@ -1,0 +1,2865 @@
+From 4f430aa9d123d47ea40d56f2a5206e1705f1c624 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Fri, 10 Jul 2026 21:09:36 -0500
+Subject: [PATCH] =?UTF-8?q?feat(nemesis-kit):=20round-27=20=E2=80=94=20Cal?=
+ =?UTF-8?q?endar=20page,=20deck-file=20reconcile=20(agent=20can=20organize?=
+ =?UTF-8?q?=20flashcards),=20library=20focus=20refresh?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Calendar page (/calendar + sidebar item): month grid + 30-day agenda of
+  assignment/exam/rotation dates. Data = ~/Documents/Nemesis Library/School/
+  calendar.json — the agent writes events as it reads Blackboard/Outlook
+  (read-merge-write contract; agent events render read-only), student adds/
+  edits/deletes manually without clobbering agent writes. Re-reads on focus.
+- Study deck-file reconcile: deck .tsv files are now the source of truth.
+  sourceFile on StudyDeck; pure reconcileDeckFiles (rename detection ≥50%
+  card overlap keeps FSRS schedule through file renames; card matching by
+  front+back preserves ids/schedule/tags; removed cards pruned; decks without
+  sourceFile never touched). adoptLegacyDeckFiles one-time relink prevents
+  duplication; failed scans return null so a read error can never wipe decks.
+  Runs on mount + debounced window focus. 14 new unit tests (vitest, all pass).
+- Library re-reads the vault on window focus (debounced) so agent-organized
+  files show up without a manual reload.
+- (Agent-side, outside this repo: nemesis-organize skill + SOUL capability
+  lines + school-portal calendar read-merge-write rules — synced to the kit.)
+---
+ apps/desktop/src/app/calendar/index.js      | 177 ++++++
+ apps/desktop/src/app/calendar/index.tsx     | 575 ++++++++++++++++++++
+ apps/desktop/src/app/calendar/model.js      | 138 +++++
+ apps/desktop/src/app/calendar/model.ts      | 204 +++++++
+ apps/desktop/src/app/chat/sidebar/index.js  |   5 +-
+ apps/desktop/src/app/chat/sidebar/index.tsx |   4 +-
+ apps/desktop/src/app/desktop-controller.js  |   3 +-
+ apps/desktop/src/app/desktop-controller.tsx |   9 +
+ apps/desktop/src/app/library/index.js       |  16 +
+ apps/desktop/src/app/library/index.tsx      |  22 +
+ apps/desktop/src/app/routes.js              |   2 +
+ apps/desktop/src/app/routes.ts              |   4 +
+ apps/desktop/src/app/study/deck-files.js    |  45 +-
+ apps/desktop/src/app/study/deck-files.ts    |  45 +-
+ apps/desktop/src/app/study/index.js         |  67 ++-
+ apps/desktop/src/app/study/index.tsx        |  71 ++-
+ apps/desktop/src/app/study/model.js         | 185 +++++++
+ apps/desktop/src/app/study/model.test.js    | 234 ++++++++
+ apps/desktop/src/app/study/model.test.ts    | 298 ++++++++++
+ apps/desktop/src/app/study/model.ts         | 246 +++++++++
+ apps/desktop/src/app/types.ts               |   1 +
+ apps/desktop/src/i18n/en.js                 |   3 +-
+ apps/desktop/src/i18n/en.ts                 |   3 +-
+ 23 files changed, 2250 insertions(+), 107 deletions(-)
+ create mode 100644 apps/desktop/src/app/calendar/index.js
+ create mode 100644 apps/desktop/src/app/calendar/index.tsx
+ create mode 100644 apps/desktop/src/app/calendar/model.js
+ create mode 100644 apps/desktop/src/app/calendar/model.ts
+ create mode 100644 apps/desktop/src/app/study/model.test.js
+ create mode 100644 apps/desktop/src/app/study/model.test.ts
+
+diff --git a/apps/desktop/src/app/calendar/index.js b/apps/desktop/src/app/calendar/index.js
+new file mode 100644
+index 00000000000..08440e73717
+--- /dev/null
++++ b/apps/desktop/src/app/calendar/index.js
+@@ -0,0 +1,177 @@
++import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
++// Calendar — assignment due dates, exams, and rotation dates for a pharmacy student.
++// Events come from calendar.json (see model.ts): Nemesis can write to it directly as it
++// reads a student's school accounts, and the student can add/edit/delete their own entries
++// by hand. Agent-written events render read-only here — see model.ts's saveCalendarEvents
++// for why a manual save can never clobber a concurrent agent write.
++import { IconChevronLeft, IconChevronRight, IconPlus, IconTrash } from '@tabler/icons-react';
++import { useCallback, useEffect, useState } from 'react';
++import { Button } from '@/components/ui/button';
++import { Codicon } from '@/components/ui/codicon';
++import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
++import { EmptyState } from '@/components/ui/empty-state';
++import { Input } from '@/components/ui/input';
++import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
++import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
++import { Textarea } from '@/components/ui/textarea';
++import { cn } from '@/lib/utils';
++import { dateKey, eventsByDate, freshId, loadCalendarState, monthGrid, parseDateKey, saveCalendarEvents, upcomingEvents } from './model';
++const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
++const AGENDA_WINDOW_DAYS = 30;
++const MAX_CHIPS_PER_DAY = 3;
++const KIND_ORDER = ['assignment', 'exam', 'rotation', 'class', 'other'];
++const KIND_META = {
++    assignment: { chip: 'bg-(--ui-blue)/15 text-(--ui-blue)', dot: 'bg-(--ui-blue)', label: 'Assignment' },
++    class: { chip: 'bg-(--ui-bg-quaternary) text-muted-foreground', dot: 'bg-(--ui-text-tertiary)', label: 'Class' },
++    exam: { chip: 'bg-(--theme-primary)/15 text-(--theme-primary)', dot: 'bg-(--theme-primary)', label: 'Exam' },
++    other: { chip: 'bg-(--ui-cyan)/15 text-(--ui-cyan)', dot: 'bg-(--ui-cyan)', label: 'Other' },
++    rotation: { chip: 'bg-(--ui-purple)/15 text-(--ui-purple)', dot: 'bg-(--ui-purple)', label: 'Rotation' }
++};
++function monthLabel(year, month) {
++    return new Date(year, month, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
++}
++function formatEventDate(key) {
++    return parseDateKey(key).toLocaleDateString(undefined, { day: 'numeric', month: 'short', weekday: 'short' });
++}
++/** "14:30" → "2:30 PM". Any other shape (an agent wrote something the time input can't
++ *  parse) renders as-is rather than throwing — display should degrade, not crash. */
++function formatEventTime(time) {
++    const [hourText, minuteText] = time.split(':');
++    const hour = Number(hourText);
++    const minute = Number(minuteText);
++    if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
++        return time;
++    }
++    return new Date(2000, 0, 1, hour, minute).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
++}
++function emptyFormValues(date) {
++    return { date, kind: 'assignment', title: '' };
++}
++export function CalendarView() {
++    const [events, setEvents] = useState([]);
++    const [loaded, setLoaded] = useState(false);
++    const [error, setError] = useState(null);
++    const [saving, setSaving] = useState(false);
++    const [cursor, setCursor] = useState(() => {
++        const now = new Date();
++        return { month: now.getMonth(), year: now.getFullYear() };
++    });
++    const [dialog, setDialog] = useState(null);
++    const refresh = useCallback(() => {
++        void loadCalendarState().then(state => {
++            setEvents(state.events);
++            setLoaded(true);
++        });
++    }, []);
++    useEffect(() => {
++        refresh();
++    }, [refresh]);
++    // Nemesis may have just written calendar.json in another process (e.g. after a "pull my
++    // due dates" run) — re-read whenever the window regains focus, same pattern the sidebar
++    // uses to pick up out-of-band project changes.
++    useEffect(() => {
++        window.addEventListener('focus', refresh);
++        return () => window.removeEventListener('focus', refresh);
++    }, [refresh]);
++    // `today` is deliberately recomputed every render (not memoized) so the "today" cell
++    // and the agenda window stay correct if the app is left open across midnight — the
++    // window-focus refresh above already forces a re-render on every return to the app.
++    // The grid/agenda derivations are cheap (a 42-cell grid, a small filter+sort), so
++    // there's no perf reason to memo them against a value that changes every render anyway.
++    const today = new Date();
++    const grid = monthGrid(cursor.year, cursor.month, today);
++    const byDate = eventsByDate(events);
++    const upcoming = upcomingEvents(events, today, AGENDA_WINDOW_DAYS);
++    const goToMonth = (delta) => {
++        setCursor(current => {
++            const next = new Date(current.year, current.month + delta, 1);
++            return { month: next.getMonth(), year: next.getFullYear() };
++        });
++    };
++    const openEvent = (event) => {
++        setDialog(event.source === 'agent' ? { event, mode: 'view' } : { event, mode: 'edit' });
++    };
++    const openAdd = (date) => setDialog({ date, mode: 'add' });
++    const closeDialog = () => {
++        setDialog(null);
++        setError(null);
++    };
++    const persist = async (nextEvents) => {
++        setSaving(true);
++        setError(null);
++        try {
++            const state = await saveCalendarEvents(nextEvents);
++            setEvents(state.events);
++            setDialog(null);
++        }
++        catch (err) {
++            setError(err instanceof Error ? err.message : 'Could not save the calendar.');
++        }
++        finally {
++            setSaving(false);
++        }
++    };
++    const handleSave = (input) => {
++        if (dialog && dialog.mode === 'edit') {
++            void persist(events.map(event => (event.id === dialog.event.id ? { ...dialog.event, ...input } : event)));
++            return;
++        }
++        const created = { id: freshId('event'), source: 'manual', ...input };
++        void persist([...events, created]);
++    };
++    const handleDelete = () => {
++        if (!dialog || dialog.mode !== 'edit') {
++            return;
++        }
++        void persist(events.filter(event => event.id !== dialog.event.id));
++    };
++    return (_jsxs("div", { className: "flex h-full min-h-0 flex-col overflow-y-auto", children: [_jsxs("header", { className: "flex shrink-0 flex-wrap items-start justify-between gap-3 px-6 pb-3 pt-5", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Schedule" }), _jsx("h1", { className: "mt-1 text-2xl font-semibold tracking-[-0.025em]", children: "Calendar" }), _jsx("p", { className: "mt-1 max-w-lg text-xs leading-relaxed text-muted-foreground", children: "Assignment due dates, exams, and rotation dates in one place. Nemesis can add these as it reads your school accounts \u2014 add or fix anything yourself too." })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsxs("div", { className: "flex items-center gap-1 rounded-md border border-border", children: [_jsx(Button, { "aria-label": "Previous month", onClick: () => goToMonth(-1), size: "icon-xs", variant: "ghost", children: _jsx(IconChevronLeft, { size: 14 }) }), _jsx("span", { className: "min-w-32 px-1 text-center text-xs font-medium tabular-nums", children: monthLabel(cursor.year, cursor.month) }), _jsx(Button, { "aria-label": "Next month", onClick: () => goToMonth(1), size: "icon-xs", variant: "ghost", children: _jsx(IconChevronRight, { size: 14 }) })] }), _jsxs(Button, { onClick: () => openAdd(dateKey(today)), size: "sm", children: [_jsx(IconPlus, { size: 14 }), "Add event"] })] })] }), _jsxs("div", { className: "grid flex-1 grid-cols-1 gap-4 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_20rem]", children: [_jsx(MonthGrid, { days: grid, eventsByDay: byDate, onAddOnDate: openAdd, onOpenEvent: openEvent }), _jsx(Agenda, { events: upcoming, hasAnyEvents: events.length > 0, loaded: loaded, onOpenEvent: openEvent })] }), dialog && (_jsx(EventDialog, { dialog: dialog, error: error, onClose: closeDialog, onDelete: handleDelete, onSave: handleSave, saving: saving }))] }));
++}
++function MonthGrid({ days, eventsByDay, onAddOnDate, onOpenEvent }) {
++    return (_jsxs("div", { className: "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card", children: [_jsx("div", { className: "grid shrink-0 grid-cols-7 border-b border-border text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground", children: WEEKDAY_LABELS.map(label => (_jsx("div", { className: "px-2 py-2 text-center", children: label }, label))) }), _jsx("div", { className: "grid flex-1 grid-cols-7 grid-rows-6", children: days.map(day => (_jsx(DayCell, { day: day, events: eventsByDay.get(day.key) ?? [], onAdd: onAddOnDate, onOpenEvent: onOpenEvent }, day.key))) })] }));
++}
++function DayCell({ day, events, onAdd, onOpenEvent }) {
++    const visible = events.slice(0, MAX_CHIPS_PER_DAY);
++    const overflow = events.length - visible.length;
++    return (_jsxs("div", { className: cn('group flex min-h-20 flex-col gap-1 border-b border-r border-border p-1.5 [&:nth-child(7n)]:border-r-0', !day.inMonth && 'bg-(--ui-bg-quaternary)/40'), children: [_jsxs("div", { className: "flex shrink-0 items-center justify-between", children: [_jsx("span", { className: cn('grid size-5 place-items-center rounded-full text-[0.6875rem] font-medium tabular-nums', day.isToday ? 'bg-(--theme-primary) text-primary-foreground' : !day.inMonth && 'text-(--ui-text-quaternary)'), children: day.date.getDate() }), _jsx(Button, { "aria-label": `Add event on ${formatEventDate(day.key)}`, className: "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100", onClick: () => onAdd(day.key), size: "icon-xs", variant: "ghost", children: _jsx(Codicon, { name: "add", size: "0.75rem" }) })] }), _jsxs("div", { className: "flex min-h-0 flex-1 flex-col gap-0.5", children: [visible.map(event => (_jsx("button", { className: cn('truncate rounded px-1 py-0.5 text-left text-[0.625rem] font-medium leading-tight', KIND_META[event.kind].chip), onClick: () => onOpenEvent(event), title: event.title, type: "button", children: event.title }, event.id))), overflow > 0 && (_jsxs(Popover, { children: [_jsx(PopoverTrigger, { asChild: true, children: _jsxs("button", { className: "truncate rounded px-1 py-0.5 text-left text-[0.625rem] font-medium text-muted-foreground hover:text-foreground", type: "button", children: ["+", overflow, " more"] }) }), _jsx(PopoverContent, { align: "start", className: "w-56 p-1.5", children: _jsx("div", { className: "flex flex-col gap-0.5", children: events.map(event => (_jsx("button", { className: cn('truncate rounded px-1.5 py-1 text-left text-xs font-medium', KIND_META[event.kind].chip), onClick: () => onOpenEvent(event), type: "button", children: event.title }, event.id))) }) })] }))] })] }));
++}
++function Agenda({ events, hasAnyEvents, loaded, onOpenEvent }) {
++    return (_jsxs("div", { className: "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card", children: [_jsxs("div", { className: "shrink-0 border-b border-border px-4 py-3", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground", children: "Agenda" }), _jsx("h2", { className: "mt-0.5 text-sm font-semibold tracking-tight", children: "Next 30 days" })] }), _jsx("div", { className: "min-h-0 flex-1 overflow-y-auto p-2", children: !loaded ? (_jsx("div", { className: "grid min-h-32 place-items-center text-xs text-muted-foreground", children: "Loading\u2026" })) : events.length === 0 ? (_jsx(EmptyState, { className: "min-h-40", description: hasAnyEvents
++                        ? 'Nothing due in the next 30 days.'
++                        : 'Ask Nemesis to pull your due dates from Blackboard and Outlook, or add one.', title: hasAnyEvents ? 'All clear' : 'No deadlines yet' })) : (_jsx("div", { className: "flex flex-col gap-1", children: events.map(event => (_jsxs("button", { className: "flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-control-hover-background)", onClick: () => onOpenEvent(event), type: "button", children: [_jsx("span", { className: cn('mt-1 size-1.5 shrink-0 rounded-full', KIND_META[event.kind].dot) }), _jsxs("span", { className: "min-w-0 flex-1", children: [_jsx("span", { className: "block truncate text-xs font-medium", children: event.title }), _jsxs("span", { className: "block text-[0.6875rem] text-muted-foreground", children: [formatEventDate(event.date), event.time ? ` · ${formatEventTime(event.time)}` : '', event.course ? ` · ${event.course}` : ''] })] })] }, event.id))) })) })] }));
++}
++function EventDialog({ dialog, error, onClose, onDelete, onSave, saving }) {
++    if (dialog.mode === 'view') {
++        return _jsx(EventViewDialog, { event: dialog.event, onClose: onClose });
++    }
++    return (_jsx(EventFormDialog, { error: error, initial: dialog.mode === 'add' ? emptyFormValues(dialog.date) : dialog.event, mode: dialog.mode, onClose: onClose, onDelete: onDelete, onSave: onSave, saving: saving }));
++}
++function ViewRow({ label, value }) {
++    return (_jsxs("div", { className: "flex items-baseline gap-2", children: [_jsx("span", { className: "w-14 shrink-0 text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground", children: label }), _jsx("span", { className: "min-w-0 flex-1 text-foreground", children: value })] }));
++}
++function EventViewDialog({ event, onClose }) {
++    return (_jsx(Dialog, { onOpenChange: open => !open && onClose(), open: true, children: _jsxs(DialogContent, { className: "sm:max-w-md", children: [_jsxs(DialogHeader, { children: [_jsx(DialogTitle, { children: event.title }), _jsx(DialogDescription, { children: "Added by Nemesis. Ask it to change this, or add your own event alongside it." })] }), _jsxs("div", { className: "flex flex-col gap-2 text-xs", children: [_jsx(ViewRow, { label: "When", value: `${formatEventDate(event.date)}${event.time ? ` · ${formatEventTime(event.time)}` : ''}` }), _jsx(ViewRow, { label: "Type", value: KIND_META[event.kind].label }), event.course && _jsx(ViewRow, { label: "Course", value: event.course }), event.note && _jsx(ViewRow, { label: "Notes", value: event.note })] }), _jsx(DialogFooter, { children: _jsx(Button, { onClick: onClose, variant: "outline", children: "Close" }) })] }) }));
++}
++function EventFormDialog({ error, initial, mode, onClose, onDelete, onSave, saving }) {
++    const [title, setTitle] = useState(initial.title);
++    const [date, setDate] = useState(initial.date);
++    const [time, setTime] = useState(initial.time ?? '');
++    const [kind, setKind] = useState(initial.kind);
++    const [course, setCourse] = useState(initial.course ?? '');
++    const [note, setNote] = useState(initial.note ?? '');
++    const [armDelete, setArmDelete] = useState(false);
++    const submit = () => {
++        if (!title.trim() || !date) {
++            return;
++        }
++        onSave({
++            course: course.trim() || undefined,
++            date,
++            kind,
++            note: note.trim() || undefined,
++            time: time.trim() || undefined,
++            title: title.trim()
++        });
++    };
++    return (_jsx(Dialog, { onOpenChange: open => !open && onClose(), open: true, children: _jsxs(DialogContent, { banner: error || undefined, bannerTone: "error", className: "sm:max-w-md", children: [_jsxs(DialogHeader, { children: [_jsx(DialogTitle, { children: mode === 'edit' ? 'Edit event' : 'Add event' }), _jsx(DialogDescription, { children: "Assignment, exam, rotation, class \u2014 anything with a due date." })] }), _jsxs("div", { className: "flex flex-col gap-3", children: [_jsx(Input, { autoFocus: true, onChange: event => setTitle(event.target.value), placeholder: "Title", value: title }), _jsxs("div", { className: "flex gap-2", children: [_jsx(Input, { className: "flex-1", onChange: event => setDate(event.target.value), type: "date", value: date }), _jsx(Input, { className: "w-32", onChange: event => setTime(event.target.value), type: "time", value: time })] }), _jsxs(Select, { onValueChange: value => setKind(value), value: kind, children: [_jsx(SelectTrigger, { "aria-label": "Event type", className: "w-full", children: _jsx(SelectValue, {}) }), _jsx(SelectContent, { children: KIND_ORDER.map(option => (_jsxs(SelectItem, { value: option, children: [_jsx("span", { className: cn('size-1.5 rounded-full', KIND_META[option].dot) }), KIND_META[option].label] }, option))) })] }), _jsx(Input, { onChange: event => setCourse(event.target.value), placeholder: "Course (optional)", value: course }), _jsx(Textarea, { className: "min-h-16", onChange: event => setNote(event.target.value), placeholder: "Notes (optional)", value: note })] }), _jsxs(DialogFooter, { className: "flex-wrap gap-2 sm:justify-between", children: [mode === 'edit' ? (_jsxs(Button, { className: cn(armDelete && 'text-destructive'), onBlur: () => setArmDelete(false), onClick: () => (armDelete ? onDelete() : setArmDelete(true)), variant: "outline", children: [_jsx(IconTrash, { size: 13 }), armDelete ? 'Really delete?' : 'Delete'] })) : (_jsx("span", {})), _jsxs("div", { className: "flex gap-2", children: [_jsx(Button, { onClick: onClose, variant: "outline", children: "Cancel" }), _jsx(Button, { disabled: !title.trim() || !date || saving, onClick: submit, children: saving ? 'Saving…' : 'Save' })] })] })] }) }));
++}
+diff --git a/apps/desktop/src/app/calendar/index.tsx b/apps/desktop/src/app/calendar/index.tsx
+new file mode 100644
+index 00000000000..a5f7536c1ab
+--- /dev/null
++++ b/apps/desktop/src/app/calendar/index.tsx
+@@ -0,0 +1,575 @@
++// Calendar — assignment due dates, exams, and rotation dates for a pharmacy student.
++// Events come from calendar.json (see model.ts): Nemesis can write to it directly as it
++// reads a student's school accounts, and the student can add/edit/delete their own entries
++// by hand. Agent-written events render read-only here — see model.ts's saveCalendarEvents
++// for why a manual save can never clobber a concurrent agent write.
++import { IconChevronLeft, IconChevronRight, IconPlus, IconTrash } from '@tabler/icons-react'
++import { useCallback, useEffect, useState } from 'react'
++
++import { Button } from '@/components/ui/button'
++import { Codicon } from '@/components/ui/codicon'
++import {
++  Dialog,
++  DialogContent,
++  DialogDescription,
++  DialogFooter,
++  DialogHeader,
++  DialogTitle
++} from '@/components/ui/dialog'
++import { EmptyState } from '@/components/ui/empty-state'
++import { Input } from '@/components/ui/input'
++import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
++import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
++import { Textarea } from '@/components/ui/textarea'
++import { cn } from '@/lib/utils'
++
++import {
++  type CalendarEvent,
++  type CalendarEventKind,
++  dateKey,
++  eventsByDate,
++  freshId,
++  loadCalendarState,
++  type MonthDay,
++  monthGrid,
++  parseDateKey,
++  saveCalendarEvents,
++  upcomingEvents
++} from './model'
++
++const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
++const AGENDA_WINDOW_DAYS = 30
++const MAX_CHIPS_PER_DAY = 3
++const KIND_ORDER: CalendarEventKind[] = ['assignment', 'exam', 'rotation', 'class', 'other']
++
++const KIND_META: Record<CalendarEventKind, { chip: string; dot: string; label: string }> = {
++  assignment: { chip: 'bg-(--ui-blue)/15 text-(--ui-blue)', dot: 'bg-(--ui-blue)', label: 'Assignment' },
++  class: { chip: 'bg-(--ui-bg-quaternary) text-muted-foreground', dot: 'bg-(--ui-text-tertiary)', label: 'Class' },
++  exam: { chip: 'bg-(--theme-primary)/15 text-(--theme-primary)', dot: 'bg-(--theme-primary)', label: 'Exam' },
++  other: { chip: 'bg-(--ui-cyan)/15 text-(--ui-cyan)', dot: 'bg-(--ui-cyan)', label: 'Other' },
++  rotation: { chip: 'bg-(--ui-purple)/15 text-(--ui-purple)', dot: 'bg-(--ui-purple)', label: 'Rotation' }
++}
++
++type EventFormValues = Omit<CalendarEvent, 'id' | 'source'>
++
++type DialogState =
++  | { mode: 'add'; date: string }
++  | { mode: 'edit'; event: CalendarEvent }
++  | { mode: 'view'; event: CalendarEvent }
++
++function monthLabel(year: number, month: number): string {
++  return new Date(year, month, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
++}
++
++function formatEventDate(key: string): string {
++  return parseDateKey(key).toLocaleDateString(undefined, { day: 'numeric', month: 'short', weekday: 'short' })
++}
++
++/** "14:30" → "2:30 PM". Any other shape (an agent wrote something the time input can't
++ *  parse) renders as-is rather than throwing — display should degrade, not crash. */
++function formatEventTime(time: string): string {
++  const [hourText, minuteText] = time.split(':')
++  const hour = Number(hourText)
++  const minute = Number(minuteText)
++
++  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
++    return time
++  }
++
++  return new Date(2000, 0, 1, hour, minute).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
++}
++
++function emptyFormValues(date: string): EventFormValues {
++  return { date, kind: 'assignment', title: '' }
++}
++
++export function CalendarView() {
++  const [events, setEvents] = useState<CalendarEvent[]>([])
++  const [loaded, setLoaded] = useState(false)
++  const [error, setError] = useState<null | string>(null)
++  const [saving, setSaving] = useState(false)
++
++  const [cursor, setCursor] = useState(() => {
++    const now = new Date()
++
++    return { month: now.getMonth(), year: now.getFullYear() }
++  })
++
++  const [dialog, setDialog] = useState<DialogState | null>(null)
++
++  const refresh = useCallback(() => {
++    void loadCalendarState().then(state => {
++      setEvents(state.events)
++      setLoaded(true)
++    })
++  }, [])
++
++  useEffect(() => {
++    refresh()
++  }, [refresh])
++
++  // Nemesis may have just written calendar.json in another process (e.g. after a "pull my
++  // due dates" run) — re-read whenever the window regains focus, same pattern the sidebar
++  // uses to pick up out-of-band project changes.
++  useEffect(() => {
++    window.addEventListener('focus', refresh)
++
++    return () => window.removeEventListener('focus', refresh)
++  }, [refresh])
++
++  // `today` is deliberately recomputed every render (not memoized) so the "today" cell
++  // and the agenda window stay correct if the app is left open across midnight — the
++  // window-focus refresh above already forces a re-render on every return to the app.
++  // The grid/agenda derivations are cheap (a 42-cell grid, a small filter+sort), so
++  // there's no perf reason to memo them against a value that changes every render anyway.
++  const today = new Date()
++  const grid = monthGrid(cursor.year, cursor.month, today)
++  const byDate = eventsByDate(events)
++  const upcoming = upcomingEvents(events, today, AGENDA_WINDOW_DAYS)
++
++  const goToMonth = (delta: number) => {
++    setCursor(current => {
++      const next = new Date(current.year, current.month + delta, 1)
++
++      return { month: next.getMonth(), year: next.getFullYear() }
++    })
++  }
++
++  const openEvent = (event: CalendarEvent) => {
++    setDialog(event.source === 'agent' ? { event, mode: 'view' } : { event, mode: 'edit' })
++  }
++
++  const openAdd = (date: string) => setDialog({ date, mode: 'add' })
++
++  const closeDialog = () => {
++    setDialog(null)
++    setError(null)
++  }
++
++  const persist = async (nextEvents: CalendarEvent[]) => {
++    setSaving(true)
++    setError(null)
++
++    try {
++      const state = await saveCalendarEvents(nextEvents)
++      setEvents(state.events)
++      setDialog(null)
++    } catch (err) {
++      setError(err instanceof Error ? err.message : 'Could not save the calendar.')
++    } finally {
++      setSaving(false)
++    }
++  }
++
++  const handleSave = (input: EventFormValues) => {
++    if (dialog && dialog.mode === 'edit') {
++      void persist(events.map(event => (event.id === dialog.event.id ? { ...dialog.event, ...input } : event)))
++
++      return
++    }
++
++    const created: CalendarEvent = { id: freshId('event'), source: 'manual', ...input }
++    void persist([...events, created])
++  }
++
++  const handleDelete = () => {
++    if (!dialog || dialog.mode !== 'edit') {
++      return
++    }
++
++    void persist(events.filter(event => event.id !== dialog.event.id))
++  }
++
++  return (
++    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
++      <header className="flex shrink-0 flex-wrap items-start justify-between gap-3 px-6 pb-3 pt-5">
++        <div>
++          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">Schedule</p>
++          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.025em]">Calendar</h1>
++          <p className="mt-1 max-w-lg text-xs leading-relaxed text-muted-foreground">
++            Assignment due dates, exams, and rotation dates in one place. Nemesis can add these as it reads your
++            school accounts — add or fix anything yourself too.
++          </p>
++        </div>
++        <div className="flex items-center gap-2">
++          <div className="flex items-center gap-1 rounded-md border border-border">
++            <Button aria-label="Previous month" onClick={() => goToMonth(-1)} size="icon-xs" variant="ghost">
++              <IconChevronLeft size={14} />
++            </Button>
++            <span className="min-w-32 px-1 text-center text-xs font-medium tabular-nums">
++              {monthLabel(cursor.year, cursor.month)}
++            </span>
++            <Button aria-label="Next month" onClick={() => goToMonth(1)} size="icon-xs" variant="ghost">
++              <IconChevronRight size={14} />
++            </Button>
++          </div>
++          <Button onClick={() => openAdd(dateKey(today))} size="sm">
++            <IconPlus size={14} />
++            Add event
++          </Button>
++        </div>
++      </header>
++
++      <div className="grid flex-1 grid-cols-1 gap-4 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
++        <MonthGrid days={grid} eventsByDay={byDate} onAddOnDate={openAdd} onOpenEvent={openEvent} />
++        <Agenda events={upcoming} hasAnyEvents={events.length > 0} loaded={loaded} onOpenEvent={openEvent} />
++      </div>
++
++      {dialog && (
++        <EventDialog
++          dialog={dialog}
++          error={error}
++          onClose={closeDialog}
++          onDelete={handleDelete}
++          onSave={handleSave}
++          saving={saving}
++        />
++      )}
++    </div>
++  )
++}
++
++function MonthGrid({
++  days,
++  eventsByDay,
++  onAddOnDate,
++  onOpenEvent
++}: {
++  days: MonthDay[]
++  eventsByDay: Map<string, CalendarEvent[]>
++  onAddOnDate: (date: string) => void
++  onOpenEvent: (event: CalendarEvent) => void
++}) {
++  return (
++    <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
++      <div className="grid shrink-0 grid-cols-7 border-b border-border text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
++        {WEEKDAY_LABELS.map(label => (
++          <div className="px-2 py-2 text-center" key={label}>
++            {label}
++          </div>
++        ))}
++      </div>
++      <div className="grid flex-1 grid-cols-7 grid-rows-6">
++        {days.map(day => (
++          <DayCell
++            day={day}
++            events={eventsByDay.get(day.key) ?? []}
++            key={day.key}
++            onAdd={onAddOnDate}
++            onOpenEvent={onOpenEvent}
++          />
++        ))}
++      </div>
++    </div>
++  )
++}
++
++function DayCell({
++  day,
++  events,
++  onAdd,
++  onOpenEvent
++}: {
++  day: MonthDay
++  events: CalendarEvent[]
++  onAdd: (date: string) => void
++  onOpenEvent: (event: CalendarEvent) => void
++}) {
++  const visible = events.slice(0, MAX_CHIPS_PER_DAY)
++  const overflow = events.length - visible.length
++
++  return (
++    <div
++      className={cn(
++        'group flex min-h-20 flex-col gap-1 border-b border-r border-border p-1.5 [&:nth-child(7n)]:border-r-0',
++        !day.inMonth && 'bg-(--ui-bg-quaternary)/40'
++      )}
++    >
++      <div className="flex shrink-0 items-center justify-between">
++        <span
++          className={cn(
++            'grid size-5 place-items-center rounded-full text-[0.6875rem] font-medium tabular-nums',
++            day.isToday ? 'bg-(--theme-primary) text-primary-foreground' : !day.inMonth && 'text-(--ui-text-quaternary)'
++          )}
++        >
++          {day.date.getDate()}
++        </span>
++        <Button
++          aria-label={`Add event on ${formatEventDate(day.key)}`}
++          className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
++          onClick={() => onAdd(day.key)}
++          size="icon-xs"
++          variant="ghost"
++        >
++          <Codicon name="add" size="0.75rem" />
++        </Button>
++      </div>
++      <div className="flex min-h-0 flex-1 flex-col gap-0.5">
++        {visible.map(event => (
++          <button
++            className={cn(
++              'truncate rounded px-1 py-0.5 text-left text-[0.625rem] font-medium leading-tight',
++              KIND_META[event.kind].chip
++            )}
++            key={event.id}
++            onClick={() => onOpenEvent(event)}
++            title={event.title}
++            type="button"
++          >
++            {event.title}
++          </button>
++        ))}
++        {overflow > 0 && (
++          <Popover>
++            <PopoverTrigger asChild>
++              <button
++                className="truncate rounded px-1 py-0.5 text-left text-[0.625rem] font-medium text-muted-foreground hover:text-foreground"
++                type="button"
++              >
++                +{overflow} more
++              </button>
++            </PopoverTrigger>
++            <PopoverContent align="start" className="w-56 p-1.5">
++              <div className="flex flex-col gap-0.5">
++                {events.map(event => (
++                  <button
++                    className={cn('truncate rounded px-1.5 py-1 text-left text-xs font-medium', KIND_META[event.kind].chip)}
++                    key={event.id}
++                    onClick={() => onOpenEvent(event)}
++                    type="button"
++                  >
++                    {event.title}
++                  </button>
++                ))}
++              </div>
++            </PopoverContent>
++          </Popover>
++        )}
++      </div>
++    </div>
++  )
++}
++
++function Agenda({
++  events,
++  hasAnyEvents,
++  loaded,
++  onOpenEvent
++}: {
++  events: CalendarEvent[]
++  hasAnyEvents: boolean
++  loaded: boolean
++  onOpenEvent: (event: CalendarEvent) => void
++}) {
++  return (
++    <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
++      <div className="shrink-0 border-b border-border px-4 py-3">
++        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">Agenda</p>
++        <h2 className="mt-0.5 text-sm font-semibold tracking-tight">Next 30 days</h2>
++      </div>
++      <div className="min-h-0 flex-1 overflow-y-auto p-2">
++        {!loaded ? (
++          <div className="grid min-h-32 place-items-center text-xs text-muted-foreground">Loading…</div>
++        ) : events.length === 0 ? (
++          <EmptyState
++            className="min-h-40"
++            description={
++              hasAnyEvents
++                ? 'Nothing due in the next 30 days.'
++                : 'Ask Nemesis to pull your due dates from Blackboard and Outlook, or add one.'
++            }
++            title={hasAnyEvents ? 'All clear' : 'No deadlines yet'}
++          />
++        ) : (
++          <div className="flex flex-col gap-1">
++            {events.map(event => (
++              <button
++                className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-(--ui-control-hover-background)"
++                key={event.id}
++                onClick={() => onOpenEvent(event)}
++                type="button"
++              >
++                <span className={cn('mt-1 size-1.5 shrink-0 rounded-full', KIND_META[event.kind].dot)} />
++                <span className="min-w-0 flex-1">
++                  <span className="block truncate text-xs font-medium">{event.title}</span>
++                  <span className="block text-[0.6875rem] text-muted-foreground">
++                    {formatEventDate(event.date)}
++                    {event.time ? ` · ${formatEventTime(event.time)}` : ''}
++                    {event.course ? ` · ${event.course}` : ''}
++                  </span>
++                </span>
++              </button>
++            ))}
++          </div>
++        )}
++      </div>
++    </div>
++  )
++}
++
++function EventDialog({
++  dialog,
++  error,
++  onClose,
++  onDelete,
++  onSave,
++  saving
++}: {
++  dialog: DialogState
++  error: null | string
++  onClose: () => void
++  onDelete: () => void
++  onSave: (input: EventFormValues) => void
++  saving: boolean
++}) {
++  if (dialog.mode === 'view') {
++    return <EventViewDialog event={dialog.event} onClose={onClose} />
++  }
++
++  return (
++    <EventFormDialog
++      error={error}
++      initial={dialog.mode === 'add' ? emptyFormValues(dialog.date) : dialog.event}
++      mode={dialog.mode}
++      onClose={onClose}
++      onDelete={onDelete}
++      onSave={onSave}
++      saving={saving}
++    />
++  )
++}
++
++function ViewRow({ label, value }: { label: string; value: string }) {
++  return (
++    <div className="flex items-baseline gap-2">
++      <span className="w-14 shrink-0 text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
++        {label}
++      </span>
++      <span className="min-w-0 flex-1 text-foreground">{value}</span>
++    </div>
++  )
++}
++
++function EventViewDialog({ event, onClose }: { event: CalendarEvent; onClose: () => void }) {
++  return (
++    <Dialog onOpenChange={open => !open && onClose()} open>
++      <DialogContent className="sm:max-w-md">
++        <DialogHeader>
++          <DialogTitle>{event.title}</DialogTitle>
++          <DialogDescription>Added by Nemesis. Ask it to change this, or add your own event alongside it.</DialogDescription>
++        </DialogHeader>
++        <div className="flex flex-col gap-2 text-xs">
++          <ViewRow
++            label="When"
++            value={`${formatEventDate(event.date)}${event.time ? ` · ${formatEventTime(event.time)}` : ''}`}
++          />
++          <ViewRow label="Type" value={KIND_META[event.kind].label} />
++          {event.course && <ViewRow label="Course" value={event.course} />}
++          {event.note && <ViewRow label="Notes" value={event.note} />}
++        </div>
++        <DialogFooter>
++          <Button onClick={onClose} variant="outline">
++            Close
++          </Button>
++        </DialogFooter>
++      </DialogContent>
++    </Dialog>
++  )
++}
++
++function EventFormDialog({
++  error,
++  initial,
++  mode,
++  onClose,
++  onDelete,
++  onSave,
++  saving
++}: {
++  error: null | string
++  initial: EventFormValues
++  mode: 'add' | 'edit'
++  onClose: () => void
++  onDelete: () => void
++  onSave: (input: EventFormValues) => void
++  saving: boolean
++}) {
++  const [title, setTitle] = useState(initial.title)
++  const [date, setDate] = useState(initial.date)
++  const [time, setTime] = useState(initial.time ?? '')
++  const [kind, setKind] = useState<CalendarEventKind>(initial.kind)
++  const [course, setCourse] = useState(initial.course ?? '')
++  const [note, setNote] = useState(initial.note ?? '')
++  const [armDelete, setArmDelete] = useState(false)
++
++  const submit = () => {
++    if (!title.trim() || !date) {
++      return
++    }
++
++    onSave({
++      course: course.trim() || undefined,
++      date,
++      kind,
++      note: note.trim() || undefined,
++      time: time.trim() || undefined,
++      title: title.trim()
++    })
++  }
++
++  return (
++    <Dialog onOpenChange={open => !open && onClose()} open>
++      <DialogContent banner={error || undefined} bannerTone="error" className="sm:max-w-md">
++        <DialogHeader>
++          <DialogTitle>{mode === 'edit' ? 'Edit event' : 'Add event'}</DialogTitle>
++          <DialogDescription>Assignment, exam, rotation, class — anything with a due date.</DialogDescription>
++        </DialogHeader>
++        <div className="flex flex-col gap-3">
++          <Input autoFocus onChange={event => setTitle(event.target.value)} placeholder="Title" value={title} />
++          <div className="flex gap-2">
++            <Input className="flex-1" onChange={event => setDate(event.target.value)} type="date" value={date} />
++            <Input className="w-32" onChange={event => setTime(event.target.value)} type="time" value={time} />
++          </div>
++          <Select onValueChange={value => setKind(value as CalendarEventKind)} value={kind}>
++            <SelectTrigger aria-label="Event type" className="w-full">
++              <SelectValue />
++            </SelectTrigger>
++            <SelectContent>
++              {KIND_ORDER.map(option => (
++                <SelectItem key={option} value={option}>
++                  <span className={cn('size-1.5 rounded-full', KIND_META[option].dot)} />
++                  {KIND_META[option].label}
++                </SelectItem>
++              ))}
++            </SelectContent>
++          </Select>
++          <Input onChange={event => setCourse(event.target.value)} placeholder="Course (optional)" value={course} />
++          <Textarea className="min-h-16" onChange={event => setNote(event.target.value)} placeholder="Notes (optional)" value={note} />
++        </div>
++        <DialogFooter className="flex-wrap gap-2 sm:justify-between">
++          {mode === 'edit' ? (
++            <Button
++              className={cn(armDelete && 'text-destructive')}
++              onBlur={() => setArmDelete(false)}
++              onClick={() => (armDelete ? onDelete() : setArmDelete(true))}
++              variant="outline"
++            >
++              <IconTrash size={13} />
++              {armDelete ? 'Really delete?' : 'Delete'}
++            </Button>
++          ) : (
++            <span />
++          )}
++          <div className="flex gap-2">
++            <Button onClick={onClose} variant="outline">
++              Cancel
++            </Button>
++            <Button disabled={!title.trim() || !date || saving} onClick={submit}>
++              {saving ? 'Saving…' : 'Save'}
++            </Button>
++          </div>
++        </DialogFooter>
++      </DialogContent>
++    </Dialog>
++  )
++}
+diff --git a/apps/desktop/src/app/calendar/model.js b/apps/desktop/src/app/calendar/model.js
+new file mode 100644
+index 00000000000..142d9acc8e9
+--- /dev/null
++++ b/apps/desktop/src/app/calendar/model.js
+@@ -0,0 +1,138 @@
++export const CALENDAR_DIR = '~/Documents/Nemesis Library/School';
++export const CALENDAR_FILE = `${CALENDAR_DIR}/calendar.json`;
++const KINDS = new Set(['assignment', 'exam', 'rotation', 'class', 'other']);
++const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
++let idCounter = 0;
++export function freshId(prefix) {
++    idCounter += 1;
++    return `${prefix}-${Date.now().toString(36)}-${idCounter.toString(36)}`;
++}
++function cleanText(value) {
++    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
++}
++function sanitizeEvent(raw) {
++    if (!raw || typeof raw !== 'object') {
++        return null;
++    }
++    const value = raw;
++    const id = cleanText(value.id);
++    const title = cleanText(value.title);
++    const date = typeof value.date === 'string' ? value.date.trim() : '';
++    const kind = typeof value.kind === 'string' && KINDS.has(value.kind) ? value.kind : null;
++    if (!id || !title || !DATE_KEY_RE.test(date) || !kind) {
++        return null;
++    }
++    const source = value.source === 'agent' || value.source === 'manual' ? value.source : undefined;
++    return {
++        course: cleanText(value.course),
++        date,
++        id,
++        kind,
++        note: cleanText(value.note),
++        source,
++        time: cleanText(value.time),
++        title
++    };
++}
++/** Parse calendar.json text into a validated event list. A malformed entry drops just
++ *  that entry instead of failing the whole file — an agent's partial write or a typo in a
++ *  hand-edited file shouldn't blank the page. */
++export function parseCalendarEvents(text) {
++    try {
++        const parsed = JSON.parse(text);
++        const list = parsed && typeof parsed === 'object' ? parsed.events : undefined;
++        return Array.isArray(list) ? list.map(sanitizeEvent).filter((event) => event !== null) : [];
++    }
++    catch {
++        return [];
++    }
++}
++/** Read the agent-writable calendar file. A missing file, an unavailable desktop bridge,
++ *  or malformed JSON all resolve to an empty list — this page must never hard-fail just
++ *  because Nemesis hasn't written anything yet. */
++export async function loadCalendarState() {
++    const api = window.hermesDesktop;
++    if (!api?.readFileText) {
++        return { events: [] };
++    }
++    try {
++        const read = await api.readFileText(CALENDAR_FILE);
++        return { events: parseCalendarEvents(read.text ?? '') };
++    }
++    catch {
++        return { events: [] };
++    }
++}
++async function writeCalendarState(state) {
++    const api = window.hermesDesktop;
++    if (!api?.writeTextFile) {
++        throw new Error('Saving is unavailable in this build.');
++    }
++    await api.makeDir?.(CALENDAR_DIR);
++    await api.writeTextFile(CALENDAR_FILE, JSON.stringify({ events: state.events }, null, 2));
++}
++/** Persist a manual add/edit/delete. `localEvents` is the editor's full list with that
++ *  change already applied. Agent events are always taken FRESH from disk rather than from
++ *  `localEvents` — so a manual save can never clobber an agent write/edit/delete that
++ *  happened concurrently, even though the page merged agent events into its own state for
++ *  display. Manual events are taken from `localEvents`, which is the student's source of
++ *  truth. The UI only lets a student edit/delete their own (non-agent) events. */
++export async function saveCalendarEvents(localEvents) {
++    const disk = await loadCalendarState();
++    const agentEvents = disk.events.filter(event => event.source === 'agent');
++    const manualEvents = localEvents.filter(event => event.source !== 'agent');
++    const next = { events: [...agentEvents, ...manualEvents] };
++    await writeCalendarState(next);
++    return next;
++}
++// --- Date helpers -------------------------------------------------------------------
++// Event `date` fields are plain "yyyy-mm-dd" with no time zone. Always parse/format them
++// as LOCAL dates: `new Date("yyyy-mm-dd")` parses as UTC midnight, which renders as the
++// PREVIOUS day in any negative UTC-offset timezone — that would put half of the US on the
++// wrong day for every event.
++export function parseDateKey(key) {
++    const [year, month, day] = key.split('-').map(Number);
++    return new Date(year, (month || 1) - 1, day || 1);
++}
++export function dateKey(date) {
++    const year = date.getFullYear();
++    const month = String(date.getMonth() + 1).padStart(2, '0');
++    const day = String(date.getDate()).padStart(2, '0');
++    return `${year}-${month}-${day}`;
++}
++/** A 6x7 Sunday-first grid covering `month`, padded with adjacent-month days so every
++ *  week row is full — the standard month-calendar layout. */
++export function monthGrid(year, month, today) {
++    const first = new Date(year, month, 1);
++    const start = new Date(year, month, 1 - first.getDay());
++    const todayKey = dateKey(today);
++    const days = [];
++    for (let i = 0; i < 42; i++) {
++        const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
++        days.push({ date, inMonth: date.getMonth() === month, isToday: dateKey(date) === todayKey, key: dateKey(date) });
++    }
++    return days;
++}
++/** Group events by date key for O(1) lookup while rendering the grid; each day's events
++ *  are time-sorted (undated-time events sort first). */
++export function eventsByDate(events) {
++    const map = new Map();
++    for (const event of events) {
++        const list = map.get(event.date) ?? [];
++        list.push(event);
++        map.set(event.date, list);
++    }
++    for (const list of map.values()) {
++        list.sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
++    }
++    return map;
++}
++/** Upcoming events from `from` through `from + days`, soonest first — the Agenda list. */
++export function upcomingEvents(events, from, days) {
++    const fromKey = dateKey(from);
++    const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + days);
++    const toKey = dateKey(to);
++    return events
++        .filter(event => event.date >= fromKey && event.date <= toKey)
++        .sort((a, b) => (a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date)));
++}
+diff --git a/apps/desktop/src/app/calendar/model.ts b/apps/desktop/src/app/calendar/model.ts
+new file mode 100644
+index 00000000000..d78e541cde5
+--- /dev/null
++++ b/apps/desktop/src/app/calendar/model.ts
+@@ -0,0 +1,204 @@
++// Calendar page data model: assignment due dates, exams, and rotation dates for a
++// pharmacy student. Events live in a JSON file the AGENT writes directly (rotation
++// coordinator dates, LMS due dates it reads off Blackboard/Outlook) — the desktop page
++// just renders it and lets the student add/correct entries by hand. Same
++// agent-writes-a-file-the-page-reads bridge as study/deck-files.ts and the Recorder's
++// Library note, just JSON instead of TSV/Markdown.
++export type CalendarEventKind = 'assignment' | 'exam' | 'rotation' | 'class' | 'other'
++
++export interface CalendarEvent {
++  id: string
++  title: string
++  /** ISO calendar date, yyyy-mm-dd — no time zone; always read/compared as a LOCAL date. */
++  date: string
++  time?: string
++  kind: CalendarEventKind
++  course?: string
++  note?: string
++  /** 'agent' events are written by Nemesis and read-only in this UI (see saveCalendarEvents
++   *  below). Absent or 'manual' = the student's own entry, freely editable. */
++  source?: 'agent' | 'manual'
++}
++
++export interface CalendarState {
++  events: CalendarEvent[]
++}
++
++export const CALENDAR_DIR = '~/Documents/Nemesis Library/School'
++export const CALENDAR_FILE = `${CALENDAR_DIR}/calendar.json`
++
++const KINDS: ReadonlySet<string> = new Set(['assignment', 'exam', 'rotation', 'class', 'other'])
++const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/
++
++let idCounter = 0
++
++export function freshId(prefix: string): string {
++  idCounter += 1
++
++  return `${prefix}-${Date.now().toString(36)}-${idCounter.toString(36)}`
++}
++
++function cleanText(value: unknown): string | undefined {
++  return typeof value === 'string' && value.trim() ? value.trim() : undefined
++}
++
++function sanitizeEvent(raw: unknown): CalendarEvent | null {
++  if (!raw || typeof raw !== 'object') {
++    return null
++  }
++
++  const value = raw as Record<string, unknown>
++  const id = cleanText(value.id)
++  const title = cleanText(value.title)
++  const date = typeof value.date === 'string' ? value.date.trim() : ''
++  const kind = typeof value.kind === 'string' && KINDS.has(value.kind) ? (value.kind as CalendarEventKind) : null
++
++  if (!id || !title || !DATE_KEY_RE.test(date) || !kind) {
++    return null
++  }
++
++  const source = value.source === 'agent' || value.source === 'manual' ? value.source : undefined
++
++  return {
++    course: cleanText(value.course),
++    date,
++    id,
++    kind,
++    note: cleanText(value.note),
++    source,
++    time: cleanText(value.time),
++    title
++  }
++}
++
++/** Parse calendar.json text into a validated event list. A malformed entry drops just
++ *  that entry instead of failing the whole file — an agent's partial write or a typo in a
++ *  hand-edited file shouldn't blank the page. */
++export function parseCalendarEvents(text: string): CalendarEvent[] {
++  try {
++    const parsed = JSON.parse(text) as unknown
++    const list = parsed && typeof parsed === 'object' ? (parsed as { events?: unknown }).events : undefined
++
++    return Array.isArray(list) ? list.map(sanitizeEvent).filter((event): event is CalendarEvent => event !== null) : []
++  } catch {
++    return []
++  }
++}
++
++/** Read the agent-writable calendar file. A missing file, an unavailable desktop bridge,
++ *  or malformed JSON all resolve to an empty list — this page must never hard-fail just
++ *  because Nemesis hasn't written anything yet. */
++export async function loadCalendarState(): Promise<CalendarState> {
++  const api = window.hermesDesktop
++
++  if (!api?.readFileText) {
++    return { events: [] }
++  }
++
++  try {
++    const read = await api.readFileText(CALENDAR_FILE)
++
++    return { events: parseCalendarEvents(read.text ?? '') }
++  } catch {
++    return { events: [] }
++  }
++}
++
++async function writeCalendarState(state: CalendarState): Promise<void> {
++  const api = window.hermesDesktop
++
++  if (!api?.writeTextFile) {
++    throw new Error('Saving is unavailable in this build.')
++  }
++
++  await api.makeDir?.(CALENDAR_DIR)
++  await api.writeTextFile(CALENDAR_FILE, JSON.stringify({ events: state.events }, null, 2))
++}
++
++/** Persist a manual add/edit/delete. `localEvents` is the editor's full list with that
++ *  change already applied. Agent events are always taken FRESH from disk rather than from
++ *  `localEvents` — so a manual save can never clobber an agent write/edit/delete that
++ *  happened concurrently, even though the page merged agent events into its own state for
++ *  display. Manual events are taken from `localEvents`, which is the student's source of
++ *  truth. The UI only lets a student edit/delete their own (non-agent) events. */
++export async function saveCalendarEvents(localEvents: CalendarEvent[]): Promise<CalendarState> {
++  const disk = await loadCalendarState()
++  const agentEvents = disk.events.filter(event => event.source === 'agent')
++  const manualEvents = localEvents.filter(event => event.source !== 'agent')
++  const next: CalendarState = { events: [...agentEvents, ...manualEvents] }
++  await writeCalendarState(next)
++
++  return next
++}
++
++// --- Date helpers -------------------------------------------------------------------
++// Event `date` fields are plain "yyyy-mm-dd" with no time zone. Always parse/format them
++// as LOCAL dates: `new Date("yyyy-mm-dd")` parses as UTC midnight, which renders as the
++// PREVIOUS day in any negative UTC-offset timezone — that would put half of the US on the
++// wrong day for every event.
++
++export function parseDateKey(key: string): Date {
++  const [year, month, day] = key.split('-').map(Number)
++
++  return new Date(year, (month || 1) - 1, day || 1)
++}
++
++export function dateKey(date: Date): string {
++  const year = date.getFullYear()
++  const month = String(date.getMonth() + 1).padStart(2, '0')
++  const day = String(date.getDate()).padStart(2, '0')
++
++  return `${year}-${month}-${day}`
++}
++
++export interface MonthDay {
++  date: Date
++  key: string
++  inMonth: boolean
++  isToday: boolean
++}
++
++/** A 6x7 Sunday-first grid covering `month`, padded with adjacent-month days so every
++ *  week row is full — the standard month-calendar layout. */
++export function monthGrid(year: number, month: number, today: Date): MonthDay[] {
++  const first = new Date(year, month, 1)
++  const start = new Date(year, month, 1 - first.getDay())
++  const todayKey = dateKey(today)
++  const days: MonthDay[] = []
++
++  for (let i = 0; i < 42; i++) {
++    const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)
++    days.push({ date, inMonth: date.getMonth() === month, isToday: dateKey(date) === todayKey, key: dateKey(date) })
++  }
++
++  return days
++}
++
++/** Group events by date key for O(1) lookup while rendering the grid; each day's events
++ *  are time-sorted (undated-time events sort first). */
++export function eventsByDate(events: CalendarEvent[]): Map<string, CalendarEvent[]> {
++  const map = new Map<string, CalendarEvent[]>()
++
++  for (const event of events) {
++    const list = map.get(event.date) ?? []
++    list.push(event)
++    map.set(event.date, list)
++  }
++
++  for (const list of map.values()) {
++    list.sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''))
++  }
++
++  return map
++}
++
++/** Upcoming events from `from` through `from + days`, soonest first — the Agenda list. */
++export function upcomingEvents(events: CalendarEvent[], from: Date, days: number): CalendarEvent[] {
++  const fromKey = dateKey(from)
++  const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + days)
++  const toKey = dateKey(to)
++
++  return events
++    .filter(event => event.date >= fromKey && event.date <= toKey)
++    .sort((a, b) => (a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date)))
++}
+diff --git a/apps/desktop/src/app/chat/sidebar/index.js b/apps/desktop/src/app/chat/sidebar/index.js
+index 34515aaec41..59286e13888 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.js
++++ b/apps/desktop/src/app/chat/sidebar/index.js
+@@ -25,7 +25,7 @@ import { $newChatProfile, $profiles, $profileScope, ALL_PROFILES, normalizeProfi
+ import { $activeProjectId, $projects, $projectScope, $projectTree, $projectTreeLoading, $removedSessionIds, $reposScanning, ALL_PROJECTS, enterProject, exitProjectScope, fetchProjectSessions, openProjectCreate, refreshProjects, refreshProjectTree, refreshWorktrees, scanAndRecordRepos } from '@/store/projects';
+ import { $cronSessions, $currentCwd, $gatewayState, $messagingPlatformTotals, $messagingSessions, $messagingTruncated, $selectedStoredSessionId, $sessionProfileTotals, $sessions, $sessionsLoading, $sessionsTotal, $workingSessionIds, sessionPinId, setCurrentCwd } from '@/store/session';
+ import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_NAV } from '@/nemesis';
+-import { ARTIFACTS_ROUTE, GRAPH_ROUTE, LIBRARY_ROUTE, MESSAGING_ROUTE, RECORDER_ROUTE, SETTINGS_ROUTE, SKILLS_ROUTE, STUDY_ROUTE } from '../../routes';
++import { ARTIFACTS_ROUTE, CALENDAR_ROUTE, GRAPH_ROUTE, LIBRARY_ROUTE, MESSAGING_ROUTE, RECORDER_ROUTE, SETTINGS_ROUTE, SKILLS_ROUTE, STUDY_ROUTE } from '../../routes';
+ import { countLabel } from './chrome';
+ import { SidebarCronJobsSection } from './cron-jobs-section';
+ import { SidebarLoadMoreRow } from './load-more-row';
+@@ -59,7 +59,8 @@ const SIDEBAR_NAV_ALL = [
+     { id: 'study', label: 'Study', icon: props => _jsx(Codicon, { name: "mortar-board", ...props }), route: STUDY_ROUTE },
+     { id: 'library', label: 'Library', icon: props => _jsx(Codicon, { name: "book", ...props }), route: LIBRARY_ROUTE },
+     { id: 'graph', label: 'Graph', icon: props => _jsx(Codicon, { name: "type-hierarchy-sub", ...props }), route: GRAPH_ROUTE },
+-    { id: 'recorder', label: 'Recorder', icon: props => _jsx(Codicon, { name: "record", ...props }), route: RECORDER_ROUTE }
++    { id: 'recorder', label: 'Recorder', icon: props => _jsx(Codicon, { name: "record", ...props }), route: RECORDER_ROUTE },
++    { id: 'calendar', label: 'Calendar', icon: props => _jsx(Codicon, { name: "calendar", ...props }), route: CALENDAR_ROUTE }
+ ];
+ const SIDEBAR_NAV = SIDEBAR_NAV_ALL.filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_NAV.has(item.id));
+ const SETTINGS_NAV_ITEM = {
+diff --git a/apps/desktop/src/app/chat/sidebar/index.tsx b/apps/desktop/src/app/chat/sidebar/index.tsx
+index b5a87dae283..ce50f5c0230 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.tsx
++++ b/apps/desktop/src/app/chat/sidebar/index.tsx
+@@ -103,6 +103,7 @@ import { NEMESIS_STUDENT_BUILD, STUDENT_HIDDEN_NAV } from '@/nemesis'
+ import {
+   type AppView,
+   ARTIFACTS_ROUTE,
++  CALENDAR_ROUTE,
+   GRAPH_ROUTE,
+   LIBRARY_ROUTE,
+   MESSAGING_ROUTE,
+@@ -163,7 +164,8 @@ const SIDEBAR_NAV_ALL: SidebarNavItem[] = [
+   { id: 'study', label: 'Study', icon: props => <Codicon name="mortar-board" {...props} />, route: STUDY_ROUTE },
+   { id: 'library', label: 'Library', icon: props => <Codicon name="book" {...props} />, route: LIBRARY_ROUTE },
+   { id: 'graph', label: 'Graph', icon: props => <Codicon name="type-hierarchy-sub" {...props} />, route: GRAPH_ROUTE },
+-  { id: 'recorder', label: 'Recorder', icon: props => <Codicon name="record" {...props} />, route: RECORDER_ROUTE }
++  { id: 'recorder', label: 'Recorder', icon: props => <Codicon name="record" {...props} />, route: RECORDER_ROUTE },
++  { id: 'calendar', label: 'Calendar', icon: props => <Codicon name="calendar" {...props} />, route: CALENDAR_ROUTE }
+ ]
+ 
+ const SIDEBAR_NAV = SIDEBAR_NAV_ALL.filter(item => !NEMESIS_STUDENT_BUILD || !STUDENT_HIDDEN_NAV.has(item.id))
+diff --git a/apps/desktop/src/app/desktop-controller.js b/apps/desktop/src/app/desktop-controller.js
+index 8a69148af26..ccc2e0e75bd 100644
+--- a/apps/desktop/src/app/desktop-controller.js
++++ b/apps/desktop/src/app/desktop-controller.js
+@@ -95,6 +95,7 @@ const StudyView = lazy(async () => ({ default: (await import('./study')).StudyVi
+ const LibraryView = lazy(async () => ({ default: (await import('./library')).LibraryView }));
+ const GraphView = lazy(async () => ({ default: (await import('./graph')).GraphView }));
+ const RecorderView = lazy(async () => ({ default: (await import('./recorder')).RecorderView }));
++const CalendarView = lazy(async () => ({ default: (await import('./calendar')).CalendarView }));
+ // Latest cron-job sessions surfaced in the collapsed "Cron jobs" section. The
+ // Cron sessions are written by a background scheduler tick (the desktop
+ // backend), so no user action signals the UI. Poll the bounded cron list on
+@@ -822,7 +823,7 @@ export function DesktopController() {
+         // Mobile overlay sits at its min width — compact, doesn't bury the chat.
+         overlayWidth: FILE_BROWSER_MIN_WIDTH, resizable: true, side: railSide, width: FILE_BROWSER_DEFAULT_WIDTH, children: _jsx(ReviewPane, {}, currentCwd || 'no-cwd') }, "review"));
+     const terminalPane = (_jsx(Pane, { bottomRow: terminalAsRow, defaultOpen: true, disabled: !terminalSidebarOpen, divider: true, height: "38vh", id: "terminal-sidebar", maxHeight: "80vh", maxWidth: "80vw", minHeight: "8rem", minWidth: "22vw", resizable: true, side: railSide, width: "42vw", children: _jsx("div", { className: cn('relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-(--ui-editor-surface-background)', terminalAsRow ? 'border-l border-(--ui-stroke-secondary) pt-0' : 'pt-(--titlebar-height)'), children: _jsx(TerminalPaneChrome, {}) }) }, "terminal-sidebar"));
+-    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: chatOpen && (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: chatView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
++    return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: chatOpen && (NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: chatView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(CalendarView, {}) }), path: "calendar" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
+ }
+ function LegacySessionRedirect() {
+     const { sessionId } = useParams();
+diff --git a/apps/desktop/src/app/desktop-controller.tsx b/apps/desktop/src/app/desktop-controller.tsx
+index 946a508b55c..b764ae7f0f1 100644
+--- a/apps/desktop/src/app/desktop-controller.tsx
++++ b/apps/desktop/src/app/desktop-controller.tsx
+@@ -145,6 +145,7 @@ const StudyView = lazy(async () => ({ default: (await import('./study')).StudyVi
+ const LibraryView = lazy(async () => ({ default: (await import('./library')).LibraryView }))
+ const GraphView = lazy(async () => ({ default: (await import('./graph')).GraphView }))
+ const RecorderView = lazy(async () => ({ default: (await import('./recorder')).RecorderView }))
++const CalendarView = lazy(async () => ({ default: (await import('./calendar')).CalendarView }))
+ 
+ // Latest cron-job sessions surfaced in the collapsed "Cron jobs" section. The
+ // Cron sessions are written by a background scheduler tick (the desktop
+@@ -1395,6 +1396,14 @@ export function DesktopController() {
+             }
+             path="recorder"
+           />
++          <Route
++            element={
++              <Suspense fallback={null}>
++                <CalendarView />
++              </Suspense>
++            }
++            path="calendar"
++          />
+           <Route element={null} path="cron" />
+           <Route element={null} path="profiles" />
+           <Route element={null} path="settings" />
+diff --git a/apps/desktop/src/app/library/index.js b/apps/desktop/src/app/library/index.js
+index fadd6bc5eb2..124d8e926a2 100644
+--- a/apps/desktop/src/app/library/index.js
++++ b/apps/desktop/src/app/library/index.js
+@@ -116,6 +116,22 @@ export function LibraryView() {
+         };
+         // eslint-disable-next-line react-hooks/exhaustive-deps
+     }, [refresh]);
++    // Re-read the vault when the window regains focus so files the agent moved,
++    // renamed, or created while you were away show up without a manual reload.
++    // Debounced so an incidental refocus doesn't hammer the disk.
++    useEffect(() => {
++        let last = 0;
++        const onFocus = () => {
++            const now = Date.now();
++            if (now - last < 1500) {
++                return;
++            }
++            last = now;
++            void refresh();
++        };
++        window.addEventListener('focus', onFocus);
++        return () => window.removeEventListener('focus', onFocus);
++    }, [refresh]);
+     const tree = useMemo(() => (contents ? buildTree(contents) : null), [contents]);
+     const index = useMemo(() => (contents ? buildIndex(contents.notes) : null), [contents]);
+     // Deep links from the Graph page: /library?note=Title opens a note,
+diff --git a/apps/desktop/src/app/library/index.tsx b/apps/desktop/src/app/library/index.tsx
+index 9186e3d6924..fba58742e4a 100644
+--- a/apps/desktop/src/app/library/index.tsx
++++ b/apps/desktop/src/app/library/index.tsx
+@@ -177,6 +177,28 @@ export function LibraryView() {
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [refresh])
+ 
++  // Re-read the vault when the window regains focus so files the agent moved,
++  // renamed, or created while you were away show up without a manual reload.
++  // Debounced so an incidental refocus doesn't hammer the disk.
++  useEffect(() => {
++    let last = 0
++
++    const onFocus = () => {
++      const now = Date.now()
++
++      if (now - last < 1500) {
++        return
++      }
++
++      last = now
++      void refresh()
++    }
++
++    window.addEventListener('focus', onFocus)
++
++    return () => window.removeEventListener('focus', onFocus)
++  }, [refresh])
++
+   const tree = useMemo(() => (contents ? buildTree(contents) : null), [contents])
+   const index = useMemo(() => (contents ? buildIndex(contents.notes) : null), [contents])
+ 
+diff --git a/apps/desktop/src/app/routes.js b/apps/desktop/src/app/routes.js
+index bc6517d6562..24d2ccedba2 100644
+--- a/apps/desktop/src/app/routes.js
++++ b/apps/desktop/src/app/routes.js
+@@ -9,6 +9,7 @@ export const STUDY_ROUTE = '/study';
+ export const LIBRARY_ROUTE = '/library';
+ export const GRAPH_ROUTE = '/graph';
+ export const RECORDER_ROUTE = '/recorder';
++export const CALENDAR_ROUTE = '/calendar';
+ export const CRON_ROUTE = '/cron';
+ export const PROFILES_ROUTE = '/profiles';
+ export const AGENTS_ROUTE = '/agents';
+@@ -24,6 +25,7 @@ export const APP_ROUTES = [
+     { id: 'library', path: LIBRARY_ROUTE, view: 'library' },
+     { id: 'graph', path: GRAPH_ROUTE, view: 'graph' },
+     { id: 'recorder', path: RECORDER_ROUTE, view: 'recorder' },
++    { id: 'calendar', path: CALENDAR_ROUTE, view: 'calendar' },
+     { id: 'cron', path: CRON_ROUTE, view: 'cron' },
+     { id: 'profiles', path: PROFILES_ROUTE, view: 'profiles' },
+     { id: 'agents', path: AGENTS_ROUTE, view: 'agents' },
+diff --git a/apps/desktop/src/app/routes.ts b/apps/desktop/src/app/routes.ts
+index dfa8b04aaf2..1a2e0a4cb90 100644
+--- a/apps/desktop/src/app/routes.ts
++++ b/apps/desktop/src/app/routes.ts
+@@ -9,6 +9,7 @@ export const STUDY_ROUTE = '/study'
+ export const LIBRARY_ROUTE = '/library'
+ export const GRAPH_ROUTE = '/graph'
+ export const RECORDER_ROUTE = '/recorder'
++export const CALENDAR_ROUTE = '/calendar'
+ export const CRON_ROUTE = '/cron'
+ export const PROFILES_ROUTE = '/profiles'
+ export const AGENTS_ROUTE = '/agents'
+@@ -17,6 +18,7 @@ export const STARMAP_ROUTE = '/starmap'
+ export type AppView =
+   | 'agents'
+   | 'artifacts'
++  | 'calendar'
+   | 'chat'
+   | 'command-center'
+   | 'cron'
+@@ -33,6 +35,7 @@ export type AppView =
+ export type AppRouteId =
+   | 'agents'
+   | 'artifacts'
++  | 'calendar'
+   | 'command-center'
+   | 'cron'
+   | 'graph'
+@@ -63,6 +66,7 @@ export const APP_ROUTES = [
+   { id: 'library', path: LIBRARY_ROUTE, view: 'library' },
+   { id: 'graph', path: GRAPH_ROUTE, view: 'graph' },
+   { id: 'recorder', path: RECORDER_ROUTE, view: 'recorder' },
++  { id: 'calendar', path: CALENDAR_ROUTE, view: 'calendar' },
+   { id: 'cron', path: CRON_ROUTE, view: 'cron' },
+   { id: 'profiles', path: PROFILES_ROUTE, view: 'profiles' },
+   { id: 'agents', path: AGENTS_ROUTE, view: 'agents' },
+diff --git a/apps/desktop/src/app/study/deck-files.js b/apps/desktop/src/app/study/deck-files.js
+index 77ddbfd8e14..b9ead19ac71 100644
+--- a/apps/desktop/src/app/study/deck-files.js
++++ b/apps/desktop/src/app/study/deck-files.js
+@@ -1,10 +1,15 @@
+ // The agent→Study bridge. Study decks live in localStorage, which the agent (a separate
+ // process with file tools) can't reach — so the agent writes DECK FILES into the vault's
+-// Flashcards folder (see the nemesis-study-decks skill) and the Study page auto-imports
+-// any file it hasn't seen before. "Make me flashcards from this chat" becomes: agent
+-// writes Flashcards/<Deck>.tsv → the deck appears in Study on next visit.
++// Flashcards folder (see the nemesis-study-decks skill) and the Study page treats that
++// folder as the source of truth: every visit (and window refocus) rescans it and
++// reconciles decks against the files (model.ts reconcileDeckFiles), so renames, card
++// edits, course changes, and deletions the agent makes on disk all land in Study —
++// with FSRS review progress preserved for cards whose text survived the edit.
+ import { parseCardPaste } from './import-cards';
+ export const DECK_DIR = '~/Documents/Nemesis Library/Flashcards';
++// Pre-reconcile builds imported each file once and tracked it here. The registry is
++// now read-only legacy: adoptLegacyDeckFiles (model.ts) uses it to relink those early
++// decks to their files so the first reconcile updates them instead of duplicating them.
+ const REGISTRY_KEY = 'nemesis.study.deckFiles.v1';
+ function loadRegistry() {
+     try {
+@@ -17,41 +22,38 @@ function loadRegistry() {
+         }
+     }
+     catch {
+-        // corrupted registry → treat as empty (worst case: a deck re-imports once)
++        // corrupted registry → treat as empty (worst case: an early deck shows up twice)
+     }
+     return new Set();
+ }
+-export function markDeckFileImported(fileName) {
+-    const registry = loadRegistry();
+-    registry.add(fileName);
+-    try {
+-        window.localStorage.setItem(REGISTRY_KEY, JSON.stringify([...registry]));
+-    }
+-    catch {
+-        // best-effort
+-    }
++/** File names the legacy import-once flow already brought in (see adoptLegacyDeckFiles). */
++export function importedDeckFileNames() {
++    return [...loadRegistry()];
+ }
+-/** Deck files not yet imported, parsed and ready. Missing folder = no candidates. */
+-export async function scanDeckFiles() {
++/** Every parseable deck file in the vault, no import filter — reconcile's view of the
++ *  folder. Returns null when the folder can't be read (no desktop bridge, folder
++ *  missing, or any file unreadable): to reconcile, an empty list means "the agent
++ *  deleted every deck file" and would remove the linked decks, so a failed scan must
++ *  never masquerade as an empty folder. */
++export async function scanAllDeckFiles() {
+     const api = window.hermesDesktop;
+     if (!api?.readDir || !api.readFileText) {
+-        return [];
++        return null;
+     }
+     let entries;
+     try {
+         const dir = await api.readDir(DECK_DIR);
+         if (dir.error) {
+-            return [];
++            return null;
+         }
+         entries = dir.entries;
+     }
+     catch {
+-        return [];
++        return null;
+     }
+-    const imported = loadRegistry();
+     const out = [];
+     for (const entry of entries) {
+-        if (entry.isDirectory || !/\.(tsv|txt|md)$/i.test(entry.name) || imported.has(entry.name)) {
++        if (entry.isDirectory || !/\.(tsv|txt|md)$/i.test(entry.name)) {
+             continue;
+         }
+         let text = '';
+@@ -60,7 +62,8 @@ export async function scanDeckFiles() {
+             text = read.text ?? '';
+         }
+         catch {
+-            continue;
++            // One unreadable file must not look like a deleted deck — abandon the round.
++            return null;
+         }
+         // Optional metadata header the skill writes: "# course: Pharmacology"
+         const courseMatch = text.match(/^#\s*course:\s*(.+)$/im);
+diff --git a/apps/desktop/src/app/study/deck-files.ts b/apps/desktop/src/app/study/deck-files.ts
+index bdfe465f565..e8d1f3db687 100644
+--- a/apps/desktop/src/app/study/deck-files.ts
++++ b/apps/desktop/src/app/study/deck-files.ts
+@@ -1,12 +1,17 @@
+ // The agent→Study bridge. Study decks live in localStorage, which the agent (a separate
+ // process with file tools) can't reach — so the agent writes DECK FILES into the vault's
+-// Flashcards folder (see the nemesis-study-decks skill) and the Study page auto-imports
+-// any file it hasn't seen before. "Make me flashcards from this chat" becomes: agent
+-// writes Flashcards/<Deck>.tsv → the deck appears in Study on next visit.
++// Flashcards folder (see the nemesis-study-decks skill) and the Study page treats that
++// folder as the source of truth: every visit (and window refocus) rescans it and
++// reconciles decks against the files (model.ts reconcileDeckFiles), so renames, card
++// edits, course changes, and deletions the agent makes on disk all land in Study —
++// with FSRS review progress preserved for cards whose text survived the edit.
+ import { parseCardPaste, type ParsedCard } from './import-cards'
+ 
+ export const DECK_DIR = '~/Documents/Nemesis Library/Flashcards'
+ 
++// Pre-reconcile builds imported each file once and tracked it here. The registry is
++// now read-only legacy: adoptLegacyDeckFiles (model.ts) uses it to relink those early
++// decks to their files so the first reconcile updates them instead of duplicating them.
+ const REGISTRY_KEY = 'nemesis.study.deckFiles.v1'
+ 
+ export interface DeckFileCandidate {
+@@ -28,29 +33,27 @@ function loadRegistry(): Set<string> {
+       }
+     }
+   } catch {
+-    // corrupted registry → treat as empty (worst case: a deck re-imports once)
++    // corrupted registry → treat as empty (worst case: an early deck shows up twice)
+   }
+ 
+   return new Set()
+ }
+ 
+-export function markDeckFileImported(fileName: string): void {
+-  const registry = loadRegistry()
+-  registry.add(fileName)
+-
+-  try {
+-    window.localStorage.setItem(REGISTRY_KEY, JSON.stringify([...registry]))
+-  } catch {
+-    // best-effort
+-  }
++/** File names the legacy import-once flow already brought in (see adoptLegacyDeckFiles). */
++export function importedDeckFileNames(): string[] {
++  return [...loadRegistry()]
+ }
+ 
+-/** Deck files not yet imported, parsed and ready. Missing folder = no candidates. */
+-export async function scanDeckFiles(): Promise<DeckFileCandidate[]> {
++/** Every parseable deck file in the vault, no import filter — reconcile's view of the
++ *  folder. Returns null when the folder can't be read (no desktop bridge, folder
++ *  missing, or any file unreadable): to reconcile, an empty list means "the agent
++ *  deleted every deck file" and would remove the linked decks, so a failed scan must
++ *  never masquerade as an empty folder. */
++export async function scanAllDeckFiles(): Promise<DeckFileCandidate[] | null> {
+   const api = window.hermesDesktop
+ 
+   if (!api?.readDir || !api.readFileText) {
+-    return []
++    return null
+   }
+ 
+   let entries: { isDirectory: boolean; name: string; path: string }[]
+@@ -59,19 +62,18 @@ export async function scanDeckFiles(): Promise<DeckFileCandidate[]> {
+     const dir = await api.readDir(DECK_DIR)
+ 
+     if (dir.error) {
+-      return []
++      return null
+     }
+ 
+     entries = dir.entries
+   } catch {
+-    return []
++    return null
+   }
+ 
+-  const imported = loadRegistry()
+   const out: DeckFileCandidate[] = []
+ 
+   for (const entry of entries) {
+-    if (entry.isDirectory || !/\.(tsv|txt|md)$/i.test(entry.name) || imported.has(entry.name)) {
++    if (entry.isDirectory || !/\.(tsv|txt|md)$/i.test(entry.name)) {
+       continue
+     }
+ 
+@@ -81,7 +83,8 @@ export async function scanDeckFiles(): Promise<DeckFileCandidate[]> {
+       const read = await api.readFileText(entry.path)
+       text = read.text ?? ''
+     } catch {
+-      continue
++      // One unreadable file must not look like a deleted deck — abandon the round.
++      return null
+     }
+ 
+     // Optional metadata header the skill writes: "# course: Pharmacology"
+diff --git a/apps/desktop/src/app/study/index.js b/apps/desktop/src/app/study/index.js
+index 697a430605d..30f8ecb8ac2 100644
+--- a/apps/desktop/src/app/study/index.js
++++ b/apps/desktop/src/app/study/index.js
+@@ -14,9 +14,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
+ import { Textarea } from '@/components/ui/textarea';
+ import { Tip } from '@/components/ui/tooltip';
+ import { cn } from '@/lib/utils';
+-import { markDeckFileImported, scanDeckFiles } from './deck-files';
++import { importedDeckFileNames, scanAllDeckFiles } from './deck-files';
+ import { parseCardPaste } from './import-cards';
+-import { addCard, addSection, assignDeckSection, buildQueue, deckStats, deleteCard, deleteDeck, freshId, gradeCard, groupDecks, loadState, previewIntervals, reviewHeatmap, saveState, studyMotivation, toggleSuspendCard, updateCard } from './model';
++import { addCard, addSection, adoptLegacyDeckFiles, assignDeckSection, buildQueue, deckStats, deleteCard, deleteDeck, freshId, gradeCard, groupDecks, loadState, previewIntervals, reconcileDeckFiles, reviewHeatmap, saveState, studyMotivation, toggleSuspendCard, updateCard } from './model';
+ const GRADES = [
+     { key: '1', label: 'Again', rating: 'again' },
+     { key: '2', label: 'Hard', rating: 'hard' },
+@@ -68,46 +68,53 @@ export function StudyView() {
+         setState(next);
+         saveState(next);
+     }, []);
+-    // Agent-created decks: import any new deck files Nemesis wrote into the vault's
+-    // Flashcards folder (see deck-files.ts). Runs once per page visit.
++    // Agent-managed decks: the vault's Flashcards folder is the source of truth, so
++    // reconcile against it on mount and whenever the window regains focus — the agent
++    // may have renamed, edited, or deleted deck files while you were away. Debounced so
++    // an incidental refocus doesn't hammer the disk. Review schedules survive because
++    // reconcile keeps card ids for unchanged card text (see model.ts).
+     useEffect(() => {
+         let cancelled = false;
+-        void (async () => {
+-            const candidates = await scanDeckFiles();
+-            if (cancelled || !candidates.length) {
++        let lastRun = 0;
++        const reconcile = async () => {
++            lastRun = Date.now();
++            const candidates = await scanAllDeckFiles();
++            if (cancelled || !candidates) {
+                 return;
+             }
+-            const importedNames = [];
++            const addedNames = [];
+             setState(current => {
+-                let next = current;
+-                for (const candidate of candidates) {
+-                    markDeckFileImported(candidate.fileName);
+-                    if (!candidate.cards.length) {
+-                        continue;
+-                    }
+-                    const deck = {
+-                        id: freshId('deck'),
+-                        name: candidate.name,
+-                        course: candidate.course,
+-                        createdAt: new Date().toISOString(),
+-                        cards: candidate.cards.map(card => ({ back: card.back, front: card.front, id: freshId('card'), tags: [] }))
+-                    };
+-                    next = addSection({ ...next, decks: [...next.decks, deck] }, candidate.course ?? '');
+-                    importedNames.push(candidate.name);
++                const adopted = adoptLegacyDeckFiles(current, importedDeckFileNames());
++                const next = reconcileDeckFiles(adopted, candidates);
++                if (next === current) {
++                    return current;
+                 }
+-                if (next !== current) {
+-                    saveState(next);
++                const knownIds = new Set(current.decks.map(deck => deck.id));
++                for (const deck of next.decks) {
++                    // Genuinely new decks only — renamed/relinked decks keep their id.
++                    if (deck.sourceFile && !knownIds.has(deck.id)) {
++                        addedNames.push(deck.name);
++                    }
+                 }
++                saveState(next);
+                 return next;
+             });
+-            if (importedNames.length) {
+-                setAutoImported(importedNames);
++            if (addedNames.length) {
++                setAutoImported([...new Set(addedNames)]);
++            }
++        };
++        void reconcile();
++        const onFocus = () => {
++            if (Date.now() - lastRun < 1500) {
++                return;
+             }
+-        })();
++            void reconcile();
++        };
++        window.addEventListener('focus', onFocus);
+         return () => {
+             cancelled = true;
++            window.removeEventListener('focus', onFocus);
+         };
+-        // eslint-disable-next-line react-hooks/exhaustive-deps
+     }, []);
+     const startReview = useCallback((deckId) => {
+         setReviewDeckId(deckId);
+@@ -228,7 +235,7 @@ export function StudyView() {
+                                 exitReview();
+                                 setBrowseDeckId(null);
+                                 setMatchDeckId(null);
+-                            }, size: "sm", variant: "outline", children: "Back to decks" })) : (_jsxs(_Fragment, { children: [_jsxs("div", { className: "mr-1 flex items-center overflow-hidden rounded-md border border-border", children: [_jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'cards' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('cards'), title: "Card view", type: "button", children: _jsx(IconLayoutGrid, { size: 14 }) }), _jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'list' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('list'), title: "List view", type: "button", children: _jsx(IconList, { size: 14 }) })] }), _jsx("button", { className: cn('rounded-md border border-border px-2 py-1.5 transition-colors', flip ? 'text-(--theme-primary)' : 'text-muted-foreground hover:text-foreground'), onClick: toggleFlip, title: flip ? 'Flip animation on' : 'Flip animation off', type: "button", children: _jsx(IconCards, { size: 14 }) }), _jsxs(Button, { onClick: () => setNewSectionOpen(true), size: "sm", variant: "outline", children: [_jsx(IconFolderPlus, { size: 14 }), "New section"] }), _jsx(Button, { onClick: () => setNewDeckSection(''), size: "sm", variant: "outline", children: "New deck" }), _jsx(Button, { onClick: () => setImportOpen(true), size: "sm", variant: "outline", children: "Import cards" }), _jsx(Button, { disabled: totals.due === 0, onClick: () => startReview(null), size: "sm", children: "Study all" })] })) })] }), autoImported.length > 0 && !reviewing && !browseDeckId && (_jsxs("div", { className: "mx-6 mb-1 flex items-center justify-between rounded-md border border-(--theme-primary)/40 bg-(--theme-primary)/10 px-3 py-1.5 text-xs", children: [_jsxs("span", { children: ["Nemesis added ", autoImported.length === 1 ? 'a new deck' : `${autoImported.length} new decks`, ":", ' ', autoImported.join(', ')] }), _jsx("button", { className: "text-muted-foreground hover:text-foreground", onClick: () => setAutoImported([]), type: "button", children: "Dismiss" })] })), reviewing ? (current ? (_jsx(ReviewSurface, { done: done, flip: flip, item: current, intervals: previewIntervals(state, current.card.id, now), onGrade: grade, onReveal: () => setRevealed(true), remaining: queue.length, revealed: revealed })) : (_jsx(EmptyState, { className: "flex-1", description: done > 0 ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.` : 'Nothing is due right now.', title: "All caught up" }))) : matchDeckId ? (_jsx(MatchGame, { deck: state.decks.find(deck => deck.id === matchDeckId) ?? null, onExit: () => setMatchDeckId(null) })) : browseDeckId ? (_jsx(CardBrowser, { deck: state.decks.find(deck => deck.id === browseDeckId) ?? null, onChange: update, onDeleteDeck: () => removeDeck(browseDeckId), onMatch: () => startMatch(browseDeckId), onMoveDeck: section => moveDeck(browseDeckId, section), sections: sections, state: state })) : (_jsx(DeckBrowser, { onBrowse: setBrowseDeckId, onCreateDeck: setNewDeckSection, onMatch: startMatch, onStudy: startReview, state: state, view: view })), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen, sections: sections }), newDeckSection !== null && (_jsx(NewDeckDialog, { initialSection: newDeckSection, onClose: () => setNewDeckSection(null), onCreate: createDeck, sections: sections })), newSectionOpen && (_jsx(NewSectionDialog, { onClose: () => setNewSectionOpen(false), onCreate: createSection, sections: sections }))] }));
++                            }, size: "sm", variant: "outline", children: "Back to decks" })) : (_jsxs(_Fragment, { children: [_jsxs("div", { className: "mr-1 flex items-center overflow-hidden rounded-md border border-border", children: [_jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'cards' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('cards'), title: "Card view", type: "button", children: _jsx(IconLayoutGrid, { size: 14 }) }), _jsx("button", { className: cn('px-2 py-1.5 transition-colors', view === 'list' ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'), onClick: () => setViewMode('list'), title: "List view", type: "button", children: _jsx(IconList, { size: 14 }) })] }), _jsx("button", { className: cn('rounded-md border border-border px-2 py-1.5 transition-colors', flip ? 'text-(--theme-primary)' : 'text-muted-foreground hover:text-foreground'), onClick: toggleFlip, title: flip ? 'Flip animation on' : 'Flip animation off', type: "button", children: _jsx(IconCards, { size: 14 }) }), _jsxs(Button, { onClick: () => setNewSectionOpen(true), size: "sm", variant: "outline", children: [_jsx(IconFolderPlus, { size: 14 }), "New section"] }), _jsx(Button, { onClick: () => setNewDeckSection(''), size: "sm", variant: "outline", children: "New deck" }), _jsx(Button, { onClick: () => setImportOpen(true), size: "sm", variant: "outline", children: "Import cards" }), _jsx(Button, { disabled: totals.due === 0, onClick: () => startReview(null), size: "sm", children: "Study all" })] })) })] }), autoImported.length > 0 && !reviewing && !browseDeckId && (_jsxs("div", { className: "mx-6 mb-1 flex items-center justify-between rounded-md border border-(--theme-primary)/40 bg-(--theme-primary)/10 px-3 py-1.5 text-xs", children: [_jsxs("span", { children: ["Nemesis added ", autoImported.length === 1 ? 'a new deck' : `${autoImported.length} new decks`, ":", ' ', autoImported.join(', ')] }), _jsx("button", { className: "text-muted-foreground hover:text-foreground", onClick: () => setAutoImported([]), type: "button", children: "Dismiss" })] })), reviewing ? (current ? (_jsx(ReviewSurface, { done: done, flip: flip, intervals: previewIntervals(state, current.card.id, now), item: current, onGrade: grade, onReveal: () => setRevealed(true), remaining: queue.length, revealed: revealed })) : (_jsx(EmptyState, { className: "flex-1", description: done > 0 ? `${done} card${done === 1 ? '' : 's'} reviewed. Come back when the next ones are due.` : 'Nothing is due right now.', title: "All caught up" }))) : matchDeckId ? (_jsx(MatchGame, { deck: state.decks.find(deck => deck.id === matchDeckId) ?? null, onExit: () => setMatchDeckId(null) })) : browseDeckId ? (_jsx(CardBrowser, { deck: state.decks.find(deck => deck.id === browseDeckId) ?? null, onChange: update, onDeleteDeck: () => removeDeck(browseDeckId), onMatch: () => startMatch(browseDeckId), onMoveDeck: section => moveDeck(browseDeckId, section), sections: sections, state: state })) : (_jsx(DeckBrowser, { onBrowse: setBrowseDeckId, onCreateDeck: setNewDeckSection, onMatch: startMatch, onStudy: startReview, state: state, view: view })), _jsx(ImportDialog, { onImport: importCards, onOpenChange: setImportOpen, open: importOpen, sections: sections }), newDeckSection !== null && (_jsx(NewDeckDialog, { initialSection: newDeckSection, onClose: () => setNewDeckSection(null), onCreate: createDeck, sections: sections })), newSectionOpen && (_jsx(NewSectionDialog, { onClose: () => setNewSectionOpen(false), onCreate: createSection, sections: sections }))] }));
+ }
+ const OTHER_SECTION_VALUE = '__other__';
+ function SectionSelect({ label, onChange, sections, value }) {
+diff --git a/apps/desktop/src/app/study/index.tsx b/apps/desktop/src/app/study/index.tsx
+index 6bb9914a59e..4005b338247 100644
+--- a/apps/desktop/src/app/study/index.tsx
++++ b/apps/desktop/src/app/study/index.tsx
+@@ -22,11 +22,12 @@ import { Textarea } from '@/components/ui/textarea'
+ import { Tip } from '@/components/ui/tooltip'
+ import { cn } from '@/lib/utils'
+ 
+-import { markDeckFileImported, scanDeckFiles } from './deck-files'
++import { importedDeckFileNames, scanAllDeckFiles } from './deck-files'
+ import { parseCardPaste } from './import-cards'
+ import {
+   addCard,
+   addSection,
++  adoptLegacyDeckFiles,
+   assignDeckSection,
+   buildQueue,
+   deckStats,
+@@ -39,6 +40,7 @@ import {
+   loadState,
+   previewIntervals,
+   type QueueItem,
++  reconcileDeckFiles,
+   reviewHeatmap,
+   saveState,
+   type StudyCard,
+@@ -112,57 +114,68 @@ export function StudyView() {
+     saveState(next)
+   }, [])
+ 
+-  // Agent-created decks: import any new deck files Nemesis wrote into the vault's
+-  // Flashcards folder (see deck-files.ts). Runs once per page visit.
++  // Agent-managed decks: the vault's Flashcards folder is the source of truth, so
++  // reconcile against it on mount and whenever the window regains focus — the agent
++  // may have renamed, edited, or deleted deck files while you were away. Debounced so
++  // an incidental refocus doesn't hammer the disk. Review schedules survive because
++  // reconcile keeps card ids for unchanged card text (see model.ts).
+   useEffect(() => {
+     let cancelled = false
++    let lastRun = 0
+ 
+-    void (async () => {
+-      const candidates = await scanDeckFiles()
++    const reconcile = async () => {
++      lastRun = Date.now()
++      const candidates = await scanAllDeckFiles()
+ 
+-      if (cancelled || !candidates.length) {
++      if (cancelled || !candidates) {
+         return
+       }
+ 
+-      const importedNames: string[] = []
++      const addedNames: string[] = []
+ 
+       setState(current => {
+-        let next = current
++        const adopted = adoptLegacyDeckFiles(current, importedDeckFileNames())
++        const next = reconcileDeckFiles(adopted, candidates)
+ 
+-        for (const candidate of candidates) {
+-          markDeckFileImported(candidate.fileName)
++        if (next === current) {
++          return current
++        }
+ 
+-          if (!candidate.cards.length) {
+-            continue
+-          }
++        const knownIds = new Set(current.decks.map(deck => deck.id))
+ 
+-          const deck: StudyDeck = {
+-            id: freshId('deck'),
+-            name: candidate.name,
+-            course: candidate.course,
+-            createdAt: new Date().toISOString(),
+-            cards: candidate.cards.map(card => ({ back: card.back, front: card.front, id: freshId('card'), tags: [] }))
++        for (const deck of next.decks) {
++          // Genuinely new decks only — renamed/relinked decks keep their id.
++          if (deck.sourceFile && !knownIds.has(deck.id)) {
++            addedNames.push(deck.name)
+           }
+-          next = addSection({ ...next, decks: [...next.decks, deck] }, candidate.course ?? '')
+-          importedNames.push(candidate.name)
+         }
+ 
+-        if (next !== current) {
+-          saveState(next)
+-        }
++        saveState(next)
+ 
+         return next
+       })
+ 
+-      if (importedNames.length) {
+-        setAutoImported(importedNames)
++      if (addedNames.length) {
++        setAutoImported([...new Set(addedNames)])
+       }
+-    })()
++    }
++
++    void reconcile()
++
++    const onFocus = () => {
++      if (Date.now() - lastRun < 1500) {
++        return
++      }
++
++      void reconcile()
++    }
++
++    window.addEventListener('focus', onFocus)
+ 
+     return () => {
+       cancelled = true
++      window.removeEventListener('focus', onFocus)
+     }
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [])
+ 
+   const startReview = useCallback((deckId: null | string) => {
+@@ -429,8 +442,8 @@ export function StudyView() {
+           <ReviewSurface
+             done={done}
+             flip={flip}
+-            item={current}
+             intervals={previewIntervals(state, current.card.id, now)}
++            item={current}
+             onGrade={grade}
+             onReveal={() => setRevealed(true)}
+             remaining={queue.length}
+diff --git a/apps/desktop/src/app/study/model.js b/apps/desktop/src/app/study/model.js
+index 909a51f803c..7f36da47942 100644
+--- a/apps/desktop/src/app/study/model.js
++++ b/apps/desktop/src/app/study/model.js
+@@ -177,6 +177,191 @@ export function assignDeckSection(state, deckId, section) {
+         decks: state.decks.map(deck => (deck.id === deckId ? { ...deck, course } : deck))
+     };
+ }
++// --- Deck-file reconcile (agent-managed decks) --------------------------------
++// The vault's Flashcards folder is the source of truth for agent-written decks:
++// the agent renames, edits, and deletes deck files while organizing, and Study
++// mirrors that here — without losing FSRS review progress, because cards keep
++// their ids (the schedule key) whenever their text survives the file edit.
++/** Keep in sync with the deck-file extension filter in deck-files.ts. */
++const DECK_FILE_EXTENSION = /\.(tsv|txt|md)$/i;
++/** A vanished file and a new file that share at least half their cards are the
++ *  same deck, renamed — relink it instead of wiping its review history. */
++const RENAME_OVERLAP_MIN = 0.5;
++/** Cards match across file edits by text, not id (case-insensitive, trimmed). */
++function cardKey(front, back) {
++    return `${front.trim().toLocaleLowerCase()}\u0000${back.trim().toLocaleLowerCase()}`;
++}
++/** Shared-card fraction (0..1) between a deck and a candidate, multiset-aware. */
++function renameScore(deck, candidate) {
++    if (!deck.cards.length || !candidate.cards.length) {
++        return 0;
++    }
++    const counts = new Map();
++    for (const card of deck.cards) {
++        const key = cardKey(card.front, card.back);
++        counts.set(key, (counts.get(key) ?? 0) + 1);
++    }
++    let shared = 0;
++    for (const card of candidate.cards) {
++        const key = cardKey(card.front, card.back);
++        const left = counts.get(key) ?? 0;
++        if (left > 0) {
++            counts.set(key, left - 1);
++            shared++;
++        }
++    }
++    return shared / Math.max(deck.cards.length, candidate.cards.length);
++}
++/** File cards → deck cards. Text-matched cards keep their StudyCard (id, tags,
++ *  suspended — and therefore their schedule entry); file text wins on case or
++ *  whitespace drift; new cards get fresh ids; dropped cards are reported so the
++ *  caller can prune their schedules. Returns the same array when nothing changed. */
++function reconcileCards(existing, parsed) {
++    const pool = new Map();
++    for (const card of existing) {
++        const key = cardKey(card.front, card.back);
++        const queue = pool.get(key);
++        if (queue) {
++            queue.push(card);
++        }
++        else {
++            pool.set(key, [card]);
++        }
++    }
++    const cards = parsed.map((entry) => {
++        const match = pool.get(cardKey(entry.front, entry.back))?.shift();
++        if (!match) {
++            return { back: entry.back, front: entry.front, id: freshId('card'), tags: [] };
++        }
++        return match.front === entry.front && match.back === entry.back
++            ? match
++            : { ...match, back: entry.back, front: entry.front };
++    });
++    const removedIds = [...pool.values()].flat().map(card => card.id);
++    const unchanged = removedIds.length === 0 && cards.length === existing.length && cards.every((card, index) => card === existing[index]);
++    return { cards: unchanged ? existing : cards, removedIds };
++}
++/** Reconcile agent-managed decks against the vault's deck files. Pure.
++ *  - candidate with a linked deck (`sourceFile`) → update name/course/cards in place
++ *  - candidate with no linked deck → relink a renamed deck when the cards overlap,
++ *    else import it fresh (skipping files with no parseable cards, like the old import)
++ *  - linked deck whose file is gone → remove it and prune its cards' schedules
++ *  - decks without `sourceFile` (made in-app) are never touched
++ *  Returns the same state reference when the files already match, so callers can
++ *  skip persistence. */
++export function reconcileDeckFiles(state, candidates) {
++    const byFile = new Map(candidates.map(candidate => [candidate.fileName, candidate]));
++    const linkedFiles = new Set();
++    for (const deck of state.decks) {
++        if (deck.sourceFile) {
++            linkedFiles.add(deck.sourceFile);
++        }
++    }
++    const decks = [];
++    const orphans = [];
++    const prunedIds = [];
++    let changed = false;
++    for (const deck of state.decks) {
++        if (!deck.sourceFile) {
++            decks.push(deck);
++            continue;
++        }
++        const candidate = byFile.get(deck.sourceFile);
++        if (!candidate) {
++            // File gone — deleted, unless a new file below claims it as a rename.
++            orphans.push(deck);
++            continue;
++        }
++        const { cards, removedIds } = reconcileCards(deck.cards, candidate.cards);
++        const course = candidate.course?.trim() || undefined;
++        if (cards === deck.cards && deck.name === candidate.name && deck.course === course) {
++            decks.push(deck);
++            continue;
++        }
++        decks.push({ ...deck, cards, course, name: candidate.name });
++        prunedIds.push(...removedIds);
++        changed = true;
++    }
++    for (const candidate of candidates) {
++        if (linkedFiles.has(candidate.fileName)) {
++            continue;
++        }
++        let renamedAt = -1;
++        let bestScore = 0;
++        for (let index = 0; index < orphans.length; index++) {
++            const score = renameScore(orphans[index], candidate);
++            if (score > bestScore) {
++                bestScore = score;
++                renamedAt = index;
++            }
++        }
++        if (renamedAt >= 0 && bestScore >= RENAME_OVERLAP_MIN) {
++            const [renamed] = orphans.splice(renamedAt, 1);
++            const { cards, removedIds } = reconcileCards(renamed.cards, candidate.cards);
++            decks.push({
++                ...renamed,
++                cards,
++                course: candidate.course?.trim() || undefined,
++                name: candidate.name,
++                sourceFile: candidate.fileName
++            });
++            prunedIds.push(...removedIds);
++            changed = true;
++            continue;
++        }
++        if (!candidate.cards.length) {
++            continue;
++        }
++        decks.push({
++            cards: candidate.cards.map(card => ({ back: card.back, front: card.front, id: freshId('card'), tags: [] })),
++            course: candidate.course?.trim() || undefined,
++            createdAt: new Date().toISOString(),
++            id: freshId('deck'),
++            name: candidate.name,
++            sourceFile: candidate.fileName
++        });
++        changed = true;
++    }
++    for (const deck of orphans) {
++        prunedIds.push(...deck.cards.map(card => card.id));
++        changed = true;
++    }
++    if (!changed) {
++        return state;
++    }
++    let schedule = state.schedule;
++    if (prunedIds.length) {
++        schedule = { ...schedule };
++        for (const id of prunedIds) {
++            delete schedule[id];
++        }
++    }
++    // Same section rules as everywhere else: new courses appear, manually-added
++    // (now empty) sections stay. The review log keeps its history — see deleteDeck.
++    return { ...state, decks, schedule, sections: normalizeSections(state.sections, decks) };
++}
++/** One-time bridge for decks imported before `sourceFile` existed: the legacy
++ *  import-once registry knows which file names were auto-imported, so relink each
++ *  to the (still unlinked) deck carrying that import's default name. Without this,
++ *  the first reconcile would see every already-imported file as brand new and
++ *  duplicate the deck. Pure; returns the same reference when nothing to adopt. */
++export function adoptLegacyDeckFiles(state, importedFileNames) {
++    let decks = state.decks;
++    let changed = false;
++    for (const fileName of importedFileNames) {
++        if (decks.some(deck => deck.sourceFile === fileName)) {
++            continue;
++        }
++        const name = fileName.replace(DECK_FILE_EXTENSION, '');
++        const at = decks.findIndex(deck => !deck.sourceFile && deck.name === name);
++        if (at < 0) {
++            continue;
++        }
++        decks = decks.map((deck, index) => (index === at ? { ...deck, sourceFile: fileName } : deck));
++        changed = true;
++    }
++    return changed ? { ...state, decks } : state;
++}
+ export function studyMotivation(state, todayIso, windowDays = 90) {
+     const DAY = 86_400_000;
+     const days = new Set(state.reviews.map(review => review.at.slice(0, 10)));
+diff --git a/apps/desktop/src/app/study/model.test.js b/apps/desktop/src/app/study/model.test.js
+new file mode 100644
+index 00000000000..7ee1e328d22
+--- /dev/null
++++ b/apps/desktop/src/app/study/model.test.js
+@@ -0,0 +1,234 @@
++// reconcileDeckFiles is what lets the agent reorganize the vault's Flashcards folder
++// (rename files, edit cards, change course headers, delete decks) without the Study
++// page drifting — and, critically, without torching FSRS review progress. These tests
++// pin that contract.
++import { describe, expect, it } from 'vitest';
++import { adoptLegacyDeckFiles, reconcileDeckFiles } from './model';
++function card(id, front, back, extra = {}) {
++    return { back, front, id, tags: [], ...extra };
++}
++function deck(overrides) {
++    return { cards: [], createdAt: '2026-07-01T00:00:00.000Z', ...overrides };
++}
++function state(decks, overrides = {}) {
++    return { decks, reviews: [], schedule: {}, sections: [], version: 1, ...overrides };
++}
++function candidate(fileName, cards, course) {
++    return { cards, course, fileName, name: fileName.replace(/\.(tsv|txt|md)$/i, '') };
++}
++// Only the schedule KEY matters to reconcile; the FSRS payload is opaque to it.
++function scheduled() {
++    return { due: '2026-07-09T00:00:00.000Z' };
++}
++describe('reconcileDeckFiles', () => {
++    it('imports a new deck file with fresh ids and files it under its course', () => {
++        const before = state([]);
++        const after = reconcileDeckFiles(before, [
++            candidate('Renal pharm.tsv', [{ back: 'loop diuretic', front: 'furosemide' }], 'Pharmacology')
++        ]);
++        expect(after).not.toBe(before);
++        expect(after.decks).toHaveLength(1);
++        const added = after.decks[0];
++        expect(added.sourceFile).toBe('Renal pharm.tsv');
++        expect(added.name).toBe('Renal pharm');
++        expect(added.course).toBe('Pharmacology');
++        expect(added.cards).toHaveLength(1);
++        expect(added.cards[0].id).toBeTruthy();
++        expect(after.sections).toContain('Pharmacology');
++    });
++    it('skips files with no parseable cards, like the old import', () => {
++        const before = state([]);
++        expect(reconcileDeckFiles(before, [candidate('Empty.tsv', [])])).toBe(before);
++    });
++    it('returns the same reference when files already match the decks', () => {
++        const linked = deck({
++            cards: [card('card-a', 'Q1', 'A1')],
++            course: 'Pharmacology',
++            id: 'deck-1',
++            name: 'Cardio',
++            sourceFile: 'Cardio.tsv'
++        });
++        const before = state([linked], { sections: ['Pharmacology'] });
++        const after = reconcileDeckFiles(before, [candidate('Cardio.tsv', [{ back: 'A1', front: 'Q1' }], 'Pharmacology')]);
++        expect(after).toBe(before);
++    });
++    it('relinks a renamed file to its deck and keeps the review schedule', () => {
++        const linked = deck({
++            cards: [card('card-a', 'Q1', 'A1'), card('card-b', 'Q2', 'A2')],
++            course: 'Pharmacology',
++            id: 'deck-1',
++            name: 'Cardio',
++            sourceFile: 'Cardio.tsv'
++        });
++        const before = state([linked], { schedule: { 'card-a': scheduled() }, sections: ['Pharmacology'] });
++        const after = reconcileDeckFiles(before, [
++            candidate('Cardio essentials.tsv', [
++                { back: 'A1', front: 'Q1' },
++                { back: 'A2', front: 'Q2' }
++            ], 'Pharmacology')
++        ]);
++        expect(after.decks).toHaveLength(1);
++        expect(after.decks[0].id).toBe('deck-1');
++        expect(after.decks[0].name).toBe('Cardio essentials');
++        expect(after.decks[0].sourceFile).toBe('Cardio essentials.tsv');
++        expect(after.decks[0].cards.map(c => c.id)).toEqual(['card-a', 'card-b']);
++        expect(after.schedule['card-a']).toBeDefined();
++    });
++    it('rename with card edits keeps surviving ids and prunes the dropped ones', () => {
++        const linked = deck({
++            cards: [card('card-a', 'Q1', 'A1'), card('card-b', 'Q2', 'A2'), card('card-c', 'Q3', 'A3')],
++            id: 'deck-1',
++            name: 'Old name',
++            sourceFile: 'Old name.tsv'
++        });
++        const before = state([linked], { schedule: { 'card-a': scheduled(), 'card-c': scheduled() } });
++        const after = reconcileDeckFiles(before, [
++            candidate('New name.tsv', [
++                { back: 'A1', front: 'Q1' },
++                { back: 'A2', front: 'Q2' },
++                { back: 'A8', front: 'Q8' }
++            ])
++        ]);
++        expect(after.decks).toHaveLength(1);
++        expect(after.decks[0].id).toBe('deck-1');
++        expect(after.decks[0].sourceFile).toBe('New name.tsv');
++        expect(after.decks[0].cards.slice(0, 2).map(c => c.id)).toEqual(['card-a', 'card-b']);
++        expect(after.decks[0].cards[2].id).not.toBe('card-c');
++        expect(after.schedule['card-a']).toBeDefined();
++        expect(after.schedule['card-c']).toBeUndefined();
++    });
++    it('treats a mostly-different new file as delete + fresh import, not a rename', () => {
++        const linked = deck({
++            cards: [card('card-a', 'Q1', 'A1'), card('card-b', 'Q2', 'A2'), card('card-c', 'Q3', 'A3')],
++            id: 'deck-1',
++            name: 'Old name',
++            sourceFile: 'Old name.tsv'
++        });
++        const before = state([linked], { schedule: { 'card-a': scheduled() } });
++        const after = reconcileDeckFiles(before, [
++            candidate('Fresh.tsv', [
++                { back: 'A1', front: 'Q1' },
++                { back: 'A5', front: 'Q5' },
++                { back: 'A6', front: 'Q6' },
++                { back: 'A7', front: 'Q7' }
++            ])
++        ]);
++        expect(after.decks).toHaveLength(1);
++        expect(after.decks[0].id).not.toBe('deck-1');
++        expect(after.decks[0].sourceFile).toBe('Fresh.tsv');
++        expect(after.schedule['card-a']).toBeUndefined();
++    });
++    it('a changed course header regroups the deck and keeps the old section around', () => {
++        const linked = deck({
++            cards: [card('card-a', 'Q1', 'A1')],
++            course: 'Pharmacology',
++            id: 'deck-1',
++            name: 'Cardio',
++            sourceFile: 'Cardio.tsv'
++        });
++        const before = state([linked], { sections: ['Pharmacology'] });
++        const after = reconcileDeckFiles(before, [
++            candidate('Cardio.tsv', [{ back: 'A1', front: 'Q1' }], 'Infectious disease')
++        ]);
++        expect(after.decks[0].course).toBe('Infectious disease');
++        expect(after.decks[0].id).toBe('deck-1');
++        expect(after.sections).toContain('Infectious disease');
++        // Manually-added (now empty) sections survive reconcile.
++        expect(after.sections).toContain('Pharmacology');
++    });
++    it('edited cards keep ids for unchanged text and prune removed schedules', () => {
++        const linked = deck({
++            cards: [card('card-keep', 'Q1', 'A1'), card('card-drop', 'Q2', 'A2')],
++            id: 'deck-1',
++            name: 'Cardio',
++            sourceFile: 'Cardio.tsv'
++        });
++        const before = state([linked], { schedule: { 'card-drop': scheduled(), 'card-keep': scheduled() } });
++        const after = reconcileDeckFiles(before, [
++            candidate('Cardio.tsv', [
++                { back: 'A1', front: 'Q1' },
++                { back: 'A3', front: 'Q3' }
++            ])
++        ]);
++        const cards = after.decks[0].cards;
++        expect(cards).toHaveLength(2);
++        expect(cards[0].id).toBe('card-keep');
++        expect(cards[1].id).not.toBe('card-drop');
++        expect(after.schedule['card-keep']).toBeDefined();
++        expect(after.schedule['card-drop']).toBeUndefined();
++        expect(after.schedule[cards[1].id]).toBeUndefined();
++    });
++    it('matches card text case-insensitively and trimmed, adopting the file text', () => {
++        const linked = deck({
++            cards: [card('card-a', '  LISINOPRIL ', 'ACE inhibitor', { suspended: true, tags: ['bp'] })],
++            id: 'deck-1',
++            name: 'Cardio',
++            sourceFile: 'Cardio.tsv'
++        });
++        const before = state([linked], { schedule: { 'card-a': scheduled() } });
++        const after = reconcileDeckFiles(before, [
++            candidate('Cardio.tsv', [{ back: 'ACE inhibitor', front: 'lisinopril' }])
++        ]);
++        const updated = after.decks[0].cards[0];
++        expect(updated.id).toBe('card-a');
++        expect(updated.front).toBe('lisinopril');
++        // In-app card state rides along with the id.
++        expect(updated.suspended).toBe(true);
++        expect(updated.tags).toEqual(['bp']);
++        expect(after.schedule['card-a']).toBeDefined();
++    });
++    it('a deleted file removes its deck and prunes the schedule, sparing user decks', () => {
++        const linked = deck({
++            cards: [card('card-a', 'Q1', 'A1')],
++            id: 'deck-file',
++            name: 'Cardio',
++            sourceFile: 'Cardio.tsv'
++        });
++        const mine = deck({ cards: [card('card-mine', 'Q9', 'A9')], id: 'deck-mine', name: 'My own deck' });
++        const before = state([linked, mine], {
++            reviews: [{ at: '2026-07-08T12:00:00.000Z', cardId: 'card-a', rating: 'good' }],
++            schedule: { 'card-a': scheduled(), 'card-mine': scheduled() }
++        });
++        const after = reconcileDeckFiles(before, []);
++        expect(after.decks).toHaveLength(1);
++        expect(after.decks[0]).toBe(mine);
++        expect(after.schedule['card-a']).toBeUndefined();
++        expect(after.schedule['card-mine']).toBeDefined();
++        // Review history stays — streaks and the heatmap don't lie (deleteDeck semantics).
++        expect(after.reviews).toHaveLength(1);
++    });
++    it('never touches decks created in-app, even when a file shares their name', () => {
++        const mine = deck({ cards: [card('card-mine', 'Q1', 'A1')], id: 'deck-mine', name: 'Cardio' });
++        const before = state([mine]);
++        const after = reconcileDeckFiles(before, [candidate('Cardio.tsv', [{ back: 'A1', front: 'Q1' }])]);
++        expect(after.decks).toHaveLength(2);
++        expect(after.decks[0]).toBe(mine);
++        expect(after.decks[0].sourceFile).toBeUndefined();
++        expect(after.decks[1].sourceFile).toBe('Cardio.tsv');
++        expect(after.decks[1].cards[0].id).not.toBe('card-mine');
++    });
++});
++describe('adoptLegacyDeckFiles', () => {
++    it('relinks a pre-reconcile imported deck to its file by the import default name', () => {
++        const early = deck({ cards: [card('card-a', 'Q1', 'A1')], id: 'deck-1', name: 'Cardio' });
++        const before = state([early]);
++        const after = adoptLegacyDeckFiles(before, ['Cardio.tsv']);
++        expect(after).not.toBe(before);
++        expect(after.decks[0].sourceFile).toBe('Cardio.tsv');
++        expect(after.decks[0].id).toBe('deck-1');
++    });
++    it('returns the same reference when there is nothing to adopt', () => {
++        const mine = deck({ id: 'deck-1', name: 'Something else' });
++        const before = state([mine]);
++        expect(adoptLegacyDeckFiles(before, ['Cardio.tsv'])).toBe(before);
++        expect(adoptLegacyDeckFiles(before, [])).toBe(before);
++    });
++    it('skips files already linked to a deck', () => {
++        const linked = deck({ id: 'deck-1', name: 'Cardio', sourceFile: 'Cardio.tsv' });
++        const twin = deck({ id: 'deck-2', name: 'Cardio' });
++        const before = state([linked, twin]);
++        const after = adoptLegacyDeckFiles(before, ['Cardio.tsv']);
++        expect(after).toBe(before);
++        expect(after.decks[1].sourceFile).toBeUndefined();
++    });
++});
+diff --git a/apps/desktop/src/app/study/model.test.ts b/apps/desktop/src/app/study/model.test.ts
+new file mode 100644
+index 00000000000..281f3f5e195
+--- /dev/null
++++ b/apps/desktop/src/app/study/model.test.ts
+@@ -0,0 +1,298 @@
++// reconcileDeckFiles is what lets the agent reorganize the vault's Flashcards folder
++// (rename files, edit cards, change course headers, delete decks) without the Study
++// page drifting — and, critically, without torching FSRS review progress. These tests
++// pin that contract.
++import { describe, expect, it } from 'vitest'
++
++import type { DeckFileCandidate } from './deck-files'
++import {
++  adoptLegacyDeckFiles,
++  reconcileDeckFiles,
++  type StoredSchedule,
++  type StudyCard,
++  type StudyDeck,
++  type StudyState
++} from './model'
++
++function card(id: string, front: string, back: string, extra: Partial<StudyCard> = {}): StudyCard {
++  return { back, front, id, tags: [], ...extra }
++}
++
++function deck(overrides: Partial<StudyDeck> & Pick<StudyDeck, 'id' | 'name'>): StudyDeck {
++  return { cards: [], createdAt: '2026-07-01T00:00:00.000Z', ...overrides }
++}
++
++function state(decks: StudyDeck[], overrides: Partial<StudyState> = {}): StudyState {
++  return { decks, reviews: [], schedule: {}, sections: [], version: 1, ...overrides }
++}
++
++function candidate(fileName: string, cards: { back: string; front: string }[], course?: string): DeckFileCandidate {
++  return { cards, course, fileName, name: fileName.replace(/\.(tsv|txt|md)$/i, '') }
++}
++
++// Only the schedule KEY matters to reconcile; the FSRS payload is opaque to it.
++function scheduled(): StoredSchedule {
++  return { due: '2026-07-09T00:00:00.000Z' } as StoredSchedule
++}
++
++describe('reconcileDeckFiles', () => {
++  it('imports a new deck file with fresh ids and files it under its course', () => {
++    const before = state([])
++
++    const after = reconcileDeckFiles(before, [
++      candidate('Renal pharm.tsv', [{ back: 'loop diuretic', front: 'furosemide' }], 'Pharmacology')
++    ])
++
++    expect(after).not.toBe(before)
++    expect(after.decks).toHaveLength(1)
++
++    const added = after.decks[0]
++    expect(added.sourceFile).toBe('Renal pharm.tsv')
++    expect(added.name).toBe('Renal pharm')
++    expect(added.course).toBe('Pharmacology')
++    expect(added.cards).toHaveLength(1)
++    expect(added.cards[0].id).toBeTruthy()
++    expect(after.sections).toContain('Pharmacology')
++  })
++
++  it('skips files with no parseable cards, like the old import', () => {
++    const before = state([])
++
++    expect(reconcileDeckFiles(before, [candidate('Empty.tsv', [])])).toBe(before)
++  })
++
++  it('returns the same reference when files already match the decks', () => {
++    const linked = deck({
++      cards: [card('card-a', 'Q1', 'A1')],
++      course: 'Pharmacology',
++      id: 'deck-1',
++      name: 'Cardio',
++      sourceFile: 'Cardio.tsv'
++    })
++
++    const before = state([linked], { sections: ['Pharmacology'] })
++    const after = reconcileDeckFiles(before, [candidate('Cardio.tsv', [{ back: 'A1', front: 'Q1' }], 'Pharmacology')])
++
++    expect(after).toBe(before)
++  })
++
++  it('relinks a renamed file to its deck and keeps the review schedule', () => {
++    const linked = deck({
++      cards: [card('card-a', 'Q1', 'A1'), card('card-b', 'Q2', 'A2')],
++      course: 'Pharmacology',
++      id: 'deck-1',
++      name: 'Cardio',
++      sourceFile: 'Cardio.tsv'
++    })
++
++    const before = state([linked], { schedule: { 'card-a': scheduled() }, sections: ['Pharmacology'] })
++
++    const after = reconcileDeckFiles(before, [
++      candidate(
++        'Cardio essentials.tsv',
++        [
++          { back: 'A1', front: 'Q1' },
++          { back: 'A2', front: 'Q2' }
++        ],
++        'Pharmacology'
++      )
++    ])
++
++    expect(after.decks).toHaveLength(1)
++    expect(after.decks[0].id).toBe('deck-1')
++    expect(after.decks[0].name).toBe('Cardio essentials')
++    expect(after.decks[0].sourceFile).toBe('Cardio essentials.tsv')
++    expect(after.decks[0].cards.map(c => c.id)).toEqual(['card-a', 'card-b'])
++    expect(after.schedule['card-a']).toBeDefined()
++  })
++
++  it('rename with card edits keeps surviving ids and prunes the dropped ones', () => {
++    const linked = deck({
++      cards: [card('card-a', 'Q1', 'A1'), card('card-b', 'Q2', 'A2'), card('card-c', 'Q3', 'A3')],
++      id: 'deck-1',
++      name: 'Old name',
++      sourceFile: 'Old name.tsv'
++    })
++
++    const before = state([linked], { schedule: { 'card-a': scheduled(), 'card-c': scheduled() } })
++
++    const after = reconcileDeckFiles(before, [
++      candidate('New name.tsv', [
++        { back: 'A1', front: 'Q1' },
++        { back: 'A2', front: 'Q2' },
++        { back: 'A8', front: 'Q8' }
++      ])
++    ])
++
++    expect(after.decks).toHaveLength(1)
++    expect(after.decks[0].id).toBe('deck-1')
++    expect(after.decks[0].sourceFile).toBe('New name.tsv')
++    expect(after.decks[0].cards.slice(0, 2).map(c => c.id)).toEqual(['card-a', 'card-b'])
++    expect(after.decks[0].cards[2].id).not.toBe('card-c')
++    expect(after.schedule['card-a']).toBeDefined()
++    expect(after.schedule['card-c']).toBeUndefined()
++  })
++
++  it('treats a mostly-different new file as delete + fresh import, not a rename', () => {
++    const linked = deck({
++      cards: [card('card-a', 'Q1', 'A1'), card('card-b', 'Q2', 'A2'), card('card-c', 'Q3', 'A3')],
++      id: 'deck-1',
++      name: 'Old name',
++      sourceFile: 'Old name.tsv'
++    })
++
++    const before = state([linked], { schedule: { 'card-a': scheduled() } })
++
++    const after = reconcileDeckFiles(before, [
++      candidate('Fresh.tsv', [
++        { back: 'A1', front: 'Q1' },
++        { back: 'A5', front: 'Q5' },
++        { back: 'A6', front: 'Q6' },
++        { back: 'A7', front: 'Q7' }
++      ])
++    ])
++
++    expect(after.decks).toHaveLength(1)
++    expect(after.decks[0].id).not.toBe('deck-1')
++    expect(after.decks[0].sourceFile).toBe('Fresh.tsv')
++    expect(after.schedule['card-a']).toBeUndefined()
++  })
++
++  it('a changed course header regroups the deck and keeps the old section around', () => {
++    const linked = deck({
++      cards: [card('card-a', 'Q1', 'A1')],
++      course: 'Pharmacology',
++      id: 'deck-1',
++      name: 'Cardio',
++      sourceFile: 'Cardio.tsv'
++    })
++
++    const before = state([linked], { sections: ['Pharmacology'] })
++
++    const after = reconcileDeckFiles(before, [
++      candidate('Cardio.tsv', [{ back: 'A1', front: 'Q1' }], 'Infectious disease')
++    ])
++
++    expect(after.decks[0].course).toBe('Infectious disease')
++    expect(after.decks[0].id).toBe('deck-1')
++    expect(after.sections).toContain('Infectious disease')
++    // Manually-added (now empty) sections survive reconcile.
++    expect(after.sections).toContain('Pharmacology')
++  })
++
++  it('edited cards keep ids for unchanged text and prune removed schedules', () => {
++    const linked = deck({
++      cards: [card('card-keep', 'Q1', 'A1'), card('card-drop', 'Q2', 'A2')],
++      id: 'deck-1',
++      name: 'Cardio',
++      sourceFile: 'Cardio.tsv'
++    })
++
++    const before = state([linked], { schedule: { 'card-drop': scheduled(), 'card-keep': scheduled() } })
++
++    const after = reconcileDeckFiles(before, [
++      candidate('Cardio.tsv', [
++        { back: 'A1', front: 'Q1' },
++        { back: 'A3', front: 'Q3' }
++      ])
++    ])
++
++    const cards = after.decks[0].cards
++    expect(cards).toHaveLength(2)
++    expect(cards[0].id).toBe('card-keep')
++    expect(cards[1].id).not.toBe('card-drop')
++    expect(after.schedule['card-keep']).toBeDefined()
++    expect(after.schedule['card-drop']).toBeUndefined()
++    expect(after.schedule[cards[1].id]).toBeUndefined()
++  })
++
++  it('matches card text case-insensitively and trimmed, adopting the file text', () => {
++    const linked = deck({
++      cards: [card('card-a', '  LISINOPRIL ', 'ACE inhibitor', { suspended: true, tags: ['bp'] })],
++      id: 'deck-1',
++      name: 'Cardio',
++      sourceFile: 'Cardio.tsv'
++    })
++
++    const before = state([linked], { schedule: { 'card-a': scheduled() } })
++
++    const after = reconcileDeckFiles(before, [
++      candidate('Cardio.tsv', [{ back: 'ACE inhibitor', front: 'lisinopril' }])
++    ])
++
++    const updated = after.decks[0].cards[0]
++    expect(updated.id).toBe('card-a')
++    expect(updated.front).toBe('lisinopril')
++    // In-app card state rides along with the id.
++    expect(updated.suspended).toBe(true)
++    expect(updated.tags).toEqual(['bp'])
++    expect(after.schedule['card-a']).toBeDefined()
++  })
++
++  it('a deleted file removes its deck and prunes the schedule, sparing user decks', () => {
++    const linked = deck({
++      cards: [card('card-a', 'Q1', 'A1')],
++      id: 'deck-file',
++      name: 'Cardio',
++      sourceFile: 'Cardio.tsv'
++    })
++
++    const mine = deck({ cards: [card('card-mine', 'Q9', 'A9')], id: 'deck-mine', name: 'My own deck' })
++
++    const before = state([linked, mine], {
++      reviews: [{ at: '2026-07-08T12:00:00.000Z', cardId: 'card-a', rating: 'good' }],
++      schedule: { 'card-a': scheduled(), 'card-mine': scheduled() }
++    })
++
++    const after = reconcileDeckFiles(before, [])
++
++    expect(after.decks).toHaveLength(1)
++    expect(after.decks[0]).toBe(mine)
++    expect(after.schedule['card-a']).toBeUndefined()
++    expect(after.schedule['card-mine']).toBeDefined()
++    // Review history stays — streaks and the heatmap don't lie (deleteDeck semantics).
++    expect(after.reviews).toHaveLength(1)
++  })
++
++  it('never touches decks created in-app, even when a file shares their name', () => {
++    const mine = deck({ cards: [card('card-mine', 'Q1', 'A1')], id: 'deck-mine', name: 'Cardio' })
++    const before = state([mine])
++    const after = reconcileDeckFiles(before, [candidate('Cardio.tsv', [{ back: 'A1', front: 'Q1' }])])
++
++    expect(after.decks).toHaveLength(2)
++    expect(after.decks[0]).toBe(mine)
++    expect(after.decks[0].sourceFile).toBeUndefined()
++    expect(after.decks[1].sourceFile).toBe('Cardio.tsv')
++    expect(after.decks[1].cards[0].id).not.toBe('card-mine')
++  })
++})
++
++describe('adoptLegacyDeckFiles', () => {
++  it('relinks a pre-reconcile imported deck to its file by the import default name', () => {
++    const early = deck({ cards: [card('card-a', 'Q1', 'A1')], id: 'deck-1', name: 'Cardio' })
++    const before = state([early])
++    const after = adoptLegacyDeckFiles(before, ['Cardio.tsv'])
++
++    expect(after).not.toBe(before)
++    expect(after.decks[0].sourceFile).toBe('Cardio.tsv')
++    expect(after.decks[0].id).toBe('deck-1')
++  })
++
++  it('returns the same reference when there is nothing to adopt', () => {
++    const mine = deck({ id: 'deck-1', name: 'Something else' })
++    const before = state([mine])
++
++    expect(adoptLegacyDeckFiles(before, ['Cardio.tsv'])).toBe(before)
++    expect(adoptLegacyDeckFiles(before, [])).toBe(before)
++  })
++
++  it('skips files already linked to a deck', () => {
++    const linked = deck({ id: 'deck-1', name: 'Cardio', sourceFile: 'Cardio.tsv' })
++    const twin = deck({ id: 'deck-2', name: 'Cardio' })
++    const before = state([linked, twin])
++    const after = adoptLegacyDeckFiles(before, ['Cardio.tsv'])
++
++    expect(after).toBe(before)
++    expect(after.decks[1].sourceFile).toBeUndefined()
++  })
++})
+diff --git a/apps/desktop/src/app/study/model.ts b/apps/desktop/src/app/study/model.ts
+index 6f257c7d0bc..b94fbcdb920 100644
+--- a/apps/desktop/src/app/study/model.ts
++++ b/apps/desktop/src/app/study/model.ts
+@@ -6,6 +6,8 @@
+ // the upgrade path is backend/vault storage once Nemesis accounts land.
+ import { createEmptyCard, fsrs, type Card as FsrsCard, type Grade, Rating } from 'ts-fsrs'
+ 
++import type { DeckFileCandidate } from './deck-files'
++
+ export interface StudyCard {
+   id: string
+   front: string
+@@ -21,6 +23,9 @@ export interface StudyDeck {
+   course?: string
+   createdAt: string
+   cards: StudyCard[]
++  /** Vault deck file (Flashcards/<fileName>) this deck mirrors. Absent = created
++   *  in-app by the student; reconcileDeckFiles never touches those. */
++  sourceFile?: string
+ }
+ 
+ /** JSON-safe FSRS card state (Dates serialized to ISO strings). */
+@@ -281,6 +286,247 @@ export function assignDeckSection(state: StudyState, deckId: string, section: st
+   }
+ }
+ 
++// --- Deck-file reconcile (agent-managed decks) --------------------------------
++// The vault's Flashcards folder is the source of truth for agent-written decks:
++// the agent renames, edits, and deletes deck files while organizing, and Study
++// mirrors that here — without losing FSRS review progress, because cards keep
++// their ids (the schedule key) whenever their text survives the file edit.
++
++/** Keep in sync with the deck-file extension filter in deck-files.ts. */
++const DECK_FILE_EXTENSION = /\.(tsv|txt|md)$/i
++
++/** A vanished file and a new file that share at least half their cards are the
++ *  same deck, renamed — relink it instead of wiping its review history. */
++const RENAME_OVERLAP_MIN = 0.5
++
++/** Cards match across file edits by text, not id (case-insensitive, trimmed). */
++function cardKey(front: string, back: string): string {
++  return `${front.trim().toLocaleLowerCase()}\u0000${back.trim().toLocaleLowerCase()}`
++}
++
++/** Shared-card fraction (0..1) between a deck and a candidate, multiset-aware. */
++function renameScore(deck: StudyDeck, candidate: DeckFileCandidate): number {
++  if (!deck.cards.length || !candidate.cards.length) {
++    return 0
++  }
++
++  const counts = new Map<string, number>()
++
++  for (const card of deck.cards) {
++    const key = cardKey(card.front, card.back)
++    counts.set(key, (counts.get(key) ?? 0) + 1)
++  }
++
++  let shared = 0
++
++  for (const card of candidate.cards) {
++    const key = cardKey(card.front, card.back)
++    const left = counts.get(key) ?? 0
++
++    if (left > 0) {
++      counts.set(key, left - 1)
++      shared++
++    }
++  }
++
++  return shared / Math.max(deck.cards.length, candidate.cards.length)
++}
++
++/** File cards → deck cards. Text-matched cards keep their StudyCard (id, tags,
++ *  suspended — and therefore their schedule entry); file text wins on case or
++ *  whitespace drift; new cards get fresh ids; dropped cards are reported so the
++ *  caller can prune their schedules. Returns the same array when nothing changed. */
++function reconcileCards(
++  existing: StudyCard[],
++  parsed: readonly { back: string; front: string }[]
++): { cards: StudyCard[]; removedIds: string[] } {
++  const pool = new Map<string, StudyCard[]>()
++
++  for (const card of existing) {
++    const key = cardKey(card.front, card.back)
++    const queue = pool.get(key)
++
++    if (queue) {
++      queue.push(card)
++    } else {
++      pool.set(key, [card])
++    }
++  }
++
++  const cards = parsed.map((entry): StudyCard => {
++    const match = pool.get(cardKey(entry.front, entry.back))?.shift()
++
++    if (!match) {
++      return { back: entry.back, front: entry.front, id: freshId('card'), tags: [] }
++    }
++
++    return match.front === entry.front && match.back === entry.back
++      ? match
++      : { ...match, back: entry.back, front: entry.front }
++  })
++
++  const removedIds = [...pool.values()].flat().map(card => card.id)
++
++  const unchanged =
++    removedIds.length === 0 && cards.length === existing.length && cards.every((card, index) => card === existing[index])
++
++  return { cards: unchanged ? existing : cards, removedIds }
++}
++
++/** Reconcile agent-managed decks against the vault's deck files. Pure.
++ *  - candidate with a linked deck (`sourceFile`) → update name/course/cards in place
++ *  - candidate with no linked deck → relink a renamed deck when the cards overlap,
++ *    else import it fresh (skipping files with no parseable cards, like the old import)
++ *  - linked deck whose file is gone → remove it and prune its cards' schedules
++ *  - decks without `sourceFile` (made in-app) are never touched
++ *  Returns the same state reference when the files already match, so callers can
++ *  skip persistence. */
++export function reconcileDeckFiles(state: StudyState, candidates: DeckFileCandidate[]): StudyState {
++  const byFile = new Map(candidates.map(candidate => [candidate.fileName, candidate]))
++  const linkedFiles = new Set<string>()
++
++  for (const deck of state.decks) {
++    if (deck.sourceFile) {
++      linkedFiles.add(deck.sourceFile)
++    }
++  }
++
++  const decks: StudyDeck[] = []
++  const orphans: StudyDeck[] = []
++  const prunedIds: string[] = []
++  let changed = false
++
++  for (const deck of state.decks) {
++    if (!deck.sourceFile) {
++      decks.push(deck)
++
++      continue
++    }
++
++    const candidate = byFile.get(deck.sourceFile)
++
++    if (!candidate) {
++      // File gone — deleted, unless a new file below claims it as a rename.
++      orphans.push(deck)
++
++      continue
++    }
++
++    const { cards, removedIds } = reconcileCards(deck.cards, candidate.cards)
++    const course = candidate.course?.trim() || undefined
++
++    if (cards === deck.cards && deck.name === candidate.name && deck.course === course) {
++      decks.push(deck)
++
++      continue
++    }
++
++    decks.push({ ...deck, cards, course, name: candidate.name })
++    prunedIds.push(...removedIds)
++    changed = true
++  }
++
++  for (const candidate of candidates) {
++    if (linkedFiles.has(candidate.fileName)) {
++      continue
++    }
++
++    let renamedAt = -1
++    let bestScore = 0
++
++    for (let index = 0; index < orphans.length; index++) {
++      const score = renameScore(orphans[index], candidate)
++
++      if (score > bestScore) {
++        bestScore = score
++        renamedAt = index
++      }
++    }
++
++    if (renamedAt >= 0 && bestScore >= RENAME_OVERLAP_MIN) {
++      const [renamed] = orphans.splice(renamedAt, 1)
++      const { cards, removedIds } = reconcileCards(renamed.cards, candidate.cards)
++
++      decks.push({
++        ...renamed,
++        cards,
++        course: candidate.course?.trim() || undefined,
++        name: candidate.name,
++        sourceFile: candidate.fileName
++      })
++      prunedIds.push(...removedIds)
++      changed = true
++
++      continue
++    }
++
++    if (!candidate.cards.length) {
++      continue
++    }
++
++    decks.push({
++      cards: candidate.cards.map(card => ({ back: card.back, front: card.front, id: freshId('card'), tags: [] })),
++      course: candidate.course?.trim() || undefined,
++      createdAt: new Date().toISOString(),
++      id: freshId('deck'),
++      name: candidate.name,
++      sourceFile: candidate.fileName
++    })
++    changed = true
++  }
++
++  for (const deck of orphans) {
++    prunedIds.push(...deck.cards.map(card => card.id))
++    changed = true
++  }
++
++  if (!changed) {
++    return state
++  }
++
++  let schedule = state.schedule
++
++  if (prunedIds.length) {
++    schedule = { ...schedule }
++
++    for (const id of prunedIds) {
++      delete schedule[id]
++    }
++  }
++
++  // Same section rules as everywhere else: new courses appear, manually-added
++  // (now empty) sections stay. The review log keeps its history — see deleteDeck.
++  return { ...state, decks, schedule, sections: normalizeSections(state.sections, decks) }
++}
++
++/** One-time bridge for decks imported before `sourceFile` existed: the legacy
++ *  import-once registry knows which file names were auto-imported, so relink each
++ *  to the (still unlinked) deck carrying that import's default name. Without this,
++ *  the first reconcile would see every already-imported file as brand new and
++ *  duplicate the deck. Pure; returns the same reference when nothing to adopt. */
++export function adoptLegacyDeckFiles(state: StudyState, importedFileNames: string[]): StudyState {
++  let decks = state.decks
++  let changed = false
++
++  for (const fileName of importedFileNames) {
++    if (decks.some(deck => deck.sourceFile === fileName)) {
++      continue
++    }
++
++    const name = fileName.replace(DECK_FILE_EXTENSION, '')
++    const at = decks.findIndex(deck => !deck.sourceFile && deck.name === name)
++
++    if (at < 0) {
++      continue
++    }
++
++    decks = decks.map((deck, index) => (index === at ? { ...deck, sourceFile: fileName } : deck))
++    changed = true
++  }
++
++  return changed ? { ...state, decks } : state
++}
++
+ // --- Motivational stats (streaks + retention) -------------------------------
+ 
+ export interface StudyMotivation {
+diff --git a/apps/desktop/src/app/types.ts b/apps/desktop/src/app/types.ts
+index fd2cde0cea2..e07090d12f7 100644
+--- a/apps/desktop/src/app/types.ts
++++ b/apps/desktop/src/app/types.ts
+@@ -124,6 +124,7 @@ export type CommandDispatchResponse =
+ 
+ export type SidebarNavId =
+   | 'artifacts'
++  | 'calendar'
+   | 'command-center'
+   | 'graph'
+   | 'library'
+diff --git a/apps/desktop/src/i18n/en.js b/apps/desktop/src/i18n/en.js
+index 1d464bfcd00..967f153721f 100644
+--- a/apps/desktop/src/i18n/en.js
++++ b/apps/desktop/src/i18n/en.js
+@@ -1439,7 +1439,8 @@ export const en = {
+             study: 'Study',
+             library: 'Library',
+             graph: 'Graph',
+-            recorder: 'Recorder'
++            recorder: 'Recorder',
++            calendar: 'Calendar'
+         },
+         searchAria: 'Search sessions',
+         searchPlaceholder: 'Search sessions…',
+diff --git a/apps/desktop/src/i18n/en.ts b/apps/desktop/src/i18n/en.ts
+index 59691ff3f1c..21f913a2526 100644
+--- a/apps/desktop/src/i18n/en.ts
++++ b/apps/desktop/src/i18n/en.ts
+@@ -1486,7 +1486,8 @@ export const en: Translations = {
+       study: 'Study',
+       library: 'Library',
+       graph: 'Graph',
+-      recorder: 'Recorder'
++      recorder: 'Recorder',
++      calendar: 'Calendar'
+     },
+     searchAria: 'Search sessions',
+     searchPlaceholder: 'Search sessions…',
+-- 
+2.53.0
+

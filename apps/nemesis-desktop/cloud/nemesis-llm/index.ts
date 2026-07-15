@@ -7,40 +7,23 @@
 //     → validates key → plan (subscriptions) → daily token budget (plan_entitlements
 //       'nemesis_llm_daily_tokens' + usage_counters 'nemesis_llm_tokens') → forwards to
 //       DeepSeek with the SERVER-side key → records usage_events → returns/streams.
-//       Models requested as 'glm*' route straight to GLM — the premium "highest"
-//       answer mode, allowed for the pro/max plans only. Otherwise, if the DeepSeek
-//       call throws or comes back out of balance (402, or an error body containing
-//       "Insufficient Balance") and GLM_API_KEY is set, the same request is retried
-//       once on GLM (every plan — that path is outage insurance, not a perk).
 //   GET  /nemesis-llm/v1/models            Authorization: Bearer <device key>
 //     → static model list (keeps OpenAI-compatible clients happy).
-//   GET  /nemesis-llm/usage            Authorization: Bearer <device key>
-//     → today's plan/limit/used/remaining for the desktop Account & usage card.
-// FOUR consumers ride this one function — chat, device-key mint, models list,
-// AND the settings usage card. Regression-check all four when rewriting routes.
 //
 // Deploy with verify_jwt=false (custom auth is implemented here: JWT for minting,
 // device keys for completions). Secrets used: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY
-// (platform-injected), DEEPSEEK_API_KEY (already set for the ask/research functions),
-// and GLM_API_KEY (Z.ai — premium tier + DeepSeek failover target; GLM_MODEL picks
-// the model used for direct-GLM requests without one and for the failover retry,
-// default 'glm-5.2'). GEMINI_API_KEY also lives in the vault but is RESERVED for
-// image generation (owner decision 2026-07-14) — it plays no part in chat.
+// (platform-injected) and DEEPSEEK_API_KEY (already set for the ask/research functions).
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const DEEPSEEK_KEY = Deno.env.get('DEEPSEEK_API_KEY') ?? ''
 const DEEPSEEK_BASE = 'https://api.deepseek.com'
-const GLM_KEY = Deno.env.get('GLM_API_KEY') ?? ''
-const GLM_MODEL = Deno.env.get('GLM_MODEL') ?? 'glm-5.2'
-const GLM_BASE = 'https://api.z.ai/api/paas/v4'
 
 const COUNTER_KEY = 'nemesis_llm_tokens'
 const ENTITLEMENT_KEY = 'nemesis_llm_daily_tokens'
 const ACTIVE = new Set(['active', 'trialing', 'past_due'])
-const FALLBACK_DAILY_TOKENS = 25_000 // free-tier default when no entitlement row
-const TRIAL_MS = 7 * 24 * 60 * 60 * 1000
+const FALLBACK_DAILY_TOKENS = 150_000 // free-tier default when no entitlement row
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
 
@@ -137,17 +120,7 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
     .limit(1)
     .maybeSingle()
 
-  let plan = sub?.plan && sub.status && ACTIVE.has(sub.status) ? sub.plan : 'free'
-
-  // No paid plan: accounts younger than 7 days ride the full-power trial tier.
-  if (plan === 'free') {
-    const { data: userData } = await admin.auth.admin.getUserById(keyRow.user_id)
-    const createdAt = userData?.user?.created_at ? Date.parse(userData.user.created_at) : 0
-
-    if (createdAt && Date.now() - createdAt < TRIAL_MS) {
-      plan = 'trial'
-    }
-  }
+  const plan = sub?.plan && sub.status && ACTIVE.has(sub.status) ? sub.plan : 'free'
 
   const { data: ent } = await admin
     .from('plan_entitlements')
@@ -197,38 +170,8 @@ async function recordUsage(ctx: KeyContext, tokens: number, model: string): Prom
   })
 }
 
-/** POST body to a provider's chat/completions endpoint. Network failures resolve to
- *  null (never throw) so the caller can decide whether to fail over. */
-function callProvider(base: string, key: string, body: Record<string, unknown>): Promise<Response | null> {
-  return fetch(`${base}/chat/completions`, {
-    body: JSON.stringify(body),
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    method: 'POST'
-  }).catch(() => null)
-}
-
-/** True when an upstream response means the PROVIDER is unusable right now — the
- *  trigger for a GLM failover retry. Covers out-of-balance (402 / "Insufficient
- *  Balance"), a dead or suspended server key (401/403 — e.g. DeepSeek's
- *  "Authentication Fails (governor)"), provider-side rate limiting (429), and 5xx.
- *  Request-shaped errors (400/404/422) stay with the caller: they would fail on any
- *  provider. Clones before reading the body so a response that turns out NOT to be
- *  a failover trigger is still intact for the normal response path. */
-async function isProviderUnusable(res: Response): Promise<boolean> {
-  if (res.status === 401 || res.status === 402 || res.status === 403 || res.status === 429 || res.status >= 500) {
-    return true
-  }
-
-  if (res.ok) {
-    return false
-  }
-
-  const text = await res.clone().text().catch(() => '')
-  return /insufficient balance/i.test(text)
-}
-
 async function chatCompletions(req: Request): Promise<Response> {
-  if (!DEEPSEEK_KEY && !GLM_KEY) {
+  if (!DEEPSEEK_KEY) {
     return json({ error: 'model provider key not configured on the server' }, 500)
   }
 
@@ -253,12 +196,11 @@ async function chatCompletions(req: Request): Promise<Response> {
   }
 
   const requested = typeof body.model === 'string' ? body.model : 'deepseek-chat'
-  const useGlm = requested.toLowerCase().startsWith('glm')
-  const resolved = useGlm ? { model: requested } : resolveModel(requested)
-  let model = resolved.model
+  const resolved = resolveModel(requested)
+  const model = resolved.model
   body.model = model
 
-  if (!useGlm && resolved.thinking && body.thinking === undefined) {
+  if (resolved.thinking && body.thinking === undefined) {
     body.thinking = resolved.thinking
   }
 
@@ -269,41 +211,11 @@ async function chatCompletions(req: Request): Promise<Response> {
     body.stream_options = { ...(body.stream_options as object | undefined), include_usage: true }
   }
 
-  let upstream: Response | null = null
-
-  if (useGlm) {
-    if (!GLM_KEY) {
-      return json({ error: 'GLM provider key not configured on the server' }, 500)
-    }
-
-    // GLM 5.2 is the premium "highest" answer mode — Agent Pro and Max plans only
-    // (owner pricing decision 2026-07-14). The automatic DeepSeek-outage failover
-    // below is deliberately NOT gated: uptime insurance covers every plan.
-    if (ctx.plan !== 'pro' && ctx.plan !== 'max') {
-      return json(
-        { error: { code: 'plan_required', message: 'The highest answer mode needs the Agent Pro or Max plan.' } },
-        403
-      )
-    }
-
-    upstream = await callProvider(GLM_BASE, GLM_KEY, body)
-  } else {
-    upstream = DEEPSEEK_KEY ? await callProvider(DEEPSEEK_BASE, DEEPSEEK_KEY, body) : null
-
-    // Failover: DeepSeek unreachable, out of balance, key-dead, or rate-limited —
-    // retry once on GLM. `thinking` is a DeepSeek-only selector, so it's stripped
-    // before the retry goes out.
-    if (GLM_KEY && (!upstream || (await isProviderUnusable(upstream)))) {
-      model = GLM_MODEL
-      body.model = GLM_MODEL
-      delete body.thinking
-      upstream = await callProvider(GLM_BASE, GLM_KEY, body)
-    }
-  }
-
-  if (!upstream) {
-    return json({ error: 'model provider unreachable' }, 502)
-  }
+  const upstream = await fetch(`${DEEPSEEK_BASE}/chat/completions`, {
+    body: JSON.stringify(body),
+    headers: { Authorization: `Bearer ${DEEPSEEK_KEY}`, 'Content-Type': 'application/json' },
+    method: 'POST'
+  })
 
   if (!streaming) {
     const data = await upstream.json().catch(() => null)
@@ -367,17 +279,15 @@ Deno.serve(async (req: Request) => {
         { id: 'deepseek-chat', object: 'model', owned_by: 'nemesis' },
         { id: 'deepseek-reasoner', object: 'model', owned_by: 'nemesis' },
         { id: 'deepseek-v4-flash', object: 'model', owned_by: 'nemesis' },
-        { id: 'deepseek-v4-pro', object: 'model', owned_by: 'nemesis' },
-        { id: GLM_MODEL, object: 'model', owned_by: 'nemesis' }
+        { id: 'deepseek-v4-pro', object: 'model', owned_by: 'nemesis' }
       ],
       object: 'list'
     })
   }
 
-  // Today's budget for the in-app Account & usage view (desktop fetchUsage()).
-  // LOAD-BEARING: the settings page's allowance card reads this; it was dropped
-  // once by a rewrite and the card sat on its unavailable state for everyone.
-  // Returns 200 even when the budget is exhausted — used/remaining ARE the answer.
+  // Read-only today's-budget snapshot for the in-app Usage view. Same key →
+  // plan → counter path chatCompletions already walks, so it can't disagree
+  // with what actually gets enforced.
   if (req.method === 'GET' && path.endsWith('/usage')) {
     const deviceKey = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
     const ctx = await resolveKey(deviceKey)
@@ -386,11 +296,13 @@ Deno.serve(async (req: Request) => {
       return ctx
     }
 
+    const remaining = Math.max(0, ctx.dailyLimit - ctx.used)
+
     return json({
       daily_limit: ctx.dailyLimit,
       period_start: ctx.periodStart,
       plan: ctx.plan,
-      remaining: Math.max(0, ctx.dailyLimit - ctx.used),
+      remaining,
       used: ctx.used
     })
   }
