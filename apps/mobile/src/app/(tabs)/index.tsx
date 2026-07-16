@@ -1,122 +1,191 @@
-import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import type { AskMode, AskResponse } from "@pharmabro/shared";
-import { askQuestion } from "@/api/ask";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { router } from "expo-router";
 import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
-import { AnswerView } from "@/components/AnswerView";
-import { ChatComposer } from "@/components/ChatComposer";
-import { Orb } from "@/components/TopBar";
-import { GuestState } from "@/components/states";
-import { c, radius, space, type } from "@/theme/tokens";
+import { EmptyBlock, MissionButton, StatusPill, Surface } from "@/components/mission-ui";
+import { createMission, isDesktopOnline, listMissions, statusLabel, type Mission } from "@/api/missions";
+import { space, type } from "@/theme/tokens";
+import tokens from "@/theme/tokens.json";
 
-interface Turn {
-  q: string;
-  a: AskResponse | null;
-  err: string | null;
+// Missions home (§Task 8) — the app's "/" route, replacing the old PharmaOrb chat
+// screen. Composer at the bottom dispatches a mission to the desktop agent; the list
+// above shows every mission the student has sent, newest first, with a live-ish
+// status (desktop-online polling, not full realtime — the detail screen is where
+// events stream live). Colors/radii come only from theme/tokens.json.
+
+const { colors, radius } = tokens;
+const DESKTOP_POLL_MS = 60_000;
+
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-const EXAMPLES = [
-  "Is lisinopril safe with spironolactone?",
-  "Semaglutide for weight loss — how well does it work?",
-  "Metformin dosing when eGFR is 40",
-];
-
-// The chat screen — opens straight into the conversation (ChatGPT/Claude style). The shared TopBar +
-// drawer live in the layout; this screen is the message list + the composer.
-export default function ChatScreen() {
+export default function MissionsHome() {
   const { session } = useAuth();
   const { resetNonce } = useShell();
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const [input, setInput] = useState("");
-  const [mode, setMode] = useState<AskMode>("fast");
-  const [busy, setBusy] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const [missions, setMissions] = useState<Mission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [desktopOnline, setDesktopOnline] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<TextInput>(null);
 
-  // "New chat" (from the drawer or top bar) clears the thread.
+  const refresh = useCallback(async () => {
+    try {
+      const rows = await listMissions();
+      setMissions(rows);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    setLoading(true);
+    void refresh().finally(() => setLoading(false));
+  }, [session, refresh]);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    const poll = async () => {
+      const online = await isDesktopOnline();
+      if (!cancelled) setDesktopOnline(online);
+    };
+    void poll();
+    const timer = setInterval(() => void poll(), DESKTOP_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [session]);
+
+  // "New mission" (drawer) lands back here (already home) and focuses the composer.
   useEffect(() => {
     if (resetNonce === 0) return;
-    setTurns([]);
-    setInput("");
+    inputRef.current?.focus();
   }, [resetNonce]);
 
   if (!session) {
     return (
-      <View style={styles.guestWrap} testID="tab-ask">
-        <GuestState body="Sign in to ask medication questions." />
+      <View style={styles.guestWrap} testID="missions-guest">
+        <EmptyBlock title="Browsing as guest" body="Sign in to dispatch a mission to your Mac." />
       </View>
     );
   }
 
-  const submit = async (raw: string) => {
-    const q = raw.trim();
-    if (q.length < 3 || busy) return;
-    const idx = turns.length;
-    setTurns((prev) => [...prev, { q, a: null, err: null }]);
-    setInput("");
-    setBusy(true);
-    requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+  const submit = async () => {
+    const trimmed = prompt.trim();
+    if (trimmed.length < 3 || sending) return;
+    setSending(true);
+    setError(null);
     try {
-      const res = await askQuestion(q, { mode });
-      setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, a: res } : t)));
+      const created = await createMission(trimmed);
+      setMissions((prev) => [created, ...prev]);
+      setPrompt("");
     } catch (e) {
-      setTurns((prev) => prev.map((t, i) => (i === idx ? { ...t, err: (e as Error).message } : t)));
+      setError((e as Error).message);
     } finally {
-      setBusy(false);
-      requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+      setSending(false);
     }
   };
 
-  const empty = turns.length === 0;
-
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={8}>
-      {empty ? (
-        <View style={styles.welcome} testID="ask-idle">
-          <Orb size={46} />
-          <Text style={styles.welcomeTitle}>What do you want to know?</Text>
-          <Text style={styles.welcomeSub}>Educational, source-grounded answers — not medical advice.</Text>
-          <View style={styles.examples}>
-            {EXAMPLES.map((ex) => (
-              <Pressable key={ex} style={styles.exChip} onPress={() => submit(ex)}>
-                <Text style={styles.exChipText}>{ex}</Text>
-              </Pressable>
-            ))}
-          </View>
+      {loading ? (
+        <View style={styles.centered} testID="missions-loading">
+          <ActivityIndicator color={colors.foreground} />
         </View>
       ) : (
-        <ScrollView ref={scrollRef} style={styles.flex} contentContainerStyle={styles.thread} keyboardShouldPersistTaps="handled">
-          {turns.map((t, i) => (
-            <View key={i} style={styles.turn}>
-              <View style={styles.userRow}>
-                <View style={styles.userBubble}><Text style={styles.userText}>{t.q}</Text></View>
-              </View>
-              <View style={styles.aRow}>
-                <View style={styles.aHead}><Orb size={20} /><Text style={styles.aName}>PharmaOrb</Text></View>
-                {t.a ? (
-                  <AnswerView answer={t.a} onAskFollowUp={submit} />
-                ) : t.err ? (
-                  <Text style={styles.err}>{t.err}</Text>
-                ) : (
-                  <View style={styles.thinking}>
-                    <ActivityIndicator color={c.acid} />
-                    <Text style={styles.thinkingText}>Reading the sources…</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          ))}
-        </ScrollView>
+        <FlatList
+          testID="missions-list"
+          data={missions}
+          keyExtractor={(m) => m.id}
+          contentContainerStyle={missions.length ? styles.list : styles.listEmpty}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={async () => {
+                setRefreshing(true);
+                await refresh();
+                setRefreshing(false);
+              }}
+              tintColor={colors.muted}
+            />
+          }
+          ListEmptyComponent={
+            <EmptyBlock
+              title="No missions yet"
+              body="Tell Nemesis what to work on below — it runs on your Mac, even while you're away from it."
+            />
+          }
+          renderItem={({ item }) => (
+            <Pressable onPress={() => router.push(`/mission/${item.id}`)} testID={`mission-row-${item.id}`}>
+              <Surface style={styles.row}>
+                <View style={styles.rowTop}>
+                  <Text style={styles.rowTitle} numberOfLines={2}>
+                    {item.title}
+                  </Text>
+                  <StatusPill status={item.status} label={statusLabel(item, desktopOnline)} />
+                </View>
+                <Text style={styles.rowTime}>{relativeTime(item.updated_at || item.created_at)}</Text>
+              </Surface>
+            </Pressable>
+          )}
+        />
       )}
 
+      {error ? <Text style={styles.err}>{error}</Text> : null}
+      {!desktopOnline ? (
+        <Text style={styles.offlineNote} testID="desktop-offline-note">
+          Your Mac is offline — this will start when Nemesis opens there.
+        </Text>
+      ) : null}
+
       <View style={styles.composerWrap}>
-        <ChatComposer
-          value={input}
-          onChangeText={setInput}
-          onSend={() => submit(input)}
-          busy={busy}
-          mode={mode}
-          onToggleMode={() => setMode((m) => (m === "fast" ? "thorough" : "fast"))}
+        <TextInput
+          ref={inputRef}
+          testID="mission-composer-input"
+          style={styles.input}
+          placeholder="What should Nemesis work on?"
+          placeholderTextColor={colors.muted}
+          value={prompt}
+          onChangeText={setPrompt}
+          multiline
+          editable={!sending}
+        />
+        <MissionButton
+          testID="mission-composer-send"
+          label={sending ? "Sending…" : "Send"}
+          variant="primary"
+          busy={sending}
+          disabled={prompt.trim().length < 3}
+          onPress={() => void submit()}
         />
       </View>
     </KeyboardAvoidingView>
@@ -124,27 +193,39 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  guestWrap: { flex: 1, padding: space(6), backgroundColor: c.bg },
+  flex: { flex: 1, backgroundColor: colors.background },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  guestWrap: { flex: 1, backgroundColor: colors.background },
 
-  welcome: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(3) },
-  welcomeTitle: { color: c.text, ...type.h1, textAlign: "center", marginTop: space(2) },
-  welcomeSub: { color: c.text2, ...type.small, textAlign: "center", maxWidth: 300 },
-  examples: { marginTop: space(4), gap: space(2.5), width: "100%", maxWidth: 380 },
-  exChip: { borderWidth: 1, borderColor: c.line, backgroundColor: c.surface, borderRadius: radius.md, paddingVertical: space(3), paddingHorizontal: space(4) },
-  exChipText: { color: c.text2, ...type.body, fontSize: 14.5 },
+  list: { padding: space(4), gap: space(3) },
+  listEmpty: { flex: 1, padding: space(4) },
+  row: { gap: space(1.5) },
+  rowTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: space(3) },
+  rowTitle: { flex: 1, ...type.bodyStrong, color: colors.foreground },
+  rowTime: { ...type.micro, color: colors.muted },
 
-  thread: { padding: space(4), paddingBottom: space(5), gap: space(6) },
-  turn: { gap: space(3.5) },
-  userRow: { flexDirection: "row", justifyContent: "flex-end" },
-  userBubble: { maxWidth: "82%", backgroundColor: c.surface2, borderWidth: 1, borderColor: c.line, borderRadius: 18, borderBottomRightRadius: 5, paddingVertical: space(2.75), paddingHorizontal: space(3.75) },
-  userText: { color: c.text, fontSize: 15, lineHeight: 21 },
-  aRow: { gap: space(2.75) },
-  aHead: { flexDirection: "row", alignItems: "center", gap: space(2) },
-  aName: { color: c.text2, ...type.small, fontWeight: "600" },
-  err: { color: c.danger, ...type.small },
-  thinking: { flexDirection: "row", alignItems: "center", gap: space(2.5), paddingVertical: space(2) },
-  thinkingText: { color: c.text2, ...type.small },
+  err: { ...type.small, color: colors.accent, paddingHorizontal: space(4), paddingBottom: space(1) },
+  offlineNote: { ...type.micro, color: colors.muted, paddingHorizontal: space(4), paddingBottom: space(1.5) },
 
-  composerWrap: { paddingHorizontal: space(3.5), paddingTop: space(2.5), paddingBottom: space(6), backgroundColor: c.bg },
+  composerWrap: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: space(2.5),
+    paddingHorizontal: space(3.5),
+    paddingTop: space(2.5),
+    paddingBottom: space(6),
+    backgroundColor: colors.background,
+  },
+  input: {
+    flex: 1,
+    maxHeight: 120,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: radius.input,
+    paddingHorizontal: space(3.5),
+    paddingVertical: space(2.75),
+    color: colors.foreground,
+    fontSize: 15.5,
+  },
 });
