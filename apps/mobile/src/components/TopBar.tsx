@@ -2,10 +2,13 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useShell } from "./AppDrawer";
 import { c, space, type } from "@/theme/tokens";
+import tokens from "@/theme/tokens.json";
 
-// The quiet chat top bar: hamburger (opens the drawer) · PharmaOrb wordmark + orb · new-chat (+).
-// Shared by the chat screen and the inner pages so the whole app reads as one shell.
-export function TopBar({ title = "PharmaOrb", showNewChat = true }: { title?: string; showNewChat?: boolean }) {
+// The quiet top bar: hamburger (opens the drawer) · Nemesis wordmark + mark · new-mission (+).
+// Shared by every screen in the (tabs) shell, including the missions home — this is
+// "chrome" in the design-parity sense, so the mark below is neutral (no accent wash),
+// sourced from theme/tokens.json rather than the old lime PharmaOrb accent.
+export function TopBar({ title = "Nemesis", showNewChat = true }: { title?: string; showNewChat?: boolean }) {
   const insets = useSafeAreaInsets();
   const { openDrawer, newChat } = useShell();
   return (
@@ -31,8 +34,9 @@ export function TopBar({ title = "PharmaOrb", showNewChat = true }: { title?: st
   );
 }
 
-// The PharmaOrb mark — a lime sphere with a soft glow. (No radial-gradient lib; a highlight dot + acid
-// shadow read as a sphere.)
+// The Nemesis mark — a neutral steel sphere, deliberately un-accented: it lives in the
+// chrome (top bar, sign-in), and the design-parity rule keeps chrome accent-free so the
+// ONE crimson accent stays meaningful on primary actions instead of washing the nav.
 export function Orb({ size = 16 }: { size?: number }) {
   return (
     <View style={[styles.orb, { width: size, height: size, borderRadius: size / 2 }]}>
@@ -53,6 +57,6 @@ const styles = StyleSheet.create({
   plusV: { position: "absolute", width: 2, height: 18, borderRadius: 2, backgroundColor: c.text2 },
   brand: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space(2) },
   wordmark: { color: c.text, fontSize: 16.5, fontWeight: "700", letterSpacing: -0.2 },
-  orb: { backgroundColor: c.acid, ...{ shadowColor: c.acid, shadowOpacity: 0.55, shadowRadius: 7, shadowOffset: { width: 0, height: 0 }, elevation: 6 } },
+  orb: { backgroundColor: tokens.colors.muted },
   orbHi: { position: "absolute", backgroundColor: "rgba(255,255,255,0.55)" },
 });

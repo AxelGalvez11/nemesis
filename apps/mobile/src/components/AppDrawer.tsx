@@ -4,12 +4,17 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { c, radius, space, type } from "@/theme/tokens";
+import tokens from "@/theme/tokens.json";
 
 // ChatGPT/Claude-style slide-out drawer + the app-shell context that drives it. Built on RN's built-in
 // Animated (no extra deps; renders identically under react-native-web for previews). The drawer is always
 // mounted and slides via translateX so there is no mount/unmount flicker; pointer events are gated on `open`.
 //
-// Item ORDER (owner's call): New chat → the nav options → THEN recent chats → profile.
+// Missions-only navigation (iOS dispatch plan, Phase 0 D4 + Design parity): the old
+// PharmaOrb evidence rows (Explore drugs / Live Monitoring / Reports) are removed here
+// — those screens stay in the codebase, just unreachable from the drawer. Settings
+// stays; it's account chrome, not an evidence screen. The "+" mark is neutral (chrome
+// rule), not the old lime accent.
 
 interface ShellState {
   open: boolean;
@@ -89,7 +94,7 @@ function DrawerContent({ onClose, onNewChat }: { onClose: () => void; onNewChat:
     onClose();
     router.push(path as never);
   };
-  const startNewChat = () => {
+  const startNewMission = () => {
     onNewChat();
     onClose();
     router.push("/" as never);
@@ -98,22 +103,12 @@ function DrawerContent({ onClose, onNewChat }: { onClose: () => void; onNewChat:
   return (
     <View style={[styles.panelInner, { paddingTop: insets.top + space(2) }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: space(3) }}>
-        <Pressable style={styles.newChat} onPress={startNewChat}>
+        <Pressable style={styles.newChat} onPress={startNewMission}>
           <Text style={styles.newChatPlus}>+</Text>
-          <Text style={styles.newChatText}>New chat</Text>
+          <Text style={styles.newChatText}>New mission</Text>
         </Pressable>
 
-        <NavRow glyph="⌕" label="Explore drugs" onPress={() => go("/explore")} />
-        <NavRow glyph="◉" label="Live Monitoring" onPress={() => go("/watchlist")} />
-        <NavRow glyph="▤" label="Reports" onPress={() => go("/reports")} />
         <NavRow glyph="⚙" label="Settings" onPress={() => go("/profile")} />
-
-        <View style={styles.divider} />
-
-        <Text style={styles.sectionLabel}>Recent</Text>
-        <View style={styles.recentEmpty}>
-          <Text style={styles.recentEmptyText}>Your chats will appear here.</Text>
-        </View>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + space(3) }]}>
@@ -152,7 +147,7 @@ const styles = StyleSheet.create({
     marginHorizontal: space(3.5), marginBottom: space(4),
     borderWidth: 1, borderColor: c.line2, borderRadius: radius.md, paddingVertical: space(3), paddingHorizontal: space(3.5),
   },
-  newChatPlus: { color: c.acid, fontSize: 19, lineHeight: 19, marginTop: -2 },
+  newChatPlus: { color: tokens.colors.muted, fontSize: 19, lineHeight: 19, marginTop: -2 },
   newChatText: { color: c.text, ...type.title },
 
   navRow: { flexDirection: "row", alignItems: "center", gap: space(3), paddingVertical: space(2.75), paddingHorizontal: space(4.5) },
@@ -162,11 +157,6 @@ const styles = StyleSheet.create({
   dim: { color: c.text3, opacity: 0.7 },
   badge: { color: c.acid, ...type.micro, borderWidth: 1, borderColor: c.acidLine, borderRadius: 6, paddingHorizontal: space(1.5), paddingVertical: 2, overflow: "hidden" },
   soon: { color: c.text3, fontSize: 9.5, letterSpacing: 0.5, fontWeight: "700" },
-
-  divider: { height: 1, backgroundColor: c.line, marginVertical: space(3), marginHorizontal: space(4) },
-  sectionLabel: { color: c.text3, ...type.micro, letterSpacing: 1, textTransform: "uppercase", paddingHorizontal: space(5), paddingBottom: space(1) },
-  recentEmpty: { paddingHorizontal: space(5), paddingVertical: space(2) },
-  recentEmptyText: { color: c.text3, ...type.small },
 
   footer: { flexDirection: "row", alignItems: "center", gap: space(2.5), borderTopWidth: 1, borderTopColor: c.line, paddingHorizontal: space(4.5), paddingTop: space(3.5) },
   avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center" },

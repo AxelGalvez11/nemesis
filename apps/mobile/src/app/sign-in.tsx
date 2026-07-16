@@ -23,7 +23,7 @@ export default function SignIn() {
   return (
     <View style={common.center} testID="signin-screen">
       <Orb size={44} />
-      <Text style={common.h1}>PharmaOrb</Text>
+      <Text style={common.h1}>Nemesis</Text>
       <Text style={common.sub}>Educational use only — not medical advice.</Text>
       <TextInput
         testID="email"
