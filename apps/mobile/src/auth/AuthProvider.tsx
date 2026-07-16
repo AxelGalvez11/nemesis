@@ -10,6 +10,7 @@ import {
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/api/supabase";
 import { identify, resetAnalyticsUser } from "@/lib/analytics";
+import { registerForPush } from "@/lib/push";
 
 interface AuthState {
   session: Session | null;
@@ -42,7 +43,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(data.session);
         // Associate analytics with the opaque user id (UUID). identify() ignores
         // anything email-shaped; no-op until a sink is wired.
-        if (data.session) identify(data.session.user.id);
+        if (data.session) {
+          identify(data.session.user.id);
+          void registerForPush(); // returning user, session already on disk
+        }
       })
       .catch(() => setSession(null))
       .finally(() => setLoading(false));
@@ -52,7 +56,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsGuest(false); // a real session supersedes guest mode
         // Only on an actual sign-in — not every TOKEN_REFRESHED. The returning-user
         // case is handled by getSession() above (buffered until the sink wires).
-        if (event === "SIGNED_IN") identify(next.user.id);
+        if (event === "SIGNED_IN") {
+          identify(next.user.id);
+          void registerForPush(); // best-effort; never blocks sign-in (see push.ts)
+        }
       } else {
         resetAnalyticsUser(); // sign-out → clear the analytics identity
       }
