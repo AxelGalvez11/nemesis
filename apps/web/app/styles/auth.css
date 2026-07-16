@@ -136,6 +136,15 @@
 }
 .nemesis-auth-shell *, .nemesis-auth-shell *::before, .nemesis-auth-shell *::after { box-sizing: border-box; }
 
+/* full-shell scanline overlay — absolute so it never participates in the grid */
+.nemesis-auth-scanlines {
+  background: repeating-linear-gradient(to bottom, transparent 0, transparent 3px, rgba(255, 255, 255, 0.018) 4px);
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 4;
+}
+
 /* atmosphere (scoped to the card column): two slow-breathing crimson washes + noise */
 .nemesis-auth-atmo { position: absolute; inset: 0; pointer-events: none; }
 .nemesis-auth-atmo::before {
