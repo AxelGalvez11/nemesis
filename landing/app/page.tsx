@@ -1,9 +1,7 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
 import { useEffect } from "react";
-import { SocialLinks } from "@/components/SocialLinks";
+import { SiteChrome, APP_SIGN_UP, APP_DOWNLOAD } from "@/components/SiteChrome";
 import {
   IconCalendar,
   IconSplit,
@@ -11,16 +9,11 @@ import {
   IconSearch,
   IconDocStack,
   IconDownload,
-  IconCheck,
 } from "@/components/FeatureIcons";
 
-const APP_SIGN_UP = "https://app.enternemesis.com/sign-up";
-const APP_SIGN_IN = "https://app.enternemesis.com/sign-in";
-const APP_DOWNLOAD = "https://app.enternemesis.com/api/download/mac";
-
 /**
- * One scroll controller drives the hero's decorative background layer. The offset
- * is calculated relative to the hero, clamped to the available overscan, and
+ * One scroll controller drives every decorative background layer. Each offset is
+ * calculated relative to its own section, clamped to the available overscan, and
  * disabled when the visitor requests reduced motion.
  */
 function useBackgroundParallax() {
@@ -108,62 +101,13 @@ function useBackgroundParallax() {
   }, []);
 }
 
-/**
- * Cursor-following card glow (adapted from 21st.dev "Spotlight Card" by easemize).
- * One rAF-throttled pointermove listener writes the viewport cursor position into
- * two CSS variables on <html>; the cards' ::after overlays use a fixed-attachment
- * radial gradient, so every card lights up under the real cursor with no per-card
- * math. Desktop-only via the (hover:hover) media block in globals.css.
- */
-function useCursorGlow() {
-  useEffect(() => {
-    let frame = 0;
-    let x = -999;
-    let y = -999;
-
-    const apply = () => {
-      frame = 0;
-      document.documentElement.style.setProperty("--cx", x.toFixed(1));
-      document.documentElement.style.setProperty("--cy", y.toFixed(1));
-    };
-
-    const onMove = (e: PointerEvent) => {
-      x = e.clientX;
-      y = e.clientY;
-      if (!frame) frame = window.requestAnimationFrame(apply);
-    };
-
-    document.addEventListener("pointermove", onMove, { passive: true });
-    return () => {
-      document.removeEventListener("pointermove", onMove);
-      if (frame) window.cancelAnimationFrame(frame);
-    };
-  }, []);
-}
-
 export default function Home() {
   useBackgroundParallax();
-  useCursorGlow();
 
   return (
-    <>
-      <nav className="nav">
-        <div className="wrap nav-in">
-          <Link className="brand" href="/" aria-label="Nemesis home">
-            <Image src="/nemesis/logo.png" alt="" width={26} height={26} />
-            <b>Nemesis</b>
-          </Link>
-          <span className="spacer" />
-          <a className="ghost" href="#work">Features</a>
-          <a className="ghost" href="#plans">Plans</a>
-          <Link className="ghost" href="/about">About</Link>
-          <a className="ghost" href={APP_SIGN_IN}>Sign in</a>
-          <a className="btn btn-primary" href={APP_SIGN_UP}>Sign up</a>
-        </div>
-      </nav>
-
-      {/* The hero keeps the committed dark-chrome panel — the notebook art was cut
-          for a black ground — while the rest of the page runs on paper. */}
+    <SiteChrome>
+      {/* The hero keeps the committed dark-chrome panel (the notebook art was cut
+          for a black ground) while the rest of the page runs on paper. */}
       <header className="hero">
         <div className="hero-art parallax-layer" data-parallax-amount="64" />
         <div className="hero-veil" />
@@ -308,55 +252,6 @@ export default function Home() {
         </div>
       </div>
 
-      <section className="section" id="plans">
-        <div className="wrap">
-          <div className="section-head">
-            <p className="eyebrow">Plans</p>
-            <h2>Seven days free. Cancel anytime.</h2>
-            <p>Card required. Nothing charged for 7 days.</p>
-          </div>
-          <div className="plans">
-            <div className="plan">
-              <div className="plan-price">$9.99<span className="per">/mo</span></div>
-              <h3>Student</h3>
-              <ul className="plan-features">
-                <li><IconCheck size={13} />Higher limits on answers and study decks</li>
-                <li><IconCheck size={13} />Notes, flashcards, and practice tests from your files</li>
-                <li><IconCheck size={13} />Scheduled school sync</li>
-              </ul>
-              <div className="plan-cta">
-                <a className="btn btn-secondary" href={APP_SIGN_UP}>Start free trial</a>
-              </div>
-            </div>
-            <div className="plan plan-featured">
-              <span className="plan-badge">Featured</span>
-              <div className="plan-price">$19.99<span className="per">/mo</span></div>
-              <h3>Agent Pro</h3>
-              <ul className="plan-features">
-                <li><IconCheck size={13} />Everything in Student</li>
-                <li><IconCheck size={13} />Deep research with cited reports</li>
-                <li><IconCheck size={13} />Higher daily limits</li>
-              </ul>
-              <div className="plan-cta">
-                <a className="btn btn-primary" href={APP_SIGN_UP}>Start free trial</a>
-              </div>
-            </div>
-            <div className="plan">
-              <div className="plan-price">$49.99<span className="per">/mo</span></div>
-              <h3>Max</h3>
-              <ul className="plan-features">
-                <li><IconCheck size={13} />Highest limits across the agent</li>
-                <li><IconCheck size={13} />Built for heavy, daily use</li>
-                <li><IconCheck size={13} />First access to new features</li>
-              </ul>
-              <div className="plan-cta">
-                <a className="btn btn-secondary" href={APP_SIGN_UP}>Start free trial</a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className="closer" id="get">
         <div className="wrap">
           <h2>Built from your notes. Sharper every week.</h2>
@@ -369,21 +264,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-
-      <footer className="foot">
-        <div className="wrap foot-in">
-          <Link className="brand" href="/" aria-label="Nemesis home">
-            <Image className="brand-logo-footer" src="/nemesis/logo.png" alt="" width={20} height={20} />
-            <b style={{ fontSize: "11px" }}>Nemesis</b>
-          </Link>
-          <Link href="/about">About</Link>
-          <a href="/privacy">Privacy</a>
-          <a href="/terms">Terms</a>
-          <SocialLinks />
-          <span className="spacer" />
-          <span className="muted">© 2026 Nemesis</span>
-        </div>
-      </footer>
-    </>
+    </SiteChrome>
   );
 }

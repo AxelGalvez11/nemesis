@@ -80,14 +80,14 @@ export default function SignInPage() {
 
   return (
     <AuthFrame
-      eyebrow="Nemesis // identity gate"
+      eyebrow="Welcome back"
       title="Sign in to Nemesis."
-      description="Re-enter the perimeter — manage the account and subscription that govern your desktop instance."
+      description="Your account, your plan, and the app on your Mac."
       footer={<p>New to Nemesis? <Link className="nemesis-auth-link" href="/sign-up">Create your account.</Link></p>}
     >
         <AuthModeSwitch active="sign-in" />
         {deleted ? <p className="nemesis-auth-success">Your account and its server-side records were deleted.</p> : null}
-        {existing ? <p className="nemesis-auth-notice">That email already commands a Nemesis instance. Sign in below to resume control.</p> : null}
+        {existing ? <p className="nemesis-auth-notice">That email already has a Nemesis account. Sign in below to continue.</p> : null}
         {isPreviewMode ? <p className="nemesis-auth-notice">Local preview mode: no account credentials are required.</p> : null}
         <OAuthButtons disabled={busy} onError={setError} showTermsNote />
         <form onSubmit={onSubmit} className="nemesis-auth-form">

@@ -249,7 +249,12 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   letter-spacing: -0.02em;
 }
 .plan-price .per { font-size: 14px; font-weight: 500; color: var(--iron); letter-spacing: 0; margin-left: 2px; }
-.plan h3 { font-size: 19px; margin: 12px 0 10px; }
+.plan h3 { font-size: 19px; margin: 12px 0 6px; }
+.plan-desc { color: var(--iron); font-size: 13.5px; line-height: 1.5; margin: 0 0 14px; }
+.pricing-hero { padding-top: 88px; }
+.pricing-head { margin-left: auto; margin-right: auto; text-align: center; max-width: 560px; }
+.pricing-fine { margin: 36px auto 0; max-width: 640px; text-align: center; }
+.pricing-fine p { color: var(--iron); font-size: 13.5px; line-height: 1.7; margin: 0; }
 .plan-features { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .plan-features li {
   display: flex; align-items: flex-start; gap: 9px; font-size: 14.5px; line-height: 1.4;
