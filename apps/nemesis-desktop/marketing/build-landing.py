@@ -1,15 +1,32 @@
-import base64, pathlib
+import argparse, base64, pathlib
 SP = pathlib.Path(__file__).resolve().parent
+
+parser = argparse.ArgumentParser(description="Build the self-contained Nemesis landing page")
+parser.add_argument(
+    "--variant",
+    choices=("current", "single"),
+    default="current",
+    help="Use the current art or the non-destructive single-object schoolwork set.",
+)
+args = parser.parse_args()
 
 def uri(name, mime):
     return f"data:{mime};base64," + base64.b64encode((SP / name).read_bytes()).decode()
 
-hero = uri("web-hero.jpg", "image/jpeg")          # owner's wireframe chrome mask (4K upscale)
-intel = uri("web-intelligence.jpg", "image/jpeg")  # interlocking rings
-mastery = uri("web-mastery.jpg", "image/jpeg")     # ascending spiral
-obelisk = uri("web-obelisk.jpg", "image/jpeg")     # monolith — replaces mask emblem
-lattice = uri("web-lattice.jpg", "image/jpeg")     # sphere lattice — the graph band
-plates = uri("web-plates.jpg", "image/jpeg")       # plates aligning — the order band
+if args.variant == "single":
+    hero = uri("web-v4-single/hero-notebook.webp", "image/webp")
+    intel = uri("web-v4-single/intelligence-clipboard.webp", "image/webp")
+    mastery = uri("web-v4-single/mastery-textbook.webp", "image/webp")
+    obelisk = uri("web-v4-single/nemesis-calendar.webp", "image/webp")
+    lattice = uri("web-v4-single/semester-binder.webp", "image/webp")
+    plates = uri("web-v4-single/order-accordion-folder.webp", "image/webp")
+else:
+    hero = uri("web-hero.jpg", "image/jpeg")          # owner's wireframe chrome mask
+    intel = uri("web-intelligence.jpg", "image/jpeg")  # interlocking rings
+    mastery = uri("web-mastery.jpg", "image/jpeg")     # ascending spiral
+    obelisk = uri("web-obelisk.jpg", "image/jpeg")     # monolith
+    lattice = uri("web-lattice.jpg", "image/jpeg")     # sphere lattice — graph band
+    plates = uri("web-plates.jpg", "image/jpeg")       # aligning plates — order band
 logo = uri("web-logo.png", "image/png")
 
 HTML = f"""<style>
@@ -341,6 +358,7 @@ HTML = f"""<style>
 }})();
 </script>"""
 
-out = SP.parent / "nemesis-landing.html"
+suffix = "-single" if args.variant == "single" else ""
+out = SP / f"nemesis-landing{suffix}.html"
 out.write_text(HTML)
 print("wrote", out, f"{len(HTML)//1024} KB")

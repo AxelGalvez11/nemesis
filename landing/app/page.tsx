@@ -10,10 +10,6 @@ import {
   IconLayers,
   IconSearch,
   IconDocStack,
-  IconShieldCheck,
-  IconWindow,
-  IconRepeat,
-  IconSplit,
   IconDownload,
   IconCheck,
 } from "@/components/FeatureIcons";
@@ -23,8 +19,8 @@ const APP_SIGN_IN = "https://app.enternemesis.com/sign-in";
 const APP_DOWNLOAD = "https://app.enternemesis.com/api/download/mac";
 
 /**
- * One scroll controller drives every decorative background layer. Each offset is
- * calculated relative to its own section, clamped to the available overscan, and
+ * One scroll controller drives the hero's decorative background layer. The offset
+ * is calculated relative to the hero, clamped to the available overscan, and
  * disabled when the visitor requests reduced motion.
  */
 function useBackgroundParallax() {
@@ -56,7 +52,7 @@ function useBackgroundParallax() {
       const mobileScale = window.innerWidth <= 820 ? 0.55 : 1;
 
       visibleLayers.forEach((layer) => {
-        const anchor = layer.closest<HTMLElement>(".hero, .obj, .band") ?? layer;
+        const anchor = layer.closest<HTMLElement>(".hero") ?? layer;
         const rect = anchor.getBoundingClientRect();
         const travel = (viewportHeight + rect.height) / 2;
         const progress = Math.max(
@@ -132,6 +128,8 @@ export default function Home() {
         </div>
       </nav>
 
+      {/* The hero keeps the committed dark-chrome panel — the notebook art was cut
+          for a black ground — while the rest of the page runs on paper. */}
       <header className="hero">
         <div className="hero-art parallax-layer" data-parallax-amount="64" />
         <div className="hero-veil" />
@@ -147,9 +145,9 @@ export default function Home() {
               <span className="dot"> · </span>It acts
             </p>
             <p className="hero-purpose reveal r3">
-              Nemesis is a desktop study assistant for students on macOS. It organizes your semester
-              from your school portals, turns lectures into notes and flashcards, and drafts cited
-              research that you review and finish. Create a Nemesis account to use it.
+              A desktop study agent for macOS. It organizes your semester from your
+              school portals, turns lectures into notes and flashcards, and drafts
+              cited research you review and finish.
             </p>
             <div className="hero-cta reveal r4">
               <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
@@ -158,9 +156,7 @@ export default function Home() {
                 Download for macOS
               </a>
             </div>
-            <p className="hero-cta-caption reveal r4">
-              Apple Silicon Macs. Sign in with your Nemesis account.
-            </p>
+            <p className="hero-cta-caption reveal r4">Apple Silicon Macs.</p>
           </div>
         </div>
       </header>
@@ -202,153 +198,24 @@ export default function Home() {
               <h3>Drafts you finish</h3>
               <p>Slides, reports, and posters, cited and ready to edit.</p>
             </div>
-            <div className="feature">
-              <div className="feature-icon"><IconShieldCheck /></div>
-              <div className="k">Authority</div>
-              <h3>Nothing happens without you</h3>
-              <p>Every action is logged. Nothing is submitted for you.</p>
-            </div>
           </div>
         </div>
       </section>
 
-      <section className="section alt" id="how">
+      <section className="section alt" id="privacy">
         <div className="wrap">
           <div className="section-head">
-            <p className="eyebrow">Containment brief</p>
-            <h2>Give it the semester. Keep the final authority.</h2>
+            <p className="eyebrow">Containment</p>
+            <h2>Nothing happens without you.</h2>
           </div>
-          <div className="qs">
-            <div className="q">
-              <div className="n">01</div>
-              <h3>It detects what <span className="b">changed</span>.</h3>
-              <p>Nemesis compares your sources with the record and flags what moved.</p>
-            </div>
-            <div className="q">
-              <div className="n">02</div>
-              <h3>It ranks what comes <span className="b">next</span>.</h3>
-              <p>Ranked by deadline, grade weight, and mastery, with the reason attached.</p>
-            </div>
-            <div className="q">
-              <div className="n">03</div>
-              <h3>It finds the <span className="b">weak point</span>.</h3>
-              <p>Tracks recall and surfaces what you are about to forget.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="section">
-        <div className="wrap">
-          <div className="section-head">
-            <p className="eyebrow">
-              Memory<span className="dot"> · </span>Skill
-              <span className="dot"> · </span>Agency
-            </p>
-            <h2>A capable system, held to a narrow mission.</h2>
-          </div>
-          <div className="triad">
-            <div className="obj">
-              <div className="img-shell" role="img" aria-label="Glitched black-chrome clipboard">
-                <div className="img intelligence parallax-layer" data-parallax-amount="18" />
-              </div>
-              <div className="cap">
-                <div className="k">Persistent memory</div>
-                <h3>It remembers across sessions</h3>
-                <p>Courses, deadlines, and concepts persist with their source and history.</p>
-              </div>
-            </div>
-            <div className="obj">
-              <div className="img-shell" role="img" aria-label="Glitched open black-chrome textbook">
-                <div className="img mastery parallax-layer" data-parallax-amount="18" />
-              </div>
-              <div className="cap">
-                <div className="k">Procedural skill</div>
-                <h3>It learns how the work gets done</h3>
-                <p>A successful workflow becomes a reusable skill, without new authority.</p>
-              </div>
-            </div>
-            <div className="obj">
-              <div className="img-shell" role="img" aria-label="Glitched black-chrome desk calendar">
-                <div className="img calendar parallax-layer" data-parallax-amount="18" />
-              </div>
-              <div className="cap">
-                <div className="k">Controlled agency</div>
-                <h3>It divides the work, then returns it</h3>
-                <p>Bounded tasks run in isolated contexts. Results return to you.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div className="band" id="graph">
-        <div className="band-art graph parallax-layer" data-parallax-amount="48" />
-        <div className="band-veil" />
-        <div className="wrap">
-          <div className="band-in">
-            <p className="eyebrow">Persistent memory</p>
-            <h2>The entity remembers the whole semester.</h2>
-            <p>Courses, deadlines, and grades live in one graph that survives the chat.</p>
-          </div>
-        </div>
-      </div>
-
-      <section className="section alt">
-        <div className="wrap">
-          <div className="section-head">
-            <p className="eyebrow">Authorized capabilities</p>
-            <h2>What it is allowed to do.</h2>
-          </div>
-          <div className="feature-grid cols-2">
-            <div className="feature">
-              <div className="feature-icon"><IconWaveform /></div>
-              <div className="k">Signal</div>
-              <h3>Turn lectures into study material</h3>
-              <p>Transcribes on-device into notes, decks, and practice tests.</p>
-            </div>
-            <div className="feature">
-              <div className="feature-icon"><IconWindow /></div>
-              <div className="k">Browser</div>
-              <h3>Enter the accounts you authorize</h3>
-              <p>Reads Blackboard, Outlook, Canvas, and Gmail from your logged-in browser.</p>
-            </div>
-            <div className="feature">
-              <div className="feature-icon"><IconRepeat /></div>
-              <div className="k">Automation</div>
-              <h3>Run the mission on schedule</h3>
-              <p>Recurring briefs and review queues, logged after every run.</p>
-            </div>
-            <div className="feature">
-              <div className="feature-icon"><IconSplit /></div>
-              <div className="k">Delegation</div>
-              <h3>Split complex work into contained tasks</h3>
-              <p>Parallel research and drafting return cited work for your review.</p>
-            </div>
-          </div>
-          <div className="trust" id="privacy">
+          <div className="trust">
             <p>
-              School sign-ins and lecture audio stay on your Mac.{" "}
-              <span>Tools stay in scope, and coursework is never submitted for you.</span>
+              Every action is logged. Coursework is never submitted for you.{" "}
+              <span>School sign-ins and lecture audio stay on your Mac.</span>
             </p>
           </div>
         </div>
       </section>
-
-      <div className="band">
-        <div className="band-art order parallax-layer" data-parallax-amount="48" />
-        <div className="band-veil" />
-        <div className="wrap">
-          <div className="band-in">
-            <p className="eyebrow">
-              Files<span className="dot"> · </span>Calendar
-              <span className="dot"> · </span>Inbox
-            </p>
-            <h2>Order is maintained inside the perimeter.</h2>
-            <p>Notes filed, decks current, calendar reconciled.</p>
-          </div>
-        </div>
-      </div>
 
       <section className="section" id="plans">
         <div className="wrap">
@@ -397,7 +264,6 @@ export default function Home() {
         <div className="wrap">
           <p className="eyebrow">Containment doctrine</p>
           <h2>It grows more capable. The perimeter stays still.</h2>
-          <p>It carries your knowledge forward, into whatever comes next.</p>
           <div className="closer-cta">
             <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
             <a className="btn btn-secondary" href={APP_DOWNLOAD}>
