@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import { SocialLinks } from "@/components/SocialLinks";
 import {
   IconCalendar,
-  IconWaveform,
+  IconSplit,
   IconLayers,
   IconSearch,
   IconDocStack,
@@ -122,9 +122,9 @@ export default function Home() {
           <span className="spacer" />
           <a className="ghost" href="#work">Features</a>
           <a className="ghost" href="#plans">Plans</a>
-          <a className="ghost" href={APP_DOWNLOAD}>Download</a>
+          <Link className="ghost" href="/about">About</Link>
           <a className="ghost" href={APP_SIGN_IN}>Sign in</a>
-          <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
+          <a className="btn btn-primary" href={APP_SIGN_UP}>Sign up</a>
         </div>
       </nav>
 
@@ -135,28 +135,19 @@ export default function Home() {
         <div className="hero-veil" />
         <div className="wrap">
           <div className="hero-in">
-            <p className="eyebrow reveal">
-              Academic agent<span className="dot"> · </span>under containment
-              <span className="dot"> · </span>macOS
+            <h1 className="reveal">Nemesis</h1>
+            <p className="hero-purpose reveal r2">
+              A study agent for your Mac that gets better the more you use it.
+              It builds its knowledge from your library — and turns your course
+              files into notes, flashcards, and practice tests.
             </p>
-            <h1 className="reveal r2">Nemesis</h1>
-            <p className="phrase reveal r3">
-              It remembers<span className="dot"> · </span>It learns
-              <span className="dot"> · </span>It acts
-            </p>
-            <p className="hero-purpose reveal r3">
-              A desktop study agent for macOS. It organizes your semester from your
-              school portals, turns lectures into notes and flashcards, and drafts
-              cited research you review and finish.
-            </p>
-            <div className="hero-cta reveal r4">
-              <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
+            <div className="hero-cta reveal r3">
+              <a className="btn btn-primary" href={APP_SIGN_UP}>Start free trial</a>
               <a className="btn btn-secondary" href={APP_DOWNLOAD}>
                 <IconDownload size={15} />
                 Download for macOS
               </a>
             </div>
-            <p className="hero-cta-caption reveal r4">Apple Silicon Macs.</p>
           </div>
         </div>
       </header>
@@ -165,38 +156,38 @@ export default function Home() {
         <div className="wrap">
           <div className="section-head">
             <p className="eyebrow">The work</p>
-            <h2>What it does, concretely.</h2>
+            <h2>What it does.</h2>
           </div>
           <div className="feature-grid">
             <div className="feature">
               <div className="feature-icon"><IconCalendar /></div>
               <div className="k">Semester</div>
               <h3>It reads your semester</h3>
-              <p>Connects to Blackboard or Canvas and builds your calendar.</p>
+              <p>Connects to Canvas or Blackboard and builds your calendar — classes, deadlines, exams.</p>
             </div>
             <div className="feature">
-              <div className="feature-icon"><IconWaveform /></div>
-              <div className="k">Lectures</div>
-              <h3>Lectures become notes</h3>
-              <p>Transcribes on your Mac and files clean notes.</p>
+              <div className="feature-icon"><IconSplit /></div>
+              <div className="k">Library</div>
+              <h3>The library is its memory</h3>
+              <p>Notes and decks are plain files on your Mac. Every file you add teaches it more about your classes.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconLayers /></div>
               <div className="k">Recall</div>
-              <h3>Flashcards that fight back</h3>
-              <p>Spaced-repetition decks built from your own lectures.</p>
+              <h3>Flashcards from your slides</h3>
+              <p>Spaced-repetition decks and practice tests, built from your own course material.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconSearch /></div>
               <div className="k">Research</div>
               <h3>Research with receipts</h3>
-              <p>Real citations from journals you can open.</p>
+              <p>Real citations from journals you can open and check.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconDocStack /></div>
               <div className="k">Drafts</div>
               <h3>Drafts you finish</h3>
-              <p>Slides, reports, and posters, cited and ready to edit.</p>
+              <p>Slides, reports, and study guides — cited, and yours to finish.</p>
             </div>
           </div>
         </div>
@@ -205,13 +196,14 @@ export default function Home() {
       <section className="section alt" id="privacy">
         <div className="wrap">
           <div className="section-head">
-            <p className="eyebrow">Containment</p>
+            <p className="eyebrow">Trust</p>
             <h2>Nothing happens without you.</h2>
           </div>
           <div className="trust">
             <p>
-              Every action is logged. Coursework is never submitted for you.{" "}
-              <span>School sign-ins and lecture audio stay on your Mac.</span>
+              It helps you learn — it never does the work for you. Coursework is
+              never submitted on your behalf, and every action is logged.{" "}
+              <span>Your notes and school sign-ins stay on your Mac.</span>
             </p>
           </div>
         </div>
@@ -230,7 +222,7 @@ export default function Home() {
               <h3>Student</h3>
               <ul className="plan-features">
                 <li><IconCheck size={13} />Higher limits on answers and study decks</li>
-                <li><IconCheck size={13} />Lecture capture</li>
+                <li><IconCheck size={13} />Notes, flashcards, and practice tests from your files</li>
                 <li><IconCheck size={13} />Scheduled school sync</li>
               </ul>
             </div>
@@ -241,7 +233,7 @@ export default function Home() {
               <ul className="plan-features">
                 <li><IconCheck size={13} />Everything in Student</li>
                 <li><IconCheck size={13} />Deep research with cited reports</li>
-                <li><IconCheck size={13} />Higher automation limits</li>
+                <li><IconCheck size={13} />Higher daily limits</li>
               </ul>
             </div>
             <div className="plan">
@@ -249,23 +241,22 @@ export default function Home() {
               <h3>Max</h3>
               <ul className="plan-features">
                 <li><IconCheck size={13} />Highest limits across the agent</li>
-                <li><IconCheck size={13} />Unlimited lecture copilot</li>
-                <li><IconCheck size={13} />First access to new capabilities</li>
+                <li><IconCheck size={13} />Built for heavy, daily use</li>
+                <li><IconCheck size={13} />First access to new features</li>
               </ul>
             </div>
           </div>
           <div className="hero-cta" style={{ marginTop: "28px", justifyContent: "center" }}>
-            <a className="btn btn-primary" href={APP_SIGN_UP}>Start the trial</a>
+            <a className="btn btn-primary" href={APP_SIGN_UP}>Start free trial</a>
           </div>
         </div>
       </section>
 
       <section className="closer" id="get">
         <div className="wrap">
-          <p className="eyebrow">Containment doctrine</p>
-          <h2>It grows more capable. The perimeter stays still.</h2>
+          <h2>Built from your notes. Sharper every week.</h2>
           <div className="closer-cta">
-            <a className="btn btn-primary" href={APP_SIGN_UP}>Deploy Nemesis</a>
+            <a className="btn btn-primary" href={APP_SIGN_UP}>Start free trial</a>
             <a className="btn btn-secondary" href={APP_DOWNLOAD}>
               <IconDownload size={15} />
               Download for macOS
@@ -280,11 +271,12 @@ export default function Home() {
             <Image className="brand-logo-footer" src="/nemesis/logo.png" alt="" width={20} height={20} />
             <b style={{ fontSize: "11px" }}>Nemesis</b>
           </Link>
+          <Link href="/about">About</Link>
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
           <SocialLinks />
           <span className="spacer" />
-          <span className="muted">persistent · scoped · never submits · macOS</span>
+          <span className="muted">© 2026 Nemesis</span>
         </div>
       </footer>
     </>

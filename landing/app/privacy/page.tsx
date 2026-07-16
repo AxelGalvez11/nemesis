@@ -24,10 +24,9 @@ export default function PrivacyPage() {
 
       <h2>What stays on your Mac</h2>
       <p>
-        Your course files, notes, lecture recordings, transcripts, flashcards, calendar, and
-        the academic record Nemesis builds are stored on your device. Lecture audio is
-        transcribed on your Mac and is not uploaded. Your school and email logins are entered
-        in Nemesis&rsquo;s own browser on your device; we never see or store those
+        Your course files, notes, flashcards, calendar, and the academic record Nemesis
+        builds are stored on your device. Your school and email logins are entered in
+        Nemesis&rsquo;s own browser on your device; we never see or store those
         credentials.
       </p>
 
