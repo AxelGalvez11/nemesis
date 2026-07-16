@@ -24,15 +24,9 @@ export function LegalShell({ children }: { children: ReactNode }) {
       <main className="legal legal-wrap">{children}</main>
       <footer className="foot">
         <div className="wrap foot-in">
-          <Link href="/about" style={{ color: "var(--iron)", fontFamily: "var(--mono)", fontSize: 12, textDecoration: "none" }}>
-            About
-          </Link>
-          <Link href="/privacy" style={{ color: "var(--iron)", fontFamily: "var(--mono)", fontSize: 12, textDecoration: "none" }}>
-            Privacy
-          </Link>
-          <Link href="/terms" style={{ color: "var(--iron)", fontFamily: "var(--mono)", fontSize: 12, textDecoration: "none" }}>
-            Terms
-          </Link>
+          <Link href="/about">About</Link>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/terms">Terms</Link>
           <SocialLinks />
           <span className="spacer" />
           <span className="muted">© 2026 Nemesis</span>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { LegalShell } from "@/components/LegalShell";
 
 export const metadata: Metadata = {
-  title: "About — Nemesis",
+  title: "About · Nemesis",
   description:
     "What Nemesis is, why it exists, and the line it won't cross.",
   robots: { index: true, follow: true },
@@ -18,8 +18,8 @@ export default function AboutPage() {
 
       <p className="legal-lead">
         Nemesis is a study agent that lives on your Mac. You give it your course
-        files — slides, readings, notes — and it gives you back notes, flashcards,
-        practice tests, and a calendar that knows your deadlines.
+        files, and it gives you back notes, flashcards, practice tests, and a
+        calendar that knows your deadlines.
       </p>
 
       <h2>Why it exists</h2>
@@ -39,16 +39,16 @@ export default function AboutPage() {
 
       <h2>The line it won&rsquo;t cross</h2>
       <p>
-        Nemesis helps you learn — it doesn&rsquo;t do the work for you. It never
+        Nemesis helps you learn. It doesn&rsquo;t do the work for you. It never
         submits coursework on your behalf. Drafts are yours to check, finish, and
         turn in.
       </p>
 
       <h2>Your files are yours</h2>
       <p>
-        The library is plain, portable files on your Mac — readable in any editor,
-        yours to keep. No ads, no selling your data, no training on your content.
-        Leave anytime and take everything with you.
+        The library is plain, portable files on your Mac, readable in any editor
+        and yours to keep. No ads, no selling your data, no training on your
+        content. Leave anytime and take everything with you.
       </p>
 
       <h2>Contact</h2>

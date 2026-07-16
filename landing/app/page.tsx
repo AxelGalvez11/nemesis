@@ -52,7 +52,7 @@ function useBackgroundParallax() {
       const mobileScale = window.innerWidth <= 820 ? 0.55 : 1;
 
       visibleLayers.forEach((layer) => {
-        const anchor = layer.closest<HTMLElement>(".hero") ?? layer;
+        const anchor = layer.closest<HTMLElement>(".hero, .obj, .band") ?? layer;
         const rect = anchor.getBoundingClientRect();
         const travel = (viewportHeight + rect.height) / 2;
         const progress = Math.max(
@@ -138,7 +138,7 @@ export default function Home() {
             <h1 className="reveal">Nemesis</h1>
             <p className="hero-purpose reveal r2">
               A study agent for your Mac that gets better the more you use it.
-              It builds its knowledge from your library — and turns your course
+              It builds its knowledge from your library and turns your course
               files into notes, flashcards, and practice tests.
             </p>
             <div className="hero-cta reveal r3">
@@ -163,7 +163,7 @@ export default function Home() {
               <div className="feature-icon"><IconCalendar /></div>
               <div className="k">Semester</div>
               <h3>It reads your semester</h3>
-              <p>Connects to Canvas or Blackboard and builds your calendar — classes, deadlines, exams.</p>
+              <p>Connects to Canvas or Blackboard and builds your calendar: classes, deadlines, exams.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconSplit /></div>
@@ -187,7 +187,60 @@ export default function Home() {
               <div className="feature-icon"><IconDocStack /></div>
               <div className="k">Drafts</div>
               <h3>Drafts you finish</h3>
-              <p>Slides, reports, and study guides — cited, and yours to finish.</p>
+              <p>Slides, reports, and study guides, cited and yours to finish.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="band">
+        <div className="band-art binder parallax-layer" data-parallax-amount="48" />
+        <div className="band-veil" />
+        <div className="wrap">
+          <div className="band-in">
+            <p className="eyebrow">Semester</p>
+            <h2>The whole semester, in one place.</h2>
+            <p>Notes filed, decks current, calendar true.</p>
+          </div>
+        </div>
+      </div>
+
+      <section className="section">
+        <div className="wrap">
+          <div className="section-head">
+            <p className="eyebrow">How it grows</p>
+            <h2>It gets sharper the longer you use it.</h2>
+          </div>
+          <div className="triad">
+            <div className="obj">
+              <div className="img-shell" role="img" aria-label="Black-chrome clipboard">
+                <div className="img intelligence parallax-layer" data-parallax-amount="18" />
+              </div>
+              <div className="cap">
+                <div className="k">Memory</div>
+                <h3>It remembers across sessions</h3>
+                <p>Courses, deadlines, and concepts stay with their source and history.</p>
+              </div>
+            </div>
+            <div className="obj">
+              <div className="img-shell" role="img" aria-label="Black-chrome open textbook">
+                <div className="img mastery parallax-layer" data-parallax-amount="18" />
+              </div>
+              <div className="cap">
+                <div className="k">Skill</div>
+                <h3>It learns how you work</h3>
+                <p>A workflow that goes well becomes a routine it can repeat.</p>
+              </div>
+            </div>
+            <div className="obj">
+              <div className="img-shell" role="img" aria-label="Black-chrome desk calendar">
+                <div className="img calendar parallax-layer" data-parallax-amount="18" />
+              </div>
+              <div className="cap">
+                <div className="k">Rhythm</div>
+                <h3>It keeps your week honest</h3>
+                <p>Reviews land before exams. Deadlines never sneak up.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -201,13 +254,25 @@ export default function Home() {
           </div>
           <div className="trust">
             <p>
-              It helps you learn — it never does the work for you. Coursework is
+              It helps you learn. It never does the work for you. Coursework is
               never submitted on your behalf, and every action is logged.{" "}
               <span>Your notes and school sign-ins stay on your Mac.</span>
             </p>
           </div>
         </div>
       </section>
+
+      <div className="band">
+        <div className="band-art order parallax-layer" data-parallax-amount="48" />
+        <div className="band-veil" />
+        <div className="wrap">
+          <div className="band-in">
+            <p className="eyebrow">Order</p>
+            <h2>Files, calendar, inbox. Kept in order.</h2>
+            <p>Everything the agent touches is logged and filed where you expect it.</p>
+          </div>
+        </div>
+      </div>
 
       <section className="section" id="plans">
         <div className="wrap">
@@ -218,7 +283,7 @@ export default function Home() {
           </div>
           <div className="plans">
             <div className="plan">
-              <div className="plan-price">$9.99</div>
+              <div className="plan-price">$9.99<span className="per">/mo</span></div>
               <h3>Student</h3>
               <ul className="plan-features">
                 <li><IconCheck size={13} />Higher limits on answers and study decks</li>
@@ -228,7 +293,7 @@ export default function Home() {
             </div>
             <div className="plan plan-featured">
               <span className="plan-badge">Featured</span>
-              <div className="plan-price">$19.99</div>
+              <div className="plan-price">$19.99<span className="per">/mo</span></div>
               <h3>Agent Pro</h3>
               <ul className="plan-features">
                 <li><IconCheck size={13} />Everything in Student</li>
@@ -237,7 +302,7 @@ export default function Home() {
               </ul>
             </div>
             <div className="plan">
-              <div className="plan-price">$49.99</div>
+              <div className="plan-price">$49.99<span className="per">/mo</span></div>
               <h3>Max</h3>
               <ul className="plan-features">
                 <li><IconCheck size={13} />Highest limits across the agent</li>

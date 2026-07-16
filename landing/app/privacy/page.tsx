@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { LegalShell } from "@/components/LegalShell";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — Nemesis",
+  title: "Privacy Policy · Nemesis",
   description:
     "What stays on your Mac, what Nemesis collects, and what we never do with your data.",
   robots: { index: true, follow: true },
@@ -33,7 +33,7 @@ export default function PrivacyPage() {
       <h2>What we collect</h2>
       <ul>
         <li>Account information: the email address you sign up with and your subscription status.</li>
-        <li>Metering: counts of assistant usage — not the content — to enforce plan limits.</li>
+        <li>Metering: counts of assistant usage, never the content, to enforce plan limits.</li>
         <li>Payments are processed by our payment provider; we do not store card numbers.</li>
       </ul>
 
@@ -55,7 +55,7 @@ export default function PrivacyPage() {
       <p>
         This site sets no advertising trackers. If you create an account, the email you
         provide is used to operate your account and tell you about the product you signed up
-        for — nothing else.
+        for, and nothing else.
       </p>
 
       <h2>Deletion</h2>
