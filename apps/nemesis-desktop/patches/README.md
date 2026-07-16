@@ -1,8 +1,9 @@
 # Nemesis fork patches
 
-Durable copies of the commits living on the `nemesis/study-v1` branch of the local
-Hermes checkout (`~/.hermes/hermes-agent`), so nothing is lost if that checkout is
-reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
+Durable copies of the Nemesis fork commits (today they live in the
+`nemesis-desktop-public` repo; the original `~/.hermes/hermes-agent` checkout was
+retired 2026-07-14 to reclaim disk). Apply onto a fresh hermes-agent clone with
+`git am <patch>`.
 
 - Commit 1 (brand reskin, mono default) is NOT stored here — it's fully regenerable:
   run `../reskin/apply-nemesis-reskin.mjs --hermes <checkout>`.
@@ -165,3 +166,45 @@ reinstalled. Apply onto a fresh hermes-agent clone with `git am <patch>`.
   stock-fallback slot's noise ("HTTP 401: Authentication Fails (governor)").
   Also: the sign-in overlay's waiting line swaps to a concrete hint after
   45s (press "Open Nemesis" in the browser tab / use email+password).
+- `0105-fix-context-economy-batch-compression-aux-fix-cheap-.patch` — the
+  token-burn batch (owner's live 9.2M-in-30-min session, 2026-07-14).
+  Backend: auxiliary side-tasks (compression/titles) now use the live
+  session's proxy credentials directly instead of falling through to dead
+  OpenRouter/Nous entries (this is why /compress no-op'd all session), and
+  a lock-contended /compress says so instead of "No changes". Skills:
+  nemesis-email gains a mandatory cost-discipline section (metadata-first,
+  incremental sweep marker, bodies never held in context — a raw-body sweep
+  cost ~6M tokens of re-reads); deliverables/pubmed write findings to
+  scratch files; nemesis-import makes Quizlet export-only (site bot-blocks,
+  verified live). Frontend: student build never enters the grouped
+  Projects view; terminal activity labels name the work (Searching
+  PubMed…/Building your slides…) without echoing commands. Pairs with the
+  reskin SOUL update (Nemesis-surfaces-first, CAPTCHA hand-off, context
+  economy, fresh-session nudge) and the nemesis-llm proxy change routing
+  High-effort turns to GLM 5.2 for Pro/Max — shipped behind GLM_HIGH_MODE,
+  DEFAULT OFF (owner call same evening: sticky-High sessions would ride 2-4x
+  GLM pricing on every agentic step, and the quality premium is unmeasured).
+  High runs DeepSeek deep thinking for everyone; GLM stays outage failover.
+  Eval flip: supabase secrets set GLM_HIGH_MODE=on (both deploys 2026-07-14).
+- `0106-fix-tester-feedback-trio-folder-permission-fright-re.patch` — first
+  external-tester feedback (2026-07-14 evening): friendly macOS folder-
+  permission strings in extendInfo (Desktop/Documents/Downloads), a consent
+  gate before nemesis-import's local scan (the unprompted Desktop touch was
+  what fired the scary dialog; SOUL gains the folder-scope rule), and the
+  recorder's zoom clash fixed (xl overflow no longer hidden — zoom-scaled
+  breakpoints could clip overflowing panes into overlap). Recorder fix needs
+  a visual pass at 125-150% UI scale in the next release build.
+- `0107-fix-student-de-noise-boot-to-chat-hide-Today-Connect.patch` — owner pass on
+  tester noise (2026-07-14 late): Today page off the student nav and every boot/
+  fallback route lands in chat; Connections page out of Settings (onboarding step
+  teaches the chat flow instead of embedding it); project surfaces fully off for
+  students (stale grouped-flag can't flip "+" to project-create, blank state says
+  "New session", ProjectDialog unmounted); Sources rail now scopes to the current
+  exchange instead of piling up the whole session; the Settings overlay scrolls on
+  every page (config pages clipped with no scrollbar). Also repairs the invalid
+  JSX comment 0106 left in recorder/index.tsx (TS1005 — 0106 shipped unbuilt
+  because the disk was full) and re-syncs stale committed .js shadows.
+- `0108-feat-skills-chat-first-school-setup-agent-writes-por.patch` — with the
+  Connections page hidden, the agent owns portal setup: school-portal now says
+  ask-in-chat then WRITE portals.json yourself (keep entries, update on change,
+  never guess); nemesis-school-sync + nemesis-email pointers updated to match.

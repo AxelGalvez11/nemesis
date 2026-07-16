@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { LegalShell } from "@/components/LegalShell";
 
 export const metadata: Metadata = {
-  title: "Terms of Use — Nemesis",
+  title: "Terms of Use · Nemesis",
   description:
     "The terms that govern your use of Nemesis, including the academic-integrity boundary: it drafts, you submit.",
   robots: { index: true, follow: true },
@@ -31,8 +31,8 @@ export default function TermsPage() {
       <h2 id="integrity">Academic integrity</h2>
       <p>
         Nemesis produces drafts and study material. It has no ability to submit coursework,
-        and it never sends anything on your behalf. What you submit — and whether it complies
-        with your institution&rsquo;s policies — is your decision and your responsibility.
+        and it never sends anything on your behalf. What you submit, and whether it complies
+        with your institution&rsquo;s policies, is your decision and your responsibility.
         Use Nemesis in the way your school permits.
       </p>
 
@@ -51,7 +51,7 @@ export default function TermsPage() {
       <h2>No warranty</h2>
       <p>
         Nemesis is provided as-is. We work to keep it accurate and dependable, but we do not
-        guarantee it is error-free, and you should verify anything that matters — grades,
+        guarantee it is error-free, and you should verify anything that matters: grades,
         deadlines, and citations included.
       </p>
 

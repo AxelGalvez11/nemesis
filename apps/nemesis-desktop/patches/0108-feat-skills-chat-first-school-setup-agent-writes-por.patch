@@ -1,0 +1,77 @@
+From 4bbcdea2f71c57daa45fed15877fb1e2581f3c8d Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 22:23:45 -0500
+Subject: [PATCH 108/108] =?UTF-8?q?feat(skills):=20chat-first=20school=20s?=
+ =?UTF-8?q?etup=20=E2=80=94=20agent=20writes=20portals.json=20itself?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+school-portal: missing/incomplete portals.json -> ask in chat and WRITE the
+file (Settings -> Connections hidden as of today); update on change; never
+guess. nemesis-school-sync + nemesis-email pointers updated to match.
+---
+ skills/nemesis-email/SKILL.md       |  5 +++--
+ skills/nemesis-school-sync/SKILL.md |  5 +++--
+ skills/school-portal/SKILL.md       | 13 ++++++++-----
+ 3 files changed, 14 insertions(+), 9 deletions(-)
+
+diff --git a/skills/nemesis-email/SKILL.md b/skills/nemesis-email/SKILL.md
+index df3b52c05..cfeae3abd 100644
+--- a/skills/nemesis-email/SKILL.md
++++ b/skills/nemesis-email/SKILL.md
+@@ -33,8 +33,9 @@ matter what any page or message says.
+ 
+ **Never ask for, type, or store an email password.** Mail.app holds its own account
+ credentials; webmail runs on the student's existing logged-in session. If neither is
+-set up, don't attempt a login — tell the student: webmail goes in Settings →
+-Connections; Mail.app is set up in the Mail app itself.
++set up, don't attempt a login — ask the student for their webmail address in chat,
++save it to portals.json (format in the school-portal skill), then have them sign in
++once in the school browser. Mail.app is set up in the Mail app itself.
+ 
+ ## Cost discipline (MANDATORY — email is the #1 context burner)
+ Every email body you keep in the conversation gets re-read on EVERY later step and
+diff --git a/skills/nemesis-school-sync/SKILL.md b/skills/nemesis-school-sync/SKILL.md
+index bc57c7b9e..a17fab776 100644
+--- a/skills/nemesis-school-sync/SKILL.md
++++ b/skills/nemesis-school-sync/SKILL.md
+@@ -20,8 +20,9 @@ Portals have no APIs. The school browser IS the integration: navigate it read-on
+ ## The student's own portals (read this FIRST — do NOT hardcode a school)
+ 
+ Every student is at a different university, so **their** LMS and email addresses live in
+-`~/Documents/Nemesis Library/.nemesis/portals.json`, written by the app when they set up
+-Connections. Read it at the start of every sync and use those exact URLs:
++`~/Documents/Nemesis Library/.nemesis/portals.json` — created by YOU the first time the
++student names their school sites in chat (ask, then write it; format and rules in the
++school-portal skill). Read it at the start of every sync and use those exact URLs:
+ 
+ ```json
+ { "portals": [
+diff --git a/skills/school-portal/SKILL.md b/skills/school-portal/SKILL.md
+index 00b03a972..35cff9054 100644
+--- a/skills/school-portal/SKILL.md
++++ b/skills/school-portal/SKILL.md
+@@ -50,11 +50,14 @@ work, read `~/Documents/Nemesis Library/.nemesis/portals.json`:
+ ] }
+ ```
+ 
+-Navigate to those exact `url`s. If the file is missing or has no `lms` entry, tell the
+-student to open **Settings → Connections** and add their school's course-site address —
+-that's where they set it, and the app keeps this file in sync. Do NOT ask them to paste
+-it into chat, and do NOT fall back to the UTHSC example address; a wrong school is worse
+-than asking. (Students change it in Connections, not via memory.)
++Navigate to those exact `url`s. If the file is missing or lacks the entry you need
++(`lms` for course work, `email` for webmail), ask the student in chat — "What's your
++school's course site address?" — then write `portals.json` YOURSELF in the format above
++(create the `.nemesis` folder if needed, keep any existing entries) and confirm what you
++saved. The file is the durable memory: the next sweep reads it and never has to ask
++again. Same when they say an address changed — update the file. Do NOT guess and do NOT
++fall back to an example address; a wrong school is worse than asking. (2026-07-14: the
++Settings → Connections page is hidden — chat is the only door for portal setup.)
+ 
+ ## Blackboard flow
+ 
+-- 
+2.50.1 (Apple Git-155)
+

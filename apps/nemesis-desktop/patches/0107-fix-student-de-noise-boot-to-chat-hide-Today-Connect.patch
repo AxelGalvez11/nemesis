@@ -1,0 +1,673 @@
+From d6300cbe6982746ec34d0fa686c63b95a8810044 Mon Sep 17 00:00:00 2001
+From: AxelGalvez11 <axelgalvez1121@gmail.com>
+Date: Tue, 14 Jul 2026 22:23:45 -0500
+Subject: [PATCH 107/108] =?UTF-8?q?fix:=20student=20de-noise=20=E2=80=94?=
+ =?UTF-8?q?=20boot=20to=20chat,=20hide=20Today=20+=20Connections,=20sessio?=
+ =?UTF-8?q?ns-only=20sidebar,=20per-answer=20Sources,=20settings=20scroll?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Today hidden from student nav (STUDENT_HIDDEN_NAV) and every boot/fallback
+  route lands in chat (cold start, 'new'/'*' routes, welcome finish).
+- Connections dropped from STUDENT_SETTINGS_KEEP; onboarding teaches the chat
+  flow (ConnectStep rows) instead of embedding the settings page.
+- Project surfaces off in student build: stale persisted grouped-flag can no
+  longer flip '+' to project-create; blank state offers 'New session';
+  ProjectDialog unmounted.
+- Sources rail scopes to the current exchange (last user message onward) —
+  kills session-long pile-up and stale rail after session switches.
+- Settings overlay: OverlayMain overflow-y-auto so every page scrolls.
+- recorder: fix invalid JSX comment placement from 049fa146d (TS1005).
+- .js shadows regenerated (incl. stale activity-phrase.js).
+---
+ apps/desktop/src/app/chat/sidebar/index.js    | 14 ++++--
+ apps/desktop/src/app/chat/sidebar/index.tsx   | 15 ++++--
+ .../src/app/chat/sidebar/section-states.js    |  4 +-
+ .../src/app/chat/sidebar/section-states.tsx   |  4 +-
+ apps/desktop/src/app/desktop-controller.js    |  8 ++--
+ apps/desktop/src/app/desktop-controller.tsx   |  9 ++--
+ apps/desktop/src/app/recorder/index.js        |  7 ++-
+ apps/desktop/src/app/recorder/index.tsx       | 10 ++--
+ apps/desktop/src/app/right-sidebar/sources.js | 25 +++++++---
+ .../desktop/src/app/right-sidebar/sources.tsx | 26 ++++++++---
+ apps/desktop/src/app/settings/index.js        |  2 +-
+ apps/desktop/src/app/settings/index.tsx       |  7 ++-
+ apps/desktop/src/app/welcome/index.js         | 10 ++--
+ apps/desktop/src/app/welcome/index.tsx        | 46 +++++++++++++++----
+ .../assistant-ui/thread/activity-phrase.js    | 29 +++++++++++-
+ .../thread/activity-phrase.test.js            | 10 ++++
+ apps/desktop/src/nemesis.js                   |  8 +++-
+ apps/desktop/src/nemesis.ts                   |  8 +++-
+ 18 files changed, 182 insertions(+), 60 deletions(-)
+
+diff --git a/apps/desktop/src/app/chat/sidebar/index.js b/apps/desktop/src/app/chat/sidebar/index.js
+index fda532854..37cc43e3a 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.js
++++ b/apps/desktop/src/app/chat/sidebar/index.js
+@@ -303,7 +303,9 @@ export function ChatSidebar({ currentView, onNavigate, onLoadMoreSessions, onLoa
+     // Workspace grouping is a `project -> repo -> lane -> sessions` tree computed
+     // authoritatively on the backend (projects.tree). Parents reorder via
+     // workspaceParentOrderIds; worktrees within a parent via workspaceOrderIds.
+-    const worktreeGroupingActive = agentsGrouped && !showAllProfiles;
++    // Student build never enters the grouped Projects view (owner ask 2026-07-14):
++    // sessions stay a flat list even if the persisted grouped flag was set earlier.
++    const worktreeGroupingActive = !NEMESIS_STUDENT_BUILD && agentsGrouped && !showAllProfiles;
+     const gatewayReady = gatewayState === 'open';
+     // The backend project tree is a structural snapshot, NOT a per-message feed.
+     // Refresh it on structural edges only — entering the grouped view, a profile
+@@ -744,15 +746,17 @@ export function ChatSidebar({ currentView, onNavigate, onLoadMoreSessions, onLoa
+                                     step: 0 })) : null, forceEmptyState: showSessionSkeletons, groups: displayAgentGroups, headerAction: inProject && enteredProject ? (_jsxs("div", { className: "group/workspace flex shrink-0 items-center gap-0.5", children: [enteredProject.path && (_jsx(StartWorkButton, { onStarted: onNewSessionInWorkspace, repoPath: enteredProject.path })), _jsx(ProjectMenu, { isActive: enteredProject.id === activeProjectId, onExitScope: exitProjectScope, project: enteredProject, scoped: true }), _jsx("div", { className: "grid size-6 place-items-center", children: _jsx(Button, { "aria-label": s.showProjects, className: HEADER_NAV_BTN, onClick: event => {
+                                                     event.stopPropagation();
+                                                     exitProjectScope();
+-                                                }, size: "icon-xs", variant: "ghost", children: _jsx(Codicon, { name: "list-unordered", size: "0.75rem" }) }) })] })) : (_jsxs("div", { className: "flex shrink-0 items-center gap-0.5", children: [!showAllProfiles ? (_jsx(Button, { "aria-label": agentsGrouped ? s.projects.newButton : s.nav['new-session'], className: HEADER_ACTION_BTN, onClick: event => {
++                                                }, size: "icon-xs", variant: "ghost", children: _jsx(Codicon, { name: "list-unordered", size: "0.75rem" }) }) })] })) : (_jsxs("div", { className: "flex shrink-0 items-center gap-0.5", children: [!showAllProfiles ? (_jsx(Button, { "aria-label": !NEMESIS_STUDENT_BUILD && agentsGrouped ? s.projects.newButton : s.nav['new-session'], className: HEADER_ACTION_BTN, onClick: event => {
+                                                 event.stopPropagation();
+-                                                if (agentsGrouped) {
++                                                // Student build: the grouped flag can persist from beta.5 —
++                                                // "+" must never open project-create there.
++                                                if (!NEMESIS_STUDENT_BUILD && agentsGrouped) {
+                                                     openProjectCreate();
+                                                 }
+                                                 else {
+                                                     onNewSessionInWorkspace(null);
+                                                 }
+-                                            }, size: "icon-xs", variant: "ghost", children: _jsx(Codicon, { name: "add", size: "0.75rem" }) })) : null, _jsx("div", { className: "grid size-6 place-items-center", children: !showAllProfiles && agentSessions.length > 0 ? (_jsx(Button, { "aria-label": agentsGrouped ? s.showSessions : s.showProjects, className: cn(HEADER_NAV_BTN, agentsGrouped && 'bg-(--ui-control-active-background) text-foreground opacity-100'), onClick: event => {
++                                            }, size: "icon-xs", variant: "ghost", children: _jsx(Codicon, { name: "add", size: "0.75rem" }) })) : null, _jsx("div", { className: "grid size-6 place-items-center", children: !NEMESIS_STUDENT_BUILD && !showAllProfiles && agentSessions.length > 0 ? (_jsx(Button, { "aria-label": agentsGrouped ? s.showSessions : s.showProjects, className: cn(HEADER_NAV_BTN, agentsGrouped && 'bg-(--ui-control-active-background) text-foreground opacity-100'), onClick: event => {
+                                                     event.stopPropagation();
+                                                     setSidebarRecentsOpen(true);
+                                                     setSidebarAgentsGrouped(!agentsGrouped);
+@@ -765,7 +769,7 @@ export function ChatSidebar({ currentView, onNavigate, onLoadMoreSessions, onLoa
+                                     // still has older threads on disk.
+                                     const canRevealMore = visible < group.sessions.length || group.hasMore;
+                                     return (_jsx(SidebarSessionsSection, { activeSessionId: activeSidebarSessionId, contentClassName: cn('flex max-h-56 flex-col gap-px pb-1.75', GROUP_BODY), emptyState: null, footer: canRevealMore ? (_jsx(SidebarLoadMoreRow, { loading: Boolean(messagingLoadMorePending[group.sourceId]), onClick: () => revealMoreMessaging(group.sourceId, group.sessions.length, group.hasMore), step: Math.min(NON_SESSION_LOAD_STEP, Math.max(0, group.total - shownSessions.length)) })) : null, label: group.label, labelIcon: _jsx(PlatformAvatar, { className: "size-4 rounded-[4px] text-[0.5625rem] [&_svg]:size-3", platformId: group.sourceId, platformName: group.label }), labelMeta: countLabel(group.sessions.length, group.total), onArchiveSession: onArchiveSession, onDeleteSession: onDeleteSession, onResumeSession: onResumeSession, onToggle: () => toggleSidebarMessagingOpen(group.sourceId), onTogglePin: pinSession, open: messagingOpenIds.includes(group.sourceId), pinned: false, rootClassName: "shrink-0 p-0", sessions: shownSessions, workingSessionIdSet: workingSessionIdSet }, group.sourceId));
+-                                }), !NEMESIS_STUDENT_BUILD && !trimmedQuery && !worktreeGroupingActive && cronJobs.length > 0 && (_jsx(SidebarCronJobsSection, { jobs: cronJobs, label: s.cronJobs, onManageJob: onManageCronJob, onOpenRun: onResumeSession, onToggle: () => setSidebarCronOpen(!cronOpen), onTriggerJob: onTriggerCronJob, open: cronOpen }))] })), contentVisible && !showSessionSections && _jsx(SidebarBlankState, { onNewProject: openProjectCreate }), contentVisible && !NEMESIS_STUDENT_BUILD && (_jsx("div", { className: "shrink-0 px-0.5 pb-1 pt-0.5", children: _jsx(ProfileRail, {}) }))] }), contentVisible && NEMESIS_STUDENT_BUILD && (_jsx(StudentSidebarFooter, { onOpenSettings: () => onNavigate(SETTINGS_NAV_ITEM) })), _jsx(ProjectDialog, {})] }));
++                                }), !NEMESIS_STUDENT_BUILD && !trimmedQuery && !worktreeGroupingActive && cronJobs.length > 0 && (_jsx(SidebarCronJobsSection, { jobs: cronJobs, label: s.cronJobs, onManageJob: onManageCronJob, onOpenRun: onResumeSession, onToggle: () => setSidebarCronOpen(!cronOpen), onTriggerJob: onTriggerCronJob, open: cronOpen }))] })), contentVisible && !showSessionSections && (_jsx(SidebarBlankState, { label: NEMESIS_STUDENT_BUILD ? s.nav['new-session'] : undefined, onNewProject: NEMESIS_STUDENT_BUILD ? () => onNewSessionInWorkspace(null) : openProjectCreate })), contentVisible && !NEMESIS_STUDENT_BUILD && (_jsx("div", { className: "shrink-0 px-0.5 pb-1 pt-0.5", children: _jsx(ProfileRail, {}) }))] }), contentVisible && NEMESIS_STUDENT_BUILD && (_jsx(StudentSidebarFooter, { onOpenSettings: () => onNavigate(SETTINGS_NAV_ITEM) })), !NEMESIS_STUDENT_BUILD && _jsx(ProjectDialog, {})] }));
+ }
+ function StudentSidebarFooter({ onOpenSettings }) {
+     const account = useStore($account);
+diff --git a/apps/desktop/src/app/chat/sidebar/index.tsx b/apps/desktop/src/app/chat/sidebar/index.tsx
+index b618c17d7..d4cdfe8d4 100644
+--- a/apps/desktop/src/app/chat/sidebar/index.tsx
++++ b/apps/desktop/src/app/chat/sidebar/index.tsx
+@@ -1283,12 +1283,14 @@ export function ChatSidebar({
+                     <div className="flex shrink-0 items-center gap-0.5">
+                       {!showAllProfiles ? (
+                         <Button
+-                          aria-label={agentsGrouped ? s.projects.newButton : s.nav['new-session']}
++                          aria-label={!NEMESIS_STUDENT_BUILD && agentsGrouped ? s.projects.newButton : s.nav['new-session']}
+                           className={HEADER_ACTION_BTN}
+                           onClick={event => {
+                             event.stopPropagation()
+ 
+-                            if (agentsGrouped) {
++                            // Student build: the grouped flag can persist from beta.5 —
++                            // "+" must never open project-create there.
++                            if (!NEMESIS_STUDENT_BUILD && agentsGrouped) {
+                               openProjectCreate()
+                             } else {
+                               onNewSessionInWorkspace(null)
+@@ -1428,7 +1430,12 @@ export function ChatSidebar({
+           </div>
+         )}
+ 
+-        {contentVisible && !showSessionSections && <SidebarBlankState onNewProject={openProjectCreate} />}
++        {contentVisible && !showSessionSections && (
++          <SidebarBlankState
++            label={NEMESIS_STUDENT_BUILD ? s.nav['new-session'] : undefined}
++            onNewProject={NEMESIS_STUDENT_BUILD ? () => onNewSessionInWorkspace(null) : openProjectCreate}
++          />
++        )}
+ 
+         {contentVisible && !NEMESIS_STUDENT_BUILD && (
+           <div className="shrink-0 px-0.5 pb-1 pt-0.5">
+@@ -1439,7 +1446,7 @@ export function ChatSidebar({
+       {contentVisible && NEMESIS_STUDENT_BUILD && (
+         <StudentSidebarFooter onOpenSettings={() => onNavigate(SETTINGS_NAV_ITEM)} />
+       )}
+-      <ProjectDialog />
++      {!NEMESIS_STUDENT_BUILD && <ProjectDialog />}
+     </Sidebar>
+   )
+ }
+diff --git a/apps/desktop/src/app/chat/sidebar/section-states.js b/apps/desktop/src/app/chat/sidebar/section-states.js
+index 1111c6163..04a96d5db 100644
+--- a/apps/desktop/src/app/chat/sidebar/section-states.js
++++ b/apps/desktop/src/app/chat/sidebar/section-states.js
+@@ -7,10 +7,10 @@ import { cn } from '@/lib/utils';
+ export function SidebarSessionSkeletons() {
+     return (_jsx("div", { "aria-hidden": "true", className: "grid gap-px", children: ['w-32', 'w-40', 'w-28', 'w-36', 'w-24'].map((width, i) => (_jsxs("div", { className: "grid min-h-[1.625rem] grid-cols-[minmax(0,1fr)_1.375rem] items-center rounded-md pl-2", children: [_jsx(Skeleton, { className: cn('h-3 rounded-sm', width) }), _jsx(Skeleton, { className: "mx-auto size-3.5 rounded-sm opacity-60" })] }, `${width}-${i}`))) }));
+ }
+-export function SidebarBlankState({ onNewProject }) {
++export function SidebarBlankState({ label, onNewProject }) {
+     const { t } = useI18n();
+     const s = t.sidebar;
+-    return (_jsx("div", { className: "grid min-h-0 flex-1 place-items-center px-4 text-center", children: _jsxs("div", { className: "flex flex-col items-center gap-2", children: [_jsx(Codicon, { className: "text-(--ui-text-quaternary)", name: "root-folder", size: "1.25rem" }), _jsx("p", { className: "text-xs text-(--ui-text-tertiary)", children: s.noSessions }), _jsxs(Button, { className: "mt-0.5 text-(--ui-text-secondary)", onClick: onNewProject, size: "sm", variant: "ghost", children: [_jsx(Codicon, { name: "add", size: "0.75rem" }), s.projects.newButton] })] }) }));
++    return (_jsx("div", { className: "grid min-h-0 flex-1 place-items-center px-4 text-center", children: _jsxs("div", { className: "flex flex-col items-center gap-2", children: [_jsx(Codicon, { className: "text-(--ui-text-quaternary)", name: "root-folder", size: "1.25rem" }), _jsx("p", { className: "text-xs text-(--ui-text-tertiary)", children: s.noSessions }), _jsxs(Button, { className: "mt-0.5 text-(--ui-text-secondary)", onClick: onNewProject, size: "sm", variant: "ghost", children: [_jsx(Codicon, { name: "add", size: "0.75rem" }), label ?? s.projects.newButton] })] }) }));
+ }
+ export function SidebarPinnedEmptyState() {
+     const { t } = useI18n();
+diff --git a/apps/desktop/src/app/chat/sidebar/section-states.tsx b/apps/desktop/src/app/chat/sidebar/section-states.tsx
+index d65eda981..359045d26 100644
+--- a/apps/desktop/src/app/chat/sidebar/section-states.tsx
++++ b/apps/desktop/src/app/chat/sidebar/section-states.tsx
+@@ -20,7 +20,7 @@ export function SidebarSessionSkeletons() {
+   )
+ }
+ 
+-export function SidebarBlankState({ onNewProject }: { onNewProject: () => void }) {
++export function SidebarBlankState({ label, onNewProject }: { label?: string; onNewProject: () => void }) {
+   const { t } = useI18n()
+   const s = t.sidebar
+ 
+@@ -31,7 +31,7 @@ export function SidebarBlankState({ onNewProject }: { onNewProject: () => void }
+         <p className="text-xs text-(--ui-text-tertiary)">{s.noSessions}</p>
+         <Button className="mt-0.5 text-(--ui-text-secondary)" onClick={onNewProject} size="sm" variant="ghost">
+           <Codicon name="add" size="0.75rem" />
+-          {s.projects.newButton}
++          {label ?? s.projects.newButton}
+         </Button>
+       </div>
+     </div>
+diff --git a/apps/desktop/src/app/desktop-controller.js b/apps/desktop/src/app/desktop-controller.js
+index 0330b46b2..b870749ac 100644
+--- a/apps/desktop/src/app/desktop-controller.js
++++ b/apps/desktop/src/app/desktop-controller.js
+@@ -65,7 +65,7 @@ import { $terminalTakeover } from './right-sidebar/store';
+ import { TerminalPaneChrome } from './right-sidebar/terminal/chrome';
+ import { PersistentTerminal } from './right-sidebar/terminal/persistent';
+ import { closeActiveTerminal } from './right-sidebar/terminal/terminals';
+-import { CRON_ROUTE, NEW_CHAT_ROUTE, routeSessionId, sessionRoute, SETTINGS_ROUTE, TODAY_ROUTE, WELCOME_ROUTE } from './routes';
++import { CRON_ROUTE, NEW_CHAT_ROUTE, routeSessionId, sessionRoute, SETTINGS_ROUTE, WELCOME_ROUTE } from './routes';
+ import { SessionPickerOverlay } from './session-picker-overlay';
+ import { SessionSwitcher } from './session-switcher';
+ import { useContextSuggestions } from './session/hooks/use-context-suggestions';
+@@ -844,7 +844,9 @@ export function DesktopController() {
+         startFreshSessionDraft();
+         requestComposerSubmit(prompt, { target: 'main' });
+     };
+-    const coldStartView = studentColdStart ? (sessionsLoading ? null : !onboardingComplete() && sessionsTotal === 0 ? (_jsx(Navigate, { replace: true, to: WELCOME_ROUTE })) : (_jsx(Navigate, { replace: true, to: TODAY_ROUTE }))) : (chatView);
++    // 2026-07-14: onboarded students land in chat, not Today — the dashboard is hidden
++    // (STUDENT_HIDDEN_NAV) until the semester graph earns a quieter version of it.
++    const coldStartView = studentColdStart ? (sessionsLoading ? null : !onboardingComplete() && sessionsTotal === 0 ? (_jsx(Navigate, { replace: true, to: WELCOME_ROUTE })) : (chatView)) : (chatView);
+     // Flipped layout mirrors the default: sessions sidebar → right, file
+     // browser + preview rail → left. Same panes, swapped sides.
+     const sidebarSide = panesFlipped ? 'right' : 'left';
+@@ -877,7 +879,7 @@ export function DesktopController() {
+         overlayWidth: FILE_BROWSER_MIN_WIDTH, resizable: true, side: railSide, width: FILE_BROWSER_DEFAULT_WIDTH, children: _jsx(ReviewPane, {}, currentCwd || 'no-cwd') }, "review"));
+     const terminalPane = (_jsx(Pane, { bottomRow: terminalAsRow, defaultOpen: true, disabled: !terminalSidebarOpen, divider: true, height: "38vh", id: "terminal-sidebar", maxHeight: "80vh", maxWidth: "80vw", minHeight: "8rem", minWidth: "22vw", resizable: true, side: railSide, width: "42vw", children: _jsx("div", { className: cn('relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-(--ui-editor-surface-background)', terminalAsRow ? 'border-l border-(--ui-stroke-secondary) pt-0' : 'pt-(--titlebar-height)'), children: _jsx(TerminalPaneChrome, {}) }) }, "terminal-sidebar"));
+     return (_jsxs(AppShell, { leftStatusbarItems: leftStatusbarItems, leftTitlebarTools: titlebarToolGroups.flat.left, mainOverlays: mainOverlays, onOpenSettings: openSettings, overlays: overlays, previewPaneOpen: browserSurfaceOpen &&
+-            (welcomeOpen || NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { disabled: welcomeOpen, forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: coldStartView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: NEMESIS_STUDENT_BUILD ? (_jsx(Suspense, { fallback: null, children: _jsx(WelcomeView, { onStartSweep: startOnboardingSweep }) })) : (_jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE })), path: "welcome" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(TodayView, {}) }), path: "today" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LedgerView, {}) }), path: "ledger" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(CalendarView, {}) }), path: "calendar" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
++            (welcomeOpen || NEMESIS_STUDENT_BUILD || Boolean(previewTarget || filePreviewTarget || browserRailOpen)), statusbarItems: statusbarItems, terminalPaneOpen: terminalSidebarOpen, titlebarTools: titlebarToolGroups.flat.right, children: [!isSecondaryWindow() && (_jsx(Pane, { disabled: welcomeOpen, forceCollapsed: narrowViewport, hoverReveal: true, id: "chat-sidebar", maxWidth: SIDEBAR_MAX_WIDTH, minWidth: SIDEBAR_DEFAULT_WIDTH, onOverlayActiveChange: setSidebarOverlayMounted, resizable: true, side: sidebarSide, width: `${SIDEBAR_DEFAULT_WIDTH}px`, children: sidebar })), _jsx(PaneMain, { children: _jsxs(Routes, { children: [_jsx(Route, { element: coldStartView, index: true }), _jsx(Route, { element: chatView, path: ":sessionId" }), _jsx(Route, { element: NEMESIS_STUDENT_BUILD ? (_jsx(Suspense, { fallback: null, children: _jsx(WelcomeView, { onStartSweep: startOnboardingSweep }) })) : (_jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE })), path: "welcome" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(TodayView, {}) }), path: "today" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LedgerView, {}) }), path: "ledger" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(SkillsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "skills" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(MessagingView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "messaging" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(ArtifactsView, { setStatusbarItemGroup: setStatusbarItemGroup }) }), path: "artifacts" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(StudyView, {}) }), path: "study" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(LibraryView, {}) }), path: "library" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(GraphView, {}) }), path: "graph" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(RecorderView, {}) }), path: "recorder" }), _jsx(Route, { element: _jsx(Suspense, { fallback: null, children: _jsx(CalendarView, {}) }), path: "calendar" }), _jsx(Route, { element: null, path: "cron" }), _jsx(Route, { element: null, path: "profiles" }), _jsx(Route, { element: null, path: "settings" }), _jsx(Route, { element: null, path: "command-center" }), _jsx(Route, { element: null, path: "agents" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "new" }), _jsx(Route, { element: _jsx(LegacySessionRedirect, {}), path: "sessions/:sessionId" }), _jsx(Route, { element: _jsx(Navigate, { replace: true, to: NEW_CHAT_ROUTE }), path: "*" })] }) }), panesFlipped ? fileBrowserPane : terminalPane, previewPane, reviewPane, panesFlipped ? terminalPane : fileBrowserPane] }));
+ }
+ function LegacySessionRedirect() {
+     const { sessionId } = useParams();
+diff --git a/apps/desktop/src/app/desktop-controller.tsx b/apps/desktop/src/app/desktop-controller.tsx
+index 57ec563a2..5c1d0aa2a 100644
+--- a/apps/desktop/src/app/desktop-controller.tsx
++++ b/apps/desktop/src/app/desktop-controller.tsx
+@@ -120,7 +120,6 @@ import {
+   routeSessionId,
+   sessionRoute,
+   SETTINGS_ROUTE,
+-  TODAY_ROUTE,
+   WELCOME_ROUTE
+ } from './routes'
+ import { SessionPickerOverlay } from './session-picker-overlay'
+@@ -1262,11 +1261,13 @@ export function DesktopController() {
+     requestComposerSubmit(prompt, { target: 'main' })
+   }
+ 
++  // 2026-07-14: onboarded students land in chat, not Today — the dashboard is hidden
++  // (STUDENT_HIDDEN_NAV) until the semester graph earns a quieter version of it.
+   const coldStartView = studentColdStart ? (
+     sessionsLoading ? null : !onboardingComplete() && sessionsTotal === 0 ? (
+       <Navigate replace to={WELCOME_ROUTE} />
+     ) : (
+-      <Navigate replace to={TODAY_ROUTE} />
++      chatView
+     )
+   ) : (
+     chatView
+@@ -1527,9 +1528,9 @@ export function DesktopController() {
+           <Route element={null} path="settings" />
+           <Route element={null} path="command-center" />
+           <Route element={null} path="agents" />
+-          <Route element={<Navigate replace to={NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE} />} path="new" />
++          <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="new" />
+           <Route element={<LegacySessionRedirect />} path="sessions/:sessionId" />
+-          <Route element={<Navigate replace to={NEMESIS_STUDENT_BUILD ? TODAY_ROUTE : NEW_CHAT_ROUTE} />} path="*" />
++          <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="*" />
+         </Routes>
+       </PaneMain>
+       {/*
+diff --git a/apps/desktop/src/app/recorder/index.js b/apps/desktop/src/app/recorder/index.js
+index fb915ac74..0512d88ef 100644
+--- a/apps/desktop/src/app/recorder/index.js
++++ b/apps/desktop/src/app/recorder/index.js
+@@ -113,7 +113,12 @@ export function RecorderView() {
+         navigate(NEW_CHAT_ROUTE);
+     };
+     if (recording === 'recording') {
+-        return (_jsxs("main", { className: "flex h-full min-h-0 flex-col overflow-y-auto bg-(--ui-editor-surface-background) px-4 pb-5 pt-4 sm:px-5 xl:overflow-hidden", children: [_jsxs("header", { className: "mb-4 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-4 py-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("span", { "aria-hidden": "true", className: "relative flex size-3 shrink-0", children: [!paused && (_jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-(--theme-primary) opacity-45" })), _jsx("span", { className: "relative inline-flex size-3 rounded-full bg-(--theme-primary)" })] }), _jsx("span", { className: "shrink-0 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: paused ? 'Paused' : 'On air' }), _jsx("input", { "aria-label": "Lecture title", className: "order-last min-w-0 basis-full border-none bg-transparent text-base font-semibold tracking-tight outline-none placeholder:text-muted-foreground/50 sm:order-none sm:min-w-44 sm:flex-1 sm:basis-auto sm:text-lg", onChange: event => setRecordingTitle(event.target.value), placeholder: "Lecture title", value: title }), _jsx("span", { className: "shrink-0 rounded-full bg-(--ui-bg-quaternary) px-3 py-1 text-base font-semibold tabular-nums tracking-tight text-foreground", children: formatElapsed(elapsedMs) }), _jsx(Button, { "aria-label": paused ? 'Resume recording' : 'Pause recording', onClick: () => void setRecordingPaused(!paused), size: "icon-sm", variant: "outline", children: paused ? _jsx(IconPlayerPlay, { size: 14 }) : _jsx(IconPlayerPause, { size: 14 }) }), _jsx(Button, { className: "active:scale-[0.98]", onClick: stopRecording, size: "sm", variant: "destructive", children: "Stop & save" })] }), _jsxs("div", { className: "grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(17rem,0.78fr)_minmax(22rem,1.22fr)]", children: [_jsxs("section", { "aria-label": "Live capture", className: "flex min-h-0 min-w-0 flex-col gap-3 xl:overflow-y-auto xl:pr-0.5", children: [_jsxs("div", { className: "shrink-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("div", { className: "mb-2 flex items-center justify-between gap-3", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground", children: "Audio signal" }), _jsx("span", { className: "truncate text-[0.65rem] text-(--ui-text-quaternary)", children: paused ? 'Capture paused' : `Mic${withSystemAudio ? ' + system' : ''}` })] }), _jsx("canvas", { className: cn('h-16 w-full rounded-xl bg-(--ui-bg-quaternary)', paused && 'opacity-45'), ref: canvasRef })] }), liveCaptions ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex min-h-48 shrink-0 flex-col rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)] xl:min-h-56", children: [_jsxs("div", { className: "mb-3 flex items-center justify-between gap-3", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Live transcript" }), _jsx("span", { className: "min-w-0 truncate text-[0.65rem] text-muted-foreground", children: liveStatus })] }), _jsx("div", { "aria-live": "polite", className: "max-h-80 space-y-3 overflow-y-auto pr-1 text-[0.8125rem] leading-6 text-foreground/90", ref: liveScrollRef, children: liveTranscript.length ? (liveTranscript.map((segment, index) => (_jsx("p", { className: "animate-in fade-in-0 border-l-2 border-(--theme-primary)/30 pl-3 duration-200", children: segment }, `${index}-${segment.slice(0, 18)}`)))) : (_jsxs("div", { className: "grid min-h-28 place-content-center text-center", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)", children: paused ? 'Capture paused' : 'Listening' }), _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: paused
++        // xl previously locked overflow to hidden for app-like fixed panes, but the
++        // breakpoints see zoom-scaled pixels: at 125-150% UI scale a window can sit
++        // in the xl column layout while the panels no longer fit vertically, and
++        // hidden overflow made them overlap with no way to scroll (tester report
++        // 2026-07-14). overflow-y-auto is visually identical when content fits.
++        return (_jsxs("main", { className: "flex h-full min-h-0 flex-col overflow-y-auto bg-(--ui-editor-surface-background) px-4 pb-5 pt-4 sm:px-5", children: [_jsxs("header", { className: "mb-4 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-4 py-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("span", { "aria-hidden": "true", className: "relative flex size-3 shrink-0", children: [!paused && (_jsx("span", { className: "absolute inline-flex size-full animate-ping rounded-full bg-(--theme-primary) opacity-45" })), _jsx("span", { className: "relative inline-flex size-3 rounded-full bg-(--theme-primary)" })] }), _jsx("span", { className: "shrink-0 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--theme-primary)", children: paused ? 'Paused' : 'On air' }), _jsx("input", { "aria-label": "Lecture title", className: "order-last min-w-0 basis-full border-none bg-transparent text-base font-semibold tracking-tight outline-none placeholder:text-muted-foreground/50 sm:order-none sm:min-w-44 sm:flex-1 sm:basis-auto sm:text-lg", onChange: event => setRecordingTitle(event.target.value), placeholder: "Lecture title", value: title }), _jsx("span", { className: "shrink-0 rounded-full bg-(--ui-bg-quaternary) px-3 py-1 text-base font-semibold tabular-nums tracking-tight text-foreground", children: formatElapsed(elapsedMs) }), _jsx(Button, { "aria-label": paused ? 'Resume recording' : 'Pause recording', onClick: () => void setRecordingPaused(!paused), size: "icon-sm", variant: "outline", children: paused ? _jsx(IconPlayerPlay, { size: 14 }) : _jsx(IconPlayerPause, { size: 14 }) }), _jsx(Button, { className: "active:scale-[0.98]", onClick: stopRecording, size: "sm", variant: "destructive", children: "Stop & save" })] }), _jsxs("div", { className: "grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(17rem,0.78fr)_minmax(22rem,1.22fr)]", children: [_jsxs("section", { "aria-label": "Live capture", className: "flex min-h-0 min-w-0 flex-col gap-3 xl:overflow-y-auto xl:pr-0.5", children: [_jsxs("div", { className: "shrink-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("div", { className: "mb-2 flex items-center justify-between gap-3", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground", children: "Audio signal" }), _jsx("span", { className: "truncate text-[0.65rem] text-(--ui-text-quaternary)", children: paused ? 'Capture paused' : `Mic${withSystemAudio ? ' + system' : ''}` })] }), _jsx("canvas", { className: cn('h-16 w-full rounded-xl bg-(--ui-bg-quaternary)', paused && 'opacity-45'), ref: canvasRef })] }), liveCaptions ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "flex min-h-48 shrink-0 flex-col rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)] xl:min-h-56", children: [_jsxs("div", { className: "mb-3 flex items-center justify-between gap-3", children: [_jsx("span", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: "Live transcript" }), _jsx("span", { className: "min-w-0 truncate text-[0.65rem] text-muted-foreground", children: liveStatus })] }), _jsx("div", { "aria-live": "polite", className: "max-h-80 space-y-3 overflow-y-auto pr-1 text-[0.8125rem] leading-6 text-foreground/90", ref: liveScrollRef, children: liveTranscript.length ? (liveTranscript.map((segment, index) => (_jsx("p", { className: "animate-in fade-in-0 border-l-2 border-(--theme-primary)/30 pl-3 duration-200", children: segment }, `${index}-${segment.slice(0, 18)}`)))) : (_jsxs("div", { className: "grid min-h-28 place-content-center text-center", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-quaternary)", children: paused ? 'Capture paused' : 'Listening' }), _jsx("p", { className: "mt-1 text-xs text-muted-foreground", children: paused
+                                                                     ? 'Resume when the lecture continues.'
+                                                                     : 'Speech will appear here as the lecture continues.' })] })) })] }), _jsxs("div", { className: "shrink-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("div", { className: "mb-2.5 flex items-center justify-between gap-3", children: [_jsxs("span", { className: "inline-flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: [_jsx(IconSparkles, { size: 12 }), "Live copilot"] }), copilotCadence && (_jsx("button", { className: "text-[0.65rem] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline", onClick: () => setCopilotEnabled(!copilotEnabled), type: "button", children: copilotEnabled ? 'Turn off' : 'Turn on' }))] }), !copilotCadence ? (_jsx("p", { className: "text-xs text-muted-foreground", children: "Live AI notes and question suggestions are part of the Agent Pro and Max plans." })) : !copilotEnabled ? (_jsx("p", { className: "text-xs text-muted-foreground", children: "Off. When on, Nemesis writes running notes from the lecture (fixing mis-heard words from context) and suggests what to ask next. Uses your plan's daily AI budget." })) : (_jsxs(_Fragment, { children: [copilotNotes.length ? (_jsx("ul", { className: "max-h-44 space-y-1.5 overflow-y-auto pr-1 text-[0.8125rem] leading-5 text-foreground/90", children: copilotNotes.slice(-8).map((note, index) => (_jsxs("li", { className: "animate-in fade-in-0 flex gap-2 duration-200", children: [_jsx("span", { className: "text-(--theme-primary)", children: "\u2022" }), _jsx("span", { children: note })] }, `${index}-${note.slice(0, 16)}`))) })) : (_jsx("p", { className: "text-xs text-muted-foreground", children: "Notes appear here as the lecture develops." })), copilotAsk.length > 0 && (_jsxs("div", { className: "mt-2.5 border-t border-(--ui-stroke-tertiary) pt-2.5", children: [_jsx("span", { className: "text-[0.6rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground", children: "Ask next" }), _jsx("ul", { className: "mt-1 space-y-1 text-[0.8125rem] leading-5 text-foreground/85", children: copilotAsk.map(question => (_jsxs("li", { children: ["\u201C", question, "\u201D"] }, question.slice(0, 24)))) })] })), _jsxs("div", { className: "mt-2.5 flex items-center justify-between gap-3", children: [_jsx("span", { className: cn('min-w-0 truncate text-[0.65rem]', copilotState === 'error' ? 'text-destructive' : 'text-muted-foreground'), children: copilotState === 'thinking' ? 'Thinking…' : copilotState === 'error' ? (copilotError ?? 'Copilot error') : '' }), _jsx(Button, { disabled: copilotState === 'thinking', onClick: forceCopilotRefresh, size: "sm", variant: "outline", children: "Suggest now" })] })] }))] }), liveInsights.length > 0 && (_jsxs("div", { className: "shrink-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]", children: [_jsxs("div", { className: "mb-2.5 flex items-center justify-between gap-3", children: [_jsxs("span", { className: "inline-flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)", children: [_jsx(IconSparkles, { size: 12 }), "Mentioned"] }), _jsx("span", { className: "text-[0.65rem] text-muted-foreground", children: "Select drugs to review after class" })] }), _jsx("div", { className: "flex flex-wrap gap-1.5", children: liveInsights.map(insight => (_jsxs("button", { "aria-pressed": insight.queued, className: cn('inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-[transform,color,border-color,background-color] active:scale-[0.98]', insight.queued
+                                                             ? 'border-(--theme-primary)/45 bg-(--ui-bg-primary) text-foreground'
+diff --git a/apps/desktop/src/app/recorder/index.tsx b/apps/desktop/src/app/recorder/index.tsx
+index e46faf27c..538cdc61d 100644
+--- a/apps/desktop/src/app/recorder/index.tsx
++++ b/apps/desktop/src/app/recorder/index.tsx
+@@ -179,12 +179,12 @@ export function RecorderView() {
+   }
+ 
+   if (recording === 'recording') {
++    // xl previously locked overflow to hidden for app-like fixed panes, but the
++    // breakpoints see zoom-scaled pixels: at 125-150% UI scale a window can sit
++    // in the xl column layout while the panels no longer fit vertically, and
++    // hidden overflow made them overlap with no way to scroll (tester report
++    // 2026-07-14). overflow-y-auto is visually identical when content fits.
+     return (
+-      {/* xl previously locked overflow to hidden for app-like fixed panes, but the
+-          breakpoints see zoom-scaled pixels: at 125-150% UI scale a window can sit
+-          in the xl column layout while the panels no longer fit vertically, and
+-          hidden overflow made them overlap with no way to scroll (tester report
+-          2026-07-14). overflow-y-auto is visually identical when content fits. */}
+       <main className="flex h-full min-h-0 flex-col overflow-y-auto bg-(--ui-editor-surface-background) px-4 pb-5 pt-4 sm:px-5">
+         <header className="mb-4 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-4 py-3 shadow-[inset_0_1px_0_var(--ui-stroke-quaternary)]">
+           <span aria-hidden="true" className="relative flex size-3 shrink-0">
+diff --git a/apps/desktop/src/app/right-sidebar/sources.js b/apps/desktop/src/app/right-sidebar/sources.js
+index a2e7bbce5..5f3711217 100644
+--- a/apps/desktop/src/app/right-sidebar/sources.js
++++ b/apps/desktop/src/app/right-sidebar/sources.js
+@@ -1,8 +1,8 @@
+ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+-// Sources rail (student build): every citation the agent surfaces in the current chat —
+-// markdown links, bare URLs, PMIDs, NCT trial ids, DOIs — collected into one clickable
+-// list. This replaces the developer file-tree as the default right-sidebar pane: students
+-// ask evidence questions, so the rail should answer "where did that come from?".
++// Sources rail (student build): every citation behind the CURRENT answer — markdown
++// links, bare URLs, PMIDs, NCT trial ids, DOIs — collected into one clickable list.
++// This replaces the developer file-tree as the default right-sidebar pane: students
++// ask evidence questions, so the rail should answer "where did THAT come from?".
+ import { useStore } from '@nanostores/react';
+ import { useEffect, useMemo, useRef, useState } from 'react';
+ import { Codicon } from '@/components/ui/codicon';
+@@ -200,17 +200,28 @@ function SourceRow({ focused, refCb, source }) {
+ export function SourcesTab() {
+     const messages = useStore($messages);
+     const focusedSourceUrl = useStore($focusedSourceUrl);
+-    const sources = useMemo(() => extractSources(messages), [messages]);
++    // Only the current exchange (last user message onward) feeds the rail. Harvesting the
++    // whole session buried the live answer's citations under every earlier question's pile
++    // — and made the rail look frozen across session switches (owner call 2026-07-14).
++    const exchange = useMemo(() => {
++        for (let index = messages.length - 1; index >= 0; index--) {
++            if (messages[index].role === 'user') {
++                return messages.slice(index);
++            }
++        }
++        return messages;
++    }, [messages]);
++    const sources = useMemo(() => extractSources(exchange), [exchange]);
+     // ChatGPT splits its drawer into cited-in-the-answer vs everything else the
+     // run touched. Cited = named in an ASSISTANT message's text; the rest came
+     // from tool traffic only.
+     const citedUrls = useMemo(() => {
+-        const assistantText = messages
++        const assistantText = exchange
+             .filter(message => message.role === 'assistant')
+             .map(message => chatMessageText(message))
+             .join('\n');
+         return new Set(sourcesFromText(assistantText).map(source => source.url));
+-    }, [messages]);
++    }, [exchange]);
+     const cited = useMemo(() => sources.filter(source => citedUrls.has(source.url)), [citedUrls, sources]);
+     const consulted = useMemo(() => sources.filter(source => !citedUrls.has(source.url)), [citedUrls, sources]);
+     const sourceElements = useRef(new Map());
+diff --git a/apps/desktop/src/app/right-sidebar/sources.tsx b/apps/desktop/src/app/right-sidebar/sources.tsx
+index 068632f77..369955534 100644
+--- a/apps/desktop/src/app/right-sidebar/sources.tsx
++++ b/apps/desktop/src/app/right-sidebar/sources.tsx
+@@ -1,7 +1,7 @@
+-// Sources rail (student build): every citation the agent surfaces in the current chat —
+-// markdown links, bare URLs, PMIDs, NCT trial ids, DOIs — collected into one clickable
+-// list. This replaces the developer file-tree as the default right-sidebar pane: students
+-// ask evidence questions, so the rail should answer "where did that come from?".
++// Sources rail (student build): every citation behind the CURRENT answer — markdown
++// links, bare URLs, PMIDs, NCT trial ids, DOIs — collected into one clickable list.
++// This replaces the developer file-tree as the default right-sidebar pane: students
++// ask evidence questions, so the rail should answer "where did THAT come from?".
+ import { useStore } from '@nanostores/react'
+ import { useEffect, useMemo, useRef, useState } from 'react'
+ 
+@@ -316,18 +316,30 @@ function SourceRow({
+ export function SourcesTab() {
+   const messages = useStore($messages)
+   const focusedSourceUrl = useStore($focusedSourceUrl)
+-  const sources = useMemo(() => extractSources(messages), [messages])
++  // Only the current exchange (last user message onward) feeds the rail. Harvesting the
++  // whole session buried the live answer's citations under every earlier question's pile
++  // — and made the rail look frozen across session switches (owner call 2026-07-14).
++  const exchange = useMemo(() => {
++    for (let index = messages.length - 1; index >= 0; index--) {
++      if (messages[index].role === 'user') {
++        return messages.slice(index)
++      }
++    }
++
++    return messages
++  }, [messages])
++  const sources = useMemo(() => extractSources(exchange), [exchange])
+   // ChatGPT splits its drawer into cited-in-the-answer vs everything else the
+   // run touched. Cited = named in an ASSISTANT message's text; the rest came
+   // from tool traffic only.
+   const citedUrls = useMemo(() => {
+-    const assistantText = messages
++    const assistantText = exchange
+       .filter(message => message.role === 'assistant')
+       .map(message => chatMessageText(message))
+       .join('\n')
+ 
+     return new Set(sourcesFromText(assistantText).map(source => source.url))
+-  }, [messages])
++  }, [exchange])
+   const cited = useMemo(() => sources.filter(source => citedUrls.has(source.url)), [citedUrls, sources])
+   const consulted = useMemo(() => sources.filter(source => !citedUrls.has(source.url)), [citedUrls, sources])
+   const sourceElements = useRef(new Map<string, HTMLButtonElement>())
+diff --git a/apps/desktop/src/app/settings/index.js b/apps/desktop/src/app/settings/index.js
+index 6e03961c3..41a4955a1 100644
+--- a/apps/desktop/src/app/settings/index.js
++++ b/apps/desktop/src/app/settings/index.js
+@@ -228,6 +228,6 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }) {
+                         triggerHaptic('warning');
+                         void resetConfig();
+                     }, children: _jsx(RefreshCw, {}) }) })] }));
+-    return (_jsx(OverlayView, { closeLabel: t.settings.closeSettings, onClose: onClose, children: _jsxs(OverlaySplitLayout, { children: [_jsx(OverlayNav, { footer: navFooter, groups: navGroups }), _jsx(OverlayMain, { className: "px-0 pb-0", children: activeView === 'usage' ? (_jsx(UsageSettings, {})) : activeView === 'connections' ? (_jsx(ConnectionsSettings, { onClose: onClose })) : activeView === 'config:appearance' ? (_jsx(AppearanceSettings, {})) : activeView === 'about' ? (_jsx(AboutSettings, {})) : activeView === 'gateway' ? (_jsx(GatewaySettings, {})) : activeView.startsWith('config:') ? (_jsx(ConfigSettings, { activeSectionId: activeView.slice('config:'.length), importInputRef: importInputRef, onConfigSaved: onConfigSaved, onMainModelChanged: onMainModelChanged })) : activeView === 'providers' ? (_jsx(ProvidersSettings, { onClose: onClose, onViewChange: setProviderView, view: providerView })) : activeView === 'keys' ? (_jsx(KeysSettings, { view: keysView })) : activeView === 'notifications' ? (_jsx(NotificationsSettings, {})) : (_jsx(SessionsSettings, {})) })] }) }));
++    return (_jsx(OverlayView, { closeLabel: t.settings.closeSettings, onClose: onClose, children: _jsxs(OverlaySplitLayout, { children: [_jsx(OverlayNav, { footer: navFooter, groups: navGroups }), _jsx(OverlayMain, { className: "overflow-y-auto overscroll-contain px-0 pb-0", children: activeView === 'usage' ? (_jsx(UsageSettings, {})) : activeView === 'connections' ? (_jsx(ConnectionsSettings, { onClose: onClose })) : activeView === 'config:appearance' ? (_jsx(AppearanceSettings, {})) : activeView === 'about' ? (_jsx(AboutSettings, {})) : activeView === 'gateway' ? (_jsx(GatewaySettings, {})) : activeView.startsWith('config:') ? (_jsx(ConfigSettings, { activeSectionId: activeView.slice('config:'.length), importInputRef: importInputRef, onConfigSaved: onConfigSaved, onMainModelChanged: onMainModelChanged })) : activeView === 'providers' ? (_jsx(ProvidersSettings, { onClose: onClose, onViewChange: setProviderView, view: providerView })) : activeView === 'keys' ? (_jsx(KeysSettings, { view: keysView })) : activeView === 'notifications' ? (_jsx(NotificationsSettings, {})) : (_jsx(SessionsSettings, {})) })] }) }));
+ }
+ export { SettingsView as SettingsPage };
+diff --git a/apps/desktop/src/app/settings/index.tsx b/apps/desktop/src/app/settings/index.tsx
+index b428faefc..dee5954da 100644
+--- a/apps/desktop/src/app/settings/index.tsx
++++ b/apps/desktop/src/app/settings/index.tsx
+@@ -296,7 +296,12 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
+       <OverlaySplitLayout>
+         <OverlayNav footer={navFooter} groups={navGroups} />
+ 
+-        <OverlayMain className="px-0 pb-0">
++        {/* overflow-y-auto (tailwind-merge beats OverlayMain's overflow-hidden): EVERY
++            settings page scrolls, not just the ones that rolled their own scroller.
++            Pages with an internal flex-1 scroller still fit the viewport and keep it;
++            natural-height pages overflow into this bar instead of clipping (owner
++            report 2026-07-14: several pages had no scrollbar at small window sizes). */}
++        <OverlayMain className="overflow-y-auto overscroll-contain px-0 pb-0">
+           {activeView === 'usage' ? (
+             <UsageSettings />
+           ) : activeView === 'connections' ? (
+diff --git a/apps/desktop/src/app/welcome/index.js b/apps/desktop/src/app/welcome/index.js
+index dbcfb13c6..923e1fcb8 100644
+--- a/apps/desktop/src/app/welcome/index.js
++++ b/apps/desktop/src/app/welcome/index.js
+@@ -1,11 +1,10 @@
+ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+ import { useState } from 'react';
+ import { useNavigate } from 'react-router-dom';
+-import { ConnectionsSettings } from '@/app/settings/connections-settings';
+ import { Button } from '@/components/ui/button';
+ import { Codicon } from '@/components/ui/codicon';
+ import { cn } from '@/lib/utils';
+-import { TODAY_ROUTE } from '../routes';
++import { NEW_CHAT_ROUTE } from '../routes';
+ import { completeOnboarding } from './onboarding';
+ export const READ_SEMESTER_PROMPT = 'Connect to my school accounts and read my semester: every course on Blackboard — syllabi, slides, lecture files, announcements, due dates. File everything into my Library, update my calendar and semester graph, and show me what you found. Use the nemesis-graph and nemesis-ledger skills.';
+ export const FIND_MATERIALS_PROMPT = 'Find my existing school files on this Mac (Documents, Desktop, Downloads, OneDrive/Google Drive folders), read my Anki collection, and fetch my Quizlet sets — propose what you find, then bring it into my Library. Use the nemesis-import skill.';
+@@ -17,16 +16,19 @@ function Progress({ step }) {
+ function SweepCard({ icon, onClick, text, title }) {
+     return (_jsxs("button", { className: "group flex min-h-40 flex-col items-start rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-5 text-left transition-colors hover:border-(--theme-primary)/45 hover:bg-(--ui-bg-quaternary) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--theme-primary)/50", onClick: onClick, type: "button", children: [_jsx("span", { className: "mb-8 grid size-9 place-items-center rounded-lg bg-(--theme-primary)/10 text-(--theme-primary)", children: _jsx(Codicon, { name: icon, size: "1rem" }) }), _jsx("span", { className: "text-base font-semibold tracking-[-0.015em] text-(--ui-text-primary)", children: title }), _jsx("span", { className: "mt-1 text-xs leading-relaxed text-(--ui-text-tertiary)", children: text }), _jsxs("span", { className: "mt-4 inline-flex items-center gap-1 text-[0.6875rem] font-semibold text-(--theme-primary)", children: ["Let Nemesis handle it ", _jsx(Codicon, { name: "arrow-right", size: "0.7rem" })] })] }));
+ }
++function ConnectStep({ icon, text, title }) {
++    return (_jsxs("div", { className: "flex items-start gap-3.5 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4", children: [_jsx("span", { className: "grid size-8 shrink-0 place-items-center rounded-lg bg-(--theme-primary)/10 text-(--theme-primary)", children: _jsx(Codicon, { name: icon, size: "0.875rem" }) }), _jsxs("span", { className: "min-w-0", children: [_jsx("span", { className: "block text-sm font-semibold tracking-[-0.01em] text-(--ui-text-primary)", children: title }), _jsx("span", { className: "mt-0.5 block text-xs leading-relaxed text-(--ui-text-tertiary)", children: text })] })] }));
++}
+ export function WelcomeView({ onStartSweep }) {
+     const navigate = useNavigate();
+     const [step, setStep] = useState(0);
+     const finish = () => {
+         completeOnboarding();
+-        navigate(TODAY_ROUTE, { replace: true });
++        navigate(NEW_CHAT_ROUTE, { replace: true });
+     };
+     const startSweep = (prompt) => {
+         completeOnboarding();
+         onStartSweep(prompt);
+     };
+-    return (_jsx("main", { className: "h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background) font-mono text-(--ui-text-primary)", children: _jsxs("div", { className: "mx-auto flex min-h-full w-full max-w-[960px] flex-col px-6 pb-10 pt-16 sm:px-10 sm:pt-20", children: [_jsxs("div", { className: "flex items-center justify-between gap-4", children: [_jsx(Progress, { step: step }), step > 0 && (_jsxs(Button, { onClick: () => setStep(current => current - 1), size: "inline", variant: "text", children: [_jsx(Codicon, { name: "arrow-left" }), " Back"] }))] }), step === 0 && (_jsxs("section", { className: "my-auto flex max-w-2xl flex-col items-start py-16", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-(--theme-primary)", children: "Nemesis \u00B7 Student agent" }), _jsx("h1", { className: "mt-5 text-4xl font-semibold tracking-[-0.045em] sm:text-5xl", children: "Your semester, under watch." }), _jsx("p", { className: "mt-5 max-w-xl text-base leading-relaxed text-(--ui-text-secondary)", children: "It runs the work around school. Let's connect your semester." }), _jsxs("div", { className: "mt-10 flex items-center gap-4", children: [_jsx(Button, { onClick: () => setStep(1), size: "lg", children: "Begin" }), _jsx(Button, { onClick: finish, size: "inline", variant: "text", children: "Skip for now" })] })] })), step === 1 && (_jsxs("section", { className: "mt-10 flex flex-1 flex-col", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)", children: "Connect" }), _jsx("h1", { className: "mt-2 text-2xl font-semibold tracking-[-0.03em]", children: "Bring your school within reach." }), _jsx("p", { className: "mt-2 max-w-2xl text-sm leading-relaxed text-(--ui-text-secondary)", children: "Sign in on the real site, in Nemesis's own browser. Your logins stay on this Mac." })] }), _jsx("div", { className: "-mx-6 mt-2 sm:-mx-6", children: _jsx(ConnectionsSettings, {}) }), _jsx("div", { className: "mt-auto flex justify-end pt-4", children: _jsx(Button, { onClick: () => setStep(2), size: "lg", children: "Continue" }) })] })), step === 2 && (_jsxs("section", { className: "mt-10 flex flex-1 flex-col", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)", children: "First sweep" }), _jsx("h1", { className: "mt-2 text-2xl font-semibold tracking-[-0.03em]", children: "Choose the first job." }), _jsx("p", { className: "mt-2 text-sm text-(--ui-text-secondary)", children: "Nemesis will gather the material. You approve what comes into your Library." })] }), _jsxs("div", { className: "mt-8 grid gap-4 md:grid-cols-2", children: [_jsx(SweepCard, { icon: "book", onClick: () => startSweep(READ_SEMESTER_PROMPT), text: "Read Blackboard, organize every course, and build the semester plan.", title: "Read my semester" }), _jsx(SweepCard, { icon: "folder-opened", onClick: () => startSweep(FIND_MATERIALS_PROMPT), text: "Survey local files, Anki, and Quizlet before importing anything.", title: "Find my study materials" })] }), _jsxs("div", { className: "mt-4 flex items-center gap-3 rounded-lg border border-dashed border-(--ui-stroke-tertiary) px-4 py-3", children: [_jsx(Codicon, { className: "text-(--ui-text-tertiary)", name: "files" }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-xs text-(--ui-text-secondary)", children: "Manual import folder" }), _jsx("p", { className: "truncate text-[0.6875rem] text-(--ui-text-quaternary)", title: IMPORTS_PATH, children: IMPORTS_PATH })] }), _jsx("span", { className: "hidden text-[0.65rem] text-(--ui-text-quaternary) sm:block", children: "Place files here to import them later." })] }), _jsx("div", { className: "mt-auto flex justify-end pt-8", children: _jsx(Button, { onClick: () => setStep(3), size: "inline", variant: "text", children: "Choose a sweep later" }) })] })), step === 3 && (_jsxs("section", { className: "my-auto flex max-w-2xl flex-col items-start py-16", children: [_jsx("span", { className: "grid size-12 place-items-center rounded-full bg-(--theme-primary)/10 text-(--theme-primary)", children: _jsx(Codicon, { name: "check", size: "1.15rem" }) }), _jsx("p", { className: "mt-8 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)", children: "Ready" }), _jsx("h1", { className: "mt-3 text-3xl font-semibold tracking-[-0.04em]", children: "Nemesis is watching your semester now." }), _jsx("p", { className: "mt-4 max-w-xl text-sm leading-relaxed text-(--ui-text-secondary)", children: "Your Today view stays quiet until there is something worth your attention." }), _jsx(Button, { className: "mt-9", onClick: finish, size: "lg", children: "Go to Today" })] }))] }) }));
++    return (_jsx("main", { className: "h-full min-h-0 overflow-y-auto bg-(--ui-editor-surface-background) font-mono text-(--ui-text-primary)", children: _jsxs("div", { className: "mx-auto flex min-h-full w-full max-w-[960px] flex-col px-6 pb-10 pt-16 sm:px-10 sm:pt-20", children: [_jsxs("div", { className: "flex items-center justify-between gap-4", children: [_jsx(Progress, { step: step }), step > 0 && (_jsxs(Button, { onClick: () => setStep(current => current - 1), size: "inline", variant: "text", children: [_jsx(Codicon, { name: "arrow-left" }), " Back"] }))] }), step === 0 && (_jsxs("section", { className: "my-auto flex max-w-2xl flex-col items-start py-16", children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-(--theme-primary)", children: "Nemesis \u00B7 Student agent" }), _jsx("h1", { className: "mt-5 text-4xl font-semibold tracking-[-0.045em] sm:text-5xl", children: "Your semester, under watch." }), _jsx("p", { className: "mt-5 max-w-xl text-base leading-relaxed text-(--ui-text-secondary)", children: "It runs the work around school. Let's connect your semester." }), _jsxs("div", { className: "mt-10 flex items-center gap-4", children: [_jsx(Button, { onClick: () => setStep(1), size: "lg", children: "Begin" }), _jsx(Button, { onClick: finish, size: "inline", variant: "text", children: "Skip for now" })] })] })), step === 1 && (_jsxs("section", { className: "mt-10 flex flex-1 flex-col", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)", children: "Connect" }), _jsx("h1", { className: "mt-2 text-2xl font-semibold tracking-[-0.03em]", children: "Bring your school within reach." }), _jsx("p", { className: "mt-2 max-w-2xl text-sm leading-relaxed text-(--ui-text-secondary)", children: "No forms here \u2014 you set this up by talking to Nemesis. Your logins stay on this Mac." })] }), _jsxs("div", { className: "mt-8 grid max-w-2xl gap-3", children: [_jsx(ConnectStep, { icon: "comment", text: "Paste your school\u2019s course site and webmail \u2014 \u201Cmy school uses canvas.myschool.edu and outlook.com\u201D.", title: "Tell Nemesis in chat" }), _jsx(ConnectStep, { icon: "globe", text: "Nemesis opens the real site in its own browser panel. Type your password there \u2014 never in chat.", title: "Sign in once, in its browser" }), _jsx(ConnectStep, { icon: "pass", text: "Your addresses are saved on this Mac, so every future sweep knows where your school lives.", title: "It remembers" })] }), _jsx("div", { className: "mt-auto flex justify-end pt-4", children: _jsx(Button, { onClick: () => setStep(2), size: "lg", children: "Continue" }) })] })), step === 2 && (_jsxs("section", { className: "mt-10 flex flex-1 flex-col", children: [_jsxs("div", { children: [_jsx("p", { className: "text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)", children: "First sweep" }), _jsx("h1", { className: "mt-2 text-2xl font-semibold tracking-[-0.03em]", children: "Choose the first job." }), _jsx("p", { className: "mt-2 text-sm text-(--ui-text-secondary)", children: "Nemesis will gather the material. You approve what comes into your Library." })] }), _jsxs("div", { className: "mt-8 grid gap-4 md:grid-cols-2", children: [_jsx(SweepCard, { icon: "book", onClick: () => startSweep(READ_SEMESTER_PROMPT), text: "Read Blackboard, organize every course, and build the semester plan.", title: "Read my semester" }), _jsx(SweepCard, { icon: "folder-opened", onClick: () => startSweep(FIND_MATERIALS_PROMPT), text: "Survey local files, Anki, and Quizlet before importing anything.", title: "Find my study materials" })] }), _jsxs("div", { className: "mt-4 flex items-center gap-3 rounded-lg border border-dashed border-(--ui-stroke-tertiary) px-4 py-3", children: [_jsx(Codicon, { className: "text-(--ui-text-tertiary)", name: "files" }), _jsxs("div", { className: "min-w-0 flex-1", children: [_jsx("p", { className: "text-xs text-(--ui-text-secondary)", children: "Manual import folder" }), _jsx("p", { className: "truncate text-[0.6875rem] text-(--ui-text-quaternary)", title: IMPORTS_PATH, children: IMPORTS_PATH })] }), _jsx("span", { className: "hidden text-[0.65rem] text-(--ui-text-quaternary) sm:block", children: "Place files here to import them later." })] }), _jsx("div", { className: "mt-auto flex justify-end pt-8", children: _jsx(Button, { onClick: () => setStep(3), size: "inline", variant: "text", children: "Choose a sweep later" }) })] })), step === 3 && (_jsxs("section", { className: "my-auto flex max-w-2xl flex-col items-start py-16", children: [_jsx("span", { className: "grid size-12 place-items-center rounded-full bg-(--theme-primary)/10 text-(--theme-primary)", children: _jsx(Codicon, { name: "check", size: "1.15rem" }) }), _jsx("p", { className: "mt-8 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)", children: "Ready" }), _jsx("h1", { className: "mt-3 text-3xl font-semibold tracking-[-0.04em]", children: "Nemesis is watching your semester now." }), _jsx("p", { className: "mt-4 max-w-xl text-sm leading-relaxed text-(--ui-text-secondary)", children: "Ask anything in chat \u2014 Nemesis keeps watch and speaks up when something needs you." }), _jsx(Button, { className: "mt-9", onClick: finish, size: "lg", children: "Start" })] }))] }) }));
+ }
+diff --git a/apps/desktop/src/app/welcome/index.tsx b/apps/desktop/src/app/welcome/index.tsx
+index c0059beb9..bd1ef53e0 100644
+--- a/apps/desktop/src/app/welcome/index.tsx
++++ b/apps/desktop/src/app/welcome/index.tsx
+@@ -1,12 +1,11 @@
+ import { useState } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ 
+-import { ConnectionsSettings } from '@/app/settings/connections-settings'
+ import { Button } from '@/components/ui/button'
+ import { Codicon } from '@/components/ui/codicon'
+ import { cn } from '@/lib/utils'
+ 
+-import { TODAY_ROUTE } from '../routes'
++import { NEW_CHAT_ROUTE } from '../routes'
+ 
+ import { completeOnboarding } from './onboarding'
+ 
+@@ -59,13 +58,27 @@ function SweepCard({ icon, onClick, text, title }: { icon: string; onClick: () =
+   )
+ }
+ 
++function ConnectStep({ icon, text, title }: { icon: string; text: string; title: string }) {
++  return (
++    <div className="flex items-start gap-3.5 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-card) p-4">
++      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-(--theme-primary)/10 text-(--theme-primary)">
++        <Codicon name={icon} size="0.875rem" />
++      </span>
++      <span className="min-w-0">
++        <span className="block text-sm font-semibold tracking-[-0.01em] text-(--ui-text-primary)">{title}</span>
++        <span className="mt-0.5 block text-xs leading-relaxed text-(--ui-text-tertiary)">{text}</span>
++      </span>
++    </div>
++  )
++}
++
+ export function WelcomeView({ onStartSweep }: WelcomeViewProps) {
+   const navigate = useNavigate()
+   const [step, setStep] = useState(0)
+ 
+   const finish = () => {
+     completeOnboarding()
+-    navigate(TODAY_ROUTE, { replace: true })
++    navigate(NEW_CHAT_ROUTE, { replace: true })
+   }
+ 
+   const startSweep = (prompt: string) => {
+@@ -111,11 +124,28 @@ export function WelcomeView({ onStartSweep }: WelcomeViewProps) {
+               <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-(--theme-primary)">Connect</p>
+               <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">Bring your school within reach.</h1>
+               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-(--ui-text-secondary)">
+-                Sign in on the real site, in Nemesis&apos;s own browser. Your logins stay on this Mac.
++                No forms here — you set this up by talking to Nemesis. Your logins stay on this Mac.
+               </p>
+             </div>
+-            <div className="-mx-6 mt-2 sm:-mx-6">
+-              <ConnectionsSettings />
++            {/* 2026-07-14: onboarding stopped embedding the Connections settings page (it
++                confused testers). The agent owns portal setup now: the student names their
++                school sites in chat and Nemesis writes portals.json (school-portal skill). */}
++            <div className="mt-8 grid max-w-2xl gap-3">
++              <ConnectStep
++                icon="comment"
++                text="Paste your school’s course site and webmail — “my school uses canvas.myschool.edu and outlook.com”."
++                title="Tell Nemesis in chat"
++              />
++              <ConnectStep
++                icon="globe"
++                text="Nemesis opens the real site in its own browser panel. Type your password there — never in chat."
++                title="Sign in once, in its browser"
++              />
++              <ConnectStep
++                icon="pass"
++                text="Your addresses are saved on this Mac, so every future sweep knows where your school lives."
++                title="It remembers"
++              />
+             </div>
+             <div className="mt-auto flex justify-end pt-4">
+               <Button onClick={() => setStep(2)} size="lg">
+@@ -180,10 +210,10 @@ export function WelcomeView({ onStartSweep }: WelcomeViewProps) {
+             </p>
+             <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em]">Nemesis is watching your semester now.</h1>
+             <p className="mt-4 max-w-xl text-sm leading-relaxed text-(--ui-text-secondary)">
+-              Your Today view stays quiet until there is something worth your attention.
++              Ask anything in chat — Nemesis keeps watch and speaks up when something needs you.
+             </p>
+             <Button className="mt-9" onClick={finish} size="lg">
+-              Go to Today
++              Start
+             </Button>
+           </section>
+         )}
+diff --git a/apps/desktop/src/components/assistant-ui/thread/activity-phrase.js b/apps/desktop/src/components/assistant-ui/thread/activity-phrase.js
+index facc79cfe..11b9dd4b3 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/activity-phrase.js
++++ b/apps/desktop/src/components/assistant-ui/thread/activity-phrase.js
+@@ -90,6 +90,30 @@ function searchSource(toolName) {
+     }
+     return '';
+ }
++/** Ordered [pattern, phrase] pairs — first match names the shell command's purpose.
++ *  Patterns test the lowercased command line; keep them specific enough that a
++ *  mismatch falls through to the generic line rather than mislabeling. */
++const TERMINAL_ACTIVITIES = [
++    [/osascript[\s\S]*?\bmail\b/, 'Reading your inbox…'],
++    [/osascript[\s\S]*?\bcalendar\b/, 'Checking your calendar…'],
++    [/pubmed|eutils|ncbi/, 'Searching PubMed…'],
++    [/clinicaltrials/, 'Searching ClinicalTrials.gov…'],
++    [/openfda|fda\.gov/, 'Checking openFDA…'],
++    [/pptx|marp|pandoc|reveal/, 'Building your slides…'],
++    [/\.apkg|anki/, 'Working on your flashcards…'],
++    [/pdftotext|pdfinfo|\bocr\b/, 'Reading a PDF…'],
++    [/ffmpeg|sherpa|whisper/, 'Processing audio…'],
++    [/pip3? install|npm install|brew install/, 'Setting up tools…']
++];
++function terminalPhrase(args) {
++    const command = firstString(args, ['command', 'cmd', 'script', 'code']).toLowerCase();
++    for (const [pattern, phrase] of TERMINAL_ACTIVITIES) {
++        if (pattern.test(command)) {
++            return phrase;
++        }
++    }
++    return 'Running a command…';
++}
+ function browserPhrase(args) {
+     const target = firstString(args, ['url', 'target']);
+     const host = target ? hostnameOnly(target) : '';
+@@ -157,9 +181,10 @@ export function phraseForActivity(event) {
+     if (FILE_EDIT_TOOLS.has(toolName)) {
+         return fileEditPhrase(args);
+     }
+-    // Never echo the raw command — a shell line is noise (or worse) to a student.
++    // Never echo the raw command — a shell line is noise (or worse) to a student —
++    // but DO classify it into a named activity when the command's purpose is clear.
+     if (TERMINAL_TOOLS.has(toolName)) {
+-        return 'Running a command…';
++        return terminalPhrase(args);
+     }
+     if (toolName === 'browser' || toolName.startsWith('browser_')) {
+         return browserPhrase(args);
+diff --git a/apps/desktop/src/components/assistant-ui/thread/activity-phrase.test.js b/apps/desktop/src/components/assistant-ui/thread/activity-phrase.test.js
+index 9df354699..c96472843 100644
+--- a/apps/desktop/src/components/assistant-ui/thread/activity-phrase.test.js
++++ b/apps/desktop/src/components/assistant-ui/thread/activity-phrase.test.js
+@@ -39,6 +39,16 @@ describe('phraseForActivity', () => {
+         expect(phrase).not.toContain('rm -rf');
+         expect(phraseForActivity(tool('execute_code', { code: 'print(1)' }))).toBe('Running a command…');
+     });
++    it('names the purpose of recognizable terminal commands without echoing them', () => {
++        expect(phraseForActivity(tool('bash', { command: 'curl -s "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=tesamorelin"' }))).toBe('Searching PubMed…');
++        expect(phraseForActivity(tool('bash', { command: 'python3 build_deck.py --out slides.pptx' }))).toBe('Building your slides…');
++        expect(phraseForActivity(tool('bash', { command: "osascript -e 'tell application \"Mail\" to get subject of messages 1 thru 25 of inbox'" }))).toBe('Reading your inbox…');
++        expect(phraseForActivity(tool('bash', { command: 'ffmpeg -i lecture.m4a lecture.wav' }))).toBe('Processing audio…');
++        // The named phrase never leaks the command text itself.
++        const named = phraseForActivity(tool('bash', { command: 'curl https://clinicaltrials.gov/api/v2/studies?query.term=GLP-1' }));
++        expect(named).toBe('Searching ClinicalTrials.gov…');
++        expect(named).not.toContain('curl');
++    });
+     it('maps the nemesis-study-decks skill to the flashcard phrase', () => {
+         expect(phraseForActivity(tool('skill_view', { name: 'nemesis-study-decks' }))).toBe('Building your flashcard deck…');
+     });
+diff --git a/apps/desktop/src/nemesis.js b/apps/desktop/src/nemesis.js
+index 8cede022a..75746a1d2 100644
+--- a/apps/desktop/src/nemesis.js
++++ b/apps/desktop/src/nemesis.js
+@@ -4,7 +4,9 @@
+ // docs/design/nemesis-product-reskin-plan-2026-07.md). Flip to false → stock Hermes UI.
+ export const NEMESIS_STUDENT_BUILD = true;
+ /** Sidebar pages hidden for students (machinery stays alive underneath). */
+-export const STUDENT_HIDDEN_NAV = new Set(['skills', 'messaging', 'artifacts']);
++// 2026-07-14: 'today' joined — owner call: the dashboard reads as noise until the
++// semester graph earns a quieter version; students boot straight into chat instead.
++export const STUDENT_HIDDEN_NAV = new Set(['today', 'skills', 'messaging', 'artifacts']);
+ /** ⌘K palette entries hidden for students. */
+ export const STUDENT_HIDDEN_PALETTE = new Set(['nav-terminal', 'nav-skills', 'nav-messaging']);
+ /** Settings sections students see. During the beta, students connect their own model
+@@ -13,10 +15,12 @@ export const STUDENT_HIDDEN_PALETTE = new Set(['nav-terminal', 'nav-skills', 'na
+ // intelligence via the metered proxy, so provider/key/model settings are not student-facing.
+ // 2026-07-14 (beta.5): 'usage' restored — students asked where to see their plan + weekly
+ // AI usage; the page now also carries account status (usage-settings.tsx).
++// 2026-07-14: 'connections' hidden — the page confused testers; students now hand their
++// school/webmail addresses to the agent in chat and it writes portals.json itself
++// (school-portal skill). The page code stays for when a settings surface earns it back.
+ export const STUDENT_SETTINGS_KEEP = new Set([
+     'usage',
+     'keybinds',
+-    'connections',
+     'config:appearance',
+     'config:chat',
+     'config:safety',
+diff --git a/apps/desktop/src/nemesis.ts b/apps/desktop/src/nemesis.ts
+index 3687a7e6e..3f8fe3aad 100644
+--- a/apps/desktop/src/nemesis.ts
++++ b/apps/desktop/src/nemesis.ts
+@@ -5,7 +5,9 @@
+ export const NEMESIS_STUDENT_BUILD = true
+ 
+ /** Sidebar pages hidden for students (machinery stays alive underneath). */
+-export const STUDENT_HIDDEN_NAV: ReadonlySet<string> = new Set(['skills', 'messaging', 'artifacts'])
++// 2026-07-14: 'today' joined — owner call: the dashboard reads as noise until the
++// semester graph earns a quieter version; students boot straight into chat instead.
++export const STUDENT_HIDDEN_NAV: ReadonlySet<string> = new Set(['today', 'skills', 'messaging', 'artifacts'])
+ 
+ /** ⌘K palette entries hidden for students. */
+ export const STUDENT_HIDDEN_PALETTE: ReadonlySet<string> = new Set(['nav-terminal', 'nav-skills', 'nav-messaging'])
+@@ -16,10 +18,12 @@ export const STUDENT_HIDDEN_PALETTE: ReadonlySet<string> = new Set(['nav-termina
+ // intelligence via the metered proxy, so provider/key/model settings are not student-facing.
+ // 2026-07-14 (beta.5): 'usage' restored — students asked where to see their plan + weekly
+ // AI usage; the page now also carries account status (usage-settings.tsx).
++// 2026-07-14: 'connections' hidden — the page confused testers; students now hand their
++// school/webmail addresses to the agent in chat and it writes portals.json itself
++// (school-portal skill). The page code stays for when a settings surface earns it back.
+ export const STUDENT_SETTINGS_KEEP: ReadonlySet<string> = new Set([
+   'usage',
+   'keybinds',
+-  'connections',
+   'config:appearance',
+   'config:chat',
+   'config:safety',
+-- 
+2.50.1 (Apple Git-155)
+

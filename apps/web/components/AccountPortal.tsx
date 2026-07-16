@@ -63,7 +63,7 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
       <div className="nemesis-account-scanlines" aria-hidden="true" />
       <header className="nemesis-account-header">
         <Link className="nemesis-account-brand" href="/account" aria-label="Nemesis account home">
-          <Image src="/nemesis/logo-4k.png" alt="" width={34} height={34} priority />
+          <Image src="/nemesis/logo-white.png" alt="" width={34} height={34} priority />
           <span>NEMESIS</span>
         </Link>
         <a className="nemesis-account-site-link" href={landingUrl}>enternemesis.com</a>

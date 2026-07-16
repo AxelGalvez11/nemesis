@@ -18,7 +18,7 @@ export function SocialLinks() {
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label={`${label} — opens in a new tab`}
+          aria-label={`${label}, opens in a new tab`}
         >
           {label}
         </a>

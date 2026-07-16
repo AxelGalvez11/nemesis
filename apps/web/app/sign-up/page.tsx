@@ -104,16 +104,16 @@ export default function SignUpPage() {
         description={<>A confirmation link was sent to <strong>{submittedEmail}</strong>. Open it to finish creating your account.</>}
         footer={<p><Link className="nemesis-auth-link" href="/sign-in">Back to sign in.</Link></p>}
       >
-        <p className="nemesis-auth-success">Waiting for you to open the link — you can close this tab afterward.</p>
+        <p className="nemesis-auth-success">Waiting for you to open the link. You can close this tab afterward.</p>
       </AuthFrame>
     );
   }
 
   return (
     <AuthFrame
-      eyebrow="Nemesis // initial deployment"
+      eyebrow="Get started"
       title="Create your account."
-      description="Bring Nemesis online — this account governs its memory, tools, and permitted scope."
+      description="One account for the Mac app, your plan, and everything Nemesis builds for you."
       footer={<p>Already have an account? <Link className="nemesis-auth-link" href="/sign-in">Sign in.</Link></p>}
     >
         <AuthModeSwitch active="sign-up" />

@@ -1,31 +1,26 @@
 import type { Metadata } from "next";
-import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Hanken_Grotesk } from "next/font/google";
 import "./globals.css";
 
-// Type system: Hanken Grotesk (variable, full wght axis — the heavy 800 display weight
-// and body text) + JetBrains Mono for the technical labels. Self-hosted by next/font and
-// exposed as CSS variables that globals.css maps into --sans / --mono.
+// Type system: Hanken Grotesk only (variable, full wght axis: the heavy 800 display
+// weight, body text, and tracked uppercase labels). Self-hosted by next/font and
+// exposed as a CSS variable that globals.css maps into --sans.
 const hanken = Hanken_Grotesk({
   subsets: ["latin"],
   variable: "--font-hanken",
   display: "swap",
 });
-const jetbrains = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.enternemesis.com"),
-  title: "Nemesis — a contained academic agent for macOS",
+  title: "Nemesis: a study agent for your Mac",
   description:
-    "Nemesis is an academic agent with persistent memory, reusable skills, scheduled automation, delegated tasks, and authorized browser access—governed by scoped tools, isolated task contexts, and a standing rule: it never submits on your behalf.",
+    "Nemesis turns your course files into notes, flashcards, and practice tests. It builds its knowledge from your library and gets better the more you use it. Your files stay on your Mac, and it never submits work for you.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "Nemesis — a contained academic agent for macOS",
+    title: "Nemesis: a study agent for your Mac",
     description:
-      "It remembers. It learns. It acts—inside your scope. Persistent memory, reusable skills, scheduled automation, and one standing rule: you submit.",
+      "Notes, flashcards, and practice tests from your own course files. It builds its knowledge from your library and gets better the more you use it.",
     type: "website",
     url: "/",
     siteName: "Nemesis",
@@ -33,9 +28,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Nemesis — a contained academic agent for macOS",
+    title: "Nemesis: a study agent for your Mac",
     description:
-      "It remembers. It learns. It acts—inside your scope. Persistent memory, reusable skills, scheduled automation, and one standing rule: you submit.",
+      "Notes, flashcards, and practice tests from your own course files. It builds its knowledge from your library and gets better the more you use it.",
     images: ["/nemesis/og.jpg"],
   },
   robots: { index: true, follow: true },
@@ -45,7 +40,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${hanken.variable} ${jetbrains.variable}`}>
+    <html lang="en" className={hanken.variable}>
       <body>{children}</body>
     </html>
   );
