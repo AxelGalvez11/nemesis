@@ -108,8 +108,42 @@ function useBackgroundParallax() {
   }, []);
 }
 
+/**
+ * Cursor-following card glow (adapted from 21st.dev "Spotlight Card" by easemize).
+ * One rAF-throttled pointermove listener writes the viewport cursor position into
+ * two CSS variables on <html>; the cards' ::after overlays use a fixed-attachment
+ * radial gradient, so every card lights up under the real cursor with no per-card
+ * math. Desktop-only via the (hover:hover) media block in globals.css.
+ */
+function useCursorGlow() {
+  useEffect(() => {
+    let frame = 0;
+    let x = -999;
+    let y = -999;
+
+    const apply = () => {
+      frame = 0;
+      document.documentElement.style.setProperty("--cx", x.toFixed(1));
+      document.documentElement.style.setProperty("--cy", y.toFixed(1));
+    };
+
+    const onMove = (e: PointerEvent) => {
+      x = e.clientX;
+      y = e.clientY;
+      if (!frame) frame = window.requestAnimationFrame(apply);
+    };
+
+    document.addEventListener("pointermove", onMove, { passive: true });
+    return () => {
+      document.removeEventListener("pointermove", onMove);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, []);
+}
+
 export default function Home() {
   useBackgroundParallax();
+  useCursorGlow();
 
   return (
     <>
@@ -290,6 +324,9 @@ export default function Home() {
                 <li><IconCheck size={13} />Notes, flashcards, and practice tests from your files</li>
                 <li><IconCheck size={13} />Scheduled school sync</li>
               </ul>
+              <div className="plan-cta">
+                <a className="btn btn-secondary" href={APP_SIGN_UP}>Start free trial</a>
+              </div>
             </div>
             <div className="plan plan-featured">
               <span className="plan-badge">Featured</span>
@@ -300,6 +337,9 @@ export default function Home() {
                 <li><IconCheck size={13} />Deep research with cited reports</li>
                 <li><IconCheck size={13} />Higher daily limits</li>
               </ul>
+              <div className="plan-cta">
+                <a className="btn btn-primary" href={APP_SIGN_UP}>Start free trial</a>
+              </div>
             </div>
             <div className="plan">
               <div className="plan-price">$49.99<span className="per">/mo</span></div>
@@ -309,10 +349,10 @@ export default function Home() {
                 <li><IconCheck size={13} />Built for heavy, daily use</li>
                 <li><IconCheck size={13} />First access to new features</li>
               </ul>
+              <div className="plan-cta">
+                <a className="btn btn-secondary" href={APP_SIGN_UP}>Start free trial</a>
+              </div>
             </div>
-          </div>
-          <div className="hero-cta" style={{ marginTop: "28px", justifyContent: "center" }}>
-            <a className="btn btn-primary" href={APP_SIGN_UP}>Start free trial</a>
           </div>
         </div>
       </section>

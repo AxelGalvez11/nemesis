@@ -141,6 +141,7 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
 }
 .feature {
+  position: relative;
   border: 1px solid var(--line); border-radius: 8px; background: #ffffff;
   padding: 28px 26px 30px;
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
@@ -164,6 +165,7 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 /* triad — three chrome-object cards, art on black inside a paper card */
 .triad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .obj {
+  position: relative;
   border: 1px solid var(--line); border-radius: 8px; background: #ffffff;
   overflow: hidden;
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
@@ -254,6 +256,31 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   color: var(--steel);
 }
 .plan-features svg { flex-shrink: 0; margin-top: 3px; color: var(--blood-deep); }
+.plan-cta { margin-top: 24px; }
+.plan-cta .btn { width: 100%; justify-content: center; }
+
+/* cursor spotlight on cards (technique adapted from 21st.dev Spotlight Card):
+   --cx/--cy hold the viewport cursor position; background-attachment: fixed puts
+   the gradient in viewport space, so the glow sits under the real cursor on any
+   card without per-card coordinates. Hover-gated, desktop pointers only. */
+@media (hover: hover) and (pointer: fine) {
+  .feature::after, .obj::after, .plan::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    pointer-events: none; opacity: 0; transition: opacity 0.3s ease;
+    background-image: radial-gradient(
+      240px 240px at calc(var(--cx, -999) * 1px) calc(var(--cy, -999) * 1px),
+      rgba(255, 39, 64, 0.07), transparent 70%
+    );
+    background-attachment: fixed;
+  }
+  .plan-featured::after {
+    background-image: radial-gradient(
+      260px 260px at calc(var(--cx, -999) * 1px) calc(var(--cy, -999) * 1px),
+      rgba(255, 39, 64, 0.1), transparent 70%
+    );
+  }
+  .feature:hover::after, .obj:hover::after, .plan:hover::after { opacity: 1; }
+}
 
 /* closer */
 .closer { padding: 108px 0 116px; text-align: center; position: relative; overflow: hidden; }
