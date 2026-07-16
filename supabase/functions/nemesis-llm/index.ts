@@ -34,6 +34,14 @@ const DEEPSEEK_KEY = Deno.env.get('DEEPSEEK_API_KEY') ?? ''
 const DEEPSEEK_BASE = 'https://api.deepseek.com'
 const GLM_KEY = Deno.env.get('GLM_API_KEY') ?? ''
 const GLM_MODEL = Deno.env.get('GLM_MODEL') ?? 'glm-5.2'
+// GLM-for-High kill switch — OFF by default (owner call 2026-07-14 evening).
+// The answer mode is per-session sticky, so a High-parked Pro user would ride
+// 2-4x-priced GLM on every agentic step (enough to sink that user's margin),
+// and the quality premium over DeepSeek deep thinking is unmeasured — students
+// never see model names. Flip on for an eval with:
+//   supabase secrets set GLM_HIGH_MODE=on   (no code deploy needed)
+// GLM remains the automatic DeepSeek-outage failover regardless of this flag.
+const GLM_HIGH_MODE = (Deno.env.get('GLM_HIGH_MODE') ?? 'off') === 'on'
 const GLM_BASE = 'https://api.z.ai/api/paas/v4'
 
 const COUNTER_KEY = 'nemesis_llm_tokens'
@@ -49,6 +57,12 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession:
  * Mirror of resolveDeepSeekModel in supabase/functions/ask/llm.ts — map to the durable
  * V4 names plus the `thinking` mode selector, so desktop clients keep working after the
  * aliases die. A client-supplied body.thinking always wins over this default.
+ *
+ * Any OTHER model id maps to deepseek-v4-flash instead of passing through: the upstream
+ * engine's deep defaults still name third-party models (e.g. anthropic/claude-opus-4.6
+ * in agent_init) and a sub-agent path that misses the configured model would otherwise
+ * surface DeepSeek's raw 400 ("supported API model names are...") to the student. We
+ * bill/provide the model, so the valve — not the client — owns the final model name.
  */
 function resolveModel(model: string): { model: string; thinking?: { type: 'disabled' | 'enabled' } } {
   const m = model.toLowerCase()
@@ -56,8 +70,9 @@ function resolveModel(model: string): { model: string; thinking?: { type: 'disab
   if (m === 'deepseek-chat') return { model: 'deepseek-v4-flash', thinking: { type: 'disabled' } }
   if (m === 'deepseek-reasoner') return { model: 'deepseek-v4-flash', thinking: { type: 'enabled' } }
   if (m.includes('v4-flash')) return { model, thinking: { type: 'disabled' } }
+  if (m.includes('v4-pro')) return { model }
 
-  return { model }
+  return { model: 'deepseek-v4-flash', thinking: { type: 'disabled' } }
 }
 
 function json(body: unknown, status = 200): Response {
@@ -253,10 +268,32 @@ async function chatCompletions(req: Request): Promise<Response> {
   }
 
   const requested = typeof body.model === 'string' ? body.model : 'deepseek-chat'
-  const useGlm = requested.toLowerCase().startsWith('glm')
-  const resolved = useGlm ? { model: requested } : resolveModel(requested)
+  let useGlm = requested.toLowerCase().startsWith('glm')
+
+  // High answer mode rides the premium GLM lane for Agent Pro / Max (owner routing
+  // decision 2026-07-14): Instant and Medium stay on DeepSeek; a High-effort turn is
+  // upgraded to GLM when the plan qualifies. Students picking High are NOT errored —
+  // they keep DeepSeek's own deep thinking. Effort is read from every encoding the
+  // desktop backend can emit (OpenRouter-style reasoning.effort, flat reasoning_effort,
+  // DeepSeek-style thinking.effort).
+  const effortHigh =
+    ((body.reasoning as { effort?: string } | undefined)?.effort ??
+      (body.reasoning_effort as string | undefined) ??
+      (body.thinking as { effort?: string } | undefined)?.effort) === 'high'
+  const glmUpgrade = GLM_HIGH_MODE && !useGlm && effortHigh && Boolean(GLM_KEY) && (ctx.plan === 'pro' || ctx.plan === 'max')
+
+  if (glmUpgrade) useGlm = true
+
+  const resolved = useGlm ? { model: glmUpgrade ? GLM_MODEL : requested } : resolveModel(requested)
   let model = resolved.model
   body.model = model
+
+  if (glmUpgrade) {
+    // GLM doesn't speak the DeepSeek/OpenRouter effort selectors — drop them.
+    delete body.thinking
+    delete body.reasoning
+    delete body.reasoning_effort
+  }
 
   if (!useGlm && resolved.thinking && body.thinking === undefined) {
     body.thinking = resolved.thinking

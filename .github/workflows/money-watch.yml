@@ -1,0 +1,98 @@
+# Money-watch — daily spend + provider-balance alarms.
+#
+# Two failure modes this catches:
+#   1. A provider account running dry (DeepSeek prepaid balance hit $0 mid-eval
+#      once, 2026-07-08 — and the GLM/Gemini failover MASKS a dry DeepSeek by
+#      silently billing the fallback provider instead).
+#   2. Runaway internal burn (9.2M tokens in 30 min happened once, 2026-07-14) —
+#      our own usage_counters/usage_events tables meter every token, so an
+#      abnormal day is visible the morning it starts, not on the invoice.
+#
+# A red run emails the repo owner — that IS the alarm. Thresholds are constants
+# at the top of each step; tune freely.
+#
+# Secrets used: SB_URL + SERVICE_KEY (already present; read-only queries), and
+# DEEPSEEK_API_KEY (OPTIONAL — the balance job self-skips until the owner adds
+# it with `gh secret set DEEPSEEK_API_KEY`).
+name: money-watch
+
+on:
+  schedule:
+    - cron: "0 13 * * *" # daily 13:00 UTC = morning US Central
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  burn-watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: yesterday's total token burn
+        env:
+          SB_URL: ${{ secrets.SB_URL }}
+          SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
+        run: |
+          # Alarm when the whole fleet burned more than this many LLM tokens in
+          # one day. ~10 heavy agentic users at the measured ~1.5M/day each.
+          MAX_DAILY_TOKENS=15000000
+          DAY=$(date -u -d "yesterday" +%F)
+          TOTAL=$(curl -sf --max-time 30 \
+            -H "apikey: $SERVICE_KEY" -H "Authorization: Bearer $SERVICE_KEY" \
+            "$SB_URL/rest/v1/usage_counters?counter_key=eq.nemesis_llm_tokens&period_start=eq.$DAY&select=used" \
+            | jq '[.[].used] | add // 0')
+          echo "Total nemesis_llm tokens on $DAY: $TOTAL (alarm above $MAX_DAILY_TOKENS)"
+          if [ "$TOTAL" -gt "$MAX_DAILY_TOKENS" ]; then
+            echo "::error::Abnormal daily burn: $TOTAL LLM tokens on $DAY (threshold $MAX_DAILY_TOKENS). Check usage_events for the top spender before the bill does."
+            exit 1
+          fi
+
+      - name: silent failover burn (GLM serving DeepSeek traffic)
+        env:
+          SB_URL: ${{ secrets.SB_URL }}
+          SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
+        run: |
+          # GLM is 2-4x DeepSeek's price and also the automatic failover target,
+          # so heavy GLM traffic usually means "DeepSeek is down or dry and the
+          # failover is quietly billing Z.ai instead" — the masked-outage case.
+          MAX_GLM_TOKENS=2000000
+          DAY=$(date -u -d "yesterday" +%F)
+          GLM=$(curl -sf --max-time 30 \
+            -H "apikey: $SERVICE_KEY" -H "Authorization: Bearer $SERVICE_KEY" \
+            "$SB_URL/rest/v1/usage_events?event_type=eq.nemesis_llm_completion&period_start=eq.$DAY&metadata-%3E%3Emodel=like.glm*&select=metadata" \
+            | jq '[.[].metadata.tokens // 0] | add // 0')
+          echo "GLM-served tokens on $DAY: $GLM (alarm above $MAX_GLM_TOKENS)"
+          if [ "$GLM" -gt "$MAX_GLM_TOKENS" ]; then
+            echo "::error::GLM served $GLM tokens on $DAY (threshold $MAX_GLM_TOKENS). Either DeepSeek is down/dry (failover is masking it — check api.deepseek.com/user/balance) or the premium lane is running hot."
+            exit 1
+          fi
+
+  deepseek-balance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: prepaid balance runway
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          # DeepSeek is PREPAID with no auto-topup: a dry balance = provider
+          # outage for us (masked by failover, billed to GLM). Alarm early.
+          MIN_BALANCE_USD=10
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "DEEPSEEK_API_KEY secret not set — skipping balance check."
+            echo "Enable with: gh secret set DEEPSEEK_API_KEY --repo AxelGalvez11/PharmaBro"
+            exit 0
+          fi
+          BODY=$(curl -sf --max-time 30 -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
+            "https://api.deepseek.com/user/balance")
+          AVAILABLE=$(echo "$BODY" | jq -r '.is_available')
+          BALANCE=$(echo "$BODY" | jq -r '[.balance_infos[] | select(.currency=="USD") | .total_balance] | first // ([.balance_infos[].total_balance] | first) // "0"')
+          echo "DeepSeek balance: $BALANCE (is_available=$AVAILABLE, alarm below \$$MIN_BALANCE_USD)"
+          if [ "$AVAILABLE" != "true" ]; then
+            echo "::error::DeepSeek reports is_available=false — the account cannot serve requests. Failover is billing GLM/Gemini right now."
+            exit 1
+          fi
+          if [ "$(echo "$BALANCE < $MIN_BALANCE_USD" | bc -l)" = "1" ]; then
+            echo "::error::DeepSeek balance \$$BALANCE is below the \$$MIN_BALANCE_USD floor — top up before the failover starts billing GLM."
+            exit 1
+          fi
