@@ -148,16 +148,26 @@ export async function markReviewed(id: string): Promise<void> {
 /** The "Needs changes" review action. Deliberately does NOT change mission status —
  * it just adds an event, the same channel the desktop uses for progress logs, so it
  * shows up in the feed as student feedback. Nothing here submits anything anywhere;
- * it's a note for whoever (student or, on a future turn, the agent) reads it next. */
-export async function requestChanges(id: string, note?: string): Promise<void> {
+ * it's a note for whoever (student or, on a future turn, the agent) reads it next.
+ * Returns the created event so the caller can show it immediately rather than
+ * waiting on the realtime echo (subscribeMission dedupes by id, so no double-add
+ * when that echo does arrive). */
+export async function requestChanges(id: string, note?: string): Promise<MissionEvent> {
   const userId = await currentUserId();
-  const { error } = await supabase.from("mission_events").insert({
-    mission_id: id,
-    user_id: userId,
-    type: "log",
-    payload: { source: "review", note: note?.trim() || "Needs changes" },
-  });
+  const { data, error } = await supabase
+    .from("mission_events")
+    .insert({
+      mission_id: id,
+      user_id: userId,
+      type: "log",
+      payload: { source: "review", note: note?.trim() || "Needs changes" },
+    })
+    .select("id,mission_id,type,payload,created_at")
+    .single();
   if (error) throw new Error(`request changes failed: ${error.message}`);
+  const event = castMissionEvent(data);
+  if (!event) throw new Error("request changes failed: unexpected response shape");
+  return event;
 }
 
 /** queued -> cancelled. Guarded to only-still-queued: once a mission is claimed the
