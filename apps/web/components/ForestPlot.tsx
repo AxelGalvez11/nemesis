@@ -1,7 +1,7 @@
 "use client";
 
-import type { MetaAnalysisResult } from "@pharmabro/shared";
-import { buildForestPlot } from "@pharmabro/shared";
+import type { MetaAnalysisResult } from "@nemesis/shared";
+import { buildForestPlot } from "@nemesis/shared";
 
 // The forest-plot FIGURE for a poolable meta-analysis. Geometry comes from the shared, pure
 // buildForestPlot (computed from the real pool — never an LLM-drawn figure); this only paints the

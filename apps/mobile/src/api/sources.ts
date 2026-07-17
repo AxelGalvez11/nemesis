@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { toSourceDetail } from "./cast";
-import type { SourceDetail } from "@pharmabro/shared";
+import type { SourceDetail } from "@nemesis/shared";
 
 /**
  * GET /sources/{id} (get_source) — the doc-12 Source Viewer record. Authenticated-only

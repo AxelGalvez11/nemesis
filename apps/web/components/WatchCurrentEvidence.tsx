@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { AskResponse } from "@pharmabro/shared";
+import type { AskResponse } from "@nemesis/shared";
 import { askQuestion } from "@/lib/api";
 import { renderInline } from "@/lib/inline-md";
 import { askHrefForWatch } from "@/lib/watch-format";

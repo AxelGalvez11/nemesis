@@ -1,6 +1,6 @@
 "use client";
 
-import type { ResearchProgressStep } from "@pharmabro/shared";
+import type { ResearchProgressStep } from "@nemesis/shared";
 import { RunThinking, stageFromProgress, runStepCurrent } from "./RunThinking";
 
 export interface WorkPanelProps {

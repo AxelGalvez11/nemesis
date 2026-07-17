@@ -2,8 +2,8 @@
 // SVG scatter of the answer's evidence: newer → right, stronger → up, bigger dot =
 // stronger claim support, filled = cited (hollow = reviewed-only). Click a dot to jump
 // to its source card. Pure render over buildEvidenceMap() — no chart libraries.
-import type { Citation } from "@pharmabro/shared";
-import { buildEvidenceMap } from "@pharmabro/shared";
+import type { Citation } from "@nemesis/shared";
+import { buildEvidenceMap } from "@nemesis/shared";
 import { normTag } from "@/lib/cite";
 
 const W = 320, H = 240;

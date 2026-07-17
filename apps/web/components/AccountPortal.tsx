@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { EntitlementSnapshot } from "@pharmabro/shared";
+import type { EntitlementSnapshot } from "@nemesis/shared";
 import { BillingPanel } from "@/components/BillingPanel";
 import { useAuth } from "@/components/AuthProvider";
 import { fetchEntitlements } from "@/lib/api";

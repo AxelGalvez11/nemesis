@@ -73,7 +73,7 @@ async function teardown() {
 }
 
 async function main() {
-  const email = `phase4-validator+${crypto.randomUUID().slice(0, 8)}@pharmabro.test`;
+  const email = `phase4-validator+${crypto.randomUUID().slice(0, 8)}@nemesis.test`;
   const password = crypto.randomUUID();
   const created = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST",

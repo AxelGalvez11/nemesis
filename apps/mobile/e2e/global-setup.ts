@@ -21,7 +21,7 @@ async function globalSetup(): Promise<void> {
     "Content-Type": "application/json",
   };
 
-  const email = `phase6b1+${Date.now().toString(36)}@pharmabro.test`;
+  const email = `phase6b1+${Date.now().toString(36)}@nemesis.test`;
   const password = `Pb!${Math.random().toString(36).slice(2)}Aa1`;
   const created = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST",

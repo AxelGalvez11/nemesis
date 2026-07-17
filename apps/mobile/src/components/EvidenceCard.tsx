@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import type { DrugOverview, EvidenceTier } from "@pharmabro/shared";
+import type { DrugOverview, EvidenceTier } from "@nemesis/shared";
 import { Badge, Card, SectionHeader } from "./ui";
 import { c, space } from "@/theme/tokens";
 

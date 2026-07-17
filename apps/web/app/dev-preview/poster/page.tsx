@@ -2,7 +2,7 @@
 // Renders <ResearchPoster> with a realistic health/biomedical fixture so the poster can be
 // screenshotted in isolation (no app chrome — this route is a sibling of app/app, whose layout owns
 // the rail). The fixture is a plausible finished Deep Research ResearchReport; it is NOT fetched.
-import type { Citation, ResearchReport } from "@pharmabro/shared";
+import type { Citation, ResearchReport } from "@nemesis/shared";
 import { ResearchPoster } from "@/components/ResearchPoster";
 
 // 30 realistic citations spanning study types + years — a real-sized cited-source list for a

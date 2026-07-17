@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import type { ResearchReport } from "@pharmabro/shared";
+import type { ResearchReport } from "@nemesis/shared";
 
 // Deep Research reports library (read-only on mobile), ported from apps/web/lib/api.ts. Reports are
 // GENERATED on web (the Pro-gated research edge fn); mobile reads the saved deliverables. Both read the

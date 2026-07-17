@@ -1,6 +1,6 @@
 // Deno unit tests (repo convention) for the jsonb -> DTO narrowing at the §8
 // client boundary. Run: deno test --no-check apps/mobile/src/api/cast.test.ts
-// (--no-check: the `import type` from @pharmabro/shared + ./types.ts is erased at
+// (--no-check: the `import type` from @nemesis/shared + ./types.ts is erased at
 // runtime). These lock the SHAPES probed against the real cloud payloads (the 6b-1
 // review lesson: validate the field the renderer dereferences, don't bare-cast).
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";

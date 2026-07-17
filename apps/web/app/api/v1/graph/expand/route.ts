@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { pmidFromUrl } from "@pharmabro/shared";
+import { pmidFromUrl } from "@nemesis/shared";
 import { verifyBearer } from "@/lib/server";
 
 export const runtime = "nodejs";

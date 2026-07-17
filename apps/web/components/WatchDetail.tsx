@@ -1,12 +1,12 @@
 "use client";
 
-import { partitionWatchEvents, type WatchEvent } from "@pharmabro/shared";
+import { partitionWatchEvents, type WatchEvent } from "@nemesis/shared";
 import { Icon } from "@/components/icons";
 import { safeHref } from "@/lib/url";
 import { WatchCurrentEvidence } from "@/components/WatchCurrentEvidence";
 
 // The watch detail view: the three channels of one live-monitoring watch, rendered from the pure
-// partition in @pharmabro/shared. The lanes are visually distinct ON PURPOSE:
+// partition in @nemesis/shared. The lanes are visually distinct ON PURPOSE:
 //   • Alerts   — loud, emphasized cards (a new high-tier study / a retraction; evidence only)
 //   • What's new — the quiet feed of every new source (the "it's working / worth my money" channel)
 //   • In the news — WALLED OFF: muted, no provider square, no study-type, an explicit "not verified

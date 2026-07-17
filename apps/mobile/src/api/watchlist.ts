@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { castWatchlistItems, castWatchlistUpdates, toDigest } from "./cast";
-import type { Digest, WatchItemType, WatchlistItem, WatchlistUpdate } from "@pharmabro/shared";
+import type { Digest, WatchItemType, WatchlistItem, WatchlistUpdate } from "@nemesis/shared";
 
 // Watchlist write-path + reads (§8/§10). These hit the tables DIRECTLY via PostgREST
 // (not a SECURITY DEFINER RPC), so RLS is the enforcement: watchlist_items is

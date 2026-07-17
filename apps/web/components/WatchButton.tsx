@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createWatch, type CreateWatchInput } from "@/lib/api";
-import { watchTitleFromQuestion } from "@pharmabro/shared";
+import { watchTitleFromQuestion } from "@nemesis/shared";
 import { Icon } from "@/components/icons";
 
 // The "Watch this" affordance: one click starts monitoring a topic (a weekly topic-watch, news on, by

@@ -6,7 +6,7 @@
 
 **Architecture:** All work is client-side Next.js (App Router, "use client" pages) plus pure helpers in `packages/shared`. New pure logic (report-title cleanup, relative-time) lives in `packages/shared` with Deno tests; UI is verified by `npm run build` + manual preview. One additive, owner-gated migration adds a `projects.instructions` column and an `updated_at` bump trigger. Every new query degrades gracefully so web can ship before the migration is applied. The frozen `/ask` edge function is never touched — project instructions ride into the answer as part of the user's question string.
 
-**Tech Stack:** Next.js 15 App Router (React client components), `@supabase/supabase-js` (PostgREST + RLS), `@pharmabro/shared` (pure TypeScript helpers, Deno-tested), Supabase Postgres migrations.
+**Tech Stack:** Next.js 15 App Router (React client components), `@supabase/supabase-js` (PostgREST + RLS), `@nemesis/shared` (pure TypeScript helpers, Deno-tested), Supabase Postgres migrations.
 
 ## Global Constraints
 
@@ -61,7 +61,7 @@
   - `fetchProject(id: string): Promise<Project | null>` — single project, `instructions` included when the column exists, `null` when it doesn't (42703-tolerant).
   - `updateProject(id: string, patch: { name?: string; description?: string | null; instructions?: string | null }): Promise<void>`
   - `createConversation(title: string, projectId?: string | null): Promise<string | null>` — sets `project_id` when passed.
-  - `displayReportTitle(raw: string): string` from `@pharmabro/shared`.
+  - `displayReportTitle(raw: string): string` from `@nemesis/shared`.
 
 - [ ] **Step 1: Create the branch off origin/main**
 
@@ -372,7 +372,7 @@ git commit -m "feat: migration for projects.instructions + updated_at trigger (a
 - Modify: `apps/web/app/app/projects/[id]/page.tsx` (full rebuild of the detail page)
 
 **Interfaces:**
-- Consumes: `fetchProject` (Task 1), `fetchProjectContents`, `fetchUnassignedItems`, `setItemProject`, `deleteProject`, `updateProject` (Task 1), types `Project` / `ProjectContents` / `ProjectItemKind` (Task 1); `setCached` from `@/lib/cache`; `displayReportTitle` from `@pharmabro/shared`; `Orb`, `Icon`, `SkeletonRows`.
+- Consumes: `fetchProject` (Task 1), `fetchProjectContents`, `fetchUnassignedItems`, `setItemProject`, `deleteProject`, `updateProject` (Task 1), types `Project` / `ProjectContents` / `ProjectItemKind` (Task 1); `setCached` from `@/lib/cache`; `displayReportTitle` from `@nemesis/shared`; `Orb`, `Icon`, `SkeletonRows`.
 - Produces: writes `setCached("ask-project-prefill", { projectId, question })` — the key + shape Task 4 reads on the Ask page. Consumes NOTHING back from Task 4.
 
 **Design:** ChatGPT-project style — a title header, a "New chat in {name}" composer box, tabs Chats | Reports | Monitoring (keeping the existing Section add/remove picker logic), chat cards showing title + created date, and a settings (⋯) menu opening a modal with rename / description / instructions / delete. Loads the project via `fetchProject(id)` (not the old client-side filter).
@@ -398,7 +398,7 @@ import {
   type ProjectContents,
   type ProjectItemKind,
 } from "@/lib/api";
-import { displayReportTitle } from "@pharmabro/shared";
+import { displayReportTitle } from "@nemesis/shared";
 import { setCached } from "@/lib/cache";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
@@ -1087,7 +1087,7 @@ git commit -m "feat(web): sidebar quick-add chat to a project (in-place picker, 
 
 **Interfaces:**
 - Consumes: `fetchMissions`, `createMission`, `setMissionStatus`, `deleteMission`, `fetchWatches`, `setWatchStatus` (all existing in `api.ts`); `type MissionSummary`, `type WatchSummary`; `cadenceLabel`, `type MissionCadence`, `type CreateMissionResult` (existing); `timeUntil` (new).
-- Produces: `timeUntil(iso: string): string` from `@pharmabro/shared`; a `clock` icon name in `icons.tsx`.
+- Produces: `timeUntil(iso: string): string` from `@nemesis/shared`; a `clock` icon name in `icons.tsx`.
 
 **Design:** A merged "Scheduled" surface listing missions (scheduled background research) and watches (evidence monitors) together. A composer at top to schedule a new mission (`report_mode: "meta"`), all `CreateMissionResult` error states mapped to friendly copy. Below, a static suggestion gallery of 4 template cards that fill the composer on click (never auto-create; the FDA one links to Monitoring instead). Free-plan users (mission limit 0) still see the gallery + composer; create returns the honest limit message.
 
@@ -1218,7 +1218,7 @@ import {
   type MissionSummary,
   type WatchSummary,
 } from "@/lib/api";
-import { cadenceLabel, timeUntil, type MissionCadence } from "@pharmabro/shared";
+import { cadenceLabel, timeUntil, type MissionCadence } from "@nemesis/shared";
 import { getCached, setCached } from "@/lib/cache";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
@@ -1453,7 +1453,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fetchResearchReports, type ResearchReportSummary } from "@/lib/api";
-import { displayReportTitle } from "@pharmabro/shared";
+import { displayReportTitle } from "@nemesis/shared";
 import { Orb } from "@/components/Orb";
 import { Icon } from "@/components/icons";
 import { SkeletonRows } from "@/components/Skeleton";
@@ -1908,9 +1908,9 @@ EOF
 - `Project.instructions?: string | null` and `ProjectChat.created_at?: string` are OPTIONAL — existing list mappers stay valid (checked against `fetchProjects`/`fetchUnassignedItems`).
 - `createConversation(title, projectId?)` — used with 2 args in Ask (Task 4), 1 arg by existing callers (unchanged).
 - `fetchProject(id): Promise<Project | null>` — consumed by Task 3 (`load`) and Task 4 (mount effect), same signature.
-- `displayReportTitle(raw: string): string` — Tasks 3, 7 import from `@pharmabro/shared`, exported in Task 1 Step 6.
+- `displayReportTitle(raw: string): string` — Tasks 3, 7 import from `@nemesis/shared`, exported in Task 1 Step 6.
 - `timeUntil(iso, now?)` — Task 6 page passes one arg (uses default `now`); tests pass two. Consistent.
-- `setItemProject("conversation", id, projectId | null)` and `MissionCadence` / `cadenceLabel` / `CreateMissionResult` reused verbatim from existing `api.ts` / `@pharmabro/shared`.
+- `setItemProject("conversation", id, projectId | null)` and `MissionCadence` / `cadenceLabel` / `CreateMissionResult` reused verbatim from existing `api.ts` / `@nemesis/shared`.
 - `ConversationSummary.project_id: string | null` added in Task 5 and read there only.
 - `clock` icon added in Task 6 before the `workspace` array references it.
 

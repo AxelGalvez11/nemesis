@@ -3,8 +3,8 @@
 // PubMed-family sources in an answer. One batched call per unique PMID set; module-level
 // cache so panel re-renders and repeat questions don't refetch. Best-effort: errors → {}.
 import { useEffect, useState } from "react";
-import type { Citation } from "@pharmabro/shared";
-import { pmidFromUrl } from "@pharmabro/shared";
+import type { Citation } from "@nemesis/shared";
+import { pmidFromUrl } from "@nemesis/shared";
 import { supabase } from "@/lib/supabase";
 
 export interface StudySnapshot { population: string | null; sample_size: number | null; duration: string | null; design: string | null }

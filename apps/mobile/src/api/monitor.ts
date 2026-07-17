@@ -4,7 +4,7 @@ import {
   resolveWatchCadence,
   type WatchEvent,
   watchEntitlement,
-} from "@pharmabro/shared";
+} from "@nemesis/shared";
 
 // Live Monitoring data layer (WS-D), ported from apps/web/lib/api.ts so mobile reads/writes the SAME
 // evidence_watches / watch_events tables the web app uses. All calls go DIRECTLY to the tables via

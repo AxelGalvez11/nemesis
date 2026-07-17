@@ -1,6 +1,6 @@
 "use client";
 
-import type { ResearchProgressStep } from "@pharmabro/shared";
+import type { ResearchProgressStep } from "@nemesis/shared";
 import { Icon } from "./icons";
 
 /** One row in the run checklist. `done` steps are calm/tinted, `active` is the emphasized "you are

@@ -1,6 +1,6 @@
 "use client";
 
-import { groupBrowseTopics, type BrowseTopic } from "@pharmabro/shared";
+import { groupBrowseTopics, type BrowseTopic } from "@nemesis/shared";
 
 // "Browse popular topics" for Monitoring: the tappable starting points that complement the search box.
 // One tap on a chip starts a watch (the parent wires onPick → createWatch). The catalog + grouping are

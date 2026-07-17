@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ResearchProgressStep } from "@pharmabro/shared";
+import type { ResearchProgressStep } from "@nemesis/shared";
 import { RunThinking, stageFromProgress, runStepCurrent, RESEARCH_STEPS } from "./RunThinking";
 import { Icon } from "./icons";
 

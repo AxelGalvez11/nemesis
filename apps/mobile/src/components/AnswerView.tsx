@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useMutation } from "@tanstack/react-query";
-import type { AnswerPoint, AskResponse, EvidenceGrade, SafetyFlag } from "@pharmabro/shared";
+import type { AnswerPoint, AskResponse, EvidenceGrade, SafetyFlag } from "@nemesis/shared";
 import { ANSWER_STALE_YEARS, answerFreshness, answerKind } from "@/api/derive";
 import { reportAnswer } from "@/api/report";
 import { Badge, Card, SectionHeader } from "./ui";

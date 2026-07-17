@@ -509,7 +509,7 @@ git commit -m "feat(enrich): batch enrich-source edge function with 30-day cache
 - Modify: `apps/web/components/EvidencePanel.tsx` (badges), `apps/web/app/styles/shell.css` (styles)
 
 **Interfaces:**
-- Consumes: `enrichmentKeyFor`/`pmidFromUrl` (`@pharmabro/shared`), the deployed endpoint from Task 5, existing `SourceCard` markup (`.badge-src`, `.meta` rows).
+- Consumes: `enrichmentKeyFor`/`pmidFromUrl` (`@nemesis/shared`), the deployed endpoint from Task 5, existing `SourceCard` markup (`.badge-src`, `.meta` rows).
 - Produces: `useEnrichment(citations: Citation[]): Record<string, SourceEnrichment>` React hook (keyed `pmid:<n>`), `SourceEnrichment` re-exported type; UI badges: `.retracted-banner`, `.scite-badge`, `.snapshot-line`, `.citedby-chip`.
 
 - [ ] **Step 1: Implement the client (module-level in-memory cache, one batch per answer)**
@@ -521,8 +521,8 @@ git commit -m "feat(enrich): batch enrich-source edge function with 30-day cache
 // PubMed-family sources in an answer. One batched call per unique PMID set; module-level
 // cache so panel re-renders and repeat questions don't refetch. Best-effort: errors → {}.
 import { useEffect, useState } from "react";
-import type { Citation } from "@pharmabro/shared";
-import { pmidFromUrl } from "@pharmabro/shared";
+import type { Citation } from "@nemesis/shared";
+import { pmidFromUrl } from "@nemesis/shared";
 import { supabase } from "@/lib/supabase";
 
 export interface StudySnapshot { population: string | null; sample_size: number | null; duration: string | null; design: string | null }
@@ -763,8 +763,8 @@ git commit -m "feat(shared): evidence-map geometry (year × evidence-weight scat
 // SVG scatter of the answer's evidence: newer → right, stronger → up, bigger dot =
 // stronger claim support, filled = cited (hollow = reviewed-only). Click a dot to jump
 // to its source card. Pure render over buildEvidenceMap().
-import type { Citation } from "@pharmabro/shared";
-import { buildEvidenceMap } from "@pharmabro/shared";
+import type { Citation } from "@nemesis/shared";
+import { buildEvidenceMap } from "@nemesis/shared";
 import { normTag } from "@/lib/cite";
 
 const W = 320, H = 240;

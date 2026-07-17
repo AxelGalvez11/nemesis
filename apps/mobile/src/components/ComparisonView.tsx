@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import type { Comparison } from "@pharmabro/shared";
+import type { Comparison } from "@nemesis/shared";
 import { Card, SectionHeader } from "./ui";
 import { SourceLink } from "./SourceLink";
 import { c, space } from "@/theme/tokens";

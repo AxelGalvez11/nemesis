@@ -3,7 +3,7 @@
 // (ncbi-suggest.ts) does the fetching and passes raw text in, so all of this is unit-testable with
 // `npx tsx`. The live query shapes these assume are proven by scripts/diag/entity-suggest-probe.ts.
 
-import type { EntitySuggestion, SearchResult, SuggestKind } from "@pharmabro/shared";
+import type { EntitySuggestion, SearchResult, SuggestKind } from "@nemesis/shared";
 
 export interface MeshTerm {
   ui: string;

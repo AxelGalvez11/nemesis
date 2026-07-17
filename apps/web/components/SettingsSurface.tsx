@@ -9,7 +9,7 @@ import { ProfilePanel } from "@/components/ProfilePanel";
 import { BillingPanel } from "@/components/BillingPanel";
 import { DataSourcesPanel } from "@/components/DataSourcesPanel";
 import { CreditsBreakdown } from "@/components/CreditsPanel";
-import { buildCreditsSummary, type CreditsSummary } from "@pharmabro/shared";
+import { buildCreditsSummary, type CreditsSummary } from "@nemesis/shared";
 import { fetchEntitlements, fetchMissions, fetchUsage, fetchWatches } from "@/lib/api";
 
 const THEME_OPTIONS: { id: ThemePreference; label: string }[] = [

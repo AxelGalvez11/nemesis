@@ -1,6 +1,6 @@
 "use client";
 
-import type { ResearchProgressStep } from "@pharmabro/shared";
+import type { ResearchProgressStep } from "@nemesis/shared";
 import { Icon } from "./icons";
 import { Orb } from "./Orb";
 

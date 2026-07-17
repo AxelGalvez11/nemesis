@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { buildCreditsSummary, type CreditsSummary } from "@pharmabro/shared";
+import { buildCreditsSummary, type CreditsSummary } from "@nemesis/shared";
 import { fetchEntitlements, fetchMissions, fetchUsage, fetchWatches } from "@/lib/api";
 
 // The inner list — plan name, a "Today" group (resettable daily meters) and a "Slots" group (permanent

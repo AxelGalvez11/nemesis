@@ -2,8 +2,8 @@
 
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import type { Citation } from "@pharmabro/shared";
-import { CLAIM_RELATION_LABEL, buildEvidenceMap, enrichmentKeyFor, formatReference, studyTypeLabel } from "@pharmabro/shared";
+import type { Citation } from "@nemesis/shared";
+import { CLAIM_RELATION_LABEL, buildEvidenceMap, enrichmentKeyFor, formatReference, studyTypeLabel } from "@nemesis/shared";
 import { normTag } from "@/lib/cite";
 import { faviconUrl, hostnameOf } from "@/lib/favicon";
 import { safeHref } from "@/lib/url";

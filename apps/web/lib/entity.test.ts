@@ -3,7 +3,7 @@
 // Exercises the pure logic the Monitor picker depends on: a picked suggestion (catalog drug OR a
 // MeSH-resolved entity) → a precise, scoped topic-watch. The browser wiring is verified by screenshot.
 import assert from "node:assert/strict";
-import type { EntitySuggestion } from "@pharmabro/shared";
+import type { EntitySuggestion } from "@nemesis/shared";
 import { isCatalogDrug, watchFieldsFromEntity } from "./entity";
 
 const mk = (over: Partial<EntitySuggestion>): EntitySuggestion => ({

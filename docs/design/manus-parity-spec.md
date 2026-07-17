@@ -228,7 +228,7 @@ engine's `ResearchProgressStep[]` to a phase-checklist row-model + counter) and 
 over those models plus the existing `ResearchProgress` component, so the risky logic is testable and the
 JSX is build-and-visual-verify only.
 
-**Tech Stack:** Next.js (App Router) client components, TypeScript, the existing `@pharmabro/shared`
+**Tech Stack:** Next.js (App Router) client components, TypeScript, the existing `@nemesis/shared`
 package. **`packages/shared` is tested with Deno's test runner + std `assert`** (`deno test`, verified
 against `packages/shared/src/claim-meter.test.ts`) — NOT Vitest. Use `.ts` import extensions in shared
 (the codebase convention).
@@ -532,7 +532,7 @@ git commit -m "feat(shared): reportToEvidenceWork — real ResearchReport metric
 - Modify: `apps/web/app/styles/shell.css` (append `.task-progress-bar` block)
 
 **Interfaces:**
-- Consumes: `progressToTracker` + `TaskProgress` from `@pharmabro/shared`; `ResearchProgressStep[]`.
+- Consumes: `progressToTracker` + `TaskProgress` from `@nemesis/shared`; `ResearchProgressStep[]`.
 - Produces:
   ```ts
   export function TaskProgressBar({ steps }: { steps: ResearchProgressStep[] }): JSX.Element | null;
@@ -554,7 +554,7 @@ it as a follow-up. (Do not duplicate the phase list in a third place.)
 "use client";
 
 import { useState } from "react";
-import { progressToTracker, type ResearchProgressStep } from "@pharmabro/shared";
+import { progressToTracker, type ResearchProgressStep } from "@nemesis/shared";
 import { Icon } from "./icons";
 
 // Pinned, collapsible "Task progress" tracker (the Manus pattern). Reads the SAME live progress steps
@@ -663,7 +663,7 @@ const onStepsRef = useRef(onSteps);
 onStepsRef.current = onSteps;
 ```
 
-Import `ResearchProgressStep` in the page's type imports from `@pharmabro/shared` (it's already a
+Import `ResearchProgressStep` in the page's type imports from `@nemesis/shared` (it's already a
 dependency of `ResearchProgress`).
 
 - [ ] **Step 2: Track the active run's steps on the page**
@@ -790,7 +790,7 @@ git commit -m "feat(web): agent avatar + ack line on research-run turns"
 - Modify: `apps/web/app/styles/shell.css` (append `.evidence-work` block)
 
 **Interfaces:**
-- Consumes: `reportToEvidenceWork` + `EvidenceWork` from `@pharmabro/shared`; `fetchResearchReport`
+- Consumes: `reportToEvidenceWork` + `EvidenceWork` from `@nemesis/shared`; `fetchResearchReport`
   from `@/lib/api`; the completed run's `savedReportId` + start/end timestamps for `elapsedMs`.
 - Produces:
   ```ts
@@ -806,7 +806,7 @@ git commit -m "feat(web): agent avatar + ack line on research-run turns"
 "use client";
 
 import { useEffect, useState } from "react";
-import { reportToEvidenceWork, type EvidenceWork } from "@pharmabro/shared";
+import { reportToEvidenceWork, type EvidenceWork } from "@nemesis/shared";
 import { fetchResearchReport } from "@/lib/api";
 import { Icon } from "./icons";
 

@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import type { UsageSnapshot } from "@pharmabro/shared";
+import type { UsageSnapshot } from "@nemesis/shared";
 
 // Billing/plan reads for the mobile plan-display screen. App Store / Play rules forbid embedding the
 // web's Stripe checkout for subscriptions, so mobile is DISPLAY-ONLY: it reads the caller's real plan +

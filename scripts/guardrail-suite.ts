@@ -308,7 +308,7 @@ async function teardown() {
 }
 
 async function main() {
-  const email = `guardrail+${crypto.randomUUID().slice(0, 8)}@pharmabro.test`;
+  const email = `guardrail+${crypto.randomUUID().slice(0, 8)}@nemesis.test`;
   const password = crypto.randomUUID();
   const created = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST",

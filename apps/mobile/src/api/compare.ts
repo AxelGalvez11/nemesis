@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { toComparison } from "./cast";
-import type { Comparison } from "@pharmabro/shared";
+import type { Comparison } from "@nemesis/shared";
 
 // GET /compare?left&right (the `compare` edge fn). It is GET-only + reads the entity
 // uuids from the query string (NOT a JSON body), so we call the functions URL directly

@@ -285,7 +285,7 @@ export function readEnv(): Env {
 export interface TestUser { userId: string; jwt: string; }
 
 export async function mintUser(env: Env): Promise<TestUser> {
-  const email = `eval+${crypto.randomUUID().slice(0, 8)}@pharmabro.test`;
+  const email = `eval+${crypto.randomUUID().slice(0, 8)}@nemesis.test`;
   const password = crypto.randomUUID();
   const created = await fetch(`${env.SB_URL}/auth/v1/admin/users`, {
     method: "POST",

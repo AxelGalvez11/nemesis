@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
 import { toAskResponse } from "./cast";
 import { capture } from "@/lib/analytics";
-import type { AskMode, AskResponse } from "@pharmabro/shared";
+import type { AskMode, AskResponse } from "@nemesis/shared";
 
 /**
  * POST /ask (the `ask` edge function, §7/§8). Authenticated-only — it verifies the

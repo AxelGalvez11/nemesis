@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { toHealthContext } from "./cast";
-import type { HealthContext, HealthContextInput } from "@pharmabro/shared";
+import type { HealthContext, HealthContextInput } from "@nemesis/shared";
 
 // My Health Context CRUD (user_health_context, 0109) — owner-only via the uhc_owner
 // RLS policy. Unlike watchlist_items, this table has NO `DEFAULT auth.uid()` on

@@ -21,8 +21,8 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@pharmabro/shared";
-import { buildAttribution, claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
+import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@nemesis/shared";
+import { buildAttribution, claimRefMarker, evidenceRows, referenceLines } from "@nemesis/shared";
 import { EXPORT_COLORS as C, EXPORT_FONTS as F, EXPORT_TYPE as T } from "./theme.ts";
 
 const pt = (points: number): number => Math.round(points * 2); // docx sizes are half-points

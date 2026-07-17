@@ -1,6 +1,6 @@
 "use client";
 
-import type { ResearchProgressStep } from "@pharmabro/shared";
+import type { ResearchProgressStep } from "@nemesis/shared";
 import { SEARCH_DOMAINS } from "@/lib/favicon";
 import { DomainChips } from "./DomainChips";
 import { Icon } from "./icons";

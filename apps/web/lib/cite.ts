@@ -1,4 +1,4 @@
-import type { ClaimSupport } from "@pharmabro/shared";
+import type { ClaimSupport } from "@nemesis/shared";
 
 // The citation tag is the join key between an answer's inline reference (citation_ids) and the
 // evidence cards (chunk_tag). Both sides MUST normalize identically, so the function lives here and

@@ -1,6 +1,6 @@
 // App-local read-row view types for the TABLE-returning §8 read RPCs
 // (get_drug_label / get_drug_trials / get_drug_pubmed). These mirror the column
-// lists in migration 0110 exactly. They live HERE, not in @pharmabro/shared,
+// lists in migration 0110 exactly. They live HERE, not in @nemesis/shared,
 // because (a) the frozen §8 contract never named them and we don't reopen it, and
 // (b) packages/shared already exports an evidence-engine `TrialRow`/`PubMedRow`
 // with a different purpose — adding read-row shapes there would clash.

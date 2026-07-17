@@ -8,7 +8,7 @@ import type {
   SourceDetail,
   WatchlistItem,
   WatchlistUpdate,
-} from "@pharmabro/shared";
+} from "@nemesis/shared";
 import type { DrugPubmed, DrugTrial, LabelDoc } from "./types.ts";
 
 // jsonb / RPC-row -> DTO narrowing at the §8 client boundary. `supabase gen types`

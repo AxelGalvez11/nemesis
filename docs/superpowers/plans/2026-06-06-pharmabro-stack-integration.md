@@ -8,7 +8,7 @@
 
 **Tech Stack:** Next.js 16 App Router (`@pharmaorb/web`), Deno Supabase Edge Functions, pnpm monorepo + Turbo, Supabase cloud (`qyjmivntajbigjswhahb`), OpenAI (gpt-4o-mini + gpt-4.1-mini), pgvector, Stripe, Vercel.
 
-**Package names:** web = `@pharmaorb/web`, shared = `@pharmabro/shared`, mobile = `@pharmaorb/mobile`.
+**Package names:** web = `@pharmaorb/web`, shared = `@nemesis/shared`, mobile = `@pharmaorb/mobile`.
 
 **Hard rules (apply throughout):**
 - Never deploy edge functions with local Docker — always `supabase functions deploy --use-api`
@@ -347,7 +347,7 @@ git commit -m "feat(web): add nuqs URL state for explore filters and ask convers
 
 ```bash
 # From repo root:
-pnpm add zod@^3.25.0 --filter @pharmabro/shared
+pnpm add zod@^3.25.0 --filter @nemesis/shared
 pnpm add zod@^3.25.0 --filter @pharmaorb/web
 pnpm add react-hook-form @hookform/resolvers --filter @pharmaorb/web
 ```
@@ -459,7 +459,7 @@ In `apps/web/app/app/explore/page.tsx`, replace the query input's onChange handl
 ```tsx
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { DrugSearchSchema, type DrugSearch } from '@pharmabro/shared'
+import { DrugSearchSchema, type DrugSearch } from '@nemesis/shared'
 
 const { register, watch } = useForm<DrugSearch>({
   resolver: zodResolver(DrugSearchSchema),
@@ -1313,7 +1313,7 @@ function cleanPdfText(raw: string): string {
 
 async function fetchPdf(url: string): Promise<Uint8Array> {
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'PharmaBro-Ingest/1.0 (research; contact@pharmabro.app)' },
+    headers: { 'User-Agent': 'PharmaBro-Ingest/1.0 (research; contact@nemesis.app)' },
   })
   if (!res.ok) throw new Error(`PDF fetch failed: ${res.status} ${url}`)
   const buf = await res.arrayBuffer()
@@ -1631,7 +1631,7 @@ Create `apps/web/app/api/[transport]/route.ts`:
 ```ts
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { z } from 'zod'
-import { AskBodySchema } from '@pharmabro/shared'
+import { AskBodySchema } from '@nemesis/shared'
 import { verifyBearer } from '@/lib/server'
 
 const handler = createMcpHandler(

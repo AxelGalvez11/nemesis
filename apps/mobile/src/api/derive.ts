@@ -1,4 +1,4 @@
-import type { AskResponse, SafetyFlag, SourceDetail } from "@pharmabro/shared";
+import type { AskResponse, SafetyFlag, SourceDetail } from "@nemesis/shared";
 
 // Pure view-state selectors (no I/O, no react-native imports → Deno-testable). Kept
 // out of the screen so the doc-06 state decisions are unit-tested, not buried in JSX.

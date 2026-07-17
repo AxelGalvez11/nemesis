@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { MissionCadence, MissionDeliver } from "@pharmabro/shared";
-import { missionEntitlement } from "@pharmabro/shared";
+import type { MissionCadence, MissionDeliver } from "@nemesis/shared";
+import { missionEntitlement } from "@nemesis/shared";
 import { createMission, fetchEntitlements } from "@/lib/api";
 import { Icon } from "@/components/icons";
 

@@ -1946,7 +1946,7 @@ Create `apps/web/lib/discovery-format.test.ts`:
 
 ```ts
 import { strict as assert } from "node:assert";
-import type { DiscoveryReport } from "@pharmabro/shared";
+import type { DiscoveryReport } from "@nemesis/shared";
 import { discoverySummaryLine, studyDesignLabel } from "./discovery-format";
 
 const report: DiscoveryReport = {
@@ -1982,7 +1982,7 @@ Expected: FAIL because `discovery-format.ts` does not exist.
 Create `apps/web/lib/discovery-format.ts`:
 
 ```ts
-import type { DiscoveryReport, StudyDesignType } from "@pharmabro/shared";
+import type { DiscoveryReport, StudyDesignType } from "@nemesis/shared";
 
 const DESIGN_LABEL: Record<StudyDesignType, string> = {
   randomized_controlled_trial: "Randomized controlled trial",

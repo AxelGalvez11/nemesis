@@ -688,7 +688,7 @@ git commit -m "feat(research-fn): service-role mission_run action — quota-bill
 ### Task 5: Web API — mission CRUD + run-for-report lookup
 
 **Files:**
-- Modify: `apps/web/lib/api.ts` (append a new `// ── Missions ──` section after the watch CRUD section; import `MissionSummary`, `MissionCadence`, `MissionDeliver`, `missionEntitlement` from `@pharmabro/shared`)
+- Modify: `apps/web/lib/api.ts` (append a new `// ── Missions ──` section after the watch CRUD section; import `MissionSummary`, `MissionCadence`, `MissionDeliver`, `missionEntitlement` from `@nemesis/shared`)
 
 **Interfaces (produced; consumed by Task 6/7b UI):**
 - `fetchMissions(): Promise<MissionSummary[]>` — RLS select, newest first.
@@ -777,7 +777,7 @@ export async function fetchRunForReport(savedReportId: string): Promise<Research
 }
 ```
 
-NOTE: check the file's existing imports — `MissionSummary`/`MissionCadence`/`MissionDeliver` come from `@pharmabro/shared` (Task 2 exported them). `isMissingRelation`, `isObj`, `ResearchProgressStep`, `ResearchRunStatusValue` already exist in the file.
+NOTE: check the file's existing imports — `MissionSummary`/`MissionCadence`/`MissionDeliver` come from `@nemesis/shared` (Task 2 exported them). `isMissingRelation`, `isObj`, `ResearchProgressStep`, `ResearchRunStatusValue` already exist in the file.
 
 - [ ] **Step 2: Typecheck** — in `apps/web`: `pnpm typecheck` — clean.
 
@@ -800,7 +800,7 @@ git commit -m "feat(web): mission CRUD + run-for-report lookup in the API layer"
 - Modify: `apps/web/app/styles/shell.css` (only if a needed style is missing — reuse `watch-card*`, `chip-action`, `scope-*` classes first)
 
 **Interfaces:**
-- Consumes: `createMission`, `fetchMissions`, `setMissionStatus`, `deleteMission`, `fetchEntitlements` (api.ts); `missionEntitlement`, `missionUsageLabel`, `cadenceLabel`, `MissionSummary`, `MissionCadence`, `MissionDeliver` (`@pharmabro/shared`); `Icon` (`@/components/icons` — icon names `clock` if it exists, else `bell`; CHECK `apps/web/components/icons.tsx` for available names first and use an existing one).
+- Consumes: `createMission`, `fetchMissions`, `setMissionStatus`, `deleteMission`, `fetchEntitlements` (api.ts); `missionEntitlement`, `missionUsageLabel`, `cadenceLabel`, `MissionSummary`, `MissionCadence`, `MissionDeliver` (`@nemesis/shared`); `Icon` (`@/components/icons` — icon names `clock` if it exists, else `bell`; CHECK `apps/web/components/icons.tsx` for available names first and use an existing one).
 - Produces: `<MissionSheet question={string} reportMode={string} onClose={() => void} />` — a small popover/sheet that creates the mission and reports the outcome inline.
 
 - [ ] **Step 1: Build `MissionSheet.tsx`:**
@@ -810,8 +810,8 @@ git commit -m "feat(web): mission CRUD + run-for-report lookup in the API layer"
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { MissionCadence, MissionDeliver } from "@pharmabro/shared";
-import { missionEntitlement } from "@pharmabro/shared";
+import type { MissionCadence, MissionDeliver } from "@nemesis/shared";
+import { missionEntitlement } from "@nemesis/shared";
 import { createMission, fetchEntitlements } from "@/lib/api";
 import { Icon } from "@/components/icons";
 
@@ -988,7 +988,7 @@ State + handlers in `MonitorPage` (mirror the watches pattern incl. cache seedin
   }
 ```
 
-Imports: `fetchMissions, setMissionStatus, deleteMission` from `@/lib/api`; `cadenceLabel, type MissionSummary` from `@pharmabro/shared`. NOTE: `relTime` exists in the file; `next` times are in the FUTURE — extend `relTime` usage with a small local wrapper if it renders future dates oddly: `const relNext = (iso: string) => { const mins = Math.round((new Date(iso).getTime() - Date.now()) / 60000); if (!Number.isFinite(mins)) return "—"; if (mins <= 0) return "due now"; if (mins < 60) return `in ${mins}m`; const hrs = Math.round(mins / 60); if (hrs < 24) return `in ${hrs}h`; return `in ${Math.round(hrs / 24)}d`; };` — use `relNext(m.next_run_at)` instead of `relTime`.
+Imports: `fetchMissions, setMissionStatus, deleteMission` from `@/lib/api`; `cadenceLabel, type MissionSummary` from `@nemesis/shared`. NOTE: `relTime` exists in the file; `next` times are in the FUTURE — extend `relTime` usage with a small local wrapper if it renders future dates oddly: `const relNext = (iso: string) => { const mins = Math.round((new Date(iso).getTime() - Date.now()) / 60000); if (!Number.isFinite(mins)) return "—"; if (mins <= 0) return "due now"; if (mins < 60) return `in ${mins}m`; const hrs = Math.round(mins / 60); if (hrs < 24) return `in ${hrs}h`; return `in ${Math.round(hrs / 24)}d`; };` — use `relNext(m.next_run_at)` instead of `relTime`.
 
 - [ ] **Step 5: Styles** — add to `shell.css` only what's missing: `.research-done { display: flex; flex-direction: column; gap: 8px; }` and `.mission-sheet { margin-top: 4px; }` (verify `scope-card`, `chip-action.active`, `watch-card*` already style the rest — they do).
 
