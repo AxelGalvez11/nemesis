@@ -127,7 +127,7 @@ export function EvidenceGraph({ citations, reviewed, activeTag, onCite }: { cita
       const line = cssVar("--line-2", "#2c2c33");
       const surface = cssVar("--surface", "#141417");
       const raised = cssVar("--raised", "#1f1f24");
-      const acid = cssVar("--acid", "#1a93fe");
+      const acid = cssVar("--acid", "#ff2740");
       const info = cssVar("--info", "#7fb2ff");
       const warn = cssVar("--warn", "#f5b23b");
       const danger = cssVar("--danger", "#ff5c4d");

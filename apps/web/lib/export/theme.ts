@@ -1,26 +1,27 @@
 // One design system for the report exporters (PDF / Word / PowerPoint). The web UI themes with CSS
 // custom properties in globals.css, which Node-side exporters can't read — so this mirrors the
-// light-mode PharmaOrb brand values as plain, framework-free data. One source of truth so a PDF, a
+// light-mode Nemesis brand values as plain, framework-free data. One source of truth so a PDF, a
 // .docx, and a .pptx all read as the same product: academic-clean (near-black ink on white paper)
-// with a PharmaOrb-green accent. PURE data + pure helpers; no I/O, no dependencies.
+// with the Nemesis crimson accent. PURE data + pure helpers; no I/O, no dependencies.
 
 /**
  * Brand palette. Hex values are stored WITHOUT a leading '#' because docx and pptxgenjs both want
  * bare hex; pdfRgb() converts to pdf-lib's 0..1 channels. Use withHash() when a '#'-prefixed value
- * is needed. Legibility is deliberate: brand green is the deep shade (readable as text/rules on
- * white); table headers use a near-black fill so reversed white text always clears contrast.
+ * is needed. Legibility is deliberate: brand crimson is the deep shade (readable as text/rules on
+ * white — same contrast-guarded value as the app's light-mode accent); table headers use a
+ * near-black fill so reversed white text always clears contrast.
  */
 export const EXPORT_COLORS = {
-  brand: "3f7a00", // deep PharmaOrb green — legible as heading text and accent rules on white
-  brandBright: "62b000", // bright accent green (thin rules, ticks) — matches the app's light --orb-color
+  brand: "a81929", // deep Nemesis crimson — legible as heading text and accent rules on white
+  brandBright: "cc1f33", // bright accent crimson (thin rules, ticks) — matches the app's light --acid
   ink: "141414", // primary body text
   inkSoft: "3a3a3a", // secondary text
   muted: "5d5d5d", // meta / captions
   faint: "8f8f8f", // footer credit / least-emphasis text
   hair: "dcdcdc", // hairline table + divider borders
-  zebra: "f5f7f2", // alternating evidence-table row (a faint green-gray)
-  headerFill: "1f2417", // table header background — near-black with a green cast; white text is safe on it
-  tint: "eef4e6", // faint green wash for the cover band / callouts
+  zebra: "f7f3f3", // alternating evidence-table row (a faint crimson-gray)
+  headerFill: "1f1416", // table header background — near-black with a crimson cast; white text is safe on it
+  tint: "f6ebec", // faint crimson wash for the cover band / callouts
   warn: "b5760a", // safety amber (matches the poster's --warn token)
   paper: "ffffff",
 } as const;

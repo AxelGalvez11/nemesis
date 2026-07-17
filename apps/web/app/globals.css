@@ -5,129 +5,127 @@
 @tailwind utilities;
 
 /* ──────────────────────────────────────────────────────────────────────────
-   PharmaOrb design tokens — faithful ChatGPT visual skin: neutral grayscale +
-   ChatGPT's own accent (blue) reserved for primary actions and links only.
+   Nemesis design tokens — the DESKTOP APP'S visual identity, worn by the web
+   app (owner call 2026-07-17: "make the webapp look exactly like the desktop").
+   Canonical source: nemesis-desktop-public design-tokens/tokens.json, theme
+   "nemesis" ("Monochrome with a neon-red edge") — near-black grayscale
+   surfaces, ONE crimson accent (#ff2740) with red-tinted hover surfaces and
+   warmed user bubbles, system sans + JetBrains Mono, tight radii.
 
-   LIGHT is the default (bare :root); [data-theme="dark"] flips it. There are
-   only TWO themes (light, dark) — "grey" was removed per owner direction
-   ("Only white and black"). The inline no-flash script in layout.tsx resolves
-   stored→OS preference→light into an explicit data-theme before paint, so
-   prefers-color-scheme is honored without cloning the whole token set here.
+   DARK is the identity anchor (desktop skin values verbatim); LIGHT mirrors
+   the desktop/phone light palette (paper #f8faff family, crimson darkened to
+   #cc1f33 so it clears WCAG on paper). LIGHT stays the bare :root for
+   backwards compatibility, but layout.tsx now defaults NEW visitors to dark.
 
-   The mockup hex tokens drive the custom shell/chat CSS; the shadcn HSL triplets
-   (same colors) drive the shadcn primitives so both render the same theme. The
-   token NAMES are a stable contract — screens read var(--bg)/--surface/--text/
-   --acid, so they re-skin coherently for free. Never rename a token.
+   The hex tokens drive the custom shell/chat CSS; the shadcn HSL triplets
+   (same colors) drive the shadcn primitives so both render the same theme.
+   Token NAMES are a stable contract (--acid now CARRIES crimson — the name is
+   historical). Never rename a token.
 
-   Values below are measured from ChatGPT's live UI (docs/design/chatgpt-clone-
-   teardown-2026-07-06.md, Probe 3 — getComputedStyle on every surface). --acid
-   carries ChatGPT's blue accent — the token NAME is unchanged, only the color
-   it carries.
+   Semantic split added with this reskin: --success/--line-success exist so
+   "success" never rides the brand accent (crimson success would read as an
+   error), and --danger is a deliberately LIGHTER crimson tint (desktop
+   account precedent) so destructive stays distinguishable from brand.
    ────────────────────────────────────────────────────────────────────────── */
 :root {
   color-scheme: light;
 
-  /* surfaces & lines (ChatGPT light neutrals — neutral gray, not warm)
-     page #ffffff · composer/sidebar surface #f4f4f4 · raised/menu #ffffff · border rgba(0,0,0,.06-.10) */
-  --bg: #ffffff; --bg-2: #f4f4f4; --surface: #f4f4f4; --surface-2: #ececec; --raised: #ffffff;
-  --line: #0000000f; --line-2: #0000001a;
-  --text: #0d0d0d; --text-2: #5d5d5d; --text-3: #8f8f8f;
-  /* sidebar bg — a dedicated token because the rail color doesn't land on any single existing
-     token across both themes (light matches --surface, dark matches --surface). Addition only,
-     not a rename. */
-  --rail-bg: #f4f4f4;
-  /* hover/active tint fills — neutral-black-over-white in light. */
-  --fill-hover: rgba(0, 0, 0, 0.04); --fill-active: rgba(0, 0, 0, 0.06);
-  /* composer box border + shadow. Dedicated tokens (addition, not a rename) since neither is
-     theme-symmetric with --line. */
-  --composer-border: rgba(0, 0, 0, 0.2); --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.02);
+  /* surfaces & lines — the desktop light family (paper, not ChatGPT white) */
+  --bg: #f8faff; --bg-2: #eef0f6; --surface: #f1f3f8; --surface-2: #e9ecf2; --raised: #ffffff;
+  --line: rgba(22, 24, 29, 0.10); --line-2: rgba(22, 24, 29, 0.18);
+  --text: #16181d; --text-2: #5a5e68; --text-3: #8b8f99;
+  --rail-bg: #eef0f6;
+  /* hover/active fills — accent-tinted at desktop accentMixes strengths (rowHover 4 / rowActive 8). */
+  --fill-hover: rgba(204, 31, 51, 0.05); --fill-active: rgba(204, 31, 51, 0.08);
+  --composer-border: rgba(22, 24, 29, 0.22); --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.02);
 
-  /* PharmaOrb brand mark color — PINNED, decoupled from --acid. The brief: "Keep the PharmaOrb
-     wordmark + orb logo (the brand mark stays — everything else follows the ChatGPT skin)."
-     --acid now carries ChatGPT's blue for actions/links; the orb keeps PharmaOrb's original green
-     identity so the mark doesn't silently follow the accent retune. Value = the pre-skin --acid (light). */
-  --orb-color: #62b000; --orb-rgb: 98, 176, 0;
+  /* Brand mark color — now the SAME crimson as the accent (the green-orb era is
+     over; one identity across desktop/phone/web). Kept as its own token so the
+     mark could diverge again deliberately, never accidentally. */
+  --orb-color: #cc1f33; --orb-rgb: 204, 31, 51;
 
-  /* ChatGPT accent — blue, measured (docs/design/chatgpt-clone-teardown-2026-07-06.md Probe 3:
-     retuned to the BRAND GREEN family, owner call 2026-07-07 — light uses the readable
-     brand green (matches --orb-color light / the landing's dark readable greens). */
-  --acid: #62b000; --acid-dim: #559a00; --acid-deep: #3d7a00; --on-acid: #ffffff;
-  /* accent as raw RGB channels — lets rgba()-built glows/halos track the accent per theme. */
-  --acid-rgb: 98, 176, 0;
+  /* Nemesis crimson, darkened for paper (contrast-guarded like desktop/phone
+     light mode). --acid is the historical token name; it carries the brand. */
+  --acid: #cc1f33; --acid-dim: #e01732; --acid-deep: #a81929; --on-acid: #fff5f3;
+  --acid-rgb: 204, 31, 51;
   --warn: #b5760a; --danger: #cc3322; --info: #0278c0;
+  /* Success is its OWN token — never the brand accent (see header). */
+  --success: #177245; --line-success: rgba(23, 114, 69, 0.28);
+  /* Desktop's warmed user bubble, translated to paper. */
+  --user-bubble: #fbeef0; --user-bubble-border: #ecd2d6;
 
-  /* layout + type */
-  --radius: 12px; --radius-sm: 10px; --rail: 260px; --rail-collapsed: 64px; --evidence: 344px;
-  /* ChatGPT-measured radii (Probe 3): composer pill 28px · menu/modal 16px. --radius/--radius-sm
-     stay as-is (used by ~60 unrelated cards/buttons) — these are dedicated additions so the
-     ChatGPT-specific surfaces can opt in without re-skinning every card. */
-  --radius-pill: 28px; --radius-menu: 16px; --radius-menu-item: 10px;
+  /* layout + type — desktop radius scale (card 8 / input 10 at radiusScalar 1) */
+  --radius: 10px; --radius-sm: 8px; --rail: 260px; --rail-collapsed: 64px; --evidence: 344px;
+  --radius-pill: 28px; --radius-menu: 12px; --radius-menu-item: 8px;
   --font: -apple-system, system-ui, "Segoe UI Variable Display", "Segoe UI", Helvetica, Arial, sans-serif;
-  --font-serif: "Libre Baskerville", Georgia, Cambria, ui-serif, "Times New Roman", serif;
+  /* Desktop has no serif display face — the serif slot now resolves to the sans
+     stack so old headline styles quietly join the one identity. */
+  --font-serif: -apple-system, system-ui, "Segoe UI Variable Display", "Segoe UI", Helvetica, Arial, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
-  /* The page chrome is flat; the body's ambient accent gradient is removed. --glow now drives ONLY
-     the brand Orb's soft halo — kept modest so the mark stays alive without a page wash. */
   --glow: 0.12;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px -4px rgba(0, 0, 0, 0.07);
-  --shadow-acid: 0 6px 22px -8px rgba(98, 176, 0, 0.4);
-  /* Menu/popover shadow (Probe 3, measured): model menu / "+" menu / profile menu. */
+  --shadow-acid: 0 6px 22px -8px rgba(204, 31, 51, 0.30);
   --shadow-menu: 0 8px 16px rgba(0, 0, 0, 0.32), inset 0 0 1px rgba(255, 255, 255, 0.2);
 
   /* legacy aliases (pre-existing pages reference these) */
   --muted: var(--text-2); --muted-2: var(--text-3);
   --accent: var(--acid); --accent-2: var(--acid-dim); --accent-mid: var(--acid-deep); --accent-dark: var(--acid-dim);
-  --line-acid: rgba(98, 176, 0, 0.24); --placeholder: var(--text-3); --button-text: var(--on-acid);
+  --line-acid: rgba(204, 31, 51, 0.26); --placeholder: var(--text-3); --button-text: var(--on-acid);
 
-  /* shadcn HSL triplets (same colors as the hex tokens above; accent #62b000 = hsl(85 100% 35%)) */
-  --background: 0 0% 100%; --foreground: 0 0% 5%;
-  --card: 0 0% 100%; --card-foreground: 0 0% 5%;
-  --popover: 0 0% 100%; --popover-foreground: 0 0% 5%;
-  --primary: 85 100% 35%; --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 96%; --secondary-foreground: 0 0% 5%;
-  --muted-shadcn: 0 0% 96%; --muted-foreground: 0 0% 45%;
-  --accent-shadcn: 0 0% 96%; --accent-foreground: 0 0% 5%;
-  --destructive: 5 75% 47%; --destructive-foreground: 0 0% 100%;
-  --border: 0 0% 92%; --input: 0 0% 88%; --ring: 217 92% 60%;
-  --shadcn-radius: 12px;
+  /* shadcn HSL triplets (same colors as the hex tokens above) */
+  --background: 220 100% 99%; --foreground: 225 14% 10%;
+  --card: 0 0% 100%; --card-foreground: 225 14% 10%;
+  --popover: 0 0% 100%; --popover-foreground: 225 14% 10%;
+  --primary: 353 76% 46%; --primary-foreground: 10 100% 98%;
+  --secondary: 222 30% 95%; --secondary-foreground: 225 14% 10%;
+  --muted-shadcn: 222 30% 95%; --muted-foreground: 225 7% 38%;
+  --accent-shadcn: 353 45% 95%; --accent-foreground: 353 65% 32%;
+  --destructive: 8 62% 47%; --destructive-foreground: 0 0% 100%;
+  --border: 225 15% 90%; --input: 225 15% 86%; --ring: 353 78% 55%;
+  --shadcn-radius: 10px;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* DARK — faithful ChatGPT dark theme (docs/design/chatgpt-clone-teardown-2026-07-06.md, Probe 1
-     + Probe 3, measured via getComputedStyle): page #000 PURE BLACK · composer/settings #212121 ·
-     menus/popovers #353535 · search modal #2f2f2f. Replaces the prior Manus near-black (#242424). */
-  --bg: #000000; --bg-2: #171717; --surface: #212121; --surface-2: #2f2f2f; --raised: #353535;
-  --line: #ffffff0f; --line-2: #ffffff1a;
-  --text: #ffffff; --text-2: #b4b4b4; --text-3: #8f8f8f;
-  --rail-bg: #000000;
-  /* ChatGPT dark sidebar fills measured live 2026-07-07: selected row rgba(255,255,255,.1). */
-  --fill-hover: rgba(255, 255, 255, 0.08); --fill-active: rgba(255, 255, 255, 0.10);
-  --composer-border: rgba(255, 255, 255, 0.2); --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
-  /* PharmaOrb brand mark color, pinned — see --orb-color comment in :root. The orb mark stays
-     PharmaOrb's own brand green regardless of the ChatGPT skin retune. */
-  --orb-color: #bcff3c; --orb-rgb: 188, 255, 60;
+  /* DARK — the desktop "nemesis" skin, verbatim (design-tokens/tokens.json):
+     page #0e0e0e · card #141414 · popover #181818 · muted #1e1e1e · secondary
+     #262626 · sidebar #0a0a0a / border #202020 · border/input #2a2a2a. Mapped
+     by elevation onto this app's surface roles. */
+  --bg: #0e0e0e; --bg-2: #141414; --surface: #181818; --surface-2: #1e1e1e; --raised: #262626;
+  --line: #202020; --line-2: #2a2a2a;
+  --text: #eaeaea; --text-2: #9a9a9a; --text-3: #808080;
+  --rail-bg: #0a0a0a;
+  /* Accent-tinted hover/active fills (desktop accentMixes rowHover 4 / rowActive 8). */
+  --fill-hover: rgba(255, 39, 64, 0.06); --fill-active: rgba(255, 39, 64, 0.09);
+  --composer-border: #2a2a2a; --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  /* Brand mark = the same crimson as everything else (see :root comment). */
+  --orb-color: #ff2740; --orb-rgb: 255, 39, 64;
 
-  /* Dark accent = the landing's acid lime (#BCFF3C), dark text on acid — the landing's own pairing. */
-  --acid: #bcff3c; --acid-dim: #a8e636; --acid-deep: #8fd028; --on-acid: #0d0d0d;
-  --acid-rgb: 188, 255, 60;
-  --warn: #f5b23b; --danger: #ff5c4d; --info: #7fb2ff;
+  /* Desktop primary/ring/deep, verbatim: #ff2740 / #ff5563 / #cc1f33 on #fff5f3. */
+  --acid: #ff2740; --acid-dim: #ff5563; --acid-deep: #cc1f33; --on-acid: #fff5f3;
+  --acid-rgb: 255, 39, 64;
+  /* Danger = the desktop-account lighter crimson tint, kept distinct from brand. */
+  --warn: #f5b23b; --danger: #ff6678; --info: #7fb2ff;
+  --success: #7ee081; --line-success: rgba(126, 224, 129, 0.30);
+  /* Desktop userBubble/userBubbleBorder, verbatim. */
+  --user-bubble: #1f1717; --user-bubble-border: #3d2b28;
 
   --glow: 0;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px -6px rgba(0, 0, 0, 0.6);
-  --shadow-acid: 0 8px 28px -8px rgba(188, 255, 60, 0.35);
+  --shadow-acid: 0 8px 28px -8px rgba(255, 39, 64, 0.35);
   --shadow-menu: 0 8px 16px rgba(0, 0, 0, 0.32), inset 0 0 1px rgba(255, 255, 255, 0.2);
-  --line-acid: rgba(188, 255, 60, 0.28);
+  --line-acid: rgba(255, 39, 64, 0.28);
 
-  --background: 0 0% 0%; --foreground: 0 0% 100%;
-  --card: 0 0% 13%; --card-foreground: 0 0% 100%;
-  --popover: 0 0% 21%; --popover-foreground: 0 0% 100%;
-  --primary: 85 100% 62%; --primary-foreground: 0 0% 5%;
-  --secondary: 0 0% 18%; --secondary-foreground: 0 0% 100%;
-  --muted-shadcn: 0 0% 13%; --muted-foreground: 0 0% 71%;
-  --accent-shadcn: 0 0% 21%; --accent-foreground: 0 0% 100%;
-  --destructive: 5 100% 65%; --destructive-foreground: 0 0% 5%;
-  --border: 0 0% 19%; --input: 0 0% 24%; --ring: 217 92% 60%;
+  --background: 0 0% 5%; --foreground: 0 0% 92%;
+  --card: 0 0% 8%; --card-foreground: 0 0% 92%;
+  --popover: 0 0% 9%; --popover-foreground: 0 0% 92%;
+  --primary: 353 100% 58%; --primary-foreground: 10 100% 98%;
+  --secondary: 0 0% 15%; --secondary-foreground: 0 0% 78%;
+  --muted-shadcn: 0 0% 12%; --muted-foreground: 0 0% 50%;
+  --accent-shadcn: 355 35% 12%; --accent-foreground: 355 100% 91%;
+  --destructive: 353 100% 70%; --destructive-foreground: 0 0% 5%;
+  --border: 0 0% 16%; --input: 0 0% 16%; --ring: 352 100% 67%;
 }
 
 * { box-sizing: border-box; }

@@ -240,7 +240,8 @@
    deliberately narrower than the 768px composer. */
 .turn { max-width: 738px; margin: 0 auto; padding: 0 28px 30px; }
 .msg-user { display: flex; justify-content: flex-end; }
-.bubble { background: var(--surface-2); padding: 10px 16px; border-radius: 22px; max-width: 70%; color: var(--text); font-size: 16px; line-height: 1.6; }
+/* Desktop-identity user bubble: warmed crimson-cast surface + border (tokens.json userBubble). */
+.bubble { background: var(--user-bubble); border: 1px solid var(--user-bubble-border); padding: 10px 16px; border-radius: 22px; max-width: 70%; color: var(--text); font-size: 16px; line-height: 1.6; }
 /* Column layout so the Manus-style agent header (avatar + name) sits ABOVE the answer body, not
    beside it. (The decorative Orb is no longer rendered, so the old avatar-left row is retired.) */
 .msg-ai { display: flex; flex-direction: column; gap: 8px; margin-top: 26px; }
@@ -1302,22 +1303,20 @@
 .theme-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); padding: 0 2px; }
 .theme-card-foot svg { color: var(--acid); }
 /* Settings theme-picker preview swatches — kept in sync with the live token values above
-   (globals.css :root / [data-theme="dark"]). tp-dot uses the ChatGPT accent blue, matching
-   the app's live --acid (the orb's pinned --orb-color is deliberately NOT mirrored here — this
-   swatch previews the theme's accent, not the fixed brand mark). Only two themes ship (light,
-   dark); "system" previews as a split light/dark swatch. */
+   (globals.css :root / [data-theme="dark"]): Nemesis paper light, desktop near-black dark,
+   crimson accent dot. "system" previews as a split light/dark swatch. */
 [data-theme-preview="system"] { color: #dadada; }
-[data-theme-preview="system"] .tp-rail { background: linear-gradient(90deg, #f4f4f4 0 50%, #000000 50% 100%); }
-[data-theme-preview="system"] .tp-page { background: linear-gradient(90deg, #ffffff 0 50%, #000000 50% 100%); }
-[data-theme-preview="system"] .tp-dot { background: #3a83f7; }
-[data-theme-preview="light"] { color: #0d0d0d; }
-[data-theme-preview="light"] .tp-rail { background: #f4f4f4; }
-[data-theme-preview="light"] .tp-page { background: #ffffff; }
-[data-theme-preview="light"] .tp-dot { background: #3a83f7; }
-[data-theme-preview="dark"] { color: #ffffff; }
-[data-theme-preview="dark"] .tp-rail { background: #000000; }
-[data-theme-preview="dark"] .tp-page { background: #000000; }
-[data-theme-preview="dark"] .tp-dot { background: #3a83f7; }
+[data-theme-preview="system"] .tp-rail { background: linear-gradient(90deg, #eef0f6 0 50%, #0a0a0a 50% 100%); }
+[data-theme-preview="system"] .tp-page { background: linear-gradient(90deg, #f8faff 0 50%, #0e0e0e 50% 100%); }
+[data-theme-preview="system"] .tp-dot { background: #ff2740; }
+[data-theme-preview="light"] { color: #16181d; }
+[data-theme-preview="light"] .tp-rail { background: #eef0f6; }
+[data-theme-preview="light"] .tp-page { background: #f8faff; }
+[data-theme-preview="light"] .tp-dot { background: #cc1f33; }
+[data-theme-preview="dark"] { color: #eaeaea; }
+[data-theme-preview="dark"] .tp-rail { background: #0a0a0a; }
+[data-theme-preview="dark"] .tp-page { background: #0e0e0e; }
+[data-theme-preview="dark"] .tp-dot { background: #ff2740; }
 /* the consolidated Settings modal is wider so the left nav + content sit comfortably side by side */
 .app-modal-wide { width: min(840px, calc(100vw - 32px)); height: min(86vh, 580px); }
 /* FIXED height + the body scrolls within → switching sections never resizes/re-centers the modal;
