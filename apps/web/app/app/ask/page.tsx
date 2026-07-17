@@ -768,7 +768,7 @@ function AskPage() {
                     AI answer (Manus shows "🌱 manus"). The decorative Orb was removed by owner direction,
                     so this is a simple token-tinted "P" square, not <Orb/>. Purely presentational. */}
                 <div className="agent-head" aria-hidden="true">
-                  <span className="agent-avatar">P</span>
+                  <span className="agent-avatar">N</span>
                   <span className="agent-name">Nemesis</span>
                 </div>
                 <div className="ai-body">
@@ -1089,13 +1089,25 @@ function Thinking({ stage, question, complete = false, secs, domains, intentLine
   // The dynamic per-question plan line (DYNAMIC_INTENT) supersedes the fixed template when present.
   const intent = intentLine || preview.intent;
   const [open, setOpen] = useState(false);
+  // Desktop-parity live turn timer (the ActivityStrip inline seconds): counts up
+  // while the turn runs so the live number and the settled "Worked for Xs" agree.
+  const [liveSecs, setLiveSecs] = useState(0);
+  useEffect(() => {
+    if (complete) return;
+    const t0 = Date.now();
+    const id = setInterval(() => setLiveSecs(Math.floor((Date.now() - t0) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [complete]);
   if (!complete) {
     return (
       <div className="thinking engine-preview engine-preview-compact" aria-live="polite" title={preview.preview}>
         <div className="intent-line">{intent}</div>
-        <span className="engine-preview-title thinking-snippet">
-          {stage <= 0 ? "Thinking" : preview.current}
-          <span className="engine-dots" aria-hidden="true"><span /><span /><span /></span>
+        {/* Desktop ActivityStrip anatomy: pulsing dither square + shimmering phrase +
+            turn timer on ONE line. Keyed by phrase so a change replays the fade-in. */}
+        <span className="thinking-status" key={stage <= 0 ? "thinking" : preview.current}>
+          <span className="dither-square" aria-hidden="true" />
+          <span className="shimmer-text">{stage <= 0 ? "Thinking" : preview.current}</span>
+          {liveSecs > 0 ? <span className="think-secs">{liveSecs}s</span> : null}
         </span>
         {stage >= 1 && stage <= 2 ? <DomainChips domains={SEARCH_DOMAINS} max={4} /> : null}
       </div>
@@ -1105,10 +1117,12 @@ function Thinking({ stage, question, complete = false, secs, domains, intentLine
   return (
     <div className="thinking engine-preview engine-preview-compact engine-preview-done">
       <div className="intent-line">{intent}</div>
+      {/* Desktop settled wording: chevron-first toggle, "Worked for Xs" when the turn
+          searched sources (the web analog of tool steps), "Hide work" while open. */}
       <button type="button" className="thought-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <span className="engine-preview-title">
-          {secs ? `Thought for ${secs}s` : "Thought through evidence"}
           <span className={`engine-preview-chevron${open ? " open" : ""}`} aria-hidden="true">›</span>
+          {open ? "Hide work" : secs ? `${domains?.length ? "Worked" : "Thought"} for ${secs}s` : "Thought through evidence"}
         </span>
       </button>
       {open ? (
@@ -1436,6 +1450,7 @@ function Answer({ answer, onCite, question, reveal = false }: { answer: AskRespo
                 ))}
               </span>
               Sources
+              <span className="sources-count">{answer.citations.length}</span>
             </button>
           ) : null}
         </div>

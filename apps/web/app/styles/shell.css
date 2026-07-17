@@ -2075,3 +2075,36 @@
   print-color-adjust: exact; -webkit-print-color-adjust: exact;
 }
 @media print { .poster-toolbar { display: none !important; } }
+
+
+/* ── Desktop-parity chat surfaces (owner call 2026-07-17) ─────────────────────
+   The thinking status row, the per-answer Sources chip, and the Evidence rail
+   chrome mirror the desktop app's ActivityStrip / MessageSources / Sources-rail
+   anatomy (nemesis-desktop src/components/assistant-ui + right-sidebar). */
+.thinking-status { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; color: var(--text-3); font-size: 13px; animation: nemesis-phrase-in 260ms ease-out; }
+@keyframes nemesis-phrase-in { from { opacity: 0; } }
+.dither-square { width: 12px; height: 12px; flex: 0 0 auto; border-radius: 2px; color: color-mix(in srgb, var(--acid) 80%, var(--text)); background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 0.125rem 0.125rem; animation: nemesis-pulse 1.6s ease-in-out infinite; }
+@keyframes nemesis-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.shimmer-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: linear-gradient(90deg, var(--text-3) 0%, var(--text) 45%, var(--text-3) 90%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; animation: nemesis-shimmer 2.2s linear infinite; }
+@keyframes nemesis-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.think-secs { font-family: var(--mono); font-size: 11px; color: var(--text-3); font-feature-settings: "tnum" 1; }
+.thought-toggle .engine-preview-chevron { display: inline-block; margin-right: 5px; transition: transform 150ms ease; }
+.thought-toggle .engine-preview-chevron.open { transform: rotate(90deg); }
+.thought-toggle:hover .engine-preview-title { color: var(--text); }
+@media (prefers-reduced-motion: reduce) {
+  .thinking-status, .dither-square, .shimmer-text { animation: none; }
+  .shimmer-text { -webkit-text-fill-color: currentColor; color: var(--text-3); background: none; }
+}
+
+/* Per-answer Sources chip — desktop MessageSources anatomy: one rounded receipt,
+   stacked overlapping favicons, label + count. */
+.sources-btn { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; border: 1px solid color-mix(in srgb, var(--line-2) 60%, transparent); background: color-mix(in srgb, var(--bg-2) 72%, transparent); border-radius: 999px; padding: 4px 10px 4px 6px; font-size: 11px; line-height: 1; color: var(--text-2); cursor: pointer; transition: transform 150ms ease, border-color 150ms ease, background-color 150ms ease, color 150ms ease, box-shadow 150ms ease; }
+.sources-btn:hover { transform: translateY(-1px); border-color: var(--line-2); background: var(--bg-2); color: var(--text); box-shadow: var(--shadow); }
+.sources-favs { display: inline-flex; }
+.sources-favs img { width: 16px; height: 16px; border-radius: 4px; background: var(--bg); box-shadow: 0 0 0 2px var(--bg); }
+.sources-favs img + img { margin-left: -6px; }
+.sources-count { font-size: 10px; font-weight: 500; color: var(--text-3); }
+
+/* Evidence rail chrome — desktop Sources-rail typography: micro-caps headers. */
+.ev-head b { font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-2); }
+.ev-source-group > summary span { font-size: 10px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-3); }
