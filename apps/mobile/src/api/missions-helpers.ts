@@ -1,10 +1,10 @@
 // Pure logic for the missions feature: types + the two derivations Task 7 unit-tests
 // (titleFromPrompt, statusLabel). Deliberately dependency-free — no supabase client,
-// no react-native import — so it loads under plain `node:test` via `npx tsx --test`
-// the same way apps/mobile/src/api/derive.ts stays Deno-testable: importing
-// ./supabase.ts here would throw at module load (missing EXPO_PUBLIC_SUPABASE_URL)
-// and react-native's entry point doesn't parse under Node at all. missions.ts
-// re-exports everything in this file, so callers never need to know the split.
+// no react-native import — so missions.test.ts loads it clean under Deno (the repo's
+// CI runs `deno test apps/mobile/src/`), the same way derive.ts stays Deno-testable:
+// importing ./supabase.ts here would throw at module load (missing
+// EXPO_PUBLIC_SUPABASE_URL) and react-native does not parse outside Metro.
+// missions.ts re-exports everything in this file, so callers never see the split.
 
 export type MissionStatus =
   | "queued"
