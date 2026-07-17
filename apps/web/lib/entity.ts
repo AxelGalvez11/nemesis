@@ -4,7 +4,7 @@
 // `mentions` (the openFDA label name-scope); everything else leaves it empty — openFDA simply contributes
 // nothing and evidence still flows from PubMed/ClinicalTrials.gov on `query_terms`.
 
-import { watchTitleFromQuestion, type EntitySuggestion } from "@pharmabro/shared";
+import { watchTitleFromQuestion, type EntitySuggestion } from "@nemesis/shared";
 
 /** A picked suggestion that names a real drug in OUR catalog → a `get_drug` fetch (the full brand list)
  *  and an openFDA name-scope make sense. A MeSH-sourced entity — even a MeSH drug — gets no name-scope

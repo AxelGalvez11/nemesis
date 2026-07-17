@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@pharmabro/shared"],
+  transpilePackages: ["@nemesis/shared"],
 };
 
 export default nextConfig;

@@ -1,7 +1,7 @@
 "use client";
 
-import type { Citation } from "@pharmabro/shared";
-import { buildEvidenceTimeline, buildStudyDesignChart } from "@pharmabro/shared";
+import type { Citation } from "@nemesis/shared";
+import { buildEvidenceTimeline, buildStudyDesignChart } from "@nemesis/shared";
 
 // A report section holding whichever evidence figures the real data supports. Renders nothing (no empty
 // heading) when neither chart clears its honesty threshold. Gate the call site on engineVisualsEnabled.

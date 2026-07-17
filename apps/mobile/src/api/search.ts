@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { castSearchResults } from "./cast";
-import type { SearchResult } from "@pharmabro/shared";
+import type { SearchResult } from "@nemesis/shared";
 
 /**
  * GET /search?q= (search_entities) — unions canonical_name + brand aliases via

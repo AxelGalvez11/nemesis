@@ -8,8 +8,8 @@
 // never more authoritative than the screen it came from. Deliberately no product branding anywhere
 // in the document or its metadata (same call as the poster) — it reads as the user's own work.
 import { PDFDocument, PDFFont, PDFPage, rgb, StandardFonts } from "pdf-lib";
-import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@pharmabro/shared";
-import { buildAttribution, claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
+import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@nemesis/shared";
+import { buildAttribution, claimRefMarker, evidenceRows, referenceLines } from "@nemesis/shared";
 import { EXPORT_COLORS as C, EXPORT_TYPE as T, pdfRgb } from "./theme.ts";
 
 const PAGE_W = 612; // US Letter, portrait

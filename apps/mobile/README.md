@@ -1,4 +1,4 @@
-# @pharmabro/mobile
+# @nemesis/mobile
 
 PharmaBro's **React Native + Expo** app, built against the frozen **§8 API contract**
 (`IMPLEMENTATION_PLAN.md` §8) and the §12 mobile plan. 4-tab MVP — **Ask · Explore ·
@@ -10,7 +10,7 @@ Watchlist · Profile**.
   (the web target is what makes the headless e2e gate possible).
 - **supabase-js** for auth + the §8 reads; **@tanstack/react-query** for fetch/cache
   state (its loading/error/empty states back the doc-06 8-state matrix).
-- Types come from the workspace package **`@pharmabro/shared`** (the frozen §8 DTOs).
+- Types come from the workspace package **`@nemesis/shared`** (the frozen §8 DTOs).
 
 ## Security posture
 
@@ -26,10 +26,10 @@ anon key alone can't read protected data. **The service key never ships in the a
 cp apps/mobile/.env.example apps/mobile/.env   # then fill EXPO_PUBLIC_SUPABASE_URL + _ANON_KEY
 
 # 2) web (dev)
-pnpm --filter @pharmabro/mobile run web
+pnpm --filter @nemesis/mobile run web
 
 # 3) device (Expo Go / dev build) — see DEVICE_CHECKLIST.md
-pnpm --filter @pharmabro/mobile exec expo start
+pnpm --filter @nemesis/mobile exec expo start
 ```
 
 ## Verify (the headless gate)
@@ -38,7 +38,7 @@ pnpm --filter @pharmabro/mobile exec expo start
 # secrets sourced for the e2e seed/teardown (service key stays in Node, never the bundle)
 set -a; source supabase/functions/.env; set +a
 export SB_URL=https://qyjmivntajbigjswhahb.supabase.co
-pnpm --filter @pharmabro/mobile exec playwright test --config e2e/playwright.config.ts
+pnpm --filter @nemesis/mobile exec playwright test --config e2e/playwright.config.ts
 ```
 
 The gate runs the app on web via `expo start --web`, seeds a confirmed test user via

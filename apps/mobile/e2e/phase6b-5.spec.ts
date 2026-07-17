@@ -21,7 +21,7 @@ let A: Seed; // actor
 let B: Seed; // isolation probe
 
 async function seedUser(tag: string): Promise<Seed> {
-  const email = `phase6b5${tag}+${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}@pharmabro.test`;
+  const email = `phase6b5${tag}+${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}@nemesis.test`;
   const password = `Pb!${Math.random().toString(36).slice(2)}Aa1`;
   const created = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST", headers: svc, body: JSON.stringify({ email, password, email_confirm: true }),

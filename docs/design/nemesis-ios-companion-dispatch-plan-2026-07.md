@@ -482,7 +482,7 @@ Produce a draft/result for review. Never submit anything to a school portal.]
 - Modify: `apps/mobile/src/app/_layout.tsx` — route missions as the home screen; remove `compare` from navigation (file stays).
 - Replace: `apps/mobile/assets/images/icon.png` with the current Nemesis logo (same source image used in the desktop repo + landing; export 1024×1024).
 
-- [ ] **Step 1: Apply config changes; `pnpm --filter @pharmabro/mobile typecheck` passes.**
+- [ ] **Step 1: Apply config changes; `pnpm --filter @nemesis/mobile typecheck` passes.**
 - [ ] **Step 2: Commit** `feat(mobile): rebrand to Nemesis, missions-first navigation`.
 
 ### Task 7: Missions API module
@@ -519,7 +519,7 @@ export async function isDesktopOnline(): Promise<boolean>                   // d
 - [ ] **Step 1: Failing tests for the two pure helpers** (`titleFromPrompt`: multiline → first line, 200-char line → 80 chars + '…', empty → 'New mission'; `statusLabel`: all seven statuses plus the queued/offline branch).
 - [ ] **Step 2: Run `npx tsx --test src/api/missions.test.ts` — FAIL.**
 - [ ] **Step 3: Implement the module** (pure helpers + supabase calls as specced above; `subscribeMission` uses `supabase.channel(\`mission-\${id}\`).on('postgres_changes', ...)`).
-- [ ] **Step 4: Tests PASS + `pnpm --filter @pharmabro/mobile typecheck` clean.**
+- [ ] **Step 4: Tests PASS + `pnpm --filter @nemesis/mobile typecheck` clean.**
 - [ ] **Step 5: Commit** `feat(mobile): missions api — create/list/subscribe/review`.
 
 ### Task 8: Screens — mission list, composer, live detail
@@ -534,7 +534,7 @@ Home screen behavior: text field ("What should Nemesis work on?") + send button 
 Detail screen behavior: header (title + status), scrolling event feed via `subscribeMission` merged with initial fetch of the last 200 `mission_events` for the id (direct supabase select, ascending); when status is `needs_review` show `result_summary` in a highlighted card with buttons **Mark reviewed** (`markReviewed`) and **Copy result**; `queued` shows **Cancel** (`cancelMission`); unsubscribe on unmount.
 
 - [ ] **Step 1: Build both screens.**
-- [ ] **Step 2: Verify:** `pnpm --filter @pharmabro/mobile typecheck`, then `pnpm --filter @pharmabro/mobile start` → iOS simulator: sign in, send "Say hello and stop." with desktop app running (Task 5) → watch live flip to Ready for review, mark reviewed.
+- [ ] **Step 2: Verify:** `pnpm --filter @nemesis/mobile typecheck`, then `pnpm --filter @nemesis/mobile start` → iOS simulator: sign in, send "Say hello and stop." with desktop app running (Task 5) → watch live flip to Ready for review, mark reviewed.
 - [ ] **Step 3: Commit** `feat(mobile): missions home + live mission detail`.
 
 ### Task 9: Push registration

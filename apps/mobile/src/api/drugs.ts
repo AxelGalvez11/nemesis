@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
 import { castLabelDocs, castPubmed, castTrials, toDrugOverview } from "./cast";
 import type { DrugPubmed, DrugTrial, LabelDoc } from "./types";
-import type { DrugOverview } from "@pharmabro/shared";
+import type { DrugOverview } from "@nemesis/shared";
 
 // The §8 drug reads. All authenticated-only (anon REVOKEd: 0110/0111/0112), so a
 // signed-in session must exist; supabase-js attaches the user JWT automatically.

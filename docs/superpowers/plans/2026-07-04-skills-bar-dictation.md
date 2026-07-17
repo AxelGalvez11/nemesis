@@ -6,12 +6,12 @@
 
 **Architecture:** Skills are pure data (a discriminated `action` the menu switches on — no functions-in-data), extending the existing `apps/web/lib/playbooks.ts`. The Systematic review skill arms a new client-only depth id (`structured_review`) that the research fn already accepts, so no edge-function change is needed. The Slides skill arms Deep research AND records a per-run "export to slides" intent keyed by turn index; when that run's report completes, the client auto-exports it to PowerPoint via the existing `downloadReportExport` helper, falling back to a neutral inline note on any failure. Dictation uses the browser Web Speech API with feature detection, an inline TS type shim, and SSR-safe support detection — no backend, no new dependencies.
 
-**Tech Stack:** Next.js 15 (React 19, `"use client"`), TypeScript, the shared `@pharmabro/shared` contract (untouched), the existing `downloadReportExport` export helper, and the Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`).
+**Tech Stack:** Next.js 15 (React 19, `"use client"`), TypeScript, the shared `@nemesis/shared` contract (untouched), the existing `downloadReportExport` export helper, and the Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`).
 
 ## Global Constraints
 
 - **FROZEN:** `supabase/functions/ask/**` — never edited. The research edge function (`supabase/functions/research/**`) is also **not** touched: `startResearch` already forwards any `ReportMode` string (verified) so `structured_review` reaches it unchanged.
-- **`@pharmabro/shared` is NOT edited.** `ReportMode` already includes `"structured_review"` (packages/shared/src/research.ts:113, verified). No Deno test tasks are needed because no shared/edge code changes.
+- **`@nemesis/shared` is NOT edited.** `ReportMode` already includes `"structured_review"` (packages/shared/src/research.ts:113, verified). No Deno test tasks are needed because no shared/edge code changes.
 - **No new npm dependencies.** Dictation uses the built-in browser Web Speech API only.
 - **Honesty rule (owner standing rule):** never assert a gate, cost, or capability that does not exist. In particular: **the PPTX export route is NOT Pro-gated server-side.** `apps/web/app/api/reports/[id]/export/pptx/route.ts` only calls `verifyBearer` → 401; there is no `ppt_export_enabled` / entitlement / 403 check (verified against origin/main). The Pro gate is upstream — `deep` is `pro:true`, and a non-Pro user's run dies at `startResearch` with `proGate` before the report ever completes. So the slides failure note must be **neutral** ("Couldn't export slides automatically — open the report to download."), never "Slides export is Pro".
 - **Web gate:** `npm run build` from `apps/web` (Next build runs typecheck). This is the only required gate.
@@ -229,7 +229,7 @@ Add a `structured_review` depth id to the client `MODES` union, route it through
 - Modify: `apps/web/app/app/ask/page.tsx` (`MODES` array ~lines 42–49; `submit()` research branch ~lines 361–369; `launchResearch` `feature` ternary ~line 261; `ResearchRunCard` `modeLabel` ~lines 927–931; the `armSystematicReview` stub from Task 1)
 
 **Interfaces:**
-- Consumes: `ReportMode` (from `@pharmabro/shared`, already imported) — the union value `"structured_review"` is already valid.
+- Consumes: `ReportMode` (from `@nemesis/shared`, already imported) — the union value `"structured_review"` is already valid.
 - Produces: a `MODES` entry with `id: "structured_review"`, which makes `(typeof MODES)[number]["id"]` include it, so `setMode("structured_review")` typechecks everywhere.
 
 - [ ] **Step 1: Add the `structured_review` entry to `MODES`**
@@ -706,7 +706,7 @@ Two upgrades to the chat's composer (the box where you type your question):
 - Dictation is browser-native (no data leaves for a new service, no new dependency).
 
 ## Scope
-- Client-only. The frozen `/ask` function and the research edge function are untouched (the "Systematic review" mode is a value the research function already accepts). `@pharmabro/shared` is untouched.
+- Client-only. The frozen `/ask` function and the research edge function are untouched (the "Systematic review" mode is a value the research function already accepts). `@nemesis/shared` is untouched.
 
 ## Test plan
 - [x] `npm run build` (apps/web) passes.

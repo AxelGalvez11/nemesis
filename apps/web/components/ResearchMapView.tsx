@@ -7,7 +7,7 @@
 // aggregator). Only the top 24 source nodes are enrichment-decorated (respects the trust-cache quota).
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Core, ElementDefinition, LayoutOptions, NodeSingular } from "cytoscape";
-import { pmidFromUrl, type MapNode, type ResearchMap } from "@pharmabro/shared";
+import { pmidFromUrl, type MapNode, type ResearchMap } from "@nemesis/shared";
 import { useEnrichmentByPmids, type SourceEnrichment } from "@/lib/enrichment";
 import { fetchGraphExpand, type GraphExpandWork } from "@/lib/api";
 

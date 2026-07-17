@@ -548,13 +548,13 @@ git commit -m "feat(shared): buildResearchMap — pure project graph aggregation
 
 **Interfaces:**
 - Consumes:
-  - `buildResearchMap`, `ResearchMap`, `ResearchMapInput`, `ResearchMapItemCites`, `ResearchMapWatch` from `@pharmabro/shared` (Task 1).
+  - `buildResearchMap`, `ResearchMap`, `ResearchMapInput`, `ResearchMapItemCites`, `ResearchMapWatch` from `@nemesis/shared` (Task 1).
   - `fetchConversationTurns(conversationId: string): Promise<SavedTurn[]>` — `apps/web/lib/api.ts`. `SavedTurn = { q: string; a: AskResponse | null; research?: SavedResearchCard }`; `AskResponse` carries `citations: Citation[]`. Deep-research turns have `a === null` and a `research.savedReportId` pointer instead.
   - `fetchResearchReport(savedReportId: string): Promise<ResearchReport | null>` — `apps/web/lib/api.ts`. `ResearchReport` carries `citations: Citation[]`.
   - `fetchWatchEvents(watchId: string): Promise<WatchEvent[]>` — `apps/web/lib/api.ts`. `WatchEvent = { channel: "evidence" | "news"; source_key: string; url: string | null; title: string; provider: string | null; study_type: string | null; published_date: string | null; ... }`.
   - `ProjectContents = { chats: ProjectChat[]; reports: ResearchReportSummary[]; watches: WatchSummary[] }` — `apps/web/lib/api.ts`. `ProjectChat = { id: string; title: string; created_at?: string }`; `ResearchReportSummary` has `{ id, title, ... }`; `WatchSummary` has `{ id, title, ... }`.
   - `getCached<T>(key)` / `setCached<T>(key, value)` — `apps/web/lib/cache.ts` (in-memory SPA-session cache).
-  - `type { Citation }` from `@pharmabro/shared`.
+  - `type { Citation }` from `@nemesis/shared`.
 - Produces (relied on by Task 5):
   - `interface ResearchMapState { map: ResearchMap | null; loading: boolean; error: string | null; skipped: number; refresh: () => void }`
   - `function useResearchMapData(projectId: string, contents: ProjectContents | null): ResearchMapState`
@@ -577,14 +577,14 @@ Create `apps/web/lib/research-map-data.ts`:
 // (skip + count) so one unreadable chat never blanks the map. Concurrency-capped at 4 to stay gentle
 // on the RLS-scoped browser client. Seeds from an in-memory cache for an instant re-paint.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Citation } from "@pharmabro/shared";
+import type { Citation } from "@nemesis/shared";
 import {
   buildResearchMap,
   type ResearchMap,
   type ResearchMapInput,
   type ResearchMapItemCites,
   type ResearchMapWatch,
-} from "@pharmabro/shared";
+} from "@nemesis/shared";
 import {
   fetchConversationTurns,
   fetchResearchReport,
@@ -730,8 +730,8 @@ git commit -m "feat(web): useResearchMapData — per-item citation assembly for 
 
 **Interfaces:**
 - Consumes:
-  - `MapNode`, `MapEdge`, `ResearchMap` from `@pharmabro/shared` (Task 1).
-  - `pmidFromUrl` from `@pharmabro/shared` — to derive `pmid:N` from a source node's `meta.url`.
+  - `MapNode`, `MapEdge`, `ResearchMap` from `@nemesis/shared` (Task 1).
+  - `pmidFromUrl` from `@nemesis/shared` — to derive `pmid:N` from a source node's `meta.url`.
   - `SourceEnrichment` + the new `useEnrichmentByPmids(pmids: string[]): Record<string, SourceEnrichment>` from `@/lib/enrichment` (this task). `SourceEnrichment = { doi: string | null; retracted: boolean; cited_by: number | null; tallies: { supporting: number; contrasting: number; mentioning: number } | null; snapshot: StudySnapshot | null }`. Returned map keys are `pmid:N`.
   - `fetchGraphExpand(pmid: string): Promise<GraphExpand>` from `@/lib/api` (Task 4) — for "Explore related".
   - `Core, ElementDefinition` from `cytoscape`.
@@ -788,7 +788,7 @@ Create `apps/web/components/ResearchMapView.tsx`:
 // aggregator). Only the top 24 source nodes are enrichment-decorated (respects the trust-cache quota).
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Core, ElementDefinition, NodeSingular } from "cytoscape";
-import { pmidFromUrl, type MapNode, type ResearchMap } from "@pharmabro/shared";
+import { pmidFromUrl, type MapNode, type ResearchMap } from "@nemesis/shared";
 import { useEnrichmentByPmids, type SourceEnrichment } from "@/lib/enrichment";
 import { fetchGraphExpand, type GraphExpandWork } from "@/lib/api";
 
@@ -1072,7 +1072,7 @@ git commit -m "feat(web): ResearchMapView + useEnrichmentByPmids for project gra
 **Interfaces:**
 - Consumes:
   - `verifyBearer(req: Request): Promise<VerifiedUser | null>` — `@/lib/server` (returns `{ id, email } | null`).
-  - `pmidFromUrl(url)` — `@pharmabro/shared` (to strip a full PubMed URL back to a bare PMID from OpenAlex `ids.pmid`, which is a URL, e.g. `https://pubmed.ncbi.nlm.nih.gov/23245604`).
+  - `pmidFromUrl(url)` — `@nemesis/shared` (to strip a full PubMed URL back to a bare PMID from OpenAlex `ids.pmid`, which is a URL, e.g. `https://pubmed.ncbi.nlm.nih.gov/23245604`).
   - `supabase.auth.getSession()` + `supabaseUrl`/`supabaseAnonKey` — for the client helper's bearer (existing pattern, `apps/web/lib/api.ts` already imports these).
 - Produces (relied on by Task 3):
   - `interface GraphExpandWork { id: string; title: string | null; year: string | null; pmid: string | null }`
@@ -1095,7 +1095,7 @@ Create `apps/web/app/api/v1/graph/expand/route.ts`:
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
 
-import { pmidFromUrl } from "@pharmabro/shared";
+import { pmidFromUrl } from "@nemesis/shared";
 import { verifyBearer } from "@/lib/server";
 
 export const runtime = "nodejs";
@@ -1515,7 +1515,7 @@ Do NOT merge. Post the PR URL and a one-line plain-English summary; wait for the
 - `ResearchMapViewProps { map, loading, error, skipped, onOpenItem }` — Task 3 defines; Task 5 supplies all five. `onOpenItem(kind, id)` where `kind: "chat" | "report" | "watch"` — Task 5 maps `"chat"→"conversation"` for `linkFor`. ✓
 - `useEnrichmentByPmids(pmids: string[]) → Record<string, SourceEnrichment>` — Task 3 Step 1 defines in `enrichment.ts`; Task 3 view consumes it; keys are `pmid:N` matching source node ids. ✓
 - `GraphExpand` / `GraphExpandWork` / `fetchGraphExpand(pmid)` — Task 4 defines in `api.ts`; Task 3 imports `fetchGraphExpand` + `GraphExpandWork`. Field names (`id`, `title`, `year`, `pmid`, and `work`/`cites`/`cited_by`/`similar`) match between the route payload (Task 4 route) and the client types (Task 4 api.ts) and the consumer (Task 3 `exploreRelated`). ✓
-- `pmidFromUrl` used identically in Tasks 1, 3, 4 (from `@pharmabro/shared`). ✓
+- `pmidFromUrl` used identically in Tasks 1, 3, 4 (from `@nemesis/shared`). ✓
 - Cache key `map:{projectId}` — written in Task 2, read in Task 2 seed; not referenced elsewhere (ghosts never cached, per Task 4 guardrail). ✓
 
 No inconsistencies found.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { EntitlementSnapshot } from "@pharmabro/shared";
+import type { EntitlementSnapshot } from "@nemesis/shared";
 import { useAuth } from "@/components/AuthProvider";
 import { Card, ErrorText, Badge } from "@/components/ui";
 import { fetchEntitlements } from "@/lib/api";

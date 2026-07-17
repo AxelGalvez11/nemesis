@@ -13,9 +13,9 @@ import type {
   StudyCharacteristic,
   SuggestedStudyDesign,
   MetaAnalysisResult,
-} from "@pharmabro/shared";
+} from "@nemesis/shared";
 import type { ResearchRunRow } from "@/lib/api";
-import { buildAttribution, buildMetaAbstract, buildReferenceList, claimEvidenceCounts, evidenceRows } from "@pharmabro/shared";
+import { buildAttribution, buildMetaAbstract, buildReferenceList, claimEvidenceCounts, evidenceRows } from "@nemesis/shared";
 import { renderInline } from "@/lib/inline-md";
 import { normTag } from "@/lib/cite";
 import { safeHref } from "@/lib/url";

@@ -2,7 +2,7 @@
 // design system can be rendered and eyeballed (grep/typecheck can't judge "beautiful"). NOT shipped.
 // Run: OUT_DIR=/some/dir pnpm --filter @pharmaorb/web exec tsx scripts/gen-export-samples.mts
 import { mkdirSync, writeFileSync } from "node:fs";
-import type { ResearchReport } from "@pharmabro/shared";
+import type { ResearchReport } from "@nemesis/shared";
 import { reportToDocx } from "../lib/export/docx.ts";
 import { reportToPdf } from "../lib/export/pdf.ts";
 import { reportToPptx } from "../lib/export/pptx.ts";

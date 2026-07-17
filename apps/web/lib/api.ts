@@ -23,8 +23,8 @@ import type {
   WatchlistItem,
   WatchlistUpdate,
   WatchItemType,
-} from "@pharmabro/shared";
-import { resolveWatchCadence, watchEntitlement } from "@pharmabro/shared";
+} from "@nemesis/shared";
+import { resolveWatchCadence, watchEntitlement } from "@nemesis/shared";
 import { isMeshTerm, mergeSuggestions, type MeshTerm } from "./mesh";
 import { supabase } from "./supabase";
 import { isPreviewMode, supabaseAnonKey, supabaseUrl } from "./env";

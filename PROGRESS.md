@@ -804,7 +804,7 @@ authenticated end-user against cloud** — the project's gate discipline, now ap
   6b-2…6b-5. **8-state primitives** (`src/components/states/`) with doc-06 verbatim empty copy.
 - **Auth** (`src/auth/AuthProvider`): email sign-in + sign-out + a guest browse-only UI state. App
   ships `EXPO_PUBLIC_*` anon key + user JWT only — service key never in the bundle.
-- **Typed §8 client** (`src/api/`) over supabase-js — `get_drug`, returning `@pharmabro/shared`
+- **Typed §8 client** (`src/api/`) over supabase-js — `get_drug`, returning `@nemesis/shared`
   DTOs; the jsonb→DTO cast guards mandatory fields (Deno unit test, 4/4).
 - **Data-bound drug screen** rendering a real `get_drug` under react-native-web (uuid- + session-
   gated). **Playwright gate** (`e2e/`): admin-seeded confirmed user, real UI sign-in, AC-visible
@@ -817,14 +817,14 @@ authenticated end-user against cloud** — the project's gate discipline, now ap
   ✓ 6b-1: guest UI state renders (browse-only, no session) (0.6s)
   2 passed (8.5s)
 ```
-Proves: web boot + react-native-web fidelity + monorepo Metro resolution of `@pharmabro/shared` +
+Proves: web boot + react-native-web fidelity + monorepo Metro resolution of `@nemesis/shared` +
 the typed §8 client + supabase email auth + an authenticated `get_drug` read + 4-tab paint + guest
 UI state. Also: `tsc` clean; `deno test cast.test.ts` 4/4.
 
 ### Reviews (both before commit)
 - **code-reviewer**: 0 CRITICAL/HIGH, 2 MEDIUM + 5 LOW — ALL addressed (getSession `.finally` so the
   route guards can't spin forever; cast validates mandatory fields; memoized AuthProvider; normalized
-  `drugId`; de-duped loading testIDs; dropped the unused `@pharmabro/db` dep → re-added in 6b-4;
+  `drugId`; de-duped loading testIDs; dropped the unused `@nemesis/db` dep → re-added in 6b-4;
   `.env` added to the app `.gitignore`; commented the deferred `signUpEmail`).
 - **security-reviewer**: anon-key-only posture **UPHELD** (no service-key leak; confined to the Node
   e2e setup; `.env` gitignored; no SQLi/XSS; route guard + query session-gating correct). Fixes:
@@ -862,7 +862,7 @@ backend changes** (every RPC already existed and is anon-REVOKEd; the payoff of 
   is_current + "open original" (http(s)-guarded). State chosen by the pure, unit-tested
   `sourceViewState` (not-found / outdated / ok).
 - **Typed client** (`src/api/`): `search.ts`, `sources.ts`, `drugs.ts` (+label/trials/pubmed),
-  app-local read-row view types (`types.ts`) — the frozen `@pharmabro/shared` is not reopened.
+  app-local read-row view types (`types.ts`) — the frozen `@nemesis/shared` is not reopened.
   jsonb→DTO casts (`cast.ts`) guard the field each renderer dereferences.
 - **"All cited"** (Phase-2 acceptance, row 673): **every** row carries a non-null `source_id` —
   verified across all rows for semaglutide (label 1/1, trials 11/11, pubmed 12/12), not just the

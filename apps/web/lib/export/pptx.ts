@@ -7,8 +7,8 @@
 // counts, evidence-base table, attribution) are unchanged, so the deck is never more authoritative
 // than the screen it came from.
 import pptxgen from "pptxgenjs";
-import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@pharmabro/shared";
-import { buildAttribution, claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
+import type { AnswerPoint, Citation, CitationStyle, EvidenceRow, ResearchReport } from "@nemesis/shared";
+import { buildAttribution, claimRefMarker, evidenceRows, referenceLines } from "@nemesis/shared";
 import { EXPORT_COLORS as C, EXPORT_FONTS } from "./theme.ts";
 
 // Neutral master name: it is written into the file's XML (and shows in PowerPoint's layout picker),

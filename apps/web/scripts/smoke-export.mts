@@ -3,7 +3,7 @@
 // can't catch a malformed docx/pptx. Run: pnpm --filter @pharmaorb/web smoke:export
 import { inflateSync } from "node:zlib";
 import { strFromU8, unzipSync } from "fflate";
-import type { ResearchReport } from "@pharmabro/shared";
+import type { ResearchReport } from "@nemesis/shared";
 import { reportToDocx } from "../lib/export/docx.ts";
 import { reportToPdf } from "../lib/export/pdf.ts";
 import { reportToPptx } from "../lib/export/pptx.ts";

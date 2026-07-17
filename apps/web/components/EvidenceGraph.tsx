@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Citation } from "@pharmabro/shared";
-import { CLAIM_RELATION_LABEL, studyTypeLabel } from "@pharmabro/shared";
+import type { Citation } from "@nemesis/shared";
+import { CLAIM_RELATION_LABEL, studyTypeLabel } from "@nemesis/shared";
 import type { Core, ElementDefinition } from "cytoscape";
 import { normTag } from "@/lib/cite";
 

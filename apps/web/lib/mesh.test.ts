@@ -1,6 +1,6 @@
 // npx tsx lib/mesh.test.ts
 import assert from "node:assert/strict";
-import type { SearchResult } from "@pharmabro/shared";
+import type { SearchResult } from "@nemesis/shared";
 import { classifyMeshTree, parseMeshEfetch, meshToSuggestion, catalogToSuggestion, mergeSuggestions, isMeshTerm } from "./mesh.ts";
 
 // A faithful 2-record efetch sample (real db=mesh retmode=text shape): a device with an Entry Terms

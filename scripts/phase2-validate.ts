@@ -64,7 +64,7 @@ async function teardown() {
 
 async function main() {
   // ---- authenticate as a throwaway end-user (role=authenticated) ----
-  const email = `phase2-validator+${crypto.randomUUID().slice(0, 8)}@pharmabro.test`;
+  const email = `phase2-validator+${crypto.randomUUID().slice(0, 8)}@nemesis.test`;
   const password = crypto.randomUUID();
   const createRes = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST",

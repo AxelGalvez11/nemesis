@@ -6,7 +6,7 @@
 
 **Architecture:** A new Next.js API route extracts text from the uploaded PDF (Node runtime, `unpdf`). The extracted text rides the request to the existing `research` edge function under a new `mode: "appraisal"`, which runs a paper-profile → grounded-appraisal LLM pipeline (reusing the FROZEN `ask/safety.ts` deterministic layer as-is) and shapes the result into the existing `ResearchReport` contract (so the Library, report view, and all three exports work unchanged). A new additive field `appraisal_questions?: string[]` carries the discussion questions and gets a small render/slide/section. The composer gains an active "Journal club" entry that opens an upload sheet, extracts, then launches the run.
 
-**Tech Stack:** TypeScript. Deno edge functions (`supabase/functions/research`, `supabase/functions/ask/**` — `ask/**` is FROZEN and reused verbatim, never edited). Next.js 16 App Router web app (`apps/web`, React 19). Shared contract package `@pharmabro/shared` (plain `.ts`, `deno test packages/shared/`). New dep: `unpdf` (MIT, pure-JS PDF text extraction, Node runtime). Report exports reuse `docx` v9.7.1 / `pptxgenjs` v4.0.1 / the hand-rolled `pdf.ts`.
+**Tech Stack:** TypeScript. Deno edge functions (`supabase/functions/research`, `supabase/functions/ask/**` — `ask/**` is FROZEN and reused verbatim, never edited). Next.js 16 App Router web app (`apps/web`, React 19). Shared contract package `@nemesis/shared` (plain `.ts`, `deno test packages/shared/`). New dep: `unpdf` (MIT, pure-JS PDF text extraction, Node runtime). Report exports reuse `docx` v9.7.1 / `pptxgenjs` v4.0.1 / the hand-rolled `pdf.ts`.
 
 ## Global Constraints
 
@@ -1267,7 +1267,7 @@ git commit -m "feat(web): render appraisal discussion questions in pptx/docx/pdf
 
 - [ ] **Step 1: Add the two client helpers to `lib/api.ts`**
 
-In `apps/web/lib/api.ts`, first ensure `PaperMeta` is imported from the shared package. Find the existing `@pharmabro/shared` type import group near the top (it already imports research types such as `ReportMode`, `ResearchReport`) and add `PaperMeta` to it. Then, immediately AFTER the `startResearch` function, add:
+In `apps/web/lib/api.ts`, first ensure `PaperMeta` is imported from the shared package. Find the existing `@nemesis/shared` type import group near the top (it already imports research types such as `ReportMode`, `ResearchReport`) and add `PaperMeta` to it. Then, immediately AFTER the `startResearch` function, add:
 
 ```typescript
 /** Extract text from a PDF via the Node route (auth + rate-limit + size guard live server-side). Throws

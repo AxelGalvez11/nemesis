@@ -6,7 +6,7 @@
 
 **Architecture:** Additive hybrid. New OPTIONAL fields on `ResearchReport` (saved in `saved_reports.payload`, `kind` stays `'deep_research'` → no migration, no break to the frozen `api.ts` read-path) + a server-side export layer (Next.js Node route handlers). The frozen guarantees hold: every new model-authored prose field is added to the single `detectViolations` scan; the citation namespace (`mergeEvidence` 1..N retag) is untouched; gaps and counts are computed deterministically in real code, the LLM only adds grounded nuance.
 
-**Tech Stack:** TypeScript. Deno edge functions (`supabase/functions/ask/**`, `supabase/functions/research`, providers under `core-source-sync`). Next.js 16 App Router web app (`apps/web`, React 19, `@supabase/supabase-js`). Shared contract package `@pharmabro/shared` (plain `.ts`, tested with `deno test packages/shared/`). New libs: `docx` v9.7.1 + `pptxgenjs` v4.0.1 (both MIT, Node-runtime only). Tests: `deno test` for all pure logic (shared + edge); `apps/web/scripts/smoke.mjs` (node) for the docx/pptx route formatters.
+**Tech Stack:** TypeScript. Deno edge functions (`supabase/functions/ask/**`, `supabase/functions/research`, providers under `core-source-sync`). Next.js 16 App Router web app (`apps/web`, React 19, `@supabase/supabase-js`). Shared contract package `@nemesis/shared` (plain `.ts`, tested with `deno test packages/shared/`). New libs: `docx` v9.7.1 + `pptxgenjs` v4.0.1 (both MIT, Node-runtime only). Tests: `deno test` for all pure logic (shared + edge); `apps/web/scripts/smoke.mjs` (node) for the docx/pptx route formatters.
 
 ---
 
@@ -465,8 +465,8 @@ import {
   Paragraph,
   TextRun,
 } from "docx";
-import type { AnswerPoint, Citation, CitationStyle, ResearchReport } from "@pharmabro/shared";
-import { buildReferenceList } from "@pharmabro/shared";
+import type { AnswerPoint, Citation, CitationStyle, ResearchReport } from "@nemesis/shared";
+import { buildReferenceList } from "@nemesis/shared";
 
 function para(text: string): Paragraph {
   return new Paragraph({ children: [new TextRun(text)] });
@@ -632,8 +632,8 @@ Create `apps/web/lib/export/pptx.ts`:
 // Buffer (pptxgenjs v4.0.1; write({ outputType: "nodebuffer" }) needs the Node runtime). A
 // briefing deck: title + honesty, summary, each section, safety, gaps, references.
 import pptxgen from "pptxgenjs";
-import type { AnswerPoint, Citation, CitationStyle, ResearchReport } from "@pharmabro/shared";
-import { buildReferenceList } from "@pharmabro/shared";
+import type { AnswerPoint, Citation, CitationStyle, ResearchReport } from "@nemesis/shared";
+import { buildReferenceList } from "@nemesis/shared";
 
 type Run = { text: string; options: { bullet: boolean; breakLine: boolean } };
 function bullets(ps: AnswerPoint[]): Run[] {
@@ -733,7 +733,7 @@ git commit -m "feat(web): pure reportToPptx formatter"
 Create `apps/web/app/api/reports/[id]/export/docx/route.ts`:
 
 ```typescript
-import type { CitationStyle, ResearchReport } from "@pharmabro/shared";
+import type { CitationStyle, ResearchReport } from "@nemesis/shared";
 import { json, userClient, verifyBearer } from "@/lib/server";
 import { reportToDocx } from "@/lib/export/docx";
 
@@ -784,7 +784,7 @@ function safeFilename(title: string, ext: string): string {
 Create `apps/web/app/api/reports/[id]/export/pptx/route.ts` — identical to the docx route except: import `reportToPptx`; call `reportToPptx`; `Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`; `safeFilename(..., "pptx")`.
 
 ```typescript
-import type { CitationStyle, ResearchReport } from "@pharmabro/shared";
+import type { CitationStyle, ResearchReport } from "@nemesis/shared";
 import { json, userClient, verifyBearer } from "@/lib/server";
 import { reportToPptx } from "@/lib/export/pptx";
 
@@ -885,7 +885,7 @@ export async function downloadReportExport(
 
 In `apps/web/components/ResearchReportView.tsx`:
 
-- Change the props: `export function ResearchReportView({ report, reportId, style = "vancouver", onStyleChange }: { report: ResearchReport; reportId?: string; style?: CitationStyle; onStyleChange?: (s: CitationStyle) => void })` (import `CitationStyle` from `@pharmabro/shared`, and `downloadReportExport` from `@/lib/api`, and `useState`).
+- Change the props: `export function ResearchReportView({ report, reportId, style = "vancouver", onStyleChange }: { report: ResearchReport; reportId?: string; style?: CitationStyle; onStyleChange?: (s: CitationStyle) => void })` (import `CitationStyle` from `@nemesis/shared`, and `downloadReportExport` from `@/lib/api`, and `useState`).
 - Add an export toolbar just below the `grade-row`, rendered only when `reportId` is set and `report.template` is falsy:
 
 ```tsx
@@ -2046,7 +2046,7 @@ const PROVIDER_ABBR: Record<string, string> = {
 
 - [ ] **Step 2: Replace the `Sources` list with a formatted reference list + add the toggle**
 
-Replace the `Sources` component body to render `buildReferenceList(citations, style)` (import `buildReferenceList` and `CitationStyle` from `@pharmabro/shared`). Pass `style` from the parent. Keep the scroll-to-source affordance (the `id={rep-src-<tag>}` anchor stays).
+Replace the `Sources` component body to render `buildReferenceList(citations, style)` (import `buildReferenceList` and `CitationStyle` from `@nemesis/shared`). Pass `style` from the parent. Keep the scroll-to-source affordance (the `id={rep-src-<tag>}` anchor stays).
 
 ```tsx
 function Sources({ citations, style }: { citations: Citation[]; style: CitationStyle }) {
@@ -2089,7 +2089,7 @@ In `apps/web/app/app/research/page.tsx`, add `const [citeStyle, setCiteStyle] = 
 
 - [ ] **Step 4: Apply the formatter to chat answers too (graceful)**
 
-In `apps/web/components/EvidencePanel.tsx`, where the chat answer's `citations` render, replace the raw source line with `formatReference(c, "vancouver")` (chat has no toggle; default Vancouver). This retroactively formats saved chats (old ones degrade gracefully — missing metadata → title + provider + date). Import `formatReference` from `@pharmabro/shared`. (If `EvidencePanel` renders many surfaces, scope this change to the citations/sources list only; do not touch unrelated markup.)
+In `apps/web/components/EvidencePanel.tsx`, where the chat answer's `citations` render, replace the raw source line with `formatReference(c, "vancouver")` (chat has no toggle; default Vancouver). This retroactively formats saved chats (old ones degrade gracefully — missing metadata → title + provider + date). Import `formatReference` from `@nemesis/shared`. (If `EvidencePanel` renders many surfaces, scope this change to the citations/sources list only; do not touch unrelated markup.)
 
 - [ ] **Step 5: Type-check + build**
 

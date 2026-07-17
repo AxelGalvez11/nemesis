@@ -19,7 +19,7 @@
 // break the app.
 //
 // NOTE (enum duplication): the INTENTS/GRADES sets below are a LOCAL copy of the
-// `@pharmabro/shared` unions. They are duplicated (not imported) on purpose — this
+// `@nemesis/shared` unions. They are duplicated (not imported) on purpose — this
 // file is unit-tested under Deno (`deno test --no-check`), which can't resolve the
 // workspace runtime import. This is a privacy guardrail, not the source of truth;
 // if the shared unions grow, widen these. A too-narrow set only DROPS an event prop

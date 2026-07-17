@@ -13,7 +13,7 @@ This is a **required gate** for Phase 6 to be called done — completed at **6b-
 ```bash
 # from repo root — set the public client env first (anon key only)
 #   apps/mobile/.env: EXPO_PUBLIC_SUPABASE_URL=..., EXPO_PUBLIC_SUPABASE_ANON_KEY=...
-pnpm --filter @pharmabro/mobile exec expo start      # scan the QR with Expo Go
+pnpm --filter @nemesis/mobile exec expo start      # scan the QR with Expo Go
 # or a dev build for native modules:  npx expo run:ios   /   npx expo run:android
 ```
 

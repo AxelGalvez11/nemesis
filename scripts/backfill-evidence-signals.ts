@@ -179,7 +179,7 @@ async function backfillPubMed() {
     let parsed = new Map<string, PubMedSignals>();
     try {
       const res = await fetch(`${EFETCH}?${params.toString()}`, {
-        headers: { "User-Agent": "PharmaBroBot/1.0 (axel@pharmabro.app)" },
+        headers: { "User-Agent": "PharmaBroBot/1.0 (axel@nemesis.app)" },
       });
       if (res.ok) parsed = parsePubMedXml(await res.text());
       else errors += slice.length;

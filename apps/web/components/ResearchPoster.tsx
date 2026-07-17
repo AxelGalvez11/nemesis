@@ -12,8 +12,8 @@
 // the markers here (claimRefMarker), the evidence table (evidenceRows), and the reference list
 // (referenceLines) — so a claim's " [1,3]" always points at reference lines "1." and "3." exactly as
 // it does everywhere else.
-import type { Citation, CitationStyle, ResearchReport } from "@pharmabro/shared";
-import { claimRefMarker, evidenceRows, referenceLines } from "@pharmabro/shared";
+import type { Citation, CitationStyle, ResearchReport } from "@nemesis/shared";
+import { claimRefMarker, evidenceRows, referenceLines } from "@nemesis/shared";
 
 export function ResearchPoster({ report, style = "vancouver" }: { report: ResearchReport; style?: CitationStyle }) {
   const rows = report.citations.length ? evidenceRows(report.citations as Citation[]) : [];

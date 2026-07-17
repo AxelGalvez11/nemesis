@@ -58,7 +58,7 @@ async function rpc(headers: Record<string, string>, fn: string, args: unknown) {
 
 const userIds: string[] = [];
 async function makeUser(): Promise<{ id: string; jwt: string }> {
-  const email = `phase5-validator+${crypto.randomUUID().slice(0, 8)}@pharmabro.test`;
+  const email = `phase5-validator+${crypto.randomUUID().slice(0, 8)}@nemesis.test`;
   const password = crypto.randomUUID();
   const created = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST",

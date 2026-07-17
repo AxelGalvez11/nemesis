@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import type { AskMode } from "@pharmabro/shared";
+import type { AskMode } from "@nemesis/shared";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, shadow, space, type } from "@/theme/tokens";

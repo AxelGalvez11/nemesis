@@ -90,7 +90,7 @@ async function teardown() {
 }
 
 async function main() {
-  const email = `smoke+${crypto.randomUUID().slice(0, 8)}@pharmabro.test`;
+  const email = `smoke+${crypto.randomUUID().slice(0, 8)}@nemesis.test`;
   const password = crypto.randomUUID();
   const created = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST", headers: { apikey: SERVICE_KEY!, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },

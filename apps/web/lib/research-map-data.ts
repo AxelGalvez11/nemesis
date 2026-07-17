@@ -5,14 +5,14 @@
 // (skip + count) so one unreadable chat never blanks the map. Concurrency-capped at 4 to stay gentle
 // on the RLS-scoped browser client. Seeds from an in-memory cache for an instant re-paint.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Citation } from "@pharmabro/shared";
+import type { Citation } from "@nemesis/shared";
 import {
   buildResearchMap,
   type ResearchMap,
   type ResearchMapInput,
   type ResearchMapItemCites,
   type ResearchMapWatch,
-} from "@pharmabro/shared";
+} from "@nemesis/shared";
 import {
   fetchConversationTurns,
   fetchResearchReport,

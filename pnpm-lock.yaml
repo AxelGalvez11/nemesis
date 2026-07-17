@@ -21,15 +21,15 @@ importers:
 
   apps/mobile:
     dependencies:
+      '@nemesis/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@noble/ciphers':
         specifier: ^1
         version: 1.3.0
       '@noble/hashes':
         specifier: ^1
         version: 1.8.0
-      '@pharmabro/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@supabase/supabase-js':
         specifier: ^2.107.0
         version: 2.107.0
@@ -127,7 +127,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@pharmabro/shared':
+      '@nemesis/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@supabase/supabase-js':

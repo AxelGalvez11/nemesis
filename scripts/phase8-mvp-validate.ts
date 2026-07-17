@@ -39,7 +39,7 @@ function ok(label: string, pass: boolean, detail = "") {
 }
 
 async function seedUser(label: string): Promise<UserSeed> {
-  const email = `phase8-${label}+${crypto.randomUUID()}@pharmabro.test`;
+  const email = `phase8-${label}+${crypto.randomUUID()}@nemesis.test`;
   const password = `Pb!${crypto.randomUUID()}Aa1`;
   const created = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST",

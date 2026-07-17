@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import type { EntitySuggestion, SuggestKind } from "@pharmabro/shared";
+import type { EntitySuggestion, SuggestKind } from "@nemesis/shared";
 import { suggestEntities } from "@/lib/api";
 
 // Typeahead for the Monitor box: as you type it resolves what you mean to a real medical thing — a drug

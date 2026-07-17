@@ -555,7 +555,7 @@ git commit -m "feat(shared): buildCreditsSummary display model for the visible-c
 - Modify: `apps/web/app/app/ask/page.tsx:135` and `apps/web/app/app/ask/page.tsx:417` — call `bumpUsage()` after the post-answer usage refetch.
 
 **Interfaces:**
-- Consumes: `buildCreditsSummary`, `CreditsSummary` from `@pharmabro/shared` (Task 3). `fetchEntitlements`, `fetchUsage`, `fetchWatches`, `fetchMissions` from `@/lib/api` (all already exist; return `EntitlementSnapshot`, `UsageSnapshot`, `WatchSummary[]`, `MissionSummary[]` respectively). `Icon` from `@/components/icons` (`sparkle` and `card` icon names exist). The account-footer `plan` state in `AppShell` (`{ plan: string; used: number; limit: number }`).
+- Consumes: `buildCreditsSummary`, `CreditsSummary` from `@nemesis/shared` (Task 3). `fetchEntitlements`, `fetchUsage`, `fetchWatches`, `fetchMissions` from `@/lib/api` (all already exist; return `EntitlementSnapshot`, `UsageSnapshot`, `WatchSummary[]`, `MissionSummary[]` respectively). `Icon` from `@/components/icons` (`sparkle` and `card` icon names exist). The account-footer `plan` state in `AppShell` (`{ plan: string; used: number; limit: number }`).
 - Produces (Task 5 depends on this EXACT name + signature):
   - `function CreditsBreakdown({ summary }: { summary: CreditsSummary }): JSX.Element` — the inner list (no modal chrome), rendered by BOTH the modal and the Settings section.
   - `function CreditsPanel({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element | null` — the modal; fetches fresh on open.
@@ -609,7 +609,7 @@ Create `apps/web/components/CreditsPanel.tsx`:
 "use client";
 
 import { useEffect, useState } from "react";
-import { buildCreditsSummary, type CreditsSummary } from "@pharmabro/shared";
+import { buildCreditsSummary, type CreditsSummary } from "@nemesis/shared";
 import { fetchEntitlements, fetchMissions, fetchUsage, fetchWatches } from "@/lib/api";
 
 // The inner list — plan name, a "Today" group (resettable daily meters) and a "Slots" group (permanent
@@ -957,7 +957,7 @@ Replace with:
 - [ ] **Step 10: Build to verify the whole wiring compiles**
 
 Run: `npm run build`
-Expected: PASS. No new TypeScript errors — `CreditsPanel`/`CreditsBreakdown` typecheck against `@pharmabro/shared`, the context adds `bumpUsage` consistently in interface + default + memo, and the ask page's destructure resolves.
+Expected: PASS. No new TypeScript errors — `CreditsPanel`/`CreditsBreakdown` typecheck against `@nemesis/shared`, the context adds `bumpUsage` consistently in interface + default + memo, and the ask page's destructure resolves.
 
 - [ ] **Step 11: Commit**
 
@@ -975,7 +975,7 @@ git commit -m "feat(web): visible credits chip + modal, and refresh account foot
 - Modify: `apps/web/app/app/settings/page.tsx` — add `"usage"` to the route's `SECTIONS` allow-list so `?section=usage` deep-links resolve.
 
 **Interfaces:**
-- Consumes: `CreditsBreakdown` from `@/components/CreditsPanel` (Task 4) — exact signature `CreditsBreakdown({ summary }: { summary: CreditsSummary })`. `buildCreditsSummary`, `CreditsSummary` from `@pharmabro/shared`. `fetchEntitlements`, `fetchUsage`, `fetchWatches`, `fetchMissions` from `@/lib/api`.
+- Consumes: `CreditsBreakdown` from `@/components/CreditsPanel` (Task 4) — exact signature `CreditsBreakdown({ summary }: { summary: CreditsSummary })`. `buildCreditsSummary`, `CreditsSummary` from `@nemesis/shared`. `fetchEntitlements`, `fetchUsage`, `fetchWatches`, `fetchMissions` from `@/lib/api`.
 - Produces: nothing other tasks depend on.
 
 **Context the implementer needs:**
@@ -1048,7 +1048,7 @@ Replace with:
 ```tsx
 import { DataSourcesPanel } from "@/components/DataSourcesPanel";
 import { CreditsBreakdown } from "@/components/CreditsPanel";
-import { buildCreditsSummary, type CreditsSummary } from "@pharmabro/shared";
+import { buildCreditsSummary, type CreditsSummary } from "@nemesis/shared";
 import { fetchEntitlements, fetchMissions, fetchUsage, fetchWatches } from "@/lib/api";
 ```
 

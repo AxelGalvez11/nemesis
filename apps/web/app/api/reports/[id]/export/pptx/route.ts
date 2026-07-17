@@ -1,4 +1,4 @@
-import type { CitationStyle, ResearchReport } from "@pharmabro/shared";
+import type { CitationStyle, ResearchReport } from "@nemesis/shared";
 import { json, userClient, verifyBearer } from "@/lib/server";
 import { reportToPptx } from "@/lib/export/pptx";
 import { safeFilename } from "@/lib/export/filename";

@@ -35,7 +35,7 @@ const bearer = (jwt: string) => ({ apikey: ANON_KEY!, Authorization: `Bearer ${j
 
 let userId: string | undefined;
 async function makeUser(): Promise<string> {
-  const email = `phase6a-validator+${crypto.randomUUID().slice(0, 8)}@pharmabro.test`;
+  const email = `phase6a-validator+${crypto.randomUUID().slice(0, 8)}@nemesis.test`;
   const password = crypto.randomUUID();
   const created = await fetch(`${SB_URL}/auth/v1/admin/users`, {
     method: "POST",
