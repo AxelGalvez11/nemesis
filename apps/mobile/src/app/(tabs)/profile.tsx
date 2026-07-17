@@ -2,6 +2,7 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-na
 import { router } from "expo-router";
 import Constants from "expo-constants";
 import { useAuth } from "@/auth/AuthProvider";
+import { useShellPadding } from "@/components/shell-chrome";
 import { SectionHeader } from "@/components/ui";
 import { useCommon } from "@/theme/common";
 import { accentSwatchHex, ACCENT_SWATCHES, type ThemeColors, type ThemeMode } from "@/theme/palette";
@@ -31,10 +32,14 @@ export default function SettingsScreen() {
   const { session, signOut } = useAuth();
   const common = useCommon();
   const styles = useThemedStyles(createStyles);
+  const { contentTop, contentBottom } = useShellPadding();
 
   if (!session) {
     return (
-      <View style={common.screen} testID="tab-profile">
+      <View
+        style={[common.screen, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
+        testID="tab-profile"
+      >
         <Text style={common.h1}>Settings</Text>
         <Text testID="profile-guest" style={common.body}>You're not signed in.</Text>
         <Pressable testID="goto-signin" style={common.btn} onPress={() => router.replace("/sign-in")}>
@@ -54,7 +59,10 @@ export default function SettingsScreen() {
   ];
 
   return (
-    <ScrollView contentContainerStyle={styles.body} testID="tab-profile">
+    <ScrollView
+      contentContainerStyle={[styles.body, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
+      testID="tab-profile"
+    >
       <Text style={common.h1}>Settings</Text>
       <Text testID="profile-email" style={styles.email}>{session.user.email}</Text>
 
@@ -126,7 +134,7 @@ function Group({ styles, title, rows }: { styles: Styles; title: string; rows: N
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-    body: { padding: space(5), gap: space(2), backgroundColor: c.bg, flexGrow: 1 },
+    body: { paddingHorizontal: space(5), gap: space(2), backgroundColor: c.bg, flexGrow: 1 },
     email: { fontSize: 15, color: c.text2, marginBottom: space(2) },
     group: { gap: 2, marginTop: space(2) },
     row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: space(3.5), borderBottomWidth: 1, borderBottomColor: c.line },

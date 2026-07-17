@@ -28,7 +28,7 @@ export default function SignIn() {
     <View style={common.center} testID="signin-screen">
       <LogoMark size={52} />
       <Text style={common.h1}>Nemesis</Text>
-      <Text style={common.sub}>Send work to your Mac. Review it from anywhere.</Text>
+      <Text style={common.sub}>Send Nemesis to work. Review it from anywhere.</Text>
       <TextInput
         testID="email"
         style={common.input}

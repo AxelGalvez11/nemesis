@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { useShellPadding } from "@/components/shell-chrome";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import {
   currentUserId,
@@ -32,6 +33,7 @@ interface DeckRow {
 export default function StudyScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { contentTop, contentBottom } = useShellPadding();
   const [key, setKey] = useState<Uint8Array | null>(null);
   const [keyChecked, setKeyChecked] = useState(false);
   const [cache, setCache] = useState<SyncCache>({});
@@ -100,7 +102,10 @@ export default function StudyScreen() {
 
   if (!key) {
     return (
-      <View style={styles.pairWrap} testID="study-unpaired">
+      <View
+        style={[styles.pairWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]}
+        testID="study-unpaired"
+      >
         <EmptyBlock
           title="Pair with your Mac"
           body="Your flashcards live on your Mac. Pair once and every deck the agent builds is reviewable here — grades sync back automatically."
@@ -129,7 +134,7 @@ export default function StudyScreen() {
       <FlatList
         data={decks}
         keyExtractor={(item) => item.pathHash}
-        contentContainerStyle={styles.listBody}
+        contentContainerStyle={[styles.listBody, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -189,7 +194,7 @@ const createStyles = (c: ThemeColors) =>
     flex: { flex: 1, backgroundColor: c.bg },
     pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4), backgroundColor: c.bg },
     pairHint: { ...type.small, color: c.text2, textAlign: "center" },
-    listBody: { padding: space(4), paddingBottom: space(10), flexGrow: 1 },
+    listBody: { padding: space(4), flexGrow: 1 },
     headline: { ...type.h2, color: c.text, marginBottom: space(3), marginTop: space(1) },
     rowPressed: { opacity: 0.85 },
     deckCard: { flexDirection: "row", alignItems: "center", marginBottom: space(2.5) },

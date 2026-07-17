@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { useShellPadding } from "@/components/shell-chrome";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import {
   currentUserId,
@@ -25,6 +26,7 @@ import { radius, space, type } from "@/theme/tokens";
 export default function LibraryScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { contentTop, contentBottom } = useShellPadding();
   const [key, setKey] = useState<Uint8Array | null>(null);
   const [keyChecked, setKeyChecked] = useState(false);
   const [cache, setCache] = useState<SyncCache>({});
@@ -92,7 +94,10 @@ export default function LibraryScreen() {
 
   if (!key) {
     return (
-      <View style={styles.pairWrap} testID="library-unpaired">
+      <View
+        style={[styles.pairWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]}
+        testID="library-unpaired"
+      >
         <EmptyBlock
           title="Pair with your Mac"
           body="Your library lives on your Mac. Pair once and everything the agent writes shows up here — readable anywhere, even offline. End-to-end encrypted: our servers can't read a word of it."
@@ -110,26 +115,35 @@ export default function LibraryScreen() {
   ).map((s) => ({ ...s, title: s.folder === "" ? "Library" : s.folder, data: s.notes }));
   const pathToHash = new Map(notes.map((d) => [d.path, d.pathHash]));
 
+  // The banners are siblings above the list, so when one shows IT carries the
+  // glass-TopBar clearance and the list's own top padding shrinks — otherwise the
+  // banner would render underneath the translucent bar.
+  const hasBanner = failures > 0 || Boolean(error);
+
   return (
     <View style={styles.flex} testID="library-screen">
-      {failures > 0 ? (
-        <Surface style={styles.warn} testID="library-decrypt-warning">
-          <Text style={styles.warnText}>
-            {failures} note{failures === 1 ? "" : "s"} couldn't be decrypted. If this persists, re-pair with your Mac
-            (Settings → Phone sync).
-          </Text>
-        </Surface>
-      ) : null}
-      {error ? (
-        <Surface style={styles.warn} testID="library-error">
-          <Text style={styles.warnText}>Couldn't reach sync: {error}</Text>
-        </Surface>
+      {hasBanner ? (
+        <View style={{ paddingTop: contentTop }}>
+          {failures > 0 ? (
+            <Surface style={styles.warn} testID="library-decrypt-warning">
+              <Text style={styles.warnText}>
+                {failures} note{failures === 1 ? "" : "s"} couldn't be decrypted. If this persists, re-pair with your Mac
+                (Settings → Phone sync).
+              </Text>
+            </Surface>
+          ) : null}
+          {error ? (
+            <Surface style={styles.warn} testID="library-error">
+              <Text style={styles.warnText}>Couldn't reach sync: {error}</Text>
+            </Surface>
+          ) : null}
+        </View>
       ) : null}
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.path}
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={styles.listBody}
+        contentContainerStyle={[styles.listBody, { paddingTop: hasBanner ? space(2) : contentTop + space(2), paddingBottom: contentBottom }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -172,7 +186,7 @@ const createStyles = (c: ThemeColors) =>
     flex: { flex: 1, backgroundColor: c.bg },
     pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4), backgroundColor: c.bg },
     pairHint: { ...type.small, color: c.text2, textAlign: "center" },
-    listBody: { padding: space(4), paddingBottom: space(10), flexGrow: 1 },
+    listBody: { padding: space(4), flexGrow: 1 },
     sectionHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(4), marginBottom: space(1.5) },
     row: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
