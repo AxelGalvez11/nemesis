@@ -42,6 +42,12 @@
           "resizeMode": "contain",
           "backgroundColor": "#0e0e0e"
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Nemesis uses the camera only to scan the pairing code shown on your Mac."
+        }
       ]
     ],
     "experiments": {
