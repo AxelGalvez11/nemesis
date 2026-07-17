@@ -3,7 +3,7 @@
 // swatch, desktop parity — persisted in SecureStore, and hands every screen a
 // ready-built ThemeColors. Until the stored preference loads, the app renders
 // the shipped default (dark + crimson) so cold start looks exactly like before.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useColorScheme } from "react-native";
 import * as SecureStore from "expo-secure-store";
 
@@ -58,7 +58,6 @@ function parsePref(raw: string | null): AppearancePref {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const system = useColorScheme();
   const [pref, setPref] = useState<AppearancePref>(DEFAULT_PREF);
-  const loadedRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -66,10 +65,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       .then((raw) => {
         if (alive) setPref(parsePref(raw));
       })
-      .catch(() => {})
-      .finally(() => {
-        loadedRef.current = true;
-      });
+      .catch(() => {});
     return () => {
       alive = false;
     };
