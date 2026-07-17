@@ -6,10 +6,11 @@
 // forwards them to the real Firecrawl with the SERVER-side key:
 //
 //   POST /nemesis-search/v2/search   Authorization: Bearer <device key (nmk_...)>
-//     → validates key → plan (subscriptions) → daily unit budget (plan_entitlements
-//       'nemesis_search_daily_units' + usage_counters 'nemesis_search_units') → tries
-//       Tavily, then Linkup, then Firecrawl (first one to answer wins) → records
-//       usage_events. All three are translated to Firecrawl's response shape.
+//     → validates key → plan (subscriptions) → daily + monthly unit budgets
+//       (plan_entitlements 'nemesis_search_daily_units'/'nemesis_search_monthly_units'
+//       + usage_counters 'nemesis_search_units'/'nemesis_search_units_month') → tries
+//       Linkup (cheapest), then Tavily, then Firecrawl (first one to answer wins) →
+//       records usage_events. All three are translated to Firecrawl's response shape.
 //   POST /nemesis-search/v2/scrape   Authorization: Bearer <device key>
 //     → same gate, forwards to Firecrawl's /v2/scrape (no scrape role for Tavily/Linkup).
 //       One search or one scrape = one unit.
@@ -21,8 +22,8 @@
 // SUPABASE_SERVICE_ROLE_KEY (platform-injected), FIRECRAWL_API_KEY (server-side upstream
 // key; when unset — and no fallback provider is configured either — this returns 503
 // with a plain explanation instead of leaking the gap to students as a cryptic parse
-// error), TAVILY_API_KEY (cheap primary for /v2/search), and LINKUP_API_KEY (search
-// fallback that sits between Tavily and Firecrawl).
+// error), LINKUP_API_KEY (cheapest primary for /v2/search), and TAVILY_API_KEY (search
+// fallback that sits between Linkup and Firecrawl; its free 1,000/mo is a safety net).
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -36,6 +37,16 @@ const LINKUP_BASE = 'https://api.linkup.so'
 
 const COUNTER_KEY = 'nemesis_search_units'
 const ENTITLEMENT_KEY = 'nemesis_search_daily_units'
+// Monthly ceiling — the economic wall behind the daily cap (search has no cache
+// discount, so daily_cap × 30 is the real cost exposure). Reads plan_entitlements
+// 'nemesis_search_monthly_units'; counts a separate usage_counters bucket
+// 'nemesis_search_units_month' (period = 1st of the month).
+const MONTHLY_ENTITLEMENT_KEY = 'nemesis_search_monthly_units'
+const MONTHLY_COUNTER_KEY = 'nemesis_search_units_month'
+const FALLBACK_MONTHLY_UNITS = 300
+// Emit one nemesis_cap_warning event when a user first crosses this fraction of
+// either the daily or monthly cap (an early signal, not a block).
+const CAP_WARN_FRACTION = 0.85
 const ACTIVE = new Set(['active', 'trialing', 'past_due'])
 const FALLBACK_DAILY_UNITS = 10 // free-tier default when no entitlement row
 const TRIAL_MS = 7 * 24 * 60 * 60 * 1000
@@ -60,6 +71,9 @@ interface KeyContext {
   dailyLimit: number
   used: number
   periodStart: string
+  monthlyLimit: number
+  monthlyUsed: number
+  monthStart: string
 }
 
 /** Resolve a device key to its user + plan + today's usage. Mirrors nemesis-llm. */
@@ -101,25 +115,44 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
     }
   }
 
-  const { data: ent } = await admin
+  const { data: ents } = await admin
     .from('plan_entitlements')
-    .select('value_json')
+    .select('entitlement_key,value_json')
     .eq('plan_code', plan)
-    .eq('entitlement_key', ENTITLEMENT_KEY)
-    .maybeSingle()
+    .in('entitlement_key', [ENTITLEMENT_KEY, MONTHLY_ENTITLEMENT_KEY])
 
-  const dailyLimit = typeof ent?.value_json === 'number' ? ent.value_json : FALLBACK_DAILY_UNITS
+  const entValue = (key: string): number | undefined => {
+    const row = ents?.find(e => e.entitlement_key === key)
+    return typeof row?.value_json === 'number' ? row.value_json : undefined
+  }
 
-  const periodStart = new Date().toISOString().slice(0, 10)
-  const { data: counter } = await admin
+  const dailyLimit = entValue(ENTITLEMENT_KEY) ?? FALLBACK_DAILY_UNITS
+  const monthlyLimit = entValue(MONTHLY_ENTITLEMENT_KEY) ?? FALLBACK_MONTHLY_UNITS
+
+  const now = new Date()
+  const periodStart = now.toISOString().slice(0, 10) // YYYY-MM-DD
+  const monthStart = `${now.toISOString().slice(0, 7)}-01` // YYYY-MM-01
+
+  const { data: counters } = await admin
     .from('usage_counters')
-    .select('used')
+    .select('counter_key,period_start,used')
     .eq('user_id', keyRow.user_id)
-    .eq('counter_key', COUNTER_KEY)
-    .eq('period_start', periodStart)
-    .maybeSingle()
+    .in('counter_key', [COUNTER_KEY, MONTHLY_COUNTER_KEY])
+    .in('period_start', [periodStart, monthStart])
 
-  return { dailyLimit, periodStart, plan, used: counter?.used ?? 0, userId: keyRow.user_id }
+  const usedFor = (counterKey: string, period: string): number =>
+    counters?.find(c => c.counter_key === counterKey && c.period_start === period)?.used ?? 0
+
+  return {
+    dailyLimit,
+    monthStart,
+    monthlyLimit,
+    monthlyUsed: usedFor(MONTHLY_COUNTER_KEY, monthStart),
+    periodStart,
+    plan,
+    used: usedFor(COUNTER_KEY, periodStart),
+    userId: keyRow.user_id
+  }
 }
 
 /** Tavily fallback for /v2/search, answered in Firecrawl's response shape so the
@@ -205,16 +238,31 @@ async function linkupSearch(body: Record<string, unknown>): Promise<Response | n
   })
 }
 
-/** Record one spent unit against today's counter + the event ledger. */
+/** Record one spent unit against today's + this month's counters + the event ledger. */
 async function recordUsage(ctx: KeyContext, kind: 'scrape' | 'search', detail: string): Promise<void> {
+  const nowIso = new Date().toISOString()
+
   await admin.from('usage_counters').upsert(
     {
       counter_key: COUNTER_KEY,
       limit_snapshot: ctx.dailyLimit,
       period_end: ctx.periodStart,
       period_start: ctx.periodStart,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
       used: ctx.used + 1,
+      user_id: ctx.userId
+    },
+    { onConflict: 'user_id,counter_key,period_start' }
+  )
+
+  await admin.from('usage_counters').upsert(
+    {
+      counter_key: MONTHLY_COUNTER_KEY,
+      limit_snapshot: ctx.monthlyLimit,
+      period_end: ctx.monthStart,
+      period_start: ctx.monthStart,
+      updated_at: nowIso,
+      used: ctx.monthlyUsed + 1,
       user_id: ctx.userId
     },
     { onConflict: 'user_id,counter_key,period_start' }
@@ -226,6 +274,33 @@ async function recordUsage(ctx: KeyContext, kind: 'scrape' | 'search', detail: s
     event_type: `nemesis_search_${kind}`,
     metadata: { detail: detail.slice(0, 200), kind },
     period_start: ctx.periodStart,
+    user_id: ctx.userId
+  })
+
+  void maybeWarnCap(ctx, 'daily', ctx.used, ctx.used + 1, ctx.dailyLimit, ctx.periodStart)
+  void maybeWarnCap(ctx, 'monthly', ctx.monthlyUsed, ctx.monthlyUsed + 1, ctx.monthlyLimit, ctx.monthStart)
+}
+
+/** Emit one nemesis_cap_warning event the moment usage crosses the warn line for a
+ *  window (only on the crossing tick, so at most one per period). */
+async function maybeWarnCap(
+  ctx: KeyContext,
+  window: 'daily' | 'monthly',
+  before: number,
+  after: number,
+  limit: number,
+  period: string
+): Promise<void> {
+  if (limit <= 0) return
+  const line = limit * CAP_WARN_FRACTION
+  if (before >= line || after < line) return
+
+  await admin.from('usage_events').insert({
+    cost_credits: 0,
+    counter_key: COUNTER_KEY,
+    event_type: 'nemesis_cap_warning',
+    metadata: { after, limit, plan: ctx.plan, pct: Math.round((after / limit) * 100), window },
+    period_start: period,
     user_id: ctx.userId
   })
 }
@@ -252,6 +327,16 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
     )
   }
 
+  if (ctx.monthlyUsed >= ctx.monthlyLimit) {
+    return json(
+      {
+        success: false,
+        error: `Monthly search budget reached for the ${ctx.plan} plan (${ctx.monthlyLimit}/month). It resets on the 1st — upgrade for a higher ceiling.`
+      },
+      429
+    )
+  }
+
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
 
   if (!body) {
@@ -260,11 +345,13 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
 
   const detail = route === '/v2/search' ? String(body.query ?? '') : String(body.url ?? '')
 
-  // Cost routing: Tavily is the cheap search provider, so SEARCHES go there first,
-  // Linkup second, and Firecrawl last (with Tavily/Linkup having no scrape role, so
-  // SCRAPES go straight to Firecrawl, which is what it's actually good at).
+  // Cost routing: Linkup is the cheapest per search (~$0.005 vs Tavily ~$0.008) AND
+  // self-reports higher accuracy, so SEARCHES try it first, then Tavily (whose free
+  // 1,000/mo tier is a useful safety net when Linkup is down), then Firecrawl last.
+  // Tavily/Linkup have no scrape role, so SCRAPES go straight to Firecrawl, which is
+  // what it's actually good at. (Reordered from Tavily-first 2026-07-17.)
   if (route === '/v2/search') {
-    const primary = await tavilySearch(body)
+    const primary = await linkupSearch(body)
 
     if (primary) {
       void recordUsage(ctx, 'search', detail)
@@ -272,7 +359,7 @@ async function proxyFirecrawl(req: Request, route: '/v2/scrape' | '/v2/search'):
       return primary
     }
 
-    const secondary = await linkupSearch(body)
+    const secondary = await tavilySearch(body)
 
     if (secondary) {
       void recordUsage(ctx, 'search', detail)

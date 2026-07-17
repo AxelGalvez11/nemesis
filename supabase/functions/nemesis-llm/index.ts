@@ -44,8 +44,27 @@ const GLM_MODEL = Deno.env.get('GLM_MODEL') ?? 'glm-5.2'
 const GLM_HIGH_MODE = (Deno.env.get('GLM_HIGH_MODE') ?? 'off') === 'on'
 const GLM_BASE = 'https://api.z.ai/api/paas/v4'
 
+// High-effort turns on a paying plan route to the premium v4-pro model — measured
+// ~80% blind-preferred over fast-tier deep-thinking on hard clinical questions
+// (2026-07-17) — but with a hard timeout and automatic fall-back to v4-flash
+// deep-thinking, because v4-pro runs ~2x slower and fails a minority of the time.
+// Kill without a deploy: supabase secrets set PRO_HIGH_MODE=off
+const PRO_HIGH_MODE = (Deno.env.get('PRO_HIGH_MODE') ?? 'on') === 'on'
+const PRO_MODEL = 'deepseek-v4-pro'
+const PRO_TIMEOUT_MS = 45_000
+
 const COUNTER_KEY = 'nemesis_llm_tokens'
 const ENTITLEMENT_KEY = 'nemesis_llm_daily_tokens'
+// Monthly ceiling — the economic wall behind the daily cap, so a user can't cost
+// daily_cap × 30. Reads plan_entitlements 'nemesis_llm_monthly_tokens'; counts a
+// separate usage_counters bucket keyed 'nemesis_llm_tokens_month' (period = 1st of
+// the month). Absent entitlement → FALLBACK_MONTHLY_TOKENS (never blocks silently).
+const MONTHLY_ENTITLEMENT_KEY = 'nemesis_llm_monthly_tokens'
+const MONTHLY_COUNTER_KEY = 'nemesis_llm_tokens_month'
+const FALLBACK_MONTHLY_TOKENS = 750_000
+// Emit one nemesis_cap_warning event when a user first crosses this fraction of
+// either the daily or the monthly cap (an early signal, not a block).
+const CAP_WARN_FRACTION = 0.85
 const ACTIVE = new Set(['active', 'trialing', 'past_due'])
 const FALLBACK_DAILY_TOKENS = 25_000 // free-tier default when no entitlement row
 const TRIAL_MS = 7 * 24 * 60 * 60 * 1000
@@ -123,6 +142,9 @@ interface KeyContext {
   dailyLimit: number
   used: number
   periodStart: string
+  monthlyLimit: number
+  monthlyUsed: number
+  monthStart: string
 }
 
 /** Resolve a device key to its user + plan + today's usage. */
@@ -164,25 +186,45 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
     }
   }
 
-  const { data: ent } = await admin
+  // Daily + monthly entitlements in one round trip.
+  const { data: ents } = await admin
     .from('plan_entitlements')
-    .select('value_json')
+    .select('entitlement_key,value_json')
     .eq('plan_code', plan)
-    .eq('entitlement_key', ENTITLEMENT_KEY)
-    .maybeSingle()
+    .in('entitlement_key', [ENTITLEMENT_KEY, MONTHLY_ENTITLEMENT_KEY])
 
-  const dailyLimit = typeof ent?.value_json === 'number' ? ent.value_json : FALLBACK_DAILY_TOKENS
+  const entValue = (key: string): number | undefined => {
+    const row = ents?.find(e => e.entitlement_key === key)
+    return typeof row?.value_json === 'number' ? row.value_json : undefined
+  }
 
-  const periodStart = new Date().toISOString().slice(0, 10)
-  const { data: counter } = await admin
+  const dailyLimit = entValue(ENTITLEMENT_KEY) ?? FALLBACK_DAILY_TOKENS
+  const monthlyLimit = entValue(MONTHLY_ENTITLEMENT_KEY) ?? FALLBACK_MONTHLY_TOKENS
+
+  const now = new Date()
+  const periodStart = now.toISOString().slice(0, 10) // YYYY-MM-DD
+  const monthStart = `${now.toISOString().slice(0, 7)}-01` // YYYY-MM-01
+
+  const { data: counters } = await admin
     .from('usage_counters')
-    .select('used')
+    .select('counter_key,period_start,used')
     .eq('user_id', keyRow.user_id)
-    .eq('counter_key', COUNTER_KEY)
-    .eq('period_start', periodStart)
-    .maybeSingle()
+    .in('counter_key', [COUNTER_KEY, MONTHLY_COUNTER_KEY])
+    .in('period_start', [periodStart, monthStart])
 
-  return { dailyLimit, periodStart, plan, used: counter?.used ?? 0, userId: keyRow.user_id }
+  const usedFor = (counterKey: string, period: string): number =>
+    counters?.find(c => c.counter_key === counterKey && c.period_start === period)?.used ?? 0
+
+  return {
+    dailyLimit,
+    monthStart,
+    monthlyLimit,
+    monthlyUsed: usedFor(MONTHLY_COUNTER_KEY, monthStart),
+    periodStart,
+    plan,
+    used: usedFor(COUNTER_KEY, periodStart),
+    userId: keyRow.user_id
+  }
 }
 
 /** Cache-hit input tokens are metered at 10% of face value. An agent conversation
@@ -199,6 +241,7 @@ async function recordUsage(ctx: KeyContext, tokens: number, cacheHitTokens: numb
   const raw = Math.max(1, Math.round(tokens))
   const cacheHit = Math.min(Math.max(0, Math.round(cacheHitTokens)), raw)
   const spent = Math.max(1, raw - cacheHit + Math.ceil(cacheHit * CACHE_HIT_WEIGHT))
+  const nowIso = new Date().toISOString()
 
   await admin.from('usage_counters').upsert(
     {
@@ -206,8 +249,22 @@ async function recordUsage(ctx: KeyContext, tokens: number, cacheHitTokens: numb
       limit_snapshot: ctx.dailyLimit,
       period_end: ctx.periodStart,
       period_start: ctx.periodStart,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
       used: ctx.used + spent,
+      user_id: ctx.userId
+    },
+    { onConflict: 'user_id,counter_key,period_start' }
+  )
+
+  // Monthly bucket — the same spent amount against the 1st-of-month counter.
+  await admin.from('usage_counters').upsert(
+    {
+      counter_key: MONTHLY_COUNTER_KEY,
+      limit_snapshot: ctx.monthlyLimit,
+      period_end: ctx.monthStart,
+      period_start: ctx.monthStart,
+      updated_at: nowIso,
+      used: ctx.monthlyUsed + spent,
       user_id: ctx.userId
     },
     { onConflict: 'user_id,counter_key,period_start' }
@@ -223,16 +280,64 @@ async function recordUsage(ctx: KeyContext, tokens: number, cacheHitTokens: numb
     period_start: ctx.periodStart,
     user_id: ctx.userId
   })
+
+  // Fire a single early-warning event the first time this spend pushes the user
+  // past CAP_WARN_FRACTION of the daily or monthly cap (crossed = below before,
+  // at/above now), so a heavy account surfaces before it's a surprise bill.
+  void maybeWarnCap(ctx, 'daily', ctx.used, ctx.used + spent, ctx.dailyLimit, ctx.periodStart)
+  void maybeWarnCap(ctx, 'monthly', ctx.monthlyUsed, ctx.monthlyUsed + spent, ctx.monthlyLimit, ctx.monthStart)
 }
 
-/** POST body to a provider's chat/completions endpoint. Network failures resolve to
- *  null (never throw) so the caller can decide whether to fail over. */
-function callProvider(base: string, key: string, body: Record<string, unknown>): Promise<Response | null> {
-  return fetch(`${base}/chat/completions`, {
-    body: JSON.stringify(body),
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    method: 'POST'
-  }).catch(() => null)
+/** Emit one nemesis_cap_warning event the moment usage crosses the warn line for a
+ *  window. Idempotent per (user, window, period) via a unique-ish event: we only
+ *  insert on the crossing tick, so at most one lands per period. */
+async function maybeWarnCap(
+  ctx: KeyContext,
+  window: 'daily' | 'monthly',
+  before: number,
+  after: number,
+  limit: number,
+  period: string
+): Promise<void> {
+  if (limit <= 0) return
+  const line = limit * CAP_WARN_FRACTION
+  if (before >= line || after < line) return // only the crossing tick
+
+  await admin.from('usage_events').insert({
+    cost_credits: 0,
+    counter_key: COUNTER_KEY,
+    event_type: 'nemesis_cap_warning',
+    metadata: { after, limit, plan: ctx.plan, pct: Math.round((after / limit) * 100), window },
+    period_start: period,
+    user_id: ctx.userId
+  })
+}
+
+/** POST body to a provider's chat/completions endpoint. Network failures (and, when
+ *  timeoutMs is set, a timeout) resolve to null — never throw — so the caller can
+ *  decide whether to fail over. The timeout is how the slow v4-pro lane bounds its
+ *  wait before falling back to the fast tier. */
+async function callProvider(
+  base: string,
+  key: string,
+  body: Record<string, unknown>,
+  timeoutMs?: number
+): Promise<Response | null> {
+  const controller = timeoutMs ? new AbortController() : undefined
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : undefined
+
+  try {
+    return await fetch(`${base}/chat/completions`, {
+      body: JSON.stringify(body),
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      method: 'POST',
+      signal: controller?.signal
+    })
+  } catch {
+    return null
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 /** True when an upstream response means the PROVIDER is unusable right now — the
@@ -274,6 +379,13 @@ async function chatCompletions(req: Request): Promise<Response> {
     )
   }
 
+  if (ctx.monthlyUsed >= ctx.monthlyLimit) {
+    return json(
+      { error: { code: 'monthly_token_budget_exhausted', message: `Monthly token budget reached for the ${ctx.plan} plan. It resets on the 1st — upgrade for a higher ceiling.` } },
+      429
+    )
+  }
+
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
 
   if (!body || !Array.isArray(body.messages)) {
@@ -297,18 +409,28 @@ async function chatCompletions(req: Request): Promise<Response> {
 
   if (glmUpgrade) useGlm = true
 
-  const resolved = useGlm ? { model: glmUpgrade ? GLM_MODEL : requested } : resolveModel(requested)
+  // The mix (2026-07-17): a High-effort turn on Agent Pro / Max routes to the
+  // premium v4-pro model — unless GLM is the chosen High lane. The hard timeout +
+  // fast-tier fallback live in the DeepSeek branch below (v4-pro is ~2x slower and
+  // fails a minority of the time). Students on lighter plans keep fast deep-thinking.
+  const proUpgrade = PRO_HIGH_MODE && !useGlm && effortHigh && (ctx.plan === 'pro' || ctx.plan === 'max')
+
+  const resolved = useGlm
+    ? { model: glmUpgrade ? GLM_MODEL : requested }
+    : proUpgrade
+      ? { model: PRO_MODEL } // v4-pro reasons natively — no thinking selector
+      : resolveModel(requested)
   let model = resolved.model
   body.model = model
 
-  if (glmUpgrade) {
-    // GLM doesn't speak the DeepSeek/OpenRouter effort selectors — drop them.
+  if (glmUpgrade || proUpgrade) {
+    // Neither GLM nor v4-pro takes the DeepSeek/OpenRouter effort selectors — drop them.
     delete body.thinking
     delete body.reasoning
     delete body.reasoning_effort
   }
 
-  if (!useGlm && resolved.thinking && body.thinking === undefined) {
+  if (!useGlm && !proUpgrade && resolved.thinking && body.thinking === undefined) {
     body.thinking = resolved.thinking
   }
 
@@ -337,6 +459,26 @@ async function chatCompletions(req: Request): Promise<Response> {
     }
 
     upstream = await callProvider(GLM_BASE, GLM_KEY, body)
+  } else if (proUpgrade) {
+    // Premium lane: v4-pro with a hard timeout. If it's slow or errors, fall back to
+    // the fast tier's own deep-thinking (same provider, reliable) — the student still
+    // gets a strong answer, just faster. A full DeepSeek outage then drops to the GLM
+    // failover below like any other turn.
+    upstream = DEEPSEEK_KEY ? await callProvider(DEEPSEEK_BASE, DEEPSEEK_KEY, body, PRO_TIMEOUT_MS) : null
+
+    if (!upstream || (await isProviderUnusable(upstream))) {
+      model = 'deepseek-v4-flash'
+      body.model = model
+      body.thinking = { type: 'enabled' }
+      upstream = DEEPSEEK_KEY ? await callProvider(DEEPSEEK_BASE, DEEPSEEK_KEY, body) : null
+    }
+
+    if (GLM_KEY && (!upstream || (await isProviderUnusable(upstream)))) {
+      model = GLM_MODEL
+      body.model = GLM_MODEL
+      delete body.thinking
+      upstream = await callProvider(GLM_BASE, GLM_KEY, body)
+    }
   } else {
     upstream = DEEPSEEK_KEY ? await callProvider(DEEPSEEK_BASE, DEEPSEEK_KEY, body) : null
 
@@ -450,6 +592,11 @@ Deno.serve(async (req: Request) => {
 
     return json({
       daily_limit: ctx.dailyLimit,
+      // Monthly figures are additive — existing desktop clients read only the daily
+      // fields and ignore these until a build surfaces them.
+      monthly_limit: ctx.monthlyLimit,
+      monthly_remaining: Math.max(0, ctx.monthlyLimit - ctx.monthlyUsed),
+      monthly_used: ctx.monthlyUsed,
       period_start: ctx.periodStart,
       plan: ctx.plan,
       remaining: Math.max(0, ctx.dailyLimit - ctx.used),
