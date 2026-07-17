@@ -3,7 +3,7 @@ import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@/auth/AuthProvider";
 import { DrawerProvider } from "@/components/AppDrawer";
 import { TopBar } from "@/components/TopBar";
-import { c } from "@/theme/tokens";
+import { useTheme } from "@/theme/ThemeProvider";
 
 // The app shell (§12, redesigned): chat-first with a slide-out drawer instead of a bottom tab bar
 // (the ChatGPT/Claude pattern). The shared TopBar + drawer wrap every screen; the active route renders
@@ -11,10 +11,14 @@ import { c } from "@/theme/tokens";
 // in and screens render guest affordances where a real session is required.
 export default function AppShellLayout() {
   const { session, isGuest, loading } = useAuth();
+  const { colors: c } = useTheme();
 
   if (loading) {
     return (
-      <View testID="auth-loading" style={styles.loading}>
+      <View
+        testID="auth-loading"
+        style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: c.bg }}
+      >
         <ActivityIndicator color={c.accent} />
       </View>
     );
@@ -23,18 +27,12 @@ export default function AppShellLayout() {
 
   return (
     <DrawerProvider>
-      <View style={styles.shell}>
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
         <TopBar />
-        <View style={styles.body}>
+        <View style={{ flex: 1 }}>
           <Slot />
         </View>
       </View>
     </DrawerProvider>
   );
 }
-
-const styles = {
-  loading: { flex: 1, alignItems: "center" as const, justifyContent: "center" as const, backgroundColor: c.bg },
-  shell: { flex: 1, backgroundColor: c.bg },
-  body: { flex: 1 },
-};

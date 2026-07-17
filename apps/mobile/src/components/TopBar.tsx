@@ -2,7 +2,9 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useShell } from "./AppDrawer";
-import { c, space } from "@/theme/tokens";
+import type { ThemeColors } from "@/theme/palette";
+import { useThemedStyles } from "@/theme/ThemeProvider";
+import { space } from "@/theme/tokens";
 
 // The quiet top bar: hamburger (opens the drawer) · Nemesis wordmark + mark · new-mission (+).
 // Shared by every screen in the (tabs) shell. This is "chrome" in the design-parity sense,
@@ -10,6 +12,7 @@ import { c, space } from "@/theme/tokens";
 export function TopBar({ title = "Nemesis", showNewChat = true }: { title?: string; showNewChat?: boolean }) {
   const insets = useSafeAreaInsets();
   const { openDrawer, newChat } = useShell();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.bar, { paddingTop: insets.top + space(2) }]}>
       <Pressable style={styles.iconBtn} onPress={openDrawer} hitSlop={8} accessibilityLabel="Open menu">
@@ -66,16 +69,17 @@ export function LogoMark({ size = 16 }: { size?: number }) {
   );
 }
 
-const styles = StyleSheet.create({
-  bar: {
-    flexDirection: "row", alignItems: "center", gap: space(2),
-    paddingHorizontal: space(3), paddingBottom: space(3),
-    borderBottomWidth: 1, borderBottomColor: c.line, backgroundColor: c.bg,
-  },
-  iconBtn: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
-  bun: { width: 19, height: 2, borderRadius: 2, backgroundColor: c.text2, marginVertical: 2 },
-  plusH: { position: "absolute", width: 18, height: 2, borderRadius: 2, backgroundColor: c.text2 },
-  plusV: { position: "absolute", width: 2, height: 18, borderRadius: 2, backgroundColor: c.text2 },
-  brand: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space(2) },
-  wordmark: { color: c.text, fontSize: 16.5, fontWeight: "700", letterSpacing: -0.2 },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    bar: {
+      flexDirection: "row", alignItems: "center", gap: space(2),
+      paddingHorizontal: space(3), paddingBottom: space(3),
+      borderBottomWidth: 1, borderBottomColor: c.line, backgroundColor: c.bg,
+    },
+    iconBtn: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
+    bun: { width: 19, height: 2, borderRadius: 2, backgroundColor: c.text2, marginVertical: 2 },
+    plusH: { position: "absolute", width: 18, height: 2, borderRadius: 2, backgroundColor: c.text2 },
+    plusV: { position: "absolute", width: 2, height: 18, borderRadius: 2, backgroundColor: c.text2 },
+    brand: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space(2) },
+    wordmark: { color: c.text, fontSize: 16.5, fontWeight: "700", letterSpacing: -0.2 },
+  });

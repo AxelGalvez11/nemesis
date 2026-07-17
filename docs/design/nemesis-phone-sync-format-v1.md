@@ -52,6 +52,53 @@ with @noble/ciphers. Parent spec: nemesis-phone-readonly-sync-2026-07.md.
   re-pair with your Mac" state, never as silent absence.
 - Cache holds CIPHERTEXT rows (encrypted at rest for free); decryption happens on read.
 
+## v1.1 — Phases 2/3 additions (2026-07-17)
+
+Same envelope, same crypto, two new `kind` values plus one plaintext side-channel.
+
+### kind: "deck" — study snapshots (Phase 3, DOWN)
+
+- One document per deck. `path` = `.study/sync/deck/<deckId>` (synthetic — no such
+  file exists; the dot prefix keeps it out of the markdown walker's namespace).
+  `title` = the deck name. Source: the desktop renderer precomputes
+  `.study/phone-decks.json` (it owns the FSRS scheduler); electron main splits it.
+- `content` = JSON:
+  `{"v":1,"asOf":"<ISO>","id":"<deckId>","name":"...","course":"...","stats":{"due":n,"fresh":n,"total":n},"queue":[{"key":"<scheduleKey>","prompt":"...","answer":"...","note":"...","isNew":bool}]}`
+  - `queue` is the deck's due queue in review order, daily caps applied, cloze
+    prompts/answers PRE-RENDERED — the phone ships zero scheduler code.
+  - `key` is the desktop study model's schedule key (`<cardId>` or
+    `<cardId>#c<n>` for a cloze slot) and must be echoed back verbatim.
+
+### kind: "calendar" — the agenda (Phase 2, DOWN)
+
+- Exactly one document. `path` = `.derived/calendar`, `title` = "Calendar".
+  Source: `School/calendar.json`, windowed −7…+180 days, main-process rendered.
+- `content` = JSON:
+  `{"v":1,"asOf":"<ISO>","feedUrl":"https://.../functions/v1/nemesis-ics?token=<64 hex>"|null,"events":[{"id","title","date":"yyyy-mm-dd","time"?,"kind":"assignment|exam|rotation|class|other","course"?,"note"?}]}`
+  - `note` may appear here (it ships encrypted). It must NEVER appear in the ICS.
+
+### review_events — grades (Phase 3, UP)
+
+Append-only rows the phone inserts and the Mac ingests (`ingested_at IS NULL`,
+oldest `reviewed_at` first) through the SAME `gradeCard` path the desktop Study
+page uses, then stamps `ingested_at`:
+`{user_id, device_id: null, deck_path_hash, schedule_key, grade: again|hard|good|easy, reviewed_at, client_event_id}`
+- `deck_path_hash` = the deck doc's row key (audit/grouping; apply needs only
+  `schedule_key`).
+- `client_event_id` = phone-generated UUID; `unique (user_id, client_event_id)` +
+  ignore-duplicates upsert makes offline-queue retries idempotent.
+- Grades for since-deleted cards are stamped-and-skipped on the Mac. Double
+  apply after a crash-between-save-and-stamp is spec-blessed (a card shows one
+  extra time; no grade is ever lost).
+
+### calendar_feeds — the ONE plaintext exception (owner decision D3)
+
+`{user_id (pk), token (64 hex, unguessable capability), ics, updated_at}` — the
+Mac-rendered ICS (dates + titles + course; NEVER note text), served to native
+calendar apps by the public `nemesis-ics` edge function
+(`GET ?token=...` → `text/calendar`; deploy with verify_jwt=false). Unpairing
+deletes the row + local token; a re-pair mints a new token (old URLs die).
+
 ## Explicitly out of scope in v1
 
 Binary files, non-.md text, key rotation / device revoke (Phase 1 note: re-pair by

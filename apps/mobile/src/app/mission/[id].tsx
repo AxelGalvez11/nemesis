@@ -15,8 +15,9 @@ import {
   type Mission,
   type MissionEvent,
 } from "@/api/missions";
-import { space, type } from "@/theme/tokens";
-import tokens from "@/theme/tokens.json";
+import type { ThemeColors } from "@/theme/palette";
+import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
+import { radius, space, type } from "@/theme/tokens";
 
 // Live mission detail (Task 8). Fetches the mission + its event history once, then
 // subscribes for live updates (Task 7's subscribeMission) so a running mission's log
@@ -27,8 +28,6 @@ import tokens from "@/theme/tokens.json";
 // the plan's hard rule specifies — "Looks good" (done) and "Needs changes" (adds an
 // event) — plus a non-submitting "Copy result" convenience. Nothing here reaches out
 // to a school portal; the agent's own never-submit rule lives on the desktop side.
-
-const { colors, radius } = tokens;
 
 function eventText(e: MissionEvent): string {
   const p = e.payload;
@@ -57,6 +56,8 @@ function eventLabel(e: MissionEvent): string {
 export default function MissionDetail() {
   const params = useLocalSearchParams<{ id: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
+  const { colors: c } = useTheme();
+  const styles = useThemedStyles(createStyles);
 
   const [mission, setMission] = useState<Mission | null>(null);
   const [events, setEvents] = useState<MissionEvent[]>([]);
@@ -156,7 +157,7 @@ export default function MissionDetail() {
 
       {loading ? (
         <View style={styles.centered} testID="mission-detail-loading">
-          <ActivityIndicator color={colors.foreground} />
+          <ActivityIndicator color={c.text} />
         </View>
       ) : !mission ? (
         <EmptyBlock title="Mission not found" body={error ?? "It may have been removed."} />
@@ -182,7 +183,7 @@ export default function MissionDetail() {
                   await refresh();
                   setRefreshing(false);
                 }}
-                tintColor={colors.muted}
+                tintColor={c.text2}
               />
             }
           >
@@ -210,7 +211,7 @@ export default function MissionDetail() {
                   testID="mission-note-input"
                   style={styles.noteInput}
                   placeholder="Add a note (optional)"
-                  placeholderTextColor={colors.muted}
+                  placeholderTextColor={c.text2}
                   value={note}
                   onChangeText={setNote}
                   multiline
@@ -262,45 +263,46 @@ export default function MissionDetail() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    flex: { flex: 1, backgroundColor: c.bg },
+    centered: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: space(3),
-    padding: space(4),
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  headerTitle: { flex: 1, ...type.h2, color: colors.foreground },
+    header: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: space(3),
+      padding: space(4),
+      borderBottomWidth: 1,
+      borderBottomColor: c.line,
+    },
+    headerTitle: { flex: 1, ...type.h2, color: c.text },
 
-  feed: { padding: space(4), gap: space(3.5), paddingBottom: space(8) },
-  promptCard: { gap: space(1.5) },
-  promptLabel: { ...type.micro, color: colors.muted, textTransform: "uppercase", letterSpacing: 0.5 },
-  promptText: { ...type.body, color: colors.foreground },
+    feed: { padding: space(4), gap: space(3.5), paddingBottom: space(8) },
+    promptCard: { gap: space(1.5) },
+    promptLabel: { ...type.micro, color: c.text2, textTransform: "uppercase", letterSpacing: 0.5 },
+    promptText: { ...type.body, color: c.text },
 
-  noEvents: { ...type.small, color: colors.muted, textAlign: "center", paddingVertical: space(3) },
-  eventRow: { gap: space(0.5) },
-  eventLabel: { ...type.micro, color: colors.muted, fontWeight: "600" },
-  eventText: { ...type.body, color: colors.foreground },
+    noEvents: { ...type.small, color: c.text2, textAlign: "center", paddingVertical: space(3) },
+    eventRow: { gap: space(0.5) },
+    eventLabel: { ...type.micro, color: c.text2, fontWeight: "600" },
+    eventText: { ...type.body, color: c.text },
 
-  reviewCard: { borderColor: colors.accentBorder, backgroundColor: colors.accentFaint, gap: space(2.5) },
-  reviewText: { ...type.body, color: colors.foreground },
-  noteInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: radius.input,
-    paddingHorizontal: space(3),
-    paddingVertical: space(2.5),
-    color: colors.foreground,
-    fontSize: 14.5,
-    minHeight: 44,
-  },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: space(2.5) },
+    reviewCard: { borderColor: c.accentLine, backgroundColor: c.accentFaint, gap: space(2.5) },
+    reviewText: { ...type.body, color: c.text },
+    noteInput: {
+      borderWidth: 1,
+      borderColor: c.line,
+      backgroundColor: c.glass,
+      borderRadius: radius.md,
+      paddingHorizontal: space(3),
+      paddingVertical: space(2.5),
+      color: c.text,
+      fontSize: 14.5,
+      minHeight: 44,
+    },
+    actions: { flexDirection: "row", flexWrap: "wrap", gap: space(2.5) },
 
-  err: { ...type.small, color: colors.accent },
-});
+    err: { ...type.small, color: c.accent },
+  });

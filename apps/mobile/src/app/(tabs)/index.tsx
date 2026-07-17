@@ -17,16 +17,16 @@ import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
 import { EmptyBlock, MissionButton, StatusPill, Surface } from "@/components/mission-ui";
 import { createMission, isDesktopOnline, listMissions, statusLabel, type Mission } from "@/api/missions";
-import { space, type } from "@/theme/tokens";
-import tokens from "@/theme/tokens.json";
+import type { ThemeColors } from "@/theme/palette";
+import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
+import { radius, space, type } from "@/theme/tokens";
 
 // Missions home (§Task 8) — the app's "/" route, replacing the old PharmaOrb chat
 // screen. Composer at the bottom dispatches a mission to the desktop agent; the list
 // above shows every mission the student has sent, newest first, with a live-ish
 // status (desktop-online polling, not full realtime — the detail screen is where
-// events stream live). Colors/radii come only from theme/tokens.json.
+// events stream live). Colors come from the theme context (see theme/palette.ts).
 
-const { colors, radius } = tokens;
 const DESKTOP_POLL_MS = 60_000;
 
 function relativeTime(iso: string): string {
@@ -47,6 +47,8 @@ export default function MissionsHome() {
   const { session } = useAuth();
   const { resetNonce } = useShell();
   const insets = useSafeAreaInsets();
+  const { colors: c } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [missions, setMissions] = useState<Mission[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -130,7 +132,7 @@ export default function MissionsHome() {
     >
       {loading ? (
         <View style={styles.centered} testID="missions-loading">
-          <ActivityIndicator color={colors.foreground} />
+          <ActivityIndicator color={c.text} />
         </View>
       ) : (
         <FlatList
@@ -146,7 +148,7 @@ export default function MissionsHome() {
                 await refresh();
                 setRefreshing(false);
               }}
-              tintColor={colors.muted}
+              tintColor={c.text2}
             />
           }
           ListEmptyComponent={
@@ -184,7 +186,7 @@ export default function MissionsHome() {
           testID="mission-composer-input"
           style={styles.input}
           placeholder="What should Nemesis work on?"
-          placeholderTextColor={colors.muted}
+          placeholderTextColor={c.text2}
           value={prompt}
           onChangeText={setPrompt}
           multiline
@@ -203,40 +205,41 @@ export default function MissionsHome() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
-  guestWrap: { flex: 1, backgroundColor: colors.background },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    flex: { flex: 1, backgroundColor: c.bg },
+    centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+    guestWrap: { flex: 1, backgroundColor: c.bg },
 
-  list: { padding: space(4), gap: space(3) },
-  listEmpty: { flex: 1, padding: space(4) },
-  row: { gap: space(1.5) },
-  rowTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: space(3) },
-  rowTitle: { flex: 1, ...type.bodyStrong, color: colors.foreground },
-  rowTime: { ...type.micro, color: colors.muted },
+    list: { padding: space(4), gap: space(3) },
+    listEmpty: { flex: 1, padding: space(4) },
+    row: { gap: space(1.5) },
+    rowTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: space(3) },
+    rowTitle: { flex: 1, ...type.bodyStrong, color: c.text },
+    rowTime: { ...type.micro, color: c.text2 },
 
-  err: { ...type.small, color: colors.accent, paddingHorizontal: space(4), paddingBottom: space(1) },
-  offlineNote: { ...type.micro, color: colors.muted, paddingHorizontal: space(4), paddingBottom: space(1.5) },
+    err: { ...type.small, color: c.accent, paddingHorizontal: space(4), paddingBottom: space(1) },
+    offlineNote: { ...type.micro, color: c.text2, paddingHorizontal: space(4), paddingBottom: space(1.5) },
 
-  composerWrap: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: space(2.5),
-    paddingHorizontal: space(3.5),
-    paddingTop: space(2.5),
-    paddingBottom: space(6),
-    backgroundColor: colors.background,
-  },
-  input: {
-    flex: 1,
-    maxHeight: 120,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: radius.input,
-    paddingHorizontal: space(3.5),
-    paddingVertical: space(2.75),
-    color: colors.foreground,
-    fontSize: 15.5,
-  },
-});
+    composerWrap: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      gap: space(2.5),
+      paddingHorizontal: space(3.5),
+      paddingTop: space(2.5),
+      paddingBottom: space(6),
+      backgroundColor: c.bg,
+    },
+    input: {
+      flex: 1,
+      maxHeight: 120,
+      borderWidth: 1,
+      borderColor: c.line,
+      backgroundColor: c.glass,
+      borderRadius: radius.md,
+      paddingHorizontal: space(3.5),
+      paddingVertical: space(2.75),
+      color: c.text,
+      fontSize: 15.5,
+    },
+  });

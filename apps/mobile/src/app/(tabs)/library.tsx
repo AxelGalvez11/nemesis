@@ -11,17 +11,20 @@ import {
   subscribeLibrary,
 } from "@/api/librarySync";
 import { buildSections, type LibrarySection, type SyncCache } from "@/lib/library-sync";
-import { space, type } from "@/theme/tokens";
-import tokens from "@/theme/tokens.json";
+import type { ThemeColors } from "@/theme/palette";
+import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
+import { radius, space, type } from "@/theme/tokens";
 
 // Library (read-only, Phase 1): what the agent wrote on the Mac, on your phone.
 // Shows cached notes instantly (offline included), pulls new rows behind that, and
 // live-refreshes while the agent is writing. No editor anywhere on this screen by
 // design — the Mac agent is the only author (single-writer architecture).
-
-const { colors, radius } = tokens;
+// Only kind:"note" docs render here — deck snapshots and the calendar doc ride the
+// same encrypted pipe but belong to the Study/Calendar screens (Phases 2/3).
 
 export default function LibraryScreen() {
+  const { colors: c } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [key, setKey] = useState<Uint8Array | null>(null);
   const [keyChecked, setKeyChecked] = useState(false);
   const [cache, setCache] = useState<SyncCache>({});
@@ -101,10 +104,11 @@ export default function LibraryScreen() {
   }
 
   const { docs, failures } = decryptLibrary(cache, key);
+  const notes = docs.filter((d) => d.kind === "note");
   const sections: (LibrarySection & { title: string; data: LibrarySection["notes"] })[] = buildSections(
-    docs.map((d) => ({ path: d.path, title: d.title })),
+    notes.map((d) => ({ path: d.path, title: d.title })),
   ).map((s) => ({ ...s, title: s.folder === "" ? "Library" : s.folder, data: s.notes }));
-  const pathToHash = new Map(docs.map((d) => [d.path, d.pathHash]));
+  const pathToHash = new Map(notes.map((d) => [d.path, d.pathHash]));
 
   return (
     <View style={styles.flex} testID="library-screen">
@@ -129,7 +133,7 @@ export default function LibraryScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            tintColor={colors.muted}
+            tintColor={c.text2}
             onRefresh={() => {
               setRefreshing(true);
               void pull(cache).finally(() => setRefreshing(false));
@@ -163,22 +167,23 @@ export default function LibraryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
-  pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4), backgroundColor: colors.background },
-  pairHint: { ...type.small, color: colors.muted, textAlign: "center" },
-  listBody: { padding: space(4), paddingBottom: space(10), flexGrow: 1 },
-  sectionHead: { ...type.micro, color: colors.muted, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(4), marginBottom: space(1.5) },
-  row: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingVertical: space(3), paddingHorizontal: space(3),
-    borderWidth: 1, borderColor: colors.border, borderRadius: radius.card,
-    backgroundColor: colors.surface, marginBottom: space(1.5),
-  },
-  rowPressed: { backgroundColor: colors.accentFaint },
-  rowTitle: { ...type.bodyStrong, color: colors.foreground, flex: 1, marginRight: space(2) },
-  chevron: { fontSize: 20, color: colors.muted },
-  warn: { marginHorizontal: space(4), marginTop: space(3), padding: space(3) },
-  warnText: { ...type.small, color: colors.muted },
-  emptyWrap: { paddingTop: space(10) },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    flex: { flex: 1, backgroundColor: c.bg },
+    pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4), backgroundColor: c.bg },
+    pairHint: { ...type.small, color: c.text2, textAlign: "center" },
+    listBody: { padding: space(4), paddingBottom: space(10), flexGrow: 1 },
+    sectionHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(4), marginBottom: space(1.5) },
+    row: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+      paddingVertical: space(3), paddingHorizontal: space(3),
+      borderWidth: 1, borderColor: c.line, borderRadius: radius.sm,
+      backgroundColor: c.glass, marginBottom: space(1.5),
+    },
+    rowPressed: { backgroundColor: c.accentFaint },
+    rowTitle: { ...type.bodyStrong, color: c.text, flex: 1, marginRight: space(2) },
+    chevron: { fontSize: 20, color: c.text2 },
+    warn: { marginHorizontal: space(4), marginTop: space(3), padding: space(3) },
+    warnText: { ...type.small, color: c.text2 },
+    emptyWrap: { paddingTop: space(10) },
+  });

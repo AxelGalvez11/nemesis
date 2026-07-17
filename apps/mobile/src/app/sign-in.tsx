@@ -3,8 +3,10 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Link, router } from "expo-router";
 import { useAuth } from "@/auth/AuthProvider";
 import { AGE_TOS_ACK } from "@/lib/legal";
-import { common, PLACEHOLDER } from "@/theme/common";
-import { c, space } from "@/theme/tokens";
+import { placeholderColor, useCommon } from "@/theme/common";
+import type { ThemeColors } from "@/theme/palette";
+import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
+import { space } from "@/theme/tokens";
 import { LogoMark } from "@/components/TopBar";
 
 // Sign-in screen. Email/password sign-IN only — accounts are created on the web
@@ -13,6 +15,9 @@ import { LogoMark } from "@/components/TopBar";
 // (the router has no auth guard on them).
 export default function SignIn() {
   const { signInEmail } = useAuth();
+  const { colors: c } = useTheme();
+  const common = useCommon();
+  const styles = useThemedStyles(createStyles);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +33,7 @@ export default function SignIn() {
         testID="email"
         style={common.input}
         placeholder="Email"
-        placeholderTextColor={PLACEHOLDER}
+        placeholderTextColor={placeholderColor(c)}
         autoCapitalize="none"
         keyboardType="email-address"
         value={email}
@@ -38,7 +43,7 @@ export default function SignIn() {
         testID="password"
         style={common.input}
         placeholder="Password"
-        placeholderTextColor={PLACEHOLDER}
+        placeholderTextColor={placeholderColor(c)}
         secureTextEntry
         value={password}
         onChangeText={setPassword}
@@ -91,23 +96,24 @@ export default function SignIn() {
   );
 }
 
-const styles = StyleSheet.create({
-  ackRow: { flexDirection: "row", alignItems: "center", gap: space(2.5), marginTop: space(2), maxWidth: 320 },
-  box: {
-    width: 22,
-    height: 22,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    borderColor: c.line2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  boxOn: { backgroundColor: c.accent, borderColor: c.accent },
-  tick: { color: c.onAccent, fontSize: 14, fontWeight: "700", lineHeight: 16 },
-  ackText: { flex: 1, fontSize: 13, lineHeight: 18, color: c.text2 },
-  links: { flexDirection: "row", alignItems: "center", gap: space(2), marginTop: space(1.5) },
-  dot: { color: c.text3 },
-  wide: { alignSelf: "stretch", maxWidth: 360, alignItems: "center", marginTop: space(2) },
-  hint: { fontSize: 12.5, lineHeight: 18, color: c.text3, textAlign: "center", maxWidth: 300 },
-  disabled: { opacity: 0.45 },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    ackRow: { flexDirection: "row", alignItems: "center", gap: space(2.5), marginTop: space(2), maxWidth: 320 },
+    box: {
+      width: 22,
+      height: 22,
+      borderRadius: 5,
+      borderWidth: 1.5,
+      borderColor: c.line2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    boxOn: { backgroundColor: c.accent, borderColor: c.accent },
+    tick: { color: c.onAccent, fontSize: 14, fontWeight: "700", lineHeight: 16 },
+    ackText: { flex: 1, fontSize: 13, lineHeight: 18, color: c.text2 },
+    links: { flexDirection: "row", alignItems: "center", gap: space(2), marginTop: space(1.5) },
+    dot: { color: c.text3 },
+    wide: { alignSelf: "stretch", maxWidth: 360, alignItems: "center", marginTop: space(2) },
+    hint: { fontSize: 12.5, lineHeight: 18, color: c.text3, textAlign: "center", maxWidth: 300 },
+    disabled: { opacity: 0.45 },
+  });

@@ -11,7 +11,7 @@ import { OfflineBanner } from "@/components/OfflineBanner";
 import { bootstrapAnalytics } from "@/lib/analyticsBootstrap";
 import { flushAnalytics } from "@/lib/analytics";
 import { setupPushResponseRouting } from "@/lib/push";
-import { c } from "@/theme/tokens";
+import { ThemeProvider, useTheme } from "@/theme/ThemeProvider";
 
 // Missions-only navigation (iOS dispatch plan, Task 6): the app's home route "/"
 // resolves to src/app/(tabs)/index.tsx (an expo-router route GROUP — the parens
@@ -33,8 +33,6 @@ export default function RootLayout() {
       posthogKey: process.env.EXPO_PUBLIC_POSTHOG_KEY,
       posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST,
     });
-    // Paint the OS background near-black so there's no white flash behind the dark UI.
-    void SystemUI.setBackgroundColorAsync(c.bg);
   }, []);
 
   // Push notification tap → mission detail (Task 9). Wired once at root, independent
@@ -54,12 +52,29 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <SafeAreaProvider>
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }} />
-          <OfflineBanner />
-          <StatusBar style="light" />
-        </SafeAreaProvider>
+        <ThemeProvider>
+          <ThemedApp />
+        </ThemeProvider>
       </AuthProvider>
     </QueryClientProvider>
+  );
+}
+
+// Everything that must repaint with the theme lives below the provider: the OS
+// background (no flash behind the UI in either mode), the Stack's content
+// background, and the status-bar icon color.
+function ThemedApp() {
+  const { colors: c, resolvedMode } = useTheme();
+
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(c.bg);
+  }, [c.bg]);
+
+  return (
+    <SafeAreaProvider>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }} />
+      <OfflineBanner />
+      <StatusBar style={resolvedMode === "dark" ? "light" : "dark"} />
+    </SafeAreaProvider>
   );
 }
