@@ -1993,9 +1993,17 @@
 .poster-safety .poster-h { border-bottom-color: var(--warn); }
 
 /* Full-width evidence-base + references bands below the upper region. */
-.poster-evidence-band, .poster-refs-band {
+.poster-evidence-band, .poster-refs-band, .poster-forest-band {
   flex: none; min-width: 0; border-top: 1px solid var(--line-2); padding-top: 8px;
 }
+
+/* Pooled meta-analysis band — the headline figure. Center the journal-style forest plot and set the
+   caption below it in the muted body voice. The .forest-plot base styles size the SVG itself. */
+.poster-forest-band .forest-plot { margin: 6px auto 4px; max-width: 680px; }
+.poster-forest-caption {
+  margin: 2px auto 0; max-width: 680px; font-size: 9px; line-height: 1.4; color: var(--text-3); text-align: center;
+}
+.poster-forest-caption b { color: var(--text); font-family: var(--mono); }
 
 /* Evidence mini-table (# · Type · Source · Year), mirroring evidenceRows. Split four-up so a real
    source list stays a short full-width band while keeping the Source column readable. */
