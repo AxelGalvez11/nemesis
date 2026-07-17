@@ -185,9 +185,20 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
   return { dailyLimit, periodStart, plan, used: counter?.used ?? 0, userId: keyRow.user_id }
 }
 
-/** Record spent tokens against today's counter + the event ledger. */
-async function recordUsage(ctx: KeyContext, tokens: number, model: string): Promise<void> {
-  const spent = Math.max(1, Math.round(tokens))
+/** Cache-hit input tokens are metered at 10% of face value. An agent conversation
+ *  re-sends its whole unchanged history on every step; DeepSeek serves that prefix
+ *  from cache and bills us ~2% of the miss price, so charging the student's daily
+ *  budget full price for replayed context drained half a Max cap on two ordinary
+ *  chats (owner call 2026-07-16: meter cache hits at a fraction, like we're billed). */
+const CACHE_HIT_WEIGHT = 0.1
+
+/** Record spent tokens against today's counter + the event ledger. `cacheHitTokens`
+ *  is the provider-reported prompt_cache_hit_tokens (0 when the provider doesn't
+ *  report it — GLM failover, missing usage chunk — which bills at full weight). */
+async function recordUsage(ctx: KeyContext, tokens: number, cacheHitTokens: number, model: string): Promise<void> {
+  const raw = Math.max(1, Math.round(tokens))
+  const cacheHit = Math.min(Math.max(0, Math.round(cacheHitTokens)), raw)
+  const spent = Math.max(1, raw - cacheHit + Math.ceil(cacheHit * CACHE_HIT_WEIGHT))
 
   await admin.from('usage_counters').upsert(
     {
@@ -206,7 +217,9 @@ async function recordUsage(ctx: KeyContext, tokens: number, model: string): Prom
     cost_credits: Math.ceil(spent / 1000),
     counter_key: COUNTER_KEY,
     event_type: 'nemesis_llm_completion',
-    metadata: { model, tokens: spent },
+    // tokens = what the meter charged; tokens_raw/cache_hit_tokens keep the full
+    // picture auditable (and let us re-tune CACHE_HIT_WEIGHT from real data).
+    metadata: { cache_hit_tokens: cacheHit, model, tokens: spent, tokens_raw: raw },
     period_start: ctx.periodStart,
     user_id: ctx.userId
   })
@@ -345,7 +358,8 @@ async function chatCompletions(req: Request): Promise<Response> {
   if (!streaming) {
     const data = await upstream.json().catch(() => null)
     const tokens = (data?.usage?.total_tokens as number | undefined) ?? 1000
-    void recordUsage(ctx, tokens, model)
+    const cacheHit = (data?.usage?.prompt_cache_hit_tokens as number | undefined) ?? 0
+    void recordUsage(ctx, tokens, cacheHit, model)
 
     return json(data ?? { error: 'upstream returned no body' }, upstream.status)
   }
@@ -353,21 +367,32 @@ async function chatCompletions(req: Request): Promise<Response> {
   // Streaming: pass bytes through untouched while scanning for the final usage chunk.
   let tail = ''
   let usageTokens = 0
+  let cacheHitTokens = 0
   const decoder = new TextDecoder()
+
+  const lastNumber = (haystack: string, re: RegExp): number | null => {
+    const matches = haystack.match(re)
+
+    if (!matches?.length) {
+      return null
+    }
+
+    const digits = matches[matches.length - 1].match(/(\d+)$/)
+
+    return digits ? Number(digits[1]) : null
+  }
 
   const meter = new TransformStream<Uint8Array, Uint8Array>({
     flush() {
-      void recordUsage(ctx, usageTokens || Math.max(500, Math.round(tail.length / 4)), model)
+      // The length/4 fallback has no usage chunk to read cache data from — bill it
+      // at full weight rather than guessing a discount.
+      void recordUsage(ctx, usageTokens || Math.max(500, Math.round(tail.length / 4)), usageTokens ? cacheHitTokens : 0, model)
     },
     transform(chunk, controller) {
       controller.enqueue(chunk)
       tail = (tail + decoder.decode(chunk, { stream: true })).slice(-8000)
-      const match = tail.match(/"total_tokens"\s*:\s*(\d+)/g)
-
-      if (match?.length) {
-        const last = match[match.length - 1].match(/(\d+)/)
-        usageTokens = last ? Number(last[1]) : usageTokens
-      }
+      usageTokens = lastNumber(tail, /"total_tokens"\s*:\s*(\d+)/g) ?? usageTokens
+      cacheHitTokens = lastNumber(tail, /"prompt_cache_hit_tokens"\s*:\s*(\d+)/g) ?? cacheHitTokens
     }
   })
 
