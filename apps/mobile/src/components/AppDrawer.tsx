@@ -108,6 +108,7 @@ function DrawerContent({ onClose, onNewChat }: { onClose: () => void; onNewChat:
           <Text style={styles.newChatText}>New mission</Text>
         </Pressable>
 
+        <NavRow glyph="▤" label="Library" onPress={() => go("/library")} />
         <NavRow glyph="⚙" label="Settings" onPress={() => go("/profile")} />
       </ScrollView>
 
