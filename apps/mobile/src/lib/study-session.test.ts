@@ -7,7 +7,9 @@ import {
   chunkEvents,
   makeClientEventId,
   parseDeckSnapshot,
+  partitionQueueByUser,
   pruneGradedMarks,
+  removeByClientEventId,
   sessionQueue,
   type DeckQueueCard,
 } from "./study-session.ts";
@@ -46,6 +48,30 @@ Deno.test("pruneGradedMarks: marks older than the snapshot retire, newer ones su
     { key: "new", at: "2026-07-17T07:00:00Z" },
   ];
   assertEquals(pruneGradedMarks(marks, "2026-07-17T06:00:00Z"), [{ key: "new", at: "2026-07-17T07:00:00Z" }]);
+});
+
+Deno.test("pruneGradedMarks: a timestamp TIE keeps the mark (same-ms snapshot can't include it)", () => {
+  const marks = [{ key: "tie", at: "2026-07-17T06:00:00Z" }];
+  assertEquals(pruneGradedMarks(marks, "2026-07-17T06:00:00Z"), marks);
+});
+
+Deno.test("partitionQueueByUser: own events flush, other accounts' events stay parked", () => {
+  const events = [
+    { client_event_id: "1", user_id: "alice" },
+    { client_event_id: "2", user_id: "bob" },
+    { client_event_id: "3", user_id: "alice" },
+  ];
+  const { own, others } = partitionQueueByUser(events, "alice");
+  assertEquals(own.map((e) => e.client_event_id), ["1", "3"]);
+  assertEquals(others.map((e) => e.client_event_id), ["2"]);
+});
+
+Deno.test("removeByClientEventId: removes exactly the confirmed ids", () => {
+  const events = [{ client_event_id: "1" }, { client_event_id: "2" }, { client_event_id: "3" }];
+  assertEquals(
+    removeByClientEventId(events, new Set(["1", "3"])).map((e) => e.client_event_id),
+    ["2"],
+  );
 });
 
 Deno.test("sessionQueue: hides cards graded on this phone since the snapshot", () => {

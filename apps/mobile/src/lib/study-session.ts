@@ -80,15 +80,16 @@ export interface GradedMark {
   at: string;
 }
 
-/** Keep only marks newer than the snapshot — once the Mac republishes a
+/** Keep only marks at-or-after the snapshot — once the Mac republishes a
  *  snapshot computed AFTER a grade, that grade is reflected in the queue itself
- *  and the local mark retires. */
+ *  and the local mark retires. A timestamp TIE keeps the mark (the safer
+ *  direction: a same-millisecond snapshot can't have ingested that grade yet). */
 export function pruneGradedMarks(marks: GradedMark[], snapshotAsOf: string): GradedMark[] {
   const cutoff = Date.parse(snapshotAsOf);
   if (!Number.isFinite(cutoff)) return marks;
   return marks.filter((mark) => {
     const at = Date.parse(mark.at);
-    return Number.isFinite(at) && at > cutoff;
+    return Number.isFinite(at) && at >= cutoff;
   });
 }
 
@@ -124,10 +125,30 @@ export function applyGradeToQueue(
 
 export interface PendingReviewEvent {
   client_event_id: string;
+  /** Captured at grading time so a later sign-in by a DIFFERENT account on this
+   *  phone can never claim (or upload) someone else's queued grades. */
+  user_id: string;
   deck_path_hash: string;
   schedule_key: string;
   grade: ReviewGrade;
   reviewed_at: string;
+}
+
+/** Split a queue into the signed-in user's own events (flushable now) and
+ *  everyone else's (kept queued until that account signs back in). Pure. */
+export function partitionQueueByUser<T extends { user_id: string }>(
+  events: T[],
+  userId: string,
+): { own: T[]; others: T[] } {
+  const own: T[] = [];
+  const others: T[] = [];
+  for (const event of events) (event.user_id === userId ? own : others).push(event);
+  return { others, own };
+}
+
+/** Remove exactly the given client_event_ids from a queue. Pure. */
+export function removeByClientEventId<T extends { client_event_id: string }>(events: T[], ids: Set<string>): T[] {
+  return events.filter((event) => !ids.has(event.client_event_id));
 }
 
 /** UUID-v4-shaped idempotency token from injected randomness (uniqueness for

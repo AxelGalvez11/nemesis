@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import Markdown from "react-native-markdown-display";
@@ -73,10 +73,21 @@ export default function ReviewScreen() {
 
   const current = session?.queue[0];
 
+  // Duplicate-touch latch: a doubled native press event calls grade() twice
+  // against the same closure before React re-renders — the second call must
+  // no-op or the Mac would apply FSRS twice for one tap. Cleared on every
+  // session-state change (which every successful grade produces).
+  const gradedLatchRef = useRef<null | string>(null);
+  useEffect(() => {
+    gradedLatchRef.current = null;
+  }, [session]);
+
   const grade = useMemo(
     () =>
       (rating: ReviewGrade) => {
         if (!session || !current || !snapshot || !pathHash) return;
+        if (gradedLatchRef.current === current.key) return;
+        gradedLatchRef.current = current.key;
         const reviewedAt = new Date().toISOString();
         const advanced = applyGradeToQueue(session.queue, rating);
         setSession({
