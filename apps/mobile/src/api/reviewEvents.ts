@@ -5,13 +5,24 @@
 // ignore-duplicates makes retries idempotent. Also keeps the per-deck
 // "graded since snapshot" marks that hide already-graded cards until the Mac
 // republishes a fresher deck snapshot.
+//
+// Concurrency + identity rules (review findings, 2026-07-17):
+//  - EVERY queue-file mutation (enqueue, flush) runs through one promise-chain
+//    lock, so overlapping flushes (per-grade + per-focus) can never clobber the
+//    file with a stale snapshot and drop a grade.
+//  - Events are stamped with the grading user's id at ENQUEUE time; a flush
+//    only ever uploads the signed-in user's own rows — a different account
+//    signing into this phone can neither claim nor upload someone else's
+//    queued grades (their rows stay parked until they sign back in).
 import * as FileSystem from "expo-file-system/legacy";
 import { supabase } from "./supabase";
 import { currentUserId } from "./librarySync";
 import {
   chunkEvents,
   makeClientEventId,
+  partitionQueueByUser,
   pruneGradedMarks,
+  removeByClientEventId,
   type GradedMark,
   type PendingReviewEvent,
   type ReviewGrade,
@@ -43,16 +54,30 @@ async function writeJsonFile(path: string, value: unknown): Promise<void> {
   }
 }
 
+// --- the queue lock --------------------------------------------------------------
+
+// All read-modify-write cycles on the queue file chain through here. JS is
+// single-threaded, but these cycles contain awaits — without the chain, an
+// enqueue landing between a flush's read and its write would be erased.
+let queueChain: Promise<unknown> = Promise.resolve();
+
+function withQueueLock<T>(run: () => Promise<T>): Promise<T> {
+  const next = queueChain.then(run, run);
+  queueChain = next.catch(() => {});
+  return next;
+}
+
 // --- the offline grade queue ---------------------------------------------------
 
 function castPendingEvent(row: unknown): PendingReviewEvent | null {
   if (!isObj(row)) return null;
-  const { client_event_id, deck_path_hash, schedule_key, grade, reviewed_at } = row;
-  if (typeof client_event_id !== "string" || typeof deck_path_hash !== "string") return null;
-  if (typeof schedule_key !== "string" || typeof reviewed_at !== "string") return null;
+  const { client_event_id, user_id, deck_path_hash, schedule_key, grade, reviewed_at } = row;
+  if (typeof client_event_id !== "string" || typeof user_id !== "string" || !user_id) return null;
+  if (typeof deck_path_hash !== "string" || typeof schedule_key !== "string" || typeof reviewed_at !== "string") return null;
   if (grade !== "again" && grade !== "hard" && grade !== "good" && grade !== "easy") return null;
   return {
     client_event_id,
+    user_id,
     deck_path_hash,
     schedule_key,
     grade,
@@ -80,47 +105,62 @@ function randomUnit(): number {
   return Math.random();
 }
 
-/** Queue one grade locally (never blocks on the network). */
+/** Queue one grade locally (never blocks on the network). Signed-out grading
+ *  shouldn't be reachable (review requires a paired, signed-in session), but if
+ *  it ever is, the grade is dropped rather than attributed to nobody. */
 export async function enqueueGrade(input: {
   deckPathHash: string;
   scheduleKey: string;
   grade: ReviewGrade;
   reviewedAt: string;
 }): Promise<void> {
-  const queue = await loadQueue();
-  queue.push({
-    client_event_id: makeClientEventId(randomUnit),
-    deck_path_hash: input.deckPathHash,
-    schedule_key: input.scheduleKey,
-    grade: input.grade,
-    reviewed_at: input.reviewedAt,
+  const uid = await currentUserId();
+  if (!uid) return;
+  await withQueueLock(async () => {
+    const queue = await loadQueue();
+    queue.push({
+      client_event_id: makeClientEventId(randomUnit),
+      user_id: uid,
+      deck_path_hash: input.deckPathHash,
+      schedule_key: input.scheduleKey,
+      grade: input.grade,
+      reviewed_at: input.reviewedAt,
+    });
+    await saveQueue(queue);
   });
-  await saveQueue(queue);
 }
 
-/** Push queued grades to review_events. Batches are idempotent
- *  (user_id + client_event_id unique, duplicates ignored); a failed batch stays
- *  queued for the next flush. Signed-out = everything stays queued. */
+/** Push the signed-in user's queued grades to review_events. Serialized with
+ *  every other queue mutation; batches are idempotent (user_id +
+ *  client_event_id unique, duplicates ignored); a failed batch stays queued.
+ *  Signed-out = everything stays queued; other accounts' rows stay parked. */
 export async function flushReviewQueue(): Promise<{ sent: number; pending: number }> {
-  const queue = await loadQueue();
-  if (!queue.length) return { pending: 0, sent: 0 };
   const uid = await currentUserId();
-  if (!uid) return { pending: queue.length, sent: 0 };
+  return withQueueLock(async () => {
+    const queue = await loadQueue();
+    if (!queue.length) return { pending: 0, sent: 0 };
+    if (!uid) return { pending: queue.length, sent: 0 };
 
-  let sent = 0;
-  let remaining = [...queue];
-  for (const batch of chunkEvents(queue, FLUSH_BATCH)) {
-    const rows = batch.map((event) => ({ ...event, user_id: uid, device_id: null }));
-    const { error } = await supabase
-      .from("review_events")
-      .upsert(rows, { ignoreDuplicates: true, onConflict: "user_id,client_event_id" });
-    if (error) break;
-    const flushed = new Set(batch.map((event) => event.client_event_id));
-    remaining = remaining.filter((event) => !flushed.has(event.client_event_id));
-    sent += batch.length;
-  }
-  if (sent > 0) await saveQueue(remaining);
-  return { pending: remaining.length, sent };
+    const { own } = partitionQueueByUser(queue, uid);
+    const flushed = new Set<string>();
+    for (const batch of chunkEvents(own, FLUSH_BATCH)) {
+      const rows = batch.map((event) => ({ ...event, device_id: null }));
+      const { error } = await supabase
+        .from("review_events")
+        .upsert(rows, { ignoreDuplicates: true, onConflict: "user_id,client_event_id" });
+      if (error) break;
+      for (const event of batch) flushed.add(event.client_event_id);
+    }
+
+    if (flushed.size === 0) return { pending: queue.length, sent: 0 };
+    // Remove exactly what the server confirmed from the CURRENT file contents —
+    // under the lock nothing can interleave, and removal-by-id keeps this safe
+    // even if a future caller bypasses the lock.
+    const current = await loadQueue();
+    const remaining = removeByClientEventId(current, flushed);
+    await saveQueue(remaining);
+    return { pending: remaining.length, sent: flushed.size };
+  });
 }
 
 /** Grades still waiting for a network flush (the review screen's honesty line). */
@@ -150,8 +190,10 @@ export async function loadAllGradedMarks(): Promise<Record<string, GradedMark[]>
 
 /** Record a completed card + prune marks the snapshot has caught up with. */
 export async function recordGradedMark(deckPathHash: string, mark: GradedMark, snapshotAsOf: string): Promise<void> {
-  const all = await loadMarksFile();
-  const pruned = pruneGradedMarks(all[deckPathHash] ?? [], snapshotAsOf);
-  all[deckPathHash] = [...pruned, mark];
-  await writeJsonFile(MARKS_PATH, { marks: all, v: 1 });
+  await withQueueLock(async () => {
+    const all = await loadMarksFile();
+    const pruned = pruneGradedMarks(all[deckPathHash] ?? [], snapshotAsOf);
+    all[deckPathHash] = [...pruned, mark];
+    await writeJsonFile(MARKS_PATH, { marks: all, v: 1 });
+  });
 }

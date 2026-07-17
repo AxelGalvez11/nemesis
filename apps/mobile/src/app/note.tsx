@@ -33,7 +33,9 @@ export default function NoteScreen() {
         return;
       }
       const { docs } = decryptLibrary(cache, key);
-      setDoc(docs.find((d) => d.pathHash === pathHash) ?? null);
+      // kind guard at the data boundary: deck/calendar docs ride the same pipe
+      // and must never render as notes, whatever route delivered the pathHash.
+      setDoc(docs.find((d) => d.pathHash === pathHash && d.kind === "note") ?? null);
     })();
     return () => {
       alive = false;

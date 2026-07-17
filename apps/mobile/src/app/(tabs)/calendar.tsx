@@ -1,8 +1,15 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Linking, Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
-import { decryptLibrary, loadCachedRows, loadVaultKey, pullLibraryRows } from "@/api/librarySync";
+import {
+  currentUserId,
+  decryptLibrary,
+  loadCachedRows,
+  loadVaultKey,
+  pullLibraryRows,
+  subscribeLibrary,
+} from "@/api/librarySync";
 import { agendaDays, dayKeyFromDate, parseCalendarDoc, type AgendaEvent, type CalendarDoc } from "@/lib/agenda";
 import type { SyncCache } from "@/lib/library-sync";
 import type { ThemeColors } from "@/theme/palette";
@@ -55,6 +62,27 @@ export default function CalendarScreen() {
       };
     }, [pull]),
   );
+
+  // Live refresh while foregrounded (the Mac republishes the calendar doc as
+  // the agent updates School/calendar.json) — same pattern as Library/Study.
+  useEffect(() => {
+    if (!key) return;
+    let unsubscribe: (() => void) | undefined;
+    let alive = true;
+    void currentUserId().then((uid) => {
+      if (!alive || !uid) return;
+      unsubscribe = subscribeLibrary(uid, () => {
+        setCache((current) => {
+          void pull(current);
+          return current;
+        });
+      });
+    });
+    return () => {
+      alive = false;
+      unsubscribe?.();
+    };
+  }, [key, pull]);
 
   if (!keyChecked) return <View style={styles.flex} testID="calendar-loading" />;
 
