@@ -61,6 +61,11 @@ export default function ChatScreen() {
 
   useEffect(() => {
     epochRef.current += 1;
+    // Release the send lock too: an in-flight request from the previous user
+    // will settle under a stale epoch, whose .finally deliberately does NOT
+    // free the lock — without this reset the composer would soft-lock.
+    sendingRef.current = false;
+    setSending(false);
     setMessages([]);
     setLastError(null);
     setInput("");
@@ -102,8 +107,13 @@ export default function ChatScreen() {
         }
       })
       .finally(() => {
-        sendingRef.current = false;
-        setSending(false);
+        // Only the CURRENT epoch's send may free the lock — a stale request
+        // settling late must not re-enable Send under a newer in-flight turn.
+        // Stale epochs get their lock released by newChat()/the uid effect.
+        if (epochRef.current === epoch) {
+          sendingRef.current = false;
+          setSending(false);
+        }
       });
   }, [input, messages, uid]);
 
