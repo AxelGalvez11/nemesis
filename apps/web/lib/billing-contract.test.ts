@@ -1,4 +1,4 @@
-// pnpm --filter @pharmaorb/web exec tsx lib/billing-contract.test.ts
+// pnpm --filter @nemesis/web exec tsx lib/billing-contract.test.ts
 import assert from "node:assert/strict";
 import {
   checkoutIdempotencyKey,
