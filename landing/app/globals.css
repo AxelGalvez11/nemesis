@@ -312,6 +312,7 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 .foot .muted { color: var(--iron); font-size: 12.5px; font-family: var(--sans); letter-spacing: 0.02em; }
 .foot .spacer { flex: 1; }
 .social-links { display: inline-flex; align-items: center; gap: 14px; }
+.social-links a { display: inline-flex; align-items: center; } /* icon glyphs sit on the text row line */
 .parallax-layer { --parallax-y: 0px; backface-visibility: hidden; }
 .parallax-layer.is-parallax-active { will-change: transform; }
 
@@ -380,4 +381,54 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   .band-in { padding: 96px 0; }
   .band-veil { background: linear-gradient(180deg, rgba(8, 8, 9, 0.55), rgba(8, 8, 9, 0.9)); }
   .nav a.ghost { display: none; }
+  .foot-grid { grid-template-columns: 1fr; gap: 28px; }
+  .compare th, .compare td { padding: 12px 10px; }
 }
+
+/* screen-reader-only (compare table's first column header) */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* pricing card fine print under the CTA */
+.plan-note { margin: 10px 0 0; text-align: center; color: var(--iron); font-size: 12px; letter-spacing: 0.02em; }
+
+/* plan comparison — one quiet table, featured column tinted like .plan-featured */
+.compare-scroll { overflow-x: auto; }
+.compare { width: 100%; max-width: 880px; margin: 0 auto; border-collapse: collapse; font-size: 13.5px; }
+.compare th, .compare td { padding: 14px 16px; border-bottom: 1px solid var(--line); text-align: center; }
+.compare thead th { font-size: 12px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--steel); }
+.compare thead th.compare-featured { color: var(--blood-deep); }
+.compare tbody th { text-align: left; font-weight: 500; color: var(--steel); line-height: 1.5; }
+.compare td { color: var(--steel); }
+.compare .compare-yes svg { color: var(--blood-deep); vertical-align: middle; }
+.compare .compare-no { color: var(--iron); }
+
+/* FAQ — native details/summary rows, no JS */
+.faq { max-width: 680px; margin: 0 auto; border-top: 1px solid var(--line); }
+.faq details { border-bottom: 1px solid var(--line); }
+.faq summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 12px;
+  padding: 18px 2px; font-size: 15.5px; font-weight: 600; color: var(--chrome);
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+  content: "+"; margin-left: auto; color: var(--iron); font-weight: 400; font-size: 18px;
+  transition: transform 0.15s ease;
+}
+.faq details[open] summary::after { transform: rotate(45deg); }
+.faq details p { margin: 0 0 18px; padding: 0 2px; color: var(--steel); font-size: 14px; line-height: 1.7; max-width: 60ch; }
+.faq details a { color: var(--blood-deep); text-decoration: none; }
+.faq details a:hover { text-decoration: underline; }
+
+/* column footer */
+.foot-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 32px; align-items: start; }
+.foot-brand { display: flex; flex-direction: column; gap: 10px; }
+.foot-tag { margin: 0; color: var(--iron); font-family: var(--sans); font-size: 12.5px; letter-spacing: 0.02em; }
+.foot-col { display: flex; flex-direction: column; gap: 10px; }
+.foot-k {
+  font-family: var(--sans); font-size: 11px; font-weight: 650; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--steel); margin-bottom: 2px;
+}
+.foot-base { display: flex; align-items: center; gap: 14px; margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--line); }

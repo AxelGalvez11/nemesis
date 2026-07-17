@@ -65,19 +65,38 @@ export function SiteChrome({ children }: { children: ReactNode }) {
 
       {children}
 
+      {/* Column footer (2026-07-16): brand block + two link columns, base row
+          with copyright and social glyphs. Reads more established than the old
+          single row without getting louder — same type scale, same colors. */}
       <footer className="foot">
-        <div className="wrap foot-in">
-          <Link className="brand" href="/" aria-label="Nemesis home">
-            <Image className="brand-logo-footer" src="/nemesis/logo.png" alt="" width={20} height={20} />
-            <b style={{ fontSize: "11px" }}>Nemesis</b>
-          </Link>
-          <Link href="/pricing">Pricing</Link>
-          <Link href="/about">About</Link>
-          <a href="/privacy">Privacy</a>
-          <a href="/terms">Terms</a>
-          <SocialLinks />
-          <span className="spacer" />
-          <span className="muted">© 2026 Nemesis</span>
+        <div className="wrap">
+          <div className="foot-grid">
+            <div className="foot-brand">
+              <Link className="brand" href="/" aria-label="Nemesis home">
+                <Image className="brand-logo-footer" src="/nemesis/logo.png" alt="" width={20} height={20} />
+                <b style={{ fontSize: "11px" }}>Nemesis</b>
+              </Link>
+              <p className="foot-tag">A study agent for your Mac.</p>
+            </div>
+            <nav className="foot-col" aria-label="Product">
+              <span className="foot-k">Product</span>
+              <a href={APP_DOWNLOAD}>Download for macOS</a>
+              <Link href="/pricing">Pricing</Link>
+              <a href={APP_SIGN_UP}>Start free trial</a>
+              <a href={APP_SIGN_IN}>Sign in</a>
+            </nav>
+            <nav className="foot-col" aria-label="Company">
+              <span className="foot-k">Company</span>
+              <Link href="/about">About</Link>
+              <a href="/privacy">Privacy</a>
+              <a href="/terms">Terms</a>
+            </nav>
+          </div>
+          <div className="foot-base">
+            <span className="muted">© 2026 Nemesis</span>
+            <span className="spacer" />
+            <SocialLinks />
+          </div>
         </div>
       </footer>
     </>
