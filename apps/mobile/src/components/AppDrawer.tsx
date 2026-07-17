@@ -86,7 +86,7 @@ function DrawerOverlay({ open, onClose, onNewChat }: { open: boolean; onClose: (
 function DrawerContent({ onClose, onNewChat }: { onClose: () => void; onNewChat: () => void }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { session, signOut } = useAuth();
+  const { session } = useAuth();
   const email = session?.user?.email ?? "Signed in";
   const initial = (email[0] ?? "?").toUpperCase();
 
@@ -109,20 +109,25 @@ function DrawerContent({ onClose, onNewChat }: { onClose: () => void; onNewChat:
         </Pressable>
 
         <NavRow glyph="▤" label="Library" onPress={() => go("/library")} />
-        <NavRow glyph="⚙" label="Settings" onPress={() => go("/profile")} />
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + space(3) }]}>
+      {/* The account row IS the door to Settings (owner call 2026-07-17, matching
+          the desktop's lower-left pattern). Sign out lives inside Settings. */}
+      <Pressable
+        testID="drawer-account"
+        style={({ pressed }) => [styles.footer, { paddingBottom: insets.bottom + space(3) }, pressed && styles.footerPressed]}
+        onPress={() => go("/profile")}
+        accessibilityLabel="Open settings"
+      >
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{initial}</Text>
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.footerName} numberOfLines={1}>{email}</Text>
+          <Text style={styles.footerHint}>Settings</Text>
         </View>
-        <Pressable onPress={() => { onClose(); void signOut(); }} hitSlop={8}>
-          <Text style={styles.signOut}>Sign out</Text>
-        </Pressable>
-      </View>
+        <Text style={styles.footerChevron}>›</Text>
+      </Pressable>
     </View>
   );
 }
@@ -160,8 +165,10 @@ const styles = StyleSheet.create({
   soon: { color: c.text3, fontSize: 9.5, letterSpacing: 0.5, fontWeight: "700" },
 
   footer: { flexDirection: "row", alignItems: "center", gap: space(2.5), borderTopWidth: 1, borderTopColor: c.line, paddingHorizontal: space(4.5), paddingTop: space(3.5) },
+  footerPressed: { backgroundColor: c.surface },
   avatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center" },
   avatarText: { color: c.text, ...type.small, fontWeight: "700" },
-  footerName: { color: c.text2, ...type.small },
-  signOut: { color: c.text3, ...type.small, fontWeight: "600" },
+  footerName: { color: c.text, ...type.small, fontWeight: "600" },
+  footerHint: { color: c.text3, ...type.micro },
+  footerChevron: { color: c.text3, fontSize: 20 },
 });

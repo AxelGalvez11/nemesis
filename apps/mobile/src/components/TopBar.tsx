@@ -1,4 +1,5 @@
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useShell } from "./AppDrawer";
 import { c, space } from "@/theme/tokens";
@@ -21,7 +22,18 @@ export function TopBar({ title = "Nemesis", showNewChat = true }: { title?: stri
         <Text style={styles.wordmark}>{title}</Text>
       </View>
       {showNewChat ? (
-        <Pressable style={styles.iconBtn} onPress={newChat} hitSlop={8} accessibilityLabel="New chat">
+        <Pressable
+          style={styles.iconBtn}
+          // "+" = start a new mission from anywhere in the shell: land on home
+          // (no-op if already there) and bump the nonce, which clears + focuses
+          // the composer (owner report: on Library the button looked dead).
+          onPress={() => {
+            newChat();
+            router.push("/");
+          }}
+          hitSlop={8}
+          accessibilityLabel="New mission"
+        >
           <View style={styles.plusH} />
           <View style={styles.plusV} />
         </Pressable>
@@ -33,10 +45,11 @@ export function TopBar({ title = "Nemesis", showNewChat = true }: { title?: stri
 }
 
 const MARK = require("../../assets/images/nemesis-mark.png");
-// 1.324 = the trimmed mark's native width/height; keeps the wings from squashing.
-const MARK_ASPECT = 1.324;
+// 1.240 = the trimmed mark's native width/height (the bolder 1254px flat master,
+// owner-supplied 2026-07-17); keeps the wings from squashing.
+const MARK_ASPECT = 1.24;
 
-// The Nemesis mark — the winged logo, silver on transparent, straight from the brand art.
+// The Nemesis mark — the winged logo, flat white on transparent, from the brand master.
 // `size` is the rendered HEIGHT in points; width follows the mark's own aspect ratio.
 // Width and height are BOTH explicit on purpose: static require()'d images carry their
 // intrinsic pixel size as a default style, and on-device that default beat the

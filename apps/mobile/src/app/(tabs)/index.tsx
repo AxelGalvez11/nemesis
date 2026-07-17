@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { router } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
 import { EmptyBlock, MissionButton, StatusPill, Surface } from "@/components/mission-ui";
@@ -45,6 +46,7 @@ function relativeTime(iso: string): string {
 export default function MissionsHome() {
   const { session } = useAuth();
   const { resetNonce } = useShell();
+  const insets = useSafeAreaInsets();
   const [missions, setMissions] = useState<Mission[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -116,7 +118,16 @@ export default function MissionsHome() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={8}>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      // With behavior="padding", the offset must equal this view's distance from
+      // the WINDOW top — here, the (tabs) shell's TopBar above the <Slot/>:
+      // safe-area inset + bar chrome (~58pt). The old hardcoded 8 under-padded by
+      // the bar's height, burying the composer + Send behind the keyboard (owner
+      // report: "the chat didn't work" — Send was never visible while typing).
+      keyboardVerticalOffset={insets.top + 58}
+    >
       {loading ? (
         <View style={styles.centered} testID="missions-loading">
           <ActivityIndicator color={colors.foreground} />
