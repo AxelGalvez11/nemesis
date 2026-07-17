@@ -22,14 +22,14 @@ export const common = StyleSheet.create({
     backgroundColor: c.surface,
   },
   btn: {
-    backgroundColor: c.acid,
+    backgroundColor: c.accent,
     paddingHorizontal: space(5),
     paddingVertical: space(3),
     borderRadius: radius.sm,
     alignSelf: "flex-start",
   },
-  btnText: { color: c.onAcid, fontWeight: "600", fontSize: 16 },
-  link: { color: c.acidDim, fontSize: 15 },
+  btnText: { color: c.onAccent, fontWeight: "600", fontSize: 16 },
+  link: { color: c.accentDim, fontSize: 15 },
   linkBtn: { paddingVertical: space(2) },
   err: { color: c.danger },
 });

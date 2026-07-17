@@ -41,7 +41,7 @@ export function FollowButton({ drugId, drugName }: { drugId: string; drugName: s
   });
 
   if (!session) return null;
-  if (isLoading) return <ActivityIndicator testID="follow-loading" color={c.acid} />;
+  if (isLoading) return <ActivityIndicator testID="follow-loading" color={c.accent} />;
 
   if (existing) {
     return (
@@ -80,9 +80,9 @@ export function FollowButton({ drugId, drugName }: { drugId: string; drugName: s
 const styles = StyleSheet.create({
   wrap: { alignSelf: "flex-start", gap: space(1.5) },
   btn: { paddingHorizontal: space(4.5), paddingVertical: space(2.5), borderRadius: 8, alignSelf: "flex-start" },
-  follow: { backgroundColor: c.acid },
-  followText: { color: c.onAcid, fontWeight: "700", fontSize: 15 },
-  following: { backgroundColor: c.acidFaint, borderWidth: 1, borderColor: c.acidLine },
-  followingText: { color: c.acidDim, fontWeight: "700", fontSize: 15 },
+  follow: { backgroundColor: c.accent },
+  followText: { color: c.onAccent, fontWeight: "700", fontSize: 15 },
+  following: { backgroundColor: c.accentFaint, borderWidth: 1, borderColor: c.accentLine },
+  followingText: { color: c.accentDim, fontWeight: "700", fontSize: 15 },
   note: { fontSize: 12, color: c.warn },
 });

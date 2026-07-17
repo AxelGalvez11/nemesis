@@ -6,11 +6,10 @@ import type { Mission } from "@/api/missions-helpers";
 
 // Presentational primitives for the missions screens ONLY (mission list/composer,
 // mission detail). Colors and radii come exclusively from theme/tokens.json — the
-// Nemesis identity (monochrome + one crimson accent) — never from the older
-// theme/tokens.ts palette, which is still lime-accented PharmaOrb branding used by
-// the evidence screens this app no longer navigates to. `space`/`type` are pulled
-// from tokens.ts only for their numeric spacing/font-size scale, which carries no
-// color or brand identity.
+// Nemesis identity (monochrome + one crimson accent). theme/tokens.ts now mirrors the
+// same palette (rebranded 2026-07-16), but these screens keep reading tokens.json
+// directly so a desktop token export updates them without a hand-edit. `space`/`type`
+// are pulled from tokens.ts only for their numeric spacing/font-size scale.
 
 const { colors, radius } = tokens;
 

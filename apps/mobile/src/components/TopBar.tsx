@@ -1,13 +1,11 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useShell } from "./AppDrawer";
-import { c, space, type } from "@/theme/tokens";
-import tokens from "@/theme/tokens.json";
+import { c, space } from "@/theme/tokens";
 
 // The quiet top bar: hamburger (opens the drawer) · Nemesis wordmark + mark · new-mission (+).
-// Shared by every screen in the (tabs) shell, including the missions home — this is
-// "chrome" in the design-parity sense, so the mark below is neutral (no accent wash),
-// sourced from theme/tokens.json rather than the old lime PharmaOrb accent.
+// Shared by every screen in the (tabs) shell. This is "chrome" in the design-parity sense,
+// so everything here stays neutral — the one crimson accent is reserved for primary actions.
 export function TopBar({ title = "Nemesis", showNewChat = true }: { title?: string; showNewChat?: boolean }) {
   const insets = useSafeAreaInsets();
   const { openDrawer, newChat } = useShell();
@@ -19,7 +17,7 @@ export function TopBar({ title = "Nemesis", showNewChat = true }: { title?: stri
         <View style={styles.bun} />
       </Pressable>
       <View style={styles.brand}>
-        <Orb size={16} />
+        <LogoMark size={15} />
         <Text style={styles.wordmark}>{title}</Text>
       </View>
       {showNewChat ? (
@@ -34,14 +32,20 @@ export function TopBar({ title = "Nemesis", showNewChat = true }: { title?: stri
   );
 }
 
-// The Nemesis mark — a neutral steel sphere, deliberately un-accented: it lives in the
-// chrome (top bar, sign-in), and the design-parity rule keeps chrome accent-free so the
-// ONE crimson accent stays meaningful on primary actions instead of washing the nav.
-export function Orb({ size = 16 }: { size?: number }) {
+const MARK = require("../../assets/images/nemesis-mark.png");
+// 1.324 = the trimmed mark's native width/height; keeps the wings from squashing.
+const MARK_ASPECT = 1.324;
+
+// The Nemesis mark — the winged logo, silver on transparent, straight from the brand art.
+// `size` is the rendered HEIGHT in points; width follows the mark's own aspect ratio.
+export function LogoMark({ size = 16 }: { size?: number }) {
   return (
-    <View style={[styles.orb, { width: size, height: size, borderRadius: size / 2 }]}>
-      <View style={[styles.orbHi, { width: size * 0.4, height: size * 0.4, borderRadius: size, top: size * 0.18, left: size * 0.2 }]} />
-    </View>
+    <Image
+      source={MARK}
+      style={{ height: size, aspectRatio: MARK_ASPECT }}
+      resizeMode="contain"
+      accessibilityLabel="Nemesis"
+    />
   );
 }
 
@@ -57,6 +61,4 @@ const styles = StyleSheet.create({
   plusV: { position: "absolute", width: 2, height: 18, borderRadius: 2, backgroundColor: c.text2 },
   brand: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space(2) },
   wordmark: { color: c.text, fontSize: 16.5, fontWeight: "700", letterSpacing: -0.2 },
-  orb: { backgroundColor: tokens.colors.muted },
-  orbHi: { position: "absolute", backgroundColor: "rgba(255,255,255,0.55)" },
 });

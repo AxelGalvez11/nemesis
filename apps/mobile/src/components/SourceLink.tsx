@@ -29,5 +29,5 @@ export function SourceLink({
 
 const styles = StyleSheet.create({
   link: { paddingVertical: space(1), alignSelf: "flex-start" },
-  linkText: { color: c.acidDim, fontSize: 13, fontWeight: "600" },
+  linkText: { color: c.accentDim, fontSize: 13, fontWeight: "600" },
 });

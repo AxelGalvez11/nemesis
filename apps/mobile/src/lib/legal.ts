@@ -1,62 +1,36 @@
-// doc-18 legal/disclaimer copy, kept in one place so the Ask disclaimer, the consent
-// gate, and the legal screens stay in sync. The disclaimer + consent strings are
-// VERBATIM from doc-18 (Privacy_Legal_Compliance). The privacy/terms bodies render
-// doc-18's required-sections lists with an explicit pre-launch note — doc-18 itself
-// says final terms must be attorney-drafted, so the app presents the current policy
-// honestly rather than claiming attorney-vetted final text. AC10 = these are PRESENT
-// and reachable; the binding legal pass is a launch (Phase 7+) gate.
+// Nemesis legal copy, kept in one place so the sign-in attestation and the legal screens
+// stay in sync. These are the current BETA policies, presented honestly as such — final
+// terms and privacy text get an attorney review before public launch (the in-app note
+// says so). The product facts that matter here: the agent runs on the student's Mac,
+// library files stay on that Mac, missions sync through our servers, and the agent
+// drafts but NEVER submits coursework.
 
-/** doc-18 "Medical disclaimer copy" — verbatim. */
-export const MEDICAL_DISCLAIMER =
-  "PharmaBro provides educational information from public sources such as FDA labels, " +
-  "DailyMed, PubMed, and ClinicalTrials.gov. It does not provide medical advice, " +
-  "diagnosis, treatment, or prescribing decisions. Always consult a qualified " +
-  "healthcare professional for personal medical decisions.";
-
-/** doc-18 "Health context consent copy" — verbatim. Shown above the HC editor. */
-export const HEALTH_CONTEXT_CONSENT =
-  "My Health Context is optional. It can help PharmaBro make educational answers more " +
-  "relevant, such as noticing that a medication question may involve allergies, " +
-  "pregnancy, kidney disease, or another medication.\n\n" +
-  "PharmaBro does not diagnose, treat, prescribe, or replace a healthcare professional. " +
-  "You can edit or delete this information anytime.";
-
-/** doc-18 "Safety escalation copy" — verbatim (mirrors the ask fn's emergency template). */
-export const SAFETY_ESCALATION =
-  "This could be urgent. If you may be experiencing a medical emergency, call emergency " +
-  "services now. For possible poisoning or overdose in the U.S., contact Poison Control " +
-  "at 1-800-222-1222.";
-
-/** Shown on the privacy + terms screens: these are the current pre-launch policies. */
+/** Shown on the privacy + terms screens: these are the current beta policies. */
 export const LEGAL_PRELAUNCH_NOTE =
-  "This is PharmaBro's current pre-launch policy. Final terms and privacy text are " +
-  "reviewed by a healthcare/privacy attorney before public launch.";
+  "This is Nemesis's current beta policy. Final terms and privacy text get an " +
+  "attorney review before public launch.";
 
-/** doc-18 age gate — the entry-screen 18+ / Terms+Privacy attestation. */
+/** The entry-screen 18+ / Terms+Privacy attestation. */
 export const AGE_TOS_ACK =
   "I am 18 or older and agree to the Terms of Service and Privacy Policy.";
 
-/** doc-18 "Privacy policy sections to include." */
 export const PRIVACY_SECTIONS: { heading: string; body: string }[] = [
-  { heading: "What we collect", body: "Your account email, your follows/watchlist, your asked questions, and — only if you choose to add it — your optional My Health Context." },
-  { heading: "Health context", body: "Optional and consent-gated. Used only to make educational answers more relevant. Independently editable and deletable at any time." },
-  { heading: "How data is used", body: "To answer questions from public sources, track evidence on what you follow, and operate the app. Sources and AI generation are shown so you can review the basis for an answer." },
-  { heading: "Model training", body: "Your health data is not used for model training by default." },
-  { heading: "Analytics & vendors", body: "Product analytics exclude health details. We do not sell health data or share it with ad networks." },
-  { heading: "Retention, deletion & export", body: "You can delete your health context immediately, and request account deletion and data export. Encryption is applied in transit." },
-  { heading: "Breach notification", body: "If a security breach affects your information, we will notify affected users and regulators as required by the FTC Health Breach Notification Rule and applicable law." },
-  { heading: "Children & minors", body: "PharmaBro is intended for adults 18 and older and is not directed to minors. Consistent with COPPA, we do not knowingly collect data from anyone under 13. The app does not provide personalized pediatric dosing." },
-  { heading: "Your state privacy rights", body: "Depending on your state (for example, Washington's My Health My Data Act or California's CCPA/CPRA), you may have rights to access, delete, or limit use of your data and to withdraw consent for optional health context. Email privacy@pharmabro.app to exercise them." },
-  { heading: "Contact", body: "Privacy questions: privacy@pharmabro.app" },
+  { heading: "What we collect", body: "Your account email; the missions you send (the request, its status, and the result summary); the devices you link — your Mac and this phone, including a push token so we can notify you; and plan + usage counts." },
+  { heading: "Where your schoolwork lives", body: "The agent runs on your Mac, and your library files stay on your Mac. Missions sync through our servers so your phone and your Mac see the same list." },
+  { heading: "How we use it", body: "To run the missions you ask for, sync your devices, send the notifications you enabled, meter usage against your plan, and keep the service working. Mission text is processed by AI model providers to produce results." },
+  { heading: "What we don't do", body: "We don't sell your data, we don't share it with ad networks, and we don't reach into the files on your Mac from the cloud." },
+  { heading: "Deletion", body: "Settings → Delete account removes your account, your missions, and your device registrations immediately. Files on your Mac are untouched — they're yours." },
+  { heading: "Age", body: "Nemesis is for adults 18 and older and is not directed to minors. Consistent with COPPA, we do not knowingly collect data from anyone under 13." },
+  { heading: "Contact", body: "Privacy questions: support@enternemesis.com" },
 ];
 
-/** doc-18 "Terms of service clauses to include." */
 export const TERMS_SECTIONS: { heading: string; body: string }[] = [
-  { heading: "Educational use only", body: "PharmaBro is for education. It is not medical advice and creates no provider–patient relationship." },
-  { heading: "Age & eligibility", body: "PharmaBro is for adults 18 and older. By using it, you confirm you are 18 or older. Do not use it to make prescribing or pediatric-dosing decisions for anyone." },
-  { heading: "Your responsibility", body: "Always consult a qualified professional for personal medical decisions. Do not use PharmaBro for emergencies or prescribing." },
-  { heading: "Source & accuracy limits", body: "Information comes from public sources that may be incomplete or out of date; source limitations are shown, not hidden." },
-  { heading: "Acceptable use", body: "No misuse for prescribing, sourcing unapproved compounds, or emergency care." },
-  { heading: "Subscription", body: "Paid tiers (when available) renew per the store's terms; manage or cancel in your store account." },
+  { heading: "What Nemesis is", body: "A study agent that runs on your Mac. This app sends it work and shows you what it did." },
+  { heading: "Drafts, never submissions", body: "The agent prepares drafts and study material. It never turns anything in for you. What you submit to your school is your decision and your responsibility." },
+  { heading: "Academic integrity", body: "Use Nemesis within your school's rules. You are responsible for how you use what it produces." },
+  { heading: "Your files", body: "Your notes, decks, and drafts are yours. We claim no ownership of anything the agent makes for you." },
+  { heading: "Accuracy", body: "The agent can be wrong. Check anything that matters before you rely on it." },
+  { heading: "Age & eligibility", body: "Nemesis is for adults 18 and older. By using it, you confirm you are 18 or older." },
+  { heading: "Plans & billing", body: "Paid plans renew and cancel where you bought them." },
   { heading: "Liability & termination", body: "Provided “as is,” with limitation of liability. Accounts may be terminated for misuse." },
 ];

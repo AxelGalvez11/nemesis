@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { AskMode } from "@pharmabro/shared";
 import { c, radius, shadow, space, type } from "@/theme/tokens";
 
-// The bottom composer — the rounded input with the Fast/Thorough mode pill and the acid send button.
+// The bottom composer — the rounded input with the Fast/Thorough mode pill and the accent send button.
 // Mirrors the web composer's dial; tapping the pill toggles Fast <-> Thorough.
 export function ChatComposer({
   value, onChangeText, onSend, busy, mode, onToggleMode,
@@ -60,9 +60,9 @@ const styles = StyleSheet.create({
   plusH: { position: "absolute", width: 13, height: 1.8, borderRadius: 2, backgroundColor: c.text2 },
   plusV: { position: "absolute", width: 1.8, height: 13, borderRadius: 2, backgroundColor: c.text2 },
   pill: { flexDirection: "row", alignItems: "center", gap: space(1.5), borderWidth: 1, borderColor: c.line2, backgroundColor: c.bg2, borderRadius: radius.pill, paddingHorizontal: space(3), paddingVertical: space(1.5) },
-  pillIcon: { color: c.acid, fontSize: 12 },
+  pillIcon: { color: c.accent, fontSize: 12 },
   pillText: { color: c.text, ...type.small, fontWeight: "600" },
-  send: { width: 38, height: 38, borderRadius: 19, backgroundColor: c.acid, alignItems: "center", justifyContent: "center", ...shadow.acid },
+  send: { width: 38, height: 38, borderRadius: 19, backgroundColor: c.accent, alignItems: "center", justifyContent: "center", ...shadow.accent },
   sendOff: { opacity: 0.4 },
-  sendArrow: { color: c.onAcid, fontSize: 20, fontWeight: "800", lineHeight: 22 },
+  sendArrow: { color: c.onAccent, fontSize: 20, fontWeight: "800", lineHeight: 22 },
 });

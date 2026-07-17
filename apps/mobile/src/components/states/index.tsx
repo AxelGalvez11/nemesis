@@ -30,7 +30,7 @@ function StateBox({
 export function LoadingState({ testID = "state-loading" }: { testID?: string }) {
   return (
     <View style={styles.box} testID={testID}>
-      <ActivityIndicator color={c.acid} />
+      <ActivityIndicator color={c.accent} />
     </View>
   );
 }
