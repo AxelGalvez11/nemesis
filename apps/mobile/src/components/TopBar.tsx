@@ -38,11 +38,15 @@ const MARK_ASPECT = 1.324;
 
 // The Nemesis mark — the winged logo, silver on transparent, straight from the brand art.
 // `size` is the rendered HEIGHT in points; width follows the mark's own aspect ratio.
+// Width and height are BOTH explicit on purpose: static require()'d images carry their
+// intrinsic pixel size as a default style, and on-device that default beat the
+// height+aspectRatio combination — the mark rendered at its raw 678×512 and swallowed
+// the whole screen (owner screenshot, build 6). Explicit dimensions always win.
 export function LogoMark({ size = 16 }: { size?: number }) {
   return (
     <Image
       source={MARK}
-      style={{ height: size, aspectRatio: MARK_ASPECT }}
+      style={{ width: Math.round(size * MARK_ASPECT), height: size }}
       resizeMode="contain"
       accessibilityLabel="Nemesis"
     />
