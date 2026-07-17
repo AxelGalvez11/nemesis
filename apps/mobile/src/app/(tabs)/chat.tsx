@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -10,9 +10,11 @@ import {
   View,
 } from "react-native";
 import Markdown from "react-native-markdown-display";
+import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "@/auth/AuthProvider";
 import { clearChatThread, loadChatThread, saveChatThread, sendChat } from "@/api/chat";
-import { EmptyBlock } from "@/components/mission-ui";
+import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import type { ChatMsg } from "@/lib/chat-thread";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
@@ -23,72 +25,109 @@ import { radius, space, type } from "@/theme/tokens";
 // the metered cloud engine, no Mac anywhere in the path. Missions stay the
 // "agent side" for work that touches files or portals; this is the "chat side"
 // for answers now, wherever the student is.
+//
+// State rules (review findings): everything is keyed to the signed-in user
+// (guests see a sign-in prompt, never someone else's transcript); `messages`
+// holds ONLY the real conversation (errors render from separate transient
+// state, so they neither feed the next turn's history nor persist); and every
+// async landing is epoch-checked so "New chat", a user switch, or an unmount
+// can never resurrect a cleared thread.
 
 const THINKING_ID = "__thinking__";
 
 interface Row {
   id: string;
-  msg: ChatMsg | null; // null = the thinking indicator row
-  error?: boolean;
+  kind: "error" | "msg" | "thinking";
+  msg?: ChatMsg;
+  errorText?: string;
 }
 
 export default function ChatScreen() {
+  const { session } = useAuth();
+  const uid = session?.user?.id ?? null;
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
   const markdownStyles = useThemedStyles(createMarkdownStyles);
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [errorIds, setErrorIds] = useState<Set<number>>(new Set());
+  const [lastError, setLastError] = useState<null | string>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // Epoch bumps on New chat and on user change; in-flight sends compare before
+  // touching state. sendingRef is the SYNCHRONOUS re-entrancy lock (React state
+  // alone lags a render, which a double native press can beat).
+  const epochRef = useRef(0);
+  const sendingRef = useRef(false);
 
   useEffect(() => {
+    epochRef.current += 1;
+    setMessages([]);
+    setLastError(null);
+    setInput("");
+    if (!uid) return;
+    const epoch = epochRef.current;
     let alive = true;
-    void loadChatThread().then((thread) => {
-      if (alive) setMessages(thread);
+    void loadChatThread(uid).then((thread) => {
+      if (alive && epochRef.current === epoch) setMessages(thread);
     });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [uid]);
 
   const send = useCallback(() => {
     const text = input.trim();
-    if (!text || sending) return;
+    if (!text || !uid || sendingRef.current) return;
+    sendingRef.current = true;
+    const epoch = epochRef.current;
+    const history = messages;
     const userMsg: ChatMsg = { at: new Date().toISOString(), content: text, role: "user" };
-    const base = [...messages, userMsg];
+    const base = [...history, userMsg];
     setMessages(base);
+    setLastError(null);
     setInput("");
     setSending(true);
-    void sendChat(messages, text)
+    void sendChat(uid, history, text)
       .then((reply) => {
-        const assistant: ChatMsg = {
-          at: new Date().toISOString(),
-          content: reply.text ?? reply.errorText ?? "Something went wrong.",
-          role: "assistant",
-        };
-        const next = [...base, assistant];
-        setMessages(next);
-        if (!reply.text) {
-          setErrorIds((current) => new Set(current).add(next.length - 1));
-          // Errors aren't part of the conversation — persist without them so a
-          // retry doesn't teach the model its own failure message.
-          void saveChatThread(base);
+        if (epochRef.current !== epoch) return;
+        if (reply.text) {
+          const next: ChatMsg[] = [...base, { at: new Date().toISOString(), content: reply.text, role: "assistant" }];
+          setMessages(next);
+          void saveChatThread(uid, next);
         } else {
-          void saveChatThread(next);
+          // The user's message stays (it IS the conversation); the failure line
+          // renders from transient state and never enters history/persistence.
+          setLastError(reply.errorText ?? "Something went wrong.");
+          void saveChatThread(uid, base);
         }
       })
-      .finally(() => setSending(false));
-  }, [input, messages, sending]);
+      .finally(() => {
+        sendingRef.current = false;
+        setSending(false);
+      });
+  }, [input, messages, uid]);
 
   const newChat = useCallback(() => {
+    epochRef.current += 1;
+    sendingRef.current = false;
     setMessages([]);
-    setErrorIds(new Set());
-    void clearChatThread();
-  }, []);
+    setLastError(null);
+    setSending(false);
+    if (uid) void clearChatThread(uid);
+  }, [uid]);
 
-  const rows: Row[] = messages.map((msg, index) => ({ error: errorIds.has(index), id: `m-${index}`, msg }));
-  if (sending) rows.push({ id: THINKING_ID, msg: null });
+  if (!uid) {
+    return (
+      <View style={[styles.flex, styles.signinWrap]} testID="chat-signin">
+        <EmptyBlock title="Sign in to chat" body="Chat answers from the cloud under your own plan — no Mac needed once you're signed in." />
+        <MissionButton label="Sign in" variant="primary" testID="chat-goto-signin" onPress={() => router.push("/sign-in")} />
+      </View>
+    );
+  }
+
+  const rows: Row[] = messages.map((msg, index) => ({ id: `m-${index}`, kind: "msg", msg }));
+  if (lastError) rows.push({ errorText: lastError, id: "__error__", kind: "error" });
+  if (sending) rows.push({ id: THINKING_ID, kind: "thinking" });
   const inverted = [...rows].reverse();
 
   return (
@@ -112,21 +151,21 @@ export default function ChatScreen() {
           contentContainerStyle={styles.listBody}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) =>
-            item.msg === null ? (
+            item.kind === "thinking" ? (
               <View style={[styles.bubble, styles.assistantBubble, styles.thinking]} testID="chat-thinking">
                 <Text style={styles.thinkingText}>Thinking…</Text>
               </View>
-            ) : item.msg.role === "user" ? (
+            ) : item.kind === "error" ? (
+              <View style={[styles.bubble, styles.assistantBubble, styles.errorBubble]} testID="chat-error">
+                <Text style={styles.errorText}>{item.errorText}</Text>
+              </View>
+            ) : item.msg!.role === "user" ? (
               <View style={[styles.bubble, styles.userBubble]}>
-                <Text style={styles.userText}>{item.msg.content}</Text>
+                <Text style={styles.userText}>{item.msg!.content}</Text>
               </View>
             ) : (
-              <View style={[styles.bubble, styles.assistantBubble, item.error && styles.errorBubble]}>
-                {item.error ? (
-                  <Text style={styles.errorText}>{item.msg.content}</Text>
-                ) : (
-                  <Markdown style={markdownStyles}>{item.msg.content}</Markdown>
-                )}
+              <View style={[styles.bubble, styles.assistantBubble]}>
+                <Markdown style={markdownStyles}>{item.msg!.content}</Markdown>
               </View>
             )
           }
@@ -173,6 +212,7 @@ export default function ChatScreen() {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
+    signinWrap: { alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4) },
     topRow: { alignItems: "flex-end", paddingHorizontal: space(4), paddingTop: space(2) },
     newChatText: { ...type.small, color: c.text2 },
     listBody: { padding: space(4), gap: space(2), flexGrow: 1 },
