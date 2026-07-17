@@ -44,7 +44,8 @@ textarea { min-height: 130px; resize: vertical; }
 .list { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
 .error { color: var(--danger); font-weight: 600; }
 .warning { color: var(--warn); font-weight: 600; }
-.success-text { color: var(--acid-deep); font-weight: 600; }
+/* Success rides its OWN token — with a crimson brand, success-as-accent would read as an error. */
+.success-text { color: var(--success); font-weight: 600; }
 .chip { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; color: var(--text-2); display: inline-flex; font-size: 12px; font-weight: 500; padding: 5px 12px; }
 .quick-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 

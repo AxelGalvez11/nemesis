@@ -214,7 +214,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
         <Card className={isPlus ? "acid" : ""}>
           <div className="row" style={{ marginBottom: 2 }}>
             <h2 style={{ margin: "0 0 2px" }}>Nemesis Student</h2>
-            {isPlus ? <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>Current</span> : null}
+            {isPlus ? <span className="badge" style={{ borderColor: "var(--line-success)", color: "var(--success)" }}>Current</span> : null}
           </div>
           <p style={{ margin: "0 0 12px" }}>
             <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{plusPrice.amount}</strong>
@@ -235,7 +235,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
         <Card className="acid">
           <div className="row" style={{ marginBottom: 2 }}>
             <h2 style={{ margin: 0 }}>Nemesis Agent Pro</h2>
-            <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>{isPro ? "Current" : "Recommended"}</span>
+            <span className="badge" style={{ borderColor: "var(--line-success)", color: "var(--success)" }}>{isPro ? "Current" : "Recommended"}</span>
           </div>
           <p style={{ margin: "0 0 12px" }}>
             <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{proPrice.amount}</strong>
@@ -258,7 +258,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
           <Card className={isMax ? "acid" : ""}>
             <div className="row" style={{ marginBottom: 2 }}>
               <h2 style={{ margin: 0 }}>Nemesis Max</h2>
-              {isMax ? <span className="badge" style={{ borderColor: "var(--line-acid)", color: "var(--acid-deep)" }}>Current</span> : null}
+              {isMax ? <span className="badge" style={{ borderColor: "var(--line-success)", color: "var(--success)" }}>Current</span> : null}
             </div>
             <p style={{ margin: "0 0 12px" }}>
               <strong style={{ fontSize: 22, letterSpacing: "-0.02em" }}>{maxPrice.amount}</strong>
