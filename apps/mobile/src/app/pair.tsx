@@ -5,18 +5,19 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MissionButton } from "@/components/mission-ui";
 import { storePairingCode } from "@/api/librarySync";
-import { space, type } from "@/theme/tokens";
-import tokens from "@/theme/tokens.json";
+import type { ThemeColors } from "@/theme/palette";
+import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
+import { radius, space, type } from "@/theme/tokens";
 
 // Pairing: point the camera at the QR code the Mac shows (Settings → Phone sync),
 // or paste the code by hand — the manual path also covers denied camera permission
 // and the simulator. The code IS the vault key, so it goes straight into the iOS
 // Keychain (SecureStore) and never to our servers.
 
-const { colors, radius } = tokens;
-
 export default function PairScreen() {
   const insets = useSafeAreaInsets();
+  const { colors: c } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [permission, requestPermission] = useCameraPermissions();
   const [manual, setManual] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +86,7 @@ export default function PairScreen() {
           testID="pair-manual"
           style={styles.input}
           placeholder="nemsync1.…"
-          placeholderTextColor={colors.muted}
+          placeholderTextColor={c.text2}
           autoCapitalize="none"
           autoCorrect={false}
           value={manual}
@@ -112,46 +113,47 @@ export default function PairScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
-  topRow: { paddingHorizontal: space(3), paddingBottom: space(2) },
-  backBtn: { alignSelf: "flex-start", paddingVertical: space(1) },
-  backText: { ...type.bodyStrong, color: colors.muted },
-  body: { flex: 1, paddingHorizontal: space(5), gap: space(3) },
-  h1: { ...type.h1, color: colors.foreground },
-  sub: { ...type.small, color: colors.muted, lineHeight: 19 },
-  scanBox: {
-    height: 260,
-    borderRadius: radius.card,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  scanBoxIdle: { padding: space(5), gap: space(4) },
-  scanFrame: {
-    width: 180,
-    height: 180,
-    borderWidth: 2,
-    borderColor: colors.accentBorder,
-    borderRadius: radius.input,
-  },
-  idleText: { ...type.small, color: colors.muted, textAlign: "center", lineHeight: 19 },
-  successText: { ...type.title, color: colors.foreground },
-  orLine: { ...type.micro, color: colors.muted, textAlign: "center", letterSpacing: 1, textTransform: "uppercase" },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.input,
-    paddingHorizontal: space(3),
-    paddingVertical: space(2.75),
-    fontSize: 15,
-    color: colors.foreground,
-    backgroundColor: colors.surface,
-    fontFamily: "Menlo",
-  },
-  error: { ...type.small, color: colors.accent },
-  privacyNote: { ...type.micro, color: colors.muted, lineHeight: 16, marginTop: space(1) },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    flex: { flex: 1, backgroundColor: c.bg },
+    topRow: { paddingHorizontal: space(3), paddingBottom: space(2) },
+    backBtn: { alignSelf: "flex-start", paddingVertical: space(1) },
+    backText: { ...type.bodyStrong, color: c.text2 },
+    body: { flex: 1, paddingHorizontal: space(5), gap: space(3) },
+    h1: { ...type.h1, color: c.text },
+    sub: { ...type.small, color: c.text2, lineHeight: 19 },
+    scanBox: {
+      height: 260,
+      borderRadius: radius.sm,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: c.line,
+      backgroundColor: c.glass,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    scanBoxIdle: { padding: space(5), gap: space(4) },
+    scanFrame: {
+      width: 180,
+      height: 180,
+      borderWidth: 2,
+      borderColor: c.accentLine,
+      borderRadius: radius.md,
+    },
+    idleText: { ...type.small, color: c.text2, textAlign: "center", lineHeight: 19 },
+    successText: { ...type.title, color: c.text },
+    orLine: { ...type.micro, color: c.text2, textAlign: "center", letterSpacing: 1, textTransform: "uppercase" },
+    input: {
+      borderWidth: 1,
+      borderColor: c.line,
+      borderRadius: radius.md,
+      paddingHorizontal: space(3),
+      paddingVertical: space(2.75),
+      fontSize: 15,
+      color: c.text,
+      backgroundColor: c.glass,
+      fontFamily: "Menlo",
+    },
+    error: { ...type.small, color: c.accent },
+    privacyNote: { ...type.micro, color: c.text2, lineHeight: 16, marginTop: space(1) },
+  });

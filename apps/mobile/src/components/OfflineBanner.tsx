@@ -1,12 +1,15 @@
 import { StyleSheet, Text, View } from "react-native";
 import { useOnline } from "@/lib/useOnline";
-import { c, space } from "@/theme/tokens";
+import type { ThemeColors } from "@/theme/palette";
+import { useThemedStyles } from "@/theme/ThemeProvider";
+import { space } from "@/theme/tokens";
 
 // The doc-06 "offline" state, surfaced globally so it satisfies the §12 matrix on every
 // key screen at once (Ask/Drug/Source/Search/Watchlist all show ●) rather than five
 // per-screen copies. Floats over the active route; renders nothing while online.
 export function OfflineBanner() {
   const online = useOnline();
+  const styles = useThemedStyles(createStyles);
   if (online) return null;
   return (
     <View style={styles.banner} testID="offline-banner" accessibilityRole="alert">
@@ -15,17 +18,18 @@ export function OfflineBanner() {
   );
 }
 
-const styles = StyleSheet.create({
-  banner: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: c.raised,
-    paddingTop: 44,
-    paddingBottom: space(2.5),
-    paddingHorizontal: space(4),
-    zIndex: 1000,
-  },
-  text: { color: c.text, fontSize: 13, fontWeight: "600", textAlign: "center" },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    banner: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: c.raised,
+      paddingTop: 44,
+      paddingBottom: space(2.5),
+      paddingHorizontal: space(4),
+      zIndex: 1000,
+    },
+    text: { color: c.text, fontSize: 13, fontWeight: "600", textAlign: "center" },
+  });

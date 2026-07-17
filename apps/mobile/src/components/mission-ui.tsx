@@ -1,17 +1,14 @@
 import type { ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { space, type } from "@/theme/tokens";
-import tokens from "@/theme/tokens.json";
+import type { ThemeColors } from "@/theme/palette";
+import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
+import { radius, space, type } from "@/theme/tokens";
 import type { Mission } from "@/api/missions-helpers";
 
 // Presentational primitives for the missions screens ONLY (mission list/composer,
-// mission detail). Colors and radii come exclusively from theme/tokens.json — the
-// Nemesis identity (monochrome + one crimson accent). theme/tokens.ts now mirrors the
-// same palette (rebranded 2026-07-16), but these screens keep reading tokens.json
-// directly so a desktop token export updates them without a hand-edit. `space`/`type`
-// are pulled from tokens.ts only for their numeric spacing/font-size scale.
-
-const { colors, radius } = tokens;
+// mission detail). Colors come from the theme context (monochrome + the student's
+// accent, Crimson by default); `space`/`type`/`radius` are the static numeric
+// scales from tokens.ts, which carry no color or brand identity.
 
 type Tone = "accent" | "accentOutline" | "neutral" | "muted";
 
@@ -29,27 +26,28 @@ function toneForStatus(status: Mission["status"]): Tone {
   }
 }
 
-/** Small status chip. Crimson is reserved for the ONE state that needs the
+/** Small status chip. The accent is reserved for the ONE state that needs the
  * student's attention (needs_review = filled, failed = outline); everything
  * else stays neutral/muted so the accent doesn't wash across the screen. */
 export function StatusPill({ status, label }: { status: Mission["status"]; label: string }) {
+  const styles = useThemedStyles(createStyles);
   const tone = toneForStatus(status);
+  const toneStyles: Record<Tone, { box: object; text: object }> = {
+    accent: { box: styles.pillAccentBox, text: styles.pillAccentText },
+    accentOutline: { box: styles.pillAccentOutlineBox, text: styles.pillAccentOutlineText },
+    neutral: { box: styles.pillNeutralBox, text: styles.pillNeutralText },
+    muted: { box: styles.pillMutedBox, text: styles.pillMutedText },
+  };
   return (
-    <View style={[styles.pill, PILL_TONE[tone].box]}>
-      <Text style={[styles.pillText, PILL_TONE[tone].text]}>{label}</Text>
+    <View style={[styles.pill, toneStyles[tone].box]}>
+      <Text style={[styles.pillText, toneStyles[tone].text]}>{label}</Text>
     </View>
   );
 }
 
-const PILL_TONE: Record<Tone, { box: object; text: object }> = {
-  accent: { box: { backgroundColor: colors.accent, borderColor: colors.accent }, text: { color: colors.foreground } },
-  accentOutline: { box: { backgroundColor: colors.accentFaint, borderColor: colors.accentBorder }, text: { color: colors.accent } },
-  neutral: { box: { backgroundColor: colors.surface, borderColor: colors.border }, text: { color: colors.foreground } },
-  muted: { box: { backgroundColor: "transparent", borderColor: colors.mutedBorder }, text: { color: colors.muted } },
-};
-
 /** Card-like container — the mission list row / event feed / result card shell. */
 export function Surface({ children, style, testID }: { children: ReactNode; style?: object; testID?: string }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.surface, style]} testID={testID}>
       {children}
@@ -74,6 +72,8 @@ export function MissionButton({
   disabled?: boolean;
   testID?: string;
 }) {
+  const { colors: c } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const isPrimary = variant === "primary";
   return (
     <Pressable
@@ -88,7 +88,7 @@ export function MissionButton({
       ]}
     >
       {busy ? (
-        <ActivityIndicator color={isPrimary ? colors.foreground : colors.muted} size="small" />
+        <ActivityIndicator color={isPrimary ? c.onAccent : c.text2} size="small" />
       ) : (
         <Text style={[styles.btnText, isPrimary ? styles.btnTextPrimary : styles.btnTextSecondary]}>{label}</Text>
       )}
@@ -97,6 +97,7 @@ export function MissionButton({
 }
 
 export function EmptyBlock({ title, body }: { title: string; body?: string }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.empty} testID="missions-empty">
       <Text style={styles.emptyTitle}>{title}</Text>
@@ -105,36 +106,45 @@ export function EmptyBlock({ title, body }: { title: string; body?: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  pill: { borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: space(2.5), paddingVertical: space(1) },
-  pillText: { ...type.micro, fontWeight: "600" },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    pill: { borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: space(2.5), paddingVertical: space(1) },
+    pillText: { ...type.micro, fontWeight: "600" },
+    pillAccentBox: { backgroundColor: c.accent, borderColor: c.accent },
+    pillAccentText: { color: c.onAccent },
+    pillAccentOutlineBox: { backgroundColor: c.accentFaint, borderColor: c.accentLine },
+    pillAccentOutlineText: { color: c.accent },
+    pillNeutralBox: { backgroundColor: c.glass, borderColor: c.line },
+    pillNeutralText: { color: c.text },
+    pillMutedBox: { backgroundColor: "transparent", borderColor: c.lineMuted },
+    pillMutedText: { color: c.text2 },
 
-  surface: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: space(4),
-    gap: space(2),
-  },
+    surface: {
+      borderWidth: 1,
+      borderColor: c.line,
+      backgroundColor: c.glass,
+      borderRadius: radius.sm,
+      padding: space(4),
+      gap: space(2),
+    },
 
-  btn: {
-    borderRadius: radius.input,
-    paddingVertical: space(3),
-    paddingHorizontal: space(4.5),
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
-  btnPrimary: { backgroundColor: colors.accent, borderColor: colors.accent },
-  btnSecondary: { backgroundColor: "transparent", borderColor: colors.border },
-  btnDisabled: { opacity: 0.45 },
-  btnPressed: { opacity: 0.8 },
-  btnText: { ...type.bodyStrong },
-  btnTextPrimary: { color: colors.foreground },
-  btnTextSecondary: { color: colors.foreground },
+    btn: {
+      borderRadius: radius.md,
+      paddingVertical: space(3),
+      paddingHorizontal: space(4.5),
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+    },
+    btnPrimary: { backgroundColor: c.accent, borderColor: c.accent },
+    btnSecondary: { backgroundColor: "transparent", borderColor: c.line },
+    btnDisabled: { opacity: 0.45 },
+    btnPressed: { opacity: 0.8 },
+    btnText: { ...type.bodyStrong },
+    btnTextPrimary: { color: c.onAccent },
+    btnTextSecondary: { color: c.text },
 
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(8), gap: space(2) },
-  emptyTitle: { ...type.title, color: colors.foreground, textAlign: "center" },
-  emptyBody: { ...type.small, color: colors.muted, textAlign: "center", maxWidth: 320 },
-});
+    empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(8), gap: space(2) },
+    emptyTitle: { ...type.title, color: c.text, textAlign: "center" },
+    emptyBody: { ...type.small, color: c.text2, textAlign: "center", maxWidth: 320 },
+  });

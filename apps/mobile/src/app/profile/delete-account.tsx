@@ -5,8 +5,10 @@ import { useMutation } from "@tanstack/react-query";
 import { deleteAccount } from "@/api/account";
 import { useAuth } from "@/auth/AuthProvider";
 import { ErrorState } from "@/components/states";
-import { common } from "@/theme/common";
-import { c, space } from "@/theme/tokens";
+import { useCommon } from "@/theme/common";
+import type { ThemeColors } from "@/theme/palette";
+import { useThemedStyles } from "@/theme/ThemeProvider";
+import { space } from "@/theme/tokens";
 
 // Account deletion (AC10 / §11 "deletion must work") — REAL and irreversible. A confirm
 // gate, then the account-delete edge fn service-role-deletes auth.users(uid); every owned
@@ -14,6 +16,8 @@ import { c, space } from "@/theme/tokens";
 // and return to sign-in.
 export default function DeleteAccountScreen() {
   const { signOut } = useAuth();
+  const common = useCommon();
+  const styles = useThemedStyles(createStyles);
   const [confirmed, setConfirmed] = useState(false);
 
   const del = useMutation({
@@ -51,14 +55,15 @@ export default function DeleteAccountScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  body: { padding: space(5), gap: space(4), backgroundColor: c.bg, flexGrow: 1 },
-  confirmRow: { flexDirection: "row", gap: space(2.5), alignItems: "flex-start", paddingVertical: space(1) },
-  checkbox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: c.danger, alignItems: "center", justifyContent: "center" },
-  checkboxOn: { backgroundColor: c.danger },
-  check: { color: "#fff", fontSize: 14, fontWeight: "900" }, // white on danger fill
-  confirmLabel: { flex: 1, fontSize: 14, lineHeight: 20, color: c.text2 },
-  dangerBtn: { backgroundColor: c.danger, paddingVertical: space(3.5), borderRadius: 10, alignItems: "center" },
-  dangerText: { color: "#fff", fontSize: 16, fontWeight: "700" }, // white on danger fill
-  disabled: { opacity: 0.5 },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    body: { padding: space(5), gap: space(4), backgroundColor: c.bg, flexGrow: 1 },
+    confirmRow: { flexDirection: "row", gap: space(2.5), alignItems: "flex-start", paddingVertical: space(1) },
+    checkbox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: c.danger, alignItems: "center", justifyContent: "center" },
+    checkboxOn: { backgroundColor: c.danger },
+    check: { color: "#fff", fontSize: 14, fontWeight: "900" }, // white on danger fill
+    confirmLabel: { flex: 1, fontSize: 14, lineHeight: 20, color: c.text2 },
+    dangerBtn: { backgroundColor: c.danger, paddingVertical: space(3.5), borderRadius: 10, alignItems: "center" },
+    dangerText: { color: "#fff", fontSize: 16, fontWeight: "700" }, // white on danger fill
+    disabled: { opacity: 0.5 },
+  });
