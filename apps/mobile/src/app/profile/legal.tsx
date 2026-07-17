@@ -1,48 +1,34 @@
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { Card } from "@/components/ui";
-import {
-  LEGAL_PRELAUNCH_NOTE,
-  MEDICAL_DISCLAIMER,
-  PRIVACY_SECTIONS,
-  TERMS_SECTIONS,
-} from "@/lib/legal";
+import { LEGAL_PRELAUNCH_NOTE, PRIVACY_SECTIONS, TERMS_SECTIONS } from "@/lib/legal";
 import { common } from "@/theme/common";
 import { c, space } from "@/theme/tokens";
 
-// Privacy / Terms / Educational-disclaimer — the three AC10 legal screens, one
-// parameterized route (?doc=). Distinct + deep-linkable; content from lib/legal.ts so
-// the disclaimer + consent copy stay verbatim-from-doc-18 and single-sourced.
+// Privacy / Terms — one parameterized route (?doc=). Distinct + deep-linkable; content
+// from lib/legal.ts so the sign-in attestation and these screens stay single-sourced.
 
-type Doc = "privacy" | "terms" | "disclaimer";
-const TITLES: Record<Doc, string> = { privacy: "Privacy Policy", terms: "Terms of Service", disclaimer: "Educational Disclaimer" };
+type Doc = "privacy" | "terms";
+const TITLES: Record<Doc, string> = { privacy: "Privacy Policy", terms: "Terms of Service" };
 
 export default function LegalScreen() {
   const params = useLocalSearchParams<{ doc?: string }>();
-  const doc: Doc = params.doc === "terms" ? "terms" : params.doc === "disclaimer" ? "disclaimer" : "privacy";
-  const sections = doc === "terms" ? TERMS_SECTIONS : doc === "privacy" ? PRIVACY_SECTIONS : [];
+  const doc: Doc = params.doc === "terms" ? "terms" : "privacy";
+  const sections = doc === "terms" ? TERMS_SECTIONS : PRIVACY_SECTIONS;
 
   return (
     <ScrollView contentContainerStyle={styles.body} testID={`legal-${doc}`}>
       <Text style={common.h1}>{TITLES[doc]}</Text>
 
-      {doc === "disclaimer" ? (
-        <Card testID="disclaimer-body">
-          <Text style={styles.para}>{MEDICAL_DISCLAIMER}</Text>
-        </Card>
-      ) : (
-        <>
-          <Card testID="legal-prelaunch">
-            <Text style={styles.note}>{LEGAL_PRELAUNCH_NOTE}</Text>
-          </Card>
-          {sections.map((s) => (
-            <View key={s.heading} style={styles.section}>
-              <Text style={styles.heading}>{s.heading}</Text>
-              <Text style={styles.para}>{s.body}</Text>
-            </View>
-          ))}
-        </>
-      )}
+      <Card testID="legal-prelaunch">
+        <Text style={styles.note}>{LEGAL_PRELAUNCH_NOTE}</Text>
+      </Card>
+      {sections.map((s) => (
+        <View key={s.heading} style={styles.section}>
+          <Text style={styles.heading}>{s.heading}</Text>
+          <Text style={styles.para}>{s.body}</Text>
+        </View>
+      ))}
     </ScrollView>
   );
 }

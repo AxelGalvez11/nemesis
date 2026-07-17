@@ -1,27 +1,29 @@
-// PharmaOrb mobile design tokens — the dark, ChatGPT/Claude-style palette ported verbatim from the web
-// app's `:root[data-theme="dark"]` (apps/web/app/globals.css) so mobile and web read as one brand.
-// React Native has no CSS variables, so these are plain typed constants consumed by StyleSheet.
+// Nemesis mobile design tokens — the phone's half of the shared visual identity with the
+// desktop app. Values mirror theme/tokens.json (the desktop dark-mode seeds, owner-specified
+// 2026-07-16): monochrome near-black surfaces, ONE crimson accent, tight radii. React Native
+// has no CSS variables, so these are plain typed constants consumed by StyleSheet. If
+// tokens.json is regenerated from the desktop export, re-derive these values to match.
 
 export const c = {
-  // surfaces & lines (true near-black)
-  bg: "#0a0a0b",
-  bg2: "#0e0e10",
-  surface: "#141417",
-  surface2: "#1a1a1e",
-  raised: "#1f1f24",
-  line: "#232329",
-  line2: "#2c2c33",
+  // surfaces & lines (monochrome near-black; bg2 = chrome/drawer, matching the desktop sidebar)
+  bg: "#0e0e0e",
+  bg2: "#0a0a0a",
+  surface: "#161617",
+  surface2: "#1b1b1d",
+  raised: "#202023",
+  line: "rgba(233,234,238,0.09)",
+  line2: "rgba(233,234,238,0.16)",
 
   // text
-  text: "#f4f4f5",
-  text2: "#a6a6ad",
-  text3: "#8c8c95",
+  text: "#e9eaee",
+  text2: "#9a9da6",
+  text3: "#6f7278",
 
-  // PharmaOrb accent — lime on near-black
-  acid: "#bcff3c",
-  acidDim: "#9bd92e",
-  acidDeep: "#74a81e",
-  onAcid: "#0a0a0b",
+  // Nemesis accent — the one crimson, reserved for primary actions
+  accent: "#ff2740",
+  accentDim: "#ff5165",
+  accentDeep: "#cc1f33",
+  onAccent: "#ffffff",
 
   // status
   warn: "#f5b23b",
@@ -29,14 +31,14 @@ export const c = {
   info: "#7fb2ff",
   good: "#7ee081",
 
-  // source-family dots (match the web evidence panel)
+  // source-family dots (legacy evidence components only)
   pubmed: "#a78bfa",
   trial: "#f59e0b",
   fda: "#5b9bff",
 
   // translucent accents
-  acidFaint: "rgba(188,255,60,0.10)",
-  acidLine: "rgba(188,255,60,0.28)",
+  accentFaint: "rgba(255,39,64,0.12)",
+  accentLine: "rgba(255,39,64,0.35)",
   warnFaint: "rgba(245,178,59,0.09)",
   warnLine: "rgba(245,178,59,0.30)",
   dangerFaint: "rgba(255,92,77,0.10)",
@@ -44,15 +46,15 @@ export const c = {
   scrim: "rgba(0,0,0,0.58)",
 } as const;
 
-export const radius = { sm: 10, md: 14, lg: 18, xl: 24, pill: 999 } as const;
+// Matches tokens.json radius seeds (card 8 / input 10) at radiusScalar 1.0.
+export const radius = { sm: 8, md: 10, lg: 14, xl: 18, pill: 999 } as const;
 
 // 4pt spacing grid.
 export const space = (n: number): number => n * 4;
 
 export const type = {
-  // Inter ships as the app font (loaded in the root layout); falls back to system.
-  family: undefined as string | undefined, // set per-platform in the root layout if a custom font is loaded
-  // sizes / line-heights tuned to the web composer + chat body
+  // System font, same as the desktop app (tokens.json font.family = "system").
+  family: undefined as string | undefined,
   h1: { fontSize: 26, lineHeight: 32, fontWeight: "700" as const },
   h2: { fontSize: 19, lineHeight: 25, fontWeight: "700" as const },
   title: { fontSize: 16, lineHeight: 22, fontWeight: "600" as const },
@@ -71,9 +73,9 @@ export const shadow = {
     shadowOffset: { width: 0, height: 8 },
     elevation: 12,
   },
-  acid: {
-    shadowColor: c.acid,
-    shadowOpacity: 0.45,
+  accent: {
+    shadowColor: c.accent,
+    shadowOpacity: 0.35,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
     elevation: 8,

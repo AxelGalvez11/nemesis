@@ -15,7 +15,7 @@ export default function AppShellLayout() {
   if (loading) {
     return (
       <View testID="auth-loading" style={styles.loading}>
-        <ActivityIndicator color={c.acid} />
+        <ActivityIndicator color={c.accent} />
       </View>
     );
   }

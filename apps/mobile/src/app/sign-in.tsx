@@ -5,15 +5,14 @@ import { useAuth } from "@/auth/AuthProvider";
 import { AGE_TOS_ACK } from "@/lib/legal";
 import { common, PLACEHOLDER } from "@/theme/common";
 import { c, space } from "@/theme/tokens";
-import { Orb } from "@/components/TopBar";
+import { LogoMark } from "@/components/TopBar";
 
-// Sign-in screen. We drive real email/password sign-IN (never UI signup — that would
-// hang on email confirmation). "Continue as guest" enters the app in browse-only mode.
-// doc-18 age gate: an 18+ / Terms+Privacy attestation gates BOTH entry actions. There is
-// no separate signup form, so the entry screen is where the attestation lives; the
-// Terms/Privacy links resolve to the legal screens (the router has no auth guard).
+// Sign-in screen. Email/password sign-IN only — accounts are created on the web
+// (enternemesis.com), so there is no in-app signup form. An 18+ / Terms+Privacy
+// attestation gates entry; the Terms/Privacy links resolve to the legal screens
+// (the router has no auth guard on them).
 export default function SignIn() {
-  const { signInEmail, continueAsGuest } = useAuth();
+  const { signInEmail } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,9 +21,9 @@ export default function SignIn() {
 
   return (
     <View style={common.center} testID="signin-screen">
-      <Orb size={44} />
+      <LogoMark size={52} />
       <Text style={common.h1}>Nemesis</Text>
-      <Text style={common.sub}>Educational use only — not medical advice.</Text>
+      <Text style={common.sub}>Send work to your Mac. Review it from anywhere.</Text>
       <TextInput
         testID="email"
         style={common.input}
@@ -74,7 +73,7 @@ export default function SignIn() {
 
       <Pressable
         testID="signin-submit"
-        style={[common.btn, (busy || !acked) && styles.disabled]}
+        style={[common.btn, styles.wide, (busy || !acked) && styles.disabled]}
         disabled={busy || !acked}
         onPress={async () => {
           setBusy(true);
@@ -87,17 +86,7 @@ export default function SignIn() {
       >
         <Text style={common.btnText}>{busy ? "Signing in…" : "Sign in"}</Text>
       </Pressable>
-      <Pressable
-        testID="continue-guest"
-        style={[common.linkBtn, !acked && styles.disabled]}
-        disabled={!acked}
-        onPress={() => {
-          continueAsGuest();
-          router.replace("/");
-        }}
-      >
-        <Text style={common.link}>Continue as guest</Text>
-      </Pressable>
+      <Text style={styles.hint}>New here? Create your account at enternemesis.com, then sign in.</Text>
     </View>
   );
 }
@@ -113,10 +102,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  boxOn: { backgroundColor: c.acid, borderColor: c.acid },
-  tick: { color: c.onAcid, fontSize: 14, fontWeight: "700", lineHeight: 16 },
+  boxOn: { backgroundColor: c.accent, borderColor: c.accent },
+  tick: { color: c.onAccent, fontSize: 14, fontWeight: "700", lineHeight: 16 },
   ackText: { flex: 1, fontSize: 13, lineHeight: 18, color: c.text2 },
   links: { flexDirection: "row", alignItems: "center", gap: space(2), marginTop: space(1.5) },
   dot: { color: c.text3 },
+  wide: { alignSelf: "stretch", maxWidth: 360, alignItems: "center", marginTop: space(2) },
+  hint: { fontSize: 12.5, lineHeight: 18, color: c.text3, textAlign: "center", maxWidth: 300 },
   disabled: { opacity: 0.45 },
 });

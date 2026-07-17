@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   navGlyph: { color: c.text2, fontSize: 17, width: 22, textAlign: "center" },
   navLabel: { color: c.text, ...type.bodyStrong, flex: 1 },
   dim: { color: c.text3, opacity: 0.7 },
-  badge: { color: c.acid, ...type.micro, borderWidth: 1, borderColor: c.acidLine, borderRadius: 6, paddingHorizontal: space(1.5), paddingVertical: 2, overflow: "hidden" },
+  badge: { color: c.accent, ...type.micro, borderWidth: 1, borderColor: c.accentLine, borderRadius: 6, paddingHorizontal: space(1.5), paddingVertical: 2, overflow: "hidden" },
   soon: { color: c.text3, fontSize: 9.5, letterSpacing: 0.5, fontWeight: "700" },
 
   footer: { flexDirection: "row", alignItems: "center", gap: space(2.5), borderTopWidth: 1, borderTopColor: c.line, paddingHorizontal: space(4.5), paddingTop: space(3.5) },

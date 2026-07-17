@@ -1,13 +1,15 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
+import Constants from "expo-constants";
 import { useAuth } from "@/auth/AuthProvider";
 import { SectionHeader } from "@/components/ui";
 import { common } from "@/theme/common";
 import { c, space } from "@/theme/tokens";
 
-// Profile hub (doc-06 Profile/Settings · §12). Account identity + the AC10 affordances:
-// My Health Context (real CRUD), subscription, the three legal screens, data export +
-// account deletion, and support. Guests get a sign-in affordance.
+// Settings — deliberately small. The phone app is a dispatch remote for the Mac agent,
+// so settings hold only what the phone itself owns: who you're signed in as, the legal
+// documents, support, and account deletion. Everything else (plans, library, models)
+// lives on the desktop app and the web account page.
 
 interface NavRow {
   testID: string;
@@ -15,14 +17,16 @@ interface NavRow {
   onPress: () => void;
 }
 
-export default function ProfileTab() {
+const SUPPORT_EMAIL = "support@enternemesis.com";
+
+export default function SettingsScreen() {
   const { session, signOut } = useAuth();
 
   if (!session) {
     return (
       <View style={common.screen} testID="tab-profile">
         <Text style={common.h1}>Settings</Text>
-        <Text testID="profile-guest" style={common.body}>Browsing as guest.</Text>
+        <Text testID="profile-guest" style={common.body}>You're not signed in.</Text>
         <Pressable testID="goto-signin" style={common.btn} onPress={() => router.replace("/sign-in")}>
           <Text style={common.btnText}>Sign in</Text>
         </Pressable>
@@ -30,33 +34,28 @@ export default function ProfileTab() {
     );
   }
 
-  const account: NavRow[] = [
-    { testID: "nav-health-context", label: "My Health Context", onPress: () => router.push("/profile/health-context") },
-    { testID: "nav-subscription", label: "Subscription", onPress: () => router.push("/profile/subscription") },
-  ];
   const legal: NavRow[] = [
-    { testID: "nav-privacy", label: "Privacy policy", onPress: () => router.push("/profile/legal?doc=privacy") },
     { testID: "nav-terms", label: "Terms of service", onPress: () => router.push("/profile/legal?doc=terms") },
-    { testID: "nav-disclaimer", label: "Educational disclaimer", onPress: () => router.push("/profile/legal?doc=disclaimer") },
+    { testID: "nav-privacy", label: "Privacy policy", onPress: () => router.push("/profile/legal?doc=privacy") },
   ];
-  const data: NavRow[] = [
-    { testID: "nav-export", label: "Export your data", onPress: () => router.push("/profile/export") },
+  const account: NavRow[] = [
+    { testID: "nav-support", label: "Contact support", onPress: () => Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {}) },
     { testID: "nav-delete-account", label: "Delete account", onPress: () => router.push("/profile/delete-account") },
-    { testID: "nav-support", label: "Contact support", onPress: () => Linking.openURL("mailto:support@pharmabro.app").catch(() => {}) },
   ];
 
   return (
     <ScrollView contentContainerStyle={styles.body} testID="tab-profile">
-      <Text style={common.h1}>Profile</Text>
+      <Text style={common.h1}>Settings</Text>
       <Text testID="profile-email" style={styles.email}>{session.user.email}</Text>
 
-      <Group title="Account" rows={account} />
       <Group title="Legal" rows={legal} />
-      <Group title="Your data" rows={data} />
+      <Group title="Account" rows={account} />
 
       <Pressable testID="signout" style={[common.btn, styles.signout]} onPress={signOut}>
         <Text style={common.btnText}>Sign out</Text>
       </Pressable>
+
+      <Text style={styles.version}>Nemesis {Constants.expoConfig?.version ?? ""}</Text>
     </ScrollView>
   );
 }
@@ -83,4 +82,5 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 16, color: c.text },
   chevron: { fontSize: 22, color: c.text3 },
   signout: { alignSelf: "stretch", alignItems: "center", marginTop: space(5) },
+  version: { fontSize: 12, color: c.text3, textAlign: "center", marginTop: space(4) },
 });
