@@ -64,9 +64,27 @@ export default function DesktopAuthPage() {
         // button must keep working even if the automatic hop was blocked.
         setDeepLink(link);
         window.location.href = link;
-        // Local-only sign-out: the refresh token now belongs to the desktop app;
-        // keeping a browser copy would break the app's session on rotation.
-        void supabase.auth.signOut({ scope: "local" });
+        // Hand-off done: drop the browser's LOCAL session WITHOUT a server-side
+        // revoke. In supabase-js v2, signOut({ scope: "local" }) is NOT local — it
+        // POSTs /logout and revokes THIS refresh token on the server, i.e. the exact
+        // token we just handed the desktop app, so the app always exchanged an
+        // already-dead token and sign-in silently failed (both Google and Apple).
+        // Stop the browser's auto-refresh and clear its stored session so it can
+        // neither rotate nor reuse the token the app now owns.
+        try {
+          void supabase.auth.stopAutoRefresh();
+        } catch {
+          // ignore
+        }
+        try {
+          for (const key of Object.keys(window.localStorage)) {
+            if (key.startsWith("sb-") && key.endsWith("-auth-token")) {
+              window.localStorage.removeItem(key);
+            }
+          }
+        } catch {
+          // A lingering browser copy is harmless once the tab is closed.
+        }
       })();
       return;
     }
