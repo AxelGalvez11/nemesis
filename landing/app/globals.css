@@ -312,6 +312,7 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 .foot .muted { color: var(--iron); font-size: 12.5px; font-family: var(--sans); letter-spacing: 0.02em; }
 .foot .spacer { flex: 1; }
 .social-links { display: inline-flex; align-items: center; gap: 14px; }
+.social-links a { display: inline-flex; align-items: center; } /* icon glyphs sit on the text row line */
 .parallax-layer { --parallax-y: 0px; backface-visibility: hidden; }
 .parallax-layer.is-parallax-active { will-change: transform; }
 
