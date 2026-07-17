@@ -252,6 +252,62 @@ export default function Home() {
         </div>
       </div>
 
+      {/* FAQ answers the questions the page raises but never settles — the
+          honesty questions first, because they're the ones that decide trust.
+          Native <details> accordions: no JS, keyboard-accessible for free. */}
+      <section className="section" id="faq">
+        <div className="wrap">
+          <div className="section-head">
+            <p className="eyebrow">Questions</p>
+            <h2>Fair questions.</h2>
+          </div>
+          <div className="faq">
+            <details>
+              <summary>Does it do my homework for me?</summary>
+              <p>
+                No. It drafts, you finish. Nemesis never submits coursework on
+                your behalf &mdash; everything it makes is a draft you review, edit,
+                and turn in yourself. Every action is logged.
+              </p>
+            </details>
+            <details>
+              <summary>Which schools does it work with?</summary>
+              <p>
+                Canvas and Blackboard work out of the box. Other school portals
+                can be set up from a chat.
+              </p>
+            </details>
+            <details>
+              <summary>Where do my files live?</summary>
+              <p>
+                On your Mac, as plain files. Notes and decks are normal folders
+                you can open, back up, or move &mdash; and they stay yours, on any
+                plan or none.
+              </p>
+            </details>
+            <details>
+              <summary>Do you sell my data or train on my notes?</summary>
+              <p>
+                No and no. No ads, no selling your data, no training on your
+                content. Your notes and school sign-ins stay on your Mac.
+              </p>
+            </details>
+            <details>
+              <summary>Is it Mac only?</summary>
+              <p>Yes &mdash; Nemesis is a Mac app.</p>
+            </details>
+            <details>
+              <summary>What does it cost?</summary>
+              <p>
+                Every plan starts with a 7-day free trial &mdash; $9.99, $19.99, or
+                $49.99 a month after that, cancel anytime. See{" "}
+                <a href="/pricing">pricing</a> for what each plan includes.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
       <section className="closer" id="get">
         <div className="wrap">
           <h2>Built from your notes. Sharper every week.</h2>
