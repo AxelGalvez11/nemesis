@@ -14,6 +14,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { clearChatThread, loadChatThread, saveChatThread, sendChat } from "@/api/chat";
+import { useShell } from "@/components/AppDrawer";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
@@ -53,6 +54,7 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { contentTop, contentBottom } = useShellPadding();
   const keyboardUp = useKeyboardVisible();
+  const { setHeaderTitle } = useShell();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [lastError, setLastError] = useState<null | string>(null);
   const [input, setInput] = useState("");
@@ -83,6 +85,15 @@ export default function ChatScreen() {
       alive = false;
     };
   }, [uid]);
+
+  // Header title: the Nemesis logo until the student asks something, then the
+  // conversation's title (their first question, trimmed). Cleared on unmount so
+  // leaving Chat restores the logo on the other screens.
+  useEffect(() => {
+    const firstUser = (messages.find((message) => message.role === "user")?.content ?? "").trim();
+    setHeaderTitle(firstUser ? (firstUser.length > 30 ? `${firstUser.slice(0, 29).trim()}…` : firstUser) : null);
+  }, [messages, setHeaderTitle]);
+  useEffect(() => () => setHeaderTitle(null), [setHeaderTitle]);
 
   const send = useCallback(() => {
     const text = input.trim();

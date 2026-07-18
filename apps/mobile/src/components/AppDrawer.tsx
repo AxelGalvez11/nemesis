@@ -28,6 +28,11 @@ interface ShellState {
   /** Bumped when the user taps "New chat"; the chat screen watches it to clear the thread. */
   resetNonce: number;
   newChat: () => void;
+  /** The TopBar's center label: null → the Nemesis logo; a string → that title
+   *  (the active chat/session title once the user has asked something). Screens
+   *  set it on mount and clear it (null) on unmount. */
+  headerTitle: string | null;
+  setHeaderTitle: (title: string | null) => void;
 }
 
 const ShellContext = createContext<ShellState | undefined>(undefined);
@@ -41,13 +46,14 @@ export function useShell(): ShellState {
 export function DrawerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [resetNonce, setResetNonce] = useState(0);
+  const [headerTitle, setHeaderTitle] = useState<string | null>(null);
   const openDrawer = useCallback(() => setOpen(true), []);
   const closeDrawer = useCallback(() => setOpen(false), []);
   const newChat = useCallback(() => setResetNonce((n) => n + 1), []);
 
   const value = useMemo<ShellState>(
-    () => ({ open, openDrawer, closeDrawer, resetNonce, newChat }),
-    [open, openDrawer, closeDrawer, resetNonce, newChat],
+    () => ({ open, openDrawer, closeDrawer, resetNonce, newChat, headerTitle, setHeaderTitle }),
+    [open, openDrawer, closeDrawer, resetNonce, newChat, headerTitle],
   );
 
   return (

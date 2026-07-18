@@ -12,9 +12,10 @@ import {
   LogoutIcon,
   MailIcon,
   SparkleIcon,
+  ThemeIcon,
   TrashIcon,
 } from "@/components/icons";
-import { accentSwatchHex, ACCENT_SWATCHES, type ThemeColors, type ThemeMode } from "@/theme/palette";
+import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space } from "@/theme/tokens";
 
@@ -27,17 +28,12 @@ import { radius, space } from "@/theme/tokens";
 
 const SUPPORT_EMAIL = "support@enternemesis.com";
 
-const THEME_MODES: { id: ThemeMode; label: string }[] = [
-  { id: "system", label: "System" },
-  { id: "light", label: "Light" },
-  { id: "dark", label: "Dark" },
-];
-
 export default function SettingsScreen() {
   const { session, signOut } = useAuth();
   const styles = useThemedStyles(createStyles);
-  const { colors: c } = useTheme();
+  const { colors: c, mode } = useTheme();
   const insets = useSafeAreaInsets();
+  const modeLabel = mode === "light" ? "Light" : mode === "dark" ? "Dark" : "System";
 
   const close = () => {
     if (router.canGoBack()) router.back();
@@ -89,11 +85,13 @@ export default function SettingsScreen() {
           <SettingRow styles={styles} icon={MailIcon} label="Email" value={email} last />
         </Card>
         <Card styles={styles}>
-          <SettingRow styles={styles} icon={SparkleIcon} label="Subscription" value="Free" last />
+          <SettingRow styles={styles} icon={SparkleIcon} label="Subscription" value="Free" chevron last testID="nav-subscription" onPress={() => router.push("/profile/subscription")} />
         </Card>
 
-        <SectionLabel styles={styles}>Appearance</SectionLabel>
-        <AppearanceCard styles={styles} />
+        <SectionLabel styles={styles}>Preferences</SectionLabel>
+        <Card styles={styles}>
+          <SettingRow styles={styles} icon={ThemeIcon} label="Appearance" value={modeLabel} chevron last testID="nav-appearance" onPress={() => router.push("/profile/appearance")} />
+        </Card>
 
         <SectionLabel styles={styles}>Legal</SectionLabel>
         <Card styles={styles}>
@@ -166,45 +164,6 @@ function SettingRow({
   );
 }
 
-function AppearanceCard({ styles }: { styles: Styles }) {
-  const { accentId, mode, setAccent, setMode } = useTheme();
-  return (
-    <View style={[styles.card, styles.cardPad]}>
-      <View style={styles.segment} testID="appearance-modes">
-        {THEME_MODES.map((entry) => (
-          <Pressable
-            key={entry.id}
-            testID={`mode-${entry.id}`}
-            onPress={() => setMode(entry.id)}
-            style={[styles.segmentItem, mode === entry.id && styles.segmentItemActive]}
-          >
-            <Text style={[styles.segmentText, mode === entry.id && styles.segmentTextActive]}>{entry.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-      <View style={styles.swatchRow} testID="appearance-accents">
-        {ACCENT_SWATCHES.map((swatch) => (
-          <Pressable
-            key={swatch.id}
-            testID={`accent-${swatch.id}`}
-            accessibilityLabel={`${swatch.label} accent`}
-            onPress={() => setAccent(swatch.id)}
-            style={styles.swatchCell}
-          >
-            <View
-              style={[
-                styles.swatch,
-                { backgroundColor: swatch.id === "crimson" ? "#ff2740" : accentSwatchHex(swatch.hue) },
-                accentId === swatch.id && styles.swatchActive,
-              ]}
-            />
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
-
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     root: { flex: 1, backgroundColor: c.bg },
@@ -236,16 +195,6 @@ const createStyles = (c: ThemeColors) =>
     chevron: { fontSize: 20, color: c.text3, marginLeft: space(1) },
 
     version: { fontSize: 12, color: c.text3, textAlign: "center", marginTop: space(5) },
-
-    segment: { flexDirection: "row", backgroundColor: c.surface2, borderRadius: radius.sm, padding: 3, gap: 3 },
-    segmentItem: { flex: 1, paddingVertical: space(2), alignItems: "center", borderRadius: radius.sm - 2 },
-    segmentItemActive: { backgroundColor: c.accentFaint },
-    segmentText: { fontSize: 14, color: c.text2, fontWeight: "600" },
-    segmentTextActive: { color: c.accent },
-    swatchRow: { flexDirection: "row", flexWrap: "wrap", marginTop: space(3) },
-    swatchCell: { width: "20%", alignItems: "center", paddingVertical: space(2) },
-    swatch: { width: 30, height: 30, borderRadius: 999, borderWidth: 2, borderColor: "transparent" },
-    swatchActive: { borderColor: c.text },
   });
 
 type Styles = ReturnType<typeof createStyles>;
