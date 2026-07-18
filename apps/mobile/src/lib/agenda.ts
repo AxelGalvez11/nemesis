@@ -86,7 +86,15 @@ function parseDayKey(key: string): Date {
   return new Date(y, (m || 1) - 1, d || 1);
 }
 
+/** Shift a yyyy-mm-dd key by ±N days, rolling months/years over (Date normalizes
+ *  out-of-range days for us). Powers the Day view's ‹ › paging. */
+export function shiftDayKey(key: string, delta: number): string {
+  const date = parseDayKey(key);
+  return dayKeyFromDate(new Date(date.getFullYear(), date.getMonth(), date.getDate() + delta));
+}
+
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const WEEKDAY_SHORT = WEEKDAYS.map((day) => day.slice(0, 3));
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** "Today" / "Tomorrow" / "Friday, Jul 24" — the agenda's day headers. */
@@ -178,6 +186,17 @@ export function stepMonth(year: number, month: number, delta: number): { year: n
   return { year: Math.floor(total / 12), month: ((total % 12) + 12) % 12 };
 }
 
+/** Time-sorted within a day, untimed events last, alphabetical tiebreak — the one
+ *  comparator every per-day view (agenda list, week, day) shares. Pure: returns a
+ *  new array, never mutates the input. */
+function sortDayEvents(events: AgendaEvent[]): AgendaEvent[] {
+  return events
+    .slice()
+    .sort((a, b) =>
+      a.time && b.time ? a.time.localeCompare(b.time) : a.time ? -1 : b.time ? 1 : a.title.localeCompare(b.title),
+    );
+}
+
 /** Upcoming events (today → today + horizon), grouped by day, day-sorted, and
  *  time-sorted within a day (untimed last). */
 export function agendaDays(events: AgendaEvent[], todayKey: string, horizonDays = 90): AgendaDay[] {
@@ -195,10 +214,45 @@ export function agendaDays(events: AgendaEvent[], todayKey: string, horizonDays 
   return [...byDay.keys()].sort().map((key) => ({
     key,
     label: labelForDay(key, todayKey),
-    events: (byDay.get(key) ?? [])
-      .slice()
-      .sort((a, b) =>
-        a.time && b.time ? a.time.localeCompare(b.time) : a.time ? -1 : b.time ? 1 : a.title.localeCompare(b.title),
-      ),
+    events: sortDayEvents(byDay.get(key) ?? []),
   }));
+}
+
+/** One day's events, time-sorted (untimed last). The Day view's list. */
+export function eventsForDay(events: AgendaEvent[], dayKey: string): AgendaEvent[] {
+  return sortDayEvents(events.filter((event) => event.date === dayKey));
+}
+
+// --- week grid -------------------------------------------------------------------
+
+export interface WeekDay {
+  /** yyyy-mm-dd for this day. */
+  key: string;
+  /** Short weekday label, e.g. "Mon". */
+  label: string;
+  day: number;
+  isToday: boolean;
+  /** This day's events, time-sorted (untimed last). */
+  events: AgendaEvent[];
+}
+
+/** The Sunday-first week containing `dateKey`, each day carrying its own
+ *  time-sorted events. Pure — `todayKey` decides which cell is "today", same
+ *  contract as monthMatrix. The Week view renders all 7 days, always (even the
+ *  empty ones), so the week never looks like it's missing days. */
+export function weekDays(events: AgendaEvent[], dateKey: string, todayKey: string): WeekDay[] {
+  const anchor = parseDayKey(dateKey);
+  const sunday = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - anchor.getDay());
+
+  return Array.from({ length: 7 }, (_, i) => {
+    const cellDate = new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate() + i);
+    const key = dayKeyFromDate(cellDate);
+    return {
+      key,
+      label: WEEKDAY_SHORT[cellDate.getDay()],
+      day: cellDate.getDate(),
+      isToday: key === todayKey,
+      events: eventsForDay(events, key),
+    };
+  });
 }
