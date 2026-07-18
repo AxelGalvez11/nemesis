@@ -173,13 +173,32 @@ export interface LayoutSim {
    * ceiling, so a finger stuck dragging a slider can never keep the
    * simulation running forever. */
   reheat(): void;
+  /** Fix node `index` at (x, y) — same coordinate space snapshot() renders
+   * (canvas pixels), not the pre-normalization sim space. step()'s force
+   * integration skips a pinned index (it never fights the finger), but the
+   * node still exerts its usual repulsion/spring pull on every other node,
+   * so unpinned neighbors keep reacting to it while the sim is ticking.
+   * snapshot() echoes a pinned node's stored (x, y) straight through —
+   * clamped into the canvas like any other node — instead of passing it
+   * through the auto-fit scale, and excludes it from the extent that scale
+   * is computed over, so dragging one node never makes the rest of the
+   * graph "breathe". No-op for an out-of-range index. Pinning has no
+   * opposite — once dragged, a node stays fixed until the sim is
+   * recreated, same as Obsidian/d3-force's drag-to-pin feel. */
+  pin(index: number, x: number, y: number): void;
 }
 
 const GOLDEN_ANGLE = 2.399963229728653;
 
 /** Normalize simulated positions into the canvas: scale the extent to fit
  * (never upscale), then clamp. Shared by createLayoutSim's snapshot() and
- * layoutNoteGraph's return so both paths produce byte-identical output. */
+ * layoutNoteGraph's return so both paths produce byte-identical output.
+ *
+ * Pinned indices (see LayoutSim.pin) are excluded from the extent the fit
+ * scale is computed over, and skip the scale/offset transform entirely —
+ * their stored (x, y) is clamped into the canvas and used as-is. With an
+ * empty `pinned` map this is exactly the original unpinned behavior (every
+ * node goes through the transform, extent covers every node). */
 function snapshotPositions(
   graph: NoteGraph,
   xs: Float64Array,
@@ -187,30 +206,53 @@ function snapshotPositions(
   width: number,
   height: number,
   padding: number,
+  pinned: Map<number, { x: number; y: number }>,
 ): NoteGraph {
   const n = xs.length;
   if (n === 0) return { edges: [...graph.edges], nodes: [] };
 
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let unpinnedCount = 0;
   for (let i = 0; i < n; i++) {
+    if (pinned.has(i)) continue;
+    unpinnedCount++;
     if (xs[i] < minX) minX = xs[i];
     if (xs[i] > maxX) maxX = xs[i];
     if (ys[i] < minY) minY = ys[i];
     if (ys[i] > maxY) maxY = ys[i];
   }
-  const spanX = Math.max(1, maxX - minX);
-  const spanY = Math.max(1, maxY - minY);
-  const scale = Math.min((width - padding * 2) / spanX, (height - padding * 2) / spanY, 1);
-  const cx = width / 2;
-  const cy = height / 2;
-  const offX = cx - ((minX + maxX) / 2) * scale;
-  const offY = cy - ((minY + maxY) / 2) * scale;
 
-  const nodes = graph.nodes.map((node, i) => ({
-    ...node,
-    x: Math.min(width - padding, Math.max(padding, xs[i] * scale + offX)),
-    y: Math.min(height - padding, Math.max(padding, ys[i] * scale + offY)),
-  }));
+  // Fit scale/offset is only meaningful relative to the unpinned extent; if
+  // every node is pinned there's nothing left to fit (pinned nodes below
+  // bypass this entirely), so the identity transform is a safe default.
+  let scale = 1;
+  let offX = 0;
+  let offY = 0;
+  if (unpinnedCount > 0) {
+    const spanX = Math.max(1, maxX - minX);
+    const spanY = Math.max(1, maxY - minY);
+    scale = Math.min((width - padding * 2) / spanX, (height - padding * 2) / spanY, 1);
+    const cx = width / 2;
+    const cy = height / 2;
+    offX = cx - ((minX + maxX) / 2) * scale;
+    offY = cy - ((minY + maxY) / 2) * scale;
+  }
+
+  const nodes = graph.nodes.map((node, i) => {
+    const p = pinned.get(i);
+    if (p) {
+      return {
+        ...node,
+        x: Math.min(width - padding, Math.max(padding, p.x)),
+        y: Math.min(height - padding, Math.max(padding, p.y)),
+      };
+    }
+    return {
+      ...node,
+      x: Math.min(width - padding, Math.max(padding, xs[i] * scale + offX)),
+      y: Math.min(height - padding, Math.max(padding, ys[i] * scale + offY)),
+    };
+  });
   return { edges: [...graph.edges], nodes };
 }
 
@@ -252,6 +294,10 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
   // moves this backwards, only step() advances it.
   let totalStepsRun = 0;
 
+  // Dragged nodes — see LayoutSim.pin. Keyed by node index, in the same
+  // canvas-pixel coordinate space snapshot() renders.
+  const pinned = new Map<number, { x: number; y: number }>();
+
   const sim: LayoutSim = {
     gravity: opts.gravity ?? 1,
     repulsion: opts.repulsion ?? 1,
@@ -264,6 +310,15 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
       if (n === 0 || it >= iterationsBudget) return;
       const cool = 1 - it / iterationsBudget;
       const step = 0.085 * cool + 0.01;
+
+      // Force pinned nodes to their dragged spot before this iteration's
+      // force pass. They still push/pull neighbors below (the repulsion and
+      // spring loops don't know or care which indices are pinned) — only the
+      // position-update loop skips them, so they never fight the finger.
+      for (const [i, p] of pinned) {
+        xs[i] = p.x;
+        ys[i] = p.y;
+      }
 
       const fx = new Float64Array(n);
       const fy = new Float64Array(n);
@@ -306,6 +361,10 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
 
       const gravity = Math.max(0, sim.gravity) * 0.02;
       for (let i = 0; i < n; i++) {
+        // Pinned: forced above, and skipped here — no gravity, no integrated
+        // motion. It was still a full participant in the repulsion/spring
+        // loops above, so unpinned neighbors already feel it.
+        if (pinned.has(i)) continue;
         // Gentle gravity keeps disconnected clusters from drifting off-canvas.
         fx[i] += (cx - xs[i]) * gravity;
         fy[i] += (cy - ys[i]) * gravity;
@@ -328,7 +387,7 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
     },
 
     snapshot(): NoteGraph {
-      return snapshotPositions(graph, xs, ys, width, height, padding);
+      return snapshotPositions(graph, xs, ys, width, height, padding, pinned);
     },
 
     reheat() {
@@ -336,6 +395,13 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
       const kick = Math.max(1, Math.round(totalIterations * 0.35));
       it = Math.max(0, it - kick);
       iterationsBudget = it + kick;
+    },
+
+    pin(index: number, x: number, y: number) {
+      if (index < 0 || index >= n) return;
+      pinned.set(index, { x, y });
+      xs[index] = x;
+      ys[index] = y;
     },
   };
   return sim;

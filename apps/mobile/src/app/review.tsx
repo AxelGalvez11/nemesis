@@ -7,7 +7,7 @@ import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { decryptLibrary, loadCachedRows, loadVaultKey } from "@/api/librarySync";
 import { enqueueGrade, flushReviewQueue, loadAllGradedMarks, recordGradedMark } from "@/api/reviewEvents";
 import {
-  clozeAnswerHighlight,
+  clozeParts,
   gradeCurrent,
   initSession,
   parseDeckSnapshot,
@@ -85,9 +85,11 @@ export default function ReviewScreen() {
 
   const current = session?.cards[0];
   const counts = session ? sessionCounts(session) : { fresh: 0, learning: 0, review: 0 };
-  // Cloze cards arrive pre-rendered (front blanked, back revealed); highlight the
-  // tested span on the back the way Anki does. Null for a normal Q/A card.
-  const clozeSplit = current ? clozeAnswerHighlight(current.prompt, current.answer) : null;
+  // Cloze cards arrive pre-rendered (front blanked, back revealed); clozeParts
+  // recovers the blank marker AND the tested span so the card reveals IN PLACE
+  // — one sentence throughout, Anki-style — instead of a separate
+  // blanked-front / full-answer pair. Null for a normal Q/A card.
+  const clozeSplit = current ? clozeParts(current.prompt, current.answer) : null;
 
   // Duplicate-touch latch: a doubled native press event calls grade() twice
   // against the same closure before React re-renders — the second call must
@@ -178,34 +180,49 @@ export default function ReviewScreen() {
         </View>
       ) : (
         <>
-          <ScrollView
-            style={styles.cardScroll}
-            contentContainerStyle={[styles.cardBody, !revealed && styles.cardBodyCentered]}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* No card box and no deck title (owner call) — just the words, with the
-                divider between prompt and answer. */}
-            {current.isNew ? <Text style={styles.newTag}>NEW</Text> : null}
-            <Markdown style={promptStyles}>{current.prompt}</Markdown>
-            {revealed ? (
-              <View style={styles.answerBlock} testID="review-answer">
-                <View style={styles.divider} />
-                {clozeSplit ? (
-                  <Text style={styles.clozeAnswer} testID="review-cloze-answer">
+          <ScrollView style={styles.cardScroll} contentContainerStyle={styles.cardBody} showsVerticalScrollIndicator={false}>
+            {/* No card box and no deck title (owner call) — just the words. The
+                Pressable fills the whole content area, so a tap ANYWHERE on the
+                card (not just on the glyphs) reveals the answer; the grade
+                buttons then take over in the footer below. */}
+            <Pressable
+              onPress={() => setRevealed(true)}
+              disabled={revealed}
+              accessibilityLabel="Reveal answer"
+              testID="review-card"
+              style={[styles.cardPressable, !revealed && styles.cardPressableCentered]}
+            >
+              {current.isNew ? <Text style={styles.newTag}>NEW</Text> : null}
+              {clozeSplit ? (
+                <>
+                  {/* True in-place cloze reveal (Anki-style): ONE sentence — the
+                      blank marker swaps for the tested word where it sits. No
+                      divider, no separate answer block. */}
+                  <Text style={styles.clozeAnswer} testID={revealed ? "review-cloze-answer" : "review-cloze-blank"}>
                     {clozeSplit.before}
-                    <Text style={styles.clozeHit}>{clozeSplit.highlight}</Text>
+                    <Text style={styles.clozeHit}>{revealed ? clozeSplit.highlight : clozeSplit.blank}</Text>
                     {clozeSplit.after}
                   </Text>
-                ) : (
-                  <Markdown style={markdownStyles}>{current.answer}</Markdown>
-                )}
-                {current.note ? <Text style={styles.note}>{current.note}</Text> : null}
-              </View>
-            ) : null}
+                  {revealed && current.note ? <Text style={styles.note}>{current.note}</Text> : null}
+                </>
+              ) : (
+                <>
+                  <Markdown style={promptStyles}>{current.prompt}</Markdown>
+                  {revealed ? (
+                    <View style={styles.answerBlock} testID="review-answer">
+                      <View style={styles.divider} />
+                      <Markdown style={markdownStyles}>{current.answer}</Markdown>
+                      {current.note ? <Text style={styles.note}>{current.note}</Text> : null}
+                    </View>
+                  ) : null}
+                </>
+              )}
+              {!revealed ? <Text style={styles.hint}>Tap to reveal</Text> : null}
+            </Pressable>
           </ScrollView>
 
-          <View style={[styles.footer, { paddingBottom: insets.bottom + space(3) }]}>
-            {revealed ? (
+          {revealed ? (
+            <View style={[styles.footer, { paddingBottom: insets.bottom + space(3) }]}>
               <View style={styles.gradeRow} testID="review-grades">
                 {gradeButtons.map((button) => (
                   <Pressable
@@ -218,12 +235,8 @@ export default function ReviewScreen() {
                   </Pressable>
                 ))}
               </View>
-            ) : (
-              <Pressable style={styles.revealBtn} testID="review-reveal" onPress={() => setRevealed(true)}>
-                <Text style={styles.revealText}>Show answer</Text>
-              </Pressable>
-            )}
-          </View>
+            </View>
+          ) : null}
         </>
       )}
     </View>
@@ -251,9 +264,12 @@ const createStyles = (c: ThemeColors) =>
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4) },
     cardScroll: { flex: 1 },
     cardBody: { paddingHorizontal: space(4), paddingTop: space(2), paddingBottom: space(6), flexGrow: 1 },
-    // Only the un-revealed (short-prompt) state floats the card to the middle;
-    // once the answer is showing the content top-aligns so it can scroll.
-    cardBodyCentered: { justifyContent: "center" },
+    // The reveal Pressable fills this whole (flexGrow: 1) content area, so a
+    // tap anywhere in the blank space — not just on the text — flips the card.
+    // Only the un-revealed (short-prompt) state centers it; once the answer is
+    // showing the content top-aligns so long answers can scroll.
+    cardPressable: { flexGrow: 1 },
+    cardPressableCentered: { justifyContent: "center" },
     newTag: {
       ...type.micro,
       color: c.accent,
@@ -267,20 +283,18 @@ const createStyles = (c: ThemeColors) =>
       marginBottom: space(3),
     },
     answerBlock: { marginTop: space(2) },
-    // Cloze answer: the revealed sentence, echoing the prompt's size/centering,
-    // with the tested word highlighted (Anki's blue-highlight behaviour).
+    // Cloze sentence: same size/centering as the prompt markdown, one sentence
+    // throughout. `clozeHit` does double duty — accent/bold on the blank
+    // marker pre-reveal, then the same accent/bold treatment on the revealed
+    // word (Anki's highlight look either way).
     clozeAnswer: { ...type.body, color: c.text, fontSize: 20, lineHeight: 29, textAlign: "center" },
     clozeHit: { color: c.accent, fontWeight: "700" },
     divider: { height: 1, backgroundColor: c.line2, marginVertical: space(4) },
     note: { ...type.small, color: c.text2, marginTop: space(3), fontStyle: "italic" },
+    // Subtle nudge shown only pre-reveal, under the prompt/cloze sentence —
+    // replaces the old "Show answer" button now that the card itself is tappable.
+    hint: { ...type.small, color: c.text3, textAlign: "center", marginTop: space(4) },
     footer: { paddingHorizontal: space(4), paddingTop: space(2), borderTopWidth: 1, borderTopColor: c.line, backgroundColor: c.bg },
-    revealBtn: {
-      backgroundColor: c.accent,
-      borderRadius: radius.md,
-      paddingVertical: space(3.5),
-      alignItems: "center",
-    },
-    revealText: { ...type.bodyStrong, color: c.onAccent },
     gradeRow: { flexDirection: "row", gap: space(2) },
     gradeBtn: {
       flex: 1,

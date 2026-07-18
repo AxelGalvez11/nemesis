@@ -269,6 +269,26 @@ export function clozeAnswerHighlight(prompt: string, answer: string): ClozeSplit
   return { after, before, highlight };
 }
 
+export interface ClozeParts extends ClozeSplit {
+  /** The blank marker exactly as authored on the front — e.g. "[...]" or
+   *  "[European city]" — recovered by slicing the prompt at the same
+   *  before/after offsets clozeAnswerHighlight found on the answer. `before`
+   *  and `after` are identical text on both prompt and answer (that's what
+   *  makes them the matched prefix/suffix), so slicing the prompt between them
+   *  recovers whatever sits in the blank's place. */
+  blank: string;
+}
+
+/** clozeAnswerHighlight, plus the blank marker text, so the UI can render ONE
+ *  sentence that reveals IN PLACE (Anki-style) instead of a separate
+ *  blanked-front / full-answer pair. Null for a normal Q/A card. */
+export function clozeParts(prompt: string, answer: string): ClozeParts | null {
+  const split = clozeAnswerHighlight(prompt, answer);
+  if (!split) return null;
+  const blank = prompt.slice(split.before.length, prompt.length - split.after.length);
+  return { ...split, blank };
+}
+
 // --- offline grade queue shapes ------------------------------------------------
 
 export interface PendingReviewEvent {

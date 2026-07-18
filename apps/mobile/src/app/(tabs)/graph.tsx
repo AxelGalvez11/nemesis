@@ -1,36 +1,40 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  PanResponder,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { router, useFocusEffect } from "expo-router";
-import Svg, { Circle, G, Line, Text as SvgText } from "react-native-svg";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import Svg, { Line } from "react-native-svg";
 import { decryptLibrary, loadCachedRows, loadVaultKey, pullLibraryRows } from "@/api/librarySync";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { ForceSlider } from "@/components/ForceSlider";
+import { GraphNodeView } from "@/components/GraphNodeView";
 import { useShellPadding } from "@/components/shell-chrome";
 import { buildNoteGraph, createLayoutSim, type LayoutSim, type NoteGraph } from "@/lib/note-graph";
-import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import type { ThemeColors } from "@/theme/palette";
+import { space, type } from "@/theme/tokens";
 
 // Graph — the phone's twin of the desktop Graph page, rebuilt for read-only sync.
 // Nodes are the synced library notes; an edge is a [[wikilink]] mention between two
 // of them. Everything renders from the local cache (offline-friendly, zero tokens):
-// decrypt → buildNoteGraph → animated force layout → one SVG. The desktop's 3D
-// scene stays a desktop luxury — a 2D constellation is the right weight for a phone.
+// decrypt → buildNoteGraph → animated force layout → an SVG for edges with real
+// Views layered on top for nodes. The desktop's 3D scene stays a desktop luxury — a
+// 2D constellation is the right weight for a phone.
 //
 // The layout ANIMATES: createLayoutSim (note-graph.ts) seeds a jittered spiral,
 // then a setInterval here ticks it toward settled, pushing each frame's positions
-// into React state. Two hand-rolled sliders (Pressable + PanResponder — no new
-// deps) let the student steer Gravity (pull-to-center) and Repulsion (node
-// spacing) live: they mutate the running sim in place and "reheat" it, so
-// dragging never resets the graph back to its starting spiral. Tap a node to
-// open the note.
+// into React state. Two touch layers sit on top of that animation:
+//   - Whole-canvas PINCH (zoom) + one-finger PAN (move), via
+//     react-native-gesture-handler Gesture.Pinch()/Gesture.Pan() composed with
+//     Gesture.Simultaneous and driving reanimated shared values (scale,
+//     translateX, translateY) applied as a transform on the Animated.View that
+//     wraps the SVG + node Views.
+//   - Per-node DRAG (GraphNodeView), which pins the dragged node in the sim
+//     (LayoutSim.pin in note-graph.ts) so the running force layout stops fighting
+//     the finger, while its neighbors keep reacting to it live.
+// The Gravity/Repulsion sliders (ForceSlider) still mutate the running sim in
+// place and "reheat" it, so dragging never resets the graph back to its starting
+// spiral. A short tap on a node still opens the note.
 
 const HEADER_H = 34;
 const SLIDERS_H = 112;
@@ -40,6 +44,9 @@ const TICK_MS = 30;
 // exact same final (and intermediate) math as note-graph.ts — just fewer, chunkier
 // frames rendered.
 const STEPS_PER_TICK = 3;
+// Whole-canvas pinch-zoom bounds.
+const MIN_SCALE = 0.4;
+const MAX_SCALE = 3;
 
 type Status = "loading" | "unpaired" | "empty" | "ready";
 
@@ -64,6 +71,16 @@ export default function GraphScreen() {
 
   const canvasW = win.width;
   const canvasH = Math.max(220, win.height - contentTop - contentBottom - HEADER_H - SLIDERS_H);
+
+  // Whole-canvas pinch/pan transform. `saved*` hold the value the gesture
+  // started from, so each new pinch/pan composes on top of wherever the
+  // canvas already was instead of jumping back to identity.
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
 
   const stopTicking = useCallback(() => {
     if (tickRef.current !== null) {
@@ -114,6 +131,25 @@ export default function GraphScreen() {
     [ensureTicking],
   );
 
+  const openNote = useCallback((pathHash: string) => {
+    router.push({ params: { ph: pathHash }, pathname: "/note" });
+  }, []);
+
+  // A node drag pins it (see note-graph.ts's LayoutSim.pin) and, if the sim had
+  // already settled into stillness, gives it one reheat so its neighbors get a
+  // chance to visibly react to the new pinned position instead of staying frozen.
+  const handleNodeDragTo = useCallback(
+    (index: number, x: number, y: number) => {
+      const sim = simRef.current;
+      if (!sim) return;
+      sim.pin(index, x, y);
+      if (sim.settled) sim.reheat();
+      ensureTicking();
+      setGraph(sim.snapshot());
+    },
+    [ensureTicking],
+  );
+
   useFocusEffect(
     useCallback(() => {
       let alive = true;
@@ -157,8 +193,16 @@ export default function GraphScreen() {
   // NOT when gravity/repulsion change; those mutate the already-running sim in
   // place (see the handlers above). Snapshots once synchronously so the
   // jittered spiral renders on the very first frame, then ticks toward settled.
+  // Also resets the pinch/pan transform back to identity so a fresh graph (or a
+  // resize) never starts out oddly zoomed or panned.
   useEffect(() => {
     stopTicking();
+    scale.value = 1;
+    savedScale.value = 1;
+    translateX.value = 0;
+    translateY.value = 0;
+    savedTranslateX.value = 0;
+    savedTranslateY.value = 0;
     if (!builtGraph || builtGraph.nodes.length === 0) {
       simRef.current = null;
       return;
@@ -177,7 +221,68 @@ export default function GraphScreen() {
       stopTicking();
       simRef.current = null;
     };
-  }, [builtGraph, canvasW, canvasH, ensureTicking, stopTicking]);
+  }, [
+    builtGraph,
+    canvasW,
+    canvasH,
+    ensureTicking,
+    stopTicking,
+    scale,
+    savedScale,
+    translateX,
+    translateY,
+    savedTranslateX,
+    savedTranslateY,
+  ]);
+
+  // Pinch to zoom, one-finger pan on empty space to move — both run purely on
+  // the UI thread (shared-value math only, no JS calls), composed so either can
+  // be active at once (pinch-while-panning). maxPointers(1) on the pan keeps a
+  // second finger exclusively in pinch's domain. See GraphNodeView for why the
+  // pan gesture object itself (not just a ref) is threaded down to nodes.
+  const canvasPinchGesture = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onStart(() => {
+          savedScale.value = scale.value;
+        })
+        .onUpdate((event) => {
+          scale.value = Math.min(MAX_SCALE, Math.max(MIN_SCALE, savedScale.value * event.scale));
+        })
+        .onEnd(() => {
+          savedScale.value = scale.value;
+        }),
+    [scale, savedScale],
+  );
+
+  const canvasPanGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .minPointers(1)
+        .maxPointers(1)
+        .onStart(() => {
+          savedTranslateX.value = translateX.value;
+          savedTranslateY.value = translateY.value;
+        })
+        .onUpdate((event) => {
+          translateX.value = savedTranslateX.value + event.translationX;
+          translateY.value = savedTranslateY.value + event.translationY;
+        })
+        .onEnd(() => {
+          savedTranslateX.value = translateX.value;
+          savedTranslateY.value = translateY.value;
+        }),
+    [translateX, translateY, savedTranslateX, savedTranslateY],
+  );
+
+  const canvasGesture = useMemo(
+    () => Gesture.Simultaneous(canvasPinchGesture, canvasPanGesture),
+    [canvasPinchGesture, canvasPanGesture],
+  );
+
+  const canvasAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }, { translateY: translateY.value }, { scale: scale.value }],
+  }));
 
   const showAllLabels = (graph?.nodes.length ?? 0) <= 40;
 
@@ -224,147 +329,36 @@ export default function GraphScreen() {
           />
         </View>
       ) : graph ? (
-        <Svg width={canvasW} height={canvasH} testID="graph-canvas">
-          {graph.edges.map((edge, i) => {
-            const a = graph.nodes[edge.a];
-            const b = graph.nodes[edge.b];
-            return <Line key={`e${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={c.lineMuted} strokeWidth={1} />;
-          })}
-          {graph.nodes.map((node) => {
-            const r = 3.5 + Math.min(5, node.degree * 1.1);
-            const hub = node.degree >= 3;
-            const label = node.title.length > 18 ? `${node.title.slice(0, 17)}…` : node.title;
-            const open = () => router.push({ params: { ph: node.pathHash }, pathname: "/note" });
-            return (
-              <G key={node.pathHash}>
-                {hub ? <Circle cx={node.x} cy={node.y} r={r + 5} fill={c.accentFaint} /> : null}
-                <Circle cx={node.x} cy={node.y} r={r} fill={hub ? c.accent : c.text3} />
-                {showAllLabels || node.degree >= 2 ? (
-                  <SvgText
-                    x={node.x}
-                    y={node.y + r + 11}
-                    fontSize={9}
-                    fill={c.text2}
-                    textAnchor="middle"
-                  >
-                    {label}
-                  </SvgText>
-                ) : null}
-                {/* Generous invisible tap target on top of everything for this node. */}
-                <Circle cx={node.x} cy={node.y} r={Math.max(16, r + 8)} fill="transparent" onPress={open} />
-              </G>
-            );
-          })}
-        </Svg>
+        <View style={[styles.canvasClip, { width: canvasW, height: canvasH }]} testID="graph-canvas">
+          <GestureDetector gesture={canvasGesture}>
+            <Animated.View style={[{ width: canvasW, height: canvasH }, canvasAnimatedStyle]}>
+              <Svg width={canvasW} height={canvasH}>
+                {graph.edges.map((edge, i) => {
+                  const a = graph.nodes[edge.a];
+                  const b = graph.nodes[edge.b];
+                  return <Line key={`e${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={c.lineMuted} strokeWidth={1} />;
+                })}
+              </Svg>
+              {graph.nodes.map((node, i) => (
+                <GraphNodeView
+                  key={node.pathHash}
+                  c={c}
+                  canvasPanGesture={canvasPanGesture}
+                  index={i}
+                  node={node}
+                  onDragTo={handleNodeDragTo}
+                  onOpen={openNote}
+                  scale={scale}
+                  showLabel={showAllLabels || node.degree >= 2}
+                />
+              ))}
+            </Animated.View>
+          </GestureDetector>
+        </View>
       ) : null}
     </View>
   );
 }
-
-const THUMB = 22;
-const TRACK_H = 22;
-
-interface ForceSliderProps {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-  c: ThemeColors;
-}
-
-/** Small hand-rolled slider (Pressable + PanResponder — no new deps) for the
- * Gravity/Repulsion controls. PanResponder drives continuous drag-to-set over
- * the track; the thumb is a Pressable with accessibilityRole="adjustable" so
- * VoiceOver/TalkBack can also swipe up/down to nudge the value by one step.
- * The gesture callbacks read from a `live` ref (refreshed every render)
- * instead of closing over props directly — PanResponder.create's config is
- * only evaluated once, so a closure captured there over a since-changed prop
- * would otherwise go stale. */
-const ForceSlider = memo(function ForceSlider({ label, value, min, max, step, onChange, c }: ForceSliderProps) {
-  const [trackWidth, setTrackWidth] = useState(0);
-  const live = useRef({ max, min, onChange, step, trackWidth });
-  live.current = { max, min, onChange, step, trackWidth };
-
-  const applyAtRatio = useCallback((ratio: number) => {
-    const { max: hi, min: lo, onChange: emit, step: gran } = live.current;
-    const clampedRatio = Math.min(1, Math.max(0, ratio));
-    const raw = lo + clampedRatio * (hi - lo);
-    const stepped = Math.round(raw / gran) * gran;
-    const clamped = Math.min(hi, Math.max(lo, stepped));
-    emit(Number(clamped.toFixed(2)));
-  }, []);
-
-  const responder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => {
-        const w = live.current.trackWidth;
-        if (w > 0) applyAtRatio(evt.nativeEvent.locationX / w);
-      },
-      onPanResponderMove: (evt) => {
-        const w = live.current.trackWidth;
-        if (w > 0) applyAtRatio(evt.nativeEvent.locationX / w);
-      },
-      onStartShouldSetPanResponder: () => true,
-    }),
-  ).current;
-
-  const ratio = max > min ? Math.min(1, Math.max(0, (value - min) / (max - min))) : 0;
-  const thumbLeft = Math.max(0, Math.min(trackWidth - THUMB, ratio * trackWidth - THUMB / 2));
-
-  return (
-    <View style={sliderStyles.row}>
-      <View style={sliderStyles.labelRow}>
-        <Text style={[sliderStyles.label, { color: c.text2 }]}>{label}</Text>
-        <Text style={[sliderStyles.value, { color: c.text3 }]}>{value.toFixed(1)}×</Text>
-      </View>
-      <View
-        style={[sliderStyles.track, { backgroundColor: c.surface2 }]}
-        onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
-        {...responder.panHandlers}
-      >
-        <View style={[sliderStyles.fill, { backgroundColor: c.accentFaint, width: `${ratio * 100}%` }]} />
-        <Pressable
-          accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
-          accessibilityLabel={label}
-          accessibilityRole="adjustable"
-          accessibilityValue={{ max, min, now: Number(value.toFixed(2)) }}
-          hitSlop={12}
-          onAccessibilityAction={(event) => {
-            const gran = live.current.step;
-            const delta = gran / (max - min || 1);
-            if (event.nativeEvent.actionName === "increment") applyAtRatio(ratio + delta);
-            else if (event.nativeEvent.actionName === "decrement") applyAtRatio(ratio - delta);
-          }}
-          style={[sliderStyles.thumb, { backgroundColor: c.accent, left: thumbLeft }]}
-        />
-      </View>
-    </View>
-  );
-});
-
-const sliderStyles = StyleSheet.create({
-  row: { gap: space(1.5) },
-  labelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  label: { ...type.micro },
-  value: { ...type.micro },
-  track: {
-    height: TRACK_H,
-    borderRadius: radius.pill,
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  fill: { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: radius.pill },
-  thumb: {
-    position: "absolute",
-    top: (TRACK_H - THUMB) / 2,
-    width: THUMB,
-    height: THUMB,
-    borderRadius: THUMB / 2,
-  },
-});
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
@@ -381,4 +375,7 @@ const createStyles = (c: ThemeColors) =>
     sliders: { paddingHorizontal: space(4), paddingBottom: space(2), gap: space(3) },
     centered: { flex: 1, alignItems: "center", justifyContent: "center" },
     pairBtn: { paddingBottom: space(4), paddingHorizontal: space(8), alignSelf: "stretch" },
+    // Clips the pinch/pan transform so a zoomed-in or panned graph never
+    // paints over the header/sliders above it.
+    canvasClip: { overflow: "hidden" },
   });

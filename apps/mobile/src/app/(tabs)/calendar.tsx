@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, Linking, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { MonthGrid } from "@/components/month-grid";
@@ -32,8 +32,10 @@ import { radius, space, type } from "@/theme/tokens";
 
 // Calendar (Phase 2): the agenda the Mac renders from School/calendar.json,
 // shipped through the encrypted pipe as the kind:"calendar" document. Read-only
-// here — the agent (and the desktop calendar page) own the events. The one
-// button hands the tokenized ICS feed to the iPhone's built-in Calendar app.
+// here — the agent (and the desktop calendar page) own the events. The
+// "Add to iPhone Calendar" action that hands the tokenized ICS feed to the
+// built-in Calendar app moved to Settings → Calendar sync (profile/calendar.tsx),
+// owner call 2026-07-18 — this tab is just the Month/Week/Day agenda now.
 //
 // Full-screen rework: a Month/Week/Day switcher (owner request) replaces the old
 // single scrolling "grid + 90-day agenda" layout. Each view is one distinct read
@@ -179,20 +181,6 @@ export default function CalendarScreen() {
             </Pressable>
           ))}
         </View>
-        {calendarDoc?.feedUrl ? (
-          <Pressable
-            testID="calendar-subscribe"
-            style={({ pressed }) => [styles.subscribeRow, pressed && styles.subscribePressed]}
-            onPress={() => {
-              // webcal:// hands the feed straight to the built-in Calendar's
-              // subscribe flow (dates + titles only — never note contents).
-              void Linking.openURL(calendarDoc.feedUrl!.replace(/^https:/, "webcal:")).catch(() => {});
-            }}
-          >
-            <Text style={styles.subscribeText}>Add to iPhone Calendar</Text>
-            <Text style={styles.subscribeHint}>deadlines in your built-in Calendar app</Text>
-          </Pressable>
-        ) : null}
       </View>
 
       {view === "month" ? (
@@ -336,19 +324,6 @@ const createStyles = (c: ThemeColors) =>
     segmentItemActive: { backgroundColor: c.accentFaint },
     segmentText: { ...type.small, color: c.text2, fontWeight: "600" },
     segmentTextActive: { color: c.accent },
-
-    subscribeRow: {
-      borderWidth: 1,
-      borderColor: c.accentLine,
-      backgroundColor: c.accentFaint,
-      borderRadius: radius.sm,
-      paddingVertical: space(3),
-      paddingHorizontal: space(3.5),
-      gap: 2,
-    },
-    subscribePressed: { opacity: 0.8 },
-    subscribeText: { ...type.bodyStrong, color: c.accent },
-    subscribeHint: { ...type.micro, color: c.text2 },
 
     monthBody: { paddingHorizontal: space(4), paddingTop: space(1), flexGrow: 1 },
 

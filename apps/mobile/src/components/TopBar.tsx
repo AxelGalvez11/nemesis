@@ -15,7 +15,7 @@ import { space } from "@/theme/tokens";
 // Content scrolls freely underneath. Chrome stays neutral — crimson is for primary actions.
 export function TopBar({ showNewChat = true }: { showNewChat?: boolean }) {
   const insets = useSafeAreaInsets();
-  const { openDrawer, newChat, headerTitle } = useShell();
+  const { openDrawer, newSession, headerTitle } = useShell();
   const styles = useThemedStyles(createStyles);
 
   return (
@@ -42,7 +42,7 @@ export function TopBar({ showNewChat = true }: { showNewChat?: boolean }) {
         // (clears + focuses the composer).
         <GlassButton
           onPress={() => {
-            newChat();
+            newSession();
             router.push("/");
           }}
           label="New session"
