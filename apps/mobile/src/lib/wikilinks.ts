@@ -57,8 +57,31 @@ export function resolveWikilinkUrl(url: string, resolver: Map<string, string>): 
   return resolver.get(normalizeLinkKey(target)) ?? null;
 }
 
-/** True for our internal wikilink URLs (so the viewer can swallow unresolved ones
- *  instead of handing "wikilink:…" to the OS link opener). */
-export function isWikilinkUrl(url: string): boolean {
-  return url.startsWith(WIKILINK_SCHEME);
+/** True for links we should hand straight to the OS opener (real web/mail/tel). */
+export function isExternalUrl(url: string): boolean {
+  return /^(https?|mailto|tel):/i.test(url);
+}
+
+/** Resolve ANY in-note link to a target note's pathHash, or null. Handles both
+ *  our wikilink: scheme AND a bare relative note reference the agent may write as
+ *  an ordinary markdown link — [text](Some Note.md) or [text](Folder/Note) — which
+ *  the wikilink preprocessor never touches. This is why taps used to die silently:
+ *  a relative .md link isn't a wikilink and isn't external, so nothing handled it.
+ *  Matches on the full relative path first, then the basename (Obsidian's
+ *  shortest-path style). Heading anchors and a leading ./ or / are stripped. */
+export function resolveInternalHref(url: string, resolver: Map<string, string>): string | null {
+  if (url.startsWith(WIKILINK_SCHEME)) return resolveWikilinkUrl(url, resolver);
+  if (isExternalUrl(url)) return null;
+  let raw = url;
+  try {
+    raw = decodeURIComponent(url);
+  } catch {
+    // keep the raw form if it isn't valid percent-encoding
+  }
+  const target = raw.split("#")[0].replace(/^\.?\//, "").trim();
+  if (!target) return null;
+  const byPath = resolver.get(normalizeLinkKey(target));
+  if (byPath) return byPath;
+  const base = target.split("/").pop() ?? target;
+  return resolver.get(normalizeLinkKey(base)) ?? null;
 }

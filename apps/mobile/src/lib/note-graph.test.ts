@@ -182,3 +182,82 @@ Deno.test("createLayoutSim.gravity/.repulsion are live-mutable without losing cu
   const moved = midway.nodes.some((n, i) => n.x !== after.nodes[i].x || n.y !== after.nodes[i].y);
   assert(moved, "step() after a live multiplier change should move at least one node");
 });
+
+// --- pin (phone Graph node dragging) ----------------------------------
+
+Deno.test("createLayoutSim.pin fixes a node's position through snapshot() and step()", () => {
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "[[B]]"),
+    doc("b.md", "B", "[[C]]"),
+    doc("c.md", "C", ""),
+  ]);
+  const sim = createLayoutSim(graph, { height: 300, width: 300 });
+  sim.pin(0, 40, 60);
+  const snap1 = sim.snapshot();
+  assertEquals(snap1.nodes[0].x, 40);
+  assertEquals(snap1.nodes[0].y, 60);
+
+  // A pinned node must never move under step(), no matter how many
+  // iterations run — the force integration skips it entirely.
+  for (let k = 0; k < 50; k++) sim.step();
+
+  const snap2 = sim.snapshot();
+  assertEquals(snap2.nodes[0].x, 40);
+  assertEquals(snap2.nodes[0].y, 60);
+});
+
+Deno.test("createLayoutSim.pin clamps the pinned position into the canvas, like unpinned nodes", () => {
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const sim = createLayoutSim(graph, { height: 200, padding: 20, width: 200 });
+  sim.pin(0, -500, 9999);
+  const snap = sim.snapshot();
+  assertEquals(snap.nodes[0].x, 20);
+  assertEquals(snap.nodes[0].y, 180);
+});
+
+Deno.test("createLayoutSim.pin: unpinned nodes keep relaxing around a node held in place", () => {
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "[[B]]"),
+    doc("b.md", "B", "[[C]]"),
+    doc("c.md", "C", "[[A]]"),
+  ]);
+  const sim = createLayoutSim(graph, { height: 300, width: 300 });
+  sim.pin(0, 150, 150);
+  const before = sim.snapshot();
+  for (let k = 0; k < 20; k++) sim.step();
+  const after = sim.snapshot();
+
+  // The pinned node held exactly still...
+  assertEquals(after.nodes[0].x, 150);
+  assertEquals(after.nodes[0].y, 150);
+  // ...while its unpinned neighbors kept responding to forces (including
+  // the pinned node's own repulsion/spring pull on them).
+  const moved = before.nodes
+    .slice(1)
+    .some((n, idx) => n.x !== after.nodes[idx + 1].x || n.y !== after.nodes[idx + 1].y);
+  assert(moved, "unpinned nodes should keep moving while another node is pinned");
+});
+
+Deno.test("createLayoutSim.pin ignores out-of-range indices", () => {
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const sim = createLayoutSim(graph, { height: 200, width: 200 });
+  const before = sim.snapshot();
+  sim.pin(-1, 10, 10);
+  sim.pin(99, 10, 10);
+  const after = sim.snapshot();
+  assertEquals(before, after);
+});
+
+Deno.test("createLayoutSim.pin: an empty pin map (the default) leaves snapshot()/layoutNoteGraph parity untouched", () => {
+  // Regression guard for the pin plumbing threaded through snapshotPositions:
+  // never calling pin() must be byte-identical to the pre-pin behavior.
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "[[B]]"),
+    doc("b.md", "B", "[[C]]"),
+    doc("c.md", "C", ""),
+  ]);
+  const opts = { height: 300, width: 300 };
+  const sim = createLayoutSim(graph, opts);
+  while (!sim.settled) sim.step();
+  assertEquals(sim.snapshot(), layoutNoteGraph(graph, opts));
+});

@@ -14,13 +14,22 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as SecureStore from "expo-secure-store";
 import { supabase } from "./supabase";
 import { buildWireMessages, chatErrorMessage, completionText, type ChatMsg } from "@/lib/chat-thread";
+import {
+  emptyStore,
+  getThread,
+  parseThreadStore,
+  removeThread,
+  threadSummaries,
+  upsertThread,
+  type ThreadStore,
+  type ThreadSummary,
+} from "@/lib/chat-threads";
 
 const LLM_BASE = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/functions/v1/nemesis-llm`;
 const CHAT_MODEL = "deepseek-chat";
 
 // SecureStore keys allow [A-Za-z0-9._-]; uuids fit as-is.
 const deviceKeyStoreFor = (uid: string) => `nemesis_device_key_v1_${uid}`;
-const threadPathFor = (uid: string) => `${FileSystem.documentDirectory ?? ""}chat-thread-v1-${uid}.json`;
 
 /** Mint a device key for the CURRENT session, only if it belongs to `uid` —
  *  a stale screen from a previous account must never mint under the new one. */
@@ -95,45 +104,66 @@ export async function sendChat(uid: string, history: ChatMsg[], userText: string
   }
 }
 
-// --- thread persistence (one rolling thread PER USER, local to this phone) ------
+// --- multi-thread store (chats save to the sidebar, local to this phone) -------
+// One store file per user holds every thread + its messages; the drawer lists
+// thread summaries. The OLD single rolling thread (chat-thread-v1-<uid>.json) is
+// migrated into the store once, on first read, so nobody loses their conversation.
 
-function castMsg(row: unknown): ChatMsg | null {
-  if (typeof row !== "object" || row === null) return null;
-  const { role, content, at } = row as Record<string, unknown>;
-  if (role !== "user" && role !== "assistant") return null;
-  if (typeof content !== "string" || typeof at !== "string") return null;
-  return { at, content, role };
+const legacyThreadPathFor = (uid: string) => `${FileSystem.documentDirectory ?? ""}chat-thread-v1-${uid}.json`;
+const storePathFor = (uid: string) => `${FileSystem.documentDirectory ?? ""}chat-threads-v2-${uid}.json`;
+
+/** Unique-enough thread id (dedupe + ordering only, not a security boundary). */
+export function newThreadId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export async function loadChatThread(uid: string): Promise<ChatMsg[]> {
+async function readJson(path: string): Promise<unknown | null> {
   try {
-    const path = threadPathFor(uid);
     const info = await FileSystem.getInfoAsync(path);
-    if (!info.exists) return [];
-    const parsed = JSON.parse(await FileSystem.readAsStringAsync(path)) as {
-      v?: number;
-      messages?: unknown;
-    };
-    if (parsed?.v !== 1 || !Array.isArray(parsed.messages)) return [];
-    return parsed.messages.map(castMsg).filter((m): m is ChatMsg => m !== null);
+    if (!info.exists) return null;
+    return JSON.parse(await FileSystem.readAsStringAsync(path));
   } catch {
-    return [];
+    return null;
   }
 }
 
-export async function saveChatThread(uid: string, messages: ChatMsg[]): Promise<void> {
+async function writeStore(uid: string, store: ThreadStore): Promise<void> {
   try {
-    // Cap what persists — the send path trims again anyway.
-    await FileSystem.writeAsStringAsync(threadPathFor(uid), JSON.stringify({ messages: messages.slice(-200), v: 1 }));
+    await FileSystem.writeAsStringAsync(storePathFor(uid), JSON.stringify(store));
   } catch {
     // best-effort
   }
 }
 
-export async function clearChatThread(uid: string): Promise<void> {
-  try {
-    await FileSystem.deleteAsync(threadPathFor(uid), { idempotent: true });
-  } catch {
-    // best-effort
+async function readStore(uid: string): Promise<ThreadStore> {
+  const now = new Date().toISOString();
+  const current = await readJson(storePathFor(uid));
+  if (current) return parseThreadStore(current, newThreadId(), now);
+  // First run on the new format: migrate the legacy single thread, if present.
+  const legacy = await readJson(legacyThreadPathFor(uid));
+  if (legacy) {
+    const migrated = parseThreadStore(legacy, newThreadId(), now);
+    if (migrated.threads.length) await writeStore(uid, migrated);
+    return migrated;
   }
+  return emptyStore();
+}
+
+/** Sidebar rows (title + when), newest first. */
+export async function listThreads(uid: string): Promise<ThreadSummary[]> {
+  return threadSummaries(await readStore(uid));
+}
+
+/** One thread's messages (empty if it doesn't exist / never had any). */
+export async function loadThreadMessages(uid: string, id: string): Promise<ChatMsg[]> {
+  return getThread(await readStore(uid), id)?.messages ?? [];
+}
+
+/** Upsert a thread's messages (creates the thread on first save). */
+export async function saveThreadMessages(uid: string, id: string, messages: ChatMsg[]): Promise<void> {
+  await writeStore(uid, upsertThread(await readStore(uid), id, messages, new Date().toISOString()));
+}
+
+export async function deleteThread(uid: string, id: string): Promise<void> {
+  await writeStore(uid, removeThread(await readStore(uid), id));
 }

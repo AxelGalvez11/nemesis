@@ -5,6 +5,7 @@ import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import {
+  CalendarIcon,
   CloseIcon,
   FileIcon,
   type IconProps,
@@ -90,7 +91,8 @@ export default function SettingsScreen() {
 
         <SectionLabel styles={styles}>Preferences</SectionLabel>
         <Card styles={styles}>
-          <SettingRow styles={styles} icon={ThemeIcon} label="Appearance" value={modeLabel} chevron last testID="nav-appearance" onPress={() => router.push("/profile/appearance")} />
+          <SettingRow styles={styles} icon={ThemeIcon} label="Appearance" value={modeLabel} chevron testID="nav-appearance" onPress={() => router.push("/profile/appearance")} />
+          <SettingRow styles={styles} icon={CalendarIcon} label="Calendar sync" chevron last testID="nav-calendar-sync" onPress={() => router.push("/profile/calendar")} />
         </Card>
 
         <SectionLabel styles={styles}>Legal</SectionLabel>

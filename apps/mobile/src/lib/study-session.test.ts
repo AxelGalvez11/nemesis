@@ -4,6 +4,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   chunkEvents,
   clozeAnswerHighlight,
+  clozeParts,
   gradeCurrent,
   initSession,
   LEARNING_GAP,
@@ -178,6 +179,33 @@ Deno.test("clozeAnswerHighlight: a normal Q/A card is not a cloze and returns nu
   assertEquals(clozeAnswerHighlight("What is 2 + 2?", "4"), null);
   assertEquals(clozeAnswerHighlight("Define [drug]", "A medication"), null); // bracket but no shared context
   assertEquals(clozeAnswerHighlight("Same", "Same"), null);
+});
+
+Deno.test("clozeParts: recovers the blank marker alongside before/highlight/after", () => {
+  assertEquals(
+    clozeParts("The capital is [...] and the river is Seine", "The capital is Paris and the river is Seine"),
+    { after: " and the river is Seine", before: "The capital is ", blank: "[...]", highlight: "Paris" },
+  );
+  // A [hint] blank recovers the full hint text, not just "[...]".
+  assertEquals(
+    clozeParts("The capital is [European city] and the river is Seine", "The capital is Paris and the river is Seine")
+      ?.blank,
+    "[European city]",
+  );
+  // Blank at the very start / end of the sentence.
+  assertEquals(clozeParts("[...] is the powerhouse", "Mitochondria is the powerhouse"), {
+    after: " is the powerhouse",
+    before: "",
+    blank: "[...]",
+    highlight: "Mitochondria",
+  });
+  assertEquals(clozeParts("The powerhouse is the [...]", "The powerhouse is the mitochondria")?.blank, "[...]");
+});
+
+Deno.test("clozeParts: a normal Q/A card is not a cloze and returns null", () => {
+  assertEquals(clozeParts("What is 2 + 2?", "4"), null);
+  assertEquals(clozeParts("Define [drug]", "A medication"), null);
+  assertEquals(clozeParts("Same", "Same"), null);
 });
 
 Deno.test("makeClientEventId: uuid-v4 shape, deterministic under injected randomness", () => {

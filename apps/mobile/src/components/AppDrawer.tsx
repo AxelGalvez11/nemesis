@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentType } from "react";
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
-import { useRouter } from "expo-router";
+import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { listMissions, type Mission, type MissionStatus } from "@/api/missions";
+import { listThreads, newThreadId } from "@/api/chat";
+import type { ThreadSummary } from "@/lib/chat-threads";
 import { GlassSurface } from "./GlassSurface";
 import { CalendarIcon, ChatIcon, GraphIcon, LibraryIcon, PlusIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
@@ -14,23 +16,23 @@ import { radius, space, type } from "@/theme/tokens";
 // Animated (no extra deps; renders identically under react-native-web for previews). The drawer is always
 // mounted and slides via translateX so there is no mount/unmount flicker; pointer events are gated on `open`.
 //
-// Liquid-glass redesign: the panel itself is a glass sheet sliding over the app.
-// The drawer IS the desktop app's sidebar on the phone (owner call 2026-07-17),
-// composed to match the web/desktop build (components/workspace/shell/chat-sidebar):
-// a compact nav (New session · Chat · Study · Library · Graph · Calendar), then the
-// live SESSIONS list (the agent's recent runs, tap to open), then an account footer
-// with the "Student" plan pill + settings gear. Cloud-first wording throughout.
+// The drawer IS the desktop sidebar on the phone: a compact nav (Chat · Study ·
+// Library · Graph · Calendar), then the live CHATS history (owner: "chats should
+// save to the sidebar") — each conversation persisted as its own thread — with the
+// agent SESSIONS below it, then a liquid-glass "New chat" button and the account
+// footer. Tapping a chat reopens it (via the /chat?c=<id> route param).
 
 interface ShellState {
   open: boolean;
   openDrawer: () => void;
   closeDrawer: () => void;
-  /** Bumped when the user taps "New chat"; the chat screen watches it to clear the thread. */
+  /** Bumped by newSession(); the missions home focuses its composer when it changes. */
   resetNonce: number;
+  /** Start a fresh agent session on the missions home (clear + focus its composer). */
+  newSession: () => void;
+  /** Open a brand-new chat thread (navigates to /chat with a fresh thread id). */
   newChat: () => void;
-  /** The TopBar's center label: null → the Nemesis logo; a string → that title
-   *  (the active chat/session title once the user has asked something). Screens
-   *  set it on mount and clear it (null) on unmount. */
+  /** The TopBar's center label: null → the Nemesis logo; a string → that title. */
   headerTitle: string | null;
   setHeaderTitle: (title: string | null) => void;
 }
@@ -49,11 +51,16 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
   const [headerTitle, setHeaderTitle] = useState<string | null>(null);
   const openDrawer = useCallback(() => setOpen(true), []);
   const closeDrawer = useCallback(() => setOpen(false), []);
-  const newChat = useCallback(() => setResetNonce((n) => n + 1), []);
+  const newSession = useCallback(() => setResetNonce((n) => n + 1), []);
+  // A fresh chat is a new thread id in the route param; the chat screen loads it
+  // (empty) and persists it on the first send, so it shows up in this drawer.
+  const newChat = useCallback(() => {
+    router.push(`/chat?c=${newThreadId()}` as never);
+  }, []);
 
   const value = useMemo<ShellState>(
-    () => ({ open, openDrawer, closeDrawer, resetNonce, newChat, headerTitle, setHeaderTitle }),
-    [open, openDrawer, closeDrawer, resetNonce, newChat, headerTitle],
+    () => ({ open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle, setHeaderTitle }),
+    [open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle],
   );
 
   return (
@@ -68,8 +75,6 @@ function DrawerOverlay({ open, onClose, onNewChat }: { open: boolean; onClose: (
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   const { width } = useWindowDimensions();
-  // Fallback when width is momentarily 0 (e.g. server-rendered first paint) so the panel never collapses to
-  // zero-width and spills its content; on a device this is always the real screen width.
   const panelW = Math.min(330, Math.round((width || 380) * 0.86));
   const progress = useRef(new Animated.Value(0)).current;
 
@@ -90,8 +95,6 @@ function DrawerOverlay({ open, onClose, onNewChat }: { open: boolean; onClose: (
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu" />
       </Animated.View>
       <Animated.View style={[styles.panel, { width: panelW, transform: [{ translateX }] }]}>
-        {/* The sliding sheet is glass: the app shows through it on iOS 26; the blur
-            fallback fills with the solid drawer color so text never loses contrast. */}
         <GlassSurface style={styles.panelGlass} fallbackColor={c.bg2}>
           <DrawerContent open={open} onClose={onClose} onNewChat={onNewChat} />
         </GlassSurface>
@@ -100,7 +103,7 @@ function DrawerOverlay({ open, onClose, onNewChat }: { open: boolean; onClose: (
   );
 }
 
-// Short "5m / 3h / 2d / Jul 8" stamp for a session row.
+// Short "5m / 3h / 2d / Jul 8" stamp for a row.
 function relTime(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
@@ -115,8 +118,6 @@ function relTime(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-// The session dot mirrors the desktop status accents: one attention color for a
-// run that needs review, everything else quiet.
 function statusColor(status: MissionStatus, c: ThemeColors): string {
   if (status === "needs_review") return c.accent;
   if (status === "failed") return c.danger;
@@ -129,54 +130,43 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const { session } = useAuth();
+  const uid = session?.user?.id ?? null;
   const email = session?.user?.email ?? "Sign in";
   const initial = (email[0] ?? "?").toUpperCase();
+  const [chats, setChats] = useState<ThreadSummary[]>([]);
   const [sessions, setSessions] = useState<Mission[]>([]);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // Refresh the sessions list each time the drawer opens (cheap; keeps it current
-  // without a realtime subscription). Guests get an empty list, never an error.
+  // Refresh chats + sessions each time the drawer opens (cheap; keeps it current).
   useEffect(() => {
-    if (!open || !session) return;
+    if (!open || !uid) return;
     let alive = true;
-    void listMissions()
-      .then((rows) => {
-        if (alive) setSessions(rows);
-      })
-      .catch(() => {});
+    void listThreads(uid).then((rows) => alive && setChats(rows)).catch(() => {});
+    void listMissions().then((rows) => alive && setSessions(rows)).catch(() => {});
     return () => {
       alive = false;
     };
-  }, [open, session]);
+  }, [open, uid]);
 
   const go = (path: string) => {
     onClose();
     router.push(path as never);
   };
-  const startNewSession = () => {
-    onNewChat();
-    onClose();
-    router.push("/" as never);
-  };
 
   const trimmed = query.trim().toLowerCase();
-  const shownSessions = trimmed
-    ? sessions.filter((mission) => mission.title.toLowerCase().includes(trimmed))
-    : sessions;
+  const shownChats = trimmed ? chats.filter((chat) => chat.title.toLowerCase().includes(trimmed)) : chats;
 
   return (
     <View style={[styles.panelInner, { paddingTop: insets.top + space(2) }]}>
-      {/* Title + search — the ChatGPT sidebar header. */}
       <View style={styles.brandRow}>
         <Text style={styles.brand}>Nemesis</Text>
         <Pressable
           style={({ pressed }) => [styles.searchBtn, (pressed || searchOpen) && styles.searchBtnActive]}
           onPress={() => setSearchOpen((v) => !v)}
           hitSlop={8}
-          accessibilityLabel="Search sessions"
+          accessibilityLabel="Search chats"
         >
           <SearchIcon size={19} color={searchOpen ? c.text : c.text2} />
         </Pressable>
@@ -184,7 +174,6 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollBody} keyboardShouldPersistTaps="handled">
         <View style={styles.navGroup}>
-          <NavRow Icon={PlusIcon} label="New session" onPress={startNewSession} accent />
           <NavRow Icon={ChatIcon} label="Chat" onPress={() => go("/chat")} />
           <NavRow Icon={StudyIcon} label="Study" onPress={() => go("/study")} />
           <NavRow Icon={LibraryIcon} label="Library" onPress={() => go("/library")} />
@@ -199,7 +188,7 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
               style={styles.searchInput}
               value={query}
               onChangeText={setQuery}
-              placeholder="Search sessions"
+              placeholder="Search chats"
               placeholderTextColor={c.text3}
               autoFocus
               testID="drawer-search"
@@ -207,66 +196,88 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
           </View>
         ) : null}
 
-        <Text style={styles.sectionLabel}>Sessions</Text>
-
-        {shownSessions.length === 0 ? (
-          <Text style={styles.emptySessions}>{trimmed ? "No matches" : "No sessions yet"}</Text>
+        <Text style={styles.sectionLabel}>Chats</Text>
+        {shownChats.length === 0 ? (
+          <Text style={styles.emptyRows}>{trimmed ? "No matches" : "No chats yet"}</Text>
         ) : (
-          shownSessions.map((mission) => (
+          shownChats.map((chat) => (
             <Pressable
-              key={mission.id}
-              testID={`drawer-session-${mission.id}`}
-              style={({ pressed }) => [styles.sessionRow, pressed && styles.sessionRowPressed]}
-              onPress={() => go(`/mission/${mission.id}`)}
+              key={chat.id}
+              testID={`drawer-chat-${chat.id}`}
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+              onPress={() => go(`/chat?c=${chat.id}`)}
             >
-              <View style={[styles.statusDot, { backgroundColor: statusColor(mission.status, c) }]} />
-              <Text style={styles.sessionTitle} numberOfLines={1}>{mission.title}</Text>
-              <Text style={styles.sessionTime}>{relTime(mission.updated_at || mission.created_at)}</Text>
+              <Text style={styles.rowTitle} numberOfLines={1}>{chat.title}</Text>
+              <Text style={styles.rowTime}>{relTime(chat.updatedAt)}</Text>
             </Pressable>
           ))
         )}
+
+        {sessions.length > 0 ? (
+          <>
+            <Text style={styles.sectionLabel}>Sessions</Text>
+            {sessions.map((mission) => (
+              <Pressable
+                key={mission.id}
+                testID={`drawer-session-${mission.id}`}
+                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                onPress={() => go(`/mission/${mission.id}`)}
+              >
+                <View style={[styles.statusDot, { backgroundColor: statusColor(mission.status, c) }]} />
+                <Text style={styles.rowTitle} numberOfLines={1}>{mission.title}</Text>
+                <Text style={styles.rowTime}>{relTime(mission.updated_at || mission.created_at)}</Text>
+              </Pressable>
+            ))}
+          </>
+        ) : null}
       </ScrollView>
 
-      {/* The account row IS the door to Settings (matching the desktop sidebar's
-          lower-left account button). Sign out lives inside Settings. */}
-      <Pressable
-        testID="drawer-account"
-        style={({ pressed }) => [styles.footer, { paddingBottom: insets.bottom + space(2.5) }, pressed && styles.footerPressed]}
-        onPress={() => go("/settings")}
-        accessibilityLabel="Account and settings"
-      >
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initial}</Text>
-        </View>
-        <Text style={styles.footerName} numberOfLines={1}>{email}</Text>
-        <View style={styles.planPill}>
-          <Text style={styles.planPillText}>Student</Text>
-        </View>
-        <SettingsIcon size={16} color={c.text3} />
-      </Pressable>
+      {/* Lower-left liquid-glass "New chat" (owner call), just above the account row. */}
+      <View style={styles.footerWrap}>
+        <GlassSurface style={styles.newChatBtn} variant="clear">
+          <Pressable
+            style={styles.newChatInner}
+            onPress={() => {
+              onNewChat();
+              onClose();
+            }}
+            testID="drawer-new-chat"
+            accessibilityLabel="New chat"
+          >
+            <PlusIcon size={17} color={c.accent} />
+            <Text style={styles.newChatText}>New chat</Text>
+          </Pressable>
+        </GlassSurface>
+
+        <Pressable
+          testID="drawer-account"
+          style={({ pressed }) => [styles.footer, { paddingBottom: insets.bottom + space(2.5) }, pressed && styles.footerPressed]}
+          onPress={() => go("/settings")}
+          accessibilityLabel="Account and settings"
+        >
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initial}</Text>
+          </View>
+          <Text style={styles.footerName} numberOfLines={1}>{email}</Text>
+          <View style={styles.planPill}>
+            <Text style={styles.planPillText}>Student</Text>
+          </View>
+          <SettingsIcon size={16} color={c.text3} />
+        </Pressable>
+      </View>
     </View>
   );
 }
 
-function NavRow({
-  Icon,
-  label,
-  accent,
-  onPress,
-}: {
-  Icon: ComponentType<IconProps>;
-  label: string;
-  accent?: boolean;
-  onPress: () => void;
-}) {
+function NavRow({ Icon, label, onPress }: { Icon: ComponentType<IconProps>; label: string; onPress: () => void }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   return (
     <Pressable style={({ pressed }) => [styles.navRow, pressed && styles.navRowPressed]} onPress={onPress}>
       <View style={styles.navIcon}>
-        <Icon size={17} color={accent ? c.accent : c.text2} />
+        <Icon size={17} color={c.text2} />
       </View>
-      <Text style={[styles.navLabel, accent && styles.navLabelAccent]}>{label}</Text>
+      <Text style={styles.navLabel}>{label}</Text>
     </Pressable>
   );
 }
@@ -279,7 +290,6 @@ const createStyles = (c: ThemeColors) =>
     panelInner: { flex: 1 },
     scrollBody: { paddingBottom: space(2) },
 
-    // Brand + search header (ChatGPT sidebar top).
     brandRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(4), paddingBottom: space(3) },
     brand: { color: c.text, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
     searchBtn: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
@@ -292,7 +302,6 @@ const createStyles = (c: ThemeColors) =>
     },
     searchInput: { flex: 1, color: c.text, fontSize: 15, padding: 0 },
 
-    // Nav — spacious rows (ChatGPT: ~44px, 16px white).
     navGroup: { paddingHorizontal: space(2), marginBottom: space(2) },
     navRow: {
       flexDirection: "row", alignItems: "center", gap: space(3),
@@ -301,24 +310,27 @@ const createStyles = (c: ThemeColors) =>
     navRowPressed: { backgroundColor: c.surface },
     navIcon: { width: 24, alignItems: "center" },
     navLabel: { color: c.text, fontSize: 16, fontWeight: "500", flex: 1 },
-    navLabelAccent: { color: c.text, fontWeight: "600" },
 
-    // Section label — ChatGPT's plain bold header (e.g. "Pinned").
     sectionLabel: { color: c.text2, fontSize: 13, fontWeight: "700", paddingHorizontal: space(4), marginTop: space(3), marginBottom: space(1.5) },
 
-    // Session rows.
-    sessionRow: {
+    // Chat + session rows share one compact row style.
+    row: {
       flexDirection: "row", alignItems: "center", gap: space(2.5),
       paddingVertical: space(2.25), paddingHorizontal: space(3.5), marginHorizontal: space(2), borderRadius: radius.md,
     },
-    sessionRowPressed: { backgroundColor: c.surface },
+    rowPressed: { backgroundColor: c.surface },
     statusDot: { width: 6, height: 6, borderRadius: 3 },
-    sessionTitle: { flex: 1, color: c.text2, fontSize: 14.5, minWidth: 0 },
-    sessionTime: { color: c.text3, fontSize: 11, fontVariant: ["tabular-nums"] },
-    emptySessions: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },
+    rowTitle: { flex: 1, color: c.text2, fontSize: 14.5, minWidth: 0 },
+    rowTime: { color: c.text3, fontSize: 11, fontVariant: ["tabular-nums"] },
+    emptyRows: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },
 
-    // Account footer — avatar + email + Student pill + settings gear.
-    footer: { flexDirection: "row", alignItems: "center", gap: space(2), borderTopWidth: 1, borderTopColor: c.line, paddingHorizontal: space(3.5), paddingTop: space(3) },
+    // Footer block — New chat button, then the account row.
+    footerWrap: { borderTopWidth: 1, borderTopColor: c.line, paddingTop: space(2) },
+    newChatBtn: { marginHorizontal: space(3), marginBottom: space(2), borderRadius: radius.pill, borderWidth: 1, borderColor: c.accentLine },
+    newChatInner: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space(2), paddingVertical: space(2.75) },
+    newChatText: { color: c.accent, fontSize: 15, fontWeight: "600" },
+
+    footer: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(3.5), paddingTop: space(1) },
     footerPressed: { backgroundColor: c.surface },
     avatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.line },
     avatarText: { color: c.text2, fontSize: 11, fontWeight: "700" },
