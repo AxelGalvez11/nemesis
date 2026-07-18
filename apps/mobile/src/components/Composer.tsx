@@ -71,9 +71,13 @@ export function Composer({
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
+    // Center everything so the '+' / text / '↑' share one baseline on a single
+    // line (owner: they were misaligned). The buttons keep a fixed 36px square;
+    // the field's line height + padding are tuned to that height so nothing sits
+    // high or low. On multi-line growth the row stays centered.
     pill: {
       flexDirection: "row",
-      alignItems: "flex-end",
+      alignItems: "center",
       gap: space(1),
       borderWidth: 1,
       borderColor: c.line2,
@@ -81,17 +85,17 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: space(1),
       paddingVertical: space(1),
     },
-    plus: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+    plus: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
     input: {
       flex: 1,
-      minHeight: 34,
       maxHeight: 120,
-      paddingHorizontal: space(1),
-      paddingVertical: space(1.75),
+      paddingHorizontal: space(1.5),
+      paddingVertical: 0,
+      lineHeight: 21,
       color: c.text,
       fontSize: 16,
     },
-    send: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+    send: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
     sendOn: { backgroundColor: c.accent },
     sendOff: { backgroundColor: c.surface2 },
   });

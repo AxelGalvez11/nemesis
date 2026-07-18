@@ -2,20 +2,26 @@
 // Run: deno test --no-check apps/mobile/src/lib/study-session.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
-  AGAIN_GAP,
-  applyGradeToQueue,
   chunkEvents,
+  clozeAnswerHighlight,
+  gradeCurrent,
+  initSession,
+  LEARNING_GAP,
   makeClientEventId,
+  NEW_STEPS,
   parseDeckSnapshot,
   partitionQueueByUser,
   pruneGradedMarks,
   removeByClientEventId,
+  RELEARN_STEPS,
+  sessionCounts,
   sessionQueue,
   splitStrayField,
   type DeckQueueCard,
 } from "./study-session.ts";
 
-const card = (key: string): DeckQueueCard => ({ key, prompt: `P ${key}`, answer: `A ${key}`, isNew: false });
+const card = (key: string, isNew = false): DeckQueueCard => ({ key, prompt: `P ${key}`, answer: `A ${key}`, isNew });
+const keys = (session: { cards: { key: string }[] }) => session.cards.map((c) => c.key);
 
 const snapshotJson = JSON.stringify({
   v: 1,
@@ -84,25 +90,94 @@ Deno.test("sessionQueue: hides cards graded on this phone since the snapshot", (
   assertEquals(queue.map((entry) => entry.key), ["card-b#c1"]);
 });
 
-Deno.test("applyGradeToQueue: non-again grades complete the card; again re-queues it a few back", () => {
-  const queue = [card("a"), card("b"), card("c"), card("d"), card("e")];
-
-  const good = applyGradeToQueue(queue, "good");
-  assertEquals(good.completed, true);
-  assertEquals(good.queue.map((entry) => entry.key), ["b", "c", "d", "e"]);
-
-  const again = applyGradeToQueue(queue, "again");
-  assertEquals(again.completed, false);
-  assertEquals(again.queue.map((entry) => entry.key), ["b", "c", "d", "a", "e"]);
-  assertEquals(again.queue.length, queue.length);
-  assertEquals(AGAIN_GAP, 3);
+Deno.test("initSession + sessionCounts: new cards seed the New bucket, due cards the Review bucket", () => {
+  const session = initSession([card("a", true), card("b"), card("c", true)]);
+  assertEquals(session.completed, 0);
+  assertEquals(session.cards[0].bucket, "new");
+  assertEquals(session.cards[0].stepsLeft, NEW_STEPS);
+  assertEquals(session.cards[1].bucket, "review");
+  assertEquals(sessionCounts(session), { fresh: 2, learning: 0, review: 1 });
 });
 
-Deno.test("applyGradeToQueue: again on a short queue lands the card at the end", () => {
-  const again = applyGradeToQueue([card("a"), card("b")], "again");
-  assertEquals(again.queue.map((entry) => entry.key), ["b", "a"]);
-  const solo = applyGradeToQueue([card("a")], "again");
-  assertEquals(solo.queue.map((entry) => entry.key), ["a"]);
+Deno.test("gradeCurrent: a new card needs two 'good's and cycles back between them (Anki 1m/10m)", () => {
+  let session = initSession([card("a", true), card("b"), card("c"), card("d"), card("e")]);
+
+  const first = gradeCurrent(session, "good");
+  assertEquals(first.graduated, false); // stays in the session
+  assertEquals(first.session.cards[0].key, "b");
+  // 'a' re-inserted LEARNING_GAP back, now in the Learning bucket with one step left.
+  assertEquals(keys(first.session)[LEARNING_GAP], "a");
+  const relearned = first.session.cards.find((c) => c.key === "a")!;
+  assertEquals(relearned.bucket, "learning");
+  assertEquals(relearned.stepsLeft, NEW_STEPS - 1);
+  assertEquals(sessionCounts(first.session), { fresh: 0, learning: 1, review: 4 });
+
+  // Walk 'a' back to the front and grade it 'good' again → it graduates.
+  session = first.session;
+  while (session.cards[0].key !== "a") session = gradeCurrent(session, "good").session;
+  const second = gradeCurrent(session, "good");
+  assertEquals(second.graduated, true);
+  assertEquals(second.session.cards.some((c) => c.key === "a"), false);
+});
+
+Deno.test("gradeCurrent: 'again' relearns and re-queues; 'easy' graduates outright", () => {
+  const session = initSession([card("a", true), card("b"), card("c"), card("d")]);
+
+  const again = gradeCurrent(session, "again");
+  assertEquals(again.graduated, false);
+  assertEquals(keys(again.session), ["b", "c", "d", "a"]); // gap clamps to queue length
+  assertEquals(again.session.cards.find((c) => c.key === "a")!.bucket, "learning");
+  assertEquals(again.session.cards.find((c) => c.key === "a")!.stepsLeft, NEW_STEPS); // reset
+
+  const easy = gradeCurrent(session, "easy");
+  assertEquals(easy.graduated, true);
+  assertEquals(keys(easy.session), ["b", "c", "d"]);
+});
+
+Deno.test("gradeCurrent: a due review passes out on 'good' but lapses into one-step relearn on 'again'", () => {
+  const pass = gradeCurrent(initSession([card("a"), card("b")]), "good");
+  assertEquals(pass.graduated, true);
+  assertEquals(keys(pass.session), ["b"]);
+
+  const lapse = gradeCurrent(initSession([card("a"), card("b"), card("c"), card("d")]), "again");
+  assertEquals(lapse.graduated, false);
+  const relapsed = lapse.session.cards.find((c) => c.key === "a")!;
+  assertEquals(relapsed.bucket, "learning");
+  assertEquals(relapsed.stepsLeft, RELEARN_STEPS);
+  // One 'good' now graduates the relearning card.
+  let session = lapse.session;
+  while (session.cards[0].key !== "a") session = gradeCurrent(session, "good").session;
+  assertEquals(gradeCurrent(session, "good").graduated, true);
+});
+
+Deno.test("gradeCurrent: empty session is a no-op", () => {
+  const empty = initSession([]);
+  assertEquals(gradeCurrent(empty, "good"), { graduated: false, session: empty });
+});
+
+Deno.test("clozeAnswerHighlight: isolates the tested span from the blanked front", () => {
+  assertEquals(
+    clozeAnswerHighlight("The capital is [...] and the river is Seine", "The capital is Paris and the river is Seine"),
+    { after: " and the river is Seine", before: "The capital is ", highlight: "Paris" },
+  );
+  // A [hint] blank still aligns to the same revealed span.
+  assertEquals(
+    clozeAnswerHighlight("The capital is [European city] and the river is Seine", "The capital is Paris and the river is Seine")?.highlight,
+    "Paris",
+  );
+  // Blank at the very start / end.
+  assertEquals(clozeAnswerHighlight("[...] is the powerhouse", "Mitochondria is the powerhouse"), {
+    after: " is the powerhouse",
+    before: "",
+    highlight: "Mitochondria",
+  });
+  assertEquals(clozeAnswerHighlight("The powerhouse is the [...]", "The powerhouse is the mitochondria")?.highlight, "mitochondria");
+});
+
+Deno.test("clozeAnswerHighlight: a normal Q/A card is not a cloze and returns null", () => {
+  assertEquals(clozeAnswerHighlight("What is 2 + 2?", "4"), null);
+  assertEquals(clozeAnswerHighlight("Define [drug]", "A medication"), null); // bracket but no shared context
+  assertEquals(clozeAnswerHighlight("Same", "Same"), null);
 });
 
 Deno.test("makeClientEventId: uuid-v4 shape, deterministic under injected randomness", () => {

@@ -120,25 +120,153 @@ export function sessionQueue(snapshot: DeckSnapshot, marks: GradedMark[]): DeckQ
   return snapshot.queue.filter((card) => !graded.has(card.key));
 }
 
-// --- optimistic in-session advance -------------------------------------------
+// --- in-session Anki-style scheduler (optimistic; the Mac owns real FSRS) ------
+//
+// The snapshot only carries isNew per card, so the phone rebuilds the Anki
+// session buckets itself: New cards and due Review cards drop into "learning"
+// when you start them and cycle back a few positions until they graduate — so a
+// card you don't know keeps coming around within one session (owner: "like Anki,
+// the card shows back again"). A new card takes two "good"s to leave (Anki's
+// 1m/10m steps); a review card you lapse ("again") relearns in one step. The
+// New / Learning / Review counters are derived live from the buckets.
+//
+// Emission is the CALLER's job (review.tsx): it sends each card's FIRST grade
+// only — the "did I recall it when it fell due" signal FSRS actually models.
+// The later learning-step grades stay on the phone, because the Mac applies
+// every review_event as an independent review and re-sending would over-advance
+// the schedule (and a first "again" must reach the Mac, or a lapse is lost).
 
-/** "Again" re-shows the card a few positions later (Anki-ish feel) instead of
- *  ending its session — the REAL rescheduling happens on the Mac via FSRS. */
-export const AGAIN_GAP = 3;
+export type CardBucket = "learning" | "new" | "review";
 
-/** Advance the session queue for one grade of the FIRST card. `completed` says
- *  whether the card left the session (any grade but "again"). Pure. */
-export function applyGradeToQueue(
-  queue: DeckQueueCard[],
-  grade: ReviewGrade,
-): { queue: DeckQueueCard[]; completed: boolean } {
-  if (!queue.length) return { completed: false, queue };
-  const [current, ...rest] = queue;
-  if (grade === "again") {
-    const cut = Math.min(AGAIN_GAP, rest.length);
-    return { completed: false, queue: [...rest.slice(0, cut), current, ...rest.slice(cut)] };
+/** "Good"s a new card must clear before graduating — mirrors Anki's default
+ *  1m/10m two-step learning. A lapsed review relearns in a single step. */
+export const NEW_STEPS = 2;
+export const RELEARN_STEPS = 1;
+/** How far back a still-learning card is re-inserted, so it returns later in the
+ *  same session rather than immediately. */
+export const LEARNING_GAP = 3;
+
+export interface SessionCard extends DeckQueueCard {
+  bucket: CardBucket;
+  /** "Good"s still needed to graduate — only meaningful while learning. */
+  stepsLeft: number;
+}
+
+export interface ReviewSession {
+  cards: SessionCard[];
+  /** Cards that have graduated (left the session) — the progress numerator. */
+  completed: number;
+}
+
+export interface SessionCounts {
+  /** The "New" bucket (named `fresh` to avoid the `new` reserved word). */
+  fresh: number;
+  learning: number;
+  review: number;
+}
+
+/** Seed a session from the (already graded-mark-filtered) queue. Pure. */
+export function initSession(queue: DeckQueueCard[]): ReviewSession {
+  return {
+    cards: queue.map((card) => ({
+      ...card,
+      bucket: card.isNew ? "new" : "review",
+      stepsLeft: card.isNew ? NEW_STEPS : 0,
+    })),
+    completed: 0,
+  };
+}
+
+/** Live New / Learning / Review tallies for the counter row. Pure. */
+export function sessionCounts(session: ReviewSession): SessionCounts {
+  let fresh = 0;
+  let learning = 0;
+  let review = 0;
+  for (const card of session.cards) {
+    if (card.bucket === "new") fresh++;
+    else if (card.bucket === "learning") learning++;
+    else review++;
   }
-  return { completed: true, queue: rest };
+  return { fresh, learning, review };
+}
+
+export interface SessionAdvance {
+  session: ReviewSession;
+  /** The card left the session (a terminal grade) — record its graded-mark. */
+  graduated: boolean;
+}
+
+/** Grade the FIRST card and advance the session. Pure — the Mac reschedules for
+ *  real from the events the caller emits. */
+export function gradeCurrent(session: ReviewSession, grade: ReviewGrade): SessionAdvance {
+  const [current, ...rest] = session.cards;
+  if (!current) return { graduated: false, session };
+
+  const graduate: SessionAdvance = {
+    graduated: true,
+    session: { cards: rest, completed: session.completed + 1 },
+  };
+  const requeue = (card: SessionCard): SessionAdvance => {
+    const cut = Math.min(LEARNING_GAP, rest.length);
+    return {
+      graduated: false,
+      session: { cards: [...rest.slice(0, cut), card, ...rest.slice(cut)], completed: session.completed },
+    };
+  };
+
+  // "Easy" always graduates outright, whatever the bucket.
+  if (grade === "easy") return graduate;
+
+  // A still-untouched due review: a pass leaves the session; a lapse relearns.
+  if (current.bucket === "review") {
+    if (grade === "again") return requeue({ ...current, bucket: "learning", stepsLeft: RELEARN_STEPS });
+    return graduate; // hard / good
+  }
+
+  // New or learning card — cycle through the steps.
+  if (grade === "again") {
+    return requeue({ ...current, bucket: "learning", stepsLeft: current.isNew ? NEW_STEPS : RELEARN_STEPS });
+  }
+  if (grade === "hard") {
+    // Repeat the current step: no progress, but keeps cycling.
+    return requeue({ ...current, bucket: "learning", stepsLeft: Math.max(current.stepsLeft, 1) });
+  }
+  // "Good": clear one step; graduate once the last step is cleared.
+  const stepsLeft = current.stepsLeft - 1;
+  if (stepsLeft <= 0) return graduate;
+  return requeue({ ...current, bucket: "learning", stepsLeft });
+}
+
+// --- cloze answer highlight ----------------------------------------------------
+//
+// The Mac pre-renders a cloze card so the phone gets the front with the tested
+// span blanked ("[...]" or "[hint]") and the back fully revealed. Anki also
+// HIGHLIGHTS the tested word on the back; the phone recovers that span by
+// aligning the two strings. Everything matches except where the front holds the
+// blank and the back holds the answer, so the longest common prefix and suffix
+// bracket the revealed text. Returns null for a normal Q/A card — its back
+// shares no surrounding context, so `before` and `after` both come back empty.
+
+export interface ClozeSplit {
+  before: string;
+  highlight: string;
+  after: string;
+}
+
+export function clozeAnswerHighlight(prompt: string, answer: string): ClozeSplit | null {
+  if (prompt === answer || !prompt.includes("[")) return null;
+  const max = Math.min(prompt.length, answer.length);
+  let pre = 0;
+  while (pre < max && prompt[pre] === answer[pre]) pre++;
+  let suf = 0;
+  while (suf < max - pre && prompt[prompt.length - 1 - suf] === answer[answer.length - 1 - suf]) suf++;
+  const before = answer.slice(0, pre);
+  const highlight = answer.slice(pre, answer.length - suf);
+  const after = answer.slice(answer.length - suf);
+  // A real cloze reveal keeps surrounding context on at least one side and a
+  // non-empty middle; a normal Q/A pair yields before === after === "".
+  if (!highlight || (!before && !after)) return null;
+  return { after, before, highlight };
 }
 
 // --- offline grade queue shapes ------------------------------------------------

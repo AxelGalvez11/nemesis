@@ -212,8 +212,8 @@ export default function ChatScreen() {
           ListEmptyComponent={
             <View style={[styles.emptyWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]}>
               <EmptyBlock
-                title="Ask anything"
-                body="Answers come straight from the cloud — no Mac needed. Mechanisms, brand names, quick explanations, study questions."
+                title="Welcome back"
+                body="What are we working on today? Ask about mechanisms, brand names, or anything from your classes — answers come straight from the cloud."
               />
             </View>
           }
