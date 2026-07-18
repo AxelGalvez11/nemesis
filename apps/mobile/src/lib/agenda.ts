@@ -99,6 +99,85 @@ export function labelForDay(key: string, todayKey: string): string {
   return `${WEEKDAYS[date.getDay()]}, ${MONTHS[date.getMonth()]} ${date.getDate()}`;
 }
 
+// --- month grid ----------------------------------------------------------------
+
+const MONTHS_FULL = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+export interface MonthCell {
+  /** yyyy-mm-dd for this cell. */
+  key: string;
+  day: number;
+  /** false for the leading/trailing days that belong to the neighbouring month. */
+  inMonth: boolean;
+  isToday: boolean;
+  /** How many events fall on this day (drives the dot markers). */
+  eventCount: number;
+  /** The dominant event kind on the day, for the dot color (exam > assignment > rest). */
+  topKind: AgendaEventKind | null;
+}
+
+export interface MonthView {
+  year: number;
+  month: number;
+  label: string;
+  /** Rows of exactly 7 cells, Sunday-first, covering the whole month. */
+  weeks: MonthCell[][];
+}
+
+const KIND_RANK: Record<AgendaEventKind, number> = { exam: 5, assignment: 4, rotation: 3, class: 2, other: 1 };
+
+/** Build a Sunday-first calendar grid for one month, with each in-month day
+ *  annotated by how many events land on it (and the highest-priority kind for
+ *  the marker color). Pure — the caller passes today's key so "today" is
+ *  deterministic. Leading/trailing cells fill out whole weeks. */
+export function monthMatrix(year: number, month: number, events: AgendaEvent[], todayKey: string): MonthView {
+  const byDay = new Map<string, AgendaEvent[]>();
+  for (const event of events) {
+    const list = byDay.get(event.date) ?? [];
+    list.push(event);
+    byDay.set(event.date, list);
+  }
+
+  const first = new Date(year, month, 1);
+  const leadPad = first.getDay(); // 0 = Sunday
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const totalCells = Math.ceil((leadPad + daysInMonth) / 7) * 7;
+
+  const cells: MonthCell[] = [];
+  for (let i = 0; i < totalCells; i++) {
+    const dayOffset = i - leadPad;
+    const date = new Date(year, month, dayOffset + 1);
+    const key = dayKeyFromDate(date);
+    const dayEvents = byDay.get(key) ?? [];
+    const topKind = dayEvents.reduce<AgendaEventKind | null>(
+      (best, event) => (best === null || KIND_RANK[event.kind] > KIND_RANK[best] ? event.kind : best),
+      null,
+    );
+    cells.push({
+      key,
+      day: date.getDate(),
+      inMonth: date.getMonth() === month,
+      isToday: key === todayKey,
+      eventCount: dayEvents.length,
+      topKind,
+    });
+  }
+
+  const weeks: MonthCell[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+
+  return { year, month, label: `${MONTHS_FULL[month]} ${year}`, weeks };
+}
+
+/** Step a (year, month) pair by ±1 month, rolling the year over. */
+export function stepMonth(year: number, month: number, delta: number): { year: number; month: number } {
+  const total = year * 12 + month + delta;
+  return { year: Math.floor(total / 12), month: ((total % 12) + 12) % 12 };
+}
+
 /** Upcoming events (today → today + horizon), grouped by day, day-sorted, and
  *  time-sorted within a day (untimed last). */
 export function agendaDays(events: AgendaEvent[], todayKey: string, horizonDays = 90): AgendaDay[] {

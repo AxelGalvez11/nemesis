@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { decryptLibrary, loadCachedRows, loadVaultKey } from "@/api/librarySync";
 import { enqueueGrade, flushReviewQueue, loadAllGradedMarks, recordGradedMark } from "@/api/reviewEvents";
@@ -35,6 +36,15 @@ export default function ReviewScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
   const markdownStyles = useThemedStyles(createMarkdownStyles);
+  // The prompt reads like a flashcard face: bigger, centered, roomy line height.
+  // Alignment lives on `textgroup` (the Text node markdown-display wraps inline
+  // content in) — `body` is only the outer View, so textAlign there wouldn't
+  // cascade to the text.
+  const promptStyles = {
+    ...markdownStyles,
+    body: { ...markdownStyles.body, color: c.text, fontSize: 20, lineHeight: 29 },
+    textgroup: { textAlign: "center" as const },
+  };
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ ph?: string }>();
   const pathHash = Array.isArray(params.ph) ? params.ph[0] : params.ph;
@@ -153,18 +163,25 @@ export default function ReviewScreen() {
         </View>
       ) : (
         <>
-          <ScrollView style={styles.cardScroll} contentContainerStyle={styles.cardBody} showsVerticalScrollIndicator={false}>
-            <Text style={styles.deckName}>{snapshot.name}</Text>
-            {current.isNew ? <Text style={styles.newTag}>NEW</Text> : null}
-            <Markdown style={markdownStyles}>{current.prompt}</Markdown>
-            {revealed ? (
-              <View style={styles.answerBlock} testID="review-answer">
-                <View style={styles.divider} />
-                <Markdown style={markdownStyles}>{current.answer}</Markdown>
-                {current.note ? <Text style={styles.note}>{current.note}</Text> : null}
-              </View>
-            ) : null}
-            <View style={{ height: space(6) }} />
+          <ScrollView
+            style={styles.cardScroll}
+            contentContainerStyle={[styles.cardBody, !revealed && styles.cardBodyCentered]}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.cardHead}>
+              <Text style={styles.deckName} numberOfLines={1}>{snapshot.name}</Text>
+              {current.isNew ? <Text style={styles.newTag}>NEW</Text> : null}
+            </View>
+            <GlassSurface style={styles.cardFace} variant="clear">
+              <Markdown style={promptStyles}>{current.prompt}</Markdown>
+              {revealed ? (
+                <View style={styles.answerBlock} testID="review-answer">
+                  <View style={styles.divider} />
+                  <Markdown style={markdownStyles}>{current.answer}</Markdown>
+                  {current.note ? <Text style={styles.note}>{current.note}</Text> : null}
+                </View>
+              ) : null}
+            </GlassSurface>
           </ScrollView>
 
           <View style={[styles.footer, { paddingBottom: insets.bottom + space(3) }]}>
@@ -208,8 +225,12 @@ const createStyles = (c: ThemeColors) =>
     progress: { ...type.small, color: c.text2, fontVariant: ["tabular-nums"] },
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4) },
     cardScroll: { flex: 1 },
-    cardBody: { paddingHorizontal: space(5), paddingTop: space(2) },
-    deckName: { ...type.micro, color: c.text3, letterSpacing: 1.1, textTransform: "uppercase", marginBottom: space(2) },
+    cardBody: { paddingHorizontal: space(4), paddingTop: space(2), paddingBottom: space(6), flexGrow: 1 },
+    // Only the un-revealed (short-prompt) state floats the card to the middle;
+    // once the answer is showing the content top-aligns so it can scroll.
+    cardBodyCentered: { justifyContent: "center" },
+    cardHead: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space(2), marginBottom: space(3) },
+    deckName: { ...type.micro, color: c.text3, letterSpacing: 1.1, textTransform: "uppercase", flexShrink: 1 },
     newTag: {
       ...type.micro,
       color: c.accent,
@@ -218,12 +239,19 @@ const createStyles = (c: ThemeColors) =>
       borderRadius: 6,
       paddingHorizontal: space(1.5),
       paddingVertical: 2,
-      alignSelf: "flex-start",
       overflow: "hidden",
-      marginBottom: space(2),
+    },
+    cardFace: {
+      borderWidth: 1,
+      borderColor: c.line,
+      borderRadius: radius.lg,
+      paddingHorizontal: space(5),
+      paddingVertical: space(7),
+      minHeight: 150,
+      justifyContent: "center",
     },
     answerBlock: { marginTop: space(2) },
-    divider: { height: 1, backgroundColor: c.line2, marginVertical: space(3) },
+    divider: { height: 1, backgroundColor: c.line2, marginVertical: space(4) },
     note: { ...type.small, color: c.text2, marginTop: space(3), fontStyle: "italic" },
     footer: { paddingHorizontal: space(4), paddingTop: space(2), borderTopWidth: 1, borderTopColor: c.line, backgroundColor: c.bg },
     revealBtn: {
