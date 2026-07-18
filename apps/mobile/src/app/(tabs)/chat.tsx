@@ -14,7 +14,9 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { clearChatThread, loadChatThread, saveChatThread, sendChat } from "@/api/chat";
+import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import type { ChatMsg } from "@/lib/chat-thread";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
@@ -49,6 +51,8 @@ export default function ChatScreen() {
   const styles = useThemedStyles(createStyles);
   const markdownStyles = useThemedStyles(createMarkdownStyles);
   const insets = useSafeAreaInsets();
+  const { contentTop, contentBottom } = useShellPadding();
+  const keyboardUp = useKeyboardVisible();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [lastError, setLastError] = useState<null | string>(null);
   const [input, setInput] = useState("");
@@ -128,7 +132,10 @@ export default function ChatScreen() {
 
   if (!uid) {
     return (
-      <View style={[styles.flex, styles.signinWrap]} testID="chat-signin">
+      <View
+        style={[styles.flex, styles.signinWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]}
+        testID="chat-signin"
+      >
         <EmptyBlock title="Sign in to chat" body="Chat answers from the cloud under your own plan — no Mac needed once you're signed in." />
         <MissionButton label="Sign in" variant="primary" testID="chat-goto-signin" onPress={() => router.push("/sign-in")} />
       </View>
@@ -144,7 +151,11 @@ export default function ChatScreen() {
     <KeyboardAvoidingView
       style={styles.flex}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={insets.top + 58}
+      // With behavior="padding", the offset must equal this view's distance from
+      // the WINDOW top. Since the glass redesign the TopBar is an OVERLAY — this
+      // screen starts at the window top, so the offset is 0 (the bar's height now
+      // lives in the scroll content's paddingTop instead; see shell-chrome.ts).
+      keyboardVerticalOffset={0}
     >
       <View style={styles.flex} testID="chat-screen">
         {messages.length > 0 ? (
@@ -158,7 +169,11 @@ export default function ChatScreen() {
           inverted
           data={inverted}
           keyExtractor={(row) => row.id}
-          contentContainerStyle={styles.listBody}
+          // This list is inverted (scaleY:-1 on the content container), which swaps
+          // which edge lands where: paddingBottom here is what ends up under the glass
+          // TopBar at the true screen top — paddingTop would only open a gap above the
+          // composer at the bottom.
+          contentContainerStyle={[styles.listBody, { paddingBottom: contentTop + space(2) }]}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) =>
             item.kind === "thinking" ? (
@@ -180,7 +195,7 @@ export default function ChatScreen() {
             )
           }
           ListEmptyComponent={
-            <View style={styles.emptyWrap}>
+            <View style={[styles.emptyWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]}>
               {/* inverted list flips children — wrap so the empty state reads upright */}
               <View style={styles.emptyFlip}>
                 <EmptyBlock
@@ -191,16 +206,18 @@ export default function ChatScreen() {
             </View>
           }
         />
-        <View style={[styles.composerRow, { paddingBottom: Math.max(insets.bottom, space(2)) }]}>
-          <TextInput
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder="Ask Nemesis…"
-            placeholderTextColor={c.text3}
-            multiline
-            testID="chat-input"
-          />
+        <View style={[styles.composerRow, { paddingBottom: keyboardUp ? space(3) : contentBottom - space(1) }]}>
+          <GlassSurface style={styles.inputGlass} variant="clear">
+            <TextInput
+              style={styles.input}
+              value={input}
+              onChangeText={setInput}
+              placeholder="Ask Nemesis…"
+              placeholderTextColor={c.text3}
+              multiline
+              testID="chat-input"
+            />
+          </GlassSurface>
           <Pressable
             testID="chat-send"
             onPress={send}
@@ -249,20 +266,20 @@ const createStyles = (c: ThemeColors) =>
       paddingTop: space(2),
       borderTopWidth: 1,
       borderTopColor: c.line,
-      backgroundColor: c.bg,
     },
-    input: {
+    inputGlass: {
       flex: 1,
-      minHeight: 42,
-      maxHeight: 130,
       borderWidth: 1,
       borderColor: c.line2,
       borderRadius: radius.lg,
+    },
+    input: {
+      minHeight: 42,
+      maxHeight: 130,
       paddingHorizontal: space(3.5),
       paddingVertical: space(2.5),
       fontSize: 16,
       color: c.text,
-      backgroundColor: c.surface,
     },
     sendBtn: {
       width: 42,

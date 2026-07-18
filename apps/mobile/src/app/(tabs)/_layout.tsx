@@ -5,10 +5,13 @@ import { DrawerProvider } from "@/components/AppDrawer";
 import { TopBar } from "@/components/TopBar";
 import { useTheme } from "@/theme/ThemeProvider";
 
-// The app shell (§12, redesigned): chat-first with a slide-out drawer instead of a bottom tab bar
-// (the ChatGPT/Claude pattern). The shared TopBar + drawer wrap every screen; the active route renders
-// in <Slot/>. Guarded: an un-authenticated, non-guest visitor is redirected to sign-in; a guest is let
-// in and screens render guest affordances where a real session is required.
+// The app shell (liquid-glass redesign): the desktop layout, translated to the
+// phone. ALL pages live in the sidebar drawer — Sessions · Chat · Library · Study ·
+// Graph · Calendar — exactly like the desktop sidebar (owner call 2026-07-17: no
+// bottom tab bar). The glass TopBar and the glass drawer float above the content,
+// which scrolls underneath them; screens pad themselves via useShellPadding().
+// Guarded: an un-authenticated, non-guest visitor is redirected to sign-in; a
+// guest is let in and screens render guest affordances where a session is required.
 export default function AppShellLayout() {
   const { session, isGuest, loading } = useAuth();
   const { colors: c } = useTheme();
@@ -28,10 +31,8 @@ export default function AppShellLayout() {
   return (
     <DrawerProvider>
       <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <Slot />
         <TopBar />
-        <View style={{ flex: 1 }}>
-          <Slot />
-        </View>
       </View>
     </DrawerProvider>
   );

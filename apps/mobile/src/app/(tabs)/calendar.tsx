@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Linking, Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
+import { useShellPadding } from "@/components/shell-chrome";
 import {
   currentUserId,
   decryptLibrary,
@@ -24,6 +25,7 @@ import { radius, space, type } from "@/theme/tokens";
 export default function CalendarScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { contentTop, contentBottom } = useShellPadding();
   const [key, setKey] = useState<Uint8Array | null>(null);
   const [keyChecked, setKeyChecked] = useState(false);
   const [cache, setCache] = useState<SyncCache>({});
@@ -88,7 +90,10 @@ export default function CalendarScreen() {
 
   if (!key) {
     return (
-      <View style={styles.pairWrap} testID="calendar-unpaired">
+      <View
+        style={[styles.pairWrap, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
+        testID="calendar-unpaired"
+      >
         <EmptyBlock
           title="Pair with your Mac"
           body="Your schedule lives on your Mac. Pair once and every deadline the agent tracks shows up here."
@@ -113,7 +118,7 @@ export default function CalendarScreen() {
         sections={sections}
         keyExtractor={(item) => item.id}
         stickySectionHeadersEnabled={false}
-        contentContainerStyle={styles.listBody}
+        contentContainerStyle={[styles.listBody, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -190,9 +195,9 @@ function EventRow({ event, styles }: { event: AgendaEvent; styles: Styles }) {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
-    pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4), backgroundColor: c.bg },
+    pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(6), gap: space(4), backgroundColor: c.bg },
     pairHint: { ...type.small, color: c.text2, textAlign: "center" },
-    listBody: { padding: space(4), paddingBottom: space(10), flexGrow: 1 },
+    listBody: { paddingHorizontal: space(4), flexGrow: 1 },
     subscribeRow: {
       borderWidth: 1,
       borderColor: c.accentLine,

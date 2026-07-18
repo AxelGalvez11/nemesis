@@ -76,7 +76,7 @@ export default function MissionDetail() {
       const [m, evs] = await Promise.all([getMission(id), listMissionEvents(id)]);
       setMission(m);
       setEvents(evs);
-      setError(m ? null : "Mission not found.");
+      setError(m ? null : "Session not found.");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -160,7 +160,7 @@ export default function MissionDetail() {
           <ActivityIndicator color={c.text} />
         </View>
       ) : !mission ? (
-        <EmptyBlock title="Mission not found" body={error ?? "It may have been removed."} />
+        <EmptyBlock title="Session not found" body={error ?? "It may have been removed."} />
       ) : (
         <>
           <View style={styles.header}>

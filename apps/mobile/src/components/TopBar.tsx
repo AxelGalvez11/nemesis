@@ -2,47 +2,52 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useShell } from "./AppDrawer";
+import { GlassSurface } from "./GlassSurface";
 import type { ThemeColors } from "@/theme/palette";
-import { useThemedStyles } from "@/theme/ThemeProvider";
+import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { space } from "@/theme/tokens";
 
-// The quiet top bar: hamburger (opens the drawer) · Nemesis wordmark + mark · new-mission (+).
-// Shared by every screen in the (tabs) shell. This is "chrome" in the design-parity sense,
-// so everything here stays neutral — the one crimson accent is reserved for primary actions.
+// The quiet top bar: hamburger (opens the drawer) · Nemesis wordmark + mark · new-session (+).
+// Liquid-glass redesign: the bar is an OVERLAY now — it floats above the screen and content
+// scrolls underneath the glass. Its height contract is unchanged (insets.top + 58, see
+// shell-chrome.ts); screens pad their content with useShellPadding().contentTop.
+// Chrome stays neutral — the one crimson accent is reserved for primary actions.
 export function TopBar({ title = "Nemesis", showNewChat = true }: { title?: string; showNewChat?: boolean }) {
   const insets = useSafeAreaInsets();
   const { openDrawer, newChat } = useShell();
   const styles = useThemedStyles(createStyles);
   return (
-    <View style={[styles.bar, { paddingTop: insets.top + space(2) }]}>
-      <Pressable style={styles.iconBtn} onPress={openDrawer} hitSlop={8} accessibilityLabel="Open menu">
-        <View style={styles.bun} />
-        <View style={styles.bun} />
-        <View style={styles.bun} />
-      </Pressable>
-      <View style={styles.brand}>
-        <LogoMark size={15} />
-        <Text style={styles.wordmark}>{title}</Text>
-      </View>
-      {showNewChat ? (
-        <Pressable
-          style={styles.iconBtn}
-          // "+" = start a new mission from anywhere in the shell: land on home
-          // (no-op if already there) and bump the nonce, which clears + focuses
-          // the composer (owner report: on Library the button looked dead).
-          onPress={() => {
-            newChat();
-            router.push("/");
-          }}
-          hitSlop={8}
-          accessibilityLabel="New mission"
-        >
-          <View style={styles.plusH} />
-          <View style={styles.plusV} />
+    <View style={styles.overlay} pointerEvents="box-none">
+      <GlassSurface style={[styles.bar, { paddingTop: insets.top + space(2) }]}>
+        <Pressable style={styles.iconBtn} onPress={openDrawer} hitSlop={8} accessibilityLabel="Open menu">
+          <View style={styles.bun} />
+          <View style={styles.bun} />
+          <View style={styles.bun} />
         </Pressable>
-      ) : (
-        <View style={styles.iconBtn} />
-      )}
+        <View style={styles.brand}>
+          <LogoMark size={15} />
+          <Text style={styles.wordmark}>{title}</Text>
+        </View>
+        {showNewChat ? (
+          <Pressable
+            style={styles.iconBtn}
+            // "+" = start a new session from anywhere in the shell: land on home
+            // (no-op if already there) and bump the nonce, which clears + focuses
+            // the composer (owner report: on Library the button looked dead).
+            onPress={() => {
+              newChat();
+              router.push("/");
+            }}
+            hitSlop={8}
+            accessibilityLabel="New session"
+          >
+            <View style={styles.plusH} />
+            <View style={styles.plusV} />
+          </Pressable>
+        ) : (
+          <View style={styles.iconBtn} />
+        )}
+      </GlassSurface>
     </View>
   );
 }
@@ -58,11 +63,14 @@ const MARK_ASPECT = 1.24;
 // intrinsic pixel size as a default style, and on-device that default beat the
 // height+aspectRatio combination — the mark rendered at its raw 678×512 and swallowed
 // the whole screen (owner screenshot, build 6). Explicit dimensions always win.
-export function LogoMark({ size = 16 }: { size?: number }) {
+// tintColor recolors the white master to the theme's text tone, so the mark reads in
+// light mode too (untinted white-on-white was invisible there).
+export function LogoMark({ size = 16, tint }: { size?: number; tint?: string }) {
+  const { colors: c } = useTheme();
   return (
     <Image
       source={MARK}
-      style={{ width: Math.round(size * MARK_ASPECT), height: size }}
+      style={{ width: Math.round(size * MARK_ASPECT), height: size, tintColor: tint ?? c.text }}
       resizeMode="contain"
       accessibilityLabel="Nemesis"
     />
@@ -71,10 +79,11 @@ export function LogoMark({ size = 16 }: { size?: number }) {
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
+    overlay: { position: "absolute", top: 0, left: 0, right: 0 },
     bar: {
       flexDirection: "row", alignItems: "center", gap: space(2),
       paddingHorizontal: space(3), paddingBottom: space(3),
-      borderBottomWidth: 1, borderBottomColor: c.line, backgroundColor: c.bg,
+      borderBottomWidth: 1, borderBottomColor: c.line,
     },
     iconBtn: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
     bun: { width: 19, height: 2, borderRadius: 2, backgroundColor: c.text2, marginVertical: 2 },
