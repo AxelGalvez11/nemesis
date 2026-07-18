@@ -1,7 +1,17 @@
 // Deno unit tests (repo convention) for the agenda pure helpers.
 // Run: deno test --no-check apps/mobile/src/lib/agenda.test.ts
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { agendaDays, labelForDay, monthMatrix, parseCalendarDoc, stepMonth, type AgendaEvent } from "./agenda.ts";
+import {
+  agendaDays,
+  eventsForDay,
+  labelForDay,
+  monthMatrix,
+  parseCalendarDoc,
+  shiftDayKey,
+  stepMonth,
+  weekDays,
+  type AgendaEvent,
+} from "./agenda.ts";
 
 const docJson = JSON.stringify({
   v: 1,
@@ -85,4 +95,48 @@ Deno.test("stepMonth rolls the year over in both directions", () => {
   assertEquals(stepMonth(2026, 11, 1), { year: 2027, month: 0 });
   assertEquals(stepMonth(2026, 0, -1), { year: 2025, month: 11 });
   assertEquals(stepMonth(2026, 6, 0), { year: 2026, month: 6 });
+});
+
+Deno.test("eventsForDay: one day's events, time-sorted, empty for no matches", () => {
+  const doc = parseCalendarDoc(docJson)!;
+  // Same day as the agendaDays "Today" bucket — same order: 09:00, 14:00, untimed-last.
+  assertEquals(eventsForDay(doc.events, "2026-07-17").map((e) => e.id), ["e3", "e2", "e4"]);
+  assertEquals(eventsForDay(doc.events, "2026-07-20").map((e) => e.id), ["e1"]);
+  assertEquals(eventsForDay(doc.events, "2099-01-01"), []);
+});
+
+Deno.test("shiftDayKey rolls months and years over in both directions", () => {
+  assertEquals(shiftDayKey("2026-07-17", 1), "2026-07-18");
+  assertEquals(shiftDayKey("2026-07-17", -1), "2026-07-16");
+  assertEquals(shiftDayKey("2026-07-17", 0), "2026-07-17");
+  assertEquals(shiftDayKey("2026-07-31", 1), "2026-08-01");
+  assertEquals(shiftDayKey("2026-01-01", -1), "2025-12-31");
+});
+
+Deno.test("weekDays: Sunday-first week containing the date, every day present, time-sorted", () => {
+  // 2026-07-17 is a Friday (Jul 1 2026 is a Wednesday) — its week is Jul 12 (Sun) .. Jul 18 (Sat).
+  const events: AgendaEvent[] = [
+    { id: "mon", title: "Mon class", date: "2026-07-13", kind: "class" },
+    { id: "fri-late", title: "Fri late", date: "2026-07-17", time: "14:00", kind: "class" },
+    { id: "fri-early", title: "Fri early", date: "2026-07-17", time: "09:00", kind: "assignment" },
+    { id: "sat", title: "Sat exam", date: "2026-07-18", kind: "exam" },
+    { id: "outside", title: "Next week", date: "2026-07-20", kind: "other" },
+  ];
+  const week = weekDays(events, "2026-07-17", "2026-07-17");
+
+  assertEquals(week.length, 7);
+  assertEquals(
+    week.map((d) => d.key),
+    ["2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18"],
+  );
+  assertEquals(week.map((d) => d.label), ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]);
+  assertEquals(week[6].day, 18);
+  assertEquals(week[5].isToday, true); // Friday = todayKey
+  assertEquals(week[0].isToday, false);
+  assertEquals(week[1].events.map((e) => e.id), ["mon"]);
+  assertEquals(week[5].events.map((e) => e.id), ["fri-early", "fri-late"]); // time-sorted within the day
+  assertEquals(week[6].events.map((e) => e.id), ["sat"]);
+  assertEquals(week[2].events, []); // Tuesday: present, just empty
+  // Next week's event must not leak into this week's cells.
+  assert(week.every((d) => d.events.every((e) => e.id !== "outside")));
 });

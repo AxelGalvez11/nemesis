@@ -6,16 +6,14 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import Markdown from "react-native-markdown-display";
 import { router } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { clearChatThread, loadChatThread, saveChatThread, sendChat } from "@/api/chat";
 import { useShell } from "@/components/AppDrawer";
-import { GlassSurface } from "@/components/GlassSurface";
+import { Composer } from "@/components/Composer";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import type { ChatMsg } from "@/lib/chat-thread";
@@ -51,7 +49,6 @@ export default function ChatScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
   const markdownStyles = useThemedStyles(createMarkdownStyles);
-  const insets = useSafeAreaInsets();
   const { contentTop, contentBottom } = useShellPadding();
   const keyboardUp = useKeyboardVisible();
   const { setHeaderTitle } = useShell();
@@ -215,36 +212,22 @@ export default function ChatScreen() {
           ListEmptyComponent={
             <View style={[styles.emptyWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]}>
               <EmptyBlock
-                title="Ask anything"
-                body="Answers come straight from the cloud — no Mac needed. Mechanisms, brand names, quick explanations, study questions."
+                title="Welcome back"
+                body="What are we working on today? Ask about mechanisms, brand names, or anything from your classes — answers come straight from the cloud."
               />
             </View>
           }
         />
         <View style={[styles.composerRow, { paddingBottom: keyboardUp ? space(3) : contentBottom - space(1) }]}>
-          <GlassSurface style={styles.inputGlass} variant="clear">
-            <TextInput
-              style={styles.input}
-              value={input}
-              onChangeText={setInput}
-              placeholder="Ask Nemesis…"
-              placeholderTextColor={c.text3}
-              multiline
-              testID="chat-input"
-            />
-          </GlassSurface>
-          <Pressable
-            testID="chat-send"
-            onPress={send}
-            disabled={!input.trim() || sending}
-            style={({ pressed }) => [
-              styles.sendBtn,
-              (!input.trim() || sending) && styles.sendDisabled,
-              pressed && styles.sendPressed,
-            ]}
-          >
-            <Text style={styles.sendText}>↑</Text>
-          </Pressable>
+          <Composer
+            value={input}
+            onChangeText={setInput}
+            onSend={send}
+            onPlus={newChat}
+            sending={sending}
+            placeholder="Ask Nemesis…"
+            testID="chat-input"
+          />
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -272,36 +255,5 @@ const createStyles = (c: ThemeColors) =>
     thinking: { opacity: 0.8 },
     thinkingText: { ...type.small, color: c.text2 },
     emptyWrap: { flex: 1, justifyContent: "center" },
-    composerRow: {
-      flexDirection: "row",
-      alignItems: "flex-end",
-      gap: space(2),
-      paddingHorizontal: space(3),
-      paddingTop: space(2),
-    },
-    inputGlass: {
-      flex: 1,
-      borderWidth: 1,
-      borderColor: c.line2,
-      borderRadius: radius.lg,
-    },
-    input: {
-      minHeight: 42,
-      maxHeight: 130,
-      paddingHorizontal: space(3.5),
-      paddingVertical: space(2.5),
-      fontSize: 16,
-      color: c.text,
-    },
-    sendBtn: {
-      width: 42,
-      height: 42,
-      borderRadius: 21,
-      backgroundColor: c.accent,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    sendDisabled: { opacity: 0.4 },
-    sendPressed: { opacity: 0.8 },
-    sendText: { fontSize: 20, fontWeight: "700", color: c.onAccent, marginTop: -2 },
+    composerRow: { paddingHorizontal: space(3), paddingTop: space(2) },
   });

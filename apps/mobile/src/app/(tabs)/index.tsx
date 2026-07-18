@@ -14,13 +14,13 @@ import {
 import { router } from "expo-router";
 import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
-import { GlassSurface } from "@/components/GlassSurface";
+import { Composer } from "@/components/Composer";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
-import { EmptyBlock, MissionButton, StatusPill, Surface } from "@/components/mission-ui";
+import { EmptyBlock, StatusPill, Surface } from "@/components/mission-ui";
 import { createMission, isDesktopOnline, listMissions, statusLabel, type Mission } from "@/api/missions";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { space, type } from "@/theme/tokens";
 
 // Sessions home — the app's "/" route. Composer at the bottom starts a session
 // (dispatched to the agent; the desktop runs it today); the list above shows every
@@ -183,29 +183,16 @@ export default function MissionsHome() {
         </Text>
       ) : null}
 
-      {/* Composer clears the floating tab bar while it's visible; when the keyboard
-          is up the bar hides, so the clearance drops and the field hugs the keys. */}
       <View style={[styles.composerWrap, { paddingBottom: keyboardUp ? space(3) : contentBottom - space(1) }]}>
-        <GlassSurface style={styles.inputGlass} variant="clear">
-          <TextInput
-            ref={inputRef}
-            testID="mission-composer-input"
-            style={styles.input}
-            placeholder="What should Nemesis work on?"
-            placeholderTextColor={c.text2}
-            value={prompt}
-            onChangeText={setPrompt}
-            multiline
-            editable={!sending}
-          />
-        </GlassSurface>
-        <MissionButton
-          testID="mission-composer-send"
-          label={sending ? "Sending…" : "Send"}
-          variant="primary"
-          busy={sending}
-          disabled={prompt.trim().length < 3}
-          onPress={() => void submit()}
+        <Composer
+          value={prompt}
+          onChangeText={setPrompt}
+          onSend={() => void submit()}
+          onPlus={() => setPrompt("")}
+          sending={sending}
+          placeholder="What should Nemesis work on?"
+          inputRef={inputRef}
+          testID="mission-composer-input"
         />
       </View>
     </KeyboardAvoidingView>
@@ -229,23 +216,7 @@ const createStyles = (c: ThemeColors) =>
     offlineNote: { ...type.micro, color: c.text2, paddingHorizontal: space(4), paddingBottom: space(1.5) },
 
     composerWrap: {
-      flexDirection: "row",
-      alignItems: "flex-end",
-      gap: space(2.5),
       paddingHorizontal: space(3.5),
       paddingTop: space(2.5),
-    },
-    inputGlass: {
-      flex: 1,
-      borderWidth: 1,
-      borderColor: c.line,
-      borderRadius: radius.xl,
-    },
-    input: {
-      maxHeight: 120,
-      paddingHorizontal: space(3.5),
-      paddingVertical: space(2.75),
-      color: c.text,
-      fontSize: 15.5,
     },
   });

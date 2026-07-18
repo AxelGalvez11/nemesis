@@ -165,7 +165,6 @@ export default function LibraryScreen() {
             }}
           >
             <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
-            <Text style={styles.chevron}>›</Text>
           </Pressable>
         )}
         ListEmptyComponent={
@@ -188,15 +187,10 @@ const createStyles = (c: ThemeColors) =>
     pairHint: { ...type.small, color: c.text2, textAlign: "center" },
     listBody: { padding: space(4), flexGrow: 1 },
     sectionHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(4), marginBottom: space(1.5) },
-    row: {
-      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      paddingVertical: space(3), paddingHorizontal: space(3),
-      borderWidth: 1, borderColor: c.line, borderRadius: radius.sm,
-      backgroundColor: c.glass, marginBottom: space(1.5),
-    },
-    rowPressed: { backgroundColor: c.accentFaint },
-    rowTitle: { ...type.bodyStrong, color: c.text, flex: 1, marginRight: space(2) },
-    chevron: { fontSize: 20, color: c.text2 },
+    // Notes are just names now (owner call) — no cards, no chevrons.
+    row: { paddingVertical: space(2.5), paddingHorizontal: space(2), borderRadius: radius.sm },
+    rowPressed: { backgroundColor: c.surface },
+    rowTitle: { ...type.body, color: c.text },
     warn: { marginHorizontal: space(4), marginTop: space(3), padding: space(3) },
     warnText: { ...type.small, color: c.text2 },
     emptyWrap: { paddingTop: space(10) },

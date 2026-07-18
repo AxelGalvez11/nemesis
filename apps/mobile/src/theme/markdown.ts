@@ -6,11 +6,18 @@ import type { ThemeColors } from "./palette";
 export const createMarkdownStyles = (c: ThemeColors) =>
   ({
     body: { color: c.text, fontSize: 15.5, lineHeight: 24 },
-    heading1: { color: c.text, fontSize: 24, lineHeight: 30, fontWeight: "700", marginTop: 18, marginBottom: 6 },
-    heading2: { color: c.text, fontSize: 20, lineHeight: 26, fontWeight: "700", marginTop: 16, marginBottom: 4 },
-    heading3: { color: c.text, fontSize: 17, lineHeight: 23, fontWeight: "600", marginTop: 12, marginBottom: 2 },
+    paragraph: { marginTop: 0, marginBottom: 12 },
+    heading1: { color: c.text, fontSize: 24, lineHeight: 30, fontWeight: "700", marginTop: 18, marginBottom: 8 },
+    heading2: { color: c.text, fontSize: 20, lineHeight: 26, fontWeight: "700", marginTop: 18, marginBottom: 6 },
+    heading3: { color: c.text, fontSize: 17, lineHeight: 23, fontWeight: "600", marginTop: 14, marginBottom: 4 },
+    heading4: { color: c.text, fontSize: 15.5, lineHeight: 22, fontWeight: "700", marginTop: 12, marginBottom: 4 },
     strong: { fontWeight: "700" as const },
-    link: { color: c.accent },
+    em: { fontStyle: "italic" as const },
+    s: { textDecorationLine: "line-through" as const },
+    link: { color: c.accent, textDecorationLine: "underline" as const },
+    bullet_list: { marginBottom: 10 },
+    ordered_list: { marginBottom: 10 },
+    list_item: { marginBottom: 4 },
     blockquote: {
       backgroundColor: c.glass,
       borderLeftColor: c.accentLine,
