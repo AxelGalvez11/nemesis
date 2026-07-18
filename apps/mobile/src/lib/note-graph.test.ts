@@ -3,9 +3,10 @@
 //
 // Imports ONLY note-graph.ts, which is dependency-free by design (like
 // library-sync.ts) so this file loads clean under Deno.
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertNotEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildNoteGraph,
+  createLayoutSim,
   extractWikilinks,
   hashString,
   layoutNoteGraph,
@@ -94,4 +95,90 @@ Deno.test("layoutNoteGraph handles empty and single-note libraries", () => {
   const one = layoutNoteGraph(buildNoteGraph([doc("solo.md", "Solo", "")]), { height: 100, width: 100 });
   assertEquals(one.nodes.length, 1);
   assert(one.nodes[0].x >= 0 && one.nodes[0].x <= 100);
+});
+
+// --- gravity/repulsion opts + createLayoutSim (phone Graph sliders) --------
+
+Deno.test("layoutNoteGraph: omitting gravity/repulsion matches passing 1 explicitly", () => {
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "[[B]]"),
+    doc("b.md", "B", "[[C]]"),
+    doc("c.md", "C", ""),
+  ]);
+  const opts = { height: 400, padding: 24, width: 400 };
+  // Bit-exact: the multiplier defaults must reproduce the original hardcoded
+  // constants (rest*rest and 0.02) exactly, not just approximately.
+  assertEquals(layoutNoteGraph(graph, opts), layoutNoteGraph(graph, { ...opts, gravity: 1, repulsion: 1 }));
+});
+
+Deno.test("layoutNoteGraph: gravity and repulsion opts are actually threaded into the sim", () => {
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "[[B]]"),
+    doc("b.md", "B", "[[C]]"),
+    doc("c.md", "C", ""),
+  ]);
+  const opts = { height: 400, padding: 24, width: 400 };
+  const base = layoutNoteGraph(graph, opts);
+  // Proving the params reach the force loop at all — not betting on a
+  // specific emergent direction, since the post-layout canvas-fit
+  // normalization can mask magnitude-only differences.
+  assertNotEquals(layoutNoteGraph(graph, { ...opts, repulsion: 3 }), base);
+  assertNotEquals(layoutNoteGraph(graph, { ...opts, gravity: 3 }), base);
+});
+
+Deno.test("createLayoutSim stepped to completion matches layoutNoteGraph's one-shot output", () => {
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const opts = { height: 300, width: 300 };
+  const sim = createLayoutSim(graph, opts);
+  assertEquals(sim.settled, false);
+  let guard = 0;
+  while (!sim.settled && guard++ < 10_000) sim.step();
+  assertEquals(sim.settled, true);
+  assertEquals(sim.snapshot(), layoutNoteGraph(graph, opts));
+});
+
+Deno.test("createLayoutSim never mutates its input graph", () => {
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const before = JSON.stringify(graph);
+  const sim = createLayoutSim(graph, { height: 300, width: 300 });
+  sim.step();
+  sim.step();
+  void sim.snapshot();
+  assertEquals(JSON.stringify(graph), before);
+});
+
+Deno.test("createLayoutSim.reheat re-arms a settled sim but is bounded against runaway", () => {
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const sim = createLayoutSim(graph, { height: 300, iterations: 5, width: 300 });
+  while (!sim.settled) sim.step();
+  assertEquals(sim.settled, true);
+
+  sim.reheat();
+  assertEquals(sim.settled, false, "reheat should re-arm an already-settled sim");
+
+  // Simulate a slider being dragged for a long time: settle, reheat, repeat.
+  // The hard step ceiling must win eventually so this terminates in a settled
+  // state no matter how many times reheat() is called.
+  for (let k = 0; k < 200; k++) {
+    let guard = 0;
+    while (!sim.settled && guard++ < 10_000) sim.step();
+    sim.reheat();
+  }
+  assertEquals(sim.settled, true, "hard step ceiling should stop further reheats from re-arming");
+});
+
+Deno.test("createLayoutSim.gravity/.repulsion are live-mutable without losing current positions", () => {
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const sim = createLayoutSim(graph, { height: 300, width: 300 });
+  sim.step();
+  sim.step();
+  const midway = sim.snapshot();
+  // Changing the multipliers mid-flight must not reseed back to the spiral —
+  // the next step continues from wherever the sim currently is.
+  sim.gravity = 2.5;
+  sim.repulsion = 0.4;
+  sim.step();
+  const after = sim.snapshot();
+  const moved = midway.nodes.some((n, i) => n.x !== after.nodes[i].x || n.y !== after.nodes[i].y);
+  assert(moved, "step() after a live multiplier change should move at least one node");
 });
