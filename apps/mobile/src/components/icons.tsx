@@ -111,3 +111,102 @@ export function PlusIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
     </Svg>
   );
 }
+
+export function MailIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="3.4" y="5.4" width="17.2" height="13.2" rx="2" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M4.2 7 12 12.4 19.8 7" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+export function SparkleIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 3.5c.4 3.6 1.4 4.6 5 5-3.6.4-4.6 1.4-5 5-.4-3.6-1.4-4.6-5-5 3.6-.4 4.6-1.4 5-5Z" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M18.5 14c.2 1.6.6 2 2.2 2.2-1.6.2-2 .6-2.2 2.2-.2-1.6-.6-2-2.2-2.2 1.6-.2 2-.6 2.2-2.2Z" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+export function ThemeIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx="12" cy="12" r="8" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M12 4a8 8 0 0 0 0 16Z" fill={color} stroke="none" />
+    </Svg>
+  );
+}
+
+export function FileIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M6.5 3.4h7L18.6 8.5V19a1.6 1.6 0 0 1-1.6 1.6H6.5A1.6 1.6 0 0 1 4.9 19V5A1.6 1.6 0 0 1 6.5 3.4Z" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M13.2 3.6v4.6a.6.6 0 0 0 .6.6h4.5" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="8.2" y1="13" x2="14.8" y2="13" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="8.2" y1="16" x2="13" y2="16" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+export function LifeRingIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx="12" cy="12" r="8.2" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Circle cx="12" cy="12" r="3.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M6.2 6.2 9.6 9.6M14.4 14.4l3.4 3.4M17.8 6.2 14.4 9.6M9.6 14.4l-3.4 3.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+export function TrashIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M4.6 6.4h14.8" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M9.2 6.4V5a1.4 1.4 0 0 1 1.4-1.4h2.8A1.4 1.4 0 0 1 14.8 5v1.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M6.4 6.4 7.2 19a1.6 1.6 0 0 0 1.6 1.5h6.4a1.6 1.6 0 0 0 1.6-1.5l.8-12.6" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+export function LogoutIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M14 4.4H6.6A1.6 1.6 0 0 0 5 6v12a1.6 1.6 0 0 0 1.6 1.6H14" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M17.5 8.5 21 12l-3.5 3.5M20.4 12H10" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+export function CloseIcon({ size = 23, color, strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Line x1="6" y1="6" x2="18" y2="18" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="18" y1="6" x2="6" y2="18" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+export function SearchIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx="10.5" cy="10.5" r="6.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="15.4" y1="15.4" x2="20" y2="20" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+export function SettingsIcon({ size = 23, color, strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path
+        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        {...base}
+      />
+    </Svg>
+  );
+}

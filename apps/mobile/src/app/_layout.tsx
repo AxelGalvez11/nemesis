@@ -72,7 +72,10 @@ function ThemedApp() {
 
   return (
     <SafeAreaProvider>
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }}>
+        {/* Settings slides up from the bottom as a sheet (ChatGPT-style), owner call. */}
+        <Stack.Screen name="settings" options={{ presentation: "modal" }} />
+      </Stack>
       <OfflineBanner />
       <StatusBar style={resolvedMode === "dark" ? "light" : "dark"} />
     </SafeAreaProvider>
