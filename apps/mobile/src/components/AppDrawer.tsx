@@ -1,11 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentType } from "react";
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { listMissions, type Mission, type MissionStatus } from "@/api/missions";
 import { GlassSurface } from "./GlassSurface";
-import { CalendarIcon, ChatIcon, GraphIcon, LibraryIcon, PlusIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
+import { CalendarIcon, ChatIcon, GraphIcon, LibraryIcon, PlusIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -128,6 +128,8 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
   const email = session?.user?.email ?? "Sign in";
   const initial = (email[0] ?? "?").toUpperCase();
   const [sessions, setSessions] = useState<Mission[]>([]);
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Refresh the sessions list each time the drawer opens (cheap; keeps it current
   // without a realtime subscription). Guests get an empty list, never an error.
@@ -154,9 +156,27 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
     router.push("/" as never);
   };
 
+  const trimmed = query.trim().toLowerCase();
+  const shownSessions = trimmed
+    ? sessions.filter((mission) => mission.title.toLowerCase().includes(trimmed))
+    : sessions;
+
   return (
-    <View style={[styles.panelInner, { paddingTop: insets.top + space(3) }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollBody}>
+    <View style={[styles.panelInner, { paddingTop: insets.top + space(2) }]}>
+      {/* Title + search — the ChatGPT sidebar header. */}
+      <View style={styles.brandRow}>
+        <Text style={styles.brand}>Nemesis</Text>
+        <Pressable
+          style={({ pressed }) => [styles.searchBtn, (pressed || searchOpen) && styles.searchBtnActive]}
+          onPress={() => setSearchOpen((v) => !v)}
+          hitSlop={8}
+          accessibilityLabel="Search sessions"
+        >
+          <SearchIcon size={19} color={searchOpen ? c.text : c.text2} />
+        </Pressable>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollBody} keyboardShouldPersistTaps="handled">
         <View style={styles.navGroup}>
           <NavRow Icon={PlusIcon} label="New session" onPress={startNewSession} accent />
           <NavRow Icon={ChatIcon} label="Chat" onPress={() => go("/chat")} />
@@ -166,16 +186,27 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
           <NavRow Icon={CalendarIcon} label="Calendar" onPress={() => go("/calendar")} />
         </View>
 
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionDot} />
-          <Text style={styles.sectionLabel}>Sessions</Text>
-          {sessions.length ? <Text style={styles.sectionCount}>{sessions.length}</Text> : null}
-        </View>
+        {searchOpen ? (
+          <View style={styles.searchField}>
+            <SearchIcon size={16} color={c.text3} />
+            <TextInput
+              style={styles.searchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search sessions"
+              placeholderTextColor={c.text3}
+              autoFocus
+              testID="drawer-search"
+            />
+          </View>
+        ) : null}
 
-        {sessions.length === 0 ? (
-          <Text style={styles.emptySessions}>No sessions yet</Text>
+        <Text style={styles.sectionLabel}>Sessions</Text>
+
+        {shownSessions.length === 0 ? (
+          <Text style={styles.emptySessions}>{trimmed ? "No matches" : "No sessions yet"}</Text>
         ) : (
-          sessions.map((mission) => (
+          shownSessions.map((mission) => (
             <Pressable
               key={mission.id}
               testID={`drawer-session-${mission.id}`}
@@ -242,31 +273,41 @@ const createStyles = (c: ThemeColors) =>
     panelInner: { flex: 1 },
     scrollBody: { paddingBottom: space(2) },
 
-    // Nav — compact rows (desktop sidebarMenuButton: ~28px, 13px medium secondary).
-    navGroup: { paddingHorizontal: space(2), gap: 1, marginBottom: space(2) },
+    // Brand + search header (ChatGPT sidebar top).
+    brandRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(4), paddingBottom: space(3) },
+    brand: { color: c.text, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
+    searchBtn: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+    searchBtnActive: { backgroundColor: c.surface },
+    searchField: {
+      flexDirection: "row", alignItems: "center", gap: space(2),
+      marginHorizontal: space(3), marginBottom: space(2),
+      paddingHorizontal: space(3), height: 38,
+      backgroundColor: c.surface, borderRadius: radius.md, borderWidth: 1, borderColor: c.line,
+    },
+    searchInput: { flex: 1, color: c.text, fontSize: 15, padding: 0 },
+
+    // Nav — spacious rows (ChatGPT: ~44px, 16px white).
+    navGroup: { paddingHorizontal: space(2), marginBottom: space(2) },
     navRow: {
-      flexDirection: "row", alignItems: "center", gap: space(2.5),
-      paddingVertical: space(2), paddingHorizontal: space(2.5), borderRadius: radius.sm,
+      flexDirection: "row", alignItems: "center", gap: space(3),
+      paddingVertical: space(2.75), paddingHorizontal: space(2.5), borderRadius: radius.md,
     },
     navRowPressed: { backgroundColor: c.surface },
-    navIcon: { width: 20, alignItems: "center" },
-    navLabel: { color: c.text2, fontSize: 13.5, fontWeight: "500", flex: 1 },
+    navIcon: { width: 24, alignItems: "center" },
+    navLabel: { color: c.text, fontSize: 16, fontWeight: "500", flex: 1 },
     navLabelAccent: { color: c.text, fontWeight: "600" },
 
-    // Section header — the desktop panel label: accent micro-caps + dither square.
-    sectionHeader: { flexDirection: "row", alignItems: "center", gap: space(1.5), paddingHorizontal: space(4), marginTop: space(2), marginBottom: space(1.5) },
-    sectionDot: { width: 7, height: 7, borderRadius: 2, backgroundColor: c.accent },
-    sectionLabel: { color: c.accent, fontSize: 10, fontWeight: "700", letterSpacing: 1.4, textTransform: "uppercase" },
-    sectionCount: { color: c.text3, fontSize: 11, fontWeight: "500", marginLeft: space(0.5) },
+    // Section label — ChatGPT's plain bold header (e.g. "Pinned").
+    sectionLabel: { color: c.text2, fontSize: 13, fontWeight: "700", paddingHorizontal: space(4), marginTop: space(3), marginBottom: space(1.5) },
 
-    // Session rows — the sidebar body on desktop.
+    // Session rows.
     sessionRow: {
-      flexDirection: "row", alignItems: "center", gap: space(2),
-      paddingVertical: space(1.75), paddingHorizontal: space(3), marginHorizontal: space(2), borderRadius: radius.sm,
+      flexDirection: "row", alignItems: "center", gap: space(2.5),
+      paddingVertical: space(2.25), paddingHorizontal: space(3.5), marginHorizontal: space(2), borderRadius: radius.md,
     },
     sessionRowPressed: { backgroundColor: c.surface },
     statusDot: { width: 6, height: 6, borderRadius: 3 },
-    sessionTitle: { flex: 1, color: c.text2, fontSize: 13, minWidth: 0 },
+    sessionTitle: { flex: 1, color: c.text2, fontSize: 14.5, minWidth: 0 },
     sessionTime: { color: c.text3, fontSize: 11, fontVariant: ["tabular-nums"] },
     emptySessions: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },
 
