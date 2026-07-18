@@ -50,6 +50,7 @@ const SIDEBAR_NAV: NavItem[] = [
   { id: "new-session", label: "New session", codicon: "robot", action: "new-session" },
   { id: "study", label: "Study", codicon: "mortar-board", route: "/study" },
   { id: "library", label: "Library", codicon: "book", route: "/library" },
+  { id: "notebooks", label: "Notebooks", codicon: "notebook", route: "/notebooks" },
   { id: "graph", label: "Graph", codicon: "type-hierarchy-sub", route: "/graph" },
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
 ];
