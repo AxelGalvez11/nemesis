@@ -16,6 +16,7 @@ import { useSessions } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
 
 import { SidebarBlankState, SidebarNoMatchState, SidebarPinnedEmptyState, SidebarSessionsEmptyState } from "./section-states";
+import { useSettingsModal } from "./settings-modal";
 import { SidebarSessionRow } from "./session-row";
 import {
   countLabel,
@@ -60,6 +61,7 @@ interface ChatSidebarProps {
 
 export function ChatSidebar({ sidebarOpen, accountEmail }: ChatSidebarProps) {
   const router = useRouter();
+  const { openSettings } = useSettingsModal();
   const pathname = usePathname();
   const { pinned, recents, sessions, selectedId, working, create, select, rename, remove, togglePin } = useSessions();
 
@@ -251,7 +253,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail }: ChatSidebarProps) {
         )}
       </SidebarContent>
 
-      <StudentSidebarFooter accountEmail={accountEmail} onOpenSettings={() => router.push("/account")} />
+      <StudentSidebarFooter accountEmail={accountEmail} onOpenSettings={openSettings} />
     </Sidebar>
   );
 }

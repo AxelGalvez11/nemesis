@@ -7,6 +7,7 @@ import { IconCards, IconChecklist, IconSitemap } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/desktop-ui/button";
+import { useSettingsModal } from "@/components/workspace/shell/settings-modal";
 import { Settings } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
@@ -25,22 +26,20 @@ interface StudyChromeProps {
 
 export function StudyChrome({ activeTab, onTabChange }: StudyChromeProps) {
   const router = useRouter();
+  const { openSettings } = useSettingsModal();
 
   return (
     <>
       <header className="flex shrink-0 items-start justify-between gap-3 px-6 pb-3 pt-5">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">Study</h1>
-          <p className="mt-0.5 text-[0.65rem] font-medium tabular-nums text-(--ui-text-tertiary)">
-            0 due · 0 new · 0 cards
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Button onClick={() => router.push("/sessions")} size="sm" variant="outline">
             <span className="size-1.5 rounded-full bg-(--theme-primary)" />
             Ask the agent
           </Button>
-          <Button aria-label="Study settings" size="icon-xs" variant="ghost">
+          <Button aria-label="Study settings" onClick={openSettings} size="icon-xs" variant="ghost">
             <Settings />
           </Button>
         </div>
