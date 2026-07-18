@@ -1,8 +1,15 @@
-// Minimal stub — the Phase C library builder replaces this body.
+// Library page — desktop src/app/library/index.tsx LibraryView root, v1
+// empty-vault anatomy (library-study spec §2.2). Sidebar + main only: no tab
+// strip, no right rail, no CodeMirror until cloud sync ships.
+
+import { LibraryMain } from "@/components/workspace/library/library-main";
+import { LibrarySidebar } from "@/components/workspace/library/library-sidebar";
+
 export default function LibraryPage() {
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-bg-editor) pt-(--titlebar-height)">
-      <h1 className="px-4 text-lg font-semibold text-foreground">Library</h1>
+    <div className="flex h-full min-h-0 overflow-hidden bg-(--ui-editor-surface-background)">
+      <LibrarySidebar />
+      <LibraryMain />
     </div>
   );
 }
