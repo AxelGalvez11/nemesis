@@ -76,6 +76,7 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
             <p className="nemesis-account-nav-email" title={email}>{email}</p>
           </div>
           <nav aria-label="Account sections">
+            <Link href="/sessions">Open Nemesis</Link>
             <Link className={section === "overview" ? "active" : ""} href="/account">Overview</Link>
             <Link className={section === "billing" ? "active" : ""} href="/account/billing">Subscription</Link>
           </nav>

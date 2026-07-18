@@ -32,7 +32,7 @@ export default function SignUpPage() {
   // pricing funnel routes strangers through here and resumes Stripe checkout on return.
   function nextPath(): string {
     const raw = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
-    return sanitizeNextPath(raw, "/account");
+    return sanitizeNextPath(raw, "/sessions");
   }
 
   // Already signed in? An account exists and is active — this page has nothing to create.
@@ -51,7 +51,7 @@ export default function SignUpPage() {
       // sessionStorage can be unavailable (private mode); the notice on /sign-in still explains.
     }
     const next = nextPath();
-    router.replace(next === "/account" ? "/sign-in?existing=1" : `/sign-in?existing=1&next=${encodeURIComponent(next)}`);
+    router.replace(next === "/sessions" ? "/sign-in?existing=1" : `/sign-in?existing=1&next=${encodeURIComponent(next)}`);
   }
 
   async function onSubmit(e: FormEvent) {

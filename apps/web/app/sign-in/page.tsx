@@ -47,7 +47,7 @@ export default function SignInPage() {
   useEffect(() => {
     if (loading || !session || isPreviewMode) return;
     const rawNext = new URLSearchParams(window.location.search).get("next");
-    router.replace(sanitizeNextPath(rawNext, "/account"));
+    router.replace(sanitizeNextPath(rawNext, "/sessions"));
   }, [loading, session, router]);
 
   async function onSubmit(e: FormEvent) {
@@ -68,7 +68,7 @@ export default function SignInPage() {
         return;
       }
       const rawNext = new URLSearchParams(window.location.search).get("next");
-      router.replace(sanitizeNextPath(rawNext, "/account"));
+      router.replace(sanitizeNextPath(rawNext, "/sessions"));
     } catch {
       setError("Nemesis could not reach the identity service. Check your connection and try again.");
       setCaptchaToken("");

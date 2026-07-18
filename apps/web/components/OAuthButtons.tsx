@@ -65,7 +65,7 @@ export function OAuthButtons({ disabled, gate, onError, showTermsNote, next }: O
         return;
       }
       // Real OAuth navigates the whole tab to the provider; only preview mode stays on-page.
-      if (isPreviewMode) router.replace(next ?? "/account");
+      if (isPreviewMode) router.replace(next ?? "/sessions");
     } catch {
       onError("Nemesis could not reach the identity service. Check your connection and try again.");
       setPending(null);

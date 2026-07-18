@@ -118,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
-        emailRedirectTo: resolveAuthRedirectUrl("/auth/callback?next=%2Faccount"),
+        emailRedirectTo: resolveAuthRedirectUrl("/auth/callback?next=%2Fsessions"),
         // Forwarded only when present; Supabase ignores it until CAPTCHA enforcement is enabled.
         ...(captchaToken ? { captchaToken } : {}),
         // Record the accepted Terms/Disclaimer version on the user (the signup consent gate). The
@@ -138,7 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null, needsEmailConfirmation: !data.session, alreadyRegistered: false };
   }, []);
 
-  const signInWithOAuth = useCallback(async (provider: OAuthProviderId, next = "/account") => {
+  const signInWithOAuth = useCallback(async (provider: OAuthProviderId, next = "/sessions") => {
     if (isPreviewMode) {
       setSession(previewSession);
       return null;
