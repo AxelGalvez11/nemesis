@@ -38,6 +38,11 @@ export interface GraphNodeViewProps {
    * this node's own pan can block it via blocksExternalGesture. */
   canvasPanGesture: PanGesture;
   showLabel: boolean;
+  /** Rendered-radius multiplier from the graph screen's settings panel (Node
+   * size slider) — 1 reproduces the original tuned radius exactly. hitR/haloR
+   * both derive from r below, so the tap target and hub halo scale right
+   * along with the visible dot instead of needing their own multiplier. */
+  sizeMultiplier: number;
   c: ThemeColors;
   /** Fired at drag start and on every subsequent move with the node's new
    * graph-space (x, y) — the same coordinate space node.x/node.y are
@@ -52,6 +57,7 @@ export const GraphNodeView = memo(function GraphNodeView({
   scale,
   canvasPanGesture,
   showLabel,
+  sizeMultiplier,
   c,
   onDragTo,
   onOpen,
@@ -66,7 +72,7 @@ export const GraphNodeView = memo(function GraphNodeView({
   // for the same physical touch.
   const dragOrigin = useRef({ x: node.x, y: node.y });
 
-  const r = 3.5 + Math.min(5, node.degree * 1.1);
+  const r = (3.5 + Math.min(5, node.degree * 1.1)) * sizeMultiplier;
   const hub = node.degree >= 3;
   const label = node.title.length > 18 ? `${node.title.slice(0, 17)}…` : node.title;
   const haloR = r + 5;

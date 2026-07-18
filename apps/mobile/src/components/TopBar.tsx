@@ -19,7 +19,7 @@ export function TopBar({ showNewChat = true }: { showNewChat?: boolean }) {
   const styles = useThemedStyles(createStyles);
 
   return (
-    <View style={[styles.overlay, { paddingTop: insets.top + space(1.5) }]} pointerEvents="box-none">
+    <View style={[styles.overlay, { paddingTop: insets.top + space(4) }]} pointerEvents="box-none">
       <GlassButton onPress={openDrawer} label="Open menu" styles={styles}>
         <View style={styles.bun} />
         <View style={styles.bun} />

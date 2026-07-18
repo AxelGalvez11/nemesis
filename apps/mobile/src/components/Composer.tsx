@@ -1,15 +1,63 @@
-import type { RefObject } from "react";
-import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import type { ReactNode, RefObject } from "react";
+import { useRef } from "react";
+import { Pressable, StyleSheet, TextInput } from "react-native";
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { GlassSurface } from "./GlassSurface";
-import { ArrowUpIcon, PlusIcon } from "./icons";
+import { ArrowUpIcon, MicIcon, PlusIcon } from "./icons";
+import { useSpeechInput } from "@/hooks/useSpeechInput";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space } from "@/theme/tokens";
 
-// The one composer — a single glass pill holding, inline (ChatGPT-style, owner
-// call 2026-07-17): a "+" on the left, the text field, and an upward-arrow send
-// CIRCLE on the right. No separate "Send" box. The '+' clears/starts fresh when
-// onPlus is given; the send circle lights up only when there's text to send.
+// The one composer — a single glass pill holding, inline (ChatGPT-style): a "+" on
+// the left, the text field, and on the right EITHER a mic (when the field is empty
+// — tap to dictate) OR the upward-arrow send circle (once there's text). The
+// buttons spring on press (owner: smoother micro-animations for sending).
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+// A press target that springs down slightly on touch and back on release — reanimated
+// on the UI thread, so it stays smooth regardless of JS-thread load.
+function Bounce({
+  onPress,
+  disabled,
+  style,
+  accessibilityLabel,
+  testID,
+  hitSlop,
+  children,
+}: {
+  onPress?: () => void;
+  disabled?: boolean;
+  style?: object | object[];
+  accessibilityLabel: string;
+  testID?: string;
+  hitSlop?: number;
+  children: ReactNode;
+}) {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const spring = { damping: 13, stiffness: 380 };
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      disabled={disabled}
+      hitSlop={hitSlop}
+      accessibilityLabel={accessibilityLabel}
+      testID={testID}
+      onPressIn={() => {
+        scale.value = withSpring(0.85, spring);
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, spring);
+      }}
+      style={[style, animatedStyle]}
+    >
+      {children}
+    </AnimatedPressable>
+  );
+}
+
 export function Composer({
   value,
   onChangeText,
@@ -33,18 +81,28 @@ export function Composer({
   const { colors: c } = useTheme();
   const canSend = value.trim().length > 0 && !sending;
 
+  // Voice dictation: the transcript is merged onto whatever was already typed when
+  // the mic was tapped (captured in dictationBase), so speaking adds to your draft
+  // rather than clobbering it.
+  const dictationBase = useRef("");
+  const { listening, start, stop } = useSpeechInput((transcript) => {
+    const base = dictationBase.current;
+    onChangeText(base ? `${base} ${transcript}` : transcript);
+  });
+  const onMic = () => {
+    if (listening) {
+      stop();
+      return;
+    }
+    dictationBase.current = value.trim();
+    void start();
+  };
+
   return (
     <GlassSurface style={styles.pill} variant="clear">
-      <Pressable
-        style={styles.plus}
-        onPress={onPlus}
-        disabled={!onPlus}
-        hitSlop={6}
-        accessibilityLabel="New"
-        testID="composer-plus"
-      >
+      <Bounce style={styles.round} onPress={onPlus} disabled={!onPlus} hitSlop={6} accessibilityLabel="New" testID="composer-plus">
         <PlusIcon size={20} color={c.text2} />
-      </Pressable>
+      </Bounce>
       <TextInput
         ref={inputRef}
         testID={testID}
@@ -56,25 +114,27 @@ export function Composer({
         multiline
         editable={!sending}
       />
-      <Pressable
-        style={[styles.send, canSend ? styles.sendOn : styles.sendOff]}
-        onPress={canSend ? onSend : undefined}
-        disabled={!canSend}
-        accessibilityLabel="Send"
-        testID="composer-send"
-      >
-        <ArrowUpIcon size={18} color={canSend ? c.onAccent : c.text3} />
-      </Pressable>
+      {canSend ? (
+        <Bounce style={[styles.round, styles.sendOn]} onPress={onSend} accessibilityLabel="Send" testID="composer-send">
+          <ArrowUpIcon size={18} color={c.onAccent} />
+        </Bounce>
+      ) : (
+        <Bounce
+          style={[styles.round, listening ? styles.micOn : styles.micOff]}
+          onPress={onMic}
+          accessibilityLabel={listening ? "Stop dictation" : "Dictate"}
+          testID="composer-mic"
+        >
+          <MicIcon size={18} color={listening ? c.onAccent : c.text2} />
+        </Bounce>
+      )}
     </GlassSurface>
   );
 }
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-    // Center everything so the '+' / text / '↑' share one baseline on a single
-    // line (owner: they were misaligned). The buttons keep a fixed 36px square;
-    // the field's line height + padding are tuned to that height so nothing sits
-    // high or low. On multi-line growth the row stays centered.
+    // Center so the '+' / text / mic-or-send share one baseline on a single line.
     pill: {
       flexDirection: "row",
       alignItems: "center",
@@ -85,7 +145,7 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: space(1),
       paddingVertical: space(1),
     },
-    plus: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+    round: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
     input: {
       flex: 1,
       maxHeight: 120,
@@ -95,7 +155,7 @@ const createStyles = (c: ThemeColors) =>
       color: c.text,
       fontSize: 16,
     },
-    send: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
     sendOn: { backgroundColor: c.accent },
-    sendOff: { backgroundColor: c.surface2 },
+    micOff: { backgroundColor: c.surface2 },
+    micOn: { backgroundColor: c.accent },
   });

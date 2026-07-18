@@ -126,6 +126,33 @@ Deno.test("layoutNoteGraph: gravity and repulsion opts are actually threaded int
   assertNotEquals(layoutNoteGraph(graph, { ...opts, gravity: 3 }), base);
 });
 
+Deno.test("layoutNoteGraph: omitting linkDistance matches passing 1 explicitly", () => {
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "[[B]]"),
+    doc("b.md", "B", "[[C]]"),
+    doc("c.md", "C", ""),
+  ]);
+  const opts = { height: 400, padding: 24, width: 400 };
+  // Bit-exact, same guarantee as the gravity/repulsion default above: the
+  // rest-length multiplier default must reproduce the original hardcoded
+  // `rest` constant exactly (rest * 1 === rest), not just approximately.
+  assertEquals(layoutNoteGraph(graph, opts), layoutNoteGraph(graph, { ...opts, linkDistance: 1 }));
+});
+
+Deno.test("layoutNoteGraph: linkDistance is actually threaded into the sim", () => {
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "[[B]]"),
+    doc("b.md", "B", "[[C]]"),
+    doc("c.md", "C", ""),
+  ]);
+  const opts = { height: 400, padding: 24, width: 400 };
+  const base = layoutNoteGraph(graph, opts);
+  // Same proof shape as the gravity/repulsion test above — not betting on a
+  // specific emergent direction, just that the multiplier reaches the spring
+  // force loop at all.
+  assertNotEquals(layoutNoteGraph(graph, { ...opts, linkDistance: 3 }), base);
+});
+
 Deno.test("createLayoutSim stepped to completion matches layoutNoteGraph's one-shot output", () => {
   const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
   const opts = { height: 300, width: 300 };
@@ -181,6 +208,21 @@ Deno.test("createLayoutSim.gravity/.repulsion are live-mutable without losing cu
   const after = sim.snapshot();
   const moved = midway.nodes.some((n, i) => n.x !== after.nodes[i].x || n.y !== after.nodes[i].y);
   assert(moved, "step() after a live multiplier change should move at least one node");
+});
+
+Deno.test("createLayoutSim.linkDistance is live-mutable without losing current positions", () => {
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const sim = createLayoutSim(graph, { height: 300, width: 300 });
+  sim.step();
+  sim.step();
+  const midway = sim.snapshot();
+  // Changing the multiplier mid-flight must not reseed back to the spiral —
+  // the next step continues from wherever the sim currently is.
+  sim.linkDistance = 2.5;
+  sim.step();
+  const after = sim.snapshot();
+  const moved = midway.nodes.some((n, i) => n.x !== after.nodes[i].x || n.y !== after.nodes[i].y);
+  assert(moved, "step() after a live linkDistance change should move at least one node");
 });
 
 // --- pin (phone Graph node dragging) ----------------------------------

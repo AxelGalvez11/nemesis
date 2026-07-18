@@ -13,8 +13,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 // overlay, (tabs) screens start at the window top, so their KeyboardAvoidingView
 // offset is 0 — the top padding lives inside the scroll content instead.
 
-/** TopBar's own height below the status-bar inset (unchanged from the solid bar). */
-export const TOP_BAR_H = 58;
+/** TopBar's own height below the status-bar inset. Sized so scroll content clears
+ *  the floating glass buttons, which now sit space(4) below the inset (owner: the
+ *  top icons were crowding the iPhone's time/wifi) rather than the old space(1.5). */
+export const TOP_BAR_H = 68;
 
 export interface ShellPadding {
   /** Space scroll content must leave at the top so it starts below the glass TopBar. */
