@@ -251,7 +251,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail }: ChatSidebarProps) {
         )}
       </SidebarContent>
 
-      <StudentSidebarFooter accountEmail={accountEmail} onOpenSettings={() => router.push("/account")} />
+      <StudentSidebarFooter accountEmail={accountEmail} onOpenSettings={() => router.push("/settings")} />
     </Sidebar>
   );
 }

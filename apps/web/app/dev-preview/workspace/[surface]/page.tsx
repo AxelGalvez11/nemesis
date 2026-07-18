@@ -17,6 +17,7 @@ import CalendarPage from "../../../(workspace)/calendar/page";
 import GraphPage from "../../../(workspace)/graph/page";
 import LibraryPage from "../../../(workspace)/library/page";
 import SessionsPage from "../../../(workspace)/sessions/page";
+import SettingsPage from "../../../(workspace)/settings/page";
 import StudyPage from "../../../(workspace)/study/page";
 
 const SURFACES = {
@@ -25,6 +26,7 @@ const SURFACES = {
   study: StudyPage,
   calendar: CalendarPage,
   graph: GraphPage,
+  settings: SettingsPage,
 } as const;
 
 type SurfaceId = keyof typeof SURFACES;

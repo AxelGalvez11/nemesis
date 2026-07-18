@@ -31,16 +31,13 @@ export function StudyChrome({ activeTab, onTabChange }: StudyChromeProps) {
       <header className="flex shrink-0 items-start justify-between gap-3 px-6 pb-3 pt-5">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">Study</h1>
-          <p className="mt-0.5 text-[0.65rem] font-medium tabular-nums text-(--ui-text-tertiary)">
-            0 due · 0 new · 0 cards
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Button onClick={() => router.push("/sessions")} size="sm" variant="outline">
             <span className="size-1.5 rounded-full bg-(--theme-primary)" />
             Ask the agent
           </Button>
-          <Button aria-label="Study settings" size="icon-xs" variant="ghost">
+          <Button aria-label="Study settings" onClick={() => router.push("/settings")} size="icon-xs" variant="ghost">
             <Settings />
           </Button>
         </div>
