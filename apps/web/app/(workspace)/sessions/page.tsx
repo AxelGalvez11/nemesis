@@ -1,4 +1,8 @@
-// Minimal stub — the Phase C sessions builder replaces this body.
+// Sessions/Chat page — shell spec §B1. Auth gate + workspace chrome come from
+// app/(workspace)/layout.tsx; this renders the chat surface itself.
+
+import { SessionChat } from "@/components/workspace/sessions/session-chat";
+
 export default function SessionsPage() {
-  return <div className="relative isolate flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)" />;
+  return <SessionChat />;
 }
