@@ -1,8 +1,17 @@
 @import url("https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+/* Desktop-parity token layer + workspace utilities. Imported here (not from layout.tsx) so
+   Tailwind v4 compiles its @theme/@utility blocks inside this compilation unit. Preflight is
+   deliberately NOT imported — the legacy portal CSS depends on stock element styles. */
+@import "./styles/desktop-ui.css";
+@import "./styles/desktop-chrome.css";
+@import "@vscode/codicons/dist/codicon.css";
+@import "katex/dist/katex.min.css";
+@config "../tailwind.config.ts";
+@plugin "@tailwindcss/typography";
 
 /* ──────────────────────────────────────────────────────────────────────────
    Nemesis design tokens — the DESKTOP APP'S visual identity, worn by the web

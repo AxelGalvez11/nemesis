@@ -4,8 +4,9 @@ const config = {
   darkMode: ["selector", '[data-theme="dark"]'],
   // Preflight OFF: we add Tailwind to an app with substantial existing CSS (globals + legacy.css +
   // shell.css). Preflight would reset the legacy element styles and break not-yet-migrated pages.
+  // Under Tailwind v4 this is enforced by construction: globals.css imports only theme.css and
+  // utilities.css (never preflight.css), so no JS toggle is needed (corePlugins is unsupported in v4).
   // box-sizing/border-box is set in globals.css; shadcn primitives self-style with explicit classes.
-  corePlugins: { preflight: false },
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
@@ -69,7 +70,6 @@ const config = {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
 } satisfies Config;
 
 export default config;

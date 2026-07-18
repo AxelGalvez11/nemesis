@@ -1,0 +1,94 @@
+"use client";
+
+// Thread — message list + scroll container, desktop src/components/assistant-ui/thread/{index,list}.tsx
+// (shell spec §B2). v1: plain scrollTop auto-follow instead of the
+// use-stick-to-bottom package (not an approved dependency for this build) —
+// good enough for a non-streaming, one-reply-at-a-time thread.
+
+import { useEffect, useRef } from "react";
+
+import type { SessionMessage } from "@/lib/workspace/sessions-store";
+
+import { AssistantMessage, type TurnError } from "./assistant-message";
+import { Intro } from "./intro";
+import { UserMessage } from "./user-message";
+
+export interface ThreadTurn {
+  user: SessionMessage;
+  assistant: SessionMessage | null;
+}
+
+interface ThreadProps {
+  turns: ThreadTurn[];
+  busy: boolean;
+  liveSeconds: number | null;
+  error: TurnError | null;
+}
+
+function turnDurationSeconds(turn: ThreadTurn): number | null {
+  if (!turn.assistant) return null;
+  return Math.round((Date.parse(turn.assistant.at) - Date.parse(turn.user.at)) / 1000);
+}
+
+export function Thread({ turns, busy, liveSeconds, error }: ThreadProps) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const isEmpty = turns.length === 0;
+  const lastTurn = turns[turns.length - 1];
+  const scrollKey = `${turns.length}:${lastTurn?.assistant?.content.length ?? 0}:${busy}`;
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [scrollKey]);
+
+  return (
+    <div className="relative grid h-full min-h-0 max-w-full grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent contain-[layout_paint]">
+      <div className="relative min-h-0 max-w-full overflow-hidden contain-[layout_paint]" style={{ height: "100%" }}>
+        <div
+          className="size-full overflow-x-hidden overflow-y-auto overscroll-contain"
+          data-slot="aui_thread-viewport"
+          ref={viewportRef}
+        >
+          {isEmpty ? (
+            <div
+              className="mx-auto grid h-full w-full max-w-(--composer-width) grid-rows-[minmax(0,1fr)_auto] min-w-0 gap-(--conversation-turn-gap) px-6 py-8"
+              data-slot="aui_thread-content"
+            >
+              <div className="flex min-h-0 w-full flex-col items-center justify-center pt-[var(--composer-measured-height)]">
+                <Intro />
+              </div>
+            </div>
+          ) : (
+            <div
+              className="mx-auto flex w-full max-w-(--composer-width) min-w-0 flex-col px-6 pt-[calc(var(--titlebar-height)-0.5rem)]"
+              data-slot="aui_thread-content"
+            >
+              {turns.map((turn, index) => {
+                const isLast = index === turns.length - 1;
+
+                return (
+                  <div className="flex min-w-0 flex-col gap-(--conversation-turn-gap) pb-(--conversation-turn-gap)" key={turn.user.at}>
+                    <div
+                      className="composer-human-ai-pair-container relative flex min-w-0 flex-col gap-(--conversation-turn-gap)"
+                      data-slot="aui_turn-pair"
+                    >
+                      <UserMessage message={turn.user} />
+                      <AssistantMessage
+                        durationSeconds={turnDurationSeconds(turn)}
+                        error={isLast ? error : null}
+                        liveSeconds={isLast && busy ? liveSeconds : null}
+                        message={turn.assistant}
+                        pending={isLast && busy && !turn.assistant}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -6,17 +6,20 @@
 /* base form elements (Tailwind preflight is disabled, so these provide the base look).
    ChatGPT feel: the default button is the accent (primary) action — calm fill, no glow; the
    .secondary variant is a neutral pill with a thin border. Pill radius, 1px borders over shadows. */
-button { font: inherit; cursor: pointer; border: 1px solid transparent; border-radius: 999px; background: var(--acid); color: var(--on-acid); font-weight: 600; padding: 9px 16px; transition: filter 0.15s, background 0.15s, border-color 0.15s, color 0.15s; }
-button:hover { filter: brightness(0.97); }
-button:disabled { cursor: not-allowed; filter: grayscale(0.3); opacity: 0.55; transform: none; }
+/* :where(:not([data-workspace] *)) scopes these legacy element defaults away from the desktop-parity
+   workspace shell without changing their specificity or behavior on portal pages (the workspace
+   styles its controls with Tailwind utilities, which these unlayered rules would otherwise beat). */
+button:where(:not([data-workspace] *)) { font: inherit; cursor: pointer; border: 1px solid transparent; border-radius: 999px; background: var(--acid); color: var(--on-acid); font-weight: 600; padding: 9px 16px; transition: filter 0.15s, background 0.15s, border-color 0.15s, color 0.15s; }
+button:where(:not([data-workspace] *)):hover { filter: brightness(0.97); }
+button:where(:not([data-workspace] *)):disabled { cursor: not-allowed; filter: grayscale(0.3); opacity: 0.55; transform: none; }
 button.secondary { background: var(--surface); border: 1px solid var(--line); color: var(--text); filter: none; }
 button.secondary:hover { background: var(--surface-2); border-color: var(--line-2); filter: none; }
 .button-link { align-items: center; background: var(--acid); border-radius: 999px; color: var(--on-acid); display: inline-flex; flex: 0 0 auto; font-weight: 600; justify-content: center; min-height: 40px; padding: 9px 16px; transition: filter 0.15s; }
 .button-link:hover { filter: brightness(0.97); }
-input, textarea, select { font: inherit; width: 100%; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); padding: 11px 13px; transition: border-color 0.15s, box-shadow 0.15s; }
-input:focus, textarea:focus, select:focus { border-color: var(--acid-dim); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acid) 16%, transparent); outline: none; }
-input::placeholder, textarea::placeholder { color: var(--text-3); }
-textarea { min-height: 130px; resize: vertical; }
+input:where(:not([data-workspace] *)), textarea:where(:not([data-workspace] *)), select:where(:not([data-workspace] *)) { font: inherit; width: 100%; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); padding: 11px 13px; transition: border-color 0.15s, box-shadow 0.15s; }
+input:where(:not([data-workspace] *)):focus, textarea:where(:not([data-workspace] *)):focus, select:where(:not([data-workspace] *)):focus { border-color: var(--acid-dim); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acid) 16%, transparent); outline: none; }
+input:where(:not([data-workspace] *))::placeholder, textarea:where(:not([data-workspace] *))::placeholder { color: var(--text-3); }
+textarea:where(:not([data-workspace] *)) { min-height: 130px; resize: vertical; }
 
 .centered { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
 .auth-card { width: min(460px, 100%); background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 28px; }
@@ -27,7 +30,7 @@ textarea { min-height: 130px; resize: vertical; }
 .page-header p { color: var(--text-2); max-width: 760px; }
 .eyebrow { color: var(--text-2); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
 
-.grid { display: grid; gap: 16px; }
+.grid:where(:not([data-workspace] *)) { display: grid; gap: 16px; }
 .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid.four-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 14px; text-align: center; }

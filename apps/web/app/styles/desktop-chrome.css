@@ -1,0 +1,784 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   desktop-chrome.css — workspace-scoped preflight, custom utilities, and
+   data-slot chrome for the desktop-parity shell. Split from desktop-ui.css
+   (token layer) to keep files under the 800-line budget. Imported by
+   globals.css immediately after desktop-ui.css.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ── Scoped preflight + workspace base ──────────────────────────────────────
+   Tailwind preflight is globally OFF (legacy portal CSS depends on stock
+   element styles). The desktop markup, however, was written against preflight.
+   This block restores the load-bearing subset UNDER [data-workspace] only
+   (the shell wrapper and portaled overlay roots carry the attribute). Lives
+   in @layer base so utilities/typography still override it, exactly like real
+   preflight. */
+@layer base {
+  [data-workspace],
+  [data-workspace] *,
+  [data-workspace] *::before,
+  [data-workspace] *::after {
+    box-sizing: border-box;
+    border-width: 0;
+    border-style: solid;
+    border-color: var(--dt-border);
+  }
+
+  [data-workspace] :is(h1, h2, h3, h4, h5, h6, p, blockquote, pre, figure, dl, dd, hr) {
+    margin: 0;
+  }
+
+  [data-workspace] :is(h1, h2, h3, h4, h5, h6) {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  [data-workspace] :is(ol, ul, menu) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  [data-workspace] hr {
+    height: 0;
+    color: inherit;
+    border-top-width: 1px;
+  }
+
+  [data-workspace] :is(img, svg, video, canvas, audio, iframe, embed, object) {
+    display: block;
+    vertical-align: middle;
+  }
+
+  [data-workspace] :is(img, video) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  [data-workspace] :is(button, input, optgroup, select, textarea) {
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    font: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    background-color: transparent;
+    background-image: none;
+    opacity: 1;
+  }
+
+  [data-workspace] :is(button, [type='button'], [type='reset'], [type='submit']) {
+    appearance: button;
+  }
+
+  [data-workspace] :is(a) {
+    color: inherit;
+    text-decoration: inherit;
+  }
+
+  [data-workspace] :is(code, kbd, samp, pre) {
+    font-family: var(--dt-font-mono);
+    font-size: 1em;
+  }
+
+  [data-workspace] :is(small) {
+    font-size: 80%;
+  }
+
+  [data-workspace] :is(table) {
+    border-collapse: collapse;
+    border-color: inherit;
+    text-indent: 0;
+  }
+
+  [data-workspace] [hidden]:not([hidden='until-found']) {
+    display: none;
+  }
+
+  [data-workspace] ::placeholder {
+    opacity: 1;
+    color: var(--ui-text-tertiary);
+  }
+
+  /* Workspace root = the desktop's body baseline. */
+  [data-workspace] {
+    margin: 0;
+    background: var(--ui-chat-surface-background);
+    color: var(--dt-foreground);
+    font-family: var(--dt-font-sans);
+    font-size: 0.8125rem;
+    line-height: var(--dt-line-height, 1.55);
+    letter-spacing: var(--dt-letter-spacing, 0);
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+
+    /* Desktop declares these at :root; the names collide with portal tokens,
+       so the workspace scope carries them instead (custom props inherit). */
+    --background: var(--dt-background);
+    --foreground: var(--dt-foreground);
+    --radius: 0.75rem;
+    /* The desktop's @theme radius scale, re-declared at the workspace root so
+       the portal's unlayered :root --radius-sm/--radius (px values) can never
+       hijack the workspace rounded-* utilities. */
+    --radius-xs: calc(var(--radius-scalar) * 0.125rem);
+    --radius-sm: calc(var(--radius-scalar) * 0.5rem);
+    --radius-md: calc(var(--radius-scalar) * 0.625rem);
+    --radius-lg: calc(var(--radius-scalar) * 0.75rem);
+    --radius-xl: calc(var(--radius-scalar) * 1rem);
+    --radius-2xl: calc(var(--radius-scalar) * 1.5rem);
+    --radius-3xl: calc(var(--radius-scalar) * 2rem);
+    --radius-4xl: calc(var(--radius-scalar) * 2.5rem);
+  }
+
+  [data-workspace] button,
+  [data-workspace] textarea {
+    font: inherit;
+  }
+
+  [data-workspace]
+    :where(
+      a,
+      .underline,
+      [class~='hover:underline'],
+      [class~='focus:underline'],
+      [class~='focus-visible:underline'],
+      [class~='group-hover:underline'],
+      [class~='peer-hover:underline']
+    ) {
+    text-decoration-color: color-mix(in srgb, currentColor 20%, transparent);
+    text-underline-offset: 0.25rem;
+  }
+
+  [data-workspace] *::selection {
+    background: var(--ui-selection-background);
+    color: inherit;
+  }
+
+  /* Primitive-level pointer cursor for every interactive control. Explicit
+     cursor utilities still win since they live in the utilities layer. */
+  [data-workspace] :is(
+    button:not(:disabled):not([aria-disabled='true']),
+    summary,
+    [role='button']:not([aria-disabled='true']),
+    [role='menuitem']:not([aria-disabled='true']),
+    [role='menuitemradio']:not([aria-disabled='true']),
+    [role='menuitemcheckbox']:not([aria-disabled='true']),
+    [role='option']:not([aria-disabled='true']),
+    [role='switch']:not([aria-disabled='true']),
+    [role='tab']:not([aria-disabled='true'])
+  ) {
+    cursor: pointer;
+  }
+
+  /* Text is selectable again where reading/copying matters. */
+  [data-workspace] input,
+  [data-workspace] textarea,
+  [data-workspace] [contenteditable]:not([contenteditable='false']),
+  [data-workspace] [data-slot='aui_user-message-root'],
+  [data-workspace] [data-slot='aui_assistant-message-content'],
+  [data-workspace] [data-slot='aui_system-message-root'],
+  [data-workspace] [data-selectable-text='true'],
+  [data-workspace] [data-selectable-text='true'] * {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  [data-workspace] button,
+  [data-workspace] [role='button'] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  [data-workspace] :is(img, picture, video, canvas, svg) {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  [data-workspace] :is(img, video, canvas) {
+    -webkit-user-drag: none;
+  }
+
+  /* Tabs render 2-wide on every code surface, matching the desktop editor. */
+  [data-workspace] pre,
+  [data-workspace] code {
+    tab-size: 2;
+    -moz-tab-size: 2;
+  }
+}
+
+/* No focus rings inside the workspace (desktop parity). Kills the native
+   outline plus Tailwind's focus-visible:ring-* (a box-shadow driven by
+   --tw-ring-*). Unlayered so it beats the utilities layer. Scoped to
+   [data-workspace] ONLY — the portal keeps its normal focus rings. */
+[data-workspace] *:focus,
+[data-workspace] *:focus-visible {
+  outline: none;
+}
+
+[data-workspace] *:focus-visible {
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+}
+
+/* ── Custom utilities (ported raw from desktop styles.css) ─────────────────── */
+
+.dither {
+  background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 0.125rem 0.125rem;
+}
+
+/* Interactive list-row hover — highlight lands instantly on hover-in and
+   fades out over 100ms on leave. */
+@utility row-hover {
+  cursor: pointer;
+  transition:
+    color 100ms ease-out,
+    background-color 100ms ease-out;
+
+  &:hover {
+    background-color: var(--ui-row-hover-background);
+    transition: none;
+  }
+}
+
+@layer utilities {
+  [class*='rounded-full'],
+  [class*=':rounded-full'] {
+    border-radius: calc(var(--radius-scalar) * 9999rem);
+  }
+}
+
+@keyframes arc-border {
+  0% {
+    background-position: 15% 15%;
+  }
+  100% {
+    background-position: 75% 75%;
+  }
+}
+
+.arc-border {
+  --arc-c0: color-mix(in srgb, var(--dt-foreground) 0%, transparent);
+  --arc-c1: var(--dt-midground);
+  --arc-c2: var(--dt-background);
+  --arc-angle: 160deg;
+  --arc-width: 0.078125rem;
+  --arc-inset: -0.125rem;
+  --arc-duration: 2.23s;
+
+  pointer-events: none;
+  position: absolute;
+  overflow: hidden;
+  border-radius: inherit;
+  inset: var(--arc-inset);
+  padding: var(--arc-width);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+:root[data-theme='dark'] .arc-border {
+  --arc-c1: var(--dt-foreground);
+}
+
+.arc-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    var(--arc-angle),
+    transparent 0%,
+    var(--arc-c0) 15%,
+    var(--arc-c1) 20%,
+    var(--arc-c2) 25%,
+    transparent 35%,
+    transparent 40%,
+    var(--arc-c0) 55%,
+    var(--arc-c1) 60%,
+    var(--arc-c2) 65%,
+    transparent 75%,
+    transparent 80%,
+    var(--arc-c0) 95%,
+    var(--arc-c1) 100%
+  );
+  background-size: 300% 300%;
+  animation: arc-border var(--arc-duration) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arc-border::before {
+    animation: none;
+  }
+}
+
+/* Quest-style "needs you" pulse for a clarify-blocked session's dot. */
+@keyframes quest-glow {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0.1875rem color-mix(in srgb, var(--color-amber-500, #f59e0b) 70%, transparent),
+      0 0 0.5rem color-mix(in srgb, var(--color-amber-500, #f59e0b) 45%, transparent);
+  }
+  50% {
+    transform: scale(1.18);
+    box-shadow:
+      0 0 0.3125rem color-mix(in srgb, var(--color-amber-500, #f59e0b) 90%, transparent),
+      0 0 0.875rem color-mix(in srgb, var(--color-amber-500, #f59e0b) 65%, transparent);
+  }
+}
+
+.quest-glow {
+  animation: quest-glow 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quest-glow {
+    animation: none;
+    box-shadow:
+      0 0 0.25rem color-mix(in srgb, var(--color-amber-500, #f59e0b) 80%, transparent),
+      0 0 0.625rem color-mix(in srgb, var(--color-amber-500, #f59e0b) 55%, transparent);
+  }
+}
+
+/* Shimmer — local stand-in for the desktop's tw-shimmer package: the text
+   paints a sweeping gradient of its own color via background-clip. Scoped
+   under [data-workspace] so the portal's own .shimmer (shell.css) never
+   collides in either direction. */
+@keyframes dt-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+[data-workspace] .shimmer {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, currentColor 62%, transparent) 30%,
+    currentColor 50%,
+    color-mix(in srgb, currentColor 62%, transparent) 70%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: inherit;
+  animation: dt-shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-workspace] .shimmer {
+    animation: none;
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* Sticky human bubbles clamp to ~2 lines with a soft bottom fade. */
+.sticky-human-clamp {
+  cursor: pointer;
+  max-height: calc(4 * var(--human-msg-line-height) * var(--conversation-text-font-size) + 0.15rem);
+  overflow: hidden;
+}
+
+.sticky-human-clamp[data-clamped='true'] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
+}
+
+/* Live thinking preview window — older lines fade into the top mask. */
+.thinking-preview {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 28%, black 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 28%, black 100%);
+}
+
+/* .fit-text — container-query auto-scaling wordmark (NEMESIS intro). */
+.fit-text {
+  --fit-captured-length: initial;
+  --fit-support-sentinel: var(--fit-captured-length, 9999px);
+
+  display: flex;
+  container-type: inline-size;
+}
+
+.fit-text > [aria-hidden] {
+  visibility: hidden;
+}
+
+.fit-text > :not([aria-hidden]) {
+  flex-grow: 1;
+  container-type: inline-size;
+
+  --fit-captured-length: 100cqi;
+  --fit-available-space: var(--fit-captured-length);
+}
+
+.fit-text > :not([aria-hidden]) > * {
+  --fit-support-sentinel: inherit;
+  --fit-captured-length: 100cqi;
+  --fit-ratio: tan(atan2(var(--fit-available-space), var(--fit-available-space) - var(--fit-captured-length)));
+
+  display: block;
+  inline-size: var(--fit-available-space);
+  font-size: clamp(
+    var(--fit-min, 1em),
+    1em * var(--fit-ratio),
+    var(--fit-max, infinity * 1px) - var(--fit-support-sentinel)
+  );
+}
+
+@container (inline-size > 0) {
+  .fit-text > :not([aria-hidden]) > * {
+    white-space: nowrap;
+  }
+}
+
+@property --fit-captured-length {
+  syntax: '<length>';
+  initial-value: 0px;
+  inherits: true;
+}
+
+/* ── Portal overlay chrome (Radix content, rendered under document.body — the
+   content roots carry [data-workspace] so tokens + scoped rules reach them). */
+[data-slot='dropdown-menu-content'],
+[data-slot='select-content'],
+[data-slot='dialog-content'],
+[data-slot='thread-timeline-popover'] {
+  border-color: var(--ui-stroke-secondary);
+  background: color-mix(in srgb, var(--ui-bg-elevated) 96%, transparent);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(0.75rem) saturate(1.08);
+  -webkit-backdrop-filter: blur(0.75rem) saturate(1.08);
+}
+
+[data-slot='dropdown-menu-item']:focus,
+[data-slot='dropdown-menu-checkbox-item']:focus,
+[data-slot='dropdown-menu-radio-item']:focus {
+  background: var(--ui-bg-tertiary);
+  color: var(--ui-text-primary);
+}
+
+/* Shared input chrome — mirrors composer hover/focus FX. Unlayered to beat
+   Tailwind utilities. Border strength = the --dt-input-border alpha knob;
+   hover doubles it, focus goes full ring color. */
+.desktop-input-chrome {
+  background: color-mix(in srgb, var(--dt-card) var(--dt-input-bg), transparent);
+  border-color: color-mix(in srgb, var(--dt-composer-ring) var(--dt-input-border), transparent);
+  box-shadow: var(--dt-input-inset);
+  transition: border-color 200ms ease-out;
+}
+
+.desktop-input-chrome:hover {
+  border-color: color-mix(in srgb, var(--dt-composer-ring) calc(var(--dt-input-border) * 2), transparent);
+}
+
+.desktop-input-chrome:focus,
+.desktop-input-chrome[data-state='open'] {
+  border-color: var(--dt-composer-ring);
+  box-shadow: none;
+  outline: none;
+}
+
+.desktop-input-chrome[aria-invalid='true'] {
+  border-color: var(--dt-destructive);
+}
+
+@layer components {
+  .scrollbar-dt,
+  .scrollbar-dt * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--dt-midground) 18%, transparent) transparent;
+  }
+
+  .scrollbar-dt::-webkit-scrollbar,
+  .scrollbar-dt *::-webkit-scrollbar {
+    width: 0.5rem;
+    height: 0.5rem;
+  }
+
+  .scrollbar-dt::-webkit-scrollbar-track,
+  .scrollbar-dt::-webkit-scrollbar-corner,
+  .scrollbar-dt *::-webkit-scrollbar-track,
+  .scrollbar-dt *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .scrollbar-dt::-webkit-scrollbar-thumb,
+  .scrollbar-dt *::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--dt-midground) 18%, transparent);
+    border-radius: 9999rem;
+    border: 0.125rem solid transparent;
+    background-clip: padding-box;
+  }
+
+  .scrollbar-dt::-webkit-scrollbar-thumb:hover,
+  .scrollbar-dt *::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--dt-midground) 40%, transparent);
+    background-clip: padding-box;
+  }
+
+  .scrollbar-dt::-webkit-scrollbar-button,
+  .scrollbar-dt *::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  /* Variant for portaled overlays that render under document.body. */
+  .dt-portal-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--dt-midground) 28%, transparent) transparent;
+  }
+
+  .dt-portal-scrollbar::-webkit-scrollbar {
+    width: 0.375rem;
+    height: 0.375rem;
+  }
+
+  .dt-portal-scrollbar::-webkit-scrollbar-track,
+  .dt-portal-scrollbar::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .dt-portal-scrollbar::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--dt-midground) 28%, transparent);
+    border-radius: 9999rem;
+    border: 0.0625rem solid transparent;
+    background-clip: padding-box;
+  }
+
+  .dt-portal-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--dt-midground) 50%, transparent);
+    background-clip: padding-box;
+  }
+
+  .dt-portal-scrollbar::-webkit-scrollbar-button {
+    display: none;
+  }
+}
+
+/* ── Conversation/message layout CSS (assistant-ui data-slot contract) ────── */
+
+[data-slot='aui_assistant-message-content'] {
+  padding-left: var(--message-text-indent);
+  font-size: var(--conversation-text-font-size);
+  line-height: 1.5;
+}
+
+[data-slot='aui_assistant-message-root'] {
+  width: 100%;
+}
+
+[data-slot='aui_assistant-message-content'] .aui-md,
+[data-slot='aui_assistant-message-content'] .aui-md :where(p, li, blockquote, table, pre) {
+  font-size: inherit;
+}
+
+/* Typography's `.prose :where(p) { margin: 1.25em }` ties `my-*` on specificity
+   and wins on source order — paragraph spacing reclaimed here. */
+[data-slot='aui_assistant-message-content'] .aui-md :where(p) {
+  margin-block: var(--paragraph-gap) 0;
+}
+
+[data-slot='aui_assistant-message-content'] .aui-md :where(h1, h2, h3, h4) {
+  margin-block: 1rem 0.25rem;
+}
+
+[data-slot='aui_assistant-message-content'] .aui-md > :first-child,
+[data-slot='aui_assistant-message-content'] .aui-md > :first-child > :first-child {
+  margin-top: 0;
+}
+
+/* RTL/bidi chat text: each block resolves its own base direction. */
+[data-slot='aui_assistant-message-content'] .aui-md :where(p, h1, h2, h3, h4, h5, h6, li, blockquote),
+[data-slot='aui_user-inline-text'],
+[data-slot='composer-rich-input'] {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+
+[data-slot='aui_assistant-message-content'] .aui-md :where(:not(pre) > code),
+[data-slot='aui_user-inline-code'],
+[data-slot='aui_assistant-message-content'] .aui-md .katex {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+[data-slot='aui_assistant-message-content'] .aui-md [data-slot='code-card'],
+[data-slot='aui_user-fence'] {
+  direction: ltr;
+  text-align: left;
+}
+
+[data-slot='aui_user-message-root'] {
+  top: var(--sticky-human-top);
+}
+
+[data-slot='aui_user-message-root'],
+[data-slot='aui_edit-composer-root'] {
+  --human-msg-line-height: 1.3;
+  font-size: var(--conversation-text-font-size);
+}
+
+[data-slot='aui_user-inline-text'] {
+  line-height: var(--human-msg-line-height);
+}
+
+[data-slot='aui_edit-composer-root'] [data-slot='composer-rich-input'] {
+  line-height: var(--human-msg-line-height);
+}
+
+/* Stick-to-bottom owns scrollTop while following. */
+[data-slot='aui_thread-viewport'] {
+  overflow-anchor: none;
+}
+
+[data-slot='aui_thread-viewport'][data-following='false'],
+[data-slot='aui_thread-viewport'][data-editing='true'] {
+  overflow-anchor: auto;
+}
+
+[data-slot='aui_thread-content'] {
+  max-width: var(--composer-width);
+  padding-inline: 1.5rem;
+}
+
+[data-slot='aui_intro'] {
+  align-items: center;
+  justify-content: center;
+  padding-bottom: var(--composer-measured-height);
+  text-align: center;
+}
+
+[data-slot='aui_intro'] > div {
+  max-width: min(var(--composer-width), 82vw);
+}
+
+[data-slot='aui_intro'] p:last-child {
+  max-width: 34rem;
+  margin-inline: auto;
+  color: var(--ui-text-tertiary);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+/* ── Composer chrome ──────────────────────────────────────────────────────── */
+
+[data-slot='composer-root'] {
+  /* +10px width compensates the 5px side padding so the visible surface keeps
+     its exact width/position (transparent grab space on desktop). */
+  width: calc(min(var(--composer-width), calc(100% - 2rem)) + 10px);
+  padding-inline: 5px;
+  padding-bottom: var(--composer-shell-pad-block-end);
+}
+
+[data-slot='composer-root'][data-popped-out] {
+  width: var(--composer-popout-width, 24rem);
+  max-width: calc(100vw - 1.5rem);
+  padding: 5px;
+}
+
+[data-slot='composer-drag-region'] {
+  border-radius: 0.4rem;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--ui-text-tertiary) 38%, transparent) 0,
+    color-mix(in srgb, var(--ui-text-tertiary) 38%, transparent) 1px,
+    transparent 1px,
+    transparent 3.5px
+  );
+}
+
+[data-slot='composer-drag-region']:hover,
+[data-slot='composer-drag-region'][data-dragging] {
+  opacity: 0.33;
+}
+
+[data-slot='composer-root'] > .pointer-events-none {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--ui-chat-surface-background) 88%, transparent)
+  ) !important;
+}
+
+[data-slot='composer-surface'] {
+  border-color: var(--ui-stroke-secondary) !important;
+}
+
+[data-slot='composer-fade'] {
+  min-height: 2.375rem;
+}
+
+[data-slot='composer-rich-input'] {
+  color: var(--ui-text-primary);
+  font-size: 0.8125rem;
+}
+
+[data-slot='composer-rich-input']:empty::before {
+  color: var(--ui-text-tertiary) !important;
+}
+
+/* ── Composer fill — ONE var painted by the surface AND anything docked to it. */
+:root {
+  --composer-fill: color-mix(in srgb, var(--dt-card) 90%, var(--dt-background));
+}
+
+[data-slot='composer-root'] {
+  --composer-fill: color-mix(in srgb, var(--dt-card) 72%, transparent);
+}
+
+[data-slot='composer-root'][data-thread-scrolled-up] {
+  --composer-fill: color-mix(in srgb, var(--dt-card) 48%, transparent);
+}
+
+/* ── ChatGPT-style activity narration (student build) ─────────────────────── */
+
+[data-nemesis-activity='collapsed'] [data-slot='aui_thinking-disclosure'],
+[data-nemesis-activity='collapsed'] [data-slot='tool-block'],
+[data-nemesis-activity='collapsed'] [data-tool-group],
+[data-nemesis-activity='live'] [data-slot='aui_thinking-disclosure'],
+[data-nemesis-activity='live'] [data-slot='tool-block']:not(:has([data-slot^='tool-approval'])),
+[data-nemesis-activity='live'] [data-tool-group]:not(:has([data-slot^='tool-approval'])) {
+  display: none;
+}
+
+@keyframes nemesis-phrase-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* The intent line fades in once the model's opening thought is readable. */
+.nemesis-intent-line {
+  animation: nemesis-phrase-in 0.4s ease-out;
+}
+
+/* Live activity phrase cross-fade (the wrapper remounts per phrase change). */
+.nemesis-activity-phrase {
+  animation: nemesis-phrase-in 260ms ease-out;
+}
+
+[data-slot='aui_activity-phrase'] + [data-slot='aui_stream-stall']:not([data-compacting='true']) {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nemesis-activity-phrase {
+    animation: none;
+  }
+  .nemesis-intent-line {
+    animation: none;
+  }
+}
+
+
+
