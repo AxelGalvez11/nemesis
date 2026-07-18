@@ -15,10 +15,36 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { isPreviewMode } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 
 import { titleFromPath, type CloudLibraryNote } from "./library-tree";
+
+// Seeded notes for the /dev-preview/workspace/library screenshot harness (no real cloud
+// session there) — lets the reader UI (folder tree, selection, markdown) render demo content.
+const PREVIEW_NOTES: CloudLibraryNote[] = [
+  {
+    path: "Pharmacology/Cardiovascular/ACE inhibitors.md",
+    title: "ACE inhibitors",
+    updatedAt: "",
+    content:
+      "# ACE inhibitors\n\n**Mechanism:** block angiotensin-converting enzyme → less angiotensin II → vasodilation and less aldosterone.\n\n## Key points\n- First-line for hypertension and heart failure\n- Classic side effect: a dry cough (bradykinin-mediated)\n\n## Related\n- Contrasts with: [[ARBs]]\n- Applied in: [[Lisinopril case]]",
+  },
+  {
+    path: "Pharmacology/Cardiovascular/Beta blockers.md",
+    title: "Beta blockers",
+    updatedAt: "",
+    content:
+      "# Beta blockers\n\nReduce heart rate and contractility (beta-1 blockade).\n\n| Agent | Selectivity | NAPLEX weight |\n| --- | --- | --- |\n| Metoprolol | Beta-1 selective | High |\n| Propranolol | Non-selective | High |",
+  },
+  {
+    path: "Immunology/01 Intro to Immunology.md",
+    title: "01 Intro to Immunology",
+    updatedAt: "",
+    content: "# Introduction to Immunology\n\n- Innate vs. adaptive immunity — the two arms\n- Key cells: leukocytes, lymphocytes, phagocytes",
+  },
+];
 
 export type { CloudLibraryNote } from "./library-tree";
 
@@ -142,17 +168,27 @@ export interface UseCloudLibraryApi {
  *  network request; the rest read the same shared snapshot. */
 export function useCloudLibrary(): UseCloudLibraryApi {
   const { session } = useAuth();
+  const preview = useWorkspacePreview();
   const userId = session?.user.id ?? null;
   const snap = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
+    // Screenshot harness (/dev-preview/workspace/library): render seeded demo notes so the
+    // reader UI is visible without a real cloud session. No network call in this path.
+    if (preview) {
+      if (loadedForUserId !== "__preview__") {
+        loadedForUserId = "__preview__";
+        setState({ status: "loaded", error: null, notes: PREVIEW_NOTES, selectedPath: PREVIEW_NOTES[0]?.path ?? null });
+      }
+      return;
+    }
     if (!userId) {
       if (loadedForUserId) reset();
       return;
     }
     if (loadedForUserId === userId) return;
     void loadNotes(userId);
-  }, [userId]);
+  }, [preview, userId]);
 
   const reload = useCallback(() => {
     if (userId) void loadNotes(userId);
