@@ -15,6 +15,7 @@ import { listThreads, loadThreadMessages, newThreadId, saveThreadMessages, sendC
 import { useShell } from "@/components/AppDrawer";
 import { Composer } from "@/components/Composer";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { ThinkingDots } from "@/components/ThinkingDots";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import type { ChatMsg } from "@/lib/chat-thread";
 import { createMarkdownStyles } from "@/theme/markdown";
@@ -183,8 +184,8 @@ export default function ChatScreen() {
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) =>
             item.kind === "thinking" ? (
-              <View style={[styles.assistantRow, styles.thinking]} testID="chat-thinking">
-                <Text style={styles.thinkingText}>Thinking…</Text>
+              <View style={styles.assistantRow} testID="chat-thinking">
+                <ThinkingDots color={c.text2} />
               </View>
             ) : item.kind === "error" ? (
               <View style={styles.errorBubble} testID="chat-error">
@@ -202,11 +203,14 @@ export default function ChatScreen() {
             )
           }
           ListEmptyComponent={
-            <View style={[styles.emptyWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]}>
-              <EmptyBlock
-                title="Welcome back"
-                body="What are we working on today? Ask about mechanisms, brand names, or anything from your classes — answers come straight from the cloud."
-              />
+            // Greeting rendered directly (not the shared EmptyBlock, which is
+            // flex:1 + centered) so it anchors NEAR THE TOP (owner call).
+            <View style={[styles.emptyWrap, { paddingTop: contentTop + space(8), paddingBottom: contentBottom }]}>
+              <Text style={styles.emptyTitle}>Welcome back</Text>
+              <Text style={styles.emptyBody}>
+                What are we working on today? Ask about mechanisms, brand names, or anything from your classes — answers come
+                straight from the cloud.
+              </Text>
             </View>
           }
         />
@@ -245,8 +249,10 @@ const createStyles = (c: ThemeColors) =>
     assistantRow: { alignSelf: "stretch", paddingHorizontal: space(0.5), paddingVertical: space(1) },
     errorBubble: { alignSelf: "flex-start", maxWidth: "88%", borderRadius: radius.lg, paddingHorizontal: space(3.5), paddingVertical: space(2.5), borderWidth: 1, borderColor: c.warnLine, backgroundColor: c.warnFaint },
     errorText: { ...type.small, color: c.text2 },
-    thinking: { opacity: 0.8 },
-    thinkingText: { ...type.small, color: c.text2 },
-    emptyWrap: { flex: 1, justifyContent: "center" },
+    // No flex:1 — the greeting sizes to its content so it sits at the top of the
+    // scroll area (paddingTop places it just below the glass TopBar).
+    emptyWrap: { alignItems: "center", gap: space(2), paddingHorizontal: space(6) },
+    emptyTitle: { ...type.title, color: c.text, textAlign: "center" },
+    emptyBody: { ...type.small, color: c.text2, textAlign: "center", maxWidth: 320 },
     composerRow: { paddingHorizontal: space(3), paddingTop: space(2) },
   });

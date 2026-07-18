@@ -48,6 +48,13 @@
         {
           "cameraPermission": "Nemesis uses the camera only to scan the pairing code shown on your Mac."
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Nemesis uses the microphone only when you tap the mic to dictate a message.",
+          "speechRecognitionPermission": "Nemesis turns what you say into text in the chat box when you tap the mic."
+        }
       ]
     ],
     "experiments": {

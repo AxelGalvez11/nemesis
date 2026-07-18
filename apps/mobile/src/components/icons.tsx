@@ -13,6 +13,16 @@ export interface IconProps {
 
 const base = { fill: "none", strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
 
+export function MicIcon({ size = 22, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="9" y="3" width="6" height="11" rx="3" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M5.8 11a6.2 6.2 0 0 0 12.4 0" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="12" y1="17.4" x2="12" y2="21" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
 export function HomeIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">

@@ -190,7 +190,7 @@ export default function ReviewScreen() {
               disabled={revealed}
               accessibilityLabel="Reveal answer"
               testID="review-card"
-              style={[styles.cardPressable, !revealed && styles.cardPressableCentered]}
+              style={styles.cardPressable}
             >
               {current.isNew ? <Text style={styles.newTag}>NEW</Text> : null}
               {clozeSplit ? (
@@ -263,13 +263,13 @@ const createStyles = (c: ThemeColors) =>
     countLabel: { ...type.micro, color: c.text3, marginTop: 1 },
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4) },
     cardScroll: { flex: 1 },
-    cardBody: { paddingHorizontal: space(4), paddingTop: space(2), paddingBottom: space(6), flexGrow: 1 },
-    // The reveal Pressable fills this whole (flexGrow: 1) content area, so a
-    // tap anywhere in the blank space — not just on the text — flips the card.
-    // Only the un-revealed (short-prompt) state centers it; once the answer is
-    // showing the content top-aligns so long answers can scroll.
+    cardBody: { paddingHorizontal: space(4), paddingTop: space(5), paddingBottom: space(6), flexGrow: 1 },
+    // The reveal Pressable fills this whole (flexGrow: 1) content area, so a tap
+    // anywhere in the blank space — not just on the text — flips the card. The
+    // content is TOP-anchored in both states (owner: it used to sit centered then
+    // jump to the top on reveal) — the prompt keeps the same Y, the answer just
+    // appends below it.
     cardPressable: { flexGrow: 1 },
-    cardPressableCentered: { justifyContent: "center" },
     newTag: {
       ...type.micro,
       color: c.accent,

@@ -143,6 +143,11 @@ export interface LayoutOptions {
    * settle, higher values clump everything tighter to the canvas center. Fed
    * by the Gravity slider. */
   gravity?: number;
+  /** Edge spring rest-length multiplier. 1 (default, omitted) reproduces the
+   * original tuned rest length exactly; lower values pull linked notes closer
+   * together, higher values stretch connections out. Fed by the phone Graph
+   * screen's Link distance slider. */
+  linkDistance?: number;
 }
 
 /** A running force simulation the caller steps by hand — the animated twin of
@@ -166,6 +171,9 @@ export interface LayoutSim {
    * positions or restarting from the spiral. */
   gravity: number;
   repulsion: number;
+  /** Live edge spring rest-length multiplier — same mutate-in-place contract
+   * as gravity/repulsion above. */
+  linkDistance: number;
   /** Re-energize an already-cooling (or settled) sim in place: rewinds the
    * cooling clock by a fixed burst so a new gravity/repulsion value is
    * visibly felt, without reseeding positions (no jump back to the spiral —
@@ -301,6 +309,7 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
   const sim: LayoutSim = {
     gravity: opts.gravity ?? 1,
     repulsion: opts.repulsion ?? 1,
+    linkDistance: opts.linkDistance ?? 1,
 
     get settled(): boolean {
       return n === 0 || it >= iterationsBudget;
@@ -346,11 +355,16 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
         }
       }
 
+      // Recomputed fresh every step() (not cached across calls), same as the
+      // repulsion/gravity locals above — so a live linkDistance change (e.g.
+      // mid-drag on the slider) is felt on the very next step(), matching
+      // gravity/repulsion's live-mutable contract.
+      const restLen = rest * Math.max(0, sim.linkDistance);
       for (const { a, b } of graph.edges) {
         const dx = xs[b] - xs[a];
         const dy = ys[b] - ys[a];
         const d = Math.max(0.1, Math.sqrt(dx * dx + dy * dy));
-        const f = (d - rest) * 0.06;
+        const f = (d - restLen) * 0.06;
         const ux = dx / d;
         const uy = dy / d;
         fx[a] += ux * f;

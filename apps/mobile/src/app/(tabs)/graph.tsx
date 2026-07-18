@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -8,11 +8,12 @@ import { decryptLibrary, loadCachedRows, loadVaultKey, pullLibraryRows } from "@
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { ForceSlider } from "@/components/ForceSlider";
 import { GraphNodeView } from "@/components/GraphNodeView";
+import { SettingsIcon } from "@/components/icons";
 import { useShellPadding } from "@/components/shell-chrome";
-import { buildNoteGraph, createLayoutSim, type LayoutSim, type NoteGraph } from "@/lib/note-graph";
+import { buildNoteGraph, createLayoutSim, type GraphNode, type LayoutSim, type NoteGraph } from "@/lib/note-graph";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import type { ThemeColors } from "@/theme/palette";
-import { space, type } from "@/theme/tokens";
+import { radius, space, type } from "@/theme/tokens";
 
 // Graph — the phone's twin of the desktop Graph page, rebuilt for read-only sync.
 // Nodes are the synced library notes; an edge is a [[wikilink]] mention between two
@@ -32,12 +33,20 @@ import { space, type } from "@/theme/tokens";
 //   - Per-node DRAG (GraphNodeView), which pins the dragged node in the sim
 //     (LayoutSim.pin in note-graph.ts) so the running force layout stops fighting
 //     the finger, while its neighbors keep reacting to it live.
-// The Gravity/Repulsion sliders (ForceSlider) still mutate the running sim in
-// place and "reheat" it, so dragging never resets the graph back to its starting
-// spiral. A short tap on a node still opens the note.
+//
+// A gear button in the header toggles a settings panel: Gravity/Repulsion/Node
+// size/Link distance sliders (ForceSlider), a Labels 3-way toggle, and a Reset.
+// The panel is a FLOATING overlay (position: absolute, opaque background, above
+// the canvas in z-order) rather than an in-flow block — deliberately, so opening
+// or closing it never changes canvasH and therefore never re-triggers the
+// seeding effect below. Gravity/Repulsion/Link distance mutate the running sim
+// in place and "reheat" it (identical pattern, all three); Node size is pure
+// rendering — a prop multiplying GraphNodeView's radius — and never touches the
+// sim. Reset is the ONLY control that reseeds (see reseedNonce): dragging a
+// node and panning/zooming survive every other control, including opening and
+// closing the panel itself. A short tap on a node still opens the note.
 
 const HEADER_H = 34;
-const SLIDERS_H = 112;
 const TICK_MS = 30;
 // Multiple physics steps per rendered frame: at one step per tick the default
 // 180-iteration settle takes ~5.4s, which reads as sluggish. Batching keeps the
@@ -50,6 +59,26 @@ const MAX_SCALE = 3;
 
 type Status = "loading" | "unpaired" | "empty" | "ready";
 
+// Which node labels the settings panel's Labels toggle shows. "hubs" is the
+// default and reproduces the screen's original always-on behavior exactly —
+// see shouldShowLabel below.
+type LabelMode = "all" | "hubs" | "none";
+const LABEL_MODES: { id: LabelMode; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "hubs", label: "Hubs" },
+  { id: "none", label: "None" },
+];
+
+/** The original label-visibility rule, factored out so the Labels toggle can
+ * widen ("all") or narrow ("none") it without disturbing the "hubs" default:
+ * small graphs (≤40 nodes) always showed every label; larger ones only
+ * labeled nodes with 2+ connections. */
+function shouldShowLabel(mode: LabelMode, node: GraphNode, smallGraphAllLabels: boolean): boolean {
+  if (mode === "all") return true;
+  if (mode === "none") return false;
+  return smallGraphAllLabels || node.degree >= 2;
+}
+
 export default function GraphScreen() {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -60,17 +89,42 @@ export default function GraphScreen() {
   const [graph, setGraph] = useState<NoteGraph | null>(null);
   const [gravity, setGravity] = useState(1);
   const [repulsion, setRepulsion] = useState(1);
+  const [nodeSize, setNodeSize] = useState(1);
+  const [linkDistance, setLinkDistance] = useState(1);
+  const [labelMode, setLabelMode] = useState<LabelMode>("hubs");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Where the floating settings panel's `top` lands — MEASURED via the header
+  // row's onLayout rather than hand-computed from contentTop/space(2)/HEADER_H.
+  // onLayout and absolute-position `top` are both Yoga-computed values for
+  // children of the same parent, so reading one to drive the other is correct
+  // regardless of whether this RN version resolves absolute positioning
+  // relative to the parent's padding box or its border box — a padding-edge
+  // arithmetic mistake here would otherwise float the panel well below the
+  // header with no type error to catch it. The initial value is only what
+  // paints for the one frame before the first onLayout fires (the panel is
+  // closed by default, so it's never actually visible then).
+  const [headerBottom, setHeaderBottom] = useState(contentTop + space(2) + HEADER_H);
+  // Bumped only by Reset (see handleReset) to force the seeding effect below
+  // to recreate the sim even when gravity/repulsion/linkDistance are already
+  // at their defaults. The ONLY on-demand reseed trigger in this screen —
+  // opening/closing the settings panel deliberately never touches this.
+  const [reseedNonce, setReseedNonce] = useState(0);
 
   const simRef = useRef<LayoutSim | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // The seeding effect below reads this once per (re)seed instead of depending
-  // on gravity/repulsion state directly — depending on them would reseed the
-  // spiral (and jump every node's position) on every slider drag.
-  const initialForces = useRef({ gravity, repulsion });
-  initialForces.current = { gravity, repulsion };
+  // on gravity/repulsion/linkDistance state directly — depending on them would
+  // reseed the spiral (and jump every node's position) on every slider drag.
+  const initialForces = useRef({ gravity, linkDistance, repulsion });
+  initialForces.current = { gravity, linkDistance, repulsion };
 
   const canvasW = win.width;
-  const canvasH = Math.max(220, win.height - contentTop - contentBottom - HEADER_H - SLIDERS_H);
+  // Deliberately NOT a function of settingsOpen: the settings panel renders as
+  // a floating overlay (see the JSX below and the top-of-file comment), not an
+  // in-flow block, specifically so toggling it never changes canvasH — which
+  // would otherwise re-trigger the seeding effect and reset pan/zoom/pinned
+  // nodes just from tapping the gear icon.
+  const canvasH = Math.max(220, win.height - contentTop - contentBottom - HEADER_H);
 
   // Whole-canvas pinch/pan transform. `saved*` hold the value the gesture
   // started from, so each new pinch/pan composes on top of wherever the
@@ -130,6 +184,37 @@ export default function GraphScreen() {
     },
     [ensureTicking],
   );
+
+  const handleLinkDistanceChange = useCallback(
+    (v: number) => {
+      setLinkDistance(v);
+      const sim = simRef.current;
+      if (sim) {
+        sim.linkDistance = v;
+        sim.reheat();
+        ensureTicking();
+      }
+    },
+    [ensureTicking],
+  );
+
+  // Node size is pure rendering — a prop multiplying GraphNodeView's radius —
+  // so, unlike the three handlers above, it never touches the sim and needs no
+  // reheat/ensureTicking. setNodeSize's setter signature already matches
+  // ForceSlider's onChange, so it's passed straight through in the JSX below.
+
+  // The only control that reseeds: restores every default and bumps
+  // reseedNonce so the seeding effect (below) recreates the sim from a fresh
+  // spiral — which also clears any pinned/dragged nodes and re-centers
+  // pan/zoom, same as a real note-data or resize reseed.
+  const handleReset = useCallback(() => {
+    setGravity(1);
+    setRepulsion(1);
+    setNodeSize(1);
+    setLinkDistance(1);
+    setLabelMode("hubs");
+    setReseedNonce((n) => n + 1);
+  }, []);
 
   const openNote = useCallback((pathHash: string) => {
     router.push({ params: { ph: pathHash }, pathname: "/note" });
@@ -210,6 +295,7 @@ export default function GraphScreen() {
     const sim = createLayoutSim(builtGraph, {
       gravity: initialForces.current.gravity,
       height: canvasH,
+      linkDistance: initialForces.current.linkDistance,
       padding: 30,
       repulsion: initialForces.current.repulsion,
       width: canvasW,
@@ -233,6 +319,10 @@ export default function GraphScreen() {
     translateY,
     savedTranslateX,
     savedTranslateY,
+    // Not read inside the effect body (initialForces.current is, instead) —
+    // bumped purely to force a reseed on Reset; see reseedNonce's declaration
+    // above for why it's the only thing that does.
+    reseedNonce,
   ]);
 
   // Pinch to zoom, one-finger pan on empty space to move — both run purely on
@@ -284,28 +374,40 @@ export default function GraphScreen() {
     transform: [{ translateX: translateX.value }, { translateY: translateY.value }, { scale: scale.value }],
   }));
 
-  const showAllLabels = (graph?.nodes.length ?? 0) <= 40;
+  const smallGraphAllLabels = (graph?.nodes.length ?? 0) <= 40;
+  const hasGraph = status === "ready" && !!graph && graph.nodes.length > 0;
 
   return (
     <View
       style={[styles.flex, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
       testID="graph-screen"
     >
-      <View style={styles.headerRow}>
+      <View
+        style={styles.headerRow}
+        onLayout={(e) => setHeaderBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+      >
         <Text style={styles.headerTitle}>Graph</Text>
-        {status === "ready" && graph ? (
-          <Text style={styles.headerMeta}>
-            {graph.nodes.length} notes · {graph.edges.length} connections
-          </Text>
-        ) : null}
-      </View>
-
-      {status === "ready" && graph && graph.nodes.length > 0 ? (
-        <View style={styles.sliders} testID="graph-sliders">
-          <ForceSlider c={c} label="Gravity" max={3} min={0} onChange={handleGravityChange} step={0.1} value={gravity} />
-          <ForceSlider c={c} label="Repulsion" max={4} min={0.2} onChange={handleRepulsionChange} step={0.1} value={repulsion} />
+        <View style={styles.headerRight}>
+          {status === "ready" && graph ? (
+            <Text style={styles.headerMeta}>
+              {graph.nodes.length} notes · {graph.edges.length} connections
+            </Text>
+          ) : null}
+          {hasGraph ? (
+            <Pressable
+              accessibilityLabel="Graph settings"
+              accessibilityRole="button"
+              accessibilityState={{ expanded: settingsOpen }}
+              hitSlop={8}
+              onPress={() => setSettingsOpen((v) => !v)}
+              style={[styles.gearBtn, settingsOpen && styles.gearBtnActive]}
+              testID="graph-settings-toggle"
+            >
+              <SettingsIcon color={settingsOpen ? c.accent : c.text3} size={17} />
+            </Pressable>
+          ) : null}
         </View>
-      ) : null}
+      </View>
 
       {status === "loading" ? (
         <View style={styles.centered} testID="graph-loading">
@@ -349,11 +451,51 @@ export default function GraphScreen() {
                   onDragTo={handleNodeDragTo}
                   onOpen={openNote}
                   scale={scale}
-                  showLabel={showAllLabels || node.degree >= 2}
+                  showLabel={shouldShowLabel(labelMode, node, smallGraphAllLabels)}
+                  sizeMultiplier={nodeSize}
                 />
               ))}
             </Animated.View>
           </GestureDetector>
+        </View>
+      ) : null}
+
+      {hasGraph && settingsOpen ? (
+        <View style={[styles.panel, { top: headerBottom }]} testID="graph-settings-panel">
+          <ForceSlider c={c} label="Gravity" max={3} min={0} onChange={handleGravityChange} step={0.1} value={gravity} />
+          <ForceSlider c={c} label="Repulsion" max={4} min={0.2} onChange={handleRepulsionChange} step={0.1} value={repulsion} />
+          <ForceSlider c={c} label="Node size" max={2} min={0.5} onChange={setNodeSize} step={0.1} value={nodeSize} />
+          <ForceSlider
+            c={c}
+            label="Link distance"
+            max={2}
+            min={0.5}
+            onChange={handleLinkDistanceChange}
+            step={0.1}
+            value={linkDistance}
+          />
+
+          <View style={styles.labelsRow}>
+            <Text style={styles.panelLabel}>Labels</Text>
+            <View style={styles.segment} testID="graph-label-mode">
+              {LABEL_MODES.map((entry) => (
+                <Pressable
+                  key={entry.id}
+                  testID={`graph-label-mode-${entry.id}`}
+                  onPress={() => setLabelMode(entry.id)}
+                  style={[styles.segmentItem, labelMode === entry.id && styles.segmentItemActive]}
+                >
+                  <Text style={[styles.segmentText, labelMode === entry.id && styles.segmentTextActive]}>
+                    {entry.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          <Pressable accessibilityRole="button" onPress={handleReset} style={styles.resetBtn} testID="graph-settings-reset">
+            <Text style={styles.resetBtnText}>Reset to defaults</Text>
+          </Pressable>
         </View>
       ) : null}
     </View>
@@ -371,11 +513,47 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: space(4),
     },
     headerTitle: { ...type.h2, color: c.text },
+    headerRight: { flexDirection: "row", alignItems: "center", gap: space(2) },
     headerMeta: { ...type.micro, color: c.text3 },
-    sliders: { paddingHorizontal: space(4), paddingBottom: space(2), gap: space(3) },
+    gearBtn: { padding: space(1), borderRadius: radius.sm },
+    gearBtnActive: { backgroundColor: c.accentFaint },
     centered: { flex: 1, alignItems: "center", justifyContent: "center" },
     pairBtn: { paddingBottom: space(4), paddingHorizontal: space(8), alignSelf: "stretch" },
     // Clips the pinch/pan transform so a zoomed-in or panned graph never
-    // paints over the header/sliders above it.
+    // paints over the header above it.
     canvasClip: { overflow: "hidden" },
+    // The settings panel: a FLOATING overlay (see the top-of-file comment for
+    // why), not an in-flow block — opaque so it fully occludes the canvas
+    // beneath it, and on top in paint order (zIndex/elevation) so its own
+    // Pressables/ForceSliders always receive the touch instead of the canvas
+    // underneath.
+    panel: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      zIndex: 50,
+      elevation: 20,
+      backgroundColor: c.bg,
+      borderBottomWidth: 1,
+      borderBottomColor: c.line,
+      paddingHorizontal: space(4),
+      paddingTop: space(3),
+      paddingBottom: space(3),
+      gap: space(3),
+    },
+    labelsRow: { gap: space(1.5) },
+    panelLabel: { ...type.micro, color: c.text2 },
+    segment: { flexDirection: "row", backgroundColor: c.surface2, borderRadius: radius.sm, padding: 3, gap: 3 },
+    segmentItem: { flex: 1, paddingVertical: space(1.5), alignItems: "center", borderRadius: radius.sm - 2 },
+    segmentItemActive: { backgroundColor: c.accentFaint },
+    segmentText: { ...type.micro, color: c.text2, fontWeight: "600" },
+    segmentTextActive: { color: c.accent },
+    resetBtn: {
+      alignSelf: "flex-start",
+      paddingVertical: space(1.5),
+      paddingHorizontal: space(3),
+      borderRadius: radius.sm,
+      backgroundColor: c.surface2,
+    },
+    resetBtnText: { ...type.micro, color: c.text2, fontWeight: "600" },
   });
