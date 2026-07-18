@@ -145,7 +145,13 @@ export default function ChatScreen() {
   const rows: Row[] = messages.map((msg, index) => ({ id: `m-${index}`, kind: "msg", msg }));
   if (lastError) rows.push({ errorText: lastError, id: "__error__", kind: "error" });
   if (sending) rows.push({ id: THINKING_ID, kind: "thinking" });
-  const inverted = [...rows].reverse();
+  const reversed = [...rows].reverse();
+  // Invert ONLY when there's content. An inverted FlatList flips its whole
+  // content container (scaleY:-1), and RN does NOT flip the ListEmptyComponent
+  // back — so an empty inverted list renders the empty state upside-down (a
+  // scaleY counter-transform proved unreliable on-device). Not inverting while
+  // empty sidesteps it entirely; the flip only matters once messages exist.
+  const hasContent = rows.length > 0;
 
   return (
     <KeyboardAvoidingView
@@ -166,13 +172,14 @@ export default function ChatScreen() {
           </View>
         ) : null}
         <FlatList
-          inverted
-          data={inverted}
+          inverted={hasContent}
+          data={reversed}
           keyExtractor={(row) => row.id}
-          // This list is inverted (scaleY:-1 on the content container), which swaps
-          // which edge lands where: paddingBottom here is what ends up under the glass
-          // TopBar at the true screen top — paddingTop would only open a gap above the
-          // composer at the bottom.
+          // When inverted (content present) the content container is flipped
+          // (scaleY:-1), so paddingBottom is what lands under the glass TopBar at
+          // the true screen top. When empty the list isn't inverted, so the empty
+          // state pads itself normally (see ListEmptyComponent) and this padding
+          // is harmless.
           contentContainerStyle={[styles.listBody, { paddingBottom: contentTop + space(2) }]}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) =>
@@ -196,13 +203,10 @@ export default function ChatScreen() {
           }
           ListEmptyComponent={
             <View style={[styles.emptyWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]}>
-              {/* inverted list flips children — wrap so the empty state reads upright */}
-              <View style={styles.emptyFlip}>
-                <EmptyBlock
-                  title="Ask anything"
-                  body="Answers come straight from the cloud — no Mac needed. Mechanisms, brand names, quick explanations, study questions."
-                />
-              </View>
+              <EmptyBlock
+                title="Ask anything"
+                body="Answers come straight from the cloud — no Mac needed. Mechanisms, brand names, quick explanations, study questions."
+              />
             </View>
           }
         />
@@ -257,7 +261,6 @@ const createStyles = (c: ThemeColors) =>
     thinking: { opacity: 0.8 },
     thinkingText: { ...type.small, color: c.text2 },
     emptyWrap: { flex: 1, justifyContent: "center" },
-    emptyFlip: { transform: [{ scaleY: -1 }] },
     composerRow: {
       flexDirection: "row",
       alignItems: "flex-end",

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Linking, Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
+import { MonthGrid } from "@/components/month-grid";
 import { useShellPadding } from "@/components/shell-chrome";
 import {
   currentUserId,
@@ -11,7 +12,15 @@ import {
   pullLibraryRows,
   subscribeLibrary,
 } from "@/api/librarySync";
-import { agendaDays, dayKeyFromDate, parseCalendarDoc, type AgendaEvent, type CalendarDoc } from "@/lib/agenda";
+import {
+  agendaDays,
+  dayKeyFromDate,
+  monthMatrix,
+  parseCalendarDoc,
+  stepMonth,
+  type AgendaEvent,
+  type CalendarDoc,
+} from "@/lib/agenda";
 import type { SyncCache } from "@/lib/library-sync";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -31,6 +40,12 @@ export default function CalendarScreen() {
   const [cache, setCache] = useState<SyncCache>({});
   const [refreshing, setRefreshing] = useState(false);
   const pulling = useRef(false);
+  // The month the grid is showing — starts on the current month, paged by the
+  // grid's ‹ › arrows. The agenda list underneath always stays "upcoming".
+  const [shownMonth, setShownMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
 
   const pull = useCallback(async (base: SyncCache) => {
     if (pulling.current) return;
@@ -109,7 +124,10 @@ export default function CalendarScreen() {
     const doc = docs.find((d) => d.kind === "calendar");
     return doc ? parseCalendarDoc(doc.content) : null;
   })();
-  const days = calendarDoc ? agendaDays(calendarDoc.events, dayKeyFromDate(new Date())) : [];
+  const todayKey = dayKeyFromDate(new Date());
+  const events = calendarDoc?.events ?? [];
+  const month = monthMatrix(shownMonth.year, shownMonth.month, events, todayKey);
+  const days = calendarDoc ? agendaDays(events, todayKey) : [];
   const sections = days.map((day) => ({ data: day.events, key: day.key, title: day.label }));
 
   return (
@@ -130,20 +148,27 @@ export default function CalendarScreen() {
           />
         }
         ListHeaderComponent={
-          calendarDoc?.feedUrl ? (
-            <Pressable
-              testID="calendar-subscribe"
-              style={({ pressed }) => [styles.subscribeRow, pressed && styles.subscribePressed]}
-              onPress={() => {
-                // webcal:// hands the feed straight to the built-in Calendar's
-                // subscribe flow (dates + titles only — never note contents).
-                void Linking.openURL(calendarDoc.feedUrl!.replace(/^https:/, "webcal:")).catch(() => {});
-              }}
-            >
-              <Text style={styles.subscribeText}>Add to iPhone Calendar</Text>
-              <Text style={styles.subscribeHint}>deadlines in your built-in Calendar app</Text>
-            </Pressable>
-          ) : null
+          <View>
+            <MonthGrid
+              month={month}
+              onStep={(delta) => setShownMonth((current) => stepMonth(current.year, current.month, delta))}
+            />
+            {calendarDoc?.feedUrl ? (
+              <Pressable
+                testID="calendar-subscribe"
+                style={({ pressed }) => [styles.subscribeRow, pressed && styles.subscribePressed]}
+                onPress={() => {
+                  // webcal:// hands the feed straight to the built-in Calendar's
+                  // subscribe flow (dates + titles only — never note contents).
+                  void Linking.openURL(calendarDoc.feedUrl!.replace(/^https:/, "webcal:")).catch(() => {});
+                }}
+              >
+                <Text style={styles.subscribeText}>Add to iPhone Calendar</Text>
+                <Text style={styles.subscribeHint}>deadlines in your built-in Calendar app</Text>
+              </Pressable>
+            ) : null}
+            <Text style={styles.agendaLabel}>Upcoming</Text>
+          </View>
         }
         renderSectionHeader={({ section }) => <Text style={styles.dayHead}>{section.title}</Text>}
         renderItem={({ item }) => <EventRow event={item} styles={styles} />}
@@ -198,6 +223,8 @@ const createStyles = (c: ThemeColors) =>
     pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(6), gap: space(4), backgroundColor: c.bg },
     pairHint: { ...type.small, color: c.text2, textAlign: "center" },
     listBody: { paddingHorizontal: space(4), flexGrow: 1 },
+    agendaLabel: { ...type.micro, color: c.text3, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(2), marginBottom: space(1) },
+
     subscribeRow: {
       borderWidth: 1,
       borderColor: c.accentLine,

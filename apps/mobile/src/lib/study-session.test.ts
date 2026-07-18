@@ -11,6 +11,7 @@ import {
   pruneGradedMarks,
   removeByClientEventId,
   sessionQueue,
+  splitStrayField,
   type DeckQueueCard,
 } from "./study-session.ts";
 
@@ -121,4 +122,51 @@ Deno.test("makeClientEventId: uuid-v4 shape, deterministic under injected random
 Deno.test("chunkEvents: splits into fixed-size batches", () => {
   assertEquals(chunkEvents([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
   assertEquals(chunkEvents([], 2), []);
+});
+
+Deno.test("splitStrayField: tab-free text is returned unchanged", () => {
+  assertEquals(splitStrayField("Neutrophils kill pathogens by [...]"), {
+    head: "Neutrophils kill pathogens by [...]",
+    extra: "",
+  });
+});
+
+Deno.test("splitStrayField: a tab-joined trailing field is peeled off the front", () => {
+  assertEquals(
+    splitStrayField("Neutrophils kill pathogens by [...]\tNeutrophil effector functions."),
+    { head: "Neutrophils kill pathogens by [...]", extra: "Neutrophil effector functions." },
+  );
+});
+
+Deno.test("parseDeckSnapshot recovers a stray tab-joined field into the note", () => {
+  const json = JSON.stringify({
+    v: 1,
+    asOf: "2026-07-17T06:00:00Z",
+    id: "immuno3",
+    name: "Immunology 3",
+    stats: { due: 1, fresh: 1, total: 1 },
+    queue: [
+      { key: "c1", prompt: "Neutrophils kill by [...]\tNeutrophil effector functions.", answer: "NETs", isNew: true },
+    ],
+  });
+  const snap = parseDeckSnapshot(json);
+  assertEquals(snap?.queue[0].prompt, "Neutrophils kill by [...]");
+  assertEquals(snap?.queue[0].answer, "NETs");
+  assertEquals(snap?.queue[0].note, "Neutrophil effector functions.");
+});
+
+Deno.test("parseDeckSnapshot de-tabs only the front and never duplicates the note", () => {
+  const json = JSON.stringify({
+    v: 1,
+    asOf: "2026-07-17T06:00:00Z",
+    id: "d",
+    name: "D",
+    stats: { due: 1, fresh: 0, total: 1 },
+    // Same trailing title tab-joined onto BOTH fields — the note must show it once.
+    queue: [{ key: "c1", prompt: "Front [...]\tSource X", answer: "Answer\tSource X", isNew: false }],
+  });
+  const card = parseDeckSnapshot(json)?.queue[0];
+  assertEquals(card?.prompt, "Front [...]");
+  assertEquals(card?.note, "Source X"); // single, not "Source X · Source X"
+  assertEquals(card?.answer, "Answer\tSource X"); // answer left verbatim (not truncated)
 });

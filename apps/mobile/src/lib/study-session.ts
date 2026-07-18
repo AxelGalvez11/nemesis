@@ -32,16 +32,36 @@ export interface DeckSnapshot {
   queue: DeckQueueCard[];
 }
 
+/** A card's front/back should never contain a raw TAB — a tab means the Mac's
+ *  pre-render tab-joined a trailing field (the deck's source/extra column) into
+ *  the text. Recover the real front as everything before the first tab and hand
+ *  back the trailing piece so it can ride along on the answer instead of
+ *  leaking onto the front. Idempotent on tab-free text (the normal case). */
+export function splitStrayField(text: string): { head: string; extra: string } {
+  const tab = text.indexOf("\t");
+  if (tab === -1) return { head: text, extra: "" };
+  return { head: text.slice(0, tab).trim(), extra: text.slice(tab + 1).replace(/\t+/g, " ").trim() };
+}
+
 function cleanCard(raw: unknown): DeckQueueCard | null {
   if (!raw || typeof raw !== "object") return null;
   const value = raw as Record<string, unknown>;
   if (typeof value.key !== "string" || !value.key) return null;
   if (typeof value.prompt !== "string" || typeof value.answer !== "string") return null;
+  // Only the FRONT is de-tabbed: a tab there is a leaked source column showing
+  // on the card face. The answer is left verbatim — splitting it too is
+  // speculative (it could truncate a legitimate multi-part back) and, when the
+  // same trailing field rides on both fields, would duplicate it in the note.
+  const front = splitStrayField(value.prompt);
+  const rawNote = typeof value.note === "string" && value.note ? value.note : "";
+  // Any field peeled off the front becomes the note (shown on reveal), deduped
+  // against an existing note so it never reads "X · X".
+  const note = [...new Set([rawNote, front.extra].filter(Boolean))].join(" · ");
   return {
     key: value.key,
-    prompt: value.prompt,
+    prompt: front.head,
     answer: value.answer,
-    ...(typeof value.note === "string" && value.note ? { note: value.note } : {}),
+    ...(note ? { note } : {}),
     isNew: value.isNew === true,
   };
 }
