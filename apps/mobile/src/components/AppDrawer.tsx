@@ -226,7 +226,7 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
       <Pressable
         testID="drawer-account"
         style={({ pressed }) => [styles.footer, { paddingBottom: insets.bottom + space(2.5) }, pressed && styles.footerPressed]}
-        onPress={() => go("/profile")}
+        onPress={() => go("/settings")}
         accessibilityLabel="Account and settings"
       >
         <View style={styles.avatar}>

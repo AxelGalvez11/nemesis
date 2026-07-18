@@ -2,9 +2,10 @@ import type { ComponentType } from "react";
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import Constants from "expo-constants";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
-import { useShellPadding } from "@/components/shell-chrome";
 import {
+  CloseIcon,
   FileIcon,
   type IconProps,
   LifeRingIcon,
@@ -13,17 +14,16 @@ import {
   SparkleIcon,
   TrashIcon,
 } from "@/components/icons";
-import { useCommon } from "@/theme/common";
 import { accentSwatchHex, ACCENT_SWATCHES, type ThemeColors, type ThemeMode } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space } from "@/theme/tokens";
 
-// Settings — modeled on the ChatGPT iOS app's account sheet (owner reference
-// 2026-07-17): a centered avatar/identity header, then grouped cards of
+// Settings — presented as a bottom-sheet MODAL (owner call 2026-07-17, matching
+// the ChatGPT iOS app: it slides up from the bottom via the root Stack's
+// presentation:"modal" on this route). Modeled on ChatGPT's account sheet: an X
+// close top-right, a centered avatar/identity header, then grouped cards of
 // icon + label (+ value / chevron) rows under muted section labels, with a red
-// destructive block at the bottom. The phone app owns only what's phone-local —
-// identity, appearance, legal, support, account deletion — so the sections adapt
-// ChatGPT's shape to that smaller surface rather than copying its feature list.
+// destructive block at the bottom.
 
 const SUPPORT_EMAIL = "support@enternemesis.com";
 
@@ -35,21 +35,33 @@ const THEME_MODES: { id: ThemeMode; label: string }[] = [
 
 export default function SettingsScreen() {
   const { session, signOut } = useAuth();
-  const common = useCommon();
   const styles = useThemedStyles(createStyles);
-  const { contentTop, contentBottom } = useShellPadding();
+  const { colors: c } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  const close = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/");
+  };
+
+  const CloseButton = (
+    <View style={[styles.modalTop, { paddingTop: insets.top + space(1.5) }]}>
+      <Pressable onPress={close} style={styles.closeBtn} hitSlop={8} testID="settings-close" accessibilityLabel="Close settings">
+        <CloseIcon size={17} color={c.text} />
+      </Pressable>
+    </View>
+  );
 
   if (!session) {
     return (
-      <View
-        style={[common.screen, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
-        testID="tab-profile"
-      >
-        <Text style={common.h1}>Settings</Text>
-        <Text testID="profile-guest" style={common.body}>You're not signed in.</Text>
-        <Pressable testID="goto-signin" style={common.btn} onPress={() => router.replace("/sign-in")}>
-          <Text style={common.btnText}>Sign in</Text>
-        </Pressable>
+      <View style={styles.root}>
+        {CloseButton}
+        <View style={styles.guest}>
+          <Text style={styles.guestText} testID="profile-guest">You're not signed in.</Text>
+          <Pressable testID="goto-signin" style={styles.signinBtn} onPress={() => router.replace("/sign-in")}>
+            <Text style={styles.signinText}>Sign in</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -58,48 +70,51 @@ export default function SettingsScreen() {
   const initial = (email[0] ?? "N").toUpperCase();
 
   return (
-    <ScrollView
-      contentContainerStyle={[styles.body, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
-      testID="tab-profile"
-    >
-      {/* Identity header — centered avatar + email, ChatGPT's account sheet. */}
-      <View style={styles.identity}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initial}</Text>
+    <View style={styles.root}>
+      {CloseButton}
+      <ScrollView
+        contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + space(6) }]}
+        showsVerticalScrollIndicator={false}
+        testID="tab-profile"
+      >
+        <View style={styles.identity}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initial}</Text>
+          </View>
+          <Text style={styles.identityEmail} testID="profile-email" numberOfLines={1}>{email}</Text>
         </View>
-        <Text style={styles.identityEmail} testID="profile-email" numberOfLines={1}>{email}</Text>
-      </View>
 
-      <SectionLabel styles={styles}>Account</SectionLabel>
-      <Card styles={styles}>
-        <SettingRow styles={styles} icon={MailIcon} label="Email" value={email} last />
-      </Card>
-      <Card styles={styles}>
-        <SettingRow styles={styles} icon={SparkleIcon} label="Subscription" value="Free" last />
-      </Card>
+        <SectionLabel styles={styles}>Account</SectionLabel>
+        <Card styles={styles}>
+          <SettingRow styles={styles} icon={MailIcon} label="Email" value={email} last />
+        </Card>
+        <Card styles={styles}>
+          <SettingRow styles={styles} icon={SparkleIcon} label="Subscription" value="Free" last />
+        </Card>
 
-      <SectionLabel styles={styles}>Appearance</SectionLabel>
-      <AppearanceCard styles={styles} />
+        <SectionLabel styles={styles}>Appearance</SectionLabel>
+        <AppearanceCard styles={styles} />
 
-      <SectionLabel styles={styles}>Legal</SectionLabel>
-      <Card styles={styles}>
-        <SettingRow styles={styles} icon={FileIcon} label="Terms of service" chevron testID="nav-terms" onPress={() => router.push("/profile/legal?doc=terms")} />
-        <SettingRow styles={styles} icon={FileIcon} label="Privacy policy" chevron last testID="nav-privacy" onPress={() => router.push("/profile/legal?doc=privacy")} />
-      </Card>
+        <SectionLabel styles={styles}>Legal</SectionLabel>
+        <Card styles={styles}>
+          <SettingRow styles={styles} icon={FileIcon} label="Terms of service" chevron testID="nav-terms" onPress={() => router.push("/profile/legal?doc=terms")} />
+          <SettingRow styles={styles} icon={FileIcon} label="Privacy policy" chevron last testID="nav-privacy" onPress={() => router.push("/profile/legal?doc=privacy")} />
+        </Card>
 
-      <SectionLabel styles={styles}>Support</SectionLabel>
-      <Card styles={styles}>
-        <SettingRow styles={styles} icon={LifeRingIcon} label="Contact support" chevron last testID="nav-support" onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {})} />
-      </Card>
+        <SectionLabel styles={styles}>Support</SectionLabel>
+        <Card styles={styles}>
+          <SettingRow styles={styles} icon={LifeRingIcon} label="Contact support" chevron last testID="nav-support" onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {})} />
+        </Card>
 
-      <View style={{ height: space(4) }} />
-      <Card styles={styles}>
-        <SettingRow styles={styles} icon={TrashIcon} label="Delete account" danger chevron testID="nav-delete-account" onPress={() => router.push("/profile/delete-account")} />
-        <SettingRow styles={styles} icon={LogoutIcon} label="Sign out" danger last testID="signout" onPress={signOut} />
-      </Card>
+        <View style={{ height: space(4) }} />
+        <Card styles={styles}>
+          <SettingRow styles={styles} icon={TrashIcon} label="Delete account" danger chevron testID="nav-delete-account" onPress={() => router.push("/profile/delete-account")} />
+          <SettingRow styles={styles} icon={LogoutIcon} label="Sign out" danger last testID="signout" onPress={signOut} />
+        </Card>
 
-      <Text style={styles.version}>Nemesis {Constants.expoConfig?.version ?? ""}</Text>
-    </ScrollView>
+        <Text style={styles.version}>Nemesis {Constants.expoConfig?.version ?? ""}</Text>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -151,8 +166,6 @@ function SettingRow({
   );
 }
 
-// Appearance stays a rich card (segmented mode + the ten accent swatches) rather
-// than a value row, since it applies live and is the one setting students touch.
 function AppearanceCard({ styles }: { styles: Styles }) {
   const { accentId, mode, setAccent, setMode } = useTheme();
   return (
@@ -194,9 +207,18 @@ function AppearanceCard({ styles }: { styles: Styles }) {
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-    body: { paddingHorizontal: space(4), backgroundColor: c.bg, flexGrow: 1 },
+    root: { flex: 1, backgroundColor: c.bg },
+    modalTop: { flexDirection: "row", justifyContent: "flex-end", paddingHorizontal: space(4), paddingBottom: space(1) },
+    closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center" },
 
-    identity: { alignItems: "center", paddingTop: space(3), paddingBottom: space(5), gap: space(2.5) },
+    guest: { flex: 1, alignItems: "center", justifyContent: "center", gap: space(4), padding: space(6) },
+    guestText: { color: c.text2, fontSize: 16 },
+    signinBtn: { backgroundColor: c.accent, borderRadius: radius.md, paddingVertical: space(3), paddingHorizontal: space(8) },
+    signinText: { color: c.onAccent, fontSize: 16, fontWeight: "600" },
+
+    body: { paddingHorizontal: space(4), flexGrow: 1 },
+
+    identity: { alignItems: "center", paddingTop: space(1), paddingBottom: space(5), gap: space(2.5) },
     avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: c.accentFaint, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.accentLine },
     avatarText: { color: c.accent, fontSize: 28, fontWeight: "700" },
     identityEmail: { color: c.text, fontSize: 17, fontWeight: "600", maxWidth: "90%" },

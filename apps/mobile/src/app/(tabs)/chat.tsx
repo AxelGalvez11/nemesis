@@ -267,8 +267,6 @@ const createStyles = (c: ThemeColors) =>
       gap: space(2),
       paddingHorizontal: space(3),
       paddingTop: space(2),
-      borderTopWidth: 1,
-      borderTopColor: c.line,
     },
     inputGlass: {
       flex: 1,
