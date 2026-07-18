@@ -13,6 +13,7 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { cn } from "@/lib/utils";
 
 import { ChatSidebar } from "./chat-sidebar";
+import { SettingsModalProvider } from "./settings-modal";
 import { StatusbarControls } from "./statusbar";
 import { TitlebarControls } from "./titlebar-controls";
 import { useMediaQuery } from "./use-media-query";
@@ -51,6 +52,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         ["--pane-chat-sidebar-width" as string]: sidebarVisible ? "237px" : "0px",
       }}
     >
+      <SettingsModalProvider>
       <TitlebarControls onToggleSidebar={() => setSidebarOpen((v) => !v)} />
       <main className="relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none">
         <div
@@ -70,6 +72,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         </div>
         <StatusbarControls />
       </main>
+      </SettingsModalProvider>
     </div>
   );
 }

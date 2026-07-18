@@ -7,6 +7,7 @@ import { IconCards, IconChecklist, IconSitemap } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/desktop-ui/button";
+import { useSettingsModal } from "@/components/workspace/shell/settings-modal";
 import { Settings } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ interface StudyChromeProps {
 
 export function StudyChrome({ activeTab, onTabChange }: StudyChromeProps) {
   const router = useRouter();
+  const { openSettings } = useSettingsModal();
 
   return (
     <>
@@ -37,7 +39,7 @@ export function StudyChrome({ activeTab, onTabChange }: StudyChromeProps) {
             <span className="size-1.5 rounded-full bg-(--theme-primary)" />
             Ask the agent
           </Button>
-          <Button aria-label="Study settings" onClick={() => router.push("/settings")} size="icon-xs" variant="ghost">
+          <Button aria-label="Study settings" onClick={openSettings} size="icon-xs" variant="ghost">
             <Settings />
           </Button>
         </div>
