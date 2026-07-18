@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useShellPadding } from "@/components/shell-chrome";
-import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
+import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import {
   currentUserId,
   decryptLibrary,
@@ -156,24 +156,14 @@ export default function StudyScreen() {
           <Pressable
             testID={`deck-${item.snapshot.id}`}
             onPress={() => router.push({ pathname: "/review", params: { ph: item.pathHash } })}
-            style={({ pressed }) => [pressed && styles.rowPressed]}
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
           >
-            <Surface style={styles.deckCard}>
-              <View style={styles.deckText}>
-                <Text style={styles.deckName} numberOfLines={1}>{item.snapshot.name}</Text>
-                <Text style={styles.deckMeta} numberOfLines={1}>
-                  {item.snapshot.course ? `${item.snapshot.course} · ` : ""}
-                  {item.snapshot.stats.total} card{item.snapshot.stats.total === 1 ? "" : "s"}
-                </Text>
-              </View>
-              {item.dueNow > 0 ? (
-                <View style={styles.dueBadge}>
-                  <Text style={styles.dueBadgeText}>{item.dueNow}</Text>
-                </View>
-              ) : (
-                <Text style={styles.doneMark}>✓</Text>
-              )}
-            </Surface>
+            <Text style={styles.deckName} numberOfLines={1}>{item.snapshot.name}</Text>
+            {item.dueNow > 0 ? (
+              <Text style={styles.due}>{item.dueNow}</Text>
+            ) : (
+              <Text style={styles.done}>✓</Text>
+            )}
           </Pressable>
         )}
         ListEmptyComponent={
@@ -196,20 +186,11 @@ const createStyles = (c: ThemeColors) =>
     pairHint: { ...type.small, color: c.text2, textAlign: "center" },
     listBody: { padding: space(4), flexGrow: 1 },
     headline: { ...type.h2, color: c.text, marginBottom: space(3), marginTop: space(1) },
-    rowPressed: { opacity: 0.85 },
-    deckCard: { flexDirection: "row", alignItems: "center", marginBottom: space(2.5) },
-    deckText: { flex: 1, minWidth: 0, gap: 2 },
-    deckName: { ...type.title, color: c.text },
-    deckMeta: { ...type.small, color: c.text2 },
-    dueBadge: {
-      minWidth: 30,
-      paddingHorizontal: space(2),
-      paddingVertical: space(1),
-      borderRadius: radius.pill,
-      backgroundColor: c.accent,
-      alignItems: "center",
-    },
-    dueBadgeText: { ...type.small, fontWeight: "700", color: c.onAccent },
-    doneMark: { ...type.title, color: c.good },
+    // Decks are just names now (owner call) — no cards; a bare due count / ✓ trails.
+    row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(2), paddingVertical: space(2.5), paddingHorizontal: space(2), borderRadius: radius.sm },
+    rowPressed: { backgroundColor: c.surface },
+    deckName: { ...type.body, color: c.text, flex: 1, minWidth: 0 },
+    due: { ...type.small, fontWeight: "700", color: c.accent, fontVariant: ["tabular-nums"] },
+    done: { ...type.small, color: c.good },
     emptyWrap: { paddingTop: space(10) },
   });

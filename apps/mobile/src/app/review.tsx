@@ -3,7 +3,6 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { decryptLibrary, loadCachedRows, loadVaultKey } from "@/api/librarySync";
 import { enqueueGrade, flushReviewQueue, loadAllGradedMarks, recordGradedMark } from "@/api/reviewEvents";
@@ -168,20 +167,17 @@ export default function ReviewScreen() {
             contentContainerStyle={[styles.cardBody, !revealed && styles.cardBodyCentered]}
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.cardHead}>
-              <Text style={styles.deckName} numberOfLines={1}>{snapshot.name}</Text>
-              {current.isNew ? <Text style={styles.newTag}>NEW</Text> : null}
-            </View>
-            <GlassSurface style={styles.cardFace} variant="clear">
-              <Markdown style={promptStyles}>{current.prompt}</Markdown>
-              {revealed ? (
-                <View style={styles.answerBlock} testID="review-answer">
-                  <View style={styles.divider} />
-                  <Markdown style={markdownStyles}>{current.answer}</Markdown>
-                  {current.note ? <Text style={styles.note}>{current.note}</Text> : null}
-                </View>
-              ) : null}
-            </GlassSurface>
+            {/* No card box and no deck title (owner call) — just the words, with the
+                divider between prompt and answer. */}
+            {current.isNew ? <Text style={styles.newTag}>NEW</Text> : null}
+            <Markdown style={promptStyles}>{current.prompt}</Markdown>
+            {revealed ? (
+              <View style={styles.answerBlock} testID="review-answer">
+                <View style={styles.divider} />
+                <Markdown style={markdownStyles}>{current.answer}</Markdown>
+                {current.note ? <Text style={styles.note}>{current.note}</Text> : null}
+              </View>
+            ) : null}
           </ScrollView>
 
           <View style={[styles.footer, { paddingBottom: insets.bottom + space(3) }]}>
@@ -229,8 +225,6 @@ const createStyles = (c: ThemeColors) =>
     // Only the un-revealed (short-prompt) state floats the card to the middle;
     // once the answer is showing the content top-aligns so it can scroll.
     cardBodyCentered: { justifyContent: "center" },
-    cardHead: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space(2), marginBottom: space(3) },
-    deckName: { ...type.micro, color: c.text3, letterSpacing: 1.1, textTransform: "uppercase", flexShrink: 1 },
     newTag: {
       ...type.micro,
       color: c.accent,
@@ -240,15 +234,8 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: space(1.5),
       paddingVertical: 2,
       overflow: "hidden",
-    },
-    cardFace: {
-      borderWidth: 1,
-      borderColor: c.line,
-      borderRadius: radius.lg,
-      paddingHorizontal: space(5),
-      paddingVertical: space(7),
-      minHeight: 150,
-      justifyContent: "center",
+      alignSelf: "center",
+      marginBottom: space(3),
     },
     answerBlock: { marginTop: space(2) },
     divider: { height: 1, backgroundColor: c.line2, marginVertical: space(4) },

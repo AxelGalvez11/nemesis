@@ -179,6 +179,15 @@ export function LogoutIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   );
 }
 
+export function ArrowUpIcon({ size = 23, color, strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Line x1="12" y1="19" x2="12" y2="6" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path d="M6.5 11.5 12 6l5.5 5.5" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
 export function CloseIcon({ size = 23, color, strokeWidth = 2 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
