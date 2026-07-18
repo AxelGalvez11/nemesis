@@ -37,12 +37,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
 
   useEffect(() => {
-    // Normalize legacy "grey" (pre-existing users' stored preference, or a stale value the
-    // no-flash script may have already written to the DOM) to "dark" before validating.
-    const fromDom = normalizeStoredPreference(document.documentElement.dataset.theme ?? null);
+    // Resolve the stored preference (stored → OS → dark) and make it AUTHORITATIVE on the DOM.
+    // The SSR `<html data-theme="dark">` literal is the identity anchor, but hydration can leave
+    // it asserted over the no-flash script, so a stored light/dark choice — or an OS light
+    // preference under "system" — would otherwise be lost on reload. Reading `data-theme` back
+    // (the old behavior) inherited that stale value; instead we recompute from the preference and
+    // write it through, which corrects the DOM regardless of what hydration left behind.
+    // Normalize legacy "grey" (pre-removal stored value) to "dark" before validating.
     const stored = normalizeStoredPreference(typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null);
-    setPreferenceState(isPreference(stored) ? stored : "system");
-    setThemeState(isTheme(fromDom) ? fromDom : isTheme(stored) ? stored : systemTheme());
+    const pref: ThemePreference = isPreference(stored) ? stored : "system";
+    const resolved: Theme = pref === "system" ? systemTheme() : pref;
+    setPreferenceState(pref);
+    setThemeState(resolved);
+    document.documentElement.dataset.theme = resolved;
   }, []);
 
   useEffect(() => {
