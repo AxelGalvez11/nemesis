@@ -8,10 +8,12 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import Reanimated, { FadeIn } from "react-native-reanimated";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
@@ -80,6 +82,7 @@ export default function ChatScreen() {
   const epochRef = useRef(0);
   const sendingRef = useRef(false);
   const listRef = useRef<FlatList<Row>>(null);
+  const composerRef = useRef<TextInput>(null);
   // The newest user-message row index — the row we pin to the top after a send / on
   // thread open. Set during render below, read by the scroll effect (kept out of its
   // deps this way).
@@ -194,7 +197,7 @@ export default function ChatScreen() {
     const hasThread = messages.length > 0;
     setHeaderRight(
       hasThread ? (
-        <GlassSurface style={styles.actionsBtn} tint={menuOpen ? c.accentFaint : undefined}>
+        <GlassSurface style={styles.actionsBtn} fallbackColor={c.glassPanel} tint={menuOpen ? c.accentFaint : undefined}>
           <Pressable
             style={styles.actionsBtnInner}
             onPress={() => setMenuOpen((v) => !v)}
@@ -228,6 +231,15 @@ export default function ChatScreen() {
     }, 60);
     return () => clearTimeout(timer);
   }, [messages.length]);
+
+  // Spring the keyboard up whenever the chat screen comes into focus (owner 2026-07-19).
+  // The short delay lets the screen settle so the focus reliably raises the keyboard.
+  useFocusEffect(
+    useCallback(() => {
+      const t = setTimeout(() => composerRef.current?.focus(), 350);
+      return () => clearTimeout(t);
+    }, []),
+  );
 
   if (!uid) {
     return (
@@ -286,10 +298,11 @@ export default function ChatScreen() {
                 <Text style={styles.userText}>{item.msg!.content}</Text>
               </View>
             ) : (
-              // Assistant: full-width markdown (with LaTeX/math), NO bubble.
-              <View style={styles.assistantRow}>
+              // Assistant: full-width markdown (with LaTeX/math), NO bubble. Fades in as
+              // it arrives (owner 2026-07-19).
+              <Reanimated.View entering={FadeIn.duration(350)} style={styles.assistantRow}>
                 <MessageBody content={item.msg!.content} styles={markdownStyles} />
-              </View>
+              </Reanimated.View>
             )
           }
           ListEmptyComponent={
@@ -326,6 +339,7 @@ export default function ChatScreen() {
             onPlus={newChat}
             sending={sending}
             placeholder="Ask Nemesis…"
+            inputRef={composerRef}
             testID="chat-input"
           />
         </View>
@@ -382,7 +396,7 @@ function ChatActionsPopup({
           { top: topInset + space(2) + 44 + space(1.5), opacity: progress, transform: [{ translateY }] },
         ]}
       >
-        <GlassSurface style={styles.actionsMenu} fallbackColor={c.bg2}>
+        <GlassSurface style={styles.actionsMenu} fallbackColor={c.glassPanel}>
           <Pressable
             testID="chat-action-pin"
             onPress={() => pick(onTogglePin)}

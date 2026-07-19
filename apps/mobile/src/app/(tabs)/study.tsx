@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, LayoutAnimation, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Line, Path, Rect } from "react-native-svg";
@@ -141,9 +142,10 @@ export default function StudyScreen() {
   // by default; a tap on the folder row's chevron toggles membership.
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
   const toggleFolder = useCallback((course: string) => {
-    // Animate the rows sliding in/out as the folder opens/closes (owner 2026-07-18).
-    // LayoutAnimation drives the FlatList's own row add/remove; iOS runs it natively.
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    // The collapse ANIMATES via reanimated: the deck rows carry entering/exiting +
+    // layout animations (see the render), so a folder's children fade+slide away on
+    // collapse instead of vanishing. (LayoutAnimation didn't fire inside FlatList — this
+    // screen is now a plain ScrollView, small enough to render every row.)
     setCollapsedFolders((prev) => {
       const next = new Set(prev);
       if (next.has(course)) next.delete(course);
@@ -283,12 +285,15 @@ export default function StudyScreen() {
 
   return (
     <View style={styles.flex} testID="study-screen">
-      <FlatList
-        data={rows}
-        keyExtractor={(item) => (item.type === "folder" ? `folder:${item.course}` : `deck:${item.deck.pathHash}`)}
+      {/* A ScrollView (not FlatList) so reanimated's entering/exiting/layout animations
+          actually fire on collapse — every row renders (this list is small). Each deck row
+          fades + slides away when its folder collapses; folder rows just reflow. */}
+      <ScrollView
+        style={styles.flex}
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.listBody,
-          { paddingTop: contentTop + space(2), paddingBottom: contentBottom + FAB_SIZE + space(6) },
+          { paddingTop: contentTop + space(2), paddingBottom: insets.bottom + FAB_SIZE + space(4) },
         ]}
         refreshControl={
           <RefreshControl
@@ -300,62 +305,73 @@ export default function StudyScreen() {
             }}
           />
         }
-        renderItem={({ item }) =>
-          item.type === "folder" ? (
-            <Pressable
-              testID={`study-folder-${item.course}`}
-              onPress={() => toggleFolder(item.course)}
-              style={({ pressed }) => [styles.folderRow, pressed && styles.rowPressed]}
-            >
-              <PlusMinusIcon size={13} color={c.text2} expanded={!item.collapsed} />
-              <Text style={styles.folderName} numberOfLines={1}>{item.course}</Text>
-              {item.due > 0 ? <Text style={styles.due}>{item.due}</Text> : null}
-            </Pressable>
-          ) : (
-            <Pressable
-              testID={`deck-${item.deck.snapshot.id}`}
-              onPress={() => router.push({ pathname: "/review", params: { ph: item.deck.pathHash } })}
-              style={({ pressed }) => [styles.row, item.nested && styles.rowNested, pressed && styles.rowPressed]}
-            >
-              <Text style={styles.deckName} numberOfLines={1}>{item.deck.snapshot.name}</Text>
-              {/* Trailing: the two pending counts (new vs due, non-overlapping) then a
-                  '›' affordance (owner 2026-07-18). ✓ when nothing's due. */}
-              <View style={styles.deckTrail}>
-                {item.deck.dueNow === 0 ? (
-                  <Text style={styles.done}>✓</Text>
-                ) : (
-                  <>
-                    {item.deck.newNow > 0 ? <Text style={styles.newCount}>{item.deck.newNow} new</Text> : null}
-                    {item.deck.reviewNow > 0 ? <Text style={styles.due}>{item.deck.reviewNow} due</Text> : null}
-                  </>
-                )}
-                <Text style={styles.deckChevron}>›</Text>
-              </View>
-            </Pressable>
-          )
-        }
-        ListEmptyComponent={
+      >
+        {rows.length === 0 ? (
           <View style={styles.emptyWrap}>
             <EmptyBlock
               title="No decks yet"
               body="Ask your agent on the Mac to build flashcards from your notes or slides — decks show up here on their own."
             />
           </View>
-        }
-      />
+        ) : (
+          rows.map((item) =>
+            item.type === "folder" ? (
+              <Animated.View key={`folder:${item.course}`} layout={LinearTransition.duration(220)}>
+                <Pressable
+                  testID={`study-folder-${item.course}`}
+                  onPress={() => toggleFolder(item.course)}
+                  style={({ pressed }) => [styles.folderRow, pressed && styles.rowPressed]}
+                >
+                  <PlusMinusIcon size={13} color={c.text2} expanded={!item.collapsed} />
+                  <Text style={styles.folderName} numberOfLines={1}>{item.course}</Text>
+                  {item.due > 0 ? <Text style={styles.due}>{item.due}</Text> : null}
+                </Pressable>
+              </Animated.View>
+            ) : (
+              <Animated.View
+                key={`deck:${item.deck.pathHash}`}
+                entering={FadeIn.duration(180)}
+                exiting={FadeOut.duration(140)}
+                layout={LinearTransition.duration(220)}
+              >
+                <Pressable
+                  testID={`deck-${item.deck.snapshot.id}`}
+                  onPress={() => router.push({ pathname: "/review", params: { ph: item.deck.pathHash } })}
+                  style={({ pressed }) => [styles.row, item.nested && styles.rowNested, pressed && styles.rowPressed]}
+                >
+                  <Text style={styles.deckName} numberOfLines={1}>{item.deck.snapshot.name}</Text>
+                  {/* Trailing: the two pending counts — new (blue) vs due (accent), numbers
+                      only (owner 2026-07-19) — then a '›'. ✓ when nothing's due. */}
+                  <View style={styles.deckTrail}>
+                    {item.deck.dueNow === 0 ? (
+                      <Text style={styles.done}>✓</Text>
+                    ) : (
+                      <>
+                        {item.deck.newNow > 0 ? <Text style={styles.newCount}>{item.deck.newNow}</Text> : null}
+                        {item.deck.reviewNow > 0 ? <Text style={styles.due}>{item.deck.reviewNow}</Text> : null}
+                      </>
+                    )}
+                    <Text style={styles.deckChevron}>›</Text>
+                  </View>
+                </Pressable>
+              </Animated.View>
+            ),
+          )
+        )}
+      </ScrollView>
 
       {/* Floating liquid-glass controls (owner asks 2 + 3) — an overlay row like
           TopBar's, so empty space between the two buttons still lets scroll/tap
           reach the list underneath. Stats sits lower-left, the mode picker
           lower-right, exactly as asked. */}
-      <View style={[styles.fabRow, { bottom: insets.bottom + space(2) }]} pointerEvents="box-none">
+      <View style={[styles.fabRow, { bottom: insets.bottom + space(1) }]} pointerEvents="box-none">
         <Pressable
           onPress={() => setStatsOpen(true)}
           hitSlop={8}
           accessibilityLabel="Study stats"
           testID="study-stats-fab"
         >
-          <GlassSurface style={styles.fab}>
+          <GlassSurface style={styles.fab} fallbackColor={c.glassPanel}>
             <View style={styles.fabInner}>
               <ChartIcon size={21} color={c.text} />
             </View>
@@ -368,7 +384,7 @@ export default function StudyScreen() {
           accessibilityLabel="Study modes"
           testID="study-modes-fab"
         >
-          <GlassSurface style={styles.fab}>
+          <GlassSurface style={styles.fab} fallbackColor={c.glassPanel}>
             <View style={styles.fabInner}>
               <ModesIcon size={21} color={c.text} />
             </View>

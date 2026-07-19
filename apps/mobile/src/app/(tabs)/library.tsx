@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
-  FlatList,
-  LayoutAnimation,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -12,6 +10,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import Reanimated, { LinearTransition } from "react-native-reanimated";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line, Path } from "react-native-svg";
@@ -157,8 +156,9 @@ export default function LibraryScreen() {
   // builds a fresh one, so a folder's collapsed-ness is independent of its
   // siblings and its ancestors' own toggles.
   const toggleFolder = useCallback((path: string) => {
-    // Animate the child rows sliding in/out on collapse/expand (owner 2026-07-18).
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    // Collapse/expand animates via the list's itemLayoutAnimation (reanimated
+    // LinearTransition on Reanimated.FlatList): the rows below slide to their new
+    // positions. (LayoutAnimation didn't fire inside the virtualized FlatList.)
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
@@ -312,10 +312,14 @@ export default function LibraryScreen() {
         </Surface>
       ) : null}
 
-      <FlatList
+      {/* Reanimated.FlatList so folder collapse/expand animates (itemLayoutAnimation): the
+          rows below slide to their new positions. Lighter than Study's per-row fade — kept
+          on FlatList here because a library can hold many notes. */}
+      <Reanimated.FlatList
         data={rows}
-        keyExtractor={(item) => `${item.type}:${item.path}`}
+        keyExtractor={(item: LibraryRow) => `${item.type}:${item.path}`}
         keyboardShouldPersistTaps="handled"
+        itemLayoutAnimation={LinearTransition.duration(200)}
         contentContainerStyle={[styles.listBody, { paddingTop: space(1), paddingBottom: contentBottom }]}
         refreshControl={
           <RefreshControl
@@ -397,7 +401,7 @@ export default function LibraryScreen() {
         onNewNote={() => flashHint(NEW_NOTE_HINT)}
         onNewFolder={() => flashHint(NEW_FOLDER_HINT)}
         onSort={() => setSortOpen(true)}
-        insetBottom={insets.bottom + space(2)}
+        insetBottom={insets.bottom + space(1)}
       />
 
       <SortSheet
@@ -476,7 +480,7 @@ function ActionsFab({
         pointerEvents={open ? "auto" : "none"}
         testID="library-actions-menu"
       >
-        <GlassSurface style={styles.actionsMenu} fallbackColor={c.bg2}>
+        <GlassSurface style={styles.actionsMenu} fallbackColor={c.glassPanel}>
           {items.map((item, i) => (
             <Pressable
               key={item.key}
@@ -496,7 +500,7 @@ function ActionsFab({
       </Animated.View>
 
       <View style={[styles.actionsFabWrap, { bottom: insetBottom }]} pointerEvents="box-none">
-        <GlassSurface style={styles.actionsFab} tint={open ? c.accentFaint : undefined}>
+        <GlassSurface style={styles.actionsFab} fallbackColor={c.glassPanel} tint={open ? c.accentFaint : undefined}>
           <Pressable
             style={styles.actionsFabInner}
             onPress={() => setOpen((v) => !v)}
