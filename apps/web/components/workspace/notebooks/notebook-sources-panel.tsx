@@ -147,9 +147,11 @@ export function NotebookSourcesPanel({ notebookId, sources, sourcesStatus, uid, 
             setBusy(true);
             setError(null);
             try {
+              const key = uid ? await deviceKey(uid) : null;
+              if (!key) throw new Error("Sign in to add a file.");
               const fd = new FormData();
               fd.append("file", file);
-              const res = await fetch("/api/notebooks/extract/file", { method: "POST", body: fd });
+              const res = await fetch("/api/notebooks/extract/file", { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: fd });
               const body = (await res.json().catch(() => null)) as { kind?: NotebookSourceKind; title?: string; text?: string; bytes?: number; error?: string } | null;
               if (!res.ok || !body?.text || !body.kind) throw new Error(body?.error ?? "Couldn't read that file.");
               await api.addExtracted(notebookId, { kind: body.kind as "pdf" | "docx" | "pptx", name: body.title ?? file.name, content: body.text, bytes: body.bytes ?? file.size });

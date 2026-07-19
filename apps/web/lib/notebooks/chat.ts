@@ -8,35 +8,72 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
-import { CHAT_SYSTEM_PROMPT, postChatCompletion, trimHistory, type WireMsg } from "@/lib/workspace/chat-api";
+import { postChatCompletion, trimHistory, type WireMsg } from "@/lib/workspace/chat-api";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 
 export type { SessionMessage } from "@/lib/workspace/sessions-store";
 
+/** A notebook chat's own system prompt — unlike the main Sessions chat, it CAN read the student's
+ *  sources (their extracted text is injected below), so it must not deflect file questions to the
+ *  Mac app. General mode: use the text freely. (Grounded "answer only from sources + cite" = Phase 2.) */
+export const NOTEBOOK_SYSTEM_PROMPT =
+  "You are Nemesis, a study assistant for health-sciences students. Answer plainly and concisely. " +
+  "Use markdown when structure helps (lists, tables). Never use emojis. The student attached sources " +
+  "to this notebook (their notes, uploaded files, and links); the sources' text is included below — " +
+  "use it to answer, and point to the relevant source when it helps. If the answer isn't in the " +
+  "sources, say so briefly, then answer from general knowledge.";
+
+/** Total characters of source text injected into the system prompt. Bounds the request (the valve
+ *  caps too); once sources exceed this, later ones are dropped with a note. RAG is the Phase-2 fix
+ *  for when a notebook's sources routinely exceed this budget. */
+export const SOURCE_CHAR_BUDGET = 30_000;
+
+export interface NotebookWireSource {
+  name: string;
+  content: string | null;
+}
+
 export interface BuildNotebookWireOpts {
   instructions: string | null;
-  sourceNames: string[];
+  sources: NotebookWireSource[];
   history: SessionMessage[];
   userText: string;
 }
 
-/** The chat/completions message array for one notebook turn: the shared system prompt, then the
- *  notebook's instructions (if any), then its source titles (if any), then trimmed history + the new
- *  user message. PURE. */
+/** Assemble the injected source-context block: each source's name + its text, truncated to stay
+ *  within `budget` total characters (earlier sources win). Sources with no text are skipped. Returns
+ *  "" when there's nothing to add. PURE. */
+export function buildSourceContext(sources: NotebookWireSource[], budget = SOURCE_CHAR_BUDGET): string {
+  const withText = sources.filter((s) => (s.content ?? "").trim().length > 0);
+  if (!withText.length) return "";
+  const parts: string[] = [];
+  let used = 0;
+  let included = 0;
+  for (const s of withText) {
+    if (used >= budget) break;
+    const remaining = budget - used;
+    const body = (s.content ?? "").trim();
+    const clip = body.length > remaining ? `${body.slice(0, remaining)}\n…[truncated]` : body;
+    parts.push(`### Source: ${s.name}\n${clip}`);
+    used += clip.length;
+    included += 1;
+  }
+  const omitted = withText.length - included;
+  const footer = omitted > 0 ? `\n\n(${omitted} more source${omitted === 1 ? "" : "s"} not shown — over the size limit.)` : "";
+  return `Sources the student added to this notebook:\n\n${parts.join("\n\n")}${footer}`;
+}
+
+/** The chat/completions message array for one notebook turn: the notebook system prompt, the
+ *  student's instructions (if any), the source text (budgeted), then trimmed history + the new user
+ *  message. PURE. */
 export function buildNotebookWireMessages(opts: BuildNotebookWireOpts): WireMsg[] {
-  const parts = [CHAT_SYSTEM_PROMPT];
+  const parts = [NOTEBOOK_SYSTEM_PROMPT];
   const instructions = opts.instructions?.trim();
   if (instructions) {
     parts.push(`This notebook's instructions from the student (follow them):\n${instructions}`);
   }
-  const names = opts.sourceNames.map((n) => n.trim()).filter((n) => n.length > 0);
-  if (names.length) {
-    parts.push(
-      "Sources the student added to this notebook (titles only — you can't read their contents yet, " +
-        "so if a question needs the text inside one, say so plainly):\n" +
-        names.map((n) => `- ${n}`).join("\n"),
-    );
-  }
+  const sourceContext = buildSourceContext(opts.sources);
+  if (sourceContext) parts.push(sourceContext);
   return [
     { content: parts.join("\n\n"), role: "system" },
     ...trimHistory(opts.history).map((m) => ({ content: m.content, role: m.role })),
@@ -176,7 +213,7 @@ export interface SendNotebookTurnOpts {
   uid: string;
   notebookId: string;
   instructions: string | null;
-  sourceNames: string[];
+  sources: NotebookWireSource[];
   userText: string;
   signal?: AbortSignal;
 }
@@ -195,7 +232,7 @@ export async function sendNotebookTurn(opts: SendNotebookTurnOpts): Promise<void
       opts.uid,
       buildNotebookWireMessages({
         instructions: opts.instructions,
-        sourceNames: opts.sourceNames,
+        sources: opts.sources,
         history,
         userText,
       }),

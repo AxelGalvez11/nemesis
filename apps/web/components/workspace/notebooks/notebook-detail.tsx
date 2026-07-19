@@ -91,7 +91,7 @@ export function NotebookDetail() {
             instructions={selected.instructions}
             notebookId={selected.id}
             preview={preview}
-            sourceNames={sources.map((s) => s.name)}
+            sources={sources.map((s) => ({ name: s.name, content: s.content }))}
             uid={uid}
           />
         </div>

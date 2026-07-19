@@ -25,6 +25,13 @@ function kindFor(name: string, type: string): FileKind | null {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  // Require the student's device key — same gate as the URL route, so this parse endpoint can't be
+  // hit anonymously to burn CPU on arbitrary uploads.
+  const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!bearer.startsWith("nmk_")) {
+    return NextResponse.json({ error: "This device needs to re-connect to your account. Try again." }, { status: 401 });
+  }
+
   let form: FormData;
   try {
     form = await req.formData();

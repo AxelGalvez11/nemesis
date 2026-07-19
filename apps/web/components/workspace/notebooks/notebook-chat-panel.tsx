@@ -11,7 +11,7 @@ import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { Tip } from "@/components/desktop-ui/tooltip";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
-import { notebookChatStore, sendNotebookTurn, useNotebookChat } from "@/lib/notebooks/chat";
+import { notebookChatStore, sendNotebookTurn, useNotebookChat, type NotebookWireSource } from "@/lib/notebooks/chat";
 import { cn } from "@/lib/utils";
 
 const PREVIEW_REPLY =
@@ -20,12 +20,12 @@ const PREVIEW_REPLY =
 interface NotebookChatPanelProps {
   notebookId: string;
   instructions: string | null;
-  sourceNames: string[];
+  sources: NotebookWireSource[];
   uid: string | null;
   preview: boolean;
 }
 
-export function NotebookChatPanel({ notebookId, instructions, sourceNames, uid, preview }: NotebookChatPanelProps) {
+export function NotebookChatPanel({ notebookId, instructions, sources, uid, preview }: NotebookChatPanelProps) {
   const { messages, working, clear } = useNotebookChat(notebookId);
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -52,8 +52,8 @@ export function NotebookChatPanel({ notebookId, instructions, sourceNames, uid, 
       notebookChatStore.append(notebookId, { role: "assistant", content: "Sign in to chat about this notebook.", at: new Date().toISOString() });
       return;
     }
-    void sendNotebookTurn({ uid, notebookId, instructions, sourceNames, userText: text });
-  }, [draft, working, preview, uid, notebookId, instructions, sourceNames]);
+    void sendNotebookTurn({ uid, notebookId, instructions, sources, userText: text });
+  }, [draft, working, preview, uid, notebookId, instructions, sources]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
