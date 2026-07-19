@@ -9,6 +9,7 @@ import {
   MAX_THREADS,
   parseThreadStore,
   removeThread,
+  setThreadPinned,
   threadSummaries,
   UNTITLED_THREAD,
   upsertThread,
@@ -61,7 +62,44 @@ Deno.test("threadSummaries: newest first, hides empty threads, drops message bod
   store = upsertThread(store, "blank", [], "2026-07-18T04:00:00Z"); // never sent → hidden
   const rows = threadSummaries(store);
   assertEquals(rows.map((r) => r.id), ["new", "old"]);
-  assertEquals(Object.keys(rows[0]).sort(), ["id", "title", "updatedAt"]);
+  assertEquals(Object.keys(rows[0]).sort(), ["id", "pinned", "title", "updatedAt"]);
+  assertEquals(rows[0].pinned, false); // unpinned by default
+});
+
+Deno.test("setThreadPinned: sets and clears the flag; unknown id is a no-op", () => {
+  let store = upsertThread(emptyStore(), "t1", [user("q")], "2026-07-18T01:00:00Z");
+  store = setThreadPinned(store, "t1", true);
+  assertEquals(getThread(store, "t1")?.pinned, true);
+  store = setThreadPinned(store, "t1", false);
+  assertEquals(getThread(store, "t1")?.pinned, false);
+  // Unknown id leaves the store untouched (still one thread).
+  store = setThreadPinned(store, "nope", true);
+  assertEquals(store.threads.length, 1);
+  assertEquals(getThread(store, "t1")?.pinned, false);
+});
+
+Deno.test("threadSummaries: pinned threads sort ABOVE the rest, newest-first within each group", () => {
+  let store = emptyStore();
+  store = upsertThread(store, "a", [user("a")], "2026-07-18T01:00:00Z"); // oldest
+  store = upsertThread(store, "b", [user("b")], "2026-07-18T02:00:00Z");
+  store = upsertThread(store, "c", [user("c")], "2026-07-18T03:00:00Z"); // newest
+  // Pin the OLDEST — it must still jump to the very top.
+  store = setThreadPinned(store, "a", true);
+  const rows = threadSummaries(store);
+  assertEquals(rows.map((r) => r.id), ["a", "c", "b"]);
+  assertEquals(rows[0].pinned, true);
+  assertEquals(rows[1].pinned, false);
+});
+
+Deno.test("pinned state survives an upsert (new message) and a parse round-trip", () => {
+  let store = upsertThread(emptyStore(), "t1", [user("q")], "2026-07-18T01:00:00Z");
+  store = setThreadPinned(store, "t1", true);
+  // A new message must NOT clear the pin.
+  store = upsertThread(store, "t1", [user("q"), bot("a")], "2026-07-18T02:00:00Z");
+  assertEquals(getThread(store, "t1")?.pinned, true);
+  // Serialize → parse must preserve it.
+  const round = parseThreadStore(JSON.parse(JSON.stringify(store)), "x", "n");
+  assertEquals(getThread(round, "t1")?.pinned, true);
 });
 
 Deno.test("getThread / removeThread", () => {

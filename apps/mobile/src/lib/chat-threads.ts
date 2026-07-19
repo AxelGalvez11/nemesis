@@ -16,6 +16,9 @@ export interface ChatThread {
   createdAt: string;
   /** ISO — last message time; the sidebar sorts on this, newest first. */
   updatedAt: string;
+  /** Pinned threads sort ABOVE the rest in the sidebar (owner 2026-07-18). Absent /
+   *  false = not pinned. */
+  pinned?: boolean;
   messages: ChatMsg[];
 }
 
@@ -24,6 +27,7 @@ export interface ThreadSummary {
   id: string;
   title: string;
   updatedAt: string;
+  pinned: boolean;
 }
 
 export interface ThreadStore {
@@ -54,13 +58,22 @@ function byUpdatedDesc(a: ChatThread, b: ChatThread): number {
   return a.updatedAt < b.updatedAt ? 1 : -1;
 }
 
-/** Sidebar rows, newest first, hiding threads that never got a message. */
+// Pinned threads first (owner 2026-07-18), then newest-first within each group.
+function byPinnedThenUpdated(a: ChatThread, b: ChatThread): number {
+  const ap = a.pinned === true ? 0 : 1;
+  const bp = b.pinned === true ? 0 : 1;
+  if (ap !== bp) return ap - bp;
+  return byUpdatedDesc(a, b);
+}
+
+/** Sidebar rows — pinned first, then newest first — hiding threads that never got a
+ *  message. */
 export function threadSummaries(store: ThreadStore): ThreadSummary[] {
   return store.threads
     .filter((thread) => thread.messages.length > 0)
     .slice()
-    .sort(byUpdatedDesc)
-    .map((thread) => ({ id: thread.id, title: thread.title, updatedAt: thread.updatedAt }));
+    .sort(byPinnedThenUpdated)
+    .map((thread) => ({ id: thread.id, title: thread.title, updatedAt: thread.updatedAt, pinned: thread.pinned === true }));
 }
 
 export function getThread(store: ThreadStore, id: string): ChatThread | null {
@@ -78,6 +91,8 @@ export function upsertThread(store: ThreadStore, id: string, messages: ChatMsg[]
     messages: capped,
     title: deriveThreadTitle(capped),
     updatedAt: nowIso,
+    // Pinned state survives new messages (owner 2026-07-18).
+    ...(existing?.pinned ? { pinned: true } : {}),
   };
   const rest = store.threads.filter((thread) => thread.id !== id);
   const threads = [updated, ...rest].sort(byUpdatedDesc).slice(0, MAX_THREADS);
@@ -86,6 +101,14 @@ export function upsertThread(store: ThreadStore, id: string, messages: ChatMsg[]
 
 export function removeThread(store: ThreadStore, id: string): ThreadStore {
   return { threads: store.threads.filter((thread) => thread.id !== id), v: 2 };
+}
+
+/** Set (or clear) a thread's pinned flag; an unknown id is a no-op. Pure. */
+export function setThreadPinned(store: ThreadStore, id: string, pinned: boolean): ThreadStore {
+  return {
+    threads: store.threads.map((thread) => (thread.id === id ? { ...thread, pinned } : thread)),
+    v: 2,
+  };
 }
 
 /** Parse a persisted store. Tolerant of the OLD single-thread file
@@ -129,5 +152,7 @@ function castThread(row: unknown): ChatThread | null {
     messages: messages.slice(-MAX_MESSAGES_PER_THREAD),
     title: typeof value.title === "string" && value.title ? value.title : deriveThreadTitle(messages),
     updatedAt,
+    // Persisted pin survives reload (owner 2026-07-18).
+    ...(value.pinned === true ? { pinned: true } : {}),
   };
 }

@@ -4,6 +4,7 @@ import { Stack, router, useLocalSearchParams } from "expo-router";
 import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { GlassSurface } from "@/components/GlassSurface";
 import { decryptLibrary, loadCachedRows, loadVaultKey } from "@/api/librarySync";
 import { enqueueGrade, flushReviewQueue, loadAllGradedMarks, recordGradedMark } from "@/api/reviewEvents";
 import {
@@ -125,34 +126,24 @@ export default function ReviewScreen() {
     [current, pathHash, session, snapshot],
   );
 
-  const gradeButtons: { rating: ReviewGrade; label: string; color: string }[] = [
-    { color: c.danger, label: "Again", rating: "again" },
-    { color: c.warn, label: "Hard", rating: "hard" },
-    { color: c.accent, label: "Good", rating: "good" },
-    { color: c.good, label: "Easy", rating: "easy" },
+  // Muted, non-neon fills with white text — the hue reads clearly (more opaque) but stays
+  // matte, not lightened. Again=red, Hard=yellow/amber, Good=green, Easy=blue.
+  const gradeButtons: { rating: ReviewGrade; label: string; fill: string }[] = [
+    { fill: "#8a3b41", label: "Again", rating: "again" },
+    { fill: "#7d6526", label: "Hard", rating: "hard" },
+    { fill: "#3c6d4d", label: "Good", rating: "good" },
+    { fill: "#3a5c84", label: "Easy", rating: "easy" },
   ];
 
   return (
     <View style={[styles.flex, { paddingTop: insets.top + space(2) }]} testID="review-screen">
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.topRow}>
-        <Pressable onPress={() => router.back()} hitSlop={10} testID="review-back" style={styles.backBtn}>
-          <Text style={styles.backText}>‹ Study</Text>
+        <Pressable onPress={() => router.back()} hitSlop={10} testID="review-back">
+          <GlassSurface style={styles.backGlass}>
+            <Text style={styles.backChevron}>‹</Text>
+          </GlassSurface>
         </Pressable>
-        {current ? (
-          <View style={styles.counts} testID="review-counts">
-            {[
-              { color: c.accent, label: "New", value: counts.fresh },
-              { color: c.warn, label: "Learn", value: counts.learning },
-              { color: c.good, label: "Review", value: counts.review },
-            ].map((item) => (
-              <View key={item.label} style={styles.countItem}>
-                <Text style={[styles.countNum, { color: item.color }]}>{item.value}</Text>
-                <Text style={styles.countLabel}>{item.label}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
       </View>
 
       {snapshot === undefined ? null : snapshot === null ? (
@@ -192,7 +183,6 @@ export default function ReviewScreen() {
               testID="review-card"
               style={styles.cardPressable}
             >
-              {current.isNew ? <Text style={styles.newTag}>NEW</Text> : null}
               {clozeSplit ? (
                 <>
                   {/* True in-place cloze reveal (Anki-style): ONE sentence — the
@@ -217,26 +207,37 @@ export default function ReviewScreen() {
                   ) : null}
                 </>
               )}
-              {!revealed ? <Text style={styles.hint}>Tap to reveal</Text> : null}
             </Pressable>
           </ScrollView>
 
-          {revealed ? (
-            <View style={[styles.footer, { paddingBottom: insets.bottom + space(3) }]}>
+          <View style={[styles.footer, { paddingBottom: insets.bottom + space(3) }]}>
+            <View style={styles.counts} testID="review-counts">
+              {[
+                { color: c.accent, label: "New", value: counts.fresh },
+                { color: c.warn, label: "Learn", value: counts.learning },
+                { color: c.good, label: "Review", value: counts.review },
+              ].map((item) => (
+                <View key={item.label} style={styles.countItem}>
+                  <Text style={[styles.countNum, { color: item.color }]}>{item.value}</Text>
+                  <Text style={styles.countLabel}>{item.label}</Text>
+                </View>
+              ))}
+            </View>
+            {revealed ? (
               <View style={styles.gradeRow} testID="review-grades">
                 {gradeButtons.map((button) => (
                   <Pressable
                     key={button.rating}
                     testID={`grade-${button.rating}`}
                     onPress={() => grade(button.rating)}
-                    style={({ pressed }) => [styles.gradeBtn, { borderColor: button.color }, pressed && styles.gradePressed]}
+                    style={({ pressed }) => [styles.gradeBtn, { backgroundColor: button.fill }, pressed && styles.gradePressed]}
                   >
-                    <Text style={[styles.gradeText, { color: button.color }]}>{button.label}</Text>
+                    <Text style={styles.gradeText}>{button.label}</Text>
                   </Pressable>
                 ))}
               </View>
-            </View>
-          ) : null}
+            ) : null}
+          </View>
         </>
       )}
     </View>
@@ -255,9 +256,18 @@ const createStyles = (c: ThemeColors) =>
     },
     backBtn: { paddingVertical: space(1) },
     backText: { ...type.bodyStrong, color: c.text2 },
+    backGlass: {
+      width: 40,
+      height: 40,
+      borderRadius: radius.md,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    backChevron: { fontSize: 26, lineHeight: 28, color: c.text, marginTop: -2 },
     // Anki-style New / Learning / Review tallies — three coloured numbers with a
     // tiny label so it's legible without knowing Anki's colour code.
-    counts: { flexDirection: "row", gap: space(3) },
+    counts: { flexDirection: "row", gap: space(4), justifyContent: "center", marginBottom: space(3) },
     countItem: { alignItems: "center" },
     countNum: { ...type.bodyStrong, fontVariant: ["tabular-nums"], lineHeight: 20 },
     countLabel: { ...type.micro, color: c.text3, marginTop: 1 },
@@ -294,16 +304,15 @@ const createStyles = (c: ThemeColors) =>
     // Subtle nudge shown only pre-reveal, under the prompt/cloze sentence —
     // replaces the old "Show answer" button now that the card itself is tappable.
     hint: { ...type.small, color: c.text3, textAlign: "center", marginTop: space(4) },
-    footer: { paddingHorizontal: space(4), paddingTop: space(2), borderTopWidth: 1, borderTopColor: c.line, backgroundColor: c.bg },
+    // No top divider (owner call) — the footer floats over the card on the same background.
+    footer: { paddingHorizontal: space(4), paddingTop: space(2), backgroundColor: c.bg },
     gradeRow: { flexDirection: "row", gap: space(2) },
     gradeBtn: {
       flex: 1,
-      borderWidth: 1.5,
       borderRadius: radius.md,
       paddingVertical: space(3),
       alignItems: "center",
-      backgroundColor: c.glass,
     },
     gradePressed: { opacity: 0.7 },
-    gradeText: { ...type.bodyStrong },
+    gradeText: { ...type.bodyStrong, color: "#fff" },
   });

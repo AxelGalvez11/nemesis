@@ -7,8 +7,10 @@ import Svg, { Line } from "react-native-svg";
 import { decryptLibrary, loadCachedRows, loadVaultKey, pullLibraryRows } from "@/api/librarySync";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { ForceSlider } from "@/components/ForceSlider";
+import { GlassSurface } from "@/components/GlassSurface";
 import { GraphNodeView } from "@/components/GraphNodeView";
 import { SettingsIcon } from "@/components/icons";
+import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
 import { buildNoteGraph, createLayoutSim, type GraphNode, type LayoutSim, type NoteGraph } from "@/lib/note-graph";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -32,10 +34,17 @@ import { radius, space, type } from "@/theme/tokens";
 //     wraps the SVG + node Views.
 //   - Per-node DRAG (GraphNodeView), which pins the dragged node in the sim
 //     (LayoutSim.pin in note-graph.ts) so the running force layout stops fighting
-//     the finger, while its neighbors keep reacting to it live.
+//     the finger, while startDrag/endDrag (also note-graph.ts) keep the sim fully
+//     energized — with a temporarily stiffer pull on the dragged node's own edges —
+//     for the whole gesture, so its linked neighbors visibly get pulled along
+//     instead of the layout barely reacting.
 //
-// A gear button in the header toggles a settings panel: Gravity/Repulsion/Node
-// size/Link distance sliders (ForceSlider), a Labels 3-way toggle, and a Reset.
+// The screen title ("Graph") is a centered, pointer-transparent overlay
+// (pointerEvents="none") so canvas pan/drag passes straight through it. The settings
+// gear lives in the TopBar's right slot (setHeaderRight) — in the chrome above the
+// status-bar blur, in line with the menu button (owner 2026-07-18) — and toggles a
+// settings panel: Gravity/Repulsion/Node size/Link distance sliders
+// (ForceSlider), a Labels 3-way toggle, and a Reset.
 // The panel is a FLOATING overlay (position: absolute, opaque background, above
 // the canvas in z-order) rather than an in-flow block — deliberately, so opening
 // or closing it never changes canvasH and therefore never re-triggers the
@@ -46,7 +55,9 @@ import { radius, space, type } from "@/theme/tokens";
 // node and panning/zooming survive every other control, including opening and
 // closing the panel itself. A short tap on a node still opens the note.
 
-const HEADER_H = 34;
+// Size of the floating glass settings-gear button (top-RIGHT overlay chrome, sized to
+// match the TopBar's 44pt menu button it sits opposite — owner 2026-07-18).
+const GEAR_SIZE = 44;
 const TICK_MS = 30;
 // Multiple physics steps per rendered frame: at one step per tick the default
 // 180-iteration settle takes ~5.4s, which reads as sluggish. Batching keeps the
@@ -83,6 +94,7 @@ export default function GraphScreen() {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   const { contentTop, contentBottom } = useShellPadding();
+  const { setHeaderRight } = useShell();
   const win = useWindowDimensions();
   const [status, setStatus] = useState<Status>("loading");
   const [builtGraph, setBuiltGraph] = useState<NoteGraph | null>(null);
@@ -93,17 +105,6 @@ export default function GraphScreen() {
   const [linkDistance, setLinkDistance] = useState(1);
   const [labelMode, setLabelMode] = useState<LabelMode>("hubs");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Where the floating settings panel's `top` lands — MEASURED via the header
-  // row's onLayout rather than hand-computed from contentTop/space(2)/HEADER_H.
-  // onLayout and absolute-position `top` are both Yoga-computed values for
-  // children of the same parent, so reading one to drive the other is correct
-  // regardless of whether this RN version resolves absolute positioning
-  // relative to the parent's padding box or its border box — a padding-edge
-  // arithmetic mistake here would otherwise float the panel well below the
-  // header with no type error to catch it. The initial value is only what
-  // paints for the one frame before the first onLayout fires (the panel is
-  // closed by default, so it's never actually visible then).
-  const [headerBottom, setHeaderBottom] = useState(contentTop + space(2) + HEADER_H);
   // Bumped only by Reset (see handleReset) to force the seeding effect below
   // to recreate the sim even when gravity/repulsion/linkDistance are already
   // at their defaults. The ONLY on-demand reseed trigger in this screen —
@@ -123,8 +124,10 @@ export default function GraphScreen() {
   // a floating overlay (see the JSX below and the top-of-file comment), not an
   // in-flow block, specifically so toggling it never changes canvasH — which
   // would otherwise re-trigger the seeding effect and reset pan/zoom/pinned
-  // nodes just from tapping the gear icon.
-  const canvasH = Math.max(220, win.height - contentTop - contentBottom - HEADER_H);
+  // nodes just from tapping the gear icon. The title chrome is likewise an
+  // absolute overlay (not in flow), so the canvas fills the whole area below
+  // the shell TopBar.
+  const canvasH = Math.max(220, win.height - contentTop - contentBottom);
 
   // Whole-canvas pinch/pan transform. `saved*` hold the value the gesture
   // started from, so each new pinch/pan composes on top of wherever the
@@ -151,6 +154,16 @@ export default function GraphScreen() {
         stopTicking();
         return;
       }
+      // Liveness note: while a drag is active, sim.settled is always false
+      // (see LayoutSim.startDrag in note-graph.ts), so this loop's own exit
+      // below depends on endDrag() being reached — normally guaranteed by
+      // GraphNodeView's pan gesture firing onDragEnd from `.onFinalize()`
+      // (RNGH's documented always-runs-eventually callback). If that were
+      // ever missed, this interval would keep re-rendering every node every
+      // tick indefinitely; it self-heals on the next drag (startDrag resets
+      // the sim's drag state) and on leaving the screen (the seeding effect's
+      // cleanup calls stopTicking()), so this is a low-severity latent risk,
+      // not a correctness bug — noted rather than defended against further.
       for (let i = 0; i < STEPS_PER_TICK && !sim.settled; i++) sim.step();
       setGraph(sim.snapshot());
       if (sim.settled) stopTicking();
@@ -220,20 +233,42 @@ export default function GraphScreen() {
     router.push({ params: { ph: pathHash }, pathname: "/note" });
   }, []);
 
-  // A node drag pins it (see note-graph.ts's LayoutSim.pin) and, if the sim had
-  // already settled into stillness, gives it one reheat so its neighbors get a
-  // chance to visibly react to the new pinned position instead of staying frozen.
+  // A node drag brackets the sim's active-drag state (note-graph.ts's
+  // LayoutSim.startDrag/endDrag) around pin()-ing it to the finger.
+  // startDrag keeps the simulation fully energized for the whole gesture —
+  // with a temporarily stiffer pull on this node's own edges — so its linked
+  // neighbors visibly follow instead of barely creeping: a single bounded
+  // reheat() kick (the old approach, still what the sliders use) is tuned
+  // for a one-off nudge, not a multi-hundred-pixel drag. endDrag lets the
+  // sim ease back to a normal settle once the finger lifts.
+  const handleNodeDragStart = useCallback(
+    (index: number) => {
+      const sim = simRef.current;
+      if (!sim) return;
+      sim.startDrag(index);
+      ensureTicking();
+    },
+    [ensureTicking],
+  );
+
   const handleNodeDragTo = useCallback(
     (index: number, x: number, y: number) => {
       const sim = simRef.current;
       if (!sim) return;
       sim.pin(index, x, y);
-      if (sim.settled) sim.reheat();
       ensureTicking();
       setGraph(sim.snapshot());
     },
     [ensureTicking],
   );
+
+  const handleNodeDragEnd = useCallback(() => {
+    const sim = simRef.current;
+    if (!sim) return;
+    sim.endDrag();
+    ensureTicking();
+    setGraph(sim.snapshot());
+  }, [ensureTicking]);
 
   useFocusEffect(
     useCallback(() => {
@@ -377,44 +412,39 @@ export default function GraphScreen() {
   const smallGraphAllLabels = (graph?.nodes.length ?? 0) <= 40;
   const hasGraph = status === "ready" && !!graph && graph.nodes.length > 0;
 
-  return (
-    <View
-      style={[styles.flex, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
-      testID="graph-screen"
-    >
-      <View
-        style={styles.headerRow}
-        onLayout={(e) => setHeaderBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
-      >
-        <Text style={styles.headerTitle}>Graph</Text>
-        <View style={styles.headerRight}>
-          {status === "ready" && graph ? (
-            <Text style={styles.headerMeta}>
-              {graph.nodes.length} notes · {graph.edges.length} connections
-            </Text>
-          ) : null}
-          {hasGraph ? (
-            <Pressable
-              accessibilityLabel="Graph settings"
-              accessibilityRole="button"
-              accessibilityState={{ expanded: settingsOpen }}
-              hitSlop={8}
-              onPress={() => setSettingsOpen((v) => !v)}
-              style={[styles.gearBtn, settingsOpen && styles.gearBtnActive]}
-              testID="graph-settings-toggle"
-            >
-              <SettingsIcon color={settingsOpen ? c.accent : c.text3} size={17} />
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
+  // Publish the settings gear into the TopBar's right slot (owner 2026-07-18: on the
+  // right, in line with the menu button). Living in the chrome layer keeps it crisp
+  // above the status-bar blur and perfectly aligned. Cleared when the graph isn't
+  // ready and on unmount so it never lingers onto another screen.
+  useEffect(() => {
+    setHeaderRight(
+      hasGraph ? (
+        <GlassSurface style={styles.gearGlass} tint={settingsOpen ? c.accentFaint : undefined}>
+          <Pressable
+            accessibilityLabel="Graph settings"
+            accessibilityRole="button"
+            accessibilityState={{ expanded: settingsOpen }}
+            hitSlop={8}
+            onPress={() => setSettingsOpen((v) => !v)}
+            style={styles.gearGlassInner}
+            testID="graph-settings-toggle"
+          >
+            <SettingsIcon color={settingsOpen ? c.accent : c.text2} size={18} />
+          </Pressable>
+        </GlassSurface>
+      ) : null,
+    );
+    return () => setHeaderRight(null);
+  }, [hasGraph, settingsOpen, c, styles, setHeaderRight]);
 
+  return (
+    <View style={styles.flex} testID="graph-screen">
       {status === "loading" ? (
-        <View style={styles.centered} testID="graph-loading">
+        <View style={[styles.centered, { paddingTop: contentTop, paddingBottom: contentBottom }]} testID="graph-loading">
           <ActivityIndicator color={c.text2} />
         </View>
       ) : status === "unpaired" ? (
-        <View style={styles.centered}>
+        <View style={[styles.centered, { paddingTop: contentTop, paddingBottom: contentBottom }]}>
           <EmptyBlock
             title="Pair with your Mac"
             body="The graph is drawn from your synced library. Pair this phone and your notes — and the links between them — appear here."
@@ -424,14 +454,17 @@ export default function GraphScreen() {
           </View>
         </View>
       ) : status === "empty" ? (
-        <View style={styles.centered}>
+        <View style={[styles.centered, { paddingTop: contentTop, paddingBottom: contentBottom }]}>
           <EmptyBlock
             title="No notes to map yet"
             body="As Nemesis writes notes into your library on the Mac, the connections between them draw themselves here."
           />
         </View>
       ) : graph ? (
-        <View style={[styles.canvasClip, { width: canvasW, height: canvasH }]} testID="graph-canvas">
+        <View
+          style={[styles.canvasClip, { width: canvasW, height: canvasH, marginTop: contentTop }]}
+          testID="graph-canvas"
+        >
           <GestureDetector gesture={canvasGesture}>
             <Animated.View style={[{ width: canvasW, height: canvasH }, canvasAnimatedStyle]}>
               <Svg width={canvasW} height={canvasH}>
@@ -448,6 +481,8 @@ export default function GraphScreen() {
                   canvasPanGesture={canvasPanGesture}
                   index={i}
                   node={node}
+                  onDragEnd={handleNodeDragEnd}
+                  onDragStart={handleNodeDragStart}
                   onDragTo={handleNodeDragTo}
                   onOpen={openNote}
                   scale={scale}
@@ -460,8 +495,19 @@ export default function GraphScreen() {
         </View>
       ) : null}
 
+      {/* Screen title — centered overlay chrome. pointerEvents="none" so the
+          canvas pan/drag underneath is never intercepted. */}
+      <View pointerEvents="none" style={[styles.titleOverlay, { top: contentTop }]}>
+        <Text style={styles.headerTitle}>Graph</Text>
+        {status === "ready" && graph ? (
+          <Text style={styles.headerMeta}>
+            {graph.nodes.length} notes · {graph.edges.length} connections
+          </Text>
+        ) : null}
+      </View>
+
       {hasGraph && settingsOpen ? (
-        <View style={[styles.panel, { top: headerBottom }]} testID="graph-settings-panel">
+        <View style={[styles.panel, { top: contentTop + space(2) }]} testID="graph-settings-panel">
           <ForceSlider c={c} label="Gravity" max={3} min={0} onChange={handleGravityChange} step={0.1} value={gravity} />
           <ForceSlider c={c} label="Repulsion" max={4} min={0.2} onChange={handleRepulsionChange} step={0.1} value={repulsion} />
           <ForceSlider c={c} label="Node size" max={2} min={0.5} onChange={setNodeSize} step={0.1} value={nodeSize} />
@@ -505,18 +551,23 @@ export default function GraphScreen() {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
-    headerRow: {
-      height: HEADER_H,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: space(4),
+    // Screen title — a centered overlay band pinned to the top of the canvas.
+    // zIndex lifts it above the in-flow canvas; the element itself carries
+    // pointerEvents="none" so it never intercepts canvas gestures.
+    titleOverlay: { position: "absolute", left: 0, right: 0, alignItems: "center", zIndex: 20 },
+    headerTitle: { ...type.h2, color: c.text, textAlign: "center" },
+    headerMeta: { ...type.micro, color: c.text3, marginTop: 2, textAlign: "center" },
+    // The gear button lives in the TopBar's right slot (see the setHeaderRight effect);
+    // this is just its glass shape — 44pt to fill that slot and match the menu button.
+    gearGlass: {
+      width: GEAR_SIZE,
+      height: GEAR_SIZE,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.line,
+      overflow: "hidden",
     },
-    headerTitle: { ...type.h2, color: c.text },
-    headerRight: { flexDirection: "row", alignItems: "center", gap: space(2) },
-    headerMeta: { ...type.micro, color: c.text3 },
-    gearBtn: { padding: space(1), borderRadius: radius.sm },
-    gearBtnActive: { backgroundColor: c.accentFaint },
+    gearGlassInner: { flex: 1, alignItems: "center", justifyContent: "center" },
     centered: { flex: 1, alignItems: "center", justifyContent: "center" },
     pairBtn: { paddingBottom: space(4), paddingHorizontal: space(8), alignSelf: "stretch" },
     // Clips the pinch/pan transform so a zoomed-in or panned graph never

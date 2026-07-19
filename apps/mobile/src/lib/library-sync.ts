@@ -145,3 +145,75 @@ export function buildSections(docs: { path: string; title: string }[]): LibraryS
       notes: [...notes].sort((a, b) => a.title.localeCompare(b.title)),
     }));
 }
+
+/** One row of the phone's NESTED library view: either a folder heading (tap to
+ * expand/collapse; carries its own full path so nested folders each track
+ * collapsed state independently — two folders can share a name at different
+ * nesting depths without colliding) or a note leaf. `depth` is the indent
+ * level (0 = top of the tree) so the screen can render tree structure without
+ * doing any recursion in JSX. */
+export type LibraryRow =
+  | { type: "folder"; path: string; name: string; depth: number }
+  | { type: "note"; path: string; title: string; depth: number };
+
+interface FolderNode {
+  name: string;
+  path: string;
+  notes: { path: string; title: string }[];
+  subfolders: Map<string, FolderNode>;
+}
+
+function folderNode(name: string, path: string): FolderNode {
+  return { name, notes: [], path, subfolders: new Map() };
+}
+
+/** Flatten `node`'s own notes + subfolders (both alphabetical, notes before
+ * folders — the same convention the root bucket already used, sorting first)
+ * into `depth`-tagged rows. A folder's subtree is omitted entirely when ITS
+ * path is in `collapsed` — that's what makes nested folders collapse
+ * independently: hiding a parent's children never touches the children's own
+ * collapsed state, so re-expanding the parent reveals whatever state its
+ * descendants were already in. */
+function flattenFolder(node: FolderNode, depth: number, collapsed: ReadonlySet<string>): LibraryRow[] {
+  const rows: LibraryRow[] = [];
+  for (const note of [...node.notes].sort((a, b) => a.title.localeCompare(b.title))) {
+    rows.push({ type: "note", path: note.path, title: note.title, depth });
+  }
+  const subfolders = [...node.subfolders.values()].sort((a, b) => a.name.localeCompare(b.name));
+  for (const sub of subfolders) {
+    rows.push({ type: "folder", path: sub.path, name: sub.name, depth });
+    if (!collapsed.has(sub.path)) rows.push(...flattenFolder(sub, depth + 1, collapsed));
+  }
+  return rows;
+}
+
+/** Build the phone library's full nested-folder row list from flat doc paths
+ * ("/"-separated, arbitrary depth) plus the set of currently-collapsed folder
+ * paths (full path per folder, e.g. "PHCY 1205/Unit 1"). Root-level notes (no
+ * "/" in their path) come first at depth 0 — the bucket the screen has always
+ * labeled "Library" — followed by top-level folders alphabetically, each
+ * one's subtree flattened in place. Pure and Deno-testable like the rest of
+ * this module; the screen owns the `collapsed` Set as React state and
+ * re-derives this list on every toggle. Additive alongside `buildSections`
+ * (unchanged above) rather than replacing it. */
+export function buildLibraryRows(docs: { path: string; title: string }[], collapsed: ReadonlySet<string>): LibraryRow[] {
+  const root = folderNode("", "");
+  for (const doc of docs) {
+    const segments = doc.path.split("/").filter(Boolean);
+    const fileName = segments.pop();
+    if (fileName === undefined) continue; // defensive: a blank path shouldn't survive parseDocJson
+    let node = root;
+    let pathSoFar = "";
+    for (const segment of segments) {
+      pathSoFar = pathSoFar === "" ? segment : `${pathSoFar}/${segment}`;
+      let child = node.subfolders.get(segment);
+      if (!child) {
+        child = folderNode(segment, pathSoFar);
+        node.subfolders.set(segment, child);
+      }
+      node = child;
+    }
+    node.notes.push({ path: doc.path, title: doc.title });
+  }
+  return flattenFolder(root, 0, collapsed);
+}

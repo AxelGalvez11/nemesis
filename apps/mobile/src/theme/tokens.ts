@@ -52,16 +52,23 @@ export const radius = { sm: 8, md: 10, lg: 14, xl: 18, pill: 999 } as const;
 // 4pt spacing grid.
 export const space = (n: number): number => n * 4;
 
+// Type ramp bumped ~1.155× the desktop tokens.json sizes for on-phone readability. Two owner
+// calls stacked here: the first ~1.1× pass (2026-07-18), then a further slight ~1.05× nudge
+// (owner: "increase app scale slightly", 2026-07-18). This is STILL a text-only change — every
+// token-driven text style lifts, but fixed-size controls (buttons, icons, FABs) are tuned
+// per-screen, not here, so enlarging them stays a separate pass (kept apart deliberately: bigger
+// controls can re-open the very clipping/edge issues fixed in the same batch). Rounded to 0.5pt;
+// revert to desktop parity by dividing these back by ~1.155.
 export const type = {
   // System font, same as the desktop app (tokens.json font.family = "system").
   family: undefined as string | undefined,
-  h1: { fontSize: 26, lineHeight: 32, fontWeight: "700" as const },
-  h2: { fontSize: 19, lineHeight: 25, fontWeight: "700" as const },
-  title: { fontSize: 16, lineHeight: 22, fontWeight: "600" as const },
-  body: { fontSize: 15.5, lineHeight: 24, fontWeight: "400" as const },
-  bodyStrong: { fontSize: 15.5, lineHeight: 24, fontWeight: "500" as const },
-  small: { fontSize: 13, lineHeight: 19, fontWeight: "400" as const },
-  micro: { fontSize: 11, lineHeight: 15, fontWeight: "500" as const },
+  h1: { fontSize: 30, lineHeight: 37, fontWeight: "700" as const },
+  h2: { fontSize: 22, lineHeight: 29, fontWeight: "700" as const },
+  title: { fontSize: 18.5, lineHeight: 25, fontWeight: "600" as const },
+  body: { fontSize: 18, lineHeight: 28, fontWeight: "400" as const },
+  bodyStrong: { fontSize: 18, lineHeight: 28, fontWeight: "500" as const },
+  small: { fontSize: 15, lineHeight: 22, fontWeight: "400" as const },
+  micro: { fontSize: 12.5, lineHeight: 17.5, fontWeight: "500" as const },
 } as const;
 
 export const shadow = {

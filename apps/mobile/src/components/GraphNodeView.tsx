@@ -24,7 +24,21 @@ import type { ThemeColors } from "@/theme/palette";
 // recognizing that same one-finger touch — without it, a drag starting on a
 // node would both move the node AND pan the canvas underneath it, since
 // nested gesture handlers don't exclude each other by default in RNGH.
+//
+// onDragStart/onDragEnd bracket the gesture so graph.tsx can call the sim's
+// startDrag()/endDrag() (note-graph.ts) — keeping the force simulation fully
+// energized, with a temporarily stiffer pull on this node's own edges, for
+// the whole gesture, so linked neighbors visibly follow instead of barely
+// creeping. onDragEnd fires from `.onFinalize()`, not `.onEnd()`: finalize is
+// the one RNGH callback guaranteed to run whether the pan ended normally,
+// was cancelled, or lost the Race to the tap — the didStartDrag ref below
+// filters out that last case (a plain tap, where onDragStart never fired) so
+// a tap can't spuriously end a drag that was never started.
 const LABEL_W = 100;
+// The one fixed dot radius every node renders at (before the Node size slider's
+// multiplier). Smaller than the old degree-scaled 3.5–8.5 range, and uniform —
+// node importance is conveyed by hub color + halo, not by size.
+const BASE_NODE_R = 3;
 
 export interface GraphNodeViewProps {
   node: GraphNode;
@@ -39,15 +53,26 @@ export interface GraphNodeViewProps {
   canvasPanGesture: PanGesture;
   showLabel: boolean;
   /** Rendered-radius multiplier from the graph screen's settings panel (Node
-   * size slider) — 1 reproduces the original tuned radius exactly. hitR/haloR
-   * both derive from r below, so the tap target and hub halo scale right
-   * along with the visible dot instead of needing their own multiplier. */
+   * size slider) — scales the single uniform node radius (BASE_NODE_R below);
+   * 1 renders every node at that base size. hitR/haloR both derive from r
+   * below, so the tap target and hub halo scale right along with the visible
+   * dot instead of needing their own multiplier. */
   sizeMultiplier: number;
   c: ThemeColors;
+  /** Fired once when a drag gesture actually activates (crosses the pan's
+   * minDistance) — before the first onDragTo. The caller starts the sim's
+   * drag-energized state (see note-graph.ts's LayoutSim.startDrag). */
+  onDragStart: (index: number) => void;
   /** Fired at drag start and on every subsequent move with the node's new
    * graph-space (x, y) — the same coordinate space node.x/node.y are
    * already in. The caller pins the sim to this position and re-renders. */
   onDragTo: (index: number, x: number, y: number) => void;
+  /** Fired once when an activated drag gesture finishes (finger lifted or
+   * the gesture was cancelled) — never for a plain tap, which never starts
+   * a drag in the first place. The caller ends the sim's drag-energized
+   * state (see note-graph.ts's LayoutSim.endDrag); the node itself stays
+   * pinned exactly as before. */
+  onDragEnd: (index: number) => void;
   onOpen: (pathHash: string) => void;
 }
 
@@ -59,20 +84,31 @@ export const GraphNodeView = memo(function GraphNodeView({
   showLabel,
   sizeMultiplier,
   c,
+  onDragStart,
   onDragTo,
+  onDragEnd,
   onOpen,
 }: GraphNodeViewProps) {
   // Captured at the drag's real start and read from onUpdate. onStart fires
   // once per physical touch-down, but this component can re-render *during*
-  // an active drag (dragging reheats the sim — see graph.tsx — so the tick
-  // loop keeps calling setGraph while a finger is still down), which
-  // rebuilds this Gesture.Pan() with a fresh closure mid-gesture. A ref
-  // survives that rebuild; a plain variable captured at construction time
-  // would not, since onStart — which would reassign it — doesn't fire again
-  // for the same physical touch.
+  // an active drag (dragging keeps the sim energized — see graph.tsx — so
+  // the tick loop keeps calling setGraph while a finger is still down),
+  // which rebuilds this Gesture.Pan() with a fresh closure mid-gesture. A
+  // ref survives that rebuild; a plain variable captured at construction
+  // time would not, since onStart — which would reassign it — doesn't fire
+  // again for the same physical touch.
   const dragOrigin = useRef({ x: node.x, y: node.y });
+  // Set in onStart, cleared in onFinalize — lets onFinalize (which fires for
+  // a losing-the-Race tap too, see the top-of-file comment) tell "a drag
+  // really was active" apart from "this was just a tap", so onDragEnd only
+  // ever fires paired with a real onDragStart.
+  const didStartDrag = useRef(false);
 
-  const r = (3.5 + Math.min(5, node.degree * 1.1)) * sizeMultiplier;
+  // Every node renders at one uniform radius — no degree-based/weighted
+  // scaling (a hub's importance still reads through color + halo below, not
+  // size). BASE_NODE_R is deliberately small; sizeMultiplier (Node size
+  // slider) scales all nodes together, so they stay uniform at any setting.
+  const r = BASE_NODE_R * sizeMultiplier;
   const hub = node.degree >= 3;
   const label = node.title.length > 18 ? `${node.title.slice(0, 17)}…` : node.title;
   const haloR = r + 5;
@@ -94,10 +130,17 @@ export const GraphNodeView = memo(function GraphNodeView({
     .blocksExternalGesture(canvasPanGesture)
     .onStart(() => {
       dragOrigin.current = { x: node.x, y: node.y };
+      didStartDrag.current = true;
+      onDragStart(index);
     })
     .onUpdate((event) => {
       const s = scale.value || 1;
       onDragTo(index, dragOrigin.current.x + event.translationX / s, dragOrigin.current.y + event.translationY / s);
+    })
+    .onFinalize(() => {
+      if (!didStartDrag.current) return;
+      didStartDrag.current = false;
+      onDragEnd(index);
     });
 
   const nodeGesture = Gesture.Race(panGesture, tapGesture);
