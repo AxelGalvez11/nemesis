@@ -99,17 +99,17 @@ export function NotebooksLanding() {
         ) : filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-(--ui-text-tertiary)">{`No notebooks match “${query.trim()}”.`}</p>
         ) : (
-          <ul className="flex flex-col">
+          <ul className="flex flex-col gap-2.5">
             {filtered.map((n) => {
               const modified = formatModified(n.updatedAt);
               return (
-                <li key={n.id} className="group relative border-b border-(--ui-stroke-tertiary)">
+                <li key={n.id} className="group relative">
                   <button
                     type="button"
                     onClick={() => select(n.id)}
-                    className="flex w-full items-center gap-3 rounded-lg px-2 py-3 pr-12 text-left transition-colors hover:bg-(--ui-control-hover-background)"
+                    className="flex w-full items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/40 px-4 py-3.5 pr-12 text-left transition-colors hover:border-(--ui-stroke-secondary) hover:bg-(--ui-control-hover-background)"
                   >
-                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-(--ui-bg-elevated) text-(--ui-text-secondary)">
+                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-(--ui-bg-elevated) text-(--ui-text-secondary)">
                       <Codicon name="notebook" size="1rem" />
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[0.95rem] font-medium text-foreground">{n.name}</span>
@@ -119,7 +119,7 @@ export function NotebooksLanding() {
                     type="button"
                     aria-label={`Delete ${n.name}`}
                     onClick={() => confirmDelete(n.id, n.name)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-active-background) hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-active-background) hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                   >
                     <Codicon name="trash" size="0.8rem" />
                   </button>

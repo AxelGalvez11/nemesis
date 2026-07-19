@@ -1,10 +1,11 @@
 "use client";
 
 // Notebooks store — one external store (useSyncExternalStore, mirroring library-cloud-store) shared
-// by the sidebar (list + selection) and the main pane (sources + instructions + chat). Reads/writes
-// the cloud notebooks / notebook_sources tables through lib/notebooks/api.ts; RLS scopes every row to
-// the signed-in user, so there is no explicit user filter here. Selecting a notebook lazily loads
-// its sources. The dev-preview harness seeds a demo notebook so the UI renders without a session.
+// by the landing list, the project home, and the chat view. Reads/writes the cloud notebooks /
+// notebook_sources / notebook_chats tables via lib/notebooks/*. RLS scopes every row to the signed-in
+// user, so there is no explicit user filter here. Selecting a notebook lazily loads its sources AND
+// its chats (Recents). `activeChatId` drives home-vs-chat-view. The dev-preview harness seeds demo
+// notebooks, sources, chats, and a canned transcript so the UI renders without a session.
 
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
@@ -24,6 +25,8 @@ import {
   type Notebook,
   type NotebookSource,
 } from "@/lib/notebooks/api";
+import { createChat, deleteChat, listChats, renameChat, type NotebookChat } from "@/lib/notebooks/chats-api";
+import { notebookChatStore, type SessionMessage } from "@/lib/notebooks/chat";
 
 export type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
@@ -34,6 +37,9 @@ interface StoreState {
   selectedId: string | null;
   sources: NotebookSource[];
   sourcesStatus: LoadStatus;
+  chats: NotebookChat[];
+  chatsStatus: LoadStatus;
+  activeChatId: string | null;
 }
 
 const EMPTY_STATE: StoreState = {
@@ -43,6 +49,9 @@ const EMPTY_STATE: StoreState = {
   selectedId: null,
   sources: [],
   sourcesStatus: "idle",
+  chats: [],
+  chatsStatus: "idle",
+  activeChatId: null,
 };
 
 const PREVIEW_NOTEBOOKS: Notebook[] = [
@@ -59,12 +68,32 @@ const PREVIEW_SOURCES: NotebookSource[] = [
 
 const PREVIEW_SOURCES_BY_ID: Record<string, NotebookSource[]> = { "preview-notebook": PREVIEW_SOURCES };
 
+const PREVIEW_CHATS: NotebookChat[] = [
+  { id: "preview-chat-1", notebookId: "preview-notebook", title: "Beta-blocker contraindications", updatedAt: "2026-07-16T14:00:00.000Z" },
+  { id: "preview-chat-2", notebookId: "preview-notebook", title: "ACE vs ARB — key differences", updatedAt: "2026-07-14T09:00:00.000Z" },
+];
+
+const PREVIEW_CHATS_BY_ID: Record<string, NotebookChat[]> = { "preview-notebook": PREVIEW_CHATS };
+
+const PREVIEW_CHAT_MESSAGES: Record<string, SessionMessage[]> = {
+  "preview-chat-1": [
+    { role: "user", content: "From my sources, when are beta-blockers contraindicated?", at: "2026-07-16T14:00:00.000Z" },
+    {
+      role: "assistant",
+      content:
+        "Based on the sources you added:\n\n- **Severe bradycardia or high-degree AV block** — they slow conduction further.\n- **Decompensated heart failure** — start only once stable, low and slow.\n- **Asthma / severe reactive airway disease** — avoid non-selective agents.\n\nWant the exact lines from the Hypertension guideline for any of these?",
+      at: "2026-07-16T14:00:05.000Z",
+    },
+  ],
+};
+
 let state: StoreState = EMPTY_STATE;
 let loadedForUserId: string | null = null;
-/** The notebook id whose sources the current `sources`/`sourcesStatus` reflect — guards against a
- *  stale load landing after the user has already switched notebooks. */
+/** The notebook id the current `sources` reflect — guards a stale load landing after a switch. */
 let sourcesForId: string | null = null;
-/** True inside the dev-preview harness — sources resolve from the seeded map, not the network. */
+/** The notebook id the current `chats` reflect — same stale-guard for the Recents load. */
+let chatsForId: string | null = null;
+/** True inside the dev-preview harness — sources/chats resolve from the seeded maps, not the network. */
 let previewActive = false;
 const listeners = new Set<() => void>();
 
@@ -86,14 +115,13 @@ function setState(next: Partial<StoreState>) {
 
 async function loadNotebooks(userId: string): Promise<void> {
   loadedForUserId = userId;
-  setState({ status: "loading", error: null, notebooks: [], selectedId: null, sources: [], sourcesStatus: "idle" });
+  setState({ ...EMPTY_STATE, status: "loading" });
   if (isPreviewMode) {
     setState({ status: "loaded", notebooks: [] });
     return;
   }
   try {
     const notebooks = await listNotebooks();
-    // A newer load (account switch) already superseded this one — drop the stale result.
     if (loadedForUserId !== userId) return;
     setState({ status: "loaded", notebooks });
   } catch (e) {
@@ -119,9 +147,27 @@ async function loadSources(notebookId: string): Promise<void> {
   }
 }
 
+async function loadChats(notebookId: string): Promise<void> {
+  chatsForId = notebookId;
+  if (previewActive) {
+    setState({ chats: PREVIEW_CHATS_BY_ID[notebookId] ?? [], chatsStatus: "loaded" });
+    return;
+  }
+  setState({ chats: [], chatsStatus: "loading" });
+  try {
+    const chats = await listChats(notebookId);
+    if (chatsForId !== notebookId) return;
+    setState({ chats, chatsStatus: "loaded" });
+  } catch {
+    if (chatsForId !== notebookId) return;
+    setState({ chatsStatus: "error" });
+  }
+}
+
 function reset() {
   loadedForUserId = null;
   sourcesForId = null;
+  chatsForId = null;
   state = EMPTY_STATE;
   emit();
 }
@@ -138,15 +184,31 @@ function getServerSnapshot(): StoreState {
 
 async function selectNotebook(id: string | null): Promise<void> {
   if (state.selectedId === id) return;
-  setState({ selectedId: id, sources: [], sourcesStatus: id ? "loading" : "idle" });
-  if (id) await loadSources(id);
+  setState({
+    selectedId: id,
+    activeChatId: null,
+    sources: [],
+    sourcesStatus: id ? "loading" : "idle",
+    chats: [],
+    chatsStatus: id ? "loading" : "idle",
+  });
+  if (id) await Promise.all([loadSources(id), loadChats(id)]);
 }
 
 async function createAndSelect(name: string): Promise<void> {
   const created = await createNotebook(name);
   if (!created) return;
-  setState({ notebooks: [created, ...state.notebooks], selectedId: created.id, sources: [], sourcesStatus: "loaded" });
   sourcesForId = created.id;
+  chatsForId = created.id;
+  setState({
+    notebooks: [created, ...state.notebooks],
+    selectedId: created.id,
+    activeChatId: null,
+    sources: [],
+    sourcesStatus: "loaded",
+    chats: [],
+    chatsStatus: "loaded",
+  });
 }
 
 async function renameNotebook(id: string, name: string): Promise<void> {
@@ -161,8 +223,11 @@ async function removeNotebook(id: string): Promise<void> {
   setState({
     notebooks,
     selectedId: clearing ? null : state.selectedId,
+    activeChatId: clearing ? null : state.activeChatId,
     sources: clearing ? [] : state.sources,
     sourcesStatus: clearing ? "idle" : state.sourcesStatus,
+    chats: clearing ? [] : state.chats,
+    chatsStatus: clearing ? "idle" : state.chatsStatus,
   });
 }
 
@@ -182,6 +247,42 @@ async function removeSourceById(id: string): Promise<void> {
   setState({ sources: state.sources.filter((s) => s.id !== id) });
 }
 
+// ── Chat actions ─────────────────────────────────────────────────────────────
+
+function openChat(chatId: string) {
+  setState({ activeChatId: chatId });
+}
+
+function backToHome() {
+  setState({ activeChatId: null });
+}
+
+/** Create a fresh chat, move it to the top of Recents, and open it. Marks the new chat as loaded in
+ *  the transcript store so its first optimistic message isn't clobbered by a hydrate. Returns null on
+ *  failure (offline / no session) — the caller must stay on home rather than open a blank chat. */
+async function startChat(notebookId: string, title: string): Promise<NotebookChat | null> {
+  const created = await createChat(notebookId, title);
+  if (!created) return null;
+  notebookChatStore.markLoaded(created.id);
+  if (chatsForId === notebookId) {
+    setState({ chats: [created, ...state.chats], activeChatId: created.id });
+  } else {
+    setState({ activeChatId: created.id });
+  }
+  return created;
+}
+
+async function renameChatById(id: string, title: string): Promise<void> {
+  await renameChat(id, title);
+  setState({ chats: state.chats.map((c) => (c.id === id ? { ...c, title } : c)) });
+}
+
+async function removeChatById(id: string): Promise<void> {
+  await deleteChat(id);
+  const chats = state.chats.filter((c) => c.id !== id);
+  setState({ chats, activeChatId: state.activeChatId === id ? null : state.activeChatId });
+}
+
 export interface UseNotebooksApi {
   status: LoadStatus;
   notebooks: Notebook[];
@@ -190,6 +291,9 @@ export interface UseNotebooksApi {
   selected: Notebook | null;
   sources: NotebookSource[];
   sourcesStatus: LoadStatus;
+  chats: NotebookChat[];
+  chatsStatus: LoadStatus;
+  activeChatId: string | null;
   select: (id: string | null) => void;
   create: (name: string) => Promise<void>;
   rename: (id: string, name: string) => Promise<void>;
@@ -202,6 +306,11 @@ export interface UseNotebooksApi {
     input: { kind: "url" | "pdf" | "docx" | "pptx" | "youtube"; name: string; content: string; sourceUrl?: string | null; bytes?: number | null },
   ) => Promise<void>;
   removeSource: (id: string) => Promise<void>;
+  openChat: (chatId: string) => void;
+  backToHome: () => void;
+  startChat: (notebookId: string, title: string) => Promise<NotebookChat | null>;
+  renameChat: (id: string, title: string) => Promise<void>;
+  removeChat: (id: string) => Promise<void>;
   reload: () => void;
 }
 
@@ -217,14 +326,9 @@ export function useNotebooks(): UseNotebooksApi {
         loadedForUserId = "__preview__";
         previewActive = true;
         sourcesForId = null;
-        state = {
-          status: "loaded",
-          notebooks: PREVIEW_NOTEBOOKS,
-          error: null,
-          selectedId: null,
-          sources: [],
-          sourcesStatus: "idle",
-        };
+        chatsForId = null;
+        notebookChatStore.injectPreview(PREVIEW_CHAT_MESSAGES);
+        state = { ...EMPTY_STATE, status: "loaded", notebooks: PREVIEW_NOTEBOOKS };
         emit();
       }
       return;
@@ -247,6 +351,9 @@ export function useNotebooks(): UseNotebooksApi {
     selected,
     sources: snap.sources,
     sourcesStatus: snap.sourcesStatus,
+    chats: snap.chats,
+    chatsStatus: snap.chatsStatus,
+    activeChatId: snap.activeChatId,
     select: useCallback((id: string | null) => void selectNotebook(id), []),
     create: useCallback((name: string) => createAndSelect(name), []),
     rename: useCallback((id: string, name: string) => renameNotebook(id, name), []),
@@ -262,6 +369,11 @@ export function useNotebooks(): UseNotebooksApi {
       prependSource(await addExtractedSource(notebookId, input));
     }, []),
     removeSource: useCallback((id: string) => removeSourceById(id), []),
+    openChat: useCallback((chatId: string) => openChat(chatId), []),
+    backToHome: useCallback(() => backToHome(), []),
+    startChat: useCallback((notebookId: string, title: string) => startChat(notebookId, title), []),
+    renameChat: useCallback((id: string, title: string) => renameChatById(id, title), []),
+    removeChat: useCallback((id: string) => removeChatById(id), []),
     reload: useCallback(() => {
       if (userId) void loadNotebooks(userId);
     }, [userId]),

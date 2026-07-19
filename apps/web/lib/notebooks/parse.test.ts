@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { toNotebook, toNotebookSource } from "./parse";
+import { toNotebook, toNotebookChat, toNotebookChatMessage, toNotebookSource } from "./parse";
 
 // toNotebook: a valid row maps snake_case → camelCase.
 {
@@ -68,6 +68,42 @@ import { toNotebook, toNotebookSource } from "./parse";
 {
   const s = toNotebookSource({ id: "s3", notebook_id: "n1", kind: "text" });
   assert.equal(s?.name, "Untitled source");
+}
+
+// toNotebookChat: a valid row maps; missing title → "New chat", missing updated_at → "".
+{
+  const c = toNotebookChat({ id: "c1", notebook_id: "n1", title: "Beta blockers", updated_at: "2026-07-18" });
+  assert.deepEqual(c, { id: "c1", notebookId: "n1", title: "Beta blockers", updatedAt: "2026-07-18" });
+  const d = toNotebookChat({ id: "c2", notebook_id: "n1" });
+  assert.equal(d?.title, "New chat");
+  assert.equal(d?.updatedAt, "");
+}
+
+// toNotebookChat: rejects a missing id / missing notebook_id / non-object.
+{
+  assert.equal(toNotebookChat({ notebook_id: "n1" }), null);
+  assert.equal(toNotebookChat({ id: "c1" }), null);
+  assert.equal(toNotebookChat(null), null);
+}
+
+// toNotebookChatMessage: a valid row maps snake_case → camelCase.
+{
+  const m = toNotebookChatMessage({ id: "m1", chat_id: "c1", role: "assistant", content: "hi", created_at: "2026-07-18" });
+  assert.deepEqual(m, { id: "m1", chatId: "c1", role: "assistant", content: "hi", createdAt: "2026-07-18" });
+}
+
+// toNotebookChatMessage: rejects an unknown role, missing content, missing id, non-object.
+{
+  assert.equal(toNotebookChatMessage({ id: "m", chat_id: "c", role: "bogus", content: "x" }), null);
+  assert.equal(toNotebookChatMessage({ id: "m", chat_id: "c", role: "user" }), null);
+  assert.equal(toNotebookChatMessage({ chat_id: "c", role: "user", content: "x" }), null);
+  assert.equal(toNotebookChatMessage(null), null);
+}
+
+// toNotebookChatMessage: empty-string content is a valid message (not treated as missing).
+{
+  const m = toNotebookChatMessage({ id: "m", chat_id: "c", role: "user", content: "" });
+  assert.equal(m?.content, "");
 }
 
 console.log("notebooks/parse.test.ts: all assertions passed");
