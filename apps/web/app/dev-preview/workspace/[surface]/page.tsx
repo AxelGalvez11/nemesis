@@ -16,6 +16,7 @@ import { sessionsStore, type WorkspaceSession } from "@/lib/workspace/sessions-s
 import CalendarPage from "../../../(workspace)/calendar/page";
 import GraphPage from "../../../(workspace)/graph/page";
 import LibraryPage from "../../../(workspace)/library/page";
+import NotebooksPage from "../../../(workspace)/notebooks/page";
 import SessionsPage from "../../../(workspace)/sessions/page";
 import SettingsPage from "../../../(workspace)/settings/page";
 import StudyPage from "../../../(workspace)/study/page";
@@ -23,6 +24,7 @@ import StudyPage from "../../../(workspace)/study/page";
 const SURFACES = {
   sessions: SessionsPage,
   library: LibraryPage,
+  notebooks: NotebooksPage,
   study: StudyPage,
   calendar: CalendarPage,
   graph: GraphPage,

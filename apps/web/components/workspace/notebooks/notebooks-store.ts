@@ -45,13 +45,11 @@ const EMPTY_STATE: StoreState = {
   sourcesStatus: "idle",
 };
 
-const PREVIEW_NOTEBOOK: Notebook = {
-  id: "preview-notebook",
-  name: "Cardiovascular pharmacology",
-  description: null,
-  instructions: "You are my pharmacology tutor. Quiz me on mechanisms and keep answers exam-focused.",
-  updatedAt: "",
-};
+const PREVIEW_NOTEBOOKS: Notebook[] = [
+  { id: "preview-notebook", name: "Cardiovascular pharmacology", description: null, instructions: "You are my pharmacology tutor. Quiz me on mechanisms and keep answers exam-focused.", updatedAt: "2026-07-15T10:00:00.000Z" },
+  { id: "preview-nb-2", name: "Renal system — NAPLEX prep", description: null, instructions: null, updatedAt: "2026-07-11T09:00:00.000Z" },
+  { id: "preview-nb-3", name: "Antibiotics review", description: null, instructions: null, updatedAt: "2026-06-28T09:00:00.000Z" },
+];
 
 const PREVIEW_SOURCES: NotebookSource[] = [
   { id: "ps1", notebookId: "preview-notebook", kind: "library", name: "ACE inhibitors", content: null, sourceUrl: null, libraryPath: "Pharmacology/Cardiovascular/ACE inhibitors.md", bytes: null, createdAt: "" },
@@ -59,11 +57,15 @@ const PREVIEW_SOURCES: NotebookSource[] = [
   { id: "ps3", notebookId: "preview-notebook", kind: "url", name: "MedlinePlus: Beta blockers", content: null, sourceUrl: "https://medlineplus.gov/betablockers.html", libraryPath: null, bytes: null, createdAt: "" },
 ];
 
+const PREVIEW_SOURCES_BY_ID: Record<string, NotebookSource[]> = { "preview-notebook": PREVIEW_SOURCES };
+
 let state: StoreState = EMPTY_STATE;
 let loadedForUserId: string | null = null;
 /** The notebook id whose sources the current `sources`/`sourcesStatus` reflect — guards against a
  *  stale load landing after the user has already switched notebooks. */
 let sourcesForId: string | null = null;
+/** True inside the dev-preview harness — sources resolve from the seeded map, not the network. */
+let previewActive = false;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -102,6 +104,10 @@ async function loadNotebooks(userId: string): Promise<void> {
 
 async function loadSources(notebookId: string): Promise<void> {
   sourcesForId = notebookId;
+  if (previewActive) {
+    setState({ sources: PREVIEW_SOURCES_BY_ID[notebookId] ?? [], sourcesStatus: "loaded" });
+    return;
+  }
   setState({ sources: [], sourcesStatus: "loading" });
   try {
     const sources = await listSources(notebookId);
@@ -209,14 +215,15 @@ export function useNotebooks(): UseNotebooksApi {
     if (preview) {
       if (loadedForUserId !== "__preview__") {
         loadedForUserId = "__preview__";
-        sourcesForId = PREVIEW_NOTEBOOK.id;
+        previewActive = true;
+        sourcesForId = null;
         state = {
           status: "loaded",
-          notebooks: [PREVIEW_NOTEBOOK],
+          notebooks: PREVIEW_NOTEBOOKS,
           error: null,
-          selectedId: PREVIEW_NOTEBOOK.id,
-          sources: PREVIEW_SOURCES,
-          sourcesStatus: "loaded",
+          selectedId: null,
+          sources: [],
+          sourcesStatus: "idle",
         };
         emit();
       }

@@ -1,14 +1,9 @@
-// Notebooks page — NotebookLM-style workspaces: sources + instructions + scoped chats. Two-pane
-// (list + detail), same shell auth gate as the other workspace pages (app/(workspace)/layout.tsx).
+// Notebooks page — NotebookLM-style workspaces: a full-width list, and a Claude-style detail (chat
+// center + right rail) when one is open. Same shell auth gate as the other workspace pages
+// (app/(workspace)/layout.tsx).
 
-import { NotebooksMain } from "@/components/workspace/notebooks/notebooks-main";
-import { NotebooksSidebar } from "@/components/workspace/notebooks/notebooks-sidebar";
+import { NotebooksWorkspace } from "@/components/workspace/notebooks/notebooks-workspace";
 
 export default function NotebooksPage() {
-  return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-(--ui-editor-surface-background)">
-      <NotebooksSidebar />
-      <NotebooksMain />
-    </div>
-  );
+  return <NotebooksWorkspace />;
 }
