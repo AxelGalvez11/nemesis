@@ -1,9 +1,10 @@
 "use client";
 
 // StudyHeatmap — GitHub-style 12-month contribution grid (library-study spec
-// §3.4). Fresh install has zero reviews, so every cell renders at level 0;
-// the geometry (11x11 cells, 3px gaps, 9px labels) is still built for real so
-// the section isn't just a placeholder box.
+// §3.4), now driven by cloud review history.
+
+import type { StudyReview } from "@/lib/workspace/study-cloud-store";
+import { reviewLevel } from "@/lib/workspace/study-scheduler";
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAY_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""];
@@ -55,9 +56,22 @@ function buildWeeks(today: Date): HeatmapWeek[] {
   return weeks;
 }
 
-export function StudyHeatmap() {
+function dayKey(date: Date) {
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+export function StudyHeatmap({ reviews }: { reviews: StudyReview[] }) {
   const today = new Date();
   const weeks = buildWeeks(today);
+  const counts = new Map<string, number>();
+  for (const review of reviews) {
+    const date = new Date(review.reviewedAt);
+    if (Number.isNaN(date.getTime())) continue;
+    const key = dayKey(date);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -80,21 +94,22 @@ export function StudyHeatmap() {
           <div className="flex gap-[3px]">
             {weeks.map((week) => (
               <div className="flex flex-col gap-[3px]" key={week.colIndex}>
-                {week.days.map(({ date, isFuture }, row) =>
-                  isFuture ? (
+                {week.days.map(({ date, isFuture }, row) => {
+                  const count = counts.get(dayKey(date)) ?? 0;
+                  return isFuture ? (
                     <div className="size-[11px]" key={row} />
                   ) : (
                     <div
                       className="size-[11px] rounded-[2px]"
                       key={row}
                       style={{
-                        background: heatColor(0),
+                        background: heatColor(reviewLevel(count)),
                         boxShadow: isSameDay(date, today) ? "inset 0 0 0 1px color-mix(in srgb, var(--ui-text-primary) 60%, transparent)" : undefined,
                       }}
-                      title={`0 reviews · ${date.getDate()} ${MONTH_ABBR[date.getMonth()]}`}
+                      title={`${count} ${count === 1 ? "review" : "reviews"} · ${date.getDate()} ${MONTH_ABBR[date.getMonth()]}`}
                     />
-                  ),
-                )}
+                  );
+                })}
               </div>
             ))}
           </div>

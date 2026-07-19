@@ -1,12 +1,4 @@
-// Vault notes → graph index. Ported from desktop's `../library/vault`
-// (loadVault/buildIndex/extractWikilinks) per graph-graph spec §B.2, minus the
-// Electron filesystem coupling.
-//
-// v1: loadVaultNotes() always resolves []  — no cloud-synced Library note store
-// exists yet in the web port (a browser has no filesystem, and the Library
-// page is still a read-only stub per the C2 scope). That keeps this pipeline
-// ready to wire up once cloud library sync lands, while guaranteeing the graph
-// page always resolves status 'empty' and never mounts the WebGL canvas.
+import type { CloudLibraryNote } from "@/lib/workspace/library-tree";
 
 export interface VaultNote {
   title: string;
@@ -20,6 +12,8 @@ export interface GraphNode {
   title: string;
   degree: number;
   ghost: boolean;
+  path: string | null;
+  target: string | null;
 }
 
 export interface GraphLink {
@@ -36,7 +30,6 @@ export interface GraphIndex {
 const WIKILINK_RE = /\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/g;
 const MD_LINK_RE = /\[[^\]]*\]\(([^)]+\.md)\)/g;
 
-/** Link targets referenced by a note's content — wikilinks + relative .md links. */
 export function extractWikilinks(content: string): string[] {
   const targets: string[] = [];
   for (const match of content.matchAll(WIKILINK_RE)) {
@@ -46,44 +39,58 @@ export function extractWikilinks(content: string): string[] {
   for (const match of content.matchAll(MD_LINK_RE)) {
     const raw = match[1];
     if (!raw) continue;
-    const basename = raw.split("/").pop() ?? raw;
-    const title = basename.replace(/\.md$/i, "").trim();
+    const title = (raw.split("/").pop() ?? raw).replace(/\.md$/i, "").trim();
     if (title) targets.push(title);
   }
   return targets;
 }
 
-/** Web replacement for the Electron `readDir` + `readFileText` vault walk. */
-export async function loadVaultNotes(): Promise<VaultNote[]> {
-  return [];
+export function cloudNotesToVault(notes: readonly CloudLibraryNote[]): VaultNote[] {
+  return notes.map((note) => ({
+    title: note.title,
+    path: note.path,
+    content: note.content,
+    folder: note.path.split("/").slice(0, -1).join("/"),
+  }));
 }
 
-/** Resolves wikilink targets against note titles (case-insensitive); unresolved
- * targets become ghost nodes. Degree = in + out link count. */
+function normalizeRef(value: string): string {
+  return value.trim().replace(/\\/g, "/").replace(/\.(md|markdown|txt)$/i, "").toLocaleLowerCase();
+}
+
 export function buildGraphIndex(notes: VaultNote[]): GraphIndex {
-  const byTitleLower = new Map<string, VaultNote>();
-  for (const note of notes) byTitleLower.set(note.title.toLowerCase(), note);
+  const byReference = new Map<string, VaultNote>();
+  for (const note of notes) {
+    byReference.set(normalizeRef(note.path), note);
+    if (!byReference.has(normalizeRef(note.title))) byReference.set(normalizeRef(note.title), note);
+    const basename = note.path.split("/").pop() ?? note.path;
+    if (!byReference.has(normalizeRef(basename))) byReference.set(normalizeRef(basename), note);
+  }
 
   const degree = new Map<string, number>();
   const links: GraphLink[] = [];
-  const ghostTitles = new Set<string>();
+  const linkKeys = new Set<string>();
+  const ghosts = new Map<string, string>();
   const bump = (id: string) => degree.set(id, (degree.get(id) ?? 0) + 1);
 
   for (const note of notes) {
     for (const target of extractWikilinks(note.content)) {
-      const resolved = byTitleLower.get(target.toLowerCase());
-      const targetId = resolved ? resolved.title : target;
-      if (!resolved) ghostTitles.add(target);
-      links.push({ source: note.title, target: targetId });
-      bump(note.title);
+      const resolved = byReference.get(normalizeRef(target));
+      const targetId = resolved?.path ?? `ghost:${normalizeRef(target)}`;
+      if (!resolved) ghosts.set(targetId, target);
+      const key = `${note.path}\u0000${targetId}`;
+      if (linkKeys.has(key)) continue;
+      linkKeys.add(key);
+      links.push({ source: note.path, target: targetId });
+      bump(note.path);
       bump(targetId);
     }
   }
 
   const nodes: GraphNode[] = [
-    ...notes.map((note) => ({ id: note.title, title: note.title, degree: degree.get(note.title) ?? 0, ghost: false })),
-    ...Array.from(ghostTitles).map((title) => ({ id: title, title, degree: degree.get(title) ?? 0, ghost: true })),
+    ...notes.map((note) => ({ id: note.path, title: note.title, degree: degree.get(note.path) ?? 0, ghost: false, path: note.path, target: null })),
+    ...Array.from(ghosts, ([id, target]) => ({ id, title: target, degree: degree.get(id) ?? 0, ghost: true, path: null, target })),
   ];
 
-  return { nodes, links, ghostCount: ghostTitles.size };
+  return { nodes, links, ghostCount: ghosts.size };
 }

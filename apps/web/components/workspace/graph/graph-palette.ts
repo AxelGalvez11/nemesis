@@ -12,6 +12,21 @@ export interface GraphPalette {
   node: string;
 }
 
+/** Convert Chrome's CSS Color 4 serialization into the RGB syntax consumed by
+ * three-spritetext/polished. Keep other browser-supported formats unchanged. */
+export function normalizeGraphCssColor(value: string, fallback: string): string {
+  const match = /^color\(srgb\s+(.+)\)$/i.exec(value.trim());
+  if (!match?.[1]) return value || fallback;
+  const [rawChannels, rawAlpha] = match[1].split("/").map((part) => part?.trim());
+  const channels = rawChannels?.split(/\s+/).map(Number) ?? [];
+  if (channels.length !== 3 || channels.some((channel) => !Number.isFinite(channel))) return fallback;
+  const [red = 0, green = 0, blue = 0] = channels.map((channel) => Math.round(Math.min(1, Math.max(0, channel)) * 255));
+  if (!rawAlpha) return `rgb(${red}, ${green}, ${blue})`;
+  const alpha = Number(rawAlpha);
+  if (!Number.isFinite(alpha)) return fallback;
+  return `rgba(${red}, ${green}, ${blue}, ${Math.min(1, Math.max(0, alpha))})`;
+}
+
 function resolveCssColor(value: string, fallback: string): string {
   if (typeof document === "undefined") return fallback;
   try {
@@ -21,7 +36,7 @@ function resolveCssColor(value: string, fallback: string): string {
     document.body.appendChild(span);
     const resolved = getComputedStyle(span).color;
     document.body.removeChild(span);
-    return resolved || fallback;
+    return normalizeGraphCssColor(resolved, fallback);
   } catch {
     return fallback;
   }

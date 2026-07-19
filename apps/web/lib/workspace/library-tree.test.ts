@@ -12,22 +12,23 @@ assert.equal(titleFromPath("Loose note.md"), "Loose note");
 assert.equal(titleFromPath("no-extension"), "no-extension");
 
 const notes = [
-  { path: "Pharmacology/Unit 3/Beta Blockers.md", title: "" },
-  { path: "Pharmacology/Unit 3/Alpha Agonists.md", title: "Alpha Agonists" },
-  { path: "Pharmacology/Unit 1/Intro.md", title: "Intro" },
-  { path: "Loose note.md", title: "Loose note" },
-  { path: "", title: "malformed row — no path, must be skipped" },
+  { id: "beta", path: "Pharmacology/Unit 3/Beta Blockers.md", title: "" },
+  { id: "alpha", path: "Pharmacology/Unit 3/Alpha Agonists.md", title: "Alpha Agonists" },
+  { id: "intro", path: "Pharmacology/Unit 1/Intro.md", title: "Intro" },
+  { id: "loose", path: "Loose note.md", title: "Loose note" },
+  { id: "bad", path: "", title: "malformed row — no path, must be skipped" },
 ];
 
-const tree = buildLibraryTree(notes);
+const tree = buildLibraryTree(notes, ["Empty course/Week 1"]);
 
 // Root-level note sits directly on the root's notes array.
 assert.equal(tree.notes.length, 1);
 assert.equal(tree.notes[0]?.title, "Loose note");
 
-// One top-level folder, nested one level deeper for the two units.
-assert.equal(tree.folders.length, 1);
-const pharm = tree.folders[0];
+// The persisted empty folder and the populated folder are both preserved.
+assert.equal(tree.folders.length, 2);
+assert.equal(tree.folders[0]?.path, "Empty course");
+const pharm = tree.folders[1];
 assert.equal(pharm?.name, "Pharmacology");
 assert.equal(pharm?.path, "Pharmacology");
 assert.equal(pharm?.folders.length, 2);

@@ -5,17 +5,9 @@
 // render control, one-time camera fit. Verbatim algorithm from desktop
 // graph/index.tsx §B.3.
 //
-// Guard: the mount effect bails immediately when `index.nodes.length === 0`,
-// so this component NEVER constructs a WebGL context for an empty vault — in
-// v1, graph-notes.ts's loader always returns [], so this path is wired and
-// correct but not yet exercised (see graph-workspace.tsx's status gate).
-//
-// Known gap (v1, harmless while unreachable): desktop's onNodeClick opens the
-// note in the Library, and clicking a ghost node materializes it via
-// saveNote(). Neither is wired here — the web Library page has no
-// open-a-specific-note or create-note store yet (still a read-only stub), so
-// there's nothing correct to navigate/write to. Revisit once cloud library
-// sync lands and the notes loader above starts returning real data.
+// The mount guard avoids constructing WebGL for an empty Library. Real notes,
+// click-through navigation, and ghost-note creation are supplied by the cloud
+// Graph workspace.
 
 import { useEffect, useRef } from "react";
 
@@ -47,18 +39,23 @@ import type { GraphControlsState } from "./graph-settings";
 interface GraphCanvasProps {
   index: GraphIndex;
   controls: GraphControlsState;
+  onNodeClick: (node: EngineNode) => void;
   className?: string;
 }
 
 type EngineInstance = import("3d-force-graph").ForceGraph3DInstance<EngineNode, EngineLink>;
+type TunableForce = { distance?: (value: number) => unknown; strength?: (value: number) => unknown };
+type OrbitControls = { autoRotate?: boolean; autoRotateSpeed?: number };
 
-export function GraphCanvas({ index, controls, className }: GraphCanvasProps) {
+export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCanvasProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<EngineInstance | null>(null);
   // Accessor closures read live controls without forcing a full remount —
   // only the mount effect's own dependency (`index`) rebuilds the engine.
   const controlsRef = useRef(controls);
   controlsRef.current = controls;
+  const onNodeClickRef = useRef(onNodeClick);
+  onNodeClickRef.current = onNodeClick;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -88,6 +85,13 @@ export function GraphCanvas({ index, controls, className }: GraphCanvasProps) {
       }) as unknown as EngineInstance;
       engineRef.current = graph;
 
+      (graph.d3Force("link") as TunableForce | undefined)?.distance?.(controlsRef.current.spread);
+      (graph.d3Force("charge") as TunableForce | undefined)?.strength?.(-controlsRef.current.repulsion);
+      (graph.d3Force("center") as TunableForce | undefined)?.strength?.(controlsRef.current.gravity);
+      const orbit = graph.controls() as OrbitControls;
+      orbit.autoRotate = controlsRef.current.rotationSpeed > 0;
+      orbit.autoRotateSpeed = controlsRef.current.rotationSpeed;
+
       function recolor() {
         graph.nodeColor(graph.nodeColor());
         graph.linkColor(graph.linkColor());
@@ -99,7 +103,9 @@ export function GraphCanvas({ index, controls, className }: GraphCanvasProps) {
       function wake() {
         graph.resumeAnimation();
         if (idleTimer) clearTimeout(idleTimer);
-        idleTimer = setTimeout(() => graph.pauseAnimation(), IDLE_PAUSE_MS);
+        if (controlsRef.current.rotationSpeed === 0) {
+          idleTimer = setTimeout(() => graph.pauseAnimation(), IDLE_PAUSE_MS);
+        }
       }
 
       graph
@@ -118,6 +124,7 @@ export function GraphCanvas({ index, controls, className }: GraphCanvasProps) {
         .linkDirectionalParticleColor(() => palette.accent)
         .nodeThreeObject((node: EngineNode) => makeLabelSprite(node, SpriteText, palette, controlsRef.current))
         .nodeThreeObjectExtend(true)
+        .onNodeClick((node: EngineNode) => onNodeClickRef.current(node))
         .onNodeHover((node: EngineNode | null) => {
           if (!controlsRef.current.neighborGlow) return;
           const nextId = node ? node.id : null;
@@ -185,18 +192,21 @@ export function GraphCanvas({ index, controls, className }: GraphCanvasProps) {
     };
   }, [index]);
 
-  // Live re-tune for an already-mounted engine: node/label size apply
-  // directly, and re-triggering nodeThreeObject rebuilds label sprites (which
-  // also picks up a showNames flip). Force-layout sliders (spread, repulsion,
-  // gravity, rotation speed) still persist to localStorage and drive the
-  // panel UI; wiring them into d3-force live is left for when this path is
-  // actually exercised (v1's notes loader always returns [], so the engine
-  // never mounts with real data yet).
+  // Apply every tuning control live. Layout changes reheat the simulation;
+  // label changes rebuild sprites; rotation keeps the render loop awake.
   useEffect(() => {
     const graph = engineRef.current;
     if (!graph) return;
     graph.nodeRelSize(controls.nodeSize);
+    (graph.d3Force("link") as TunableForce | undefined)?.distance?.(controls.spread);
+    (graph.d3Force("charge") as TunableForce | undefined)?.strength?.(-controls.repulsion);
+    (graph.d3Force("center") as TunableForce | undefined)?.strength?.(controls.gravity);
     graph.nodeThreeObject(graph.nodeThreeObject());
+    graph.d3ReheatSimulation();
+    const orbit = graph.controls() as OrbitControls;
+    orbit.autoRotate = controls.rotationSpeed > 0;
+    orbit.autoRotateSpeed = controls.rotationSpeed;
+    if (controls.rotationSpeed > 0) graph.resumeAnimation();
   }, [controls]);
 
   return <div className={cn("min-h-0", className)} ref={hostRef} />;

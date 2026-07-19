@@ -1,19 +1,15 @@
 "use client";
 
-// Library folder-tree sidebar — desktop src/app/library/index.tsx LibraryView aside, now
-// wired to the real cloud read: lib/workspace/library-cloud-store.ts fetches the signed-in
-// user's rows from readable_library_documents and this renders them as a folder tree
-// (lib/workspace/library-tree.ts). Still read-only — the three header actions stay inert
-// placeholders (write sync is a separate, later slice).
+// Cloud Library tree with persisted note/folder creation, search, selection,
+// and shared state for the editor and Graph surfaces.
 
-import { IconFilePlus, IconFolderPlus, IconLayoutSidebarLeftCollapse } from "@tabler/icons-react";
+import { IconFilePlus, IconFolderPlus } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { CountSkeleton, Skeleton } from "@/components/desktop-ui/skeleton";
 import { SearchField } from "@/components/desktop-ui/search-field";
-import { Tip } from "@/components/desktop-ui/tooltip";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { buildLibraryTree, countLibraryNotes } from "@/lib/workspace/library-tree";
 import { cn } from "@/lib/utils";
@@ -21,20 +17,19 @@ import { GROUP_BODY, SCROLL_Y, SidebarRowStack } from "@/components/workspace/sh
 
 import { LibraryNoteRow, LibraryTreeView } from "./library-tree-view";
 import { LibraryTreeBlankState } from "./library-tree-blank-state";
-
-const INERT_TIP = "Editing isn't available yet — notes are read-only until write sync ships";
+import { LibraryCreateDialog, type LibraryCreateKind } from "./library-create-dialog";
 
 const HEADER_ACTIONS = [
   { label: "New note", icon: IconFilePlus },
   { label: "New folder", icon: IconFolderPlus },
-  { label: "Hide file list", icon: IconLayoutSidebarLeftCollapse },
-];
+] as const;
 
 export function LibrarySidebar() {
   const [query, setQuery] = useState("");
-  const { status, notes, error, selectedPath, select, reload } = useCloudLibrary();
+  const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
+  const { status, notes, folders, error, selectedPath, select, reload } = useCloudLibrary();
 
-  const tree = useMemo(() => buildLibraryTree(notes), [notes]);
+  const tree = useMemo(() => buildLibraryTree(notes, folders), [folders, notes]);
   const totalCount = useMemo(() => countLibraryNotes(tree), [tree]);
   const loading = status === "idle" || status === "loading";
 
@@ -62,11 +57,9 @@ export function LibrarySidebar() {
         </div>
         <div className="flex gap-0.5">
           {HEADER_ACTIONS.map(({ label, icon: Icon }) => (
-            <Tip key={label} label={INERT_TIP}>
-              <Button aria-label={label} size="icon-xs" type="button" variant="ghost">
-                <Icon />
-              </Button>
-            </Tip>
+            <Button aria-label={label} key={label} onClick={() => setCreateKind(label === "New note" ? "note" : "folder")} size="icon-xs" type="button" variant="ghost">
+              <Icon />
+            </Button>
           ))}
         </div>
       </div>
@@ -89,7 +82,7 @@ export function LibrarySidebar() {
         ) : status === "error" ? (
           <LibraryErrorState message={error} onRetry={reload} />
         ) : totalCount === 0 ? (
-          <LibraryTreeBlankState />
+          <LibraryTreeBlankState onCreate={() => setCreateKind("note")} />
         ) : trimmedQuery && filtered ? (
           filtered.length === 0 ? (
             <LibraryNoMatchState query={trimmedQuery} />
@@ -111,6 +104,7 @@ export function LibrarySidebar() {
           </div>
         )}
       </div>
+      <LibraryCreateDialog kind={createKind ?? "note"} onOpenChange={(open) => !open && setCreateKind(null)} open={createKind !== null} />
     </aside>
   );
 }

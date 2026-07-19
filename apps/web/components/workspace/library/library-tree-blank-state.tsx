@@ -6,15 +6,16 @@
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 
-export function LibraryTreeBlankState() {
+export function LibraryTreeBlankState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="grid min-h-0 flex-1 place-items-center px-4 text-center">
       <div className="flex flex-col items-center gap-2">
         <Codicon className="text-(--ui-text-quaternary)" name="root-folder" size="1.25rem" />
-        <p className="text-xs text-(--ui-text-tertiary)">Your notes live on your Mac for now</p>
+        <p className="text-xs text-(--ui-text-tertiary)">Start your Library</p>
         <p className="max-w-52 text-[0.6875rem] leading-relaxed text-(--ui-text-quaternary)">
-          Cloud library sync is coming — until then, write and browse in the Mac app.
+          Create a note, then connect ideas with [[double brackets]].
         </p>
+        <button className="text-xs font-medium text-primary hover:underline" onClick={onCreate} type="button">New note</button>
       </div>
     </div>
   );

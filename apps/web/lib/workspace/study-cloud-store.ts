@@ -1,0 +1,429 @@
+"use client";
+
+import { useCallback, useEffect, useSyncExternalStore } from "react";
+
+import { useAuth } from "@/components/AuthProvider";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
+import { supabase } from "@/lib/supabase";
+
+import { scheduleStudyCard, type StudyGrade } from "./study-scheduler";
+
+export interface StudyDeck {
+  id: string;
+  name: string;
+  description: string;
+  sourcePath: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudyCard {
+  id: string;
+  deckId: string;
+  front: string;
+  back: string;
+  sourcePath: string | null;
+  dueAt: string;
+  intervalDays: number;
+  repetitions: number;
+  lapses: number;
+  suspended: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StudyReview {
+  id: string;
+  cardId: string;
+  grade: StudyGrade;
+  reviewedAt: string;
+}
+
+export type StudyLoadStatus = "idle" | "loading" | "loaded" | "error";
+
+interface StoreState {
+  status: StudyLoadStatus;
+  error: string | null;
+  decks: StudyDeck[];
+  cards: StudyCard[];
+  reviews: StudyReview[];
+  selectedDeckId: string | null;
+}
+
+const now = new Date().toISOString();
+const PREVIEW_DECKS: StudyDeck[] = [
+  {
+    id: "preview-cardiovascular",
+    name: "Cardiovascular pharmacology",
+    description: "Core mechanisms, adverse effects, and counseling points.",
+    sourcePath: "Pharmacology/Cardiovascular/ACE inhibitors.md",
+    createdAt: now,
+    updatedAt: now,
+  },
+];
+const PREVIEW_CARDS: StudyCard[] = [
+  {
+    id: "preview-card-ace",
+    deckId: "preview-cardiovascular",
+    front: "What is the principal mechanism of ACE inhibitors?",
+    back: "They inhibit angiotensin-converting enzyme, reducing angiotensin II and aldosterone while increasing bradykinin.",
+    sourcePath: "Pharmacology/Cardiovascular/ACE inhibitors.md",
+    dueAt: now,
+    intervalDays: 0,
+    repetitions: 0,
+    lapses: 0,
+    suspended: false,
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "preview-card-cough",
+    deckId: "preview-cardiovascular",
+    front: "Which classic ACE inhibitor adverse effect is mediated by bradykinin?",
+    back: "A persistent dry cough.",
+    sourcePath: "Pharmacology/Cardiovascular/ACE inhibitors.md",
+    dueAt: now,
+    intervalDays: 0,
+    repetitions: 0,
+    lapses: 0,
+    suspended: false,
+    createdAt: now,
+    updatedAt: now,
+  },
+];
+
+const EMPTY_STATE: StoreState = {
+  status: "idle",
+  error: null,
+  decks: [],
+  cards: [],
+  reviews: [],
+  selectedDeckId: null,
+};
+let state: StoreState = EMPTY_STATE;
+let loadedForUserId: string | null = null;
+const listeners = new Set<() => void>();
+
+function emit() {
+  for (const listener of listeners) listener();
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function setState(next: StoreState) {
+  state = next;
+  emit();
+}
+
+function getSnapshot() {
+  return state;
+}
+
+function getServerSnapshot() {
+  return EMPTY_STATE;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function number(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function toDeck(raw: unknown): StudyDeck | null {
+  if (!isObject(raw) || typeof raw.id !== "string" || typeof raw.name !== "string") return null;
+  return {
+    id: raw.id,
+    name: raw.name,
+    description: text(raw.description),
+    sourcePath: typeof raw.source_path === "string" ? raw.source_path : null,
+    createdAt: text(raw.created_at),
+    updatedAt: text(raw.updated_at),
+  };
+}
+
+function toCard(raw: unknown): StudyCard | null {
+  if (!isObject(raw) || typeof raw.id !== "string" || typeof raw.deck_id !== "string") return null;
+  return {
+    id: raw.id,
+    deckId: raw.deck_id,
+    front: text(raw.front),
+    back: text(raw.back),
+    sourcePath: typeof raw.source_path === "string" ? raw.source_path : null,
+    dueAt: text(raw.due_at),
+    intervalDays: number(raw.interval_days),
+    repetitions: number(raw.repetitions),
+    lapses: number(raw.lapses),
+    suspended: raw.suspended === true,
+    createdAt: text(raw.created_at),
+    updatedAt: text(raw.updated_at),
+  };
+}
+
+function toReview(raw: unknown): StudyReview | null {
+  if (!isObject(raw) || typeof raw.id !== "string" || typeof raw.card_id !== "string") return null;
+  const grade = raw.grade;
+  if (grade !== "again" && grade !== "hard" && grade !== "good" && grade !== "easy") return null;
+  return { id: raw.id, cardId: raw.card_id, grade, reviewedAt: text(raw.reviewed_at) };
+}
+
+async function loadStudy(userId: string) {
+  loadedForUserId = userId;
+  setState({ ...EMPTY_STATE, status: "loading" });
+  try {
+    const reviewFloor = new Date();
+    reviewFloor.setFullYear(reviewFloor.getFullYear() - 1);
+    const [deckResult, cardResult, reviewResult] = await Promise.all([
+      supabase
+        .from("study_decks")
+        .select("id,name,description,source_path,created_at,updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false }),
+      supabase
+        .from("study_cards")
+        .select("id,deck_id,front,back,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
+        .eq("user_id", userId)
+        .order("due_at", { ascending: true }),
+      supabase
+        .from("study_review_logs")
+        .select("id,card_id,grade,reviewed_at")
+        .eq("user_id", userId)
+        .gte("reviewed_at", reviewFloor.toISOString())
+        .order("reviewed_at", { ascending: false }),
+    ]);
+    if (deckResult.error) throw new Error(deckResult.error.message);
+    if (cardResult.error) throw new Error(cardResult.error.message);
+    if (reviewResult.error) throw new Error(reviewResult.error.message);
+
+    const decks = (deckResult.data ?? []).flatMap((row) => {
+      const deck = toDeck(row);
+      return deck ? [deck] : [];
+    });
+    const cards = (cardResult.data ?? []).flatMap((row) => {
+      const card = toCard(row);
+      return card ? [card] : [];
+    });
+    const reviews = (reviewResult.data ?? []).flatMap((row) => {
+      const review = toReview(row);
+      return review ? [review] : [];
+    });
+    setState({ status: "loaded", error: null, decks, cards, reviews, selectedDeckId: decks[0]?.id ?? null });
+  } catch (cause) {
+    setState({
+      ...EMPTY_STATE,
+      status: "error",
+      error: cause instanceof Error ? cause.message : "Couldn't load your study decks.",
+    });
+  }
+}
+
+function reset() {
+  loadedForUserId = null;
+  setState(EMPTY_STATE);
+}
+
+export interface CreateDeckInput {
+  name: string;
+  description?: string;
+  sourcePath?: string | null;
+}
+
+export interface CreateCardInput {
+  deckId: string;
+  front: string;
+  back: string;
+  sourcePath?: string | null;
+}
+
+export interface UseCloudStudyApi extends StoreState {
+  selectDeck: (deckId: string | null) => void;
+  reload: () => void;
+  createDeck: (input: CreateDeckInput) => Promise<StudyDeck>;
+  createCard: (input: CreateCardInput) => Promise<StudyCard>;
+  gradeCard: (cardId: string, grade: StudyGrade) => Promise<StudyCard>;
+  deleteDeck: (deckId: string) => Promise<void>;
+}
+
+export function isCardDue(card: StudyCard, at = new Date()): boolean {
+  return !card.suspended && new Date(card.dueAt).getTime() <= at.getTime();
+}
+
+export function useCloudStudy(): UseCloudStudyApi {
+  const { session } = useAuth();
+  const preview = useWorkspacePreview();
+  const userId = session?.user.id ?? null;
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  useEffect(() => {
+    if (preview) {
+      if (loadedForUserId !== "__preview__" || state.status !== "loaded") {
+        loadedForUserId = "__preview__";
+        setState({
+          status: "loaded",
+          error: null,
+          decks: PREVIEW_DECKS,
+          cards: PREVIEW_CARDS,
+          reviews: [],
+          selectedDeckId: PREVIEW_DECKS[0]?.id ?? null,
+        });
+      }
+      return;
+    }
+    if (!userId) {
+      if (loadedForUserId) reset();
+      return;
+    }
+    if (loadedForUserId !== userId) void loadStudy(userId);
+  }, [preview, userId]);
+
+  const reload = useCallback(() => {
+    if (preview) {
+      loadedForUserId = null;
+      setState(EMPTY_STATE);
+    } else if (userId) {
+      void loadStudy(userId);
+    }
+  }, [preview, userId]);
+
+  const createDeck = useCallback(async (input: CreateDeckInput) => {
+    const name = input.name.trim();
+    if (!name) throw new Error("Enter a deck name.");
+    const timestamp = new Date().toISOString();
+    if (preview) {
+      const deck: StudyDeck = {
+        id: `preview-${crypto.randomUUID()}`,
+        name,
+        description: input.description?.trim() ?? "",
+        sourcePath: input.sourcePath?.trim() || null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      setState({ ...state, decks: [deck, ...state.decks], selectedDeckId: deck.id });
+      return deck;
+    }
+    if (!userId) throw new Error("Sign in to create a deck.");
+    const { data, error } = await supabase
+      .from("study_decks")
+      .insert({
+        user_id: userId,
+        name,
+        description: input.description?.trim() ?? "",
+        source_path: input.sourcePath?.trim() || null,
+      })
+      .select("id,name,description,source_path,created_at,updated_at")
+      .single();
+    if (error) throw new Error(error.message);
+    const deck = toDeck(data);
+    if (!deck) throw new Error("The deck was saved but returned an invalid response.");
+    setState({ ...state, decks: [deck, ...state.decks], selectedDeckId: deck.id });
+    return deck;
+  }, [preview, userId]);
+
+  const createCard = useCallback(async (input: CreateCardInput) => {
+    const front = input.front.trim();
+    const back = input.back.trim();
+    if (!front || !back) throw new Error("Add both a prompt and an answer.");
+    const timestamp = new Date().toISOString();
+    if (preview) {
+      const card: StudyCard = {
+        id: `preview-${crypto.randomUUID()}`,
+        deckId: input.deckId,
+        front,
+        back,
+        sourcePath: input.sourcePath?.trim() || null,
+        dueAt: timestamp,
+        intervalDays: 0,
+        repetitions: 0,
+        lapses: 0,
+        suspended: false,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      setState({ ...state, cards: [card, ...state.cards], selectedDeckId: card.deckId });
+      return card;
+    }
+    if (!userId) throw new Error("Sign in to create a card.");
+    const { data, error } = await supabase
+      .from("study_cards")
+      .insert({ user_id: userId, deck_id: input.deckId, front, back, source_path: input.sourcePath?.trim() || null })
+      .select("id,deck_id,front,back,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
+      .single();
+    if (error) throw new Error(error.message);
+    const card = toCard(data);
+    if (!card) throw new Error("The card was saved but returned an invalid response.");
+    setState({ ...state, cards: [card, ...state.cards], selectedDeckId: card.deckId });
+    return card;
+  }, [preview, userId]);
+
+  const gradeCard = useCallback(async (cardId: string, grade: StudyGrade) => {
+    const card = state.cards.find((item) => item.id === cardId);
+    if (!card) throw new Error("That card is no longer available.");
+    const reviewedAt = new Date();
+    let nextCard: StudyCard;
+    if (preview) {
+      const schedule = scheduleStudyCard(card, grade);
+      const due = new Date(reviewedAt);
+      due.setDate(due.getDate() + schedule.intervalDays);
+      nextCard = { ...card, ...schedule, dueAt: due.toISOString(), updatedAt: reviewedAt.toISOString() };
+    } else {
+      if (!userId) throw new Error("Sign in to review cards.");
+      const { data, error } = await supabase.rpc("grade_study_card", { p_card_id: cardId, p_grade: grade });
+      if (error) throw new Error(error.message);
+      const result = Array.isArray(data) ? data[0] : data;
+      if (!isObject(result) || typeof result.next_due !== "string") throw new Error("The review returned an invalid response.");
+      nextCard = {
+        ...card,
+        dueAt: result.next_due,
+        intervalDays: number(result.interval_days),
+        repetitions: number(result.repetitions),
+        lapses: number(result.lapses),
+        updatedAt: reviewedAt.toISOString(),
+      };
+    }
+    const review: StudyReview = {
+      id: `local-${crypto.randomUUID()}`,
+      cardId,
+      grade,
+      reviewedAt: reviewedAt.toISOString(),
+    };
+    setState({
+      ...state,
+      cards: state.cards.map((item) => (item.id === cardId ? nextCard : item)),
+      reviews: [review, ...state.reviews],
+    });
+    return nextCard;
+  }, [preview, userId]);
+
+  const deleteDeck = useCallback(async (deckId: string) => {
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to delete a deck.");
+      const { error } = await supabase.from("study_decks").delete().eq("id", deckId).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    const decks = state.decks.filter((deck) => deck.id !== deckId);
+    setState({
+      ...state,
+      decks,
+      cards: state.cards.filter((card) => card.deckId !== deckId),
+      selectedDeckId: state.selectedDeckId === deckId ? (decks[0]?.id ?? null) : state.selectedDeckId,
+    });
+  }, [preview, userId]);
+
+  return {
+    ...snapshot,
+    selectDeck: useCallback((deckId: string | null) => setState({ ...state, selectedDeckId: deckId }), []),
+    reload,
+    createDeck,
+    createCard,
+    gradeCard,
+    deleteDeck,
+  };
+}

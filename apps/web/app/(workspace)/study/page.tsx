@@ -1,22 +1,23 @@
 "use client";
 
-// Study — fresh-install v1 (library-study spec §3). No decks/tests/mindmaps
-// data model yet: every count is zero and Cards/Tests/Mind maps all render
-// their respective empty states per the build plan's C3 scope.
-
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { AgentEmptyState } from "@/components/workspace/study/agent-empty-state";
 import { CardsTab } from "@/components/workspace/study/cards-tab";
 import { StudyChrome, type StudyTabId } from "@/components/workspace/study/study-chrome";
+import { useCloudStudy } from "@/lib/workspace/study-cloud-store";
 
 export default function StudyPage() {
   const [activeTab, setActiveTab] = useState<StudyTabId>("cards");
+  const searchParams = useSearchParams();
+  const sourcePath = searchParams.get("source");
+  const { cards } = useCloudStudy();
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto">
-      <StudyChrome activeTab={activeTab} onTabChange={setActiveTab} />
-      {activeTab === "cards" && <CardsTab />}
+      <StudyChrome activeTab={activeTab} counts={{ cards: cards.length, tests: 0, maps: 0 }} onTabChange={setActiveTab} />
+      {activeTab === "cards" && <CardsTab sourcePath={sourcePath} />}
       {activeTab === "tests" && (
         <AgentEmptyState
           description="Practice tests live here, grouped by course. The agent builds them from your lectures…"

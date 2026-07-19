@@ -4,6 +4,7 @@
 // from library-cloud-store.ts so the tree math stays trivially readable/testable on its own.
 
 export interface CloudLibraryNote {
+  id: string;
   path: string;
   title: string;
   content: string;
@@ -37,19 +38,15 @@ export function titleFromPath(path: string): string {
  *  the desktop Library sidebar groups into. Folders and notes are sorted alphabetically at
  *  every level; a blank/whitespace title falls back to `titleFromPath`. Rows with an empty
  *  path are skipped (defensive — should never happen for a well-formed row). */
-export function buildLibraryTree(notes: { path: string; title: string }[]): LibraryTreeFolder {
+export function buildLibraryTree(notes: { path: string; title: string }[], folderPaths: readonly string[] = []): LibraryTreeFolder {
   const root: LibraryTreeFolder = { kind: "folder", name: "", path: "", folders: [], notes: [] };
 
-  for (const note of notes) {
-    const segments = note.path.split("/").filter(Boolean);
-    if (segments.length === 0) continue;
-
-    const folderSegments = segments.slice(0, -1);
+  const ensureFolder = (segments: readonly string[]): LibraryTreeFolder => {
     let cursor = root;
     let pathSoFar = "";
-    for (const segment of folderSegments) {
+    for (const segment of segments) {
       pathSoFar = pathSoFar ? `${pathSoFar}/${segment}` : segment;
-      const existing = cursor.folders.find((f) => f.name === segment);
+      const existing = cursor.folders.find((folder) => folder.name === segment);
       if (existing) {
         cursor = existing;
       } else {
@@ -58,6 +55,19 @@ export function buildLibraryTree(notes: { path: string; title: string }[]): Libr
         cursor = created;
       }
     }
+    return cursor;
+  };
+
+  for (const folderPath of folderPaths) {
+    ensureFolder(folderPath.split("/").map((segment) => segment.trim()).filter(Boolean));
+  }
+
+  for (const note of notes) {
+    const segments = note.path.split("/").filter(Boolean);
+    if (segments.length === 0) continue;
+
+    const folderSegments = segments.slice(0, -1);
+    const cursor = ensureFolder(folderSegments);
 
     const title = note.title.trim().length > 0 ? note.title.trim() : titleFromPath(note.path);
     cursor.notes.push({ kind: "note", path: note.path, title });

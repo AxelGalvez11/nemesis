@@ -9,8 +9,8 @@
      baked in as static CSS (the desktop sets those via JS at boot; web bakes
      them). Light mode = synthLightColors(nemesis) + crimson tint (#cc1f33,
      contrast-guarded); dark mode = nemesis skin verbatim (#ff2740).
-   - `--radius-scalar: 0.2` — the shipped Backdrop override, NOT the CSS
-     default of 1. Corners render near-square on purpose.
+   - `--radius-scalar: 0.75` — a web-specific softer corner treatment that
+     keeps the desktop density without its near-square Backdrop override.
    - Dark selector is `:root[data-theme="dark"]` (web theme mechanism), not
      `:root.dark`.
    - Everything workspace-visual is scoped under `[data-workspace]` (the shell
@@ -340,9 +340,9 @@
     --dt-letter-spacing: 0;
     --dt-spacing-mul: 1;
 
-    /* SHIPPED radius reality: the desktop's Backdrop mount-time Leva override
-       pins the scalar at 0.2 (styles.css says 1; the app never runs at 1). */
-    --radius-scalar: 0.2;
+    /* The web workspace uses friendlier, rounder surfaces than the dense
+       desktop client while retaining the same proportional radius scale. */
+    --radius-scalar: 0.75;
 
     --status-stack-measured-height: 0px;
     --thread-last-message-clearance: calc(var(--composer-measured-height) + var(--status-stack-measured-height) + 2rem);
