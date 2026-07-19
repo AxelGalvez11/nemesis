@@ -149,7 +149,7 @@ async function mintDeviceKey(uid: string): Promise<string | null> {
   }
 }
 
-async function deviceKey(uid: string): Promise<string | null> {
+export async function deviceKey(uid: string): Promise<string | null> {
   const stored = readStoredKey(uid);
   if (stored) return stored;
   return mintDeviceKey(uid);
@@ -161,20 +161,20 @@ export interface ChatReply {
   errorKind: ChatErrorKind | null;
 }
 
-/** One non-streaming completion turn for the signed-in user `uid`. Resolves
- *  (never rejects) for network/API failures — those come back as a
- *  student-readable line. Only an aborted `signal` rejects, so the caller can
- *  tell "the user stopped it" apart from "it failed". */
-export async function sendChatTurn(
+/** One non-streaming completion turn from an arbitrary wire-message array — the shared transport for
+ *  both the main Sessions chat and per-notebook chats (same device-key mint, same valve, same error
+ *  copy). Resolves (never rejects) for network/API failures — those come back as a student-readable
+ *  line. Only an aborted `signal` rejects, so the caller can tell "the user stopped it" apart from
+ *  "it failed". */
+export async function postChatCompletion(
   uid: string,
-  history: SessionMessage[],
-  userText: string,
+  wireMessages: WireMsg[],
   signal?: AbortSignal,
 ): Promise<ChatReply> {
   let key = await deviceKey(uid);
   if (!key) return { errorKind: "auth", errorText: "Sign in to chat.", text: null };
 
-  const payload = JSON.stringify({ messages: buildWireMessages(history, userText), model: CHAT_MODEL });
+  const payload = JSON.stringify({ messages: wireMessages, model: CHAT_MODEL });
   const call = (bearer: string) =>
     fetch(`${LLM_BASE}/v1/chat/completions`, {
       body: payload,
@@ -208,4 +208,14 @@ export async function sendChatTurn(
       text: null,
     };
   }
+}
+
+/** One non-streaming completion turn for the signed-in user `uid` on the main Sessions chat. */
+export async function sendChatTurn(
+  uid: string,
+  history: SessionMessage[],
+  userText: string,
+  signal?: AbortSignal,
+): Promise<ChatReply> {
+  return postChatCompletion(uid, buildWireMessages(history, userText), signal);
 }

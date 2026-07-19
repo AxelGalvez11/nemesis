@@ -166,6 +166,9 @@ importers:
       docx:
         specifier: ^9.7.1
         version: 9.7.1
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       katex:
         specifier: ^0.16.45
         version: 0.16.47
@@ -236,9 +239,6 @@ importers:
       '@types/react-dom':
         specifier: ^19
         version: 19.2.3(@types/react@19.2.16)
-      fflate:
-        specifier: ^0.8.3
-        version: 0.8.3
       postcss:
         specifier: ^8.5.15
         version: 8.5.15
