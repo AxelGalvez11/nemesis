@@ -192,8 +192,8 @@ export function NotebookHome() {
           </div>
         </div>
 
-        {/* Right rail */}
-        <aside className="flex w-[22rem] shrink-0 flex-col overflow-y-auto border-l border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-4 py-5">
+        {/* Right rail — floats on the page background (no distinct column/slab), like Claude's. */}
+        <aside className="flex w-[22rem] shrink-0 flex-col overflow-y-auto px-3 pb-6 pt-5">
           {/* Notebook controls — pin + actions menu, top-right above the panel. */}
           <div className="mb-2 flex items-center justify-end gap-0.5">
             <button
