@@ -1,17 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
-import { listThreads, loadThreadMessages, newThreadId, saveThreadMessages, sendChat } from "@/api/chat";
+import { deleteThread, isThreadPinned, listThreads, loadThreadMessages, newThreadId, pinThread, saveThreadMessages, sendChat } from "@/api/chat";
 import { useShell } from "@/components/AppDrawer";
 import { Composer } from "@/components/Composer";
+import { GlassSurface } from "@/components/GlassSurface";
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { ThinkingDots } from "@/components/ThinkingDots";
@@ -51,7 +58,9 @@ export default function ChatScreen() {
   const markdownStyles = useThemedStyles(createMarkdownStyles);
   const { contentTop, contentBottom } = useShellPadding();
   const keyboardUp = useKeyboardVisible();
-  const { setHeaderTitle, newChat } = useShell();
+  const { setHeaderTitle, newChat, setHeaderRight } = useShell();
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
 
   // The active thread rides in the route param so the drawer/TopBar can steer it.
   const params = useLocalSearchParams<{ c?: string }>();
@@ -62,10 +71,19 @@ export default function ChatScreen() {
   const [lastError, setLastError] = useState<null | string>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // Pinned state of the active thread (drives the "…" menu's Pin/Unpin label) and
+  // whether that menu is open.
+  const [pinned, setPinned] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   // Epoch bumps on user change AND thread change; in-flight sends compare before
   // touching state. sendingRef is the synchronous re-entrancy lock.
   const epochRef = useRef(0);
   const sendingRef = useRef(false);
+  const listRef = useRef<FlatList<Row>>(null);
+  // The newest user-message row index — the row we pin to the top after a send / on
+  // thread open. Set during render below, read by the scroll effect (kept out of its
+  // deps this way).
+  const lastUserRowIndexRef = useRef(-1);
 
   // Load the active thread: the route's `c` if present, else the most recent
   // thread (resume), else a brand-new empty thread. Re-runs on user/thread change.
@@ -76,6 +94,8 @@ export default function ChatScreen() {
     setMessages([]);
     setLastError(null);
     setInput("");
+    setPinned(false);
+    setMenuOpen(false);
     if (!uid) {
       setThreadId(null);
       return;
@@ -93,6 +113,9 @@ export default function ChatScreen() {
       if (!alive || epochRef.current !== epoch) return;
       setThreadId(id);
       setMessages(loaded);
+      void isThreadPinned(uid, id).then((p) => {
+        if (alive && epochRef.current === epoch) setPinned(p);
+      });
     })();
     return () => {
       alive = false;
@@ -144,6 +167,68 @@ export default function ChatScreen() {
       });
   }, [input, messages, uid, threadId]);
 
+  // "…" menu actions.
+  const handleDelete = useCallback(() => {
+    if (!uid || !threadId) return;
+    setMenuOpen(false);
+    void deleteThread(uid, threadId).then(() => {
+      // Leave the just-deleted thread: replace with /chat (no param) so it resumes the
+      // most-recent remaining conversation — or a fresh one if none — and Back can't
+      // return to the dead thread.
+      router.replace("/chat");
+    });
+  }, [uid, threadId]);
+
+  const handleTogglePin = useCallback(() => {
+    if (!uid || !threadId) return;
+    const next = !pinned;
+    setPinned(next); // optimistic; the store write is best-effort
+    void pinThread(uid, threadId, next);
+  }, [uid, threadId, pinned]);
+
+  // Publish the "…" actions button into the TopBar's right slot once the thread has
+  // messages (an empty new chat has nothing to pin/delete). It toggles `menuOpen`; the
+  // dropdown itself renders below in the page layer, so it stays crisp under the
+  // status-bar blur. Cleared when empty and on unmount.
+  useEffect(() => {
+    const hasThread = messages.length > 0;
+    setHeaderRight(
+      hasThread ? (
+        <GlassSurface style={styles.actionsBtn} tint={menuOpen ? c.accentFaint : undefined}>
+          <Pressable
+            style={styles.actionsBtnInner}
+            onPress={() => setMenuOpen((v) => !v)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Chat actions"
+            accessibilityState={{ expanded: menuOpen }}
+            testID="chat-actions-btn"
+          >
+            <DotsIcon size={20} color={menuOpen ? c.accent : c.text2} />
+          </Pressable>
+        </GlassSurface>
+      ) : null,
+    );
+    return () => setHeaderRight(null);
+  }, [messages.length, menuOpen, c, styles, setHeaderRight]);
+
+  // Pin the newest user question to the top after a send and on thread open (owner
+  // 2026-07-18: your prompt sits at the top, the thinking/answer grows below it and to
+  // the left). Keyed on the message COUNT so it fires once per turn; scrollToIndex can
+  // throw before a row is measured, so the list's onScrollToIndexFailed retries.
+  useEffect(() => {
+    const idx = lastUserRowIndexRef.current;
+    if (idx < 0) return;
+    const timer = setTimeout(() => {
+      try {
+        listRef.current?.scrollToIndex({ animated: true, index: idx, viewPosition: 0 });
+      } catch {
+        // list not ready — onScrollToIndexFailed handles the retry
+      }
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [messages.length]);
+
   if (!uid) {
     return (
       <View
@@ -159,21 +244,34 @@ export default function ChatScreen() {
   const rows: Row[] = messages.map((msg, index) => ({ id: `m-${index}`, kind: "msg", msg }));
   if (lastError) rows.push({ errorText: lastError, id: "__error__", kind: "error" });
   if (sending) rows.push({ id: THINKING_ID, kind: "thinking" });
-  const reversed = [...rows].reverse();
-  // Invert ONLY when there's content — an inverted FlatList flips its content
-  // container and RN does not flip the empty component back (would render the
-  // empty state upside-down). Not inverting while empty sidesteps it entirely.
   const hasContent = rows.length > 0;
+  // The newest user-message row — what the scroll effect pins to the top. Computed here
+  // in render and stashed in a ref so that effect needn't depend on `rows`.
+  lastUserRowIndexRef.current = rows.reduce(
+    (acc, row, i) => (row.kind === "msg" && row.msg?.role === "user" ? i : acc),
+    -1,
+  );
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>
       <View style={styles.flex} testID="chat-screen">
         <FlatList
-          inverted={hasContent}
-          data={reversed}
+          ref={listRef}
+          data={rows}
           keyExtractor={(row) => row.id}
-          contentContainerStyle={[styles.listBody, { paddingBottom: contentTop + space(2) }]}
+          contentContainerStyle={[styles.listBody, { paddingTop: contentTop + space(2) }]}
           keyboardShouldPersistTaps="handled"
+          onScrollToIndexFailed={(info) => {
+            // A row wasn't measured yet: jump near it by estimate, then retry once settled.
+            listRef.current?.scrollToOffset({ animated: false, offset: info.averageItemLength * info.index });
+            setTimeout(() => {
+              try {
+                listRef.current?.scrollToIndex({ animated: true, index: info.index, viewPosition: 0 });
+              } catch {
+                // give up quietly — content is still readable, just not auto-pinned
+              }
+            }, 120);
+          }}
           renderItem={({ item }) =>
             item.kind === "thinking" ? (
               <View style={styles.assistantRow} testID="chat-thinking">
@@ -196,8 +294,9 @@ export default function ChatScreen() {
           }
           ListEmptyComponent={
             // Greeting rendered directly (not the shared EmptyBlock, which is
-            // flex:1 + centered) so it anchors NEAR THE TOP (owner call).
-            <View style={[styles.emptyWrap, { paddingTop: contentTop + space(8), paddingBottom: contentBottom }]}>
+            // flex:1 + centered) so it anchors NEAR THE TOP (owner call). The list's own
+            // paddingTop already clears the glass TopBar, so this only adds a little more.
+            <View style={[styles.emptyWrap, { paddingTop: space(4), paddingBottom: contentBottom }]}>
               <Text style={styles.emptyTitle}>Welcome back</Text>
               <Text style={styles.emptyBody}>
                 What are we working on today? Ask about mechanisms, brand names, or anything from your classes — answers come
@@ -205,6 +304,19 @@ export default function ChatScreen() {
               </Text>
             </View>
           }
+          ListFooterComponent={
+            // Bottom spacer so the last exchange can scroll up until the question sits at
+            // the top of the viewport (ChatGPT-style). Only when there's content.
+            hasContent ? <View style={{ height: Math.round(windowHeight * 0.5) }} /> : null
+          }
+        />
+        <ChatActionsPopup
+          visible={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          pinned={pinned}
+          onDelete={handleDelete}
+          onTogglePin={handleTogglePin}
+          topInset={insets.top}
         />
         <View style={[styles.composerRow, { paddingBottom: keyboardUp ? space(3) : contentBottom - space(1) }]}>
           <Composer
@@ -219,6 +331,88 @@ export default function ChatScreen() {
         </View>
       </View>
     </KeyboardAvoidingView>
+  );
+}
+
+// The chat "…" dropdown (Pin/Unpin · Delete chat). Always mounted so its close fade
+// plays; the button that toggles it lives in the TopBar's right slot (see the
+// setHeaderRight effect). Same fade+rise + transparent tap-catcher as the app's other
+// menus — no whole-screen blur, the menu's own glass is the only blur. Anchored just
+// below the "…" button (which sits below the status-bar blur), so it renders crisp.
+function ChatActionsPopup({
+  visible,
+  onClose,
+  pinned,
+  onDelete,
+  onTogglePin,
+  topInset,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  pinned: boolean;
+  onDelete: () => void;
+  onTogglePin: () => void;
+  topInset: number;
+}) {
+  const styles = useThemedStyles(createStyles);
+  const { colors: c } = useTheme();
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: visible ? 1 : 0,
+      duration: visible ? 170 : 130,
+      easing: visible ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [visible, progress]);
+
+  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] });
+  const pick = (fn: () => void) => {
+    onClose();
+    fn();
+  };
+
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID="chat-actions-menu">
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu" />
+      <Animated.View
+        style={[
+          styles.actionsMenuWrap,
+          { top: topInset + space(2) + 44 + space(1.5), opacity: progress, transform: [{ translateY }] },
+        ]}
+      >
+        <GlassSurface style={styles.actionsMenu} fallbackColor={c.bg2}>
+          <Pressable
+            testID="chat-action-pin"
+            onPress={() => pick(onTogglePin)}
+            style={({ pressed }) => [styles.actionsRow, pressed && styles.actionsRowPressed]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.actionsLabel}>{pinned ? "Unpin" : "Pin"}</Text>
+          </Pressable>
+          <Pressable
+            testID="chat-action-delete"
+            onPress={() => pick(onDelete)}
+            style={({ pressed }) => [styles.actionsRow, styles.actionsDivider, pressed && styles.actionsRowPressed]}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.actionsLabel, styles.actionsLabelDanger]}>Delete chat</Text>
+          </Pressable>
+        </GlassSurface>
+      </Animated.View>
+    </View>
+  );
+}
+
+/** Horizontal "…" for the TopBar chat-actions button. */
+function DotsIcon({ size = 20, color }: { size?: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx="5.6" cy="12" r="1.7" fill={color} />
+      <Circle cx="12" cy="12" r="1.7" fill={color} />
+      <Circle cx="18.4" cy="12" r="1.7" fill={color} />
+    </Svg>
   );
 }
 
@@ -245,4 +439,15 @@ const createStyles = (c: ThemeColors) =>
     emptyTitle: { ...type.title, color: c.text, textAlign: "center" },
     emptyBody: { ...type.small, color: c.text2, textAlign: "center", maxWidth: 320 },
     composerRow: { paddingHorizontal: space(3), paddingTop: space(2) },
+
+    // "…" chat-actions button (rendered into the TopBar's right slot) + its dropdown.
+    actionsBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: c.line },
+    actionsBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
+    actionsMenuWrap: { position: "absolute", right: space(3), minWidth: 168 },
+    actionsMenu: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
+    actionsRow: { paddingVertical: space(3), paddingHorizontal: space(4) },
+    actionsRowPressed: { backgroundColor: c.surface },
+    actionsDivider: { borderTopWidth: 1, borderTopColor: c.line },
+    actionsLabel: { ...type.body, color: c.text },
+    actionsLabelDanger: { color: c.danger },
   });

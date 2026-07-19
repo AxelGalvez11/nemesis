@@ -18,7 +18,7 @@ import { space } from "@/theme/tokens";
 // crimson is for primary actions.
 export function TopBar() {
   const insets = useSafeAreaInsets();
-  const { openDrawer, headerTitle } = useShell();
+  const { openDrawer, headerTitle, headerRight } = useShell();
   const styles = useThemedStyles(createStyles);
 
   return (
@@ -33,7 +33,10 @@ export function TopBar() {
         {headerTitle ? <Text style={styles.title} numberOfLines={1}>{headerTitle}</Text> : null}
       </View>
 
-      <View style={styles.spacer} />
+      {/* Right slot: a screen's own action (Graph gear, Chat "…") when set — it paints
+          here, in the chrome above the status-bar blur, perfectly in line with the menu
+          button. Empty otherwise, so the same-size slot keeps the center title centered. */}
+      <View style={styles.spacer} pointerEvents="box-none">{headerRight}</View>
     </View>
   );
 }
@@ -95,7 +98,7 @@ const createStyles = (c: ThemeColors) =>
     bun: { width: 18, height: 2, borderRadius: 2.5, backgroundColor: c.text2, marginVertical: 2 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(1) },
     title: { color: c.text, fontSize: 17, fontWeight: "600", letterSpacing: -0.2 },
-    // Invisible same-size spacer (no border/fill) so the center label stays
-    // centered between two equal-width slots now that the '+' button is gone.
-    spacer: { width: 44, height: 44 },
+    // Right slot — holds a screen's headerRight action (Graph gear / Chat "…") when set,
+    // else an empty same-size box so the center label stays centered between two equal slots.
+    spacer: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   });

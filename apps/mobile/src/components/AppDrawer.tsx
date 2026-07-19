@@ -8,6 +8,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { listMissions, type Mission, type MissionStatus } from "@/api/missions";
 import { listThreads, newThreadId } from "@/api/chat";
 import type { ThreadSummary } from "@/lib/chat-threads";
+import Svg, { Path } from "react-native-svg";
 import { GlassSurface } from "./GlassSurface";
 import { CalendarIcon, ChatIcon, GraphIcon, LibraryIcon, PlusIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
@@ -54,6 +55,11 @@ interface ShellState {
   /** The TopBar's center label: null → blank (owner call 2026-07-18, no logo/wordmark chrome); a string → that title. */
   headerTitle: string | null;
   setHeaderTitle: (title: string | null) => void;
+  /** Optional right-side TopBar chrome — a screen's own action (Graph's gear, Chat's
+   *  "…" menu). Rendered in the top-right slot, which paints ABOVE the status-bar blur,
+   *  so it stays crisp and lines up exactly with the left menu button (owner 2026-07-18). */
+  headerRight: ReactNode;
+  setHeaderRight: (node: ReactNode) => void;
 }
 
 const ShellContext = createContext<ShellState | undefined>(undefined);
@@ -68,6 +74,7 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [resetNonce, setResetNonce] = useState(0);
   const [headerTitle, setHeaderTitle] = useState<string | null>(null);
+  const [headerRight, setHeaderRight] = useState<ReactNode>(null);
   const openDrawer = useCallback(() => setOpen(true), []);
   const closeDrawer = useCallback(() => setOpen(false), []);
   const newSession = useCallback(() => setResetNonce((n) => n + 1), []);
@@ -78,8 +85,8 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<ShellState>(
-    () => ({ open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle, setHeaderTitle }),
-    [open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle],
+    () => ({ open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle, setHeaderTitle, headerRight, setHeaderRight }),
+    [open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle, headerRight],
   );
 
   return (
@@ -297,6 +304,7 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
               style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
               onPress={() => go(`/chat?c=${chat.id}`)}
             >
+              {chat.pinned ? <PinIcon size={12} color={c.accent} /> : null}
               <Text style={styles.rowTitle} numberOfLines={1}>{chat.title}</Text>
               <Text style={styles.rowTime}>{relTime(chat.updatedAt)}</Text>
             </Pressable>
@@ -371,6 +379,22 @@ function NavRow({ Icon, label, onPress }: { Icon: ComponentType<IconProps>; labe
       </View>
       <Text style={styles.navLabel}>{label}</Text>
     </Pressable>
+  );
+}
+
+/** Small pushpin marking a pinned chat row. */
+function PinIcon({ size = 12, color }: { size?: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M12 17v5 M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
+        stroke={color}
+        strokeWidth={1.8}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
   );
 }
 

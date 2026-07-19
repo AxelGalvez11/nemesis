@@ -19,6 +19,7 @@ import {
   getThread,
   parseThreadStore,
   removeThread,
+  setThreadPinned,
   threadSummaries,
   upsertThread,
   type ThreadStore,
@@ -166,4 +167,14 @@ export async function saveThreadMessages(uid: string, id: string, messages: Chat
 
 export async function deleteThread(uid: string, id: string): Promise<void> {
   await writeStore(uid, removeThread(await readStore(uid), id));
+}
+
+/** Whether a thread is currently pinned (drives the "…" menu's Pin/Unpin label). */
+export async function isThreadPinned(uid: string, id: string): Promise<boolean> {
+  return getThread(await readStore(uid), id)?.pinned === true;
+}
+
+/** Pin (or unpin) a thread so it sorts above the rest in the sidebar. */
+export async function pinThread(uid: string, id: string, pinned: boolean): Promise<void> {
+  await writeStore(uid, setThreadPinned(await readStore(uid), id, pinned));
 }
