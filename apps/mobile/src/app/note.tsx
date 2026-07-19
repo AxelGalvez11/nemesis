@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Animated, Easing, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -77,6 +77,17 @@ export default function NoteScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
+  // "…" menu open/close animation (fade + small rise) — matches every other glass menu
+  // in the app (owner 2026-07-18: menu-openers should animate).
+  const menuProgress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(menuProgress, {
+      toValue: menuOpen ? 1 : 0,
+      duration: menuOpen ? 170 : 130,
+      easing: menuOpen ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [menuOpen, menuProgress]);
 
   useEffect(() => {
     let alive = true;
@@ -276,31 +287,38 @@ export default function NoteScreen() {
         </ScrollView>
       )}
 
-      {/* "…" menu — anchored under the top-row cluster. Transparent tap-catcher (no
-          page blur); the menu's own glass supplies the only blur (owner: confine blur
-          to the component). */}
-      {menuOpen ? (
-        <View style={StyleSheet.absoluteFill} testID="note-menu">
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} accessibilityLabel="Close menu" />
-          <View style={[styles.menuWrap, { top: insets.top + space(2) + 40 + space(1.5) }]}>
-            <GlassSurface style={styles.menu} fallbackColor={c.bg2}>
-              {MENU_ITEMS.map((item, i) => (
-                <Pressable
-                  key={item.key}
-                  testID={`note-menu-${item.key}`}
-                  onPress={() => onMenuSelect(item)}
-                  style={({ pressed }) => [styles.menuRow, i > 0 && styles.menuDivider, pressed && styles.menuRowPressed]}
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: !item.enabled }}
-                >
-                  <Text style={[styles.menuLabel, !item.enabled && styles.menuLabelDisabled]}>{item.label}</Text>
-                  {item.enabled ? null : <Text style={styles.menuTag}>Desktop</Text>}
-                </Pressable>
-              ))}
-            </GlassSurface>
-          </View>
-        </View>
-      ) : null}
+      {/* "…" menu — anchored under the top-row cluster. Always mounted so the close fade
+          plays; a transparent tap-catcher dismisses it (no page blur — the menu's own
+          glass is the only blur). Fade + small rise, like every other glass menu. */}
+      <View style={StyleSheet.absoluteFill} pointerEvents={menuOpen ? "auto" : "none"} testID="note-menu">
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} accessibilityLabel="Close menu" />
+        <Animated.View
+          style={[
+            styles.menuWrap,
+            {
+              top: insets.top + space(2) + 40 + space(1.5),
+              opacity: menuProgress,
+              transform: [{ translateY: menuProgress.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
+            },
+          ]}
+        >
+          <GlassSurface style={styles.menu} fallbackColor={c.bg2}>
+            {MENU_ITEMS.map((item, i) => (
+              <Pressable
+                key={item.key}
+                testID={`note-menu-${item.key}`}
+                onPress={() => onMenuSelect(item)}
+                style={({ pressed }) => [styles.menuRow, i > 0 && styles.menuDivider, pressed && styles.menuRowPressed]}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !item.enabled }}
+              >
+                <Text style={[styles.menuLabel, !item.enabled && styles.menuLabelDisabled]}>{item.label}</Text>
+                {item.enabled ? null : <Text style={styles.menuTag}>Desktop</Text>}
+              </Pressable>
+            ))}
+          </GlassSurface>
+        </Animated.View>
+      </View>
     </View>
   );
 }
