@@ -139,6 +139,10 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* App-wide scale: the desktop-parity UI is rem-based, so bumping the root font
+   size proportionally enlarges text, spacing, and cards without touching
+   viewport-height (so nothing overflows). Tune this one number to taste. */
+html { font-size: 110%; }
 body {
   margin: 0;
   font-family: var(--font);
