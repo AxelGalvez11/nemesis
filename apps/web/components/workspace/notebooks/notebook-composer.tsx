@@ -24,7 +24,7 @@ export function NotebookComposer({
   onSubmit,
   disabled,
   working,
-  placeholder = "Ask about this notebook…",
+  placeholder = "Ask a question",
   autoFocus,
   large,
 }: NotebookComposerProps) {

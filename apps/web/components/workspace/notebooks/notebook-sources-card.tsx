@@ -1,8 +1,10 @@
 "use client";
 
-// The right-rail "Sources" card (Claude's Context box): a rounded panel that lists the notebook's
-// sources, is itself a drag-and-drop target for files, and whose "+" opens the finder dialog. Drops
-// and dialog uploads share the same extract path (notebook-source-actions). Writes are RLS-scoped.
+// The right-rail "Sources" segment (Claude's Context box): one divider-separated block inside the
+// unified rail panel that lists the notebook's sources, is itself a drag-and-drop target for files,
+// and whose "+" opens the finder dialog. Renders borderless (the parent panel owns the rounding +
+// dividers). Drops and dialog uploads share the same extract path (notebook-source-actions). Writes
+// are RLS-scoped.
 
 import { useMemo, useState } from "react";
 
@@ -85,8 +87,8 @@ export function NotebookSourcesCard({
   return (
     <section
       className={cn(
-        "flex flex-col gap-2 rounded-2xl border p-3 transition-colors",
-        dragging ? "border-(--ui-stroke-secondary) bg-(--ui-control-hover-background)" : "border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/40",
+        "flex flex-col gap-2 p-3 transition-colors",
+        dragging && "bg-(--ui-control-hover-background)",
       )}
       onDragOver={(e) => {
         if (Array.from(e.dataTransfer.types).includes("Files")) {
@@ -118,7 +120,7 @@ export function NotebookSourcesCard({
         <button
           type="button"
           onClick={() => setDialogOpen(true)}
-          className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-(--ui-stroke-tertiary) px-3 py-6 text-center text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background)"
+          className="flex flex-col items-center gap-1.5 rounded-lg px-3 py-5 text-center text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background)"
         >
           <Codicon name="cloud-upload" size="1.1rem" />
           <span className="text-[0.78rem]">Drag files here, or click to add notes, links, or files.</span>
@@ -128,7 +130,7 @@ export function NotebookSourcesCard({
           {sources.map((s) => (
             <li
               key={s.id}
-              className="group flex items-center gap-2 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2.5 py-1.5"
+              className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-(--ui-control-hover-background)"
             >
               <Codicon name={KIND_ICON[s.kind]} size="0.85rem" className="shrink-0 text-(--ui-text-tertiary)" />
               <div className="min-w-0 flex-1">

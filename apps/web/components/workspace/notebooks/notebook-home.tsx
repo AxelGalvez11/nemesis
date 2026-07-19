@@ -10,6 +10,13 @@ import { useCallback, useMemo, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { Codicon } from "@/components/desktop-ui/codicon";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/desktop-ui/dropdown-menu";
 import { notebookChatStore, sendNotebookTurn, type NotebookWireSource } from "@/lib/notebooks/chat";
 import { cn } from "@/lib/utils";
 
@@ -92,6 +99,12 @@ export function NotebookHome() {
     void notebooks.remove(selected.id);
   };
 
+  const onRename = () => {
+    if (typeof window === "undefined") return;
+    const next = window.prompt("Rename notebook", selected.name)?.trim();
+    if (next && next !== selected.name) void notebooks.rename(selected.id, next);
+  };
+
   const instructions = selected.instructions?.trim() ?? "";
 
   return (
@@ -139,7 +152,7 @@ export function NotebookHome() {
               </button>
             )}
 
-            <NotebookComposer onSubmit={startFromPrompt} placeholder={`Ask ${selected.name} anything…`} large autoFocus />
+            <NotebookComposer onSubmit={startFromPrompt} placeholder="Ask a question" large autoFocus />
             {startError && <p className="mt-2 text-[0.8rem] text-(--dt-destructive)">{startError}</p>}
 
             <div className="mt-8">
@@ -149,13 +162,13 @@ export function NotebookHome() {
               ) : chats.length === 0 ? (
                 <p className="py-3 text-[0.85rem] text-(--ui-text-tertiary)">No chats yet — ask something above to start one.</p>
               ) : (
-                <ul className="flex flex-col">
+                <ul className="flex flex-col gap-2">
                   {chats.map((c) => (
-                    <li key={c.id} className="group relative border-b border-(--ui-stroke-tertiary)">
+                    <li key={c.id} className="group relative">
                       <button
                         type="button"
                         onClick={() => notebooks.openChat(c.id)}
-                        className="flex w-full items-center gap-3 rounded-lg px-2 py-2.5 pr-10 text-left transition-colors hover:bg-(--ui-control-hover-background)"
+                        className="flex w-full items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/40 px-3.5 py-3 pr-10 text-left transition-colors hover:bg-(--ui-control-hover-background)"
                       >
                         <Codicon name="comment-discussion" size="0.9rem" className="shrink-0 text-(--ui-text-tertiary)" />
                         <span className="min-w-0 flex-1 truncate text-[0.9rem] text-foreground">{c.title}</span>
@@ -167,7 +180,7 @@ export function NotebookHome() {
                         type="button"
                         aria-label={`Delete ${c.title}`}
                         onClick={() => void notebooks.removeChat(c.id)}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-active-background) hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-active-background) hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                       >
                         <Codicon name="trash" size="0.75rem" />
                       </button>
@@ -180,55 +193,87 @@ export function NotebookHome() {
         </div>
 
         {/* Right rail */}
-        <aside className="flex w-[22rem] shrink-0 flex-col gap-4 overflow-y-auto border-l border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-4 py-5">
-          <section className="flex flex-col gap-2 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/40 p-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-[0.8rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)">Instructions</h2>
-              <button
-                type="button"
-                aria-label="Edit instructions"
-                onClick={() => setInstrOpen(true)}
-                className="rounded-md p-1 text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground"
-              >
-                <Codicon name={instructions ? "pencil" : "add"} size="0.8rem" />
-              </button>
-            </div>
+        <aside className="flex w-[22rem] shrink-0 flex-col overflow-y-auto border-l border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-4 py-5">
+          {/* Notebook controls — pin + actions menu, top-right above the panel. */}
+          <div className="mb-2 flex items-center justify-end gap-0.5">
             <button
               type="button"
-              onClick={() => setInstrOpen(true)}
-              className={cn(
-                "rounded-xl px-1 py-1 text-left text-[0.82rem] leading-relaxed transition-colors hover:bg-(--ui-control-hover-background)",
-                instructions ? "text-(--ui-text-secondary)" : "text-(--ui-text-quaternary)",
-              )}
+              disabled
+              aria-label="Pin notebook (coming soon)"
+              title="Pin — coming soon"
+              className="rounded-md p-1 text-(--ui-text-quaternary) opacity-60"
             >
-              {instructions ? (
-                <span className="line-clamp-4 whitespace-pre-wrap">{instructions}</span>
-              ) : (
-                "Add instructions to tailor Nemesis's answers in this notebook."
-              )}
+              <Codicon name="pin" size="0.9rem" />
             </button>
-          </section>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Notebook actions"
+                  className="rounded-md p-1 text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground data-[state=open]:bg-(--ui-control-active-background) data-[state=open]:text-foreground"
+                >
+                  <Codicon name="kebab-vertical" size="0.9rem" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="bottom">
+                <DropdownMenuItem onSelect={onRename}>
+                  <Codicon name="edit" size="0.875rem" /> Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled>
+                  <Codicon name="archive" size="0.875rem" /> Archive
+                  <span className="ml-auto rounded-full bg-(--ui-bg-elevated) px-1.5 py-0.5 text-[0.6rem] font-medium text-(--ui-text-quaternary)">Soon</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={onDelete} variant="destructive">
+                  <Codicon name="trash" size="0.875rem" /> Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
-          <NotebookSourcesCard
-            notebookId={selected.id}
-            uid={uid}
-            sources={sources}
-            sourcesStatus={sourcesStatus}
-            addLibrary={notebooks.addLibrary}
-            addExtracted={notebooks.addExtracted}
-            removeSource={notebooks.removeSource}
-          />
+          {/* One rounded panel; dividers separate the sections (no nested boxes). */}
+          <div className="divide-y divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.5rem] border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/40">
+            <section className="flex flex-col gap-2 p-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-[0.8rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)">Instructions</h2>
+                <button
+                  type="button"
+                  aria-label="Edit instructions"
+                  onClick={() => setInstrOpen(true)}
+                  className="rounded-md p-1 text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground"
+                >
+                  <Codicon name={instructions ? "pencil" : "add"} size="0.8rem" />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInstrOpen(true)}
+                className={cn(
+                  "rounded-lg px-1 py-1 text-left text-[0.82rem] leading-relaxed transition-colors hover:bg-(--ui-control-hover-background)",
+                  instructions ? "text-(--ui-text-secondary)" : "text-(--ui-text-quaternary)",
+                )}
+              >
+                {instructions ? (
+                  <span className="line-clamp-4 whitespace-pre-wrap">{instructions}</span>
+                ) : (
+                  "Add instructions to tailor Nemesis's answers in this notebook."
+                )}
+              </button>
+            </section>
 
-          <SoonSection icon="lightbulb" title="Memory" subtitle="What this notebook remembers about you." />
-          <SoonSection icon="clock" title="Scheduled" subtitle="Recurring tasks for this notebook." />
+            <NotebookSourcesCard
+              notebookId={selected.id}
+              uid={uid}
+              sources={sources}
+              sourcesStatus={sourcesStatus}
+              addLibrary={notebooks.addLibrary}
+              addExtracted={notebooks.addExtracted}
+              removeSource={notebooks.removeSource}
+            />
 
-          <button
-            type="button"
-            onClick={onDelete}
-            className="mt-auto flex items-center gap-1.5 self-start rounded-md px-1.5 py-1 text-[0.8rem] text-(--dt-destructive) transition-colors hover:bg-(--dt-destructive)/10"
-          >
-            <Codicon name="trash" size="0.75rem" /> Delete notebook
-          </button>
+            <SoonSegment icon="lightbulb" title="Memory" subtitle="What this notebook remembers about you." />
+            <SoonSegment icon="clock" title="Scheduled" subtitle="Recurring tasks for this notebook." />
+          </div>
         </aside>
       </div>
 
@@ -242,9 +287,9 @@ export function NotebookHome() {
   );
 }
 
-function SoonSection({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
+function SoonSegment({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
   return (
-    <section className="flex flex-col gap-1 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/40 p-3 opacity-75">
+    <section className="flex flex-col gap-1 p-3 opacity-75">
       <div className="flex items-center gap-1.5">
         <h2 className="text-[0.8rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)">{title}</h2>
         <span className="rounded-full bg-(--ui-bg-elevated) px-1.5 py-0.5 text-[0.6rem] font-medium text-(--ui-text-quaternary)">Soon</span>
