@@ -2,6 +2,7 @@ import { Redirect, Slot } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@/auth/AuthProvider";
 import { DrawerProvider } from "@/components/AppDrawer";
+import { StatusBarBlur } from "@/components/StatusBarBlur";
 import { TopBar } from "@/components/TopBar";
 import { useTheme } from "@/theme/ThemeProvider";
 
@@ -32,6 +33,7 @@ export default function AppShellLayout() {
     <DrawerProvider>
       <View style={{ flex: 1, backgroundColor: c.bg }}>
         <Slot />
+        <StatusBarBlur />
         <TopBar />
       </View>
     </DrawerProvider>

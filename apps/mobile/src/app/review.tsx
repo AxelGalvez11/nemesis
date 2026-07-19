@@ -126,12 +126,13 @@ export default function ReviewScreen() {
     [current, pathHash, session, snapshot],
   );
 
-  // Muted, non-neon color fills with white text. Again=red, Hard=yellow, Good=green, Easy=blue.
+  // Muted, non-neon fills with white text — the hue reads clearly (more opaque) but stays
+  // matte, not lightened. Again=red, Hard=yellow/amber, Good=green, Easy=blue.
   const gradeButtons: { rating: ReviewGrade; label: string; fill: string }[] = [
-    { fill: "#5b3336", label: "Again", rating: "again" },
-    { fill: "#5a5230", label: "Hard", rating: "hard" },
-    { fill: "#33513c", label: "Good", rating: "good" },
-    { fill: "#324a63", label: "Easy", rating: "easy" },
+    { fill: "#8a3b41", label: "Again", rating: "again" },
+    { fill: "#7d6526", label: "Hard", rating: "hard" },
+    { fill: "#3c6d4d", label: "Good", rating: "good" },
+    { fill: "#3a5c84", label: "Easy", rating: "easy" },
   ];
 
   return (
@@ -303,7 +304,8 @@ const createStyles = (c: ThemeColors) =>
     // Subtle nudge shown only pre-reveal, under the prompt/cloze sentence —
     // replaces the old "Show answer" button now that the card itself is tappable.
     hint: { ...type.small, color: c.text3, textAlign: "center", marginTop: space(4) },
-    footer: { paddingHorizontal: space(4), paddingTop: space(2), borderTopWidth: 1, borderTopColor: c.line, backgroundColor: c.bg },
+    // No top divider (owner call) — the footer floats over the card on the same background.
+    footer: { paddingHorizontal: space(4), paddingTop: space(2), backgroundColor: c.bg },
     gradeRow: { flexDirection: "row", gap: space(2) },
     gradeBtn: {
       flex: 1,

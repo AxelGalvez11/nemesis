@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentType } from "react";
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
-import { router } from "expo-router";
+import { router, usePathname } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,32 +12,33 @@ import { GlassSurface } from "./GlassSurface";
 import { CalendarIcon, ChatIcon, GraphIcon, LibraryIcon, PlusIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space, type } from "@/theme/tokens";
+import { radius, shadow, space, type } from "@/theme/tokens";
 
-// ChatGPT/Claude-style slide-out drawer + the app-shell context that drives it. Built on RN's built-in
-// Animated (no extra deps; renders identically under react-native-web for previews). The drawer is always
-// mounted and slides via translateX so there is no mount/unmount flicker; pointer events are gated on `open`.
+// ChatGPT/Claude-style side drawer + the app-shell context that drives it. Built on RN's built-in
+// Animated (no extra deps; renders identically under react-native-web for previews). The sidebar is
+// always mounted UNDERNEATH the page; opening PUSHES the whole page (Slot + StatusBarBlur + TopBar) to
+// the right by the panel width to reveal it, instead of sliding an overlay on top — see DrawerShell.
 //
 // The drawer IS the desktop sidebar on the phone: a compact nav (Chat · Study ·
 // Library · Graph · Calendar), then the live CHATS history (owner: "chats should
 // save to the sidebar") — each conversation persisted as its own thread — with the
-// agent SESSIONS below it, then a liquid-glass "New chat" button and the account
-// footer. Tapping a chat reopens it (via the /chat?c=<id> route param).
+// agent SESSIONS below it, then a solid "New chat" button and a settings gear.
+// Tapping a chat reopens it (via the /chat?c=<id> route param).
 //
-// Owner call 2026-07-18: the drawer also opens on a horizontal edge-swipe (in
-// addition to tapping TopBar's menu button) — see EDGE_WIDTH/OPEN_THRESHOLD and
-// DrawerProvider's edgeSwipeGesture below.
+// Owner call 2026-07-18: the drawer opens on a rightward swipe from ANYWHERE (plus
+// tapping TopBar's menu button); on /graph and /calendar — which own their own
+// horizontal drags — the swipe is restricted to the left edge so the child gesture
+// keeps the interior. See DrawerShell's route-gated pan (EDGE_WIDTH / OPEN_THRESHOLD).
 
-// How close to the screen's left edge a touch must START for the edge-swipe-to-open
-// gesture to even engage (react-native-gesture-handler's Pan `hitSlop`, points).
+// On /graph and /calendar (which own horizontal drags) the open-swipe is restricted
+// to a touch STARTING within this many points of the left edge, so the child gesture
+// keeps the interior (react-native-gesture-handler's Pan `hitSlop`, points).
 const EDGE_WIDTH = 28;
-// How far right that touch must travel before it counts as "open the drawer" (points).
+// How far the touch must travel horizontally before it flips the drawer open/closed.
 const OPEN_THRESHOLD = 48;
-
-// A plain, theme-independent flex:1 box for the GestureDetector's child — defined
-// once at module scope so DrawerProvider (which otherwise touches no theme colors)
-// doesn't need a useThemedStyles subscription just for this one static style.
-const shellStyles = StyleSheet.create({ fill: { flex: 1 } });
+// Corner radius on the two facing edges of the push shell — the page's left edge and
+// the sidebar's right edge (radius.xl; the "New chat" button uses radius.lg).
+const SHELL_RADIUS = radius.xl;
 
 interface ShellState {
   open: boolean;
@@ -75,33 +76,6 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
     router.push(`/chat?c=${newThreadId()}` as never);
   }, []);
 
-  // Edge-swipe-to-open: a rightward drag starting within EDGE_WIDTH points of the
-  // screen's left edge opens the drawer, same destination as tapping TopBar's menu
-  // button. Runs as a worklet on the UI thread (react-native-reanimated) until the
-  // threshold trips, then hands off to openDrawer (JS-thread React state) via
-  // runOnJS — the same Gesture.Pan()/GestureDetector idiom as the Graph screen's
-  // canvas pan, just a one-shot trigger instead of a live-tracked transform.
-  // `triggered` guards against calling openDrawer() repeatedly as the finger keeps
-  // moving past the threshold within one gesture; it resets on every new touch.
-  const triggered = useSharedValue(false);
-  const edgeSwipeGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .hitSlop({ left: 0, width: EDGE_WIDTH })
-        .activeOffsetX(12)
-        .failOffsetY([-15, 15])
-        .onStart(() => {
-          triggered.value = false;
-        })
-        .onUpdate((event) => {
-          if (!triggered.value && event.translationX > OPEN_THRESHOLD) {
-            triggered.value = true;
-            runOnJS(openDrawer)();
-          }
-        }),
-    [openDrawer, triggered],
-  );
-
   const value = useMemo<ShellState>(
     () => ({ open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle, setHeaderTitle }),
     [open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle],
@@ -109,42 +83,108 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
 
   return (
     <ShellContext.Provider value={value}>
-      <GestureDetector gesture={edgeSwipeGesture}>
-        <View style={shellStyles.fill}>{children}</View>
-      </GestureDetector>
-      <DrawerOverlay open={open} onClose={closeDrawer} onNewChat={newChat} />
+      <DrawerShell open={open} onOpen={openDrawer} onClose={closeDrawer} onNewChat={newChat}>
+        {children}
+      </DrawerShell>
     </ShellContext.Provider>
   );
 }
 
-function DrawerOverlay({ open, onClose, onNewChat }: { open: boolean; onClose: () => void; onNewChat: () => void }) {
+// The push shell: the sidebar sits UNDERNEATH at the left; the page slides right by
+// the panel width to reveal it. One JS-driven progress value (0 closed -> 1 open)
+// drives BOTH the page's translateX and its left-corner radius, so the rounded,
+// shadowed edge only shows while open (no closed-state notch) — a native-driver
+// transform can't co-animate borderRadius, so the whole thing stays on the JS driver
+// (fine for a ~220ms one-shot). Opening/closing is a worklet + runOnJS trigger (same
+// idiom as the Graph canvas pan); `triggered` fires it once per drag and resets on
+// each new touch. Rightward opens, leftward closes; failOffsetY yields to scrolls.
+function DrawerShell({
+  open,
+  onOpen,
+  onClose,
+  onNewChat,
+  children,
+}: {
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  onNewChat: () => void;
+  children: ReactNode;
+}) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   const { width } = useWindowDimensions();
+  const pathname = usePathname();
   const panelW = Math.min(330, Math.round((width || 380) * 0.86));
-  const progress = useRef(new Animated.Value(0)).current;
 
+  // On the Graph canvas and Calendar the open-swipe is restricted to the left edge so
+  // the child's own horizontal drag keeps the interior; elsewhere it opens from anywhere.
+  const edgeOnly = pathname === "/graph" || pathname === "/calendar";
+
+  const progress = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(progress, {
       toValue: open ? 1 : 0,
-      duration: open ? 230 : 180,
+      duration: open ? 240 : 190,
       easing: open ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-      useNativeDriver: true,
+      useNativeDriver: false,
     }).start();
   }, [open, progress]);
 
-  const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [-panelW, 0] });
+  const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [0, panelW] });
+  const edgeRadius = progress.interpolate({ inputRange: [0, 1], outputRange: [0, SHELL_RADIUS] });
+
+  const triggered = useSharedValue(false);
+  const gesture = useMemo(() => {
+    const pan = Gesture.Pan()
+      .failOffsetY([-16, 16])
+      .onStart(() => {
+        triggered.value = false;
+      })
+      .onUpdate((event) => {
+        if (triggered.value) return;
+        if (!open && event.translationX > OPEN_THRESHOLD) {
+          triggered.value = true;
+          runOnJS(onOpen)();
+        } else if (open && event.translationX < -OPEN_THRESHOLD) {
+          triggered.value = true;
+          runOnJS(onClose)();
+        }
+      });
+    // Direction/zone gating is set per state so the pan claims only the drags it owns:
+    // when open, a leftward drag closes; when closed, a rightward drag opens (edge-only
+    // on /graph + /calendar). This keeps it from cancelling child gestures it shouldn't.
+    if (open) pan.activeOffsetX(-14);
+    else if (edgeOnly) pan.hitSlop({ left: 0, width: EDGE_WIDTH }).activeOffsetX(12);
+    else pan.activeOffsetX(16);
+    return pan;
+  }, [open, edgeOnly, onOpen, onClose, triggered]);
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents={open ? "auto" : "none"}>
-      <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { opacity: progress }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu" />
-      </Animated.View>
-      <Animated.View style={[styles.panel, { width: panelW, transform: [{ translateX }] }]}>
+    <View style={styles.shellRoot}>
+      <View style={[styles.underPanel, { width: panelW }]} pointerEvents={open ? "auto" : "none"}>
         <GlassSurface style={styles.panelGlass} fallbackColor={c.bg2}>
           <DrawerContent open={open} onClose={onClose} onNewChat={onNewChat} />
         </GlassSurface>
-      </Animated.View>
+      </View>
+
+      <GestureDetector gesture={gesture}>
+        <Animated.View
+          style={[
+            styles.pageShadow,
+            { transform: [{ translateX }], borderTopLeftRadius: edgeRadius, borderBottomLeftRadius: edgeRadius },
+          ]}
+        >
+          <Animated.View
+            style={[styles.pageClip, { borderTopLeftRadius: edgeRadius, borderBottomLeftRadius: edgeRadius }]}
+          >
+            {children}
+            {open ? (
+              <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu" />
+            ) : null}
+          </Animated.View>
+        </Animated.View>
+      </GestureDetector>
     </View>
   );
 }
@@ -178,8 +218,6 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
   const uid = session?.user?.id ?? null;
-  const email = session?.user?.email ?? "Sign in";
-  const initial = (email[0] ?? "?").toUpperCase();
   const [chats, setChats] = useState<ThreadSummary[]>([]);
   const [sessions, setSessions] = useState<Mission[]>([]);
   const [query, setQuery] = useState("");
@@ -278,40 +316,27 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
         ) : null}
       </ScrollView>
 
-      {/* Footer: identity display, then a bottom row — liquid-glass "New chat"
-          lower-left, gear-only Settings lower-right (owner call 2026-07-18; no
-          divider above it anymore). Settings deliberately skips onClose(): unlike
-          go() (used by every nav/chat/session row, which SHOULD close the drawer
-          on navigation), pushing /settings without closing means the drawer stays
-          `open` underneath and the modal sheet slides up OVER it — so dismissing
-          Settings lands you right back on the still-open drawer instead of a
-          closed one. See TopBar.tsx / settings.tsx for the rest of that fix. */}
-      <View style={styles.footerWrap}>
-        <View style={styles.identityRow}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initial}</Text>
-          </View>
-          <Text style={styles.footerName} numberOfLines={1}>{email}</Text>
-          <View style={styles.planPill}>
-            <Text style={styles.planPillText}>Student</Text>
-          </View>
-        </View>
-
-        <View style={[styles.bottomRow, { paddingBottom: insets.bottom + space(2.5) }]}>
-          <GlassSurface style={styles.newChatBtn} variant="clear">
-            <Pressable
-              style={styles.newChatInner}
-              onPress={() => {
-                onNewChat();
-                onClose();
-              }}
-              testID="drawer-new-chat"
-              accessibilityLabel="New chat"
-            >
-              <PlusIcon size={17} color={c.accent} />
-              <Text style={styles.newChatText}>New chat</Text>
-            </Pressable>
-          </GlassSurface>
+      {/* Footer: a single bottom row — a SOLID "New chat" button lower-left, gear-only
+          Settings lower-right (owner call 2026-07-18: no identity row, no divider).
+          Settings deliberately skips onClose(): unlike go() (used by every nav/chat/
+          session row, which SHOULD close the drawer on navigation), pushing /settings
+          without closing means the drawer stays `open` underneath and the modal sheet
+          slides up OVER it — so dismissing Settings lands you right back on the still-
+          open drawer instead of a closed one. See TopBar.tsx / settings.tsx. */}
+      <View style={[styles.footerWrap, { paddingBottom: insets.bottom + space(2.5) }]}>
+        <View style={styles.bottomRow}>
+          <Pressable
+            style={({ pressed }) => [styles.newChatBtn, pressed && styles.newChatBtnPressed]}
+            onPress={() => {
+              onNewChat();
+              onClose();
+            }}
+            testID="drawer-new-chat"
+            accessibilityLabel="New chat"
+          >
+            <PlusIcon size={17} color={c.accent} />
+            <Text style={styles.newChatText}>New chat</Text>
+          </Pressable>
 
           <GlassSurface style={styles.settingsBtn}>
             <Pressable
@@ -345,8 +370,19 @@ function NavRow({ Icon, label, onPress }: { Icon: ComponentType<IconProps>; labe
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-    scrim: { backgroundColor: c.scrim },
-    panel: { position: "absolute", top: 0, bottom: 0, left: 0, borderRightWidth: 1, borderRightColor: c.line, overflow: "hidden" },
+    // Push shell: the sidebar sits UNDER the page at the left; the page slides right to
+    // reveal it. shellRoot's bg shows only in the thin seam between the two rounded
+    // facing edges when open (near-black, reads as background).
+    shellRoot: { flex: 1, backgroundColor: c.bg, overflow: "hidden" },
+    underPanel: {
+      position: "absolute", top: 0, bottom: 0, left: 0,
+      borderTopRightRadius: SHELL_RADIUS, borderBottomRightRadius: SHELL_RADIUS, overflow: "hidden",
+    },
+    // The moving page. pageShadow carries the drop shadow (needs an opaque bg and NO
+    // overflow clip so the shadow can bleed onto the sidebar); pageClip rounds the
+    // actual content. Both round only the LEFT (facing) corners via edgeRadius.
+    pageShadow: { flex: 1, backgroundColor: c.bg, ...shadow.raise },
+    pageClip: { flex: 1, overflow: "hidden" },
     panelGlass: { flex: 1 },
     panelInner: { flex: 1 },
     scrollBody: { paddingBottom: space(2) },
@@ -385,24 +421,24 @@ const createStyles = (c: ThemeColors) =>
     rowTime: { color: c.text3, fontSize: 11, fontVariant: ["tabular-nums"] },
     emptyRows: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },
 
-    // Footer block — identity display, then a bottom row (New chat lower-left,
-    // Settings gear lower-right). No divider above it (owner call 2026-07-18).
-    footerWrap: { paddingTop: space(2) },
-
-    identityRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(3.5), paddingBottom: space(2) },
-    avatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.line },
-    avatarText: { color: c.text2, fontSize: 11, fontWeight: "700" },
-    footerName: { flex: 1, color: c.text, fontSize: 12.5, fontWeight: "500", minWidth: 0 },
-    planPill: { backgroundColor: c.accentFaint, borderRadius: radius.pill, paddingHorizontal: space(1.75), paddingVertical: 2 },
-    planPillText: { color: c.accent, fontSize: 10, fontWeight: "700" },
-
-    bottomRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(3), paddingTop: space(1) },
-    // Auto-width pill (hugs its icon+text) now that it shares the row with the
-    // settings button, instead of the old full-bleed bar above the account row.
-    newChatBtn: { borderRadius: radius.pill, borderWidth: 1, borderColor: c.accentLine },
-    newChatInner: { flexDirection: "row", alignItems: "center", gap: space(1.75), paddingVertical: space(2.25), paddingHorizontal: space(3.5) },
+    // Footer block — a single bottom row (New chat lower-left, Settings gear
+    // lower-right). No identity row, no divider (owner call 2026-07-18).
+    footerWrap: { paddingTop: space(2.5) },
+    bottomRow: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+      paddingLeft: space(3.5), paddingRight: space(4), paddingTop: space(1),
+    },
+    // Solid (not glass) squarish button that hugs its icon + label.
+    newChatBtn: {
+      flexDirection: "row", alignItems: "center", gap: space(1.75),
+      paddingVertical: space(2.5), paddingHorizontal: space(3.5),
+      backgroundColor: c.raised, borderRadius: radius.lg,
+    },
+    newChatBtnPressed: { backgroundColor: c.surface2 },
     newChatText: { color: c.accent, fontSize: 15, fontWeight: "600" },
 
+    // The gear sits fully inside the panel — bottomRow's paddingRight keeps its 44pt
+    // circle clear of the sidebar's rounded right edge (owner: it was clipping).
     settingsBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: c.line },
     settingsBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
   });

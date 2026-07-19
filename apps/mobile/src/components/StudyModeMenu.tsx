@@ -3,6 +3,7 @@ import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-nativ
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
+import { BlurScrim } from "./BlurScrim";
 import { GlassSurface } from "./GlassSurface";
 
 export type StudyModeKey = "cards" | "tests" | "mindmaps";
@@ -51,7 +52,9 @@ export function StudyModeMenu({
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID="study-mode-menu">
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close study modes" />
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: progress }]}>
+        <BlurScrim onPress={onClose} intensity={16} />
+      </Animated.View>
       <Animated.View
         style={[
           styles.menuWrap,

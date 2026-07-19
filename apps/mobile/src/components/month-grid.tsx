@@ -136,6 +136,24 @@ function DayCell({
   );
 }
 
+/** The Sun→Sat letter stripe (S M T W T F S) as 7 equal, centered columns.
+ *  Powers the Daily view's header rule in calendar.tsx (the grid renders its own
+ *  height-locked copy inline above). Pass `activeIndex` (0 = Sunday) to accent
+ *  the weekday the shown day falls on, so a single-day view still reads as part
+ *  of the same week. */
+export function WeekdayStripe({ activeIndex }: { activeIndex?: number }) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View style={styles.weekdayStripe} testID="calendar-weekday-stripe">
+      {WEEKDAY_LABELS.map((label, i) => (
+        <Text key={i} style={[styles.weekdayStripeLabel, i === activeIndex && styles.weekdayStripeActive]}>
+          {label}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 /** Re-export so callers get the grid and the matrix builder from one module. */
 export { monthMatrix };
 
@@ -161,6 +179,13 @@ const createStyles = (c: ThemeColors) =>
     dayCellMini: { flex: 1, alignItems: "center", paddingVertical: 1.5 },
     dayInnerMini: { width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center" },
     dayNumMini: { fontSize: 8.5, color: c.text },
+
+    // Standalone weekday stripe (Daily view header) — matches the large card's
+    // weekday row treatment; active column takes the accent (color only, no
+    // size/weight jump, so it stays a quiet cue).
+    weekdayStripe: { flexDirection: "row", alignItems: "center", paddingHorizontal: space(1) },
+    weekdayStripeLabel: { flex: 1, textAlign: "center", fontSize: 13, fontWeight: "700", color: c.text3 },
+    weekdayStripeActive: { color: c.accent },
 
     // Shared across both sizes.
     dayToday: { backgroundColor: c.accent },

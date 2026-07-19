@@ -21,7 +21,9 @@ export interface GraphNode {
   title: string;
   /** Top-level folder ("" for vault root) — the course grouping, roughly. */
   folder: string;
-  /** Number of distinct connections; drives node size and hub highlighting. */
+  /** Number of distinct connections; drives hub highlighting (accent + halo)
+   * and label visibility. NOT node size — every node renders at one uniform
+   * radius (see GraphNodeView). */
   degree: number;
   x: number;
   y: number;

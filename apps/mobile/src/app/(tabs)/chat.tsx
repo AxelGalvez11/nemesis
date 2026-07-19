@@ -3,17 +3,16 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import Markdown from "react-native-markdown-display";
 import { router, useLocalSearchParams } from "expo-router";
 import { useAuth } from "@/auth/AuthProvider";
 import { listThreads, loadThreadMessages, newThreadId, saveThreadMessages, sendChat } from "@/api/chat";
 import { useShell } from "@/components/AppDrawer";
 import { Composer } from "@/components/Composer";
+import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { ThinkingDots } from "@/components/ThinkingDots";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
@@ -169,13 +168,6 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>
       <View style={styles.flex} testID="chat-screen">
-        {messages.length > 0 ? (
-          <View style={styles.topRow}>
-            <Pressable onPress={newChat} hitSlop={8} testID="chat-new">
-              <Text style={styles.newChatText}>New chat</Text>
-            </Pressable>
-          </View>
-        ) : null}
         <FlatList
           inverted={hasContent}
           data={reversed}
@@ -196,9 +188,9 @@ export default function ChatScreen() {
                 <Text style={styles.userText}>{item.msg!.content}</Text>
               </View>
             ) : (
-              // Assistant: full-width markdown, NO bubble.
+              // Assistant: full-width markdown (with LaTeX/math), NO bubble.
               <View style={styles.assistantRow}>
-                <Markdown style={markdownStyles}>{item.msg!.content}</Markdown>
+                <MessageBody content={item.msg!.content} styles={markdownStyles} />
               </View>
             )
           }
@@ -234,8 +226,6 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
     signinWrap: { alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4) },
-    topRow: { alignItems: "flex-end", paddingHorizontal: space(4), paddingTop: space(2) },
-    newChatText: { ...type.small, color: c.text2 },
     listBody: { padding: space(4), gap: space(2), flexGrow: 1 },
     bubble: { maxWidth: "88%", borderRadius: radius.lg, paddingHorizontal: space(3.5), paddingVertical: space(2.5) },
     userBubble: {

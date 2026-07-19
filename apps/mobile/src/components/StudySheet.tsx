@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BlurScrim } from "./BlurScrim";
 import { GlassSurface } from "./GlassSurface";
 import { CloseIcon } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
@@ -9,7 +10,7 @@ import { radius, space, type } from "@/theme/tokens";
 
 // A liquid-glass panel that slides up from the bottom edge — the Study screen's
 // Stats sheet and its "coming soon" placeholders both ride this. Mirrors
-// AppDrawer's DrawerOverlay: always mounted, one Animated.Value driven by
+// AppDrawer's DrawerShell: always mounted, one Animated.Value driven by
 // Animated.timing (translateY here instead of translateX), pointer events
 // gated on `visible` rather than mount/unmount so the close animation always
 // plays and there's no first-open flicker.
@@ -47,8 +48,8 @@ export function SlideUpSheet({
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID={testID}>
-      <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, { opacity: progress }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel={`Close ${title}`} />
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: progress }]}>
+        <BlurScrim onPress={onClose} intensity={22} />
       </Animated.View>
       <Animated.View style={[styles.sheetWrap, { transform: [{ translateY }] }]}>
         <GlassSurface style={styles.sheet} fallbackColor={c.bg2}>
@@ -67,7 +68,6 @@ export function SlideUpSheet({
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-    scrim: { backgroundColor: c.scrim },
     sheetWrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
     sheet: { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderWidth: 1, borderColor: c.line, borderBottomWidth: 0 },
     header: {

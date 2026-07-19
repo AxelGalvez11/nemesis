@@ -22,7 +22,7 @@ export function TopBar() {
   const styles = useThemedStyles(createStyles);
 
   return (
-    <View style={[styles.overlay, { paddingTop: insets.top + space(4) }]} pointerEvents="box-none">
+    <View style={[styles.overlay, { paddingTop: insets.top + space(2) }]} pointerEvents="box-none">
       <GlassButton onPress={openDrawer} label="Open menu" styles={styles}>
         <View style={styles.bun} />
         <View style={styles.bun} />
@@ -90,12 +90,12 @@ const createStyles = (c: ThemeColors) =>
       flexDirection: "row", alignItems: "center", gap: space(2),
       paddingHorizontal: space(3), paddingBottom: space(2),
     },
-    glassBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: c.line },
+    glassBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: c.line },
     glassBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
-    bun: { width: 16, height: 1.8, borderRadius: 2, backgroundColor: c.text2, marginVertical: 1.8 },
+    bun: { width: 18, height: 2, borderRadius: 2.5, backgroundColor: c.text2, marginVertical: 2 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(1) },
-    title: { color: c.text, fontSize: 16, fontWeight: "600", letterSpacing: -0.2 },
+    title: { color: c.text, fontSize: 17, fontWeight: "600", letterSpacing: -0.2 },
     // Invisible same-size spacer (no border/fill) so the center label stays
     // centered between two equal-width slots now that the '+' button is gone.
-    spacer: { width: 40, height: 40 },
+    spacer: { width: 44, height: 44 },
   });

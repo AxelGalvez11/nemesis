@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import Reanimated, { Easing as ReEasing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { router, useFocusEffect } from "expo-router";
 import Svg, { Path } from "react-native-svg";
+import { BlurScrim } from "@/components/BlurScrim";
 import { CalendarIcon } from "@/components/icons";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
-import { MonthGrid, monthCardHeight } from "@/components/month-grid";
+import { MonthGrid, monthCardHeight, WeekdayStripe } from "@/components/month-grid";
 import { useShellPadding } from "@/components/shell-chrome";
 import {
   currentUserId,
@@ -127,6 +129,24 @@ export default function CalendarScreen() {
   // The day Daily view is showing — starts on today, paged by its ‹ › arrows.
   const [shownDay, setShownDay] = useState(() => dayKeyFromDate(new Date()));
 
+  // Quick zoom-in + fade whenever the mode changes (Daily↔Monthly↔Yearly), so the
+  // three views settle into place as one system instead of hard-cutting. Runs on
+  // reanimated's UI thread. Opacity floors at 0.5 (not 0): on a mode switch the
+  // new content commits at full opacity for a frame before this reset lands, and
+  // a 1→0.5 blink is imperceptible where a 1→0 one would flicker.
+  const zoom = useSharedValue(0.96);
+  const fade = useSharedValue(0.5);
+  useEffect(() => {
+    zoom.value = 0.96;
+    fade.value = 0.5;
+    zoom.value = withTiming(1, { duration: 180, easing: ReEasing.out(ReEasing.cubic) });
+    fade.value = withTiming(1, { duration: 180, easing: ReEasing.out(ReEasing.cubic) });
+  }, [view, zoom, fade]);
+  const contentAnimStyle = useAnimatedStyle(() => ({
+    opacity: fade.value,
+    transform: [{ scale: zoom.value }],
+  }));
+
   const pull = useCallback(async (base: SyncCache) => {
     if (pulling.current) return;
     pulling.current = true;
@@ -223,6 +243,10 @@ export default function CalendarScreen() {
   const todayKey = dayKeyFromDate(new Date());
   const events = calendarDoc?.events ?? [];
   const dayEvents = eventsForDay(events, shownDay);
+  // Weekday (0 = Sunday) the shown day falls on, to accent its column in the
+  // Daily view's letter stripe. Parses the yyyy-mm-dd key as a LOCAL date.
+  const [sdY, sdM, sdD] = shownDay.split("-").map(Number);
+  const shownWeekday = new Date(sdY, (sdM || 1) - 1, sdD || 1).getDay();
 
   // Monthly's rendered months + each card's (deterministic, fixed-height) size.
   // Recomputed fresh each render like the rest of this screen's derived data —
@@ -253,6 +277,7 @@ export default function CalendarScreen() {
 
   return (
     <View style={styles.flex} testID="calendar-screen">
+      <Reanimated.View style={[styles.zoomWrap, contentAnimStyle]}>
       {view === "monthly" ? (
         <FlatList
           testID="calendar-monthly-view"
@@ -311,6 +336,9 @@ export default function CalendarScreen() {
               onStep={(delta) => setShownDay((current) => shiftDayKey(current, delta))}
               styles={styles}
             />
+            <View style={styles.dayWeekdayWrap}>
+              <WeekdayStripe activeIndex={shownWeekday} />
+            </View>
           </View>
           <FlatList
             data={dayEvents}
@@ -329,6 +357,7 @@ export default function CalendarScreen() {
           />
         </View>
       ) : null}
+      </Reanimated.View>
 
       <ViewSwitcher
         view={view}
@@ -431,9 +460,10 @@ function ChevronUpIcon({ size = 10, color }: { size?: number; color: string }) {
 /** The lower-left liquid-glass view switcher: a compact pill showing the
  *  active view, tapping it opens a small popup to pick Daily / Monthly /
  *  Yearly. Scrim + fade/slide pattern mirrors AppDrawer's overlay, scaled down
- *  for a small popover instead of a full slide-out panel (no dimming — just an
- *  invisible tap-outside-to-close catcher, which reads lighter for a menu this
- *  small). */
+ *  for a small popover instead of a full slide-out panel. The backdrop BLURS
+ *  the agenda behind the popup (BlurScrim) so the menu reads clearly while the
+ *  page stays recognisable; tapping the blur closes the menu. The blur is
+ *  mounted only while the menu is open (kept alive through the close fade). */
 function ViewSwitcher({
   view,
   menuOpen,
@@ -453,23 +483,35 @@ function ViewSwitcher({
 }) {
   const { colors: c } = useTheme();
   const progress = useRef(new Animated.Value(0)).current;
+  // Keep the full-screen blur mounted through the close fade, then drop it so it
+  // isn't rendering (and blurring) while the menu is shut.
+  const [scrimMounted, setScrimMounted] = useState(false);
 
   useEffect(() => {
+    if (menuOpen) setScrimMounted(true);
     Animated.timing(progress, {
       toValue: menuOpen ? 1 : 0,
       duration: menuOpen ? 170 : 130,
       easing: menuOpen ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
       useNativeDriver: true,
-    }).start();
+    }).start(({ finished }) => {
+      if (finished && !menuOpen) setScrimMounted(false);
+    });
   }, [menuOpen, progress]);
 
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] });
 
   return (
     <>
-      <View style={StyleSheet.absoluteFill} pointerEvents={menuOpen ? "auto" : "none"} testID="calendar-view-menu-scrim">
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close view menu" />
-      </View>
+      {scrimMounted ? (
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { opacity: progress }]}
+          pointerEvents={menuOpen ? "auto" : "none"}
+          testID="calendar-view-menu-scrim"
+        >
+          <BlurScrim onPress={onClose} testID="calendar-view-menu-blur" />
+        </Animated.View>
+      ) : null}
 
       <Animated.View
         style={[
@@ -518,6 +560,9 @@ function ViewSwitcher({
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
+    // Wraps the active view for the mode-switch zoom/fade; fills the screen so
+    // the FlatList/ScrollView inside stays bounded exactly as before.
+    zoomWrap: { flex: 1 },
     pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(6), gap: space(4), backgroundColor: c.bg },
     pairHint: { ...type.small, color: c.text2, textAlign: "center" },
     listBody: { paddingHorizontal: space(4), paddingTop: space(1), flexGrow: 1 },
@@ -527,6 +572,7 @@ const createStyles = (c: ThemeColors) =>
     yearGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
 
     dayNav: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(4), paddingBottom: space(2) },
+    dayWeekdayWrap: { paddingHorizontal: space(4), paddingBottom: space(2.5) },
     arrow: { fontSize: 26, lineHeight: 30, color: c.text2, paddingHorizontal: space(2) },
     dayNavLabel: { ...type.h2, color: c.text },
 

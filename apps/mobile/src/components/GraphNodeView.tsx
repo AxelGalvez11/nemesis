@@ -35,6 +35,10 @@ import type { ThemeColors } from "@/theme/palette";
 // filters out that last case (a plain tap, where onDragStart never fired) so
 // a tap can't spuriously end a drag that was never started.
 const LABEL_W = 100;
+// The one fixed dot radius every node renders at (before the Node size slider's
+// multiplier). Smaller than the old degree-scaled 3.5–8.5 range, and uniform —
+// node importance is conveyed by hub color + halo, not by size.
+const BASE_NODE_R = 3;
 
 export interface GraphNodeViewProps {
   node: GraphNode;
@@ -49,9 +53,10 @@ export interface GraphNodeViewProps {
   canvasPanGesture: PanGesture;
   showLabel: boolean;
   /** Rendered-radius multiplier from the graph screen's settings panel (Node
-   * size slider) — 1 reproduces the original tuned radius exactly. hitR/haloR
-   * both derive from r below, so the tap target and hub halo scale right
-   * along with the visible dot instead of needing their own multiplier. */
+   * size slider) — scales the single uniform node radius (BASE_NODE_R below);
+   * 1 renders every node at that base size. hitR/haloR both derive from r
+   * below, so the tap target and hub halo scale right along with the visible
+   * dot instead of needing their own multiplier. */
   sizeMultiplier: number;
   c: ThemeColors;
   /** Fired once when a drag gesture actually activates (crosses the pan's
@@ -99,7 +104,11 @@ export const GraphNodeView = memo(function GraphNodeView({
   // ever fires paired with a real onDragStart.
   const didStartDrag = useRef(false);
 
-  const r = (3.5 + Math.min(5, node.degree * 1.1)) * sizeMultiplier;
+  // Every node renders at one uniform radius — no degree-based/weighted
+  // scaling (a hub's importance still reads through color + halo below, not
+  // size). BASE_NODE_R is deliberately small; sizeMultiplier (Node size
+  // slider) scales all nodes together, so they stay uniform at any setting.
+  const r = BASE_NODE_R * sizeMultiplier;
   const hub = node.degree >= 3;
   const label = node.title.length > 18 ? `${node.title.slice(0, 17)}…` : node.title;
   const haloR = r + 5;
