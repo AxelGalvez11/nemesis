@@ -52,16 +52,21 @@ export const radius = { sm: 8, md: 10, lg: 14, xl: 18, pill: 999 } as const;
 // 4pt spacing grid.
 export const space = (n: number): number => n * 4;
 
+// Type ramp bumped ~110% for on-phone readability (owner call 2026-07-18). Values below are
+// the desktop tokens.json sizes × 1.1, rounded to 0.5pt. This lifts every token-driven text
+// style app-wide; fixed-size controls (buttons, icons) are tuned per-screen, not here — so a
+// later "make controls bigger too" pass stays a separate change. To revert to desktop parity,
+// divide these back by 1.1.
 export const type = {
   // System font, same as the desktop app (tokens.json font.family = "system").
   family: undefined as string | undefined,
-  h1: { fontSize: 26, lineHeight: 32, fontWeight: "700" as const },
-  h2: { fontSize: 19, lineHeight: 25, fontWeight: "700" as const },
-  title: { fontSize: 16, lineHeight: 22, fontWeight: "600" as const },
-  body: { fontSize: 15.5, lineHeight: 24, fontWeight: "400" as const },
-  bodyStrong: { fontSize: 15.5, lineHeight: 24, fontWeight: "500" as const },
-  small: { fontSize: 13, lineHeight: 19, fontWeight: "400" as const },
-  micro: { fontSize: 11, lineHeight: 15, fontWeight: "500" as const },
+  h1: { fontSize: 28.5, lineHeight: 35, fontWeight: "700" as const },
+  h2: { fontSize: 21, lineHeight: 27.5, fontWeight: "700" as const },
+  title: { fontSize: 17.5, lineHeight: 24, fontWeight: "600" as const },
+  body: { fontSize: 17, lineHeight: 26.5, fontWeight: "400" as const },
+  bodyStrong: { fontSize: 17, lineHeight: 26.5, fontWeight: "500" as const },
+  small: { fontSize: 14.5, lineHeight: 21, fontWeight: "400" as const },
+  micro: { fontSize: 12, lineHeight: 16.5, fontWeight: "500" as const },
 } as const;
 
 export const shadow = {
