@@ -495,7 +495,7 @@
   .scrollbar-dt,
   .scrollbar-dt * {
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--dt-midground) 18%, transparent) transparent;
+    scrollbar-color: color-mix(in srgb, var(--ui-base) 18%, transparent) transparent;
   }
 
   .scrollbar-dt::-webkit-scrollbar,
@@ -513,7 +513,7 @@
 
   .scrollbar-dt::-webkit-scrollbar-thumb,
   .scrollbar-dt *::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--dt-midground) 18%, transparent);
+    background: color-mix(in srgb, var(--ui-base) 18%, transparent);
     border-radius: 9999rem;
     border: 0.125rem solid transparent;
     background-clip: padding-box;
@@ -521,7 +521,7 @@
 
   .scrollbar-dt::-webkit-scrollbar-thumb:hover,
   .scrollbar-dt *::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--dt-midground) 40%, transparent);
+    background: color-mix(in srgb, var(--ui-base) 40%, transparent);
     background-clip: padding-box;
   }
 
@@ -533,7 +533,7 @@
   /* Variant for portaled overlays that render under document.body. */
   .dt-portal-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--dt-midground) 28%, transparent) transparent;
+    scrollbar-color: color-mix(in srgb, var(--ui-base) 28%, transparent) transparent;
   }
 
   .dt-portal-scrollbar::-webkit-scrollbar {
@@ -547,14 +547,14 @@
   }
 
   .dt-portal-scrollbar::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--dt-midground) 28%, transparent);
+    background: color-mix(in srgb, var(--ui-base) 28%, transparent);
     border-radius: 9999rem;
     border: 0.0625rem solid transparent;
     background-clip: padding-box;
   }
 
   .dt-portal-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--dt-midground) 50%, transparent);
+    background: color-mix(in srgb, var(--ui-base) 50%, transparent);
     background-clip: padding-box;
   }
 
@@ -779,6 +779,5 @@
     animation: none;
   }
 }
-
 
 

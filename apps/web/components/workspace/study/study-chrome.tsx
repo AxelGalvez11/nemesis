@@ -1,22 +1,27 @@
 "use client";
 
-// Study page chrome — header (title/counts/Ask-the-agent/settings) + the
-// Cards/Tests/Mind maps tab strip (library-study spec §3.2, verbatim).
+// Study page chrome — compact title/settings plus a centered page selector.
 
-import { IconCards, IconChecklist, IconSitemap } from "@tabler/icons-react";
-import { useRouter } from "next/navigation";
+import { IconCards, IconChartBar, IconChecklist, IconChevronDown, IconSitemap } from "@tabler/icons-react";
 
 import { Button } from "@/components/desktop-ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/desktop-ui/dropdown-menu";
 import { useSettingsModal } from "@/components/workspace/shell/settings-modal";
 import { Settings } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
-export type StudyTabId = "cards" | "tests" | "maps";
+export type StudyTabId = "cards" | "tests" | "maps" | "stats";
 
 const TABS: { id: StudyTabId; label: string; icon: typeof IconCards }[] = [
   { id: "cards", label: "Cards", icon: IconCards },
   { id: "tests", label: "Tests", icon: IconChecklist },
-  { id: "maps", label: "Mind maps", icon: IconSitemap },
+  { id: "maps", label: "Mindmaps", icon: IconSitemap },
+  { id: "stats", label: "Stats", icon: IconChartBar },
 ];
 
 interface StudyChromeProps {
@@ -26,51 +31,45 @@ interface StudyChromeProps {
 }
 
 export function StudyChrome({ activeTab, counts, onTabChange }: StudyChromeProps) {
-  const router = useRouter();
   const { openSettings } = useSettingsModal();
+  const active = TABS.find((tab) => tab.id === activeTab) ?? TABS[0]!;
+  const ActiveIcon = active.icon;
 
   return (
-    <>
-      <header className="flex shrink-0 items-start justify-between gap-3 px-6 pb-3 pt-5">
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold tracking-tight">Study</h1>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Button onClick={() => router.push("/sessions")} size="sm" variant="outline">
-            <span className="size-1.5 rounded-full bg-(--theme-primary)" />
-            Ask the agent
-          </Button>
-          <Button aria-label="Study settings" onClick={openSettings} size="icon-xs" variant="ghost">
-            <Settings />
-          </Button>
-        </div>
-      </header>
+    <header className="relative flex min-h-12 shrink-0 items-center justify-between gap-3 px-6 py-2.5">
+      <h1 className="text-lg font-semibold tracking-tight">Study</h1>
 
-      <nav
-        aria-label="Study sections"
-        className="mx-6 mb-3 flex items-center gap-1 border-b border-(--ui-stroke-tertiary)"
-      >
-        {TABS.map(({ id, label, icon: Icon }) => {
-          const active = activeTab === id;
-          const count = counts[id];
-
-          return (
-            <button
-              className={cn(
-                "relative -mb-px flex items-center gap-1.5 border-b-2 px-2.5 pb-2 pt-1 text-xs font-medium",
-                active ? "border-(--theme-primary) text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            aria-label="Choose study page"
+            className="absolute left-1/2 min-w-32 -translate-x-1/2 gap-2 rounded-xl bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)]"
+            size="sm"
+            variant="secondary"
+          >
+            <ActiveIcon size={14} />
+            {active.label}
+            <IconChevronDown className="ml-1 text-(--ui-text-tertiary)" size={13} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="center" className="min-w-44">
+          {TABS.map(({ id, label, icon: Icon }) => (
+            <DropdownMenuItem
+              className={cn(activeTab === id && "bg-(--ui-control-active-background)")}
               key={id}
-              onClick={() => onTabChange(id)}
-              type="button"
+              onSelect={() => onTabChange(id)}
             >
-              <Icon size={13} />
-              {label}
-              {count > 0 && <span className="tabular-nums text-(--ui-text-quaternary)">{count}</span>}
-            </button>
-          );
-        })}
-      </nav>
-    </>
+              <Icon size={14} />
+              <span>{label}</span>
+              {counts[id] > 0 && <span className="ml-auto tabular-nums text-(--ui-text-quaternary)">{counts[id]}</span>}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Button aria-label="Study settings" onClick={openSettings} size="icon-xs" variant="ghost">
+        <Settings />
+      </Button>
+    </header>
   );
 }

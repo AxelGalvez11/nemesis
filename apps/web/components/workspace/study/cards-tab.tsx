@@ -10,7 +10,6 @@ import { Plus } from "@/lib/workspace/icons";
 import { isCardDue, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import { cn } from "@/lib/utils";
 
-import { StudyHeatmap } from "./heatmap";
 import { ReviewSession } from "./review-session";
 import { StudyCreateDialog, type StudyCreateKind } from "./study-create-dialog";
 
@@ -19,7 +18,7 @@ interface CardsTabProps {
 }
 
 export function CardsTab({ sourcePath }: CardsTabProps) {
-  const { cards, decks, deleteDeck, error, reload, reviews, selectDeck, selectedDeckId, status } = useCloudStudy();
+  const { cards, decks, deleteDeck, error, reload, selectDeck, selectedDeckId, status } = useCloudStudy();
   const [createKind, setCreateKind] = useState<StudyCreateKind | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -60,7 +59,7 @@ export function CardsTab({ sourcePath }: CardsTabProps) {
           <Plus size={13} />
           New deck
         </Button>
-        <Button disabled={!selectedDeck} onClick={() => setCreateKind("card")} size="sm" variant="secondary">
+        <Button disabled={!selectedDeck} onClick={() => setCreateKind("card")} size="sm" variant="outline">
           <IconCards size={13} />
           Add card
         </Button>
@@ -94,7 +93,7 @@ export function CardsTab({ sourcePath }: CardsTabProps) {
                   className={cn(
                     "rounded-xl border p-3 text-left transition-colors",
                     active
-                      ? "border-primary/35 bg-primary/7"
+                      ? "border-(--ui-stroke-primary) bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)]"
                       : "border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) hover:border-(--ui-stroke-secondary) hover:bg-(--chrome-action-hover)",
                   )}
                   key={deck.id}
@@ -116,7 +115,7 @@ export function CardsTab({ sourcePath }: CardsTabProps) {
             })}
           </section>
 
-          <section className="min-w-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) p-4">
+          <section className="min-w-0 rounded-2xl border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-base)_3%,transparent)] p-4">
             {selectedDeck ? (
               <>
                 <div className="flex items-start justify-between gap-4">
@@ -159,9 +158,6 @@ export function CardsTab({ sourcePath }: CardsTabProps) {
         </div>
       )}
 
-      <div className="flex shrink-0 justify-center px-6 pb-8 pt-4">
-        <StudyHeatmap reviews={reviews} />
-      </div>
       <StudyCreateDialog
         deck={selectedDeck}
         kind={createKind ?? "deck"}

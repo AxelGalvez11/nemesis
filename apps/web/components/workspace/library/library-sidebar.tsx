@@ -3,7 +3,7 @@
 // Cloud Library tree with persisted note/folder creation, search, selection,
 // and shared state for the editor and Graph surfaces.
 
-import { IconFilePlus, IconFolderPlus } from "@tabler/icons-react";
+import { IconFilePlus, IconFolderPlus, IconLayoutSidebarLeftCollapse } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -24,7 +24,7 @@ const HEADER_ACTIONS = [
   { label: "New folder", icon: IconFolderPlus },
 ] as const;
 
-export function LibrarySidebar() {
+export function LibrarySidebar({ onCollapse }: { onCollapse: () => void }) {
   const [query, setQuery] = useState("");
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
   const { status, notes, folders, error, selectedPath, select, reload } = useCloudLibrary();
@@ -61,6 +61,9 @@ export function LibrarySidebar() {
               <Icon />
             </Button>
           ))}
+          <Button aria-label="Collapse Library sidebar" onClick={onCollapse} size="icon-xs" type="button" variant="ghost">
+            <IconLayoutSidebarLeftCollapse />
+          </Button>
         </div>
       </div>
 

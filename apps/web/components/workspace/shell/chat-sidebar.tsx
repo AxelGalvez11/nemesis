@@ -5,6 +5,7 @@
 // Sessions sections, account footer. Class strings are verbatim transplants.
 
 import { usePathname, useRouter } from "next/navigation";
+import { IconLayoutSidebarLeftCollapse } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -15,7 +16,7 @@ import { comboTokens } from "@/lib/workspace/combo";
 import { useSessions } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
 
-import { SidebarBlankState, SidebarNoMatchState, SidebarPinnedEmptyState, SidebarSessionsEmptyState } from "./section-states";
+import { SidebarBlankState, SidebarNoMatchState, SidebarSessionsEmptyState } from "./section-states";
 import { useSettingsModal } from "./settings-modal";
 import { SidebarSessionRow } from "./session-row";
 import {
@@ -58,13 +59,14 @@ const SIDEBAR_NAV: NavItem[] = [
 interface ChatSidebarProps {
   sidebarOpen: boolean;
   accountEmail: string;
+  onCollapse: () => void;
 }
 
-export function ChatSidebar({ sidebarOpen, accountEmail }: ChatSidebarProps) {
+export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSidebarProps) {
   const router = useRouter();
   const { openSettings } = useSettingsModal();
   const pathname = usePathname();
-  const { pinned, recents, sessions, selectedId, working, create, select, rename, remove, togglePin } = useSessions();
+  const { pinned, recents, sessions, selectedId, working, select, rename, remove, togglePin } = useSessions();
 
   const [query, setQuery] = useState("");
   const [pinnedOpen, setPinnedOpen] = useState(true);
@@ -78,8 +80,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail }: ChatSidebarProps) {
   }, [sessions, trimmedQuery]);
 
   const startNewSession = () => {
-    const session = create();
-    select(session.id);
+    select(null);
     router.push("/sessions");
   };
 
@@ -110,10 +111,10 @@ export function ChatSidebar({ sidebarOpen, accountEmail }: ChatSidebarProps) {
                 const isNewSession = item.action === "new-session";
 
                 return (
-                  <SidebarMenuItem key={item.id}>
+                  <SidebarMenuItem className="flex items-center gap-0.5" key={item.id}>
                     <SidebarMenuButton
                       className={cn(
-                        "flex h-7 w-full justify-start gap-2 rounded-md border border-transparent px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none",
+                        "flex h-7 min-w-0 flex-1 justify-start gap-2 rounded-md border border-transparent px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 ease-out hover:bg-(--ui-control-hover-background) hover:text-foreground hover:transition-none",
                         active &&
                           "border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) text-foreground shadow-none hover:border-(--ui-stroke-tertiary)!",
                       )}
@@ -130,6 +131,11 @@ export function ChatSidebar({ sidebarOpen, accountEmail }: ChatSidebarProps) {
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       {isNewSession && <KbdGroup className="ml-auto opacity-55" keys={[...NEW_SESSION_KBD]} size="sm" />}
                     </SidebarMenuButton>
+                    {isNewSession && (
+                      <Button aria-label="Collapse sidebar" onClick={onCollapse} size="icon-xs" variant="ghost">
+                        <IconLayoutSidebarLeftCollapse />
+                      </Button>
+                    )}
                   </SidebarMenuItem>
                 );
               })}
@@ -173,7 +179,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail }: ChatSidebarProps) {
               ) : (
                 <>
                   {/* Pinned */}
-                  <SidebarGroup className="shrink-0 p-0 pb-1">
+                  {pinned.length > 0 && <SidebarGroup className="shrink-0 p-0 pb-1">
                     <SidebarSectionHeader
                       label="Pinned"
                       onToggle={() => setPinnedOpen((v) => !v)}
@@ -183,10 +189,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail }: ChatSidebarProps) {
                       <SidebarGroupContent
                         className={cn("flex max-h-44 flex-col gap-px rounded-lg pb-2 pt-1", GROUP_BODY)}
                       >
-                        {pinned.length === 0 ? (
-                          <SidebarPinnedEmptyState />
-                        ) : (
-                          pinned.map((session) => (
+                        {pinned.map((session) => (
                             <SidebarSessionRow
                               isPinned
                               isSelected={session.id === selectedId}
@@ -198,11 +201,10 @@ export function ChatSidebar({ sidebarOpen, accountEmail }: ChatSidebarProps) {
                               onResume={() => resume(session.id)}
                               session={session}
                             />
-                          ))
-                        )}
+                          ))}
                       </SidebarGroupContent>
                     )}
-                  </SidebarGroup>
+                  </SidebarGroup>}
 
                   {/* Sessions */}
                   <SidebarGroup className="min-h-32 flex-1 overflow-hidden p-0">

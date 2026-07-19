@@ -1,13 +1,13 @@
 "use client";
 
 // Library folder tree — recursive render of the LibraryTreeFolder built by
-// lib/workspace/library-tree.ts. Read-only slice 1: no expand/collapse state (folders always
-// render open), no drag/reorder, no context menu — just folders and notes, indented by depth,
-// in the same row chrome as the chat sidebar's session rows
+// lib/workspace/library-tree.ts. Folders own their disclosure state while notes
+// remain compact, text-first rows in the same chrome as the chat sidebar
 // (components/workspace/shell/sidebar-primitives.tsx), so it reads as one system with the
 // rest of the desktop-parity shell.
 
 import type * as React from "react";
+import { useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { LibraryTreeFolder, LibraryTreeNote } from "@/lib/workspace/library-tree";
@@ -54,19 +54,26 @@ function LibraryFolderNode({
   selectedPath: string | null;
   onSelect: (path: string) => void;
 }) {
+  const [open, setOpen] = useState(true);
+
   return (
     <div>
       <div style={indentStyle(depth)}>
         <SidebarRowShell>
-          <SidebarRowBody className="cursor-default" disabled>
+          <SidebarRowBody aria-expanded={open} onClick={() => setOpen((value) => !value)}>
             <SidebarRowLead>
-              <Codicon className="text-(--ui-text-quaternary)" name="folder" size="0.875rem" />
+              <Codicon
+                className="text-(--ui-text-quaternary)"
+                name={open ? "chevron-down" : "chevron-right"}
+                size="0.75rem"
+              />
             </SidebarRowLead>
+            <Codicon className="shrink-0 text-(--ui-text-quaternary)" name={open ? "folder-opened" : "folder"} size="0.875rem" />
             <SidebarRowLabel className="font-medium text-(--ui-text-tertiary)">{folder.name}</SidebarRowLabel>
           </SidebarRowBody>
         </SidebarRowShell>
       </div>
-      <LibraryTreeView depth={depth + 1} folder={folder} onSelect={onSelect} selectedPath={selectedPath} />
+      {open && <LibraryTreeView depth={depth + 1} folder={folder} onSelect={onSelect} selectedPath={selectedPath} />}
     </div>
   );
 }
@@ -88,9 +95,6 @@ export function LibraryNoteRow({
     <div style={indentStyle(depth)}>
       <SidebarRowShell className={cn("row-hover", isSelected && "bg-(--ui-row-active-background)")}>
         <SidebarRowBody onClick={() => onSelect(note.path)}>
-          <SidebarRowLead>
-            <Codicon className="text-(--ui-text-quaternary)" name="note" size="0.875rem" />
-          </SidebarRowLead>
           <SidebarRowLabel className={cn(isSelected && "text-foreground")}>{note.title}</SidebarRowLabel>
         </SidebarRowBody>
       </SidebarRowShell>

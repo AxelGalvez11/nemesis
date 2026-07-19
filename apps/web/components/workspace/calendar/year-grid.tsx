@@ -41,7 +41,7 @@ function MiniMonth({ days, eventsByDay, month, onSelectMonth, year }: MiniMonthP
 
   return (
     <button
-      className="flex flex-col gap-1.5 rounded-xl border border-border p-2 text-left transition-colors hover:border-(--theme-primary)/60 hover:bg-(--ui-control-hover-background)"
+      className="flex flex-col gap-1.5 rounded-xl border border-border p-2 text-left transition-colors hover:border-(--ui-stroke-primary) hover:bg-(--ui-control-hover-background)"
       onClick={() => onSelectMonth(year, month)}
       type="button"
     >

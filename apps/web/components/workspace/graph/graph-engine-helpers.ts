@@ -109,7 +109,7 @@ export function makeLabelSprite(
   const sprite = new SpriteTextCtor(truncateLabel(node.title), controls.labelSize, palette.label);
   const object3d = sprite as unknown as Object3DLike;
   object3d.visible = controls.showNames;
-  const radius = Math.cbrt(1 + node.degree) * controls.nodeSize;
+  const radius = controls.nodeSize;
   object3d.position.set(0, radius * LABEL_OFFSET_SCALE, 0);
   return sprite;
 }

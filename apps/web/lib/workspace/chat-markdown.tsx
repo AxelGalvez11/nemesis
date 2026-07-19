@@ -25,21 +25,31 @@ const MARKDOWN_CONTAINER_CLASS_NAME =
 
 const CODE_BLOCK_LANGUAGE_RE = /language-/;
 
-function markdownComponents(onWikiLink?: (target: string) => void): Components {
+function markdownComponents(
+  onWikiLink?: (target: string) => void,
+  isWikiLinkAvailable?: (target: string) => boolean,
+): Components {
   return {
     a: ({ children, href }) => {
       const wikiTarget = href?.startsWith("#nemesis-note=")
         ? decodeURIComponent(href.slice("#nemesis-note=".length))
         : null;
+      const wikiAvailable = wikiTarget ? (isWikiLinkAvailable?.(wikiTarget) ?? true) : true;
       return (
         <a
-          className="break-words underline decoration-primary/35 underline-offset-4 hover:decoration-primary"
-          href={href}
+          aria-disabled={!wikiAvailable || undefined}
+          className={cn(
+            "break-words underline underline-offset-4",
+            wikiTarget && wikiAvailable && "font-medium text-(--ui-blue) decoration-current/35 hover:decoration-current",
+            wikiTarget && !wikiAvailable && "cursor-default text-(--ui-text-quaternary) decoration-current/20",
+            !wikiTarget && "text-(--ui-blue) decoration-current/35 hover:decoration-current",
+          )}
+          href={wikiAvailable ? href : undefined}
           onClick={
-            wikiTarget && onWikiLink
+            wikiTarget
               ? (event) => {
                   event.preventDefault();
-                  onWikiLink(wikiTarget);
+                  if (wikiAvailable) onWikiLink?.(wikiTarget);
                 }
               : undefined
           }
@@ -118,15 +128,17 @@ export function AssistantMarkdown({
   className,
   text,
   onWikiLink,
+  isWikiLinkAvailable,
 }: {
   className?: string;
   text: string;
   onWikiLink?: (target: string) => void;
+  isWikiLinkAvailable?: (target: string) => boolean;
 }) {
   return (
     <div className={cn(MARKDOWN_CONTAINER_CLASS_NAME, className)}>
       <ReactMarkdown
-        components={markdownComponents(onWikiLink)}
+        components={markdownComponents(onWikiLink, isWikiLinkAvailable)}
         rehypePlugins={[rehypeKatex]}
         remarkPlugins={[remarkGfm, remarkMath]}
       >

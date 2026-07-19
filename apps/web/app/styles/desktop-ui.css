@@ -9,7 +9,7 @@
      baked in as static CSS (the desktop sets those via JS at boot; web bakes
      them). Light mode = synthLightColors(nemesis) + crimson tint (#cc1f33,
      contrast-guarded); dark mode = nemesis skin verbatim (#ff2740).
-   - `--radius-scalar: 0.75` — a web-specific softer corner treatment that
+   - `--radius-scalar: 1` — a web-specific softer corner treatment that
      keeps the desktop density without its near-square Backdrop override.
    - Dark selector is `:root[data-theme="dark"]` (web theme mechanism), not
      `:root.dark`.
@@ -254,27 +254,11 @@
     --ui-text-secondary: color-mix(in srgb, var(--ui-base) 74%, transparent);
     --ui-text-tertiary: color-mix(in srgb, var(--ui-base) 54%, transparent);
     --ui-text-quaternary: color-mix(in srgb, var(--ui-base) 36%, transparent);
-    --ui-stroke-primary: color-mix(
-      in srgb,
-      var(--ui-accent) var(--theme-stroke-primary-accent-mix),
-      color-mix(in srgb, var(--ui-base) 10%, transparent)
-    );
-    --ui-stroke-secondary: color-mix(
-      in srgb,
-      var(--ui-accent) var(--theme-stroke-secondary-accent-mix),
-      color-mix(in srgb, var(--ui-base) 7%, transparent)
-    );
-    --ui-stroke-tertiary: color-mix(
-      in srgb,
-      var(--ui-accent) var(--theme-stroke-tertiary-accent-mix),
-      color-mix(in srgb, var(--ui-base) 5%, transparent)
-    );
-    --ui-stroke-quaternary: color-mix(
-      in srgb,
-      var(--ui-accent) var(--theme-stroke-quaternary-accent-mix),
-      color-mix(in srgb, var(--ui-base) 3%, transparent)
-    );
-    --ui-sash-hover-border: color-mix(in srgb, var(--ui-accent) 18%, var(--ui-stroke-tertiary));
+    --ui-stroke-primary: color-mix(in srgb, var(--ui-base) 18%, transparent);
+    --ui-stroke-secondary: color-mix(in srgb, var(--ui-base) 12%, transparent);
+    --ui-stroke-tertiary: color-mix(in srgb, var(--ui-base) 8%, transparent);
+    --ui-stroke-quaternary: color-mix(in srgb, var(--ui-base) 5%, transparent);
+    --ui-sash-hover-border: color-mix(in srgb, var(--ui-base) 18%, var(--ui-stroke-tertiary));
     --ui-sash-hover-background: color-mix(in srgb, var(--ui-accent) 6%, transparent);
     --ui-surface-background: var(--ui-bg-editor);
     --ui-sidebar-surface-background: var(--ui-bg-sidebar);
@@ -296,7 +280,7 @@
     --dt-card-foreground: var(--ui-text-primary);
     /* applyTheme paints the palette slots below with the skin's FLAT colors
        (overriding the styles.css derived fallbacks) — baked here. */
-    --dt-muted: #fff5f6;
+    --dt-muted: #f5f5f6;
     --dt-muted-foreground: var(--ui-text-tertiary);
     --dt-popover: color-mix(in srgb, var(--ui-bg-elevated) 96%, transparent);
     --dt-popover-foreground: var(--ui-text-primary);
@@ -306,8 +290,8 @@
     --dt-secondary-foreground: #72393d;
     --dt-accent: var(--theme-accent-soft);
     --dt-accent-foreground: #cc1f33;
-    --dt-border: #efd7db;
-    --dt-input: #e7c9ce;
+    --dt-border: #e4e4e7;
+    --dt-input: #d9d9de;
     /* THE single knob for input-field borders: the resting alpha (% of the ring
        color). Hover doubles it; focus/open go full. 0% = invisible at rest. */
     --dt-input-border: 7%;
@@ -316,16 +300,16 @@
     --dt-input-bg: 0%;
     /* Classic recessed "inset" — a crisp 1px inner shadow at the TOP edge. */
     --dt-input-inset: inset 0 1px 1px color-mix(in srgb, #000 10%, transparent);
-    --dt-ring: #cc1f33;
+    --dt-ring: #77777f;
     --dt-midground: var(--theme-midground);
     --dt-midground-foreground: #ffffff;
-    --dt-composer-ring: #cc1f33;
+    --dt-composer-ring: #77777f;
     --dt-destructive: #b94a3a;
     --dt-destructive-foreground: #ffffff;
     --dt-sidebar-bg: var(--ui-bg-sidebar);
     --dt-sidebar-border: #ececef;
     --dt-user-bubble: var(--ui-chat-bubble-background);
-    --dt-user-bubble-border: #efd7db;
+    --dt-user-bubble-border: #dedee2;
 
     --dt-font-sans:
       'Segoe WPC', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif,
@@ -342,7 +326,7 @@
 
     /* The web workspace uses friendlier, rounder surfaces than the dense
        desktop client while retaining the same proportional radius scale. */
-    --radius-scalar: 0.75;
+    --radius-scalar: 1;
 
     --status-stack-measured-height: 0px;
     --thread-last-message-clearance: calc(var(--composer-measured-height) + var(--status-stack-measured-height) + 2rem);
@@ -441,9 +425,9 @@
     --dt-accent-foreground: #ff2740;
     --dt-border: #2a2a2a;
     --dt-input: #2a2a2a;
-    --dt-ring: #ff2740;
+    --dt-ring: #8f8f98;
     --dt-midground-foreground: #1a1a1a;
-    --dt-composer-ring: #ff2740;
+    --dt-composer-ring: #8f8f98;
     --dt-destructive: #ff3b46;
     --dt-destructive-foreground: #fef2f2;
     --dt-sidebar-border: #202020;

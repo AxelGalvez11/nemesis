@@ -23,7 +23,7 @@ const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
 
 const SHELL_VARS: React.CSSProperties = {
   ["--sidebar-width" as string]: "var(--pane-chat-sidebar-width)",
-  ["--titlebar-height" as string]: "34px",
+  ["--titlebar-height" as string]: "0px",
   ["--titlebar-content-inset" as string]: "0.75rem",
   // TITLEBAR_EDGE_INSET = 14px / TITLEBAR_CONTROLS_TOP = 6px — the browser tab
   // has no traffic lights, so the fallback edge inset applies.
@@ -53,7 +53,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       }}
     >
       <SettingsModalProvider>
-      <TitlebarControls onToggleSidebar={() => setSidebarOpen((v) => !v)} />
+      {!sidebarVisible && <TitlebarControls onToggleSidebar={() => setSidebarOpen(true)} />}
       <main className="relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none">
         <div
           className="relative grid h-full min-h-0"
@@ -66,7 +66,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             data-pane-open={sidebarVisible ? "true" : "false"}
             data-pane-side="left"
           >
-            <ChatSidebar accountEmail={accountEmail} sidebarOpen={sidebarVisible} />
+            <ChatSidebar accountEmail={accountEmail} onCollapse={() => setSidebarOpen(false)} sidebarOpen={sidebarVisible} />
           </div>
           <div className="relative min-h-0 min-w-0 overflow-hidden">{children}</div>
         </div>

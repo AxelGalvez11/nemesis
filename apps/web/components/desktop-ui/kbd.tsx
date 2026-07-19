@@ -26,7 +26,7 @@ const kbdVariants = cva(
           "border-[color-mix(in_srgb,var(--ui-stroke-tertiary)_80%,transparent)]",
         ],
         capturing: [
-          "border-[color-mix(in_srgb,var(--theme-primary)_50%,var(--ui-stroke-secondary))]",
+          "border-(--ui-stroke-secondary)",
           "bg-[color-mix(in_srgb,var(--theme-primary)_10%,var(--ui-bg-elevated))]",
           "text-[color-mix(in_srgb,var(--theme-primary)_88%,transparent)]",
           "shadow-none",

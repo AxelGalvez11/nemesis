@@ -50,6 +50,7 @@ type OrbitControls = { autoRotate?: boolean; autoRotateSpeed?: number };
 export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCanvasProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<EngineInstance | null>(null);
+  const wakeRef = useRef<(() => void) | null>(null);
   // Accessor closures read live controls without forcing a full remount —
   // only the mount effect's own dependency (`index`) rebuilds the engine.
   const controlsRef = useRef(controls);
@@ -107,13 +108,15 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
           idleTimer = setTimeout(() => graph.pauseAnimation(), IDLE_PAUSE_MS);
         }
       }
+      wakeRef.current = wake;
 
       graph
         .backgroundColor(palette.background)
         .width(host.clientWidth)
         .height(host.clientHeight)
+        .numDimensions(2)
         .nodeRelSize(controlsRef.current.nodeSize)
-        .nodeVal((node: EngineNode) => 1 + node.degree)
+        .nodeVal(() => 1)
         .nodeOpacity(0)
         .linkOpacity(0)
         .nodeColor((node: EngineNode) => colorForNode(node, activeId, adjacency, palette, maxDegree))
@@ -182,6 +185,7 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
         host.removeEventListener("pointerdown", onInteract);
         host.removeEventListener("wheel", onInteract);
         if (engineRef.current === graph) engineRef.current = null;
+        if (wakeRef.current === wake) wakeRef.current = null;
         graph._destructor();
       });
     }
@@ -203,10 +207,11 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
     (graph.d3Force("center") as TunableForce | undefined)?.strength?.(controls.gravity);
     graph.nodeThreeObject(graph.nodeThreeObject());
     graph.d3ReheatSimulation();
+    graph.refresh();
     const orbit = graph.controls() as OrbitControls;
     orbit.autoRotate = controls.rotationSpeed > 0;
     orbit.autoRotateSpeed = controls.rotationSpeed;
-    if (controls.rotationSpeed > 0) graph.resumeAnimation();
+    wakeRef.current?.();
   }, [controls]);
 
   return <div className={cn("min-h-0", className)} ref={hostRef} />;
