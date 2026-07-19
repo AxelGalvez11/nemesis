@@ -50,12 +50,12 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
-      <nav className="mx-auto mb-7 flex shrink-0 items-center rounded-b-2xl border border-t-0 border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-1 shadow-sm">
-        <Button className="rounded-xl" size="sm" variant="secondary"><Icon size={14} /> {label}</Button>
+      <nav className="mx-auto mb-7 flex shrink-0 items-center rounded-b-2xl border border-t-0 border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
+        <Button className="rounded-xl bg-black/[0.055] dark:bg-white/[0.08]" size="sm" variant="ghost"><Icon size={14} /> {label}</Button>
         <Button onClick={() => setCreateOpen(true)} size="sm" variant="ghost">Add</Button>
         <Button disabled={items.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
       </nav>
-      <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/60 shadow-[0_14px_34px_rgba(0,0,0,0.06)]">
+      <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
         <div className="grid grid-cols-[minmax(0,1fr)_6rem_6rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold">
           <span>Group</span><span className="text-center">Items</span><span className="text-center">Due</span>
         </div>
@@ -91,7 +91,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
             <label className="grid gap-1.5 text-xs font-medium">Title<Input autoFocus onChange={(event) => setTitle(event.target.value)} placeholder={isTests ? "Cardiovascular practice test" : "RAAS pathway"} value={title} /></label>
             <label className="grid gap-1.5 text-xs font-medium">Group<Input list={`${artifactKind}-group-options`} onChange={(event) => setGroupName(event.target.value)} placeholder="Pharmacy School::Exam 7" value={groupName} /><datalist id={`${artifactKind}-group-options`}>{suggestedGroups.map((group) => <option key={group} value={group} />)}</datalist></label>
             {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
-            <DialogFooter><Button onClick={() => setCreateOpen(false)} type="button" variant="ghost">Cancel</Button><Button disabled={saving || !title.trim()} type="submit">{saving ? "Saving…" : `Create ${singular}`}</Button></DialogFooter>
+            <DialogFooter><Button onClick={() => setCreateOpen(false)} type="button" variant="ghost">Cancel</Button><Button disabled={saving || !title.trim()} type="submit" variant="secondary">{saving ? "Saving…" : `Create ${singular}`}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

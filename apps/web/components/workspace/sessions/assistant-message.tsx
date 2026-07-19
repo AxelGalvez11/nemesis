@@ -36,7 +36,7 @@ export function AssistantMessage({ message, pending, liveSeconds, durationSecond
 
   return (
     <div
-      className="group flex w-full min-w-0 max-w-full flex-col gap-0 self-start overflow-hidden"
+      className="group flex w-full min-w-0 max-w-full animate-in flex-col gap-0 self-start overflow-hidden fade-in-0 duration-500"
       data-role="assistant"
       data-slot="aui_assistant-message-root"
       data-streaming={pending ? "true" : undefined}

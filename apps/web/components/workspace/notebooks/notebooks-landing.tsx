@@ -134,7 +134,7 @@ export function NotebooksLanding() {
                   <button
                     type="button"
                     onClick={() => select(n.id)}
-                    className="flex w-full items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/55 px-4 py-3.5 pr-12 text-left shadow-[0_8px_20px_rgba(0,0,0,0.045)] transition-all hover:-translate-y-px hover:border-(--ui-stroke-secondary) hover:bg-(--ui-control-hover-background) hover:shadow-[0_12px_28px_rgba(0,0,0,0.07)]"
+                    className="flex w-full items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) bg-background px-4 py-3.5 pr-12 text-left shadow-[0_2px_8px_rgba(0,0,0,0.035)] transition-colors hover:border-(--ui-stroke-secondary) hover:bg-(--ui-control-hover-background)"
                   >
                     <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-(--ui-bg-elevated) text-(--ui-text-secondary)">
                       <Codicon name="notebook" size="1rem" />

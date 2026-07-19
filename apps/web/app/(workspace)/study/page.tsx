@@ -16,7 +16,7 @@ export default function StudyPage() {
   const { artifacts, cards, reviews } = useCloudStudy();
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <StudyChrome activeTab={activeTab} counts={{ cards: cards.length, tests: artifacts.filter((item) => item.kind === "test").length, maps: artifacts.filter((item) => item.kind === "mindmap").length, stats: reviews.length }} onTabChange={setActiveTab} />
       {activeTab === "cards" && <CardsTab sourcePath={sourcePath} />}
       {activeTab === "tests" && <GroupedStudyTab kind="tests" />}

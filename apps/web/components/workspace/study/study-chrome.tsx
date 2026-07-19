@@ -43,7 +43,7 @@ export function StudyChrome({ activeTab, counts, onTabChange }: StudyChromeProps
         <DropdownMenuTrigger asChild>
           <Button
             aria-label="Choose study page"
-            className="absolute left-1/2 min-w-32 -translate-x-1/2 gap-2 rounded-xl bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)]"
+            className="absolute left-1/2 min-w-32 -translate-x-1/2 gap-2 rounded-xl bg-black/[0.055] dark:bg-white/[0.08]"
             size="sm"
             variant="secondary"
           >
@@ -55,7 +55,7 @@ export function StudyChrome({ activeTab, counts, onTabChange }: StudyChromeProps
         <DropdownMenuContent align="center" className="min-w-44">
           {TABS.map(({ id, label, icon: Icon }) => (
             <DropdownMenuItem
-              className={cn(activeTab === id && "bg-(--ui-control-active-background)")}
+              className={cn(activeTab === id && "bg-black/[0.055] dark:bg-white/[0.08]")}
               key={id}
               onSelect={() => onTabChange(id)}
             >

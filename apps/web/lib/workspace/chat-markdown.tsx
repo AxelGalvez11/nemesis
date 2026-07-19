@@ -53,9 +53,9 @@ function markdownComponents(
           aria-disabled={!wikiAvailable || undefined}
           className={cn(
             "break-words underline underline-offset-4",
-            wikiTarget && wikiAvailable && "font-medium text-(--theme-primary) decoration-current/35 hover:decoration-current",
+            wikiTarget && wikiAvailable && "font-medium text-sky-600 decoration-current/70 hover:decoration-current dark:text-sky-400",
             wikiTarget && !wikiAvailable && "cursor-default text-(--ui-text-quaternary) decoration-current/20",
-            !wikiTarget && "text-(--theme-primary) decoration-current/35 hover:decoration-current",
+            !wikiTarget && "text-sky-600 decoration-current/70 hover:decoration-current dark:text-sky-400",
           )}
           href={wikiAvailable ? href : undefined}
           onClick={

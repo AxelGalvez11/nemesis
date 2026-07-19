@@ -57,7 +57,7 @@ export function Thread({ turns, busy, liveSeconds, error, centeredComposer = fal
               className="mx-auto grid h-full w-full max-w-(--composer-width) grid-rows-[minmax(0,1fr)_auto] min-w-0 gap-(--conversation-turn-gap) px-6 py-8"
               data-slot="aui_thread-content"
             >
-              <div className={cn("flex min-h-0 w-full flex-col items-center", centeredComposer ? "justify-start pt-[12vh]" : "justify-center pt-[var(--composer-measured-height)]")}>
+              <div className={cn("flex min-h-0 w-full flex-col items-center", centeredComposer ? "justify-center pb-40" : "justify-center pt-[var(--composer-measured-height)]")}>
                 <Intro />
               </div>
             </div>

@@ -101,7 +101,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
     >
       <SidebarContent className="gap-0 overflow-hidden bg-transparent px-2.5">
         <div className="flex h-9 shrink-0 items-center gap-1 px-2 pt-1">
-          <span className="min-w-0 flex-1 truncate text-[0.68rem] font-semibold tracking-[0.16em] text-foreground">NEMESIS</span>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold tracking-[0.13em] text-foreground">NEMESIS</span>
           <Button
             aria-label={searchOpen ? "Close session search" : "Search sessions"}
             onClick={() => {

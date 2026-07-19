@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/desktop-ui/dialog";
 import { Input } from "@/components/desktop-ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/desktop-ui/select";
 import { Textarea } from "@/components/desktop-ui/textarea";
 import { type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 
@@ -108,18 +109,11 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
             <>
               <label className="grid gap-1.5 text-xs font-medium">
                 Deck
-                <select className="h-9 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-3 text-xs text-foreground outline-none focus:border-(--theme-primary)" onChange={(event) => setDeckId(event.target.value)} value={deckId}>
-                  {decks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
+                <Select onValueChange={setDeckId} value={deckId}><SelectTrigger className="h-10 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-background px-3"><SelectValue placeholder="Choose a deck" /></SelectTrigger><SelectContent>{decks.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
                 Card type
-                <select className="h-9 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-3 text-xs text-foreground outline-none focus:border-(--theme-primary)" onChange={(event) => setCardType(event.target.value as typeof cardType)} value={cardType}>
-                  <option value="basic">Basic (front/back)</option>
-                  <option value="reversed">Basic reversed</option>
-                  <option value="cloze">Cloze</option>
-                  <option value="image">Image occlusion</option>
-                </select>
+                <Select onValueChange={(value) => setCardType(value as typeof cardType)} value={cardType}><SelectTrigger className="h-10 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-background px-3"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="basic">Basic (front/back)</SelectItem><SelectItem value="reversed">Basic reversed</SelectItem><SelectItem value="cloze">Cloze</SelectItem><SelectItem value="image">Image occlusion</SelectItem></SelectContent></Select>
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
                 {cardType === "cloze" ? "Cloze text" : cardType === "image" ? "Image or occlusion prompt" : "Front"}
@@ -139,7 +133,7 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
           {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
           <DialogFooter>
             <Button onClick={() => onOpenChange(false)} type="button" variant="ghost">Cancel</Button>
-            <Button disabled={saving || (isDeck ? !name.trim() : !front.trim() || !back.trim())} type="submit">
+            <Button disabled={saving || (isDeck ? !name.trim() : !front.trim() || !back.trim())} type="submit" variant="secondary">
               {saving ? "Saving…" : isDeck ? "Create deck" : "Add card"}
             </Button>
           </DialogFooter>

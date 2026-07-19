@@ -33,7 +33,7 @@ export function NotebookTranscript({ messages, working, emptyHint }: NotebookTra
           <div
             key={i}
             className={cn(
-              "min-w-0 text-[0.95rem] leading-relaxed",
+              "min-w-0 animate-in text-[length:var(--conversation-text-font-size)] leading-relaxed fade-in-0 duration-500",
               m.role === "user"
                 ? "self-end max-w-[85%] rounded-[1.75rem] bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)] px-4 py-2.5 text-foreground"
                 : "max-w-full text-foreground",
@@ -42,7 +42,7 @@ export function NotebookTranscript({ messages, working, emptyHint }: NotebookTra
             {m.role === "user" ? (
               <span className="whitespace-pre-wrap break-words">{m.content}</span>
             ) : (
-              <AssistantMarkdown className="text-[0.95rem] leading-relaxed" text={m.content} />
+              <AssistantMarkdown className="text-[length:var(--conversation-text-font-size)] leading-relaxed" text={m.content} />
             )}
           </div>
         ))

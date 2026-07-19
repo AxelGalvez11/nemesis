@@ -15,10 +15,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { ChevronDown } from "@/lib/workspace/icons";
+import { Mic } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
 export type AnswerMode = "instant" | "medium" | "high";
@@ -41,13 +41,16 @@ interface ComposerProps {
   busy: boolean;
   centered?: boolean;
   placeholder: string;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, files: File[]) => void;
   onStop: () => void;
 }
 
 export function Composer({ busy, centered = false, placeholder, onSubmit, onStop }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasText, setHasText] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [listening, setListening] = useState(false);
   const [answerMode, setAnswerMode] = useState<AnswerMode>(readStoredAnswerMode);
 
   const setMode = (mode: AnswerMode) => {
@@ -63,11 +66,48 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
     const el = inputRef.current;
     if (!el || busy) return;
     const text = (el.textContent ?? "").trim();
-    if (!text) return;
+    if (!text && files.length === 0) return;
     el.textContent = "";
     setHasText(false);
-    onSubmit(text);
-  }, [busy, onSubmit]);
+    const submittedFiles = files;
+    setFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    onSubmit(text, submittedFiles);
+  }, [busy, files, onSubmit]);
+
+  const startDictation = () => {
+    type SpeechRecognitionConstructor = new () => {
+      continuous: boolean;
+      interimResults: boolean;
+      lang: string;
+      start: () => void;
+      stop: () => void;
+      onresult: ((event: { results: ArrayLike<{ 0: { transcript: string } }> }) => void) | null;
+      onend: (() => void) | null;
+      onerror: (() => void) | null;
+    };
+    const speechWindow = window as typeof window & {
+      SpeechRecognition?: SpeechRecognitionConstructor;
+      webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    };
+    const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!Recognition) return;
+    const recognition = new Recognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = navigator.language || "en-US";
+    recognition.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript?.trim() ?? "";
+      if (!transcript || !inputRef.current) return;
+      const current = inputRef.current.textContent?.trim() ?? "";
+      inputRef.current.textContent = [current, transcript].filter(Boolean).join(" ");
+      setHasText(true);
+    };
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+    setListening(true);
+    recognition.start();
+  };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -79,7 +119,7 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
   return (
     <div
       className={cn(
-        "group/composer absolute left-1/2 z-30 w-[min(var(--composer-width),calc(100%-2rem))] max-w-full -translate-x-1/2 overflow-visible rounded-2xl pt-2 pb-[var(--composer-shell-pad-block-end)]",
+        "group/composer absolute left-1/2 z-30 w-[min(var(--composer-width),calc(100%-2rem))] max-w-full -translate-x-1/2 overflow-visible rounded-[1.75rem] pt-2 pb-[var(--composer-shell-pad-block-end)]",
         centered ? "top-1/2 -translate-y-1/2" : "bottom-0",
       )}
       data-slot="composer-root"
@@ -94,12 +134,23 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
             className="pointer-events-none absolute inset-0 -z-10 rounded-[inherit] bg-(--composer-fill) backdrop-blur-[0.75rem] backdrop-saturate-[1.12]"
           />
           <div
-            className="relative z-1 flex min-h-0 w-full flex-col gap-(--composer-row-gap) overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y)"
+            className="relative z-1 flex min-h-0 w-full flex-col gap-1.5 overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y)"
             data-slot="composer-fade"
           >
+            {files.length > 0 && (
+              <div className="flex flex-wrap gap-1 px-1">
+                {files.map((file, index) => (
+                  <span className="flex max-w-44 items-center gap-1 rounded-full bg-(--ui-bg-quaternary) px-2 py-1 text-[0.6875rem] text-(--ui-text-secondary)" key={`${file.name}:${file.lastModified}:${index}`}>
+                    <span className="truncate">{file.name}</span>
+                    <button aria-label={`Remove ${file.name}`} className="rounded-full p-0.5 hover:bg-(--chrome-action-hover)" onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} type="button"><Codicon name="close" size="0.65rem" /></button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-(--composer-control-gap) [grid-template-areas:'menu_input_controls']">
               <div className="flex translate-y-[3px] items-start self-start [grid-area:menu]">
-                <AttachMenu />
+                <input className="sr-only" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} ref={fileInputRef} type="file" />
+                <AttachMenu onChoose={() => fileInputRef.current?.click()} />
               </div>
               <div className="min-w-0 [grid-area:input]">
                 <div
@@ -117,6 +168,7 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
               <div className="flex items-center justify-end [grid-area:controls]">
                 <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
                   <ModelPill mode={answerMode} onChange={setMode} />
+                  <Button aria-label="Dictate" aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>
                   {busy ? (
                     <Button
                       aria-label="Stop"
@@ -130,7 +182,7 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
                     <Button
                       aria-label="Send"
                       className="size-(--composer-control-primary-size) shrink-0 rounded-full bg-foreground p-0 text-background hover:bg-foreground/90 disabled:bg-foreground/30 disabled:text-background disabled:opacity-100"
-                      disabled={!hasText}
+                      disabled={!hasText && files.length === 0}
                       onClick={submit}
                       size="icon"
                     >
@@ -147,28 +199,11 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
   );
 }
 
-function AttachMenu() {
+function AttachMenu({ onChoose }: { onChoose: () => void }) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          aria-label="Attach"
-          className="size-(--composer-control-size) shrink-0 rounded-md text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground data-[state=open]:bg-(--chrome-action-hover) data-[state=open]:text-foreground"
-          size="icon"
-          variant="ghost"
-        >
-          <Codicon name="add" size="0.875rem" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-60" side="top" sideOffset={6}>
-        <DropdownMenuLabel className="px-2 pb-0.5 pt-0.5 text-[0.625rem] font-semibold uppercase tracking-wider text-(--ui-text-tertiary)">
-          Attach
-        </DropdownMenuLabel>
-        <DropdownMenuItem className="text-[length:var(--conversation-tool-font-size)]" disabled>
-          Attachments arrive with cloud sync — use the Mac app for now
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Button aria-label="Attach files or images" className="size-(--composer-control-size) shrink-0 rounded-full text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground" onClick={onChoose} size="icon" type="button" variant="ghost">
+      <Codicon name="add" size="1rem" />
+    </Button>
   );
 }
 

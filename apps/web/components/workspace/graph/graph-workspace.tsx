@@ -49,9 +49,12 @@ export function GraphWorkspace() {
 
         {ready && (
           <div className="absolute right-6 top-5 z-10 flex flex-col items-end gap-2">
-            <Button aria-label="Graph settings" onClick={() => setPanelOpen((value) => !value)} size="sm" variant={panelOpen ? "secondary" : "outline"}>
-              <SlidersHorizontal size={14} />
-            </Button>
+            <div className="flex items-center gap-2 rounded-xl bg-(--ui-bg-elevated)/90 p-1 shadow-sm backdrop-blur">
+              <div className="flex items-center rounded-lg bg-(--ui-bg-quaternary) p-0.5">
+                {([2, 3] as const).map((dimensions) => <Button className={controls.dimensions === dimensions ? "bg-background text-foreground shadow-sm" : ""} key={dimensions} onClick={() => handleControlsChange({ ...controls, dimensions })} size="xs" variant="ghost">{dimensions}D</Button>)}
+              </div>
+              <Button aria-label="Graph settings" onClick={() => setPanelOpen((value) => !value)} size="icon-xs" variant={panelOpen ? "secondary" : "ghost"}><SlidersHorizontal size={14} /></Button>
+            </div>
             {panelOpen && <GraphControlsPanel controls={controls} onChange={handleControlsChange} />}
           </div>
         )}

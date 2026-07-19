@@ -1,28 +1,16 @@
 "use client";
 
-import { IconCards, IconChevronDown, IconChevronRight, IconDots, IconTrash } from "@tabler/icons-react";
+import { IconCards, IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/desktop-ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/desktop-ui/dropdown-menu";
 import { EmptyState } from "@/components/desktop-ui/empty-state";
-import { Plus } from "@/lib/workspace/icons";
 import { isCardDue, type StudyCard, type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import { cn } from "@/lib/utils";
 
 import { StudyCreateDialog, type StudyCreateKind } from "./study-create-dialog";
+import { ReviewSession } from "./review-session";
+import { StudyBrowser } from "./study-browser";
 
 interface CardsTabProps {
   sourcePath?: string | null;
@@ -88,21 +76,26 @@ export function CardsTab({ sourcePath }: CardsTabProps) {
   const { cards, decks, deleteDeck, error, reload, selectDeck, selectedDeckId, status } = useCloudStudy();
   const [createKind, setCreateKind] = useState<StudyCreateKind | null>(null);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [actionError, setActionError] = useState<string | null>(null);
   const selectedDeck = decks.find((deck) => deck.id === selectedDeckId) ?? null;
-  const selectedCards = useMemo(() => cards.filter((card) => card.deckId === selectedDeckId), [cards, selectedDeckId]);
   const tree = useMemo(() => buildDeckTree(decks), [decks]);
 
-  async function removeSelectedDeck() {
-    if (!selectedDeck || !window.confirm(`Delete “${selectedDeck.name}” and all of its cards?`)) return;
-    setActionError(null);
+  async function removeDeck(deckId: string) {
+    const deck = decks.find((item) => item.id === deckId);
+    if (!deck || !window.confirm(`Delete “${deck.name}” and all of its cards?`)) return;
     try {
-      await deleteDeck(selectedDeck.id);
+      await deleteDeck(deckId);
       setBrowseOpen(false);
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Couldn't delete the deck.");
     }
+  }
+
+  function openDeck(deckId: string) {
+    selectDeck(deckId);
+    setReviewOpen(true);
   }
 
   function toggleGroup(id: string) {
@@ -128,78 +121,55 @@ export function CardsTab({ sourcePath }: CardsTabProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
-      <nav className="mx-auto mb-7 flex shrink-0 items-center rounded-b-2xl border border-t-0 border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) p-1 shadow-sm">
-        <Button className="rounded-xl" size="sm" variant="secondary"><IconCards size={14} /> Decks</Button>
+      <nav className="mx-auto mb-7 flex shrink-0 items-center rounded-b-2xl border border-t-0 border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
+        <Button className="rounded-xl bg-black/[0.055] dark:bg-white/[0.08]" onClick={() => setCreateKind("deck")} size="sm" variant="ghost"><IconCards size={14} /> Decks</Button>
         <Button disabled={decks.length === 0} onClick={() => setCreateKind("card")} size="sm" variant="ghost">Add card</Button>
-        <Button disabled={!selectedDeck} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
+        <Button disabled={decks.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
       </nav>
 
       {decks.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
-          <EmptyState action={<Button onClick={() => setCreateKind("deck")}>Create your first deck</Button>} description={sourcePath ? "Turn this Library note into a linked cloud deck." : "Create a deck to start building a durable review habit."} title="No decks yet" />
+          <EmptyState action={<Button onClick={() => setCreateKind("deck")} variant="secondary">Create your first deck</Button>} description={sourcePath ? "Turn this Library note into a linked cloud deck." : "Create a deck to start building a durable review habit."} title="No decks yet" />
         </div>
       ) : (
-        <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/60 shadow-[0_14px_34px_rgba(0,0,0,0.06)]">
+        <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
           <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem_5rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold">
             <span>Deck</span><span className="text-center">New</span><span className="text-center">Learn</span><span className="text-center">Due</span>
           </div>
           <div className="py-1.5">
             {tree.map((node) => (
-              <DeckRow cards={cards} collapsed={collapsed} depth={0} key={node.id} node={node} onSelect={selectDeck} onToggle={toggleGroup} selectedDeckId={selectedDeckId} />
+              <DeckRow cards={cards} collapsed={collapsed} depth={0} key={node.id} node={node} onOpenDeck={openDeck} onToggle={toggleGroup} selectedDeckId={selectedDeckId} />
             ))}
-          </div>
-          <div className="flex items-center justify-center gap-2 border-t border-(--ui-stroke-tertiary) px-4 py-3">
-            <Button onClick={() => setCreateKind("deck")} size="sm" variant="secondary"><Plus size={13} /> Create deck</Button>
           </div>
         </section>
       )}
 
       <StudyCreateDialog deck={selectedDeck} kind={createKind ?? "deck"} onOpenChange={(open) => !open && setCreateKind(null)} open={createKind !== null} sourcePath={sourcePath} />
 
-      <Dialog onOpenChange={setBrowseOpen} open={browseOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <div className="flex items-start justify-between gap-4 pr-7">
-              <div><DialogTitle>Browse {selectedDeck?.name ?? "deck"}</DialogTitle><DialogDescription>{selectedCards.length} card{selectedCards.length === 1 ? "" : "s"} in this deck.</DialogDescription></div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild><Button aria-label="Deck actions" size="icon-xs" variant="ghost"><IconDots /></Button></DropdownMenuTrigger>
-                <DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => void removeSelectedDeck()} variant="destructive"><IconTrash /> Delete deck</DropdownMenuItem></DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </DialogHeader>
-          {actionError && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{actionError}</p>}
-          <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
-            {selectedCards.length === 0 ? (
-              <div className="grid min-h-48 place-items-center text-center"><div><p className="text-xs font-semibold">This deck is empty</p><Button className="mt-4" onClick={() => { setBrowseOpen(false); setCreateKind("card"); }} variant="secondary">Add card</Button></div></div>
-            ) : selectedCards.map((card) => (
-              <article className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) p-3" key={card.id}>
-                <p className="text-xs font-medium leading-5">{card.front}</p><p className="mt-2 text-[0.75rem] leading-5 text-muted-foreground">{card.back}</p>
-              </article>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {actionError && <p className="mx-auto mt-3 rounded-lg bg-(--ui-bg-quaternary) px-3 py-2 text-xs text-(--ui-text-secondary)">{actionError}</p>}
+      <StudyBrowser cards={cards} decks={decks} initialDeckId={selectedDeckId} onAddCard={(deckId) => { selectDeck(deckId); setBrowseOpen(false); setCreateKind("card"); }} onDeleteDeck={(deckId) => void removeDeck(deckId)} onOpenChange={setBrowseOpen} open={browseOpen} />
+      <ReviewSession cards={cards} deck={selectedDeck} onOpenChange={setReviewOpen} open={reviewOpen} />
     </div>
   );
 }
 
-function DeckRow({ node, depth, cards, collapsed, selectedDeckId, onSelect, onToggle }: { node: DeckTreeNode; depth: number; cards: StudyCard[]; collapsed: Set<string>; selectedDeckId: string | null; onSelect: (id: string | null) => void; onToggle: (id: string) => void }) {
+function DeckRow({ node, depth, cards, collapsed, selectedDeckId, onOpenDeck, onToggle }: { node: DeckTreeNode; depth: number; cards: StudyCard[]; collapsed: Set<string>; selectedDeckId: string | null; onOpenDeck: (id: string) => void; onToggle: (id: string) => void }) {
   const counts = countsForNode(node, cards);
   const group = !node.deck;
   const isCollapsed = collapsed.has(node.id);
   const active = node.deck?.id === selectedDeckId;
   return (
     <>
-      <button className={cn("grid w-full grid-cols-[minmax(0,1fr)_5rem_5rem_5rem] items-center px-5 py-2 text-left text-xs transition-colors hover:bg-(--ui-control-hover-background)", active && "bg-(--ui-control-active-background)")} onClick={() => group ? onToggle(node.id) : onSelect(node.deck?.id ?? null)} type="button">
+      <button className={cn("grid w-full grid-cols-[minmax(0,1fr)_5rem_5rem_5rem] items-center px-5 py-2 text-left text-xs transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06]", active && "bg-black/[0.055] dark:bg-white/[0.08]")} onClick={() => group ? onToggle(node.id) : node.deck && onOpenDeck(node.deck.id)} type="button">
         <span className={cn("flex min-w-0 items-center gap-1.5", group && "font-semibold")} style={{ paddingLeft: `${depth * 1.1}rem` }}>
           {group ? (isCollapsed ? <IconChevronRight size={13} /> : <IconChevronDown size={13} />) : <span className="w-[13px]" />}
           <span className="truncate">{node.label}</span>
         </span>
         <span className="text-center font-medium tabular-nums text-sky-500">{counts.newCount || 0}</span>
-        <span className="text-center font-medium tabular-nums text-rose-500">{counts.learnCount || 0}</span>
+        <span className="text-center font-medium tabular-nums text-amber-500">{counts.learnCount || 0}</span>
         <span className="text-center font-medium tabular-nums text-emerald-500">{counts.dueCount || 0}</span>
       </button>
-      {!isCollapsed && node.children.map((child) => <DeckRow cards={cards} collapsed={collapsed} depth={depth + 1} key={child.id} node={child} onSelect={onSelect} onToggle={onToggle} selectedDeckId={selectedDeckId} />)}
+      {!isCollapsed && node.children.map((child) => <DeckRow cards={cards} collapsed={collapsed} depth={depth + 1} key={child.id} node={child} onOpenDeck={onOpenDeck} onToggle={onToggle} selectedDeckId={selectedDeckId} />)}
     </>
   );
 }

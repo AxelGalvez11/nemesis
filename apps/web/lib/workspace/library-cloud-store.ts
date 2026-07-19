@@ -164,6 +164,8 @@ export interface UseCloudLibraryApi extends StoreState {
   createFolder: (path: string) => Promise<string>;
   saveNote: (input: SaveNoteInput) => Promise<CloudLibraryNote>;
   deleteNote: (id: string) => Promise<void>;
+  moveNote: (id: string, targetFolder: string) => Promise<void>;
+  moveFolder: (sourcePath: string, targetFolder: string) => Promise<void>;
 }
 
 export function useCloudLibrary(): UseCloudLibraryApi {
@@ -281,6 +283,59 @@ export function useCloudLibrary(): UseCloudLibraryApi {
     setState({ ...state, notes, selectedPath: state.selectedPath === existing.path ? (notes[0]?.path ?? null) : state.selectedPath });
   }, [preview, userId]);
 
+  const moveNote = useCallback(async (id: string, rawTargetFolder: string): Promise<void> => {
+    const existing = state.notes.find((note) => note.id === id);
+    if (!existing) return;
+    const targetFolder = normalizeLibraryFolder(rawTargetFolder);
+    const candidate = notePathFor(existing.title, targetFolder);
+    const path = state.notes.some((note) => note.id !== id && note.path.toLowerCase() === candidate.toLowerCase())
+      ? uniqueNotePath(existing.title, targetFolder)
+      : candidate;
+    if (path === existing.path) return;
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to move this note.");
+      const { error } = await supabase.from("readable_library_documents").update({ path, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    setState({
+      ...state,
+      notes: state.notes.map((note) => note.id === id ? { ...note, path } : note),
+      selectedPath: state.selectedPath === existing.path ? path : state.selectedPath,
+    });
+  }, [preview, userId]);
+
+  const moveFolder = useCallback(async (rawSourcePath: string, rawTargetFolder: string): Promise<void> => {
+    const sourcePath = normalizeLibraryFolder(rawSourcePath);
+    const targetFolder = normalizeLibraryFolder(rawTargetFolder);
+    if (!sourcePath) return;
+    if (targetFolder === sourcePath || targetFolder.startsWith(`${sourcePath}/`)) throw new Error("A folder can't be moved inside itself.");
+    const name = sourcePath.split("/").pop() ?? sourcePath;
+    const destination = targetFolder ? `${targetFolder}/${name}` : name;
+    if (destination === sourcePath) return;
+    if (state.folders.some((folder) => folder !== sourcePath && folder.toLowerCase() === destination.toLowerCase())) {
+      throw new Error("A folder with that name already exists there.");
+    }
+    const remap = (path: string) => path === sourcePath ? destination : path.startsWith(`${sourcePath}/`) ? `${destination}${path.slice(sourcePath.length)}` : path;
+    const movedNotes = state.notes.filter((note) => note.path.startsWith(`${sourcePath}/`));
+    const movedFolders = state.folders.filter((folder) => folder === sourcePath || folder.startsWith(`${sourcePath}/`));
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to move this folder.");
+      const updates = [
+        ...movedNotes.map((note) => supabase.from("readable_library_documents").update({ path: remap(note.path), updated_at: new Date().toISOString() }).eq("id", note.id).eq("user_id", userId)),
+        ...movedFolders.map((folder) => supabase.from("readable_library_documents").update({ path: remap(folder), updated_at: new Date().toISOString() }).eq("path", folder).eq("kind", "folder").eq("user_id", userId)),
+      ];
+      const results = await Promise.all(updates);
+      const failure = results.find((result) => result.error)?.error;
+      if (failure) throw new Error(failure.message);
+    }
+    setState({
+      ...state,
+      notes: state.notes.map((note) => note.path.startsWith(`${sourcePath}/`) ? { ...note, path: remap(note.path) } : note),
+      folders: state.folders.map(remap),
+      selectedPath: state.selectedPath?.startsWith(`${sourcePath}/`) ? remap(state.selectedPath) : state.selectedPath,
+    });
+  }, [preview, userId]);
+
   return {
     ...snap,
     select: useCallback((path: string | null) => select(path), []),
@@ -289,5 +344,7 @@ export function useCloudLibrary(): UseCloudLibraryApi {
     createFolder,
     saveNote,
     deleteNote,
+    moveNote,
+    moveFolder,
   };
 }

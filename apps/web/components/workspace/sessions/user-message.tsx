@@ -11,7 +11,7 @@ import type { SessionMessage } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
 
 const USER_BUBBLE_BASE_CLASS =
-  "composer-human-message standalone-glass relative flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-y-auto rounded-xl border bg-(--dt-user-bubble) px-3 py-2 text-left";
+  "composer-human-message relative flex w-fit min-w-0 max-w-[85%] self-end flex-col gap-1.5 overflow-y-auto rounded-[1.75rem] border bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)] px-4 py-2.5 text-left";
 const USER_BUBBLE_READ_CLASS =
   "cursor-pointer pr-9 text-[length:var(--conversation-text-font-size)] leading-(--dt-line-height) text-foreground/95 transition-colors border-(--ui-stroke-tertiary) hover:border-(--ui-stroke-secondary)";
 

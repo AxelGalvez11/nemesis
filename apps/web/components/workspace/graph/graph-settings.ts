@@ -8,6 +8,7 @@ export const MIN_LABEL_SIZE = 1;
 export const MAX_LABEL_SIZE = 4;
 
 export interface GraphControlsState {
+  dimensions: 2 | 3;
   labelSize: number;
   nodeSize: number;
   spread: number;
@@ -19,6 +20,7 @@ export interface GraphControlsState {
 }
 
 export const DEFAULT_CONTROLS: GraphControlsState = {
+  dimensions: 3,
   gravity: 0.3,
   labelSize: 2.4,
   neighborGlow: true,
@@ -37,6 +39,7 @@ function sanitizeControls(raw: unknown): GraphControlsState {
   const b = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
 
   return {
+    dimensions: r.dimensions === 2 ? 2 : 3,
     labelSize: clamped(r.labelSize, DEFAULT_CONTROLS.labelSize, MIN_LABEL_SIZE, MAX_LABEL_SIZE),
     nodeSize: clamped(r.nodeSize, DEFAULT_CONTROLS.nodeSize, MIN_NODE_SIZE, MAX_NODE_SIZE),
     spread: n(r.spread, DEFAULT_CONTROLS.spread),

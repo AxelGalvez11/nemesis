@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 
 import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
+import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 
@@ -17,30 +18,6 @@ import { ChatHeader } from "./chat-header";
 import { Composer } from "./composer";
 import { Thread, type ThreadTurn } from "./thread";
 import type { TurnError } from "./assistant-message";
-
-// Desktop t.composer.newSessionPlaceholders / followUpPlaceholders (shell spec §B7).
-const NEW_SESSION_PLACEHOLDERS = [
-  "What are we building?",
-  "Give Nemesis a task",
-  "What's on your mind?",
-  "Describe what you need",
-  "What should we tackle?",
-  "Ask anything",
-  "Start with a goal",
-];
-const FOLLOW_UP_PLACEHOLDERS = [
-  "Send a follow-up",
-  "Add more context",
-  "Refine the request",
-  "What's next?",
-  "Keep it going",
-  "Push it further",
-  "Adjust or continue",
-];
-
-function pickPlaceholder(pool: string[]): string {
-  return pool[Math.floor(Math.random() * pool.length)] ?? pool[0] ?? "";
-}
 
 function groupTurns(messages: SessionMessage[]): ThreadTurn[] {
   const turns: ThreadTurn[] = [];
@@ -63,6 +40,11 @@ function isAbortError(err: unknown): boolean {
 
 const PREVIEW_REPLY =
   "This is a preview build — replies here are canned. Sign in on the real app to chat with Nemesis.";
+
+function titleFromPrompt(text: string) {
+  const compact = text.trim().replace(/\s+/g, " ");
+  return compact.length <= 54 ? compact : `${compact.slice(0, 54).trimEnd()}…`;
+}
 
 export function SessionChat() {
   const preview = useWorkspacePreview();
@@ -125,13 +107,17 @@ export function SessionChat() {
   }, []);
 
   const handleSubmit = useCallback(
-    (text: string) => {
+    async (text: string, files: File[]) => {
       if (!uid) return;
       const targetId = selectedId ?? sessionsStore.create().id;
+      const history = sessionsStore.getState().sessions.find((s) => s.id === targetId)?.messages ?? [];
+      const prepared = await prepareChatAttachments(text, files, uid);
+      if (!prepared.displayText) return;
+      if (history.length === 0) sessionsStore.rename(targetId, titleFromPrompt(text || files[0]?.name || "New session"));
       setError(null);
 
       if (preview) {
-        sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: text, role: "user" });
+        sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: prepared.displayText, role: "user" });
         sessionsStore.setWorking(targetId, true);
         window.setTimeout(() => {
           sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: PREVIEW_REPLY, role: "assistant" });
@@ -140,9 +126,8 @@ export function SessionChat() {
         return;
       }
 
-      const history = sessionsStore.getState().sessions.find((s) => s.id === targetId)?.messages ?? [];
-      sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: text, role: "user" });
-      void runTurn(uid, targetId, history, text);
+      sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: prepared.displayText, role: "user" });
+      void runTurn(uid, targetId, history, prepared.wireText);
     },
     [preview, runTurn, selectedId, uid],
   );
@@ -153,10 +138,7 @@ export function SessionChat() {
   }, [selectedId]);
 
   const isFreshThread = messages.length === 0;
-  const placeholder = useMemo(
-    () => pickPlaceholder(isFreshThread ? NEW_SESSION_PLACEHOLDERS : FOLLOW_UP_PLACEHOLDERS),
-    [selectedId, isFreshThread],
-  );
+  const placeholder = isFreshThread ? "Ask anything" : "Send a follow-up";
 
   return (
     <div className="relative isolate flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)">

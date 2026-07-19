@@ -13,6 +13,7 @@ export interface CloudLibraryNote {
 
 export interface LibraryTreeNote {
   kind: "note";
+  id: string;
   path: string;
   title: string;
 }
@@ -70,7 +71,7 @@ export function buildLibraryTree(notes: { path: string; title: string }[], folde
     const cursor = ensureFolder(folderSegments);
 
     const title = note.title.trim().length > 0 ? note.title.trim() : titleFromPath(note.path);
-    cursor.notes.push({ kind: "note", path: note.path, title });
+    cursor.notes.push({ kind: "note", id: "id" in note && typeof note.id === "string" ? note.id : note.path, path: note.path, title });
   }
 
   sortFolder(root);

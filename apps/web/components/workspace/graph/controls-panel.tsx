@@ -20,7 +20,7 @@ export function GraphControlsPanel({ controls, onChange }: GraphControlsPanelPro
   return (
     <div className="w-64 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-4 text-(--ui-text-primary) shadow-lg">
       <div className="mb-4">
-        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--theme-primary)">Graph controls</p>
+        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-secondary)">Graph controls</p>
         <p className="mt-1 text-xs text-(--ui-text-secondary)">Tune the map without changing your notes.</p>
       </div>
       <div className="space-y-4">
@@ -91,7 +91,7 @@ function ControlSlider({ label, max, min, onChange, step, value }: ControlSlider
         </span>
       </span>
       <input
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-(--ui-stroke-primary) accent-(--theme-primary) [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-(--theme-primary) [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-(--theme-primary)"
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-(--ui-stroke-primary) accent-foreground [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-foreground [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-foreground"
         max={max}
         min={min}
         onChange={(e) => onChange(Number(e.target.value))}

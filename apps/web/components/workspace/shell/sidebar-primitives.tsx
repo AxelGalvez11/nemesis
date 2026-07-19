@@ -112,8 +112,7 @@ export function SidebarMenuButton({ className, type = "button", ...props }: Reac
 
 export function SidebarPanelLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="flex min-w-0 items-center gap-2 pl-2 text-[0.64rem] font-semibold uppercase tracking-[0.16em] text-(--theme-primary)">
-      <span aria-hidden="true" className="dither inline-block size-2 shrink-0 rounded-[1px]" />
+    <span className="flex min-w-0 items-center gap-2 pl-2 text-[0.64rem] font-semibold uppercase tracking-[0.16em] text-(--ui-text-tertiary)">
       <span className="min-w-0 truncate leading-none">{children}</span>
     </span>
   );

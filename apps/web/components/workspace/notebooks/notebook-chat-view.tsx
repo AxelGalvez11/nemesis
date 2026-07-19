@@ -10,9 +10,9 @@ import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { notebookChatStore, sendNotebookTurn, useNotebookChat, type NotebookWireSource } from "@/lib/notebooks/chat";
+import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 
 import { NotebookComposer } from "./notebook-composer";
-import { NotebookProjectMenu } from "./notebook-project-menu";
 import { NotebookTranscript } from "./notebook-transcript";
 import { useNotebooks } from "./notebooks-store";
 
@@ -36,10 +36,12 @@ export function NotebookChatView() {
   const notebookId = selected?.id ?? null;
 
   const submit = useCallback(
-    (text: string) => {
+    async (text: string, files: File[]) => {
       if (!activeChatId || !notebookId) return;
+      const prepared = await prepareChatAttachments(text, files, uid);
+      if (!prepared.displayText) return;
       if (preview) {
-        notebookChatStore.append(activeChatId, { role: "user", content: text, at: new Date().toISOString() });
+        notebookChatStore.append(activeChatId, { role: "user", content: prepared.displayText, at: new Date().toISOString() });
         notebookChatStore.setWorking(activeChatId, true);
         window.setTimeout(() => {
           notebookChatStore.append(activeChatId, { role: "assistant", content: PREVIEW_REPLY, at: new Date().toISOString() });
@@ -51,7 +53,7 @@ export function NotebookChatView() {
         notebookChatStore.append(activeChatId, { role: "assistant", content: "Sign in to chat about this notebook.", at: new Date().toISOString() });
         return;
       }
-      void sendNotebookTurn({ uid, notebookId, chatId: activeChatId, instructions, sources: wireSources, userText: text });
+      void sendNotebookTurn({ uid, notebookId, chatId: activeChatId, instructions, sources: wireSources, userText: prepared.wireText, displayText: prepared.displayText });
     },
     [activeChatId, notebookId, preview, uid, instructions, wireSources],
   );
@@ -77,7 +79,6 @@ export function NotebookChatView() {
         <NotebookTranscript messages={messages} working={working} />
         <div className="shrink-0 pb-5 pt-2">
           <div className="mx-auto w-full max-w-3xl">
-            <div className="mb-1 flex justify-end"><NotebookProjectMenu /></div>
             <NotebookComposer onSubmit={submit} working={working} autoFocus placeholder={`Message ${selected.name}…`} />
           </div>
         </div>

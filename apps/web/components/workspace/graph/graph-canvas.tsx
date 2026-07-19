@@ -47,13 +47,14 @@ interface GraphCanvasProps {
 
 type EngineInstance = import("3d-force-graph").ForceGraph3DInstance<EngineNode, EngineLink>;
 type TunableForce = { distance?: (value: number) => unknown; strength?: (value: number) => unknown };
-type OrbitControls = { autoRotate?: boolean; autoRotateSpeed?: number };
+type OrbitControls = { autoRotate?: boolean; autoRotateSpeed?: number; mouseButtons?: { LEFT: number; MIDDLE: number; RIGHT: number } };
 type ThreeRuntime = {
   AdditiveBlending: unknown;
   CanvasTexture: new (canvas: HTMLCanvasElement) => unknown;
   Group: new () => { add: (...objects: unknown[]) => void };
   Sprite: new (material: unknown) => { scale: { set: (x: number, y: number, z: number) => void } };
   SpriteMaterial: new (options: Record<string, unknown>) => unknown;
+  MOUSE: { ROTATE: number; PAN: number };
 };
 
 function createGlowTexture(Three: ThreeRuntime) {
@@ -121,6 +122,7 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
       const orbit = graph.controls() as OrbitControls;
       orbit.autoRotate = controlsRef.current.rotationSpeed > 0;
       orbit.autoRotateSpeed = controlsRef.current.rotationSpeed;
+      const defaultLeftButton = orbit.mouseButtons?.LEFT;
 
       function recolor() {
         graph.nodeColor(graph.nodeColor());
@@ -143,7 +145,7 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
         .backgroundColor(palette.background)
         .width(host.clientWidth)
         .height(host.clientHeight)
-        .numDimensions(3)
+        .numDimensions(controlsRef.current.dimensions)
         .nodeRelSize(controlsRef.current.nodeSize * NODE_CONTROL_SCALE)
         .nodeVal(() => 1)
         .nodeOpacity(0)
@@ -223,7 +225,20 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
       resizeObserver.observe(host);
 
       const onInteract = () => wake();
+      const setCommandPan = (enabled: boolean) => {
+        if (!orbit.mouseButtons) return;
+        orbit.mouseButtons.LEFT = enabled ? Three.MOUSE.PAN : (defaultLeftButton ?? Three.MOUSE.ROTATE);
+      };
+      const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Meta") setCommandPan(true); };
+      const onKeyUp = (event: KeyboardEvent) => { if (event.key === "Meta") setCommandPan(false); };
+      const onPointerDown = (event: PointerEvent) => { if (event.metaKey) setCommandPan(true); };
+      const onPointerUp = () => setCommandPan(false);
       host.addEventListener("pointerdown", onInteract);
+      host.addEventListener("pointerdown", onPointerDown);
+      window.addEventListener("pointerup", onPointerUp);
+      window.addEventListener("keydown", onKeyDown);
+      window.addEventListener("keyup", onKeyUp);
+      window.addEventListener("blur", onPointerUp);
       host.addEventListener("wheel", onInteract, { passive: true });
 
       disposeFns.push(() => {
@@ -232,6 +247,11 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
         cancelAnimationFrame(revealFrame);
         resizeObserver.disconnect();
         host.removeEventListener("pointerdown", onInteract);
+        host.removeEventListener("pointerdown", onPointerDown);
+        window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("keydown", onKeyDown);
+        window.removeEventListener("keyup", onKeyUp);
+        window.removeEventListener("blur", onPointerUp);
         host.removeEventListener("wheel", onInteract);
         if (engineRef.current === graph) engineRef.current = null;
         if (wakeRef.current === wake) wakeRef.current = null;
@@ -251,6 +271,7 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
     const graph = engineRef.current;
     if (!graph) return;
     graph.nodeRelSize(controls.nodeSize * NODE_CONTROL_SCALE);
+    graph.numDimensions(controls.dimensions);
     (graph.d3Force("link") as TunableForce | undefined)?.distance?.(controls.spread);
     (graph.d3Force("charge") as TunableForce | undefined)?.strength?.(-controls.repulsion);
     (graph.d3Force("center") as TunableForce | undefined)?.strength?.(controls.gravity);

@@ -7,7 +7,7 @@
 // Follows the app/dev-preview/poster convention.
 
 import { notFound, useParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect } from "react";
 
 import { WorkspacePreviewProvider } from "@/components/workspace/preview-context";
 import { WorkspaceShell } from "@/components/workspace/shell/workspace-shell";
@@ -99,11 +99,11 @@ export default function WorkspacePreviewPage() {
   const params = useParams<{ surface: string }>();
   const surface = params.surface as SurfaceId;
 
-  // Seed once, before first paint of the shell (persistence disabled).
-  useState(() => {
+  // Seed after mount so the external-store notification never fires while a
+  // different component is rendering (React treats that as an invalid update).
+  useEffect(() => {
     sessionsStore.injectPreview(PREVIEW_SESSIONS, "preview-pharmacology");
-    return true;
-  });
+  }, []);
 
   const Surface = SURFACES[surface];
   if (!Surface) notFound();

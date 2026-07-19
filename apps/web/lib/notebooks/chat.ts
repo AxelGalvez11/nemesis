@@ -193,6 +193,7 @@ export interface SendNotebookTurnOpts {
   instructions: string | null;
   sources: NotebookWireSource[];
   userText: string;
+  displayText?: string;
   signal?: AbortSignal;
 }
 
@@ -204,9 +205,10 @@ export async function sendNotebookTurn(opts: SendNotebookTurnOpts): Promise<void
   const userText = opts.userText.trim();
   if (!userText) return;
   const history = notebookChatStore.getMessages(opts.chatId);
-  notebookChatStore.append(opts.chatId, { role: "user", content: userText, at: nowIso() });
+  const displayText = opts.displayText?.trim() || userText;
+  notebookChatStore.append(opts.chatId, { role: "user", content: displayText, at: nowIso() });
   notebookChatStore.setWorking(opts.chatId, true);
-  void appendMessage({ chatId: opts.chatId, notebookId: opts.notebookId, role: "user", content: userText }).catch(() => {});
+  void appendMessage({ chatId: opts.chatId, notebookId: opts.notebookId, role: "user", content: displayText }).catch(() => {});
   try {
     const reply = await postChatCompletion(
       opts.uid,

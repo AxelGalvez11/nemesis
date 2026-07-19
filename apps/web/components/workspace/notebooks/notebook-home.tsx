@@ -11,6 +11,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { notebookChatStore, sendNotebookTurn, type NotebookWireSource } from "@/lib/notebooks/chat";
+import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { cn } from "@/lib/utils";
 
 import { NotebookComposer } from "./notebook-composer";
@@ -51,14 +52,16 @@ export function NotebookHome() {
   );
 
   const startFromPrompt = useCallback(
-    async (text: string) => {
+    async (text: string, files: File[]) => {
       if (!selected) return;
+      const prepared = await prepareChatAttachments(text, files, uid);
+      if (!prepared.displayText) return;
       setStartError(null);
       if (preview) {
         const existing = chats[0];
         if (!existing) return;
         notebooks.openChat(existing.id);
-        notebookChatStore.append(existing.id, { role: "user", content: text, at: new Date().toISOString() });
+        notebookChatStore.append(existing.id, { role: "user", content: prepared.displayText, at: new Date().toISOString() });
         notebookChatStore.setWorking(existing.id, true);
         window.setTimeout(() => {
           notebookChatStore.append(existing.id, { role: "assistant", content: PREVIEW_REPLY, at: new Date().toISOString() });
@@ -66,13 +69,13 @@ export function NotebookHome() {
         }, 600);
         return;
       }
-      const chat = await notebooks.startChat(selected.id, titleFromPrompt(text));
+      const chat = await notebooks.startChat(selected.id, titleFromPrompt(text || files[0]?.name || "New chat"));
       if (!chat) {
         setStartError("Couldn't start a chat — check your connection and that you're signed in.");
         return;
       }
       if (!uid) return;
-      void sendNotebookTurn({ uid, notebookId: selected.id, chatId: chat.id, instructions: selected.instructions, sources: wireSources, userText: text });
+      void sendNotebookTurn({ uid, notebookId: selected.id, chatId: chat.id, instructions: selected.instructions, sources: wireSources, userText: prepared.wireText, displayText: prepared.displayText });
     },
     [selected, preview, chats, uid, wireSources, notebooks],
   );
@@ -118,7 +121,7 @@ export function NotebookHome() {
                       <button
                         type="button"
                         onClick={() => notebooks.openChat(c.id)}
-                        className="flex w-full items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/55 px-3.5 py-3 pr-10 text-left shadow-[0_7px_18px_rgba(0,0,0,0.04)] transition-all hover:-translate-y-px hover:bg-(--ui-control-hover-background) hover:shadow-[0_10px_24px_rgba(0,0,0,0.065)]"
+                        className="flex w-full items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) bg-background px-3.5 py-3 pr-10 text-left shadow-[0_2px_8px_rgba(0,0,0,0.035)] transition-colors hover:bg-(--ui-control-hover-background)"
                       >
                         <Codicon name="comment-discussion" size="0.9rem" className="shrink-0 text-(--ui-text-tertiary)" />
                         <span className="min-w-0 flex-1 truncate text-[0.9rem] text-foreground">{c.title}</span>
@@ -145,7 +148,7 @@ export function NotebookHome() {
         {/* Right rail — floats on the page background (no distinct column/slab), like Claude's. */}
         <aside className="flex w-[22rem] shrink-0 flex-col overflow-y-auto px-3 pb-6 pt-5">
           {/* One rounded panel; dividers separate the sections (no nested boxes). */}
-          <div className="divide-y divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.5rem] border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/55 shadow-[0_14px_34px_rgba(0,0,0,0.07)]">
+          <div className="divide-y divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.5rem] border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
             <section className="flex flex-col gap-2 p-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-[0.8rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)">Instructions</h2>

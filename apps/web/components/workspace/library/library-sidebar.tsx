@@ -5,6 +5,7 @@
 
 import { IconFilePlus, IconFolderPlus, IconLayoutSidebarLeftCollapse, IconSearch, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -25,10 +26,11 @@ const HEADER_ACTIONS = [
 ] as const;
 
 export function LibrarySidebar({ onCollapse }: { onCollapse: () => void }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
-  const { status, notes, folders, error, selectedPath, select, reload } = useCloudLibrary();
+  const { status, notes, folders, error, selectedPath, select, reload, createNote, moveNote, moveFolder } = useCloudLibrary();
 
   const tree = useMemo(() => buildLibraryTree(notes, folders), [folders, notes]);
   const totalCount = useMemo(() => countLibraryNotes(tree), [tree]);
@@ -40,6 +42,16 @@ export function LibrarySidebar({ onCollapse }: { onCollapse: () => void }) {
     const q = trimmedQuery.toLowerCase();
     return notes.filter((n) => n.title.toLowerCase().includes(q));
   }, [notes, trimmedQuery]);
+
+  const createBlankNote = async () => {
+    const note = await createNote({ title: "Untitled note", content: "" });
+    router.replace(`/library?note=${encodeURIComponent(note.path)}`);
+  };
+
+  const openPath = (path: string) => {
+    select(path);
+    router.replace(`/library?note=${encodeURIComponent(path)}`);
+  };
 
   return (
     <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height)">
@@ -66,7 +78,7 @@ export function LibrarySidebar({ onCollapse }: { onCollapse: () => void }) {
             </Button>
           )}
           {HEADER_ACTIONS.map(({ label, icon: Icon }) => (
-            <Button aria-label={label} key={label} onClick={() => setCreateKind(label === "New note" ? "note" : "folder")} size="icon-xs" type="button" variant="ghost">
+            <Button aria-label={label} key={label} onClick={() => label === "New note" ? void createBlankNote() : setCreateKind("folder")} size="icon-xs" type="button" variant="ghost">
               <Icon />
             </Button>
           ))}
@@ -104,15 +116,15 @@ export function LibrarySidebar({ onCollapse }: { onCollapse: () => void }) {
                 <LibraryNoteRow
                   isSelected={note.path === selectedPath}
                   key={note.path}
-                  note={{ kind: "note", path: note.path, title: note.title }}
-                  onSelect={select}
+                  note={{ kind: "note", id: note.id, path: note.path, title: note.title }}
+                  onSelect={openPath}
                 />
               ))}
             </SidebarRowStack>
           )
         ) : (
           <div className={cn("min-h-0 flex-1 px-2 pb-1.75", GROUP_BODY)}>
-            <LibraryTreeView folder={tree} onSelect={select} selectedPath={selectedPath} />
+            <LibraryTreeView folder={tree} onMoveFolder={(source, target) => void moveFolder(source, target)} onMoveNote={(id, target) => void moveNote(id, target)} onSelect={openPath} selectedPath={selectedPath} />
           </div>
         )}
       </div>

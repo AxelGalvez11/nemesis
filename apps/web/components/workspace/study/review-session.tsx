@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
+import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { type StudyCard, type StudyDeck, isCardDue, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import type { StudyGrade } from "@/lib/workspace/study-scheduler";
 
-const GRADES: { grade: StudyGrade; label: string; hint: string; variant: "destructive" | "secondary" | "default" }[] = [
-  { grade: "again", label: "Again", hint: "1d", variant: "destructive" },
+const GRADES: { grade: StudyGrade; label: string; hint: string; variant: "outline" | "secondary" }[] = [
+  { grade: "again", label: "Again", hint: "1d", variant: "outline" },
   { grade: "hard", label: "Hard", hint: "slower", variant: "secondary" },
-  { grade: "good", label: "Good", hint: "normal", variant: "default" },
+  { grade: "good", label: "Good", hint: "normal", variant: "secondary" },
   { grade: "easy", label: "Easy", hint: "longer", variant: "secondary" },
 ];
 
@@ -58,32 +59,32 @@ export function ReviewSession({ cards, deck, open, onOpenChange }: ReviewSession
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-none border-0 bg-background px-8 py-6" showCloseButton>
+        <DialogHeader className="mx-auto w-full max-w-5xl border-b border-(--ui-stroke-tertiary) pb-4">
           <DialogTitle>{deck?.name ?? "Review"}</DialogTitle>
           <DialogDescription>
             {current ? `${completedIds.length} reviewed · ${queue.length} remaining` : `${completedIds.length} cards reviewed`}
           </DialogDescription>
         </DialogHeader>
         {current ? (
-          <div className="grid gap-4">
-            <section className="grid min-h-56 place-items-center rounded-2xl border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-8 py-10 text-center">
+          <div className="mx-auto grid min-h-0 w-full max-w-5xl grid-rows-[minmax(0,1fr)_auto] gap-5 py-6">
+            <section className="grid min-h-0 place-items-center overflow-y-auto rounded-3xl border border-(--ui-stroke-secondary) bg-background px-10 py-12 text-center shadow-sm">
               <div className="max-w-xl">
-                <p className="whitespace-pre-wrap text-base font-medium leading-7">{current.front}</p>
+                <AssistantMarkdown className="text-lg font-medium leading-8" text={current.front} />
                 {revealed && (
                   <div className="mt-7 border-t border-(--ui-stroke-tertiary) pt-7">
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-(--ui-text-secondary)">{current.back}</p>
+                    <AssistantMarkdown className="text-base leading-7 text-(--ui-text-secondary)" text={current.back} />
                   </div>
                 )}
               </div>
             </section>
             {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
             {!revealed ? (
-              <Button className="justify-self-center" onClick={() => setRevealed(true)} size="lg">Show answer</Button>
+              <Button className="justify-self-center bg-foreground text-background hover:bg-foreground/90" onClick={() => setRevealed(true)} size="lg" variant="ghost">Show answer</Button>
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {GRADES.map(({ grade: value, hint, label, variant }) => (
-                  <Button className="h-auto flex-col gap-0.5 py-2" disabled={saving} key={value} onClick={() => void grade(value)} variant={variant}>
+                  <Button className="h-auto flex-col gap-0.5 bg-background py-2 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]" disabled={saving} key={value} onClick={() => void grade(value)} variant={variant}>
                     <span>{label}</span>
                     <span className="text-[0.625rem] font-normal opacity-70">{hint}</span>
                   </Button>
@@ -96,7 +97,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange }: ReviewSession
             <div>
               <p className="text-sm font-semibold">You’re caught up</p>
               <p className="mt-1 text-xs text-muted-foreground">The next review will appear when a card is due.</p>
-              <Button className="mt-5" onClick={() => onOpenChange(false)} variant="secondary">Done</Button>
+              <Button className="mt-5 bg-background" onClick={() => onOpenChange(false)} variant="outline">Done</Button>
             </div>
           </div>
         )}

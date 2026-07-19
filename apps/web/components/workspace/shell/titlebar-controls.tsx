@@ -6,8 +6,8 @@
 // No drag regions / traffic-light insets — a browser tab has no window chrome.
 
 import { Button } from "@/components/desktop-ui/button";
-import { Codicon } from "@/components/desktop-ui/codicon";
 import { Tip } from "@/components/desktop-ui/tooltip";
+import { IconLayoutSidebarLeftCollapse } from "@tabler/icons-react";
 
 const titlebarButtonClass = "text-muted-foreground/85 hover:bg-(--ui-control-hover-background) hover:text-foreground";
 
@@ -26,7 +26,7 @@ export function TitlebarControls({ onToggleSidebar }: TitlebarControlsProps) {
           size="icon-titlebar"
           variant="ghost"
         >
-          <Codicon name="layout-sidebar-left" size="0.875rem" />
+          <IconLayoutSidebarLeftCollapse size="0.875rem" />
         </Button>
       </Tip>
     </div>
