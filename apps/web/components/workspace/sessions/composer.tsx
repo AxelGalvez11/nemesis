@@ -39,12 +39,13 @@ function readStoredAnswerMode(): AnswerMode {
 
 interface ComposerProps {
   busy: boolean;
+  centered?: boolean;
   placeholder: string;
   onSubmit: (text: string) => void;
   onStop: () => void;
 }
 
-export function Composer({ busy, placeholder, onSubmit, onStop }: ComposerProps) {
+export function Composer({ busy, centered = false, placeholder, onSubmit, onStop }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const [hasText, setHasText] = useState(false);
   const [answerMode, setAnswerMode] = useState<AnswerMode>(readStoredAnswerMode);
@@ -77,7 +78,10 @@ export function Composer({ busy, placeholder, onSubmit, onStop }: ComposerProps)
 
   return (
     <div
-      className="group/composer absolute bottom-0 left-1/2 z-30 w-[min(var(--composer-width),calc(100%-2rem))] max-w-full -translate-x-1/2 overflow-visible rounded-2xl pt-2 pb-[var(--composer-shell-pad-block-end)]"
+      className={cn(
+        "group/composer absolute left-1/2 z-30 w-[min(var(--composer-width),calc(100%-2rem))] max-w-full -translate-x-1/2 overflow-visible rounded-2xl pt-2 pb-[var(--composer-shell-pad-block-end)]",
+        centered ? "top-1/2 -translate-y-1/2" : "bottom-0",
+      )}
       data-slot="composer-root"
     >
       <div className="relative w-full rounded-[inherit]">

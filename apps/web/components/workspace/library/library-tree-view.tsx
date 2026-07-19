@@ -54,7 +54,7 @@ function LibraryFolderNode({
   selectedPath: string | null;
   onSelect: (path: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   return (
     <div>
@@ -69,7 +69,7 @@ function LibraryFolderNode({
               />
             </SidebarRowLead>
             <Codicon className="shrink-0 text-(--ui-text-quaternary)" name={open ? "folder-opened" : "folder"} size="0.875rem" />
-            <SidebarRowLabel className="font-medium text-(--ui-text-tertiary)">{folder.name}</SidebarRowLabel>
+            <SidebarRowLabel className="font-medium text-foreground">{folder.name}</SidebarRowLabel>
           </SidebarRowBody>
         </SidebarRowShell>
       </div>

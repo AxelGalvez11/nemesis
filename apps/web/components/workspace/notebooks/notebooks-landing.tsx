@@ -4,11 +4,18 @@
 // "New", and a row per notebook (name + last-modified + hover delete). Clicking a row opens its
 // detail. This replaces the old second-sidebar list; the workspace's left nav is the only rail here.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { SearchField } from "@/components/desktop-ui/search-field";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/desktop-ui/dropdown-menu";
 
 import { useNotebooks } from "./notebooks-store";
 
@@ -23,11 +30,21 @@ export function NotebooksLanding() {
   const { status, notebooks, error, select, create, remove, reload } = useNotebooks();
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem("nemesis.web.pinned-notebooks") ?? "[]");
+      if (Array.isArray(parsed)) setPinnedIds(new Set(parsed.filter((value): value is string => typeof value === "string")));
+    } catch {
+      // Keep the empty in-memory set.
+    }
+  }, []);
 
   const trimmed = query.trim().toLowerCase();
   const filtered = useMemo(
-    () => (trimmed ? notebooks.filter((n) => n.name.toLowerCase().includes(trimmed)) : notebooks),
-    [notebooks, trimmed],
+    () => [...(trimmed ? notebooks.filter((n) => n.name.toLowerCase().includes(trimmed)) : notebooks)].sort((a, b) => Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id))),
+    [notebooks, pinnedIds, trimmed],
   );
   const loading = status === "idle" || status === "loading";
 
@@ -43,6 +60,16 @@ export function NotebooksLanding() {
   const confirmDelete = (id: string, name: string) => {
     if (typeof window !== "undefined" && !window.confirm(`Delete “${name}”? Its sources and chat are removed. This can't be undone.`)) return;
     void remove(id);
+  };
+
+  const togglePin = (id: string) => {
+    setPinnedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try { window.localStorage.setItem("nemesis.web.pinned-notebooks", JSON.stringify(Array.from(next))); } catch { /* best effort */ }
+      return next;
+    });
   };
 
   return (
@@ -107,22 +134,26 @@ export function NotebooksLanding() {
                   <button
                     type="button"
                     onClick={() => select(n.id)}
-                    className="flex w-full items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/40 px-4 py-3.5 pr-12 text-left transition-colors hover:border-(--ui-stroke-secondary) hover:bg-(--ui-control-hover-background)"
+                    className="flex w-full items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/55 px-4 py-3.5 pr-12 text-left shadow-[0_8px_20px_rgba(0,0,0,0.045)] transition-all hover:-translate-y-px hover:border-(--ui-stroke-secondary) hover:bg-(--ui-control-hover-background) hover:shadow-[0_12px_28px_rgba(0,0,0,0.07)]"
                   >
                     <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-(--ui-bg-elevated) text-(--ui-text-secondary)">
                       <Codicon name="notebook" size="1rem" />
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[0.95rem] font-medium text-foreground">{n.name}</span>
+                    {pinnedIds.has(n.id) && <Codicon className="shrink-0 text-(--theme-primary)" name="pin" size="0.75rem" />}
                     {modified && <span className="shrink-0 text-xs tabular-nums text-(--ui-text-quaternary)">{modified}</span>}
                   </button>
-                  <button
-                    type="button"
-                    aria-label={`Delete ${n.name}`}
-                    onClick={() => confirmDelete(n.id, n.name)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-active-background) hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                  >
-                    <Codicon name="trash" size="0.8rem" />
-                  </button>
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><button aria-label={`${n.name} project actions`} className="rounded-lg p-1.5 text-(--ui-text-tertiary) hover:bg-(--ui-control-active-background) hover:text-foreground" type="button"><Codicon name="ellipsis" size="0.95rem" /></button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => select(n.id)}><Codicon name="settings-gear" size="0.85rem" /> Project settings</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => togglePin(n.id)}><Codicon name="pin" size="0.85rem" /> {pinnedIds.has(n.id) ? "Unpin" : "Pin"}</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => confirmDelete(n.id, n.name)} variant="destructive"><Codicon name="trash" size="0.85rem" /> Delete project</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </li>
               );
             })}

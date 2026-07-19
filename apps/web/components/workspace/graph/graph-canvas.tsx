@@ -27,6 +27,7 @@ import {
   IDLE_PAUSE_MS,
   LINK_OPACITY,
   makeLabelSprite,
+  NODE_CONTROL_SCALE,
   NODE_OPACITY,
   particlesForLink,
   REVEAL_MS,
@@ -34,6 +35,7 @@ import {
 } from "./graph-engine-helpers";
 import type { GraphIndex } from "./graph-notes";
 import { readGraphPalette } from "./graph-palette";
+import { graphNodeColor } from "./graph-palette";
 import type { GraphControlsState } from "./graph-settings";
 
 interface GraphCanvasProps {
@@ -46,6 +48,29 @@ interface GraphCanvasProps {
 type EngineInstance = import("3d-force-graph").ForceGraph3DInstance<EngineNode, EngineLink>;
 type TunableForce = { distance?: (value: number) => unknown; strength?: (value: number) => unknown };
 type OrbitControls = { autoRotate?: boolean; autoRotateSpeed?: number };
+type ThreeRuntime = {
+  AdditiveBlending: unknown;
+  CanvasTexture: new (canvas: HTMLCanvasElement) => unknown;
+  Group: new () => { add: (...objects: unknown[]) => void };
+  Sprite: new (material: unknown) => { scale: { set: (x: number, y: number, z: number) => void } };
+  SpriteMaterial: new (options: Record<string, unknown>) => unknown;
+};
+
+function createGlowTexture(Three: ThreeRuntime) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  if (context) {
+    const gradient = context.createRadialGradient(64, 64, 4, 64, 64, 64);
+    gradient.addColorStop(0, "rgba(255,255,255,0.95)");
+    gradient.addColorStop(0.22, "rgba(255,255,255,0.55)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 128, 128);
+  }
+  return new Three.CanvasTexture(canvas);
+}
 
 export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCanvasProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -68,14 +93,18 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
     void mount();
 
     async function mount() {
-      const [{ default: ForceGraph3D }, { default: SpriteText }] = await Promise.all([
+      const [{ default: ForceGraph3D }, { default: SpriteText }, ThreeModule] = await Promise.all([
         import("3d-force-graph"),
         import("three-spritetext"),
+        // @ts-expect-error -- three is an untyped transitive runtime dependency of 3d-force-graph.
+        import("three"),
       ]);
       if (cancelled || !host) return;
 
       const dark = document.documentElement.getAttribute("data-theme") === "dark";
       const palette = readGraphPalette(dark ? "dark" : "light");
+      const Three = ThreeModule as unknown as ThreeRuntime;
+      const glowTexture = createGlowTexture(Three);
       const maxDegree = Math.max(1, ...index.nodes.map((n) => n.degree));
       const adjacency = buildAdjacency(index);
       let activeId: string | null = null;
@@ -114,8 +143,8 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
         .backgroundColor(palette.background)
         .width(host.clientWidth)
         .height(host.clientHeight)
-        .numDimensions(2)
-        .nodeRelSize(controlsRef.current.nodeSize)
+        .numDimensions(3)
+        .nodeRelSize(controlsRef.current.nodeSize * NODE_CONTROL_SCALE)
         .nodeVal(() => 1)
         .nodeOpacity(0)
         .linkOpacity(0)
@@ -125,7 +154,27 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
         .linkDirectionalParticles((link: EngineLink) => particlesForLink(link, activeId))
         .linkDirectionalParticleWidth(HIGHLIGHT_LINK_PARTICLE_WIDTH)
         .linkDirectionalParticleColor(() => palette.accent)
-        .nodeThreeObject((node: EngineNode) => makeLabelSprite(node, SpriteText, palette, controlsRef.current))
+        .nodeThreeObject((node: EngineNode) => {
+          const group = new Three.Group();
+          const label = makeLabelSprite(node, SpriteText, palette, controlsRef.current);
+          if (!node.ghost && node.degree > 1) {
+            const density = maxDegree > 1 ? Math.min(1, (node.degree - 1) / (maxDegree - 1)) : 1;
+            const material = new Three.SpriteMaterial({
+              blending: Three.AdditiveBlending,
+              color: graphNodeColor(node, palette, maxDegree),
+              depthWrite: false,
+              map: glowTexture,
+              opacity: 0.12 + density * 0.38,
+              transparent: true,
+            });
+            const halo = new Three.Sprite(material);
+            const diameter = controlsRef.current.nodeSize * NODE_CONTROL_SCALE * (4 + density * 3);
+            halo.scale.set(diameter, diameter, 1);
+            group.add(halo);
+          }
+          group.add(label);
+          return group as unknown as ReturnType<typeof makeLabelSprite>;
+        })
         .nodeThreeObjectExtend(true)
         .onNodeClick((node: EngineNode) => onNodeClickRef.current(node))
         .onNodeHover((node: EngineNode | null) => {
@@ -201,7 +250,7 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
   useEffect(() => {
     const graph = engineRef.current;
     if (!graph) return;
-    graph.nodeRelSize(controls.nodeSize);
+    graph.nodeRelSize(controls.nodeSize * NODE_CONTROL_SCALE);
     (graph.d3Force("link") as TunableForce | undefined)?.distance?.(controls.spread);
     (graph.d3Force("charge") as TunableForce | undefined)?.strength?.(-controls.repulsion);
     (graph.d3Force("center") as TunableForce | undefined)?.strength?.(controls.gravity);

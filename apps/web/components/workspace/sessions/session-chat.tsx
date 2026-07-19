@@ -165,9 +165,9 @@ export function SessionChat() {
         className="relative min-h-0 max-w-full flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]"
         data-slot="composer-bounds"
       >
-        <Thread busy={busy} error={turnError} liveSeconds={liveSeconds} turns={turns} />
+        <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} liveSeconds={liveSeconds} turns={turns} />
       </div>
-      <Composer busy={busy} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} />
+      <Composer busy={busy} centered={isFreshThread} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} />
     </div>
   );
 }

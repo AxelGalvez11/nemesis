@@ -39,6 +39,18 @@ export interface StudyReview {
   reviewedAt: string;
 }
 
+export type StudyArtifactKind = "test" | "mindmap";
+
+export interface StudyArtifact {
+  id: string;
+  kind: StudyArtifactKind;
+  groupName: string;
+  title: string;
+  status: "draft" | "ready" | "archived";
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type StudyLoadStatus = "idle" | "loading" | "loaded" | "error";
 
 interface StoreState {
@@ -47,6 +59,7 @@ interface StoreState {
   decks: StudyDeck[];
   cards: StudyCard[];
   reviews: StudyReview[];
+  artifacts: StudyArtifact[];
   selectedDeckId: string | null;
 }
 
@@ -91,6 +104,10 @@ const PREVIEW_CARDS: StudyCard[] = [
     updatedAt: now,
   },
 ];
+const PREVIEW_ARTIFACTS: StudyArtifact[] = [
+  { id: "preview-test", kind: "test", groupName: "Cardiovascular pharmacology", title: "ACE inhibitor practice test", status: "draft", createdAt: now, updatedAt: now },
+  { id: "preview-map", kind: "mindmap", groupName: "Cardiovascular pharmacology", title: "RAAS pathway", status: "draft", createdAt: now, updatedAt: now },
+];
 
 const EMPTY_STATE: StoreState = {
   status: "idle",
@@ -98,6 +115,7 @@ const EMPTY_STATE: StoreState = {
   decks: [],
   cards: [],
   reviews: [],
+  artifacts: [],
   selectedDeckId: null,
 };
 let state: StoreState = EMPTY_STATE;
@@ -175,13 +193,19 @@ function toReview(raw: unknown): StudyReview | null {
   return { id: raw.id, cardId: raw.card_id, grade, reviewedAt: text(raw.reviewed_at) };
 }
 
+function toArtifact(raw: unknown): StudyArtifact | null {
+  if (!isObject(raw) || typeof raw.id !== "string" || (raw.kind !== "test" && raw.kind !== "mindmap") || typeof raw.title !== "string") return null;
+  const status = raw.status === "ready" || raw.status === "archived" ? raw.status : "draft";
+  return { id: raw.id, kind: raw.kind, groupName: text(raw.group_name), title: raw.title, status, createdAt: text(raw.created_at), updatedAt: text(raw.updated_at) };
+}
+
 async function loadStudy(userId: string) {
   loadedForUserId = userId;
   setState({ ...EMPTY_STATE, status: "loading" });
   try {
     const reviewFloor = new Date();
     reviewFloor.setFullYear(reviewFloor.getFullYear() - 1);
-    const [deckResult, cardResult, reviewResult] = await Promise.all([
+    const [deckResult, cardResult, reviewResult, artifactResult] = await Promise.all([
       supabase
         .from("study_decks")
         .select("id,name,description,source_path,created_at,updated_at")
@@ -198,10 +222,16 @@ async function loadStudy(userId: string) {
         .eq("user_id", userId)
         .gte("reviewed_at", reviewFloor.toISOString())
         .order("reviewed_at", { ascending: false }),
+      supabase
+        .from("study_artifacts")
+        .select("id,kind,group_name,title,status,created_at,updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false }),
     ]);
     if (deckResult.error) throw new Error(deckResult.error.message);
     if (cardResult.error) throw new Error(cardResult.error.message);
     if (reviewResult.error) throw new Error(reviewResult.error.message);
+    if (artifactResult.error) throw new Error(artifactResult.error.message);
 
     const decks = (deckResult.data ?? []).flatMap((row) => {
       const deck = toDeck(row);
@@ -215,7 +245,11 @@ async function loadStudy(userId: string) {
       const review = toReview(row);
       return review ? [review] : [];
     });
-    setState({ status: "loaded", error: null, decks, cards, reviews, selectedDeckId: decks[0]?.id ?? null });
+    const artifacts = (artifactResult.data ?? []).flatMap((row) => {
+      const artifact = toArtifact(row);
+      return artifact ? [artifact] : [];
+    });
+    setState({ status: "loaded", error: null, decks, cards, reviews, artifacts, selectedDeckId: decks[0]?.id ?? null });
   } catch (cause) {
     setState({
       ...EMPTY_STATE,
@@ -243,13 +277,21 @@ export interface CreateCardInput {
   sourcePath?: string | null;
 }
 
+export interface CreateArtifactInput {
+  kind: StudyArtifactKind;
+  groupName?: string;
+  title: string;
+}
+
 export interface UseCloudStudyApi extends StoreState {
   selectDeck: (deckId: string | null) => void;
   reload: () => void;
   createDeck: (input: CreateDeckInput) => Promise<StudyDeck>;
   createCard: (input: CreateCardInput) => Promise<StudyCard>;
+  createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
   gradeCard: (cardId: string, grade: StudyGrade) => Promise<StudyCard>;
   deleteDeck: (deckId: string) => Promise<void>;
+  deleteArtifact: (artifactId: string) => Promise<void>;
 }
 
 export function isCardDue(card: StudyCard, at = new Date()): boolean {
@@ -272,6 +314,7 @@ export function useCloudStudy(): UseCloudStudyApi {
           decks: PREVIEW_DECKS,
           cards: PREVIEW_CARDS,
           reviews: [],
+          artifacts: PREVIEW_ARTIFACTS,
           selectedDeckId: PREVIEW_DECKS[0]?.id ?? null,
         });
       }
@@ -363,6 +406,29 @@ export function useCloudStudy(): UseCloudStudyApi {
     return card;
   }, [preview, userId]);
 
+  const createArtifact = useCallback(async (input: CreateArtifactInput) => {
+    const title = input.title.trim();
+    const groupName = input.groupName?.trim() ?? "";
+    if (!title) throw new Error("Enter a title.");
+    const timestamp = new Date().toISOString();
+    if (preview) {
+      const artifact: StudyArtifact = { id: `preview-${crypto.randomUUID()}`, kind: input.kind, groupName, title, status: "draft", createdAt: timestamp, updatedAt: timestamp };
+      setState({ ...state, artifacts: [artifact, ...state.artifacts] });
+      return artifact;
+    }
+    if (!userId) throw new Error("Sign in to create study material.");
+    const { data, error } = await supabase
+      .from("study_artifacts")
+      .insert({ user_id: userId, kind: input.kind, group_name: groupName, title })
+      .select("id,kind,group_name,title,status,created_at,updated_at")
+      .single();
+    if (error) throw new Error(error.message);
+    const artifact = toArtifact(data);
+    if (!artifact) throw new Error("The study item was saved but returned an invalid response.");
+    setState({ ...state, artifacts: [artifact, ...state.artifacts] });
+    return artifact;
+  }, [preview, userId]);
+
   const gradeCard = useCallback(async (cardId: string, grade: StudyGrade) => {
     const card = state.cards.find((item) => item.id === cardId);
     if (!card) throw new Error("That card is no longer available.");
@@ -417,13 +483,24 @@ export function useCloudStudy(): UseCloudStudyApi {
     });
   }, [preview, userId]);
 
+  const deleteArtifact = useCallback(async (artifactId: string) => {
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to delete study material.");
+      const { error } = await supabase.from("study_artifacts").delete().eq("id", artifactId).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    setState({ ...state, artifacts: state.artifacts.filter((artifact) => artifact.id !== artifactId) });
+  }, [preview, userId]);
+
   return {
     ...snapshot,
     selectDeck: useCallback((deckId: string | null) => setState({ ...state, selectedDeckId: deckId }), []),
     reload,
     createDeck,
     createCard,
+    createArtifact,
     gradeCard,
     deleteDeck,
+    deleteArtifact,
   };
 }

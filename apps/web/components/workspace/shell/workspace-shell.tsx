@@ -20,6 +20,7 @@ import { useMediaQuery } from "./use-media-query";
 
 // SIDEBAR_COLLAPSE_BREAKPOINT_PX = 768 (desktop app/layout-constants.ts).
 const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
+const APP_SCALE = 1.1;
 
 const SHELL_VARS: React.CSSProperties = {
   ["--sidebar-width" as string]: "var(--pane-chat-sidebar-width)",
@@ -50,6 +51,9 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       style={{
         ...SHELL_VARS,
         ["--pane-chat-sidebar-width" as string]: sidebarVisible ? "237px" : "0px",
+        height: "100vh",
+        width: "100%",
+        zoom: APP_SCALE,
       }}
     >
       <SettingsModalProvider>

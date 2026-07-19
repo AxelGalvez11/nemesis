@@ -28,7 +28,7 @@ export default function LibraryPage() {
       {sidebarOpen ? (
         <LibrarySidebar onCollapse={() => setSidebarOpen(false)} />
       ) : (
-        <aside className="flex w-10 shrink-0 justify-center border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) pt-2">
+        <aside className="flex w-8 shrink-0 justify-center border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) pt-2">
           <Button aria-label="Expand Library sidebar" onClick={() => setSidebarOpen(true)} size="icon-xs" variant="ghost">
             <IconLayoutSidebarLeftExpand />
           </Button>

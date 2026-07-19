@@ -31,11 +31,14 @@ function titleFromSource(path: string | null | undefined) {
 }
 
 export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }: StudyCreateDialogProps) {
-  const { createCard, createDeck } = useCloudStudy();
+  const { createCard, createDeck, decks } = useCloudStudy();
   const [name, setName] = useState("");
+  const [group, setGroup] = useState("");
   const [description, setDescription] = useState("");
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
+  const [deckId, setDeckId] = useState("");
+  const [cardType, setCardType] = useState<"basic" | "reversed" | "cloze" | "image">("basic");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,10 +46,13 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
     if (!open) return;
     setName(titleFromSource(sourcePath));
     setDescription("");
+    setGroup("");
     setFront("");
     setBack("");
+    setDeckId(deck?.id ?? decks[0]?.id ?? "");
+    setCardType("basic");
     setError(null);
-  }, [open, sourcePath]);
+  }, [deck?.id, decks, open, sourcePath]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -54,10 +60,13 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
     setError(null);
     try {
       if (kind === "deck") {
-        await createDeck({ name, description, sourcePath });
+        const fullName = group.trim() ? `${group.trim()}::${name.trim()}` : name;
+        await createDeck({ name: fullName, description, sourcePath });
       } else {
-        if (!deck) throw new Error("Choose a deck first.");
-        await createCard({ deckId: deck.id, front, back, sourcePath: deck.sourcePath ?? sourcePath });
+        const targetDeck = decks.find((item) => item.id === deckId);
+        if (!targetDeck) throw new Error("Choose a deck first.");
+        await createCard({ deckId: targetDeck.id, front, back, sourcePath: targetDeck.sourcePath ?? sourcePath });
+        if (cardType === "reversed") await createCard({ deckId: targetDeck.id, front: back, back: front, sourcePath: targetDeck.sourcePath ?? sourcePath });
       }
       onOpenChange(false);
     } catch (cause) {
@@ -73,11 +82,11 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
       <DialogContent className="max-w-lg">
         <form className="grid gap-4" onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>{isDeck ? "New deck" : `Add card to ${deck?.name ?? "deck"}`}</DialogTitle>
+            <DialogTitle>{isDeck ? "New deck" : "Add card"}</DialogTitle>
             <DialogDescription>
               {isDeck
                 ? "Create a cloud deck that stays available anywhere you use Nemesis."
-                : "Cards are due immediately and enter spaced repetition after their first review."}
+                : "Choose the destination deck and note type before adding the content."}
             </DialogDescription>
           </DialogHeader>
           {isDeck ? (
@@ -87,6 +96,10 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
                 <Input autoFocus onChange={(event) => setName(event.target.value)} placeholder="Cardiovascular pharmacology" value={name} />
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
+                Group <span className="font-normal text-muted-foreground">optional</span>
+                <Input onChange={(event) => setGroup(event.target.value)} placeholder="Pharmacy School::Exam 7" value={group} />
+              </label>
+              <label className="grid gap-1.5 text-xs font-medium">
                 Description <span className="font-normal text-muted-foreground">optional</span>
                 <Textarea onChange={(event) => setDescription(event.target.value)} placeholder="What this deck covers" value={description} />
               </label>
@@ -94,11 +107,26 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
           ) : (
             <>
               <label className="grid gap-1.5 text-xs font-medium">
-                Prompt
-                <Textarea autoFocus onChange={(event) => setFront(event.target.value)} placeholder="What should you recall?" value={front} />
+                Deck
+                <select className="h-9 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-3 text-xs text-foreground outline-none focus:border-(--theme-primary)" onChange={(event) => setDeckId(event.target.value)} value={deckId}>
+                  {decks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
-                Answer
+                Card type
+                <select className="h-9 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-3 text-xs text-foreground outline-none focus:border-(--theme-primary)" onChange={(event) => setCardType(event.target.value as typeof cardType)} value={cardType}>
+                  <option value="basic">Basic (front/back)</option>
+                  <option value="reversed">Basic reversed</option>
+                  <option value="cloze">Cloze</option>
+                  <option value="image">Image occlusion</option>
+                </select>
+              </label>
+              <label className="grid gap-1.5 text-xs font-medium">
+                {cardType === "cloze" ? "Cloze text" : cardType === "image" ? "Image or occlusion prompt" : "Front"}
+                <Textarea autoFocus onChange={(event) => setFront(event.target.value)} placeholder={cardType === "cloze" ? "The {{c1::mitochondria}} is the powerhouse of the cell." : cardType === "image" ? "Paste an image URL or describe the hidden region" : "What should you recall?"} value={front} />
+              </label>
+              <label className="grid gap-1.5 text-xs font-medium">
+                {cardType === "image" ? "Occluded answer" : cardType === "cloze" ? "Extra explanation" : "Back"}
                 <Textarea onChange={(event) => setBack(event.target.value)} placeholder="The concise answer or explanation" value={back} />
               </label>
             </>

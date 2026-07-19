@@ -3,12 +3,12 @@
 // Cloud Library tree with persisted note/folder creation, search, selection,
 // and shared state for the editor and Graph surfaces.
 
-import { IconFilePlus, IconFolderPlus, IconLayoutSidebarLeftCollapse } from "@tabler/icons-react";
+import { IconFilePlus, IconFolderPlus, IconLayoutSidebarLeftCollapse, IconSearch, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { CountSkeleton, Skeleton } from "@/components/desktop-ui/skeleton";
+import { Skeleton } from "@/components/desktop-ui/skeleton";
 import { SearchField } from "@/components/desktop-ui/search-field";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { buildLibraryTree, countLibraryNotes } from "@/lib/workspace/library-tree";
@@ -26,6 +26,7 @@ const HEADER_ACTIONS = [
 
 export function LibrarySidebar({ onCollapse }: { onCollapse: () => void }) {
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
   const { status, notes, folders, error, selectedPath, select, reload } = useCloudLibrary();
 
@@ -42,20 +43,28 @@ export function LibrarySidebar({ onCollapse }: { onCollapse: () => void }) {
 
   return (
     <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height)">
-      <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-5">
+      <div className="flex items-center justify-between gap-3 px-3 pb-2 pt-2.5">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">Library</h1>
-          {loading ? (
-            <CountSkeleton className="mt-1.5" />
-          ) : status === "error" ? (
+          {status === "error" && (
             <p className="mt-0.5 text-[0.65rem] font-medium text-(--dt-destructive)">Couldn&rsquo;t load notes</p>
-          ) : (
-            <p className="mt-0.5 text-[0.65rem] font-medium tabular-nums text-(--ui-text-tertiary)">
-              {totalCount} note{totalCount === 1 ? "" : "s"}
-            </p>
           )}
         </div>
         <div className="flex gap-0.5">
+          {totalCount > 0 && (
+            <Button
+              aria-label={searchOpen ? "Hide note search" : "Search notes"}
+              onClick={() => {
+                setSearchOpen((value) => !value);
+                if (searchOpen) setQuery("");
+              }}
+              size="icon-xs"
+              type="button"
+              variant="ghost"
+            >
+              {searchOpen ? <IconX /> : <IconSearch />}
+            </Button>
+          )}
           {HEADER_ACTIONS.map(({ label, icon: Icon }) => (
             <Button aria-label={label} key={label} onClick={() => setCreateKind(label === "New note" ? "note" : "folder")} size="icon-xs" type="button" variant="ghost">
               <Icon />
@@ -67,8 +76,8 @@ export function LibrarySidebar({ onCollapse }: { onCollapse: () => void }) {
         </div>
       </div>
 
-      {totalCount > 0 && (
-        <div className="mx-3">
+      {totalCount > 0 && searchOpen && (
+        <div className="mx-3 mb-1">
           <SearchField
             aria-label="Search notes"
             containerClassName="w-full rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated) px-2 opacity-100"

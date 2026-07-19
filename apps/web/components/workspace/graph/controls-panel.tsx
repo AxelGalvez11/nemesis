@@ -5,7 +5,7 @@
 import { Button } from "@/components/desktop-ui/button";
 import { Switch } from "@/components/desktop-ui/switch";
 
-import { DEFAULT_CONTROLS, type GraphControlsState, MAX_LABEL_SIZE, MIN_LABEL_SIZE, MIN_NODE_SIZE } from "./graph-settings";
+import { DEFAULT_CONTROLS, type GraphControlsState, MAX_LABEL_SIZE, MAX_NODE_SIZE, MIN_LABEL_SIZE, MIN_NODE_SIZE } from "./graph-settings";
 
 interface GraphControlsPanelProps {
   controls: GraphControlsState;
@@ -26,10 +26,10 @@ export function GraphControlsPanel({ controls, onChange }: GraphControlsPanelPro
       <div className="space-y-4">
         <ControlSlider
           label="Node size"
-          max={10}
+          max={MAX_NODE_SIZE}
           min={MIN_NODE_SIZE}
           onChange={(v) => set("nodeSize", v)}
-          step={0.5}
+          step={0.1}
           value={controls.nodeSize}
         />
         <ControlSlider
@@ -37,7 +37,7 @@ export function GraphControlsPanel({ controls, onChange }: GraphControlsPanelPro
           max={MAX_LABEL_SIZE}
           min={MIN_LABEL_SIZE}
           onChange={(v) => set("labelSize", v)}
-          step={1}
+          step={0.1}
           value={controls.labelSize}
         />
         <ControlSlider label="Spread" max={120} min={10} onChange={(v) => set("spread", v)} step={2} value={controls.spread} />

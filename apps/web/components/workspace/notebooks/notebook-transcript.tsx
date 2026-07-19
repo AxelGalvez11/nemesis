@@ -42,7 +42,7 @@ export function NotebookTranscript({ messages, working, emptyHint }: NotebookTra
             {m.role === "user" ? (
               <span className="whitespace-pre-wrap break-words">{m.content}</span>
             ) : (
-              <AssistantMarkdown text={m.content} />
+              <AssistantMarkdown className="text-[0.95rem] leading-relaxed" text={m.content} />
             )}
           </div>
         ))

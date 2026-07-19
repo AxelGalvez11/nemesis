@@ -39,45 +39,26 @@ export function GraphWorkspace() {
     router.push(`/library?note=${encodeURIComponent(created.path)}`);
   }
 
-  async function newNote() {
-    const created = await createNote({ title: "Untitled note" });
-    router.push(`/library?note=${encodeURIComponent(created.path)}`);
-  }
-
   const ready = status === "loaded" && notes.length > 0;
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background) pt-(--titlebar-height)">
       <div className="relative flex h-full min-h-0 flex-col">
         <header className="pointer-events-none absolute left-6 top-5 z-10">
           <h1 className="text-lg font-semibold">Graph</h1>
-          <p className="text-xs text-muted-foreground">
-            {ready ? `${notes.length} notes${index.ghostCount > 0 ? ` · ${index.ghostCount} to create` : ""} — click any node` : ""}
-          </p>
-          {ready && index.ghostCount > 0 && <p className="text-[11px] text-muted-foreground/70">Dim nodes are uncreated [[links]]. Click one to make the note.</p>}
         </header>
 
         {ready && (
           <div className="absolute right-6 top-5 z-10 flex flex-col items-end gap-2">
-            <div className="flex gap-2">
-              <Button aria-label="Graph settings" onClick={() => setPanelOpen((value) => !value)} size="sm" variant={panelOpen ? "secondary" : "outline"}>
-                <SlidersHorizontal size={14} />
-              </Button>
-              <Button onClick={() => void newNote()} size="sm" variant="outline">+ New note</Button>
-            </div>
+            <Button aria-label="Graph settings" onClick={() => setPanelOpen((value) => !value)} size="sm" variant={panelOpen ? "secondary" : "outline"}>
+              <SlidersHorizontal size={14} />
+            </Button>
             {panelOpen && <GraphControlsPanel controls={controls} onChange={handleControlsChange} />}
           </div>
         )}
 
         {status === "error" && <EmptyState className="flex-1" description={error ?? "Could not read the Library."} title="Graph unavailable" />}
         {(status === "idle" || status === "loading") && <EmptyState className="flex-1" description="Connecting your notes…" title="Building graph" />}
-        {status === "loaded" && notes.length === 0 && (
-          <div className="grid flex-1 place-items-center text-center">
-            <div>
-              <EmptyState description="Create linked notes in the Library first." title="Nothing to map yet" />
-              <Button onClick={() => void newNote()} size="sm">Create a note</Button>
-            </div>
-          </div>
-        )}
+        {status === "loaded" && notes.length === 0 && <EmptyState className="flex-1" description="Create linked notes in the Library first." title="Nothing to map yet" />}
         {ready && <GraphCanvas className="min-h-0 flex-1" controls={controls} index={index} onNodeClick={(node) => void openNode(node)} />}
       </div>
     </div>

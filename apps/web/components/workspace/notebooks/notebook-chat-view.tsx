@@ -12,6 +12,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { notebookChatStore, sendNotebookTurn, useNotebookChat, type NotebookWireSource } from "@/lib/notebooks/chat";
 
 import { NotebookComposer } from "./notebook-composer";
+import { NotebookProjectMenu } from "./notebook-project-menu";
 import { NotebookTranscript } from "./notebook-transcript";
 import { useNotebooks } from "./notebooks-store";
 
@@ -76,6 +77,7 @@ export function NotebookChatView() {
         <NotebookTranscript messages={messages} working={working} />
         <div className="shrink-0 pb-5 pt-2">
           <div className="mx-auto w-full max-w-3xl">
+            <div className="mb-1 flex justify-end"><NotebookProjectMenu /></div>
             <NotebookComposer onSubmit={submit} working={working} autoFocus placeholder={`Message ${selected.name}…`} />
           </div>
         </div>

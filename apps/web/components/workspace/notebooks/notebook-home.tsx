@@ -10,18 +10,12 @@ import { useCallback, useMemo, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { Codicon } from "@/components/desktop-ui/codicon";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/desktop-ui/dropdown-menu";
 import { notebookChatStore, sendNotebookTurn, type NotebookWireSource } from "@/lib/notebooks/chat";
 import { cn } from "@/lib/utils";
 
 import { NotebookComposer } from "./notebook-composer";
 import { NotebookInstructionsDialog } from "./notebook-instructions-dialog";
+import { NotebookProjectMenu } from "./notebook-project-menu";
 import { NotebookSourcesCard } from "./notebook-sources-card";
 import { useNotebooks } from "./notebooks-store";
 
@@ -48,8 +42,6 @@ export function NotebookHome() {
   const notebooks = useNotebooks();
   const { selected, sources, sourcesStatus, chats, chatsStatus } = notebooks;
 
-  const [nameDraft, setNameDraft] = useState(selected?.name ?? "");
-  const [nameEditing, setNameEditing] = useState(false);
   const [instrOpen, setInstrOpen] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -87,24 +79,6 @@ export function NotebookHome() {
 
   if (!selected) return null;
 
-  const commitName = () => {
-    setNameEditing(false);
-    const next = nameDraft.trim();
-    if (next && next !== selected.name) void notebooks.rename(selected.id, next);
-    else setNameDraft(selected.name);
-  };
-
-  const onDelete = () => {
-    if (typeof window !== "undefined" && !window.confirm(`Delete “${selected.name}”? Its sources and chats are removed. This can't be undone.`)) return;
-    void notebooks.remove(selected.id);
-  };
-
-  const onRename = () => {
-    if (typeof window === "undefined") return;
-    const next = window.prompt("Rename notebook", selected.name)?.trim();
-    if (next && next !== selected.name) void notebooks.rename(selected.id, next);
-  };
-
   const instructions = selected.instructions?.trim() ?? "";
 
   return (
@@ -123,34 +97,10 @@ export function NotebookHome() {
         {/* Center: title + composer + Recents */}
         <div className="mx-auto flex min-w-0 flex-1 flex-col overflow-y-auto px-6 pb-8">
           <div className="mx-auto w-full max-w-2xl pt-2">
-            {nameEditing ? (
-              <input
-                aria-label="Notebook name"
-                autoFocus
-                className="mb-6 w-full min-w-0 bg-transparent text-3xl font-semibold tracking-tight text-foreground outline-none"
-                onBlur={commitName}
-                onChange={(e) => setNameDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.currentTarget.blur();
-                  if (e.key === "Escape") {
-                    setNameDraft(selected.name);
-                    setNameEditing(false);
-                  }
-                }}
-                value={nameDraft}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setNameDraft(selected.name);
-                  setNameEditing(true);
-                }}
-                className="mb-6 block max-w-full truncate text-left text-3xl font-semibold tracking-tight text-foreground hover:opacity-80"
-              >
-                {selected.name}
-              </button>
-            )}
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <h1 className="min-w-0 truncate text-3xl font-semibold tracking-tight text-foreground">{selected.name}</h1>
+              <NotebookProjectMenu />
+            </div>
 
             <NotebookComposer onSubmit={startFromPrompt} placeholder="Ask a question" large autoFocus />
             {startError && <p className="mt-2 text-[0.8rem] text-(--dt-destructive)">{startError}</p>}
@@ -168,7 +118,7 @@ export function NotebookHome() {
                       <button
                         type="button"
                         onClick={() => notebooks.openChat(c.id)}
-                        className="flex w-full items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/40 px-3.5 py-3 pr-10 text-left transition-colors hover:bg-(--ui-control-hover-background)"
+                        className="flex w-full items-center gap-3 rounded-2xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/55 px-3.5 py-3 pr-10 text-left shadow-[0_7px_18px_rgba(0,0,0,0.04)] transition-all hover:-translate-y-px hover:bg-(--ui-control-hover-background) hover:shadow-[0_10px_24px_rgba(0,0,0,0.065)]"
                       >
                         <Codicon name="comment-discussion" size="0.9rem" className="shrink-0 text-(--ui-text-tertiary)" />
                         <span className="min-w-0 flex-1 truncate text-[0.9rem] text-foreground">{c.title}</span>
@@ -194,45 +144,8 @@ export function NotebookHome() {
 
         {/* Right rail — floats on the page background (no distinct column/slab), like Claude's. */}
         <aside className="flex w-[22rem] shrink-0 flex-col overflow-y-auto px-3 pb-6 pt-5">
-          {/* Notebook controls — pin + actions menu, top-right above the panel. */}
-          <div className="mb-2 flex items-center justify-end gap-0.5">
-            <button
-              type="button"
-              disabled
-              aria-label="Pin notebook (coming soon)"
-              title="Pin — coming soon"
-              className="rounded-md p-1 text-(--ui-text-quaternary) opacity-60"
-            >
-              <Codicon name="pin" size="0.9rem" />
-            </button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="Notebook actions"
-                  className="rounded-md p-1 text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground data-[state=open]:bg-(--ui-control-active-background) data-[state=open]:text-foreground"
-                >
-                  <Codicon name="kebab-vertical" size="0.9rem" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="bottom">
-                <DropdownMenuItem onSelect={onRename}>
-                  <Codicon name="edit" size="0.875rem" /> Rename
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled>
-                  <Codicon name="archive" size="0.875rem" /> Archive
-                  <span className="ml-auto rounded-full bg-(--ui-bg-elevated) px-1.5 py-0.5 text-[0.6rem] font-medium text-(--ui-text-quaternary)">Soon</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={onDelete} variant="destructive">
-                  <Codicon name="trash" size="0.875rem" /> Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
           {/* One rounded panel; dividers separate the sections (no nested boxes). */}
-          <div className="divide-y divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.5rem] border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/40">
+          <div className="divide-y divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.5rem] border border-(--ui-stroke-tertiary) bg-(--ui-bg-elevated)/55 shadow-[0_14px_34px_rgba(0,0,0,0.07)]">
             <section className="flex flex-col gap-2 p-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-[0.8rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)">Instructions</h2>

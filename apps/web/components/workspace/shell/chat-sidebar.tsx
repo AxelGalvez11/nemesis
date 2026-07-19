@@ -5,14 +5,12 @@
 // Sessions sections, account footer. Class strings are verbatim transplants.
 
 import { usePathname, useRouter } from "next/navigation";
-import { IconLayoutSidebarLeftCollapse } from "@tabler/icons-react";
+import { IconLayoutSidebarLeftCollapse, IconSearch, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { KbdGroup } from "@/components/desktop-ui/kbd";
 import { SearchField } from "@/components/desktop-ui/search-field";
-import { comboTokens } from "@/lib/workspace/combo";
 import { useSessions } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
 
@@ -35,8 +33,6 @@ import {
   SidebarRowStack,
   SidebarSectionHeader,
 } from "./sidebar-primitives";
-
-const NEW_SESSION_KBD = comboTokens("mod+n");
 
 interface NavItem {
   id: string;
@@ -66,9 +62,11 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
   const router = useRouter();
   const { openSettings } = useSettingsModal();
   const pathname = usePathname();
+  const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
   const { pinned, recents, sessions, selectedId, working, select, rename, remove, togglePin } = useSessions();
 
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [pinnedOpen, setPinnedOpen] = useState(true);
   const [sessionsOpen, setSessionsOpen] = useState(true);
 
@@ -81,12 +79,12 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
 
   const startNewSession = () => {
     select(null);
-    router.push("/sessions");
+    router.push(`${navigationRoot}/sessions`);
   };
 
   const resume = (id: string) => {
     select(id);
-    router.push("/sessions");
+    router.push(`${navigationRoot}/sessions`);
   };
 
   const showSessionSections = sessions.length > 0;
@@ -102,12 +100,36 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
       )}
     >
       <SidebarContent className="gap-0 overflow-hidden bg-transparent px-2.5">
-        {/* Nav list — starts below the titlebar band. */}
-        <SidebarGroup className="shrink-0 p-0 pb-2 pt-[calc(var(--titlebar-height)+0.375rem)]">
+        <div className="flex h-9 shrink-0 items-center gap-1 px-2 pt-1">
+          <span className="min-w-0 flex-1 truncate text-[0.68rem] font-semibold tracking-[0.16em] text-foreground">NEMESIS</span>
+          <Button
+            aria-label={searchOpen ? "Close session search" : "Search sessions"}
+            onClick={() => {
+              setSearchOpen((value) => !value);
+              if (searchOpen) setQuery("");
+            }}
+            size="icon-xs"
+            variant="ghost"
+          >
+            {searchOpen ? <IconX /> : <IconSearch />}
+          </Button>
+          <Button aria-label="Collapse sidebar" onClick={onCollapse} size="icon-xs" variant="ghost">
+            <IconLayoutSidebarLeftCollapse />
+          </Button>
+        </div>
+        {searchOpen && showSessionSections && (
+          <div className="shrink-0 px-2 pb-1">
+            <SearchField aria-label="Search sessions" onChange={setQuery} placeholder="Search sessions…" value={query} />
+          </div>
+        )}
+
+        {/* Nav list — starts below the brand band. */}
+        <SidebarGroup className="shrink-0 p-0 pb-2 pt-1">
           <SidebarGroupContent>
             <SidebarMenu className="gap-px">
               {SIDEBAR_NAV.map((item) => {
-                const active = item.route ? pathname === item.route || pathname.startsWith(`${item.route}/`) : false;
+                const destination = item.route ? `${navigationRoot}${item.route}` : null;
+                const active = destination ? pathname === destination || pathname.startsWith(`${destination}/`) : false;
                 const isNewSession = item.action === "new-session";
 
                 return (
@@ -120,7 +142,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
                       )}
                       onClick={() => {
                         if (isNewSession) startNewSession();
-                        else if (item.route) router.push(item.route);
+                        else if (destination) router.push(destination);
                       }}
                     >
                       <Codicon
@@ -129,13 +151,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
                         size="1em"
                       />
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                      {isNewSession && <KbdGroup className="ml-auto opacity-55" keys={[...NEW_SESSION_KBD]} size="sm" />}
                     </SidebarMenuButton>
-                    {isNewSession && (
-                      <Button aria-label="Collapse sidebar" onClick={onCollapse} size="icon-xs" variant="ghost">
-                        <IconLayoutSidebarLeftCollapse />
-                      </Button>
-                    )}
                   </SidebarMenuItem>
                 );
               })}
@@ -145,16 +161,6 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
 
         {showSessionSections ? (
           <>
-            {/* Search */}
-            <div className="shrink-0 px-2 pb-1 pt-1">
-              <SearchField
-                aria-label="Search sessions"
-                onChange={setQuery}
-                placeholder="Search sessions…"
-                value={query}
-              />
-            </div>
-
             <div className={cn("flex min-h-0 flex-1 flex-col pb-1.75", SCROLL_Y)}>
               {trimmedQuery && filtered ? (
                 filtered.length === 0 ? (

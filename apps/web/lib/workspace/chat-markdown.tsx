@@ -4,6 +4,7 @@
 // non-streaming v1 wire recipe — fenced code renders as a plain mono block).
 
 import type { Components } from "react-markdown";
+import { Children } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
@@ -25,6 +26,18 @@ const MARKDOWN_CONTAINER_CLASS_NAME =
 
 const CODE_BLOCK_LANGUAGE_RE = /language-/;
 
+export function slugifyHeading(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+function headingText(children: React.ReactNode): string {
+  return Children.toArray(children).map((child) => (typeof child === "string" || typeof child === "number" ? String(child) : "")).join("");
+}
+
 function markdownComponents(
   onWikiLink?: (target: string) => void,
   isWikiLinkAvailable?: (target: string) => boolean,
@@ -40,9 +53,9 @@ function markdownComponents(
           aria-disabled={!wikiAvailable || undefined}
           className={cn(
             "break-words underline underline-offset-4",
-            wikiTarget && wikiAvailable && "font-medium text-(--ui-blue) decoration-current/35 hover:decoration-current",
+            wikiTarget && wikiAvailable && "font-medium text-(--theme-primary) decoration-current/35 hover:decoration-current",
             wikiTarget && !wikiAvailable && "cursor-default text-(--ui-text-quaternary) decoration-current/20",
-            !wikiTarget && "text-(--ui-blue) decoration-current/35 hover:decoration-current",
+            !wikiTarget && "text-(--theme-primary) decoration-current/35 hover:decoration-current",
           )}
           href={wikiAvailable ? href : undefined}
           onClick={
@@ -80,10 +93,10 @@ function markdownComponents(
         </code>
       );
     },
-    h1: ({ children }) => <h1 className="my-1 text-[1rem] font-semibold tracking-tight">{children}</h1>,
-    h2: ({ children }) => <h2 className="my-1 text-[0.9375rem] font-semibold tracking-tight">{children}</h2>,
-    h3: ({ children }) => <h3 className="my-1 text-[0.875rem] font-semibold">{children}</h3>,
-    h4: ({ children }) => <h4 className="my-1 text-[0.8125rem] font-semibold">{children}</h4>,
+    h1: ({ children }) => <h1 className="my-1 text-[1rem] font-semibold tracking-tight" id={slugifyHeading(headingText(children))}>{children}</h1>,
+    h2: ({ children }) => <h2 className="my-1 text-[0.9375rem] font-semibold tracking-tight" id={slugifyHeading(headingText(children))}>{children}</h2>,
+    h3: ({ children }) => <h3 className="my-1 text-[0.875rem] font-semibold" id={slugifyHeading(headingText(children))}>{children}</h3>,
+    h4: ({ children }) => <h4 className="my-1 text-[0.8125rem] font-semibold" id={slugifyHeading(headingText(children))}>{children}</h4>,
     hr: () => <div aria-hidden className="my-3" />,
     img: ({ alt, src }) =>
       typeof src === "string" ? (

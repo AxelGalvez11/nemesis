@@ -12,6 +12,8 @@ import { dimColor, graphNodeColor, type GraphPalette } from "./graph-palette";
 
 export const LABEL_MAX_CHARS = 24;
 export const LABEL_OFFSET_SCALE = 1.2;
+export const LABEL_CONTROL_SCALE = 3.3;
+export const NODE_CONTROL_SCALE = 2.7;
 export const DEFAULT_LINK_WIDTH = 0.5;
 export const HIGHLIGHT_LINK_WIDTH = 2.5;
 export const HIGHLIGHT_LINK_PARTICLES = 3;
@@ -106,10 +108,10 @@ export function makeLabelSprite(
   palette: GraphPalette,
   controls: GraphControlsState,
 ): SpriteText {
-  const sprite = new SpriteTextCtor(truncateLabel(node.title), controls.labelSize, palette.label);
+  const sprite = new SpriteTextCtor(truncateLabel(node.title), controls.labelSize * LABEL_CONTROL_SCALE, palette.label);
   const object3d = sprite as unknown as Object3DLike;
   object3d.visible = controls.showNames;
-  const radius = controls.nodeSize;
+  const radius = controls.nodeSize * NODE_CONTROL_SCALE;
   object3d.position.set(0, radius * LABEL_OFFSET_SCALE, 0);
   return sprite;
 }

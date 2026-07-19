@@ -8,6 +8,7 @@
 import { useEffect, useRef } from "react";
 
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import { cn } from "@/lib/utils";
 
 import { AssistantMessage, type TurnError } from "./assistant-message";
 import { Intro } from "./intro";
@@ -23,6 +24,7 @@ interface ThreadProps {
   busy: boolean;
   liveSeconds: number | null;
   error: TurnError | null;
+  centeredComposer?: boolean;
 }
 
 function turnDurationSeconds(turn: ThreadTurn): number | null {
@@ -30,7 +32,7 @@ function turnDurationSeconds(turn: ThreadTurn): number | null {
   return Math.round((Date.parse(turn.assistant.at) - Date.parse(turn.user.at)) / 1000);
 }
 
-export function Thread({ turns, busy, liveSeconds, error }: ThreadProps) {
+export function Thread({ turns, busy, liveSeconds, error, centeredComposer = false }: ThreadProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const isEmpty = turns.length === 0;
   const lastTurn = turns[turns.length - 1];
@@ -55,7 +57,7 @@ export function Thread({ turns, busy, liveSeconds, error }: ThreadProps) {
               className="mx-auto grid h-full w-full max-w-(--composer-width) grid-rows-[minmax(0,1fr)_auto] min-w-0 gap-(--conversation-turn-gap) px-6 py-8"
               data-slot="aui_thread-content"
             >
-              <div className="flex min-h-0 w-full flex-col items-center justify-center pt-[var(--composer-measured-height)]">
+              <div className={cn("flex min-h-0 w-full flex-col items-center", centeredComposer ? "justify-start pt-[12vh]" : "justify-center pt-[var(--composer-measured-height)]")}>
                 <Intro />
               </div>
             </div>

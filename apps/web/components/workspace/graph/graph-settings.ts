@@ -2,9 +2,10 @@
 // Persisted to localStorage["nemesis.graph.settings.v1"].
 
 export const GRAPH_SETTINGS_KEY = "nemesis.graph.settings.v1";
-export const MIN_NODE_SIZE = 4;
-export const MIN_LABEL_SIZE = 4;
-export const MAX_LABEL_SIZE = 24;
+export const MIN_NODE_SIZE = 1;
+export const MAX_NODE_SIZE = 4;
+export const MIN_LABEL_SIZE = 1;
+export const MAX_LABEL_SIZE = 4;
 
 export interface GraphControlsState {
   labelSize: number;
@@ -19,9 +20,9 @@ export interface GraphControlsState {
 
 export const DEFAULT_CONTROLS: GraphControlsState = {
   gravity: 0.3,
-  labelSize: 8,
+  labelSize: 2.4,
   neighborGlow: true,
-  nodeSize: 7,
+  nodeSize: 2.6,
   repulsion: 40,
   rotationSpeed: 0,
   showNames: true,
@@ -32,11 +33,12 @@ function sanitizeControls(raw: unknown): GraphControlsState {
   if (typeof raw !== "object" || raw === null) return { ...DEFAULT_CONTROLS };
   const r = raw as Partial<Record<keyof GraphControlsState, unknown>>;
   const n = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
+  const clamped = (v: unknown, fallback: number, min: number, max: number) => Math.min(max, Math.max(min, n(v, fallback)));
   const b = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
 
   return {
-    labelSize: n(r.labelSize, DEFAULT_CONTROLS.labelSize),
-    nodeSize: n(r.nodeSize, DEFAULT_CONTROLS.nodeSize),
+    labelSize: clamped(r.labelSize, DEFAULT_CONTROLS.labelSize, MIN_LABEL_SIZE, MAX_LABEL_SIZE),
+    nodeSize: clamped(r.nodeSize, DEFAULT_CONTROLS.nodeSize, MIN_NODE_SIZE, MAX_NODE_SIZE),
     spread: n(r.spread, DEFAULT_CONTROLS.spread),
     repulsion: n(r.repulsion, DEFAULT_CONTROLS.repulsion),
     gravity: n(r.gravity, DEFAULT_CONTROLS.gravity),
