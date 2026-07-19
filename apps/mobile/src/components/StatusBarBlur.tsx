@@ -31,6 +31,10 @@ export function StatusBarBlur({ intensity = 52 }: { intensity?: number }) {
   // Hold full strength through the status bar, then start the gradual fade just below it.
   const solidStop = Math.min(0.72, inset / height);
   const tint: BlurTint = resolvedMode === "dark" ? "systemChromeMaterialDark" : "systemChromeMaterialLight";
+  // Owner 2026-07-19: on top of the blur, a fade to black so the TopBar's title + buttons
+  // pop. Peak opacity is mode-tuned — a strong black wash in dark mode, a light touch in
+  // light mode (a full black band would look wrong on the light theme).
+  const blackPeak = resolvedMode === "dark" ? 0.92 : 0.24;
 
   return (
     <View style={[styles.host, { height }]} pointerEvents="none">
@@ -51,6 +55,17 @@ export function StatusBarBlur({ intensity = 52 }: { intensity?: number }) {
       >
         <BlurView tint={tint} intensity={intensity} style={StyleSheet.absoluteFill} />
       </MaskedView>
+      {/* Fade-to-black wash over the blur — strong at the very top, gone by the bottom. */}
+      <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
+        <Defs>
+          <LinearGradient id="statusBlack" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#000000" stopOpacity={String(blackPeak)} />
+            <Stop offset={String(solidStop)} stopColor="#000000" stopOpacity={String(blackPeak * 0.7)} />
+            <Stop offset="1" stopColor="#000000" stopOpacity="0" />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#statusBlack)" />
+      </Svg>
     </View>
   );
 }

@@ -10,7 +10,7 @@ import { listThreads, newThreadId } from "@/api/chat";
 import type { ThreadSummary } from "@/lib/chat-threads";
 import Svg, { Path } from "react-native-svg";
 import { GlassSurface } from "./GlassSurface";
-import { CalendarIcon, ChatIcon, GraphIcon, LibraryIcon, PlusIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
+import { CalendarIcon, GraphIcon, LibraryIcon, PlusIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, shadow, space, type } from "@/theme/tokens";
@@ -171,9 +171,12 @@ function DrawerShell({
   return (
     <View style={styles.shellRoot}>
       <View style={[styles.underPanel, { width: panelW }]} pointerEvents={open ? "auto" : "none"}>
-        <GlassSurface style={styles.panelGlass} fallbackColor={c.bg2}>
+        {/* Solid, borderless (owner 2026-07-19): a glass panel here drew a bright material
+            edge that competed with the page's rounded corners. A plain dark fill has no
+            edge, so the pushed page's corners + shadow read cleanly against it. */}
+        <View style={styles.panelSolid}>
           <DrawerContent open={open} onClose={onClose} onNewChat={onNewChat} />
-        </GlassSurface>
+        </View>
       </View>
 
       <GestureDetector gesture={gesture}>
@@ -271,7 +274,6 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.navGroup}>
-          <NavRow Icon={ChatIcon} label="Chat" onPress={() => go("/chat")} />
           <NavRow Icon={StudyIcon} label="Study" onPress={() => go("/study")} />
           <NavRow Icon={LibraryIcon} label="Library" onPress={() => go("/library")} />
           <NavRow Icon={GraphIcon} label="Graph" onPress={() => go("/graph")} />
@@ -352,7 +354,7 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
             <Text style={styles.newChatText}>New chat</Text>
           </Pressable>
 
-          <GlassSurface style={styles.settingsBtn}>
+          <GlassSurface style={styles.settingsBtn} fallbackColor={c.glassPanel}>
             <Pressable
               style={styles.settingsBtnInner}
               onPress={() => router.push("/settings" as never)}
@@ -415,7 +417,7 @@ const createStyles = (c: ThemeColors) =>
     // actual content. Both round only the LEFT (facing) corners via edgeRadius.
     pageShadow: { flex: 1, backgroundColor: c.bg, ...shadow.raise },
     pageClip: { flex: 1, overflow: "hidden" },
-    panelGlass: { flex: 1 },
+    panelSolid: { flex: 1, backgroundColor: c.bg2 },
     panelInner: { flex: 1 },
     // flex:1 so the ScrollView fills the gap between the brand row and the footer — the
     // footer then pins to the BOTTOM (owner 2026-07-18: bottom buttons had empty space
@@ -462,7 +464,9 @@ const createStyles = (c: ThemeColors) =>
     footerWrap: { paddingTop: space(2.5) },
     bottomRow: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      paddingLeft: space(3.5), paddingRight: space(4.5), paddingTop: space(1),
+      // Extra right padding so the gear clears the pushed page's ~18pt shadow that bleeds
+      // onto the sidebar's right edge (owner: the gear was "cutting out to the right").
+      paddingLeft: space(3.5), paddingRight: space(6), paddingTop: space(1),
     },
     // Solid (not glass) squarish button that hugs its icon + label.
     newChatBtn: {

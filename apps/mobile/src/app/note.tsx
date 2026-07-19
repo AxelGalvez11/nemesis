@@ -187,7 +187,7 @@ export default function NoteScreen() {
           accessibilityRole="button"
           accessibilityLabel="Back to library"
         >
-          <GlassSurface style={styles.iconGlass}>
+          <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel}>
             <Text style={styles.backChevron}>‹</Text>
           </GlassSurface>
         </Pressable>
@@ -203,7 +203,7 @@ export default function NoteScreen() {
               accessibilityRole="button"
               accessibilityLabel="Reading mode — switch to editing on your Mac"
             >
-              <GlassSurface style={styles.iconGlass}>
+              <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel}>
                 <BookIcon size={19} color={c.text} />
               </GlassSurface>
             </Pressable>
@@ -215,7 +215,7 @@ export default function NoteScreen() {
               accessibilityRole="button"
               accessibilityLabel="Note actions"
             >
-              <GlassSurface style={styles.iconGlass}>
+              <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel}>
                 <DotsIcon size={19} color={c.text} />
               </GlassSurface>
             </Pressable>
@@ -302,7 +302,7 @@ export default function NoteScreen() {
             },
           ]}
         >
-          <GlassSurface style={styles.menu} fallbackColor={c.bg2}>
+          <GlassSurface style={styles.menu} fallbackColor={c.glassPanel}>
             {MENU_ITEMS.map((item, i) => (
               <Pressable
                 key={item.key}
