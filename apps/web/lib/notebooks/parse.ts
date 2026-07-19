@@ -86,6 +86,59 @@ export function toNotebookSource(raw: unknown): NotebookSource | null {
   };
 }
 
+export type NotebookChatRole = "user" | "assistant" | "system";
+
+/** One chat thread inside a notebook (the Claude-Projects "Recents" row). */
+export interface NotebookChat {
+  id: string;
+  notebookId: string;
+  title: string;
+  updatedAt: string;
+}
+
+/** One persisted message in a notebook chat. */
+export interface NotebookChatMessage {
+  id: string;
+  chatId: string;
+  role: NotebookChatRole;
+  content: string;
+  createdAt: string;
+}
+
+function isChatRole(x: unknown): x is NotebookChatRole {
+  return x === "user" || x === "assistant" || x === "system";
+}
+
+/** Validate one `notebook_chats` row. Requires a string id + notebook_id. */
+export function toNotebookChat(raw: unknown): NotebookChat | null {
+  if (!isObj(raw)) return null;
+  const id = str(raw.id);
+  const notebookId = str(raw.notebook_id);
+  if (!id || !notebookId) return null;
+  return {
+    id,
+    notebookId,
+    title: str(raw.title) ?? "New chat",
+    updatedAt: str(raw.updated_at) ?? "",
+  };
+}
+
+/** Validate one `notebook_chat_messages` row. Requires id + chat_id + a known role + string content. */
+export function toNotebookChatMessage(raw: unknown): NotebookChatMessage | null {
+  if (!isObj(raw)) return null;
+  const id = str(raw.id);
+  const chatId = str(raw.chat_id);
+  const content = str(raw.content);
+  if (!id || !chatId || !isChatRole(raw.role) || content === null) return null;
+  return {
+    id,
+    chatId,
+    role: raw.role,
+    content,
+    createdAt: str(raw.created_at) ?? "",
+  };
+}
+
 /** Map a Supabase `data` array through a row parser, dropping rows that fail validation. */
 export function mapRows<T>(data: unknown, parse: (r: unknown) => T | null): T[] {
   if (!Array.isArray(data)) return [];

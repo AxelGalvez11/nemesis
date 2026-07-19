@@ -1,15 +1,17 @@
 "use client";
 
-// Per-notebook chat: a localStorage-backed transcript store (one authority per tab, keyed by
-// notebook id), the wire-message builder that injects the notebook's instructions + source titles,
-// and a send orchestrator over the shared nemesis-llm transport (postChatCompletion). General mode
-// only in Phase 1 — the model sees the instructions and the source list, but does not retrieve
-// source *content* yet (that's grounded mode, Phase 2).
+// Per-notebook-CHAT store, cloud-synced. Each chat thread's messages live in the account
+// (notebook_chat_messages) and follow the student across devices. Keys by chatId: hydrate once per
+// chat from listMessages, then append optimistically in memory while the cloud INSERT fires in the
+// background — the UI never blocks on the write. The wire-message builders stay pure. General mode:
+// the model reads the notebook's instructions + the sources' text (grounded/cite-only = Phase 2).
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import { postChatCompletion, trimHistory, type WireMsg } from "@/lib/workspace/chat-api";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
+
+import { appendMessage, listMessages, touchChat } from "./chats-api";
 
 export type { SessionMessage } from "@/lib/workspace/sessions-store";
 
@@ -81,23 +83,24 @@ export function buildNotebookWireMessages(opts: BuildNotebookWireOpts): WireMsg[
   ];
 }
 
-// ── Local transcript store (localStorage, keyed by notebook id) ──────────────
+// ── Cloud-backed transcript store (keyed by chatId) ──────────────────────────
 
-const STORAGE_KEY = "nemesis.web.notebook-chat.v1";
-const MAX_MESSAGES = 200;
+type ChatLoadStatus = "idle" | "loading" | "loaded";
 
-interface ChatFile {
-  v: 1;
-  byNotebook: Record<string, SessionMessage[]>;
+interface ChatSlice {
+  messages: SessionMessage[];
+  status: ChatLoadStatus;
+  working: boolean;
 }
+
+const MAX_MESSAGES = 400;
+const EMPTY_SLICE: ChatSlice = { messages: [], status: "idle", working: false };
 
 interface StoreState {
-  byNotebook: Record<string, SessionMessage[]>;
-  working: Record<string, boolean>;
+  byChat: Record<string, ChatSlice>;
 }
 
-let state: StoreState = { byNotebook: {}, working: {} };
-let hydrated = false;
+let state: StoreState = { byChat: {} };
 let previewMode = false;
 const listeners = new Set<() => void>();
 
@@ -112,97 +115,71 @@ function subscribe(fn: () => void): () => void {
   };
 }
 
-function sanitizeMessage(raw: unknown): SessionMessage | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const m = raw as Record<string, unknown>;
-  const role = m.role === "user" || m.role === "assistant" ? m.role : null;
-  if (!role || typeof m.content !== "string") return null;
-  return { role, content: m.content, at: typeof m.at === "string" ? m.at : new Date(0).toISOString() };
-}
-
-function loadFromStorage(): Record<string, SessionMessage[]> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null || (parsed as ChatFile).v !== 1) return {};
-    const byNotebook = (parsed as ChatFile).byNotebook;
-    if (typeof byNotebook !== "object" || byNotebook === null) return {};
-    const out: Record<string, SessionMessage[]> = {};
-    for (const [id, list] of Object.entries(byNotebook)) {
-      if (Array.isArray(list)) {
-        out[id] = list.map(sanitizeMessage).filter((m): m is SessionMessage => m !== null);
-      }
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-function persist() {
-  if (previewMode || typeof window === "undefined") return;
-  try {
-    const file: ChatFile = {
-      v: 1,
-      byNotebook: Object.fromEntries(
-        Object.entries(state.byNotebook).map(([id, list]) => [id, list.slice(-MAX_MESSAGES)]),
-      ),
-    };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(file));
-  } catch {
-    // Quota/private mode — the in-memory copy stays authoritative for the tab.
-  }
-}
-
-function ensureHydrated() {
-  if (hydrated || typeof window === "undefined") return;
-  hydrated = true;
-  state = { ...state, byNotebook: loadFromStorage() };
-}
-
-function setState(next: StoreState) {
-  state = next;
-  persist();
+function setSlice(chatId: string, patch: Partial<ChatSlice>) {
+  const prev = state.byChat[chatId] ?? EMPTY_SLICE;
+  state = { byChat: { ...state.byChat, [chatId]: { ...prev, ...patch } } };
   emit();
 }
 
 const nowIso = () => new Date().toISOString();
 
+/** Cloud rows carry a role that may include "system"; the transcript only renders user/assistant. */
+function toEntries(rows: { role: string; content: string; createdAt: string }[]): SessionMessage[] {
+  const out: SessionMessage[] = [];
+  for (const r of rows) {
+    if (r.role === "user" || r.role === "assistant") {
+      out.push({ role: r.role, content: r.content, at: r.createdAt || nowIso() });
+    }
+  }
+  return out;
+}
+
+/** Hydrate a chat's transcript from the cloud, once. Never refetches a chat that's already loading or
+ *  loaded, and never clobbers messages appended optimistically while the fetch was in flight (mirrors
+ *  the sources store's stale-guard). */
+async function ensureLoaded(chatId: string): Promise<void> {
+  if (previewMode) return;
+  const slice = state.byChat[chatId];
+  if (slice && slice.status !== "idle") return;
+  setSlice(chatId, { status: "loading" });
+  try {
+    const rows = await listMessages(chatId);
+    const current = state.byChat[chatId];
+    if (!current || current.status !== "loading") return; // superseded (e.g. cleared/reset)
+    // Adopt cloud history only if nothing was optimistically appended during the fetch.
+    const messages = current.messages.length ? current.messages : toEntries(rows);
+    setSlice(chatId, { messages, status: "loaded" });
+  } catch {
+    setSlice(chatId, { status: "loaded" }); // degrade to whatever's already in memory
+  }
+}
+
 export const notebookChatStore = {
-  getState(): StoreState {
-    ensureHydrated();
-    return state;
-  },
   subscribe,
-  messages(notebookId: string): SessionMessage[] {
-    ensureHydrated();
-    return state.byNotebook[notebookId] ?? [];
+  getMessages(chatId: string): SessionMessage[] {
+    return (state.byChat[chatId] ?? EMPTY_SLICE).messages;
   },
-  append(notebookId: string, message: SessionMessage) {
-    ensureHydrated();
-    const list = [...(state.byNotebook[notebookId] ?? []), message].slice(-MAX_MESSAGES);
-    setState({ ...state, byNotebook: { ...state.byNotebook, [notebookId]: list } });
+  ensureLoaded,
+  /** Mark a brand-new chat as loaded (empty) so no hydrate runs before its first turn. */
+  markLoaded(chatId: string) {
+    if ((state.byChat[chatId]?.status ?? "idle") === "idle") setSlice(chatId, { status: "loaded" });
   },
-  clear(notebookId: string) {
-    ensureHydrated();
-    const next = { ...state.byNotebook };
-    delete next[notebookId];
-    setState({ ...state, byNotebook: next });
+  append(chatId: string, message: SessionMessage) {
+    const prev = state.byChat[chatId] ?? EMPTY_SLICE;
+    const messages = [...prev.messages, message].slice(-MAX_MESSAGES);
+    setSlice(chatId, { messages, status: prev.status === "idle" ? "loaded" : prev.status });
   },
-  setWorking(notebookId: string, working: boolean) {
-    ensureHydrated();
-    const next = { ...state.working };
-    if (working) next[notebookId] = true;
-    else delete next[notebookId];
-    setState({ ...state, working: next });
+  setWorking(chatId: string, working: boolean) {
+    setSlice(chatId, { working });
   },
-  /** Dev-preview only: seed transcripts in-memory and stop persisting. */
-  injectPreview(byNotebook: Record<string, SessionMessage[]>) {
+  /** Dev-preview only: seed transcripts in-memory and stop hitting the network. */
+  injectPreview(byChat: Record<string, SessionMessage[]>) {
     previewMode = true;
-    hydrated = true;
-    state = { byNotebook, working: {} };
+    const seeded: Record<string, ChatSlice> = {};
+    for (const [id, messages] of Object.entries(byChat)) {
+      seeded[id] = { messages, status: "loaded", working: false };
+    }
+    state = { byChat: seeded };
     emit();
   },
 };
@@ -212,21 +189,24 @@ export const notebookChatStore = {
 export interface SendNotebookTurnOpts {
   uid: string;
   notebookId: string;
+  chatId: string;
   instructions: string | null;
   sources: NotebookWireSource[];
   userText: string;
   signal?: AbortSignal;
 }
 
-/** Append the user's message, run one turn through the shared transport with the notebook's
- *  instructions + source titles injected, then append the assistant's reply (or a readable error
- *  line). Persists to the per-notebook local store. Rethrows only on abort. */
+/** Append the user's message, run one turn with the notebook's instructions + source text injected,
+ *  then append the assistant's reply (or a readable error line). The transcript renders from memory
+ *  immediately; the cloud INSERTs fire in the background (a failed write only costs cross-device sync,
+ *  never the UI). Rethrows only on abort. */
 export async function sendNotebookTurn(opts: SendNotebookTurnOpts): Promise<void> {
   const userText = opts.userText.trim();
   if (!userText) return;
-  const history = notebookChatStore.messages(opts.notebookId);
-  notebookChatStore.append(opts.notebookId, { role: "user", content: userText, at: nowIso() });
-  notebookChatStore.setWorking(opts.notebookId, true);
+  const history = notebookChatStore.getMessages(opts.chatId);
+  notebookChatStore.append(opts.chatId, { role: "user", content: userText, at: nowIso() });
+  notebookChatStore.setWorking(opts.chatId, true);
+  void appendMessage({ chatId: opts.chatId, notebookId: opts.notebookId, role: "user", content: userText }).catch(() => {});
   try {
     const reply = await postChatCompletion(
       opts.uid,
@@ -239,46 +219,48 @@ export async function sendNotebookTurn(opts: SendNotebookTurnOpts): Promise<void
       opts.signal,
     );
     const text = reply.text ?? reply.errorText ?? "Something went wrong. Try again.";
-    notebookChatStore.append(opts.notebookId, { role: "assistant", content: text, at: nowIso() });
+    notebookChatStore.append(opts.chatId, { role: "assistant", content: text, at: nowIso() });
+    if (reply.text) {
+      void appendMessage({ chatId: opts.chatId, notebookId: opts.notebookId, role: "assistant", content: reply.text }).catch(() => {});
+    }
+    void touchChat(opts.chatId).catch(() => {});
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
-    notebookChatStore.append(opts.notebookId, {
+    notebookChatStore.append(opts.chatId, {
       role: "assistant",
       content: "You're offline — chat needs a connection. Try again in a moment.",
       at: nowIso(),
     });
   } finally {
-    notebookChatStore.setWorking(opts.notebookId, false);
+    notebookChatStore.setWorking(opts.chatId, false);
   }
 }
 
 // ── React hook ────────────────────────────────────────────────────────────────
 
-const EMPTY: StoreState = { byNotebook: {}, working: {} };
+const EMPTY_STATE: StoreState = { byChat: {} };
 
 function getSnapshot(): StoreState {
-  ensureHydrated();
   return state;
 }
 
-// Server snapshot is a stable empty state (store hydrates client-side only).
 function getServerSnapshot(): StoreState {
-  return EMPTY;
+  return EMPTY_STATE;
 }
 
 export interface UseNotebookChatApi {
   messages: SessionMessage[];
   working: boolean;
-  clear: () => void;
 }
 
-export function useNotebookChat(notebookId: string | null): UseNotebookChatApi {
+export function useNotebookChat(chatId: string | null): UseNotebookChatApi {
   const snap = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  useEffect(() => {
+    if (chatId) void notebookChatStore.ensureLoaded(chatId);
+  }, [chatId]);
+  const slice = chatId ? snap.byChat[chatId] : undefined;
   return {
-    messages: notebookId ? (snap.byNotebook[notebookId] ?? []) : [],
-    working: notebookId ? Boolean(snap.working[notebookId]) : false,
-    clear: useCallback(() => {
-      if (notebookId) notebookChatStore.clear(notebookId);
-    }, [notebookId]),
+    messages: slice?.messages ?? [],
+    working: slice?.working ?? false,
   };
 }
