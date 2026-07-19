@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useShellPadding } from "@/components/shell-chrome";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
@@ -11,7 +11,7 @@ import {
   pullLibraryRows,
   subscribeLibrary,
 } from "@/api/librarySync";
-import { buildSections, type LibrarySection, type SyncCache } from "@/lib/library-sync";
+import { buildLibraryRows, type SyncCache } from "@/lib/library-sync";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -22,6 +22,12 @@ import { radius, space, type } from "@/theme/tokens";
 // design — the Mac agent is the only author (single-writer architecture).
 // Only kind:"note" docs render here — deck snapshots and the calendar doc ride the
 // same encrypted pipe but belong to the Study/Calendar screens (Phases 2/3).
+//
+// Folders nest arbitrarily deep (mirrors the Mac vault's own folder structure) and
+// each one collapses independently — buildLibraryRows() (lib/library-sync.ts) turns
+// the flat doc-path list into a depth-tagged row list every render; `collapsed` (a
+// Set of full folder paths, e.g. "PHCY 1205/Unit 1") is the only state that drives
+// it, so collapsing a parent never disturbs a child's own remembered state.
 
 export default function LibraryScreen() {
   const { colors: c } = useTheme();
@@ -32,7 +38,20 @@ export default function LibraryScreen() {
   const [cache, setCache] = useState<SyncCache>({});
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const pulling = useRef(false);
+
+  // Toggle ONE folder by its full path — never mutates the previous Set, always
+  // builds a fresh one, so a folder's collapsed-ness is independent of its
+  // siblings and its ancestors' own toggles.
+  const toggleFolder = useCallback((path: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
 
   const pull = useCallback(async (base: SyncCache) => {
     if (pulling.current) return;
@@ -110,10 +129,11 @@ export default function LibraryScreen() {
 
   const { docs, failures } = decryptLibrary(cache, key);
   const notes = docs.filter((d) => d.kind === "note");
-  const sections: (LibrarySection & { title: string; data: LibrarySection["notes"] })[] = buildSections(
-    notes.map((d) => ({ path: d.path, title: d.title })),
-  ).map((s) => ({ ...s, title: s.folder === "" ? "Library" : s.folder, data: s.notes }));
+  const rows = buildLibraryRows(notes.map((d) => ({ path: d.path, title: d.title })), collapsed);
   const pathToHash = new Map(notes.map((d) => [d.path, d.pathHash]));
+  // Root-level notes (no folder) are the only rows ever at depth 0 with type "note" —
+  // that's exactly the old "" bucket buildSections used to label "Library".
+  const hasRootNotes = rows.some((r) => r.type === "note" && r.depth === 0);
 
   // The banners are siblings above the list, so when one shows IT carries the
   // glass-TopBar clearance and the list's own top padding shrinks — otherwise the
@@ -139,10 +159,9 @@ export default function LibraryScreen() {
           ) : null}
         </View>
       ) : null}
-      <SectionList
-        sections={sections}
-        keyExtractor={(item) => item.path}
-        stickySectionHeadersEnabled={false}
+      <FlatList
+        data={rows}
+        keyExtractor={(item) => `${item.type}:${item.path}`}
         contentContainerStyle={[styles.listBody, { paddingTop: hasBanner ? space(2) : contentTop + space(2), paddingBottom: contentBottom }]}
         refreshControl={
           <RefreshControl
@@ -154,19 +173,45 @@ export default function LibraryScreen() {
             }}
           />
         }
-        renderSectionHeader={({ section }) => <Text style={styles.sectionHead}>{section.title}</Text>}
-        renderItem={({ item }) => (
-          <Pressable
-            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-            testID={`note-${item.path}`}
-            onPress={() => {
-              const ph = pathToHash.get(item.path);
-              if (ph) router.push({ pathname: "/note", params: { ph } });
-            }}
-          >
-            <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
-          </Pressable>
-        )}
+        ListHeaderComponent={hasRootNotes ? <Text style={styles.sectionHead}>Library</Text> : null}
+        renderItem={({ item }) => {
+          const indent = item.depth > 0 ? { paddingLeft: space(2) + item.depth * space(4) } : null;
+          if (item.type === "folder") {
+            const isCollapsed = collapsed.has(item.path);
+            return (
+              <Pressable
+                style={({ pressed }) => [styles.folderRow, indent, pressed && styles.rowPressed]}
+                testID={`folder-${item.path}`}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.name} folder`}
+                accessibilityState={{ expanded: !isCollapsed }}
+                onPress={() => toggleFolder(item.path)}
+              >
+                <Text style={[styles.folderChevron, { transform: [{ rotate: isCollapsed ? "0deg" : "90deg" }] }]}>›</Text>
+                <Text style={styles.folderName} numberOfLines={1}>{item.name}</Text>
+              </Pressable>
+            );
+          }
+          return (
+            <Pressable
+              style={({ pressed }) => [styles.row, indent, pressed && styles.rowPressed]}
+              testID={`note-${item.path}`}
+              onPress={() => {
+                const ph = pathToHash.get(item.path);
+                if (ph) router.push({ pathname: "/note", params: { ph } });
+              }}
+            >
+              <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
+            </Pressable>
+          );
+        }}
+        // rows.length === 0 iff notes.length === 0: a top-level folder's own row (and
+        // every root note) is always emitted regardless of collapse state — only a
+        // collapsed folder's DESCENDANTS get hidden — so this never falsely fires while
+        // notes merely sit behind a collapsed folder. Keeping FlatList's own empty
+        // handling (rather than branching around the list) is also what keeps
+        // pull-to-refresh alive on this exact screen — the just-paired, nothing-synced-
+        // yet state, which is the moment a pull-to-refresh matters most.
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
             <EmptyBlock
@@ -186,11 +231,27 @@ const createStyles = (c: ThemeColors) =>
     pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4), backgroundColor: c.bg },
     pairHint: { ...type.small, color: c.text2, textAlign: "center" },
     listBody: { padding: space(4), flexGrow: 1 },
+    // "Library" — the label above root-level (unfoldered) notes only; real folders
+    // render as folderRow below, each with its own name + chevron.
     sectionHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(4), marginBottom: space(1.5) },
-    // Notes are just names now (owner call) — no cards, no chevrons.
+    // Notes are still just names (owner call) — no cards, no chevrons on notes.
     row: { paddingVertical: space(2.5), paddingHorizontal: space(2), borderRadius: radius.sm },
     rowPressed: { backgroundColor: c.surface },
     rowTitle: { ...type.body, color: c.text },
+    // Folders ARE collapsible, so they get the chevron notes deliberately don't.
+    folderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(1.5),
+      paddingVertical: space(2.5),
+      paddingHorizontal: space(2),
+      marginTop: space(3),
+      borderRadius: radius.sm,
+    },
+    folderName: { ...type.bodyStrong, color: c.text, flexShrink: 1 },
+    // Same glyph as settings.tsx's disclosure "›", rotated in place (0deg = collapsed
+    // pointing right, 90deg = expanded pointing down) — no icon asset, no animation lib.
+    folderChevron: { fontSize: 17, lineHeight: 20, color: c.text2, width: 14, textAlign: "center" },
     warn: { marginHorizontal: space(4), marginTop: space(3), padding: space(3) },
     warnText: { ...type.small, color: c.text2 },
     emptyWrap: { paddingTop: space(10) },

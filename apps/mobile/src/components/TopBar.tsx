@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useShell } from "./AppDrawer";
 import { GlassSurface } from "./GlassSurface";
@@ -8,14 +7,18 @@ import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { space } from "@/theme/tokens";
 
-// The top chrome — no bar, no border (owner call): two FLOATING liquid-glass
-// buttons (menu top-left, new-session '+' top-right) with a centered label that
-// shows the Nemesis logo by default and swaps to the active chat/session title
-// once the student has asked something (screens drive it via useShell().setHeaderTitle).
-// Content scrolls freely underneath. Chrome stays neutral — crimson is for primary actions.
-export function TopBar({ showNewChat = true }: { showNewChat?: boolean }) {
+// The top chrome — no bar, no border (owner call): ONE floating liquid-glass menu
+// button top-left, and a centered label that appears once the student has asked
+// something (screens drive it via useShell().setHeaderTitle) — blank otherwise.
+// Owner call 2026-07-18: dropped the Nemesis logo/wordmark and the '+' button from
+// every page's top chrome (the drawer's own "New chat" button, plus the new
+// edge-swipe-to-open gesture, cover that job now). A same-size invisible spacer
+// sits top-right purely so the center label stays visually centered between two
+// equal-width slots. Content scrolls freely underneath. Chrome stays neutral —
+// crimson is for primary actions.
+export function TopBar() {
   const insets = useSafeAreaInsets();
-  const { openDrawer, newSession, headerTitle } = useShell();
+  const { openDrawer, headerTitle } = useShell();
   const styles = useThemedStyles(createStyles);
 
   return (
@@ -27,33 +30,10 @@ export function TopBar({ showNewChat = true }: { showNewChat?: boolean }) {
       </GlassButton>
 
       <View style={styles.center} pointerEvents="none">
-        {headerTitle ? (
-          <Text style={styles.title} numberOfLines={1}>{headerTitle}</Text>
-        ) : (
-          <View style={styles.brand}>
-            <LogoMark size={15} />
-            <Text style={styles.wordmark}>Nemesis</Text>
-          </View>
-        )}
+        {headerTitle ? <Text style={styles.title} numberOfLines={1}>{headerTitle}</Text> : null}
       </View>
 
-      {showNewChat ? (
-        // "+" starts a new session from anywhere: land on home and bump the nonce
-        // (clears + focuses the composer).
-        <GlassButton
-          onPress={() => {
-            newSession();
-            router.push("/");
-          }}
-          label="New session"
-          styles={styles}
-        >
-          <View style={styles.plusH} />
-          <View style={styles.plusV} />
-        </GlassButton>
-      ) : (
-        <View style={styles.glassBtn} />
-      )}
+      <View style={styles.spacer} />
     </View>
   );
 }
@@ -89,6 +69,8 @@ const MARK_ASPECT = 1.24;
 // intrinsic pixel size as a default style, and on-device that default beat the
 // height+aspectRatio combination (owner screenshot, build 6). Explicit dimensions win.
 // tintColor recolors the white master to the theme's text tone so it reads in light mode.
+// No longer used by TopBar itself (owner call 2026-07-18 dropped the top chrome
+// wordmark), but stays exported — sign-in.tsx still renders the mark as page branding.
 export function LogoMark({ size = 16, tint }: { size?: number; tint?: string }) {
   const { colors: c } = useTheme();
   return (
@@ -111,10 +93,9 @@ const createStyles = (c: ThemeColors) =>
     glassBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: c.line },
     glassBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
     bun: { width: 16, height: 1.8, borderRadius: 2, backgroundColor: c.text2, marginVertical: 1.8 },
-    plusH: { position: "absolute", width: 16, height: 1.8, borderRadius: 2, backgroundColor: c.text2 },
-    plusV: { position: "absolute", width: 1.8, height: 16, borderRadius: 2, backgroundColor: c.text2 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(1) },
-    brand: { flexDirection: "row", alignItems: "center", gap: space(2) },
-    wordmark: { color: c.text, fontSize: 16.5, fontWeight: "700", letterSpacing: -0.2 },
     title: { color: c.text, fontSize: 16, fontWeight: "600", letterSpacing: -0.2 },
+    // Invisible same-size spacer (no border/fill) so the center label stays
+    // centered between two equal-width slots now that the '+' button is gone.
+    spacer: { width: 40, height: 40 },
   });

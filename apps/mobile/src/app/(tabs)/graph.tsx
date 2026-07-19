@@ -32,7 +32,10 @@ import { radius, space, type } from "@/theme/tokens";
 //     wraps the SVG + node Views.
 //   - Per-node DRAG (GraphNodeView), which pins the dragged node in the sim
 //     (LayoutSim.pin in note-graph.ts) so the running force layout stops fighting
-//     the finger, while its neighbors keep reacting to it live.
+//     the finger, while startDrag/endDrag (also note-graph.ts) keep the sim fully
+//     energized — with a temporarily stiffer pull on the dragged node's own edges —
+//     for the whole gesture, so its linked neighbors visibly get pulled along
+//     instead of the layout barely reacting.
 //
 // A gear button in the header toggles a settings panel: Gravity/Repulsion/Node
 // size/Link distance sliders (ForceSlider), a Labels 3-way toggle, and a Reset.
@@ -151,6 +154,16 @@ export default function GraphScreen() {
         stopTicking();
         return;
       }
+      // Liveness note: while a drag is active, sim.settled is always false
+      // (see LayoutSim.startDrag in note-graph.ts), so this loop's own exit
+      // below depends on endDrag() being reached — normally guaranteed by
+      // GraphNodeView's pan gesture firing onDragEnd from `.onFinalize()`
+      // (RNGH's documented always-runs-eventually callback). If that were
+      // ever missed, this interval would keep re-rendering every node every
+      // tick indefinitely; it self-heals on the next drag (startDrag resets
+      // the sim's drag state) and on leaving the screen (the seeding effect's
+      // cleanup calls stopTicking()), so this is a low-severity latent risk,
+      // not a correctness bug — noted rather than defended against further.
       for (let i = 0; i < STEPS_PER_TICK && !sim.settled; i++) sim.step();
       setGraph(sim.snapshot());
       if (sim.settled) stopTicking();
@@ -220,20 +233,42 @@ export default function GraphScreen() {
     router.push({ params: { ph: pathHash }, pathname: "/note" });
   }, []);
 
-  // A node drag pins it (see note-graph.ts's LayoutSim.pin) and, if the sim had
-  // already settled into stillness, gives it one reheat so its neighbors get a
-  // chance to visibly react to the new pinned position instead of staying frozen.
+  // A node drag brackets the sim's active-drag state (note-graph.ts's
+  // LayoutSim.startDrag/endDrag) around pin()-ing it to the finger.
+  // startDrag keeps the simulation fully energized for the whole gesture —
+  // with a temporarily stiffer pull on this node's own edges — so its linked
+  // neighbors visibly follow instead of barely creeping: a single bounded
+  // reheat() kick (the old approach, still what the sliders use) is tuned
+  // for a one-off nudge, not a multi-hundred-pixel drag. endDrag lets the
+  // sim ease back to a normal settle once the finger lifts.
+  const handleNodeDragStart = useCallback(
+    (index: number) => {
+      const sim = simRef.current;
+      if (!sim) return;
+      sim.startDrag(index);
+      ensureTicking();
+    },
+    [ensureTicking],
+  );
+
   const handleNodeDragTo = useCallback(
     (index: number, x: number, y: number) => {
       const sim = simRef.current;
       if (!sim) return;
       sim.pin(index, x, y);
-      if (sim.settled) sim.reheat();
       ensureTicking();
       setGraph(sim.snapshot());
     },
     [ensureTicking],
   );
+
+  const handleNodeDragEnd = useCallback(() => {
+    const sim = simRef.current;
+    if (!sim) return;
+    sim.endDrag();
+    ensureTicking();
+    setGraph(sim.snapshot());
+  }, [ensureTicking]);
 
   useFocusEffect(
     useCallback(() => {
@@ -448,6 +483,8 @@ export default function GraphScreen() {
                   canvasPanGesture={canvasPanGesture}
                   index={i}
                   node={node}
+                  onDragEnd={handleNodeDragEnd}
+                  onDragStart={handleNodeDragStart}
                   onDragTo={handleNodeDragTo}
                   onOpen={openNote}
                   scale={scale}

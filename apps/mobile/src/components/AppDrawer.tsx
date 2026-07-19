@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentType } from "react";
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router } from "expo-router";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { listMissions, type Mission, type MissionStatus } from "@/api/missions";
@@ -21,6 +23,21 @@ import { radius, space, type } from "@/theme/tokens";
 // save to the sidebar") — each conversation persisted as its own thread — with the
 // agent SESSIONS below it, then a liquid-glass "New chat" button and the account
 // footer. Tapping a chat reopens it (via the /chat?c=<id> route param).
+//
+// Owner call 2026-07-18: the drawer also opens on a horizontal edge-swipe (in
+// addition to tapping TopBar's menu button) — see EDGE_WIDTH/OPEN_THRESHOLD and
+// DrawerProvider's edgeSwipeGesture below.
+
+// How close to the screen's left edge a touch must START for the edge-swipe-to-open
+// gesture to even engage (react-native-gesture-handler's Pan `hitSlop`, points).
+const EDGE_WIDTH = 28;
+// How far right that touch must travel before it counts as "open the drawer" (points).
+const OPEN_THRESHOLD = 48;
+
+// A plain, theme-independent flex:1 box for the GestureDetector's child — defined
+// once at module scope so DrawerProvider (which otherwise touches no theme colors)
+// doesn't need a useThemedStyles subscription just for this one static style.
+const shellStyles = StyleSheet.create({ fill: { flex: 1 } });
 
 interface ShellState {
   open: boolean;
@@ -32,7 +49,7 @@ interface ShellState {
   newSession: () => void;
   /** Open a brand-new chat thread (navigates to /chat with a fresh thread id). */
   newChat: () => void;
-  /** The TopBar's center label: null → the Nemesis logo; a string → that title. */
+  /** The TopBar's center label: null → blank (owner call 2026-07-18, no logo/wordmark chrome); a string → that title. */
   headerTitle: string | null;
   setHeaderTitle: (title: string | null) => void;
 }
@@ -58,6 +75,33 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
     router.push(`/chat?c=${newThreadId()}` as never);
   }, []);
 
+  // Edge-swipe-to-open: a rightward drag starting within EDGE_WIDTH points of the
+  // screen's left edge opens the drawer, same destination as tapping TopBar's menu
+  // button. Runs as a worklet on the UI thread (react-native-reanimated) until the
+  // threshold trips, then hands off to openDrawer (JS-thread React state) via
+  // runOnJS — the same Gesture.Pan()/GestureDetector idiom as the Graph screen's
+  // canvas pan, just a one-shot trigger instead of a live-tracked transform.
+  // `triggered` guards against calling openDrawer() repeatedly as the finger keeps
+  // moving past the threshold within one gesture; it resets on every new touch.
+  const triggered = useSharedValue(false);
+  const edgeSwipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .hitSlop({ left: 0, width: EDGE_WIDTH })
+        .activeOffsetX(12)
+        .failOffsetY([-15, 15])
+        .onStart(() => {
+          triggered.value = false;
+        })
+        .onUpdate((event) => {
+          if (!triggered.value && event.translationX > OPEN_THRESHOLD) {
+            triggered.value = true;
+            runOnJS(openDrawer)();
+          }
+        }),
+    [openDrawer, triggered],
+  );
+
   const value = useMemo<ShellState>(
     () => ({ open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle, setHeaderTitle }),
     [open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle],
@@ -65,7 +109,9 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
 
   return (
     <ShellContext.Provider value={value}>
-      {children}
+      <GestureDetector gesture={edgeSwipeGesture}>
+        <View style={shellStyles.fill}>{children}</View>
+      </GestureDetector>
       <DrawerOverlay open={open} onClose={closeDrawer} onNewChat={newChat} />
     </ShellContext.Provider>
   );
@@ -232,29 +278,16 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
         ) : null}
       </ScrollView>
 
-      {/* Lower-left liquid-glass "New chat" (owner call), just above the account row. */}
+      {/* Footer: identity display, then a bottom row — liquid-glass "New chat"
+          lower-left, gear-only Settings lower-right (owner call 2026-07-18; no
+          divider above it anymore). Settings deliberately skips onClose(): unlike
+          go() (used by every nav/chat/session row, which SHOULD close the drawer
+          on navigation), pushing /settings without closing means the drawer stays
+          `open` underneath and the modal sheet slides up OVER it — so dismissing
+          Settings lands you right back on the still-open drawer instead of a
+          closed one. See TopBar.tsx / settings.tsx for the rest of that fix. */}
       <View style={styles.footerWrap}>
-        <GlassSurface style={styles.newChatBtn} variant="clear">
-          <Pressable
-            style={styles.newChatInner}
-            onPress={() => {
-              onNewChat();
-              onClose();
-            }}
-            testID="drawer-new-chat"
-            accessibilityLabel="New chat"
-          >
-            <PlusIcon size={17} color={c.accent} />
-            <Text style={styles.newChatText}>New chat</Text>
-          </Pressable>
-        </GlassSurface>
-
-        <Pressable
-          testID="drawer-account"
-          style={({ pressed }) => [styles.footer, { paddingBottom: insets.bottom + space(2.5) }, pressed && styles.footerPressed]}
-          onPress={() => go("/settings")}
-          accessibilityLabel="Account and settings"
-        >
+        <View style={styles.identityRow}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{initial}</Text>
           </View>
@@ -262,8 +295,36 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
           <View style={styles.planPill}>
             <Text style={styles.planPillText}>Student</Text>
           </View>
-          <SettingsIcon size={16} color={c.text3} />
-        </Pressable>
+        </View>
+
+        <View style={[styles.bottomRow, { paddingBottom: insets.bottom + space(2.5) }]}>
+          <GlassSurface style={styles.newChatBtn} variant="clear">
+            <Pressable
+              style={styles.newChatInner}
+              onPress={() => {
+                onNewChat();
+                onClose();
+              }}
+              testID="drawer-new-chat"
+              accessibilityLabel="New chat"
+            >
+              <PlusIcon size={17} color={c.accent} />
+              <Text style={styles.newChatText}>New chat</Text>
+            </Pressable>
+          </GlassSurface>
+
+          <GlassSurface style={styles.settingsBtn}>
+            <Pressable
+              style={styles.settingsBtnInner}
+              onPress={() => router.push("/settings" as never)}
+              testID="drawer-settings"
+              accessibilityLabel="Settings"
+              hitSlop={8}
+            >
+              <SettingsIcon size={19} color={c.text2} />
+            </Pressable>
+          </GlassSurface>
+        </View>
       </View>
     </View>
   );
@@ -324,17 +385,24 @@ const createStyles = (c: ThemeColors) =>
     rowTime: { color: c.text3, fontSize: 11, fontVariant: ["tabular-nums"] },
     emptyRows: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },
 
-    // Footer block — New chat button, then the account row.
-    footerWrap: { borderTopWidth: 1, borderTopColor: c.line, paddingTop: space(2) },
-    newChatBtn: { marginHorizontal: space(3), marginBottom: space(2), borderRadius: radius.pill, borderWidth: 1, borderColor: c.accentLine },
-    newChatInner: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: space(2), paddingVertical: space(2.75) },
-    newChatText: { color: c.accent, fontSize: 15, fontWeight: "600" },
+    // Footer block — identity display, then a bottom row (New chat lower-left,
+    // Settings gear lower-right). No divider above it (owner call 2026-07-18).
+    footerWrap: { paddingTop: space(2) },
 
-    footer: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(3.5), paddingTop: space(1) },
-    footerPressed: { backgroundColor: c.surface },
+    identityRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(3.5), paddingBottom: space(2) },
     avatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.line },
     avatarText: { color: c.text2, fontSize: 11, fontWeight: "700" },
     footerName: { flex: 1, color: c.text, fontSize: 12.5, fontWeight: "500", minWidth: 0 },
     planPill: { backgroundColor: c.accentFaint, borderRadius: radius.pill, paddingHorizontal: space(1.75), paddingVertical: 2 },
     planPillText: { color: c.accent, fontSize: 10, fontWeight: "700" },
+
+    bottomRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(3), paddingTop: space(1) },
+    // Auto-width pill (hugs its icon+text) now that it shares the row with the
+    // settings button, instead of the old full-bleed bar above the account row.
+    newChatBtn: { borderRadius: radius.pill, borderWidth: 1, borderColor: c.accentLine },
+    newChatInner: { flexDirection: "row", alignItems: "center", gap: space(1.75), paddingVertical: space(2.25), paddingHorizontal: space(3.5) },
+    newChatText: { color: c.accent, fontSize: 15, fontWeight: "600" },
+
+    settingsBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: c.line },
+    settingsBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
   });

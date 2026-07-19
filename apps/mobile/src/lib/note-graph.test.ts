@@ -303,3 +303,124 @@ Deno.test("createLayoutSim.pin: an empty pin map (the default) leaves snapshot()
   while (!sim.settled) sim.step();
   assertEquals(sim.snapshot(), layoutNoteGraph(graph, opts));
 });
+
+// --- startDrag/endDrag (phone Graph screen: drag pulls linked neighbors) --
+
+Deno.test("createLayoutSim.startDrag keeps a settled sim hot until endDrag", () => {
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const sim = createLayoutSim(graph, { height: 300, width: 300 });
+  while (!sim.settled) sim.step();
+  assertEquals(sim.settled, true);
+
+  sim.startDrag(0);
+  assertEquals(sim.settled, false, "an active drag should never report settled");
+  for (let i = 0; i < 50; i++) sim.step();
+  assertEquals(sim.settled, false, "should stay hot for the whole gesture, not cool down mid-drag");
+
+  sim.endDrag();
+  let guard = 0;
+  while (!sim.settled && guard++ < 10_000) sim.step();
+  assertEquals(sim.settled, true, "should ease back to settled after the drag ends");
+});
+
+Deno.test("createLayoutSim.startDrag ignores out-of-range indices", () => {
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const sim = createLayoutSim(graph, { height: 200, width: 200 });
+  while (!sim.settled) sim.step();
+  sim.startDrag(-1);
+  assertEquals(sim.settled, true, "an out-of-range startDrag must not force settled=false forever");
+  sim.startDrag(99);
+  assertEquals(sim.settled, true);
+});
+
+Deno.test("createLayoutSim.endDrag without a prior startDrag is a harmless no-op (mirrors a tap's defensive cleanup call)", () => {
+  const graph = buildNoteGraph([doc("a.md", "A", "[[B]]"), doc("b.md", "B", "")]);
+  const sim = createLayoutSim(graph, { height: 200, width: 200 });
+  while (!sim.settled) sim.step();
+  sim.endDrag();
+  let guard = 0;
+  while (!sim.settled && guard++ < 10_000) sim.step();
+  assertEquals(sim.settled, true, "should settle right back down, never throw or hang");
+});
+
+Deno.test("createLayoutSim.startDrag: the dragged node's own edges pull its neighbor noticeably harder than the old pin()+reheat() path", () => {
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "[[B]]"),
+    doc("b.md", "B", "[[C]]"),
+    doc("c.md", "C", ""),
+  ]);
+  const opts = { height: 400, width: 400 };
+
+  // Old path: pin far away, reheat() once (a single bounded kick), step —
+  // this is exactly what the phone Graph screen did before startDrag/endDrag
+  // existed, and is the direct cause of "dragging only moves that node".
+  const baseline = createLayoutSim(graph, opts);
+  while (!baseline.settled) baseline.step();
+  baseline.pin(0, 350, 350);
+  baseline.reheat();
+  for (let i = 0; i < 30; i++) baseline.step();
+  const baselineNeighbor = baseline.snapshot().nodes[1];
+
+  // New path: same drag target, same step count, through startDrag instead.
+  const dragged = createLayoutSim(graph, opts);
+  while (!dragged.settled) dragged.step();
+  dragged.startDrag(0);
+  dragged.pin(0, 350, 350);
+  for (let i = 0; i < 30; i++) dragged.step();
+  const draggedNeighbor = dragged.snapshot().nodes[1];
+
+  const target = { x: 350, y: 350 };
+  const baselineGap = Math.hypot(target.x - baselineNeighbor.x, target.y - baselineNeighbor.y);
+  const draggedGap = Math.hypot(target.x - draggedNeighbor.x, target.y - draggedNeighbor.y);
+  assert(
+    draggedGap < baselineGap - 5,
+    `startDrag should close the gap to the dragged node meaningfully more than reheat() alone: baseline gap ${baselineGap}, startDrag gap ${draggedGap}`,
+  );
+});
+
+Deno.test("createLayoutSim.startDrag/.endDrag: many cumulative drags never exhaust reheat()'s lifetime step ceiling", () => {
+  // Regression guard: dragging must run on its own per-gesture step budget,
+  // never spending from totalStepsRun/hardStepCeiling (the lifetime counter
+  // reheat() — i.e. sliders — is bounded by). If it shared that budget, a
+  // few long drags in one session would exhaust it and dragging would
+  // silently stop pulling neighbors for the rest of the sim's lifetime —
+  // the original bug, resurrected after heavy use instead of on first try.
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "[[B]]"),
+    doc("b.md", "B", "[[C]]"),
+    doc("c.md", "C", ""),
+  ]);
+  // iterations: 5 -> hardStepCeiling = max(5, 5*8) = 40, trivially exhausted
+  // by ordinary reheat() cycles below (same shape as the reheat runaway test
+  // above), so this graph proves dragging survives the ceiling rather than
+  // relying on it being generous enough in practice.
+  const sim = createLayoutSim(graph, { height: 300, iterations: 5, width: 300 });
+  while (!sim.settled) sim.step();
+
+  // Exhaust the lifetime ceiling via ordinary reheat()s first (e.g. a lot of
+  // slider tweaking before the user ever touches a node).
+  for (let k = 0; k < 20; k++) {
+    let guard = 0;
+    while (!sim.settled && guard++ < 10_000) sim.step();
+    sim.reheat();
+  }
+  assertEquals(sim.settled, true, "lifetime ceiling should be exhausted by this point");
+
+  // Now drag repeatedly — many separate gestures, each stepping well past
+  // what the already-exhausted lifetime ceiling would allow if dragging
+  // shared it.
+  const before = sim.snapshot();
+  for (let g = 0; g < 5; g++) {
+    sim.startDrag(0);
+    for (let s = 0; s < 100; s++) {
+      sim.pin(0, 250 + g, 50 - g);
+      sim.step();
+    }
+    sim.endDrag();
+    let guard = 0;
+    while (!sim.settled && guard++ < 10_000) sim.step();
+  }
+  const after = sim.snapshot();
+  const neighborMoved = before.nodes[1].x !== after.nodes[1].x || before.nodes[1].y !== after.nodes[1].y;
+  assert(neighborMoved, "neighbor should still respond to dragging after the slider lifetime ceiling was exhausted");
+});

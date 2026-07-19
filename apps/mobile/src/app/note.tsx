@@ -3,6 +3,7 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-na
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock } from "@/components/mission-ui";
 import { decryptLibrary, loadCachedRows, loadVaultKey } from "@/api/librarySync";
 import type { LibraryDoc } from "@/lib/library-sync";
@@ -97,8 +98,17 @@ export default function NoteScreen() {
     <View style={[styles.flex, { paddingTop: insets.top + space(2) }]} testID="note-screen">
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.topRow}>
-        <Pressable onPress={() => router.back()} hitSlop={10} testID="note-back" style={styles.backBtn}>
-          <Text style={styles.backText}>‹ Library</Text>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          testID="note-back"
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Back to library"
+        >
+          <GlassSurface style={styles.backGlass}>
+            <Text style={styles.backChevron}>‹</Text>
+          </GlassSurface>
         </Pressable>
       </View>
       {notice ? (
@@ -129,8 +139,12 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
     topRow: { paddingHorizontal: space(3), paddingBottom: space(2) },
-    backBtn: { alignSelf: "flex-start", paddingVertical: space(1) },
-    backText: { ...type.bodyStrong, color: c.text2 },
+    // Upper-left liquid-glass icon button (owner call) — replaces the old plain-text
+    // "‹ Library" link. Same shape as review.tsx's own glass back button: 40x40,
+    // radius.md, centered chevron glyph — kept consistent across both detail screens.
+    backBtn: { alignSelf: "flex-start" },
+    backGlass: { width: 40, height: 40, borderRadius: radius.md, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+    backChevron: { fontSize: 26, lineHeight: 28, color: c.text, marginTop: -2 },
     body: { paddingHorizontal: space(5) },
     title: { ...type.h1, color: c.text, marginBottom: space(1) },
     meta: { ...type.micro, color: c.text2, marginBottom: space(4) },

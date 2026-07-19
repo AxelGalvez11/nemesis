@@ -194,6 +194,29 @@ export interface LayoutSim {
    * opposite — once dragged, a node stays fixed until the sim is
    * recreated, same as Obsidian/d3-force's drag-to-pin feel. */
   pin(index: number, x: number, y: number): void;
+  /** Marks node `index` as actively being dragged right now — call once
+   * per gesture, alongside the first pin(), when a finger touches down on
+   * a node. Distinct from pin()'s permanent hold: while a drag is active,
+   * step() never cools toward settled (reheat()'s bounded kick is tuned
+   * for a one-off slider nudge, not a multi-second drag — a real drag
+   * needs the sim to stay fully energized for as long as the finger is
+   * down, the same idea as d3-force's alphaTarget-while-dragging pattern),
+   * and edges touching the dragged node get a temporarily stiffer pull so
+   * its direct neighbors visibly follow instead of drifting almost
+   * imperceptibly behind a fast-moving finger. Governed by its own
+   * per-gesture step budget — separate from reheat()'s lifetime
+   * hardStepCeiling — so heavy dragging in one session can never exhaust
+   * the budget sliders rely on, and a single held gesture still can't spin
+   * forever. No-op for an out-of-range index. */
+  startDrag(index: number): void;
+  /** Ends the drag started by startDrag(): stops the heat/spring boost and
+   * arms the same bounded, fixed-strength settle tail reheat() gives
+   * sliders, so the sim always eases back to rest afterward — still
+   * governed by reheat()'s lifetime hardStepCeiling. The node itself stays
+   * pinned (see pin()) exactly as before; only the drag-specific boost
+   * ends. Safe to call even if no drag is active (e.g. a tap that never
+   * crossed the pan gesture's minDistance) — a harmless no-op-ish reheat. */
+  endDrag(): void;
 }
 
 const GOLDEN_ANGLE = 2.399963229728653;
@@ -306,18 +329,82 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
   // canvas-pixel coordinate space snapshot() renders.
   const pinned = new Map<number, { x: number; y: number }>();
 
+  // Active-drag state — see LayoutSim.startDrag/endDrag. `dragging` is
+  // distinct from `pinned` above: a node stays in `pinned` forever once
+  // dragged (no opposite), but `dragging` is only true for the ONE node
+  // currently under a live finger, for the duration of that one gesture.
+  let dragging = false;
+  let dragIndex = -1;
+  // Per-GESTURE step budget, deliberately separate from totalStepsRun/
+  // hardStepCeiling below (which guards reheat()'s lifetime, across every
+  // slider nudge plus the initial settle). A drag ticks continuously — at
+  // the phone Graph screen's TICK_MS/STEPS_PER_TICK that's roughly 100
+  // step()s per second — for as long as a finger is down. If dragging spent
+  // from the same lifetime budget, a few long drags in one session would
+  // exhaust hardStepCeiling and silently revert to the exact "only the
+  // dragged node moves" bug this exists to fix, for the rest of the sim's
+  // lifetime. dragStepsRun resets every startDrag(), so it only ever bounds
+  // a single gesture (tens of seconds at that tick rate) — never the sim's
+  // cumulative lifetime.
+  let dragStepsRun = 0;
+  const dragStepCeiling = Math.max(2000, totalIterations * 30);
+  // Shared kick magnitude for both reheat() (sliders) and endDrag()'s settle
+  // tail below — same fixed burst either way.
+  const kick = Math.max(1, Math.round(totalIterations * 0.35));
+  // Edges touching the actively-dragged node get this multiplier on their
+  // spring pull (see the edge-force loop below). The base 0.06 spring
+  // constant is tuned for gently relaxing the initial jittered spiral, where
+  // nodes already start close to their rest length — far too soft to notice
+  // against the hundred-plus-pixel gaps a real finger drag opens up.
+  // Empirically, ~5x is close to the ceiling of what helps: repulsion from
+  // every other node in the graph pushes back on the same neighbor, so
+  // returns diminish well before the multiplier gets large enough to risk
+  // overshoot/oscillation against the step-size cap below.
+  const DRAG_SPRING_BOOST = 5;
+
   const sim: LayoutSim = {
     gravity: opts.gravity ?? 1,
     repulsion: opts.repulsion ?? 1,
     linkDistance: opts.linkDistance ?? 1,
 
     get settled(): boolean {
-      return n === 0 || it >= iterationsBudget;
+      return n === 0 || (!dragging && it >= iterationsBudget);
+    },
+
+    startDrag(index: number) {
+      if (index < 0 || index >= n) return;
+      dragging = true;
+      dragIndex = index;
+      dragStepsRun = 0;
+    },
+
+    endDrag() {
+      dragging = false;
+      dragIndex = -1;
+      // Fixed, duration-independent settle tail (cool starts at the same
+      // ~0.35 a slider's reheat() gives, decaying to 0 over `kick` steps)
+      // regardless of how long the drag itself ran. `it` is left untouched
+      // by step() while dragging (see below), so — unlike reusing reheat()'s
+      // relative rewind, which would only make sense right after a slider
+      // nudge from an already-settled state — resetting to a fixed point
+      // here is what keeps the release feel consistent instead of drifting
+      // colder the longer a drag lasted. Still bounded by the same lifetime
+      // hardStepCeiling as reheat(), since this tail runs through the normal
+      // (non-dragging) step() path below.
+      if (totalStepsRun < hardStepCeiling) {
+        it = Math.max(0, totalIterations - kick);
+        iterationsBudget = totalIterations;
+      }
     },
 
     step() {
-      if (n === 0 || it >= iterationsBudget) return;
-      const cool = 1 - it / iterationsBudget;
+      if (n === 0) return;
+      if (dragging) {
+        if (dragStepsRun >= dragStepCeiling) return;
+      } else if (it >= iterationsBudget) {
+        return;
+      }
+      const cool = dragging ? 1 : 1 - it / iterationsBudget;
       const step = 0.085 * cool + 0.01;
 
       // Force pinned nodes to their dragged spot before this iteration's
@@ -364,7 +451,13 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
         const dx = xs[b] - xs[a];
         const dy = ys[b] - ys[a];
         const d = Math.max(0.1, Math.sqrt(dx * dx + dy * dy));
-        const f = (d - restLen) * 0.06;
+        // See DRAG_SPRING_BOOST above: only the actively-dragged node's own
+        // edges get the stiffer pull, so its direct neighbors visibly follow
+        // while the rest of the graph keeps relaxing at the normal gentle
+        // rate — not a global stiffening just because some node, somewhere,
+        // is being dragged.
+        const boost = dragging && (a === dragIndex || b === dragIndex) ? DRAG_SPRING_BOOST : 1;
+        const f = (d - restLen) * 0.06 * boost;
         const ux = dx / d;
         const uy = dy / d;
         fx[a] += ux * f;
@@ -396,8 +489,17 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
         ys[i] += my;
       }
 
-      it++;
-      totalStepsRun++;
+      // Dragging advances its own per-gesture counter only — `it`/
+      // totalStepsRun stay exactly where they were when startDrag() fired,
+      // so reheat()'s lifetime budget (sliders) is never spent by dragging,
+      // and endDrag()'s fixed tail reset above has a well-defined "before"
+      // state to reset from.
+      if (dragging) {
+        dragStepsRun++;
+      } else {
+        it++;
+        totalStepsRun++;
+      }
     },
 
     snapshot(): NoteGraph {
@@ -406,7 +508,6 @@ export function createLayoutSim(graph: NoteGraph, opts: LayoutOptions): LayoutSi
 
     reheat() {
       if (totalStepsRun >= hardStepCeiling) return; // guard against runaway
-      const kick = Math.max(1, Math.round(totalIterations * 0.35));
       it = Math.max(0, it - kick);
       iterationsBudget = it + kick;
     },

@@ -6,6 +6,7 @@
 // Mac publisher is covered desktop-side, not here.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  buildLibraryRows,
   buildSections,
   bytesFromBase64Url,
   mergeRows,
@@ -139,4 +140,65 @@ Deno.test("buildSections: groups by top folder, root bucket first, sorted titles
   ]);
   assertEquals(sections.map((s) => s.folder), ["", "Anatomy", "PHCY 1205"]);
   assertEquals(sections[2].notes.map((n) => n.title), ["Antibiotics", "Exam 2"]);
+});
+
+Deno.test("buildLibraryRows: nests arbitrarily deep, notes before folders, alphabetical, depth-tagged", () => {
+  const rows = buildLibraryRows(
+    [
+      { path: "todo.md", title: "Todo" },
+      { path: "PHCY 1205/exam-2.md", title: "Exam 2" },
+      { path: "PHCY 1205/Unit 1/antibiotics.md", title: "Antibiotics" },
+      { path: "Anatomy/heart.md", title: "Heart" },
+    ],
+    new Set(),
+  );
+  assertEquals(rows, [
+    { type: "note", path: "todo.md", title: "Todo", depth: 0 },
+    { type: "folder", path: "Anatomy", name: "Anatomy", depth: 0 },
+    { type: "note", path: "Anatomy/heart.md", title: "Heart", depth: 1 },
+    { type: "folder", path: "PHCY 1205", name: "PHCY 1205", depth: 0 },
+    { type: "note", path: "PHCY 1205/exam-2.md", title: "Exam 2", depth: 1 },
+    { type: "folder", path: "PHCY 1205/Unit 1", name: "Unit 1", depth: 1 },
+    { type: "note", path: "PHCY 1205/Unit 1/antibiotics.md", title: "Antibiotics", depth: 2 },
+  ]);
+});
+
+Deno.test("buildLibraryRows: collapsing a folder hides its whole subtree — notes AND nested subfolders", () => {
+  const docs = [
+    { path: "PHCY 1205/exam-2.md", title: "Exam 2" },
+    { path: "PHCY 1205/Unit 1/antibiotics.md", title: "Antibiotics" },
+  ];
+  const rows = buildLibraryRows(docs, new Set(["PHCY 1205"]));
+  assertEquals(rows, [{ type: "folder", path: "PHCY 1205", name: "PHCY 1205", depth: 0 }]);
+});
+
+Deno.test("buildLibraryRows: same-named nested folders under different parents collapse independently", () => {
+  const docs = [
+    { path: "Anatomy/Week 1/notes.md", title: "Week 1 notes" },
+    { path: "PHCY 1205/Week 1/notes.md", title: "Week 1 notes" },
+  ];
+  // Collapse ONLY "Anatomy/Week 1" (full-path key) — the identically-named
+  // "PHCY 1205/Week 1" must stay expanded, proving the key isn't just the name.
+  const rows = buildLibraryRows(docs, new Set(["Anatomy/Week 1"]));
+  assertEquals(rows, [
+    { type: "folder", path: "Anatomy", name: "Anatomy", depth: 0 },
+    { type: "folder", path: "Anatomy/Week 1", name: "Week 1", depth: 1 },
+    { type: "folder", path: "PHCY 1205", name: "PHCY 1205", depth: 0 },
+    { type: "folder", path: "PHCY 1205/Week 1", name: "Week 1", depth: 1 },
+    { type: "note", path: "PHCY 1205/Week 1/notes.md", title: "Week 1 notes", depth: 2 },
+  ]);
+});
+
+Deno.test("buildLibraryRows: root notes aren't inside any folder, so they're unaffected by folder collapse", () => {
+  const rows = buildLibraryRows(
+    [
+      { path: "todo.md", title: "Todo" },
+      { path: "Anatomy/heart.md", title: "Heart" },
+    ],
+    new Set(["Anatomy"]),
+  );
+  assertEquals(rows, [
+    { type: "note", path: "todo.md", title: "Todo", depth: 0 },
+    { type: "folder", path: "Anatomy", name: "Anatomy", depth: 0 },
+  ]);
 });
