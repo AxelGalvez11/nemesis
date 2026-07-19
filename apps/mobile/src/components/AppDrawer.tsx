@@ -36,9 +36,10 @@ import { radius, shadow, space, type } from "@/theme/tokens";
 const EDGE_WIDTH = 28;
 // How far the touch must travel horizontally before it flips the drawer open/closed.
 const OPEN_THRESHOLD = 48;
-// Corner radius on the two facing edges of the push shell — the page's left edge and
-// the sidebar's right edge (radius.xl; the "New chat" button uses radius.lg).
-const SHELL_RADIUS = radius.xl;
+// The moving page's facing (left) corner radius when the drawer is open. Owner call
+// 2026-07-18: the SIDEBAR is SQUARE — only the page (chat/library/etc.) gets rounded
+// corners, and rounder than before. ("New chat" button keeps radius.lg.)
+const PAGE_RADIUS = 28;
 
 interface ShellState {
   open: boolean;
@@ -132,7 +133,7 @@ function DrawerShell({
   }, [open, progress]);
 
   const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [0, panelW] });
-  const edgeRadius = progress.interpolate({ inputRange: [0, 1], outputRange: [0, SHELL_RADIUS] });
+  const edgeRadius = progress.interpolate({ inputRange: [0, 1], outputRange: [0, PAGE_RADIUS] });
 
   const triggered = useSharedValue(false);
   const gesture = useMemo(() => {
@@ -256,7 +257,12 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
         </Pressable>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollBody} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollBody}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.navGroup}>
           <NavRow Icon={ChatIcon} label="Chat" onPress={() => go("/chat")} />
           <NavRow Icon={StudyIcon} label="Study" onPress={() => go("/study")} />
@@ -371,12 +377,14 @@ function NavRow({ Icon, label, onPress }: { Icon: ComponentType<IconProps>; labe
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     // Push shell: the sidebar sits UNDER the page at the left; the page slides right to
-    // reveal it. shellRoot's bg shows only in the thin seam between the two rounded
-    // facing edges when open (near-black, reads as background).
+    // reveal it. shellRoot's bg shows only behind the page's rounded left edge when open
+    // (near-black, reads as background).
     shellRoot: { flex: 1, backgroundColor: c.bg, overflow: "hidden" },
+    // Square (owner 2026-07-18: the sidebar has no rounded corners). overflow:hidden still
+    // clips the glass to the panel rect; with no rounded bottom-right corner the footer gear
+    // is no longer nipped on its right side (owner: the gear was cutting off).
     underPanel: {
-      position: "absolute", top: 0, bottom: 0, left: 0,
-      borderTopRightRadius: SHELL_RADIUS, borderBottomRightRadius: SHELL_RADIUS, overflow: "hidden",
+      position: "absolute", top: 0, bottom: 0, left: 0, overflow: "hidden",
     },
     // The moving page. pageShadow carries the drop shadow (needs an opaque bg and NO
     // overflow clip so the shadow can bleed onto the sidebar); pageClip rounds the
@@ -385,6 +393,10 @@ const createStyles = (c: ThemeColors) =>
     pageClip: { flex: 1, overflow: "hidden" },
     panelGlass: { flex: 1 },
     panelInner: { flex: 1 },
+    // flex:1 so the ScrollView fills the gap between the brand row and the footer — the
+    // footer then pins to the BOTTOM (owner 2026-07-18: bottom buttons had empty space
+    // below them) instead of floating up beneath short content.
+    scroll: { flex: 1 },
     scrollBody: { paddingBottom: space(2) },
 
     brandRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(4), paddingBottom: space(3) },
@@ -426,7 +438,7 @@ const createStyles = (c: ThemeColors) =>
     footerWrap: { paddingTop: space(2.5) },
     bottomRow: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      paddingLeft: space(3.5), paddingRight: space(4), paddingTop: space(1),
+      paddingLeft: space(3.5), paddingRight: space(4.5), paddingTop: space(1),
     },
     // Solid (not glass) squarish button that hugs its icon + label.
     newChatBtn: {
@@ -437,8 +449,8 @@ const createStyles = (c: ThemeColors) =>
     newChatBtnPressed: { backgroundColor: c.surface2 },
     newChatText: { color: c.accent, fontSize: 15, fontWeight: "600" },
 
-    // The gear sits fully inside the panel — bottomRow's paddingRight keeps its 44pt
-    // circle clear of the sidebar's rounded right edge (owner: it was clipping).
+    // The gear sits fully inside the panel. Now that the sidebar is square (no rounded
+    // bottom-right corner) the clip is gone; bottomRow's paddingRight is just breathing room.
     settingsBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: c.line },
     settingsBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
   });

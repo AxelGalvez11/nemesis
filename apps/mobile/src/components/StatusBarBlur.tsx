@@ -15,12 +15,21 @@ import { useTheme } from "@/theme/ThemeProvider";
 // Uses only modules already in the app — expo-blur, react-native-svg, and MaskedView
 // (which react-navigation already ships) — so it changes no native code and rides the
 // over-the-air update lane. `intensity` on the BlurView is the peak strength at the top.
-const FADE_EXTRA = 16; // points of fade that spill below the status-bar inset
+//
+// Owner call 2026-07-18: taller + stronger so it clearly backs the TopBar's centered title
+// (the chat name especially) as messages scroll under it, and the fade is more gradual. The
+// fade stays FULLY solid through the status-bar inset itself (so the clock/wifi never lose
+// their backing), then eases to clear over the extra span below — solidStop is computed from
+// the live inset so the hand-off lands right at the bottom of the status bar on every device.
+const FADE_EXTRA = 46; // points below the status-bar inset over which the blur eases to clear
 
-export function StatusBarBlur({ intensity = 40 }: { intensity?: number }) {
+export function StatusBarBlur({ intensity = 52 }: { intensity?: number }) {
   const insets = useSafeAreaInsets();
   const { resolvedMode } = useTheme();
-  const height = Math.max(insets.top, 20) + FADE_EXTRA;
+  const inset = Math.max(insets.top, 20);
+  const height = inset + FADE_EXTRA;
+  // Hold full strength through the status bar, then start the gradual fade just below it.
+  const solidStop = Math.min(0.72, inset / height);
   const tint: BlurTint = resolvedMode === "dark" ? "systemChromeMaterialDark" : "systemChromeMaterialLight";
 
   return (
@@ -32,7 +41,7 @@ export function StatusBarBlur({ intensity = 40 }: { intensity?: number }) {
             <Defs>
               <LinearGradient id="statusFade" x1="0" y1="0" x2="0" y2="1">
                 <Stop offset="0" stopColor="#ffffff" stopOpacity="1" />
-                <Stop offset="0.6" stopColor="#ffffff" stopOpacity="1" />
+                <Stop offset={String(solidStop)} stopColor="#ffffff" stopOpacity="1" />
                 <Stop offset="1" stopColor="#ffffff" stopOpacity="0" />
               </LinearGradient>
             </Defs>

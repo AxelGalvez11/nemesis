@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import Svg, { Line } from "react-native-svg";
@@ -41,7 +42,7 @@ import { radius, space, type } from "@/theme/tokens";
 // The screen title ("Graph") and a gear button are floating overlay chrome
 // (position: absolute, layered ABOVE the canvas): the title is centered and
 // pointer-transparent (pointerEvents="none") so canvas pan/drag passes straight
-// through it, and the gear — a top-left GlassSurface button whose wrapper is
+// through it, and the gear — a top-right GlassSurface button whose wrapper is
 // pointerEvents="box-none" so only the button itself is tappable — toggles a
 // settings panel: Gravity/Repulsion/Node size/Link distance sliders
 // (ForceSlider), a Labels 3-way toggle, and a Reset.
@@ -55,8 +56,9 @@ import { radius, space, type } from "@/theme/tokens";
 // node and panning/zooming survive every other control, including opening and
 // closing the panel itself. A short tap on a node still opens the note.
 
-// Size of the floating glass settings-gear button (top-left overlay chrome).
-const GEAR_SIZE = 40;
+// Size of the floating glass settings-gear button (top-RIGHT overlay chrome, sized to
+// match the TopBar's 44pt menu button it sits opposite — owner 2026-07-18).
+const GEAR_SIZE = 44;
 const TICK_MS = 30;
 // Multiple physics steps per rendered frame: at one step per tick the default
 // 180-iteration settle takes ~5.4s, which reads as sluggish. Batching keeps the
@@ -93,6 +95,7 @@ export default function GraphScreen() {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   const { contentTop, contentBottom } = useShellPadding();
+  const insets = useSafeAreaInsets();
   const win = useWindowDimensions();
   const [status, setStatus] = useState<Status>("loading");
   const [builtGraph, setBuiltGraph] = useState<NoteGraph | null>(null);
@@ -479,11 +482,12 @@ export default function GraphScreen() {
         ) : null}
       </View>
 
-      {/* Settings gear — a top-left GlassSurface button. The wrapper is
+      {/* Settings gear — a top-RIGHT GlassSurface button, sitting in the same row as
+          (and mirroring) the TopBar's left menu button. The wrapper is
           pointerEvents="box-none", so ONLY the glass button is tappable and the
           rest of the canvas underneath still receives pan/drag gestures. */}
       {hasGraph ? (
-        <View pointerEvents="box-none" style={[styles.gearOverlay, { top: contentTop }]}>
+        <View pointerEvents="box-none" style={[styles.gearOverlay, { top: insets.top + space(2) }]}>
           <GlassSurface style={styles.gearGlass} tint={settingsOpen ? c.accentFaint : undefined}>
             <Pressable
               accessibilityLabel="Graph settings"
@@ -501,7 +505,7 @@ export default function GraphScreen() {
       ) : null}
 
       {hasGraph && settingsOpen ? (
-        <View style={[styles.panel, { top: contentTop + GEAR_SIZE + space(2) }]} testID="graph-settings-panel">
+        <View style={[styles.panel, { top: contentTop + space(2) }]} testID="graph-settings-panel">
           <ForceSlider c={c} label="Gravity" max={3} min={0} onChange={handleGravityChange} step={0.1} value={gravity} />
           <ForceSlider c={c} label="Repulsion" max={4} min={0.2} onChange={handleRepulsionChange} step={0.1} value={repulsion} />
           <ForceSlider c={c} label="Node size" max={2} min={0.5} onChange={setNodeSize} step={0.1} value={nodeSize} />
@@ -551,10 +555,10 @@ const createStyles = (c: ThemeColors) =>
     titleOverlay: { position: "absolute", left: 0, right: 0, alignItems: "center", zIndex: 20 },
     headerTitle: { ...type.h2, color: c.text, textAlign: "center" },
     headerMeta: { ...type.micro, color: c.text3, marginTop: 2, textAlign: "center" },
-    // Gear overlay — top-left, above the canvas and left-aligned under the
-    // shell TopBar's menu button. The wrapper only positions; box-none (in JSX)
-    // means just the glass button inside is tappable.
-    gearOverlay: { position: "absolute", left: space(3), zIndex: 30 },
+    // Gear overlay — top-RIGHT, mirroring the TopBar's left menu button in the same
+    // row (owner 2026-07-18). The wrapper only positions; box-none (in JSX) means just
+    // the glass button inside is tappable.
+    gearOverlay: { position: "absolute", right: space(3), zIndex: 30 },
     gearGlass: {
       width: GEAR_SIZE,
       height: GEAR_SIZE,

@@ -3,7 +3,6 @@ import { Animated, Easing, FlatList, Pressable, RefreshControl, ScrollView, Styl
 import Reanimated, { Easing as ReEasing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { router, useFocusEffect } from "expo-router";
 import Svg, { Path } from "react-native-svg";
-import { BlurScrim } from "@/components/BlurScrim";
 import { CalendarIcon } from "@/components/icons";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
@@ -459,11 +458,9 @@ function ChevronUpIcon({ size = 10, color }: { size?: number; color: string }) {
 
 /** The lower-left liquid-glass view switcher: a compact pill showing the
  *  active view, tapping it opens a small popup to pick Daily / Monthly /
- *  Yearly. Scrim + fade/slide pattern mirrors AppDrawer's overlay, scaled down
- *  for a small popover instead of a full slide-out panel. The backdrop BLURS
- *  the agenda behind the popup (BlurScrim) so the menu reads clearly while the
- *  page stays recognisable; tapping the blur closes the menu. The blur is
- *  mounted only while the menu is open (kept alive through the close fade). */
+ *  Yearly. The popup's own glass supplies its blur; a transparent full-screen
+ *  tap-catcher (mounted only while open) closes it WITHOUT blurring the agenda
+ *  behind it (owner 2026-07-18: confine blur to the menu, no whole-screen blur). */
 function ViewSwitcher({
   view,
   menuOpen,
@@ -483,34 +480,28 @@ function ViewSwitcher({
 }) {
   const { colors: c } = useTheme();
   const progress = useRef(new Animated.Value(0)).current;
-  // Keep the full-screen blur mounted through the close fade, then drop it so it
-  // isn't rendering (and blurring) while the menu is shut.
-  const [scrimMounted, setScrimMounted] = useState(false);
 
   useEffect(() => {
-    if (menuOpen) setScrimMounted(true);
     Animated.timing(progress, {
       toValue: menuOpen ? 1 : 0,
       duration: menuOpen ? 170 : 130,
       easing: menuOpen ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
       useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished && !menuOpen) setScrimMounted(false);
-    });
+    }).start();
   }, [menuOpen, progress]);
 
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] });
 
   return (
     <>
-      {scrimMounted ? (
-        <Animated.View
-          style={[StyleSheet.absoluteFill, { opacity: progress }]}
-          pointerEvents={menuOpen ? "auto" : "none"}
+      {/* Transparent tap-catcher — closes the menu on an outside tap, no page blur. */}
+      {menuOpen ? (
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          accessibilityLabel="Close view menu"
           testID="calendar-view-menu-scrim"
-        >
-          <BlurScrim onPress={onClose} testID="calendar-view-menu-blur" />
-        </Animated.View>
+        />
       ) : null}
 
       <Animated.View

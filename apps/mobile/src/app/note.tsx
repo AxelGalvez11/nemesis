@@ -4,7 +4,6 @@ import { Stack, router, useLocalSearchParams } from "expo-router";
 import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line, Path } from "react-native-svg";
-import { BlurScrim } from "@/components/BlurScrim";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock } from "@/components/mission-ui";
 import { CloseIcon, SearchIcon, type IconProps } from "@/components/icons";
@@ -277,10 +276,12 @@ export default function NoteScreen() {
         </ScrollView>
       )}
 
-      {/* "…" menu — BlurScrim backdrop, anchored under the top-row cluster. */}
+      {/* "…" menu — anchored under the top-row cluster. Transparent tap-catcher (no
+          page blur); the menu's own glass supplies the only blur (owner: confine blur
+          to the component). */}
       {menuOpen ? (
         <View style={StyleSheet.absoluteFill} testID="note-menu">
-          <BlurScrim onPress={() => setMenuOpen(false)} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} accessibilityLabel="Close menu" />
           <View style={[styles.menuWrap, { top: insets.top + space(2) + 40 + space(1.5) }]}>
             <GlassSurface style={styles.menu} fallbackColor={c.bg2}>
               {MENU_ITEMS.map((item, i) => (

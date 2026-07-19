@@ -1,7 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BlurScrim } from "./BlurScrim";
 import { GlassSurface } from "./GlassSurface";
 import { CloseIcon } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
@@ -48,9 +47,9 @@ export function SlideUpSheet({
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID={testID}>
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity: progress }]}>
-        <BlurScrim onPress={onClose} intensity={22} />
-      </Animated.View>
+      {/* Transparent tap-catcher — dismiss on an outside tap WITHOUT blurring the page.
+          The sheet's own glass supplies the only blur (owner: confine blur to the component). */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
       <Animated.View style={[styles.sheetWrap, { transform: [{ translateY }] }]}>
         <GlassSurface style={styles.sheet} fallbackColor={c.bg2}>
           <View style={styles.header}>

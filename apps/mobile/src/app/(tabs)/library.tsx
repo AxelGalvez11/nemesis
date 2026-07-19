@@ -3,6 +3,7 @@ import {
   Animated,
   Easing,
   FlatList,
+  LayoutAnimation,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -13,10 +14,9 @@ import {
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Line, Path } from "react-native-svg";
+import Svg, { Circle, Line, Path } from "react-native-svg";
 import { useShellPadding } from "@/components/shell-chrome";
 import { useShell } from "@/components/AppDrawer";
-import { BlurScrim } from "@/components/BlurScrim";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { CloseIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
@@ -106,6 +106,7 @@ export default function LibraryScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { contentTop, contentBottom } = useShellPadding();
+  const insets = useSafeAreaInsets();
   const { setHeaderTitle } = useShell();
   const [key, setKey] = useState<Uint8Array | null>(null);
   const [keyChecked, setKeyChecked] = useState(false);
@@ -156,6 +157,8 @@ export default function LibraryScreen() {
   // builds a fresh one, so a folder's collapsed-ness is independent of its
   // siblings and its ancestors' own toggles.
   const toggleFolder = useCallback((path: string) => {
+    // Animate the child rows sliding in/out on collapse/expand (owner 2026-07-18).
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
@@ -256,44 +259,15 @@ export default function LibraryScreen() {
     ? sortNotes(filtered, sort).map((n) => ({ type: "note", path: n.path, title: n.title, depth: 0 }))
     : buildLibraryRows(notes.map((d) => ({ path: d.path, title: d.title })), collapsed);
 
-  // Root-level notes (no folder) are the only rows ever at depth 0 with type "note" —
-  // that's exactly the old "" bucket buildSections used to label "Library".
-  const hasRootNotes = !flat && rows.some((r) => r.type === "note" && r.depth === 0);
   const flatHeader = searching ? `${rows.length} result${rows.length === 1 ? "" : "s"}` : sortLabel(sort);
 
   return (
     <View style={styles.flex} testID="library-screen">
-      {/* Controls header — carries the glass-TopBar clearance so its first row (not the
-          list) is what sits below the floating bar. */}
-      <View style={[styles.controls, { paddingTop: contentTop }]}>
-        <View style={styles.actionRow}>
-          <ActionButton
-            icon={<SearchIcon size={17} color={searchOpen ? c.accent : c.text2} />}
-            label="Search"
-            active={searchOpen}
-            onPress={toggleSearch}
-            testID="library-search-btn"
-          />
-          <ActionButton
-            icon={<PlusIcon size={17} color={c.text2} />}
-            label="New note"
-            onPress={() => flashHint(NEW_NOTE_HINT)}
-            testID="library-new-note"
-          />
-          <ActionButton
-            icon={<FolderPlusIcon size={17} color={c.text2} />}
-            label="New folder"
-            onPress={() => flashHint(NEW_FOLDER_HINT)}
-            testID="library-new-folder"
-          />
-          <ActionButton
-            icon={<SortIcon size={17} color={c.text2} />}
-            label="Sort"
-            onPress={() => setSortOpen(true)}
-            testID="library-sort-btn"
-          />
-        </View>
-
+      {/* Top band below the glass TopBar: just the search field + inline hint now — the
+          Search / New note / New folder / Sort actions moved into the lower-left "…" glass
+          menu (owner 2026-07-18). Carries the TopBar clearance; only pads at the bottom
+          when it actually has a row to show. */}
+      <View style={[styles.controls, { paddingTop: contentTop, paddingBottom: searchOpen || hint ? space(3) : 0 }]}>
         {searchOpen ? (
           <View style={styles.searchField}>
             <SearchIcon size={16} color={c.text3} />
@@ -358,8 +332,6 @@ export default function LibraryScreen() {
             <Text style={styles.sectionHead} testID="library-list-header">
               {flatHeader}
             </Text>
-          ) : hasRootNotes ? (
-            <Text style={styles.sectionHead}>Library</Text>
           ) : null
         }
         renderItem={({ item }) => {
@@ -375,7 +347,7 @@ export default function LibraryScreen() {
                 accessibilityState={{ expanded: !isCollapsed }}
                 onPress={() => toggleFolder(item.path)}
               >
-                <Text style={[styles.folderChevron, { transform: [{ rotate: isCollapsed ? "0deg" : "90deg" }] }]}>›</Text>
+                <PlusMinusIcon size={13} color={c.text2} expanded={!isCollapsed} />
                 <Text style={styles.folderName} numberOfLines={1}>{item.name}</Text>
               </Pressable>
             );
@@ -417,6 +389,17 @@ export default function LibraryScreen() {
         }
       />
 
+      {/* Lower-left "…" glass button → the Search / New note / New folder / Sort menu
+          (owner 2026-07-18: those four combined into one three-dots control). */}
+      <ActionsFab
+        searchActive={searchOpen}
+        onSearch={toggleSearch}
+        onNewNote={() => flashHint(NEW_NOTE_HINT)}
+        onNewFolder={() => flashHint(NEW_FOLDER_HINT)}
+        onSort={() => setSortOpen(true)}
+        insetBottom={insets.bottom + space(2)}
+      />
+
       <SortSheet
         visible={sortOpen}
         current={sort}
@@ -430,41 +413,110 @@ export default function LibraryScreen() {
   );
 }
 
-/** Compact glass pill in the controls row (Search / New note / New folder / Sort).
- * Self-contained so it can close over the theme without prop-drilling colors. */
-function ActionButton({
-  icon,
-  label,
-  active = false,
-  onPress,
-  testID,
+// The lower-left three-dots glass button + the small glass popup it opens (owner
+// 2026-07-18). Same always-mounted fade+rise + transparent tap-catcher pattern as
+// StudyModeMenu, so it feels like one family. Picking an item closes the menu and
+// runs its action; the page behind is NOT blurred — the menu's own glass is the
+// only blur.
+const FAB_SIZE = 48;
+
+function ActionsFab({
+  searchActive,
+  onSearch,
+  onNewNote,
+  onNewFolder,
+  onSort,
+  insetBottom,
 }: {
-  icon: React.ReactNode;
-  label: string;
-  active?: boolean;
-  onPress: () => void;
-  testID?: string;
+  searchActive: boolean;
+  onSearch: () => void;
+  onNewNote: () => void;
+  onNewFolder: () => void;
+  onSort: () => void;
+  insetBottom: number;
 }) {
+  const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
+  const [open, setOpen] = useState(false);
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: open ? 1 : 0,
+      duration: open ? 170 : 130,
+      easing: open ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [open, progress]);
+
+  const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] });
+  const pick = (fn: () => void) => {
+    setOpen(false);
+    fn();
+  };
+
+  const items: { key: string; label: string; icon: React.ReactNode; onPress: () => void }[] = [
+    { key: "search", label: "Search", icon: <SearchIcon size={17} color={searchActive ? c.accent : c.text2} />, onPress: onSearch },
+    { key: "new-note", label: "New note", icon: <PlusIcon size={17} color={c.text2} />, onPress: onNewNote },
+    { key: "new-folder", label: "New folder", icon: <FolderPlusIcon size={17} color={c.text2} />, onPress: onNewFolder },
+    { key: "sort", label: "Sort", icon: <SortIcon size={17} color={c.text2} />, onPress: onSort },
+  ];
+
   return (
-    <GlassSurface style={[actionStyles.btn, { borderColor: active ? c.accentLine : c.line }]} tint={active ? c.accentFaint : undefined}>
-      <Pressable
-        style={actionStyles.inner}
-        onPress={onPress}
-        hitSlop={4}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        testID={testID}
+    <>
+      {open ? (
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} accessibilityLabel="Close menu" />
+      ) : null}
+
+      <Animated.View
+        style={[
+          styles.actionsMenuWrap,
+          { bottom: insetBottom + FAB_SIZE + space(3), opacity: progress, transform: [{ translateY }] },
+        ]}
+        pointerEvents={open ? "auto" : "none"}
+        testID="library-actions-menu"
       >
-        {icon}
-        <Text style={[actionStyles.label, { color: active ? c.accent : c.text2 }]}>{label}</Text>
-      </Pressable>
-    </GlassSurface>
+        <GlassSurface style={styles.actionsMenu} fallbackColor={c.bg2}>
+          {items.map((item, i) => (
+            <Pressable
+              key={item.key}
+              testID={`library-action-${item.key}`}
+              onPress={() => pick(item.onPress)}
+              style={({ pressed }) => [styles.actionsRow, i > 0 && styles.actionsDivider, pressed && styles.rowPressed]}
+              accessibilityRole="button"
+              accessibilityLabel={item.label}
+            >
+              {item.icon}
+              <Text style={[styles.actionsLabel, item.key === "search" && searchActive && styles.actionsLabelActive]}>
+                {item.label}
+              </Text>
+            </Pressable>
+          ))}
+        </GlassSurface>
+      </Animated.View>
+
+      <View style={[styles.actionsFabWrap, { bottom: insetBottom }]} pointerEvents="box-none">
+        <GlassSurface style={styles.actionsFab} tint={open ? c.accentFaint : undefined}>
+          <Pressable
+            style={styles.actionsFabInner}
+            onPress={() => setOpen((v) => !v)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Library actions"
+            accessibilityState={{ expanded: open }}
+            testID="library-actions-fab"
+          >
+            <DotsIcon size={20} color={open ? c.accent : c.text2} />
+          </Pressable>
+        </GlassSurface>
+      </View>
+    </>
   );
 }
 
 /** The half-height SORT sheet. Always mounted (like SlideUpSheet / StudyModeMenu) so
- * both the open and close animations play; a BlurScrim frosts the library behind it. */
+ * both the open and close animations play; a transparent tap-catcher closes it and the
+ * sheet's own glass supplies the blur (owner: no whole-screen blur behind popups). */
 function SortSheet({
   visible,
   current,
@@ -498,9 +550,9 @@ function SortSheet({
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID="library-sort-sheet">
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity: progress }]}>
-        <BlurScrim onPress={onClose} />
-      </Animated.View>
+      {/* Transparent tap-catcher — dismiss on an outside tap WITHOUT blurring the page.
+          The sheet's own glass supplies the only blur (owner: confine blur to the component). */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close sort" />
       <Animated.View style={[styles.sheetWrap, { transform: [{ translateY }] }]}>
         {/* At LEAST half the screen tall (the "half sheet"), but grows to fit its rows
             on short devices so the last option never clips. */}
@@ -543,6 +595,30 @@ function SortSheet({
 
 // Inline glyphs the shared icon set (components/icons.tsx) doesn't carry yet — thin
 // strokes / round caps to match its language. Local to this screen on purpose.
+
+/** Folder disclosure indicator — "+" collapsed, "−" expanded (owner 2026-07-18). The
+ *  horizontal stroke always draws; the vertical only while collapsed. */
+function PlusMinusIcon({ size = 13, color, expanded }: { size?: number; color: string; expanded: boolean }) {
+  const mid = 12;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Line x1="5" y1={mid} x2="19" y2={mid} stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+      {expanded ? null : <Line x1={mid} y1="5" x2={mid} y2="19" stroke={color} strokeWidth={2.4} strokeLinecap="round" />}
+    </Svg>
+  );
+}
+
+/** Horizontal "…" for the lower-left actions button. */
+function DotsIcon({ size = 20, color }: { size?: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx="5.6" cy="12" r="1.7" fill={color} />
+      <Circle cx="12" cy="12" r="1.7" fill={color} />
+      <Circle cx="18.4" cy="12" r="1.7" fill={color} />
+    </Svg>
+  );
+}
+
 function FolderPlusIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
@@ -571,21 +647,15 @@ function SortIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   );
 }
 
-const actionStyles = StyleSheet.create({
-  btn: { borderRadius: radius.pill, borderWidth: 1, overflow: "hidden" },
-  inner: { flexDirection: "row", alignItems: "center", gap: space(1.5), paddingVertical: space(2), paddingHorizontal: space(3) },
-  label: { ...type.small, fontWeight: "600" },
-});
-
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
     pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4), backgroundColor: c.bg },
     pairHint: { ...type.small, color: c.text2, textAlign: "center" },
 
-    // Controls header (Search / New note / New folder / Sort + the search field).
-    controls: { paddingHorizontal: space(4), paddingBottom: space(3), gap: space(2.5) },
-    actionRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: space(2) },
+    // Top band below the TopBar — now just the (conditional) search field + hint; its
+    // bottom padding is applied inline, only when it has a row to show.
+    controls: { paddingHorizontal: space(4), gap: space(2.5) },
     searchField: {
       flexDirection: "row",
       alignItems: "center",
@@ -623,9 +693,6 @@ const createStyles = (c: ThemeColors) =>
       borderRadius: radius.sm,
     },
     folderName: { ...type.bodyStrong, color: c.text, flexShrink: 1 },
-    // Same glyph as settings.tsx's disclosure "›", rotated in place (0deg = collapsed
-    // pointing right, 90deg = expanded pointing down) — no icon asset, no animation lib.
-    folderChevron: { fontSize: 17, lineHeight: 20, color: c.text2, width: 14, textAlign: "center" },
     warn: { marginHorizontal: space(4), marginTop: space(1), padding: space(3) },
     warnText: { ...type.small, color: c.text2 },
     emptyWrap: { paddingTop: space(10) },
@@ -656,4 +723,15 @@ const createStyles = (c: ThemeColors) =>
     sortLabelDisabled: { ...type.body, color: c.text3 },
     sortHint: { ...type.micro, color: c.text3 },
     sortCheck: { color: c.accent, fontSize: 16, fontWeight: "700" },
+
+    // Lower-left "…" actions button + its popup menu (Search / New note / New folder / Sort).
+    actionsFabWrap: { position: "absolute", left: space(4), alignItems: "flex-start" },
+    actionsFab: { width: FAB_SIZE, height: FAB_SIZE, borderRadius: FAB_SIZE / 2, borderWidth: 1, borderColor: c.line },
+    actionsFabInner: { flex: 1, alignItems: "center", justifyContent: "center" },
+    actionsMenuWrap: { position: "absolute", left: space(4), minWidth: 188 },
+    actionsMenu: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
+    actionsRow: { flexDirection: "row", alignItems: "center", gap: space(2.5), paddingVertical: space(3), paddingHorizontal: space(4) },
+    actionsDivider: { borderTopWidth: 1, borderTopColor: c.line },
+    actionsLabel: { ...type.body, color: c.text },
+    actionsLabelActive: { color: c.accent, fontWeight: "600" },
   });

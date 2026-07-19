@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { FlatList, LayoutAnimation, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Line, Path, Rect } from "react-native-svg";
+import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { GlassSurface } from "@/components/GlassSurface";
@@ -46,8 +48,14 @@ import { radius, space, type } from "@/theme/tokens";
 interface DeckRow {
   pathHash: string;
   snapshot: DeckSnapshot;
-  /** stats.due minus cards already graded on this phone since the snapshot. */
+  /** Total actionable now = the session queue length (new + due review), minus cards
+   *  already graded on this phone since the snapshot. newNow + reviewNow === dueNow. */
   dueNow: number;
+  /** New (never-seen) cards in that queue. */
+  newNow: number;
+  /** Due REVIEW cards in that queue (dueNow − newNow) — kept distinct so the row can
+   *  show "N new · M due" without double-counting. */
+  reviewNow: number;
 }
 
 interface FolderGroup {
@@ -112,7 +120,16 @@ export default function StudyScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { contentTop, contentBottom } = useShellPadding();
+  const insets = useSafeAreaInsets();
+  const { setHeaderTitle } = useShell();
   const [key, setKey] = useState<Uint8Array | null>(null);
+
+  // Centered "Study" label in the shared TopBar (owner 2026-07-18) — same slot
+  // Library/Chat drive; cleared on unmount so it never leaks to another screen.
+  useEffect(() => {
+    setHeaderTitle("Study");
+    return () => setHeaderTitle(null);
+  }, [setHeaderTitle]);
   const [keyChecked, setKeyChecked] = useState(false);
   const [cache, setCache] = useState<SyncCache>({});
   const [marks, setMarks] = useState<Record<string, GradedMark[]>>({});
@@ -124,6 +141,9 @@ export default function StudyScreen() {
   // by default; a tap on the folder row's chevron toggles membership.
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
   const toggleFolder = useCallback((course: string) => {
+    // Animate the rows sliding in/out as the folder opens/closes (owner 2026-07-18).
+    // LayoutAnimation drives the FlatList's own row add/remove; iOS runs it natively.
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setCollapsedFolders((prev) => {
       const next = new Set(prev);
       if (next.has(course)) next.delete(course);
@@ -234,7 +254,12 @@ export default function StudyScreen() {
     .map((d) => {
       const snapshot = parseDeckSnapshot(d.content);
       if (!snapshot) return null;
-      return { dueNow: sessionQueue(snapshot, marks[d.pathHash] ?? []).length, pathHash: d.pathHash, snapshot };
+      // One queue, split into its two buckets so "new" and "due" don't overlap: the
+      // queue holds both new and due-review cards (initSession buckets them by isNew),
+      // so newNow + reviewNow === dueNow exactly.
+      const queue = sessionQueue(snapshot, marks[d.pathHash] ?? []);
+      const newNow = queue.filter((card) => card.isNew).length;
+      return { dueNow: queue.length, newNow, reviewNow: queue.length - newNow, pathHash: d.pathHash, snapshot };
     })
     .filter((row): row is DeckRow => row !== null)
     .sort((a, b) => b.dueNow - a.dueNow || a.snapshot.name.localeCompare(b.snapshot.name));
@@ -275,13 +300,6 @@ export default function StudyScreen() {
             }}
           />
         }
-        ListHeaderComponent={
-          decks.length ? (
-            <Text style={styles.headline} testID="study-total-due">
-              {totalDue === 0 ? "All caught up" : `${totalDue} card${totalDue === 1 ? "" : "s"} due`}
-            </Text>
-          ) : null
-        }
         renderItem={({ item }) =>
           item.type === "folder" ? (
             <Pressable
@@ -289,7 +307,7 @@ export default function StudyScreen() {
               onPress={() => toggleFolder(item.course)}
               style={({ pressed }) => [styles.folderRow, pressed && styles.rowPressed]}
             >
-              <ChevronIcon size={11} color={c.text2} expanded={!item.collapsed} />
+              <PlusMinusIcon size={13} color={c.text2} expanded={!item.collapsed} />
               <Text style={styles.folderName} numberOfLines={1}>{item.course}</Text>
               {item.due > 0 ? <Text style={styles.due}>{item.due}</Text> : null}
             </Pressable>
@@ -300,11 +318,19 @@ export default function StudyScreen() {
               style={({ pressed }) => [styles.row, item.nested && styles.rowNested, pressed && styles.rowPressed]}
             >
               <Text style={styles.deckName} numberOfLines={1}>{item.deck.snapshot.name}</Text>
-              {item.deck.dueNow > 0 ? (
-                <Text style={styles.due}>{item.deck.dueNow}</Text>
-              ) : (
-                <Text style={styles.done}>✓</Text>
-              )}
+              {/* Trailing: the two pending counts (new vs due, non-overlapping) then a
+                  '›' affordance (owner 2026-07-18). ✓ when nothing's due. */}
+              <View style={styles.deckTrail}>
+                {item.deck.dueNow === 0 ? (
+                  <Text style={styles.done}>✓</Text>
+                ) : (
+                  <>
+                    {item.deck.newNow > 0 ? <Text style={styles.newCount}>{item.deck.newNow} new</Text> : null}
+                    {item.deck.reviewNow > 0 ? <Text style={styles.due}>{item.deck.reviewNow} due</Text> : null}
+                  </>
+                )}
+                <Text style={styles.deckChevron}>›</Text>
+              </View>
             </Pressable>
           )
         }
@@ -322,7 +348,7 @@ export default function StudyScreen() {
           TopBar's, so empty space between the two buttons still lets scroll/tap
           reach the list underneath. Stats sits lower-left, the mode picker
           lower-right, exactly as asked. */}
-      <View style={[styles.fabRow, { bottom: contentBottom }]} pointerEvents="box-none">
+      <View style={[styles.fabRow, { bottom: insets.bottom + space(2) }]} pointerEvents="box-none">
         <Pressable
           onPress={() => setStatsOpen(true)}
           hitSlop={8}
@@ -384,18 +410,16 @@ export default function StudyScreen() {
 // --- inline icons (kept local to this screen — icons.tsx stays untouched) -----
 
 const iconBase = { fill: "none", strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-// Module-level (not part of createStyles) on purpose: ChevronIcon renders
-// outside the component, so it has no access to the theme-built `styles`
-// object — and this transform carries no color/theme dependency anyway.
-const CHEVRON_EXPANDED_STYLE = { transform: [{ rotate: "90deg" as const }] };
 
-/** Folder disclosure indicator — points right when collapsed, down (rotated
- *  90°) when expanded. A plain style transform is enough here; the row's own
- *  appear/disappear is instant, matching the rest of this screen's lists. */
-function ChevronIcon({ size = 12, color, expanded }: { size?: number; color: string; expanded: boolean }) {
+/** Folder disclosure indicator — a "+" when collapsed, a "−" when expanded (owner
+ *  2026-07-18). The horizontal stroke always draws; the vertical one only while
+ *  collapsed, so the glyph reads as plus→minus as the folder opens. */
+function PlusMinusIcon({ size = 13, color, expanded }: { size?: number; color: string; expanded: boolean }) {
+  const mid = 12;
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" style={expanded ? CHEVRON_EXPANDED_STYLE : undefined}>
-      <Path d="M8 5.5 16 12 8 18.5" stroke={color} strokeWidth={2.2} {...iconBase} />
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Line x1="5" y1={mid} x2="19" y2={mid} stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+      {expanded ? null : <Line x1={mid} y1="5" x2={mid} y2="19" stroke={color} strokeWidth={2.4} strokeLinecap="round" />}
     </Svg>
   );
 }
@@ -430,15 +454,19 @@ const createStyles = (c: ThemeColors) =>
     pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4), backgroundColor: c.bg },
     pairHint: { ...type.small, color: c.text2, textAlign: "center" },
     listBody: { padding: space(4), flexGrow: 1 },
-    headline: { ...type.h2, color: c.text, marginBottom: space(3), marginTop: space(1) },
-    // Decks are just names now (owner call) — no cards; a bare due count / ✓ trails.
+    // Decks are just names now (owner call) — the two pending counts + a '›' trail.
     row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(2), paddingVertical: space(2.5), paddingHorizontal: space(2), borderRadius: radius.sm },
     // Nested under a folder header — indented like a file tree's children.
     rowNested: { paddingLeft: space(6) },
     rowPressed: { backgroundColor: c.surface },
     deckName: { ...type.body, color: c.text, flex: 1, minWidth: 0 },
     due: { ...type.small, fontWeight: "700", color: c.accent, fontVariant: ["tabular-nums"] },
+    // "New" is distinct from "due" (info-blue vs accent) so the two counts read apart.
+    newCount: { ...type.small, fontWeight: "700", color: c.info, fontVariant: ["tabular-nums"] },
     done: { ...type.small, color: c.good },
+    // The trailing cluster: counts (or ✓) then the '›' affordance.
+    deckTrail: { flexDirection: "row", alignItems: "center", gap: space(2) },
+    deckChevron: { ...type.body, color: c.text3, marginLeft: space(0.5) },
     emptyWrap: { paddingTop: space(10) },
 
     // Collapsible folder header row (owner ask 1).

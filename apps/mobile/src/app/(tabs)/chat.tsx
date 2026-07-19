@@ -228,11 +228,11 @@ const createStyles = (c: ThemeColors) =>
     signinWrap: { alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4) },
     listBody: { padding: space(4), gap: space(2), flexGrow: 1 },
     bubble: { maxWidth: "88%", borderRadius: radius.lg, paddingHorizontal: space(3.5), paddingVertical: space(2.5) },
+    // Plain gray — no accent fill, no accent border (owner call 2026-07-18: the
+    // prompt bubble should read neutral, not tinted).
     userBubble: {
       alignSelf: "flex-end",
-      backgroundColor: c.accentFaint,
-      borderWidth: 1,
-      borderColor: c.accentLine,
+      backgroundColor: c.surface2,
     },
     userText: { ...type.body, color: c.text },
     // Assistant is not a bubble — it's a full-width block of markdown.
