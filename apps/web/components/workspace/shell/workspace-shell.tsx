@@ -5,6 +5,7 @@
 // statusbar. No drag regions, no hover-reveal, no resize, no right rail.
 // The [data-workspace] attribute scopes the entire desktop token/chrome layer.
 
+import { useRouter } from "next/navigation";
 import type * as React from "react";
 import { useEffect, useState } from "react";
 
@@ -12,6 +13,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { OutputViewerDialog } from "@/components/workspace/sessions/output-viewer-dialog";
 import { UpgradePromptDialog } from "@/components/workspace/upgrade-prompt-dialog";
+import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 import { ChatSidebar } from "./chat-sidebar";
@@ -37,7 +39,22 @@ const SHELL_VARS: React.CSSProperties = {
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const preview = useWorkspacePreview();
   const { session } = useAuth();
+  const router = useRouter();
   const accountEmail = preview?.email ?? session?.user.email ?? "";
+
+  // Two-step verification guard: a session that skipped the sign-in code (the
+  // account has a verified factor but this session never passed it) is sent
+  // back to /sign-in, which shows the code form. Fail-open on errors.
+  useEffect(() => {
+    if (preview || !session) return;
+    let alive = true;
+    void supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+      .then(({ data }) => {
+        if (alive && data?.nextLevel === "aal2" && data.currentLevel !== "aal2") router.replace("/sign-in");
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [preview, session, router]);
 
   const narrowViewport = useMediaQuery(NARROW_VIEWPORT_QUERY);
   const [sidebarOpen, setSidebarOpen] = useState(true);
