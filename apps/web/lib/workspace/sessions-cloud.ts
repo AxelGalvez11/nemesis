@@ -18,7 +18,7 @@ import type { SessionMessage, SessionOutput, SessionSource, WorkspaceSession } f
 
 const MIGRATION_FLAG_PREFIX = "nemesis.web.sessions.cloudmigrated.v1:";
 const LEGACY_CLAIMED_FLAG = "nemesis.web.sessions.legacyclaimed.v1";
-const THREAD_COLUMNS = "id,title,pinned,created_at,updated_at";
+const THREAD_COLUMNS = "id,title,pinned,meta,created_at,updated_at";
 const MESSAGE_COLUMNS = "id,thread_id,role,content,meta,created_at";
 
 // ── One-time migration flag (per uid, localStorage) ─────────────────────────
@@ -107,11 +107,19 @@ function toSessionSource(raw: unknown): SessionSource | null {
 
 function toSessionOutput(raw: unknown): SessionOutput | null {
   if (!isRecord(raw)) return null;
-  const { id, title, kind, url } = raw;
-  const kinds = new Set(["flashcards", "slides", "test", "report", "other"]);
-  return typeof id === "string" && typeof title === "string" && typeof kind === "string" && kinds.has(kind)
-    ? { id, title, kind: kind as SessionOutput["kind"], ...(typeof url === "string" ? { url } : {}) }
-    : null;
+  const { id, title, kind, url, transcript, notes, durationSeconds, createdAt } = raw;
+  const kinds = new Set(["flashcards", "slides", "test", "report", "recording", "other"]);
+  if (typeof id !== "string" || typeof title !== "string" || typeof kind !== "string" || !kinds.has(kind)) return null;
+  return {
+    id,
+    title,
+    kind: kind as SessionOutput["kind"],
+    ...(typeof url === "string" ? { url } : {}),
+    ...(typeof transcript === "string" ? { transcript } : {}),
+    ...(typeof notes === "string" ? { notes } : {}),
+    ...(typeof durationSeconds === "number" && Number.isFinite(durationSeconds) ? { durationSeconds } : {}),
+    ...(typeof createdAt === "string" ? { createdAt } : {}),
+  };
 }
 
 function rowToMessage(row: Record<string, unknown>): SessionMessage | null {
@@ -135,14 +143,18 @@ function rowToMessage(row: Record<string, unknown>): SessionMessage | null {
 }
 
 function rowToSession(row: Record<string, unknown>, messages: SessionMessage[]): WorkspaceSession | null {
-  const { id, title, pinned, created_at: createdAt, updated_at: updatedAt } = row;
+  const { id, title, pinned, meta, created_at: createdAt, updated_at: updatedAt } = row;
   if (typeof id !== "string") return null;
+  const outputs = isRecord(meta) && Array.isArray(meta.outputs)
+    ? meta.outputs.flatMap((raw) => { const o = toSessionOutput(raw); return o ? [o] : []; })
+    : [];
   return {
     id,
     title: typeof title === "string" && title.length > 0 ? title : "New chat",
     createdAt: typeof createdAt === "string" ? createdAt : new Date(0).toISOString(),
     updatedAt: typeof updatedAt === "string" ? updatedAt : new Date(0).toISOString(),
     ...(pinned === true ? { pinned: true } : {}),
+    ...(outputs.length ? { outputs } : {}),
     messages,
   };
 }
@@ -153,6 +165,10 @@ function threadRow(uid: string, session: WorkspaceSession) {
     user_id: uid,
     title: session.title,
     pinned: Boolean(session.pinned),
+    // Session-level artifacts (recordings etc.). Oversized meta fails the
+    // row's size check server-side; the caller is fire-and-forget, so the
+    // artifact simply stays local-only (applyCloudRefresh preserves it).
+    meta: session.outputs?.length ? { outputs: session.outputs } : null,
     created_at: session.createdAt,
     updated_at: session.updatedAt,
   };

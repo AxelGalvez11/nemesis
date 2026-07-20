@@ -47,6 +47,7 @@ import {
   renameThreadCloud,
   togglePinThreadCloud,
   uploadLocalSessionsToCloud,
+  upsertThreadCloud,
 } from "./sessions-cloud";
 
 export interface SessionSource {
@@ -353,9 +354,23 @@ function applyCloudRefresh(cloudSessions: WorkspaceSession[]) {
   if (state.selectedId) protectedIds.add(state.selectedId);
   const preserved = state.sessions.filter((s) => protectedIds.has(s.id));
   const preservedIds = new Set(preserved.map((s) => s.id));
+  const localById = new Map(state.sessions.map((s) => [s.id, s]));
   const fromCloud = cloudSessions
     .filter((s) => !preservedIds.has(s.id))
-    .map((s) => ({ ...s, messages: s.messages.slice(-MAX_MESSAGES_PER_SESSION) }));
+    .map((s) => {
+      // Union outputs with the local copy (local first): an artifact whose
+      // upload failed — e.g. a transcript over the row size cap — must never
+      // be erased by a cloud refresh that doesn't know about it.
+      const localOutputs = localById.get(s.id)?.outputs ?? [];
+      const cloudOutputs = s.outputs ?? [];
+      const seen = new Set(localOutputs.map((o) => o.id));
+      const outputs = [...localOutputs, ...cloudOutputs.filter((o) => !seen.has(o.id))].slice(0, 50);
+      return {
+        ...s,
+        ...(outputs.length ? { outputs } : {}),
+        messages: s.messages.slice(-MAX_MESSAGES_PER_SESSION),
+      };
+    });
   const sessions = [...preserved, ...fromCloud];
   const stillSelected = state.selectedId ? sessions.some((s) => s.id === state.selectedId) : true;
   setState({ ...state, sessions, selectedId: stillSelected ? state.selectedId : null });
@@ -480,6 +495,10 @@ export const sessionsStore = {
         ? { ...session, outputs: [output, ...(session.outputs ?? []).filter((item) => item.id !== output.id)].slice(0, 50), updatedAt: nowIso() }
         : session),
     });
+    // Artifacts ride the thread row's meta so recordings reach other devices.
+    const uid = cloudUserId;
+    const session = state.sessions.find((s) => s.id === id);
+    if (uid && session) cloudFireAndForget(() => upsertThreadCloud(uid, session));
   },
 
   /** Insert or update the assistant message for an in-flight turn. Streaming
