@@ -28,6 +28,8 @@ import { buildLibraryTree, countLibraryNotes, type LibrarySortMode } from "@/lib
 import { cn } from "@/lib/utils";
 import { GROUP_BODY, SCROLL_Y, SidebarRowStack } from "@/components/workspace/shell/sidebar-primitives";
 
+import { seedComposerFiles } from "@/lib/workspace/composer-seed";
+
 import { LibraryNoteRow, LibraryTreeView } from "./library-tree-view";
 import { LibraryTreeBlankState } from "./library-tree-blank-state";
 import { LibraryCreateDialog, type LibraryCreateKind } from "./library-create-dialog";
@@ -64,6 +66,17 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
   const openPath = (path: string) => {
     select(path);
     router.replace(`${navigationRoot}/library?note=${encodeURIComponent(path)}`);
+    onNavigate?.();
+  };
+
+  // "Attach to AI chat": selected notes become virtual .md attachment files
+  // seeded into the Sessions composer, which reads their text into the turn
+  // via the ordinary prepareChatAttachments path.
+  const attachNotesToChat = (noteIds: string[]) => {
+    const chosen = notes.filter((note) => noteIds.includes(note.id));
+    if (chosen.length === 0) return;
+    seedComposerFiles(chosen.map((note) => new File([note.content], `${(note.title || "Note").replace(/[\\/:]/g, "-")}.md`, { type: "text/markdown" })));
+    router.push(`${navigationRoot}/sessions`);
     onNavigate?.();
   };
 
@@ -172,6 +185,7 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
           <div className={cn("min-h-0 flex-1 px-2 pb-1.75", GROUP_BODY)}>
             <LibraryTreeView
               folder={tree}
+              onAttachNotes={attachNotesToChat}
               onCreateFolder={(path) => void createFolder(path)}
               onDeleteFolder={(path) => void deleteFolder(path)}
               onDeleteNote={(id) => void deleteNote(id)}

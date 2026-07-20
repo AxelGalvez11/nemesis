@@ -7,6 +7,8 @@
 import type { KeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { consumeSeededComposerFiles } from "@/lib/workspace/composer-seed";
+
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import {
@@ -66,6 +68,13 @@ export function Composer({ busy, centered = false, placement = "floating", place
     // The stored mode is read once when this composer is mounted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  // One-shot seed from "Attach to AI chat" (Library multi-select): the seeded
+  // notes arrive as ordinary attachment chips on the freshly mounted composer.
+  useEffect(() => {
+    const seeded = consumeSeededComposerFiles();
+    if (seeded && seeded.length > 0) setFiles((current) => [...current, ...seeded]);
+  }, []);
 
   useEffect(() => {
     if (!mode) return;
