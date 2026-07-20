@@ -7,7 +7,6 @@ import { SocialLinks } from "@/components/SocialLinks";
 
 export const APP_SIGN_UP = "https://app.enternemesis.com/sign-up";
 export const APP_SIGN_IN = "https://app.enternemesis.com/sign-in";
-export const APP_DOWNLOAD = "https://app.enternemesis.com/api/download/mac";
 
 /**
  * Cursor-following card glow (adapted from 21st.dev "Spotlight Card" by easemize).
@@ -76,13 +75,12 @@ export function SiteChrome({ children }: { children: ReactNode }) {
                 <Image className="brand-logo-footer" src="/nemesis/logo.png" alt="" width={20} height={20} />
                 <b style={{ fontSize: "11px" }}>Nemesis</b>
               </Link>
-              <p className="foot-tag">A study agent for your Mac.</p>
+              <p className="foot-tag">A study agent that gets better the more you use it.</p>
             </div>
             <nav className="foot-col" aria-label="Product">
               <span className="foot-k">Product</span>
-              <a href={APP_DOWNLOAD}>Download for macOS</a>
               <Link href="/pricing">Pricing</Link>
-              <a href={APP_SIGN_UP}>Start free trial</a>
+              <a href={APP_SIGN_UP}>Get started free</a>
               <a href={APP_SIGN_IN}>Sign in</a>
             </nav>
             <nav className="foot-col" aria-label="Company">

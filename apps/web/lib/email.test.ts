@@ -6,8 +6,10 @@ assert.equal(escapeHtml(`<b>"x" & 'y'</b>`), "&lt;b&gt;&quot;x&quot; &amp; &#39;
 
 const trial = buildWelcomeEmail({ planName: "Nemesis Student", trialing: true, trialDays: 7 });
 assert.equal(trial.subject, "Your Nemesis Student trial is live");
-assert.ok(trial.text.includes("/api/download/mac"), "text has download link");
-assert.ok(trial.html.includes("/api/download/mac"), "html has download link");
+// Desktop is deferred (2026-07-20): the email points at the browser app, never the Mac download.
+assert.ok(trial.text.includes("Open Nemesis in your browser"), "text points to the web app");
+assert.ok(!trial.text.includes("/api/download/mac"), "text has no download link");
+assert.ok(!trial.html.includes("/api/download/mac"), "html has no download link");
 assert.match(trial.text, /7-day free trial has started/);
 assert.match(trial.text, /Cancel anytime before then and you pay nothing/);
 assert.match(trial.html, /Nemesis Student/);

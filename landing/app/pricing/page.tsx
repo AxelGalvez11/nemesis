@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { SiteChrome, APP_SIGN_UP, APP_DOWNLOAD } from "@/components/SiteChrome";
-import { IconCheck, IconDownload } from "@/components/FeatureIcons";
+import { SiteChrome, APP_SIGN_UP } from "@/components/SiteChrome";
+import { IconCheck } from "@/components/FeatureIcons";
 
 export const metadata: Metadata = {
   title: "Pricing · Nemesis",
   description:
-    "Seven days free on every plan. Student $9.99, Agent Pro $19.99, Max $49.99. Cancel anytime.",
+    "Start free. Student $9.99, Agent Pro $19.99, Max $99. Cancel anytime.",
   robots: { index: true, follow: true },
 };
 
@@ -23,7 +23,7 @@ const COMPARE_ROWS = [
 const BILLING_FAQ = [
   {
     q: "When am I charged?",
-    a: "Day 8. A card is required to start, and nothing is charged during the 7-day trial. Cancel before day 8 and you pay nothing.",
+    a: "Only when you upgrade. The free plan doesn't ask for a card. Paid plans bill monthly from the day you subscribe.",
   },
   {
     q: "Can I cancel anytime?",
@@ -35,11 +35,11 @@ const BILLING_FAQ = [
   },
   {
     q: "What happens to my library if I cancel?",
-    a: "Nothing. Your notes and decks are plain files on your Mac. They stay yours forever, on any plan or none.",
+    a: "Nothing. Your library stays in your account and keeps working on the free plan. It stays yours forever.",
   },
   {
     q: "Which plan should I start with?",
-    a: "Student covers a normal week of classes. If you lean on deep research or keep hitting daily limits, Agent Pro is the one most people land on.",
+    a: "Start free. If you lean on deep research or keep hitting daily limits, Agent Pro is the one most people land on.",
   },
 ] as const;
 
@@ -68,8 +68,8 @@ export default function PricingPage() {
         <div className="wrap">
           <div className="section-head pricing-head">
             <p className="eyebrow">Pricing</p>
-            <h2>Seven days free. Cancel anytime.</h2>
-            <p>Every plan starts with a 7-day free trial. Card required, nothing charged until day 8.</p>
+            <h2>Start free. Upgrade when you need more.</h2>
+            <p>Use Nemesis free every day, no card required. Paid plans raise the limits — cancel anytime.</p>
           </div>
           <div className="plans">
             <div className="plan">
@@ -82,8 +82,8 @@ export default function PricingPage() {
                 <li><IconCheck size={13} />Scheduled school sync</li>
               </ul>
               <div className="plan-cta">
-                <a className="btn btn-secondary" href={APP_SIGN_UP}>Start free trial</a>
-                <p className="plan-note">Free for 7 days, then $9.99/mo</p>
+                <a className="btn btn-secondary" href={APP_SIGN_UP}>Get Student</a>
+                <p className="plan-note">Billed monthly, cancel anytime</p>
               </div>
             </div>
             <div className="plan plan-featured">
@@ -97,27 +97,27 @@ export default function PricingPage() {
                 <li><IconCheck size={13} />Higher daily limits</li>
               </ul>
               <div className="plan-cta">
-                <a className="btn btn-primary" href={APP_SIGN_UP}>Start free trial</a>
-                <p className="plan-note">Free for 7 days, then $19.99/mo</p>
+                <a className="btn btn-primary" href={APP_SIGN_UP}>Get Agent Pro</a>
+                <p className="plan-note">Billed monthly, cancel anytime</p>
               </div>
             </div>
             <div className="plan">
-              <div className="plan-price">$49.99<span className="per">/mo</span></div>
+              <div className="plan-price">$99<span className="per">/mo</span></div>
               <h3>Max</h3>
-              <p className="plan-desc">For all-day use and the heaviest weeks.</p>
+              <p className="plan-desc">Real-time AI for the heaviest study and research weeks.</p>
               <ul className="plan-features">
                 <li><IconCheck size={13} />Highest limits across the agent</li>
-                <li><IconCheck size={13} />Built for heavy, daily use</li>
+                <li><IconCheck size={13} />Live copilot — 4,000 transcription minutes a month</li>
                 <li><IconCheck size={13} />First access to new features</li>
               </ul>
               <div className="plan-cta">
-                <a className="btn btn-secondary" href={APP_SIGN_UP}>Start free trial</a>
-                <p className="plan-note">Free for 7 days, then $49.99/mo</p>
+                <a className="btn btn-secondary" href={APP_SIGN_UP}>Get Max</a>
+                <p className="plan-note">Billed monthly, cancel anytime</p>
               </div>
             </div>
           </div>
           <div className="pricing-fine">
-            <p>Cancel anytime from your account, no phone calls. Your library is plain files on your Mac and stays yours on any plan, forever. No ads, no selling your data, no training on your content.</p>
+            <p>Cancel anytime from your account, no phone calls. Your library stays yours on any plan, forever. No ads, no selling your data, no training on your content.</p>
           </div>
         </div>
       </section>
@@ -174,11 +174,7 @@ export default function PricingPage() {
         <div className="wrap">
           <h2>Try it on this week&rsquo;s classes.</h2>
           <div className="closer-cta">
-            <a className="btn btn-primary" href={APP_SIGN_UP}>Start free trial</a>
-            <a className="btn btn-secondary" href={APP_DOWNLOAD}>
-              <IconDownload size={15} />
-              Download for macOS
-            </a>
+            <a className="btn btn-primary" href={APP_SIGN_UP}>Get started free</a>
           </div>
         </div>
       </section>
