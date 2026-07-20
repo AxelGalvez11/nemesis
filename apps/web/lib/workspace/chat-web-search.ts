@@ -7,6 +7,7 @@ export interface ChatWebResult {
 const EXPLICIT_WEB_PATTERN = /\b(search(?: the)? web|web search|look(?:\s+(?:it|this|that))?\s+up|browse|online|internet|source(?:s)?|cite|link(?:s)?)\b/i;
 const CURRENT_INFO_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live)\b/i;
 const CHANGING_FACT_PATTERN = /\bwho\s+(?:is|are|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
+const LIVE_SPORTS_PATTERN = /\b(world cup|super bowl|olympics?|playoffs?|finals?|tournament|match|game|who won|score|standings)\b/i;
 const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
 
 export function shouldSearchWeb(query: string): boolean {
@@ -15,8 +16,17 @@ export function shouldSearchWeb(query: string): boolean {
   return EXPLICIT_WEB_PATTERN.test(compact)
     || CURRENT_INFO_PATTERN.test(compact)
     || CHANGING_FACT_PATTERN.test(compact)
+    || LIVE_SPORTS_PATTERN.test(compact)
     || RECENT_YEAR_PATTERN.test(compact)
     || /https?:\/\//i.test(compact);
+}
+
+/** Time-sensitive searches need an explicit date. Without it, providers can
+ * rank an old winner or schedule above today's result. */
+export function buildFreshSearchQuery(query: string, now = new Date()): string {
+  if (!CURRENT_INFO_PATTERN.test(query) && !CHANGING_FACT_PATTERN.test(query) && !LIVE_SPORTS_PATTERN.test(query)) return query;
+  const date = now.toISOString().slice(0, 10);
+  return `${query.trim()} current as of ${date}`;
 }
 
 export function formatWebSearchContext(results: ChatWebResult[]): string {

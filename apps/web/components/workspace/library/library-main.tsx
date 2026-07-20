@@ -77,9 +77,10 @@ function headingsFromMarkdown(content: string) {
 
 function tagsFromMarkdown(content: string) {
   const tags = new Set<string>();
-  const frontmatter = /^---[\s\S]*?^---/m.exec(content)?.[0] ?? "";
-  const inline = /tags:\s*\[([^\]]*)\]/i.exec(frontmatter)?.[1] ?? "";
-  inline.split(",").map((tag) => tag.trim().replace(/^['"]|['"]$/g, "")).filter(Boolean).forEach((tag) => tags.add(tag));
+  for (const match of content.matchAll(/^\s*tags:\s*\[([^\]]*)\]/gim)) {
+    const inline = match[1] ?? "";
+    inline.split(",").map((tag) => tag.trim().replace(/^['"]|['"]$/g, "")).filter(Boolean).forEach((tag) => tags.add(tag));
+  }
   for (const match of content.matchAll(/(?:^|\s)#([\p{L}\d_-]+)/gu)) if (match[1]) tags.add(match[1]);
   return Array.from(tags).sort((a, b) => a.localeCompare(b));
 }
@@ -179,14 +180,32 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
     router.replace(`/library?note=${encodeURIComponent(path)}`);
   }
 
-  function openWikiTarget(target: string) {
+  async function openWikiTarget(target: string) {
     const existing = findLibraryNote(notes, target);
-    if (existing) openPath(existing.path);
+    if (existing) {
+      openPath(existing.path);
+      return;
+    }
+    const parentFolder = note?.path.split("/").slice(0, -1).join("/") ?? "";
+    const targetTitle = target.split("/").pop()?.trim() || target;
+    try {
+      const created = await createNote({ title: targetTitle, folder: parentFolder, content: "" });
+      openPath(created.path);
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "Couldn't create that linked note.");
+    }
   }
 
   async function createBlankNote() {
-    const created = await createNote({ title: "Untitled note", content: "" });
-    openPath(created.path);
+    setMessage(null);
+    try {
+      const created = await createNote({ title: "Untitled note", folder: "", content: "" });
+      setOpenPaths((paths) => paths.includes(created.path) ? paths : [...paths, created.path]);
+      openPath(created.path);
+      setMode("edit");
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "Couldn't create a new note.");
+    }
   }
 
   function travelHistory(delta: number) {
@@ -242,7 +261,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   return (
     <main className="relative flex h-full min-w-0 flex-1 overflow-hidden bg-(--ui-bg-editor)">
       <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="workspace-page-header flex h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) px-1.5 pt-1">
+        <div className="workspace-page-header flex h-10 shrink-0 items-end gap-0.5 overflow-x-auto overflow-y-hidden border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-1.5 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <Button
             aria-label={leftSidebarOpen ? "Collapse Library sidebar" : "Expand Library sidebar"}
             className="mb-1 shrink-0"
@@ -261,10 +280,10 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
               return (
                 <div
                   className={cn(
-                    "group relative -mb-px flex h-8 min-w-28 max-w-48 items-center gap-1.5 rounded-t-lg border px-2 text-xs",
+                    "group relative -mb-px flex h-8 min-w-32 max-w-52 items-center gap-1.5 rounded-t-[1rem] border px-3 text-xs before:pointer-events-none before:absolute before:-left-2 before:bottom-0 before:size-2 before:rounded-br-[0.65rem] after:pointer-events-none after:absolute after:-right-2 after:bottom-0 after:size-2 after:rounded-bl-[0.65rem]",
                     active
-                      ? "z-10 border-(--ui-stroke-secondary) border-b-background bg-background text-foreground"
-                      : "border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground",
+                      ? "z-10 border-(--ui-stroke-secondary) border-b-(--ui-bg-editor) bg-(--ui-bg-editor) text-foreground before:shadow-[3px_3px_0_var(--ui-bg-editor)] after:shadow-[-3px_3px_0_var(--ui-bg-editor)]"
+                      : "border-transparent bg-transparent text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground",
                     draggedTab === path && "opacity-55",
                   )}
                   draggable
@@ -305,7 +324,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
             <Button aria-label="Previous note" disabled={navigation.index <= 0} onClick={() => travelHistory(-1)} size="icon-xs" variant="ghost"><IconArrowLeft /></Button>
             <Button aria-label="Next note" disabled={navigation.index >= navigation.entries.length - 1} onClick={() => travelHistory(1)} size="icon-xs" variant="ghost"><IconArrowRight /></Button>
           </div>
-          <input aria-label="Note title" className="min-w-48 flex-1 bg-transparent px-1 py-1 text-lg font-semibold tracking-tight text-foreground outline-none placeholder:text-(--ui-text-quaternary)" onChange={(event) => updateDraft({ title: event.target.value })} placeholder="Untitled note" spellCheck value={title} />
+          <input aria-label="Note title" className={cn("min-w-48 flex-1 bg-transparent px-1 py-1 text-lg font-semibold tracking-tight text-foreground outline-none placeholder:text-(--ui-text-quaternary)", mode !== "edit" && "cursor-default")} onChange={(event) => updateDraft({ title: event.target.value })} placeholder="Untitled note" readOnly={mode !== "edit"} spellCheck tabIndex={mode === "edit" ? 0 : -1} value={title} />
           <SegmentedControl className="bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)]" onChange={setMode} options={EDITOR_MODES} value={mode} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button aria-label="Note actions" size="icon-xs" variant="ghost"><IconDots /></Button></DropdownMenuTrigger>
@@ -321,9 +340,9 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
           <div className="mx-auto flex min-h-full w-full max-w-(--composer-width) min-w-0 flex-col px-6 pb-12 pt-5 max-sm:px-4">
             {mode === "edit" ? (
-              <LibraryLiveEditor isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} key={note.id} onChange={(next) => updateDraft({ content: next })} onWikiLink={openWikiTarget} value={content} />
+              <LibraryLiveEditor isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} key={note.id} onChange={(next) => updateDraft({ content: next })} onWikiLink={(target) => void openWikiTarget(target)} value={content} />
             ) : (
-              <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} onWikiLink={openWikiTarget} text={content} /></article>
+              <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown externalLinksInNewTab={false} isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} obsidianTags onWikiLink={(target) => void openWikiTarget(target)} text={content} /></article>
             )}
           </div>
         </div>
@@ -342,9 +361,9 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
                 {outgoing.length === 0 ? <PanelEmpty>Type [[Note name]] to connect an idea.</PanelEmpty> : outgoing.map((link) => {
                   const linked = findLibraryNote(notes, link.target);
                   return linked ? (
-                    <a className="w-full truncate rounded-lg px-2 py-1.5 text-left text-xs font-medium text-[var(--theme-primary)] underline decoration-2 underline-offset-4 hover:bg-(--chrome-action-hover)" href={`/library?note=${encodeURIComponent(linked.path)}`} key={link.target} onClick={(event) => { event.preventDefault(); openWikiTarget(link.target); }} style={{ color: "var(--theme-primary)", textDecorationColor: "currentColor", textDecorationLine: "underline", textDecorationThickness: "2px", textUnderlineOffset: "0.25rem" }}>{link.label}</a>
+                    <a className="w-full truncate rounded-lg px-2 py-1.5 text-left text-xs font-medium text-[var(--theme-primary)] underline decoration-2 underline-offset-4 hover:bg-(--chrome-action-hover)" href={`/library?note=${encodeURIComponent(linked.path)}`} key={link.target} onClick={(event) => { event.preventDefault(); void openWikiTarget(link.target); }} style={{ color: "var(--theme-primary)", textDecorationColor: "currentColor", textDecorationLine: "underline", textDecorationThickness: "2px", textUnderlineOffset: "0.25rem" }}>{link.label}</a>
                   ) : (
-                    <span aria-disabled="true" className="w-full truncate px-2 py-1.5 text-xs text-(--ui-text-quaternary)" key={link.target} title="This note has not been created yet">{link.label}</span>
+                    <button className="w-full truncate rounded-lg px-2 py-1.5 text-left text-xs text-(--ui-text-quaternary) underline decoration-current/35 underline-offset-4 hover:bg-(--chrome-action-hover) hover:text-(--ui-text-secondary)" key={link.target} onClick={() => void openWikiTarget(link.target)} title="Create this note in the current folder" type="button">{link.label}</button>
                   );
                 })}
               </LinkSection>

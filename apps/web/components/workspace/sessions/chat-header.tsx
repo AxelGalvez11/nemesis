@@ -7,6 +7,7 @@
 // the sidebar session row (components/workspace/shell/session-row.tsx).
 
 import { useState } from "react";
+import { IconLayoutSidebarRightExpand } from "@tabler/icons-react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -26,7 +27,7 @@ const TITLEBAR_HEADER_TITLE_CLASS = "min-w-0 flex-1 overflow-hidden";
 const TITLEBAR_HEADER_SHADOW_CLASS =
   "after:pointer-events-none after:absolute after:left-0 after:right-0 after:top-full after:h-4 after:bg-linear-to-b after:from-(--ui-chat-surface-background) after:to-transparent after:content-['']";
 
-export function ChatHeader({ session }: { session: WorkspaceSession | null }) {
+export function ChatHeader({ session, onOpenRail, railOpen }: { session: WorkspaceSession | null; onOpenRail: () => void; railOpen: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const title = session?.title || "New session";
 
@@ -74,6 +75,11 @@ export function ChatHeader({ session }: { session: WorkspaceSession | null }) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>}
+      {!railOpen && (
+        <Button aria-label="Open session sidebar" className="pointer-events-auto ml-auto shrink-0" onClick={onOpenRail} size="icon-xs" variant="ghost">
+          <IconLayoutSidebarRightExpand />
+        </Button>
+      )}
     </header>
   );
 }

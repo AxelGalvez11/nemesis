@@ -1,11 +1,12 @@
 "use client";
 
-import { IconTrash } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { IconChevronDown, IconFolderPlus, IconPlus, IconTrash } from "@tabler/icons-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { Input } from "@/components/desktop-ui/input";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
 import { type StudyArtifactKind, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 
 interface GroupedStudyTabProps {
@@ -20,16 +21,37 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   const singular = isTests ? "test" : "mind map";
   const items = useMemo(() => artifacts.filter((artifact) => artifact.kind === artifactKind), [artifactKind, artifacts]);
   const suggestedGroups = useMemo(() => Array.from(new Set(decks.map((deck) => deck.name.split("::")[0]?.trim()).filter(Boolean))) as string[], [decks]);
+  const [extraGroups, setExtraGroups] = useState<string[]>([]);
   const groups = useMemo(() => {
-    const names = new Set([...suggestedGroups, ...items.map((item) => item.groupName || "Ungrouped")]);
+    const names = new Set([...suggestedGroups, ...extraGroups, ...items.map((item) => item.groupName || "Ungrouped")]);
     return Array.from(names).sort((a, b) => a.localeCompare(b));
-  }, [items, suggestedGroups]);
+  }, [extraGroups, items, suggestedGroups]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [groupName, setGroupName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const groupStorageKey = `nemesis.web.study-${kind}-groups`;
+  useEffect(() => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(groupStorageKey) ?? "[]");
+      if (Array.isArray(parsed)) setExtraGroups(parsed.filter((group): group is string => typeof group === "string" && group.trim().length > 0));
+    } catch { /* best effort */ }
+  }, [groupStorageKey]);
+
+  function createGroup(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const next = groupName.trim();
+    if (!next) return;
+    const groups = Array.from(new Set([...extraGroups, next]));
+    setExtraGroups(groups);
+    try { window.localStorage.setItem(groupStorageKey, JSON.stringify(groups)); } catch { /* best effort */ }
+    setGroupName("");
+    setGroupOpen(false);
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -50,7 +72,13 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
       <nav className="mx-auto mb-7 flex shrink-0 items-center rounded-b-2xl border border-t-0 border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
-        <Button onClick={() => setCreateOpen(true)} size="sm" variant="ghost">Add</Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button size="sm" variant="ghost">Add <IconChevronDown size={13} /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onSelect={() => setCreateOpen(true)}><IconPlus /> New {singular}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { setGroupName(""); setGroupOpen(true); }}><IconFolderPlus /> New group</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button disabled={items.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
       </nav>
       <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
@@ -90,6 +118,16 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
             <label className="grid gap-1.5 text-xs font-medium">Group<Input list={`${artifactKind}-group-options`} onChange={(event) => setGroupName(event.target.value)} placeholder="Pharmacy School::Exam 7" value={groupName} /><datalist id={`${artifactKind}-group-options`}>{suggestedGroups.map((group) => <option key={group} value={group} />)}</datalist></label>
             {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>}
             <DialogFooter><Button onClick={() => setCreateOpen(false)} type="button" variant="ghost">Cancel</Button><Button disabled={saving || !title.trim()} type="submit" variant="secondary">{saving ? "Saving…" : `Create ${singular}`}</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setGroupOpen} open={groupOpen}>
+        <DialogContent className="max-w-sm">
+          <form className="grid gap-4" onSubmit={createGroup}>
+            <DialogHeader><DialogTitle>New {label.toLowerCase()} group</DialogTitle><DialogDescription>Group related {label.toLowerCase()} by course, unit, or topic.</DialogDescription></DialogHeader>
+            <label className="grid gap-1.5 text-xs font-medium">Group name<Input autoFocus onChange={(event) => setGroupName(event.target.value)} placeholder="Pharmacy School::Exam 7" value={groupName} /></label>
+            <DialogFooter><Button onClick={() => setGroupOpen(false)} type="button" variant="ghost">Cancel</Button><Button disabled={!groupName.trim()} type="submit" variant="secondary">Create group</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

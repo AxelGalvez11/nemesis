@@ -36,6 +36,7 @@ import type { GraphIndex } from "./graph-notes";
 import { readGraphPalette } from "./graph-palette";
 import { graphNodeColor } from "./graph-palette";
 import type { GraphControlsState } from "./graph-settings";
+import { GraphCanvas2D } from "./graph-canvas-2d";
 
 interface GraphCanvasProps {
   index: GraphIndex;
@@ -79,7 +80,7 @@ function createGlowTexture(Three: ThreeRuntime) {
   return new Three.CanvasTexture(canvas);
 }
 
-export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCanvasProps) {
+function GraphCanvas3D({ index, controls, onNodeClick, className }: GraphCanvasProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<EngineInstance | null>(null);
   const wakeRef = useRef<(() => void) | null>(null);
@@ -290,7 +291,6 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
     const graph = engineRef.current;
     if (!graph) return;
     graph.nodeRelSize(controls.nodeSize * NODE_CONTROL_SCALE);
-    graph.numDimensions(controls.dimensions);
     (graph.d3Force("link") as TunableForce | undefined)?.distance?.(controls.spread);
     (graph.d3Force("charge") as TunableForce | undefined)?.strength?.(-controls.repulsion);
     (graph.d3Force("center") as TunableForce | undefined)?.strength?.(controls.gravity);
@@ -299,16 +299,22 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
     graph.refresh();
     const orbit = graph.controls() as OrbitControls;
     orbit.enablePan = true;
-    orbit.enableRotate = controls.dimensions === 3;
-    orbit.screenSpacePanning = controls.dimensions === 2;
-    orbit.autoRotate = controls.dimensions === 3 && controls.rotationSpeed > 0;
+    orbit.enableRotate = true;
+    orbit.screenSpacePanning = false;
+    orbit.autoRotate = controls.rotationSpeed > 0;
     orbit.autoRotateSpeed = controls.rotationSpeed;
-    if (orbit.mouseButtons) orbit.mouseButtons.LEFT = controls.dimensions === 2 ? 2 : 0;
-    if (controls.dimensions === 2) {
-      graph.cameraPosition({ x: 0, y: 0, z: 260 }, { x: 0, y: 0, z: 0 }, 220);
-    }
+    if (orbit.mouseButtons) orbit.mouseButtons.LEFT = 0;
     wakeRef.current?.();
   }, [controls]);
 
   return <div className={cn("min-h-0", className)} ref={hostRef} />;
+}
+
+/** 2D and 3D are separate renderers. The 2D path never constructs WebGL or
+ * Three.js objects, so switching to it behaves like an Obsidian canvas rather
+ * than a flattened perspective camera. */
+export function GraphCanvas(props: GraphCanvasProps) {
+  return props.controls.dimensions === 2
+    ? <GraphCanvas2D {...props} />
+    : <GraphCanvas3D {...props} />;
 }

@@ -11,11 +11,26 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
+export interface SessionSource {
+  title: string;
+  url: string;
+  description: string;
+}
+
+export interface SessionOutput {
+  id: string;
+  kind: "flashcards" | "slides" | "test" | "report" | "other";
+  title: string;
+  url?: string;
+}
+
 export interface SessionMessage {
   role: "user" | "assistant";
   content: string;
   /** ISO timestamp — display/persistence only. */
   at: string;
+  sources?: SessionSource[];
+  outputs?: SessionOutput[];
 }
 
 export interface WorkspaceSession {
@@ -63,12 +78,47 @@ function subscribe(fn: () => void): () => void {
   };
 }
 
+function inferSourcesFromContent(content: string): SessionSource[] {
+  const sources = new Map<string, SessionSource>();
+  for (const match of content.matchAll(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi)) {
+    const title = match[1]?.trim();
+    const url = match[2]?.trim();
+    if (url && !sources.has(url)) sources.set(url, { title: title || url, url, description: "" });
+  }
+  return Array.from(sources.values()).slice(0, 12);
+}
+
 function sanitizeMessage(raw: unknown): SessionMessage | null {
   if (typeof raw !== "object" || raw === null) return null;
   const m = raw as Record<string, unknown>;
   const role = m.role === "user" || m.role === "assistant" ? m.role : null;
   if (!role || typeof m.content !== "string") return null;
-  return { role, content: m.content, at: typeof m.at === "string" ? m.at : new Date(0).toISOString() };
+  const persistedSources = Array.isArray(m.sources) ? m.sources.flatMap((rawSource) => {
+    if (!rawSource || typeof rawSource !== "object") return [];
+    const source = rawSource as Record<string, unknown>;
+    return typeof source.url === "string" && typeof source.title === "string"
+      ? [{ title: source.title, url: source.url, description: typeof source.description === "string" ? source.description : "" }]
+      : [];
+  }).slice(0, 12) : [];
+  // Compatibility for conversations created before source metadata was
+  // persisted: recover Markdown citations so old searched answers also expose
+  // the Sources pill after the next reload.
+  const sources = persistedSources.length ? persistedSources : inferSourcesFromContent(m.content);
+  const outputs = Array.isArray(m.outputs) ? m.outputs.flatMap((rawOutput) => {
+    if (!rawOutput || typeof rawOutput !== "object") return [];
+    const output = rawOutput as Record<string, unknown>;
+    const kinds = new Set(["flashcards", "slides", "test", "report", "other"]);
+    return typeof output.id === "string" && typeof output.title === "string" && typeof output.kind === "string" && kinds.has(output.kind)
+      ? [{ id: output.id, title: output.title, kind: output.kind as SessionOutput["kind"], ...(typeof output.url === "string" ? { url: output.url } : {}) }]
+      : [];
+  }).slice(0, 30) : [];
+  return {
+    role,
+    content: m.content,
+    at: typeof m.at === "string" ? m.at : new Date(0).toISOString(),
+    ...(sources.length ? { sources } : {}),
+    ...(outputs.length ? { outputs } : {}),
+  };
 }
 
 function sanitizeSession(raw: unknown): WorkspaceSession | null {

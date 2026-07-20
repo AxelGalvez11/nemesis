@@ -200,13 +200,13 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
       <nav className="mx-auto mb-7 flex shrink-0 items-center rounded-b-2xl border border-t-0 border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
         <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button className="rounded-xl" size="sm" variant="ghost">Deck</Button></DropdownMenuTrigger>
+          <DropdownMenuTrigger asChild><Button className="rounded-xl" size="sm" variant="ghost">Add <IconChevronDown size={13} /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuItem onSelect={() => setCreateKind("deck")}><IconPlus /> New deck</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setGroupDialogOpen(true)}><IconFolderPlus /> New group</DropdownMenuItem>
+            <DropdownMenuItem disabled={decks.length === 0} onSelect={() => setCreateKind("card")}><IconPlus /> New card</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button disabled={decks.length === 0} onClick={() => setCreateKind("card")} size="sm" variant="ghost">Add</Button>
         <Button disabled={decks.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
       </nav>
 

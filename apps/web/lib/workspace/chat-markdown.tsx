@@ -42,6 +42,7 @@ function headingText(children: React.ReactNode): string {
 function markdownComponents(
   onWikiLink?: (target: string) => void,
   isWikiLinkAvailable?: (target: string) => boolean,
+  externalLinksInNewTab = true,
 ): Components {
   return {
     a: ({ children, href }) => {
@@ -51,19 +52,19 @@ function markdownComponents(
       const wikiAvailable = wikiTarget ? (isWikiLinkAvailable?.(wikiTarget) ?? true) : true;
       return (
         <a
-          aria-disabled={!wikiAvailable || undefined}
+          aria-label={wikiTarget && !wikiAvailable ? `Create note ${wikiTarget}` : undefined}
           className={cn(
             "break-words underline underline-offset-4",
             wikiTarget && wikiAvailable && "font-medium text-[var(--theme-primary)] decoration-2 hover:decoration-current",
-            wikiTarget && !wikiAvailable && "cursor-default text-(--ui-text-quaternary) decoration-current/20",
+            wikiTarget && !wikiAvailable && "cursor-pointer text-(--ui-text-quaternary) decoration-current/35",
             !wikiTarget && "text-[var(--theme-primary)] decoration-2 hover:decoration-current",
           )}
-          href={wikiAvailable ? href : undefined}
+          href={href}
           onClick={
             wikiTarget
               ? (event) => {
                   event.preventDefault();
-                  if (wikiAvailable) onWikiLink?.(wikiTarget);
+                  onWikiLink?.(wikiTarget);
                 }
               : undefined
           }
@@ -75,7 +76,7 @@ function markdownComponents(
             textDecorationThickness: wikiTarget && !wikiAvailable ? "1px" : "2px",
             textUnderlineOffset: "0.25rem",
           }}
-          target={wikiTarget ? undefined : "_blank"}
+          target={wikiTarget || !externalLinksInNewTab ? undefined : "_blank"}
         >
           {children}
         </a>
@@ -150,20 +151,30 @@ export function AssistantMarkdown({
   text,
   onWikiLink,
   isWikiLinkAvailable,
+  externalLinksInNewTab = true,
+  obsidianTags = false,
 }: {
   className?: string;
   text: string;
   onWikiLink?: (target: string) => void;
   isWikiLinkAvailable?: (target: string) => boolean;
+  externalLinksInNewTab?: boolean;
+  obsidianTags?: boolean;
 }) {
+  const markdown = obsidianTags
+    ? text.replace(/^\s*tags:\s*\[([^\]]*)\]\s*$/gim, (_line, rawTags: string) => {
+        const tags = rawTags.split(",").map((tag) => tag.trim().replace(/^['\"]|['\"]$/g, "")).filter(Boolean);
+        return tags.map((tag) => `#${tag.replace(/\s+/g, "-")}`).join(" ");
+      })
+    : text;
   return (
     <div className={cn(MARKDOWN_CONTAINER_CLASS_NAME, className)}>
       <ReactMarkdown
-        components={markdownComponents(onWikiLink, isWikiLinkAvailable)}
+        components={markdownComponents(onWikiLink, isWikiLinkAvailable, externalLinksInNewTab)}
         rehypePlugins={[rehypeKatex]}
         remarkPlugins={[remarkGfm, remarkMath]}
       >
-        {normalizeMathDelimiters(onWikiLink ? wikiLinksToMarkdown(text) : text)}
+        {normalizeMathDelimiters(onWikiLink ? wikiLinksToMarkdown(markdown) : markdown)}
       </ReactMarkdown>
     </div>
   );

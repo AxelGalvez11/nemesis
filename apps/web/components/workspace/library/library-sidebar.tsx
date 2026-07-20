@@ -30,7 +30,7 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
-  const { status, notes, folders, error, selectedPath, select, reload, createNote, moveNote, moveFolder } = useCloudLibrary();
+  const { status, notes, folders, error, selectedPath, select, reload, createNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
 
   const tree = useMemo(() => buildLibraryTree(notes, folders), [folders, notes]);
   const totalCount = useMemo(() => countLibraryNotes(tree), [tree]);
@@ -44,7 +44,7 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
   }, [notes, trimmedQuery]);
 
   const createBlankNote = async () => {
-    const note = await createNote({ title: "Untitled note", content: "" });
+    const note = await createNote({ title: "Untitled note", folder: "", content: "" });
     router.replace(`/library?note=${encodeURIComponent(note.path)}`);
     onNavigate?.();
   };
@@ -123,7 +123,18 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
           )
         ) : (
           <div className={cn("min-h-0 flex-1 px-2 pb-1.75", GROUP_BODY)}>
-            <LibraryTreeView folder={tree} onMoveFolder={(source, target) => void moveFolder(source, target)} onMoveNote={(id, target) => void moveNote(id, target)} onSelect={openPath} selectedPath={selectedPath} />
+            <LibraryTreeView
+              folder={tree}
+              onCreateFolder={(path) => void createFolder(path)}
+              onDeleteFolder={(path) => void deleteFolder(path)}
+              onDeleteNote={(id) => void deleteNote(id)}
+              onMoveFolder={(source, target) => void moveFolder(source, target)}
+              onMoveNote={(id, target) => void moveNote(id, target)}
+              onRenameFolder={(path, title) => void renameFolder(path, title)}
+              onRenameNote={(id, title) => void renameNote(id, title)}
+              onSelect={openPath}
+              selectedPath={selectedPath}
+            />
           </div>
         )}
       </div>

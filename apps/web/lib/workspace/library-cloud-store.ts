@@ -92,12 +92,12 @@ function toNote(raw: unknown): CloudLibraryNote | null {
   };
 }
 
-function uniqueNotePath(title: string, folder: string): string {
+function uniqueNotePath(title: string, folder: string, excludeId?: string): string {
   const first = notePathFor(title, folder);
-  if (!state.notes.some((note) => note.path.toLocaleLowerCase() === first.toLocaleLowerCase())) return first;
+  if (!state.notes.some((note) => note.id !== excludeId && note.path.toLocaleLowerCase() === first.toLocaleLowerCase())) return first;
   for (let suffix = 2; suffix < 1000; suffix += 1) {
     const candidate = notePathFor(`${title} ${suffix}`, folder);
-    if (!state.notes.some((note) => note.path.toLocaleLowerCase() === candidate.toLocaleLowerCase())) return candidate;
+    if (!state.notes.some((note) => note.id !== excludeId && note.path.toLocaleLowerCase() === candidate.toLocaleLowerCase())) return candidate;
   }
   return notePathFor(`${title} ${Date.now()}`, folder);
 }
@@ -164,6 +164,9 @@ export interface UseCloudLibraryApi extends StoreState {
   createFolder: (path: string) => Promise<string>;
   saveNote: (input: SaveNoteInput) => Promise<CloudLibraryNote>;
   deleteNote: (id: string) => Promise<void>;
+  deleteFolder: (path: string) => Promise<void>;
+  renameNote: (id: string, title: string) => Promise<void>;
+  renameFolder: (path: string, name: string) => Promise<void>;
   moveNote: (id: string, targetFolder: string) => Promise<void>;
   moveFolder: (sourcePath: string, targetFolder: string) => Promise<void>;
 }
@@ -283,6 +286,50 @@ export function useCloudLibrary(): UseCloudLibraryApi {
     setState({ ...state, notes, selectedPath: state.selectedPath === existing.path ? (notes[0]?.path ?? null) : state.selectedPath });
   }, [preview, userId]);
 
+  const deleteFolder = useCallback(async (rawPath: string): Promise<void> => {
+    const path = normalizeLibraryFolder(rawPath);
+    if (!path) return;
+    const affectedNotes = state.notes.filter((note) => note.path.startsWith(`${path}/`));
+    const affectedFolders = state.folders.filter((folder) => folder === path || folder.startsWith(`${path}/`));
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to delete this folder.");
+      const updatedAt = new Date().toISOString();
+      const results = await Promise.all([
+        ...affectedNotes.map((note) => supabase.from("readable_library_documents").update({ deleted: true, updated_at: updatedAt }).eq("id", note.id).eq("user_id", userId)),
+        ...affectedFolders.map((folder) => supabase.from("readable_library_documents").update({ deleted: true, updated_at: updatedAt }).eq("path", folder).eq("kind", "folder").eq("user_id", userId)),
+      ]);
+      const failure = results.find((result) => result.error)?.error;
+      if (failure) throw new Error(failure.message);
+    }
+    const deletedNoteIds = new Set(affectedNotes.map((note) => note.id));
+    const notes = state.notes.filter((note) => !deletedNoteIds.has(note.id));
+    const selectionDeleted = state.selectedPath?.startsWith(`${path}/`) ?? false;
+    setState({
+      ...state,
+      notes,
+      folders: state.folders.filter((folder) => !affectedFolders.includes(folder)),
+      selectedPath: selectionDeleted ? (notes[0]?.path ?? null) : state.selectedPath,
+    });
+  }, [preview, userId]);
+
+  const renameNote = useCallback(async (id: string, rawTitle: string): Promise<void> => {
+    const existing = state.notes.find((note) => note.id === id);
+    if (!existing) return;
+    const title = safeLibraryTitle(rawTitle);
+    const folder = existing.path.split("/").slice(0, -1).join("/");
+    const path = uniqueNotePath(title, folder, id);
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to rename this note.");
+      const { error } = await supabase.from("readable_library_documents").update({ title, path, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    setState({
+      ...state,
+      notes: state.notes.map((note) => note.id === id ? { ...note, title, path } : note),
+      selectedPath: state.selectedPath === existing.path ? path : state.selectedPath,
+    });
+  }, [preview, userId]);
+
   const moveNote = useCallback(async (id: string, rawTargetFolder: string): Promise<void> => {
     const existing = state.notes.find((note) => note.id === id);
     if (!existing) return;
@@ -336,6 +383,37 @@ export function useCloudLibrary(): UseCloudLibraryApi {
     });
   }, [preview, userId]);
 
+  const renameFolder = useCallback(async (rawPath: string, rawName: string): Promise<void> => {
+    const sourcePath = normalizeLibraryFolder(rawPath);
+    const parent = sourcePath.split("/").slice(0, -1).join("/");
+    const name = normalizeLibraryFolder(rawName).split("/").pop() ?? "";
+    if (!sourcePath || !name) return;
+    const destination = parent ? `${parent}/${name}` : name;
+    if (destination === sourcePath) return;
+    if (state.folders.some((folder) => folder !== sourcePath && folder.toLowerCase() === destination.toLowerCase())) {
+      throw new Error("A folder with that name already exists there.");
+    }
+    const remap = (path: string) => path === sourcePath ? destination : path.startsWith(`${sourcePath}/`) ? `${destination}${path.slice(sourcePath.length)}` : path;
+    const movedNotes = state.notes.filter((note) => note.path.startsWith(`${sourcePath}/`));
+    const movedFolders = state.folders.filter((folder) => folder === sourcePath || folder.startsWith(`${sourcePath}/`));
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to rename this folder.");
+      const updatedAt = new Date().toISOString();
+      const results = await Promise.all([
+        ...movedNotes.map((note) => supabase.from("readable_library_documents").update({ path: remap(note.path), updated_at: updatedAt }).eq("id", note.id).eq("user_id", userId)),
+        ...movedFolders.map((folder) => supabase.from("readable_library_documents").update({ path: remap(folder), title: remap(folder).split("/").pop(), updated_at: updatedAt }).eq("path", folder).eq("kind", "folder").eq("user_id", userId)),
+      ]);
+      const failure = results.find((result) => result.error)?.error;
+      if (failure) throw new Error(failure.message);
+    }
+    setState({
+      ...state,
+      notes: state.notes.map((note) => note.path.startsWith(`${sourcePath}/`) ? { ...note, path: remap(note.path) } : note),
+      folders: state.folders.map(remap),
+      selectedPath: state.selectedPath?.startsWith(`${sourcePath}/`) ? remap(state.selectedPath) : state.selectedPath,
+    });
+  }, [preview, userId]);
+
   return {
     ...snap,
     select: useCallback((path: string | null) => select(path), []),
@@ -344,6 +422,9 @@ export function useCloudLibrary(): UseCloudLibraryApi {
     createFolder,
     saveNote,
     deleteNote,
+    deleteFolder,
+    renameNote,
+    renameFolder,
     moveNote,
     moveFolder,
   };

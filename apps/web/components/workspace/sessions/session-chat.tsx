@@ -18,6 +18,7 @@ import { ChatHeader } from "./chat-header";
 import { Composer } from "./composer";
 import { Thread, type ThreadTurn } from "./thread";
 import type { TurnError } from "./assistant-message";
+import { SessionRightRail, type SessionRailPanel } from "./session-right-rail";
 
 function groupTurns(messages: SessionMessage[]): ThreadTurn[] {
   const turns: ThreadTurn[] = [];
@@ -55,6 +56,8 @@ export function SessionChat() {
   const { session, messages } = useSessionMessages(selectedId);
 
   const [error, setError] = useState<{ sessionId: string; text: string; kind: ChatErrorKind } | null>(null);
+  const [rightRailOpen, setRightRailOpen] = useState(false);
+  const [rightPanel, setRightPanel] = useState<SessionRailPanel>("sources");
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
   const [, forceTick] = useReducer((n: number) => n + 1, 0);
@@ -91,7 +94,7 @@ export function SessionChat() {
     try {
       const reply = await sendChatTurn(targetUid, history, text, controller.signal);
       if (reply.text) {
-        sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: reply.text, role: "assistant" });
+        sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: reply.text, role: "assistant", ...(reply.sources.length ? { sources: reply.sources } : {}) });
       } else if (reply.errorText && reply.errorKind) {
         setError({ kind: reply.errorKind, sessionId: targetId, text: reply.errorText });
       }
@@ -143,17 +146,28 @@ export function SessionChat() {
 
   const isFreshThread = messages.length === 0;
   const placeholder = isFreshThread ? "Ask anything" : "Send a follow-up";
+  const sources = useMemo(() => {
+    const unique = new Map<string, NonNullable<SessionMessage["sources"]>[number]>();
+    for (const message of messages) for (const source of message.sources ?? []) if (!unique.has(source.url)) unique.set(source.url, source);
+    return Array.from(unique.values());
+  }, [messages]);
+  const outputs = useMemo(() => messages.flatMap((message) => message.outputs ?? []), [messages]);
+
+  const openSources = useCallback(() => {
+    setRightPanel("sources");
+    setRightRailOpen(true);
+  }, []);
 
   return (
     <div className="relative isolate flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)">
-      <ChatHeader session={session} />
-      <div
-        className="relative min-h-0 max-w-full flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]"
-        data-slot="composer-bounds"
-      >
-        <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} turns={turns} />
+      <ChatHeader onOpenRail={() => setRightRailOpen(true)} railOpen={rightRailOpen} session={session} />
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]" data-slot="composer-bounds">
+          <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
+          <Composer busy={busy} centered={isFreshThread} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} />
+        </div>
+        {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={outputs} panel={rightPanel} sources={sources} />}
       </div>
-      <Composer busy={busy} centered={isFreshThread} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} />
     </div>
   );
 }

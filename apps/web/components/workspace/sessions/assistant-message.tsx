@@ -27,9 +27,10 @@ interface AssistantMessageProps {
   liveSeconds: number | null;
   durationSeconds: number | null;
   error: TurnError | null;
+  onOpenSources?: () => void;
 }
 
-export function AssistantMessage({ message, pending, liveSeconds, durationSeconds, error }: AssistantMessageProps) {
+export function AssistantMessage({ message, pending, liveSeconds, durationSeconds, error, onOpenSources }: AssistantMessageProps) {
   if (!message && !pending && !error) return null;
 
   const visibleText = message?.content && message.content.length > 0 ? message.content : null;
@@ -50,7 +51,7 @@ export function AssistantMessage({ message, pending, liveSeconds, durationSecond
         {pending && <ActivityStrip placement="live" seconds={liveSeconds} />}
         {error && <AssistantErrorRow error={error} />}
       </div>
-      {visibleText && <AssistantFooter text={visibleText} />}
+      {visibleText && <AssistantFooter onOpenSources={onOpenSources} sourceCount={message?.sources?.length ?? 0} text={visibleText} />}
     </div>
   );
 }
@@ -76,7 +77,7 @@ function AssistantErrorRow({ error }: { error: TurnError }) {
   );
 }
 
-function AssistantFooter({ text }: { text: string }) {
+function AssistantFooter({ text, sourceCount, onOpenSources }: { text: string; sourceCount: number; onOpenSources?: () => void }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -92,7 +93,12 @@ function AssistantFooter({ text }: { text: string }) {
   };
 
   return (
-    <div className="flex min-h-6 flex-col items-end gap-1 pr-(--message-text-indent) pl-(--message-text-indent)">
+    <div className="flex min-h-6 flex-row items-center justify-between gap-2 pr-(--message-text-indent) pl-(--message-text-indent)">
+      {sourceCount > 0 && (
+        <Button className="h-6 gap-1.5 rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) px-2.5 text-[0.6875rem] text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)" onClick={onOpenSources} size="xs" variant="ghost">
+          <Codicon name="references" size="0.72rem" /> {sourceCount} {sourceCount === 1 ? "source" : "sources"}
+        </Button>
+      )}
       <div
         className="relative flex flex-row items-center justify-end gap-2 py-1.5 opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
         data-slot="aui_msg-actions"
