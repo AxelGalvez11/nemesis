@@ -3,9 +3,7 @@
 // Event dialogs — verbatim from desktop calendar/index.tsx §A.13. Dispatch:
 // agent-authored events (source === 'agent') open the read-only EventViewDialog;
 // everything else opens EventFormDialog in 'add' or 'edit' mode. The two-step
-// delete confirm is inline component state (armDelete), not a separate dialog:
-// first click relabels the button "Really delete?" and tints it destructive;
-// blur resets it; second click deletes.
+// destructive actions use an explicit confirmation prompt before deletion.
 
 import { useState } from "react";
 
@@ -88,7 +86,6 @@ export function EventFormDialog({ mode, initialDate, event, onClose, onSave, onD
   const [note, setNote] = useState(event?.note ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [armDelete, setArmDelete] = useState(false);
 
   async function submit() {
     if (!title.trim() || !date || saving) return;
@@ -116,6 +113,7 @@ export function EventFormDialog({ mode, initialDate, event, onClose, onSave, onD
 
   async function handleDelete() {
     if (!onDelete || saving) return;
+    if (!window.confirm(`Are you sure you want to delete “${title || "this event"}”? This can't be undone.`)) return;
     setSaving(true);
     setError(null);
     try {
@@ -123,7 +121,6 @@ export function EventFormDialog({ mode, initialDate, event, onClose, onSave, onD
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't delete. Try again.");
       setSaving(false);
-      setArmDelete(false);
     }
   }
 
@@ -164,13 +161,11 @@ export function EventFormDialog({ mode, initialDate, event, onClose, onSave, onD
         <DialogFooter className="flex-wrap gap-2 sm:justify-between">
           {mode === "edit" ? (
             <Button
-              className={cn(armDelete && "text-destructive")}
-              onBlur={() => setArmDelete(false)}
-              onClick={() => (armDelete ? handleDelete() : setArmDelete(true))}
+              onClick={() => void handleDelete()}
               variant="outline"
             >
               <Trash2 size={13} />
-              {armDelete ? "Really delete?" : "Delete"}
+              Delete
             </Button>
           ) : (
             <span />

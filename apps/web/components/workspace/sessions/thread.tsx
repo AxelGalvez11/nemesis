@@ -25,6 +25,7 @@ interface ThreadProps {
   liveSeconds: number | null;
   error: TurnError | null;
   centeredComposer?: boolean;
+  onEditMessage: (at: string, content: string) => void;
 }
 
 function turnDurationSeconds(turn: ThreadTurn): number | null {
@@ -32,17 +33,24 @@ function turnDurationSeconds(turn: ThreadTurn): number | null {
   return Math.round((Date.parse(turn.assistant.at) - Date.parse(turn.user.at)) / 1000);
 }
 
-export function Thread({ turns, busy, liveSeconds, error, centeredComposer = false }: ThreadProps) {
+export function Thread({ turns, busy, liveSeconds, error, centeredComposer = false, onEditMessage }: ThreadProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const isEmpty = turns.length === 0;
   const lastTurn = turns[turns.length - 1];
-  const scrollKey = `${turns.length}:${lastTurn?.assistant?.content.length ?? 0}:${busy}`;
+  const assistantScrollKey = `${turns.length}:${lastTurn?.assistant?.content.length ?? 0}`;
 
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [scrollKey]);
+    const lastPair = el.querySelector<HTMLElement>("[data-turn-pair]:last-child");
+    if (lastPair) el.scrollTo({ top: Math.max(0, lastPair.offsetTop - 8), behavior: "smooth" });
+  }, [turns.length]);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || !lastTurn?.assistant) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [assistantScrollKey, lastTurn?.assistant]);
 
   return (
     <div className="relative grid h-full min-h-0 max-w-full grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent contain-[layout_paint]">
@@ -63,19 +71,19 @@ export function Thread({ turns, busy, liveSeconds, error, centeredComposer = fal
             </div>
           ) : (
             <div
-              className="mx-auto flex w-full max-w-(--composer-width) min-w-0 flex-col px-6 pt-[calc(var(--titlebar-height)-0.5rem)]"
+              className="mx-auto flex w-full max-w-(--composer-width) min-w-0 flex-col px-6 pb-[calc(var(--composer-measured-height)+2rem)] pt-4"
               data-slot="aui_thread-content"
             >
               {turns.map((turn, index) => {
                 const isLast = index === turns.length - 1;
 
                 return (
-                  <div className="flex min-w-0 flex-col gap-(--conversation-turn-gap) pb-(--conversation-turn-gap)" key={turn.user.at}>
+                  <div className="flex min-w-0 flex-col gap-(--conversation-turn-gap) pb-(--conversation-turn-gap)" data-turn-pair key={turn.user.at}>
                     <div
                       className="composer-human-ai-pair-container relative flex min-w-0 flex-col gap-(--conversation-turn-gap)"
                       data-slot="aui_turn-pair"
                     >
-                      <UserMessage message={turn.user} />
+                      <UserMessage message={turn.user} onEdit={onEditMessage} />
                       <AssistantMessage
                         durationSeconds={turnDurationSeconds(turn)}
                         error={isLast ? error : null}

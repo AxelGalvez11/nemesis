@@ -1,11 +1,5 @@
 "use client";
 
-// Library folder tree — recursive render of the LibraryTreeFolder built by
-// lib/workspace/library-tree.ts. Folders own their disclosure state while notes
-// remain compact, text-first rows in the same chrome as the chat sidebar
-// (components/workspace/shell/sidebar-primitives.tsx), so it reads as one system with the
-// rest of the desktop-parity shell.
-
 import type * as React from "react";
 import { useState } from "react";
 
@@ -16,9 +10,18 @@ import { cn } from "@/lib/utils";
 import { SidebarRowBody, SidebarRowLabel, SidebarRowLead, SidebarRowShell, SidebarRowStack } from "../shell/sidebar-primitives";
 
 const INDENT_REM_PER_DEPTH = 0.875;
+const DRAG_TYPE = "application/x-nemesis-library-item";
+
+type DragItem = { kind: "note"; id: string } | { kind: "folder"; path: string };
 
 function indentStyle(depth: number): React.CSSProperties {
   return { paddingLeft: `${depth * INDENT_REM_PER_DEPTH}rem` };
+}
+
+function writeDragItem(event: React.DragEvent, item: DragItem) {
+  event.stopPropagation();
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(item));
 }
 
 interface LibraryTreeViewProps {
@@ -30,36 +33,124 @@ interface LibraryTreeViewProps {
   depth?: number;
 }
 
-/** Renders one folder's children (subfolders first, then notes — both already
- *  alphabetically sorted by buildLibraryTree). Recurses for nested subfolders. */
-const DRAG_TYPE = "application/x-nemesis-library-item";
+export function LibraryTreeView({ folder, selectedPath, onSelect, onMoveNote, onMoveFolder, depth = 0 }: LibraryTreeViewProps) {
+  const [dragItem, setDragItem] = useState<DragItem | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
-type DragItem = { kind: "note"; id: string } | { kind: "folder"; path: string };
-
-function readDragItem(event: React.DragEvent): DragItem | null {
-  try {
-    const parsed = JSON.parse(event.dataTransfer.getData(DRAG_TYPE)) as DragItem;
-    return parsed?.kind === "note" || parsed?.kind === "folder" ? parsed : null;
-  } catch {
-    return null;
+  function finishDrop(targetFolder: string) {
+    if (!dragItem) return;
+    if (dragItem.kind === "note") onMoveNote?.(dragItem.id, targetFolder);
+    if (dragItem.kind === "folder") onMoveFolder?.(dragItem.path, targetFolder);
+    setDragItem(null);
+    setDropTarget(null);
   }
+
+  return (
+    <div className="min-h-full">
+      {dragItem && (
+        <div
+          className={cn(
+            "mb-1 grid min-h-8 place-items-center rounded-lg border border-dashed px-2 text-[0.6875rem] font-medium transition-colors",
+            dropTarget === ""
+              ? "border-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_9%,transparent)] text-foreground"
+              : "border-(--ui-stroke-secondary) text-(--ui-text-tertiary)",
+          )}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setDropTarget("");
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "move";
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            finishDrop("");
+          }}
+        >
+          Move to Library root
+        </div>
+      )}
+      <TreeContents
+        depth={depth}
+        dragItem={dragItem}
+        dropTarget={dropTarget}
+        folder={folder}
+        onDragEnd={() => {
+          setDragItem(null);
+          setDropTarget(null);
+        }}
+        onDragStart={setDragItem}
+        onDropTarget={finishDrop}
+        onMoveFolder={onMoveFolder}
+        onMoveNote={onMoveNote}
+        onSelect={onSelect}
+        onTargetChange={setDropTarget}
+        selectedPath={selectedPath}
+      />
+    </div>
+  );
 }
 
-export function LibraryTreeView({ folder, selectedPath, onSelect, onMoveNote, onMoveFolder, depth = 0 }: LibraryTreeViewProps) {
-  const drop = (event: React.DragEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const item = readDragItem(event);
-    if (item?.kind === "note") onMoveNote?.(item.id, folder.path);
-    if (item?.kind === "folder") onMoveFolder?.(item.path, folder.path);
-  };
+interface TreeContentsProps extends LibraryTreeViewProps {
+  dragItem: DragItem | null;
+  dropTarget: string | null;
+  onDragStart: (item: DragItem) => void;
+  onDragEnd: () => void;
+  onDropTarget: (folder: string) => void;
+  onTargetChange: (folder: string | null) => void;
+}
+
+function TreeContents({
+  folder,
+  selectedPath,
+  onSelect,
+  onMoveNote,
+  onMoveFolder,
+  depth = 0,
+  dragItem,
+  dropTarget,
+  onDragStart,
+  onDragEnd,
+  onDropTarget,
+  onTargetChange,
+}: TreeContentsProps) {
   return (
-    <SidebarRowStack className="gap-px" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={drop}>
+    <SidebarRowStack className="gap-px">
       {folder.folders.map((child) => (
-        <LibraryFolderNode depth={depth} folder={child} key={child.path} onMoveFolder={onMoveFolder} onMoveNote={onMoveNote} onSelect={onSelect} selectedPath={selectedPath} />
+        <LibraryFolderNode
+          depth={depth}
+          dragItem={dragItem}
+          dropTarget={dropTarget}
+          folder={child}
+          key={child.path}
+          onDragEnd={onDragEnd}
+          onDragStart={onDragStart}
+          onDropTarget={onDropTarget}
+          onMoveFolder={onMoveFolder}
+          onMoveNote={onMoveNote}
+          onSelect={onSelect}
+          onTargetChange={onTargetChange}
+          selectedPath={selectedPath}
+        />
       ))}
       {folder.notes.map((note) => (
-        <LibraryNoteRow depth={depth} isSelected={note.path === selectedPath} key={note.path} note={note} onSelect={onSelect} />
+        <LibraryNoteRow
+          depth={depth}
+          isSelected={note.path === selectedPath}
+          key={note.path}
+          note={note}
+          onDragEnd={onDragEnd}
+          onDragStart={(event) => {
+            const item = { kind: "note", id: note.id } satisfies DragItem;
+            writeDragItem(event, item);
+            onDragStart(item);
+          }}
+          onSelect={onSelect}
+        />
       ))}
     </SidebarRowStack>
   );
@@ -72,6 +163,12 @@ function LibraryFolderNode({
   onSelect,
   onMoveNote,
   onMoveFolder,
+  dragItem,
+  dropTarget,
+  onDragStart,
+  onDragEnd,
+  onDropTarget,
+  onTargetChange,
 }: {
   folder: LibraryTreeFolder;
   depth: number;
@@ -79,39 +176,97 @@ function LibraryFolderNode({
   onSelect: (path: string) => void;
   onMoveNote?: (id: string, folder: string) => void;
   onMoveFolder?: (sourcePath: string, folder: string) => void;
+  dragItem: DragItem | null;
+  dropTarget: string | null;
+  onDragStart: (item: DragItem) => void;
+  onDragEnd: () => void;
+  onDropTarget: (folder: string) => void;
+  onTargetChange: (folder: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const invalidTarget = dragItem?.kind === "folder" && (dragItem.path === folder.path || folder.path.startsWith(`${dragItem.path}/`));
+  const highlighted = !invalidTarget && dropTarget === folder.path;
 
   return (
-    <div draggable onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ kind: "folder", path: folder.path } satisfies DragItem)); }}>
-      <div onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const item = readDragItem(event); if (item?.kind === "note") onMoveNote?.(item.id, folder.path); if (item?.kind === "folder") onMoveFolder?.(item.path, folder.path); }} style={indentStyle(depth)}>
-        <SidebarRowShell>
+    <div>
+      <div
+        draggable
+        onDragEnd={onDragEnd}
+        onDragEnter={(event) => {
+          if (invalidTarget) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onTargetChange(folder.path);
+          setOpen(true);
+        }}
+        onDragOver={(event) => {
+          if (invalidTarget) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDragStart={(event) => {
+          const item = { kind: "folder", path: folder.path } satisfies DragItem;
+          writeDragItem(event, item);
+          onDragStart(item);
+        }}
+        onDrop={(event) => {
+          if (invalidTarget) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onDropTarget(folder.path);
+        }}
+        style={indentStyle(depth)}
+      >
+        <SidebarRowShell
+          className={cn(
+            highlighted && "outline outline-2 outline-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_9%,transparent)]",
+            dragItem?.kind === "folder" && dragItem.path === folder.path && "opacity-50",
+          )}
+        >
           <SidebarRowBody aria-expanded={open} onClick={() => setOpen((value) => !value)}>
             <SidebarRowLead><Codicon className="text-(--ui-text-quaternary)" name={open ? "chevron-down" : "chevron-right"} size="0.75rem" /></SidebarRowLead>
             <SidebarRowLabel className="font-medium text-foreground">{folder.name}</SidebarRowLabel>
           </SidebarRowBody>
         </SidebarRowShell>
       </div>
-      {open && <LibraryTreeView depth={depth + 1} folder={folder} onMoveFolder={onMoveFolder} onMoveNote={onMoveNote} onSelect={onSelect} selectedPath={selectedPath} />}
+      {open && (
+        <TreeContents
+          depth={depth + 1}
+          dragItem={dragItem}
+          dropTarget={dropTarget}
+          folder={folder}
+          onDragEnd={onDragEnd}
+          onDragStart={onDragStart}
+          onDropTarget={onDropTarget}
+          onMoveFolder={onMoveFolder}
+          onMoveNote={onMoveNote}
+          onSelect={onSelect}
+          onTargetChange={onTargetChange}
+          selectedPath={selectedPath}
+        />
+      )}
     </div>
   );
 }
 
-/** A single note row. Exported so the sidebar's flat search-results list (title match,
- *  outside any folder context) can reuse the exact same row chrome as the tree. */
 export function LibraryNoteRow({
   note,
   depth = 0,
   isSelected,
   onSelect,
+  onDragStart,
+  onDragEnd,
 }: {
   note: LibraryTreeNote;
   depth?: number;
   isSelected: boolean;
   onSelect: (path: string) => void;
+  onDragStart?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragEnd?: () => void;
 }) {
   return (
-    <div draggable onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ kind: "note", id: note.id } satisfies DragItem)); }} style={indentStyle(depth)}>
+    <div draggable={Boolean(onDragStart)} onDragEnd={onDragEnd} onDragStart={onDragStart} style={indentStyle(depth)}>
       <SidebarRowShell className={cn("row-hover", isSelected && "bg-(--ui-row-active-background)")}>
         <SidebarRowBody onClick={() => onSelect(note.path)}>
           <SidebarRowLabel className={cn(isSelected && "text-foreground")}>{note.title}</SidebarRowLabel>

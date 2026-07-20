@@ -1,13 +1,11 @@
 "use client";
 
 // Composer — desktop src/app/chat/composer/index.tsx (shell spec §B7), v1:
-// contenteditable input, model pill (Instant/Medium/High — cosmetic in v1,
-// every mode sends deepseek-chat), a "+" menu with one disabled attachments
-// row, send/stop circle. No voice, no queueing, no popover trigger, no drag
-// popout — not in the C1 scope.
+// contenteditable input, Chat/Record mode, attachment/deep-research menu,
+// dictation, and send/stop/record controls.
 
 import type { KeyboardEvent } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -21,20 +19,20 @@ import { ChevronDown } from "@/lib/workspace/icons";
 import { Mic } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
-export type AnswerMode = "instant" | "medium" | "high";
+export type ComposerMode = "chat" | "record";
 
-const ANSWER_MODE_STORAGE_KEY = "nemesis.web.answer-mode";
-const ANSWER_MODE_LABEL: Record<AnswerMode, string> = { high: "High", instant: "Instant", medium: "Medium" };
-const ANSWER_MODES: AnswerMode[] = ["instant", "medium", "high"];
+const COMPOSER_MODE_STORAGE_KEY = "nemesis.web.composer-mode";
+const COMPOSER_MODE_LABEL: Record<ComposerMode, string> = { chat: "Chat", record: "Record" };
+const COMPOSER_MODES: ComposerMode[] = ["chat", "record"];
 
-function isAnswerMode(value: string | null): value is AnswerMode {
-  return value === "instant" || value === "medium" || value === "high";
+function isComposerMode(value: string | null): value is ComposerMode {
+  return value === "chat" || value === "record";
 }
 
-function readStoredAnswerMode(): AnswerMode {
-  if (typeof window === "undefined") return "instant";
-  const stored = window.localStorage.getItem(ANSWER_MODE_STORAGE_KEY);
-  return isAnswerMode(stored) ? stored : "instant";
+function readStoredComposerMode(): ComposerMode {
+  if (typeof window === "undefined") return "chat";
+  const stored = window.localStorage.getItem(COMPOSER_MODE_STORAGE_KEY);
+  return isComposerMode(stored) ? stored : "chat";
 }
 
 interface ComposerProps {
@@ -51,12 +49,18 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
   const [hasText, setHasText] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [listening, setListening] = useState(false);
-  const [answerMode, setAnswerMode] = useState<AnswerMode>(readStoredAnswerMode);
+  const [recording, setRecording] = useState(false);
+  const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
 
-  const setMode = (mode: AnswerMode) => {
-    setAnswerMode(mode);
+  useEffect(() => {
+    setComposerMode(readStoredComposerMode());
+  }, []);
+
+  const setMode = (mode: ComposerMode) => {
+    setComposerMode(mode);
+    setRecording(false);
     try {
-      window.localStorage.setItem(ANSWER_MODE_STORAGE_KEY, mode);
+      window.localStorage.setItem(COMPOSER_MODE_STORAGE_KEY, mode);
     } catch {
       // best-effort
     }
@@ -137,7 +141,7 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
             className="relative z-1 flex min-h-0 w-full flex-col gap-1.5 overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y)"
             data-slot="composer-fade"
           >
-            {files.length > 0 && (
+            {composerMode === "chat" && files.length > 0 && (
               <div className="flex flex-wrap gap-1 px-1">
                 {files.map((file, index) => (
                   <span className="flex max-w-44 items-center gap-1 rounded-full bg-(--ui-bg-quaternary) px-2 py-1 text-[0.6875rem] text-(--ui-text-secondary)" key={`${file.name}:${file.lastModified}:${index}`}>
@@ -149,15 +153,22 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
             )}
             <div className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-(--composer-control-gap) [grid-template-areas:'menu_input_controls']">
               <div className="flex translate-y-[3px] items-start self-start [grid-area:menu]">
-                <input className="sr-only" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} ref={fileInputRef} type="file" />
-                <AttachMenu onChoose={() => fileInputRef.current?.click()} />
+                {composerMode === "chat" && (
+                  <>
+                    <input className="sr-only" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} ref={fileInputRef} type="file" />
+                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} />
+                  </>
+                )}
               </div>
               <div className="min-w-0 [grid-area:input]">
                 <div
                   aria-multiline="true"
-                  className="min-h-(--composer-input-min-height) max-h-(--composer-input-max-height) min-w-(--composer-input-inline-min-width) flex-1 cursor-text overflow-y-auto whitespace-pre-wrap break-words bg-transparent pb-1 pr-1 pt-1 leading-normal text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60"
-                  contentEditable
-                  data-placeholder={placeholder}
+                  className={cn(
+                    "min-h-(--composer-input-min-height) max-h-(--composer-input-max-height) min-w-(--composer-input-inline-min-width) flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent pb-1 pr-1 pt-1 text-[length:var(--conversation-text-font-size)] leading-normal text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60",
+                    composerMode === "chat" ? "cursor-text" : "cursor-default",
+                  )}
+                  contentEditable={composerMode === "chat"}
+                  data-placeholder={composerMode === "chat" ? placeholder : "Record a lecture or conversation"}
                   data-slot="composer-rich-input"
                   onInput={(event) => setHasText((event.currentTarget.textContent ?? "").trim().length > 0)}
                   onKeyDown={handleKeyDown}
@@ -167,9 +178,22 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
               </div>
               <div className="flex items-center justify-end [grid-area:controls]">
                 <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
-                  <ModelPill mode={answerMode} onChange={setMode} />
-                  <Button aria-label="Dictate" aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>
-                  {busy ? (
+                  <ModePill mode={composerMode} onChange={setMode} />
+                  {composerMode === "chat" && <Button aria-label="Dictate" aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>}
+                  {composerMode === "record" ? (
+                    <Button
+                      aria-label={recording ? "Stop recording" : "Start recording"}
+                      aria-pressed={recording}
+                      className={cn(
+                        "size-(--composer-control-primary-size) shrink-0 rounded-full p-0",
+                        recording ? "bg-destructive text-destructive-foreground" : "bg-foreground text-background hover:bg-foreground/90",
+                      )}
+                      onClick={() => setRecording((value) => !value)}
+                      size="icon"
+                    >
+                      <Codicon name={recording ? "debug-stop" : "record"} size="0.875rem" />
+                    </Button>
+                  ) : busy ? (
                     <Button
                       aria-label="Stop"
                       className="size-(--composer-control-primary-size) shrink-0 rounded-full bg-foreground p-0 text-background hover:bg-foreground/90"
@@ -199,15 +223,29 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
   );
 }
 
-function AttachMenu({ onChoose }: { onChoose: () => void }) {
+function AddMenu({ onChooseFiles }: { onChooseFiles: () => void }) {
   return (
-    <Button aria-label="Attach files or images" className="size-(--composer-control-size) shrink-0 rounded-full text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground" onClick={onChoose} size="icon" type="button" variant="ghost">
-      <Codicon name="add" size="1rem" />
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button aria-label="Add to chat" className="size-(--composer-control-size) shrink-0 rounded-full text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground" size="icon" type="button" variant="ghost">
+          <Codicon name="add" size="1rem" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-44" side="top" sideOffset={8}>
+        <DropdownMenuItem onSelect={onChooseFiles}>
+          <Codicon name="file-media" size="0.875rem" />
+          Files
+        </DropdownMenuItem>
+        <DropdownMenuItem>
+          <Codicon name="search" size="0.875rem" />
+          Deep research
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
-function ModelPill({ mode, onChange }: { mode: AnswerMode; onChange: (mode: AnswerMode) => void }) {
+function ModePill({ mode, onChange }: { mode: ComposerMode; onChange: (mode: ComposerMode) => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -216,13 +254,13 @@ function ModelPill({ mode, onChange }: { mode: AnswerMode; onChange: (mode: Answ
           size="sm"
           variant="ghost"
         >
-          <span className="truncate">{ANSWER_MODE_LABEL[mode]}</span>
+          <span className="truncate">{COMPOSER_MODE_LABEL[mode]}</span>
           <ChevronDown className="size-2.5 shrink-0 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-32 p-1" side="top">
         <div className="flex flex-col gap-0.5">
-          {ANSWER_MODES.map((option) => (
+          {COMPOSER_MODES.map((option) => (
             <DropdownMenuItem
               className={cn(
                 "rounded-md px-2.5 py-1.5 text-left text-sm font-medium",
@@ -231,7 +269,7 @@ function ModelPill({ mode, onChange }: { mode: AnswerMode; onChange: (mode: Answ
               key={option}
               onSelect={() => onChange(option)}
             >
-              {ANSWER_MODE_LABEL[option]}
+              {COMPOSER_MODE_LABEL[option]}
             </DropdownMenuItem>
           ))}
         </div>

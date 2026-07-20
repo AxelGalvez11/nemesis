@@ -21,23 +21,24 @@ import { sessionsStore, type WorkspaceSession } from "@/lib/workspace/sessions-s
 import { cn } from "@/lib/utils";
 
 const TITLEBAR_HEADER_BASE_CLASS =
-  "pointer-events-none relative z-3 flex h-(--titlebar-height) w-full min-w-0 shrink-0 items-center justify-start gap-3 overflow-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) px-[max(0.75rem,var(--titlebar-content-inset,0rem))] pr-[calc(var(--titlebar-tools-right,0.75rem)+var(--titlebar-tools-width,0px)+0.75rem)]";
+  "workspace-page-header pointer-events-none relative z-3 flex h-11 w-full min-w-0 shrink-0 items-center justify-start gap-3 overflow-hidden border-b border-(--ui-stroke-tertiary) bg-(--ui-chat-surface-background) px-[max(0.75rem,var(--titlebar-content-inset,0rem))] pr-[calc(var(--titlebar-tools-right,0.75rem)+var(--titlebar-tools-width,0px)+0.75rem)]";
 const TITLEBAR_HEADER_TITLE_CLASS = "min-w-0 flex-1 overflow-hidden";
 const TITLEBAR_HEADER_SHADOW_CLASS =
   "after:pointer-events-none after:absolute after:left-0 after:right-0 after:top-full after:h-4 after:bg-linear-to-b after:from-(--ui-chat-surface-background) after:to-transparent after:content-['']";
 
-export function ChatHeader({ session }: { session: WorkspaceSession }) {
+export function ChatHeader({ session }: { session: WorkspaceSession | null }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const title = session.title || "New session";
+  const title = session?.title || "New session";
 
   const handleRename = () => {
     const next = window.prompt("Rename session", title);
-    if (next && next.trim().length > 0) sessionsStore.rename(session.id, next.trim());
+    if (session && next && next.trim().length > 0) sessionsStore.rename(session.id, next.trim());
   };
 
   return (
     <header className={cn(TITLEBAR_HEADER_BASE_CLASS, TITLEBAR_HEADER_SHADOW_CLASS)}>
-      <div
+      <div className="workspace-page-title pointer-events-auto shrink-0 text-foreground">Sessions</div>
+      {session && <div
         className={TITLEBAR_HEADER_TITLE_CLASS}
         style={{
           maxWidth:
@@ -64,13 +65,15 @@ export function ChatHeader({ session }: { session: WorkspaceSession }) {
               Rename
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => sessionsStore.remove(session.id)} variant="destructive">
+            <DropdownMenuItem onSelect={() => {
+              if (window.confirm(`Are you sure you want to delete “${title}”? This can't be undone.`)) sessionsStore.remove(session.id);
+            }} variant="destructive">
               <Codicon name="trash" size="0.875rem" />
               Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+      </div>}
     </header>
   );
 }

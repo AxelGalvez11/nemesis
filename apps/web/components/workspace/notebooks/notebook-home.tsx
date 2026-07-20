@@ -86,7 +86,7 @@ export function NotebookHome() {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-1 px-6 pb-2 pt-[calc(var(--titlebar-height)+1rem)] text-[0.85rem]">
+      <div className="workspace-page-header flex shrink-0 items-center gap-1 px-6 pb-2 pt-[calc(var(--titlebar-height)+1rem)] text-[0.85rem] max-sm:px-4">
         <button
           type="button"
           onClick={() => notebooks.select(null)}
@@ -98,10 +98,10 @@ export function NotebookHome() {
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Center: title + composer + Recents */}
-        <div className="mx-auto flex min-w-0 flex-1 flex-col overflow-y-auto px-6 pb-8">
+        <div className="mx-auto flex min-w-0 flex-1 flex-col overflow-y-auto px-6 pb-8 max-sm:px-4">
           <div className="mx-auto w-full max-w-2xl pt-2">
             <div className="mb-5 flex items-start justify-between gap-4">
-              <h1 className="min-w-0 truncate text-3xl font-semibold tracking-tight text-foreground">{selected.name}</h1>
+              <h1 className="workspace-page-title min-w-0 truncate text-foreground">{selected.name}</h1>
               <NotebookProjectMenu />
             </div>
 
@@ -132,7 +132,9 @@ export function NotebookHome() {
                       <button
                         type="button"
                         aria-label={`Delete ${c.title}`}
-                        onClick={() => void notebooks.removeChat(c.id)}
+                        onClick={() => {
+                          if (window.confirm(`Are you sure you want to delete “${c.title}”? This can't be undone.`)) void notebooks.removeChat(c.id);
+                        }}
                         className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-(--ui-text-tertiary) opacity-0 transition-opacity hover:bg-(--ui-control-active-background) hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                       >
                         <Codicon name="trash" size="0.75rem" />
@@ -146,17 +148,17 @@ export function NotebookHome() {
         </div>
 
         {/* Right rail — floats on the page background (no distinct column/slab), like Claude's. */}
-        <aside className="flex w-[22rem] shrink-0 flex-col overflow-y-auto px-3 pb-6 pt-5">
+        <aside className="flex w-[22rem] shrink-0 flex-col overflow-y-auto px-3 pb-6 pt-5 max-lg:hidden">
           {/* One rounded panel; dividers separate the sections (no nested boxes). */}
-          <div className="divide-y divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.5rem] border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
+          <div className="divide-y divide-(--ui-stroke-secondary) overflow-hidden rounded-[1.5rem] border border-(--ui-stroke-secondary) bg-background shadow-[0_2px_8px_rgba(0,0,0,0.025)]">
             <section className="flex flex-col gap-2 p-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-[0.8rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)">Instructions</h2>
+                <h2 className="text-[0.8rem] font-semibold uppercase tracking-wide text-foreground">Instructions</h2>
                 <button
                   type="button"
                   aria-label="Edit instructions"
                   onClick={() => setInstrOpen(true)}
-                  className="rounded-md p-1 text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground"
+                  className="rounded-md p-1 text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground"
                 >
                   <Codicon name={instructions ? "pencil" : "add"} size="0.8rem" />
                 </button>
@@ -166,7 +168,7 @@ export function NotebookHome() {
                 onClick={() => setInstrOpen(true)}
                 className={cn(
                   "rounded-lg px-1 py-1 text-left text-[0.82rem] leading-relaxed transition-colors hover:bg-(--ui-control-hover-background)",
-                  instructions ? "text-(--ui-text-secondary)" : "text-(--ui-text-quaternary)",
+                  instructions ? "text-foreground" : "text-(--ui-text-secondary)",
                 )}
               >
                 {instructions ? (
@@ -205,12 +207,12 @@ export function NotebookHome() {
 
 function SoonSegment({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
   return (
-    <section className="flex flex-col gap-1 p-3 opacity-75">
+    <section className="flex flex-col gap-1 p-3">
       <div className="flex items-center gap-1.5">
-        <h2 className="text-[0.8rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)">{title}</h2>
+        <h2 className="text-[0.8rem] font-semibold uppercase tracking-wide text-foreground">{title}</h2>
         <span className="rounded-full bg-(--ui-bg-elevated) px-1.5 py-0.5 text-[0.6rem] font-medium text-(--ui-text-quaternary)">Soon</span>
       </div>
-      <div className="flex items-center gap-2 text-(--ui-text-quaternary)">
+      <div className="flex items-center gap-2 text-(--ui-text-secondary)">
         <Codicon name={icon} size="0.85rem" className="shrink-0" />
         <span className="text-[0.74rem]">{subtitle}</span>
       </div>

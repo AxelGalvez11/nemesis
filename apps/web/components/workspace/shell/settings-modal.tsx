@@ -7,11 +7,11 @@
 
 import { createContext, useContext, useState } from "react";
 
-import { Dialog, DialogContent, DialogTitle } from "@/components/desktop-ui/dialog";
-import { SettingsSurface } from "@/components/SettingsSurface";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/desktop-ui/dialog";
+import { SettingsSurface, type SettingsSection } from "@/components/SettingsSurface";
 
 interface SettingsModalValue {
-  openSettings: () => void;
+  openSettings: (section?: SettingsSection) => void;
 }
 
 const SettingsModalContext = createContext<SettingsModalValue | null>(null);
@@ -24,16 +24,21 @@ export function useSettingsModal(): SettingsModalValue {
 
 export function SettingsModalProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const [initialSection, setInitialSection] = useState<SettingsSection>("general");
+
+  const openSettings = (section: SettingsSection = "general") => {
+    setInitialSection(section);
+    setOpen(true);
+  };
 
   return (
-    <SettingsModalContext.Provider value={{ openSettings: () => setOpen(true) }}>
+    <SettingsModalContext.Provider value={{ openSettings }}>
       {children}
       <Dialog onOpenChange={setOpen} open={open}>
-        <DialogContent className="w-full max-w-3xl gap-0 overflow-hidden p-0">
+        <DialogContent className="h-[min(86dvh,48rem)] w-[min(64rem,calc(100vw-2rem))] max-h-none max-w-none gap-0 overflow-hidden rounded-2xl p-0 max-sm:h-[100dvh] max-sm:w-screen max-sm:rounded-none" showCloseButton>
           <DialogTitle className="sr-only">Settings</DialogTitle>
-          <div className="max-h-[85vh] overflow-y-auto">
-            <SettingsSurface />
-          </div>
+          <DialogDescription className="sr-only">Configure Nemesis preferences, appearance, usage, billing, storage, and security.</DialogDescription>
+          <SettingsSurface initialSection={initialSection} />
         </DialogContent>
       </Dialog>
     </SettingsModalContext.Provider>

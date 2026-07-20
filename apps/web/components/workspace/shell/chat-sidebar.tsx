@@ -10,7 +10,19 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/desktop-ui/dropdown-menu";
 import { SearchField } from "@/components/desktop-ui/search-field";
+import { useAuth } from "@/components/AuthProvider";
+import type { SettingsSection } from "@/components/SettingsSurface";
 import { useSessions } from "@/lib/workspace/sessions-store";
 import { cn } from "@/lib/utils";
 
@@ -48,17 +60,22 @@ const SIDEBAR_NAV: NavItem[] = [
   { id: "study", label: "Study", codicon: "mortar-board", route: "/study" },
   { id: "library", label: "Library", codicon: "book", route: "/library" },
   { id: "notebooks", label: "Notebooks", codicon: "notebook", route: "/notebooks" },
-  { id: "graph", label: "Graph", codicon: "type-hierarchy-sub", route: "/graph" },
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
+];
+
+const MORE_NAV: NavItem[] = [
+  { id: "graph", label: "Graph", codicon: "type-hierarchy-sub", route: "/graph" },
+  { id: "plugins", label: "Plugins", codicon: "extensions", route: "/plugins" },
 ];
 
 interface ChatSidebarProps {
   sidebarOpen: boolean;
   accountEmail: string;
   onCollapse: () => void;
+  onNavigate?: () => void;
 }
 
-export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSidebarProps) {
+export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate }: ChatSidebarProps) {
   const router = useRouter();
   const { openSettings } = useSettingsModal();
   const pathname = usePathname();
@@ -80,17 +97,29 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
   const startNewSession = () => {
     select(null);
     router.push(`${navigationRoot}/sessions`);
+    onNavigate?.();
   };
 
   const resume = (id: string) => {
     select(id);
     router.push(`${navigationRoot}/sessions`);
+    onNavigate?.();
+  };
+
+  const navigate = (destination: string) => {
+    router.push(destination);
+    onNavigate?.();
+  };
+
+  const confirmRemoveSession = (id: string, title: string) => {
+    if (window.confirm(`Are you sure you want to delete “${title || "New session"}”? This can't be undone.`)) remove(id);
   };
 
   const showSessionSections = sessions.length > 0;
 
   return (
     <Sidebar
+      aria-hidden={!sidebarOpen}
       className={cn(
         "relative h-full min-w-0 overflow-hidden border-t-0 border-b-0 text-foreground transition-none",
         "border-r border-l-0",
@@ -98,6 +127,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
           ? "border-(--sidebar-edge-border) bg-(--ui-sidebar-surface-background) opacity-100"
           : "pointer-events-none border-transparent bg-transparent opacity-0",
       )}
+      inert={!sidebarOpen}
     >
       <SidebarContent className="gap-0 overflow-hidden bg-transparent px-2.5">
         <div className="flex h-9 shrink-0 items-center gap-1 px-2 pt-1">
@@ -142,7 +172,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
                       )}
                       onClick={() => {
                         if (isNewSession) startNewSession();
-                        else if (destination) router.push(destination);
+                        else if (destination) navigate(destination);
                       }}
                     >
                       <Codicon
@@ -155,6 +185,28 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
                   </SidebarMenuItem>
                 );
               })}
+              <SidebarMenuItem className="flex items-center gap-0.5">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <SidebarMenuButton
+                      className={cn(
+                        "flex h-7 min-w-0 flex-1 justify-start gap-2 rounded-md border border-transparent px-2 text-left text-[0.8125rem] font-medium text-(--ui-text-secondary) transition-colors duration-100 hover:bg-(--ui-control-hover-background) hover:text-foreground",
+                        MORE_NAV.some((item) => item.route && (pathname === `${navigationRoot}${item.route}` || pathname.startsWith(`${navigationRoot}${item.route}/`))) && "border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) text-foreground",
+                      )}
+                    >
+                      <Codicon className="size-4 shrink-0 text-[color-mix(in_srgb,currentColor_72%,transparent)]" name="ellipsis" size="1em" />
+                      <span className="min-w-0 flex-1 truncate">More</span>
+                    </SidebarMenuButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-40" side="right" sideOffset={8}>
+                    {MORE_NAV.map((item) => (
+                      <DropdownMenuItem key={item.id} onSelect={() => item.route && navigate(`${navigationRoot}${item.route}`)}>
+                        <Codicon name={item.codicon} size="0.85rem" /> {item.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -173,7 +225,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
                         isSelected={session.id === selectedId}
                         isWorking={Boolean(working[session.id])}
                         key={session.id}
-                        onDelete={() => remove(session.id)}
+                        onDelete={() => confirmRemoveSession(session.id, session.title)}
                         onPin={() => togglePin(session.id)}
                         onRename={(title) => rename(session.id, title)}
                         onResume={() => resume(session.id)}
@@ -201,7 +253,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
                               isSelected={session.id === selectedId}
                               isWorking={Boolean(working[session.id])}
                               key={session.id}
-                              onDelete={() => remove(session.id)}
+                              onDelete={() => confirmRemoveSession(session.id, session.title)}
                               onPin={() => togglePin(session.id)}
                               onRename={(title) => rename(session.id, title)}
                               onResume={() => resume(session.id)}
@@ -242,7 +294,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse }: ChatSideb
                               isSelected={session.id === selectedId}
                               isWorking={Boolean(working[session.id])}
                               key={session.id}
-                              onDelete={() => remove(session.id)}
+                              onDelete={() => confirmRemoveSession(session.id, session.title)}
                               onPin={() => togglePin(session.id)}
                               onRename={(title) => rename(session.id, title)}
                               onResume={() => resume(session.id)}
@@ -272,29 +324,39 @@ function StudentSidebarFooter({
   onOpenSettings,
 }: {
   accountEmail: string;
-  onOpenSettings: () => void;
+  onOpenSettings: (section?: SettingsSection) => void;
 }) {
   const accountInitial = (accountEmail?.[0] ?? "N").toUpperCase();
+  const { signOut } = useAuth();
+  const router = useRouter();
 
   return (
     <SidebarFooter className="sticky bottom-0 shrink-0 gap-1 border-t border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-2.5 py-2">
       <div className="flex min-w-0 items-center gap-1">
-        <Button
-          aria-label="Account & settings"
-          className="min-w-0 flex-1 justify-start gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left text-(--ui-text-secondary) transition-colors duration-100 ease hover:bg-(--ui-control-hover-background) hover:text-foreground active:scale-[0.99] motion-reduce:active:scale-100"
-          onClick={onOpenSettings}
-          size="sm"
-          variant="ghost"
-        >
-          <span className="grid size-6 shrink-0 place-items-center rounded-full bg-(--ui-bg-quaternary) text-[0.65rem] font-semibold uppercase text-(--ui-text-secondary) shadow-[inset_0_0_0_1px_var(--ui-stroke-tertiary)]">
-            {accountInitial}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-xs font-medium">{accountEmail || "Sign in"}</span>
-          <span className="max-w-20 shrink truncate rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-(--theme-primary)">
-            Student
-          </span>
-          <Codicon name="settings-gear" size="0.8rem" className="shrink-0 text-(--ui-text-tertiary)" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button aria-label="Account menu" className="min-w-0 flex-1 justify-start gap-2 overflow-hidden rounded-md px-1.5 py-1 text-left text-(--ui-text-secondary) transition-colors duration-100 ease hover:bg-(--ui-control-hover-background) hover:text-foreground active:scale-[0.99] motion-reduce:active:scale-100" size="sm" variant="ghost">
+              <span className="grid size-6 shrink-0 place-items-center rounded-full bg-(--ui-bg-quaternary) text-[0.65rem] font-semibold uppercase text-(--ui-text-secondary) shadow-[inset_0_0_0_1px_var(--ui-stroke-tertiary)]">{accountInitial}</span>
+              <span className="min-w-0 flex-1 truncate text-xs font-medium">{accountEmail || "Sign in"}</span>
+              <span className="max-w-20 shrink truncate rounded-full bg-(--theme-primary)/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-(--theme-primary)">Student</span>
+              <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="chevron-up" size="0.8rem" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-52" side="top" sideOffset={8}>
+            <DropdownMenuItem onSelect={() => router.push("/pricing")}><Codicon name="sparkle" size="0.85rem" /> Upgrade plan</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onOpenSettings("appearance")}><Codicon name="symbol-color" size="0.85rem" /> Appearance settings</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger><Codicon name="question" size="0.85rem" /> Help</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-44" sideOffset={6}>
+                <DropdownMenuItem onSelect={() => router.push("/legal/terms")}><Codicon name="law" size="0.85rem" /> Terms of service</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => router.push("/legal/privacy")}><Codicon name="shield" size="0.85rem" /> Privacy policy</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => { window.location.href = "mailto:support@enternemesis.com?subject=Nemesis%20bug%20report"; }}><Codicon name="bug" size="0.85rem" /> Report a bug</DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuItem onSelect={() => void signOut().then(() => router.replace("/sign-in"))}><Codicon name="sign-out" size="0.85rem" /> Log out</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </SidebarFooter>
   );

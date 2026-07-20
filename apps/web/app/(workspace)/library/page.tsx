@@ -9,10 +9,13 @@ import { useEffect, useRef, useState } from "react";
 
 import { LibraryMain } from "@/components/workspace/library/library-main";
 import { LibrarySidebar } from "@/components/workspace/library/library-sidebar";
+import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
+import { cn } from "@/lib/utils";
 
 export default function LibraryPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const narrowViewport = useMediaQuery("(max-width: 768px)");
   const searchParams = useSearchParams();
   const { notes, select } = useCloudLibrary();
   const requestedPath = searchParams.get("note");
@@ -25,10 +28,25 @@ export default function LibraryPage() {
     }
   }, [notes, requestedPath, select]);
 
+  useEffect(() => {
+    if (narrowViewport) setSidebarOpen(false);
+  }, [narrowViewport]);
+
   return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-(--ui-editor-surface-background)">
-      {sidebarOpen && <LibrarySidebar onCollapse={() => setSidebarOpen(false)} />}
-      <LibraryMain leftSidebarOpen={sidebarOpen} onExpandLeft={() => setSidebarOpen(true)} />
+    <div className="relative flex h-full min-h-0 overflow-hidden bg-(--ui-editor-surface-background)">
+      {sidebarOpen && (
+        <>
+          {narrowViewport && <button aria-label="Close Library sidebar" className="absolute inset-0 z-30 bg-black/25" onClick={() => setSidebarOpen(false)} type="button" />}
+          <div className={cn(narrowViewport ? "absolute inset-y-0 left-0 z-40 shadow-2xl" : "contents")}>
+            <LibrarySidebar onNavigate={() => narrowViewport && setSidebarOpen(false)} />
+          </div>
+        </>
+      )}
+      <LibraryMain
+        leftSidebarOpen={sidebarOpen}
+        onCollapseLeft={() => setSidebarOpen(false)}
+        onExpandLeft={() => setSidebarOpen(true)}
+      />
     </div>
   );
 }

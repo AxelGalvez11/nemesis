@@ -4,7 +4,16 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
+export type AccentPreference = "crimson" | "blue" | "green" | "orange" | "purple";
 const STORAGE_KEY = "pharmaorb-theme";
+const ACCENT_STORAGE_KEY = "nemesis.web.accent";
+const SCALE_STORAGE_KEY = "nemesis.web.scale";
+const ACCENT_COLORS: Record<Exclude<AccentPreference, "crimson">, string> = {
+  blue: "#2563eb",
+  green: "#16865c",
+  orange: "#d26324",
+  purple: "#7c4dca",
+};
 
 const isTheme = (v: unknown): v is Theme => v === "light" || v === "dark";
 const isPreference = (v: unknown): v is ThemePreference => isTheme(v) || v === "system";
@@ -19,22 +28,50 @@ const normalizeStoredPreference = (v: string | null): string | null => (v === "g
 interface ThemeContextValue {
   preference: ThemePreference;
   theme: Theme;
+  accent: AccentPreference;
+  scale: number;
   setTheme: (t: ThemePreference) => void;
+  setAccent: (accent: AccentPreference) => void;
+  setScale: (scale: number) => void;
   toggle: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
   preference: "system",
   theme: "light",
+  accent: "crimson",
+  scale: 110,
   setTheme: () => {},
+  setAccent: () => {},
+  setScale: () => {},
   toggle: () => {},
 });
+
+function isAccent(value: string | null): value is AccentPreference {
+  return value === "crimson" || value === "blue" || value === "green" || value === "orange" || value === "purple";
+}
+
+function applyAccent(accent: AccentPreference) {
+  const root = document.documentElement;
+  if (accent === "crimson") {
+    root.style.removeProperty("--theme-primary");
+    root.style.removeProperty("--theme-midground");
+    root.style.removeProperty("--theme-warm");
+    return;
+  }
+  const color = ACCENT_COLORS[accent];
+  root.style.setProperty("--theme-primary", color);
+  root.style.setProperty("--theme-midground", color);
+  root.style.setProperty("--theme-warm", color);
+}
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Default light; the inline no-flash script in layout.tsx already resolved stored→OS→light onto
   // <html data-theme> before paint, so we read it back on mount to sync React state.
   const [theme, setThemeState] = useState<Theme>("light");
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
+  const [accent, setAccentState] = useState<AccentPreference>("crimson");
+  const [scale, setScaleState] = useState(110);
 
   useEffect(() => {
     // Resolve the stored preference (stored → OS → dark) and make it AUTHORITATIVE on the DOM.
@@ -50,6 +87,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setPreferenceState(pref);
     setThemeState(resolved);
     document.documentElement.dataset.theme = resolved;
+    const storedAccent = localStorage.getItem(ACCENT_STORAGE_KEY);
+    const nextAccent = isAccent(storedAccent) ? storedAccent : "crimson";
+    const storedScale = Number(localStorage.getItem(SCALE_STORAGE_KEY));
+    const nextScale = Number.isFinite(storedScale) && storedScale >= 90 && storedScale <= 125 ? storedScale : 110;
+    setAccentState(nextAccent);
+    setScaleState(nextScale);
+    applyAccent(nextAccent);
+    document.documentElement.style.fontSize = `${nextScale}%`;
   }, []);
 
   useEffect(() => {
@@ -76,10 +121,23 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const setAccent = (next: AccentPreference) => {
+    setAccentState(next);
+    applyAccent(next);
+    try { localStorage.setItem(ACCENT_STORAGE_KEY, next); } catch { /* best effort */ }
+  };
+
+  const setScale = (next: number) => {
+    const clamped = Math.min(125, Math.max(90, Math.round(next)));
+    setScaleState(clamped);
+    document.documentElement.style.fontSize = `${clamped}%`;
+    try { localStorage.setItem(SCALE_STORAGE_KEY, String(clamped)); } catch { /* best effort */ }
+  };
+
   // The topbar button toggles light ↔ dark; Settings offers System/Light/Dark explicitly.
   const toggle = () => setTheme(theme === "light" ? "dark" : "light");
 
-  return <ThemeContext.Provider value={{ preference, theme, setTheme, toggle }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ preference, theme, accent, scale, setTheme, setAccent, setScale, toggle }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): ThemeContextValue {

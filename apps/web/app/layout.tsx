@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 import "./styles/shell.css";
 import "./styles/legacy.css";
@@ -25,10 +26,8 @@ const themeScript = `(function(){try{var p=localStorage.getItem('pharmaorb-theme
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
       <body>
+        <Script id="nemesis-theme" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: themeScript }} />
         <PostHogProvider>
           <ThemeProvider>
             <AuthProvider>{children}</AuthProvider>

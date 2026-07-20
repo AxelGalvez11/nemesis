@@ -132,7 +132,7 @@ export function CalendarWorkspace() {
           today={today}
           view={view}
         />
-        <div className="grid flex-1 grid-cols-1 gap-4 px-6 pb-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="grid flex-1 grid-cols-1 gap-4 px-6 pb-8 max-sm:px-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           {view === "day" && (
             <DayPanel
               date={cursor}

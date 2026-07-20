@@ -7,15 +7,19 @@ import { IconCards, IconChartBar, IconChecklist, IconChevronDown, IconSitemap } 
 import { Button } from "@/components/desktop-ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
-import { useSettingsModal } from "@/components/workspace/shell/settings-modal";
 import { Settings } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
 export type StudyTabId = "cards" | "tests" | "maps" | "stats";
+export interface StudyReviewSettings {
+  flipAnimation: boolean;
+  flashcardOutline: boolean;
+}
 
 const TABS: { id: StudyTabId; label: string; icon: typeof IconCards }[] = [
   { id: "cards", label: "Cards", icon: IconCards },
@@ -28,22 +32,23 @@ interface StudyChromeProps {
   activeTab: StudyTabId;
   counts: Record<StudyTabId, number>;
   onTabChange: (tab: StudyTabId) => void;
+  reviewSettings: StudyReviewSettings;
+  onReviewSettingsChange: (settings: StudyReviewSettings) => void;
 }
 
-export function StudyChrome({ activeTab, counts, onTabChange }: StudyChromeProps) {
-  const { openSettings } = useSettingsModal();
+export function StudyChrome({ activeTab, counts, onTabChange, reviewSettings, onReviewSettingsChange }: StudyChromeProps) {
   const active = TABS.find((tab) => tab.id === activeTab) ?? TABS[0]!;
   const ActiveIcon = active.icon;
 
   return (
-    <header className="relative flex min-h-12 shrink-0 items-center justify-between gap-3 px-6 py-2.5">
-      <h1 className="text-lg font-semibold tracking-tight">Study</h1>
+    <header className="workspace-page-header relative flex min-h-12 shrink-0 items-center justify-between gap-3 px-6 py-2.5 max-sm:px-4">
+      <h1 className="workspace-page-title">Study</h1>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             aria-label="Choose study page"
-            className="absolute left-1/2 min-w-32 -translate-x-1/2 gap-2 rounded-xl bg-black/[0.055] dark:bg-white/[0.08]"
+            className="absolute left-1/2 min-w-32 -translate-x-1/2 gap-2 rounded-xl bg-black/[0.055] dark:bg-white/[0.08] max-sm:relative max-sm:left-auto max-sm:translate-x-0"
             size="sm"
             variant="secondary"
           >
@@ -67,9 +72,21 @@ export function StudyChrome({ activeTab, counts, onTabChange }: StudyChromeProps
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Button aria-label="Study settings" onClick={openSettings} size="icon-xs" variant="ghost">
-        <Settings />
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button aria-label="Study settings" className="size-9 rounded-xl" size="icon" variant="ghost">
+            <Settings className="size-5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuCheckboxItem checked={reviewSettings.flipAnimation} onCheckedChange={(checked) => onReviewSettingsChange({ ...reviewSettings, flipAnimation: checked })}>
+            Card flip animation
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem checked={reviewSettings.flashcardOutline} onCheckedChange={(checked) => onReviewSettingsChange({ ...reviewSettings, flashcardOutline: checked })}>
+            Flashcard outline
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </header>
   );
 }

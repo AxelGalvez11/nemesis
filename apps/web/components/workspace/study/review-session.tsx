@@ -3,10 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/desktop-ui/dialog";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { type StudyCard, type StudyDeck, isCardDue, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import type { StudyGrade } from "@/lib/workspace/study-scheduler";
+import { cn } from "@/lib/utils";
+
+import type { StudyReviewSettings } from "./study-chrome";
 
 const GRADES: { grade: StudyGrade; label: string; hint: string; variant: "outline" | "secondary" }[] = [
   { grade: "again", label: "Again", hint: "1d", variant: "outline" },
@@ -20,9 +23,10 @@ interface ReviewSessionProps {
   deck: StudyDeck | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  settings: StudyReviewSettings;
 }
 
-export function ReviewSession({ cards, deck, open, onOpenChange }: ReviewSessionProps) {
+export function ReviewSession({ cards, deck, open, onOpenChange, settings }: ReviewSessionProps) {
   const { gradeCard } = useCloudStudy();
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
@@ -59,21 +63,17 @@ export function ReviewSession({ cards, deck, open, onOpenChange }: ReviewSession
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-none border-0 bg-background px-8 py-6" showCloseButton>
-        <DialogHeader className="mx-auto w-full max-w-5xl border-b border-(--ui-stroke-tertiary) pb-4">
-          <DialogTitle>{deck?.name ?? "Review"}</DialogTitle>
-          <DialogDescription>
-            {current ? `${completedIds.length} reviewed · ${queue.length} remaining` : `${completedIds.length} cards reviewed`}
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-none border-0 bg-background px-7 py-6" showCloseButton>
+        <DialogTitle className="sr-only">{deck?.name ?? "Flashcard review"}</DialogTitle>
+        <DialogDescription className="sr-only">Review the front of the card, reveal its answer, then grade your recall.</DialogDescription>
         {current ? (
-          <div className="mx-auto grid min-h-0 w-full max-w-5xl grid-rows-[minmax(0,1fr)_auto] gap-5 py-6">
-            <section className="grid min-h-0 place-items-center overflow-y-auto rounded-3xl border border-(--ui-stroke-secondary) bg-background px-10 py-12 text-center shadow-sm">
-              <div className="max-w-xl">
+          <div className="mx-auto grid min-h-0 w-full max-w-6xl grid-rows-[minmax(0,1fr)_auto] gap-5 pt-8">
+            <section className={cn("grid min-h-0 place-items-start overflow-y-auto bg-background px-4 py-12 text-center", settings.flashcardOutline && "rounded-3xl border border-(--ui-stroke-secondary) shadow-sm")}>
+              <div className={cn("mx-auto w-full max-w-5xl", settings.flipAnimation && "animate-in fade-in-0 duration-300")}>
                 <AssistantMarkdown className="text-lg font-medium leading-8" text={current.front} />
                 {revealed && (
-                  <div className="mt-7 border-t border-(--ui-stroke-tertiary) pt-7">
-                    <AssistantMarkdown className="text-base leading-7 text-(--ui-text-secondary)" text={current.back} />
+                  <div className={cn("mt-8 border-t border-(--ui-stroke-secondary) pt-8", settings.flipAnimation && "animate-in fade-in-0 slide-in-from-bottom-1 duration-300")}>
+                    <AssistantMarkdown className="text-lg leading-8 text-foreground" text={current.back} />
                   </div>
                 )}
               </div>
@@ -93,7 +93,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange }: ReviewSession
             )}
           </div>
         ) : (
-          <div className="grid min-h-56 place-items-center rounded-2xl border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-8 text-center">
+          <div className="grid min-h-56 place-items-center bg-background p-8 text-center">
             <div>
               <p className="text-sm font-semibold">You’re caught up</p>
               <p className="mt-1 text-xs text-muted-foreground">The next review will appear when a card is due.</p>

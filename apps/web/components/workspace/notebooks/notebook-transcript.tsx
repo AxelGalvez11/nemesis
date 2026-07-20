@@ -35,7 +35,7 @@ export function NotebookTranscript({ messages, working, emptyHint }: NotebookTra
             className={cn(
               "min-w-0 animate-in text-[length:var(--conversation-text-font-size)] leading-relaxed fade-in-0 duration-500",
               m.role === "user"
-                ? "self-end max-w-[85%] rounded-[1.75rem] bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)] px-4 py-2.5 text-foreground"
+                ? "self-end max-w-[85%] rounded-[1.75rem] bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)] px-4 py-2.5 text-center text-foreground"
                 : "max-w-full text-foreground",
             )}
           >
