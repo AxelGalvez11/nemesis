@@ -1,12 +1,15 @@
-# Vercel builds only apps/web for the nemesis-web project. Keep local build
-# artifacts and unrelated desktop/marketing work out of the deployment bundle.
+# This repo feeds TWO Vercel projects: "nemesis-web" (root dir apps/web) and
+# "nemesis" (root dir landing — the www.enternemesis.com landing site). This
+# file applies to BOTH, so it must never exclude either project's root dir.
+# Excluding `landing` here (2026-07-20) broke every landing deploy with
+# "No Next.js version detected". Keep local build artifacts and unrelated
+# desktop/marketing work out of the deployment bundle.
 **/node_modules
 **/.next
 **/.turbo
 
 apps/desktop-agent
 apps/nemesis-desktop
-landing
 marketing
 tmp
 
