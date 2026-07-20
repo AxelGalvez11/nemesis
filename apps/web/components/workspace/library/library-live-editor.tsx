@@ -2,8 +2,8 @@
 
 import { indentLess, indentMore } from "@codemirror/commands";
 import { syntaxTree } from "@codemirror/language";
-import { markdown } from "@codemirror/lang-markdown";
-import { type Range } from "@codemirror/state";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { StateField, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, EditorView, keymap, ViewPlugin, type DecorationSet, type ViewUpdate, WidgetType } from "@codemirror/view";
 import {
   IconBlockquote,
@@ -54,6 +54,125 @@ const hiddenSyntax = Decoration.replace({});
 const wikiLink = Decoration.mark({ class: "cm-wiki-link" });
 const obsidianTag = Decoration.mark({ class: "cm-obsidian-tag" });
 const obsidianHighlight = Decoration.mark({ class: "cm-obsidian-highlight" });
+
+/** Strip inline markdown marks for table-cell display (the widget is
+ *  read-only; clicking it reveals the raw syntax for editing). */
+function displayCellText(raw: string): string {
+  return raw
+    .trim()
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/==([^=]+)==/g, "$1")
+    .replace(/\[\[([^\]]+)\]\]/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<\/?u>/g, "");
+}
+
+/** Split one markdown table row into cells (leading/trailing pipes dropped,
+ *  escaped pipes kept). */
+function splitTableRow(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  const cells: string[] = [];
+  let current = "";
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    if (char === "\\" && trimmed[index + 1] === "|") {
+      current += "|";
+      index += 1;
+    } else if (char === "|") {
+      cells.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  cells.push(current);
+  return cells;
+}
+
+function columnAlignments(delimiter: string): Array<"left" | "center" | "right"> {
+  return splitTableRow(delimiter).map((cell) => {
+    const spec = cell.trim();
+    if (spec.startsWith(":") && spec.endsWith(":")) return "center";
+    if (spec.endsWith(":")) return "right";
+    return "left";
+  });
+}
+
+/** Rendered GFM table shown while the cursor is OUTSIDE the table block.
+ *  Clicking a row moves the cursor to that row, which swaps back to syntax. */
+class MarkdownTableWidget extends WidgetType {
+  constructor(private readonly source: string, private readonly from: number) { super(); }
+
+  override eq(other: MarkdownTableWidget) {
+    return other.source === this.source && other.from === this.from;
+  }
+
+  toDOM(view: EditorView) {
+    const lines = this.source.split("\n");
+    const aligns = columnAlignments(lines[1] ?? "");
+    const wrap = document.createElement("div");
+    wrap.className = "cm-md-table";
+    const table = document.createElement("table");
+
+    let offset = 0;
+    lines.forEach((line, lineIndex) => {
+      if (lineIndex === 1 && /^\s*\|?[\s:|-]+\|?\s*$/.test(line)) {
+        offset += line.length + 1;
+        return;
+      }
+      const row = document.createElement("tr");
+      row.dataset.offset = String(offset);
+      for (const [cellIndex, cell] of splitTableRow(line).entries()) {
+        const el = document.createElement(lineIndex === 0 ? "th" : "td");
+        el.textContent = displayCellText(cell);
+        el.style.textAlign = aligns[cellIndex] ?? "left";
+        row.appendChild(el);
+      }
+      (lineIndex === 0 ? table.createTHead() : table.tBodies[0] ?? table.createTBody()).appendChild(row);
+      offset += line.length + 1;
+    });
+
+    wrap.appendChild(table);
+    wrap.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      const rowEl = (event.target as HTMLElement).closest("tr");
+      const rowOffset = Number(rowEl?.dataset.offset ?? 0);
+      const anchor = Math.min(this.from + rowOffset, view.state.doc.length);
+      view.dispatch({ selection: { anchor } });
+      view.focus();
+    });
+    return wrap;
+  }
+}
+
+function tableDecorations(state: EditorState): DecorationSet {
+  const ranges: Range<Decoration>[] = [];
+  syntaxTree(state).iterate({
+    enter(node) {
+      if (node.name !== "Table") return;
+      const touched = state.selection.ranges.some((range) => range.from <= node.to && range.to >= node.from);
+      if (touched) return;
+      const source = state.doc.sliceString(node.from, node.to);
+      ranges.push(Decoration.replace({ block: true, widget: new MarkdownTableWidget(source, node.from) }).range(node.from, node.to));
+    },
+  });
+  return Decoration.set(ranges, true);
+}
+
+// Block replacements must come from a StateField (view plugins may not supply
+// block decorations). Recomputed on doc/selection changes AND when the async
+// markdown parse advances (tree identity changes), so a table that finishes
+// parsing after mount still renders without user input.
+const liveTables = StateField.define<DecorationSet>({
+  create: tableDecorations,
+  update(value, tr) {
+    if (tr.docChanged || tr.selection || syntaxTree(tr.state) !== syntaxTree(tr.startState)) return tableDecorations(tr.state);
+    return value;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
 
 class HorizontalRuleWidget extends WidgetType {
   toDOM() {
@@ -210,6 +329,18 @@ const editorTheme = EditorView.theme({
     width: "100%",
   },
   ".cm-list-marker": { color: "var(--ui-text-secondary)", display: "inline-block", minWidth: "0.85rem" },
+  ".cm-md-table": { cursor: "pointer", overflowX: "auto", padding: "0.35rem 0" },
+  ".cm-md-table table": { borderCollapse: "collapse", fontSize: "0.925em", width: "100%" },
+  ".cm-md-table th, .cm-md-table td": {
+    border: "1px solid var(--ui-stroke-secondary)",
+    padding: "0.4rem 0.65rem",
+    verticalAlign: "top",
+  },
+  ".cm-md-table th": {
+    backgroundColor: "color-mix(in srgb, var(--ui-base) 5%, transparent)",
+    fontWeight: "650",
+  },
+  ".cm-md-table tr:hover td": { backgroundColor: "color-mix(in srgb, var(--ui-base) 3%, transparent)" },
 });
 
 type InlineFormat = "bold" | "italic" | "underline" | "link" | "code" | "highlight";
@@ -348,13 +479,15 @@ export function LibraryLiveEditor({ value, onChange, autoFocus = false, showTool
       parent: hostRef.current,
       extensions: [
         basicSetup,
-        markdown(),
+        // GFM base so pipe tables parse as Table nodes (liveTables renders them).
+        markdown({ base: markdownLanguage }),
         EditorView.lineWrapping,
         keymap.of([
           { key: "Tab", run: indentMore },
           { key: "Shift-Tab", run: indentLess },
         ]),
         livePreview,
+        liveTables,
         editorTheme,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) onChangeRef.current(update.state.doc.toString());
