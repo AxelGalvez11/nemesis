@@ -21,10 +21,12 @@ import * as SecureStore from "expo-secure-store";
 import { fetch as expoFetch } from "expo/fetch";
 import { supabase } from "./supabase";
 import {
+  budgetResetKind,
   buildWireMessages,
   chatErrorKind,
   chatErrorMessage,
   formatWebSearchContext,
+  type BudgetResetKind,
   type ChatErrorKind,
   type ChatMsg,
   type ChatSource,
@@ -149,6 +151,9 @@ export interface ChatReply {
   text: string | null;
   errorText: string | null;
   errorKind: ChatErrorKind | null;
+  /** Set only on budget errors — which credit window ran dry (drives the
+   *  upgrade sheet's reset line). */
+  budgetReset: BudgetResetKind | null;
   sources: ChatSource[];
 }
 
@@ -165,7 +170,7 @@ async function postChatCompletion(
   onDelta?: CompletionDeltaHandler,
 ): Promise<ChatReply> {
   let key = await deviceKey(uid);
-  if (!key) return { errorKind: "auth", errorText: "Sign in to chat.", sources: [], text: null };
+  if (!key) return { budgetReset: null, errorKind: "auth", errorText: "Sign in to chat.", sources: [], text: null };
 
   const payload = JSON.stringify({
     messages: wireMessages,
@@ -193,14 +198,21 @@ async function postChatCompletion(
     }
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as unknown;
-      return { errorKind: chatErrorKind(res.status, body), errorText: chatErrorMessage(res.status, body), sources: [], text: null };
+      return {
+        budgetReset: budgetResetKind(body),
+        errorKind: chatErrorKind(res.status, body),
+        errorText: chatErrorMessage(res.status, body),
+        sources: [],
+        text: null,
+      };
     }
     const text = await readCompletionStream(res.body, onDelta);
     return text
-      ? { errorKind: null, errorText: null, sources: [], text }
-      : { errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
+      ? { budgetReset: null, errorKind: null, errorText: null, sources: [], text }
+      : { budgetReset: null, errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
   } catch {
     return {
+      budgetReset: null,
       errorKind: "unreachable",
       errorText: "You're offline — chat needs a connection (your Library still works).",
       sources: [],

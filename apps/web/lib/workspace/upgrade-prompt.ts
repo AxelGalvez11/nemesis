@@ -4,12 +4,17 @@
 // runner executes this file without @/ alias resolution, and the transport
 // layer can depend on it without pulling UI code.
 
+/** Which credit window ran dry — the valve's daily ledger rolls at UTC
+ *  midnight; monthly caps reset on the 1st. Drives the dialog's reset line. */
+export type UpgradeResetKind = "daily" | "monthly";
+
 export interface UpgradePromptState {
   open: boolean;
   message: string | null;
+  reset: UpgradeResetKind | null;
 }
 
-let state: UpgradePromptState = { open: false, message: null };
+let state: UpgradePromptState = { open: false, message: null, reset: null };
 const listeners = new Set<() => void>();
 
 function emit(next: UpgradePromptState): void {
@@ -29,19 +34,28 @@ export function upgradePromptSnapshot(): UpgradePromptState {
 }
 
 // Stable reference for React's server snapshot (useSyncExternalStore).
-const CLOSED: UpgradePromptState = { open: false, message: null };
+const CLOSED: UpgradePromptState = { open: false, message: null, reset: null };
 export function upgradePromptServerSnapshot(): UpgradePromptState {
   return CLOSED;
 }
 
 /** Open the upgrade popup. `message` is the server's student-readable line
- *  when available (e.g. which limit was hit); re-opening replaces it. */
-export function showUpgradePrompt(message?: string | null): void {
+ *  when available (e.g. which limit was hit); re-opening replaces it.
+ *  `reset` says which credit window ran dry so the dialog can show a real
+ *  reset time instead of "tomorrow". */
+export function showUpgradePrompt(message?: string | null, reset?: UpgradeResetKind | null): void {
   const trimmed = typeof message === "string" ? message.trim() : "";
-  emit({ open: true, message: trimmed ? trimmed : null });
+  emit({ open: true, message: trimmed ? trimmed : null, reset: reset ?? null });
 }
 
 export function dismissUpgradePrompt(): void {
   if (!state.open) return;
-  emit({ open: false, message: state.message });
+  emit({ open: false, message: state.message, reset: state.reset });
+}
+
+/** Next UTC midnight after `now` — when the daily credit ledger rolls over. */
+export function nextDailyReset(now: Date): Date {
+  const reset = new Date(now.getTime());
+  reset.setUTCHours(24, 0, 0, 0);
+  return reset;
 }

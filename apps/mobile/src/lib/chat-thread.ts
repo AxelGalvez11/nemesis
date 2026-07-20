@@ -106,6 +106,25 @@ export function chatErrorKind(status: number, body: unknown): ChatErrorKind {
   return "generic";
 }
 
+/** Which credit window ran dry — drives the upgrade sheet's reset line.
+ *  The valve's ledger keys are UTC calendar days (daily) and the 1st of the
+ *  month (monthly), so "daily" resets at the next UTC midnight. */
+export type BudgetResetKind = "daily" | "monthly";
+
+export function budgetResetKind(body: unknown): BudgetResetKind | null {
+  const code = errorCode(body);
+  if (code === "monthly_token_budget_exhausted") return "monthly";
+  if (code === "daily_token_budget_exhausted") return "daily";
+  return null;
+}
+
+/** Next UTC midnight after `now` — when the daily credit ledger rolls over. */
+export function nextDailyReset(now: Date): Date {
+  const reset = new Date(now.getTime());
+  reset.setUTCHours(24, 0, 0, 0);
+  return reset;
+}
+
 /** Map the valve's error shapes to one student-readable line. */
 export function chatErrorMessage(status: number, body: unknown): string {
   const message =
