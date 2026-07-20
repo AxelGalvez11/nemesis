@@ -53,7 +53,7 @@ export function NotebookTranscript({ messages, working, emptyHint }: NotebookTra
           );
         })
       )}
-      {working && <div className="mx-auto w-full max-w-3xl text-[0.85rem] text-(--ui-text-tertiary)">Thinking…</div>}
+      {working && messages.at(-1)?.role !== "assistant" && <div className="mx-auto w-full max-w-3xl text-[0.85rem] text-(--ui-text-tertiary)">Thinking…</div>}
     </div>
   );
 }

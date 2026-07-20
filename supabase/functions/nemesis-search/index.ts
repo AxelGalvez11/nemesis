@@ -49,8 +49,6 @@ const FALLBACK_MONTHLY_UNITS = 300
 const CAP_WARN_FRACTION = 0.85
 const ACTIVE = new Set(['active', 'trialing', 'past_due'])
 const FALLBACK_DAILY_UNITS = 10 // free-tier default when no entitlement row
-const TRIAL_MS = 7 * 24 * 60 * 60 * 1000
-
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
 
 function json(body: unknown, status = 200): Response {
@@ -105,15 +103,8 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
 
   let plan = sub?.plan && sub.status && ACTIVE.has(sub.status) ? sub.plan : 'free'
 
-  // No paid plan: accounts younger than 7 days ride the full-power trial tier.
-  if (plan === 'free') {
-    const { data: userData } = await admin.auth.admin.getUserById(keyRow.user_id)
-    const createdAt = userData?.user?.created_at ? Date.parse(userData.user.created_at) : 0
-
-    if (createdAt && Date.now() - createdAt < TRIAL_MS) {
-      plan = 'trial'
-    }
-  }
+  // Free accounts remain on the bounded freemium tier. A paid subscription may
+  // still be `trialing`, but account age alone never grants the full Pro budget.
 
   const { data: ents } = await admin
     .from('plan_entitlements')

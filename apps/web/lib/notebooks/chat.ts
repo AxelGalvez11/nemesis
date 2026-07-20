@@ -8,7 +8,9 @@
 
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
-import { postChatCompletion, trimHistory, type WireMsg } from "@/lib/workspace/chat-api";
+import { buildFreshSearchQuery } from "@/lib/workspace/chat-web-search";
+import { postChatCompletion, searchWebContext, trimHistory, type WireMsg } from "@/lib/workspace/chat-api";
+import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 
 import { appendMessage, listMessages, touchChat } from "./chats-api";
@@ -19,11 +21,12 @@ export type { SessionMessage } from "@/lib/workspace/sessions-store";
  *  sources (their extracted text is injected below), so it must not deflect file questions to the
  *  Mac app. General mode: use the text freely. (Grounded "answer only from sources + cite" = Phase 2.) */
 export const NOTEBOOK_SYSTEM_PROMPT =
-  "You are Nemesis, a study assistant for health-sciences students. Answer plainly and concisely. " +
-  "Use markdown when structure helps (lists, tables). Never use emojis. The student attached sources " +
+  "You are Nemesis, a rigorous study and research partner for learners in any discipline, major, or profession. " +
+  "Never assume the user's field or level; infer it from context and adapt. Answer directly before expanding. " +
+  "Use markdown when structure helps, render math clearly, and use examples, code, evidence, or counterarguments when useful. Never use emojis. The student attached sources " +
   "to this notebook (their notes, uploaded files, and links); the sources' text is included below — " +
-  "use it to answer, and point to the relevant source when it helps. If the answer isn't in the " +
-  "sources, say so briefly, then answer from general knowledge.";
+  "use it to answer, point to the relevant source when it helps, and distinguish the source's claims from your inference. " +
+  "If the answer isn't in the sources, say so briefly, then answer from general knowledge.";
 
 /** Total characters of source text injected into the system prompt. Bounds the request (the valve
  *  caps too); once sources exceed this, later ones are dropped with a note. RAG is the Phase-2 fix
@@ -40,6 +43,7 @@ export interface BuildNotebookWireOpts {
   sources: NotebookWireSource[];
   history: SessionMessage[];
   userText: string;
+  decision?: ChatRouteDecision;
 }
 
 /** Assemble the injected source-context block: each source's name + its text, truncated to stay
@@ -69,7 +73,8 @@ export function buildSourceContext(sources: NotebookWireSource[], budget = SOURC
  *  student's instructions (if any), the source text (budgeted), then trimmed history + the new user
  *  message. PURE. */
 export function buildNotebookWireMessages(opts: BuildNotebookWireOpts): WireMsg[] {
-  const parts = [NOTEBOOK_SYSTEM_PROMPT];
+  const decision = opts.decision ?? classifyChatRequest(opts.userText);
+  const parts = [NOTEBOOK_SYSTEM_PROMPT, routeInstruction(decision.route)];
   const instructions = opts.instructions?.trim();
   if (instructions) {
     parts.push(`This notebook's instructions from the student (follow them):\n${instructions}`);
@@ -169,6 +174,15 @@ export const notebookChatStore = {
     const messages = [...prev.messages, message].slice(-MAX_MESSAGES);
     setSlice(chatId, { messages, status: prev.status === "idle" ? "loaded" : prev.status });
   },
+  upsertAssistant(chatId: string, at: string, content: string) {
+    const prev = state.byChat[chatId] ?? EMPTY_SLICE;
+    const index = prev.messages.findIndex((message) => message.role === "assistant" && message.at === at);
+    const message: SessionMessage = { role: "assistant", content, at };
+    const messages = index >= 0
+      ? prev.messages.map((existing, messageIndex) => messageIndex === index ? message : existing)
+      : [...prev.messages, message].slice(-MAX_MESSAGES);
+    setSlice(chatId, { messages, status: prev.status === "idle" ? "loaded" : prev.status });
+  },
   setWorking(chatId: string, working: boolean) {
     setSlice(chatId, { working });
   },
@@ -209,30 +223,40 @@ export async function sendNotebookTurn(opts: SendNotebookTurnOpts): Promise<void
   notebookChatStore.append(opts.chatId, { role: "user", content: displayText, at: nowIso() });
   notebookChatStore.setWorking(opts.chatId, true);
   void appendMessage({ chatId: opts.chatId, notebookId: opts.notebookId, role: "user", content: displayText }).catch(() => {});
+  const decision = classifyChatRequest(userText);
+  const assistantAt = nowIso();
+  let groundedText = userText;
   try {
+    if (decision.searchWeb) {
+      const result = await searchWebContext(opts.uid, buildFreshSearchQuery(userText), opts.signal);
+      groundedText = result.context
+        ? `${userText}\n\n${result.context}`
+        : `${userText}\n\nLive research was requested but returned no verifiable sources. Do not invent current facts or citations; state what could not be verified.`;
+    }
     const reply = await postChatCompletion(
       opts.uid,
       buildNotebookWireMessages({
         instructions: opts.instructions,
         sources: opts.sources,
         history,
-        userText,
+        userText: groundedText,
+        decision,
       }),
-      opts.signal,
+      {
+        decision,
+        signal: opts.signal,
+        onDelta: (_delta, accumulated) => notebookChatStore.upsertAssistant(opts.chatId, assistantAt, accumulated),
+      },
     );
     const text = reply.text ?? reply.errorText ?? "Something went wrong. Try again.";
-    notebookChatStore.append(opts.chatId, { role: "assistant", content: text, at: nowIso() });
+    notebookChatStore.upsertAssistant(opts.chatId, assistantAt, text);
     if (reply.text) {
       void appendMessage({ chatId: opts.chatId, notebookId: opts.notebookId, role: "assistant", content: reply.text }).catch(() => {});
     }
     void touchChat(opts.chatId).catch(() => {});
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
-    notebookChatStore.append(opts.chatId, {
-      role: "assistant",
-      content: "You're offline — chat needs a connection. Try again in a moment.",
-      at: nowIso(),
-    });
+    notebookChatStore.upsertAssistant(opts.chatId, assistantAt, "You're offline — chat needs a connection. Try again in a moment.");
   } finally {
     notebookChatStore.setWorking(opts.chatId, false);
   }

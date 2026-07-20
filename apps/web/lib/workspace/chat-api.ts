@@ -8,9 +8,10 @@ import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, type ChatWebResult } from "@/lib/workspace/chat-web-search";
+import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
 
 const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
-const CHAT_MODEL = "deepseek-chat";
 
 export interface WireMsg {
   role: "assistant" | "system" | "user";
@@ -20,8 +21,10 @@ export interface WireMsg {
 /** Nemesis speaks for itself here (same soul rules as the desktop agent):
  *  plain, concise, no emojis, never a different product's name. */
 export const CHAT_SYSTEM_PROMPT =
-  "You are Nemesis, a study assistant for health-sciences students. " +
-  "Answer plainly and concisely. Use markdown when structure helps (lists, tables). " +
+  "You are Nemesis, a rigorous study and research partner for learners in any discipline, major, or profession. " +
+  "Never assume the user's field or level; infer it from context and adapt. Answer directly before expanding. " +
+  "Use markdown when structure helps, render math clearly, and use examples, code, primary evidence, or counterarguments when they improve understanding. " +
+  "Separate established facts from inference and uncertainty. Correct misconceptions without being condescending. " +
   "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
   "Never use emojis. If a question needs the student's own files or their school portals, " +
   "say that the Mac app's missions handle those and answer what you can from knowledge.";
@@ -51,14 +54,31 @@ export function trimHistory(
   return out;
 }
 
+/** Preserve the conversation's originating goal when a long transcript has to
+ * drop older turns. This is deterministic and bounded, so continuity does not
+ * require another paid model call. */
+export function buildContinuityAnchor(history: SessionMessage[], kept: SessionMessage[]): string {
+  if (history.length === 0 || kept.length === history.length) return "";
+  const firstUser = history.find((message) => message.role === "user" && message.content.trim());
+  if (!firstUser || kept.includes(firstUser)) return "";
+  return `The conversation originally began with this user goal; preserve it unless the user has changed direction:\n${firstUser.content.slice(0, 1_200)}`;
+}
+
 /** The chat/completions message array for one turn. */
-export function buildWireMessages(history: SessionMessage[], userText: string): WireMsg[] {
+export function buildWireMessages(
+  history: SessionMessage[],
+  userText: string,
+  decision = classifyChatRequest(userText),
+): WireMsg[] {
   const now = new Date();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const liveClock = `The current date is ${now.toISOString().slice(0, 10)} and the user's time zone is ${timeZone}. You do have this clock context; never claim you cannot know today's date.`;
+  const kept = trimHistory(history);
+  const continuityAnchor = buildContinuityAnchor(history, kept);
   return [
-    { content: `${CHAT_SYSTEM_PROMPT} ${liveClock}`, role: "system" },
-    ...trimHistory(history).map((msg) => ({ content: msg.content, role: msg.role })),
+    { content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction(decision.route)}\n\n${liveClock}`, role: "system" },
+    ...(continuityAnchor ? [{ content: continuityAnchor, role: "system" as const }] : []),
+    ...kept.map((msg) => ({ content: msg.content, role: msg.role })),
     { content: userText, role: "user" },
   ];
 }
@@ -167,26 +187,38 @@ export interface ChatReply {
   sources: ChatWebResult[];
 }
 
-/** One non-streaming completion turn from an arbitrary wire-message array — the shared transport for
+export interface ChatCompletionOptions {
+  signal?: AbortSignal;
+  decision?: ChatRouteDecision;
+  onDelta?: CompletionDeltaHandler;
+}
+
+/** One completion turn from an arbitrary wire-message array — the shared transport for
  *  both the main Sessions chat and per-notebook chats (same device-key mint, same valve, same error
- *  copy). Resolves (never rejects) for network/API failures — those come back as a student-readable
- *  line. Only an aborted `signal` rejects, so the caller can tell "the user stopped it" apart from
- *  "it failed". */
+ *  copy). Streams when `onDelta` is supplied. Resolves (never rejects) for network/API failures —
+ *  those come back as a student-readable line. Only an aborted `signal` rejects, so the caller can
+ *  tell "the user stopped it" apart from "it failed". */
 export async function postChatCompletion(
   uid: string,
   wireMessages: WireMsg[],
-  signal?: AbortSignal,
+  options: ChatCompletionOptions = {},
 ): Promise<ChatReply> {
   let key = await deviceKey(uid);
   if (!key) return { errorKind: "auth", errorText: "Sign in to chat.", sources: [], text: null };
 
-  const payload = JSON.stringify({ messages: wireMessages, model: CHAT_MODEL });
+  const decision = options.decision ?? { route: "conversation", model: "deepseek-chat", searchWeb: false };
+  const payload = JSON.stringify({
+    messages: wireMessages,
+    model: decision.model,
+    ...(decision.reasoningEffort ? { reasoning_effort: decision.reasoningEffort } : {}),
+    ...(options.onDelta ? { stream: true } : {}),
+  });
   const call = (bearer: string) =>
     fetch(`${LLM_BASE}/v1/chat/completions`, {
       body: payload,
       headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json" },
       method: "POST",
-      signal,
+      signal: options.signal,
     });
 
   try {
@@ -200,9 +232,13 @@ export async function postChatCompletion(
         res = await call(key);
       }
     }
-    const body = (await res.json().catch(() => null)) as unknown;
-    if (!res.ok) return { errorKind: chatErrorKind(res.status, body), errorText: chatErrorMessage(res.status, body), sources: [], text: null };
-    const text = completionText(body);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as unknown;
+      return { errorKind: chatErrorKind(res.status, body), errorText: chatErrorMessage(res.status, body), sources: [], text: null };
+    }
+    const text = options.onDelta
+      ? await readCompletionStream(res.body, options.onDelta)
+      : completionText((await res.json().catch(() => null)) as unknown);
     return text
       ? { errorKind: null, errorText: null, sources: [], text }
       : { errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
@@ -217,27 +253,37 @@ export async function postChatCompletion(
   }
 }
 
-/** One non-streaming completion turn for the signed-in user `uid` on the main Sessions chat. */
+/** One routed completion turn for the signed-in user `uid` on the main Sessions chat. */
 export async function sendChatTurn(
   uid: string,
   history: SessionMessage[],
   userText: string,
   signal?: AbortSignal,
+  onDelta?: CompletionDeltaHandler,
 ): Promise<ChatReply> {
+  const classified = classifyChatRequest(userText);
+  const needsWeb = classified.searchWeb || shouldSearchWeb(userText);
+  const decision: ChatRouteDecision = needsWeb && classified.route === "conversation"
+    ? { route: "current", model: "deepseek-reasoner", searchWeb: true }
+    : classified;
   let groundedText = userText;
   let sources: ChatWebResult[] = [];
-  if (shouldSearchWeb(userText)) {
+  if (needsWeb) {
     const result = await searchWebContext(uid, buildFreshSearchQuery(userText), signal);
     sources = result.sources;
     groundedText = result.context
       ? `${userText}\n\n${result.context}`
       : `${userText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
-  const reply = await postChatCompletion(uid, buildWireMessages(history, groundedText), signal);
+  const reply = await postChatCompletion(uid, buildWireMessages(history, groundedText, decision), {
+    decision,
+    onDelta,
+    signal,
+  });
   return { ...reply, sources };
 }
 
-async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<{ context: string; sources: ChatWebResult[] }> {
+export async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<{ context: string; sources: ChatWebResult[] }> {
   const key = await deviceKey(uid);
   if (!key) return { context: "", sources: [] };
   try {

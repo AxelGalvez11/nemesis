@@ -92,11 +92,14 @@ export function SessionChat() {
 
     const controller = new AbortController();
     abortControllers.current.set(targetId, controller);
+    const assistantAt = new Date().toISOString();
 
     try {
-      const reply = await sendChatTurn(targetUid, history, text, controller.signal);
+      const reply = await sendChatTurn(targetUid, history, text, controller.signal, (_delta, accumulated) => {
+        sessionsStore.upsertAssistantMessage(targetId, assistantAt, accumulated, undefined, false);
+      });
       if (reply.text) {
-        sessionsStore.appendMessage(targetId, { at: new Date().toISOString(), content: reply.text, role: "assistant", ...(reply.sources.length ? { sources: reply.sources } : {}) });
+        sessionsStore.upsertAssistantMessage(targetId, assistantAt, reply.text, reply.sources);
       } else if (reply.errorText && reply.errorKind) {
         setError({ kind: reply.errorKind, sessionId: targetId, text: reply.errorText });
       }

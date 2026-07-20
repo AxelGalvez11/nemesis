@@ -4,6 +4,10 @@ import type { SessionMessage } from "@/lib/workspace/sessions-store";
 
 import { buildNotebookWireMessages, buildSourceContext } from "./chat";
 
+// The workspace serves every field; medicine is supported but is not the default identity.
+assert.match(buildNotebookWireMessages({ instructions: null, sources: [], history: [], userText: "Explain eigenvectors" })[0]?.content ?? "", /any discipline/);
+assert.doesNotMatch(buildNotebookWireMessages({ instructions: null, sources: [], history: [], userText: "Explain eigenvectors" })[0]?.content ?? "", /health-sciences students/i);
+
 // Injects instructions + source TEXT (not just the title) into the system message; user text is last.
 {
   const msgs = buildNotebookWireMessages({
