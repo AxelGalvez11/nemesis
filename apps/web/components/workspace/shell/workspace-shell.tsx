@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
+import { UpgradePromptDialog } from "@/components/workspace/upgrade-prompt-dialog";
 import { cn } from "@/lib/utils";
 
 import { ChatSidebar } from "./chat-sidebar";
@@ -105,6 +106,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <div className="relative min-h-0 min-w-0 overflow-hidden">{children}</div>
         </div>
       </main>
+      <UpgradePromptDialog />
       </SettingsModalProvider>
     </div>
   );
