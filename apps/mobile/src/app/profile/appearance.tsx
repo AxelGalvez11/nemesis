@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { accentSwatchHex, ACCENT_SWATCHES, type ThemeColors, type ThemeMode } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space } from "@/theme/tokens";
+import { radius, space, type } from "@/theme/tokens";
 
 // Appearance — its own page (owner call), pushed from the Settings sheet. Holds
 // the theme mode (System / Light / Dark) and the ten accent swatches; both apply
@@ -77,15 +77,15 @@ const createStyles = (c: ThemeColors) =>
     root: { flex: 1, backgroundColor: c.bg },
     header: { paddingHorizontal: space(3), paddingBottom: space(1) },
     back: { alignSelf: "flex-start", paddingVertical: space(1) },
-    backText: { fontSize: 16, color: c.accent, fontWeight: "500" },
+    backText: { fontSize: type.small.fontSize + 1, color: c.accent, fontWeight: "500" },
     body: { paddingHorizontal: space(5), flexGrow: 1 },
     title: { fontSize: 28, fontWeight: "700", color: c.text, marginBottom: space(4), marginTop: space(1) },
 
-    label: { fontSize: 13, fontWeight: "600", color: c.text3, marginTop: space(4), marginBottom: space(2) },
+    label: { fontSize: type.micro.fontSize, fontWeight: "600", color: c.text3, marginTop: space(4), marginBottom: space(2) },
     segment: { flexDirection: "row", backgroundColor: c.surface2, borderRadius: radius.sm, padding: 3, gap: 3 },
     segmentItem: { flex: 1, paddingVertical: space(2.5), alignItems: "center", borderRadius: radius.sm - 2 },
     segmentItemActive: { backgroundColor: c.accentFaint },
-    segmentText: { fontSize: 15, color: c.text2, fontWeight: "600" },
+    segmentText: { fontSize: type.small.fontSize, color: c.text2, fontWeight: "600" },
     segmentTextActive: { color: c.accent },
 
     swatchRow: { flexDirection: "row", flexWrap: "wrap" },

@@ -6,7 +6,7 @@ import { AGE_TOS_ACK } from "@/lib/legal";
 import { placeholderColor, useCommon } from "@/theme/common";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { space } from "@/theme/tokens";
+import { space, type } from "@/theme/tokens";
 import { LogoMark } from "@/components/TopBar";
 
 type Mode = "signin" | "signup";
@@ -143,7 +143,7 @@ export default function SignIn() {
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-    notice: { fontSize: 13, lineHeight: 18, color: c.good, textAlign: "center", maxWidth: 320 },
+    notice: { fontSize: type.micro.fontSize, lineHeight: 18, color: c.good, textAlign: "center", maxWidth: 320 },
     ackRow: { flexDirection: "row", alignItems: "center", gap: space(2.5), marginTop: space(2), maxWidth: 320 },
     box: {
       width: 22,
@@ -155,13 +155,13 @@ const createStyles = (c: ThemeColors) =>
       justifyContent: "center",
     },
     boxOn: { backgroundColor: c.accent, borderColor: c.accent },
-    tick: { color: c.onAccent, fontSize: 14, fontWeight: "700", lineHeight: 16 },
-    ackText: { flex: 1, fontSize: 13, lineHeight: 18, color: c.text2 },
+    tick: { color: c.onAccent, fontSize: type.small.fontSize, fontWeight: "700", lineHeight: 16 },
+    ackText: { flex: 1, fontSize: type.micro.fontSize, lineHeight: 18, color: c.text2 },
     links: { flexDirection: "row", alignItems: "center", gap: space(2), marginTop: space(1.5) },
     dot: { color: c.text3 },
     wide: { alignSelf: "stretch", maxWidth: 360, alignItems: "center", marginTop: space(2) },
     disabled: { opacity: 0.45 },
     switchRow: { marginTop: space(3) },
-    switchText: { fontSize: 13.5, color: c.text3, textAlign: "center" },
+    switchText: { fontSize: type.micro.fontSize, color: c.text3, textAlign: "center" },
     switchLink: { color: c.accent, fontWeight: "600" },
   });

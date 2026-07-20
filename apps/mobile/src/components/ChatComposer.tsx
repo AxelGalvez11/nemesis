@@ -59,13 +59,13 @@ export function ChatComposer({
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     box: { backgroundColor: c.surface, borderWidth: 1, borderColor: c.line2, borderRadius: radius.xl, padding: space(3.25), paddingBottom: space(2.5), ...shadow.raise },
-    input: { color: c.text, fontSize: 15.5, lineHeight: 22, minHeight: 24, maxHeight: 130, paddingTop: 2, paddingHorizontal: space(1) },
+    input: { color: c.text, fontSize: type.small.fontSize, lineHeight: 22, minHeight: 24, maxHeight: 130, paddingTop: 2, paddingHorizontal: space(1) },
     tools: { flexDirection: "row", alignItems: "center", gap: space(2.25), marginTop: space(2.5) },
     plusBtn: { width: 32, height: 32, borderRadius: 9, borderWidth: 1, borderColor: c.line, backgroundColor: c.bg2, alignItems: "center", justifyContent: "center" },
     plusH: { position: "absolute", width: 13, height: 1.8, borderRadius: 2, backgroundColor: c.text2 },
     plusV: { position: "absolute", width: 1.8, height: 13, borderRadius: 2, backgroundColor: c.text2 },
     pill: { flexDirection: "row", alignItems: "center", gap: space(1.5), borderWidth: 1, borderColor: c.line2, backgroundColor: c.bg2, borderRadius: radius.pill, paddingHorizontal: space(3), paddingVertical: space(1.5) },
-    pillIcon: { color: c.accent, fontSize: 12 },
+    pillIcon: { color: c.accent, fontSize: type.micro.fontSize },
     pillText: { color: c.text, ...type.small, fontWeight: "600" },
     send: { width: 38, height: 38, borderRadius: 19, backgroundColor: c.accent, alignItems: "center", justifyContent: "center" },
     sendOff: { opacity: 0.4 },

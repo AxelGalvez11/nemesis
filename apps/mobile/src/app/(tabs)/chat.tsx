@@ -457,7 +457,7 @@ function ChatActionsPopup({
           { top: topInset + space(2) + 44 + space(1.5), opacity: progress, transform: [{ translateY }] },
         ]}
       >
-        <GlassSurface style={styles.actionsMenu} fallbackColor={c.glassPanel}>
+        <GlassSurface style={styles.actionsMenu} fallbackColor={c.glassPanel} opaque>
           <Pressable
             testID="chat-action-pin"
             onPress={() => pick(onTogglePin)}

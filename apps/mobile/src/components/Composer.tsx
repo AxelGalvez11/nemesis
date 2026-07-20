@@ -7,7 +7,7 @@ import { ArrowUpIcon, MicIcon, PlusIcon } from "./icons";
 import { useSpeechInput } from "@/hooks/useSpeechInput";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space } from "@/theme/tokens";
+import { radius, space, type } from "@/theme/tokens";
 
 // The one composer — a single glass pill holding, inline (ChatGPT-style): a "+" on
 // the left, the text field, and on the right EITHER a mic (when the field is empty
@@ -153,7 +153,7 @@ const createStyles = (c: ThemeColors) =>
       paddingVertical: 0,
       lineHeight: 21,
       color: c.text,
-      fontSize: 16,
+      fontSize: type.small.fontSize + 1,
     },
     sendOn: { backgroundColor: c.accent },
     micOff: { backgroundColor: c.surface2 },

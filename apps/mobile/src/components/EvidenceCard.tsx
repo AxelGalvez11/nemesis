@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import type { DrugOverview, EvidenceTier } from "@nemesis/shared";
 import { Badge, Card, SectionHeader } from "./ui";
-import { c, space } from "@/theme/tokens";
+import { c, space, type } from "@/theme/tokens";
 
 // AC9: "drug pages show score + rationale + counts + limitations". The four parts
 // each get a testID so the gate asserts all of them. The tier is the deterministic
@@ -72,10 +72,10 @@ export function EvidenceCard({ score }: { score: EvidenceScore }) {
 
 const styles = StyleSheet.create({
   wrap: { gap: space(2) },
-  rationale: { fontSize: 15, lineHeight: 21, color: c.text },
+  rationale: { fontSize: type.small.fontSize, lineHeight: 21, color: c.text },
   counts: { flexDirection: "row", flexWrap: "wrap", gap: space(3), marginTop: space(1) },
-  count: { fontSize: 13, color: c.text2 },
+  count: { fontSize: type.micro.fontSize, color: c.text2 },
   limitations: { marginTop: space(1.5), gap: 3 },
-  limTitle: { fontSize: 13, fontWeight: "700", color: c.warn },
-  limItem: { fontSize: 13, color: c.text3 },
+  limTitle: { fontSize: type.micro.fontSize, fontWeight: "700", color: c.warn },
+  limItem: { fontSize: type.micro.fontSize, color: c.text3 },
 });

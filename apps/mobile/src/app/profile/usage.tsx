@@ -6,7 +6,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { fetchUsageSummary, usagePercent, type UsageErrorKind, type UsageSummary } from "@/api/usage";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space } from "@/theme/tokens";
+import { radius, space, type } from "@/theme/tokens";
 
 // Usage — phone half of the cloud-first settings port (build spec §11). Real
 // data: GET {LLM_BASE}/usage with the device key (same metered gateway Chat
@@ -160,30 +160,30 @@ const createStyles = (c: ThemeColors) =>
     root: { flex: 1, backgroundColor: c.bg },
     header: { paddingHorizontal: space(3), paddingBottom: space(1) },
     back: { alignSelf: "flex-start", paddingVertical: space(1) },
-    backText: { fontSize: 16, color: c.accent, fontWeight: "500" },
+    backText: { fontSize: type.small.fontSize + 1, color: c.accent, fontWeight: "500" },
     body: { paddingHorizontal: space(5), flexGrow: 1 },
     title: { fontSize: 28, fontWeight: "700", color: c.text, marginBottom: space(1), marginTop: space(1) },
-    subtitle: { fontSize: 13.5, lineHeight: 19, color: c.text3, marginBottom: space(4) },
-    guest: { fontSize: 15, color: c.text2, marginTop: space(4) },
+    subtitle: { fontSize: type.micro.fontSize, lineHeight: 19, color: c.text3, marginBottom: space(4) },
+    guest: { fontSize: type.small.fontSize, color: c.text2, marginTop: space(4) },
 
     centerBox: { alignItems: "center", gap: space(3), paddingVertical: space(8) },
-    errorText: { fontSize: 15, color: c.text2, textAlign: "center", maxWidth: 300 },
+    errorText: { fontSize: type.small.fontSize, color: c.text2, textAlign: "center", maxWidth: 300 },
     retryBtn: { backgroundColor: c.surface2, borderRadius: radius.sm, paddingHorizontal: space(5), paddingVertical: space(2.5) },
-    retryText: { fontSize: 14, fontWeight: "600", color: c.text },
+    retryText: { fontSize: type.small.fontSize, fontWeight: "600", color: c.text },
 
     planPill: { alignSelf: "flex-start", backgroundColor: c.accentFaint, borderColor: c.accentLine, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: space(3.5), paddingVertical: space(1.5), marginBottom: space(4) },
-    planPillText: { fontSize: 13, fontWeight: "700", color: c.accent },
+    planPillText: { fontSize: type.micro.fontSize, fontWeight: "700", color: c.accent },
 
     usageCard: { backgroundColor: c.surface, borderRadius: radius.md, borderWidth: 1, borderColor: c.line, padding: space(4), marginBottom: space(3), gap: space(2) },
     usageTop: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" },
-    usageLabel: { fontSize: 16, fontWeight: "600", color: c.text },
-    usagePct: { fontSize: 15, fontWeight: "700", color: c.text, fontVariant: ["tabular-nums"] },
+    usageLabel: { fontSize: type.small.fontSize + 1, fontWeight: "600", color: c.text },
+    usagePct: { fontSize: type.small.fontSize, fontWeight: "700", color: c.text, fontVariant: ["tabular-nums"] },
     track: { height: 8, borderRadius: radius.pill, backgroundColor: c.surface2, overflow: "hidden" },
     fill: { height: "100%", borderRadius: radius.pill, backgroundColor: c.accent },
-    usageCaption: { fontSize: 12.5, color: c.text3 },
+    usageCaption: { fontSize: type.micro.fontSize, color: c.text3 },
 
     refreshBtn: { alignSelf: "flex-start", marginTop: space(1), paddingVertical: space(2) },
-    refreshText: { fontSize: 14, fontWeight: "600", color: c.accent },
+    refreshText: { fontSize: type.small.fontSize, fontWeight: "600", color: c.accent },
   });
 
 type Styles = ReturnType<typeof createStyles>;

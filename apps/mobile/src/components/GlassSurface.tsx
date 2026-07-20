@@ -39,16 +39,27 @@ export interface GlassSurfaceProps {
   /** Solid-ish fill drawn under the blur fallback so content stays readable pre-iOS 26.
    *  Defaults to the theme's translucent `glass` token. */
   fallbackColor?: string;
+  /** Near-opaque menu backing — kills page bleed-through on both glass paths. */
+  opaque?: boolean;
   testID?: string;
 }
 
-export function GlassSurface({ children, style, variant = "regular", tint, fallbackColor, testID }: GlassSurfaceProps) {
+export function GlassSurface({ children, style, variant = "regular", tint, fallbackColor, opaque = false, testID }: GlassSurfaceProps) {
   const { colors: c, resolvedMode } = useTheme();
+
+  // Near-opaque backing for menu panels: painted OVER the glass material but UNDER the
+  // content, so the glass edge/highlight survives while the page behind stops bleeding
+  // through (owner 2026-07-20: "mini menus still allow the background to bleed through").
+  // Needed on BOTH paths — the real iOS-26 material is translucent by design, so a
+  // fallback fill alone can't fix it.
+  const backing = opaque ? (
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: c.glassMenu }]} pointerEvents="none" />
+  ) : null;
 
   if (LIQUID_GLASS) {
     return (
       <GlassView
-        style={style}
+        style={[opaque ? styles.clip : null, style]}
         glassEffectStyle={variant}
         tintColor={tint}
         // Match the glass to the app's OWN light/dark toggle, not the system setting.
@@ -56,6 +67,7 @@ export function GlassSurface({ children, style, variant = "regular", tint, fallb
         isInteractive={false}
         testID={testID}
       >
+        {backing}
         {children}
       </GlassView>
     );
@@ -72,6 +84,7 @@ export function GlassSurface({ children, style, variant = "regular", tint, fallb
     <BlurView tint={blurTint} intensity={intensity} style={[styles.clip, style]} testID={testID}>
       <View style={[StyleSheet.absoluteFill, { backgroundColor: fill }]} pointerEvents="none" />
       {tint ? <View style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} pointerEvents="none" /> : null}
+      {backing}
       {children}
     </BlurView>
   );

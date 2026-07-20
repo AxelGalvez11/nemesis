@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createWatch, fetchWatches } from "@/api/monitor";
 import { useAuth } from "@/auth/AuthProvider";
-import { c, space } from "@/theme/tokens";
+import { c, space, type } from "@/theme/tokens";
 
 // "Watch this" affordance on the drug page. Creates a topic watch in the LIVE evidence_watches system
 // (the same one web uses + the Monitoring tab reads) — NOT the retired watchlist_items spine the old
@@ -81,8 +81,8 @@ const styles = StyleSheet.create({
   wrap: { alignSelf: "flex-start", gap: space(1.5) },
   btn: { paddingHorizontal: space(4.5), paddingVertical: space(2.5), borderRadius: 8, alignSelf: "flex-start" },
   follow: { backgroundColor: c.accent },
-  followText: { color: c.onAccent, fontWeight: "700", fontSize: 15 },
+  followText: { color: c.onAccent, fontWeight: "700", fontSize: type.small.fontSize },
   following: { backgroundColor: c.accentFaint, borderWidth: 1, borderColor: c.accentLine },
-  followingText: { color: c.accentDim, fontWeight: "700", fontSize: 15 },
-  note: { fontSize: 12, color: c.warn },
+  followingText: { color: c.accentDim, fontWeight: "700", fontSize: type.small.fontSize },
+  note: { fontSize: type.micro.fontSize, color: c.warn },
 });

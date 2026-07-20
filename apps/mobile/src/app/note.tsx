@@ -336,7 +336,7 @@ export default function NoteScreen() {
             },
           ]}
         >
-          <GlassSurface style={styles.menu} fallbackColor={c.glassPanel}>
+          <GlassSurface style={styles.menu} fallbackColor={c.glassPanel} opaque>
             {MENU_ITEMS.map((item, i) => (
               <Pressable
                 key={item.key}
@@ -416,7 +416,7 @@ const createStyles = (c: ThemeColors) =>
       borderWidth: 1,
       borderColor: c.line,
     },
-    findInput: { flex: 1, color: c.text, fontSize: 15, padding: 0 },
+    findInput: { flex: 1, color: c.text, fontSize: type.small.fontSize, padding: 0 },
     findCount: { ...type.small, color: c.text3, fontVariant: ["tabular-nums"] },
     findBody: { ...type.body, color: c.text2 },
     findHit: { backgroundColor: c.accentFaint, color: c.accent, fontWeight: "600" },

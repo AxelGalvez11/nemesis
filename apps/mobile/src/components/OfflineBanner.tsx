@@ -4,7 +4,7 @@ import { GlassSurface } from "./GlassSurface";
 import { useOnline } from "@/lib/useOnline";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { space } from "@/theme/tokens";
+import { space, type } from "@/theme/tokens";
 
 // The doc-06 "offline" state, surfaced globally so it satisfies the §12 matrix on every
 // key screen at once (Ask/Drug/Source/Search/Watchlist all show ●) rather than five
@@ -43,5 +43,5 @@ const createStyles = (c: ThemeColors) =>
       borderBottomWidth: 1,
       borderBottomColor: c.line,
     },
-    text: { color: c.text, fontSize: 13, fontWeight: "600", textAlign: "center" },
+    text: { color: c.text, fontSize: type.micro.fontSize, fontWeight: "600", textAlign: "center" },
   });

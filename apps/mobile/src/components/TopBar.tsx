@@ -5,7 +5,7 @@ import { useShell } from "./AppDrawer";
 import { GlassSurface } from "./GlassSurface";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { space } from "@/theme/tokens";
+import { space, type } from "@/theme/tokens";
 
 // The top chrome — no bar, no border (owner call): ONE floating liquid-glass menu
 // button top-left, and a centered label that appears once the student has asked
@@ -103,7 +103,7 @@ const createStyles = (c: ThemeColors) =>
     glassBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
     bun: { width: 18, height: 2, borderRadius: 2.5, backgroundColor: c.text2, marginVertical: 2 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(1) },
-    title: { color: c.text, fontSize: 17, fontWeight: "600", letterSpacing: -0.2 },
+    title: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "600", letterSpacing: -0.2 },
     // Right slot — holds a screen's headerRight action (Graph gear / Chat "…") when set,
     // else an empty same-size box so the center label stays centered between two equal slots.
     spacer: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },

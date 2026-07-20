@@ -86,5 +86,5 @@ const createStyles = (c: ThemeColors) =>
     },
     chipText: { ...type.small, color: c.text2 },
     badge: { borderRadius: 7, borderWidth: 1, paddingHorizontal: space(2.5), paddingVertical: space(1), alignSelf: "flex-start" },
-    badgeText: { fontSize: 12.5, fontWeight: "700", textTransform: "capitalize" },
+    badgeText: { fontSize: type.micro.fontSize, fontWeight: "700", textTransform: "capitalize" },
   });

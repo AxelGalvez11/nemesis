@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router, usePathname } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { runOnJS, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { listThreads, newThreadId } from "@/api/chat";
@@ -37,8 +36,6 @@ import { radius, shadow, space, type } from "@/theme/tokens";
 // to a touch STARTING within this many points of the left edge, so the child gesture
 // keeps the interior (react-native-gesture-handler's Pan `hitSlop`, points).
 const EDGE_WIDTH = 28;
-// How far the touch must travel horizontally before it flips the drawer open/closed.
-const OPEN_THRESHOLD = 48;
 // The moving page's facing (left) corner radius when the drawer is open. Owner call
 // 2026-07-18: the SIDEBAR is SQUARE — only the page (chat/library/etc.) gets rounded
 // corners, and rounder than before. ("New chat" button keeps radius.lg.)
@@ -126,33 +123,53 @@ function DrawerShell({
   const edgeOnly = pathname === "/graph" || pathname === "/calendar";
 
   const progress = useRef(new Animated.Value(0)).current;
+
+  // Settle the drawer to fully open/closed from WHEREVER the finger left it —
+  // used both by the open-state effect and by a released drag that snaps back
+  // to the same state (where the effect wouldn't re-fire).
+  const animateTo = useCallback(
+    (target: boolean) => {
+      Animated.timing(progress, {
+        toValue: target ? 1 : 0,
+        duration: target ? 240 : 190,
+        easing: target ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    },
+    [progress],
+  );
   useEffect(() => {
-    Animated.timing(progress, {
-      toValue: open ? 1 : 0,
-      duration: open ? 240 : 190,
-      easing: open ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [open, progress]);
+    animateTo(open);
+  }, [open, animateTo]);
 
   const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [0, panelW] });
   const edgeRadius = progress.interpolate({ inputRange: [0, 1], outputRange: [0, PAGE_RADIUS] });
 
-  const triggered = useSharedValue(false);
+  // Owner 2026-07-20: the page FOLLOWS the finger. The pan runs on the JS thread
+  // (`runOnJS(true)`) so each move writes `progress` directly — the same JS-driven
+  // value the transforms already ride (borderRadius can't native-animate anyway).
+  // Release settles to the nearest state, with a velocity fling overriding position.
   const gesture = useMemo(() => {
+    const startFrom = open ? 1 : 0;
     const pan = Gesture.Pan()
+      .runOnJS(true)
       .failOffsetY([-16, 16])
       .onStart(() => {
-        triggered.value = false;
+        progress.stopAnimation();
       })
       .onUpdate((event) => {
-        if (triggered.value) return;
-        if (!open && event.translationX > OPEN_THRESHOLD) {
-          triggered.value = true;
-          runOnJS(onOpen)();
-        } else if (open && event.translationX < -OPEN_THRESHOLD) {
-          triggered.value = true;
-          runOnJS(onClose)();
+        const next = Math.min(1, Math.max(0, startFrom + event.translationX / panelW));
+        progress.setValue(next);
+      })
+      .onEnd((event) => {
+        const at = startFrom + event.translationX / panelW;
+        const fling = Math.abs(event.velocityX) > 420;
+        const target = fling ? event.velocityX > 0 : at > 0.5;
+        if (target !== open) {
+          if (target) onOpen();
+          else onClose();
+        } else {
+          animateTo(open); // snapped back — state unchanged, settle manually
         }
       });
     // Direction/zone gating is set per state so the pan claims only the drags it owns:
@@ -162,7 +179,7 @@ function DrawerShell({
     else if (edgeOnly) pan.hitSlop({ left: 0, width: EDGE_WIDTH }).activeOffsetX(12);
     else pan.activeOffsetX(16);
     return pan;
-  }, [open, edgeOnly, onOpen, onClose, triggered]);
+  }, [open, edgeOnly, onOpen, onClose, progress, panelW, animateTo]);
 
   return (
     <View style={styles.shellRoot}>
@@ -398,13 +415,14 @@ const createStyles = (c: ThemeColors) =>
     brand: { color: c.text, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
     searchBtn: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
     searchBtnActive: { backgroundColor: c.surface },
+    // Borderless (owner 2026-07-20: "remove the sidebar borders") — fills only.
     searchField: {
       flexDirection: "row", alignItems: "center", gap: space(2),
       marginHorizontal: space(3), marginBottom: space(2),
-      paddingHorizontal: space(3), height: 38,
-      backgroundColor: c.surface, borderRadius: radius.md, borderWidth: 1, borderColor: c.line,
+      paddingHorizontal: space(3), height: 40,
+      backgroundColor: c.surface, borderRadius: radius.md,
     },
-    searchInput: { flex: 1, color: c.text, fontSize: 15, padding: 0 },
+    searchInput: { flex: 1, color: c.text, fontSize: type.small.fontSize, padding: 0 },
 
     navGroup: { paddingHorizontal: space(2), marginBottom: space(2) },
     navRow: {
@@ -412,19 +430,20 @@ const createStyles = (c: ThemeColors) =>
       paddingVertical: space(2.75), paddingHorizontal: space(2.5), borderRadius: radius.md,
     },
     navRowPressed: { backgroundColor: c.surface },
-    navIcon: { width: 24, alignItems: "center" },
-    navLabel: { color: c.text, fontSize: 16, fontWeight: "500", flex: 1 },
+    navIcon: { width: 26, alignItems: "center" },
+    // Sidebar text rides the shared type ramp (owner 2026-07-20: bigger + standardized).
+    navLabel: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "500", flex: 1 },
 
-    sectionLabel: { color: c.text2, fontSize: 13, fontWeight: "700", paddingHorizontal: space(4), marginTop: space(3), marginBottom: space(1.5) },
+    sectionLabel: { color: c.text2, fontSize: type.micro.fontSize, fontWeight: "700", paddingHorizontal: space(4), marginTop: space(3), marginBottom: space(1.5) },
 
     // Chat rows share one compact row style.
     row: {
       flexDirection: "row", alignItems: "center", gap: space(2.5),
-      paddingVertical: space(2.25), paddingHorizontal: space(3.5), marginHorizontal: space(2), borderRadius: radius.md,
+      paddingVertical: space(2.5), paddingHorizontal: space(3.5), marginHorizontal: space(2), borderRadius: radius.md,
     },
     rowPressed: { backgroundColor: c.surface },
-    rowTitle: { flex: 1, color: c.text2, fontSize: 14.5, minWidth: 0 },
-    rowTime: { color: c.text3, fontSize: 11, fontVariant: ["tabular-nums"] },
+    rowTitle: { flex: 1, color: c.text2, fontSize: type.small.fontSize + 1, minWidth: 0 },
+    rowTime: { color: c.text3, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },
     emptyRows: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },
 
     // Footer block — a single bottom row (New chat lower-left, Settings gear
@@ -443,10 +462,9 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: c.raised, borderRadius: radius.lg,
     },
     newChatBtnPressed: { backgroundColor: c.surface2 },
-    newChatText: { color: c.accent, fontSize: 15, fontWeight: "600" },
+    newChatText: { color: c.accent, fontSize: type.small.fontSize + 1, fontWeight: "600" },
 
-    // The gear sits fully inside the panel. Now that the sidebar is square (no rounded
-    // bottom-right corner) the clip is gone; bottomRow's paddingRight is just breathing room.
-    settingsBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: c.line },
+    // The gear sits fully inside the panel. Borderless (owner 2026-07-20).
+    settingsBtn: { width: 44, height: 44, borderRadius: 22 },
     settingsBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
   });
