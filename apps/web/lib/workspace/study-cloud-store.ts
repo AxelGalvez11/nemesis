@@ -22,6 +22,7 @@ export interface StudyCard {
   deckId: string;
   front: string;
   back: string;
+  cardType: StudyCardType;
   sourcePath: string | null;
   dueAt: string;
   intervalDays: number;
@@ -31,6 +32,8 @@ export interface StudyCard {
   createdAt: string;
   updatedAt: string;
 }
+
+export type StudyCardType = "basic" | "reversed" | "cloze" | "image_occlusion";
 
 export interface StudyReview {
   id: string;
@@ -80,6 +83,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     deckId: "preview-cardiovascular",
     front: "What is the principal mechanism of ACE inhibitors?",
     back: "They inhibit angiotensin-converting enzyme, reducing angiotensin II and aldosterone while increasing bradykinin.",
+    cardType: "basic",
     sourcePath: "Pharmacology/Cardiovascular/ACE inhibitors.md",
     dueAt: now,
     intervalDays: 0,
@@ -94,6 +98,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     deckId: "preview-cardiovascular",
     front: "Which classic ACE inhibitor adverse effect is mediated by bradykinin?",
     back: "A persistent dry cough.",
+    cardType: "basic",
     sourcePath: "Pharmacology/Cardiovascular/ACE inhibitors.md",
     dueAt: now,
     intervalDays: 0,
@@ -156,6 +161,10 @@ function number(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function cardType(value: unknown): StudyCardType {
+  return value === "reversed" || value === "cloze" || value === "image_occlusion" ? value : "basic";
+}
+
 function toDeck(raw: unknown): StudyDeck | null {
   if (!isObject(raw) || typeof raw.id !== "string" || typeof raw.name !== "string") return null;
   return {
@@ -175,6 +184,7 @@ function toCard(raw: unknown): StudyCard | null {
     deckId: raw.deck_id,
     front: text(raw.front),
     back: text(raw.back),
+    cardType: cardType(raw.card_type),
     sourcePath: typeof raw.source_path === "string" ? raw.source_path : null,
     dueAt: text(raw.due_at),
     intervalDays: number(raw.interval_days),
@@ -213,7 +223,7 @@ async function loadStudy(userId: string) {
         .order("updated_at", { ascending: false }),
       supabase
         .from("study_cards")
-        .select("id,deck_id,front,back,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
+        .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
         .eq("user_id", userId)
         .order("due_at", { ascending: true }),
       supabase
@@ -274,7 +284,15 @@ export interface CreateCardInput {
   deckId: string;
   front: string;
   back: string;
+  cardType?: StudyCardType;
   sourcePath?: string | null;
+}
+
+export interface UpdateCardInput {
+  id: string;
+  front: string;
+  back: string;
+  cardType: StudyCardType;
 }
 
 export interface CreateArtifactInput {
@@ -288,6 +306,7 @@ export interface UseCloudStudyApi extends StoreState {
   reload: () => void;
   createDeck: (input: CreateDeckInput) => Promise<StudyDeck>;
   createCard: (input: CreateCardInput) => Promise<StudyCard>;
+  updateCard: (input: UpdateCardInput) => Promise<StudyCard>;
   createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
   gradeCard: (cardId: string, grade: StudyGrade) => Promise<StudyCard>;
   moveDeck: (deckId: string, targetGroup: string) => Promise<void>;
@@ -383,6 +402,7 @@ export function useCloudStudy(): UseCloudStudyApi {
         deckId: input.deckId,
         front,
         back,
+        cardType: input.cardType ?? "basic",
         sourcePath: input.sourcePath?.trim() || null,
         dueAt: timestamp,
         intervalDays: 0,
@@ -398,14 +418,40 @@ export function useCloudStudy(): UseCloudStudyApi {
     if (!userId) throw new Error("Sign in to create a card.");
     const { data, error } = await supabase
       .from("study_cards")
-      .insert({ user_id: userId, deck_id: input.deckId, front, back, source_path: input.sourcePath?.trim() || null })
-      .select("id,deck_id,front,back,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
+      .insert({ user_id: userId, deck_id: input.deckId, front, back, card_type: input.cardType ?? "basic", source_path: input.sourcePath?.trim() || null })
+      .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
       .single();
     if (error) throw new Error(error.message);
     const card = toCard(data);
     if (!card) throw new Error("The card was saved but returned an invalid response.");
     setState({ ...state, cards: [card, ...state.cards], selectedDeckId: card.deckId });
     return card;
+  }, [preview, userId]);
+
+  const updateCard = useCallback(async (input: UpdateCardInput) => {
+    const existing = state.cards.find((item) => item.id === input.id);
+    if (!existing) throw new Error("That card is no longer available.");
+    const front = input.front.trim();
+    const back = input.back.trim();
+    if (!front || !back) throw new Error("Add both a prompt and an answer.");
+    const updatedAt = new Date().toISOString();
+    let next: StudyCard = { ...existing, front, back, cardType: input.cardType, updatedAt };
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to edit a card.");
+      const { data, error } = await supabase
+        .from("study_cards")
+        .update({ front, back, card_type: input.cardType, updated_at: updatedAt })
+        .eq("id", input.id)
+        .eq("user_id", userId)
+        .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
+        .single();
+      if (error) throw new Error(error.message);
+      const saved = toCard(data);
+      if (!saved) throw new Error("The card was updated but returned an invalid response.");
+      next = saved;
+    }
+    setState({ ...state, cards: state.cards.map((item) => item.id === next.id ? next : item) });
+    return next;
   }, [preview, userId]);
 
   const createArtifact = useCallback(async (input: CreateArtifactInput) => {
@@ -537,6 +583,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     reload,
     createDeck,
     createCard,
+    updateCard,
     createArtifact,
     gradeCard,
     moveDeck,

@@ -138,10 +138,13 @@ export function LibraryTreeView(props: LibraryTreeViewProps) {
   }
 
   return (
-    <div className="relative min-h-full">
-      {dragItem && (
-        <div className={cn("pointer-events-none absolute inset-x-1 top-0 z-20 grid min-h-9 place-items-center rounded-lg border border-dashed px-2 text-[0.6875rem] font-medium shadow-sm backdrop-blur-sm", dropTarget === "" ? "border-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--ui-bg-elevated)_88%,var(--theme-primary)_12%)] text-foreground" : "border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_88%,transparent)] text-(--ui-text-tertiary)")}>Move to Library root</div>
+    <div
+      className={cn(
+        "relative min-h-full rounded-lg transition-[background-color,outline-color]",
+        dragItem && dropTarget === "" && "bg-[color-mix(in_srgb,var(--theme-primary)_7%,transparent)] outline outline-2 -outline-offset-2 outline-[var(--theme-primary)]",
       )}
+      data-library-drop-folder=""
+    >
       <TreeContents
         {...props}
         depth={depth}

@@ -26,7 +26,7 @@ export function TitlebarControls({ onToggleSidebar }: TitlebarControlsProps) {
           size="icon-titlebar"
           variant="ghost"
         >
-          <IconLayoutSidebarLeftExpand size="0.875rem" />
+          <IconLayoutSidebarLeftExpand size={14} stroke={1.7} />
         </Button>
       </Tip>
     </div>

@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/desktop-ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/desktop-ui/select";
 import { Textarea } from "@/components/desktop-ui/textarea";
-import { type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
+import { type StudyCardType, type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 
 export type StudyCreateKind = "deck" | "card";
 
@@ -39,7 +39,7 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [deckId, setDeckId] = useState("");
-  const [cardType, setCardType] = useState<"basic" | "reversed" | "cloze" | "image">("basic");
+  const [cardType, setCardType] = useState<StudyCardType>("basic");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,8 +66,8 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
       } else {
         const targetDeck = decks.find((item) => item.id === deckId);
         if (!targetDeck) throw new Error("Choose a deck first.");
-        await createCard({ deckId: targetDeck.id, front, back, sourcePath: targetDeck.sourcePath ?? sourcePath });
-        if (cardType === "reversed") await createCard({ deckId: targetDeck.id, front: back, back: front, sourcePath: targetDeck.sourcePath ?? sourcePath });
+        await createCard({ deckId: targetDeck.id, front, back, cardType, sourcePath: targetDeck.sourcePath ?? sourcePath });
+        if (cardType === "reversed") await createCard({ deckId: targetDeck.id, front: back, back: front, cardType, sourcePath: targetDeck.sourcePath ?? sourcePath });
       }
       onOpenChange(false);
     } catch (cause) {
@@ -113,14 +113,14 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
                 Card type
-                <Select onValueChange={(value) => setCardType(value as typeof cardType)} value={cardType}><SelectTrigger className="h-10 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-background px-3"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="basic">Basic (front/back)</SelectItem><SelectItem value="reversed">Basic reversed</SelectItem><SelectItem value="cloze">Cloze</SelectItem><SelectItem value="image">Image occlusion</SelectItem></SelectContent></Select>
+                <Select onValueChange={(value) => setCardType(value as StudyCardType)} value={cardType}><SelectTrigger className="h-10 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-background px-3"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="basic">Basic (front/back)</SelectItem><SelectItem value="reversed">Basic reversed</SelectItem><SelectItem value="cloze">Cloze</SelectItem><SelectItem value="image_occlusion">Image occlusion</SelectItem></SelectContent></Select>
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
-                {cardType === "cloze" ? "Cloze text" : cardType === "image" ? "Image or occlusion prompt" : "Front"}
-                <Textarea autoFocus onChange={(event) => setFront(event.target.value)} placeholder={cardType === "cloze" ? "The {{c1::mitochondria}} is the powerhouse of the cell." : cardType === "image" ? "Paste an image URL or describe the hidden region" : "What should you recall?"} value={front} />
+                {cardType === "cloze" ? "Cloze text" : cardType === "image_occlusion" ? "Image or occlusion prompt" : "Front"}
+                <Textarea autoFocus onChange={(event) => setFront(event.target.value)} placeholder={cardType === "cloze" ? "The {{c1::mitochondria}} is the powerhouse of the cell." : cardType === "image_occlusion" ? "Paste an image URL or describe the hidden region" : "What should you recall?"} value={front} />
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
-                {cardType === "image" ? "Occluded answer" : cardType === "cloze" ? "Extra explanation" : "Back"}
+                {cardType === "image_occlusion" ? "Occluded answer" : cardType === "cloze" ? "Extra explanation" : "Back"}
                 <Textarea onChange={(event) => setBack(event.target.value)} placeholder="The concise answer or explanation" value={back} />
               </label>
             </>

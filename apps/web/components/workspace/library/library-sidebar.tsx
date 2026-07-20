@@ -3,16 +3,23 @@
 // Cloud Library tree with persisted note/folder creation, search, selection,
 // and shared state for the editor and Graph surfaces.
 
-import { IconFileImport, IconFilePlus, IconFolderPlus, IconSearch, IconX } from "@tabler/icons-react";
+import { IconArrowsSort, IconFileImport, IconFilePlus, IconFolderPlus, IconSearch, IconX } from "@tabler/icons-react";
 import { useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/desktop-ui/dropdown-menu";
 import { Skeleton } from "@/components/desktop-ui/skeleton";
 import { SearchField } from "@/components/desktop-ui/search-field";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
-import { buildLibraryTree, countLibraryNotes } from "@/lib/workspace/library-tree";
+import { buildLibraryTree, countLibraryNotes, type LibrarySortMode } from "@/lib/workspace/library-tree";
 import { cn } from "@/lib/utils";
 import { GROUP_BODY, SCROLL_Y, SidebarRowStack } from "@/components/workspace/shell/sidebar-primitives";
 
@@ -31,12 +38,13 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [sortMode, setSortMode] = useState<LibrarySortMode>("az");
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const { status, notes, folders, error, selectedPath, select, reload, createNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
 
-  const tree = useMemo(() => buildLibraryTree(notes, folders), [folders, notes]);
+  const tree = useMemo(() => buildLibraryTree(notes, folders, sortMode), [folders, notes, sortMode]);
   const totalCount = useMemo(() => countLibraryNotes(tree), [tree]);
   const loading = status === "idle" || status === "loading";
 
@@ -109,6 +117,21 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
               {searchOpen ? <IconX /> : <IconSearch />}
             </Button>
           )}
+          {totalCount > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button aria-label="Sort Library" size="icon-xs" type="button" variant="ghost"><IconArrowsSort /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-40">
+                <DropdownMenuRadioGroup onValueChange={(value) => setSortMode(value as LibrarySortMode)} value={sortMode}>
+                  <DropdownMenuRadioItem value="az">Sort A–Z</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="za">Sort Z–A</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="modified">Date modified</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="added">Date added</DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           {HEADER_ACTIONS.map(({ label, icon: Icon }) => (
             <Button aria-label={label} key={label} onClick={() => label === "New note" ? void createBlankNote() : setCreateKind("folder")} size="icon-xs" type="button" variant="ghost">
               <Icon />
@@ -150,7 +173,7 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
                 <LibraryNoteRow
                   isSelected={note.path === selectedPath}
                   key={note.path}
-                  note={{ kind: "note", id: note.id, path: note.path, title: note.title }}
+                  note={{ kind: "note", id: note.id, path: note.path, title: note.title, updatedAt: note.updatedAt, createdAt: note.createdAt, addedOrder: 0 }}
                   onSelect={openPath}
                 />
               ))}

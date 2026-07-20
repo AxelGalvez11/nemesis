@@ -1,10 +1,11 @@
 "use client";
 
-import { IconFolderPlus, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconChevronDown, IconFolderPlus, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
 import { Input } from "@/components/desktop-ui/input";
 import { type StudyArtifactKind, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 
@@ -70,11 +71,18 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
-      <section className="mx-auto mt-5 w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
-        <div className="flex items-center justify-end gap-1 border-b border-(--ui-stroke-tertiary) px-3 py-2">
-          <Button className="gap-1.5" onClick={() => setCreateOpen(true)} size="sm" variant="ghost"><IconPlus size={14} /> New {singular}</Button>
-          {isTests && <Button className="gap-1.5" onClick={() => { setGroupName(""); setGroupOpen(true); }} size="sm" variant="ghost"><IconFolderPlus size={14} /> New folder</Button>}
-        </div>
+      <nav className="mx-auto mb-4 mt-2 flex shrink-0 items-center rounded-2xl border border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button className="rounded-xl" size="sm" variant="ghost">Add <IconChevronDown size={13} /></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onSelect={() => setCreateOpen(true)}><IconPlus /> New {singular}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { setGroupName(""); setGroupOpen(true); }}><IconFolderPlus /> New folder</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button disabled={items.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
+      </nav>
+
+      <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
         <div className="grid grid-cols-[minmax(0,1fr)_6rem_6rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold">
           <span>Group</span><span className="text-center">Items</span><span className="text-center">{isTests ? "Score" : "Updated"}</span>
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { IconChevronDown, IconChevronRight, IconFolderPlus, IconPlus } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
@@ -117,12 +117,17 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [dragItem, setDragItem] = useState<DeckDragItem | null>(null);
+  const dragItemRef = useRef<DeckDragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const dropTargetRef = useRef<string | null>(null);
+  const ignoreClickUntilRef = useRef(0);
+  const pointerCleanupRef = useRef<(() => void) | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const selectedDeck = decks.find((deck) => deck.id === selectedDeckId) ?? null;
   const tree = useMemo(() => buildDeckTree(decks, extraGroups), [decks, extraGroups]);
 
   useEffect(() => setExtraGroups(loadGroups()), []);
+  useEffect(() => () => pointerCleanupRef.current?.(), []);
 
   function persistGroups(next: string[]) {
     const unique = Array.from(new Set(next.map(normalizeGroup).filter(Boolean)));
@@ -155,13 +160,68 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
     });
   }
 
-  async function finishDrop(targetGroup: string) {
-    if (!dragItem) return;
+  function changeDropTarget(target: string | null) {
+    dropTargetRef.current = target;
+    setDropTarget(target);
+  }
+
+  function startDrag(item: DeckDragItem) {
+    dragItemRef.current = item;
+    setDragItem(item);
+  }
+
+  function endDrag() {
+    dragItemRef.current = null;
+    setDragItem(null);
+    changeDropTarget(null);
+  }
+
+  function beginPointerDrag(event: React.PointerEvent, item: DeckDragItem) {
+    if (event.button !== 0) return;
+    pointerCleanupRef.current?.();
+    const origin = { x: event.clientX, y: event.clientY };
+    let dragging = false;
+    const move = (pointerEvent: PointerEvent) => {
+      if (!dragging && Math.hypot(pointerEvent.clientX - origin.x, pointerEvent.clientY - origin.y) < 5) return;
+      if (!dragging) {
+        dragging = true;
+        startDrag(item);
+        document.body.style.userSelect = "none";
+      }
+      const hit = document.elementFromPoint(pointerEvent.clientX, pointerEvent.clientY) as HTMLElement | null;
+      const target = hit?.closest<HTMLElement>("[data-study-drop-group]")?.dataset.studyDropGroup;
+      const invalid = item.kind === "group" && target !== undefined && (target === item.path || target.startsWith(`${item.path}::`));
+      changeDropTarget(target === undefined || invalid ? null : target);
+    };
+    const cleanup = () => {
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", up, true);
+      if (pointerCleanupRef.current === cleanup) pointerCleanupRef.current = null;
+    };
+    const up = () => {
+      if (dragging) {
+        const target = dropTargetRef.current;
+        if (target !== null) void finishDrop(target, item);
+        ignoreClickUntilRef.current = performance.now() + 250;
+      }
+      endDrag();
+      cleanup();
+    };
+    pointerCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
+  }
+
+  async function finishDrop(targetGroup: string, dragged: DeckDragItem | null = dragItemRef.current) {
+    if (!dragged) return;
     setActionError(null);
     try {
-      if (dragItem.kind === "deck") await moveDeck(dragItem.id, targetGroup);
+      if (dragged.kind === "deck") await moveDeck(dragged.id, targetGroup);
       else {
-        const source = dragItem.path;
+        const source = dragged.path;
         await moveDeckGroup(source, targetGroup);
         const leaf = source.split("::").pop() ?? source;
         const destination = targetGroup ? `${targetGroup}::${leaf}` : leaf;
@@ -170,8 +230,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Couldn't move that deck.");
     } finally {
-      setDragItem(null);
-      setDropTarget(null);
+      endDrag();
     }
   }
 
@@ -198,7 +257,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
-      <nav className="mx-auto mb-7 flex shrink-0 items-center rounded-b-2xl border border-t-0 border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
+      <nav className="mx-auto mb-4 mt-2 flex shrink-0 items-center rounded-2xl border border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button className="rounded-xl" size="sm" variant="ghost">Add <IconChevronDown size={13} /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start">
@@ -215,24 +274,19 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
           <EmptyState action={<Button onClick={() => setCreateKind("deck")} variant="secondary">Create your first deck</Button>} description={sourcePath ? "Turn this Library note into a linked cloud deck." : "Create a deck to start building a durable review habit."} title="No decks yet" />
         </div>
       ) : (
-        <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
+        <section
+          className={cn(
+            "mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)] transition-[outline-color,background-color]",
+            dragItem && dropTarget === "" && "bg-[color-mix(in_srgb,var(--theme-primary)_6%,var(--background))] outline outline-2 outline-[var(--theme-primary)]",
+          )}
+          data-study-drop-group=""
+        >
           <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem_5rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold">
             <span className="pl-[19px]">Deck</span><span className="text-center">New</span><span className="text-center">Learn</span><span className="text-center">Due</span>
           </div>
           <div className="py-1.5">
-            {dragItem && (
-              <button
-                className={cn("mx-3 mb-1 grid min-h-8 w-[calc(100%-1.5rem)] place-items-center rounded-lg border border-dashed text-[0.6875rem] font-medium", dropTarget === "" ? "border-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_9%,transparent)]" : "border-(--ui-stroke-secondary) text-(--ui-text-tertiary)")}
-                onDragEnter={(event) => { event.preventDefault(); setDropTarget(""); }}
-                onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
-                onDrop={(event) => { event.preventDefault(); void finishDrop(""); }}
-                type="button"
-              >
-                Move to deck root
-              </button>
-            )}
             {tree.map((node) => (
-              <DeckRow cards={cards} collapsed={collapsed} depth={0} dragItem={dragItem} dropTarget={dropTarget} key={node.id} node={node} onDragEnd={() => { setDragItem(null); setDropTarget(null); }} onDragStart={setDragItem} onDrop={(group) => void finishDrop(group)} onOpenDeck={openDeck} onTargetChange={setDropTarget} onToggle={toggleGroup} />
+              <DeckRow cards={cards} collapsed={collapsed} depth={0} dragItem={dragItem} dropTarget={dropTarget} key={node.id} node={node} onOpenDeck={openDeck} onPointerClick={() => performance.now() < ignoreClickUntilRef.current} onPointerDragStart={beginPointerDrag} onToggle={toggleGroup} />
             ))}
           </div>
         </section>
@@ -265,13 +319,11 @@ interface DeckRowProps {
   dropTarget: string | null;
   onOpenDeck: (id: string) => void;
   onToggle: (id: string) => void;
-  onDragStart: (item: DeckDragItem) => void;
-  onDragEnd: () => void;
-  onTargetChange: (target: string | null) => void;
-  onDrop: (target: string) => void;
+  onPointerDragStart: (event: React.PointerEvent, item: DeckDragItem) => void;
+  onPointerClick: () => boolean;
 }
 
-function DeckRow({ node, depth, cards, collapsed, dragItem, dropTarget, onOpenDeck, onToggle, onDragStart, onDragEnd, onTargetChange, onDrop }: DeckRowProps) {
+function DeckRow({ node, depth, cards, collapsed, dragItem, dropTarget, onOpenDeck, onToggle, onPointerDragStart, onPointerClick }: DeckRowProps) {
   const counts = countsForNode(node, cards);
   const group = !node.deck;
   const isCollapsed = collapsed.has(node.id);
@@ -287,44 +339,24 @@ function DeckRow({ node, depth, cards, collapsed, dragItem, dropTarget, onOpenDe
           highlighted && "outline outline-2 -outline-offset-2 outline-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)]",
           ((dragItem?.kind === "deck" && node.deck?.id === dragItem.id) || (dragItem?.kind === "group" && node.groupPath === dragItem.path)) && "opacity-50",
         )}
-        draggable
-        onClick={() => group ? onToggle(node.id) : node.deck && onOpenDeck(node.deck.id)}
-        onDragEnd={onDragEnd}
-        onDragEnter={(event) => {
-          if (!group || invalidTarget) return;
-          event.preventDefault();
-          event.stopPropagation();
-          onTargetChange(node.groupPath);
+        data-study-drop-group={group ? node.groupPath : undefined}
+        onClick={() => {
+          if (onPointerClick()) return;
+          if (group) onToggle(node.id);
+          else if (node.deck) onOpenDeck(node.deck.id);
         }}
-        onDragOver={(event) => {
-          if (!group || invalidTarget) return;
-          event.preventDefault();
-          event.stopPropagation();
-          event.dataTransfer.dropEffect = "move";
-        }}
-        onDragStart={(event) => {
-          event.stopPropagation();
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData("application/x-nemesis-study-deck", JSON.stringify(item));
-          onDragStart(item);
-        }}
-        onDrop={(event) => {
-          if (!group || invalidTarget) return;
-          event.preventDefault();
-          event.stopPropagation();
-          onDrop(node.groupPath);
-        }}
+        onPointerDown={(event) => onPointerDragStart(event, item)}
         type="button"
       >
         <span className={cn("flex min-w-0 items-center gap-1.5", group && "font-semibold")} style={{ paddingLeft: `${depth * 1.1}rem` }}>
-          {group ? (isCollapsed ? <IconChevronRight size={13} /> : <IconChevronDown size={13} />) : <span className="w-[13px]" />}
+          {group ? (isCollapsed ? <IconChevronRight size={13} /> : <IconChevronDown size={13} />) : <span className="w-[13px] shrink-0" />}
           <span className="truncate">{node.label}</span>
         </span>
         <span className="text-center font-medium tabular-nums text-sky-500">{counts.newCount || 0}</span>
         <span className="text-center font-medium tabular-nums text-amber-500">{counts.learnCount || 0}</span>
         <span className="text-center font-medium tabular-nums text-emerald-500">{counts.dueCount || 0}</span>
       </button>
-      {!isCollapsed && node.children.map((child) => <DeckRow cards={cards} collapsed={collapsed} depth={depth + 1} dragItem={dragItem} dropTarget={dropTarget} key={child.id} node={child} onDragEnd={onDragEnd} onDragStart={onDragStart} onDrop={onDrop} onOpenDeck={onOpenDeck} onTargetChange={onTargetChange} onToggle={onToggle} />)}
+      {!isCollapsed && node.children.map((child) => <DeckRow cards={cards} collapsed={collapsed} depth={depth + 1} dragItem={dragItem} dropTarget={dropTarget} key={child.id} node={child} onOpenDeck={onOpenDeck} onPointerClick={onPointerClick} onPointerDragStart={onPointerDragStart} onToggle={onToggle} />)}
     </>
   );
 }
