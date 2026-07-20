@@ -9,7 +9,9 @@ import {
   IconBlockquote,
   IconBold,
   IconCode,
+  IconH1,
   IconH2,
+  IconH3,
   IconHighlight,
   IconItalic,
   IconLink,
@@ -25,11 +27,17 @@ import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 
+/** Imperative surface the parent uses to drive the editor (TOC clicks). */
+export interface LibraryEditorApi {
+  scrollToHeading: (label: string) => void;
+}
+
 interface LibraryLiveEditorProps {
   value: string;
   onChange: (value: string) => void;
   autoFocus?: boolean;
   showToolbar?: boolean;
+  apiRef?: RefObject<LibraryEditorApi | null>;
 }
 
 const HIDDEN_MARKS = new Set([
@@ -261,8 +269,13 @@ function EditingToolbar({ viewRef }: { viewRef: RefObject<EditorView | null> }) 
     if (view) action(view);
   };
   return (
-    <div aria-label="Note formatting" className="mb-3 flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="toolbar">
-      <ToolbarButton label="Heading" onClick={() => run((view) => applyLinePrefix(view, "## "))}><IconH2 /></ToolbarButton>
+    // Neutral fill on purpose (no accent mix — owner 2026-07-20) and sticky so
+    // the toolbar rides just under the note header while the note scrolls.
+    <div aria-label="Note formatting" className="sticky top-0 z-20 mb-3 flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl border border-[color-mix(in_srgb,var(--ui-base)_14%,transparent)] bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)] p-1 backdrop-blur-md [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="toolbar">
+      <ToolbarButton label="Heading 1" onClick={() => run((view) => applyLinePrefix(view, "# "))}><IconH1 /></ToolbarButton>
+      <ToolbarButton label="Heading 2" onClick={() => run((view) => applyLinePrefix(view, "## "))}><IconH2 /></ToolbarButton>
+      <ToolbarButton label="Heading 3" onClick={() => run((view) => applyLinePrefix(view, "### "))}><IconH3 /></ToolbarButton>
+      <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-(--ui-stroke-tertiary)" />
       <ToolbarButton label="Bold" onClick={() => run((view) => formatInline(view, "bold"))}><IconBold /></ToolbarButton>
       <ToolbarButton label="Italic" onClick={() => run((view) => formatInline(view, "italic"))}><IconItalic /></ToolbarButton>
       <ToolbarButton label="Underline" onClick={() => run((view) => formatInline(view, "underline"))}><IconUnderline /></ToolbarButton>
@@ -285,11 +298,48 @@ function ToolbarButton({ children, label, onClick }: { children: ReactNode; labe
 
 /** Obsidian-style Live Preview: Markdown is stored losslessly, but formatting
  * marks are concealed everywhere except the line containing the selection. */
-export function LibraryLiveEditor({ value, onChange, autoFocus = false, showToolbar = false }: LibraryLiveEditorProps) {
+export function LibraryLiveEditor({ value, onChange, autoFocus = false, showToolbar = false, apiRef }: LibraryLiveEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+
+  useEffect(() => {
+    if (!apiRef) return;
+    apiRef.current = {
+      scrollToHeading: (label: string) => {
+        const view = viewRef.current;
+        if (!view) return;
+        const target = label.trim().toLowerCase();
+        for (let lineNumber = 1; lineNumber <= view.state.doc.lines; lineNumber += 1) {
+          const line = view.state.doc.line(lineNumber);
+          const match = /^#{1,6}\s+(.*)$/.exec(line.text);
+          if (match?.[1]?.trim().toLowerCase() === target) {
+            // The editor auto-grows, so the scrolling element is a page
+            // ancestor — CodeMirror's scroll effects can't reach it. Dispatch
+            // applies the DOM update synchronously, so resolve the line's DOM
+            // node and scroll the ancestor in the same tick (no rAF: throttled
+            // frames, e.g. background panes, would swallow the callback).
+            view.dispatch({ selection: { anchor: line.from } });
+            const domPos = view.domAtPos(line.from);
+            const base: Element | null = domPos.node instanceof Element ? domPos.node : domPos.node.parentElement;
+            const lineEl = base?.closest(".cm-line") ?? base;
+            if (!(lineEl instanceof HTMLElement)) return;
+            let scroller: HTMLElement | null = lineEl.parentElement;
+            while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+            if (!scroller) return;
+            // 64px clears the sticky toolbar so the heading stays visible.
+            scroller.scrollTop += lineEl.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 64;
+            view.focus();
+            return;
+          }
+        }
+      },
+    };
+    return () => {
+      apiRef.current = null;
+    };
+  }, [apiRef]);
 
   useEffect(() => {
     if (!hostRef.current) return;
