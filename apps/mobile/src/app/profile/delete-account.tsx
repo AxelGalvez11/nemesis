@@ -32,8 +32,8 @@ export default function DeleteAccountScreen() {
     <ScrollView contentContainerStyle={styles.body} testID="delete-account-screen">
       <Text style={common.h1}>Delete account</Text>
       <Text style={common.body}>
-        This permanently deletes your Nemesis account and everything tied to it — your missions and their results,
-        your linked devices, and your sign-in. Files on your Mac stay on your Mac. This cannot be undone.
+        This permanently deletes your Nemesis account and everything tied to it — your chats, notes,
+        flashcards, calendar, registered devices, and your sign-in. This cannot be undone.
       </Text>
 
       <Pressable testID="delete-confirm" style={styles.confirmRow} onPress={() => setConfirmed((c) => !c)}>

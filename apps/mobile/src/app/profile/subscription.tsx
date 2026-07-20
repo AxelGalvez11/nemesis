@@ -12,7 +12,7 @@ import { radius, space } from "@/theme/tokens";
 
 const FREE_INCLUDES = [
   "Cloud chat with citations",
-  "Library, Study & Calendar synced from your Mac",
+  "Library, Study & Calendar in your account — same on phone and web",
   "Flashcards, notes & the knowledge graph",
 ];
 
