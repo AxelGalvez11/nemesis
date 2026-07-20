@@ -4,7 +4,7 @@
 // transcript, shared right rail, and composer. Reads the active chat from the store and sends turns
 // through the cloud-backed orchestrator. Preview builds return a canned reply.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconLayoutSidebarRightExpand } from "@tabler/icons-react";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -12,6 +12,8 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { Button } from "@/components/desktop-ui/button";
 import { notebookChatStore, sendNotebookTurn, useNotebookChat, type NotebookWireSource } from "@/lib/notebooks/chat";
+import { appendMessage } from "@/lib/notebooks/chats-api";
+import { consumeNotebookRecording } from "@/lib/notebooks/record-intent";
 import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 
@@ -67,6 +69,16 @@ export function NotebookChatView() {
     if (active) setRecordCanvasOpen(true);
   }, []);
 
+  // Recorder pressed on the notebook home: the home creates this chat, sets
+  // the one-shot intent, and navigates here — pick it up and go live.
+  useEffect(() => {
+    if (activeChatId && consumeNotebookRecording(activeChatId)) {
+      setComposerMode("record");
+      setRecordCanvasOpen(true);
+      setRecording(true);
+    }
+  }, [activeChatId]);
+
   const handleRecordingFinished = useCallback((draft: RecordingArtifactDraft) => {
     setRecording(false);
     setRecordCanvasOpen(false);
@@ -74,8 +86,24 @@ export function NotebookChatView() {
     if (draft.durationSeconds <= 0 && !draft.transcript.trim() && !draft.notes.trim()) return;
     setRightPanel("outputs");
     setRightRailOpen(true);
-    void createArtifact(draft).catch(() => undefined);
-  }, [createArtifact]);
+    const chatId = activeChatId;
+    const targetNotebookId = notebookId;
+    void createArtifact(draft)
+      .then((artifact) => {
+        if (!chatId) return;
+        const content = "Recording captured — transcript and notes are ready.";
+        notebookChatStore.append(chatId, {
+          at: new Date().toISOString(),
+          content,
+          outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
+          role: "assistant",
+        });
+        // Cloud rows carry plain content only; the artifact itself persists in
+        // chat_recording_artifacts, so a reload still shows it under Outputs.
+        if (!preview && targetNotebookId) void appendMessage({ chatId, content, notebookId: targetNotebookId, role: "assistant" }).catch(() => {});
+      })
+      .catch(() => undefined);
+  }, [activeChatId, createArtifact, notebookId, preview]);
 
   const submit = useCallback(
     async (text: string, files: File[]) => {

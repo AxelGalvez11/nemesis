@@ -159,11 +159,18 @@ export function SessionChat() {
     for (const message of messages) for (const source of message.sources ?? []) if (!unique.has(source.url)) unique.set(source.url, source);
     return Array.from(unique.values());
   }, [messages]);
-  const outputs = useMemo(() => [
-    ...recordingArtifacts.map((artifact) => ({ id: artifact.id, kind: "recording" as const, title: artifact.title, transcript: artifact.transcript, notes: artifact.notes, durationSeconds: artifact.durationSeconds, createdAt: artifact.createdAt })),
-    ...(session?.outputs ?? []),
-    ...messages.flatMap((message) => message.outputs ?? []),
-  ], [messages, recordingArtifacts, session?.outputs]);
+  const outputs = useMemo(() => {
+    // The finished-recording flow now records the same artifact in the rail
+    // source (chat_recording_artifacts) AND on the chat message, so dedupe by
+    // id — first occurrence wins.
+    const merged = [
+      ...recordingArtifacts.map((artifact) => ({ id: artifact.id, kind: "recording" as const, title: artifact.title, transcript: artifact.transcript, notes: artifact.notes, durationSeconds: artifact.durationSeconds, createdAt: artifact.createdAt })),
+      ...(session?.outputs ?? []),
+      ...messages.flatMap((message) => message.outputs ?? []),
+    ];
+    const seen = new Set<string>();
+    return merged.filter((output) => (seen.has(output.id) ? false : (seen.add(output.id), true)));
+  }, [messages, recordingArtifacts, session?.outputs]);
 
   const handleModeChange = useCallback((mode: ComposerMode) => {
     if (mode === "record" && !sessionsStore.getState().selectedId) sessionsStore.create("Recorded session");
@@ -176,8 +183,21 @@ export function SessionChat() {
     if (draft.durationSeconds <= 0 && !draft.transcript.trim() && !draft.notes.trim()) return;
     setRightPanel("outputs");
     setRightRailOpen(true);
-    void createArtifact(draft).catch(() => undefined);
-  }, [createArtifact]);
+    const targetId = selectedId;
+    void createArtifact(draft)
+      .then((artifact) => {
+        // The artifact also lands in the chat itself as a clickable card
+        // (owner ask 2026-07-20) — message outputs sync to cloud meta.
+        if (!targetId) return;
+        sessionsStore.appendMessage(targetId, {
+          at: new Date().toISOString(),
+          content: "Recording captured — transcript and notes are ready.",
+          outputs: [{ createdAt: artifact.createdAt, durationSeconds: artifact.durationSeconds, id: artifact.id, kind: "recording", notes: artifact.notes, title: artifact.title, transcript: artifact.transcript }],
+          role: "assistant",
+        });
+      })
+      .catch(() => undefined);
+  }, [createArtifact, selectedId]);
 
   const openSources = useCallback(() => {
     setRightPanel("sources");

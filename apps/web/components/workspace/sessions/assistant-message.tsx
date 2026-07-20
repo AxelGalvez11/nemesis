@@ -15,6 +15,7 @@ import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 
 import { ActivityStrip } from "./activity-strip";
+import { OutputCard } from "./output-card";
 
 export interface TurnError {
   text: string;
@@ -51,6 +52,11 @@ export function AssistantMessage({ message, animateReveal = false, pending, live
       >
         {!pending && <ActivityStrip placement="header" seconds={durationSeconds} />}
         {visibleText && <AssistantMarkdown text={visibleText} />}
+        {message?.outputs && message.outputs.length > 0 && (
+          <div className="mt-2 flex flex-col gap-2">
+            {message.outputs.map((output) => <OutputCard key={output.id} output={output} />)}
+          </div>
+        )}
         {pending && <ActivityStrip placement="live" seconds={liveSeconds} />}
         {error && <AssistantErrorRow error={error} />}
       </div>
