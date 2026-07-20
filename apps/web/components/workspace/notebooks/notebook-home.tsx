@@ -95,6 +95,12 @@ export function NotebookHome() {
 
   const handleGenerate = useCallback((kind: NotebookOutputKind) => {
     if (!selected) return;
+    // Deliverables are grounded in the notebook's sources — with nothing
+    // attached there is nothing to build from (owner 2026-07-20 evening).
+    if (wireSources.length === 0) {
+      setStartError("Attach at least one source first — deliverables are built only from this notebook's sources.");
+      return;
+    }
     setStartError(null);
     setHomeTab("outputs");
     if (preview) {
@@ -313,7 +319,7 @@ export function NotebookHome() {
                 {(["flashcards", "test", "slides"] as const).map((kind) => (
                   <button
                     className="flex flex-col items-center gap-1.5 rounded-xl border border-(--ui-stroke-tertiary) bg-background px-2 py-3 text-[0.76rem] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground disabled:opacity-55"
-                    disabled={Boolean(generating[kind])}
+                    disabled={Boolean(generating[kind]) || wireSources.length === 0}
                     key={kind}
                     onClick={() => handleGenerate(kind)}
                     type="button"
@@ -323,7 +329,11 @@ export function NotebookHome() {
                   </button>
                 ))}
               </div>
-              <p className="text-[0.72rem] leading-relaxed text-(--ui-text-quaternary)">Built from this notebook's sources. Results land under Outputs.</p>
+              <p className="text-[0.72rem] leading-relaxed text-(--ui-text-quaternary)">
+                {wireSources.length === 0
+                  ? "Attach at least one source first — deliverables are built only from this notebook's sources."
+                  : "Built from this notebook's sources. Results land under Outputs."}
+              </p>
             </section>
           </div>
         </aside>

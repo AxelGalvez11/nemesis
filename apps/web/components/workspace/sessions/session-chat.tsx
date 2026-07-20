@@ -286,7 +286,7 @@ export function SessionChat() {
             onRecordingChange={setRecording}
             onStop={handleStop}
             onSubmit={handleSubmit}
-            placeholder={projectId ? "Message your project" : placeholder}
+            placeholder={projectId ? "Message your notebook" : placeholder}
             showRecordCompanion={false}
           />
         </div>
