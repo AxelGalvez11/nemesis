@@ -37,8 +37,6 @@ interface BillingCatalog {
   max?: CatalogPrice;
 }
 
-type TrialEligibility = boolean | null;
-
 function formatPrice(price: CatalogPrice | undefined): { amount: string; interval: string } {
   if (!price || price.unitAmount == null) return { amount: "Price in checkout", interval: "" };
   const amount = new Intl.NumberFormat("en-US", {
@@ -50,20 +48,13 @@ function formatPrice(price: CatalogPrice | undefined): { amount: string; interva
   return { amount, interval: price.interval ? ` / ${price.interval}` : "" };
 }
 
-function checkoutDisclosure(
-  price: { amount: string; interval: string },
-  trialEligible: TrialEligibility,
-): string {
-  const recurringPrice = price.amount === "Price in checkout"
-    ? "the recurring price shown in Stripe"
-    : `${price.amount}${price.interval}`;
-  if (trialEligible === true) {
-    return `Card required. Free for 7 days, then ${recurringPrice} automatically. Cancel anytime in Stripe; cancel before the trial ends to avoid the first charge.`;
-  }
+// Freemium (2026-07-20): checkout never grants a trial, so the disclosure only
+// ever describes an immediate recurring subscription.
+function checkoutDisclosure(price: { amount: string; interval: string }): string {
   if (price.amount === "Price in checkout") {
     return "Card required. Stripe shows the recurring price before you subscribe. Cancel anytime in Stripe.";
   }
-  return `Card required. Your ${recurringPrice} recurring subscription starts when you confirm in Stripe. Cancel anytime.`;
+  return `Card required. Your ${price.amount}${price.interval} recurring subscription starts when you confirm in Stripe. Cancel anytime.`;
 }
 
 /**
@@ -80,7 +71,6 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [applying, setApplying] = useState(checkoutStatus === "success");
   const [catalog, setCatalog] = useState<BillingCatalog | null>(null);
-  const [trialEligible, setTrialEligible] = useState<TrialEligibility>(null);
 
   useEffect(() => {
     void fetchEntitlements().then(setEnt).catch((e) => setError(e instanceof Error ? e.message : "Billing failed"));
@@ -93,12 +83,11 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
     void fetch("/api/stripe/catalog", { headers: { Authorization: `Bearer ${token}` } })
       .then(async (res) => {
         if (!res.ok) throw new Error("Could not load subscription prices");
-        return res.json() as Promise<{ plans: BillingCatalog; trialEligible?: boolean | null }>;
+        return res.json() as Promise<{ plans: BillingCatalog }>;
       })
       .then((body) => {
         if (cancelled) return;
         setCatalog(body.plans);
-        setTrialEligible(typeof body.trialEligible === "boolean" ? body.trialEligible : null);
       })
       .catch(() => {
         // Checkout remains authoritative if Stripe's catalog cannot be read momentarily.
@@ -170,7 +159,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
     }
     return (
       <button style={{ width: "100%" }} disabled={busy === tier} onClick={() => void post(tier, "/api/stripe/checkout", { plan: tier })}>
-        {busy === tier ? "Opening checkout…" : trialEligible === true ? "Start 7-day free trial" : label}
+        {busy === tier ? "Opening checkout…" : label}
       </button>
     );
   }
@@ -202,9 +191,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
             ? "Checking subscription status…"
             : currentRank > 0
             ? "Manage, change, or cancel your subscription through Stripe."
-            : trialEligible === true
-            ? "Choose a plan below. Your one-time 7-day trial starts after card verification in Stripe."
-            : "Choose a desktop plan below. Stripe shows the recurring total before you subscribe."}
+            : "Choose a plan below. Stripe shows the recurring total before you subscribe."}
         </p>
         <button className="secondary" disabled={busy === "portal"} onClick={() => void post("portal", "/api/stripe/portal")}>
           {busy === "portal" ? "Opening…" : "Manage billing"}
@@ -229,7 +216,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
           {planCta("plus", "Upgrade to Student")}
           {currentRank === 0 ? (
             <p className="muted" style={{ fontSize: 11.5, lineHeight: 1.5, margin: "12px 0 0" }}>
-              {checkoutDisclosure(plusPrice, trialEligible)}
+              {checkoutDisclosure(plusPrice)}
             </p>
           ) : null}
         </Card>
@@ -251,7 +238,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
           {planCta("pro", "Upgrade to Agent Pro")}
           {currentRank === 0 ? (
             <p className="muted" style={{ fontSize: 11.5, lineHeight: 1.5, margin: "12px 0 0" }}>
-              {checkoutDisclosure(proPrice, trialEligible)}
+              {checkoutDisclosure(proPrice)}
             </p>
           ) : null}
         </Card>
@@ -274,7 +261,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
             {planCta("max", "Upgrade to Max")}
             {currentRank === 0 ? (
               <p className="muted" style={{ fontSize: 11.5, lineHeight: 1.5, margin: "12px 0 0" }}>
-                {checkoutDisclosure(maxPrice, trialEligible)}
+                {checkoutDisclosure(maxPrice)}
               </p>
             ) : null}
           </Card>
