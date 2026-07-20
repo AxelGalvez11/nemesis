@@ -15,6 +15,8 @@ interface NotebookComposerProps {
   autoFocus?: boolean;
   large?: boolean;
   onModeChange?: (mode: ComposerMode) => void;
+  onRecordingChange?: (recording: boolean) => void;
+  showRecordCompanion?: boolean;
 }
 
 export function NotebookComposer({
@@ -23,15 +25,19 @@ export function NotebookComposer({
   working = false,
   placeholder = "Ask a question",
   onModeChange,
+  onRecordingChange,
+  showRecordCompanion,
 }: NotebookComposerProps) {
   return (
     <Composer
       busy={Boolean(disabled || working)}
       onModeChange={onModeChange}
+      onRecordingChange={onRecordingChange}
       onStop={() => undefined}
       onSubmit={onSubmit}
       placement="inline"
       placeholder={placeholder}
+      showRecordCompanion={showRecordCompanion}
     />
   );
 }

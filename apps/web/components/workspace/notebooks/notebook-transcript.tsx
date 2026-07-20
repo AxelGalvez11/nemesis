@@ -17,6 +17,7 @@ interface NotebookTranscriptProps {
 
 export function NotebookTranscript({ messages, working, emptyHint }: NotebookTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const initialMessageKeys = useRef(new Set(messages.map((message) => `${message.role}:${message.at}`)));
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -29,11 +30,15 @@ export function NotebookTranscript({ messages, working, emptyHint }: NotebookTra
           {emptyHint ?? "Ask about this notebook — it knows your instructions and the sources you added."}
         </div>
       ) : (
-        messages.map((m, i) => (
+        messages.map((m) => {
+          const messageKey = `${m.role}:${m.at}`;
+          const animateOnce = !initialMessageKeys.current.has(messageKey);
+          return (
           <div
-            key={i}
+            key={messageKey}
             className={cn(
-              "min-w-0 animate-in text-[length:var(--conversation-text-font-size)] leading-relaxed fade-in-0 duration-500",
+              "min-w-0 text-[length:var(--conversation-text-font-size)] leading-relaxed",
+              animateOnce && "animate-in fade-in-0 duration-500",
               m.role === "user"
                 ? "self-end max-w-[85%] rounded-[1.75rem] bg-[color-mix(in_srgb,var(--ui-base)_7%,transparent)] px-4 py-2.5 text-center text-foreground"
                 : "max-w-full text-foreground",
@@ -45,7 +50,8 @@ export function NotebookTranscript({ messages, working, emptyHint }: NotebookTra
               <AssistantMarkdown className="text-[length:var(--conversation-text-font-size)] leading-relaxed" text={m.content} />
             )}
           </div>
-        ))
+          );
+        })
       )}
       {working && <div className="mx-auto w-full max-w-3xl text-[0.85rem] text-(--ui-text-tertiary)">Thinking…</div>}
     </div>

@@ -19,6 +19,7 @@ import { Composer, type ComposerMode } from "./composer";
 import { Thread, type ThreadTurn } from "./thread";
 import type { TurnError } from "./assistant-message";
 import { SessionRightRail, type SessionRailPanel } from "./session-right-rail";
+import { RecordWorkspace } from "./record-workspace";
 
 function groupTurns(messages: SessionMessage[]): ThreadTurn[] {
   const turns: ThreadTurn[] = [];
@@ -160,16 +161,20 @@ export function SessionChat() {
   }, []);
 
   return (
-    <div className="relative isolate flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)">
-      <ChatHeader onOpenRail={() => setRightRailOpen(true)} railOpen={rightRailOpen} session={session} />
-      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+    <div className="relative isolate flex h-full min-w-0 overflow-hidden bg-(--ui-chat-surface-background)">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <ChatHeader onOpenRail={() => setRightRailOpen(true)} railOpen={rightRailOpen} session={session} />
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]" data-slot="composer-bounds">
-          <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} recordMode={composerMode === "record"} turns={turns} />
+          {composerMode === "record" ? (
+            <RecordWorkspace className="absolute inset-x-6 bottom-[calc(var(--composer-measured-height)+1.75rem)] top-4 z-10 max-sm:inset-x-3" />
+          ) : (
+            <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
+          )}
           <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-24 bg-linear-to-t from-(--ui-chat-surface-background) via-[color-mix(in_srgb,var(--ui-chat-surface-background)_82%,transparent)] to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_top,black_35%,transparent)]" />
-          <Composer busy={busy} centered={isFreshThread} onModeChange={setComposerMode} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} />
+          <Composer busy={busy} centered={isFreshThread && composerMode === "chat"} onModeChange={setComposerMode} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} showRecordCompanion={false} />
         </div>
-        {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={outputs} panel={rightPanel} sources={sources} />}
       </div>
+      {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={outputs} panel={rightPanel} sources={sources} />}
     </div>
   );
 }

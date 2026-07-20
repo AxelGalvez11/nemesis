@@ -16,7 +16,7 @@ export type SessionRailSource = Omit<SessionSource, "url" | "description"> & { u
 
 export function SessionRightRail({ panel, onPanelChange, onCollapse, sources, outputs }: { panel: SessionRailPanel; onPanelChange: (panel: SessionRailPanel) => void; onCollapse: () => void; sources: SessionRailSource[]; outputs: SessionOutput[] }) {
   return (
-    <aside className="flex h-full w-[17.5rem] shrink-0 flex-col overflow-hidden border-l border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) animate-in slide-in-from-right-5 fade-in-0 duration-200 motion-reduce:animate-none max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-[min(18rem,88vw)] max-md:shadow-xl">
+    <aside className="relative z-10 flex h-full w-[17.5rem] shrink-0 self-stretch flex-col overflow-hidden border-l border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) animate-in slide-in-from-right-5 fade-in-0 duration-200 motion-reduce:animate-none max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-[min(18rem,88vw)] max-md:shadow-xl" data-slot="session-right-rail">
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-2">
         <div className="grid flex-1 grid-cols-2 rounded-xl bg-(--ui-bg-quaternary) p-0.5">
           {(["sources", "outputs"] as const).map((option) => (

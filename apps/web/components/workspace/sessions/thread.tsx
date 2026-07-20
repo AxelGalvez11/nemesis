@@ -25,7 +25,6 @@ interface ThreadProps {
   liveSeconds: number | null;
   error: TurnError | null;
   centeredComposer?: boolean;
-  recordMode?: boolean;
   onEditMessage: (at: string, content: string) => void;
   onOpenSources?: () => void;
 }
@@ -35,8 +34,9 @@ function turnDurationSeconds(turn: ThreadTurn): number | null {
   return Math.round((Date.parse(turn.assistant.at) - Date.parse(turn.user.at)) / 1000);
 }
 
-export function Thread({ turns, busy, liveSeconds, error, centeredComposer = false, recordMode = false, onEditMessage, onOpenSources }: ThreadProps) {
+export function Thread({ turns, busy, liveSeconds, error, centeredComposer = false, onEditMessage, onOpenSources }: ThreadProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const initialAssistantMessages = useRef(new Set(turns.flatMap((turn) => turn.assistant ? [turn.assistant.at] : [])));
   const isEmpty = turns.length === 0;
   const lastTurn = turns[turns.length - 1];
   const assistantScrollKey = `${turns.length}:${lastTurn?.assistant?.content.length ?? 0}`;
@@ -67,13 +67,13 @@ export function Thread({ turns, busy, liveSeconds, error, centeredComposer = fal
               className="mx-auto grid h-full w-full max-w-(--composer-width) grid-rows-[minmax(0,1fr)_auto] min-w-0 gap-(--conversation-turn-gap) px-6 py-8"
               data-slot="aui_thread-content"
             >
-              <div className={cn("flex min-h-0 w-full flex-col items-center transition-[padding] duration-300", centeredComposer ? (recordMode ? "justify-center pb-72" : "justify-center pb-40") : "justify-center pt-[var(--composer-measured-height)]")}>
+              <div className={cn("flex min-h-0 w-full flex-col items-center transition-[padding] duration-300", centeredComposer ? "justify-center pb-40" : "justify-center pt-[var(--composer-measured-height)]")}>
                 <Intro />
               </div>
             </div>
           ) : (
             <div
-              className={cn("mx-auto flex w-full max-w-(--composer-width) min-w-0 flex-col px-6 pt-4 transition-[padding] duration-300", recordMode ? "pb-[calc(var(--composer-measured-height)+10rem)]" : "pb-[calc(var(--composer-measured-height)+2rem)]")}
+              className="mx-auto flex w-full max-w-(--composer-width) min-w-0 flex-col px-6 pb-[calc(var(--composer-measured-height)+2rem)] pt-4"
               data-slot="aui_thread-content"
             >
               {turns.map((turn, index) => {
@@ -91,7 +91,7 @@ export function Thread({ turns, busy, liveSeconds, error, centeredComposer = fal
                         error={isLast ? error : null}
                         liveSeconds={isLast && busy ? liveSeconds : null}
                         message={turn.assistant}
-                        animateReveal={isLast}
+                        animateReveal={isLast && Boolean(turn.assistant) && !initialAssistantMessages.current.has(turn.assistant?.at ?? "")}
                         onOpenSources={turn.assistant?.sources?.length ? onOpenSources : undefined}
                         pending={isLast && busy && !turn.assistant}
                       />

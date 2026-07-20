@@ -48,6 +48,12 @@
 [data-workspace][data-sidebar-visible='false'] .workspace-inline-sidebar-toggle {
   left: max(3.5rem, env(safe-area-inset-left));
 }
+/* The Library tab strip already starts after its own open sidebar, so the
+   global-sidebar safety inset would leave its toggle and first tab stranded in
+   the middle of the row. Keep the inset only when both sidebars are collapsed. */
+[data-workspace][data-sidebar-visible='false'] .library-tab-strip[data-library-sidebar-open='true'] {
+  padding-left: 0.375rem;
+}
 @media (max-width: 768px) {
   .workspace-page-header {
     padding-right: max(1rem, env(safe-area-inset-right));

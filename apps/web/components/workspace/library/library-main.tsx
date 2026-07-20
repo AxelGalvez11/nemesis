@@ -277,7 +277,10 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   return (
     <main className="relative flex h-full min-w-0 flex-1 overflow-hidden bg-(--ui-bg-editor)">
       <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="workspace-page-header flex h-9 shrink-0 items-end gap-0.5 overflow-x-auto overflow-y-hidden border-b border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-text-primary)_5%,var(--ui-bg-editor))] px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          className="library-tab-strip workspace-page-header flex h-9 shrink-0 items-end gap-0.5 overflow-x-auto overflow-y-hidden border-b border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-text-primary)_5%,var(--ui-bg-editor))] px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          data-library-sidebar-open={leftSidebarOpen ? "true" : "false"}
+        >
           <Button
             aria-label={leftSidebarOpen ? "Collapse Library sidebar" : "Expand Library sidebar"}
             className="mb-0.5 shrink-0 self-center"
@@ -356,7 +359,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
           <div className="mx-auto flex min-h-full w-full max-w-(--composer-width) min-w-0 flex-col px-6 pb-12 pt-5 max-sm:px-4">
             {mode === "edit" ? (
-              <LibraryLiveEditor isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} key={note.id} onChange={(next) => updateDraft({ content: next })} onWikiLink={(target) => void openWikiTarget(target)} value={content} />
+              <LibraryLiveEditor key={note.id} onChange={(next) => updateDraft({ content: next })} value={content} />
             ) : (
               <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown externalLinksInNewTab={false} isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} obsidianTags onWikiLink={(target) => void openWikiTarget(target)} text={content} /></article>
             )}
