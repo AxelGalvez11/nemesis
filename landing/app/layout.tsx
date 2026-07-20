@@ -13,12 +13,12 @@ const hanken = Hanken_Grotesk({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.enternemesis.com"),
-  title: "Nemesis: a study agent for your Mac",
+  title: "Nemesis: your AI study agent",
   description:
-    "Nemesis turns your course files into notes, flashcards, and practice tests. It builds its knowledge from your library and gets better the more you use it. Your files stay on your Mac, and it never submits work for you.",
+    "Nemesis turns your course files into notes, flashcards, and practice tests. It builds its knowledge from your library and gets better the more you use it. It never submits work for you.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "Nemesis: a study agent for your Mac",
+    title: "Nemesis: your AI study agent",
     description:
       "Notes, flashcards, and practice tests from your own course files. It builds its knowledge from your library and gets better the more you use it.",
     type: "website",
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Nemesis: a study agent for your Mac",
+    title: "Nemesis: your AI study agent",
     description:
       "Notes, flashcards, and practice tests from your own course files. It builds its knowledge from your library and gets better the more you use it.",
     images: ["/nemesis/og.jpg"],

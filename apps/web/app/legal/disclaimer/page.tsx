@@ -4,7 +4,7 @@ export default function DisclaimerPage() {
   return (
     <main className="legal-page">
       <nav className="legal-nav">
-        <Link className="brand" href="/app">Nemesis</Link>
+        <Link className="brand" href="/">Nemesis</Link>
         <div>
           <Link className="source-link" href="/legal/privacy">Privacy</Link>
           <Link className="source-link" href="/legal/terms">Terms</Link>

@@ -203,7 +203,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
             : currentRank > 0
             ? "Manage, change, or cancel your subscription through Stripe."
             : trialEligible === true
-            ? "Choose a desktop plan below. Your one-time 7-day trial starts after card verification in Stripe."
+            ? "Choose a plan below. Your one-time 7-day trial starts after card verification in Stripe."
             : "Choose a desktop plan below. Stripe shows the recurring total before you subscribe."}
         </p>
         <button className="secondary" disabled={busy === "portal"} onClick={() => void post("portal", "/api/stripe/portal")}>
