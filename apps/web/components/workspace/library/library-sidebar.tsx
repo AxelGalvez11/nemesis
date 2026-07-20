@@ -3,8 +3,8 @@
 // Cloud Library tree with persisted note/folder creation, search, selection,
 // and shared state for the editor and Graph surfaces.
 
-import { IconFilePlus, IconFolderPlus, IconSearch, IconX } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { IconFileImport, IconFilePlus, IconFolderPlus, IconSearch, IconX } from "@tabler/icons-react";
+import { useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -32,6 +32,8 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const { status, notes, folders, error, selectedPath, select, reload, createNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
 
   const tree = useMemo(() => buildLibraryTree(notes, folders), [folders, notes]);
@@ -57,6 +59,24 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
     onNavigate?.();
   };
 
+  const importNotes = async (files: File[]) => {
+    if (files.length === 0) return;
+    setImportError(null);
+    try {
+      let lastPath: string | null = null;
+      for (const file of files) {
+        const title = file.name.replace(/\.(?:md|markdown|txt)$/i, "").trim() || "Untitled note";
+        const note = await createNote({ title, folder: "", content: await file.text() });
+        lastPath = note.path;
+      }
+      if (lastPath) openPath(lastPath);
+    } catch (cause) {
+      setImportError(cause instanceof Error ? cause.message : "Couldn't import those notes.");
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  };
+
   return (
     <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height)">
       <div className="workspace-page-header flex items-center justify-between gap-3 px-3 pb-2 pt-2.5">
@@ -67,6 +87,14 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
           )}
         </div>
         <div className="flex gap-0.5">
+          <input
+            accept=".md,.markdown,.txt,text/markdown,text/plain"
+            className="sr-only"
+            multiple
+            onChange={(event) => void importNotes(Array.from(event.target.files ?? []))}
+            ref={importInputRef}
+            type="file"
+          />
           {totalCount > 0 && (
             <Button
               aria-label={searchOpen ? "Hide note search" : "Search notes"}
@@ -86,8 +114,13 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
               <Icon />
             </Button>
           ))}
+          <Button aria-label="Import notes" onClick={() => importInputRef.current?.click()} size="icon-xs" title="Import notes" type="button" variant="ghost">
+            <IconFileImport />
+          </Button>
         </div>
       </div>
+
+      {importError && <p className="mx-3 mb-1 text-[0.65rem] text-destructive" role="alert">{importError}</p>}
 
       {totalCount > 0 && searchOpen && (
         <div className="mx-3 mb-1">

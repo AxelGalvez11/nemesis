@@ -9,6 +9,7 @@ const CURRENT_INFO_PATTERN = /\b(latest|current|currently|today|tonight|yesterda
 const CHANGING_FACT_PATTERN = /\bwho\s+(?:is|are|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
 const LIVE_SPORTS_PATTERN = /\b(world cup|super bowl|olympics?|playoffs?|finals?|tournament|match|game|who won|score|standings)\b/i;
 const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
+const EMERGING_ENTITY_PATTERN = /\b(?:what|who)\s+(?:is|are)\s+(?:the\s+)?[\p{L}\p{N}._-]+(?:\s+[\p{L}\p{N}._-]+){0,4}\s+(?:agent|ai|app|company|framework|library|model|platform|plugin|product|project|service|software|tool)\b/iu;
 
 export function shouldSearchWeb(query: string): boolean {
   const compact = query.trim();
@@ -17,6 +18,7 @@ export function shouldSearchWeb(query: string): boolean {
     || CURRENT_INFO_PATTERN.test(compact)
     || CHANGING_FACT_PATTERN.test(compact)
     || LIVE_SPORTS_PATTERN.test(compact)
+    || EMERGING_ENTITY_PATTERN.test(compact)
     || RECENT_YEAR_PATTERN.test(compact)
     || /https?:\/\//i.test(compact);
 }

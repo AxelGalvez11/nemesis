@@ -1,7 +1,7 @@
 "use client";
 
 // The full chat view inside a notebook (Claude's in-project chat): a "Notebook / Chat" breadcrumb, the
-// transcript, and the composer — no right rail. Reads the active chat from the store and sends turns
+// transcript, shared right rail, and composer. Reads the active chat from the store and sends turns
 // through the cloud-backed orchestrator. Preview builds return a canned reply.
 
 import { useCallback, useMemo, useState } from "react";
@@ -18,6 +18,8 @@ import { NotebookComposer } from "./notebook-composer";
 import { NotebookTranscript } from "./notebook-transcript";
 import { useNotebooks } from "./notebooks-store";
 import { SessionRightRail, type SessionRailPanel, type SessionRailSource } from "../sessions/session-right-rail";
+import { type ComposerMode } from "../sessions/composer";
+import { RecordWorkspace } from "../sessions/record-workspace";
 
 const PREVIEW_REPLY =
   "This is a preview build — replies here are canned. Sign in on the real app to chat about this notebook.";
@@ -31,6 +33,8 @@ export function NotebookChatView() {
   const { messages, working } = useNotebookChat(activeChatId);
   const [rightRailOpen, setRightRailOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<SessionRailPanel>("sources");
+  const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
+  const [recording, setRecording] = useState(false);
 
   const wireSources: NotebookWireSource[] = useMemo(
     () => sources.map((s) => ({ name: s.name, content: s.content })),
@@ -72,8 +76,9 @@ export function NotebookChatView() {
   const chat = chats.find((c) => c.id === activeChatId);
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-1.5 px-6 pb-2 pt-[calc(var(--titlebar-height)+1rem)] text-[0.85rem]">
+    <div className="flex h-full min-w-0 flex-1 overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center gap-1.5 px-6 pb-2 pt-[calc(var(--titlebar-height)+1rem)] text-[0.85rem]">
         <button
           type="button"
           onClick={backToHome}
@@ -84,20 +89,31 @@ export function NotebookChatView() {
         <Codicon name="chevron-right" size="0.7rem" className="shrink-0 text-(--ui-text-quaternary)" />
         <span className="max-w-[20rem] truncate font-medium text-foreground">{chat?.title ?? "New chat"}</span>
         {!rightRailOpen && <Button aria-label="Open notebook chat sidebar" className="ml-auto" onClick={() => setRightRailOpen(true)} size="icon-xs" variant="ghost"><IconLayoutSidebarRightExpand /></Button>}
-      </div>
+        </div>
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-6">
-          <NotebookTranscript messages={messages} working={working} />
+          {composerMode === "record" && recording ? (
+            <RecordWorkspace className="mb-2 mt-4 min-h-0 flex-1" />
+          ) : (
+            <NotebookTranscript messages={messages} working={working} />
+          )}
           <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-20 bg-linear-to-t from-(--ui-chat-surface-background) to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_top,black,transparent)]" />
           <div className="relative z-10 shrink-0 pb-5 pt-2">
             <div className="mx-auto w-full max-w-3xl">
-              <NotebookComposer onSubmit={submit} working={working} autoFocus placeholder={`Message ${selected.name}…`} />
+              <NotebookComposer
+                autoFocus
+                onModeChange={setComposerMode}
+                onRecordingChange={setRecording}
+                onSubmit={submit}
+                placeholder={`Message ${selected.name}…`}
+                showRecordCompanion={!recording}
+                working={working}
+              />
             </div>
           </div>
         </div>
-        {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={[]} panel={rightPanel} sources={railSources} />}
       </div>
+      {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={[]} panel={rightPanel} sources={railSources} />}
     </div>
   );
 }

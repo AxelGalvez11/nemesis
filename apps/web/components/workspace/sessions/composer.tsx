@@ -41,11 +41,13 @@ interface ComposerProps {
   placement?: "floating" | "inline";
   placeholder: string;
   onModeChange?: (mode: ComposerMode) => void;
+  onRecordingChange?: (recording: boolean) => void;
   onSubmit: (text: string, files: File[]) => void;
   onStop: () => void;
+  showRecordCompanion?: boolean;
 }
 
-export function Composer({ busy, centered = false, placement = "floating", placeholder, onModeChange, onSubmit, onStop }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, onModeChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasText, setHasText] = useState(false);
@@ -66,6 +68,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
     setComposerMode(mode);
     onModeChange?.(mode);
     setRecording(false);
+    onRecordingChange?.(false);
     try {
       window.localStorage.setItem(COMPOSER_MODE_STORAGE_KEY, mode);
     } catch {
@@ -199,7 +202,11 @@ export function Composer({ busy, centered = false, placement = "floating", place
                         "size-(--composer-control-primary-size) shrink-0 rounded-full p-0",
                         recording ? "bg-destructive text-destructive-foreground" : "bg-foreground text-background hover:bg-foreground/90",
                       )}
-                      onClick={() => setRecording((value) => !value)}
+                      onClick={() => {
+                        const next = !recording;
+                        setRecording(next);
+                        onRecordingChange?.(next);
+                      }}
                       size="icon"
                     >
                       <Codicon name={recording ? "debug-stop" : "record"} size="0.875rem" />
@@ -230,7 +237,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
           </div>
         </div>
       </div>
-      {composerMode === "record" && <RecordCompanionPanel />}
+      {composerMode === "record" && showRecordCompanion && <RecordCompanionPanel />}
     </div>
   );
 }
@@ -251,7 +258,7 @@ function AudioWaveform({ active }: { active: boolean }) {
 
 export function RecordCompanionPanel() {
   return (
-    <section className="mt-2 grid min-h-28 grid-cols-2 divide-x divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.5rem] border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_92%,transparent)] shadow-lg backdrop-blur-xl animate-in slide-in-from-bottom-3 fade-in-0 duration-300 motion-reduce:animate-none">
+    <section className="mt-2 grid min-h-28 grid-cols-2 divide-x divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.5rem] border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_92%,transparent)] shadow-lg backdrop-blur-xl animate-in slide-in-from-bottom-3 fade-in-0 duration-300 motion-reduce:animate-none" data-slot="record-companion-panel">
       <div className="p-4">
         <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">Transcript</h2>
         <p className="mt-2 text-xs leading-relaxed text-(--ui-text-quaternary)">Live transcription will appear here while you record.</p>
