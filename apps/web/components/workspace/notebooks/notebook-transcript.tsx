@@ -9,6 +9,8 @@ import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import type { SessionMessage } from "@/lib/notebooks/chat";
 import { cn } from "@/lib/utils";
 
+import { OutputCard } from "../sessions/output-card";
+
 interface NotebookTranscriptProps {
   messages: SessionMessage[];
   working: boolean;
@@ -47,7 +49,14 @@ export function NotebookTranscript({ messages, working, emptyHint }: NotebookTra
             {m.role === "user" ? (
               <span className="whitespace-pre-wrap break-words">{m.content}</span>
             ) : (
-              <AssistantMarkdown className="text-[length:var(--conversation-text-font-size)] leading-relaxed" text={m.content} />
+              <>
+                <AssistantMarkdown className="text-[length:var(--conversation-text-font-size)] leading-relaxed" text={m.content} />
+                {m.outputs && m.outputs.length > 0 && (
+                  <div className="mt-2 flex flex-col gap-2">
+                    {m.outputs.map((output) => <OutputCard key={output.id} output={output} />)}
+                  </div>
+                )}
+              </>
             )}
           </div>
           );

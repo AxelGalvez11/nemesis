@@ -11,6 +11,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { notebookChatStore, sendNotebookTurn, type NotebookWireSource } from "@/lib/notebooks/chat";
+import { requestNotebookRecording } from "@/lib/notebooks/record-intent";
 import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +46,7 @@ export function NotebookHome() {
 
   const [instrOpen, setInstrOpen] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [startingRecording, setStartingRecording] = useState(false);
 
   const wireSources: NotebookWireSource[] = useMemo(
     () => sources.map((s) => ({ name: s.name, content: s.content })),
@@ -80,6 +82,31 @@ export function NotebookHome() {
     [selected, preview, chats, uid, wireSources, notebooks],
   );
 
+  // Owner ask 2026-07-20: on the notebook home the recorder stays compact
+  // (mode pill + companion panel only); pressing Record creates a chat and
+  // hands off to the full chat view, which opens the regular recorder screen.
+  const startRecordingChat = useCallback(
+    (active: boolean) => {
+      if (!active || !selected || startingRecording) return;
+      setStartingRecording(true);
+      setStartError(null);
+      void (async () => {
+        try {
+          const chat = preview ? (chats[0] ?? null) : await notebooks.startChat(selected.id, "Recorded session");
+          if (!chat) {
+            setStartError("Couldn't start a recording — check your connection and that you're signed in.");
+            return;
+          }
+          requestNotebookRecording(chat.id);
+          notebooks.openChat(chat.id);
+        } finally {
+          setStartingRecording(false);
+        }
+      })();
+    },
+    [chats, notebooks, preview, selected, startingRecording],
+  );
+
   if (!selected) return null;
 
   const instructions = selected.instructions?.trim() ?? "";
@@ -105,7 +132,7 @@ export function NotebookHome() {
               <NotebookProjectMenu />
             </div>
 
-            <NotebookComposer onSubmit={startFromPrompt} placeholder="Ask a question" large autoFocus />
+            <NotebookComposer onRecordingChange={startRecordingChat} onSubmit={startFromPrompt} placeholder="Ask a question" large autoFocus />
             {startError && <p className="mt-2 text-[0.8rem] text-(--dt-destructive)">{startError}</p>}
 
             <div className="mt-8">

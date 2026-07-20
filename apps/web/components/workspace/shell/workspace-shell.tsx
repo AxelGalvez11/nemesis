@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
+import { OutputViewerDialog } from "@/components/workspace/sessions/output-viewer-dialog";
 import { UpgradePromptDialog } from "@/components/workspace/upgrade-prompt-dialog";
 import { cn } from "@/lib/utils";
 
@@ -107,6 +108,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         </div>
       </main>
       <UpgradePromptDialog />
+      <OutputViewerDialog />
       </SettingsModalProvider>
     </div>
   );
