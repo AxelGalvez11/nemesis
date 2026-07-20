@@ -149,6 +149,19 @@ native fetch has no CORS). Supabase table access uses the normal supabase-js cli
    `apps/web` tsc + tests + `next build` if feasible in worktree.
 3. PR → owner OK → merge (web auto-deploys) + EAS OTA publish (recipe in ship-ops memory).
 
+## 12b. Amendments made during the build (accepted deviations)
+
+- **Shared-browser cache convention** (added mid-build after two builders independently
+  flagged cross-account contamination): all web localStorage caches are scoped per-uid
+  (`<base>:<uid>`); the pre-cloud legacy blob at the old unscoped key is claimed ONCE
+  globally by the first account to sign in, uploaded, then deleted; AuthProvider sweeps
+  `nemesis.web.sessions.*`, `nemesis.web.calendar.*`, and `nemesis_device_key_v1_*` from
+  localStorage on SIGNED_OUT. Mobile caches were already per-uid files.
+- **§4 "hydrate synchronously" is superseded**: per-uid keys mean hydration waits one tick
+  for the signed-in uid (effect-deferred). Accepted — masked by the workspace loading gate.
+- Sessions store kept its per-uid one-time-upload flag; calendar dropped its equivalent.
+  Both are idempotent-safe; divergence accepted as a cosmetic cleanup follow-up.
+
 ## 13. Out of scope this round (say so in the report)
 
 - ICS "Add to iPhone Calendar" rebuild on cloud; phone note EDITING; phone attachments;
