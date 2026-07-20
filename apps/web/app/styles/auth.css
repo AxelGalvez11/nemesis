@@ -24,23 +24,14 @@
   position: relative;
 }
 
-/* left panel — the glitched chrome-notebook art */
+/* left panel — dark type-only field (the notebook photo + glitch layers were
+   removed 2026-07-20) */
 .nemesis-auth-field {
   background: #000;
   border-right: 1px solid var(--auth-line);
   min-height: 100svh;
   overflow: hidden;
   position: relative;
-}
-.nemesis-auth-object {
-  background-image: url("/nemesis/hero-notebook.webp");
-  background-position: 58% center;
-  background-repeat: no-repeat;
-  background-size: cover;
-  filter: contrast(1.22) saturate(0.72);
-  inset: -5%;
-  position: absolute;
-  transform: scale(1.05);
 }
 .nemesis-auth-field::before {
   background:
@@ -50,48 +41,6 @@
   inset: 0;
   position: absolute;
   z-index: 1;
-}
-.nemesis-auth-field::after {
-  background: rgba(235, 238, 243, 0.94);
-  box-shadow: 18px 0 0 #080809, 25px 0 0 rgba(255, 39, 64, 0.7), 91px 0 0 rgba(231, 233, 237, 0.88);
-  content: "";
-  height: 2px;
-  left: 17%;
-  opacity: 0.55;
-  position: absolute;
-  right: 20%;
-  top: 35%;
-  transform: skewX(-28deg);
-  z-index: 2;
-}
-.nemesis-auth-glitch {
-  background-image: url("/nemesis/hero-notebook.webp");
-  background-position: 58% center;
-  background-repeat: no-repeat;
-  background-size: cover;
-  filter: invert(1) contrast(1.9) grayscale(1);
-  height: 18px;
-  left: 8%;
-  opacity: 0.82;
-  position: absolute;
-  right: 7%;
-  z-index: 3;
-}
-.nemesis-auth-glitch.glitch-a { top: 29%; transform: translateX(28px); }
-.nemesis-auth-glitch.glitch-b { bottom: 29%; height: 9px; transform: translateX(-18px); }
-@media (prefers-reduced-motion: no-preference) {
-  .nemesis-auth-glitch.glitch-a { animation: nemesis-auth-glitch-a 6s steps(1, end) infinite; }
-  .nemesis-auth-glitch.glitch-b { animation: nemesis-auth-glitch-b 8s steps(1, end) infinite; }
-}
-@keyframes nemesis-auth-glitch-a {
-  0%, 7%, 9%, 62%, 64%, 100% { transform: translateX(28px); opacity: 0.82; }
-  8% { transform: translateX(-48px); opacity: 1; }
-  63% { transform: translateX(62px); opacity: 0.44; }
-}
-@keyframes nemesis-auth-glitch-b {
-  0%, 28%, 30%, 83%, 85%, 100% { transform: translateX(-18px); }
-  29% { transform: translateX(52px); }
-  84% { transform: translateX(-70px); }
 }
 .nemesis-auth-field-copy {
   bottom: 48px;
@@ -345,8 +294,6 @@
   .nemesis-auth-field::before {
     background: linear-gradient(0deg, rgba(8, 8, 9, 0.97) 8%, rgba(8, 8, 9, 0.9) 53%, rgba(8, 8, 9, 0.62));
   }
-  .nemesis-auth-field::after, .nemesis-auth-glitch { display: none; }
-  .nemesis-auth-object { background-position: 54% center; opacity: 0.38; }
   .nemesis-auth-field-copy { display: none; }
   .nemesis-auth-panel-wrap { min-height: 100svh; padding: 96px 24px 48px; }
 }

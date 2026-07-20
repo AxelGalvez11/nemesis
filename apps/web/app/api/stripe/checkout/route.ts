@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     try {
     const { data: existing, error: subscriptionReadError } = await admin
       .from("subscriptions")
-      .select("stripe_customer_id, stripe_livemode, stripe_subscription_id, trial_end")
+      .select("stripe_customer_id, stripe_livemode")
       .eq("user_id", user.id)
       .maybeSingle();
     if (subscriptionReadError) throw subscriptionReadError;
@@ -66,15 +66,11 @@ export async function POST(req: Request) {
     let customerId = existingInCurrentMode
       ? existing.stripe_customer_id as string | null | undefined
       : null;
-    let hasSubscriptionHistory = existingInCurrentMode
-      && Boolean(existing?.stripe_subscription_id || existing?.trial_end);
     if (customerId) {
       // Paid users change tiers in Stripe's portal. Starting another subscription checkout for the
       // same customer can leave both tiers active and double-charge them.
       let hasOpenSubscription = false;
       for await (const subscription of stripeClient.subscriptions.list({ customer: customerId, status: "all", limit: 100 })) {
-        // Any prior subscription, including canceled/incomplete-expired, consumes the one-time trial.
-        hasSubscriptionHistory = true;
         if (subscriptionRemainsOpen(subscription.status)) {
           hasOpenSubscription = true;
         }
@@ -128,7 +124,8 @@ export async function POST(req: Request) {
       if (customerMirrorError) throw customerMirrorError;
     }
 
-    const checkoutTerms = subscriptionCheckoutTerms(hasSubscriptionHistory);
+    // Freemium: no trials — the subscription bills immediately on completion.
+    const checkoutTerms = subscriptionCheckoutTerms();
     const session = await stripeClient.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,

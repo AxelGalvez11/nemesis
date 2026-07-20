@@ -20,13 +20,12 @@ interface Tier {
   featured?: boolean;
 }
 
-// Nemesis tiers — a trial model, not freemium: every plan starts with a no-charge
-// trial (Stripe collects the card, first charge lands after the trial). The plans map
-// to Stripe prices (plan "plus" | "pro" | "max" → STRIPE_{PLUS,PRO,MAX}_PRICE_ID); the
-// $ shown here must match those Stripe prices.
+// Nemesis tiers — freemium: the free plan works every day with no card, and these
+// paid plans raise the limits. The plans map to Stripe prices (plan "plus" | "pro" |
+// "max" → STRIPE_{PLUS,PRO,MAX}_PRICE_ID); the $ shown here must match those prices.
 const TIERS: Tier[] = [
   {
-    cta: "Start free trial",
+    cta: "Get Student",
     cadence: "/ month",
     features: [
       "Cited answers and research support for any field",
@@ -41,7 +40,7 @@ const TIERS: Tier[] = [
     tagline: "For the student who lives in it.",
   },
   {
-    cta: "Start free trial",
+    cta: "Get Agent Pro",
     cadence: "/ month",
     featured: true,
     features: [
@@ -56,7 +55,7 @@ const TIERS: Tier[] = [
     tagline: "The full autopilot for your degree.",
   },
   {
-    cta: "Start free trial",
+    cta: "Get Max",
     cadence: "/ month",
     features: [
       "Everything in Agent Pro, with the highest limits",
@@ -160,7 +159,7 @@ function PricingInner() {
 
       <header className="nm-nav">
         <span className="nm-wordmark">NEMESIS</span>
-        <Link className="nm-nav-link" href={session?.access_token ? "/app" : "/sign-in"}>
+        <Link className="nm-nav-link" href={session?.access_token ? "/" : "/sign-in"}>
           {session?.access_token ? "Open app" : "Sign in"}
         </Link>
       </header>
@@ -170,15 +169,15 @@ function PricingInner() {
         <h1 className="nm-title">The AI that runs your semester.</h1>
         <p className="nm-sub">
           Nemesis combines live notes, study tools, research, and cited answers for any course or field in one focused
-          workspace — on the web first, with a deeper desktop agent to follow.
+          workspace, right in your browser.
         </p>
-        <p className="nm-trialline">Every plan starts with a 7-day free trial. No charge until it ends — cancel anytime.</p>
+        <p className="nm-trialline">Start free, no card required. Paid plans raise the limits — cancel anytime.</p>
       </section>
 
       {checkoutStatus === "success" ? (
         <p className="nm-banner nm-banner-ok">
-          Payment received — you&apos;re a founding member. Check your email for how to get the Mac app, or open the app if
-          you already have it and sign in with this account.
+          Payment received — you&apos;re a founding member. Your plan is live on this account: open the app and you&apos;re
+          set.
         </p>
       ) : checkoutStatus === "cancelled" ? (
         <p className="nm-banner">Checkout cancelled — no charge was made.</p>
@@ -195,7 +194,7 @@ function PricingInner() {
               <strong>{tier.price}</strong>
               <span className="nm-cadence">{tier.cadence}</span>
             </p>
-            <p className="nm-trialhint">7 days free, then billed monthly</p>
+            <p className="nm-trialhint">Billed monthly. Cancel anytime.</p>
             <button className="nm-cta" disabled={busy === tier.id} onClick={() => onCta(tier)} type="button">
               {busy === tier.id ? "Opening checkout…" : tier.cta}
             </button>
@@ -215,7 +214,7 @@ function PricingInner() {
 
       <p className="nm-fineprint">
         Cancel anytime. Prices in USD. Nemesis reads your school accounts to help you — it never submits work or sends
-        email on your behalf. macOS only for now; an iPhone app is on the way.
+        email on your behalf. Works in your browser today; an iPhone app is on the way.
       </p>
     </main>
   );
@@ -230,7 +229,7 @@ export default function PricingPage() {
 }
 
 const PRICING_CSS = `
-.nm-pricing { --nm-bg:#0b0b0c; --nm-surface:#141416; --nm-line:#262629; --nm-text:#f2f2f4; --nm-dim:#a0a0a8; --nm-red:#ff2740; --nm-red-soft:rgba(255,39,64,0.12);
+.nm-pricing { --nm-bg:#ffffff; --nm-surface:#fafafa; --nm-line:#e4e4e8; --nm-text:#17171a; --nm-dim:#63636d; --nm-red:#d81f33; --nm-red-soft:rgba(216,31,51,0.10);
   min-height:100vh; background:var(--nm-bg); color:var(--nm-text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
   padding:0 24px 72px; -webkit-font-smoothing:antialiased; }
 .nm-nav { display:flex; align-items:center; justify-content:space-between; max-width:1080px; margin:0 auto; padding:22px 4px; }
@@ -243,11 +242,12 @@ const PRICING_CSS = `
 .nm-sub { color:var(--nm-dim); font-size:clamp(15px,2.2vw,18px); line-height:1.6; margin:0 auto; max-width:600px; }
 .nm-trialline { color:var(--nm-red); font-size:13.5px; font-weight:600; margin:20px auto 0; }
 .nm-banner { max-width:1080px; margin:0 auto 24px; padding:13px 16px; border-radius:12px; font-size:14px; background:var(--nm-surface); border:1px solid var(--nm-line); color:var(--nm-dim); text-align:center; }
-.nm-banner-ok { border-color:rgba(52,199,89,0.4); color:#7ee29a; background:rgba(52,199,89,0.08); }
-.nm-banner-err { border-color:rgba(255,59,70,0.45); color:#ff8f97; background:rgba(255,59,70,0.08); }
+.nm-banner-ok { border-color:rgba(28,138,66,0.35); color:#1c7a3f; background:rgba(52,199,89,0.08); }
+.nm-banner-err { border-color:rgba(216,31,51,0.35); color:#b3121f; background:rgba(216,31,51,0.06); }
 .nm-tiers { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; max-width:1080px; margin:0 auto; align-items:start; }
-.nm-card { position:relative; background:var(--nm-surface); border:1px solid var(--nm-line); border-radius:20px; padding:26px 24px; display:flex; flex-direction:column; }
-.nm-card-featured { border-color:var(--nm-red); box-shadow:0 0 0 1px var(--nm-red), 0 20px 50px -24px var(--nm-red-soft); }
+.nm-card { position:relative; background:var(--nm-bg); border:1px solid var(--nm-line); border-radius:20px; padding:26px 24px; display:flex; flex-direction:column;
+  box-shadow:0 14px 34px -28px rgba(10,10,14,0.25); }
+.nm-card-featured { border-color:var(--nm-red); box-shadow:0 0 0 1px var(--nm-red), 0 22px 50px -26px var(--nm-red-soft); }
 .nm-tag { position:absolute; top:-11px; left:24px; background:var(--nm-red); color:#fff; font-size:11px; font-weight:700; letter-spacing:0.04em; padding:4px 11px; border-radius:999px; text-transform:uppercase; }
 .nm-card-name { font-size:19px; font-weight:700; margin:0 0 4px; letter-spacing:-0.01em; }
 .nm-card-tagline { color:var(--nm-dim); font-size:13.5px; line-height:1.45; margin:0 0 18px; min-height:38px; }
@@ -255,11 +255,11 @@ const PRICING_CSS = `
 .nm-price strong { font-size:36px; font-weight:800; letter-spacing:-0.03em; }
 .nm-cadence { color:var(--nm-dim); font-size:14px; }
 .nm-trialhint { color:var(--nm-dim); font-size:12px; margin:-8px 0 14px; }
-.nm-cta { width:100%; border:none; border-radius:12px; padding:12px 16px; font-size:15px; font-weight:700; cursor:pointer; background:#1f1f22; color:var(--nm-text); border:1px solid var(--nm-line); transition:filter 0.15s, background 0.15s; }
-.nm-cta:hover:not(:disabled) { background:#242427; }
+.nm-cta { width:100%; border:none; border-radius:12px; padding:12px 16px; font-size:15px; font-weight:700; cursor:pointer; background:#f3f3f5; color:var(--nm-text); border:1px solid var(--nm-line); transition:filter 0.15s, background 0.15s; }
+.nm-cta:hover:not(:disabled) { background:#ebebee; }
 .nm-cta:disabled { opacity:0.6; cursor:default; }
 .nm-card-featured .nm-cta { background:var(--nm-red); border-color:var(--nm-red); color:#fff; }
-.nm-card-featured .nm-cta:hover:not(:disabled) { filter:brightness(1.08); }
+.nm-card-featured .nm-cta:hover:not(:disabled) { filter:brightness(1.06); }
 .nm-features { list-style:none; margin:22px 0 0; padding:0; display:grid; gap:12px; }
 .nm-features li { display:flex; gap:10px; font-size:14px; line-height:1.45; color:var(--nm-dim); }
 .nm-check { color:var(--nm-red); font-weight:800; flex:0 0 auto; }

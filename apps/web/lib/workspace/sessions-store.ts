@@ -57,9 +57,13 @@ export interface SessionSource {
 
 export interface SessionOutput {
   id: string;
-  kind: "flashcards" | "slides" | "test" | "report" | "other";
+  kind: "flashcards" | "slides" | "test" | "report" | "recording" | "other";
   title: string;
   url?: string;
+  transcript?: string;
+  notes?: string;
+  durationSeconds?: number;
+  createdAt?: string;
 }
 
 export interface SessionMessage {
@@ -84,6 +88,7 @@ export interface WorkspaceSession {
   updatedAt: string;
   pinned?: boolean;
   messages: SessionMessage[];
+  outputs?: SessionOutput[];
 }
 
 interface SessionsFile {
@@ -147,6 +152,23 @@ function inferSourcesFromContent(content: string): SessionSource[] {
   return Array.from(sources.values()).slice(0, 12);
 }
 
+function sanitizeOutput(rawOutput: unknown): SessionOutput | null {
+  if (!rawOutput || typeof rawOutput !== "object") return null;
+  const output = rawOutput as Record<string, unknown>;
+  const kinds = new Set(["flashcards", "slides", "test", "report", "recording", "other"]);
+  if (typeof output.id !== "string" || typeof output.title !== "string" || typeof output.kind !== "string" || !kinds.has(output.kind)) return null;
+  return {
+    id: output.id,
+    title: output.title,
+    kind: output.kind as SessionOutput["kind"],
+    ...(typeof output.url === "string" ? { url: output.url } : {}),
+    ...(typeof output.transcript === "string" ? { transcript: output.transcript } : {}),
+    ...(typeof output.notes === "string" ? { notes: output.notes } : {}),
+    ...(typeof output.durationSeconds === "number" ? { durationSeconds: output.durationSeconds } : {}),
+    ...(typeof output.createdAt === "string" ? { createdAt: output.createdAt } : {}),
+  };
+}
+
 function sanitizeMessage(raw: unknown): SessionMessage | null {
   if (typeof raw !== "object" || raw === null) return null;
   const m = raw as Record<string, unknown>;
@@ -163,14 +185,7 @@ function sanitizeMessage(raw: unknown): SessionMessage | null {
   // persisted: recover Markdown citations so old searched answers also expose
   // the Sources pill after the next reload.
   const sources = persistedSources.length ? persistedSources : inferSourcesFromContent(m.content);
-  const outputs = Array.isArray(m.outputs) ? m.outputs.flatMap((rawOutput) => {
-    if (!rawOutput || typeof rawOutput !== "object") return [];
-    const output = rawOutput as Record<string, unknown>;
-    const kinds = new Set(["flashcards", "slides", "test", "report", "other"]);
-    return typeof output.id === "string" && typeof output.title === "string" && typeof output.kind === "string" && kinds.has(output.kind)
-      ? [{ id: output.id, title: output.title, kind: output.kind as SessionOutput["kind"], ...(typeof output.url === "string" ? { url: output.url } : {}) }]
-      : [];
-  }).slice(0, 30) : [];
+  const outputs = Array.isArray(m.outputs) ? m.outputs.map(sanitizeOutput).filter((output): output is SessionOutput => output !== null).slice(0, 30) : [];
   return {
     id: typeof m.id === "string" && m.id.length > 0 ? m.id : newId(),
     role,
@@ -188,6 +203,7 @@ function sanitizeSession(raw: unknown): WorkspaceSession | null {
   const messages = Array.isArray(s.messages)
     ? s.messages.map(sanitizeMessage).filter((m): m is SessionMessage => m !== null)
     : [];
+  const outputs = Array.isArray(s.outputs) ? s.outputs.map(sanitizeOutput).filter((output): output is SessionOutput => output !== null).slice(0, 50) : [];
   return {
     id: s.id,
     title: typeof s.title === "string" && s.title.length > 0 ? s.title : "New session",
@@ -195,6 +211,7 @@ function sanitizeSession(raw: unknown): WorkspaceSession | null {
     updatedAt: typeof s.updatedAt === "string" ? s.updatedAt : new Date(0).toISOString(),
     ...(s.pinned === true ? { pinned: true } : {}),
     messages,
+    ...(outputs.length ? { outputs } : {}),
   };
 }
 
@@ -453,6 +470,16 @@ export const sessionsStore = {
     const uid = cloudUserId;
     const session = state.sessions.find((s) => s.id === id);
     if (uid && session) cloudFireAndForget(() => appendMessageCloud(uid, session, stored));
+  },
+
+  addOutput(id: string, output: SessionOutput) {
+    ensureHydrated();
+    setState({
+      ...state,
+      sessions: state.sessions.map((session) => session.id === id
+        ? { ...session, outputs: [output, ...(session.outputs ?? []).filter((item) => item.id !== output.id)].slice(0, 50), updatedAt: nowIso() }
+        : session),
+    });
   },
 
   /** Insert or update the assistant message for an in-flight turn. Streaming

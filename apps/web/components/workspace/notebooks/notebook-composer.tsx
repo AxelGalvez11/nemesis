@@ -17,6 +17,7 @@ interface NotebookComposerProps {
   onModeChange?: (mode: ComposerMode) => void;
   onRecordingChange?: (recording: boolean) => void;
   showRecordCompanion?: boolean;
+  mode?: ComposerMode;
 }
 
 export function NotebookComposer({
@@ -27,10 +28,12 @@ export function NotebookComposer({
   onModeChange,
   onRecordingChange,
   showRecordCompanion,
+  mode,
 }: NotebookComposerProps) {
   return (
     <Composer
       busy={Boolean(disabled || working)}
+      mode={mode}
       onModeChange={onModeChange}
       onRecordingChange={onRecordingChange}
       onStop={() => undefined}

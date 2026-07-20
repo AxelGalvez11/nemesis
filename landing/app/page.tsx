@@ -1,130 +1,30 @@
 "use client";
 
-import { useEffect } from "react";
-import { SiteChrome, APP_SIGN_UP, APP_DOWNLOAD } from "@/components/SiteChrome";
+import { SiteChrome, APP_SIGN_UP } from "@/components/SiteChrome";
 import {
   IconCalendar,
   IconSplit,
   IconLayers,
   IconSearch,
   IconDocStack,
-  IconDownload,
 } from "@/components/FeatureIcons";
 
-/**
- * One scroll controller drives every decorative background layer. Each offset is
- * calculated relative to its own section, clamped to the available overscan, and
- * disabled when the visitor requests reduced motion.
- */
-function useBackgroundParallax() {
-  useEffect(() => {
-    const layers = Array.from(
-      document.querySelectorAll<HTMLElement>(".parallax-layer"),
-    );
-    if (!layers.length) return;
-
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const visibleLayers = new Set<HTMLElement>();
-    let frame = 0;
-
-    const resetLayers = () => {
-      layers.forEach((layer) => {
-        layer.style.setProperty("--parallax-y", "0px");
-        layer.classList.remove("is-parallax-active");
-      });
-    };
-
-    const update = () => {
-      frame = 0;
-      if (reducedMotion.matches) {
-        resetLayers();
-        return;
-      }
-
-      const viewportHeight = window.innerHeight;
-      const mobileScale = window.innerWidth <= 820 ? 0.55 : 1;
-
-      visibleLayers.forEach((layer) => {
-        const anchor = layer.closest<HTMLElement>(".hero, .obj, .band") ?? layer;
-        const rect = anchor.getBoundingClientRect();
-        const travel = (viewportHeight + rect.height) / 2;
-        const progress = Math.max(
-          -1,
-          Math.min(1, (viewportHeight / 2 - (rect.top + rect.height / 2)) / travel),
-        );
-        const amount = Number(layer.dataset.parallaxAmount ?? 0) * mobileScale;
-
-        layer.style.setProperty("--parallax-y", `${(progress * amount).toFixed(2)}px`);
-      });
-    };
-
-    const requestUpdate = () => {
-      if (!frame) frame = window.requestAnimationFrame(update);
-    };
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          const layer = entry.target as HTMLElement;
-          if (entry.isIntersecting && !reducedMotion.matches) {
-            visibleLayers.add(layer);
-            layer.classList.add("is-parallax-active");
-          } else {
-            visibleLayers.delete(layer);
-            layer.classList.remove("is-parallax-active");
-          }
-        });
-        requestUpdate();
-      },
-      { rootMargin: "12% 0px" },
-    );
-
-    const onMotionPreferenceChange = () => {
-      if (reducedMotion.matches) resetLayers();
-      requestUpdate();
-    };
-
-    layers.forEach((layer) => observer.observe(layer));
-    window.addEventListener("scroll", requestUpdate, { passive: true });
-    window.addEventListener("resize", requestUpdate);
-    reducedMotion.addEventListener("change", onMotionPreferenceChange);
-    requestUpdate();
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("scroll", requestUpdate);
-      window.removeEventListener("resize", requestUpdate);
-      reducedMotion.removeEventListener("change", onMotionPreferenceChange);
-      if (frame) window.cancelAnimationFrame(frame);
-      resetLayers();
-    };
-  }, []);
-}
-
 export default function Home() {
-  useBackgroundParallax();
-
   return (
     <SiteChrome>
-      {/* The hero keeps the committed dark-chrome panel (the notebook art was cut
-          for a black ground) while the rest of the page runs on paper. */}
+      {/* The hero keeps the committed dark-chrome panel; the notebook art was
+          removed with the rest of the page photography (2026-07-20). */}
       <header className="hero">
-        <div className="hero-art parallax-layer" data-parallax-amount="64" />
-        <div className="hero-veil" />
         <div className="wrap">
           <div className="hero-in">
             <h1 className="reveal">Nemesis</h1>
             <p className="hero-purpose reveal r2">
-              A study agent for your Mac that gets better the more you use it.
-              It builds its knowledge from your library and turns your course
-              files into notes, flashcards, and practice tests.
+              A study agent that gets better the more you use it. It builds its
+              knowledge from your library and turns your course files into
+              notes, flashcards, and practice tests.
             </p>
             <div className="hero-cta reveal r3">
-              <a className="btn btn-primary" href={APP_SIGN_UP}>Start free trial</a>
-              <a className="btn btn-secondary" href={APP_DOWNLOAD}>
-                <IconDownload size={15} />
-                Download for macOS
-              </a>
+              <a className="btn btn-primary" href={APP_SIGN_UP}>Get started free</a>
             </div>
           </div>
         </div>
@@ -147,7 +47,7 @@ export default function Home() {
               <div className="feature-icon"><IconSplit /></div>
               <div className="k">Library</div>
               <h3>The library is its memory</h3>
-              <p>Notes and decks are plain files on your Mac. Every file you add teaches it more about your classes.</p>
+              <p>Notes and decks live in your library. Every file you add teaches it more about your classes.</p>
             </div>
             <div className="feature">
               <div className="feature-icon"><IconLayers /></div>
@@ -172,8 +72,6 @@ export default function Home() {
       </section>
 
       <div className="band">
-        <div className="band-art binder parallax-layer" data-parallax-amount="48" />
-        <div className="band-veil" />
         <div className="wrap">
           <div className="band-in">
             <p className="eyebrow">Semester</p>
@@ -191,9 +89,6 @@ export default function Home() {
           </div>
           <div className="triad">
             <div className="obj">
-              <div className="img-shell" role="img" aria-label="Black-chrome clipboard">
-                <div className="img intelligence parallax-layer" data-parallax-amount="18" />
-              </div>
               <div className="cap">
                 <div className="k">Memory</div>
                 <h3>It remembers across sessions</h3>
@@ -201,9 +96,6 @@ export default function Home() {
               </div>
             </div>
             <div className="obj">
-              <div className="img-shell" role="img" aria-label="Black-chrome open textbook">
-                <div className="img mastery parallax-layer" data-parallax-amount="18" />
-              </div>
               <div className="cap">
                 <div className="k">Skill</div>
                 <h3>It learns how you work</h3>
@@ -211,9 +103,6 @@ export default function Home() {
               </div>
             </div>
             <div className="obj">
-              <div className="img-shell" role="img" aria-label="Black-chrome desk calendar">
-                <div className="img calendar parallax-layer" data-parallax-amount="18" />
-              </div>
               <div className="cap">
                 <div className="k">Rhythm</div>
                 <h3>It keeps your week honest</h3>
@@ -234,15 +123,13 @@ export default function Home() {
             <p>
               It helps you learn. It never does the work for you. Coursework is
               never submitted on your behalf, and every action is logged.{" "}
-              <span>Your notes and school sign-ins stay on your Mac.</span>
+              <span>Your notes stay in your account &mdash; never sold, never trained on.</span>
             </p>
           </div>
         </div>
       </section>
 
       <div className="band">
-        <div className="band-art order parallax-layer" data-parallax-amount="48" />
-        <div className="band-veil" />
         <div className="wrap">
           <div className="band-in">
             <p className="eyebrow">Order</p>
@@ -280,8 +167,8 @@ export default function Home() {
             <details>
               <summary>Where do my files live?</summary>
               <p>
-                On your Mac, as plain files. Notes and decks are normal folders
-                you can open, back up, or move &mdash; and they stay yours, on any
+                In your Nemesis library, in your account. Notes and decks are
+                yours to export or move any time &mdash; and they stay yours, on any
                 plan or none.
               </p>
             </details>
@@ -289,18 +176,21 @@ export default function Home() {
               <summary>Do you sell my data or train on my notes?</summary>
               <p>
                 No and no. No ads, no selling your data, no training on your
-                content. Your notes and school sign-ins stay on your Mac.
+                content.
               </p>
             </details>
             <details>
-              <summary>Is it Mac only?</summary>
-              <p>Yes &mdash; Nemesis is a Mac app.</p>
+              <summary>Do I need to install anything?</summary>
+              <p>
+                No. Nemesis runs in your browser. A Mac desktop app is planned,
+                but nothing is required to start.
+              </p>
             </details>
             <details>
               <summary>What does it cost?</summary>
               <p>
-                Every plan starts with a 7-day free trial &mdash; $9.99, $19.99, or
-                $49.99 a month after that, cancel anytime. See{" "}
+                There&rsquo;s a free plan you can use every day. Paid plans &mdash;
+                $9.99, $19.99, or $99 a month &mdash; raise the limits. See{" "}
                 <a href="/pricing">pricing</a> for what each plan includes.
               </p>
             </details>
@@ -312,11 +202,7 @@ export default function Home() {
         <div className="wrap">
           <h2>Built from your notes. Sharper every week.</h2>
           <div className="closer-cta">
-            <a className="btn btn-primary" href={APP_SIGN_UP}>Start free trial</a>
-            <a className="btn btn-secondary" href={APP_DOWNLOAD}>
-              <IconDownload size={15} />
-              Download for macOS
-            </a>
+            <a className="btn btn-primary" href={APP_SIGN_UP}>Get started free</a>
           </div>
         </div>
       </section>

@@ -93,21 +93,11 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 .btn-secondary:hover { border-color: var(--steel); background: rgba(10, 10, 12, 0.05); transform: translateY(-1px); }
 .btn-secondary svg { opacity: 0.85; }
 
-/* hero — the one dark-chrome panel. Square notebook anchored right, black-on-black
-   blend. Text colors are scoped here (the page tokens are paper-tuned). */
+/* hero — the one dark-chrome panel, type-only (page photography removed
+   2026-07-20). Text colors are scoped here (the page tokens are paper-tuned). */
 .hero {
   position: relative; min-height: 92vh; display: flex; align-items: center;
   background: var(--ink); border-bottom: 1px solid var(--line); overflow: hidden;
-}
-.hero-art {
-  position: absolute; top: 50%; transform: translate3d(0, calc(-50% + var(--parallax-y, 0px)), 0);
-  right: -3vw; height: 104%; aspect-ratio: 1 / 1;
-  background-image: url("/nemesis/hero-notebook.webp");
-  background-size: cover; background-position: center;
-}
-.hero-veil {
-  position: absolute; inset: 0;
-  background: linear-gradient(90deg, var(--ink) 24%, rgba(8, 8, 9, 0.7) 46%, rgba(8, 8, 9, 0.06) 72%, rgba(8, 8, 9, 0.3) 100%);
 }
 .hero-in { position: relative; padding: 60px 0; max-width: 820px; }
 .hero h1 {
@@ -162,7 +152,7 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 .feature h3 { font-size: 19px; margin: 8px 0 8px; letter-spacing: -0.01em; }
 .feature p { font-size: 15.5px; line-height: 1.6; color: var(--steel); margin: 0; }
 
-/* triad — three chrome-object cards, art on black inside a paper card */
+/* triad — three text cards (the chrome-object photos were removed 2026-07-20) */
 .triad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .obj {
   position: relative;
@@ -174,15 +164,6 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   transform: translateY(-4px); border-color: rgba(255, 39, 64, 0.35);
   box-shadow: 0 22px 44px -30px rgba(10, 10, 12, 0.5);
 }
-.obj .img-shell { position: relative; aspect-ratio: 1 / 1; overflow: hidden; background: var(--ink); }
-.obj .img {
-  position: absolute; inset: -9%;
-  background-size: cover; background-position: center;
-  transform: translate3d(0, var(--parallax-y, 0px), 0);
-}
-.obj .img.intelligence { background-image: url("/nemesis/intelligence-clipboard.webp"); }
-.obj .img.mastery { background-image: url("/nemesis/mastery-textbook.webp"); }
-.obj .img.calendar { background-image: url("/nemesis/nemesis-calendar.webp"); }
 .obj .cap { padding: 24px 24px 28px; }
 .obj .k {
   font-family: var(--sans); font-size: 11px; font-weight: 650; letter-spacing: 0.15em;
@@ -191,21 +172,10 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 .obj h3 { font-size: 20px; margin: 9px 0 8px; letter-spacing: -0.01em; }
 .obj p { font-size: 15.5px; line-height: 1.6; color: var(--steel); margin: 0; }
 
-/* full-width dark art bands with parallax */
+/* full-width dark type bands */
 .band {
   position: relative; overflow: hidden; background: var(--ink);
   border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-}
-.band-art {
-  position: absolute; inset: -72px 0;
-  background-size: cover; background-position: center;
-  transform: translate3d(0, var(--parallax-y, 0px), 0);
-}
-.band-art.binder { background-image: url("/nemesis/semester-binder-4k.webp"); }
-.band-art.order { background-image: url("/nemesis/order-accordion-folder-4k.webp"); background-position: 76% center; }
-.band-veil {
-  position: absolute; inset: 0;
-  background: linear-gradient(90deg, rgba(8, 8, 9, 0.9) 22%, rgba(8, 8, 9, 0.55) 46%, rgba(8, 8, 9, 0.05) 78%);
 }
 .band-in { position: relative; padding: 128px 0; max-width: 560px; }
 .band .eyebrow { color: #9a9da4; }
@@ -367,8 +337,6 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
 }
 @media (prefers-reduced-motion: reduce) {
   .reveal { animation: none; }
-  .parallax-layer { --parallax-y: 0px !important; transform: translate3d(0, 0, 0); }
-  .hero-art { transform: translate3d(0, -50%, 0); }
   html { scroll-behavior: auto; }
 }
 
@@ -376,10 +344,7 @@ h1, h2, h3 { color: var(--chrome); font-weight: 600; text-wrap: balance; margin:
   .feature-grid { grid-template-columns: 1fr; }
   .plans { grid-template-columns: 1fr; }
   .triad { grid-template-columns: 1fr; }
-  .hero-art { height: 88%; right: -34vw; opacity: 0.8; }
-  .hero-veil { background: linear-gradient(180deg, rgba(8, 8, 9, 0.42), rgba(8, 8, 9, 0.88)); }
   .band-in { padding: 96px 0; }
-  .band-veil { background: linear-gradient(180deg, rgba(8, 8, 9, 0.55), rgba(8, 8, 9, 0.9)); }
   .nav a.ghost { display: none; }
   .foot-grid { grid-template-columns: 1fr; gap: 28px; }
   .compare th, .compare td { padding: 12px 10px; }

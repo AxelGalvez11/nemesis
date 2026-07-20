@@ -56,7 +56,6 @@ export function buildWelcomeEmail({ planName, trialing, trialDays }: WelcomeEmai
 } {
   const safePlan = escapeHtml(planName);
   const accountUrl = `${appUrl}/account`;
-  const downloadUrl = `${appUrl}/api/download/mac`;
   const subject = trialing ? `Your ${planName} trial is live` : `Your ${planName} subscription is active`;
   const trialLineText = trialing
     ? `Your card will not be charged until the ${trialDays}-day trial ends. Cancel anytime before then and you pay nothing.`
@@ -69,7 +68,7 @@ export function buildWelcomeEmail({ planName, trialing, trialDays }: WelcomeEmai
       ? `Your ${planName} plan is live, and your ${trialDays}-day free trial has started.`
       : `Your ${planName} plan is active.`,
     trialLineText,
-    `Download the desktop app (macOS, Apple Silicon): ${downloadUrl}`,
+    `Open Nemesis in your browser: ${appUrl}`,
     `Sign in with this account and your plan is live inside Nemesis.`,
     `Manage, switch, or cancel your plan anytime: ${accountUrl}`,
     ``,
@@ -90,8 +89,8 @@ export function buildWelcomeEmail({ planName, trialing, trialDays }: WelcomeEmai
       ? `<p style="font-size:15px;line-height:1.6;margin:0 0 12px;">Your card will not be charged until the ${trialDays}-day trial ends. Cancel anytime before then and you pay nothing.</p>`
       : ""}
     <p style="font-size:15px;line-height:1.6;margin:0 0 12px;">
-      <a href="${downloadUrl}" style="color:#8a2430;font-weight:bold;">Download the desktop app for macOS</a>
-      (Apple Silicon), sign in with this account, and your plan is live inside Nemesis.
+      <a href="${appUrl}" style="color:#8a2430;font-weight:bold;">Open Nemesis</a>
+      in your browser, sign in with this account, and your plan is live inside Nemesis.
     </p>
     <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
       Manage, switch, or cancel your plan anytime from your

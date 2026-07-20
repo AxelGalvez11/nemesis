@@ -10,6 +10,7 @@ import type { SessionMessage } from "@/lib/workspace/sessions-store";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
+import { showUpgradePrompt } from "@/lib/workspace/upgrade-prompt";
 
 const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
 
@@ -234,7 +235,12 @@ export async function postChatCompletion(
     }
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as unknown;
-      return { errorKind: chatErrorKind(res.status, body), errorText: chatErrorMessage(res.status, body), sources: [], text: null };
+      const errorKind = chatErrorKind(res.status, body);
+      const errorText = chatErrorMessage(res.status, body);
+      // Out of credits is an upsell moment, not just an error row: pop the
+      // shell-mounted upgrade dialog on every budget-exhausted turn.
+      if (errorKind === "budget") showUpgradePrompt(errorText);
+      return { errorKind, errorText, sources: [], text: null };
     }
     const text = options.onDelta
       ? await readCompletionStream(res.body, options.onDelta)

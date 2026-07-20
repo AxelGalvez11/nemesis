@@ -95,8 +95,8 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
             <h1>{section === "billing" ? "Subscription." : "Your account."}</h1>
             <span>
               {section === "billing"
-                ? "Manage the plan attached to your desktop instance. Payments open securely in Stripe."
-                : "Identity and billing live here. Your courses, notes, recordings, and agent workspace stay in the desktop app."}
+                ? "Manage your Nemesis plan. Payments open securely in Stripe."
+                : "Identity and billing live here. Your courses, notes, recordings, and agent workspace are in the app."}
             </span>
           </div>
 
@@ -113,22 +113,18 @@ export function AccountPortal({ section, checkoutStatus }: AccountPortalProps) {
               </section>
 
               <section className="nemesis-account-card desktop-card">
-                <p className="nemesis-account-card-label">Desktop first</p>
+                <p className="nemesis-account-card-label">Your workspace</p>
                 <h2>The work stays with Nemesis.</h2>
                 <p>
-                  Everything happens in the desktop app. Download it, sign in with this account,
-                  and your plan is live inside the agent.
+                  Everything happens in the app, right in your browser. Open it and your plan is
+                  live inside the agent.
                 </p>
-                <a className="nemesis-account-primary-action" href="/api/download/mac">
-                  Download for macOS
-                </a>
+                <Link className="nemesis-account-primary-action" href="/">
+                  Open Nemesis
+                </Link>
                 <p className="nemesis-account-fineprint">
-                  Apple Silicon Macs (M1 or newer). New versions announce themselves inside the app.
+                  Works in any modern browser. New features arrive on their own — nothing to install.
                 </p>
-                <div className="nemesis-account-boundary">
-                  <span>Browser</span><b>Account + billing</b>
-                  <span>Desktop</span><b>Courses + agent workspace</b>
-                </div>
               </section>
             </div>
           ) : (

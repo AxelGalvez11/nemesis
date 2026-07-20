@@ -40,3 +40,4 @@ supabase/.branches/
 
 # graphify knowledge-graph output (generated cache, never source)
 graphify-out/
+.env*

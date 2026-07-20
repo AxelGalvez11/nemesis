@@ -29,6 +29,8 @@ export interface StudyCard {
   repetitions: number;
   lapses: number;
   suspended: boolean;
+  flagged: boolean;
+  tags: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -90,6 +92,8 @@ const PREVIEW_CARDS: StudyCard[] = [
     repetitions: 0,
     lapses: 0,
     suspended: false,
+    flagged: true,
+    tags: ["pharmacology", "mechanisms"],
     createdAt: now,
     updatedAt: now,
   },
@@ -105,6 +109,8 @@ const PREVIEW_CARDS: StudyCard[] = [
     repetitions: 0,
     lapses: 0,
     suspended: false,
+    flagged: false,
+    tags: ["adverse-effects"],
     createdAt: now,
     updatedAt: now,
   },
@@ -165,6 +171,10 @@ function cardType(value: unknown): StudyCardType {
   return value === "reversed" || value === "cloze" || value === "image_occlusion" ? value : "basic";
 }
 
+export function normalizeStudyTags(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim().replace(/^#+/, "").toLowerCase()).filter(Boolean)));
+}
+
 function toDeck(raw: unknown): StudyDeck | null {
   if (!isObject(raw) || typeof raw.id !== "string" || typeof raw.name !== "string") return null;
   return {
@@ -191,6 +201,8 @@ function toCard(raw: unknown): StudyCard | null {
     repetitions: number(raw.repetitions),
     lapses: number(raw.lapses),
     suspended: raw.suspended === true,
+    flagged: raw.flagged === true,
+    tags: Array.isArray(raw.tags) ? normalizeStudyTags(raw.tags.filter((value): value is string => typeof value === "string")) : [],
     createdAt: text(raw.created_at),
     updatedAt: text(raw.updated_at),
   };
@@ -223,7 +235,7 @@ async function loadStudy(userId: string) {
         .order("updated_at", { ascending: false }),
       supabase
         .from("study_cards")
-        .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
+        .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flagged,tags,created_at,updated_at")
         .eq("user_id", userId)
         .order("due_at", { ascending: true }),
       supabase
@@ -293,6 +305,8 @@ export interface UpdateCardInput {
   front: string;
   back: string;
   cardType: StudyCardType;
+  flagged: boolean;
+  tags: string[];
 }
 
 export interface CreateArtifactInput {
@@ -409,6 +423,8 @@ export function useCloudStudy(): UseCloudStudyApi {
         repetitions: 0,
         lapses: 0,
         suspended: false,
+        flagged: false,
+        tags: [],
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -419,7 +435,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     const { data, error } = await supabase
       .from("study_cards")
       .insert({ user_id: userId, deck_id: input.deckId, front, back, card_type: input.cardType ?? "basic", source_path: input.sourcePath?.trim() || null })
-      .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
+      .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flagged,tags,created_at,updated_at")
       .single();
     if (error) throw new Error(error.message);
     const card = toCard(data);
@@ -435,15 +451,16 @@ export function useCloudStudy(): UseCloudStudyApi {
     const back = input.back.trim();
     if (!front || !back) throw new Error("Add both a prompt and an answer.");
     const updatedAt = new Date().toISOString();
-    let next: StudyCard = { ...existing, front, back, cardType: input.cardType, updatedAt };
+    const tags = normalizeStudyTags(input.tags);
+    let next: StudyCard = { ...existing, front, back, cardType: input.cardType, flagged: input.flagged, tags, updatedAt };
     if (!preview) {
       if (!userId) throw new Error("Sign in to edit a card.");
       const { data, error } = await supabase
         .from("study_cards")
-        .update({ front, back, card_type: input.cardType, updated_at: updatedAt })
+        .update({ front, back, card_type: input.cardType, flagged: input.flagged, tags, updated_at: updatedAt })
         .eq("id", input.id)
         .eq("user_id", userId)
-        .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
+        .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flagged,tags,created_at,updated_at")
         .single();
       if (error) throw new Error(error.message);
       const saved = toCard(data);

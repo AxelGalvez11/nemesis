@@ -113,7 +113,7 @@ export default function SignUpPage() {
     <AuthFrame
       eyebrow="Get started"
       title="Create your account."
-      description="One account for the Mac app, your plan, and everything Nemesis builds for you."
+      description="One account for your plan and everything Nemesis builds for you."
       footer={<p>Already have an account? <Link className="nemesis-auth-link" href="/sign-in">Sign in.</Link></p>}
     >
         <AuthModeSwitch active="sign-up" />

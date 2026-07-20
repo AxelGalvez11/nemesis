@@ -82,7 +82,7 @@ export default function SignInPage() {
     <AuthFrame
       eyebrow="Welcome back"
       title="Sign in to Nemesis."
-      description="Your account, your plan, and the app on your Mac."
+      description="Your account, your plan, and your workspace."
       footer={<p>New to Nemesis? <Link className="nemesis-auth-link" href="/sign-up">Create your account.</Link></p>}
     >
         <AuthModeSwitch active="sign-in" />

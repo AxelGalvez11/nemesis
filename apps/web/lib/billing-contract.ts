@@ -26,24 +26,15 @@ export function stripePriceMatchesPlan(plan: CheckoutPlan, price: StripePriceLik
     && price.unit_amount === MONTHLY_PLAN_PRICE_CENTS[plan];
 }
 
-export function isTrialEligibleForSubscriptionHistory(hasSubscriptionHistory: boolean): boolean {
-  return !hasSubscriptionHistory;
-}
-
-export function subscriptionCheckoutTerms(hasSubscriptionHistory: boolean) {
+/** Freemium (owner decision 2026-07-20): checkout NEVER grants a trial — the free
+ * plan is the try-before-you-buy path, and paid plans bill immediately.
+ * NEMESIS_TRIAL_PERIOD_DAYS survives above only for webhook/email handling of
+ * subscriptions that started a trial before this cutoff. */
+export function subscriptionCheckoutTerms() {
   return {
     payment_method_collection: "always" as const,
     payment_method_types: ["card"] as ["card"],
-    subscription_data: isTrialEligibleForSubscriptionHistory(hasSubscriptionHistory)
-      ? {
-          trial_period_days: NEMESIS_TRIAL_PERIOD_DAYS,
-          trial_settings: {
-            end_behavior: {
-              missing_payment_method: "cancel" as const,
-            },
-          },
-        }
-      : {},
+    subscription_data: {},
   };
 }
 

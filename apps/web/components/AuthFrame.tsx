@@ -11,8 +11,9 @@ interface AuthFrameProps {
 }
 
 /**
- * Auth shell shared by /sign-in and /sign-up: a split layout — the glitched
- * chrome-notebook art panel on the left, and on the right a glass card whose
+ * Auth shell shared by /sign-in and /sign-up: a split layout — a dark type-only
+ * panel on the left (the notebook art was removed with the rest of the site
+ * photography, 2026-07-20), and on the right a glass card whose
  * traveling border beams + glow treatment are adapted from 21st.dev "Sign In
  * Card" (jatin-yadav05), rebuilt as pure CSS in auth.css (no framer-motion)
  * and re-tuned to the Nemesis crimson. Pages own the copy + form logic; this
@@ -28,11 +29,8 @@ export function AuthFrame({ eyebrow, title, description, children, footer }: Aut
       </a>
 
       <section className="nemesis-auth-field" aria-hidden="true">
-        <div className="nemesis-auth-object" />
-        <div className="nemesis-auth-glitch glitch-a" />
-        <div className="nemesis-auth-glitch glitch-b" />
         <div className="nemesis-auth-field-copy">
-          <p className="nemesis-auth-status"><span /> Study agent for macOS</p>
+          <p className="nemesis-auth-status"><span /> Your AI study agent</p>
           <h2>Your whole semester, in one quiet place.</h2>
           <p>
             Notes, flashcards, practice tests, and a calendar that keeps deadlines

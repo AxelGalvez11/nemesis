@@ -4,7 +4,6 @@ import {
   IconArrowLeft,
   IconArrowNarrowLeft,
   IconArrowRight,
-  IconCards,
   IconDots,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
@@ -14,6 +13,7 @@ import {
   IconList,
   IconPlus,
   IconTags,
+  IconTextSize,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
@@ -99,6 +99,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   const note = selectedPath ? (notes.find((item) => item.path === selectedPath) ?? null) : null;
   const [openPaths, setOpenPaths] = useState<string[]>([]);
   const [mode, setMode] = useState<EditorMode>("edit");
+  const [editingBarOpen, setEditingBarOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<RightPanel>("links");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -348,7 +349,10 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button aria-label="Note actions" size="icon-xs" variant="ghost"><IconDots /></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => router.push(`${navigationRoot}/study?source=${encodeURIComponent(note.path)}`)}><IconCards /> Study this note</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => {
+                setMode("edit");
+                setEditingBarOpen((open) => !open);
+              }}><IconTextSize /> {editingBarOpen ? "Hide editing bar" : "Show editing bar"}</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setConfirmDelete(true)} variant="destructive"><IconTrash /> Delete note</DropdownMenuItem>
             </DropdownMenuContent>
@@ -359,9 +363,9 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
           <div className="mx-auto flex min-h-full w-full max-w-(--composer-width) min-w-0 flex-col px-6 pb-12 pt-5 max-sm:px-4">
             {mode === "edit" ? (
-              <LibraryLiveEditor key={note.id} onChange={(next) => updateDraft({ content: next })} value={content} />
+              <LibraryLiveEditor autoFocus={note.content.trim().length === 0} key={note.id} onChange={(next) => updateDraft({ content: next })} showToolbar={editingBarOpen} value={content} />
             ) : (
-              <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown className="[&_h1]:!mb-3 [&_h1]:!mt-7 [&_h1]:!text-4xl [&_h1]:!font-bold [&_h2]:!mb-2.5 [&_h2]:!mt-6 [&_h2]:!text-2xl [&_h3]:!mb-2 [&_h3]:!mt-5 [&_h3]:!text-xl [&_h4]:!mt-4 [&_h4]:!text-base" externalLinksInNewTab={false} isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} obsidianTags onWikiLink={(target) => void openWikiTarget(target)} text={content} /></article>
+              <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown className="[&_h1]:!mb-3 [&_h1]:!mt-7 [&_h1]:!text-4xl [&_h1]:!font-bold [&_h2]:!mb-2.5 [&_h2]:!mt-6 [&_h2]:!text-2xl [&_h3]:!mb-2 [&_h3]:!mt-5 [&_h3]:!text-xl [&_h4]:!mt-4 [&_h4]:!text-base" externalLinksInNewTab={false} isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} obsidianHighlights obsidianTags onWikiLink={(target) => void openWikiTarget(target)} text={content} /></article>
             )}
           </div>
         </div>
