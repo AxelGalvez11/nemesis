@@ -13,6 +13,7 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
+import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 
 import { ChatHeader } from "./chat-header";
 import { Composer, type ComposerMode } from "./composer";
@@ -49,7 +50,7 @@ function titleFromPrompt(text: string) {
 }
 
 export function SessionChat() {
-  const preview = useWorkspacePreview();
+  const preview = Boolean(useWorkspacePreview());
   const { session: authSession } = useAuth();
   const uid = preview ? "preview-user" : (authSession?.user.id ?? null);
 
@@ -61,6 +62,7 @@ export function SessionChat() {
   const [rightPanel, setRightPanel] = useState<SessionRailPanel>("sources");
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const [recording, setRecording] = useState(false);
+  const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: selectedId, preview, surface: "sessions", userId: uid });
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
   const [, forceTick] = useReducer((n: number) => n + 1, 0);
@@ -157,7 +159,25 @@ export function SessionChat() {
     for (const message of messages) for (const source of message.sources ?? []) if (!unique.has(source.url)) unique.set(source.url, source);
     return Array.from(unique.values());
   }, [messages]);
-  const outputs = useMemo(() => messages.flatMap((message) => message.outputs ?? []), [messages]);
+  const outputs = useMemo(() => [
+    ...recordingArtifacts.map((artifact) => ({ id: artifact.id, kind: "recording" as const, title: artifact.title, transcript: artifact.transcript, notes: artifact.notes, durationSeconds: artifact.durationSeconds, createdAt: artifact.createdAt })),
+    ...(session?.outputs ?? []),
+    ...messages.flatMap((message) => message.outputs ?? []),
+  ], [messages, recordingArtifacts, session?.outputs]);
+
+  const handleModeChange = useCallback((mode: ComposerMode) => {
+    if (mode === "record" && !sessionsStore.getState().selectedId) sessionsStore.create("Recorded session");
+    setComposerMode(mode);
+  }, []);
+
+  const handleRecordingFinished = useCallback((draft: RecordingArtifactDraft) => {
+    setRecording(false);
+    setComposerMode("chat");
+    if (draft.durationSeconds <= 0 && !draft.transcript.trim() && !draft.notes.trim()) return;
+    setRightPanel("outputs");
+    setRightRailOpen(true);
+    void createArtifact(draft).catch(() => undefined);
+  }, [createArtifact]);
 
   const openSources = useCallback(() => {
     setRightPanel("sources");
@@ -178,12 +198,13 @@ export function SessionChat() {
               contextId={selectedId}
               surface="sessions"
               uid={uid}
+              onFinished={handleRecordingFinished}
             />
           ) : (
             <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
           )}
           <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-24 bg-linear-to-t from-(--ui-chat-surface-background) via-[color-mix(in_srgb,var(--ui-chat-surface-background)_82%,transparent)] to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_top,black_35%,transparent)]" />
-          <Composer busy={busy} centered={isFreshThread && composerMode === "chat"} onModeChange={setComposerMode} onRecordingChange={setRecording} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} showRecordCompanion={false} />
+          <Composer busy={busy} centered={isFreshThread && composerMode === "chat"} mode={composerMode} onModeChange={handleModeChange} onRecordingChange={setRecording} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} showRecordCompanion={false} />
         </div>
       </div>
       {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={outputs} panel={rightPanel} sources={sources} />}

@@ -13,6 +13,7 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import { Button } from "@/components/desktop-ui/button";
 import { notebookChatStore, sendNotebookTurn, useNotebookChat, type NotebookWireSource } from "@/lib/notebooks/chat";
 import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
+import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 
 import { NotebookComposer } from "./notebook-composer";
 import { NotebookTranscript } from "./notebook-transcript";
@@ -35,6 +36,8 @@ export function NotebookChatView() {
   const [rightPanel, setRightPanel] = useState<SessionRailPanel>("sources");
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const [recording, setRecording] = useState(false);
+  const [recordCanvasOpen, setRecordCanvasOpen] = useState(false);
+  const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: activeChatId, preview, surface: "notebook", userId: uid });
 
   const wireSources: NotebookWireSource[] = useMemo(
     () => sources.map((s) => ({ name: s.name, content: s.content })),
@@ -48,6 +51,31 @@ export function NotebookChatView() {
 
   const instructions = selected?.instructions ?? null;
   const notebookId = selected?.id ?? null;
+
+  const outputs = useMemo(() => recordingArtifacts.map((artifact) => ({
+    id: artifact.id,
+    kind: "recording" as const,
+    title: artifact.title,
+    transcript: artifact.transcript,
+    notes: artifact.notes,
+    durationSeconds: artifact.durationSeconds,
+    createdAt: artifact.createdAt,
+  })), [recordingArtifacts]);
+
+  const handleRecordingChange = useCallback((active: boolean) => {
+    setRecording(active);
+    if (active) setRecordCanvasOpen(true);
+  }, []);
+
+  const handleRecordingFinished = useCallback((draft: RecordingArtifactDraft) => {
+    setRecording(false);
+    setRecordCanvasOpen(false);
+    setComposerMode("chat");
+    if (draft.durationSeconds <= 0 && !draft.transcript.trim() && !draft.notes.trim()) return;
+    setRightPanel("outputs");
+    setRightRailOpen(true);
+    void createArtifact(draft).catch(() => undefined);
+  }, [createArtifact]);
 
   const submit = useCallback(
     async (text: string, files: File[]) => {
@@ -92,7 +120,7 @@ export function NotebookChatView() {
         </div>
 
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-6">
-          {composerMode === "record" && recording ? (
+          {composerMode === "record" && recordCanvasOpen ? (
             <RecordWorkspace
               accessToken={session?.access_token ?? null}
               active
@@ -102,6 +130,7 @@ export function NotebookChatView() {
               keyterms={[selected.name, ...sources.map((source) => source.name)]}
               surface="notebook"
               uid={uid}
+              onFinished={handleRecordingFinished}
             />
           ) : (
             <NotebookTranscript messages={messages} working={working} />
@@ -112,17 +141,18 @@ export function NotebookChatView() {
               <NotebookComposer
                 autoFocus
                 onModeChange={setComposerMode}
-                onRecordingChange={setRecording}
+                onRecordingChange={handleRecordingChange}
                 onSubmit={submit}
                 placeholder={`Message ${selected.name}…`}
                 showRecordCompanion={!recording}
+                mode={composerMode}
                 working={working}
               />
             </div>
           </div>
         </div>
       </div>
-      {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={[]} panel={rightPanel} sources={railSources} />}
+      {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={outputs} panel={rightPanel} sources={railSources} />}
     </div>
   );
 }

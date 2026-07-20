@@ -217,7 +217,7 @@ function LibraryFolderNode(props: TreeContentsProps & { folder: LibraryTreeFolde
             data-library-drag-folder={folder.path}
             data-library-drop-folder={folder.path}
             onClick={() => { if (!props.onPointerClick()) setOpen((value) => !value); }}
-            onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); props.onContext({ item: { kind: "folder", path: folder.path, title: folder.name }, x: event.clientX, y: event.clientY }); }}
+            onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); props.onContext({ item: { kind: "folder", path: folder.path, title: folder.name }, x: event.clientX, y: event.clientY }); }}
             onPointerDown={(event) => props.onPointerDragStart(event, { kind: "folder", path: folder.path, title: folder.name })}
           >
             <SidebarRowLead><Codicon className="text-(--ui-text-quaternary)" name={open ? "chevron-down" : "chevron-right"} size="0.75rem" /></SidebarRowLead>
@@ -240,7 +240,7 @@ export function LibraryNoteRow({ note, depth = 0, isSelected, onSelect, onContex
           data-library-drag-note={note.id}
           data-library-parent-folder={parentFolder}
           onClick={() => { if (!onPointerClick?.()) onSelect(note.path); }}
-          onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onContext?.({ item: { kind: "note", id: note.id, title: note.title }, x: event.clientX, y: event.clientY }); }}
+          onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onContext?.({ item: { kind: "note", id: note.id, title: note.title }, x: event.clientX, y: event.clientY }); }}
           onPointerDown={onPointerDragStart}
         >
           <SidebarRowLabel className={cn(isSelected && "text-foreground")}>{note.title}</SidebarRowLabel>

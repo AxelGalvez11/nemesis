@@ -3,7 +3,7 @@
 // Cloud Library tree with persisted note/folder creation, search, selection,
 // and shared state for the editor and Graph surfaces.
 
-import { IconArrowsSort, IconFileImport, IconFilePlus, IconFolderPlus, IconSearch, IconX } from "@tabler/icons-react";
+import { IconArrowsSort, IconDots, IconFileImport, IconFilePlus, IconFolderPlus, IconSearch } from "@tabler/icons-react";
 import { useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -12,8 +12,13 @@ import { Codicon } from "@/components/desktop-ui/codicon";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { Skeleton } from "@/components/desktop-ui/skeleton";
@@ -26,11 +31,6 @@ import { GROUP_BODY, SCROLL_Y, SidebarRowStack } from "@/components/workspace/sh
 import { LibraryNoteRow, LibraryTreeView } from "./library-tree-view";
 import { LibraryTreeBlankState } from "./library-tree-blank-state";
 import { LibraryCreateDialog, type LibraryCreateKind } from "./library-create-dialog";
-
-const HEADER_ACTIONS = [
-  { label: "New note", icon: IconFilePlus },
-  { label: "New folder", icon: IconFolderPlus },
-] as const;
 
 export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
   const router = useRouter();
@@ -97,49 +97,38 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
         <div className="flex gap-0.5">
           <input
             accept=".md,.markdown,.txt,text/markdown,text/plain"
-            className="sr-only"
+            className="hidden"
             multiple
             onChange={(event) => void importNotes(Array.from(event.target.files ?? []))}
             ref={importInputRef}
             type="file"
           />
-          {totalCount > 0 && (
-            <Button
-              aria-label={searchOpen ? "Hide note search" : "Search notes"}
-              onClick={() => {
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button aria-label="Library tools" size="icon-xs" title="Library tools" type="button" variant="ghost"><IconDots /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-44">
+              <DropdownMenuItem disabled={totalCount === 0} onSelect={() => {
                 setSearchOpen((value) => !value);
                 if (searchOpen) setQuery("");
-              }}
-              size="icon-xs"
-              type="button"
-              variant="ghost"
-            >
-              {searchOpen ? <IconX /> : <IconSearch />}
-            </Button>
-          )}
-          {totalCount > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button aria-label="Sort Library" size="icon-xs" type="button" variant="ghost"><IconArrowsSort /></Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-40">
-                <DropdownMenuRadioGroup onValueChange={(value) => setSortMode(value as LibrarySortMode)} value={sortMode}>
-                  <DropdownMenuRadioItem value="az">Sort A–Z</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="za">Sort Z–A</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="modified">Date modified</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="added">Date added</DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-          {HEADER_ACTIONS.map(({ label, icon: Icon }) => (
-            <Button aria-label={label} key={label} onClick={() => label === "New note" ? void createBlankNote() : setCreateKind("folder")} size="icon-xs" type="button" variant="ghost">
-              <Icon />
-            </Button>
-          ))}
-          <Button aria-label="Import notes" onClick={() => importInputRef.current?.click()} size="icon-xs" title="Import notes" type="button" variant="ghost">
-            <IconFileImport />
-          </Button>
+              }}><IconSearch /> {searchOpen ? "Hide search" : "Search notes"}</DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger><IconArrowsSort /> Sort</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-40" sideOffset={6}>
+                  <DropdownMenuRadioGroup onValueChange={(value) => setSortMode(value as LibrarySortMode)} value={sortMode}>
+                    <DropdownMenuRadioItem value="az">Sort A–Z</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="za">Sort Z–A</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="modified">Date modified</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="added">Date added</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => void createBlankNote()}><IconFilePlus /> New note</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setCreateKind("folder")}><IconFolderPlus /> New folder</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => importInputRef.current?.click()}><IconFileImport /> Import notes</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
