@@ -38,8 +38,9 @@ import { radius, shadow, space, type } from "@/theme/tokens";
 const EDGE_WIDTH = 28;
 // The moving page's facing (left) corner radius when the drawer is open. Owner call
 // 2026-07-18: the SIDEBAR is SQUARE — only the page (chat/library/etc.) gets rounded
-// corners, and rounder than before. ("New chat" button keeps radius.lg.)
-const PAGE_RADIUS = 28;
+// corners. Owner 2026-07-20: ChatGPT-round — device-corner scale, paired with
+// borderCurve:"continuous" (Apple squircle) on pageShadow/pageClip below.
+const PAGE_RADIUS = 48;
 
 interface ShellState {
   open: boolean;
@@ -401,8 +402,8 @@ const createStyles = (c: ThemeColors) =>
     // The moving page. pageShadow carries the drop shadow (needs an opaque bg and NO
     // overflow clip so the shadow can bleed onto the sidebar); pageClip rounds the
     // actual content. Both round only the LEFT (facing) corners via edgeRadius.
-    pageShadow: { flex: 1, backgroundColor: c.bg, ...shadow.raise },
-    pageClip: { flex: 1, overflow: "hidden" },
+    pageShadow: { flex: 1, backgroundColor: c.bg, borderCurve: "continuous", ...shadow.raise },
+    pageClip: { flex: 1, overflow: "hidden", borderCurve: "continuous" },
     panelSolid: { flex: 1, backgroundColor: c.bg2 },
     panelInner: { flex: 1 },
     // flex:1 so the ScrollView fills the gap between the brand row and the footer — the
