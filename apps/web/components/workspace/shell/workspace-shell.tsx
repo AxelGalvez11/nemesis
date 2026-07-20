@@ -45,6 +45,24 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
     if (narrowViewport) setSidebarOpen(false);
   }, [narrowViewport]);
 
+  useEffect(() => {
+    const addHoverDescriptions = (root: ParentNode) => {
+      root.querySelectorAll<HTMLElement>("button[aria-label], a[aria-label], [role='button'][aria-label]").forEach((control) => {
+        if (control.title || control.textContent?.trim()) return;
+        const label = control.getAttribute("aria-label");
+        if (label) control.title = label;
+      });
+    };
+    addHoverDescriptions(document);
+    const observer = new MutationObserver((entries) => {
+      for (const entry of entries) {
+        for (const node of entry.addedNodes) if (node instanceof HTMLElement) addHoverDescriptions(node);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div
       className="scrollbar-dt flex h-screen min-h-0 w-full flex-col overflow-hidden bg-background"

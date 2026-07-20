@@ -12,8 +12,8 @@ import {
 import type { CloudLibraryNote } from "./library-tree";
 
 const notes: CloudLibraryNote[] = [
-  { id: "a", path: "Cardiology/ACE inhibitors.md", title: "ACE inhibitors", content: "See [[ARBs]].", updatedAt: "" },
-  { id: "b", path: "Cardiology/ARBs.md", title: "ARBs", content: "Back to [[ACE inhibitors|ACEIs]].", updatedAt: "" },
+  { id: "a", path: "Cardiology/ACE inhibitors.md", title: "ACE inhibitors", content: "See [[ARBs]].", updatedAt: "", createdAt: "" },
+  { id: "b", path: "Cardiology/ARBs.md", title: "ARBs", content: "Back to [[ACE inhibitors|ACEIs]].", updatedAt: "", createdAt: "" },
 ];
 
 assert.deepEqual(extractLibraryLinks("[[ARBs]] and [[ACE inhibitors|ACEIs]] and [[ARBs]]"), [

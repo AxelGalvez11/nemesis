@@ -63,12 +63,14 @@ function Button({
   variant = "default",
   size = "default",
   asChild = false,
+  title,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
   }) {
   const Comp = asChild ? Slot.Root : "button";
+  const hoverDescription = title ?? (typeof props["aria-label"] === "string" && String(size).startsWith("icon") ? props["aria-label"] : undefined);
 
   return (
     <Comp
@@ -76,6 +78,7 @@ function Button({
       data-size={size}
       data-slot="button"
       data-variant={variant}
+      title={hoverDescription}
       {...props}
     />
   );

@@ -15,6 +15,7 @@ const PREVIEW_NOTES: CloudLibraryNote[] = [
     path: "Pharmacology/Cardiovascular/ACE inhibitors.md",
     title: "ACE inhibitors",
     updatedAt: "",
+    createdAt: "",
     content:
       "# ACE inhibitors\n\n**Mechanism:** block angiotensin-converting enzyme → less angiotensin II → vasodilation and less aldosterone.\n\n## Key points\n- First-line for hypertension and heart failure\n- Classic side effect: a dry cough (bradykinin-mediated)\n\n## Related\n- Contrasts with: [[ARBs]]\n- Applied in: [[Lisinopril case]]",
   },
@@ -23,6 +24,7 @@ const PREVIEW_NOTES: CloudLibraryNote[] = [
     path: "Pharmacology/Cardiovascular/Beta blockers.md",
     title: "Beta blockers",
     updatedAt: "",
+    createdAt: "",
     content:
       "# Beta blockers\n\nReduce heart rate and contractility (beta-1 blockade).\n\n| Agent | Selectivity | NAPLEX weight |\n| --- | --- | --- |\n| Metoprolol | Beta-1 selective | High |\n| Propranolol | Non-selective | High |",
   },
@@ -31,6 +33,7 @@ const PREVIEW_NOTES: CloudLibraryNote[] = [
     path: "Immunology/01 Intro to Immunology.md",
     title: "01 Intro to Immunology",
     updatedAt: "",
+    createdAt: "",
     content: "# Introduction to Immunology\n\n- Innate vs. adaptive immunity — the two arms\n- Key cells: leukocytes, lymphocytes, phagocytes",
   },
 ];
@@ -89,6 +92,12 @@ function toNote(raw: unknown): CloudLibraryNote | null {
     title: rawTitle || titleFromPath(path),
     content: typeof raw.content === "string" ? raw.content : "",
     updatedAt: typeof raw.updated_at === "string" ? raw.updated_at : "",
+    createdAt:
+      typeof raw.created_at === "string"
+        ? raw.created_at
+        : typeof raw.updated_at === "string"
+          ? raw.updated_at
+          : "",
   };
 }
 
@@ -118,7 +127,7 @@ async function loadDocuments(userId: string): Promise<void> {
   try {
     const { data, error } = await supabase
       .from("readable_library_documents")
-      .select("id,user_id,path,kind,title,content,updated_at,deleted")
+      .select("id,user_id,path,kind,title,content,created_at,updated_at,deleted")
       .eq("user_id", userId)
       .eq("deleted", false)
       .in("kind", ["note", "folder"])
@@ -220,7 +229,7 @@ export function useCloudLibrary(): UseCloudLibraryApi {
       const path = uniqueNotePath(title, folder);
       const candidateTitle = titleFromPath(path);
       const content = input.content ?? `# ${candidateTitle}\n\n`;
-      const note = { id: `preview-${crypto.randomUUID()}`, path, title: candidateTitle, content, updatedAt: now };
+      const note = { id: `preview-${crypto.randomUUID()}`, path, title: candidateTitle, content, updatedAt: now, createdAt: now };
       setState({ ...state, notes: [note, ...state.notes], selectedPath: path });
       return note;
     }
@@ -237,7 +246,7 @@ export function useCloudLibrary(): UseCloudLibraryApi {
       const { data, error } = await supabase
         .from("readable_library_documents")
         .insert({ user_id: userId, path: candidate.path, kind: "note", title: candidate.title, content, deleted: false, updated_at: now })
-        .select("id,path,title,content,updated_at")
+        .select("id,path,title,content,created_at,updated_at")
         .single();
       if (isUniquePathViolation(error)) continue;
       if (error) throw new Error(error.message);

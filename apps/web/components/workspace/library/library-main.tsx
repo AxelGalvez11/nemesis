@@ -267,7 +267,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   if (!note) {
     return (
       <main className="relative flex h-full min-w-0 flex-1 flex-col items-center justify-center overflow-hidden bg-(--ui-bg-editor)">
-        {!leftSidebarOpen && <Button aria-label="Expand Library sidebar" className="workspace-inline-sidebar-toggle absolute left-2 top-2" onClick={onExpandLeft} size="icon-xs" variant="ghost"><IconLayoutSidebarLeftExpand /></Button>}
+        {!leftSidebarOpen && <Button aria-label="Expand Library sidebar" className="workspace-inline-sidebar-toggle absolute left-2 top-2" onClick={onExpandLeft} size="icon-xs" variant="ghost"><IconLayoutSidebarLeftExpand size={14} stroke={1.7} /></Button>}
         <EmptyState description="Create a note, then connect ideas with [[double brackets]]." title="No note open" />
         <Button onClick={() => void createBlankNote()} size="sm" variant="secondary">New note</Button>
       </main>
@@ -288,7 +288,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
             size="icon-xs"
             variant="ghost"
           >
-            {leftSidebarOpen ? <IconLayoutSidebarLeftCollapse /> : <IconLayoutSidebarLeftExpand />}
+            {leftSidebarOpen ? <IconLayoutSidebarLeftCollapse size={14} stroke={1.7} /> : <IconLayoutSidebarLeftExpand size={14} stroke={1.7} />}
           </Button>
           {openPaths.length > 0 && (
             <>
@@ -361,7 +361,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
             {mode === "edit" ? (
               <LibraryLiveEditor key={note.id} onChange={(next) => updateDraft({ content: next })} value={content} />
             ) : (
-              <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown externalLinksInNewTab={false} isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} obsidianTags onWikiLink={(target) => void openWikiTarget(target)} text={content} /></article>
+              <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown className="[&_h1]:!mb-3 [&_h1]:!mt-7 [&_h1]:!text-4xl [&_h1]:!font-bold [&_h2]:!mb-2.5 [&_h2]:!mt-6 [&_h2]:!text-2xl [&_h3]:!mb-2 [&_h3]:!mt-5 [&_h3]:!text-xl [&_h4]:!mt-4 [&_h4]:!text-base" externalLinksInNewTab={false} isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} obsidianTags onWikiLink={(target) => void openWikiTarget(target)} text={content} /></article>
             )}
           </div>
         </div>

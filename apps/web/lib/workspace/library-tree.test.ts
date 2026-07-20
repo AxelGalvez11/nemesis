@@ -48,4 +48,12 @@ assert.equal(unit3?.notes[1]?.path, "Pharmacology/Unit 3/Beta Blockers.md");
 // The empty-path row never made it into the tree — 4 valid notes in, 4 counted.
 assert.equal(countLibraryNotes(tree), 4);
 
+const sortable = [
+  { id: "a", path: "A.md", title: "Alpha", updatedAt: "2026-07-18T12:00:00.000Z", createdAt: "2026-07-20T12:00:00.000Z" },
+  { id: "z", path: "Z.md", title: "Zulu", updatedAt: "2026-07-20T12:00:00.000Z", createdAt: "2026-07-18T12:00:00.000Z" },
+];
+assert.deepEqual(buildLibraryTree(sortable, [], "za").notes.map((note) => note.title), ["Zulu", "Alpha"]);
+assert.deepEqual(buildLibraryTree(sortable, [], "modified").notes.map((note) => note.title), ["Zulu", "Alpha"]);
+assert.deepEqual(buildLibraryTree(sortable, [], "added").notes.map((note) => note.title), ["Alpha", "Zulu"]);
+
 console.log("library-tree.test.ts OK");
