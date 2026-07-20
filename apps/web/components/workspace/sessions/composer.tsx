@@ -262,7 +262,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
           </div>
         </div>
       </div>
-      {activeMode === "chat" && belowStart && <div className="mt-2 flex justify-start px-1">{belowStart}</div>}
+      {activeMode === "chat" && belowStart && <div className="relative z-3 -mt-px flex justify-start pl-6">{belowStart}</div>}
       {activeMode === "record" && showRecordCompanion && <RecordCompanionPanel />}
     </div>
   );
