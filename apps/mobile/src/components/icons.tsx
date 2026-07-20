@@ -122,6 +122,29 @@ export function PlusIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   );
 }
 
+/** Closed folder outline — marks folder rows in Library/Study trees. */
+export function FolderIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M3.8 7.2a1.8 1.8 0 0 1 1.8-1.8h3.6a1.8 1.8 0 0 1 1.35.6l1.1 1.25a1.8 1.8 0 0 0 1.35.6h5.4a1.8 1.8 0 0 1 1.8 1.8v7.15a1.8 1.8 0 0 1-1.8 1.8H5.6a1.8 1.8 0 0 1-1.8-1.8Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        {...base}
+      />
+    </Svg>
+  );
+}
+
+/** Right-pointing chevron; rotate 90° for the expanded (pointing-down) state. */
+export function ChevronIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="m9 5.8 6.2 6.2L9 18.2" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
 export function MailIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">

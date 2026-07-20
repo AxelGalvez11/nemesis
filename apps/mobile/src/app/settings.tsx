@@ -19,7 +19,7 @@ import {
 } from "@/components/icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space } from "@/theme/tokens";
+import { radius, space, type } from "@/theme/tokens";
 
 // Notifications/Usage need glyphs the shared icon set doesn't have yet. Kept
 // local to this file (not added to components/icons.tsx) to stay inside this
@@ -205,18 +205,18 @@ const createStyles = (c: ThemeColors) =>
     closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: c.surface2, alignItems: "center", justifyContent: "center" },
 
     guest: { flex: 1, alignItems: "center", justifyContent: "center", gap: space(4), padding: space(6) },
-    guestText: { color: c.text2, fontSize: 16 },
+    guestText: { color: c.text2, fontSize: type.small.fontSize + 1 },
     signinBtn: { backgroundColor: c.accent, borderRadius: radius.md, paddingVertical: space(3), paddingHorizontal: space(8) },
-    signinText: { color: c.onAccent, fontSize: 16, fontWeight: "600" },
+    signinText: { color: c.onAccent, fontSize: type.small.fontSize + 1, fontWeight: "600" },
 
     body: { paddingHorizontal: space(4), flexGrow: 1 },
 
     identity: { alignItems: "center", paddingTop: space(1), paddingBottom: space(5), gap: space(2.5) },
     avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: c.accentFaint, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.accentLine },
     avatarText: { color: c.accent, fontSize: 28, fontWeight: "700" },
-    identityEmail: { color: c.text, fontSize: 17, fontWeight: "600", maxWidth: "90%" },
+    identityEmail: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "600", maxWidth: "90%" },
 
-    sectionLabel: { color: c.text3, fontSize: 12.5, fontWeight: "600", marginTop: space(4), marginBottom: space(1.5), marginLeft: space(1) },
+    sectionLabel: { color: c.text3, fontSize: type.micro.fontSize, fontWeight: "600", marginTop: space(4), marginBottom: space(1.5), marginLeft: space(1) },
     card: { backgroundColor: c.surface, borderRadius: radius.md, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
     cardPad: { padding: space(3.5) },
 
@@ -224,11 +224,11 @@ const createStyles = (c: ThemeColors) =>
     rowDivider: { borderBottomWidth: 1, borderBottomColor: c.line },
     rowPressed: { backgroundColor: c.surface2 },
     rowIcon: { width: 22, alignItems: "center" },
-    rowLabel: { fontSize: 16, color: c.text },
-    rowValue: { flex: 1, textAlign: "right", fontSize: 15, color: c.text3 },
+    rowLabel: { fontSize: type.small.fontSize + 1, color: c.text },
+    rowValue: { flex: 1, textAlign: "right", fontSize: type.small.fontSize, color: c.text3 },
     chevron: { fontSize: 20, color: c.text3, marginLeft: space(1) },
 
-    version: { fontSize: 12, color: c.text3, textAlign: "center", marginTop: space(5) },
+    version: { fontSize: type.micro.fontSize, color: c.text3, textAlign: "center", marginTop: space(5) },
   });
 
 type Styles = ReturnType<typeof createStyles>;

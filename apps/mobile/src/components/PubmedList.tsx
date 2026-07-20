@@ -3,7 +3,7 @@ import type { DrugPubmed } from "@/api/types";
 import { EmptyState } from "./states";
 import { Card, SectionHeader } from "./ui";
 import { SourceLink } from "./SourceLink";
-import { c, space } from "@/theme/tokens";
+import { c, space, type } from "@/theme/tokens";
 
 // AC6: PubMed results shown, each cited. Title + journal + date; the abstract is
 // truncated (full read happens at the cited source).
@@ -42,7 +42,7 @@ export function PubmedList({ articles }: { articles: DrugPubmed[] }) {
 
 const styles = StyleSheet.create({
   wrap: { gap: space(2) },
-  title: { fontSize: 15, fontWeight: "600", color: c.text, lineHeight: 20 },
-  meta: { fontSize: 13, color: c.text3, marginTop: 2 },
-  abstract: { fontSize: 13, lineHeight: 19, color: c.text2, marginTop: space(1) },
+  title: { fontSize: type.small.fontSize, fontWeight: "600", color: c.text, lineHeight: 20 },
+  meta: { fontSize: type.micro.fontSize, color: c.text3, marginTop: 2 },
+  abstract: { fontSize: type.micro.fontSize, lineHeight: 19, color: c.text2, marginTop: space(1) },
 });

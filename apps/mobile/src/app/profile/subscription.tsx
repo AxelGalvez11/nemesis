@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ThemeColors } from "@/theme/palette";
 import { useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, space } from "@/theme/tokens";
+import { radius, space, type } from "@/theme/tokens";
 
 // Subscription — its own page (owner call), pushed from the Settings sheet. Shows
 // the current plan and what Nemesis Pro adds. No in-app purchase CTA yet: App
@@ -77,7 +77,7 @@ const createStyles = (c: ThemeColors) =>
     root: { flex: 1, backgroundColor: c.bg },
     header: { paddingHorizontal: space(3), paddingBottom: space(1) },
     back: { alignSelf: "flex-start", paddingVertical: space(1) },
-    backText: { fontSize: 16, color: c.accent, fontWeight: "500" },
+    backText: { fontSize: type.small.fontSize + 1, color: c.accent, fontWeight: "500" },
     body: { paddingHorizontal: space(5), flexGrow: 1, gap: space(4) },
     title: { fontSize: 28, fontWeight: "700", color: c.text, marginBottom: space(1), marginTop: space(1) },
 
@@ -88,15 +88,15 @@ const createStyles = (c: ThemeColors) =>
     currentPill: { backgroundColor: c.surface2, borderRadius: radius.pill, paddingHorizontal: space(2.5), paddingVertical: space(1) },
     currentPillText: { fontSize: 11, fontWeight: "600", color: c.text2 },
     proName: { fontSize: 20, fontWeight: "700", color: c.accent },
-    proSub: { fontSize: 13, color: c.text2, marginBottom: space(1) },
+    proSub: { fontSize: type.micro.fontSize, color: c.text2, marginBottom: space(1) },
 
     feature: { flexDirection: "row", alignItems: "flex-start", gap: space(2.5) },
-    check: { fontSize: 15, color: c.good, fontWeight: "700", marginTop: 1 },
+    check: { fontSize: type.small.fontSize, color: c.good, fontWeight: "700", marginTop: 1 },
     checkAccent: { color: c.accent },
-    featureText: { flex: 1, fontSize: 15, lineHeight: 21, color: c.text },
+    featureText: { flex: 1, fontSize: type.small.fontSize, lineHeight: 21, color: c.text },
 
     soonRow: { marginTop: space(2), paddingTop: space(3), borderTopWidth: 1, borderTopColor: c.accentLine },
-    soonText: { fontSize: 13, color: c.text2, textAlign: "center" },
+    soonText: { fontSize: type.micro.fontSize, color: c.text2, textAlign: "center" },
   });
 
 type Styles = ReturnType<typeof createStyles>;

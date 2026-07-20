@@ -600,7 +600,7 @@ function ViewSwitcher({
         pointerEvents={menuOpen ? "auto" : "none"}
         testID="calendar-view-menu"
       >
-        <GlassSurface style={styles.menuPanel} fallbackColor={c.glassPanel}>
+        <GlassSurface style={styles.menuPanel} fallbackColor={c.glassPanel} opaque>
           {VIEW_OPTIONS.map((opt) => {
             const active = view === opt.id;
             return (

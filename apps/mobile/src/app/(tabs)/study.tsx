@@ -4,6 +4,7 @@ import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanim
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Line, Path, Rect } from "react-native-svg";
+import { ChevronIcon } from "@/components/icons";
 import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
@@ -263,7 +264,10 @@ export default function StudyScreen() {
                   onPress={() => toggleFolder(item.group)}
                   style={({ pressed }) => [styles.folderRow, pressed && styles.rowPressed]}
                 >
-                  <PlusMinusIcon size={13} color={c.text2} expanded={!item.collapsed} />
+                  {/* Chevron points right when collapsed, down when open (owner 2026-07-20). */}
+                  <View style={item.collapsed ? null : styles.chevronOpen}>
+                    <ChevronIcon size={13} color={c.text2} strokeWidth={2.2} />
+                  </View>
                   <Text style={styles.folderName} numberOfLines={1}>{item.group}</Text>
                   {item.actionable > 0 ? <Text style={styles.due}>{item.actionable}</Text> : null}
                 </Pressable>
@@ -370,19 +374,6 @@ export default function StudyScreen() {
 
 const iconBase = { fill: "none", strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
 
-/** Folder disclosure indicator — a "+" when collapsed, a "−" when expanded (owner
- *  2026-07-18). The horizontal stroke always draws; the vertical one only while
- *  collapsed, so the glyph reads as plus→minus as the folder opens. */
-function PlusMinusIcon({ size = 13, color, expanded }: { size?: number; color: string; expanded: boolean }) {
-  const mid = 12;
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Line x1="5" y1={mid} x2="19" y2={mid} stroke={color} strokeWidth={2.4} strokeLinecap="round" />
-      {expanded ? null : <Line x1={mid} y1="5" x2={mid} y2="19" stroke={color} strokeWidth={2.4} strokeLinecap="round" />}
-    </Svg>
-  );
-}
-
 /** Stacked-cards glyph for the Cards/Tests/Mindmaps FAB — a front card plus a
  *  peeking back edge, the same "shape + partial second shape" depth trick the
  *  shared icon set uses elsewhere (e.g. SessionsIcon). */
@@ -429,8 +420,9 @@ const createStyles = (c: ThemeColors) =>
     emptyWrap: { paddingTop: space(10) },
 
     // Collapsible folder header row (owner ask 1).
+    chevronOpen: { transform: [{ rotate: "90deg" }] },
     folderRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingVertical: space(2.5), paddingHorizontal: space(2), borderRadius: radius.sm },
-    folderName: { ...type.bodyStrong, color: c.text2, flex: 1, minWidth: 0, textTransform: "uppercase", letterSpacing: 0.4, fontSize: 12.5 },
+    folderName: { ...type.bodyStrong, color: c.text2, flex: 1, minWidth: 0, textTransform: "uppercase", letterSpacing: 0.4, fontSize: type.micro.fontSize },
 
     // Floating glass FABs (owner asks 2 + 3).
     fabRow: { position: "absolute", left: 0, right: 0, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: space(4) },

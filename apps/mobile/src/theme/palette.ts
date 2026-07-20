@@ -131,6 +131,9 @@ export interface ThemeColors {
   /** Semi-opaque frosted fill for glass BUTTONS + MENUS — readable, but translucent
    *  enough to let the blur show through (unlike the opaque bg2). */
   glassPanel: string;
+  /** Near-opaque backing for MENU panels — glass edge stays, but the page behind
+   *  can no longer bleed through the panel (owner 2026-07-20). */
+  glassMenu: string;
   line: string;
   line2: string;
   /** tokens.json `mutedBorder` twin. */
@@ -167,6 +170,7 @@ const DARK_BASE = {
   raised: "#202023",
   glass: "rgba(233,234,238,0.045)",
   glassPanel: "rgba(24,24,27,0.72)",
+  glassMenu: "rgba(20,20,23,0.94)",
   line: "rgba(233,234,238,0.09)",
   line2: "rgba(233,234,238,0.16)",
   lineMuted: "rgba(154,157,166,0.20)",
@@ -186,6 +190,7 @@ const LIGHT_BASE = {
   raised: "#ffffff",
   glass: "rgba(22,24,29,0.045)",
   glassPanel: "rgba(250,251,255,0.78)",
+  glassMenu: "rgba(250,251,255,0.96)",
   line: "rgba(22,24,29,0.10)",
   line2: "rgba(22,24,29,0.18)",
   lineMuted: "rgba(90,94,104,0.22)",

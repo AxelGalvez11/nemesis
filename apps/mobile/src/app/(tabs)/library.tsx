@@ -19,7 +19,7 @@ import { useShellPadding } from "@/components/shell-chrome";
 import { useShell } from "@/components/AppDrawer";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
-import { CloseIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
+import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { fetchLibrary, loadCachedLibrary, type CloudLibrarySnapshot } from "@/api/cloudLibrary";
 import { buildLibraryRows, type LibraryRow } from "@/lib/library-sync";
 import type { ThemeColors } from "@/theme/palette";
@@ -325,7 +325,11 @@ export default function LibraryScreen() {
                 accessibilityState={{ expanded: !isCollapsed }}
                 onPress={() => toggleFolder(item.path)}
               >
-                <PlusMinusIcon size={13} color={c.text2} expanded={!isCollapsed} />
+                {/* Chevron points right when collapsed, down when open (owner 2026-07-20). */}
+                <View style={isCollapsed ? null : styles.chevronOpen}>
+                  <ChevronIcon size={13} color={c.text2} strokeWidth={2.2} />
+                </View>
+                <FolderIcon size={16} color={c.text2} strokeWidth={1.9} />
                 <Text style={styles.folderName} numberOfLines={1}>{item.name}</Text>
               </Pressable>
             );
@@ -467,7 +471,7 @@ function ActionsFab({
         pointerEvents={open ? "auto" : "none"}
         testID="library-actions-menu"
       >
-        <GlassSurface style={styles.actionsMenu} fallbackColor={c.glassPanel}>
+        <GlassSurface style={styles.actionsMenu} fallbackColor={c.glassPanel} opaque>
           {items.map((item, i) => (
             <Pressable
               key={item.key}
@@ -578,18 +582,6 @@ function SortSheet({
 // Inline glyphs the shared icon set (components/icons.tsx) doesn't carry yet — thin
 // strokes / round caps to match its language. Local to this screen on purpose.
 
-/** Folder disclosure indicator — "+" collapsed, "−" expanded (owner 2026-07-18). The
- *  horizontal stroke always draws; the vertical only while collapsed. */
-function PlusMinusIcon({ size = 13, color, expanded }: { size?: number; color: string; expanded: boolean }) {
-  const mid = 12;
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Line x1="5" y1={mid} x2="19" y2={mid} stroke={color} strokeWidth={2.4} strokeLinecap="round" />
-      {expanded ? null : <Line x1={mid} y1="5" x2={mid} y2="19" stroke={color} strokeWidth={2.4} strokeLinecap="round" />}
-    </Svg>
-  );
-}
-
 /** Horizontal "…" for the lower-left actions button. */
 function DotsIcon({ size = 20, color }: { size?: number; color: string }) {
   return (
@@ -648,7 +640,7 @@ const createStyles = (c: ThemeColors) =>
       borderWidth: 1,
       borderColor: c.line,
     },
-    searchInput: { flex: 1, color: c.text, fontSize: 15, padding: 0 },
+    searchInput: { flex: 1, color: c.text, fontSize: type.small.fontSize, padding: 0 },
     hint: { paddingHorizontal: space(3), paddingVertical: space(2), borderRadius: radius.md, backgroundColor: c.surface, borderWidth: 1, borderColor: c.line },
     hintText: { ...type.small, color: c.text2 },
 
@@ -664,6 +656,7 @@ const createStyles = (c: ThemeColors) =>
     // Only shown in the flat (search / sort) list, where a note is out of its folder.
     rowFolder: { ...type.micro, color: c.text3, marginTop: 2 },
     // Folders ARE collapsible, so they get the chevron notes deliberately don't.
+    chevronOpen: { transform: [{ rotate: "90deg" }] },
     folderRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -704,7 +697,7 @@ const createStyles = (c: ThemeColors) =>
     sortLabelActive: { color: c.accent, fontWeight: "600" },
     sortLabelDisabled: { ...type.body, color: c.text3 },
     sortHint: { ...type.micro, color: c.text3 },
-    sortCheck: { color: c.accent, fontSize: 16, fontWeight: "700" },
+    sortCheck: { color: c.accent, fontSize: type.small.fontSize + 1, fontWeight: "700" },
 
     // Lower-left "…" actions button + its popup menu (Search / New note / New folder / Sort).
     actionsFabWrap: { position: "absolute", left: space(4), alignItems: "flex-start" },

@@ -165,11 +165,11 @@ const createStyles = (c: ThemeColors) =>
     labelWrapLarge: { height: LARGE_LABEL_H, justifyContent: "center", paddingHorizontal: space(1) },
     labelLarge: { ...type.h1, color: c.text },
     weekdayRowLarge: { flexDirection: "row", height: LARGE_WEEKDAY_H, alignItems: "center" },
-    weekdayLarge: { flex: 1, textAlign: "center", fontSize: 13, fontWeight: "700", color: c.text3 },
+    weekdayLarge: { flex: 1, textAlign: "center", fontSize: type.micro.fontSize, fontWeight: "700", color: c.text3 },
     weekRowLarge: { flexDirection: "row", height: LARGE_ROW_H },
     dayCellLarge: { flex: 1, height: LARGE_ROW_H, alignItems: "center", justifyContent: "center" },
     dayInnerLarge: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-    dayNumLarge: { fontSize: 17, color: c.text },
+    dayNumLarge: { fontSize: type.body.fontSize, color: c.text },
 
     // Mini (Yearly's 12-up grid) — compact, naturally sized; no scroll-math dependency.
     cardMini: { width: "48%", marginBottom: space(5) },
@@ -184,7 +184,7 @@ const createStyles = (c: ThemeColors) =>
     // weekday row treatment; active column takes the accent (color only, no
     // size/weight jump, so it stays a quiet cue).
     weekdayStripe: { flexDirection: "row", alignItems: "center", paddingHorizontal: space(1) },
-    weekdayStripeLabel: { flex: 1, textAlign: "center", fontSize: 13, fontWeight: "700", color: c.text3 },
+    weekdayStripeLabel: { flex: 1, textAlign: "center", fontSize: type.micro.fontSize, fontWeight: "700", color: c.text3 },
     weekdayStripeActive: { color: c.accent },
 
     // Shared across both sizes.
