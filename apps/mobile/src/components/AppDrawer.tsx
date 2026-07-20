@@ -402,7 +402,10 @@ const createStyles = (c: ThemeColors) =>
     // The moving page. pageShadow carries the drop shadow (needs an opaque bg and NO
     // overflow clip so the shadow can bleed onto the sidebar); pageClip rounds the
     // actual content. Both round only the LEFT (facing) corners via edgeRadius.
-    pageShadow: { flex: 1, backgroundColor: c.bg, borderCurve: "continuous", ...shadow.raise },
+    // Shadow color is themed (alpha in c.pageShadow, so opacity is 1 here): the flat
+    // 50%-black read as a gray vertical band on the LIGHT sidebar (owner 2026-07-20:
+    // keep the shadow, kill the band) — light mode now casts a faint one instead.
+    pageShadow: { flex: 1, backgroundColor: c.bg, borderCurve: "continuous", ...shadow.raise, shadowColor: c.pageShadow, shadowOpacity: 1 },
     pageClip: { flex: 1, overflow: "hidden", borderCurve: "continuous" },
     panelSolid: { flex: 1, backgroundColor: c.bg2 },
     panelInner: { flex: 1 },
