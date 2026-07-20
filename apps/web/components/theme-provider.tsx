@@ -90,7 +90,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const storedAccent = localStorage.getItem(ACCENT_STORAGE_KEY);
     const nextAccent = isAccent(storedAccent) ? storedAccent : "crimson";
     const storedScale = Number(localStorage.getItem(SCALE_STORAGE_KEY));
-    const nextScale = Number.isFinite(storedScale) && storedScale >= 90 && storedScale <= 125 ? storedScale : 110;
+    const nextScale = Number.isFinite(storedScale) && storedScale >= 50 && storedScale <= 150 ? storedScale : 110;
     setAccentState(nextAccent);
     setScaleState(nextScale);
     applyAccent(nextAccent);
@@ -128,7 +128,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setScale = (next: number) => {
-    const clamped = Math.min(125, Math.max(90, Math.round(next)));
+    const clamped = Math.min(150, Math.max(50, Math.round(next)));
     setScaleState(clamped);
     document.documentElement.style.fontSize = `${clamped}%`;
     try { localStorage.setItem(SCALE_STORAGE_KEY, String(clamped)); } catch { /* best effort */ }

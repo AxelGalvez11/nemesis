@@ -3,14 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { BillingPanel } from "@/components/BillingPanel";
+import { BillingSettings } from "@/components/workspace/shell/billing-settings";
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { useAuth } from "@/components/AuthProvider";
+import { SecuritySettings } from "@/components/workspace/shell/security-settings";
 import { useTheme, type AccentPreference, type ThemePreference } from "@/components/theme-provider";
-import { fetchEntitlements, fetchMissions, fetchUsage, fetchWatches } from "@/lib/api";
+import { loadUsageBars, type UsageBar } from "@/lib/workspace/usage-summary";
 import { cn } from "@/lib/utils";
-import { buildCreditsSummary, type CreditsSummary } from "@nemesis/shared";
 
 export type SettingsSection =
   | "general"
@@ -81,6 +80,8 @@ const ACCENT_OPTIONS: { id: AccentPreference; label: string; color: string }[] =
 ];
 
 const SELECT_CLASS = "h-9 min-w-44 rounded-lg border border-(--ui-stroke-secondary) bg-background px-3 text-xs text-foreground outline-none focus:border-(--theme-primary)";
+// Discrete scale presets replace the old slider (owner 2026-07-20 evening).
+const SCALE_PRESETS = [50, 75, 90, 100, 110, 125, 150] as const;
 const KEYBOARD_SHORTCUTS: Array<[string, string]> = [
   ["New session", "⌘ N"],
   ["Search", "⌘ K"],
@@ -90,13 +91,12 @@ const KEYBOARD_SHORTCUTS: Array<[string, string]> = [
   ["Open settings", "⌘ ,"],
 ];
 
-export function SettingsSurface({ initialSection = "general", checkoutStatus }: { initialSection?: SettingsSection; checkoutStatus?: string }) {
+export function SettingsSurface({ initialSection = "general" }: { initialSection?: SettingsSection; checkoutStatus?: string }) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [preferences, setPreferences] = useState<AssistantPreferences>(DEFAULT_PREFERENCES);
-  const [credits, setCredits] = useState<CreditsSummary | null>(null);
+  const [usageBars, setUsageBars] = useState<UsageBar[] | null>(null);
   const [storage, setStorage] = useState<{ used: number; quota: number } | null>(null);
   const { preference, accent, scale, setTheme, setAccent, setScale } = useTheme();
-  const { session, signOut } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -111,16 +111,14 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
   useEffect(() => {
     if (section !== "usage") return;
     let alive = true;
-    setCredits(null);
-    void Promise.all([
-      fetchEntitlements().catch(() => null),
-      fetchUsage().catch(() => null),
-      fetchWatches().catch(() => null),
-      fetchMissions().catch(() => null),
-    ]).then(([snapshot, usage, watches, missions]) => {
-      if (!alive) return;
-      setCredits(buildCreditsSummary({ snapshot, usage, watchCount: watches?.length ?? null, missionCount: missions?.length ?? null }));
-    });
+    setUsageBars(null);
+    void loadUsageBars()
+      .then((bars) => {
+        if (alive) setUsageBars(bars);
+      })
+      .catch(() => {
+        if (alive) setUsageBars([]);
+      });
     return () => { alive = false; };
   }, [section]);
 
@@ -194,11 +192,11 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
           <SettingsPage title="Appearance" description="Saved on this device and applied immediately.">
             <SettingsCard title="Theme"><div className="grid grid-cols-3 gap-2 max-sm:grid-cols-1">{THEME_OPTIONS.map((item) => <button aria-pressed={preference === item.id} className={cn("rounded-xl border border-(--ui-stroke-secondary) bg-background p-2 text-left text-xs font-medium hover:bg-(--ui-control-hover-background)", preference === item.id && "border-(--theme-primary) ring-1 ring-(--theme-primary)")} key={item.id} onClick={() => setTheme(item.id)} type="button"><span className="theme-swatch mb-2" data-theme-preview={item.id} aria-hidden="true"><span className="tp-rail" /><span className="tp-page"><span className="tp-line" /><span className="tp-line short" /><span className="tp-dot" /></span></span>{item.label}</button>)}</div></SettingsCard>
             <SettingsCard title="Accent color"><div className="flex flex-wrap gap-2">{ACCENT_OPTIONS.map((item) => <button aria-label={item.label} aria-pressed={accent === item.id} className={cn("grid size-10 place-items-center rounded-full border border-(--ui-stroke-secondary)", accent === item.id && "ring-2 ring-offset-2 ring-offset-background")} key={item.id} onClick={() => setAccent(item.id)} style={{ color: item.color }} title={item.label} type="button"><span className="size-6 rounded-full" style={{ backgroundColor: item.color }} /></button>)}</div></SettingsCard>
-            <SettingsCard title="Scaling"><div className="flex items-center gap-4"><input aria-label="App scaling" className="min-w-0 flex-1 accent-[var(--theme-primary)]" max={125} min={90} onChange={(event) => setScale(Number(event.target.value))} step={5} type="range" value={scale} /><output className="w-12 text-right text-sm font-semibold tabular-nums">{scale}%</output></div></SettingsCard>
+            <SettingsCard title="Scaling"><div className="flex flex-wrap gap-2">{SCALE_PRESETS.map((preset) => <button aria-pressed={scale === preset} className={cn("min-w-16 rounded-xl border border-(--ui-stroke-secondary) bg-background px-3 py-2 text-xs font-semibold tabular-nums hover:bg-(--ui-control-hover-background)", scale === preset && "border-(--theme-primary) text-(--theme-primary) ring-1 ring-(--theme-primary)")} key={preset} onClick={() => setScale(preset)} type="button">{preset}%</button>)}</div><p className="mt-3 text-[0.7rem] text-(--ui-text-tertiary)">Everything in the app grows or shrinks together. Currently {scale}%.</p></SettingsCard>
           </SettingsPage>
         )}
 
-        {section === "usage" && <UsageSettings credits={credits} />}
+        {section === "usage" && <UsageSettings bars={usageBars} />}
 
         {section === "voice" && (
           <SettingsPage title="Voice" description="Defaults for dictation and future recording playback.">
@@ -209,7 +207,7 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
           </SettingsPage>
         )}
 
-        {section === "billing" && <SettingsPage title="Billing" description="Manage your plan and payment details."><BillingPanel checkoutStatus={checkoutStatus} /></SettingsPage>}
+        {section === "billing" && <SettingsPage title="Billing" description="Manage your plan and payment details."><BillingSettings /></SettingsPage>}
 
         {section === "storage" && (
           <SettingsPage title="Storage" description="Browser storage used by offline preferences, previews, and cached study data.">
@@ -218,11 +216,8 @@ export function SettingsSurface({ initialSection = "general", checkoutStatus }: 
         )}
 
         {section === "security" && (
-          <SettingsPage title="Security & login" description="Review the account currently connected to Nemesis.">
-            <SettingsCard>
-              <SettingsRow label="Signed in as"><span className="text-xs text-foreground">{session?.user.email ?? "Preview account"}</span></SettingsRow>
-              <div className="flex flex-wrap gap-2 pt-3"><Button onClick={() => router.push("/account")} size="sm" variant="secondary">Manage account</Button><Button onClick={() => void signOut().then(() => router.replace("/sign-in"))} size="sm" variant="ghost">Log out</Button></div>
-            </SettingsCard>
+          <SettingsPage title="Security & login" description="Your password and the extra checks that protect sign-in.">
+            <SecuritySettings />
           </SettingsPage>
         )}
 
@@ -253,12 +248,39 @@ function FrequencyControl({ value, onChange }: { value: Frequency; onChange: (va
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
-  return <button aria-checked={checked} className={cn("relative h-6 w-10 rounded-full border transition-colors", checked ? "border-(--theme-primary) bg-(--theme-primary)" : "border-(--ui-stroke-secondary) bg-(--ui-bg-quaternary)")} onClick={() => onChange(!checked)} role="switch" type="button"><span className={cn("absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-4" : "translate-x-0.5")} /></button>;
+  // Knob travel: 40px track − 2px borders − 16px knob − 2px gap = 20px (translate-x-5).
+  // The old translate-x-4 left the knob mid-track, so "on" and "off" looked alike.
+  return <button aria-checked={checked} className={cn("relative h-6 w-10 cursor-pointer rounded-full border transition-colors", checked ? "border-(--theme-primary) bg-(--theme-primary)" : "border-(--ui-stroke-secondary) bg-(--ui-bg-quaternary)")} onClick={() => onChange(!checked)} role="switch" type="button"><span className={cn("absolute top-0.5 left-0 size-4 rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-5" : "translate-x-0.5")} /></button>;
 }
 
-function UsageSettings({ credits }: { credits: CreditsSummary | null }) {
-  const rows = credits ? [...credits.daily, ...credits.slots] : [];
-  return <SettingsPage title="Usage" description="Current plan usage shown as a percentage of each allowance."><SettingsCard>{credits ? rows.length > 0 ? rows.map((row) => { const percentage = row.limit > 0 ? Math.min(100, Math.round((row.used / row.limit) * 100)) : 0; return <div className="border-b border-(--ui-stroke-tertiary) py-3 last:border-b-0" key={row.key}><div className="mb-2 flex items-center justify-between gap-4"><span className="text-xs font-medium">{row.label}</span><span className="text-sm font-semibold tabular-nums">{percentage}%</span></div><div className="h-2 overflow-hidden rounded-full bg-(--ui-bg-quaternary)"><div className="h-full rounded-full bg-(--theme-primary)" style={{ width: `${percentage}%` }} /></div></div>; }) : <p className="text-xs text-(--ui-text-tertiary)">No measured usage is available yet.</p> : <p className="text-xs text-(--ui-text-tertiary)">Loading usage…</p>}</SettingsCard></SettingsPage>;
+function UsageSettings({ bars }: { bars: UsageBar[] | null }) {
+  return (
+    <SettingsPage title="Usage" description="How much of your plan you've used — questions per day, per week, and voice-recording minutes.">
+      <SettingsCard>
+        {bars === null ? (
+          <p className="text-xs text-(--ui-text-tertiary)">Loading usage…</p>
+        ) : bars.length === 0 ? (
+          <p className="text-xs text-(--ui-text-tertiary)">No measured usage is available yet.</p>
+        ) : (
+          bars.map((bar) => {
+            const percentage = bar.unlimited ? 0 : bar.limit > 0 ? Math.min(100, Math.round((bar.used / bar.limit) * 100)) : 0;
+            return (
+              <div className="border-b border-(--ui-stroke-tertiary) py-3 first:pt-1 last:border-b-0 last:pb-1" key={bar.key}>
+                <div className="mb-1 flex items-center justify-between gap-4">
+                  <span className="text-xs font-medium">{bar.label}</span>
+                  <span className="text-sm font-semibold tabular-nums">{bar.unlimited ? "Unlimited" : `${percentage}%`}</span>
+                </div>
+                <p className="mb-2 text-[0.7rem] text-(--ui-text-tertiary)">{bar.detail}</p>
+                <div className="h-2 overflow-hidden rounded-full bg-(--ui-bg-quaternary)">
+                  <div className="h-full rounded-full bg-(--theme-primary)" style={{ width: `${bar.unlimited ? 100 : percentage}%`, opacity: bar.unlimited ? 0.25 : 1 }} />
+                </div>
+              </div>
+            );
+          })
+        )}
+      </SettingsCard>
+    </SettingsPage>
+  );
 }
 
 function StorageMeter({ storage }: { storage: { used: number; quota: number } | null }) {
