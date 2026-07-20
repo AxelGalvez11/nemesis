@@ -19,11 +19,12 @@ import { space } from "@/theme/tokens";
 export function TopBar() {
   const insets = useSafeAreaInsets();
   const { openDrawer, headerTitle, headerRight } = useShell();
+  const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
 
   return (
     <View style={[styles.overlay, { paddingTop: insets.top + space(2) }]} pointerEvents="box-none">
-      <GlassButton onPress={openDrawer} label="Open menu" styles={styles}>
+      <GlassButton onPress={openDrawer} label="Open menu" styles={styles} fallback={c.glassPanel}>
         <View style={styles.bun} />
         <View style={styles.bun} />
         <View style={styles.bun} />
@@ -45,15 +46,17 @@ function GlassButton({
   onPress,
   label,
   styles,
+  fallback,
   children,
 }: {
   onPress: () => void;
   label: string;
   styles: ReturnType<typeof createStyles>;
+  fallback?: string;
   children: ReactNode;
 }) {
   return (
-    <GlassSurface style={styles.glassBtn}>
+    <GlassSurface style={styles.glassBtn} fallbackColor={fallback}>
       <Pressable style={styles.glassBtnInner} onPress={onPress} hitSlop={8} accessibilityLabel={label}>
         {children}
       </Pressable>
@@ -92,6 +95,9 @@ const createStyles = (c: ThemeColors) =>
       position: "absolute", top: 0, left: 0, right: 0,
       flexDirection: "row", alignItems: "center", gap: space(2),
       paddingHorizontal: space(3), paddingBottom: space(2),
+      // Above StatusBarBlur (zIndex 5) so the menu button, title and headerRight action
+      // paint ON TOP of the blur/black-fade instead of getting frosted by it.
+      zIndex: 10,
     },
     glassBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: c.line },
     glassBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },

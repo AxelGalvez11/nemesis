@@ -128,6 +128,9 @@ export interface ThemeColors {
   raised: string;
   /** Translucent panel fill (the mission screens' tokens.json `surface`). */
   glass: string;
+  /** Semi-opaque frosted fill for glass BUTTONS + MENUS — readable, but translucent
+   *  enough to let the blur show through (unlike the opaque bg2). */
+  glassPanel: string;
   line: string;
   line2: string;
   /** tokens.json `mutedBorder` twin. */
@@ -163,6 +166,7 @@ const DARK_BASE = {
   surface2: "#1b1b1d",
   raised: "#202023",
   glass: "rgba(233,234,238,0.045)",
+  glassPanel: "rgba(24,24,27,0.72)",
   line: "rgba(233,234,238,0.09)",
   line2: "rgba(233,234,238,0.16)",
   lineMuted: "rgba(154,157,166,0.20)",
@@ -181,6 +185,7 @@ const LIGHT_BASE = {
   surface2: "#f1f3f8",
   raised: "#ffffff",
   glass: "rgba(22,24,29,0.045)",
+  glassPanel: "rgba(250,251,255,0.78)",
   line: "rgba(22,24,29,0.10)",
   line2: "rgba(22,24,29,0.18)",
   lineMuted: "rgba(90,94,104,0.22)",

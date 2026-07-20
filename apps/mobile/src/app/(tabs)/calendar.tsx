@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Reanimated, { Easing as ReEasing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import Svg, { Path } from "react-native-svg";
 import { CalendarIcon } from "@/components/icons";
@@ -73,7 +74,8 @@ const MONTHS_APPEND_STEP = 6;
 
 // Floating view-switcher geometry (lower-left liquid-glass button + its popup).
 const FAB_HEIGHT = 44;
-const FAB_BOTTOM = space(3);
+// Sits just above the home-indicator safe area (owner 2026-07-19: near the bottom).
+const FAB_BOTTOM = space(1);
 const MENU_GAP = space(3);
 // Keeps scrollable content clear of the floating button, so the last row is
 // never hidden behind it.
@@ -106,6 +108,7 @@ export default function CalendarScreen() {
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { contentTop, contentBottom } = useShellPadding();
+  const insets = useSafeAreaInsets();
   const [key, setKey] = useState<Uint8Array | null>(null);
   const [keyChecked, setKeyChecked] = useState(false);
   const [cache, setCache] = useState<SyncCache>({});
@@ -367,7 +370,7 @@ export default function CalendarScreen() {
           setMenuOpen(false);
         }}
         onClose={() => setMenuOpen(false)}
-        contentBottom={contentBottom}
+        insetBottom={insets.bottom}
         styles={styles}
       />
     </View>
@@ -467,7 +470,7 @@ function ViewSwitcher({
   onToggleMenu,
   onSelect,
   onClose,
-  contentBottom,
+  insetBottom,
   styles,
 }: {
   view: CalendarView;
@@ -475,7 +478,7 @@ function ViewSwitcher({
   onToggleMenu: () => void;
   onSelect: (view: CalendarView) => void;
   onClose: () => void;
-  contentBottom: number;
+  insetBottom: number;
   styles: Styles;
 }) {
   const { colors: c } = useTheme();
@@ -507,12 +510,12 @@ function ViewSwitcher({
       <Animated.View
         style={[
           styles.menuPanelWrap,
-          { bottom: contentBottom + FAB_BOTTOM + FAB_HEIGHT + MENU_GAP, opacity: progress, transform: [{ translateY }] },
+          { bottom: insetBottom + FAB_BOTTOM + FAB_HEIGHT + MENU_GAP, opacity: progress, transform: [{ translateY }] },
         ]}
         pointerEvents={menuOpen ? "auto" : "none"}
         testID="calendar-view-menu"
       >
-        <GlassSurface style={styles.menuPanel}>
+        <GlassSurface style={styles.menuPanel} fallbackColor={c.glassPanel}>
           {VIEW_OPTIONS.map((opt) => {
             const active = view === opt.id;
             return (
@@ -530,8 +533,8 @@ function ViewSwitcher({
         </GlassSurface>
       </Animated.View>
 
-      <View style={[styles.fabWrap, { bottom: contentBottom + FAB_BOTTOM }]} pointerEvents="box-none">
-        <GlassSurface style={styles.fab} testID="calendar-view-fab">
+      <View style={[styles.fabWrap, { bottom: insetBottom + FAB_BOTTOM }]} pointerEvents="box-none">
+        <GlassSurface style={styles.fab} fallbackColor={c.glassPanel} testID="calendar-view-fab">
           <Pressable
             style={styles.fabInner}
             onPress={onToggleMenu}

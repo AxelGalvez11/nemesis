@@ -60,7 +60,7 @@ export function StudyModeMenu({
           { bottom: insetBottom + FAB_SIZE + space(3), opacity: progress, transform: [{ translateY }] },
         ]}
       >
-        <GlassSurface style={styles.menu} fallbackColor={c.bg2}>
+        <GlassSurface style={styles.menu} fallbackColor={c.glassPanel}>
           {OPTIONS.map((option, i) => (
             <Pressable
               key={option.key}

@@ -51,7 +51,7 @@ export function SlideUpSheet({
           The sheet's own glass supplies the only blur (owner: confine blur to the component). */}
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
       <Animated.View style={[styles.sheetWrap, { transform: [{ translateY }] }]}>
-        <GlassSurface style={styles.sheet} fallbackColor={c.bg2}>
+        <GlassSurface style={styles.sheet} fallbackColor={c.glassPanel}>
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
             <Pressable onPress={onClose} hitSlop={10} style={styles.closeBtn} accessibilityLabel={`Close ${title}`}>
