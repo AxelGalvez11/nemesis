@@ -6,6 +6,7 @@ import {
   isTrialEligibleForSubscriptionHistory,
   planLabel,
   reusableCheckoutUrl,
+  stripePriceMatchesPlan,
   stripeKeyMode,
   subscriptionCheckoutTerms,
   subscriptionGrantsAccess,
@@ -24,6 +25,20 @@ assert.equal(subscriptionRemainsOpen("past_due"), true);
 assert.equal(stripeKeyMode("sk_test_example"), "test");
 assert.equal(stripeKeyMode("rk_live_example"), "live");
 assert.equal(stripeKeyMode("not-a-key"), "unknown");
+assert.equal(stripePriceMatchesPlan("max", {
+  active: true,
+  currency: "usd",
+  recurring: { interval: "month" },
+  type: "recurring",
+  unit_amount: 9_900,
+}), true);
+assert.equal(stripePriceMatchesPlan("max", {
+  active: true,
+  currency: "usd",
+  recurring: { interval: "month" },
+  type: "recurring",
+  unit_amount: 4_999,
+}), false);
 
 const now = Date.parse("2026-07-12T12:00:00Z");
 assert.equal(reusableCheckoutUrl([

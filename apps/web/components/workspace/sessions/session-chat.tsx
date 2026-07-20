@@ -60,6 +60,7 @@ export function SessionChat() {
   const [rightRailOpen, setRightRailOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<SessionRailPanel>("sources");
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
+  const [recording, setRecording] = useState(false);
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
   const [, forceTick] = useReducer((n: number) => n + 1, 0);
@@ -169,12 +170,20 @@ export function SessionChat() {
         <ChatHeader onOpenRail={() => setRightRailOpen(true)} railOpen={rightRailOpen} session={session} />
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]" data-slot="composer-bounds">
           {composerMode === "record" ? (
-            <RecordWorkspace className="absolute inset-x-6 bottom-[calc(var(--composer-measured-height)+1.75rem)] top-4 z-10 max-sm:inset-x-3" />
+            <RecordWorkspace
+              accessToken={authSession?.access_token ?? null}
+              active={recording}
+              className="absolute inset-x-6 bottom-[calc(var(--composer-measured-height)+1.75rem)] top-4 z-10 max-sm:inset-x-3"
+              context="A live study, research, class, meeting, or interview session. Infer the subject only from what is spoken."
+              contextId={selectedId}
+              surface="sessions"
+              uid={uid}
+            />
           ) : (
             <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
           )}
           <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-24 bg-linear-to-t from-(--ui-chat-surface-background) via-[color-mix(in_srgb,var(--ui-chat-surface-background)_82%,transparent)] to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_top,black_35%,transparent)]" />
-          <Composer busy={busy} centered={isFreshThread && composerMode === "chat"} onModeChange={setComposerMode} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} showRecordCompanion={false} />
+          <Composer busy={busy} centered={isFreshThread && composerMode === "chat"} onModeChange={setComposerMode} onRecordingChange={setRecording} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} showRecordCompanion={false} />
         </div>
       </div>
       {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={outputs} panel={rightPanel} sources={sources} />}

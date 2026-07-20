@@ -2,6 +2,29 @@ export type CheckoutPlan = "plus" | "pro" | "max";
 export type StripeMode = "test" | "live";
 
 export const NEMESIS_TRIAL_PERIOD_DAYS = 7;
+export const MONTHLY_PLAN_PRICE_CENTS: Record<CheckoutPlan, number> = {
+  plus: 999,
+  pro: 1_999,
+  max: 9_900,
+};
+
+interface StripePriceLike {
+  active?: boolean;
+  currency?: string;
+  type?: string;
+  unit_amount?: number | null;
+  recurring?: { interval?: string | null } | null;
+}
+
+/** Fail closed when an environment variable still points at an obsolete or
+ * annual Stripe Price. The marketing page, catalog, and Checkout must agree. */
+export function stripePriceMatchesPlan(plan: CheckoutPlan, price: StripePriceLike): boolean {
+  return price.active !== false
+    && price.currency === "usd"
+    && price.type === "recurring"
+    && price.recurring?.interval === "month"
+    && price.unit_amount === MONTHLY_PLAN_PRICE_CENTS[plan];
+}
 
 export function isTrialEligibleForSubscriptionHistory(hasSubscriptionHistory: boolean): boolean {
   return !hasSubscriptionHistory;

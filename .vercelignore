@@ -1,0 +1,24 @@
+# Vercel builds only apps/web for the nemesis-web project. Keep local build
+# artifacts and unrelated desktop/marketing work out of the deployment bundle.
+**/node_modules
+**/.next
+**/.turbo
+
+apps/desktop-agent
+apps/nemesis-desktop
+landing
+marketing
+tmp
+
+.claude
+.gstack
+.obsidian
+docs
+supabase
+
+/*.canvas
+/*.jpeg
+/*.jpg
+/*.png
+/*.webp
+/*.mp4

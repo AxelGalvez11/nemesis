@@ -5,6 +5,7 @@ import {
   checkoutIdempotencyKey,
   customerIdempotencyKey,
   reusableCheckoutUrl,
+  stripePriceMatchesPlan,
   subscriptionCheckoutTerms,
   subscriptionRemainsOpen,
 } from "@/lib/billing-contract";
@@ -25,6 +26,20 @@ export async function POST(req: Request) {
     if (!priceId) return json({ error: `STRIPE_${plan.toUpperCase()}_PRICE_ID missing` }, 500);
 
     const stripeClient = stripe();
+    const checkoutPrice = await stripeClient.prices.retrieve(priceId);
+    if (!stripePriceMatchesPlan(plan, checkoutPrice)) {
+      console.error("stripe_checkout_price_mismatch", {
+        active: checkoutPrice.active,
+        currency: checkoutPrice.currency,
+        interval: checkoutPrice.recurring?.interval,
+        plan,
+        unitAmount: checkoutPrice.unit_amount,
+      });
+      return json({
+        error: "stripe_checkout_price_mismatch",
+        message: "This subscription price is being updated. Try again shortly.",
+      }, 503);
+    }
     const mode = assertStripeBillingWritesAllowed();
     const livemode = mode === "live";
     const admin = adminClient();

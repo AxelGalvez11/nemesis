@@ -223,6 +223,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
           <ul style={billingList}>
             <li style={billingItem}><span style={billingTick}>✓</span>Higher limits for answers, notes, and study decks</li>
             <li style={billingItem}><span style={billingTick}>✓</span>Turn lectures into organized study material</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>30 live transcription minutes each month</li>
             <li style={billingItem}><span style={billingTick}>✓</span>Scheduled school portal and email sync</li>
           </ul>
           {planCta("plus", "Upgrade to Student")}
@@ -245,7 +246,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
             <li style={{ ...billingItem, color: "var(--text-2)", fontWeight: 600, fontSize: 12.5 }}>Everything in Student, plus:</li>
             <li style={billingItem}><span style={billingTick}>✓</span><span><strong>Deep research</strong> with multi-step cited reports</span></li>
             <li style={billingItem}><span style={billingTick}>✓</span>Higher desktop-agent automation limits</li>
-            <li style={billingItem}><span style={billingTick}>✓</span>Expanded lecture copilot access</li>
+            <li style={billingItem}><span style={billingTick}>✓</span>90 live copilot minutes each month</li>
           </ul>
           {planCta("pro", "Upgrade to Agent Pro")}
           {currentRank === 0 ? (
@@ -267,7 +268,7 @@ export function BillingPanel({ checkoutStatus }: { checkoutStatus?: string }) {
             <ul style={billingList}>
               <li style={{ ...billingItem, color: "var(--text-2)", fontWeight: 600, fontSize: 12.5 }}>Everything in Agent Pro, plus:</li>
               <li style={billingItem}><span style={billingTick}>✓</span>Highest usage limits across the agent</li>
-              <li style={billingItem}><span style={billingTick}>✓</span>Unlimited lecture copilot</li>
+              <li style={billingItem}><span style={billingTick}>✓</span>4,000 live copilot minutes each month</li>
               <li style={billingItem}><span style={billingTick}>✓</span>First access to new capabilities</li>
             </ul>
             {planCta("max", "Upgrade to Max")}

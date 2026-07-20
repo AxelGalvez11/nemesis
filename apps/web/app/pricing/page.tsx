@@ -29,8 +29,9 @@ const TIERS: Tier[] = [
     cta: "Start free trial",
     cadence: "/ month",
     features: [
-      "Cited answers from real medical literature",
+      "Cited answers and research support for any field",
       "Turn your lectures into notes + exam-ready flashcards",
+      "30 minutes of live transcription each month",
       "Higher daily limits for answers, notes & decks",
       "Sync your school portal + email on a schedule",
     ],
@@ -47,7 +48,7 @@ const TIERS: Tier[] = [
       "Everything in Student, plus the autopilot",
       "The agent runs your whole semester end-to-end",
       "Deep research reports with real citations",
-      "Live lecture copilot — up to 2 lectures a day",
+      "Live copilot — 90 transcription minutes each month",
     ],
     id: "pro",
     name: "Agent Pro",
@@ -58,15 +59,15 @@ const TIERS: Tier[] = [
     cta: "Start free trial",
     cadence: "/ month",
     features: [
-      "Everything in Agent Pro, with no ceiling",
-      "Unlimited live lecture copilot — real-time, every class",
+      "Everything in Agent Pro, with the highest limits",
+      "Live copilot — 4,000 transcription minutes each month",
       "The highest daily limits on everything",
       "First access to every new power we ship",
     ],
     id: "max",
     name: "Max",
-    price: "$49.99",
-    tagline: "Real-time AI in every lecture, all day.",
+    price: "$99",
+    tagline: "Real-time AI for your heaviest study and research.",
   },
 ];
 
@@ -168,8 +169,8 @@ function PricingInner() {
         <p className="nm-eyebrow">Founding member · early access</p>
         <h1 className="nm-title">The AI that runs your semester.</h1>
         <p className="nm-sub">
-          Nemesis syncs your school, turns every lecture into notes and exam-ready flashcards, and answers with real,
-          cited sources — a local-first agent that lives on your Mac and stays a step ahead of you.
+          Nemesis combines live notes, study tools, research, and cited answers for any course or field in one focused
+          workspace — on the web first, with a deeper desktop agent to follow.
         </p>
         <p className="nm-trialline">Every plan starts with a 7-day free trial. No charge until it ends — cancel anytime.</p>
       </section>
