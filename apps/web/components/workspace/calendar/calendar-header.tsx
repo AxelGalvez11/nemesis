@@ -20,11 +20,11 @@ interface CalendarHeaderProps {
 
 export function CalendarHeader({ view, cursor, today, onChangeView, onStep, onAddEvent }: CalendarHeaderProps) {
   return (
-    <header className="flex shrink-0 flex-wrap items-start justify-between gap-3 px-6 pb-3 pt-5">
+    <header className="workspace-page-header flex shrink-0 flex-wrap items-start justify-between gap-3 px-6 pb-3 pt-5 max-sm:px-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-[-0.025em]">Calendar</h1>
+        <h1 className="workspace-page-title">Calendar</h1>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
         <SegmentedControl onChange={onChangeView} options={VIEW_OPTIONS} value={view} />
         <div className="flex items-center gap-1 rounded-md border border-border">
           <Button

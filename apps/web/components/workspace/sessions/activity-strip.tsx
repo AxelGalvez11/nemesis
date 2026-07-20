@@ -5,8 +5,6 @@
 // a turn is in flight, and a settled "Thought for Xs" caption once it lands
 // (shown only past 2s, non-expandable — no reasoning trail is kept in v1).
 
-import { cn } from "@/lib/utils";
-
 /** "21s" under a minute, "1m 2s" at or above — matches desktop's formatDuration. */
 export function formatDuration(totalSeconds: number): string {
   const seconds = Math.max(0, Math.round(totalSeconds));
@@ -39,7 +37,6 @@ export function ActivityStrip({ placement, seconds }: ActivityStripProps) {
         role="status"
       >
         <div className="flex min-w-0 max-w-full items-center gap-2">
-          <span aria-hidden="true" className={cn("dither inline-block size-3 shrink-0 rounded-[2px] text-midground/80 animate-pulse")} />
           <span className="nemesis-activity-phrase flex min-w-0 text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)">
             <span className="shimmer min-w-0 truncate">Thinking</span>
           </span>

@@ -7,6 +7,7 @@
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import { formatWebSearchContext, shouldSearchWeb, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 
 const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
 const CHAT_MODEL = "deepseek-chat";
@@ -21,6 +22,7 @@ export interface WireMsg {
 export const CHAT_SYSTEM_PROMPT =
   "You are Nemesis, a study assistant for health-sciences students. " +
   "Answer plainly and concisely. Use markdown when structure helps (lists, tables). " +
+  "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
   "Never use emojis. If a question needs the student's own files or their school portals, " +
   "say that the Mac app's missions handle those and answer what you can from knowledge.";
 
@@ -217,5 +219,29 @@ export async function sendChatTurn(
   userText: string,
   signal?: AbortSignal,
 ): Promise<ChatReply> {
-  return postChatCompletion(uid, buildWireMessages(history, userText), signal);
+  let groundedText = userText;
+  if (shouldSearchWeb(userText)) {
+    const context = await searchWebContext(uid, userText, signal);
+    if (context) groundedText = `${userText}\n\n${context}`;
+  }
+  return postChatCompletion(uid, buildWireMessages(history, groundedText), signal);
+}
+
+async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<string> {
+  const key = await deviceKey(uid);
+  if (!key) return "";
+  try {
+    const response = await fetch("/api/workspace/search", {
+      body: JSON.stringify({ query, limit: 5 }),
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      method: "POST",
+      signal,
+    });
+    if (!response.ok) return "";
+    const body = (await response.json()) as { data?: { web?: ChatWebResult[] } };
+    return formatWebSearchContext(body.data?.web ?? []);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    return "";
+  }
 }

@@ -290,6 +290,8 @@ export interface UseCloudStudyApi extends StoreState {
   createCard: (input: CreateCardInput) => Promise<StudyCard>;
   createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
   gradeCard: (cardId: string, grade: StudyGrade) => Promise<StudyCard>;
+  moveDeck: (deckId: string, targetGroup: string) => Promise<void>;
+  moveDeckGroup: (sourceGroup: string, targetGroup: string) => Promise<void>;
   deleteDeck: (deckId: string) => Promise<void>;
   deleteArtifact: (artifactId: string) => Promise<void>;
 }
@@ -468,6 +470,43 @@ export function useCloudStudy(): UseCloudStudyApi {
     return nextCard;
   }, [preview, userId]);
 
+  const moveDeck = useCallback(async (deckId: string, rawTargetGroup: string) => {
+    const deck = state.decks.find((item) => item.id === deckId);
+    if (!deck) return;
+    const targetGroup = rawTargetGroup.split("::").map((part) => part.trim()).filter(Boolean).join("::");
+    const leaf = deck.name.split("::").pop()?.trim() || deck.name;
+    const name = targetGroup ? `${targetGroup}::${leaf}` : leaf;
+    if (name === deck.name) return;
+    if (state.decks.some((item) => item.id !== deckId && item.name.toLowerCase() === name.toLowerCase())) {
+      throw new Error("A deck with that name already exists in this group.");
+    }
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to move a deck.");
+      const { error } = await supabase.from("study_decks").update({ name }).eq("id", deckId).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    setState({ ...state, decks: state.decks.map((item) => item.id === deckId ? { ...item, name, updatedAt: new Date().toISOString() } : item) });
+  }, [preview, userId]);
+
+  const moveDeckGroup = useCallback(async (rawSourceGroup: string, rawTargetGroup: string) => {
+    const sourceGroup = rawSourceGroup.split("::").map((part) => part.trim()).filter(Boolean).join("::");
+    const targetGroup = rawTargetGroup.split("::").map((part) => part.trim()).filter(Boolean).join("::");
+    if (!sourceGroup || sourceGroup === targetGroup || targetGroup.startsWith(`${sourceGroup}::`)) return;
+    const groupLeaf = sourceGroup.split("::").pop() ?? sourceGroup;
+    const destination = targetGroup ? `${targetGroup}::${groupLeaf}` : groupLeaf;
+    const moving = state.decks.filter((deck) => deck.name.startsWith(`${sourceGroup}::`));
+    if (moving.length === 0) return;
+    const renamed = moving.map((deck) => ({ deck, name: `${destination}${deck.name.slice(sourceGroup.length)}` }));
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to move a deck group.");
+      const results = await Promise.all(renamed.map(({ deck, name }) => supabase.from("study_decks").update({ name }).eq("id", deck.id).eq("user_id", userId)));
+      const failure = results.find((result) => result.error)?.error;
+      if (failure) throw new Error(failure.message);
+    }
+    const names = new Map(renamed.map(({ deck, name }) => [deck.id, name]));
+    setState({ ...state, decks: state.decks.map((deck) => names.has(deck.id) ? { ...deck, name: names.get(deck.id)!, updatedAt: new Date().toISOString() } : deck) });
+  }, [preview, userId]);
+
   const deleteDeck = useCallback(async (deckId: string) => {
     if (!preview) {
       if (!userId) throw new Error("Sign in to delete a deck.");
@@ -500,6 +539,8 @@ export function useCloudStudy(): UseCloudStudyApi {
     createCard,
     createArtifact,
     gradeCard,
+    moveDeck,
+    moveDeckGroup,
     deleteDeck,
     deleteArtifact,
   };

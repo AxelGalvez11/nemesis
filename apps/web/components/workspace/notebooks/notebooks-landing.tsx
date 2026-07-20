@@ -58,7 +58,7 @@ export function NotebooksLanding() {
   };
 
   const confirmDelete = (id: string, name: string) => {
-    if (typeof window !== "undefined" && !window.confirm(`Delete “${name}”? Its sources and chat are removed. This can't be undone.`)) return;
+    if (typeof window !== "undefined" && !window.confirm(`Are you sure you want to delete “${name}”? Its sources and chat are removed. This can't be undone.`)) return;
     void remove(id);
   };
 
@@ -73,10 +73,10 @@ export function NotebooksLanding() {
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden px-6 pt-[calc(var(--titlebar-height)+2.5rem)]">
+    <div className="workspace-page-header mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden px-6 pt-[calc(var(--titlebar-height)+1.25rem)] max-sm:px-4">
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Notebooks</h1>
+          <h1 className="workspace-page-title">Notebooks</h1>
           <p className="mt-1 text-sm text-(--ui-text-tertiary)">Gather sources, set an instruction, and chat about them.</p>
         </div>
         <Button disabled={creating} onClick={onNew} size="sm" variant="secondary">

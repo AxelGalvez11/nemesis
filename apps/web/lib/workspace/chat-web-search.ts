@@ -1,0 +1,29 @@
+export interface ChatWebResult {
+  title: string;
+  url: string;
+  description: string;
+}
+
+const EXPLICIT_WEB_PATTERN = /\b(search(?: the)? web|web search|look(?:\s+(?:it|this|that))?\s+up|browse|online|internet|source(?:s)?|cite|link(?:s)?)\b/i;
+const CURRENT_INFO_PATTERN = /\b(latest|current|currently|today|tonight|yesterday|tomorrow|news|price|weather|score|schedule|standings|release|version|update|recent|live)\b/i;
+const CHANGING_FACT_PATTERN = /\bwho\s+(?:is|are|won|leads|runs|owns)|\b(?:president|prime minister|ceo|champion|winner)\b/i;
+const RECENT_YEAR_PATTERN = /\b202[4-9]\b/;
+
+export function shouldSearchWeb(query: string): boolean {
+  const compact = query.trim();
+  if (compact.length < 3) return false;
+  return EXPLICIT_WEB_PATTERN.test(compact)
+    || CURRENT_INFO_PATTERN.test(compact)
+    || CHANGING_FACT_PATTERN.test(compact)
+    || RECENT_YEAR_PATTERN.test(compact)
+    || /https?:\/\//i.test(compact);
+}
+
+export function formatWebSearchContext(results: ChatWebResult[]): string {
+  const usable = results.filter((result) => result.url && (result.title || result.description)).slice(0, 5);
+  if (usable.length === 0) return "";
+  return [
+    "Live web search results (use these for current facts and cite the relevant URL in the answer):",
+    ...usable.map((result, index) => `${index + 1}. ${result.title || result.url}\nURL: ${result.url}\n${result.description}`),
+  ].join("\n\n");
+}

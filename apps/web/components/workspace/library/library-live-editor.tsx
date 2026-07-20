@@ -73,15 +73,18 @@ export function LibraryLiveEditor({ value, onChange, onWikiLink, isWikiLinkAvail
   }
 
   return (
-    <div className="min-h-[28rem] p-1" data-slot="library-live-editor">
+    <div className="min-h-[28rem] w-full cursor-text bg-transparent p-1" data-slot="library-live-editor">
       {blocks.map((block, index) => (
         <div className="min-h-7 py-1" key={`${index}:${blocks.length}`}>
           {activeIndex === index ? (
             <ActiveBlock onBlur={() => setActiveIndex(null)} onChange={(next) => updateBlock(index, next)} value={block} />
           ) : (
             <div
-              className="min-h-7 cursor-text rounded-md px-0 py-0.5 outline-none hover:bg-[color-mix(in_srgb,var(--ui-base)_2%,transparent)]"
-              onClick={() => setActiveIndex(index)}
+              className="min-h-7 cursor-text bg-transparent px-0 py-0.5 outline-none"
+              onClick={(event) => {
+                if ((event.target as HTMLElement).closest("a, button")) return;
+                setActiveIndex(index);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") setActiveIndex(index);
               }}

@@ -137,17 +137,21 @@ export function SessionChat() {
     abortControllers.current.get(selectedId)?.abort();
   }, [selectedId]);
 
+  const handleEditMessage = useCallback((at: string, content: string) => {
+    if (selectedId) sessionsStore.updateMessage(selectedId, at, content);
+  }, [selectedId]);
+
   const isFreshThread = messages.length === 0;
   const placeholder = isFreshThread ? "Ask anything" : "Send a follow-up";
 
   return (
     <div className="relative isolate flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)">
-      {session && <ChatHeader session={session} />}
+      <ChatHeader session={session} />
       <div
         className="relative min-h-0 max-w-full flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]"
         data-slot="composer-bounds"
       >
-        <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} liveSeconds={liveSeconds} turns={turns} />
+        <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} turns={turns} />
       </div>
       <Composer busy={busy} centered={isFreshThread} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} />
     </div>

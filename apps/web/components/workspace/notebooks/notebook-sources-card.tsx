@@ -102,7 +102,7 @@ export function NotebookSourcesCard({
       onDrop={onDrop}
     >
       <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-1.5 text-[0.8rem] font-semibold uppercase tracking-wide text-(--ui-text-tertiary)">
+        <h2 className="flex items-center gap-1.5 text-[0.8rem] font-semibold uppercase tracking-wide text-foreground">
           Sources
           {sources.length > 0 && <span className="tabular-nums text-(--ui-text-quaternary)">{sources.length}</span>}
         </h2>
@@ -120,7 +120,7 @@ export function NotebookSourcesCard({
         <button
           type="button"
           onClick={() => setDialogOpen(true)}
-          className="flex flex-col items-center gap-1.5 rounded-lg px-3 py-5 text-center text-(--ui-text-quaternary) transition-colors hover:bg-(--ui-control-hover-background)"
+          className="flex flex-col items-center gap-1.5 rounded-lg px-3 py-5 text-center text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background)"
         >
           <Codicon name="cloud-upload" size="1.1rem" />
           <span className="text-[0.78rem]">Drag files here, or click to add notes, links, or files.</span>
@@ -142,7 +142,9 @@ export function NotebookSourcesCard({
               <Button
                 aria-label={`Remove ${s.name}`}
                 className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                onClick={() => void removeSource(s.id)}
+                onClick={() => {
+                  if (window.confirm(`Are you sure you want to delete “${s.name}”? This can't be undone.`)) void removeSource(s.id);
+                }}
                 size="icon-xs"
                 type="button"
                 variant="ghost"

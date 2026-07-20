@@ -43,12 +43,12 @@ export function GraphWorkspace() {
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background) pt-(--titlebar-height)">
       <div className="relative flex h-full min-h-0 flex-col">
-        <header className="pointer-events-none absolute left-6 top-5 z-10">
-          <h1 className="text-lg font-semibold">Graph</h1>
+        <header className="workspace-page-header-floating pointer-events-none absolute left-6 top-5 z-10">
+          <h1 className="workspace-page-title">Graph</h1>
         </header>
 
         {ready && (
-          <div className="absolute right-6 top-5 z-10 flex flex-col items-end gap-2">
+          <div className="absolute right-6 top-5 z-10 flex flex-col items-end gap-2 max-sm:right-3 max-sm:top-14">
             <div className="flex items-center gap-2 rounded-xl bg-(--ui-bg-elevated)/90 p-1 shadow-sm backdrop-blur">
               <div className="flex items-center rounded-lg bg-(--ui-bg-quaternary) p-0.5">
                 {([2, 3] as const).map((dimensions) => <Button className={controls.dimensions === dimensions ? "bg-background text-foreground shadow-sm" : ""} key={dimensions} onClick={() => handleControlsChange({ ...controls, dimensions })} size="xs" variant="ghost">{dimensions}D</Button>)}

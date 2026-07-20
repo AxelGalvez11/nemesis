@@ -3,7 +3,7 @@
 // Cloud Library tree with persisted note/folder creation, search, selection,
 // and shared state for the editor and Graph surfaces.
 
-import { IconFilePlus, IconFolderPlus, IconLayoutSidebarLeftCollapse, IconSearch, IconX } from "@tabler/icons-react";
+import { IconFilePlus, IconFolderPlus, IconSearch, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -25,7 +25,7 @@ const HEADER_ACTIONS = [
   { label: "New folder", icon: IconFolderPlus },
 ] as const;
 
-export function LibrarySidebar({ onCollapse }: { onCollapse: () => void }) {
+export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -46,18 +46,20 @@ export function LibrarySidebar({ onCollapse }: { onCollapse: () => void }) {
   const createBlankNote = async () => {
     const note = await createNote({ title: "Untitled note", content: "" });
     router.replace(`/library?note=${encodeURIComponent(note.path)}`);
+    onNavigate?.();
   };
 
   const openPath = (path: string) => {
     select(path);
     router.replace(`/library?note=${encodeURIComponent(path)}`);
+    onNavigate?.();
   };
 
   return (
     <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height)">
-      <div className="flex items-center justify-between gap-3 px-3 pb-2 pt-2.5">
+      <div className="workspace-page-header flex items-center justify-between gap-3 px-3 pb-2 pt-2.5">
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold tracking-tight">Library</h1>
+          <h1 className="workspace-page-title">Library</h1>
           {status === "error" && (
             <p className="mt-0.5 text-[0.65rem] font-medium text-(--dt-destructive)">Couldn&rsquo;t load notes</p>
           )}
@@ -82,9 +84,6 @@ export function LibrarySidebar({ onCollapse }: { onCollapse: () => void }) {
               <Icon />
             </Button>
           ))}
-          <Button aria-label="Collapse Library sidebar" onClick={onCollapse} size="icon-xs" type="button" variant="ghost">
-            <IconLayoutSidebarLeftCollapse />
-          </Button>
         </div>
       </div>
 

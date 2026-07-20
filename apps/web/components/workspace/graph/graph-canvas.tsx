@@ -20,7 +20,6 @@ import {
   colorForLink,
   colorForNode,
   easeOutCubic,
-  ENGINE_STOP_FALLBACK_MS,
   type EngineLink,
   type EngineNode,
   HIGHLIGHT_LINK_PARTICLE_WIDTH,
@@ -47,7 +46,14 @@ interface GraphCanvasProps {
 
 type EngineInstance = import("3d-force-graph").ForceGraph3DInstance<EngineNode, EngineLink>;
 type TunableForce = { distance?: (value: number) => unknown; strength?: (value: number) => unknown };
-type OrbitControls = { autoRotate?: boolean; autoRotateSpeed?: number; mouseButtons?: { LEFT: number; MIDDLE: number; RIGHT: number } };
+type OrbitControls = {
+  autoRotate?: boolean;
+  autoRotateSpeed?: number;
+  enablePan?: boolean;
+  enableRotate?: boolean;
+  screenSpacePanning?: boolean;
+  mouseButtons?: { LEFT: number; MIDDLE: number; RIGHT: number };
+};
 type ThreeRuntime = {
   AdditiveBlending: unknown;
   CanvasTexture: new (canvas: HTMLCanvasElement) => unknown;
@@ -120,9 +126,13 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
       (graph.d3Force("charge") as TunableForce | undefined)?.strength?.(-controlsRef.current.repulsion);
       (graph.d3Force("center") as TunableForce | undefined)?.strength?.(controlsRef.current.gravity);
       const orbit = graph.controls() as OrbitControls;
-      orbit.autoRotate = controlsRef.current.rotationSpeed > 0;
+      orbit.enablePan = true;
+      orbit.enableRotate = controlsRef.current.dimensions === 3;
+      orbit.screenSpacePanning = controlsRef.current.dimensions === 2;
+      orbit.autoRotate = controlsRef.current.dimensions === 3 && controlsRef.current.rotationSpeed > 0;
       orbit.autoRotateSpeed = controlsRef.current.rotationSpeed;
       const defaultLeftButton = orbit.mouseButtons?.LEFT;
+      if (orbit.mouseButtons && controlsRef.current.dimensions === 2) orbit.mouseButtons.LEFT = Three.MOUSE.PAN;
 
       function recolor() {
         graph.nodeColor(graph.nodeColor());
@@ -143,6 +153,7 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
 
       graph
         .backgroundColor(palette.background)
+        .showNavInfo(false)
         .width(host.clientWidth)
         .height(host.clientHeight)
         .numDimensions(controlsRef.current.dimensions)
@@ -207,27 +218,35 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
         else wake();
       }
 
-      // Camera auto-fits exactly once, on first engine settle (or a 2000ms
-      // fallback if onEngineStop never fires — e.g. a 0px container at
-      // construction time). Never re-fits after that; user pan/zoom persists.
+      // Camera auto-fits once during the initial reveal. A short initial fit
+      // avoids the old two-second fallback jump; the first user interaction
+      // permanently cancels any pending fit.
       let hasFitted = false;
+      let interacted = false;
       function fitOnce() {
-        if (hasFitted) return;
+        if (hasFitted || interacted) return;
         hasFitted = true;
-        graph.zoomToFit(CAMERA_FIT_MS, CAMERA_FIT_PADDING);
+        graph.zoomToFit(Math.min(CAMERA_FIT_MS, 220), CAMERA_FIT_PADDING);
       }
       graph.onEngineStop(fitOnce);
-      const fallbackFitTimer = setTimeout(fitOnce, ENGINE_STOP_FALLBACK_MS);
+      const initialFitTimer = setTimeout(fitOnce, 180);
 
       const resizeObserver = new ResizeObserver(() => {
         graph.width(host.clientWidth).height(host.clientHeight);
       });
       resizeObserver.observe(host);
 
-      const onInteract = () => wake();
+      const onInteract = () => {
+        interacted = true;
+        hasFitted = true;
+        clearTimeout(initialFitTimer);
+        wake();
+      };
       const setCommandPan = (enabled: boolean) => {
         if (!orbit.mouseButtons) return;
-        orbit.mouseButtons.LEFT = enabled ? Three.MOUSE.PAN : (defaultLeftButton ?? Three.MOUSE.ROTATE);
+        orbit.mouseButtons.LEFT = controlsRef.current.dimensions === 2 || enabled
+          ? Three.MOUSE.PAN
+          : (defaultLeftButton ?? Three.MOUSE.ROTATE);
       };
       const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Meta") setCommandPan(true); };
       const onKeyUp = (event: KeyboardEvent) => { if (event.key === "Meta") setCommandPan(false); };
@@ -242,7 +261,7 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
       host.addEventListener("wheel", onInteract, { passive: true });
 
       disposeFns.push(() => {
-        clearTimeout(fallbackFitTimer);
+        clearTimeout(initialFitTimer);
         if (idleTimer) clearTimeout(idleTimer);
         cancelAnimationFrame(revealFrame);
         resizeObserver.disconnect();
@@ -279,8 +298,15 @@ export function GraphCanvas({ index, controls, onNodeClick, className }: GraphCa
     graph.d3ReheatSimulation();
     graph.refresh();
     const orbit = graph.controls() as OrbitControls;
-    orbit.autoRotate = controls.rotationSpeed > 0;
+    orbit.enablePan = true;
+    orbit.enableRotate = controls.dimensions === 3;
+    orbit.screenSpacePanning = controls.dimensions === 2;
+    orbit.autoRotate = controls.dimensions === 3 && controls.rotationSpeed > 0;
     orbit.autoRotateSpeed = controls.rotationSpeed;
+    if (orbit.mouseButtons) orbit.mouseButtons.LEFT = controls.dimensions === 2 ? 2 : 0;
+    if (controls.dimensions === 2) {
+      graph.cameraPosition({ x: 0, y: 0, z: 260 }, { x: 0, y: 0, z: 0 }, 220);
+    }
     wakeRef.current?.();
   }, [controls]);
 

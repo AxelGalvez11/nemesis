@@ -211,6 +211,26 @@ export const sessionsStore = {
     });
   },
 
+  updateMessage(id: string, at: string, content: string) {
+    ensureHydrated();
+    const nextContent = content.trim();
+    if (!nextContent) return;
+    setState({
+      ...state,
+      sessions: state.sessions.map((session) =>
+        session.id === id
+          ? {
+              ...session,
+              messages: session.messages.map((message) =>
+                message.at === at && message.role === "user" ? { ...message, content: nextContent } : message,
+              ),
+              updatedAt: nowIso(),
+            }
+          : session,
+      ),
+    });
+  },
+
   /** Replace a session's message list wholesale (retry/error cleanup paths). */
   setMessages(id: string, messages: SessionMessage[]) {
     ensureHydrated();

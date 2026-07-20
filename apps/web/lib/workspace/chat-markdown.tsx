@@ -12,6 +12,7 @@ import remarkMath from "remark-math";
 
 import { cn } from "@/lib/utils";
 import { wikiLinksToMarkdown } from "@/lib/workspace/library-links";
+import { normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
 
 const MARKDOWN_CONTAINER_CLASS_NAME =
   "aui-md prose w-full max-w-none overflow-hidden text-[length:var(--conversation-text-font-size)] " +
@@ -53,9 +54,9 @@ function markdownComponents(
           aria-disabled={!wikiAvailable || undefined}
           className={cn(
             "break-words underline underline-offset-4",
-            wikiTarget && wikiAvailable && "font-medium text-sky-600 decoration-current/70 hover:decoration-current dark:text-sky-400",
+            wikiTarget && wikiAvailable && "font-medium text-[var(--theme-primary)] decoration-2 hover:decoration-current",
             wikiTarget && !wikiAvailable && "cursor-default text-(--ui-text-quaternary) decoration-current/20",
-            !wikiTarget && "text-sky-600 decoration-current/70 hover:decoration-current dark:text-sky-400",
+            !wikiTarget && "text-[var(--theme-primary)] decoration-2 hover:decoration-current",
           )}
           href={wikiAvailable ? href : undefined}
           onClick={
@@ -67,6 +68,13 @@ function markdownComponents(
               : undefined
           }
           rel={wikiTarget ? undefined : "noopener noreferrer"}
+          style={{
+            color: wikiTarget && !wikiAvailable ? "var(--ui-text-quaternary)" : "var(--theme-primary)",
+            textDecorationColor: wikiTarget && !wikiAvailable ? "color-mix(in srgb, currentColor 35%, transparent)" : "currentColor",
+            textDecorationLine: "underline",
+            textDecorationThickness: wikiTarget && !wikiAvailable ? "1px" : "2px",
+            textUnderlineOffset: "0.25rem",
+          }}
           target={wikiTarget ? undefined : "_blank"}
         >
           {children}
@@ -97,7 +105,7 @@ function markdownComponents(
     h2: ({ children }) => <h2 className="my-1 text-[0.9375rem] font-semibold tracking-tight" id={slugifyHeading(headingText(children))}>{children}</h2>,
     h3: ({ children }) => <h3 className="my-1 text-[0.875rem] font-semibold" id={slugifyHeading(headingText(children))}>{children}</h3>,
     h4: ({ children }) => <h4 className="my-1 text-[0.8125rem] font-semibold" id={slugifyHeading(headingText(children))}>{children}</h4>,
-    hr: () => <div aria-hidden className="my-3" />,
+    hr: () => <hr className="my-5 border-0 border-t border-(--ui-stroke-secondary)" />,
     img: ({ alt, src }) =>
       typeof src === "string" ? (
         // eslint-disable-next-line @next/next/no-img-element -- remote/blob markdown images, not a static asset.
@@ -155,7 +163,7 @@ export function AssistantMarkdown({
         rehypePlugins={[rehypeKatex]}
         remarkPlugins={[remarkGfm, remarkMath]}
       >
-        {onWikiLink ? wikiLinksToMarkdown(text) : text}
+        {normalizeMathDelimiters(onWikiLink ? wikiLinksToMarkdown(text) : text)}
       </ReactMarkdown>
     </div>
   );

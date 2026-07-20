@@ -44,7 +44,7 @@ export function NotebookProjectMenu() {
   }
 
   function remove() {
-    if (!selected || !window.confirm(`Delete “${selected.name}”? Its sources and chats are removed. This can't be undone.`)) return;
+    if (!selected || !window.confirm(`Are you sure you want to delete “${selected.name}”? Its sources and chats are removed. This can't be undone.`)) return;
     void notebooks.remove(selected.id);
   }
 

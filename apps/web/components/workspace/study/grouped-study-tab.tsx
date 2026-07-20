@@ -1,6 +1,6 @@
 "use client";
 
-import { IconChecklist, IconSitemap, IconTrash } from "@tabler/icons-react";
+import { IconTrash } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -16,7 +16,6 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   const { artifacts, createArtifact, decks, deleteArtifact } = useCloudStudy();
   const isTests = kind === "tests";
   const artifactKind: StudyArtifactKind = isTests ? "test" : "mindmap";
-  const Icon = isTests ? IconChecklist : IconSitemap;
   const label = isTests ? "Tests" : "Mindmaps";
   const singular = isTests ? "test" : "mind map";
   const items = useMemo(() => artifacts.filter((artifact) => artifact.kind === artifactKind), [artifactKind, artifacts]);
@@ -51,7 +50,6 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
       <nav className="mx-auto mb-7 flex shrink-0 items-center rounded-b-2xl border border-t-0 border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
-        <Button className="rounded-xl bg-black/[0.055] dark:bg-white/[0.08]" size="sm" variant="ghost"><Icon size={14} /> {label}</Button>
         <Button onClick={() => setCreateOpen(true)} size="sm" variant="ghost">Add</Button>
         <Button disabled={items.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
       </nav>
@@ -101,9 +99,11 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
           <DialogHeader><DialogTitle>Browse {label.toLowerCase()}</DialogTitle><DialogDescription>{items.length} cloud item{items.length === 1 ? "" : "s"}, grouped with the rest of Study.</DialogDescription></DialogHeader>
           <div className="max-h-[55vh] space-y-2 overflow-y-auto">
             {items.map((item) => (
-              <article className="flex items-center gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) px-3 py-2.5" key={item.id}>
+              <article className="flex items-center gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-background px-3 py-2.5" key={item.id}>
                 <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">{item.title}</p><p className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground">{item.groupName || "Ungrouped"}</p></div>
-                <Button aria-label={`Delete ${item.title}`} onClick={() => void deleteArtifact(item.id)} size="icon-xs" variant="ghost"><IconTrash /></Button>
+                <Button aria-label={`Delete ${item.title}`} onClick={() => {
+                  if (window.confirm(`Are you sure you want to delete “${item.title}”? This can't be undone.`)) void deleteArtifact(item.id);
+                }} size="icon-xs" variant="ghost"><IconTrash /></Button>
               </article>
             ))}
           </div>
