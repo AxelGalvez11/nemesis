@@ -3,20 +3,30 @@
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { ChatMsg } from "./chat-thread.ts";
 import {
+  chatMsgFromCloudRow,
+  type CloudThreadMeta,
   deriveThreadTitle,
   emptyStore,
+  ensureMessageIds,
+  generateUuidV4,
   getThread,
+  isValidThreadId,
   MAX_THREADS,
+  mergeCloudThreadList,
+  mergeMessages,
+  newMessagesSince,
   parseThreadStore,
+  remapThreadId,
   removeThread,
+  setThreadMessages,
   setThreadPinned,
   threadSummaries,
   UNTITLED_THREAD,
   upsertThread,
 } from "./chat-threads.ts";
 
-const user = (content: string, at = "2026-07-18T00:00:00Z"): ChatMsg => ({ at, content, role: "user" });
-const bot = (content: string, at = "2026-07-18T00:00:01Z"): ChatMsg => ({ at, content, role: "assistant" });
+const user = (content: string, at = "2026-07-18T00:00:00Z", id?: string): ChatMsg => ({ at, content, role: "user", ...(id ? { id } : {}) });
+const bot = (content: string, at = "2026-07-18T00:00:01Z", id?: string): ChatMsg => ({ at, content, role: "assistant", ...(id ? { id } : {}) });
 
 Deno.test("deriveThreadTitle: first user message, trimmed; else Untitled", () => {
   assertEquals(deriveThreadTitle([user("  What is a beta blocker?  ")]), "What is a beta blocker?");
@@ -135,4 +145,141 @@ Deno.test("parseThreadStore: reads a v2 store, drops malformed threads, empty on
   assertEquals(store.threads[0].id, "a");
   assertEquals(parseThreadStore(null, "x", "n").threads.length, 0);
   assertEquals(parseThreadStore({ v: 9 }, "x", "n").threads.length, 0);
+});
+
+// ── Cloud reconciliation (§6) ────────────────────────────────────────────────
+
+Deno.test("generateUuidV4: produces valid-shaped, non-constant ids", () => {
+  const a = generateUuidV4();
+  const b = generateUuidV4();
+  assert(isValidThreadId(a));
+  assert(isValidThreadId(b));
+  assert(a !== b);
+});
+
+Deno.test("isValidThreadId: only a real uuid passes — legacy local ids do not", () => {
+  assert(isValidThreadId("3fa85f64-5717-4562-b3fc-2c963f66afa6"));
+  assert(isValidThreadId("3FA85F64-5717-4562-B3FC-2C963F66AFA6")); // case-insensitive
+  assert(!isValidThreadId("kx3f8n-a1b2c3d4")); // the pre-cloud build's local format
+  assert(!isValidThreadId(""));
+});
+
+Deno.test("remapThreadId: renames a thread's id in place; unknown id is a no-op", () => {
+  let store = upsertThread(emptyStore(), "old-id", [user("q")], "2026-07-18T01:00:00Z");
+  store = remapThreadId(store, "old-id", "3fa85f64-5717-4562-b3fc-2c963f66afa6");
+  assertEquals(getThread(store, "old-id"), null);
+  assertEquals(getThread(store, "3fa85f64-5717-4562-b3fc-2c963f66afa6")?.messages[0].content, "q");
+  const untouched = remapThreadId(store, "nope", "whatever");
+  assertEquals(untouched, store);
+});
+
+Deno.test("ensureMessageIds: backfills only messages missing an id, leaves existing ids alone", () => {
+  let n = 0;
+  const makeId = () => `gen-${++n}`;
+  const withIds = ensureMessageIds([user("a", undefined, "kept"), bot("b"), user("c")], makeId);
+  assertEquals(withIds.map((m) => m.id), ["kept", "gen-1", "gen-2"]);
+  assertEquals(withIds[0].content, "a"); // untouched otherwise
+});
+
+Deno.test("newMessagesSince: id-based diff — the common append-only case", () => {
+  const a = user("a", "2026-07-18T00:00:00Z", "1");
+  const b = bot("b", "2026-07-18T00:00:01Z", "2");
+  const c = user("c", "2026-07-18T00:00:02Z", "3");
+  assertEquals(newMessagesSince([a, b, c], [a, b]).map((m) => m.content), ["c"]);
+  assertEquals(newMessagesSince([a, b, c], []), [a, b, c]); // nothing synced yet → everything is new
+  assertEquals(newMessagesSince([a, b, c], [a, b, c]), []); // fully synced → nothing new
+});
+
+Deno.test("newMessagesSince: still finds the newest message after the 200-cap evicts the oldest (id-based, not count-based)", () => {
+  // upsertThread caps a thread at MAX_MESSAGES_PER_THREAD by dropping the
+  // OLDEST message — so the total count can stay flat even though a new
+  // message just arrived. A count-based diff would miss it; an id-based one
+  // still finds it because "d" simply isn't in `previous`.
+  const a = user("a", "2026-07-18T00:00:00Z", "1");
+  const b = bot("b", "2026-07-18T00:00:01Z", "2");
+  const c = user("c", "2026-07-18T00:00:02Z", "3");
+  const d = bot("d", "2026-07-18T00:00:03Z", "4");
+  const previous = [a, b];
+  const current = [b, c]; // "a" got evicted, "c" got added — SAME length (2) as previous, but genuinely different content
+  assertEquals(newMessagesSince(current, previous).map((m) => m.content), ["c"]);
+  // A second turn later: "b" evicted, "d" added — again same length, still finds the new one.
+  assertEquals(newMessagesSince([c, d], [b, c]).map((m) => m.content), ["d"]);
+});
+
+Deno.test("newMessagesSince: falls back to a role|at|content key for legacy id-less messages", () => {
+  const legacy = { at: "2026-07-18T00:00:00Z", content: "no id", role: "user" as const };
+  assertEquals(newMessagesSince([legacy], [legacy]), []);
+  assertEquals(newMessagesSince([legacy], []), [legacy]);
+});
+
+Deno.test("mergeCloudThreadList: cloud metadata wins for known ids, cloud-only ids are added as stubs, local-only ids survive", () => {
+  let store = upsertThread(emptyStore(), "local-only", [user("still syncing")], "2026-07-18T01:00:00Z");
+  store = upsertThread(store, "known", [user("hi")], "2026-07-18T01:00:00Z");
+  const cloud: CloudThreadMeta[] = [
+    { createdAt: "2026-07-18T01:00:00Z", id: "known", pinned: true, title: "Renamed via cloud", updatedAt: "2026-07-18T09:00:00Z" },
+    { createdAt: "2026-07-18T02:00:00Z", id: "cloud-only", pinned: false, title: "From another device", updatedAt: "2026-07-18T02:00:00Z" },
+  ];
+  const merged = mergeCloudThreadList(store, cloud);
+  assertEquals(getThread(merged, "known")?.title, "Renamed via cloud");
+  assertEquals(getThread(merged, "known")?.pinned, true);
+  assertEquals(getThread(merged, "known")?.messages[0].content, "hi"); // local messages untouched by the list merge
+  assertEquals(getThread(merged, "cloud-only")?.messages, []); // stub — hydrated on open
+  assertEquals(getThread(merged, "local-only")?.messages[0].content, "still syncing"); // NOT dropped
+});
+
+Deno.test("chatMsgFromCloudRow: maps a valid row, normalizes the timestamp, drops system/malformed rows", () => {
+  const msg = chatMsgFromCloudRow({
+    content: "hello",
+    created_at: "2026-07-18T01:00:00+00:00", // Postgres-shaped, not the local Z-suffixed form
+    id: "row-1",
+    meta: { sources: [{ description: "d", title: "T", url: "https://x.test" }] },
+    role: "user",
+  });
+  assertEquals(msg?.content, "hello");
+  assertEquals(msg?.at, "2026-07-18T01:00:00.000Z"); // normalized to the canonical Z form
+  assertEquals(msg?.id, "row-1");
+  assertEquals(msg?.sources, [{ description: "d", title: "T", url: "https://x.test" }]);
+
+  assertEquals(chatMsgFromCloudRow({ content: "x", created_at: "2026-07-18T01:00:00Z", id: "1", meta: null, role: "system" }), null);
+  assertEquals(chatMsgFromCloudRow({ content: 5, created_at: "2026-07-18T01:00:00Z", id: "1", meta: null, role: "user" }), null);
+  assertEquals(chatMsgFromCloudRow({ content: "x", created_at: "not-a-date", id: "1", meta: null, role: "user" }), null);
+  // meta with a malformed source entry is dropped, not the whole message.
+  const tolerant = chatMsgFromCloudRow({ content: "x", created_at: "2026-07-18T01:00:00Z", id: "1", meta: { sources: [{ url: 5 }] }, role: "user" });
+  assertEquals(tolerant?.sources, undefined);
+});
+
+Deno.test("mergeMessages: de-dupes by id (cloud copy wins), sorts chronologically, keeps both local-only and cloud-only tails", () => {
+  const local = [user("a", "2026-07-18T01:00:00.000Z", "1"), user("offline draft", "2026-07-18T03:00:00.000Z", "3")];
+  const cloud = [
+    user("a", "2026-07-18T01:00:00.000Z", "1"), // exact duplicate by id
+    bot("from web", "2026-07-18T02:00:00.000Z", "2"), // cloud-only, in the middle
+  ];
+  const merged = mergeMessages(local, cloud);
+  assertEquals(merged.map((m) => m.id), ["1", "2", "3"]);
+  assertEquals(merged.map((m) => m.content), ["a", "from web", "offline draft"]);
+});
+
+Deno.test("mergeMessages: falls back to a role|at|content key when a legacy row has no id", () => {
+  const local = [{ at: "2026-07-18T01:00:00.000Z", content: "legacy", role: "user" as const }];
+  const cloud = [{ at: "2026-07-18T01:00:00.000Z", content: "legacy", role: "user" as const }];
+  assertEquals(mergeMessages(local, cloud).length, 1);
+});
+
+Deno.test("setThreadMessages: replaces messages without touching title/pinned/timestamps", () => {
+  let store = upsertThread(emptyStore(), "t1", [user("first")], "2026-07-18T01:00:00Z");
+  store = setThreadPinned(store, "t1", true);
+  const before = getThread(store, "t1")!;
+  store = setThreadMessages(store, "t1", [user("first"), bot("reply from another device")], "2026-07-18T09:00:00Z");
+  const after = getThread(store, "t1")!;
+  assertEquals(after.messages.length, 2);
+  assertEquals(after.title, before.title);
+  assertEquals(after.pinned, true);
+  assertEquals(after.updatedAt, before.updatedAt); // a read-time merge must NOT resort the sidebar
+  assertEquals(after.createdAt, before.createdAt);
+});
+
+Deno.test("setThreadMessages: constructs a fresh entry when the thread is unknown locally (defensive)", () => {
+  const store = setThreadMessages(emptyStore(), "cloud-only", [user("hi")], "2026-07-18T09:00:00Z");
+  assertEquals(getThread(store, "cloud-only")?.messages[0].content, "hi");
+  assertEquals(getThread(store, "cloud-only")?.title, "hi");
 });

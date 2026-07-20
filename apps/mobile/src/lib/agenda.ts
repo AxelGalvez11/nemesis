@@ -13,6 +13,10 @@ export interface AgendaEvent {
   kind: AgendaEventKind;
   course?: string;
   note?: string;
+  /** Cloud-first phone (2026-07-20 §9): 'agent' events are read-only in the
+   *  UI. Absent on events that predate this field (e.g. the old encrypted
+   *  vault doc path) — treated as manual/editable wherever that matters. */
+  source?: "agent" | "manual";
 }
 
 export interface CalendarDoc {
