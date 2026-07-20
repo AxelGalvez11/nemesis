@@ -672,8 +672,10 @@
 
 [data-slot='composer-root'] {
   /* +10px width compensates the 5px side padding so the visible surface keeps
-     its exact width/position (transparent grab space on desktop). */
-  width: calc(min(var(--composer-width), calc(100% - 2rem)) + 10px);
+     its exact width/position (transparent grab space on desktop). Pill cap is
+     narrower than the thread column; margin centers the inline placements. */
+  width: calc(min(var(--composer-pill-max-width, 42rem), calc(100% - 2rem)) + 10px);
+  margin-inline: auto;
   padding-inline: 5px;
   padding-bottom: var(--composer-shell-pad-block-end);
 }

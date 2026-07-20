@@ -149,7 +149,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
       className={cn(
         "group/composer z-30 max-w-full overflow-visible rounded-[1.75rem] pt-2 pb-[var(--composer-shell-pad-block-end)]",
         placement === "floating"
-          ? "absolute left-1/2 w-[min(46rem,calc(100%-2rem))] -translate-x-1/2"
+          ? "absolute left-1/2 w-[min(var(--composer-pill-max-width,42rem),calc(100%-2rem))] -translate-x-1/2"
           : "relative w-full",
         placement === "floating" && (centered ? "top-1/2 -translate-y-1/2" : "bottom-3"),
       )}
@@ -191,7 +191,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
                 {activeMode === "chat" ? (
                   <div
                     aria-multiline="true"
-                    className="min-h-(--composer-input-min-height) max-h-(--composer-input-max-height) min-w-(--composer-input-inline-min-width) flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent py-1 pr-1 text-[length:var(--conversation-text-font-size)] leading-normal text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60"
+                    className="min-h-(--composer-input-min-height) max-h-(--composer-input-max-height) min-w-(--composer-input-inline-min-width) flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent py-1 pr-1 text-[1rem] leading-normal text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60"
                     contentEditable
                     data-placeholder={placeholder}
                     data-slot="composer-rich-input"

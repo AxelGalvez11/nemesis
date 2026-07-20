@@ -44,7 +44,7 @@ import { backlinksFor, extractLibraryLinks, findLibraryNote } from "@/lib/worksp
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
 
-import { LibraryLiveEditor } from "./library-live-editor";
+import { LibraryLiveEditor, type LibraryEditorApi } from "./library-live-editor";
 
 type EditorMode = "edit" | "read";
 type RightPanel = "links" | "backlinks" | "contents" | "tags";
@@ -112,6 +112,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   const [navigation, setNavigation] = useState<{ entries: string[]; index: number }>({ entries: [], index: -1 });
   const draftRef = useRef<NoteDraft | null>(null);
   const replaceTabPathRef = useRef<string | null>(null);
+  const editorApiRef = useRef<LibraryEditorApi | null>(null);
 
   useEffect(() => {
     if (!selectedPath) return;
@@ -363,7 +364,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
           <div className="mx-auto flex min-h-full w-full max-w-(--composer-width) min-w-0 flex-col px-6 pb-12 pt-5 max-sm:px-4">
             {mode === "edit" ? (
-              <LibraryLiveEditor autoFocus={note.content.trim().length === 0} key={note.id} onChange={(next) => updateDraft({ content: next })} showToolbar={editingBarOpen} value={content} />
+              <LibraryLiveEditor apiRef={editorApiRef} autoFocus={note.content.trim().length === 0} key={note.id} onChange={(next) => updateDraft({ content: next })} showToolbar={editingBarOpen} value={content} />
             ) : (
               <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown className="[&_h1]:!mb-3 [&_h1]:!mt-7 [&_h1]:!text-4xl [&_h1]:!font-bold [&_h2]:!mb-2.5 [&_h2]:!mt-6 [&_h2]:!text-2xl [&_h3]:!mb-2 [&_h3]:!mt-5 [&_h3]:!text-xl [&_h4]:!mt-4 [&_h4]:!text-base" externalLinksInNewTab={false} isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} obsidianHighlights obsidianTags onWikiLink={(target) => void openWikiTarget(target)} text={content} /></article>
             )}
@@ -401,7 +402,21 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
             {rightPanel === "contents" && (
               <LinkSection title="Table of contents">
                 {headings.length === 0 ? <PanelEmpty>Add headings to build an outline.</PanelEmpty> : headings.map((heading, index) => (
-                  <button className="w-full truncate rounded-lg py-1.5 pr-2 text-left text-xs text-(--ui-text-secondary) hover:bg-(--chrome-action-hover) hover:text-foreground" key={`${heading.label}:${index}`} onClick={() => document.getElementById(slugifyHeading(heading.label))?.scrollIntoView({ behavior: "smooth", block: "start" })} style={{ paddingLeft: `${Math.max(0.5, (heading.depth - 1) * 0.75 + 0.5)}rem` }} type="button">{heading.label}</button>
+                  <button
+                    className="w-full truncate rounded-lg py-1.5 pr-2 text-left text-xs text-(--ui-text-secondary) hover:bg-(--chrome-action-hover) hover:text-foreground"
+                    key={`${heading.label}:${index}`}
+                    onClick={() => {
+                      // Edit mode renders CodeMirror (no heading DOM ids), so
+                      // route the jump through the editor's imperative API.
+                      if (mode === "edit") {
+                        editorApiRef.current?.scrollToHeading(heading.label);
+                        return;
+                      }
+                      document.getElementById(slugifyHeading(heading.label))?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                    style={{ paddingLeft: `${Math.max(0.5, (heading.depth - 1) * 0.75 + 0.5)}rem` }}
+                    type="button"
+                  >{heading.label}</button>
                 ))}
               </LinkSection>
             )}
