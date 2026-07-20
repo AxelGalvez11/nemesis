@@ -1,44 +1,58 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Easing, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  Animated,
+  Easing,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import Reanimated, { Easing as ReEasing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import Svg, { Path } from "react-native-svg";
-import { CalendarIcon } from "@/components/icons";
+import { CalendarIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { MonthGrid, monthCardHeight, WeekdayStripe } from "@/components/month-grid";
 import { useShellPadding } from "@/components/shell-chrome";
+import { SlideUpSheet } from "@/components/StudySheet";
+import { useAuth } from "@/auth/AuthProvider";
 import {
-  currentUserId,
-  decryptLibrary,
-  loadCachedRows,
-  loadVaultKey,
-  pullLibraryRows,
-  subscribeLibrary,
-} from "@/api/librarySync";
+  createCalendarEvent,
+  deleteCalendarEvent,
+  listCalendarEvents,
+  loadCachedCalendarEvents,
+  updateCalendarEvent,
+  type CalendarEventInput,
+} from "@/api/cloudCalendar";
 import {
   dayKeyFromDate,
   eventsForDay,
   labelForDay,
   monthMatrix,
-  parseCalendarDoc,
   shiftDayKey,
   stepMonth,
   type AgendaEvent,
-  type CalendarDoc,
+  type AgendaEventKind,
 } from "@/lib/agenda";
-import type { SyncCache } from "@/lib/library-sync";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
-// Calendar (Phase 2): the agenda the Mac renders from School/calendar.json,
-// shipped through the encrypted pipe as the kind:"calendar" document. Read-only
-// here — the agent (and the desktop calendar page) own the events. The
-// "Add to iPhone Calendar" action that hands the tokenized ICS feed to the
-// built-in Calendar app moved to Settings → Calendar sync (profile/calendar.tsx),
-// owner call 2026-07-18 — this tab is just the agenda now.
+// Calendar (cloud-first phone spec §9, 2026-07-20): reads `calendar_events`
+// cloud rows directly (same table + RLS the web calendar writes — see
+// supabase/migrations/20260720210000_cloud_chat_calendar.sql) instead of the
+// old pairing-gated encrypted vault doc. source:'agent' events (written by the
+// agent, not this screen) stay read-only — tapping one opens a view-only sheet;
+// everything else opens the editable add/edit sheet. No Realtime subscription
+// (matches the rest of this round's cloud work): refresh happens on focus and
+// pull-to-refresh, not live-push.
 //
 // View-switcher rework (owner call 2026-07-18): the old top Month/Week/Day
 // segmented control is gone, and Week goes away entirely. A single liquid-glass
@@ -64,6 +78,38 @@ const VIEW_OPTIONS: { id: CalendarView; label: string }[] = [
 const VIEW_LABEL: Record<CalendarView, string> = { daily: "Daily", monthly: "Monthly", yearly: "Yearly" };
 
 type MonthKey = { year: number; month: number };
+
+// The event create/edit/view sheet's state — same three-way dispatch as the web
+// calendar's DialogState (calendar-workspace.tsx): agent-authored events only
+// ever reach "view" (read-only); everything else is "add" or "edit".
+type EventDialogState =
+  | { mode: "add"; date: string }
+  | { mode: "edit"; event: AgendaEvent }
+  | { mode: "view"; event: AgendaEvent }
+  | null;
+
+const EVENT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Same order as the web calendar's KIND_ORDER (kind-meta.ts), so the picker
+// reads the same way on both platforms.
+const KIND_PICKER_OPTIONS: { value: AgendaEventKind; label: string }[] = [
+  { value: "assignment", label: "Assignment" },
+  { value: "exam", label: "Exam" },
+  { value: "rotation", label: "Rotation" },
+  { value: "class", label: "Class" },
+  { value: "other", label: "Other" },
+];
+
+function kindDotColor(kind: AgendaEventKind, c: ThemeColors): string {
+  const map: Record<AgendaEventKind, string> = {
+    assignment: c.warn,
+    class: c.info,
+    exam: c.danger,
+    other: c.text2,
+    rotation: c.accent,
+  };
+  return map[kind];
+}
 
 // Monthly's continuous scroll: how far the fixed window reaches on first open,
 // and how many more months get appended once the student scrolls near the
@@ -109,13 +155,16 @@ export default function CalendarScreen() {
   const styles = useThemedStyles(createStyles);
   const { contentTop, contentBottom } = useShellPadding();
   const insets = useSafeAreaInsets();
-  const [key, setKey] = useState<Uint8Array | null>(null);
-  const [keyChecked, setKeyChecked] = useState(false);
-  const [cache, setCache] = useState<SyncCache>({});
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
+  const [events, setEvents] = useState<AgendaEvent[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const pulling = useRef(false);
   const [view, setView] = useState<CalendarView>("monthly");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [dialog, setDialog] = useState<EventDialogState>(null);
 
   // Monthly's window of months around an anchor (defaults to today's month;
   // retargeted by goToMonth when the student taps a mini month in Yearly).
@@ -149,59 +198,41 @@ export default function CalendarScreen() {
     transform: [{ scale: zoom.value }],
   }));
 
-  const pull = useCallback(async (base: SyncCache) => {
+  // Cloud fetch — no Realtime subscription this round (matches the rest of the
+  // cloud-first phone work): refresh on focus + pull-to-refresh only.
+  const pull = useCallback(async (uid: string) => {
     if (pulling.current) return;
     pulling.current = true;
     try {
-      const merged = await pullLibraryRows(base);
-      setCache(merged);
-    } catch {
-      // offline — the cached agenda still renders
+      const rows = await listCalendarEvents(uid);
+      setEvents(rows);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message); // offline/error — the last-cached agenda still renders
     } finally {
       pulling.current = false;
+      setLoaded(true);
     }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
+      if (!userId) return;
       let alive = true;
-      void (async () => {
-        const k = await loadVaultKey();
+      // Instant open from the on-device cache (offline-safe), then a live pull
+      // in the background — never lets a slower cache read clobber a faster
+      // network result that already landed.
+      void loadCachedCalendarEvents(userId).then((cached) => {
         if (!alive) return;
-        setKey(k);
-        setKeyChecked(true);
-        if (!k) return;
-        const cached = await loadCachedRows();
-        if (!alive) return;
-        setCache(cached);
-        void pull(cached);
-      })();
+        setEvents((prev) => (prev.length > 0 ? prev : cached));
+        setLoaded((prevLoaded) => prevLoaded || cached.length > 0);
+      });
+      void pull(userId);
       return () => {
         alive = false;
       };
-    }, [pull]),
+    }, [userId, pull]),
   );
-
-  // Live refresh while foregrounded (the Mac republishes the calendar doc as
-  // the agent updates School/calendar.json) — same pattern as Library/Study.
-  useEffect(() => {
-    if (!key) return;
-    let unsubscribe: (() => void) | undefined;
-    let alive = true;
-    void currentUserId().then((uid) => {
-      if (!alive || !uid) return;
-      unsubscribe = subscribeLibrary(uid, () => {
-        setCache((current) => {
-          void pull(current);
-          return current;
-        });
-      });
-    });
-    return () => {
-      alive = false;
-      unsubscribe?.();
-    };
-  }, [key, pull]);
 
   // Jump straight to a day's agenda — wired into every day cell in both
   // Monthly and Yearly grids.
@@ -219,31 +250,60 @@ export default function CalendarScreen() {
     setView("monthly");
   }, []);
 
-  if (!keyChecked) return <View style={styles.flex} testID="calendar-loading" />;
+  // Opens the add sheet for a brand-new event on the given date (the FAB passes
+  // "today"; a day cell passes its own date).
+  const openAdd = useCallback((date: string) => setDialog({ mode: "add", date }), []);
 
-  if (!key) {
+  // Agent-authored events are read-only — same source:'agent' dispatch the web
+  // calendar's openEvent uses.
+  const openEvent = useCallback((event: AgendaEvent) => {
+    setDialog(event.source === "agent" ? { mode: "view", event } : { mode: "edit", event });
+  }, []);
+
+  const handleSaveEvent = useCallback(
+    async (input: CalendarEventInput) => {
+      if (!userId || !dialog || dialog.mode === "view") return;
+      const saved =
+        dialog.mode === "edit"
+          ? await updateCalendarEvent(userId, dialog.event.id, input)
+          : await createCalendarEvent(userId, input);
+      setEvents((prev) => [...prev.filter((e) => e.id !== saved.id), saved]);
+      setDialog(null);
+    },
+    [userId, dialog],
+  );
+
+  const handleDeleteEvent = useCallback(async () => {
+    if (!userId || dialog?.mode !== "edit") return;
+    const id = dialog.event.id;
+    await deleteCalendarEvent(userId, id);
+    setEvents((prev) => prev.filter((e) => e.id !== id));
+    setDialog(null);
+  }, [userId, dialog]);
+
+  if (!userId) {
     return (
       <View
         style={[styles.pairWrap, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]}
-        testID="calendar-unpaired"
+        testID="calendar-signed-out"
       >
         <EmptyBlock
-          title="Pair with your Mac"
-          body="Your schedule lives on your Mac. Pair once and every deadline the agent tracks shows up here."
+          title="Sign in to see your calendar"
+          body="Your schedule lives in your account now — no Mac needed once you're signed in."
         />
-        <MissionButton label="Scan pairing code" variant="primary" testID="goto-pair" onPress={() => router.push("/pair")} />
-        <Text style={styles.pairHint}>On your Mac: Settings → Phone sync → Pair phone.</Text>
+        <MissionButton
+          label="Sign in"
+          variant="primary"
+          testID="calendar-goto-signin"
+          onPress={() => router.push("/sign-in")}
+        />
       </View>
     );
   }
 
-  const { docs } = decryptLibrary(cache, key);
-  const calendarDoc: CalendarDoc | null = (() => {
-    const doc = docs.find((d) => d.kind === "calendar");
-    return doc ? parseCalendarDoc(doc.content) : null;
-  })();
+  if (!loaded) return <View style={styles.flex} testID="calendar-loading" />;
+
   const todayKey = dayKeyFromDate(new Date());
-  const events = calendarDoc?.events ?? [];
   const dayEvents = eventsForDay(events, shownDay);
   // Weekday (0 = Sunday) the shown day falls on, to accent its column in the
   // Daily view's letter stripe. Parses the yyyy-mm-dd key as a LOCAL date.
@@ -272,13 +332,20 @@ export default function CalendarScreen() {
       tintColor={c.text2}
       onRefresh={() => {
         setRefreshing(true);
-        void pull(cache).finally(() => setRefreshing(false));
+        void pull(userId).finally(() => setRefreshing(false));
       }}
     />
   );
 
   return (
     <View style={styles.flex} testID="calendar-screen">
+      {/* Background refresh failed (e.g. offline) — the last-loaded events still
+          render underneath; this just says why nothing newer showed up. */}
+      {error ? (
+        <View style={[styles.errorBanner, { top: contentTop + space(1) }]} pointerEvents="none" testID="calendar-error">
+          <Text style={styles.errorBannerText} numberOfLines={2}>Couldn't refresh: {error}</Text>
+        </View>
+      ) : null}
       <Reanimated.View style={[styles.zoomWrap, contentAnimStyle]}>
       {view === "monthly" ? (
         <FlatList
@@ -347,12 +414,12 @@ export default function CalendarScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={[styles.listBody, { paddingBottom: contentBottom + FAB_CLEARANCE }]}
             refreshControl={refreshControl}
-            renderItem={({ item }) => <EventRow event={item} styles={styles} />}
+            renderItem={({ item }) => <EventRow event={item} styles={styles} onPress={openEvent} />}
             ListEmptyComponent={
               <View style={styles.emptyWrap}>
                 <EmptyBlock
                   title="No events"
-                  body="The agent fills this from your syllabus and school portals. Ask it on your Mac to set up your semester."
+                  body="Ask Nemesis to fill in your semester, or tap + to add an event yourself."
                 />
               </View>
             }
@@ -373,6 +440,20 @@ export default function CalendarScreen() {
         insetBottom={insets.bottom}
         styles={styles}
       />
+
+      <AddEventFab
+        insetBottom={insets.bottom}
+        onPress={() => openAdd(view === "daily" ? shownDay : todayKey)}
+      />
+
+      <EventSheet
+        dialog={dialog}
+        todayKey={todayKey}
+        onClose={() => setDialog(null)}
+        onSave={handleSaveEvent}
+        onDelete={handleDeleteEvent}
+        styles={styles}
+      />
     </View>
   );
 }
@@ -385,7 +466,7 @@ const KIND_LABEL: Record<AgendaEvent["kind"], string> = {
   rotation: "Rotation",
 };
 
-function EventRow({ event, styles }: { event: AgendaEvent; styles: Styles }) {
+function EventRow({ event, styles, onPress }: { event: AgendaEvent; styles: Styles; onPress: (event: AgendaEvent) => void }) {
   const { colors: c } = useTheme();
   const kindColor: Record<AgendaEvent["kind"], string> = {
     assignment: c.warn,
@@ -396,16 +477,20 @@ function EventRow({ event, styles }: { event: AgendaEvent; styles: Styles }) {
   };
 
   return (
-    <Surface style={styles.eventCard} testID={`event-${event.id}`}>
-      <View style={[styles.kindDot, { backgroundColor: kindColor[event.kind] }]} />
-      <View style={styles.eventText}>
-        <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
-        <Text style={styles.eventMeta} numberOfLines={1}>
-          {[event.time, KIND_LABEL[event.kind], event.course].filter(Boolean).join(" · ")}
-        </Text>
-        {event.note ? <Text style={styles.eventNote} numberOfLines={2}>{event.note}</Text> : null}
-      </View>
-    </Surface>
+    <Pressable onPress={() => onPress(event)} testID={`event-${event.id}`}>
+      <Surface style={styles.eventCard}>
+        <View style={[styles.kindDot, { backgroundColor: kindColor[event.kind] }]} />
+        <View style={styles.eventText}>
+          <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
+          <Text style={styles.eventMeta} numberOfLines={1}>
+            {[event.time, KIND_LABEL[event.kind], event.course, event.source === "agent" ? "Nemesis" : ""]
+              .filter(Boolean)
+              .join(" · ")}
+          </Text>
+          {event.note ? <Text style={styles.eventNote} numberOfLines={2}>{event.note}</Text> : null}
+        </View>
+      </Surface>
+    </Pressable>
   );
 }
 
@@ -551,6 +636,234 @@ function ViewSwitcher({
   );
 }
 
+/** Bottom-right liquid-glass "+" — opens the add-event sheet. Sits opposite the
+ *  ViewSwitcher's bottom-left button, always visible across all three views. */
+function AddEventFab({ insetBottom, onPress }: { insetBottom: number; onPress: () => void }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors: c } = useTheme();
+  return (
+    <View style={[styles.addFabWrap, { bottom: insetBottom + FAB_BOTTOM }]} pointerEvents="box-none">
+      <GlassSurface style={styles.addFab} fallbackColor={c.glassPanel} testID="calendar-add-fab">
+        <Pressable
+          style={styles.addFabInner}
+          onPress={onPress}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel="Add event"
+        >
+          <PlusIcon size={19} color={c.text} />
+        </Pressable>
+      </GlassSurface>
+    </View>
+  );
+}
+
+function ViewRow({ label, value, styles }: { label: string; value: string; styles: Styles }) {
+  return (
+    <View style={styles.viewRow}>
+      <Text style={styles.viewRowLabel}>{label}</Text>
+      <Text style={styles.viewRowValue}>{value}</Text>
+    </View>
+  );
+}
+
+/** The add/edit/view sheet — a SlideUpSheet always mounted so its open/close
+ *  animation always plays (same convention as StudySheet/StudyModeMenu). Local
+ *  field state resets from `dialog` whenever it changes to a NEW open value (a
+ *  fresh object reference every openAdd/openEvent call, including reopening
+ *  the same event); closing leaves the fields as-is, hidden during the close
+ *  animation — same tolerance Study's "coming soon" sheet already relies on. */
+function EventSheet({
+  dialog,
+  todayKey,
+  onClose,
+  onSave,
+  onDelete,
+  styles,
+}: {
+  dialog: EventDialogState;
+  todayKey: string;
+  onClose: () => void;
+  onSave: (input: CalendarEventInput) => Promise<void>;
+  onDelete: () => Promise<void>;
+  styles: Styles;
+}) {
+  const { colors: c } = useTheme();
+  const [title, setTitle] = useState("");
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [kind, setKind] = useState<AgendaEventKind>("assignment");
+  const [course, setCourse] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!dialog) return; // closing — leave fields as-is for the close animation
+    const seed = dialog.mode !== "add" ? dialog.event : null;
+    setTitle(seed?.title ?? "");
+    setDate(dialog.mode === "add" ? dialog.date : (seed?.date ?? ""));
+    setTime(seed?.time ?? "");
+    setKind(seed?.kind ?? "assignment");
+    setCourse(seed?.course ?? "");
+    setNote(seed?.note ?? "");
+    setSaving(false);
+    setError(null);
+  }, [dialog]);
+
+  const editingExisting = dialog?.mode === "edit";
+  const sheetTitle = !dialog ? "" : dialog.mode === "view" ? dialog.event.title || "Event" : editingExisting ? "Edit event" : "Add event";
+  const canSave = title.trim().length > 0 && EVENT_DATE_RE.test(date) && !saving;
+
+  function submit() {
+    if (!canSave) return;
+    setSaving(true);
+    setError(null);
+    const input: CalendarEventInput = {
+      title: title.trim(),
+      date,
+      kind,
+      ...(time.trim() ? { time: time.trim() } : {}),
+      ...(course.trim() ? { course: course.trim() } : {}),
+      ...(note.trim() ? { note: note.trim() } : {}),
+    };
+    void onSave(input).catch((e) => {
+      setError(e instanceof Error ? e.message : "Couldn't save. Try again.");
+      setSaving(false);
+    });
+  }
+
+  function confirmDelete() {
+    Alert.alert(
+      "Delete event?",
+      `Are you sure you want to delete "${title || "this event"}"? This can't be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            setSaving(true);
+            setError(null);
+            void onDelete().catch((e) => {
+              setError(e instanceof Error ? e.message : "Couldn't delete. Try again.");
+              setSaving(false);
+            });
+          },
+        },
+      ],
+    );
+  }
+
+  return (
+    <SlideUpSheet visible={dialog !== null} onClose={onClose} title={sheetTitle} testID="calendar-event-sheet">
+      {dialog && dialog.mode === "view" ? (
+        <View testID="calendar-event-view">
+          <ViewRow
+            label="When"
+            value={`${labelForDay(dialog.event.date, todayKey)}${dialog.event.time ? ` · ${dialog.event.time}` : ""}`}
+            styles={styles}
+          />
+          <ViewRow
+            label="Type"
+            value={KIND_PICKER_OPTIONS.find((o) => o.value === dialog.event.kind)?.label ?? "Other"}
+            styles={styles}
+          />
+          {dialog.event.course ? <ViewRow label="Course" value={dialog.event.course} styles={styles} /> : null}
+          {dialog.event.note ? <ViewRow label="Notes" value={dialog.event.note} styles={styles} /> : null}
+          <Text style={styles.sheetHint}>Added by Nemesis. Ask it to change this, or add your own event alongside it.</Text>
+          <MissionButton label="Close" onPress={onClose} testID="calendar-event-view-close" />
+        </View>
+      ) : (
+        <View testID="calendar-event-form">
+          {error ? <Text style={styles.sheetError}>{error}</Text> : null}
+          <TextInput
+            style={styles.sheetInput}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Title"
+            placeholderTextColor={c.text3}
+            testID="calendar-event-title"
+          />
+          <View style={styles.sheetRow}>
+            <TextInput
+              style={[styles.sheetInput, styles.sheetInputFlex]}
+              value={date}
+              onChangeText={setDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={c.text3}
+              autoCapitalize="none"
+              autoCorrect={false}
+              testID="calendar-event-date"
+            />
+            <TextInput
+              style={[styles.sheetInput, styles.sheetInputTime]}
+              value={time}
+              onChangeText={setTime}
+              placeholder="HH:MM"
+              placeholderTextColor={c.text3}
+              autoCapitalize="none"
+              autoCorrect={false}
+              testID="calendar-event-time"
+            />
+          </View>
+          <View style={styles.kindPickerRow}>
+            {KIND_PICKER_OPTIONS.map((opt) => {
+              const active = kind === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  onPress={() => setKind(opt.value)}
+                  style={[styles.kindChip, active && styles.kindChipActive]}
+                  testID={`calendar-event-kind-${opt.value}`}
+                >
+                  <View style={[styles.kindChipDot, { backgroundColor: kindDotColor(opt.value, c) }]} />
+                  <Text style={[styles.kindChipText, active && styles.kindChipTextActive]}>{opt.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <TextInput
+            style={styles.sheetInput}
+            value={course}
+            onChangeText={setCourse}
+            placeholder="Course (optional)"
+            placeholderTextColor={c.text3}
+            testID="calendar-event-course"
+          />
+          <TextInput
+            style={[styles.sheetInput, styles.sheetNoteInput]}
+            value={note}
+            onChangeText={setNote}
+            placeholder="Notes (optional)"
+            placeholderTextColor={c.text3}
+            multiline
+            testID="calendar-event-note"
+          />
+          <View style={styles.sheetActions}>
+            {editingExisting ? (
+              <Pressable onPress={confirmDelete} disabled={saving} style={styles.deleteBtn} testID="calendar-event-delete">
+                <TrashIcon size={15} color={c.danger} />
+                <Text style={styles.deleteBtnText}>Delete</Text>
+              </Pressable>
+            ) : (
+              <View />
+            )}
+            <MissionButton
+              label={saving ? "Saving…" : "Save"}
+              variant="primary"
+              busy={saving}
+              disabled={!canSave}
+              onPress={submit}
+              testID="calendar-event-save"
+            />
+          </View>
+        </View>
+      )}
+    </SlideUpSheet>
+  );
+}
+
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
@@ -558,8 +871,23 @@ const createStyles = (c: ThemeColors) =>
     // the FlatList/ScrollView inside stays bounded exactly as before.
     zoomWrap: { flex: 1 },
     pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(6), gap: space(4), backgroundColor: c.bg },
-    pairHint: { ...type.small, color: c.text2, textAlign: "center" },
     listBody: { paddingHorizontal: space(4), paddingTop: space(1), flexGrow: 1 },
+
+    // Background-refresh failure banner (offline/error) — floats above the
+    // active view without shifting its layout.
+    errorBanner: {
+      position: "absolute",
+      left: space(4),
+      right: space(4),
+      zIndex: 5,
+      backgroundColor: c.surface2,
+      borderWidth: 1,
+      borderColor: c.line,
+      borderRadius: radius.md,
+      paddingHorizontal: space(3),
+      paddingVertical: space(2),
+    },
+    errorBannerText: { ...type.small, color: c.text2, textAlign: "center" },
 
     monthListBody: { paddingHorizontal: space(4), flexGrow: 1 },
     yearBody: { paddingHorizontal: space(4), flexGrow: 1 },
@@ -591,6 +919,67 @@ const createStyles = (c: ThemeColors) =>
     menuItemText: { ...type.body, color: c.text2, fontWeight: "600" },
     menuItemTextActive: { color: c.accent },
     menuItemDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: c.accent },
+
+    // Bottom-right "+" — opposite the ViewSwitcher's bottom-left button.
+    addFabWrap: { position: "absolute", right: space(4), alignItems: "flex-end" },
+    addFab: { width: FAB_HEIGHT, height: FAB_HEIGHT, borderRadius: FAB_HEIGHT / 2, borderWidth: 1, borderColor: c.line },
+    addFabInner: { flex: 1, alignItems: "center", justifyContent: "center" },
+
+    // Event view sheet (agent-authored, read-only).
+    viewRow: { flexDirection: "row", alignItems: "baseline", gap: space(2), paddingVertical: space(1.5) },
+    viewRowLabel: {
+      ...type.micro,
+      color: c.text2,
+      textTransform: "uppercase",
+      letterSpacing: 0.8,
+      width: 64,
+      flexShrink: 0,
+    },
+    viewRowValue: { ...type.body, color: c.text, flex: 1 },
+    sheetHint: { ...type.small, color: c.text3, marginTop: space(3), marginBottom: space(4) },
+
+    // Event add/edit form sheet.
+    sheetError: {
+      ...type.small,
+      color: c.danger,
+      backgroundColor: c.surface2,
+      borderRadius: radius.sm,
+      padding: space(2.5),
+      marginBottom: space(2),
+    },
+    sheetInput: {
+      ...type.body,
+      color: c.text,
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.line,
+      borderRadius: radius.md,
+      paddingHorizontal: space(3),
+      paddingVertical: space(2.5),
+      marginBottom: space(2.5),
+    },
+    sheetRow: { flexDirection: "row", gap: space(2.5) },
+    sheetInputFlex: { flex: 1 },
+    sheetInputTime: { width: 92 },
+    sheetNoteInput: { minHeight: 72, textAlignVertical: "top" },
+    kindPickerRow: { flexDirection: "row", flexWrap: "wrap", gap: space(2), marginBottom: space(2.5) },
+    kindChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: space(1.5),
+      paddingVertical: space(1.75),
+      paddingHorizontal: space(3),
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: c.line,
+    },
+    kindChipActive: { borderColor: c.accent, backgroundColor: c.accentFaint },
+    kindChipDot: { width: 7, height: 7, borderRadius: 3.5 },
+    kindChipText: { ...type.small, color: c.text2, fontWeight: "600" },
+    kindChipTextActive: { color: c.accent },
+    sheetActions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: space(1) },
+    deleteBtn: { flexDirection: "row", alignItems: "center", gap: space(1.5), paddingVertical: space(2), paddingHorizontal: space(1) },
+    deleteBtnText: { ...type.small, color: c.danger, fontWeight: "600" },
   });
 
 type Styles = ReturnType<typeof createStyles>;

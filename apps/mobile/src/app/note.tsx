@@ -4,31 +4,32 @@ import { Stack, router, useLocalSearchParams } from "expo-router";
 import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line, Path } from "react-native-svg";
+import { useAuth } from "@/auth/AuthProvider";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock } from "@/components/mission-ui";
 import { CloseIcon, SearchIcon, type IconProps } from "@/components/icons";
-import { decryptLibrary, loadCachedRows, loadVaultKey } from "@/api/librarySync";
-import type { LibraryDoc } from "@/lib/library-sync";
+import { fetchNote, findCachedNote, loadCachedLibrary, type CloudLibraryNote } from "@/api/cloudLibrary";
 import { buildNoteResolver, isExternalUrl, preprocessWikilinks, resolveInternalHref } from "@/lib/wikilinks";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
-// Read-only note view: decrypts one cached library doc and renders its markdown.
-// The Mac agent is the only author, so every write-shaped control here is inert by
-// design — the "…" menu's Delete / Rename / Replace and the book icon's "edit" all
-// only explain that editing happens on the Mac; a phone write would be wiped by the
-// next sync. Everything renders from the local ciphertext cache, so an already-opened
-// library works fully offline.
-// [[wikilinks]] are tappable: preprocessed into markdown links and resolved against
-// every synced note (by title / basename / path) to jump between notes.
+// Read-only note view (cloud-first pivot, docs/design/nemesis-cloud-first-phone-2026-07.md
+// §7): renders one note straight from your account's library. The web app is the only
+// author for now, so every write-shaped control here is inert by design — the "…" menu's
+// Delete / Rename / Replace and the book icon's "edit" all only explain that editing
+// happens on the web app; phone editing isn't wired up yet. The last-cached copy of this
+// note (and the rest of the library, for wikilink resolution) renders instantly, then a
+// fresh fetch refreshes its content, so an already-opened note keeps working offline.
+// [[wikilinks]] are tappable: preprocessed into markdown links and resolved against every
+// cached note (by title / basename / path) to jump between notes.
 // Find IS wired (read-safe): while a query is present the body renders as plain text
 // with every match highlighted, plus a live match count — the one genuinely useful,
 // non-destructive action of the four.
 
-// The "…" menu. Only Find is actionable on a read-only mirror; the rest flash the
-// "edit on your Mac" note instead of pretending to mutate the vault.
+// The "…" menu. Only Find is actionable on a read-only copy; the rest flash the
+// "edit on the web app" note instead of pretending to mutate the library.
 const MENU_ITEMS = [
   { key: "delete", label: "Delete", enabled: false },
   { key: "rename", label: "Rename", enabled: false },
@@ -36,7 +37,23 @@ const MENU_ITEMS = [
   { key: "replace", label: "Replace", enabled: false },
 ] as const;
 
-const EDIT_ON_MAC = "Editing happens on your Mac — this phone shows a read-only copy.";
+const EDIT_ON_WEB = "Editing happens on the web app — this phone shows a read-only copy.";
+
+/** Short relative age ("3d ago" / a short date past a week) — same small helper each
+ * screen that shows one keeps locally (see app/(tabs)/index.tsx, components/AppDrawer.tsx). */
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (diffSec < 60) return "just now";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 /** Split `text` into ordered runs, flagging the ones that match `query` (case-
  * insensitive). Pure, so the highlighted body and the match count derive from the
@@ -65,12 +82,14 @@ export default function NoteScreen() {
   const styles = useThemedStyles(createStyles);
   const markdownStyles = useThemedStyles(createMarkdownStyles);
   const { colors: c } = useTheme();
-  const params = useLocalSearchParams<{ ph?: string }>();
-  const pathHash = Array.isArray(params.ph) ? params.ph[0] : params.ph;
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
+  const params = useLocalSearchParams<{ id?: string }>();
+  const noteId = Array.isArray(params.id) ? params.id[0] : params.id;
   const insets = useSafeAreaInsets();
-  const [doc, setDoc] = useState<(LibraryDoc & { pathHash: string }) | null | undefined>(undefined);
+  const [doc, setDoc] = useState<CloudLibraryNote | null | undefined>(undefined);
   const [resolver, setResolver] = useState<Map<string, string>>(() => new Map());
-  // Transient "couldn't find that note" / "edit on your Mac" line.
+  // Transient "couldn't find that note" / "edit on the web app" line.
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Read-only chrome state.
@@ -91,24 +110,36 @@ export default function NoteScreen() {
 
   useEffect(() => {
     let alive = true;
+    setDoc(undefined);
     void (async () => {
-      const [key, cache] = await Promise.all([loadVaultKey(), loadCachedRows()]);
-      if (!alive) return;
-      if (!key || !pathHash) {
-        setDoc(null);
+      if (!userId || !noteId) {
+        if (alive) setDoc(null);
         return;
       }
-      const { docs } = decryptLibrary(cache, key);
-      const notes = docs.filter((d) => d.kind === "note");
-      setResolver(buildNoteResolver(notes.map((d) => ({ title: d.title, path: d.path, pathHash: d.pathHash }))));
-      // kind guard at the data boundary: deck/calendar docs ride the same pipe
-      // and must never render as notes, whatever route delivered the pathHash.
-      setDoc(notes.find((d) => d.pathHash === pathHash) ?? null);
+      // Cache first (instant, offline-friendly): also seeds the wikilink resolver
+      // from the rest of the library, not just this one note.
+      const cached = await loadCachedLibrary(userId);
+      if (!alive) return;
+      setResolver(buildNoteResolver(cached.notes.map((d) => ({ path: d.path, pathHash: d.id, title: d.title }))));
+      const cachedNote = findCachedNote(cached, { id: noteId });
+      if (cachedNote) setDoc(cachedNote);
+
+      // Then a light single-row fetch for the freshest content — cheaper than
+      // re-pulling the whole library just to open one note.
+      try {
+        const fresh = await fetchNote(userId, { id: noteId });
+        if (!alive) return;
+        if (fresh) setDoc(fresh);
+        else if (!cachedNote) setDoc(null); // genuinely gone, and nothing cached either
+      } catch {
+        // Offline (or the request failed): fall back to whatever the cache had.
+        if (alive && !cachedNote) setDoc(null);
+      }
     })();
     return () => {
       alive = false;
     };
-  }, [pathHash]);
+  }, [userId, noteId]);
 
   const rendered = useMemo(() => (doc ? preprocessWikilinks(doc.content) : ""), [doc]);
 
@@ -137,8 +168,8 @@ export default function NoteScreen() {
         setFindOpen(true);
         return;
       }
-      // Delete / Rename / Replace: inert on the read-only mirror.
-      flashNotice(EDIT_ON_MAC);
+      // Delete / Rename / Replace: inert on this read-only copy.
+      flashNotice(EDIT_ON_WEB);
     },
     [flashNotice],
   );
@@ -149,14 +180,14 @@ export default function NoteScreen() {
   }, []);
 
   // Any in-note link — a [[wikilink]] OR a bare relative markdown link — opens the
-  // target note when it resolves to something synced. Real web links open in the
-  // browser; an internal link that matches no synced note flashes a notice rather
+  // target note when it resolves to something in the library. Real web links open in
+  // the browser; an internal link that matches no known note flashes a notice rather
   // than doing nothing. (return false = we handled it; don't let the default open.)
   const onLinkPress = useCallback(
     (url: string): boolean => {
-      const targetHash = resolveInternalHref(url, resolver);
-      if (targetHash) {
-        router.push({ pathname: "/note", params: { ph: targetHash } });
+      const targetId = resolveInternalHref(url, resolver);
+      if (targetId) {
+        router.push({ pathname: "/note", params: { id: targetId } });
         return false;
       }
       if (isExternalUrl(url)) {
@@ -170,7 +201,7 @@ export default function NoteScreen() {
           return url;
         }
       })();
-      flashNotice(`"${name}" isn't in your synced library yet.`);
+      flashNotice(`"${name}" isn't in your library yet.`);
       return false;
     },
     [resolver, flashNotice],
@@ -193,15 +224,15 @@ export default function NoteScreen() {
         </Pressable>
 
         {/* Book (read/edit) then "…" — only shown once a real note is loaded. Read is
-            the only real mode; tapping "edit" explains it's a Mac-side action. */}
+            the only real mode; tapping "edit" explains it's a web-app action. */}
         {doc ? (
           <>
             <Pressable
-              onPress={() => flashNotice(EDIT_ON_MAC)}
+              onPress={() => flashNotice(EDIT_ON_WEB)}
               hitSlop={10}
               testID="note-mode-toggle"
               accessibilityRole="button"
-              accessibilityLabel="Reading mode — switch to editing on your Mac"
+              accessibilityLabel="Reading mode — switch to editing on the web app"
             >
               <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel}>
                 <BookIcon size={19} color={c.text} />
@@ -257,14 +288,17 @@ export default function NoteScreen() {
 
       {doc === undefined ? null : doc === null ? (
         <View style={styles.emptyWrap}>
-          <EmptyBlock title="Note unavailable" body="It may have been deleted on your Mac, or this phone needs re-pairing." />
+          <EmptyBlock
+            title="Note unavailable"
+            body="It may have been deleted, or hasn't reached this phone yet — pull to refresh from the Library tab."
+          />
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Text style={styles.title}>{doc.title}</Text>
           <Text style={styles.meta}>
             {doc.path}
-            {doc.mtime ? ` · synced from your Mac` : ""}
+            {doc.updatedAt ? ` · updated ${relativeTime(doc.updatedAt)}` : ""}
           </Text>
           {findActive && segments ? (
             // Find mode: render the note's own text so matches can actually be
@@ -313,7 +347,7 @@ export default function NoteScreen() {
                 accessibilityState={{ disabled: !item.enabled }}
               >
                 <Text style={[styles.menuLabel, !item.enabled && styles.menuLabelDisabled]}>{item.label}</Text>
-                {item.enabled ? null : <Text style={styles.menuTag}>Desktop</Text>}
+                {item.enabled ? null : <Text style={styles.menuTag}>Web</Text>}
               </Pressable>
             ))}
           </GlassSurface>

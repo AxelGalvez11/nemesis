@@ -14,32 +14,27 @@ import Reanimated, { LinearTransition } from "react-native-reanimated";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Line, Path } from "react-native-svg";
+import { useAuth } from "@/auth/AuthProvider";
 import { useShellPadding } from "@/components/shell-chrome";
 import { useShell } from "@/components/AppDrawer";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { CloseIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
-import {
-  currentUserId,
-  decryptLibrary,
-  loadCachedRows,
-  loadVaultKey,
-  pullLibraryRows,
-  subscribeLibrary,
-} from "@/api/librarySync";
-import { buildLibraryRows, type LibraryRow, type SyncCache } from "@/lib/library-sync";
+import { fetchLibrary, loadCachedLibrary, type CloudLibrarySnapshot } from "@/api/cloudLibrary";
+import { buildLibraryRows, type LibraryRow } from "@/lib/library-sync";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
-// Library (read-only, Phase 1): what the agent wrote on the Mac, on your phone.
-// Shows cached notes instantly (offline included), pulls new rows behind that, and
-// live-refreshes while the agent is writing. No editor anywhere on this screen by
-// design — the Mac agent is the only author (single-writer architecture).
-// Only kind:"note" docs render here — deck snapshots and the calendar doc ride the
-// same encrypted pipe but belong to the Study/Calendar screens (Phases 2/3).
+// Library (cloud-first pivot, docs/design/nemesis-cloud-first-phone-2026-07.md §7):
+// the same notes the web app's Library reads and writes, on your phone. Shows the
+// last-cached list instantly (offline included), then refreshes from the cloud
+// behind that — on open and whenever this screen regains focus. No editor anywhere
+// on this screen by design (single-writer architecture, for now): the web app is
+// the only place a note gets created or changed; this phone shows a read-only copy.
+// Only kind:"note" rows render here — folder rows only inform the folder tree.
 //
-// Folders nest arbitrarily deep (mirrors the Mac vault's own folder structure) and
+// Folders nest arbitrarily deep (mirrors the web app's own folder structure) and
 // each one collapses independently — buildLibraryRows() (lib/library-sync.ts) turns
 // the flat doc-path list into a depth-tagged row list every render; `collapsed` (a
 // Set of full folder paths, e.g. "PHCY 1205/Unit 1") is the only state that drives
@@ -47,29 +42,25 @@ import { radius, space, type } from "@/theme/tokens";
 //
 // Read-only controls (this screen owns the UI, never the data): a Search that filters
 // the list, a Sort half-sheet that reorders it, and New note / New folder buttons that
-// only ever explain "create it on your Mac" — a phone write would be wiped by the next
-// sync or corrupt the mirror, so those actions are deliberately inert.
+// only ever explain "create it on the web app" — a phone write isn't wired up yet, so
+// those actions are deliberately inert until phone editing ships.
 
-// A–Z / Z–A sort by title; Modified sorts by the doc's mtime. There is deliberately
-// no "created" key here: the read-only mirror carries no creation timestamp (see the
-// disabled rows in SORT_OPTIONS), so we never fabricate one.
-type SortKey = "az" | "za" | "mod-asc" | "mod-desc";
+// A–Z / Z–A by title; Modified by the row's updated_at; Created by its created_at —
+// the cloud table carries both, so every ordering the owner specced has honest data
+// to stand on (unlike the old Mac-paired mirror, which only ever had mtime).
+type SortKey = "az" | "za" | "mod-asc" | "mod-desc" | "created-asc" | "created-desc";
 
-// The full menu the owner specced. The two "Created" rows are rendered but disabled:
-// the synced doc format (lib/library-sync.ts LibraryDoc) has only `mtime`, no created
-// date, so those orderings have no honest data to stand on.
 const SORT_OPTIONS = [
   { key: "az", label: "A–Z" },
   { key: "za", label: "Z–A" },
   { key: "mod-asc", label: "Modified (old → new)" },
   { key: "mod-desc", label: "Modified (new → old)" },
-  { key: "created-asc", label: "Created (old → new)", disabled: true },
-  { key: "created-desc", label: "Created (new → old)", disabled: true },
+  { key: "created-asc", label: "Created (old → new)" },
+  { key: "created-desc", label: "Created (new → old)" },
 ] as const;
 
-const CREATED_HINT = "Not synced to your phone";
-const NEW_NOTE_HINT = "New notes are created on your Mac — this phone shows a read-only copy.";
-const NEW_FOLDER_HINT = "New folders are created on your Mac — this phone shows a read-only copy.";
+const NEW_NOTE_HINT = "New notes are created on the web app — this phone shows a read-only copy.";
+const NEW_FOLDER_HINT = "New folders are created on the web app — this phone shows a read-only copy.";
 
 function sortLabel(key: SortKey): string {
   switch (key) {
@@ -79,20 +70,26 @@ function sortLabel(key: SortKey): string {
       return "Sorted · Modified (old → new)";
     case "mod-desc":
       return "Sorted · Modified (new → old)";
+    case "created-asc":
+      return "Sorted · Created (old → new)";
+    case "created-desc":
+      return "Sorted · Created (new → old)";
     default:
       return "Sorted · A–Z";
   }
 }
 
-/** Pure reorder for the flat (search / non-default-sort) list. ISO mtimes compare
- * lexicographically (same assumption mergeRows relies on); notes with no mtime are
- * pushed to the end in title order so they land somewhere stable either direction. */
-function sortNotes<T extends { title: string; mtime?: string }>(list: T[], key: SortKey): T[] {
+/** Pure reorder for the flat (search / non-default-sort) list. ISO timestamps
+ * compare lexicographically; notes with no timestamp (shouldn't happen for a
+ * well-formed cloud row, but defensive) sort to the end in title order. */
+function sortNotes<T extends { title: string; updatedAt: string; createdAt: string }>(list: T[], key: SortKey): T[] {
   if (key === "az") return [...list].sort((a, b) => a.title.localeCompare(b.title));
   if (key === "za") return [...list].sort((a, b) => b.title.localeCompare(a.title));
-  const timed = list.filter((n) => n.mtime);
-  const untimed = list.filter((n) => !n.mtime).sort((a, b) => a.title.localeCompare(b.title));
-  timed.sort((a, b) => (key === "mod-asc" ? a.mtime!.localeCompare(b.mtime!) : b.mtime!.localeCompare(a.mtime!)));
+  const field = key === "created-asc" || key === "created-desc" ? "createdAt" : "updatedAt";
+  const ascending = key === "mod-asc" || key === "created-asc";
+  const timed = list.filter((n) => n[field]);
+  const untimed = list.filter((n) => !n[field]).sort((a, b) => a.title.localeCompare(b.title));
+  timed.sort((a, b) => (ascending ? a[field].localeCompare(b[field]) : b[field].localeCompare(a[field])));
   return [...timed, ...untimed];
 }
 
@@ -107,14 +104,15 @@ export default function LibraryScreen() {
   const { contentTop, contentBottom } = useShellPadding();
   const insets = useSafeAreaInsets();
   const { setHeaderTitle } = useShell();
-  const [key, setKey] = useState<Uint8Array | null>(null);
-  const [keyChecked, setKeyChecked] = useState(false);
-  const [cache, setCache] = useState<SyncCache>({});
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
+  const [dataReady, setDataReady] = useState(false);
+  const [snapshot, setSnapshot] = useState<CloudLibrarySnapshot>({ folders: [], notes: [] });
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   // Read-only control state — all declared here, above the early returns, so the
-  // hook order never changes between the loading / unpaired / paired renders.
+  // hook order never changes between the loading / signed-out / signed-in renders.
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("az");
@@ -167,12 +165,16 @@ export default function LibraryScreen() {
     });
   }, []);
 
-  const pull = useCallback(async (base: SyncCache) => {
+  // Fresh cloud pull for `uid`, replacing the snapshot wholesale on success (see
+  // cloudLibrary.ts's fetchLibrary — the right behavior so a delete/rename made on
+  // the web app is reflected here too). Failures leave the last-known snapshot on
+  // screen and just surface the error line below.
+  const refresh = useCallback(async (uid: string) => {
     if (pulling.current) return;
     pulling.current = true;
     try {
-      const merged = await pullLibraryRows(base);
-      setCache(merged);
+      const fresh = await fetchLibrary(uid);
+      setSnapshot(fresh);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -181,69 +183,49 @@ export default function LibraryScreen() {
     }
   }, []);
 
-  // Re-check the key + freshen on every focus: this is the screen the user lands on
-  // right after pairing, and after any stretch away from the app.
+  // Every time this screen regains focus: render the cached snapshot instantly
+  // (offline-friendly), then refresh from the cloud behind that.
   useFocusEffect(
     useCallback(() => {
       let alive = true;
+      if (!userId) {
+        setDataReady(true);
+        return () => {
+          alive = false;
+        };
+      }
       void (async () => {
-        const k = await loadVaultKey();
+        const cached = await loadCachedLibrary(userId);
         if (!alive) return;
-        setKey(k);
-        setKeyChecked(true);
-        if (!k) return;
-        const cached = await loadCachedRows();
-        if (!alive) return;
-        setCache(cached);
-        void pull(cached);
+        setSnapshot(cached);
+        setDataReady(true);
+        void refresh(userId);
       })();
       return () => {
         alive = false;
       };
-    }, [pull]),
+    }, [userId, refresh]),
   );
 
-  // Live updates while the agent writes on the Mac.
-  useEffect(() => {
-    if (!key) return;
-    let unsubscribe: (() => void) | undefined;
-    let alive = true;
-    void currentUserId().then((uid) => {
-      if (!alive || !uid) return;
-      unsubscribe = subscribeLibrary(uid, () => {
-        setCache((current) => {
-          void pull(current);
-          return current;
-        });
-      });
-    });
-    return () => {
-      alive = false;
-      unsubscribe?.();
-    };
-  }, [key, pull]);
+  if (!dataReady) return <View style={styles.flex} testID="library-loading" />;
 
-  if (!keyChecked) return <View style={styles.flex} testID="library-loading" />;
-
-  if (!key) {
+  if (!userId) {
     return (
       <View
-        style={[styles.pairWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]}
-        testID="library-unpaired"
+        style={[styles.authWrap, { paddingTop: contentTop, paddingBottom: contentBottom }]}
+        testID="library-signin"
       >
         <EmptyBlock
-          title="Pair with your Mac"
-          body="Your library lives on your Mac. Pair once and everything the agent writes shows up here — readable anywhere, even offline. End-to-end encrypted: our servers can't read a word of it."
+          title="Sign in to see your library"
+          body="Your notes live in your account. Sign in to read them here — anywhere, even offline once they've loaded."
         />
-        <MissionButton label="Scan pairing code" variant="primary" testID="goto-pair" onPress={() => router.push("/pair")} />
-        <Text style={styles.pairHint}>On your Mac: Settings → Phone sync → Pair phone.</Text>
+        <MissionButton label="Sign in" variant="primary" testID="library-goto-signin" onPress={() => router.push("/sign-in")} />
       </View>
     );
   }
 
-  const { docs, failures } = decryptLibrary(cache, key);
-  const notes = docs.filter((d) => d.kind === "note");
-  const pathToHash = new Map(notes.map((d) => [d.path, d.pathHash]));
+  const notes = snapshot.notes;
+  const pathToId = new Map(notes.map((n) => [n.path, n.id]));
 
   const trimmed = query.trim();
   const searching = trimmed.length > 0;
@@ -298,17 +280,9 @@ export default function LibraryScreen() {
         ) : null}
       </View>
 
-      {failures > 0 ? (
-        <Surface style={styles.warn} testID="library-decrypt-warning">
-          <Text style={styles.warnText}>
-            {failures} note{failures === 1 ? "" : "s"} couldn't be decrypted. If this persists, re-pair with your Mac
-            (Settings → Phone sync).
-          </Text>
-        </Surface>
-      ) : null}
       {error ? (
         <Surface style={styles.warn} testID="library-error">
-          <Text style={styles.warnText}>Couldn't reach sync: {error}</Text>
+          <Text style={styles.warnText}>Couldn't reach your library: {error}</Text>
         </Surface>
       ) : null}
 
@@ -327,7 +301,7 @@ export default function LibraryScreen() {
             tintColor={c.text2}
             onRefresh={() => {
               setRefreshing(true);
-              void pull(cache).finally(() => setRefreshing(false));
+              void refresh(userId).finally(() => setRefreshing(false));
             }}
           />
         }
@@ -362,8 +336,8 @@ export default function LibraryScreen() {
               style={({ pressed }) => [styles.row, indent, pressed && styles.rowPressed]}
               testID={`note-${item.path}`}
               onPress={() => {
-                const ph = pathToHash.get(item.path);
-                if (ph) router.push({ pathname: "/note", params: { ph } });
+                const id = pathToId.get(item.path);
+                if (id) router.push({ pathname: "/note", params: { id } });
               }}
             >
               <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
@@ -377,17 +351,30 @@ export default function LibraryScreen() {
         // root note) is always emitted regardless of collapse state in tree mode, so the
         // tree branch never falsely fires while notes merely sit behind a collapsed
         // folder. Keeping FlatList's own empty handling (rather than branching around
-        // the list) is also what keeps pull-to-refresh alive on the just-paired,
-        // nothing-synced-yet state, which is the moment a pull-to-refresh matters most.
+        // the list) is also what keeps pull-to-refresh alive on the truly-empty state,
+        // which is the moment a pull-to-refresh matters most.
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
             {searching ? (
-              <EmptyBlock title="No matching notes" body={`Nothing in your synced library matches “${trimmed}”.`} />
+              <EmptyBlock title="No matching notes" body={`Nothing in your library matches “${trimmed}”.`} />
             ) : (
-              <EmptyBlock
-                title="Nothing synced yet"
-                body="Your Mac publishes notes as the agent writes them. Leave the Nemesis desktop app open and check back in a minute."
-              />
+              <>
+                <EmptyBlock
+                  title="Nothing here yet"
+                  body="Your library lives in your account. Create notes on the web app and they appear here."
+                />
+                <View style={styles.emptyRefreshBtn}>
+                  <MissionButton
+                    label="Refresh"
+                    busy={refreshing}
+                    testID="library-empty-refresh"
+                    onPress={() => {
+                      setRefreshing(true);
+                      void refresh(userId).finally(() => setRefreshing(false));
+                    }}
+                  />
+                </View>
+              </>
             )}
           </View>
         }
@@ -565,15 +552,6 @@ function SortSheet({
           <Text style={styles.sheetTitle}>Sort</Text>
           <View style={{ paddingBottom: insets.bottom + space(4) }}>
             {SORT_OPTIONS.map((opt) => {
-              const disabled = "disabled" in opt && opt.disabled;
-              if (disabled) {
-                return (
-                  <View key={opt.key} style={styles.sortRow} testID={`sort-option-${opt.key}`} accessibilityState={{ disabled: true }}>
-                    <Text style={styles.sortLabelDisabled}>{opt.label}</Text>
-                    <Text style={styles.sortHint}>{CREATED_HINT}</Text>
-                  </View>
-                );
-              }
               const optKey = opt.key as SortKey;
               const isActive = current === optKey;
               return (
@@ -654,8 +632,7 @@ function SortIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
-    pairWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4), backgroundColor: c.bg },
-    pairHint: { ...type.small, color: c.text2, textAlign: "center" },
+    authWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4), backgroundColor: c.bg },
 
     // Top band below the TopBar — now just the (conditional) search field + hint; its
     // bottom padding is applied inline, only when it has a row to show.
@@ -699,7 +676,8 @@ const createStyles = (c: ThemeColors) =>
     folderName: { ...type.bodyStrong, color: c.text, flexShrink: 1 },
     warn: { marginHorizontal: space(4), marginTop: space(1), padding: space(3) },
     warnText: { ...type.small, color: c.text2 },
-    emptyWrap: { paddingTop: space(10) },
+    emptyWrap: { paddingTop: space(10), gap: space(4) },
+    emptyRefreshBtn: { alignSelf: "center" },
 
     // Sort half-sheet.
     sheetWrap: { position: "absolute", left: 0, right: 0, bottom: 0 },
