@@ -40,6 +40,7 @@ interface ComposerProps {
   centered?: boolean;
   placement?: "floating" | "inline";
   placeholder: string;
+  mode?: ComposerMode;
   onModeChange?: (mode: ComposerMode) => void;
   onRecordingChange?: (recording: boolean) => void;
   onSubmit: (text: string, files: File[]) => void;
@@ -47,7 +48,7 @@ interface ComposerProps {
   showRecordCompanion?: boolean;
 }
 
-export function Composer({ busy, centered = false, placement = "floating", placeholder, onModeChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasText, setHasText] = useState(false);
@@ -55,16 +56,29 @@ export function Composer({ busy, centered = false, placement = "floating", place
   const [listening, setListening] = useState(false);
   const [recording, setRecording] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
+  const activeMode = mode ?? composerMode;
 
   useEffect(() => {
+    if (mode) return;
     const stored = readStoredComposerMode();
     setComposerMode(stored);
     onModeChange?.(stored);
     // The stored mode is read once when this composer is mounted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [mode]);
+
+  useEffect(() => {
+    if (!mode) return;
+    setComposerMode(mode);
+    try { window.localStorage.setItem(COMPOSER_MODE_STORAGE_KEY, mode); } catch { /* best-effort */ }
+  }, [mode]);
 
   const setMode = (mode: ComposerMode) => {
+    if (recording && activeMode === "record" && mode === "chat") {
+      setRecording(false);
+      onRecordingChange?.(false);
+      return;
+    }
     setComposerMode(mode);
     onModeChange?.(mode);
     setRecording(false);
@@ -154,7 +168,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
             className="relative z-1 flex min-h-0 w-full flex-col gap-1.5 overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y)"
             data-slot="composer-fade"
           >
-            {composerMode === "chat" && files.length > 0 && (
+            {activeMode === "chat" && files.length > 0 && (
               <div className="flex flex-wrap gap-1 px-1">
                 {files.map((file, index) => (
                   <span className="flex max-w-44 items-center gap-1 rounded-full bg-(--ui-bg-quaternary) px-2 py-1 text-[0.6875rem] text-(--ui-text-secondary)" key={`${file.name}:${file.lastModified}:${index}`}>
@@ -166,7 +180,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
             )}
             <div className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-(--composer-control-gap) [grid-template-areas:'menu_input_controls']">
               <div className="flex items-center self-center [grid-area:menu]">
-                {composerMode === "chat" && (
+                {activeMode === "chat" && (
                   <>
                     <input className="sr-only" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} ref={fileInputRef} type="file" />
                     <AddMenu onChooseFiles={() => fileInputRef.current?.click()} />
@@ -174,7 +188,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
                 )}
               </div>
               <div className="min-w-0 [grid-area:input]">
-                {composerMode === "chat" ? (
+                {activeMode === "chat" ? (
                   <div
                     aria-multiline="true"
                     className="min-h-(--composer-input-min-height) max-h-(--composer-input-max-height) min-w-(--composer-input-inline-min-width) flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent py-1 pr-1 text-[length:var(--conversation-text-font-size)] leading-normal text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60"
@@ -192,9 +206,9 @@ export function Composer({ busy, centered = false, placement = "floating", place
               </div>
               <div className="flex items-center justify-end [grid-area:controls]">
                 <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
-                  <ModePill mode={composerMode} onChange={setMode} />
-                  {composerMode === "chat" && <Button aria-label="Dictate" aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>}
-                  {composerMode === "record" ? (
+                  <ModePill mode={activeMode} onChange={setMode} />
+                  {activeMode === "chat" && <Button aria-label="Dictate" aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>}
+                  {activeMode === "record" ? (
                     <Button
                       aria-label={recording ? "Stop recording" : "Start recording"}
                       aria-pressed={recording}
@@ -237,7 +251,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
           </div>
         </div>
       </div>
-      {composerMode === "record" && showRecordCompanion && <RecordCompanionPanel />}
+      {activeMode === "record" && showRecordCompanion && <RecordCompanionPanel />}
     </div>
   );
 }

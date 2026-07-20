@@ -46,6 +46,9 @@ function markdownComponents(
 ): Components {
   return {
     a: ({ children, href }) => {
+      if (href === "#nemesis-highlight") {
+        return <mark className="rounded-[0.2rem] bg-[color-mix(in_srgb,var(--theme-primary)_24%,transparent)] px-0.5 text-inherit">{children}</mark>;
+      }
       const tag = href?.startsWith("#nemesis-tag=")
         ? decodeURIComponent(href.slice("#nemesis-tag=".length))
         : null;
@@ -63,33 +66,48 @@ function markdownComponents(
         ? decodeURIComponent(href.slice("#nemesis-note=".length))
         : null;
       const wikiAvailable = wikiTarget ? (isWikiLinkAvailable?.(wikiTarget) ?? true) : true;
+      if (wikiTarget) {
+        return (
+          <button
+            aria-label={!wikiAvailable ? `Create note ${wikiTarget}` : undefined}
+            className={cn(
+              "inline cursor-pointer break-words border-0 bg-transparent p-0 align-baseline font-[inherit] underline underline-offset-4",
+              wikiAvailable ? "font-medium text-[var(--theme-primary)] decoration-2 hover:decoration-current" : "text-(--ui-text-quaternary) decoration-current/35",
+            )}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onWikiLink?.(wikiTarget);
+            }}
+            style={{
+              color: wikiAvailable ? "var(--theme-primary)" : "var(--ui-text-quaternary)",
+              textDecorationColor: wikiAvailable ? "currentColor" : "color-mix(in srgb, currentColor 35%, transparent)",
+              textDecorationLine: "underline",
+              textDecorationThickness: wikiAvailable ? "2px" : "1px",
+              textUnderlineOffset: "0.25rem",
+            }}
+            type="button"
+          >
+            {children}
+          </button>
+        );
+      }
       return (
         <a
-          aria-label={wikiTarget && !wikiAvailable ? `Create note ${wikiTarget}` : undefined}
           className={cn(
             "break-words underline underline-offset-4",
-            wikiTarget && wikiAvailable && "font-medium text-[var(--theme-primary)] decoration-2 hover:decoration-current",
-            wikiTarget && !wikiAvailable && "cursor-pointer text-(--ui-text-quaternary) decoration-current/35",
-            !wikiTarget && "text-[var(--theme-primary)] decoration-2 hover:decoration-current",
+            "text-[var(--theme-primary)] decoration-2 hover:decoration-current",
           )}
           href={href}
-          onClick={
-            wikiTarget
-              ? (event) => {
-                  event.preventDefault();
-                  onWikiLink?.(wikiTarget);
-                }
-              : undefined
-          }
-          rel={wikiTarget ? undefined : "noopener noreferrer"}
+          rel="noopener noreferrer"
           style={{
-            color: wikiTarget && !wikiAvailable ? "var(--ui-text-quaternary)" : "var(--theme-primary)",
-            textDecorationColor: wikiTarget && !wikiAvailable ? "color-mix(in srgb, currentColor 35%, transparent)" : "currentColor",
+            color: "var(--theme-primary)",
+            textDecorationColor: "currentColor",
             textDecorationLine: "underline",
-            textDecorationThickness: wikiTarget && !wikiAvailable ? "1px" : "2px",
+            textDecorationThickness: "2px",
             textUnderlineOffset: "0.25rem",
           }}
-          target={wikiTarget || !externalLinksInNewTab ? undefined : "_blank"}
+          target={!externalLinksInNewTab ? undefined : "_blank"}
         >
           {children}
         </a>
@@ -165,6 +183,7 @@ export function AssistantMarkdown({
   onWikiLink,
   isWikiLinkAvailable,
   externalLinksInNewTab = true,
+  obsidianHighlights = false,
   obsidianTags = false,
 }: {
   className?: string;
@@ -172,9 +191,13 @@ export function AssistantMarkdown({
   onWikiLink?: (target: string) => void;
   isWikiLinkAvailable?: (target: string) => boolean;
   externalLinksInNewTab?: boolean;
+  obsidianHighlights?: boolean;
   obsidianTags?: boolean;
 }) {
-  const markdown = obsidianTags ? obsidianTagsToMarkdown(text) : text;
+  const taggedMarkdown = obsidianTags ? obsidianTagsToMarkdown(text) : text;
+  const markdown = obsidianHighlights
+    ? taggedMarkdown.replace(/==([^=\n]+)==/g, (_match, value: string) => `[${value.replace(/([\]\\])/g, "\\$1")}](#nemesis-highlight)`)
+    : taggedMarkdown;
   return (
     <div className={cn(MARKDOWN_CONTAINER_CLASS_NAME, className)}>
       <ReactMarkdown

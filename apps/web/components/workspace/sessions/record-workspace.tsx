@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { MessageResponse } from "@/components/ai-elements/message";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { SegmentedControl } from "@/components/desktop-ui/segmented-control";
 import { cn } from "@/lib/utils";
 import { formatLiveDuration } from "@/lib/workspace/live-audio-contract";
+import type { RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 
 import { useLiveAudioSession } from "./use-live-audio";
 
@@ -19,6 +20,7 @@ interface RecordWorkspaceProps {
   keyterms?: string[];
   surface?: "sessions" | "notebook";
   uid?: string | null;
+  onFinished?: (draft: RecordingArtifactDraft) => void;
 }
 
 type InsightMode = "notes" | "explore";
@@ -65,18 +67,38 @@ export function RecordWorkspace({
   keyterms,
   surface = "sessions",
   uid = null,
+  onFinished,
 }: RecordWorkspaceProps) {
   const live = useLiveAudioSession({ accessToken, active, context, contextId, keyterms, surface, uid });
   const [insightMode, setInsightMode] = useState<InsightMode>("notes");
   const activeListening = live.status === "listening";
   const used = live.usage?.usedSeconds ?? 0;
   const limit = live.usage?.limitSeconds ?? 0;
+  const wasActiveRef = useRef(false);
+  const finishedRef = useRef(false);
+  const latestRef = useRef({ durationSeconds: live.elapsedSeconds, notes: live.insights.notes.join("\n"), transcript: live.transcript });
+  latestRef.current = { durationSeconds: live.elapsedSeconds, notes: live.insights.notes.join("\n"), transcript: live.transcript };
+
+  useEffect(() => {
+    if (active) {
+      wasActiveRef.current = true;
+      finishedRef.current = false;
+      return;
+    }
+    if (!wasActiveRef.current || finishedRef.current) return;
+    finishedRef.current = true;
+    const timer = window.setTimeout(() => {
+      wasActiveRef.current = false;
+      onFinished?.(latestRef.current);
+    }, 550);
+    return () => window.clearTimeout(timer);
+  }, [active, onFinished]);
 
   return (
     <section
       aria-label="Live transcription workspace"
       className={cn(
-        "grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] divide-x divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.75rem] border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_94%,transparent)] shadow-lg backdrop-blur-xl animate-in slide-in-from-bottom-8 fade-in-0 duration-500 ease-out motion-reduce:animate-none max-sm:grid-cols-1 max-sm:divide-x-0 max-sm:divide-y",
+        "record-workspace-enter grid min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,2fr)] divide-x divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.75rem] border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_94%,transparent)] shadow-lg backdrop-blur-xl max-sm:grid-cols-1 max-sm:divide-x-0 max-sm:divide-y",
         className,
       )}
       data-slot="record-workspace"
