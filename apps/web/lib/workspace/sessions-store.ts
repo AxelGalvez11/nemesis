@@ -4,12 +4,51 @@
 // single-tab-authoritative, with a tiny external-store subscription so every
 // consumer (sidebar, sessions page, dev preview) re-renders from one source.
 //
-// Storage contract (versioned): localStorage["nemesis.web.sessions.v1"] =
+// Storage contract (versioned): localStorage["nemesis.web.sessions.v1:<uid>"] =
 //   { v: 1, sessions: [{ id, title, createdAt, updatedAt, pinned?, messages: [{ role, content, at }] }] }
 //
 // Phase C (sessions page) extends behavior ONLY through this API surface.
+//
+// Cloud-first phone spec §4: the localStorage cache above stays the
+// hydration source and the offline/signed-out fallback. When a real account
+// is signed in (not previewMode), every mutation also write-throughs to
+// `chat_threads`/`chat_messages` (fire-and-forget, one retry — see
+// sessions-cloud.ts), and a background refresh (initial load + tab-focus)
+// replaces local state with the cloud copy except for whichever session is
+// currently open or mid-turn. previewMode and signed-out remain pure-local,
+// exactly as before.
+//
+// Cache key is scoped PER-UID (nemesis.web.sessions.v1:<uid>), never a single
+// shared key — a shared browser where account A signs out and account B
+// signs in must never have B's one-time migration upload A's residual local
+// sessions into B's cloud account. This does mean hydration can no longer
+// happen before the signed-in uid is known (see hydrateForUser, called from
+// setCloudUser once useSessions() resolves auth) — the first render shows the
+// empty state for one tick, then the real per-uid cache paints. The OLD
+// unscoped key (nemesis.web.sessions.v1, no suffix) is handled as a single
+// GLOBAL one-time claim: whichever account hydrates first after this ships
+// absorbs it into their own cache/cloud, then the key is deleted outright so
+// no later account on the same browser can ever read it.
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
+
+import { useAuth } from "@/components/AuthProvider";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
+
+import {
+  appendMessageCloud,
+  cloudFireAndForget,
+  deleteThreadCloud,
+  fetchCloudSessions,
+  hasClaimedLegacyCache,
+  hasMigratedSessions,
+  markLegacyCacheClaimed,
+  markSessionsMigrated,
+  renameThreadCloud,
+  togglePinThreadCloud,
+  uploadLocalSessionsToCloud,
+  upsertThreadCloud,
+} from "./sessions-cloud";
 
 export interface SessionSource {
   title: string;
@@ -29,6 +68,12 @@ export interface SessionOutput {
 }
 
 export interface SessionMessage {
+  /** Client-generated UUID — the chat_messages cloud row's primary key.
+   *  Optional in the type for backward compatibility with anything already in
+   *  localStorage or hand-built by callers (dev-preview seeds, notebooks'
+   *  reuse of this type); the store backfills a fresh id wherever one is
+   *  missing so every message it manages ends up with one. */
+  id?: string;
   role: "user" | "assistant";
   content: string;
   /** ISO timestamp — display/persistence only. */
@@ -52,7 +97,22 @@ interface SessionsFile {
   sessions: WorkspaceSession[];
 }
 
-export const SESSIONS_STORAGE_KEY = "nemesis.web.sessions.v1";
+/** Pre-scoping key. Read exactly once, globally (see hydrateForUser), then
+ *  deleted outright — never written to again. */
+const LEGACY_SESSIONS_STORAGE_KEY = "nemesis.web.sessions.v1";
+
+function sessionsStorageKey(uid: string): string {
+  return `nemesis.web.sessions.v1:${uid}`;
+}
+
+/** The key persist()/hydrateForUser() read and write right now. Falls back to
+ *  the legacy unscoped key only in the (practically unreached — every real
+ *  route gates on auth before this store's actions are reachable) window
+ *  before setCloudUser() has ever run, rather than silently no-op'ing. */
+function currentStorageKey(): string {
+  return cloudUserId ? sessionsStorageKey(cloudUserId) : LEGACY_SESSIONS_STORAGE_KEY;
+}
+
 const MAX_MESSAGES_PER_SESSION = 200;
 
 // ── Module state (one authority per tab) ────────────────────────────────────
@@ -128,6 +188,7 @@ function sanitizeMessage(raw: unknown): SessionMessage | null {
   const sources = persistedSources.length ? persistedSources : inferSourcesFromContent(m.content);
   const outputs = Array.isArray(m.outputs) ? m.outputs.map(sanitizeOutput).filter((output): output is SessionOutput => output !== null).slice(0, 30) : [];
   return {
+    id: typeof m.id === "string" && m.id.length > 0 ? m.id : newId(),
     role,
     content: m.content,
     at: typeof m.at === "string" ? m.at : new Date(0).toISOString(),
@@ -155,10 +216,10 @@ function sanitizeSession(raw: unknown): WorkspaceSession | null {
   };
 }
 
-function loadFromStorage(): WorkspaceSession[] {
+function loadFromStorageKey(key: string): WorkspaceSession[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(SESSIONS_STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null || (parsed as SessionsFile).v !== 1) return [];
@@ -177,16 +238,49 @@ function persist() {
       v: 1,
       sessions: state.sessions.map((s) => ({ ...s, messages: s.messages.slice(-MAX_MESSAGES_PER_SESSION) })),
     };
-    window.localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(file));
+    window.localStorage.setItem(currentStorageKey(), JSON.stringify(file));
   } catch {
     // Quota/private mode — the in-memory copy stays authoritative for the tab.
   }
 }
 
+// Real hydration is per-uid (see hydrateForUser, called from setCloudUser
+// once useSessions() knows who's signed in) or via injectPreview() in the
+// dev-preview harness. Neither has necessarily run the first time some path
+// touches the store, so this is just a do-it-once latch, not a data load —
+// there is no single key left to safely guess at reading from.
 function ensureHydrated() {
   if (hydrated || typeof window === "undefined") return;
   hydrated = true;
-  state = { ...state, sessions: loadFromStorage() };
+}
+
+function mergeSessionsById(base: WorkspaceSession[], extra: WorkspaceSession[]): WorkspaceSession[] {
+  const seen = new Set(base.map((s) => s.id));
+  return [...base, ...extra.filter((s) => !seen.has(s.id))];
+}
+
+/** Runs once per uid the moment setCloudUser() learns who's signed in: reads
+ * that account's own per-uid cache, and — the FIRST time this runs for ANY
+ * account on this browser, ever — also claims the old unscoped cache (if
+ * anything is in it), merges it in, and deletes that legacy key outright so
+ * no other account can ever read it again. Synchronous (localStorage only,
+ * no network), so there's no staleness race to guard against here. */
+function hydrateForUser(uid: string) {
+  if (typeof window === "undefined") return;
+  hydrated = true;
+  const ownSessions = loadFromStorageKey(sessionsStorageKey(uid));
+  if (hasClaimedLegacyCache()) {
+    setState({ ...state, sessions: ownSessions });
+    return;
+  }
+  const legacySessions = loadFromStorageKey(LEGACY_SESSIONS_STORAGE_KEY);
+  try {
+    window.localStorage.removeItem(LEGACY_SESSIONS_STORAGE_KEY);
+  } catch {
+    // Private mode — nothing further to protect once we stop reading it.
+  }
+  markLegacyCacheClaimed();
+  setState({ ...state, sessions: mergeSessionsById(ownSessions, legacySessions) });
 }
 
 function setState(next: StoreState, persistNow = true) {
@@ -207,6 +301,103 @@ function sortedSessions(list: WorkspaceSession[]): WorkspaceSession[] {
   return [...list].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
 }
 
+// ── Cloud sync (signed-in only — previewMode/no-uid stays pure local) ──────
+// Module-global rather than hook state: rename/togglePin/remove/etc. are
+// called directly on `sessionsStore` from event handlers outside any hook
+// (chat-header.tsx, session-chat.tsx), so "which account am I" has to live at
+// the same module scope those already read `state` from. useSessions() below
+// (mounted persistently in the workspace shell) is the sole place that feeds
+// it, via useAuth()/useWorkspacePreview().
+
+let cloudUserId: string | null = null;
+let cloudSyncInFlight = false;
+let visibilityListenerAttached = false;
+
+function ensureVisibilityListener() {
+  if (visibilityListenerAttached || typeof document === "undefined") return;
+  visibilityListenerAttached = true;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && cloudUserId) void syncCloudForUser(cloudUserId);
+  });
+}
+
+/** One-time migration (if not already flagged) then a full refresh. Reused
+ * for both the initial sign-in and every later visibilitychange trigger —
+ * hasMigratedSessions() makes the migration step a no-op after the first
+ * success. Guarded against overlap and against a mid-flight account switch. */
+async function syncCloudForUser(uid: string) {
+  if (cloudSyncInFlight) return;
+  cloudSyncInFlight = true;
+  try {
+    if (!hasMigratedSessions(uid)) {
+      await uploadLocalSessionsToCloud(uid, state.sessions);
+      if (cloudUserId !== uid) return; // signed out / switched again mid-upload
+      markSessionsMigrated(uid);
+    }
+    if (cloudUserId !== uid) return;
+    const cloudSessions = await fetchCloudSessions(uid);
+    if (cloudUserId !== uid) return;
+    applyCloudRefresh(cloudSessions);
+  } catch {
+    // Cloud unreachable — local state stays authoritative; the next trigger retries.
+  } finally {
+    cloudSyncInFlight = false;
+  }
+}
+
+/** Cloud-authoritative replace, except a session with an in-flight turn or
+ * the one currently open — those keep their local copy so a background
+ * refresh (tab-focus) can never clobber a streaming answer or a
+ * not-yet-synced draft (the create() → appendMessage() window). */
+function applyCloudRefresh(cloudSessions: WorkspaceSession[]) {
+  const protectedIds = new Set(Object.keys(state.working));
+  if (state.selectedId) protectedIds.add(state.selectedId);
+  const preserved = state.sessions.filter((s) => protectedIds.has(s.id));
+  const preservedIds = new Set(preserved.map((s) => s.id));
+  const localById = new Map(state.sessions.map((s) => [s.id, s]));
+  const fromCloud = cloudSessions
+    .filter((s) => !preservedIds.has(s.id))
+    .map((s) => {
+      // Union outputs with the local copy (local first): an artifact whose
+      // upload failed — e.g. a transcript over the row size cap — must never
+      // be erased by a cloud refresh that doesn't know about it.
+      const localOutputs = localById.get(s.id)?.outputs ?? [];
+      const cloudOutputs = s.outputs ?? [];
+      const seen = new Set(localOutputs.map((o) => o.id));
+      const outputs = [...localOutputs, ...cloudOutputs.filter((o) => !seen.has(o.id))].slice(0, 50);
+      return {
+        ...s,
+        ...(outputs.length ? { outputs } : {}),
+        messages: s.messages.slice(-MAX_MESSAGES_PER_SESSION),
+      };
+    });
+  const sessions = [...preserved, ...fromCloud];
+  const stillSelected = state.selectedId ? sessions.some((s) => s.id === state.selectedId) : true;
+  setState({ ...state, sessions, selectedId: stillSelected ? state.selectedId : null });
+}
+
+function setCloudUser(uid: string | null) {
+  if (uid === cloudUserId) return;
+  const previousUid = cloudUserId;
+  cloudUserId = uid;
+  if (previousUid && uid) {
+    // Switched to a different signed-in account without a full page reload
+    // (sign out → sign in as someone else, same tab) — clear the in-memory
+    // view so one student never glimpses another's thread titles while the
+    // new account's cloud data loads. persistNow=false is load-bearing: this
+    // must NOT write through currentStorageKey(), which already points at the
+    // NEW uid's own key (cloudUserId was just reassigned above) — persisting
+    // the blank here would wipe that account's real cache a moment before
+    // hydrateForUser() reads it back.
+    setState({ sessions: [], selectedId: null, working: {} }, false);
+  }
+  if (uid) {
+    hydrateForUser(uid);
+    ensureVisibilityListener();
+    void syncCloudForUser(uid);
+  }
+}
+
 // ── Actions (module-level so non-hook code can drive the store) ─────────────
 
 export const sessionsStore = {
@@ -216,6 +407,10 @@ export const sessionsStore = {
   },
 
   subscribe,
+
+  /** Called from useSessions() only — wires which account's cloud data this
+   *  tab syncs against. Not meant for direct use by other components. */
+  setCloudUser,
 
   create(title = "New session"): WorkspaceSession {
     ensureHydrated();
@@ -242,6 +437,11 @@ export const sessionsStore = {
       ...state,
       sessions: state.sessions.map((s) => (s.id === id ? { ...s, title, updatedAt: nowIso() } : s)),
     });
+    const uid = cloudUserId;
+    const updated = state.sessions.find((s) => s.id === id);
+    // Best-effort: if the thread doesn't exist in cloud yet (create() hasn't
+    // sent a first message), this UPDATE just affects 0 rows.
+    if (uid && updated) cloudFireAndForget(() => renameThreadCloud(uid, id, title, updated.updatedAt));
   },
 
   remove(id: string) {
@@ -252,6 +452,8 @@ export const sessionsStore = {
       selectedId: state.selectedId === id ? null : state.selectedId,
       working: Object.fromEntries(Object.entries(state.working).filter(([key]) => key !== id)),
     });
+    const uid = cloudUserId;
+    if (uid) cloudFireAndForget(() => deleteThreadCloud(uid, id));
   },
 
   togglePin(id: string) {
@@ -260,22 +462,29 @@ export const sessionsStore = {
       ...state,
       sessions: state.sessions.map((s) => (s.id === id ? { ...s, pinned: !s.pinned } : s)),
     });
+    const uid = cloudUserId;
+    const pinned = state.sessions.find((s) => s.id === id)?.pinned ?? false;
+    if (uid) cloudFireAndForget(() => togglePinThreadCloud(uid, id, pinned));
   },
 
   appendMessage(id: string, message: SessionMessage) {
     ensureHydrated();
+    const stored: SessionMessage = message.id ? message : { ...message, id: newId() };
     setState({
       ...state,
       sessions: state.sessions.map((s) =>
         s.id === id
           ? {
               ...s,
-              messages: [...s.messages, message].slice(-MAX_MESSAGES_PER_SESSION),
+              messages: [...s.messages, stored].slice(-MAX_MESSAGES_PER_SESSION),
               updatedAt: nowIso(),
             }
           : s,
       ),
     });
+    const uid = cloudUserId;
+    const session = state.sessions.find((s) => s.id === id);
+    if (uid && session) cloudFireAndForget(() => appendMessageCloud(uid, session, stored));
   },
 
   addOutput(id: string, output: SessionOutput) {
@@ -286,6 +495,10 @@ export const sessionsStore = {
         ? { ...session, outputs: [output, ...(session.outputs ?? []).filter((item) => item.id !== output.id)].slice(0, 50), updatedAt: nowIso() }
         : session),
     });
+    // Artifacts ride the thread row's meta so recordings reach other devices.
+    const uid = cloudUserId;
+    const session = state.sessions.find((s) => s.id === id);
+    if (uid && session) cloudFireAndForget(() => upsertThreadCloud(uid, session));
   },
 
   /** Insert or update the assistant message for an in-flight turn. Streaming
@@ -308,6 +521,7 @@ export const sessionsStore = {
           at,
           content,
           role: "assistant",
+          ...(index < 0 ? { id: newId() } : {}),
           ...(sources?.length ? { sources } : {}),
         };
         const messages = index >= 0
@@ -318,6 +532,15 @@ export const sessionsStore = {
         return { ...session, messages, updatedAt: nowIso() };
       }),
     }, persistNow);
+
+    // Cloud write-through fires only on the final (non-streaming) call — the
+    // spec is explicit that partial deltas never reach chat_messages.
+    if (persistNow) {
+      const uid = cloudUserId;
+      const session = state.sessions.find((s) => s.id === id);
+      const stored = session?.messages.find((m) => m.role === "assistant" && m.at === at);
+      if (uid && session && stored) cloudFireAndForget(() => appendMessageCloud(uid, session, stored));
+    }
   },
 
   updateMessage(id: string, at: string, content: string) {
@@ -397,6 +620,16 @@ export interface UseSessionsApi {
 }
 
 export function useSessions(): UseSessionsApi {
+  const preview = useWorkspacePreview();
+  const { session: authSession } = useAuth();
+  // null throughout the dev-preview harness regardless of the developer's real
+  // signed-in state, so that route never fires a cloud call (module comment).
+  const uid = preview ? null : (authSession?.user.id ?? null);
+
+  useEffect(() => {
+    sessionsStore.setCloudUser(uid);
+  }, [uid]);
+
   const snap = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const sessions = sortedSessions(snap.sessions);
 

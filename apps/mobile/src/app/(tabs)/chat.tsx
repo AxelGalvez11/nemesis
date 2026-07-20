@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
+  AppState,
   Easing,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -25,7 +27,7 @@ import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { ThinkingDots } from "@/components/ThinkingDots";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
-import type { ChatMsg } from "@/lib/chat-thread";
+import type { ChatMsg, ChatSource } from "@/lib/chat-thread";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -73,6 +75,10 @@ export default function ChatScreen() {
   const [lastError, setLastError] = useState<null | string>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // The in-flight assistant reply's text so far — rendered live into the same
+  // "msg" row shape as a finished answer (owner: streaming §6), so it gets the
+  // exact same FadeIn + markdown treatment with no separate render path.
+  const [streamingText, setStreamingText] = useState("");
   // Pinned state of the active thread (drives the "…" menu's Pin/Unpin label) and
   // whether that menu is open.
   const [pinned, setPinned] = useState(false);
@@ -94,6 +100,7 @@ export default function ChatScreen() {
     epochRef.current += 1;
     sendingRef.current = false;
     setSending(false);
+    setStreamingText("");
     setMessages([]);
     setLastError(null);
     setInput("");
@@ -125,6 +132,23 @@ export default function ChatScreen() {
     };
   }, [uid, routeThreadId]);
 
+  // Refresh the open thread from the cloud when the app returns to the
+  // foreground (§6: "list refresh on open + app foreground") — this is what
+  // picks up a message sent from web (or another session) while this phone
+  // was in the background. The drawer already refreshes the sidebar list
+  // every time it opens (see AppDrawer.tsx), so that half needs no change here.
+  useEffect(() => {
+    if (!uid || !threadId) return;
+    const epoch = epochRef.current;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active" || sendingRef.current) return; // never clobber an in-flight turn
+      void loadThreadMessages(uid, threadId).then((loaded) => {
+        if (epochRef.current === epoch) setMessages(loaded);
+      });
+    });
+    return () => sub.remove();
+  }, [uid, threadId]);
+
   // Header title: the Nemesis logo until the student asks something, then the
   // conversation's title (their first question, trimmed). Cleared on unmount.
   useEffect(() => {
@@ -146,14 +170,27 @@ export default function ChatScreen() {
     setLastError(null);
     setInput("");
     setSending(true);
+    setStreamingText("");
     // Persist the user turn immediately so the thread shows in the sidebar even
     // if the reply never lands.
     void saveThreadMessages(uid, id, base);
-    void sendChat(uid, history, text)
+    void sendChat(uid, history, text, (_delta, accumulated) => {
+      // Renders live into the assistant row as chunks arrive; stale turns
+      // (thread/user switched mid-stream) are dropped by the epoch guard.
+      if (epochRef.current === epoch) setStreamingText(accumulated);
+    })
       .then((reply) => {
         if (epochRef.current !== epoch) return;
         if (reply.text) {
-          const next: ChatMsg[] = [...base, { at: new Date().toISOString(), content: reply.text, role: "assistant" }];
+          const next: ChatMsg[] = [
+            ...base,
+            {
+              at: new Date().toISOString(),
+              content: reply.text,
+              role: "assistant",
+              ...(reply.sources.length ? { sources: reply.sources } : {}),
+            },
+          ];
           setMessages(next);
           void saveThreadMessages(uid, id, next);
         } else {
@@ -166,6 +203,7 @@ export default function ChatScreen() {
         if (epochRef.current === epoch) {
           sendingRef.current = false;
           setSending(false);
+          setStreamingText("");
         }
       });
   }, [input, messages, uid, threadId]);
@@ -255,7 +293,16 @@ export default function ChatScreen() {
 
   const rows: Row[] = messages.map((msg, index) => ({ id: `m-${index}`, kind: "msg", msg }));
   if (lastError) rows.push({ errorText: lastError, id: "__error__", kind: "error" });
-  if (sending) rows.push({ id: THINKING_ID, kind: "thinking" });
+  if (sending) {
+    // Dots until the first chunk lands, then the SAME "msg" row shape as a
+    // finished answer — same key throughout, so FadeIn plays once (on that
+    // transition) rather than replaying per chunk as the text grows.
+    rows.push(
+      streamingText
+        ? { id: THINKING_ID, kind: "msg", msg: { at: "", content: streamingText, role: "assistant" } }
+        : { id: THINKING_ID, kind: "thinking" },
+    );
+  }
   const hasContent = rows.length > 0;
   // The newest user-message row — what the scroll effect pins to the top. Computed here
   // in render and stashed in a ref so that effect needn't depend on `rows`.
@@ -299,9 +346,11 @@ export default function ChatScreen() {
               </View>
             ) : (
               // Assistant: full-width markdown (with LaTeX/math), NO bubble. Fades in as
-              // it arrives (owner 2026-07-19).
+              // it arrives (owner 2026-07-19). Sources (when the router grounded this
+              // turn with a web search) render as a compact tappable row underneath.
               <Reanimated.View entering={FadeIn.duration(350)} style={styles.assistantRow}>
                 <MessageBody content={item.msg!.content} styles={markdownStyles} />
+                {item.msg!.sources?.length ? <SourcesRow sources={item.msg!.sources} /> : null}
               </Reanimated.View>
             )
           }
@@ -430,6 +479,38 @@ function DotsIcon({ size = 20, color }: { size?: number; color: string }) {
   );
 }
 
+/** Compact tappable row of web-search citations under an assistant message
+ *  (§6: only rendered when the router grounded the turn with a live search).
+ *  Opens the result in the external browser — there's no in-app viewer for an
+ *  arbitrary web URL. */
+function SourcesRow({ sources }: { sources: ChatSource[] }) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View style={styles.sourcesRow} testID="chat-sources">
+      {sources.map((source, index) => (
+        <Pressable
+          key={`${source.url}-${index}`}
+          style={({ pressed }) => [styles.sourceChip, pressed && styles.sourceChipPressed]}
+          onPress={() => void Linking.openURL(source.url).catch(() => {})}
+          testID={`chat-source-${index}`}
+        >
+          <Text style={styles.sourceChipText} numberOfLines={1}>
+            {source.title.trim() || hostnameOf(source.url)}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+/** Bare hostname for a chip label when a result has no title. A small regex
+ *  rather than the global `URL` API — dependency-free and can't throw on a
+ *  malformed url (falls back to the raw string). */
+function hostnameOf(url: string): string {
+  const match = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/@]*@)?([^/:?#]+)/i.exec(url);
+  return (match?.[1] ?? url).replace(/^www\./, "");
+}
+
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
@@ -445,6 +526,11 @@ const createStyles = (c: ThemeColors) =>
     userText: { ...type.body, color: c.text },
     // Assistant is not a bubble — it's a full-width block of markdown.
     assistantRow: { alignSelf: "stretch", paddingHorizontal: space(0.5), paddingVertical: space(1) },
+    // Compact tappable "Sources" chips under an assistant message (§6).
+    sourcesRow: { flexDirection: "row", flexWrap: "wrap", gap: space(1.5), marginTop: space(1.5), paddingHorizontal: space(0.5) },
+    sourceChip: { maxWidth: 220, paddingVertical: space(1), paddingHorizontal: space(2.5), borderRadius: radius.md, borderWidth: 1, borderColor: c.line },
+    sourceChipPressed: { backgroundColor: c.surface },
+    sourceChipText: { ...type.small, color: c.accent },
     errorBubble: { alignSelf: "flex-start", maxWidth: "88%", borderRadius: radius.lg, paddingHorizontal: space(3.5), paddingVertical: space(2.5), borderWidth: 1, borderColor: c.warnLine, backgroundColor: c.warnFaint },
     errorText: { ...type.small, color: c.text2 },
     // No flex:1 — the greeting sizes to its content so it sits at the top of the

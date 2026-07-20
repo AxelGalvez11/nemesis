@@ -3,49 +3,19 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
-import type { Mission } from "@/api/missions-helpers";
 
-// Presentational primitives for the missions screens ONLY (mission list/composer,
-// mission detail). Colors come from the theme context (monochrome + the student's
-// accent, Crimson by default); `space`/`type`/`radius` are the static numeric
-// scales from tokens.ts, which carry no color or brand identity.
+// Shared presentational primitives used across the app's screens (Chat, Study,
+// Library, Graph, Calendar, Review): an empty-state block, a solid/outline
+// button, and a bordered card shell. Colors come from the theme context
+// (monochrome + the student's accent, Crimson by default); `space`/`type`/
+// `radius` are the static numeric scales from tokens.ts, which carry no color or
+// brand identity. (File keeps its mission-ui.tsx name from when missions were
+// the app's only screen; the mission-specific StatusPill was retired with the
+// missions feature — cloud-first phone, owner call 2026-07-20, see
+// docs/design/nemesis-cloud-first-phone-2026-07.md §10.)
 
-type Tone = "accent" | "accentOutline" | "neutral" | "muted";
-
-function toneForStatus(status: Mission["status"]): Tone {
-  switch (status) {
-    case "needs_review":
-      return "accent";
-    case "failed":
-      return "accentOutline";
-    case "done":
-    case "cancelled":
-      return "muted";
-    default:
-      return "neutral"; // queued, claimed, running
-  }
-}
-
-/** Small status chip. The accent is reserved for the ONE state that needs the
- * student's attention (needs_review = filled, failed = outline); everything
- * else stays neutral/muted so the accent doesn't wash across the screen. */
-export function StatusPill({ status, label }: { status: Mission["status"]; label: string }) {
-  const styles = useThemedStyles(createStyles);
-  const tone = toneForStatus(status);
-  const toneStyles: Record<Tone, { box: object; text: object }> = {
-    accent: { box: styles.pillAccentBox, text: styles.pillAccentText },
-    accentOutline: { box: styles.pillAccentOutlineBox, text: styles.pillAccentOutlineText },
-    neutral: { box: styles.pillNeutralBox, text: styles.pillNeutralText },
-    muted: { box: styles.pillMutedBox, text: styles.pillMutedText },
-  };
-  return (
-    <View style={[styles.pill, toneStyles[tone].box]}>
-      <Text style={[styles.pillText, toneStyles[tone].text]}>{label}</Text>
-    </View>
-  );
-}
-
-/** Card-like container — the mission list row / event feed / result card shell. */
+/** Card-like container — a bordered/tinted shell used as a list row, prompt
+ * card, or result card across screens. */
 export function Surface({ children, style, testID }: { children: ReactNode; style?: object; testID?: string }) {
   const styles = useThemedStyles(createStyles);
   return (
@@ -108,17 +78,6 @@ export function EmptyBlock({ title, body }: { title: string; body?: string }) {
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-    pill: { borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: space(2.5), paddingVertical: space(1) },
-    pillText: { ...type.micro, fontWeight: "600" },
-    pillAccentBox: { backgroundColor: c.accent, borderColor: c.accent },
-    pillAccentText: { color: c.onAccent },
-    pillAccentOutlineBox: { backgroundColor: c.accentFaint, borderColor: c.accentLine },
-    pillAccentOutlineText: { color: c.accent },
-    pillNeutralBox: { backgroundColor: c.glass, borderColor: c.line },
-    pillNeutralText: { color: c.text },
-    pillMutedBox: { backgroundColor: "transparent", borderColor: c.lineMuted },
-    pillMutedText: { color: c.text2 },
-
     surface: {
       borderWidth: 1,
       borderColor: c.line,

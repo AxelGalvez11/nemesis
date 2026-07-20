@@ -3,34 +3,39 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "@/auth/AuthProvider";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { GlassSurface } from "@/components/GlassSurface";
-import { decryptLibrary, loadCachedRows, loadVaultKey } from "@/api/librarySync";
-import { enqueueGrade, flushReviewQueue, loadAllGradedMarks, recordGradedMark } from "@/api/reviewEvents";
 import {
-  clozeParts,
-  gradeCurrent,
-  initSession,
-  parseDeckSnapshot,
-  sessionCounts,
-  sessionQueue,
-  type DeckSnapshot,
-  type ReviewGrade,
-  type ReviewSession,
-} from "@/lib/study-session";
+  fetchCloudStudy,
+  gradeStudyCard,
+  isCardDue,
+  type CloudStudyCard,
+  type CloudStudyDeck,
+  type StudyGrade,
+} from "@/api/cloudStudy";
+import { clozeParts } from "@/lib/study-session";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
-// Flashcard review (Phase 3): walks the Mac-precomputed queue for one deck as an
-// Anki-style session (see study-session.ts). New and lapsed cards cycle back
-// within the session until they graduate; a New / Learning / Review counter row
-// tracks the buckets live. Grading is optimistic — the card advances instantly.
-// Each card emits only its FIRST grade (the "did I recall it when due" signal);
-// later learning-step grades stay on the phone so the Mac's FSRS, which applies
-// every event as an independent review, isn't over-advanced. The Mac reschedules
-// for real next time it's awake.
+// Flashcard review (cloud-first phone, build spec §8): walks the LIVE due
+// queue for one cloud deck (study_decks/study_cards via api/cloudStudy.ts).
+// Grading calls the shared grade_study_card RPC per grade — same server math
+// the web workspace uses, online-required (the old Mac offline grade-queue is
+// retired for cloud Study). A card that fails to grade (offline, or the RPC
+// rejects it) stays exactly where it is — revealed, ungraded — so the student
+// can retry once they're back online instead of silently losing the review.
+//
+// The reveal/grade INTERACTION is unchanged from the old Mac-paired screen:
+// tap the card anywhere to reveal, then one of four grade buttons. What's
+// gone is the old in-session "learning steps" simulation (a card cycling back
+// within one sitting before its first grade reached the Mac) — that existed
+// only to buffer the retired offline queue. Cloud grading reports every tap
+// straight to the server, so a graded card simply leaves this session's queue
+// (its new due_at naturally pushes it out of isCardDue); Anki-style
+// within-session relearning is a v2 idea, not a cloud-parity requirement.
 
 export default function ReviewScreen() {
   const { colors: c } = useTheme();
@@ -46,89 +51,97 @@ export default function ReviewScreen() {
     textgroup: { textAlign: "center" as const },
   };
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ ph?: string }>();
-  const pathHash = Array.isArray(params.ph) ? params.ph[0] : params.ph;
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
+  const params = useLocalSearchParams<{ deckId?: string }>();
+  const deckId = Array.isArray(params.deckId) ? params.deckId[0] : params.deckId;
 
-  const [snapshot, setSnapshot] = useState<DeckSnapshot | null | undefined>(undefined);
-  const [session, setSession] = useState<ReviewSession | null>(null);
+  // undefined = still loading; null = deck not found / unavailable.
+  const [deck, setDeck] = useState<CloudStudyDeck | null | undefined>(undefined);
+  const [cards, setCards] = useState<CloudStudyCard[]>([]);
+  const [completedIds, setCompletedIds] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
-  const [pendingSync, setPendingSync] = useState(0);
-  // Cards whose grade has already been sent up — each card emits its FIRST grade
-  // only, so cycling it through learning steps never double-counts on the Mac.
-  const emittedRef = useRef<Set<string>>(new Set());
+  const [gradeError, setGradeError] = useState<string | null>(null);
+  const [grading, setGrading] = useState(false);
 
   useEffect(() => {
     let alive = true;
+    if (!userId || !deckId) {
+      setDeck(null);
+      return;
+    }
+    setDeck(undefined);
     void (async () => {
-      const [key, cache, marks] = await Promise.all([loadVaultKey(), loadCachedRows(), loadAllGradedMarks()]);
-      if (!alive) return;
-      if (!key || !pathHash) {
-        setSnapshot(null);
-        return;
+      try {
+        const { decks, cards: allCards } = await fetchCloudStudy(userId);
+        if (!alive) return;
+        const found = decks.find((item) => item.id === deckId) ?? null;
+        setDeck(found);
+        setCards(found ? allCards.filter((card) => card.deckId === found.id) : []);
+        setCompletedIds([]);
+        setRevealed(false);
+        setGradeError(null);
+      } catch {
+        if (alive) setDeck(null);
       }
-      const { docs } = decryptLibrary(cache, key);
-      const doc = docs.find((d) => d.pathHash === pathHash && d.kind === "deck");
-      const parsed = doc ? parseDeckSnapshot(doc.content) : null;
-      setSnapshot(parsed);
-      if (parsed) {
-        emittedRef.current = new Set();
-        setSession(initSession(sessionQueue(parsed, marks[pathHash] ?? [])));
-      }
-      // Older stranded grades get a flush attempt as the session starts.
-      void flushReviewQueue().then(({ pending }) => {
-        if (alive) setPendingSync(pending);
-      });
     })();
     return () => {
       alive = false;
     };
-  }, [pathHash]);
+  }, [deckId, userId]);
 
-  const current = session?.cards[0];
-  const counts = session ? sessionCounts(session) : { fresh: 0, learning: 0, review: 0 };
-  // Cloze cards arrive pre-rendered (front blanked, back revealed); clozeParts
-  // recovers the blank marker AND the tested span so the card reveals IN PLACE
-  // — one sentence throughout, Anki-style — instead of a separate
-  // blanked-front / full-answer pair. Null for a normal Q/A card.
-  const clozeSplit = current ? clozeParts(current.prompt, current.answer) : null;
-
-  // Duplicate-touch latch: a doubled native press event calls grade() twice
-  // against the same closure before React re-renders — the second call must
-  // no-op or the Mac would apply FSRS twice for one tap. Cleared on every
-  // session-state change (which every successful grade produces).
-  const gradedLatchRef = useRef<null | string>(null);
-  useEffect(() => {
-    gradedLatchRef.current = null;
-  }, [session]);
-
-  const grade = useMemo(
-    () =>
-      (rating: ReviewGrade) => {
-        if (!session || !current || !snapshot || !pathHash) return;
-        if (gradedLatchRef.current === current.key) return;
-        gradedLatchRef.current = current.key;
-        const reviewedAt = new Date().toISOString();
-        setSession(gradeCurrent(session, rating).session);
-        setRevealed(false);
-        // First grade of this card only: it's the "did I recall it when due"
-        // signal the Mac's FSRS models. Later learning-step grades stay local
-        // (the Mac applies every event as an independent review — re-sending
-        // would over-advance). The graded mark rides along so the card is hidden
-        // from the next snapshot until the Mac has ingested this grade.
-        if (emittedRef.current.has(current.key)) return;
-        emittedRef.current.add(current.key);
-        void enqueueGrade({ deckPathHash: pathHash, grade: rating, reviewedAt, scheduleKey: current.key })
-          .then(() => recordGradedMark(pathHash, { at: reviewedAt, key: current.key }, snapshot.asOf))
-          .then(() => flushReviewQueue())
-          .then(({ pending }) => setPendingSync(pending))
-          .catch(() => {});
-      },
-    [current, pathHash, session, snapshot],
+  // The live due queue: new cards (due_at defaults to creation time) and due
+  // reviews together, minus whatever this session has already graded. Grading
+  // a card pushes its due_at into the future server-side, but completedIds is
+  // the immediate, synchronous removal the UI relies on for THIS session.
+  const queue = useMemo(
+    () => cards.filter((card) => isCardDue(card) && !completedIds.includes(card.id)),
+    [cards, completedIds],
   );
+  const current = queue[0] ?? null;
+  // Remaining-in-queue counts (not the deck-list's New/Learn/Due triple):
+  // every card left here is already due, so "Learn" (explicitly NOT due) can
+  // never apply to a review queue — showing it would describe cards you
+  // aren't reviewing.
+  const remainingNew = queue.filter((card) => card.repetitions === 0).length;
+  const remainingDue = queue.length - remainingNew;
+
+  // Cloze cards arrive as author-written "front"/"back" text (web's Study
+  // browser); clozeParts only lights up when the two align as a blanked/full
+  // mirror pair (the historic Mac format). It safely falls through to plain
+  // Q/A markdown otherwise — that's expected for freshly-authored cloud cloze
+  // cards, not a bug.
+  const clozeSplit = current && current.cardType === "cloze" ? clozeParts(current.front, current.back) : null;
+
+  // Duplicate-touch latch: a doubled native press event can call grade() twice
+  // against the same closure before React re-renders. A ref is synchronous
+  // (state wouldn't be visible in time), so it's the actual re-entrancy guard;
+  // `grading` state below is only for the visual disabled look.
+  const gradingRef = useRef(false);
+  useEffect(() => {
+    gradingRef.current = false;
+  }, [current?.id]);
+
+  async function grade(value: StudyGrade) {
+    if (!current || gradingRef.current) return;
+    gradingRef.current = true;
+    setGrading(true);
+    setGradeError(null);
+    const result = await gradeStudyCard(current.id, value);
+    gradingRef.current = false;
+    setGrading(false);
+    if (!result.ok) {
+      // Stay put — revealed, ungraded — so the student can retry once online.
+      setGradeError(result.message);
+      return;
+    }
+    setCompletedIds((ids) => [...ids, current.id]);
+    setRevealed(false);
+  }
 
   // Muted, non-neon fills with white text — the hue reads clearly (more opaque) but stays
   // matte, not lightened. Again=red, Hard=yellow/amber, Good=green, Easy=blue.
-  const gradeButtons: { rating: ReviewGrade; label: string; fill: string }[] = [
+  const gradeButtons: { rating: StudyGrade; label: string; fill: string }[] = [
     { fill: "#8a3b41", label: "Again", rating: "again" },
     { fill: "#7d6526", label: "Hard", rating: "hard" },
     { fill: "#3c6d4d", label: "Good", rating: "good" },
@@ -146,25 +159,22 @@ export default function ReviewScreen() {
         </Pressable>
       </View>
 
-      {snapshot === undefined ? null : snapshot === null ? (
+      {deck === undefined ? null : deck === null ? (
         <View style={styles.emptyWrap}>
-          <EmptyBlock title="Deck unavailable" body="It may have been removed on your Mac, or this phone needs re-pairing." />
-        </View>
-      ) : !session || (session.cards.length === 0 && session.completed === 0) ? (
-        <View style={styles.emptyWrap} testID="review-none-due">
-          <EmptyBlock
-            title="Nothing due in this deck"
-            body="Come back when cards fall due — your Mac keeps the schedule and republishes this deck as it changes."
-          />
+          <EmptyBlock title="Deck unavailable" body="This deck may have been deleted, or you may need to sign in again." />
         </View>
       ) : !current ? (
-        <View style={styles.emptyWrap} testID="review-complete">
+        <View style={styles.emptyWrap} testID={completedIds.length > 0 ? "review-complete" : "review-none-due"}>
           <EmptyBlock
-            title={`Session complete — ${session.completed} card${session.completed === 1 ? "" : "s"}`}
+            title={
+              completedIds.length > 0
+                ? `Session complete — ${completedIds.length} card${completedIds.length === 1 ? "" : "s"}`
+                : "Nothing due in this deck"
+            }
             body={
-              pendingSync > 0
-                ? `${pendingSync} grade${pendingSync === 1 ? "" : "s"} will sync when you're back online; your Mac applies them and reschedules.`
-                : "Grades are on their way to your Mac — it reschedules every card from here."
+              completedIds.length > 0
+                ? "Nice work — come back when more cards fall due."
+                : "Come back when cards fall due, or add more from the web app."
             }
           />
           <MissionButton label="Done" variant="primary" testID="review-done" onPress={() => router.back()} />
@@ -183,26 +193,31 @@ export default function ReviewScreen() {
               testID="review-card"
               style={styles.cardPressable}
             >
-              {clozeSplit ? (
+              {current.cardType === "image_occlusion" ? (
+                // Graceful fallback — image occlusion cards don't render on the
+                // phone in v1 (do NOT attempt image rendering). Still gradable:
+                // the student can recall-and-grade from memory, or skip to web.
+                <View testID="review-image-fallback">
+                  <Text style={promptStyles.body as object}>{current.front || "Image card"}</Text>
+                  <Text style={styles.imageFallbackNote}>Open on web for image cards.</Text>
+                </View>
+              ) : clozeSplit ? (
                 <>
                   {/* True in-place cloze reveal (Anki-style): ONE sentence — the
-                      blank marker swaps for the tested word where it sits. No
-                      divider, no separate answer block. */}
+                      blank marker swaps for the tested word where it sits. */}
                   <Text style={styles.clozeAnswer} testID={revealed ? "review-cloze-answer" : "review-cloze-blank"}>
                     {clozeSplit.before}
                     <Text style={styles.clozeHit}>{revealed ? clozeSplit.highlight : clozeSplit.blank}</Text>
                     {clozeSplit.after}
                   </Text>
-                  {revealed && current.note ? <Text style={styles.note}>{current.note}</Text> : null}
                 </>
               ) : (
                 <>
-                  <Markdown style={promptStyles}>{current.prompt}</Markdown>
+                  <Markdown style={promptStyles}>{current.front}</Markdown>
                   {revealed ? (
                     <View style={styles.answerBlock} testID="review-answer">
                       <View style={styles.divider} />
-                      <Markdown style={markdownStyles}>{current.answer}</Markdown>
-                      {current.note ? <Text style={styles.note}>{current.note}</Text> : null}
+                      <Markdown style={markdownStyles}>{current.back}</Markdown>
                     </View>
                   ) : null}
                 </>
@@ -211,11 +226,11 @@ export default function ReviewScreen() {
           </ScrollView>
 
           <View style={[styles.footer, { paddingBottom: insets.bottom + space(3) }]}>
+            {gradeError ? <Text style={styles.gradeErrorText} accessibilityRole="alert">{gradeError}</Text> : null}
             <View style={styles.counts} testID="review-counts">
               {[
-                { color: c.accent, label: "New", value: counts.fresh },
-                { color: c.warn, label: "Learn", value: counts.learning },
-                { color: c.good, label: "Review", value: counts.review },
+                { color: c.info, label: "New", value: remainingNew },
+                { color: c.accent, label: "Due", value: remainingDue },
               ].map((item) => (
                 <View key={item.label} style={styles.countItem}>
                   <Text style={[styles.countNum, { color: item.color }]}>{item.value}</Text>
@@ -229,8 +244,14 @@ export default function ReviewScreen() {
                   <Pressable
                     key={button.rating}
                     testID={`grade-${button.rating}`}
-                    onPress={() => grade(button.rating)}
-                    style={({ pressed }) => [styles.gradeBtn, { backgroundColor: button.fill }, pressed && styles.gradePressed]}
+                    disabled={grading}
+                    onPress={() => void grade(button.rating)}
+                    style={({ pressed }) => [
+                      styles.gradeBtn,
+                      { backgroundColor: button.fill },
+                      pressed && styles.gradePressed,
+                      grading && styles.gradeBtnDisabled,
+                    ]}
                   >
                     <Text style={styles.gradeText}>{button.label}</Text>
                   </Pressable>
@@ -254,8 +275,6 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: space(3),
       paddingBottom: space(2),
     },
-    backBtn: { paddingVertical: space(1) },
-    backText: { ...type.bodyStrong, color: c.text2 },
     backGlass: {
       width: 40,
       height: 40,
@@ -265,8 +284,7 @@ const createStyles = (c: ThemeColors) =>
       overflow: "hidden",
     },
     backChevron: { fontSize: 26, lineHeight: 28, color: c.text, marginTop: -2 },
-    // Anki-style New / Learning / Review tallies — three coloured numbers with a
-    // tiny label so it's legible without knowing Anki's colour code.
+    // New / Due tallies for what's LEFT in this session's queue.
     counts: { flexDirection: "row", gap: space(4), justifyContent: "center", marginBottom: space(3) },
     countItem: { alignItems: "center" },
     countNum: { ...type.bodyStrong, fontVariant: ["tabular-nums"], lineHeight: 20 },
@@ -276,23 +294,11 @@ const createStyles = (c: ThemeColors) =>
     cardBody: { paddingHorizontal: space(4), paddingTop: space(5), paddingBottom: space(6), flexGrow: 1 },
     // The reveal Pressable fills this whole (flexGrow: 1) content area, so a tap
     // anywhere in the blank space — not just on the text — flips the card. The
-    // content is TOP-anchored in both states (owner: it used to sit centered then
-    // jump to the top on reveal) — the prompt keeps the same Y, the answer just
-    // appends below it.
+    // content is TOP-anchored in both states — the prompt keeps the same Y, the
+    // answer just appends below it.
     cardPressable: { flexGrow: 1 },
-    newTag: {
-      ...type.micro,
-      color: c.accent,
-      borderColor: c.accentLine,
-      borderWidth: 1,
-      borderRadius: 6,
-      paddingHorizontal: space(1.5),
-      paddingVertical: 2,
-      overflow: "hidden",
-      alignSelf: "center",
-      marginBottom: space(3),
-    },
     answerBlock: { marginTop: space(2) },
+    imageFallbackNote: { ...type.small, color: c.text2, textAlign: "center", marginTop: space(3) },
     // Cloze sentence: same size/centering as the prompt markdown, one sentence
     // throughout. `clozeHit` does double duty — accent/bold on the blank
     // marker pre-reveal, then the same accent/bold treatment on the revealed
@@ -300,10 +306,7 @@ const createStyles = (c: ThemeColors) =>
     clozeAnswer: { ...type.body, color: c.text, fontSize: 20, lineHeight: 29, textAlign: "center" },
     clozeHit: { color: c.accent, fontWeight: "700" },
     divider: { height: 1, backgroundColor: c.line2, marginVertical: space(4) },
-    note: { ...type.small, color: c.text2, marginTop: space(3), fontStyle: "italic" },
-    // Subtle nudge shown only pre-reveal, under the prompt/cloze sentence —
-    // replaces the old "Show answer" button now that the card itself is tappable.
-    hint: { ...type.small, color: c.text3, textAlign: "center", marginTop: space(4) },
+    gradeErrorText: { ...type.small, color: c.accent, textAlign: "center", marginBottom: space(2) },
     // No top divider (owner call) — the footer floats over the card on the same background.
     footer: { paddingHorizontal: space(4), paddingTop: space(2), backgroundColor: c.bg },
     gradeRow: { flexDirection: "row", gap: space(2) },
@@ -314,5 +317,6 @@ const createStyles = (c: ThemeColors) =>
       alignItems: "center",
     },
     gradePressed: { opacity: 0.7 },
+    gradeBtnDisabled: { opacity: 0.5 },
     gradeText: { ...type.bodyStrong, color: "#fff" },
   });

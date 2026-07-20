@@ -3,14 +3,14 @@ import * as Device from "expo-device";
 import { router } from "expo-router";
 import { supabase } from "@/api/supabase";
 
-// Push registration + routing for the missions feature (Task 9). Expo's push service
-// needs no server secret — the device token itself is the capability, so the desktop
-// dispatcher (a later phase) can send a push straight from Node with nothing but the
-// token the phone uploads here. Registration is entirely best-effort: a denied
-// permission or a failed upsert must never block sign-in or app usage.
+// Push registration + routing. Expo's push service needs no server secret — the
+// device token itself is the capability, so a future server-side sender can push
+// straight from Node with nothing but the token the phone uploads here.
+// Registration is entirely best-effort: a denied permission or a failed upsert
+// must never block sign-in or app usage.
 
 // Foreground handler: show the banner even while the app is open, no sound/badge —
-// missions are a quiet background task, not an urgent alert.
+// a quiet notification, not an urgent alert.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -23,8 +23,8 @@ Notifications.setNotificationHandler({
 /** Request permission (soft-fail if denied) and upsert this device's Expo push
  * token into `devices`. Call after a session exists (AuthProvider). Push tokens
  * don't work in the simulator or Expo Go — real verification is a physical-device
- * step (plan Task 10), out of scope here; this function still runs safely there,
- * it just returns early via `Device.isDevice`. */
+ * step, out of scope here; this function still runs safely there, it just
+ * returns early via `Device.isDevice`. */
 export async function registerForPush(): Promise<void> {
   try {
     if (!Device.isDevice) return;
@@ -53,13 +53,15 @@ export async function registerForPush(): Promise<void> {
   }
 }
 
-/** Route a notification tap to the mission it's about. Wired once at app root
- * (root _layout.tsx), independent of auth state, so a tap always navigates —
- * the destination screen handles its own guest/no-session affordance. */
+/** Route a notification tap to the app's home. Cloud-first phone (owner call
+ * 2026-07-20): Mac-dispatch missions — and the mission detail screen a push used
+ * to deep-link into — are retired (docs/design/nemesis-cloud-first-phone-2026-07.md
+ * §10), so every notification tap now just opens home; home itself redirects to
+ * /chat. Wired once at app root (root _layout.tsx), independent of auth state, so
+ * a tap always navigates somewhere useful. */
 export function setupPushResponseRouting(): () => void {
-  const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-    const missionId = response.notification.request.content.data?.missionId;
-    if (typeof missionId === "string") router.push(`/mission/${missionId}` as never);
+  const sub = Notifications.addNotificationResponseReceivedListener(() => {
+    router.push("/" as never);
   });
   return () => sub.remove();
 }

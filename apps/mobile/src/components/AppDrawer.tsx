@@ -5,7 +5,6 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
-import { listMissions, type Mission, type MissionStatus } from "@/api/missions";
 import { listThreads, newThreadId } from "@/api/chat";
 import type { ThreadSummary } from "@/lib/chat-threads";
 import Svg, { Path } from "react-native-svg";
@@ -22,9 +21,12 @@ import { radius, shadow, space, type } from "@/theme/tokens";
 //
 // The drawer IS the desktop sidebar on the phone: a compact nav (Chat · Study ·
 // Library · Graph · Calendar), then the live CHATS history (owner: "chats should
-// save to the sidebar") — each conversation persisted as its own thread — with the
-// agent SESSIONS below it, then a solid "New chat" button and a settings gear.
-// Tapping a chat reopens it (via the /chat?c=<id> route param).
+// save to the sidebar") — each conversation persisted as its own thread — then a
+// solid "New chat" button and a settings gear. Tapping a chat reopens it (via the
+// /chat?c=<id> route param). Mac-dispatch "sessions" (the missions feature) are
+// removed from the phone entirely (owner call 2026-07-20; see
+// docs/design/nemesis-cloud-first-phone-2026-07.md §10) — this drawer no longer
+// lists them.
 //
 // Owner call 2026-07-18: the drawer opens on a rightward swipe from ANYWHERE (plus
 // tapping TopBar's menu button); on /graph and /calendar — which own their own
@@ -46,10 +48,6 @@ interface ShellState {
   open: boolean;
   openDrawer: () => void;
   closeDrawer: () => void;
-  /** Bumped by newSession(); the missions home focuses its composer when it changes. */
-  resetNonce: number;
-  /** Start a fresh agent session on the missions home (clear + focus its composer). */
-  newSession: () => void;
   /** Open a brand-new chat thread (navigates to /chat with a fresh thread id). */
   newChat: () => void;
   /** The TopBar's center label: null → blank (owner call 2026-07-18, no logo/wordmark chrome); a string → that title. */
@@ -72,12 +70,10 @@ export function useShell(): ShellState {
 
 export function DrawerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const [resetNonce, setResetNonce] = useState(0);
   const [headerTitle, setHeaderTitle] = useState<string | null>(null);
   const [headerRight, setHeaderRight] = useState<ReactNode>(null);
   const openDrawer = useCallback(() => setOpen(true), []);
   const closeDrawer = useCallback(() => setOpen(false), []);
-  const newSession = useCallback(() => setResetNonce((n) => n + 1), []);
   // A fresh chat is a new thread id in the route param; the chat screen loads it
   // (empty) and persists it on the first send, so it shows up in this drawer.
   const newChat = useCallback(() => {
@@ -85,8 +81,8 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<ShellState>(
-    () => ({ open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle, setHeaderTitle, headerRight, setHeaderRight }),
-    [open, openDrawer, closeDrawer, resetNonce, newSession, newChat, headerTitle, headerRight],
+    () => ({ open, openDrawer, closeDrawer, newChat, headerTitle, setHeaderTitle, headerRight, setHeaderRight }),
+    [open, openDrawer, closeDrawer, newChat, headerTitle, headerRight],
   );
 
   return (
@@ -215,14 +211,6 @@ function relTime(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function statusColor(status: MissionStatus, c: ThemeColors): string {
-  if (status === "needs_review") return c.accent;
-  if (status === "failed") return c.danger;
-  if (status === "running" || status === "claimed") return c.info;
-  if (status === "done") return c.good;
-  return c.text3; // queued, cancelled
-}
-
 function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: () => void; onNewChat: () => void }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -230,16 +218,14 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
   const { session } = useAuth();
   const uid = session?.user?.id ?? null;
   const [chats, setChats] = useState<ThreadSummary[]>([]);
-  const [sessions, setSessions] = useState<Mission[]>([]);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // Refresh chats + sessions each time the drawer opens (cheap; keeps it current).
+  // Refresh chats each time the drawer opens (cheap; keeps it current).
   useEffect(() => {
     if (!open || !uid) return;
     let alive = true;
     void listThreads(uid).then((rows) => alive && setChats(rows)).catch(() => {});
-    void listMissions().then((rows) => alive && setSessions(rows)).catch(() => {});
     return () => {
       alive = false;
     };
@@ -313,23 +299,6 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
           ))
         )}
 
-        {sessions.length > 0 ? (
-          <>
-            <Text style={styles.sectionLabel}>Sessions</Text>
-            {sessions.map((mission) => (
-              <Pressable
-                key={mission.id}
-                testID={`drawer-session-${mission.id}`}
-                style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-                onPress={() => go(`/mission/${mission.id}`)}
-              >
-                <View style={[styles.statusDot, { backgroundColor: statusColor(mission.status, c) }]} />
-                <Text style={styles.rowTitle} numberOfLines={1}>{mission.title}</Text>
-                <Text style={styles.rowTime}>{relTime(mission.updated_at || mission.created_at)}</Text>
-              </Pressable>
-            ))}
-          </>
-        ) : null}
       </ScrollView>
 
       {/* Footer: a single bottom row — a SOLID "New chat" button lower-left, gear-only
@@ -448,13 +417,12 @@ const createStyles = (c: ThemeColors) =>
 
     sectionLabel: { color: c.text2, fontSize: 13, fontWeight: "700", paddingHorizontal: space(4), marginTop: space(3), marginBottom: space(1.5) },
 
-    // Chat + session rows share one compact row style.
+    // Chat rows share one compact row style.
     row: {
       flexDirection: "row", alignItems: "center", gap: space(2.5),
       paddingVertical: space(2.25), paddingHorizontal: space(3.5), marginHorizontal: space(2), borderRadius: radius.md,
     },
     rowPressed: { backgroundColor: c.surface },
-    statusDot: { width: 6, height: 6, borderRadius: 3 },
     rowTitle: { flex: 1, color: c.text2, fontSize: 14.5, minWidth: 0 },
     rowTime: { color: c.text3, fontSize: 11, fontVariant: ["tabular-nums"] },
     emptyRows: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },

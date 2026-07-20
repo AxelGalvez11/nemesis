@@ -1,17 +1,18 @@
 import type { ComponentType } from "react";
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import Svg, { Path } from "react-native-svg";
 import { router } from "expo-router";
 import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import {
-  CalendarIcon,
   CloseIcon,
   FileIcon,
   type IconProps,
   LifeRingIcon,
   LogoutIcon,
   MailIcon,
+  SettingsIcon,
   SparkleIcon,
   ThemeIcon,
   TrashIcon,
@@ -19,6 +20,35 @@ import {
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space } from "@/theme/tokens";
+
+// Notifications/Usage need glyphs the shared icon set doesn't have yet. Kept
+// local to this file (not added to components/icons.tsx) to stay inside this
+// task's owned-files boundary during the cloud-first-phone build — several
+// other agents are editing the mobile tree concurrently. Same hand-drawn
+// language as icons.tsx: thin round strokes, color from the caller.
+const iconBase = { fill: "none", strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+
+function BellIcon({ size = 19, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M12 4.2c-3 0-5.3 2.4-5.3 5.7v2.9l-1.4 2.4a.55.55 0 0 0 .47.83h12.46a.55.55 0 0 0 .47-.83l-1.4-2.4v-2.9c0-3.3-2.3-5.7-5.3-5.7Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        {...iconBase}
+      />
+      <Path d="M9.7 18.4a2.3 2.3 0 0 0 4.6 0" stroke={color} strokeWidth={strokeWidth} {...iconBase} />
+    </Svg>
+  );
+}
+
+function PulseIcon({ size = 19, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M3 12.5h3.4l1.8-5.3 3 10.1 2.2-8 1.6 3.2h5" stroke={color} strokeWidth={strokeWidth} {...iconBase} />
+    </Svg>
+  );
+}
 
 // Settings — presented as a bottom-sheet MODAL (owner call 2026-07-17, matching
 // the ChatGPT iOS app: it slides up from the bottom via the root Stack's
@@ -91,8 +121,10 @@ export default function SettingsScreen() {
 
         <SectionLabel styles={styles}>Preferences</SectionLabel>
         <Card styles={styles}>
-          <SettingRow styles={styles} icon={ThemeIcon} label="Appearance" value={modeLabel} chevron testID="nav-appearance" onPress={() => router.push("/profile/appearance")} />
-          <SettingRow styles={styles} icon={CalendarIcon} label="Calendar sync" chevron last testID="nav-calendar-sync" onPress={() => router.push("/profile/calendar")} />
+          <SettingRow styles={styles} icon={SettingsIcon} label="General" chevron testID="nav-general" onPress={() => router.push("/profile/general")} />
+          <SettingRow styles={styles} icon={BellIcon} label="Notifications" chevron testID="nav-notifications" onPress={() => router.push("/profile/notifications")} />
+          <SettingRow styles={styles} icon={PulseIcon} label="Usage" chevron testID="nav-usage" onPress={() => router.push("/profile/usage")} />
+          <SettingRow styles={styles} icon={ThemeIcon} label="Appearance" value={modeLabel} chevron last testID="nav-appearance" onPress={() => router.push("/profile/appearance")} />
         </Card>
 
         <SectionLabel styles={styles}>Legal</SectionLabel>

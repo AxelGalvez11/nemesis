@@ -1,10 +1,10 @@
-// Pure logic for phone library sync (Phase 1): pairing-code parsing, ciphertext-row
-// merging, and folder grouping. Deliberately dependency-free — no supabase client, no
-// react-native, no crypto imports — so library-sync.test.ts loads clean under Deno
-// (CI runs `deno test --no-check --allow-env apps/mobile/src/`), the same split as
-// missions-helpers.ts. Decryption lives in library-crypto.ts, which is NOT Deno-tested;
-// its byte-level interop with the Mac publisher is proven by a desktop-repo test.
-// Wire format: docs/design/nemesis-phone-sync-format-v1.md.
+// Pure logic for the phone library list: path parsing, row merging, and folder grouping.
+// Survives the cloud-first pivot because it never knew about pairing or crypto — it's
+// deliberately dependency-free (no supabase client, no react-native) so
+// library-sync.test.ts loads clean under Deno (CI runs
+// `deno test --no-check --allow-env apps/mobile/src/`). Today its rows come from
+// api/cloudLibrary.ts (public.readable_library_documents); the old E2EE vault mirror
+// and its pairing/crypto modules were removed in the cloud-first-phone pass.
 
 export const PAIRING_PREFIX = "nemsync1.";
 const VAULT_KEY_BYTES = 32;

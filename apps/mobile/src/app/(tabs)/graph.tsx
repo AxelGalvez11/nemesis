@@ -4,7 +4,8 @@ import { router, useFocusEffect } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import Svg, { Line } from "react-native-svg";
-import { decryptLibrary, loadCachedRows, loadVaultKey, pullLibraryRows } from "@/api/librarySync";
+import { useAuth } from "@/auth/AuthProvider";
+import { fetchLibrary, loadCachedLibrary, type CloudLibraryNote } from "@/api/cloudLibrary";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { ForceSlider } from "@/components/ForceSlider";
 import { GlassSurface } from "@/components/GlassSurface";
@@ -17,12 +18,15 @@ import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import type { ThemeColors } from "@/theme/palette";
 import { radius, space, type } from "@/theme/tokens";
 
-// Graph — the phone's twin of the desktop Graph page, rebuilt for read-only sync.
-// Nodes are the synced library notes; an edge is a [[wikilink]] mention between two
-// of them. Everything renders from the local cache (offline-friendly, zero tokens):
-// decrypt → buildNoteGraph → animated force layout → an SVG for edges with real
-// Views layered on top for nodes. The desktop's 3D scene stays a desktop luxury — a
-// 2D constellation is the right weight for a phone.
+// Graph (cloud-first pivot, docs/design/nemesis-cloud-first-phone-2026-07.md §7) —
+// the phone's twin of the web app's Graph page. Nodes are your account's library
+// notes; an edge is a [[wikilink]] mention between two of them. Renders from the
+// local disk cache first (offline-friendly, instant), refreshed from the cloud on
+// every focus: cloudLibrary.ts → buildNoteGraph (note-graph.ts, fed cloud id/path/
+// title/content in place of the old sync pipe's pathHash/path/title/content — same
+// shape, so buildNoteGraph itself needed no changes) → animated force layout → an
+// SVG for edges with real Views layered on top for nodes. The desktop's 3D scene
+// stays a desktop luxury — a 2D constellation is the right weight for a phone.
 //
 // The layout ANIMATES: createLayoutSim (note-graph.ts) seeds a jittered spiral,
 // then a setInterval here ticks it toward settled, pushing each frame's positions
@@ -68,7 +72,16 @@ const STEPS_PER_TICK = 3;
 const MIN_SCALE = 0.4;
 const MAX_SCALE = 3;
 
-type Status = "loading" | "unpaired" | "empty" | "ready";
+type Status = "loading" | "signin" | "empty" | "ready";
+
+/** Stable per-note signature (id + updated_at, order-independent) — lets a
+ * background refresh tell "nothing actually changed" apart from "the library
+ * changed", so a same-data refresh never reseeds the running layout sim (a
+ * fresh buildNoteGraph() result is a new object every call, and the seeding
+ * effect below reseeds whenever `builtGraph` changes identity). */
+function librarySignature(notes: readonly CloudLibraryNote[]): string {
+  return notes.map((n) => `${n.id}:${n.updatedAt}`).sort().join("|");
+}
 
 // Which node labels the settings panel's Labels toggle shows. "hubs" is the
 // default and reproduces the screen's original always-on behavior exactly —
@@ -95,10 +108,13 @@ export default function GraphScreen() {
   const { colors: c } = useTheme();
   const { contentTop, contentBottom } = useShellPadding();
   const { setHeaderRight } = useShell();
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
   const win = useWindowDimensions();
   const [status, setStatus] = useState<Status>("loading");
   const [builtGraph, setBuiltGraph] = useState<NoteGraph | null>(null);
   const [graph, setGraph] = useState<NoteGraph | null>(null);
+  const [emptyRefreshing, setEmptyRefreshing] = useState(false);
   const [gravity, setGravity] = useState(1);
   const [repulsion, setRepulsion] = useState(1);
   const [nodeSize, setNodeSize] = useState(1);
@@ -113,6 +129,10 @@ export default function GraphScreen() {
 
   const simRef = useRef<LayoutSim | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Last signature (see librarySignature) a graph was actually built from — lets
+  // applyNotes below skip rebuilding (and thus reseeding the layout) when a
+  // background refresh confirms nothing changed.
+  const lastSignatureRef = useRef<string>("");
   // The seeding effect below reads this once per (re)seed instead of depending
   // on gravity/repulsion/linkDistance state directly — depending on them would
   // reseed the spiral (and jump every node's position) on every slider drag.
@@ -229,8 +249,8 @@ export default function GraphScreen() {
     setReseedNonce((n) => n + 1);
   }, []);
 
-  const openNote = useCallback((pathHash: string) => {
-    router.push({ params: { ph: pathHash }, pathname: "/note" });
+  const openNote = useCallback((id: string) => {
+    router.push({ params: { id }, pathname: "/note" });
   }, []);
 
   // A node drag brackets the sim's active-drag state (note-graph.ts's
@@ -270,44 +290,75 @@ export default function GraphScreen() {
     setGraph(sim.snapshot());
   }, [ensureTicking]);
 
+  // Apply a fresh notes list: rebuilds the graph (and reseeds the layout — see the
+  // seeding effect below) only when librarySignature actually changed, so a
+  // background refresh that confirms nothing changed never disturbs the running
+  // simulation, pan/zoom, or any pinned node. Empty clears everything (a real
+  // "no notes" state, not an error).
+  const applyNotes = useCallback((notes: readonly CloudLibraryNote[]) => {
+    if (notes.length === 0) {
+      lastSignatureRef.current = "";
+      setStatus("empty");
+      setBuiltGraph(null);
+      setGraph(null);
+      return;
+    }
+    const signature = librarySignature(notes);
+    if (signature !== lastSignatureRef.current) {
+      lastSignatureRef.current = signature;
+      setBuiltGraph(
+        buildNoteGraph(notes.map((n) => ({ content: n.content, path: n.path, pathHash: n.id, title: n.title }))),
+      );
+    }
+    setStatus("ready");
+  }, []);
+
+  // Cache first (instant, offline-friendly), then a cloud refresh behind it — same
+  // "refresh on focus" policy as the Library tab. A refresh failure (offline) just
+  // keeps whatever the cache already produced; only a genuinely empty cache AND a
+  // failed refresh falls through to the empty state.
   useFocusEffect(
     useCallback(() => {
       let alive = true;
+      if (!userId) {
+        setStatus("signin");
+        return () => {
+          alive = false;
+        };
+      }
       void (async () => {
-        const key = await loadVaultKey();
+        const cached = await loadCachedLibrary(userId);
         if (!alive) return;
-        if (!key) {
-          setStatus("unpaired");
-          return;
+        if (cached.notes.length > 0) applyNotes(cached.notes);
+        try {
+          const fresh = await fetchLibrary(userId);
+          if (!alive) return;
+          applyNotes(fresh.notes);
+        } catch {
+          if (cached.notes.length === 0) setStatus("empty");
         }
-        let cache = await loadCachedRows();
-        if (Object.keys(cache).length === 0) {
-          // First visit before the Library tab ever pulled: try one network pull,
-          // but stay graceful offline — an empty graph is a state, not an error.
-          try {
-            cache = await pullLibraryRows(cache);
-          } catch {
-            // offline: render from whatever the cache holds
-          }
-        }
-        if (!alive) return;
-        const notes = decryptLibrary(cache, key)
-          .docs.filter((d) => d.kind === "note")
-          .map((d) => ({ content: d.content, path: d.path, pathHash: d.pathHash, title: d.title }));
-        if (notes.length === 0) {
-          setStatus("empty");
-          setBuiltGraph(null);
-          setGraph(null);
-          return;
-        }
-        setBuiltGraph(buildNoteGraph(notes));
-        setStatus("ready");
       })();
       return () => {
         alive = false;
       };
-    }, []),
+    }, [userId, applyNotes]),
   );
+
+  // Manual "Refresh" affordance in the empty state (§7): a background focus-refresh
+  // already ran above and came back empty, so this gives the student an explicit
+  // way to re-check the cloud after creating a note on the web app.
+  const runManualRefresh = useCallback(async () => {
+    if (!userId) return;
+    setEmptyRefreshing(true);
+    try {
+      const fresh = await fetchLibrary(userId);
+      applyNotes(fresh.notes);
+    } catch {
+      // stays on the empty state — nothing else to do here
+    } finally {
+      setEmptyRefreshing(false);
+    }
+  }, [userId, applyNotes]);
 
   // (Re)seeds the simulation whenever the note data or canvas size changes —
   // NOT when gravity/repulsion change; those mutate the already-running sim in
@@ -443,22 +494,25 @@ export default function GraphScreen() {
         <View style={[styles.centered, { paddingTop: contentTop, paddingBottom: contentBottom }]} testID="graph-loading">
           <ActivityIndicator color={c.text2} />
         </View>
-      ) : status === "unpaired" ? (
-        <View style={[styles.centered, { paddingTop: contentTop, paddingBottom: contentBottom }]}>
+      ) : status === "signin" ? (
+        <View style={[styles.centered, { paddingTop: contentTop, paddingBottom: contentBottom }]} testID="graph-signin">
           <EmptyBlock
-            title="Pair with your Mac"
-            body="The graph is drawn from your synced library. Pair this phone and your notes — and the links between them — appear here."
+            title="Sign in to see your graph"
+            body="The graph is drawn from your account's library. Sign in and the connections between your notes appear here."
           />
           <View style={styles.pairBtn}>
-            <MissionButton label="Pair with your Mac" variant="primary" onPress={() => router.push("/pair")} />
+            <MissionButton label="Sign in" variant="primary" testID="graph-goto-signin" onPress={() => router.push("/sign-in")} />
           </View>
         </View>
       ) : status === "empty" ? (
-        <View style={[styles.centered, { paddingTop: contentTop, paddingBottom: contentBottom }]}>
+        <View style={[styles.centered, { paddingTop: contentTop, paddingBottom: contentBottom }]} testID="graph-empty">
           <EmptyBlock
-            title="No notes to map yet"
-            body="As Nemesis writes notes into your library on the Mac, the connections between them draw themselves here."
+            title="Nothing here yet"
+            body="Your library lives in your account. Create notes on the web app and they appear here."
           />
+          <View style={styles.pairBtn}>
+            <MissionButton label="Refresh" busy={emptyRefreshing} testID="graph-empty-refresh" onPress={() => void runManualRefresh()} />
+          </View>
         </View>
       ) : graph ? (
         <View
