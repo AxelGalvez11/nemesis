@@ -32,6 +32,29 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/** localStorage prefixes that hold per-account data. Swept on sign-out so a shared
+ *  browser never hands one student's cached chats, calendar, or LLM device key to
+ *  the next person who signs in. Migration flags are intentionally NOT swept —
+ *  they record that the pre-cloud legacy blob was already claimed and deleted. */
+const ACCOUNT_LOCAL_PREFIXES = [
+  "nemesis.web.sessions.v1",
+  "nemesis.web.calendar.v1",
+  "nemesis_device_key_v1_",
+];
+
+function sweepAccountLocalData(): void {
+  try {
+    for (let i = window.localStorage.length - 1; i >= 0; i--) {
+      const key = window.localStorage.key(i);
+      if (key && ACCOUNT_LOCAL_PREFIXES.some((p) => key.startsWith(p))) {
+        window.localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // Storage unavailable (private mode/quota) — nothing cached there to sweep.
+  }
+}
+
 const previewSession = {
   access_token: "preview-access-token",
   token_type: "bearer",
@@ -83,7 +106,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
       if (next?.user) phIdentify(next.user.id, { email: next.user.email });
-      else if (event === "SIGNED_OUT") phReset();
+      else if (event === "SIGNED_OUT") {
+        phReset();
+        sweepAccountLocalData();
+      }
       setLoading(false);
     });
     return () => {

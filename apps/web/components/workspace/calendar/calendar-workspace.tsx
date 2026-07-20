@@ -1,12 +1,16 @@
 "use client";
 
-// Calendar — verbatim from desktop calendar/index.tsx §A.4–A.13. Fully
-// functional: localStorage-backed (see lib/workspace/calendar-model.ts), four
-// view modes (Day/Week/Month/Year) plus an always-present Agenda rail. View
-// mode persists to localStorage["nemesis.calendar.view"].
+// Calendar — verbatim from desktop calendar/index.tsx §A.4–A.13, since cloud-
+// first phone (2026-07-20 §5) now backed by `calendar_events` cloud rows, with
+// localStorage as an offline/warm cache (see lib/workspace/calendar-model.ts).
+// Four view modes (Day/Week/Month/Year) plus an always-present Agenda rail.
+// View mode persists to localStorage["nemesis.calendar.view"] (unrelated to
+// the event data itself, still local-only by design).
 
 import { useEffect, useMemo, useState } from "react";
 
+import { useAuth } from "@/components/AuthProvider";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import {
   addDays,
   addMonths,
@@ -14,10 +18,11 @@ import {
   addYears,
   type CalendarEvent,
   dayEvents,
+  deleteCalendarEvent,
   eventsByDate,
-  loadCalendarState,
+  loadCalendarEvents,
   monthGrid,
-  saveCalendarEvents,
+  saveCalendarEvent,
   upcomingEvents,
   weekGrid,
 } from "@/lib/workspace/calendar-model";
@@ -44,6 +49,9 @@ function loadStoredView(): CalendarViewMode {
 }
 
 export function CalendarWorkspace() {
+  const { session } = useAuth();
+  const preview = useWorkspacePreview() !== null;
+  const userId = session?.user.id ?? null;
   const today = useMemo(() => new Date(), []);
   const [mounted, setMounted] = useState(false);
   const [view, setView] = useState<CalendarViewMode>("month");
@@ -63,11 +71,14 @@ export function CalendarWorkspace() {
     window.localStorage.setItem(CALENDAR_VIEW_STORAGE_KEY, view);
   }, [mounted, view]);
 
-  // Events: async-shaped load (mirrors the desktop IPC signature) drives the
-  // Agenda's "Loading…" state until the first read completes.
+  // Events: cloud-aware load (preview/signed-out stay pure-local — see
+  // calendar-model.ts) drives the Agenda's "Loading…" state until the first
+  // read completes. Re-runs if the session resolves after mount (userId flips
+  // from null to a real id) or preview status changes.
   useEffect(() => {
     let cancelled = false;
-    loadCalendarState().then((state) => {
+    setLoaded(false);
+    loadCalendarEvents({ userId, preview }).then((state) => {
       if (cancelled) return;
       setEvents(state.events);
       setLoaded(true);
@@ -75,7 +86,7 @@ export function CalendarWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId, preview]);
 
   const byDate = useMemo(() => eventsByDate(events), [events]);
   const upcoming = useMemo(() => upcomingEvents(events, today, AGENDA_WINDOW_DAYS), [events, today]);
@@ -104,20 +115,17 @@ export function CalendarWorkspace() {
     setView("month");
   }
 
-  // Always writes through the model's agent/manual merge rule — see
-  // lib/workspace/calendar-model.ts saveCalendarEvents.
-  async function persist(nextLocalEvents: CalendarEvent[]) {
-    const state = await saveCalendarEvents(nextLocalEvents);
-    setEvents(state.events);
-  }
-
+  // Per-event cloud write (see lib/workspace/calendar-model.ts) — errors
+  // propagate to EventFormDialog's own try/catch, which shows them inline.
   async function handleSave(saved: CalendarEvent) {
-    await persist([...events.filter((e) => e.id !== saved.id), saved]);
+    const stored = await saveCalendarEvent(saved, { userId, preview });
+    setEvents((prev) => [...prev.filter((e) => e.id !== stored.id), stored]);
     setDialog(null);
   }
 
   async function handleDelete(id: string) {
-    await persist(events.filter((e) => e.id !== id));
+    await deleteCalendarEvent(id, { userId, preview });
+    setEvents((prev) => prev.filter((e) => e.id !== id));
     setDialog(null);
   }
 

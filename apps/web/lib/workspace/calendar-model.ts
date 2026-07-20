@@ -1,12 +1,18 @@
 // Calendar data model — verbatim port of desktop apps/desktop/src/app/calendar/model.ts
-// (types, date math, grid builders, sanitize, agent/manual merge rule) with the
-// storage layer swapped from the Electron `window.hermesDesktop` file-IPC bridge
-// to localStorage. Same CalendarState JSON shape either way.
+// (types, date math, grid builders, sanitize) with the storage layer taken one step
+// further: Electron file-IPC → localStorage (desktop-parity) → `calendar_events`
+// cloud rows, one row per event (cloud-first phone spec §5). localStorage stays as
+// an offline/warm cache — refreshed after every successful cloud read, and the
+// ONLY source of truth in preview mode / while signed out (no Supabase calls
+// there, matching sessions-store.ts and study-cloud-store.ts).
 //
-// The merge rule in saveCalendarEvents is the actual point of the feature: agent
-// (Nemesis-authored) events are always re-read fresh from the store, never taken
-// from the in-memory `localEvents` the UI passes in, so a manual save can never
-// clobber a concurrent agent write. Preserved intact across the port.
+// The old whole-file "agent vs manual merge on save" rule is gone: per-event rows
+// mean a manual save only ever touches its own row, so a concurrent agent write to
+// a DIFFERENT row is never at risk. Agent-authored events (source: 'agent') stay
+// read-only in the UI — calendar-workspace.tsx only ever routes them to the
+// read-only view dialog, never to saveCalendarEvent/deleteCalendarEvent.
+
+import { supabase } from "@/lib/supabase";
 
 export type CalendarEventKind = "assignment" | "exam" | "rotation" | "class" | "other";
 
@@ -27,7 +33,37 @@ export interface CalendarState {
   events: CalendarEvent[];
 }
 
+/** Context the caller (calendar-workspace.tsx) already has on hand from
+ *  useAuth()/useWorkspacePreview() — this module needs no auth imports of its
+ *  own beyond the Supabase client itself. */
+export interface CalendarCloudCtx {
+  userId: string | null;
+  /** Dev-preview harness: pure-local behavior, no network calls (matches every
+   *  other cloud store in the workspace). */
+  preview: boolean;
+}
+
+// Legacy/preview key: unscoped by design. Preview mode keeps using it exactly
+// as before (a single synthetic dev-preview session, no cross-account risk).
+// It's ALSO where the one-time migration reads pre-cloud calendar data from —
+// see migrateLocalCalendarToCloud below for why that key must be unscoped too.
 export const CALENDAR_STORAGE_KEY = "nemesis.web.calendar.v1";
+// Single GLOBAL flag — deliberately NOT per-uid. The legacy key above is
+// itself global (pre-cloud calendar predates the idea of "whose" browser
+// cache this is), so only the FIRST signed-in account on a given browser may
+// ever claim it; migrateLocalCalendarToCloud deletes the legacy key the
+// moment it's claimed, so no later account on the same device can read
+// (or re-upload) another account's data. A per-uid flag would have left the
+// legacy key sitting there for every subsequent sign-in to also claim.
+const CALENDAR_CLOUD_MIGRATED_KEY = "nemesis.web.calendar.cloudmigrated.v1";
+const CALENDAR_EVENT_COLUMNS = "id,title,date,time,kind,course,note,source";
+
+/** The ONGOING per-account warm-cache key — every signed-in user's cache
+ *  lives at its own key, so switching accounts on the same browser can never
+ *  read (or migrate) a different account's cached events. */
+function calendarCacheKey(userId: string): string {
+  return `${CALENDAR_STORAGE_KEY}:${userId}`;
+}
 
 const VALID_KINDS: readonly CalendarEventKind[] = ["assignment", "exam", "rotation", "class", "other"];
 
@@ -59,39 +95,134 @@ function parseCalendarEvents(text: string): CalendarEvent[] {
   }
 }
 
-/** Web replacement for the Electron `readFileText(CALENDAR_FILE)` IPC call. */
-export async function loadCalendarState(): Promise<CalendarState> {
+/** Keyed localStorage read — the same underlying storage serves three
+ *  distinct scopes (see callers): the legacy/preview key, and each signed-in
+ *  account's own per-uid warm-cache key. */
+async function readLocalCalendarState(key: string): Promise<CalendarState> {
   if (typeof window === "undefined") return { events: [] };
   try {
-    const raw = window.localStorage.getItem(CALENDAR_STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     return { events: parseCalendarEvents(raw ?? "") };
   } catch {
     return { events: [] };
   }
 }
 
-/** Web replacement for the Electron `writeTextFile(CALENDAR_FILE, ...)` IPC call. */
-function writeCalendarState(state: CalendarState): void {
+function writeLocalCalendarState(key: string, state: CalendarState): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(CALENDAR_STORAGE_KEY, JSON.stringify({ events: state.events }, null, 2));
+    window.localStorage.setItem(key, JSON.stringify({ events: state.events }, null, 2));
   } catch {
     // Quota/private mode — the in-memory copy stays authoritative for the tab.
   }
 }
 
-/**
- * Saves the caller's local (manual + whatever agent events it happened to have
- * in memory) event list, but re-reads agent events fresh from storage first so
- * a manual edit can never overwrite an agent write that landed concurrently.
- */
-export async function saveCalendarEvents(localEvents: CalendarEvent[]): Promise<CalendarState> {
-  const disk = await loadCalendarState();
-  const agentEvents = disk.events.filter((event) => event.source === "agent");
-  const manualEvents = localEvents.filter((event) => event.source !== "agent");
-  const next: CalendarState = { events: [...agentEvents, ...manualEvents] };
-  writeCalendarState(next);
-  return next;
+function toCloudRow(event: CalendarEvent, userId: string, source: "agent" | "manual") {
+  return {
+    id: event.id,
+    user_id: userId,
+    title: event.title,
+    date: event.date,
+    time: event.time ?? null,
+    kind: event.kind,
+    course: event.course ?? null,
+    note: event.note ?? null,
+    source,
+  };
+}
+
+/** One-time upload of whatever was sitting in the legacy unscoped key before
+ *  this browser had a cloud calendar — GLOBALLY flagged so only the FIRST
+ *  signed-in account on this browser ever claims it. The legacy key is
+ *  deleted the moment it's claimed (empty or not), so no later sign-in on the
+ *  same device/browser can read, let alone re-upload, another account's data.
+ *  Best-effort: a failed upload leaves BOTH the flag and the legacy key alone
+ *  so the next load simply retries (the upsert is idempotent on id); it never
+ *  blocks or fails the read that wraps it. */
+async function migrateLocalCalendarToCloud(userId: string): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    if (window.localStorage.getItem(CALENDAR_CLOUD_MIGRATED_KEY) === "1") return;
+  } catch {
+    return;
+  }
+  const legacy = await readLocalCalendarState(CALENDAR_STORAGE_KEY);
+  if (legacy.events.length > 0) {
+    const rows = legacy.events.map((event) => toCloudRow(event, userId, event.source === "agent" ? "agent" : "manual"));
+    const { error } = await supabase.from("calendar_events").upsert(rows, { onConflict: "id" });
+    if (error) return;
+  }
+  try {
+    window.localStorage.removeItem(CALENDAR_STORAGE_KEY);
+    window.localStorage.setItem(CALENDAR_CLOUD_MIGRATED_KEY, "1");
+  } catch {
+    // Private mode — migration retries every load; harmless since upsert is idempotent.
+  }
+}
+
+/** Cloud-aware load: preview + signed-out stay pure-local, reading the shared
+ *  legacy/preview key (see readLocalCalendarState). Signed-in reads
+ *  `calendar_events`, refreshing THIS account's own per-uid warm-cache key on
+ *  success; a network failure (offline) falls back to that same per-uid cache
+ *  so the calendar still renders — never the legacy/preview key. */
+export async function loadCalendarEvents(ctx: CalendarCloudCtx): Promise<CalendarState> {
+  if (ctx.preview || !ctx.userId) return readLocalCalendarState(CALENDAR_STORAGE_KEY);
+  const userId = ctx.userId;
+  await migrateLocalCalendarToCloud(userId);
+  const cacheKey = calendarCacheKey(userId);
+  try {
+    const { data, error } = await supabase
+      .from("calendar_events")
+      .select(CALENDAR_EVENT_COLUMNS)
+      .eq("user_id", userId)
+      .order("date", { ascending: true });
+    if (error) throw new Error(error.message);
+    const events = (data ?? []).flatMap((row) => {
+      const event = sanitizeEvent(row);
+      return event ? [event] : [];
+    });
+    const state: CalendarState = { events };
+    writeLocalCalendarState(cacheKey, state);
+    return state;
+  } catch {
+    return readLocalCalendarState(cacheKey); // offline — last warm cache for THIS account
+  }
+}
+
+/** Insert-or-update a single event row — the per-event replacement for the old
+ *  whole-file saveCalendarEvents. Always writes source:'manual': the UI never
+ *  routes an agent-authored event here (see openEvent's view/edit dispatch in
+ *  calendar-workspace.tsx), and this is the second line of defense. */
+export async function saveCalendarEvent(event: CalendarEvent, ctx: CalendarCloudCtx): Promise<CalendarEvent> {
+  const manualEvent: CalendarEvent = { ...event, source: "manual" };
+  if (ctx.preview || !ctx.userId) {
+    const state = await readLocalCalendarState(CALENDAR_STORAGE_KEY);
+    const next: CalendarState = { events: [...state.events.filter((e) => e.id !== manualEvent.id), manualEvent] };
+    writeLocalCalendarState(CALENDAR_STORAGE_KEY, next);
+    return manualEvent;
+  }
+  const row = toCloudRow(manualEvent, ctx.userId, "manual");
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .upsert(row, { onConflict: "id" })
+    .select(CALENDAR_EVENT_COLUMNS)
+    .single();
+  if (error) throw new Error(error.message);
+  const saved = sanitizeEvent(data);
+  if (!saved) throw new Error("The event was saved but returned an invalid response.");
+  return saved;
+}
+
+/** Deletes a single event row. Same UI guarantee as saveCalendarEvent: only
+ *  ever called on a manual (non-agent) event. */
+export async function deleteCalendarEvent(id: string, ctx: CalendarCloudCtx): Promise<void> {
+  if (ctx.preview || !ctx.userId) {
+    const state = await readLocalCalendarState(CALENDAR_STORAGE_KEY);
+    writeLocalCalendarState(CALENDAR_STORAGE_KEY, { events: state.events.filter((e) => e.id !== id) });
+    return;
+  }
+  const { error } = await supabase.from("calendar_events").delete().eq("id", id).eq("user_id", ctx.userId);
+  if (error) throw new Error(error.message);
 }
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
