@@ -10,7 +10,7 @@ import type { SessionMessage } from "@/lib/workspace/sessions-store";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
-import { showUpgradePrompt } from "@/lib/workspace/upgrade-prompt";
+import { showUpgradePrompt, type UpgradeResetKind } from "@/lib/workspace/upgrade-prompt";
 
 const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
 
@@ -99,6 +99,11 @@ export function chatErrorKind(status: number, body: unknown): ChatErrorKind {
   if (status === 401 || status === 403) return "auth";
   if (status >= 500 || status === 502) return "unreachable";
   return "generic";
+}
+
+/** Which credit window ran dry (a bare 429 without a code reads as daily). */
+function budgetResetOf(body: unknown): UpgradeResetKind {
+  return errorCode(body) === "monthly_token_budget_exhausted" ? "monthly" : "daily";
 }
 
 /** Map the valve's error shapes to one student-readable line. */
@@ -239,7 +244,7 @@ export async function postChatCompletion(
       const errorText = chatErrorMessage(res.status, body);
       // Out of credits is an upsell moment, not just an error row: pop the
       // shell-mounted upgrade dialog on every budget-exhausted turn.
-      if (errorKind === "budget") showUpgradePrompt(errorText);
+      if (errorKind === "budget") showUpgradePrompt(errorText, budgetResetOf(body));
       return { errorKind, errorText, sources: [], text: null };
     }
     const text = options.onDelta

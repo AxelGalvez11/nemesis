@@ -94,3 +94,24 @@ Deno.test("completionText: extracts assistant text, rejects empty/malformed", ()
   assertEquals(completionText({ choices: [] }), null);
   assertEquals(completionText("nope"), null);
 });
+
+import { budgetResetKind, nextDailyReset } from "./chat-thread.ts";
+
+Deno.test("budgetResetKind: daily vs monthly vs neither", () => {
+  assertEquals(budgetResetKind({ error: { code: "daily_token_budget_exhausted" } }), "daily");
+  assertEquals(budgetResetKind({ error: { code: "monthly_token_budget_exhausted" } }), "monthly");
+  assertEquals(budgetResetKind({ error: { code: "something_else" } }), null);
+  assertEquals(budgetResetKind(null), null);
+  assertEquals(budgetResetKind("nope"), null);
+});
+
+Deno.test("nextDailyReset: next UTC midnight, never in the past", () => {
+  const morning = new Date("2026-07-20T03:15:00Z");
+  assertEquals(nextDailyReset(morning).toISOString(), "2026-07-21T00:00:00.000Z");
+  const lastMinute = new Date("2026-07-20T23:59:59Z");
+  assertEquals(nextDailyReset(lastMinute).toISOString(), "2026-07-21T00:00:00.000Z");
+  const exactMidnight = new Date("2026-07-20T00:00:00Z");
+  assertEquals(nextDailyReset(exactMidnight).toISOString(), "2026-07-21T00:00:00.000Z");
+  const monthEnd = new Date("2026-07-31T12:00:00Z");
+  assertEquals(nextDailyReset(monthEnd).toISOString(), "2026-08-01T00:00:00.000Z");
+});

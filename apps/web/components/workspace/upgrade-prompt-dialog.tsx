@@ -15,6 +15,7 @@ import {
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import {
   dismissUpgradePrompt,
+  nextDailyReset,
   showUpgradePrompt,
   subscribeUpgradePrompt,
   upgradePromptServerSnapshot,
@@ -53,13 +54,15 @@ export function UpgradePromptDialog() {
           </DialogDescription>
         </DialogHeader>
         <p className="px-1 text-sm leading-relaxed text-muted-foreground">
-          Upgrade to raise your daily limits and keep going right now, or wait for the
-          reset — your work stays put either way.
+          {state.reset === "monthly"
+            ? "Your monthly allowance resets on the 1st."
+            : `Free credits reset at ${nextDailyReset(new Date()).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`}{" "}
+          Upgrade to keep going right now — your work stays put either way.
         </p>
         <DialogFooter>
-          <Button onClick={dismissUpgradePrompt} variant="secondary">Not now</Button>
+          <Button onClick={dismissUpgradePrompt} variant="secondary">Wait for reset</Button>
           <Button asChild onClick={dismissUpgradePrompt}>
-            <Link href="/pricing">See plans</Link>
+            <Link href="/pricing">Upgrade</Link>
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -27,7 +27,8 @@ import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { ThinkingDots } from "@/components/ThinkingDots";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
-import type { ChatMsg, ChatSource } from "@/lib/chat-thread";
+import type { BudgetResetKind, ChatMsg, ChatSource } from "@/lib/chat-thread";
+import { UpgradeSheet } from "@/components/UpgradeSheet";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -83,6 +84,7 @@ export default function ChatScreen() {
   // whether that menu is open.
   const [pinned, setPinned] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [upgrade, setUpgrade] = useState<null | { message: string | null; reset: BudgetResetKind | null }>(null);
   // Epoch bumps on user change AND thread change; in-flight sends compare before
   // touching state. sendingRef is the synchronous re-entrancy lock.
   const epochRef = useRef(0);
@@ -197,6 +199,10 @@ export default function ChatScreen() {
           // The user's message stays (it IS the conversation); the failure line
           // renders from transient state and never enters history/persistence.
           setLastError(reply.errorText ?? "Something went wrong.");
+          // Credits ran dry → the freemium moment: hard stop, upgrade or wait.
+          if (reply.errorKind === "budget") {
+            setUpgrade({ message: reply.errorText, reset: reply.budgetReset });
+          }
         }
       })
       .finally(() => {
@@ -379,6 +385,12 @@ export default function ChatScreen() {
           onDelete={handleDelete}
           onTogglePin={handleTogglePin}
           topInset={insets.top}
+        />
+        <UpgradeSheet
+          visible={upgrade !== null}
+          message={upgrade?.message ?? null}
+          reset={upgrade?.reset ?? null}
+          onClose={() => setUpgrade(null)}
         />
         <View style={[styles.composerRow, { paddingBottom: keyboardUp ? space(3) : contentBottom - space(1) }]}>
           <Composer
