@@ -7,16 +7,27 @@
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
-import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
+import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
 import { showUpgradePrompt, type UpgradeResetKind } from "@/lib/workspace/upgrade-prompt";
 
 const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
 
+export interface WireToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
 export interface WireMsg {
-  role: "assistant" | "system" | "user";
+  role: "assistant" | "system" | "user" | "tool";
   content: string;
+  /** Assistant messages that requested tools (echoed back on the next round). */
+  tool_calls?: WireToolCall[];
+  /** Tool-result messages: which call this answers. */
+  tool_call_id?: string;
 }
 
 /** Nemesis speaks for itself here (same soul rules as the desktop agent):
@@ -27,8 +38,11 @@ export const CHAT_SYSTEM_PROMPT =
   "Use markdown when structure helps, render math clearly, and use examples, code, primary evidence, or counterarguments when they improve understanding. " +
   "Separate established facts from inference and uncertainty. Correct misconceptions without being condescending. " +
   "When live web results are supplied, use them for current facts and cite the relevant URLs. " +
-  "Never use emojis. If a question needs the student's own files or their school portals, " +
-  "say that the Mac app's missions handle those and answer what you can from knowledge.";
+  "Never use emojis. " +
+  "You can see and edit this student's Nemesis workspace through your tools: search and read their Library notes, create notes, " +
+  "list flashcard decks and add cards, and list or add calendar events. Use the tools whenever a question involves their own notes, " +
+  "decks, or schedule, or when they ask you to save something — read their real data instead of guessing, and never invent what a " +
+  "note or calendar says. After any write, state plainly what you created or changed. School portals are still handled by the Mac app's missions.";
 
 /** Keep the upstream payload bounded: the most recent messages whose combined
  *  length fits the budget (always at least the latest message, even if huge —
@@ -135,6 +149,20 @@ export function completionText(body: unknown): string | null {
   return typeof message?.content === "string" && message.content.trim() ? message.content : null;
 }
 
+/** Tool calls from a non-streaming chat/completions response, if any. */
+export function completionToolCalls(body: unknown): AgentToolCall[] {
+  if (typeof body !== "object" || body === null) return [];
+  const choices = (body as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || !choices.length) return [];
+  const raw = (choices[0] as { message?: { tool_calls?: unknown } }).message?.tool_calls;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    const call = entry as { id?: unknown; function?: { name?: unknown; arguments?: unknown } };
+    if (typeof call.id !== "string" || typeof call.function?.name !== "string") return [];
+    return [{ arguments: typeof call.function.arguments === "string" ? call.function.arguments : "{}", id: call.id, name: call.function.name }];
+  });
+}
+
 // ── Device key (web: localStorage instead of SecureStore) ──────────────────
 
 const deviceKeyStorageKey = (uid: string) => `nemesis_device_key_v1_${uid}`;
@@ -191,12 +219,16 @@ export interface ChatReply {
   errorText: string | null;
   errorKind: ChatErrorKind | null;
   sources: ChatWebResult[];
+  /** Present when the model asked to run tools instead of (or before) answering. */
+  toolCalls?: AgentToolCall[];
 }
 
 export interface ChatCompletionOptions {
   signal?: AbortSignal;
   decision?: ChatRouteDecision;
   onDelta?: CompletionDeltaHandler;
+  /** OpenAI-format tool schemas; the valve forwards them verbatim. */
+  tools?: readonly unknown[];
 }
 
 /** One completion turn from an arbitrary wire-message array — the shared transport for
@@ -218,6 +250,7 @@ export async function postChatCompletion(
     model: decision.model,
     ...(decision.reasoningEffort ? { reasoning_effort: decision.reasoningEffort } : {}),
     ...(options.onDelta ? { stream: true } : {}),
+    ...(options.tools?.length ? { tools: options.tools } : {}),
   });
   const call = (bearer: string) =>
     fetch(`${LLM_BASE}/v1/chat/completions`, {
@@ -247,12 +280,21 @@ export async function postChatCompletion(
       if (errorKind === "budget") showUpgradePrompt(errorText, budgetResetOf(body));
       return { errorKind, errorText, sources: [], text: null };
     }
-    const text = options.onDelta
-      ? await readCompletionStream(res.body, options.onDelta)
-      : completionText((await res.json().catch(() => null)) as unknown);
-    return text
-      ? { errorKind: null, errorText: null, sources: [], text }
-      : { errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
+    let text: string | null = null;
+    let toolCalls: AgentToolCall[] = [];
+    if (options.onDelta) {
+      const streamed = await readCompletionStreamFull(res.body, options.onDelta);
+      text = streamed.text.trim() ? streamed.text : null;
+      toolCalls = streamed.toolCalls;
+    } else {
+      const body = (await res.json().catch(() => null)) as unknown;
+      text = completionText(body);
+      toolCalls = completionToolCalls(body);
+    }
+    if (text || toolCalls.length) {
+      return { errorKind: null, errorText: null, sources: [], text, ...(toolCalls.length ? { toolCalls } : {}) };
+    }
+    return { errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
     return {
@@ -264,7 +306,14 @@ export async function postChatCompletion(
   }
 }
 
-/** One routed completion turn for the signed-in user `uid` on the main Sessions chat. */
+/** Most tool rounds a single turn may run before we force a plain answer. */
+const AGENT_MAX_TOOL_ROUNDS = 4;
+
+/** One routed completion turn for the signed-in user `uid` on the main Sessions chat.
+ *  Runs the workspace agent loop (owner 2026-07-20): the model can call the
+ *  Library/Study/Calendar tools; results are fed back until it answers in text.
+ *  Tools are withheld on reasoner-model routes (DeepSeek thinking mode requires
+ *  echoing reasoning_content on tool turns, which the stream doesn't retain). */
 export async function sendChatTurn(
   uid: string,
   history: SessionMessage[],
@@ -286,11 +335,36 @@ export async function sendChatTurn(
       ? `${userText}\n\n${result.context}`
       : `${userText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
-  const reply = await postChatCompletion(uid, buildWireMessages(history, groundedText, decision), {
-    decision,
-    onDelta,
-    signal,
-  });
+
+  const toolsEnabled = !decision.model.includes("reasoner");
+  let messages: WireMsg[] = buildWireMessages(history, groundedText, decision);
+  let reply: ChatReply = { errorKind: null, errorText: null, sources: [], text: null };
+  for (let round = 0; round <= AGENT_MAX_TOOL_ROUNDS; round += 1) {
+    // The last permitted round goes out without tools so it must answer in text.
+    const offerTools = toolsEnabled && round < AGENT_MAX_TOOL_ROUNDS;
+    reply = await postChatCompletion(uid, messages, {
+      decision,
+      onDelta,
+      signal,
+      ...(offerTools ? { tools: AGENT_TOOLS } : {}),
+    });
+    const calls = reply.toolCalls ?? [];
+    if (!calls.length || reply.errorKind) break;
+    const results = await Promise.all(calls.map(async (call) => ({ call, result: await executeAgentTool(call) })));
+    messages = [
+      ...messages,
+      {
+        content: reply.text ?? "",
+        role: "assistant",
+        tool_calls: calls.map((call) => ({ function: { arguments: call.arguments, name: call.name }, id: call.id, type: "function" as const })),
+      },
+      ...results.map(({ call, result }) => ({
+        content: JSON.stringify(result).slice(0, 20_000),
+        role: "tool" as const,
+        tool_call_id: call.id,
+      })),
+    ];
+  }
   return { ...reply, sources };
 }
 
