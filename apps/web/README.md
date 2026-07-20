@@ -32,10 +32,27 @@ Server-only:
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PLUS_PRICE_ID`
 - `STRIPE_PRO_PRICE_ID`
+- `STRIPE_MAX_PRICE_ID` (recurring monthly Max price at exactly $99 USD)
+- `STRIPE_MAX_LEGACY_PRICE_IDS` (comma-separated retired Max prices retained for grandfathered users)
 - `STRIPE_ALLOW_TEST_BILLING` (non-production only, and only with an isolated test Supabase project)
 - `STRIPE_ALLOW_LIVE` (`true` only when deliberately going live)
+- `ASSEMBLYAI_API_KEY` (server-only key for live transcription; never expose it to the browser)
+- `ASSEMBLYAI_SPEECH_MODEL` (optional; defaults to `universal-streaming-multilingual`)
 - `NCBI_API_KEY` (optional; raises PubMed E-utilities rate limits)
 - `UNPAYWALL_EMAIL` (optional but recommended; contact email used for Unpaywall/OpenAlex API etiquette)
+
+## Live audio copilot
+
+Live audio uses short-lived AssemblyAI browser tokens for transcription and the existing metered
+DeepSeek chat path for discipline-neutral notes, questions, and topics to explore. Apply the latest
+Supabase migration before enabling it; the migration adds monthly audio allowances and reservation
+accounting so a recording cannot silently exceed its plan limit.
+
+AssemblyAI must be able to reach `POST /api/live-audio/webhook` over public HTTPS to reconcile billed
+connection time and save the final transcript. Use a deployed preview URL or HTTPS tunnel for local
+end-to-end testing. On Vercel, the webhook also verifies AssemblyAI's documented fixed source IPs so
+the browser-visible callback secret cannot be used to refund a live reservation. Raw audio is streamed
+directly to AssemblyAI and is not stored by Nemesis.
 
 Evidence broker:
 

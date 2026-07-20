@@ -78,6 +78,9 @@ export const emailFrom = process.env.EMAIL_FROM ?? "Nemesis <support@enternemesi
 // (Vercel sends it as a Bearer token on cron invocations). Alerts email the owner.
 export const cronSecret = process.env.CRON_SECRET ?? "";
 export const deepseekApiKey = process.env.DEEPSEEK_API_KEY ?? "";
+export const assemblyAiApiKey = process.env.ASSEMBLYAI_API_KEY ?? "";
+export const assemblyAiSpeechModel =
+  process.env.ASSEMBLYAI_SPEECH_MODEL ?? "universal-streaming-multilingual";
 export const balanceAlertEmail = process.env.BALANCE_ALERT_EMAIL ?? "axelgalvez1121@gmail.com";
 const rawBalanceThreshold = Number(process.env.DEEPSEEK_BALANCE_ALERT_USD ?? "5");
 export const deepseekBalanceAlertUsd = Number.isFinite(rawBalanceThreshold) ? rawBalanceThreshold : 5;
@@ -90,6 +93,12 @@ export const stripeProPriceId = process.env.STRIPE_PRO_PRICE_ID ?? "";
 // Optional top tier: leave unset to sell Plus + Pro only. When set, Max joins the
 // catalog, the billing cards, and checkout accepts plan === "max".
 export const stripeMaxPriceId = process.env.STRIPE_MAX_PRICE_ID ?? "";
+// Comma-separated retired Max Price IDs remain entitlement-valid for
+// grandfathered subscribers, but Checkout never sells them again.
+export const stripeMaxLegacyPriceIds = (process.env.STRIPE_MAX_LEGACY_PRICE_IDS ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 export const stripeAllowLive = process.env.STRIPE_ALLOW_LIVE === "true";
 export const stripeAllowTestBilling = process.env.STRIPE_ALLOW_TEST_BILLING === "true";
 

@@ -67,8 +67,6 @@ const FALLBACK_MONTHLY_TOKENS = 750_000
 const CAP_WARN_FRACTION = 0.85
 const ACTIVE = new Set(['active', 'trialing', 'past_due'])
 const FALLBACK_DAILY_TOKENS = 25_000 // free-tier default when no entitlement row
-const TRIAL_MS = 7 * 24 * 60 * 60 * 1000
-
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } })
 
 /**
@@ -89,7 +87,11 @@ function resolveModel(model: string): { model: string; thinking?: { type: 'disab
   if (m === 'deepseek-chat') return { model: 'deepseek-v4-flash', thinking: { type: 'disabled' } }
   if (m === 'deepseek-reasoner') return { model: 'deepseek-v4-flash', thinking: { type: 'enabled' } }
   if (m.includes('v4-flash')) return { model, thinking: { type: 'disabled' } }
-  if (m.includes('v4-pro')) return { model }
+  // Premium routing is server-owned. A client cannot bypass the plan +
+  // high-effort gate below by naming v4-pro directly; it receives Flash with
+  // thinking instead. This protects the product's gross-margin budget while
+  // preserving a strong answer.
+  if (m.includes('v4-pro')) return { model: 'deepseek-v4-flash', thinking: { type: 'enabled' } }
 
   return { model: 'deepseek-v4-flash', thinking: { type: 'disabled' } }
 }
@@ -176,15 +178,8 @@ async function resolveKey(deviceKey: string): Promise<KeyContext | Response> {
 
   let plan = sub?.plan && sub.status && ACTIVE.has(sub.status) ? sub.plan : 'free'
 
-  // No paid plan: accounts younger than 7 days ride the full-power trial tier.
-  if (plan === 'free') {
-    const { data: userData } = await admin.auth.admin.getUserById(keyRow.user_id)
-    const createdAt = userData?.user?.created_at ? Date.parse(userData.user.created_at) : 0
-
-    if (createdAt && Date.now() - createdAt < TRIAL_MS) {
-      plan = 'trial'
-    }
-  }
+  // Free accounts remain on the bounded freemium tier. A paid subscription may
+  // still be `trialing`, but account age alone never grants the full Pro budget.
 
   // Daily + monthly entitlements in one round trip.
   const { data: ents } = await admin

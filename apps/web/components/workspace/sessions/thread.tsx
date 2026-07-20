@@ -2,8 +2,7 @@
 
 // Thread — message list + scroll container, desktop src/components/assistant-ui/thread/{index,list}.tsx
 // (shell spec §B2). v1: plain scrollTop auto-follow instead of the
-// use-stick-to-bottom package (not an approved dependency for this build) —
-// good enough for a non-streaming, one-reply-at-a-time thread.
+// use-stick-to-bottom package (not an approved dependency for this build).
 
 import { useEffect, useRef } from "react";
 
@@ -93,7 +92,7 @@ export function Thread({ turns, busy, liveSeconds, error, centeredComposer = fal
                         message={turn.assistant}
                         animateReveal={isLast && Boolean(turn.assistant) && !initialAssistantMessages.current.has(turn.assistant?.at ?? "")}
                         onOpenSources={turn.assistant?.sources?.length ? onOpenSources : undefined}
-                        pending={isLast && busy && !turn.assistant}
+                        pending={isLast && busy}
                       />
                     </div>
                   </div>

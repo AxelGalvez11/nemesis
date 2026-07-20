@@ -1,6 +1,6 @@
 import { stripeMaxPriceId, stripePlusPriceId, stripeProPriceId } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
-import { isTrialEligibleForSubscriptionHistory } from "@/lib/billing-contract";
+import { isTrialEligibleForSubscriptionHistory, stripePriceMatchesPlan } from "@/lib/billing-contract";
 import { assertStripeBillingWritesAllowed, stripe, stripeFailureDetail } from "@/lib/stripe";
 
 interface CatalogPrice {
@@ -28,6 +28,27 @@ export async function GET(req: Request) {
       trialEligibilityForUser(user.id, livemode),
       stripeMaxPriceId ? stripeClient.prices.retrieve(stripeMaxPriceId) : Promise.resolve(null),
     ]);
+
+    const configuredPrices: Array<{
+      plan: "plus" | "pro" | "max";
+      price: typeof plusPrice;
+    }> = [
+      { plan: "plus", price: plusPrice },
+      { plan: "pro", price: proPrice },
+    ];
+    if (maxPrice) configuredPrices.push({ plan: "max", price: maxPrice });
+    for (const { plan, price } of configuredPrices) {
+      if (!stripePriceMatchesPlan(plan, price)) {
+        console.error("stripe_catalog_price_mismatch", {
+          active: price.active,
+          currency: price.currency,
+          interval: price.recurring?.interval,
+          plan,
+          unitAmount: price.unit_amount,
+        });
+        return json({ error: "stripe_catalog_price_mismatch" }, 503);
+      }
+    }
 
     const serialize = (price: typeof plusPrice): CatalogPrice => ({
       unitAmount: price.unit_amount,

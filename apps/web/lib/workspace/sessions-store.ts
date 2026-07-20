@@ -172,9 +172,9 @@ function ensureHydrated() {
   state = { ...state, sessions: loadFromStorage() };
 }
 
-function setState(next: StoreState) {
+function setState(next: StoreState, persistNow = true) {
   state = next;
-  persist();
+  if (persistNow) persist();
   emit();
 }
 
@@ -259,6 +259,38 @@ export const sessionsStore = {
           : s,
       ),
     });
+  },
+
+  /** Insert or update the assistant message for an in-flight turn. Streaming
+   * chunks update memory without rewriting localStorage; the final call
+   * persists the completed message and its source metadata once. */
+  upsertAssistantMessage(
+    id: string,
+    at: string,
+    content: string,
+    sources?: SessionSource[],
+    persistNow = true,
+  ) {
+    ensureHydrated();
+    setState({
+      ...state,
+      sessions: state.sessions.map((session) => {
+        if (session.id !== id) return session;
+        const index = session.messages.findIndex((message) => message.role === "assistant" && message.at === at);
+        const message: SessionMessage = {
+          at,
+          content,
+          role: "assistant",
+          ...(sources?.length ? { sources } : {}),
+        };
+        const messages = index >= 0
+          ? session.messages.map((existing, messageIndex) => messageIndex === index
+            ? { ...existing, ...message, ...(sources === undefined && existing.sources ? { sources: existing.sources } : {}) }
+            : existing)
+          : [...session.messages, message].slice(-MAX_MESSAGES_PER_SESSION);
+        return { ...session, messages, updatedAt: nowIso() };
+      }),
+    }, persistNow);
   },
 
   updateMessage(id: string, at: string, content: string) {

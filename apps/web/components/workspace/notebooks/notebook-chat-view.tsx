@@ -93,7 +93,16 @@ export function NotebookChatView() {
 
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-6">
           {composerMode === "record" && recording ? (
-            <RecordWorkspace className="mb-2 mt-4 min-h-0 flex-1" />
+            <RecordWorkspace
+              accessToken={session?.access_token ?? null}
+              active
+              className="mb-2 mt-4 min-h-0 flex-1"
+              context={[selected.name, instructions].filter(Boolean).join(" · ")}
+              contextId={activeChatId}
+              keyterms={[selected.name, ...sources.map((source) => source.name)]}
+              surface="notebook"
+              uid={uid}
+            />
           ) : (
             <NotebookTranscript messages={messages} working={working} />
           )}

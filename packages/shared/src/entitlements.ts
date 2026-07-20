@@ -1,12 +1,13 @@
 // MVP web-beta entitlements (0122). These are the public plan/usage shapes used by
 // web now and mobile later; the database remains the source of truth.
 
-export type PlanCode = "free" | "plus" | "pro" | "student" | "professional" | "enterprise";
+export type PlanCode = "free" | "plus" | "pro" | "max" | "student" | "professional" | "enterprise";
 
 export type EntitlementKey =
   | "ask_daily_limit"
   | "watchlist_limit"
-  | "stripe_plus_enabled";
+  | "stripe_plus_enabled"
+  | "live_audio_seconds_month_limit";
 
 export interface EntitlementSnapshot {
   plan: PlanCode;
