@@ -15,7 +15,7 @@ import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
 
 import { ChatHeader } from "./chat-header";
-import { Composer } from "./composer";
+import { Composer, type ComposerMode } from "./composer";
 import { Thread, type ThreadTurn } from "./thread";
 import type { TurnError } from "./assistant-message";
 import { SessionRightRail, type SessionRailPanel } from "./session-right-rail";
@@ -58,6 +58,7 @@ export function SessionChat() {
   const [error, setError] = useState<{ sessionId: string; text: string; kind: ChatErrorKind } | null>(null);
   const [rightRailOpen, setRightRailOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<SessionRailPanel>("sources");
+  const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const turnStartedAt = useRef<Map<string, number>>(new Map());
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
   const [, forceTick] = useReducer((n: number) => n + 1, 0);
@@ -163,8 +164,9 @@ export function SessionChat() {
       <ChatHeader onOpenRail={() => setRightRailOpen(true)} railOpen={rightRailOpen} session={session} />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]" data-slot="composer-bounds">
-          <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
-          <Composer busy={busy} centered={isFreshThread} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} />
+          <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} recordMode={composerMode === "record"} turns={turns} />
+          <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-24 bg-linear-to-t from-(--ui-chat-surface-background) via-[color-mix(in_srgb,var(--ui-chat-surface-background)_82%,transparent)] to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_top,black_35%,transparent)]" />
+          <Composer busy={busy} centered={isFreshThread} onModeChange={setComposerMode} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} />
         </div>
         {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={outputs} panel={rightPanel} sources={sources} />}
       </div>

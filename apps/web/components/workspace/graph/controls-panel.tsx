@@ -13,6 +13,7 @@ interface GraphControlsPanelProps {
 }
 
 export function GraphControlsPanel({ controls, onChange }: GraphControlsPanelProps) {
+  const is2D = controls.dimensions === 2;
   function set<K extends keyof GraphControlsState>(key: K, value: GraphControlsState[K]) {
     onChange({ ...controls, [key]: value });
   }
@@ -21,7 +22,7 @@ export function GraphControlsPanel({ controls, onChange }: GraphControlsPanelPro
     <div className="w-64 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-4 text-(--ui-text-primary) shadow-lg">
       <div className="mb-4">
         <p className="text-[0.65rem] font-semibold uppercase tracking-[0.09em] text-(--ui-text-secondary)">Graph controls</p>
-        <p className="mt-1 text-xs text-(--ui-text-secondary)">Tune the map without changing your notes.</p>
+        <p className="mt-1 text-xs text-(--ui-text-secondary)">{is2D ? "Tune the flat force map and canvas." : "Tune the spatial force map and camera."}</p>
       </div>
       <div className="space-y-4">
         <ControlSlider
@@ -40,7 +41,7 @@ export function GraphControlsPanel({ controls, onChange }: GraphControlsPanelPro
           step={0.1}
           value={controls.labelSize}
         />
-        <ControlSlider label="Spread" max={120} min={10} onChange={(v) => set("spread", v)} step={2} value={controls.spread} />
+        <ControlSlider label={is2D ? "Link distance" : "Spread"} max={120} min={10} onChange={(v) => set("spread", v)} step={2} value={controls.spread} />
         <ControlSlider
           label="Repulsion"
           max={140}
@@ -50,14 +51,14 @@ export function GraphControlsPanel({ controls, onChange }: GraphControlsPanelPro
           value={controls.repulsion}
         />
         <ControlSlider label="Gravity" max={0.5} min={0} onChange={(v) => set("gravity", v)} step={0.02} value={controls.gravity} />
-        <ControlSlider
-          label="Rotation speed"
-          max={3}
-          min={0}
-          onChange={(v) => set("rotationSpeed", v)}
-          step={0.1}
-          value={controls.rotationSpeed}
-        />
+        {!is2D && <ControlSlider
+            label="Rotation speed"
+            max={3}
+            min={0}
+            onChange={(v) => set("rotationSpeed", v)}
+            step={0.1}
+            value={controls.rotationSpeed}
+          />}
       </div>
       <label className="mt-4 flex cursor-pointer items-center justify-between border-t border-(--ui-stroke-tertiary) pt-3 text-xs font-medium text-(--ui-text-primary)">
         Node names <Switch checked={controls.showNames} onCheckedChange={(v) => set("showNames", v)} size="xs" />

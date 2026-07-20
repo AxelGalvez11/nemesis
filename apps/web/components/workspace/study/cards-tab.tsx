@@ -217,7 +217,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
       ) : (
         <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
           <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem_5rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold">
-            <span>Deck</span><span className="text-center">New</span><span className="text-center">Learn</span><span className="text-center">Due</span>
+            <span className="pl-[19px]">Deck</span><span className="text-center">New</span><span className="text-center">Learn</span><span className="text-center">Due</span>
           </div>
           <div className="py-1.5">
             {dragItem && (

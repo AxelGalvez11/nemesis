@@ -5,7 +5,7 @@
 // error card + footer with a Copy button only (no branch picker, no refresh,
 // no overflow menu — not in the C1 scope).
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -23,6 +23,7 @@ export interface TurnError {
 
 interface AssistantMessageProps {
   message: SessionMessage | null;
+  animateReveal?: boolean;
   pending: boolean;
   liveSeconds: number | null;
   durationSeconds: number | null;
@@ -30,10 +31,11 @@ interface AssistantMessageProps {
   onOpenSources?: () => void;
 }
 
-export function AssistantMessage({ message, pending, liveSeconds, durationSeconds, error, onOpenSources }: AssistantMessageProps) {
+export function AssistantMessage({ message, animateReveal = false, pending, liveSeconds, durationSeconds, error, onOpenSources }: AssistantMessageProps) {
+  const revealedText = useProgressiveWords(message?.content ?? "", animateReveal);
   if (!message && !pending && !error) return null;
 
-  const visibleText = message?.content && message.content.length > 0 ? message.content : null;
+  const visibleText = revealedText.length > 0 ? revealedText : null;
 
   return (
     <div
@@ -54,6 +56,30 @@ export function AssistantMessage({ message, pending, liveSeconds, durationSecond
       {visibleText && <AssistantFooter onOpenSources={onOpenSources} sourceCount={message?.sources?.length ?? 0} text={visibleText} />}
     </div>
   );
+}
+
+function useProgressiveWords(text: string, enabled: boolean): string {
+  const pieces = useMemo(() => text.split(/(\s+)/).filter(Boolean), [text]);
+  const [visibleCount, setVisibleCount] = useState(enabled ? 0 : pieces.length);
+
+  useEffect(() => {
+    if (!enabled) {
+      setVisibleCount(pieces.length);
+      return;
+    }
+    setVisibleCount(0);
+    if (pieces.length === 0) return;
+    const timer = window.setInterval(() => {
+      setVisibleCount((count) => {
+        const next = Math.min(pieces.length, count + 2);
+        if (next >= pieces.length) window.clearInterval(timer);
+        return next;
+      });
+    }, 42);
+    return () => window.clearInterval(timer);
+  }, [enabled, pieces]);
+
+  return pieces.slice(0, visibleCount).join("");
 }
 
 function AssistantErrorRow({ error }: { error: TurnError }) {

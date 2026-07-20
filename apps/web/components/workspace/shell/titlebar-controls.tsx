@@ -7,7 +7,7 @@
 
 import { Button } from "@/components/desktop-ui/button";
 import { Tip } from "@/components/desktop-ui/tooltip";
-import { IconLayoutSidebarLeftCollapse } from "@tabler/icons-react";
+import { IconLayoutSidebarLeftExpand } from "@tabler/icons-react";
 
 const titlebarButtonClass = "text-muted-foreground/85 hover:bg-(--ui-control-hover-background) hover:text-foreground";
 
@@ -26,7 +26,7 @@ export function TitlebarControls({ onToggleSidebar }: TitlebarControlsProps) {
           size="icon-titlebar"
           variant="ghost"
         >
-          <IconLayoutSidebarLeftCollapse size="0.875rem" />
+          <IconLayoutSidebarLeftExpand size="0.875rem" />
         </Button>
       </Tip>
     </div>

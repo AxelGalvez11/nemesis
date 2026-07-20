@@ -11,7 +11,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 
 import { cn } from "@/lib/utils";
-import { wikiLinksToMarkdown } from "@/lib/workspace/library-links";
+import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/library-links";
 import { normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
 
 const MARKDOWN_CONTAINER_CLASS_NAME =
@@ -46,6 +46,19 @@ function markdownComponents(
 ): Components {
   return {
     a: ({ children, href }) => {
+      const tag = href?.startsWith("#nemesis-tag=")
+        ? decodeURIComponent(href.slice("#nemesis-tag=".length))
+        : null;
+      if (tag) {
+        return (
+          <span
+            className="mx-0.5 inline-flex items-center rounded-full bg-[color-mix(in_srgb,var(--theme-primary)_12%,transparent)] px-2 py-0.5 align-baseline text-[0.82em] font-medium text-[var(--theme-primary)]"
+            data-library-tag={tag}
+          >
+            #{tag}
+          </span>
+        );
+      }
       const wikiTarget = href?.startsWith("#nemesis-note=")
         ? decodeURIComponent(href.slice("#nemesis-note=".length))
         : null;
@@ -161,12 +174,7 @@ export function AssistantMarkdown({
   externalLinksInNewTab?: boolean;
   obsidianTags?: boolean;
 }) {
-  const markdown = obsidianTags
-    ? text.replace(/^\s*tags:\s*\[([^\]]*)\]\s*$/gim, (_line, rawTags: string) => {
-        const tags = rawTags.split(",").map((tag) => tag.trim().replace(/^['\"]|['\"]$/g, "")).filter(Boolean);
-        return tags.map((tag) => `#${tag.replace(/\s+/g, "-")}`).join(" ");
-      })
-    : text;
+  const markdown = obsidianTags ? obsidianTagsToMarkdown(text) : text;
   return (
     <div className={cn(MARKDOWN_CONTAINER_CLASS_NAME, className)}>
       <ReactMarkdown

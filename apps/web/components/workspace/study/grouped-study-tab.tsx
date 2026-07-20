@@ -1,12 +1,11 @@
 "use client";
 
-import { IconChevronDown, IconFolderPlus, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconFolderPlus, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { Input } from "@/components/desktop-ui/input";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
 import { type StudyArtifactKind, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 
 interface GroupedStudyTabProps {
@@ -71,19 +70,13 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
-      <nav className="mx-auto mb-7 flex shrink-0 items-center rounded-b-2xl border border-t-0 border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button size="sm" variant="ghost">Add <IconChevronDown size={13} /></Button></DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            <DropdownMenuItem onSelect={() => setCreateOpen(true)}><IconPlus /> New {singular}</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => { setGroupName(""); setGroupOpen(true); }}><IconFolderPlus /> New group</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <Button disabled={items.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
-      </nav>
-      <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
+      <section className="mx-auto mt-5 w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
+        <div className="flex items-center justify-end gap-1 border-b border-(--ui-stroke-tertiary) px-3 py-2">
+          <Button className="gap-1.5" onClick={() => setCreateOpen(true)} size="sm" variant="ghost"><IconPlus size={14} /> New {singular}</Button>
+          {isTests && <Button className="gap-1.5" onClick={() => { setGroupName(""); setGroupOpen(true); }} size="sm" variant="ghost"><IconFolderPlus size={14} /> New folder</Button>}
+        </div>
         <div className="grid grid-cols-[minmax(0,1fr)_6rem_6rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold">
-          <span>Group</span><span className="text-center">Items</span><span className="text-center">Due</span>
+          <span>Group</span><span className="text-center">Items</span><span className="text-center">{isTests ? "Score" : "Updated"}</span>
         </div>
         {groups.length > 0 ? (
           <div className="py-1.5">
@@ -92,11 +85,11 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
               return (
                 <div key={group}>
                   <div className="grid grid-cols-[minmax(0,1fr)_6rem_6rem] items-center px-5 py-2 text-xs">
-                    <span className="truncate font-semibold">{group}</span><span className="text-center tabular-nums text-(--ui-text-secondary)">{grouped.length}</span><span className="text-center tabular-nums text-(--ui-text-quaternary)">0</span>
+                    <span className="truncate font-semibold">{group}</span><span className="text-center tabular-nums text-(--ui-text-secondary)">{grouped.length}</span><span className="text-center tabular-nums text-(--ui-text-quaternary)">{isTests ? "0%" : "—"}</span>
                   </div>
                   {grouped.map((item) => (
                     <button className="grid w-full grid-cols-[minmax(0,1fr)_6rem_6rem] items-center px-5 py-2 text-left text-xs text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)" key={item.id} onClick={() => setBrowseOpen(true)} type="button">
-                      <span className="truncate pl-5">{item.title}</span><span className="text-center text-[0.6875rem] capitalize text-(--ui-text-quaternary)">{item.status}</span><span />
+                      <span className="truncate pl-5">{item.title}</span><span className="text-center text-[0.6875rem] capitalize text-(--ui-text-quaternary)">{item.status}</span><span className="text-center tabular-nums text-(--ui-text-quaternary)">{isTests ? "0%" : new Date(item.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
                     </button>
                   ))}
                 </div>

@@ -49,6 +49,25 @@ export function wikiLinksToMarkdown(content: string): string {
   });
 }
 
+export function obsidianTagsToMarkdown(text: string): string {
+  const normalized = text.replace(/^\s*tags:\s*\[([^\]]*)\]\s*$/gim, (_line, rawTags: string) => {
+    const tags = rawTags.split(",").map((tag) => tag.trim().replace(/^['\"]|['\"]$/g, "")).filter(Boolean);
+    return tags.map((tag) => `#${tag.replace(/\s+/g, "-")}`).join(" ");
+  });
+
+  let fenced = false;
+  return normalized.split("\n").map((line) => {
+    if (/^\s*```/.test(line)) {
+      fenced = !fenced;
+      return line;
+    }
+    if (fenced || /^\s*#{1,6}\s/.test(line)) return line;
+    return line.replace(/(^|[\s(])#([\p{L}\p{N}_-]+)/gu, (_match, prefix: string, tag: string) => (
+      `${prefix}[#${tag}](#nemesis-tag=${encodeURIComponent(tag)})`
+    ));
+  }).join("\n");
+}
+
 export function normalizeLibraryFolder(value: string): string {
   return value
     .replace(/\\/g, "/")
