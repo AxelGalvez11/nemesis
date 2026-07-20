@@ -73,7 +73,7 @@ export function NotebooksLanding() {
   };
 
   return (
-    <div className="workspace-page-header mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden px-6 pt-[calc(var(--titlebar-height)+1.25rem)] max-sm:px-4">
+    <div className="workspace-page-header mx-auto flex h-full w-full max-w-[52rem] flex-col overflow-hidden px-6 pt-[calc(var(--titlebar-height)+clamp(2.25rem,6vh,4.5rem))] max-sm:px-4 max-sm:pt-[calc(var(--titlebar-height)+1.5rem)]">
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
           <h1 className="workspace-page-title">Notebooks</h1>

@@ -7,7 +7,7 @@
 import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
-import { formatWebSearchContext, shouldSearchWeb, type ChatWebResult } from "@/lib/workspace/chat-web-search";
+import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 
 const LLM_BASE = `${supabaseUrl}/functions/v1/nemesis-llm`;
 const CHAT_MODEL = "deepseek-chat";
@@ -53,8 +53,11 @@ export function trimHistory(
 
 /** The chat/completions message array for one turn. */
 export function buildWireMessages(history: SessionMessage[], userText: string): WireMsg[] {
+  const now = new Date();
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const liveClock = `The current date is ${now.toISOString().slice(0, 10)} and the user's time zone is ${timeZone}. You do have this clock context; never claim you cannot know today's date.`;
   return [
-    { content: CHAT_SYSTEM_PROMPT, role: "system" },
+    { content: `${CHAT_SYSTEM_PROMPT} ${liveClock}`, role: "system" },
     ...trimHistory(history).map((msg) => ({ content: msg.content, role: msg.role })),
     { content: userText, role: "user" },
   ];
@@ -161,6 +164,7 @@ export interface ChatReply {
   text: string | null;
   errorText: string | null;
   errorKind: ChatErrorKind | null;
+  sources: ChatWebResult[];
 }
 
 /** One non-streaming completion turn from an arbitrary wire-message array — the shared transport for
@@ -174,7 +178,7 @@ export async function postChatCompletion(
   signal?: AbortSignal,
 ): Promise<ChatReply> {
   let key = await deviceKey(uid);
-  if (!key) return { errorKind: "auth", errorText: "Sign in to chat.", text: null };
+  if (!key) return { errorKind: "auth", errorText: "Sign in to chat.", sources: [], text: null };
 
   const payload = JSON.stringify({ messages: wireMessages, model: CHAT_MODEL });
   const call = (bearer: string) =>
@@ -197,16 +201,17 @@ export async function postChatCompletion(
       }
     }
     const body = (await res.json().catch(() => null)) as unknown;
-    if (!res.ok) return { errorKind: chatErrorKind(res.status, body), errorText: chatErrorMessage(res.status, body), text: null };
+    if (!res.ok) return { errorKind: chatErrorKind(res.status, body), errorText: chatErrorMessage(res.status, body), sources: [], text: null };
     const text = completionText(body);
     return text
-      ? { errorKind: null, errorText: null, text }
-      : { errorKind: "generic", errorText: "The answer came back empty. Try again.", text: null };
+      ? { errorKind: null, errorText: null, sources: [], text }
+      : { errorKind: "generic", errorText: "The answer came back empty. Try again.", sources: [], text: null };
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") throw err;
     return {
       errorKind: "unreachable",
       errorText: "You're offline — chat needs a connection. Try again in a moment.",
+      sources: [],
       text: null,
     };
   }
@@ -220,16 +225,21 @@ export async function sendChatTurn(
   signal?: AbortSignal,
 ): Promise<ChatReply> {
   let groundedText = userText;
+  let sources: ChatWebResult[] = [];
   if (shouldSearchWeb(userText)) {
-    const context = await searchWebContext(uid, userText, signal);
-    if (context) groundedText = `${userText}\n\n${context}`;
+    const result = await searchWebContext(uid, buildFreshSearchQuery(userText), signal);
+    sources = result.sources;
+    groundedText = result.context
+      ? `${userText}\n\n${result.context}`
+      : `${userText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
-  return postChatCompletion(uid, buildWireMessages(history, groundedText), signal);
+  const reply = await postChatCompletion(uid, buildWireMessages(history, groundedText), signal);
+  return { ...reply, sources };
 }
 
-async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<string> {
+async function searchWebContext(uid: string, query: string, signal?: AbortSignal): Promise<{ context: string; sources: ChatWebResult[] }> {
   const key = await deviceKey(uid);
-  if (!key) return "";
+  if (!key) return { context: "", sources: [] };
   try {
     const response = await fetch("/api/workspace/search", {
       body: JSON.stringify({ query, limit: 5 }),
@@ -237,11 +247,12 @@ async function searchWebContext(uid: string, query: string, signal?: AbortSignal
       method: "POST",
       signal,
     });
-    if (!response.ok) return "";
+    if (!response.ok) return { context: "", sources: [] };
     const body = (await response.json()) as { data?: { web?: ChatWebResult[] } };
-    return formatWebSearchContext(body.data?.web ?? []);
+    const sources = (body.data?.web ?? []).filter((source) => source.url).slice(0, 5);
+    return { context: formatWebSearchContext(sources), sources };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
-    return "";
+    return { context: "", sources: [] };
   }
 }

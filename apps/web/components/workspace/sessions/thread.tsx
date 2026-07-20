@@ -26,6 +26,7 @@ interface ThreadProps {
   error: TurnError | null;
   centeredComposer?: boolean;
   onEditMessage: (at: string, content: string) => void;
+  onOpenSources?: () => void;
 }
 
 function turnDurationSeconds(turn: ThreadTurn): number | null {
@@ -33,7 +34,7 @@ function turnDurationSeconds(turn: ThreadTurn): number | null {
   return Math.round((Date.parse(turn.assistant.at) - Date.parse(turn.user.at)) / 1000);
 }
 
-export function Thread({ turns, busy, liveSeconds, error, centeredComposer = false, onEditMessage }: ThreadProps) {
+export function Thread({ turns, busy, liveSeconds, error, centeredComposer = false, onEditMessage, onOpenSources }: ThreadProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const isEmpty = turns.length === 0;
   const lastTurn = turns[turns.length - 1];
@@ -89,6 +90,7 @@ export function Thread({ turns, busy, liveSeconds, error, centeredComposer = fal
                         error={isLast ? error : null}
                         liveSeconds={isLast && busy ? liveSeconds : null}
                         message={turn.assistant}
+                        onOpenSources={turn.assistant?.sources?.length ? onOpenSources : undefined}
                         pending={isLast && busy && !turn.assistant}
                       />
                     </div>

@@ -43,7 +43,7 @@ export function LibraryCreateDialog({ kind, open, onOpenChange, initialFolder = 
     setError(null);
     try {
       if (kind === "folder") await createFolder(folder ? `${folder}/${name}` : name);
-      else await createNote({ title: name, folder });
+      else await createNote({ title: name, folder: "" });
       onOpenChange(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : `Couldn't create the ${kind}.`);
@@ -69,10 +69,12 @@ export function LibraryCreateDialog({ kind, open, onOpenChange, initialFolder = 
             Name
             <Input autoFocus onChange={(event) => setName(event.target.value)} placeholder={kind === "note" ? "Untitled note" : "New folder"} value={name} />
           </label>
-          <label className="grid gap-1.5 text-xs font-medium">
-            Parent folder <span className="font-normal text-muted-foreground">optional</span>
-            <Input onChange={(event) => setFolder(event.target.value)} placeholder="Course/Unit" value={folder} />
-          </label>
+          {kind === "folder" && (
+            <label className="grid gap-1.5 text-xs font-medium">
+              Parent folder <span className="font-normal text-muted-foreground">optional</span>
+              <Input onChange={(event) => setFolder(event.target.value)} placeholder="Course/Unit" value={folder} />
+            </label>
+          )}
           {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
           <DialogFooter>
             <Button onClick={() => onOpenChange(false)} type="button" variant="ghost">Cancel</Button>

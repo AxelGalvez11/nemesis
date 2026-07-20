@@ -30,35 +30,38 @@ function activeBlockClass(block: string): string {
 }
 
 function ActiveBlock({ value, onChange, onBlur }: { value: string; onChange: (value: string) => void; onBlur: () => void }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const textarea = ref.current;
-    if (!textarea) return;
-    textarea.style.height = "0px";
-    textarea.style.height = `${Math.max(28, textarea.scrollHeight)}px`;
-    textarea.focus();
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    const editor = ref.current;
+    if (!editor) return;
+    editor.focus();
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
   }, []);
 
   return (
-    <textarea
+    <div
       aria-label="Edit note block"
       className={cn(
-        "block min-h-7 w-full resize-none overflow-hidden bg-transparent p-0 font-sans text-foreground outline-none placeholder:text-(--ui-text-quaternary)",
+        "block min-h-7 w-full whitespace-pre-wrap break-words bg-transparent p-0 font-sans text-foreground outline-none empty:before:pointer-events-none empty:before:text-(--ui-text-quaternary) empty:before:content-[attr(data-placeholder)]",
         activeBlockClass(value),
       )}
+      contentEditable
+      data-placeholder="Write in Markdown. Link another note with [[Note name]]."
       onBlur={onBlur}
-      onChange={(event) => {
-        event.currentTarget.style.height = "0px";
-        event.currentTarget.style.height = `${Math.max(28, event.currentTarget.scrollHeight)}px`;
-        onChange(event.target.value);
-      }}
-      placeholder="Write in Markdown. Link another note with [[Note name]]."
+      onInput={(event) => onChange(event.currentTarget.innerText.replace(/\u00a0/g, " "))}
       ref={ref}
+      role="textbox"
       spellCheck
-      value={value}
-    />
+      suppressContentEditableWarning
+    >
+      {value}
+    </div>
   );
 }
 
@@ -73,7 +76,13 @@ export function LibraryLiveEditor({ value, onChange, onWikiLink, isWikiLinkAvail
   }
 
   return (
-    <div className="min-h-[28rem] w-full cursor-text bg-transparent p-1" data-slot="library-live-editor">
+    <div
+      className="min-h-[38rem] w-full cursor-text bg-transparent p-1"
+      data-slot="library-live-editor"
+      onClick={(event) => {
+        if (event.currentTarget === event.target) setActiveIndex(Math.max(0, blocks.length - 1));
+      }}
+    >
       {blocks.map((block, index) => (
         <div className="min-h-7 py-1" key={`${index}:${blocks.length}`}>
           {activeIndex === index ? (
@@ -92,7 +101,7 @@ export function LibraryLiveEditor({ value, onChange, onWikiLink, isWikiLinkAvail
               tabIndex={0}
             >
               {block ? (
-                <AssistantMarkdown isWikiLinkAvailable={isWikiLinkAvailable} onWikiLink={onWikiLink} text={block} />
+                <AssistantMarkdown externalLinksInNewTab={false} isWikiLinkAvailable={isWikiLinkAvailable} obsidianTags onWikiLink={onWikiLink} text={block} />
               ) : (
                 <span className="text-(--ui-text-quaternary)">Write in Markdown…</span>
               )}

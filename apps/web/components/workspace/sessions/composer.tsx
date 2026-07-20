@@ -123,8 +123,8 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
   return (
     <div
       className={cn(
-        "group/composer absolute left-1/2 z-30 w-[min(var(--composer-width),calc(100%-2rem))] max-w-full -translate-x-1/2 overflow-visible rounded-[1.75rem] pt-2 pb-[var(--composer-shell-pad-block-end)]",
-        centered ? "top-1/2 -translate-y-1/2" : "bottom-0",
+        "group/composer absolute left-1/2 z-30 w-[min(46rem,calc(100%-2rem))] max-w-full -translate-x-1/2 overflow-visible rounded-[1.75rem] pt-2 pb-[var(--composer-shell-pad-block-end)]",
+        centered ? "top-1/2 -translate-y-1/2" : "bottom-3",
       )}
       data-slot="composer-root"
     >
@@ -264,7 +264,7 @@ function ModePill({ mode, onChange }: { mode: ComposerMode; onChange: (mode: Com
             <DropdownMenuItem
               className={cn(
                 "rounded-md px-2.5 py-1.5 text-left text-sm font-medium",
-                option === mode ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-accent",
+                option === mode ? "bg-(--ui-control-active-background) text-foreground" : "text-foreground hover:bg-(--ui-control-hover-background)",
               )}
               key={option}
               onSelect={() => onChange(option)}

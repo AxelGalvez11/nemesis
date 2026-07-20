@@ -56,6 +56,9 @@ const PREVIEW_SESSIONS: WorkspaceSession[] = [
         content:
           "Here is the exam-ready breakdown:\n\n- **Beta-1 blockade in the heart** reduces heart rate (negative chronotropy) and contractility (negative inotropy), lowering cardiac output.\n- **Reduced renin release** from juxtaglomerular cells (beta-1 mediated) dampens the RAAS cascade, so less angiotensin II and aldosterone.\n- **Central sympathetic outflow** falls with chronic use, reducing overall vascular tone.\n- Net effect: lower cardiac output plus reduced volume retention equals lower blood pressure.\n\nWant a comparison table of selective vs non-selective agents next?",
         at: minutesAgo(41),
+        sources: [
+          { title: "Beta blockers", url: "https://medlineplus.gov/betablockers.html", description: "MedlinePlus overview of beta blockers, uses, and safety." },
+        ],
       },
       {
         role: "user",
@@ -92,7 +95,7 @@ const PREVIEW_SESSIONS: WorkspaceSession[] = [
     updatedAt: minutesAgo(1440),
     messages: [
       { role: "user", content: "Turn my cardio lecture notes into cloze cards.", at: minutesAgo(2000) },
-      { role: "assistant", content: "Drafted 24 cloze cards across preload, afterload, and Frank-Starling.", at: minutesAgo(1999) },
+      { role: "assistant", content: "Drafted 24 cloze cards across preload, afterload, and Frank-Starling.", at: minutesAgo(1999), outputs: [{ id: "preview-card-output", kind: "flashcards", title: "Cardio lecture cloze deck" }] },
     ],
   },
 ];
