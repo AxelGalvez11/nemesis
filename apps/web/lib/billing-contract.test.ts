@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {
   checkoutIdempotencyKey,
   customerIdempotencyKey,
-  isTrialEligibleForSubscriptionHistory,
   planLabel,
   reusableCheckoutUrl,
   stripePriceMatchesPlan,
@@ -56,22 +55,15 @@ assert.notEqual(
   checkoutIdempotencyKey("u1", "test", "attempt-2"),
 );
 assert.equal(customerIdempotencyKey("u1", "live"), "nemesis-customer:live:u1");
-assert.equal(isTrialEligibleForSubscriptionHistory(false), true);
-assert.equal(isTrialEligibleForSubscriptionHistory(true), false);
 
-assert.deepEqual(subscriptionCheckoutTerms(false), {
-  payment_method_collection: "always",
-  payment_method_types: ["card"],
-  subscription_data: {
-    trial_period_days: 7,
-    trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
-  },
-});
-assert.deepEqual(subscriptionCheckoutTerms(true), {
+// Freemium (2026-07-20): checkout terms NEVER include a trial — paid plans bill
+// immediately; the free plan is the try-before-you-buy path.
+assert.deepEqual(subscriptionCheckoutTerms(), {
   payment_method_collection: "always",
   payment_method_types: ["card"],
   subscription_data: {},
 });
+assert.ok(!JSON.stringify(subscriptionCheckoutTerms()).includes("trial"), "no trial keys in checkout terms");
 assert.equal(subscriptionWebhookAction("customer.subscription.created"), "created");
 assert.equal(subscriptionWebhookAction("customer.subscription.updated"), "updated");
 assert.equal(subscriptionWebhookAction("customer.subscription.deleted"), "deleted");
