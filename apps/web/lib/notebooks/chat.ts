@@ -8,8 +8,7 @@
 
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
-import { buildFreshSearchQuery } from "@/lib/workspace/chat-web-search";
-import { postChatCompletion, searchWebContext, trimHistory, type WireMsg } from "@/lib/workspace/chat-api";
+import { postChatCompletion, trimHistory, type WireMsg } from "@/lib/workspace/chat-api";
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 
@@ -17,16 +16,19 @@ import { appendMessage, listMessages, touchChat } from "./chats-api";
 
 export type { SessionMessage } from "@/lib/workspace/sessions-store";
 
-/** A notebook chat's own system prompt — unlike the main Sessions chat, it CAN read the student's
- *  sources (their extracted text is injected below), so it must not deflect file questions to the
- *  Mac app. General mode: use the text freely. (Grounded "answer only from sources + cite" = Phase 2.) */
+/** A notebook chat's own system prompt. GROUNDED MODE (owner 2026-07-20):
+ *  answers come from the attached sources only — no web search, no silent
+ *  general-knowledge fallback. When the sources don't cover it, the model
+ *  says so and points at adding a source / Find sources. */
 export const NOTEBOOK_SYSTEM_PROMPT =
   "You are Nemesis, a rigorous study and research partner for learners in any discipline, major, or profession. " +
   "Never assume the user's field or level; infer it from context and adapt. Answer directly before expanding. " +
-  "Use markdown when structure helps, render math clearly, and use examples, code, evidence, or counterarguments when useful. Never use emojis. The student attached sources " +
-  "to this notebook (their notes, uploaded files, and links); the sources' text is included below — " +
-  "use it to answer, point to the relevant source when it helps, and distinguish the source's claims from your inference. " +
-  "If the answer isn't in the sources, say so briefly, then answer from general knowledge.";
+  "Use markdown when structure helps, render math clearly, and use examples, evidence, or counterarguments when useful. Never use emojis. " +
+  "This is a notebook chat: answer ONLY from the sources the student attached (their text is included below) and the student's instructions. " +
+  "Point to the relevant source by name when it helps, and distinguish the source's claims from your inference. " +
+  "If the sources don't cover the question, say so plainly and suggest attaching a relevant source (or using Find sources) — " +
+  "do not answer from outside knowledge, do not search the web, and never invent facts or citations. " +
+  "Basic conversational replies (greetings, clarifying what's in this notebook) are fine without sources.";
 
 /** Total characters of source text injected into the system prompt. Bounds the request (the valve
  *  caps too); once sources exceed this, later ones are dropped with a note. RAG is the Phase-2 fix
@@ -225,21 +227,16 @@ export async function sendNotebookTurn(opts: SendNotebookTurnOpts): Promise<void
   void appendMessage({ chatId: opts.chatId, notebookId: opts.notebookId, role: "user", content: displayText }).catch(() => {});
   const decision = classifyChatRequest(userText);
   const assistantAt = nowIso();
-  let groundedText = userText;
   try {
-    if (decision.searchWeb) {
-      const result = await searchWebContext(opts.uid, buildFreshSearchQuery(userText), opts.signal);
-      groundedText = result.context
-        ? `${userText}\n\n${result.context}`
-        : `${userText}\n\nLive research was requested but returned no verifiable sources. Do not invent current facts or citations; state what could not be verified.`;
-    }
+    // Grounded mode (owner 2026-07-20): notebook answers come only from the
+    // attached sources — the web-search grounding step is intentionally gone.
     const reply = await postChatCompletion(
       opts.uid,
       buildNotebookWireMessages({
         instructions: opts.instructions,
         sources: opts.sources,
         history,
-        userText: groundedText,
+        userText,
         decision,
       }),
       {
