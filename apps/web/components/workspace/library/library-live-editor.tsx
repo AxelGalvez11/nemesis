@@ -31,10 +31,15 @@ function activeBlockClass(block: string): string {
 
 function ActiveBlock({ value, onChange, onBlur }: { value: string; onChange: (value: string) => void; onBlur: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const initialValue = useRef(value);
 
   useEffect(() => {
     const editor = ref.current;
     if (!editor) return;
+    // Keep the editable DOM uncontrolled while the user is typing. Rendering
+    // `value` as a React child makes every keystroke replace the text node,
+    // which sends the caret back to the start and breaks arrow navigation.
+    editor.textContent = initialValue.current;
     editor.focus();
     const selection = window.getSelection();
     const range = document.createRange();
@@ -59,9 +64,7 @@ function ActiveBlock({ value, onChange, onBlur }: { value: string; onChange: (va
       role="textbox"
       spellCheck
       suppressContentEditableWarning
-    >
-      {value}
-    </div>
+    />
   );
 }
 

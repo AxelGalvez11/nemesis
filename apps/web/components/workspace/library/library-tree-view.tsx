@@ -1,7 +1,7 @@
 "use client";
 
 import type * as React from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Codicon } from "@/components/desktop-ui/codicon";
 import type { LibraryTreeFolder, LibraryTreeNote } from "@/lib/workspace/library-tree";
@@ -10,30 +10,11 @@ import { cn } from "@/lib/utils";
 import { SidebarRowBody, SidebarRowLabel, SidebarRowLead, SidebarRowShell, SidebarRowStack } from "../shell/sidebar-primitives";
 
 const INDENT_REM_PER_DEPTH = 0.875;
-const DRAG_TYPE = "application/x-nemesis-library-item";
-
 type DragItem = { kind: "note"; id: string; title: string } | { kind: "folder"; path: string; title: string };
 type ContextPoint = { item: DragItem; x: number; y: number };
 
 function indentStyle(depth: number): React.CSSProperties {
   return { paddingLeft: `${depth * INDENT_REM_PER_DEPTH}rem` };
-}
-
-function writeDragItem(event: React.DragEvent, item: DragItem) {
-  event.stopPropagation();
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData(DRAG_TYPE, JSON.stringify(item));
-  event.dataTransfer.setData("text/plain", item.kind === "note" ? item.id : item.path);
-}
-
-function readDragItem(event: React.DragEvent, fallback: DragItem | null): DragItem | null {
-  if (fallback) return fallback;
-  try {
-    const parsed = JSON.parse(event.dataTransfer.getData(DRAG_TYPE)) as DragItem;
-    return parsed?.kind === "note" || parsed?.kind === "folder" ? parsed : null;
-  } catch {
-    return null;
-  }
 }
 
 interface LibraryTreeViewProps {
@@ -53,16 +34,77 @@ interface LibraryTreeViewProps {
 export function LibraryTreeView(props: LibraryTreeViewProps) {
   const { folder, onMoveNote, onMoveFolder, depth = 0 } = props;
   const [dragItem, setDragItem] = useState<DragItem | null>(null);
+  const dragItemRef = useRef<DragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const dropTargetRef = useRef<string | null>(null);
+  const ignoreClickUntilRef = useRef(0);
+  const pointerCleanupRef = useRef<(() => void) | null>(null);
   const [context, setContext] = useState<ContextPoint | null>(null);
 
-  function finishDrop(targetFolder: string, event?: React.DragEvent) {
-    const item = event ? readDragItem(event, dragItem) : dragItem;
-    if (!item) return;
+  useEffect(() => () => pointerCleanupRef.current?.(), []);
+
+  function moveItem(item: DragItem, targetFolder: string) {
+    if (item.kind === "folder" && (item.path === targetFolder || targetFolder.startsWith(`${item.path}/`))) return;
     if (item.kind === "note") onMoveNote?.(item.id, targetFolder);
     else onMoveFolder?.(item.path, targetFolder);
+  }
+
+  function changeDropTarget(target: string | null) {
+    dropTargetRef.current = target;
+    setDropTarget(target);
+  }
+
+  function startDrag(item: DragItem) {
+    dragItemRef.current = item;
+    setDragItem(item);
+  }
+
+  function endDrag() {
+    dragItemRef.current = null;
     setDragItem(null);
-    setDropTarget(null);
+    changeDropTarget(null);
+  }
+
+  function beginPointerDrag(event: React.PointerEvent, item: DragItem) {
+    if (event.button !== 0) return;
+    pointerCleanupRef.current?.();
+    const origin = { x: event.clientX, y: event.clientY };
+    let dragging = false;
+
+    const move = (pointerEvent: PointerEvent) => {
+      if (!dragging && Math.hypot(pointerEvent.clientX - origin.x, pointerEvent.clientY - origin.y) < 5) return;
+      if (!dragging) {
+        dragging = true;
+        startDrag(item);
+        document.body.style.userSelect = "none";
+      }
+      const hit = document.elementFromPoint(pointerEvent.clientX, pointerEvent.clientY) as HTMLElement | null;
+      const folderTarget = hit?.closest<HTMLElement>("[data-library-drop-folder]")?.dataset.libraryDropFolder;
+      const noteParent = hit?.closest<HTMLElement>("[data-library-parent-folder]")?.dataset.libraryParentFolder;
+      const target = folderTarget ?? noteParent ?? "";
+      const invalid = item.kind === "folder" && (item.path === target || target.startsWith(`${item.path}/`));
+      changeDropTarget(invalid ? null : target);
+    };
+    const cleanup = () => {
+      document.body.style.userSelect = "";
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", up, true);
+      if (pointerCleanupRef.current === cleanup) pointerCleanupRef.current = null;
+    };
+    const up = () => {
+      if (dragging) {
+        const target = dropTargetRef.current;
+        if (target !== null) moveItem(item, target);
+        ignoreClickUntilRef.current = performance.now() + 250;
+      }
+      endDrag();
+      cleanup();
+    };
+    pointerCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
   }
 
   function runMenuAction(action: "delete" | "move" | "rename" | "folder") {
@@ -96,21 +138,9 @@ export function LibraryTreeView(props: LibraryTreeViewProps) {
   }
 
   return (
-    <div
-      className="min-h-full"
-      onDragOver={(event) => {
-        if (!readDragItem(event, dragItem)) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        setDropTarget("");
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        finishDrop("", event);
-      }}
-    >
+    <div className="relative min-h-full">
       {dragItem && (
-        <div className={cn("mb-1 grid min-h-9 place-items-center rounded-lg border border-dashed px-2 text-[0.6875rem] font-medium", dropTarget === "" ? "border-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_9%,transparent)] text-foreground" : "border-(--ui-stroke-secondary) text-(--ui-text-tertiary)")}>Move to Library root</div>
+        <div className={cn("pointer-events-none absolute inset-x-1 top-0 z-20 grid min-h-9 place-items-center rounded-lg border border-dashed px-2 text-[0.6875rem] font-medium shadow-sm backdrop-blur-sm", dropTarget === "" ? "border-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--ui-bg-elevated)_88%,var(--theme-primary)_12%)] text-foreground" : "border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_88%,transparent)] text-(--ui-text-tertiary)")}>Move to Library root</div>
       )}
       <TreeContents
         {...props}
@@ -118,10 +148,8 @@ export function LibraryTreeView(props: LibraryTreeViewProps) {
         dragItem={dragItem}
         dropTarget={dropTarget}
         onContext={setContext}
-        onDragEnd={() => { setDragItem(null); setDropTarget(null); }}
-        onDragStart={setDragItem}
-        onDropTarget={finishDrop}
-        onTargetChange={setDropTarget}
+        onPointerDragStart={beginPointerDrag}
+        onPointerClick={() => performance.now() < ignoreClickUntilRef.current}
       />
       {context && (
         <>
@@ -145,11 +173,9 @@ function ContextAction({ children, onClick }: { children: React.ReactNode; onCli
 interface TreeContentsProps extends LibraryTreeViewProps {
   dragItem: DragItem | null;
   dropTarget: string | null;
-  onDragStart: (item: DragItem) => void;
-  onDragEnd: () => void;
-  onDropTarget: (folder: string, event?: React.DragEvent) => void;
-  onTargetChange: (folder: string | null) => void;
   onContext: (point: ContextPoint) => void;
+  onPointerDragStart: (event: React.PointerEvent, item: DragItem) => void;
+  onPointerClick: () => boolean;
 }
 
 function TreeContents(props: TreeContentsProps) {
@@ -164,12 +190,8 @@ function TreeContents(props: TreeContentsProps) {
           key={note.path}
           note={note}
           onContext={props.onContext}
-          onDragEnd={props.onDragEnd}
-          onDragStart={(event) => {
-            const item = { kind: "note", id: note.id, title: note.title } satisfies DragItem;
-            writeDragItem(event, item);
-            props.onDragStart(item);
-          }}
+          onPointerClick={props.onPointerClick}
+          onPointerDragStart={(event) => props.onPointerDragStart(event, { kind: "note", id: note.id, title: note.title })}
           onSelect={props.onSelect}
         />
       ))}
@@ -184,18 +206,17 @@ function LibraryFolderNode(props: TreeContentsProps & { folder: LibraryTreeFolde
   const highlighted = !invalidTarget && dropTarget === folder.path;
   return (
     <div>
-      <div
-        draggable
-        onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); props.onContext({ item: { kind: "folder", path: folder.path, title: folder.name }, x: event.clientX, y: event.clientY }); }}
-        onDragEnd={props.onDragEnd}
-        onDragEnter={(event) => { if (invalidTarget) return; event.preventDefault(); event.stopPropagation(); props.onTargetChange(folder.path); setOpen(true); }}
-        onDragOver={(event) => { if (invalidTarget) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; }}
-        onDragStart={(event) => { const item = { kind: "folder", path: folder.path, title: folder.name } satisfies DragItem; writeDragItem(event, item); props.onDragStart(item); }}
-        onDrop={(event) => { if (invalidTarget) return; event.preventDefault(); event.stopPropagation(); props.onDropTarget(folder.path, event); }}
-        style={indentStyle(depth)}
-      >
+      <div style={indentStyle(depth)}>
         <SidebarRowShell className={cn(highlighted && "outline outline-2 outline-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_9%,transparent)]", dragItem?.kind === "folder" && dragItem.path === folder.path && "opacity-50")}>
-          <SidebarRowBody aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+          <SidebarRowBody
+            aria-expanded={open}
+            className="cursor-grab active:cursor-grabbing"
+            data-library-drag-folder={folder.path}
+            data-library-drop-folder={folder.path}
+            onClick={() => { if (!props.onPointerClick()) setOpen((value) => !value); }}
+            onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); props.onContext({ item: { kind: "folder", path: folder.path, title: folder.name }, x: event.clientX, y: event.clientY }); }}
+            onPointerDown={(event) => props.onPointerDragStart(event, { kind: "folder", path: folder.path, title: folder.name })}
+          >
             <SidebarRowLead><Codicon className="text-(--ui-text-quaternary)" name={open ? "chevron-down" : "chevron-right"} size="0.75rem" /></SidebarRowLead>
             <SidebarRowLabel className="font-medium text-foreground">{folder.name}</SidebarRowLabel>
           </SidebarRowBody>
@@ -206,11 +227,21 @@ function LibraryFolderNode(props: TreeContentsProps & { folder: LibraryTreeFolde
   );
 }
 
-export function LibraryNoteRow({ note, depth = 0, isSelected, onSelect, onDragStart, onDragEnd, onContext }: { note: LibraryTreeNote; depth?: number; isSelected: boolean; onSelect: (path: string) => void; onDragStart?: (event: React.DragEvent<HTMLDivElement>) => void; onDragEnd?: () => void; onContext?: (point: ContextPoint) => void }) {
+export function LibraryNoteRow({ note, depth = 0, isSelected, onSelect, onContext, onPointerDragStart, onPointerClick }: { note: LibraryTreeNote; depth?: number; isSelected: boolean; onSelect: (path: string) => void; onContext?: (point: ContextPoint) => void; onPointerDragStart?: (event: React.PointerEvent<HTMLButtonElement>) => void; onPointerClick?: () => boolean }) {
+  const parentFolder = note.path.split("/").slice(0, -1).join("/");
   return (
-    <div draggable={Boolean(onDragStart)} onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onContext?.({ item: { kind: "note", id: note.id, title: note.title }, x: event.clientX, y: event.clientY }); }} onDragEnd={onDragEnd} onDragStart={onDragStart} style={indentStyle(depth)}>
+    <div style={indentStyle(depth)}>
       <SidebarRowShell className={cn("row-hover", isSelected && "bg-(--ui-row-active-background)")}>
-        <SidebarRowBody onClick={() => onSelect(note.path)}><SidebarRowLabel className={cn(isSelected && "text-foreground")}>{note.title}</SidebarRowLabel></SidebarRowBody>
+        <SidebarRowBody
+          className={cn(onPointerDragStart && "cursor-grab active:cursor-grabbing")}
+          data-library-drag-note={note.id}
+          data-library-parent-folder={parentFolder}
+          onClick={() => { if (!onPointerClick?.()) onSelect(note.path); }}
+          onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onContext?.({ item: { kind: "note", id: note.id, title: note.title }, x: event.clientX, y: event.clientY }); }}
+          onPointerDown={onPointerDragStart}
+        >
+          <SidebarRowLabel className={cn(isSelected && "text-foreground")}>{note.title}</SidebarRowLabel>
+        </SidebarRowBody>
       </SidebarRowShell>
     </div>
   );

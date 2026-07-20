@@ -5,7 +5,7 @@
 
 import { IconFilePlus, IconFolderPlus, IconSearch, IconX } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
@@ -27,6 +27,8 @@ const HEADER_ACTIONS = [
 
 export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
@@ -45,13 +47,13 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
 
   const createBlankNote = async () => {
     const note = await createNote({ title: "Untitled note", folder: "", content: "" });
-    router.replace(`/library?note=${encodeURIComponent(note.path)}`);
+    router.replace(`${navigationRoot}/library?note=${encodeURIComponent(note.path)}`);
     onNavigate?.();
   };
 
   const openPath = (path: string) => {
     select(path);
-    router.replace(`/library?note=${encodeURIComponent(path)}`);
+    router.replace(`${navigationRoot}/library?note=${encodeURIComponent(path)}`);
     onNavigate?.();
   };
 

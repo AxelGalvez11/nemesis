@@ -32,7 +32,6 @@ import { SidebarSessionRow } from "./session-row";
 import {
   countLabel,
   GROUP_BODY,
-  HEADER_ACTION_BTN,
   SCROLL_Y,
   Sidebar,
   SidebarContent,
@@ -267,17 +266,6 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
                   {/* Sessions */}
                   <SidebarGroup className="min-h-32 flex-1 overflow-hidden p-0">
                     <SidebarSectionHeader
-                      action={
-                        <Button
-                          aria-label="New session"
-                          className={HEADER_ACTION_BTN}
-                          onClick={startNewSession}
-                          size="icon-xs"
-                          variant="ghost"
-                        >
-                          <Codicon name="add" size="0.75rem" />
-                        </Button>
-                      }
                       label="Sessions"
                       meta={countLabel(recents.length, recents.length)}
                       onToggle={() => setSessionsOpen((v) => !v)}
@@ -344,7 +332,8 @@ function StudentSidebarFooter({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52" side="top" sideOffset={8}>
             <DropdownMenuItem onSelect={() => router.push("/pricing")}><Codicon name="sparkle" size="0.85rem" /> Upgrade plan</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onOpenSettings("appearance")}><Codicon name="symbol-color" size="0.85rem" /> Appearance settings</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onOpenSettings("appearance")}><Codicon name="symbol-color" size="0.85rem" /> Appearance</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onOpenSettings("general")}><Codicon name="settings-gear" size="0.85rem" /> Settings</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuSub>
               <DropdownMenuSubTrigger><Codicon name="question" size="0.85rem" /> Help</DropdownMenuSubTrigger>

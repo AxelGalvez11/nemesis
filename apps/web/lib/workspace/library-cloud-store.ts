@@ -102,6 +102,16 @@ function uniqueNotePath(title: string, folder: string, excludeId?: string): stri
   return notePathFor(`${title} ${Date.now()}`, folder);
 }
 
+function isUniquePathViolation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "23505" || /readable_library_documents_user_id_path_key|duplicate key value/i.test(error.message ?? "");
+}
+
+function noteCandidate(title: string, folder: string, suffix: number) {
+  const candidateTitle = suffix === 1 ? title : `${title} ${suffix}`;
+  return { title: candidateTitle, path: notePathFor(candidateTitle, folder) };
+}
+
 async function loadDocuments(userId: string): Promise<void> {
   loadedForUserId = userId;
   setState({ status: "loading", error: null, notes: [], folders: [], selectedPath: null });
@@ -204,27 +214,39 @@ export function useCloudLibrary(): UseCloudLibraryApi {
   const createNote = useCallback(async (input: CreateNoteInput): Promise<CloudLibraryNote> => {
     const title = safeLibraryTitle(input.title);
     const folder = normalizeLibraryFolder(input.folder ?? "");
-    const path = uniqueNotePath(title, folder);
-    const content = input.content ?? `# ${title}\n\n`;
     const now = new Date().toISOString();
 
     if (preview) {
-      const note = { id: `preview-${crypto.randomUUID()}`, path, title, content, updatedAt: now };
+      const path = uniqueNotePath(title, folder);
+      const candidateTitle = titleFromPath(path);
+      const content = input.content ?? `# ${candidateTitle}\n\n`;
+      const note = { id: `preview-${crypto.randomUUID()}`, path, title: candidateTitle, content, updatedAt: now };
       setState({ ...state, notes: [note, ...state.notes], selectedPath: path });
       return note;
     }
     if (!userId) throw new Error("Sign in to create a note.");
 
-    const { data, error } = await supabase
-      .from("readable_library_documents")
-      .insert({ user_id: userId, path, kind: "note", title, content, deleted: false, updated_at: now })
-      .select("id,path,title,content,updated_at")
-      .single();
-    if (error) throw new Error(error.message);
-    const note = toNote(data);
-    if (!note) throw new Error("The note was saved but returned an invalid response.");
-    setState({ ...state, notes: [note, ...state.notes], selectedPath: note.path });
-    return note;
+    // The database's (user_id, path) constraint also includes soft-deleted
+    // documents, while the in-memory Library intentionally does not. Retry
+    // with a readable suffix instead of exposing a raw Postgres error or
+    // reviving/overwriting a deleted note via upsert.
+    for (let suffix = 1; suffix <= 999; suffix += 1) {
+      const candidate = noteCandidate(title, folder, suffix);
+      if (state.notes.some((note) => note.path.toLocaleLowerCase() === candidate.path.toLocaleLowerCase())) continue;
+      const content = input.content ?? `# ${candidate.title}\n\n`;
+      const { data, error } = await supabase
+        .from("readable_library_documents")
+        .insert({ user_id: userId, path: candidate.path, kind: "note", title: candidate.title, content, deleted: false, updated_at: now })
+        .select("id,path,title,content,updated_at")
+        .single();
+      if (isUniquePathViolation(error)) continue;
+      if (error) throw new Error(error.message);
+      const note = toNote(data);
+      if (!note) throw new Error("The note was saved but returned an invalid response.");
+      setState({ ...state, notes: [note, ...state.notes], selectedPath: note.path });
+      return note;
+    }
+    throw new Error("Couldn't find an available name for this note.");
   }, [preview, userId]);
 
   const createFolder = useCallback(async (rawPath: string): Promise<string> => {
@@ -236,19 +258,27 @@ export function useCloudLibrary(): UseCloudLibraryApi {
       return path;
     }
     if (!userId) throw new Error("Sign in to create a folder.");
-    const title = path.split("/").pop() ?? path;
-    const { error } = await supabase.from("readable_library_documents").insert({
-      user_id: userId,
-      path,
-      kind: "folder",
-      title,
-      content: null,
-      deleted: false,
-      updated_at: new Date().toISOString(),
-    });
-    if (error) throw new Error(error.message);
-    setState({ ...state, folders: [...state.folders, path] });
-    return path;
+    const parent = path.split("/").slice(0, -1).join("/");
+    const baseTitle = path.split("/").pop() ?? path;
+    for (let suffix = 1; suffix <= 999; suffix += 1) {
+      const title = suffix === 1 ? baseTitle : `${baseTitle} ${suffix}`;
+      const candidate = parent ? `${parent}/${title}` : title;
+      if (state.folders.some((folder) => folder.toLocaleLowerCase() === candidate.toLocaleLowerCase())) continue;
+      const { error } = await supabase.from("readable_library_documents").insert({
+        user_id: userId,
+        path: candidate,
+        kind: "folder",
+        title,
+        content: null,
+        deleted: false,
+        updated_at: new Date().toISOString(),
+      });
+      if (isUniquePathViolation(error)) continue;
+      if (error) throw new Error(error.message);
+      setState({ ...state, folders: [...state.folders, candidate] });
+      return candidate;
+    }
+    throw new Error("Couldn't find an available name for this folder.");
   }, [preview, userId]);
 
   const saveNote = useCallback(async (input: SaveNoteInput): Promise<CloudLibraryNote> => {

@@ -12,9 +12,11 @@ function domainFor(url: string) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }
 
-export function SessionRightRail({ panel, onPanelChange, onCollapse, sources, outputs }: { panel: SessionRailPanel; onPanelChange: (panel: SessionRailPanel) => void; onCollapse: () => void; sources: SessionSource[]; outputs: SessionOutput[] }) {
+export type SessionRailSource = Omit<SessionSource, "url" | "description"> & { url?: string; description?: string };
+
+export function SessionRightRail({ panel, onPanelChange, onCollapse, sources, outputs }: { panel: SessionRailPanel; onPanelChange: (panel: SessionRailPanel) => void; onCollapse: () => void; sources: SessionRailSource[]; outputs: SessionOutput[] }) {
   return (
-    <aside className="flex h-full w-[17.5rem] shrink-0 flex-col overflow-hidden border-l border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-[min(18rem,88vw)] max-md:shadow-xl">
+    <aside className="flex h-full w-[17.5rem] shrink-0 flex-col overflow-hidden border-l border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) animate-in slide-in-from-right-5 fade-in-0 duration-200 motion-reduce:animate-none max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-[min(18rem,88vw)] max-md:shadow-xl">
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-(--ui-stroke-tertiary) px-2">
         <div className="grid flex-1 grid-cols-2 rounded-xl bg-(--ui-bg-quaternary) p-0.5">
           {(["sources", "outputs"] as const).map((option) => (
@@ -25,13 +27,13 @@ export function SessionRightRail({ panel, onPanelChange, onCollapse, sources, ou
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {panel === "sources" ? (
-          sources.length ? <div className="grid gap-2">{sources.map((source) => (
-            <a className="grid gap-1 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-editor) p-3 hover:border-(--ui-stroke-secondary) hover:bg-(--ui-control-hover-background)" href={source.url} key={source.url} rel="noopener noreferrer" target="_blank">
-              <span className="flex items-center gap-1.5 text-[0.6875rem] text-(--ui-text-tertiary)"><IconLink size={12} />{domainFor(source.url)}</span>
-              <span className="text-xs font-medium leading-snug text-foreground">{source.title || domainFor(source.url)}</span>
-              {source.description && <span className="line-clamp-3 text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)">{source.description}</span>}
-            </a>
-          ))}</div> : <RailEmpty icon={<IconLink size={18} />} text="Sources from web searches will appear here." />
+          sources.length ? <div className="grid gap-2">{sources.map((source, index) => {
+            const body = <><span className="flex items-center gap-1.5 text-[0.6875rem] text-(--ui-text-tertiary)"><IconLink size={12} />{source.url ? domainFor(source.url) : "Notebook source"}</span><span className="text-xs font-medium leading-snug text-foreground">{source.title || (source.url ? domainFor(source.url) : "Source")}</span>{source.description && <span className="line-clamp-3 text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)">{source.description}</span>}</>;
+            const className = "grid gap-1 rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-editor) p-3 hover:border-(--ui-stroke-secondary) hover:bg-(--ui-control-hover-background)";
+            return source.url
+              ? <a className={className} href={source.url} key={source.url} rel="noopener noreferrer" target="_blank">{body}</a>
+              : <div className={className} key={`${source.title}:${index}`}>{body}</div>;
+          })}</div> : <RailEmpty icon={<IconLink size={18} />} text="Sources from web searches will appear here." />
         ) : outputs.length ? (
           <div className="grid gap-2">{outputs.map((output) => {
             const body = <><span className="text-[0.6875rem] capitalize text-(--ui-text-tertiary)">{output.kind}</span><span className="text-xs font-medium text-foreground">{output.title}</span></>;

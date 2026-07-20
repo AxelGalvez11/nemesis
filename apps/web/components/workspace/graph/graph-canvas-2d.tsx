@@ -49,7 +49,7 @@ function seedNodes(index: GraphIndex): { nodes: FlatNode[]; links: FlatLink[] } 
 function settleLayout(nodes: FlatNode[], links: FlatLink[], controls: GraphControlsState) {
   const iterations = Math.min(220, 90 + nodes.length * 2);
   const desiredDistance = Math.max(18, controls.spread);
-  const charge = Math.max(4, controls.repulsion) * 16;
+  const charge = Math.max(0, controls.repulsion) * 22;
   for (let tick = 0; tick < iterations; tick += 1) {
     const alpha = 1 - tick / iterations;
     for (let i = 0; i < nodes.length; i += 1) {
@@ -83,7 +83,7 @@ function settleLayout(nodes: FlatNode[], links: FlatLink[], controls: GraphContr
       link.target.vx -= dx * force;
       link.target.vy -= dy * force;
     }
-    const centerForce = Math.max(0.0003, controls.gravity * 0.008) * alpha;
+    const centerForce = Math.max(0, controls.gravity) * 0.015 * alpha;
     for (const node of nodes) {
       node.vx -= node.x * centerForce;
       node.vy -= node.y * centerForce;
@@ -93,6 +93,15 @@ function settleLayout(nodes: FlatNode[], links: FlatLink[], controls: GraphContr
       node.y += node.vy;
     }
   }
+}
+
+export function measureSettled2DLayout(index: GraphIndex, controls: GraphControlsState) {
+  const graph = seedNodes(index);
+  settleLayout(graph.nodes, graph.links, controls);
+  if (graph.nodes.length === 0) return { width: 0, height: 0 };
+  const xs = graph.nodes.map((node) => node.x);
+  const ys = graph.nodes.map((node) => node.y);
+  return { width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
 }
 
 function fittedTransform(nodes: FlatNode[], width: number, height: number): ViewTransform {
@@ -115,6 +124,7 @@ export function GraphCanvas2D({ index, controls, onNodeClick, className }: Graph
   const transformRef = useRef<ViewTransform>({ x: 0, y: 0, scale: 1 });
   const hoverRef = useRef<string | null>(null);
   const drawRef = useRef<() => void>(() => undefined);
+  const fittedIndexRef = useRef<GraphIndex | null>(null);
   const controlsRef = useRef(controls);
   const onNodeClickRef = useRef(onNodeClick);
   controlsRef.current = controls;
@@ -280,7 +290,9 @@ export function GraphCanvas2D({ index, controls, onNodeClick, className }: Graph
     };
 
     drawRef.current = draw;
-    resize(true);
+    const shouldFit = fittedIndexRef.current !== index;
+    resize(shouldFit);
+    fittedIndexRef.current = index;
     const observer = new ResizeObserver(() => resize(false));
     observer.observe(host);
     canvas.addEventListener("pointerdown", onPointerDown);
@@ -304,7 +316,14 @@ export function GraphCanvas2D({ index, controls, onNodeClick, className }: Graph
   useEffect(() => drawRef.current(), [controls.labelSize, controls.neighborGlow, controls.nodeSize, controls.showNames]);
 
   return (
-    <div className={cn("min-h-0 overflow-hidden", className)} data-graph-mode="2d" ref={hostRef}>
+    <div
+      className={cn("min-h-0 overflow-hidden", className)}
+      data-force-gravity={controls.gravity}
+      data-force-repulsion={controls.repulsion}
+      data-force-spread={controls.spread}
+      data-graph-mode="2d"
+      ref={hostRef}
+    >
       <canvas aria-label="Two-dimensional note graph" className="block size-full touch-none" ref={canvasRef} />
     </div>
   );

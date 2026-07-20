@@ -38,12 +38,14 @@ function readStoredComposerMode(): ComposerMode {
 interface ComposerProps {
   busy: boolean;
   centered?: boolean;
+  placement?: "floating" | "inline";
   placeholder: string;
+  onModeChange?: (mode: ComposerMode) => void;
   onSubmit: (text: string, files: File[]) => void;
   onStop: () => void;
 }
 
-export function Composer({ busy, centered = false, placeholder, onSubmit, onStop }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, onModeChange, onSubmit, onStop }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasText, setHasText] = useState(false);
@@ -53,11 +55,16 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
 
   useEffect(() => {
-    setComposerMode(readStoredComposerMode());
+    const stored = readStoredComposerMode();
+    setComposerMode(stored);
+    onModeChange?.(stored);
+    // The stored mode is read once when this composer is mounted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const setMode = (mode: ComposerMode) => {
     setComposerMode(mode);
+    onModeChange?.(mode);
     setRecording(false);
     try {
       window.localStorage.setItem(COMPOSER_MODE_STORAGE_KEY, mode);
@@ -123,8 +130,11 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
   return (
     <div
       className={cn(
-        "group/composer absolute left-1/2 z-30 w-[min(46rem,calc(100%-2rem))] max-w-full -translate-x-1/2 overflow-visible rounded-[1.75rem] pt-2 pb-[var(--composer-shell-pad-block-end)]",
-        centered ? "top-1/2 -translate-y-1/2" : "bottom-3",
+        "group/composer z-30 max-w-full overflow-visible rounded-[1.75rem] pt-2 pb-[var(--composer-shell-pad-block-end)]",
+        placement === "floating"
+          ? "absolute left-1/2 w-[min(46rem,calc(100%-2rem))] -translate-x-1/2"
+          : "relative w-full",
+        placement === "floating" && (centered ? "top-1/2 -translate-y-1/2" : "bottom-3"),
       )}
       data-slot="composer-root"
     >
@@ -152,7 +162,7 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
               </div>
             )}
             <div className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-(--composer-control-gap) [grid-template-areas:'menu_input_controls']">
-              <div className="flex translate-y-[3px] items-start self-start [grid-area:menu]">
+              <div className="flex items-center self-center [grid-area:menu]">
                 {composerMode === "chat" && (
                   <>
                     <input className="sr-only" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} ref={fileInputRef} type="file" />
@@ -161,20 +171,21 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
                 )}
               </div>
               <div className="min-w-0 [grid-area:input]">
-                <div
-                  aria-multiline="true"
-                  className={cn(
-                    "min-h-(--composer-input-min-height) max-h-(--composer-input-max-height) min-w-(--composer-input-inline-min-width) flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent pb-1 pr-1 pt-1 text-[length:var(--conversation-text-font-size)] leading-normal text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60",
-                    composerMode === "chat" ? "cursor-text" : "cursor-default",
-                  )}
-                  contentEditable={composerMode === "chat"}
-                  data-placeholder={composerMode === "chat" ? placeholder : "Record a lecture or conversation"}
-                  data-slot="composer-rich-input"
-                  onInput={(event) => setHasText((event.currentTarget.textContent ?? "").trim().length > 0)}
-                  onKeyDown={handleKeyDown}
-                  ref={inputRef}
-                  role="textbox"
-                />
+                {composerMode === "chat" ? (
+                  <div
+                    aria-multiline="true"
+                    className="min-h-(--composer-input-min-height) max-h-(--composer-input-max-height) min-w-(--composer-input-inline-min-width) flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent py-1 pr-1 text-[length:var(--conversation-text-font-size)] leading-normal text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/60"
+                    contentEditable
+                    data-placeholder={placeholder}
+                    data-slot="composer-rich-input"
+                    onInput={(event) => setHasText((event.currentTarget.textContent ?? "").trim().length > 0)}
+                    onKeyDown={handleKeyDown}
+                    ref={inputRef}
+                    role="textbox"
+                  />
+                ) : (
+                  <AudioWaveform active={recording} />
+                )}
               </div>
               <div className="flex items-center justify-end [grid-area:controls]">
                 <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
@@ -219,7 +230,37 @@ export function Composer({ busy, centered = false, placeholder, onSubmit, onStop
           </div>
         </div>
       </div>
+      {composerMode === "record" && <RecordCompanionPanel />}
     </div>
+  );
+}
+
+function AudioWaveform({ active }: { active: boolean }) {
+  return (
+    <div aria-label={active ? "Recording audio waveform" : "Audio waveform ready"} className="flex h-(--composer-input-min-height) min-w-36 items-center justify-center gap-[3px]" role="img">
+      {Array.from({ length: 18 }, (_, index) => (
+        <span
+          className={cn("w-[2px] rounded-full bg-foreground/65", active ? "animate-pulse" : "opacity-45")}
+          key={index}
+          style={{ animationDelay: `${(index % 6) * 85}ms`, animationDuration: `${620 + (index % 5) * 90}ms`, height: `${7 + ((index * 7) % 17)}px` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+export function RecordCompanionPanel() {
+  return (
+    <section className="mt-2 grid min-h-28 grid-cols-2 divide-x divide-(--ui-stroke-tertiary) overflow-hidden rounded-[1.5rem] border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_92%,transparent)] shadow-lg backdrop-blur-xl animate-in slide-in-from-bottom-3 fade-in-0 duration-300 motion-reduce:animate-none">
+      <div className="p-4">
+        <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">Transcript</h2>
+        <p className="mt-2 text-xs leading-relaxed text-(--ui-text-quaternary)">Live transcription will appear here while you record.</p>
+      </div>
+      <div className="p-4">
+        <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">Suggestion</h2>
+        <p className="mt-2 text-xs leading-relaxed text-(--ui-text-quaternary)">Prompts such as what to say next or what to explore will appear here.</p>
+      </div>
+    </section>
   );
 }
 
