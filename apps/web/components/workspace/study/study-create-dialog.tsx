@@ -1,6 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  IconBold,
+  IconBrackets,
+  IconCode,
+  IconHighlight,
+  IconItalic,
+  IconList,
+  IconTypography,
+} from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import {
@@ -31,6 +40,17 @@ function titleFromSource(path: string | null | undefined) {
   return leaf.replace(/\.md$/i, "");
 }
 
+type CardFormat = "bold" | "italic" | "highlight" | "code" | "cloze" | "list";
+
+const FORMAT_BUTTONS: Array<{ format: CardFormat; label: string; icon: React.ReactNode }> = [
+  { format: "bold", label: "Bold", icon: <IconBold /> },
+  { format: "italic", label: "Italic", icon: <IconItalic /> },
+  { format: "highlight", label: "Highlight", icon: <IconHighlight /> },
+  { format: "code", label: "Inline code", icon: <IconCode /> },
+  { format: "cloze", label: "Cloze deletion", icon: <IconBrackets /> },
+  { format: "list", label: "Bulleted list", icon: <IconList /> },
+];
+
 export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }: StudyCreateDialogProps) {
   const { createCard, createDeck, decks } = useCloudStudy();
   const [name, setName] = useState("");
@@ -42,6 +62,10 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
   const [cardType, setCardType] = useState<StudyCardType>("basic");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toolbarOn, setToolbarOn] = useState(false);
+  const frontRef = useRef<HTMLTextAreaElement>(null);
+  const backRef = useRef<HTMLTextAreaElement>(null);
+  const lastFieldRef = useRef<"front" | "back">("front");
 
   useEffect(() => {
     if (!open) return;
@@ -53,7 +77,33 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
     setDeckId(deck?.id ?? decks[0]?.id ?? "");
     setCardType("basic");
     setError(null);
+    lastFieldRef.current = "front";
   }, [deck?.id, decks, open, sourcePath]);
+
+  // Formatting acts on whichever field was focused last; the text lives in
+  // markdown, which review mode already renders (AssistantMarkdown).
+  function applyFormat(format: CardFormat) {
+    const el = lastFieldRef.current === "back" ? backRef.current : frontRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    const selected = el.value.slice(start, end);
+    let insert: string;
+    if (format === "list") {
+      const body = selected || "item";
+      insert = body.split("\n").map((line) => (line.trim() ? `- ${line.replace(/^\s*[-*+]\s+/, "")}` : line)).join("\n");
+    } else if (format === "cloze") {
+      const highest = (el.value.match(/\{\{c(\d+)::/g) ?? []).reduce((max, mark) => Math.max(max, Number(/\d+/.exec(mark)?.[0] ?? 0)), 0);
+      insert = `{{c${highest + 1}::${selected || "hidden text"}}}`;
+    } else {
+      const wrap = format === "bold" ? "**" : format === "italic" ? "*" : format === "highlight" ? "==" : "`";
+      insert = `${wrap}${selected || `${format} text`}${wrap}`;
+    }
+    el.setRangeText(insert, start, end, "select");
+    el.focus();
+    if (lastFieldRef.current === "back") setBack(el.value);
+    else setFront(el.value);
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -80,7 +130,7 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
   const isDeck = kind === "deck";
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className={isDeck ? "max-w-lg" : "max-w-2xl"}>
         <form className="grid gap-4" onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>{isDeck ? "New deck" : "Add card"}</DialogTitle>
@@ -107,21 +157,43 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
             </>
           ) : (
             <>
-              <label className="grid gap-1.5 text-xs font-medium">
-                Deck
-                <Select onValueChange={setDeckId} value={deckId}><SelectTrigger className="h-10 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-background px-3"><SelectValue placeholder="Choose a deck" /></SelectTrigger><SelectContent>{decks.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
-              </label>
-              <label className="grid gap-1.5 text-xs font-medium">
-                Card type
-                <Select onValueChange={(value) => setCardType(value as StudyCardType)} value={cardType}><SelectTrigger className="h-10 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-background px-3"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="basic">Basic (front/back)</SelectItem><SelectItem value="reversed">Basic reversed</SelectItem><SelectItem value="cloze">Cloze</SelectItem><SelectItem value="image_occlusion">Image occlusion</SelectItem></SelectContent></Select>
-              </label>
+              <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
+                <label className="grid gap-1.5 text-xs font-medium">
+                  Deck
+                  <Select onValueChange={setDeckId} value={deckId}><SelectTrigger className="h-10 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-background px-3"><SelectValue placeholder="Choose a deck" /></SelectTrigger><SelectContent>{decks.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+                </label>
+                <label className="grid gap-1.5 text-xs font-medium">
+                  Card type
+                  <Select onValueChange={(value) => setCardType(value as StudyCardType)} value={cardType}><SelectTrigger className="h-10 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-background px-3"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="basic">Basic (front/back)</SelectItem><SelectItem value="reversed">Basic reversed</SelectItem><SelectItem value="cloze">Cloze</SelectItem><SelectItem value="image_occlusion">Image occlusion</SelectItem></SelectContent></Select>
+                </label>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  aria-label="Formatting toolbar"
+                  aria-pressed={toolbarOn}
+                  onClick={() => setToolbarOn((value) => !value)}
+                  size="icon-xs"
+                  title="Formatting toolbar"
+                  type="button"
+                  variant={toolbarOn ? "secondary" : "ghost"}
+                >
+                  <IconTypography />
+                </Button>
+                {toolbarOn && (
+                  <div aria-label="Card formatting" className="flex items-center gap-0.5 rounded-lg border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)] p-0.5" role="toolbar">
+                    {FORMAT_BUTTONS.map(({ format, label, icon }) => (
+                      <Button aria-label={label} key={format} onClick={() => applyFormat(format)} size="icon-xs" title={label} type="button" variant="ghost">{icon}</Button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <label className="grid gap-1.5 text-xs font-medium">
                 {cardType === "cloze" ? "Cloze text" : cardType === "image_occlusion" ? "Image or occlusion prompt" : "Front"}
-                <Textarea autoFocus onChange={(event) => setFront(event.target.value)} placeholder={cardType === "cloze" ? "The {{c1::mitochondria}} is the powerhouse of the cell." : cardType === "image_occlusion" ? "Paste an image URL or describe the hidden region" : "What should you recall?"} value={front} />
+                <Textarea autoFocus className="min-h-28" onChange={(event) => setFront(event.target.value)} onFocus={() => { lastFieldRef.current = "front"; }} placeholder={cardType === "cloze" ? "The {{c1::mitochondria}} is the powerhouse of the cell." : cardType === "image_occlusion" ? "Paste an image URL or describe the hidden region" : "What should you recall?"} ref={frontRef} value={front} />
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
                 {cardType === "image_occlusion" ? "Occluded answer" : cardType === "cloze" ? "Extra explanation" : "Back"}
-                <Textarea onChange={(event) => setBack(event.target.value)} placeholder="The concise answer or explanation" value={back} />
+                <Textarea className="min-h-24" onChange={(event) => setBack(event.target.value)} onFocus={() => { lastFieldRef.current = "back"; }} placeholder="The concise answer or explanation" ref={backRef} value={back} />
               </label>
             </>
           )}
