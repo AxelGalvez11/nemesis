@@ -7,9 +7,13 @@
 // desktop's "/" = uncommitted new chat until the first message lands.
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { useAuth } from "@/components/AuthProvider";
+import { useNotebooks } from "@/components/workspace/notebooks/notebooks-store";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
+import { listSources } from "@/lib/notebooks/api";
+import { sendNotebookTurn } from "@/lib/notebooks/chat";
 import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
 import { type ChatErrorKind, sendChatTurn } from "@/lib/workspace/chat-api";
 import { sessionsStore, useSessionMessages, useSessions, type SessionMessage } from "@/lib/workspace/sessions-store";
@@ -17,6 +21,7 @@ import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/worksp
 
 import { ChatHeader } from "./chat-header";
 import { Composer, type ComposerMode } from "./composer";
+import { ProjectPill } from "./project-pill";
 import { Thread, type ThreadTurn } from "./thread";
 import type { TurnError } from "./assistant-message";
 import { SessionRightRail, type SessionRailPanel } from "./session-right-rail";
@@ -56,6 +61,11 @@ export function SessionChat() {
 
   const { selectedId, working } = useSessions();
   const { session, messages } = useSessionMessages(selectedId);
+  const router = useRouter();
+  const pathname = usePathname();
+  const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
+  const notebooks = useNotebooks();
+  const [projectId, setProjectId] = useState<string | null>(null);
 
   const [error, setError] = useState<{ sessionId: string; text: string; kind: ChatErrorKind } | null>(null);
   const [rightRailOpen, setRightRailOpen] = useState(false);
@@ -117,9 +127,45 @@ export function SessionChat() {
     }
   }, []);
 
+  // "Work within a project" (owner 2026-07-20): with a project picked, the
+  // message starts a chat INSIDE that notebook — instructions + sources apply
+  // and the chat lives there — then this page hands off to the notebook view.
+  const submitIntoProject = useCallback(
+    async (notebookId: string, text: string, files: File[]) => {
+      if (!uid) return;
+      const prepared = await prepareChatAttachments(text, files, uid);
+      if (!prepared.displayText) return;
+      setError(null);
+      notebooks.select(notebookId);
+      const chat = await notebooks.startChat(notebookId, titleFromPrompt(text || files[0]?.name || "New chat"));
+      if (!chat) {
+        setError({ kind: "generic", sessionId: selectedId ?? "draft", text: "Couldn't start the project chat — check your connection." });
+        return;
+      }
+      const notebook = notebooks.notebooks.find((entry) => entry.id === notebookId) ?? null;
+      const sources = await listSources(notebookId).catch(() => []);
+      void sendNotebookTurn({
+        chatId: chat.id,
+        displayText: prepared.displayText,
+        instructions: notebook?.instructions ?? null,
+        notebookId,
+        sources: sources.map((source) => ({ content: source.content, name: source.name })),
+        uid,
+        userText: prepared.wireText,
+      });
+      setProjectId(null);
+      router.push(`${navigationRoot}/notebooks`);
+    },
+    [navigationRoot, notebooks, router, selectedId, uid],
+  );
+
   const handleSubmit = useCallback(
     async (text: string, files: File[]) => {
       if (!uid) return;
+      if (projectId && !preview) {
+        await submitIntoProject(projectId, text, files);
+        return;
+      }
       const targetId = selectedId ?? sessionsStore.create().id;
       const history = sessionsStore.getState().sessions.find((s) => s.id === targetId)?.messages ?? [];
       const prepared = await prepareChatAttachments(text, files, uid);
@@ -224,7 +270,25 @@ export function SessionChat() {
             <Thread busy={busy} centeredComposer={isFreshThread} error={turnError} key={selectedId ?? "draft"} liveSeconds={liveSeconds} onEditMessage={handleEditMessage} onOpenSources={openSources} turns={turns} />
           )}
           <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-24 bg-linear-to-t from-(--ui-chat-surface-background) via-[color-mix(in_srgb,var(--ui-chat-surface-background)_82%,transparent)] to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_top,black_35%,transparent)]" />
-          <Composer busy={busy} centered={isFreshThread && composerMode === "chat"} mode={composerMode} onModeChange={handleModeChange} onRecordingChange={setRecording} onStop={handleStop} onSubmit={handleSubmit} placeholder={placeholder} showRecordCompanion={false} />
+          <Composer
+            belowStart={isFreshThread ? (
+              <ProjectPill
+                notebooks={notebooks.notebooks}
+                onChange={setProjectId}
+                onNewProject={() => router.push(`${navigationRoot}/notebooks`)}
+                value={projectId}
+              />
+            ) : undefined}
+            busy={busy}
+            centered={isFreshThread && composerMode === "chat"}
+            mode={composerMode}
+            onModeChange={handleModeChange}
+            onRecordingChange={setRecording}
+            onStop={handleStop}
+            onSubmit={handleSubmit}
+            placeholder={projectId ? "Message your project" : placeholder}
+            showRecordCompanion={false}
+          />
         </div>
       </div>
       {rightRailOpen && <SessionRightRail onCollapse={() => setRightRailOpen(false)} onPanelChange={setRightPanel} outputs={outputs} panel={rightPanel} sources={sources} />}

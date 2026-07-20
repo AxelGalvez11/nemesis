@@ -4,7 +4,7 @@
 // contenteditable input, Chat/Record mode, attachment/deep-research menu,
 // dictation, and send/stop/record controls.
 
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { consumeSeededComposerFiles } from "@/lib/workspace/composer-seed";
@@ -48,9 +48,11 @@ interface ComposerProps {
   onSubmit: (text: string, files: File[]) => void;
   onStop: () => void;
   showRecordCompanion?: boolean;
+  /** Rendered under the pill, aligned to its left edge (the Projects chip). */
+  belowStart?: ReactNode;
 }
 
-export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasText, setHasText] = useState(false);
@@ -260,6 +262,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
           </div>
         </div>
       </div>
+      {activeMode === "chat" && belowStart && <div className="mt-2 flex justify-start px-1">{belowStart}</div>}
       {activeMode === "record" && showRecordCompanion && <RecordCompanionPanel />}
     </div>
   );
