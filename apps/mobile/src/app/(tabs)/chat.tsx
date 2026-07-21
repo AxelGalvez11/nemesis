@@ -5,7 +5,6 @@ import {
   Easing,
   FlatList,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -19,15 +18,31 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
-import { deleteThread, isThreadPinned, listThreads, loadThreadMessages, newThreadId, pinThread, saveThreadMessages, sendChat } from "@/api/chat";
+import {
+  deleteThread,
+  isThreadPinned,
+  listThreads,
+  loadThreadMessages,
+  loadThreadOutputs,
+  newThreadId,
+  pinThread,
+  saveThreadMessages,
+  sendChat,
+} from "@/api/chat";
+import type { CloudLibraryNote } from "@/api/cloudLibrary";
 import { useShell } from "@/components/AppDrawer";
-import { Composer } from "@/components/Composer";
+import { AttachLibrarySheet } from "@/components/AttachLibrarySheet";
+import { Composer, COMPOSER_PILL_HEIGHT } from "@/components/Composer";
+import { ComposerPlusMenu } from "@/components/ComposerPlusMenu";
+import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
 import { GlassSurface } from "@/components/GlassSurface";
+import { CloseIcon } from "@/components/icons";
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
 import { ThinkingDots } from "@/components/ThinkingDots";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
-import type { BudgetResetKind, ChatMsg, ChatSource } from "@/lib/chat-thread";
+import { withAttachmentNote, type BudgetResetKind, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
@@ -85,6 +100,23 @@ export default function ChatScreen() {
   const [pinned, setPinned] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [upgrade, setUpgrade] = useState<null | { message: string | null; reset: BudgetResetKind | null }>(null);
+  // Session-level deliverables (chat_threads.meta.outputs — e.g. a web
+  // Record-mode recording) for the open thread; chip row at the top of the
+  // transcript. See api/chat.ts's loadThreadOutputs doc for why the phone
+  // only ever reads these, never creates them.
+  const [threadOutputs, setThreadOutputs] = useState<ChatOutput[]>([]);
+  // Composer "+" mini menu (owner: attach a Library doc, or toggle deep
+  // research) and the two things it opens/toggles.
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
+  // One Library doc attached as context for the NEXT send only — cleared once
+  // that turn is sent (see send()'s attachedDoc capture). Deep research is the
+  // opposite: a persistent toggle the student switches off themselves.
+  const [attachedDoc, setAttachedDoc] = useState<{ title: string; content: string } | null>(null);
+  const [deepResearchOn, setDeepResearchOn] = useState(false);
+  // Which message's sources/deliverable is showing in its bottom-up sheet, if any.
+  const [sourcesSheetFor, setSourcesSheetFor] = useState<ChatSource[] | null>(null);
+  const [deliverableSheetFor, setDeliverableSheetFor] = useState<ChatOutput | null>(null);
   // Epoch bumps on user change AND thread change; in-flight sends compare before
   // touching state. sendingRef is the synchronous re-entrancy lock.
   const epochRef = useRef(0);
@@ -108,6 +140,13 @@ export default function ChatScreen() {
     setInput("");
     setPinned(false);
     setMenuOpen(false);
+    setThreadOutputs([]);
+    setPlusMenuOpen(false);
+    setLibraryPickerOpen(false);
+    setAttachedDoc(null);
+    setDeepResearchOn(false);
+    setSourcesSheetFor(null);
+    setDeliverableSheetFor(null);
     if (!uid) {
       setThreadId(null);
       return;
@@ -127,6 +166,9 @@ export default function ChatScreen() {
       setMessages(loaded);
       void isThreadPinned(uid, id).then((p) => {
         if (alive && epochRef.current === epoch) setPinned(p);
+      });
+      void loadThreadOutputs(uid, id).then((outputs) => {
+        if (alive && epochRef.current === epoch) setThreadOutputs(outputs);
       });
     })();
     return () => {
@@ -151,13 +193,16 @@ export default function ChatScreen() {
     return () => sub.remove();
   }, [uid, threadId]);
 
-  // Header title: the Nemesis logo until the student asks something, then the
-  // conversation's title (their first question, trimmed). Cleared on unmount.
+  // TopBar: no centered chat/session title in a chat (owner 2026-07-20 — "remove
+  // the centered top chat/session title in a chat"). Always blank; only the "…"
+  // actions menu (see the setHeaderRight effect below) occupies the header.
+  // headerTitle itself is still driven by OTHER screens (Library/Study/
+  // Notebooks tabs, notebook.tsx's own header) — this only clears what THIS
+  // screen contributes, on mount and again on unmount.
   useEffect(() => {
-    const firstUser = (messages.find((message) => message.role === "user")?.content ?? "").trim();
-    setHeaderTitle(firstUser ? (firstUser.length > 30 ? `${firstUser.slice(0, 29).trim()}…` : firstUser) : null);
-  }, [messages, setHeaderTitle]);
-  useEffect(() => () => setHeaderTitle(null), [setHeaderTitle]);
+    setHeaderTitle(null);
+    return () => setHeaderTitle(null);
+  }, [setHeaderTitle]);
 
   const send = useCallback(() => {
     const text = input.trim();
@@ -166,20 +211,31 @@ export default function ChatScreen() {
     const epoch = epochRef.current;
     const history = messages;
     const id = threadId;
-    const userMsg: ChatMsg = { at: new Date().toISOString(), content: text, role: "user" };
+    // Captured once at send time — attach is one-shot (cleared right below,
+    // same turn), deep research is a persistent toggle the student switches
+    // off themselves (NOT cleared here). Both ride into sendChat's options,
+    // never into the persisted/displayed ChatMsg.content itself.
+    const doc = attachedDoc;
+    const research = deepResearchOn;
+    const userMsg: ChatMsg = { at: new Date().toISOString(), content: withAttachmentNote(text, doc?.title ?? null), role: "user" };
     const base = [...history, userMsg];
     setMessages(base);
     setLastError(null);
     setInput("");
+    setAttachedDoc(null);
     setSending(true);
     setStreamingText("");
     // Persist the user turn immediately so the thread shows in the sidebar even
     // if the reply never lands.
     void saveThreadMessages(uid, id, base);
-    void sendChat(uid, history, text, (_delta, accumulated) => {
-      // Renders live into the assistant row as chunks arrive; stale turns
-      // (thread/user switched mid-stream) are dropped by the epoch guard.
-      if (epochRef.current === epoch) setStreamingText(accumulated);
+    void sendChat(uid, history, text, {
+      attachedDoc: doc ? { content: doc.content, title: doc.title } : undefined,
+      forceResearch: research,
+      onDelta: (_delta, accumulated) => {
+        // Renders live into the assistant row as chunks arrive; stale turns
+        // (thread/user switched mid-stream) are dropped by the epoch guard.
+        if (epochRef.current === epoch) setStreamingText(accumulated);
+      },
     })
       .then((reply) => {
         if (epochRef.current !== epoch) return;
@@ -212,7 +268,7 @@ export default function ChatScreen() {
           setStreamingText("");
         }
       });
-  }, [input, messages, uid, threadId]);
+  }, [input, messages, uid, threadId, attachedDoc, deepResearchOn]);
 
   // "…" menu actions.
   const handleDelete = useCallback(() => {
@@ -352,24 +408,33 @@ export default function ChatScreen() {
               </View>
             ) : (
               // Assistant: full-width markdown (with LaTeX/math), NO bubble. Fades in as
-              // it arrives (owner 2026-07-19). Sources (when the router grounded this
-              // turn with a web search) render as a compact tappable row underneath.
+              // it arrives (owner 2026-07-19). A "Sources · N" pill (when the router
+              // grounded this turn with a web search) and any deliverable chips this
+              // turn carries render underneath.
               <Reanimated.View entering={FadeIn.duration(350)} style={styles.assistantRow}>
                 <MessageBody content={item.msg!.content} styles={markdownStyles} />
-                {item.msg!.sources?.length ? <SourcesRow sources={item.msg!.sources} /> : null}
+                {item.msg!.sources?.length ? (
+                  <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
+                ) : null}
+                {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={setDeliverableSheetFor} /> : null}
               </Reanimated.View>
             )
           }
+          ListHeaderComponent={
+            // Session-level deliverables (e.g. a web Record-mode recording synced
+            // onto this thread) — a chip row at the very top of the transcript,
+            // separate from any PER-MESSAGE chips rendered in renderItem above.
+            threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={setDeliverableSheetFor} /> : null
+          }
           ListEmptyComponent={
-            // Greeting rendered directly (not the shared EmptyBlock, which is
-            // flex:1 + centered) so it anchors NEAR THE TOP (owner call). The list's own
-            // paddingTop already clears the glass TopBar, so this only adds a little more.
+            // Minimal greeting — ONE line, no explainer (owner 2026-07-20: "remove the
+            // 'what are we working on today...' because its too noisy. just a simple
+            // welcome back"). Rendered directly (not the shared EmptyBlock, which is
+            // flex:1 + centered) so it still anchors NEAR THE TOP, not vertically
+            // centered (prior owner call this preserves). The list's own paddingTop
+            // already clears the glass TopBar, so this only adds a little more.
             <View style={[styles.emptyWrap, { paddingTop: space(4), paddingBottom: contentBottom }]}>
               <Text style={styles.emptyTitle}>Welcome back</Text>
-              <Text style={styles.emptyBody}>
-                What are we working on today? Ask about mechanisms, brand names, or anything from your classes — answers come
-                straight from the cloud.
-              </Text>
             </View>
           }
           ListFooterComponent={
@@ -392,12 +457,32 @@ export default function ChatScreen() {
           reset={upgrade?.reset ?? null}
           onClose={() => setUpgrade(null)}
         />
+        <ComposerPlusMenu
+          visible={plusMenuOpen}
+          onClose={() => setPlusMenuOpen(false)}
+          bottomOffset={(keyboardUp ? space(3) : contentBottom - space(1)) + COMPOSER_PILL_HEIGHT + space(2)}
+          onAttach={() => setLibraryPickerOpen(true)}
+          deepResearchOn={deepResearchOn}
+          onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}
+        />
+        <AttachLibrarySheet
+          visible={libraryPickerOpen}
+          onClose={() => setLibraryPickerOpen(false)}
+          userId={uid}
+          onPick={(note: CloudLibraryNote) => {
+            setAttachedDoc({ content: note.content, title: note.title });
+            setLibraryPickerOpen(false);
+          }}
+        />
+        <SourcesSheet visible={sourcesSheetFor !== null} onClose={() => setSourcesSheetFor(null)} sources={sourcesSheetFor ?? []} />
+        <DeliverableSheet visible={deliverableSheetFor !== null} onClose={() => setDeliverableSheetFor(null)} output={deliverableSheetFor} />
         <View style={[styles.composerRow, { paddingBottom: keyboardUp ? space(3) : contentBottom - space(1) }]}>
+          {attachedDoc ? <AttachedDocChip title={attachedDoc.title} onRemove={() => setAttachedDoc(null)} /> : null}
           <Composer
             value={input}
             onChangeText={setInput}
             onSend={send}
-            onPlus={newChat}
+            onPlus={() => setPlusMenuOpen((v) => !v)}
             sending={sending}
             placeholder="Ask Nemesis…"
             inputRef={composerRef}
@@ -491,36 +576,23 @@ function DotsIcon({ size = 20, color }: { size?: number; color: string }) {
   );
 }
 
-/** Compact tappable row of web-search citations under an assistant message
- *  (§6: only rendered when the router grounded the turn with a live search).
- *  Opens the result in the external browser — there's no in-app viewer for an
- *  arbitrary web URL. */
-function SourcesRow({ sources }: { sources: ChatSource[] }) {
+/** The attached Library document's small removable chip, rendered just above
+ *  the composer input while it's staged for the next send (owner spec:
+ *  "show a small removable chip above the composer input"). Cleared
+ *  automatically once that turn sends (see send()) or manually via the "x". */
+function AttachedDocChip({ title, onRemove }: { title: string; onRemove: () => void }) {
   const styles = useThemedStyles(createStyles);
+  const { colors: c } = useTheme();
   return (
-    <View style={styles.sourcesRow} testID="chat-sources">
-      {sources.map((source, index) => (
-        <Pressable
-          key={`${source.url}-${index}`}
-          style={({ pressed }) => [styles.sourceChip, pressed && styles.sourceChipPressed]}
-          onPress={() => void Linking.openURL(source.url).catch(() => {})}
-          testID={`chat-source-${index}`}
-        >
-          <Text style={styles.sourceChipText} numberOfLines={1}>
-            {source.title.trim() || hostnameOf(source.url)}
-          </Text>
+    <View style={styles.attachChipRow}>
+      <View style={styles.attachChip} testID="chat-attached-doc-chip">
+        <Text style={styles.attachChipText} numberOfLines={1}>{title}</Text>
+        <Pressable onPress={onRemove} hitSlop={8} accessibilityLabel={`Remove ${title}`} testID="chat-attached-doc-remove">
+          <CloseIcon size={12} color={c.text2} />
         </Pressable>
-      ))}
+      </View>
     </View>
   );
-}
-
-/** Bare hostname for a chip label when a result has no title. A small regex
- *  rather than the global `URL` API — dependency-free and can't throw on a
- *  malformed url (falls back to the raw string). */
-function hostnameOf(url: string): string {
-  const match = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/@]*@)?([^/:?#]+)/i.exec(url);
-  return (match?.[1] ?? url).replace(/^www\./, "");
 }
 
 const createStyles = (c: ThemeColors) =>
@@ -538,19 +610,28 @@ const createStyles = (c: ThemeColors) =>
     userText: { ...type.body, color: c.text },
     // Assistant is not a bubble — it's a full-width block of markdown.
     assistantRow: { alignSelf: "stretch", paddingHorizontal: space(0.5), paddingVertical: space(1) },
-    // Compact tappable "Sources" chips under an assistant message (§6).
-    sourcesRow: { flexDirection: "row", flexWrap: "wrap", gap: space(1.5), marginTop: space(1.5), paddingHorizontal: space(0.5) },
-    sourceChip: { maxWidth: 220, paddingVertical: space(1), paddingHorizontal: space(2.5), borderRadius: radius.md, borderWidth: 1, borderColor: c.line },
-    sourceChipPressed: { backgroundColor: c.surface },
-    sourceChipText: { ...type.small, color: c.accent },
     errorBubble: { alignSelf: "flex-start", maxWidth: "88%", borderRadius: radius.lg, paddingHorizontal: space(3.5), paddingVertical: space(2.5), borderWidth: 1, borderColor: c.warnLine, backgroundColor: c.warnFaint },
     errorText: { ...type.small, color: c.text2 },
     // No flex:1 — the greeting sizes to its content so it sits at the top of the
-    // scroll area (paddingTop places it just below the glass TopBar).
+    // scroll area (paddingTop places it just below the glass TopBar). Owner
+    // 2026-07-20: ONE short line only, muted (text2) — no explainer sentence.
     emptyWrap: { alignItems: "center", gap: space(2), paddingHorizontal: space(6) },
-    emptyTitle: { ...type.title, color: c.text, textAlign: "center" },
-    emptyBody: { ...type.small, color: c.text2, textAlign: "center", maxWidth: 320 },
+    emptyTitle: { ...type.title, color: c.text2, textAlign: "center" },
     composerRow: { paddingHorizontal: space(3), paddingTop: space(2) },
+    // The attached-Library-doc chip staged above the composer input.
+    attachChipRow: { marginBottom: space(1.5), paddingHorizontal: space(1) },
+    attachChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      alignSelf: "flex-start",
+      gap: space(1.5),
+      maxWidth: 260,
+      paddingVertical: space(1),
+      paddingHorizontal: space(2.5),
+      borderRadius: radius.pill,
+      backgroundColor: c.surface2,
+    },
+    attachChipText: { ...type.small, color: c.text, flexShrink: 1 },
 
     // "…" chat-actions button (rendered into the TopBar's right slot) + its dropdown.
     actionsBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: c.line },

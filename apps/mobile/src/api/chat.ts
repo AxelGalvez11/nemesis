@@ -22,13 +22,17 @@ import { fetch as expoFetch } from "expo/fetch";
 import { supabase } from "./supabase";
 import {
   budgetResetKind,
+  buildAttachmentContext,
   buildWireMessages,
   chatErrorKind,
   chatErrorMessage,
+  forcedResearchDecision,
   formatWebSearchContext,
+  type AttachedLibraryDoc,
   type BudgetResetKind,
   type ChatErrorKind,
   type ChatMsg,
+  type ChatOutput,
   type ChatSource,
   type WireMsg,
 } from "@/lib/chat-thread";
@@ -47,6 +51,7 @@ import {
   mergeCloudThreadList,
   mergeMessages,
   newMessagesSince,
+  outputsFromMeta,
   parseThreadStore,
   remapThreadId,
   removeThread,
@@ -222,27 +227,45 @@ async function postChatCompletion(
   }
 }
 
+export interface SendChatOptions {
+  onDelta?: CompletionDeltaHandler;
+  /** Set when the composer's "Deep research" toggle was on for this turn —
+   *  forces forcedResearchDecision() instead of classifyChatRequest's
+   *  text-based inference. See that function's doc for why. */
+  forceResearch?: boolean;
+  /** A Library document attached via the composer's "+" menu for this turn —
+   *  folded into the wire-only prompt (buildAttachmentContext) and NEVER
+   *  passed back out; the caller is responsible for what (if anything) it
+   *  records into the persisted ChatMsg it builds for its own history (see
+   *  chat.tsx's send(), which uses withAttachmentNote for that). */
+  attachedDoc?: AttachedLibraryDoc;
+}
+
 /** One routed completion turn for the signed-in user `uid`: classifies the
- *  request (model + whether it needs live search), optionally grounds it with
- *  a nemesis-search call, then streams the reply. `onDelta` (optional) is
+ *  request (model + whether it needs live search) — or, when the composer's
+ *  Deep research toggle forced it, always research — optionally folds in an
+ *  attached Library document's text, grounds with a nemesis-search call when
+ *  the route calls for it, then streams the reply. `options.onDelta` is
  *  called with each chunk as it arrives so the screen can render into the
  *  assistant bubble live. Never throws. */
 export async function sendChat(
   uid: string,
   history: ChatMsg[],
   userText: string,
-  onDelta?: CompletionDeltaHandler,
+  options: SendChatOptions = {},
 ): Promise<ChatReply> {
-  const decision = classifyChatRequest(userText);
-  let groundedText = userText;
+  const { attachedDoc, forceResearch, onDelta } = options;
+  const decision = forceResearch ? forcedResearchDecision() : classifyChatRequest(userText);
+  const attachmentContext = attachedDoc ? buildAttachmentContext(attachedDoc) : "";
+  let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
   let sources: ChatSource[] = [];
   if (decision.searchWeb) {
     const query = decision.route === "current" ? withFreshDateAnchor(userText) : userText;
     const result = await searchWebContext(uid, query);
     sources = result.sources;
     groundedText = result.context
-      ? `${userText}\n\n${result.context}`
-      : `${userText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
+      ? `${groundedText}\n\n${result.context}`
+      : `${groundedText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
   const reply = await postChatCompletion(uid, buildWireMessages(history, groundedText, decision), decision, onDelta);
   return { ...reply, sources };
@@ -327,15 +350,24 @@ async function withOneRetry<T extends SupabaseResult>(fn: () => PromiseLike<T>):
 }
 
 /** One `chat_messages` row for `message` — content clamped to the column's
- *  60,000-char check constraint; `meta.sources` uses the SAME field shape as
- *  web's SessionSource (title/url/description), so a thread written from the
- *  phone reads back identically on web with no translation layer. */
+ *  60,000-char check constraint; `meta.sources`/`meta.outputs` use the SAME
+ *  field shapes as web's SessionSource/SessionOutput, so a thread written from
+ *  the phone reads back identically on web with no translation layer. The
+ *  phone Chat surface never constructs a message with `.outputs` itself today
+ *  (no recording composer, no tool executor) — this only matters for keeping
+ *  a message's outputs intact if some future local write path ever sets them;
+ *  a message already synced from web keeps its outputs regardless (chat_messages
+ *  has no UPDATE grant, so an existing row is never overwritten — see
+ *  syncThreadToCloud's ignoreDuplicates upsert below). */
 function cloudMessageRow(uid: string, threadId: string, message: ChatMsg & { id: string }) {
+  const meta = message.sources?.length || message.outputs?.length
+    ? { ...(message.sources?.length ? { sources: message.sources } : {}), ...(message.outputs?.length ? { outputs: message.outputs } : {}) }
+    : null;
   return {
     content: message.content.slice(0, 60_000),
     created_at: message.at,
     id: message.id,
-    meta: message.sources?.length ? { sources: message.sources } : null,
+    meta,
     role: message.role,
     thread_id: threadId,
     user_id: uid,
@@ -526,4 +558,21 @@ export async function pinThread(uid: string, id: string, pinned: boolean): Promi
   void withOneRetry(() =>
     supabase.from("chat_threads").update({ pinned, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", uid),
   );
+}
+
+/** Session-level deliverables (e.g. recordings) attached to a thread's own
+ *  `chat_threads.meta.outputs` — written by web's Record-mode composer (see
+ *  apps/web/lib/workspace/sessions-cloud.ts's threadRow). The phone Chat
+ *  surface only ever READS these (no recording composer of its own); the chip
+ *  row at the top of an open thread (chat.tsx) is this call's only consumer.
+ *  Best-effort/offline-safe, same posture as isThreadPinned — a fetch failure
+ *  just means the chip row stays empty until the thread is reopened online. */
+export async function loadThreadOutputs(uid: string, id: string): Promise<ChatOutput[]> {
+  try {
+    const { data, error } = await supabase.from("chat_threads").select("meta").eq("id", id).eq("user_id", uid).maybeSingle();
+    if (error || !data) return [];
+    return outputsFromMeta(data.meta);
+  } catch {
+    return [];
+  }
 }

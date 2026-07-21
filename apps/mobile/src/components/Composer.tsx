@@ -16,6 +16,12 @@ import { radius, space, type } from "@/theme/tokens";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+/** The pill's own rendered height (round button 36 + vertical padding 2*space(1) +
+ *  the 1px top/bottom border) — exported so a caller anchoring something ABOVE the
+ *  composer (chat.tsx's ComposerPlusMenu) sizes off the same number this pill
+ *  actually renders at, same precedent as StudyModeMenu.tsx's exported FAB_SIZE. */
+export const COMPOSER_PILL_HEIGHT = 46;
+
 // A press target that springs down slightly on touch and back on release — reanimated
 // on the UI thread, so it stays smooth regardless of JS-thread load.
 function Bounce({

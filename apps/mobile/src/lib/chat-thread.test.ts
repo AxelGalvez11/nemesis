@@ -3,13 +3,17 @@
 import { assertEquals, assertMatch } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { routeInstruction } from "./chat-routing.ts";
 import {
+  ATTACHMENT_CONTEXT_MAX_CHARS,
+  buildAttachmentContext,
   buildWireMessages,
   CHAT_SYSTEM_PROMPT,
   chatErrorKind,
   chatErrorMessage,
   completionText,
+  forcedResearchDecision,
   formatWebSearchContext,
   trimHistory,
+  withAttachmentNote,
   type ChatMsg,
   type ChatSource,
 } from "./chat-thread.ts";
@@ -103,6 +107,30 @@ Deno.test("budgetResetKind: daily vs monthly vs neither", () => {
   assertEquals(budgetResetKind({ error: { code: "something_else" } }), null);
   assertEquals(budgetResetKind(null), null);
   assertEquals(budgetResetKind("nope"), null);
+});
+
+Deno.test("buildAttachmentContext: mirrors web's '### Attachment: NAME' block shape, clamped, empty on blank content", () => {
+  const block = buildAttachmentContext({ content: "Beta blockers reduce heart rate.", title: "Pharm Ch. 4" });
+  assertEquals(block, "### Attachment: Pharm Ch. 4\nType: Library note\n\nBeta blockers reduce heart rate.");
+  assertMatch(block, /^### Attachment: /);
+  assertEquals(buildAttachmentContext({ content: "   ", title: "Empty note" }), "");
+});
+
+Deno.test("buildAttachmentContext: clamps to ~8000 chars by default, or a caller-supplied limit", () => {
+  const long = "x".repeat(ATTACHMENT_CONTEXT_MAX_CHARS + 500);
+  const block = buildAttachmentContext({ content: long, title: "Long note" });
+  assertEquals(block.length, "### Attachment: Long note\nType: Library note\n\n".length + ATTACHMENT_CONTEXT_MAX_CHARS);
+  const capped = buildAttachmentContext({ content: long, title: "Long note" }, 10);
+  assertEquals(capped, "### Attachment: Long note\nType: Library note\n\nxxxxxxxxxx");
+});
+
+Deno.test("withAttachmentNote: appends 'Attached: NAME' when a title is given, else returns text unchanged", () => {
+  assertEquals(withAttachmentNote("What's the mechanism?", "Pharm Ch. 4"), "What's the mechanism?\n\nAttached: Pharm Ch. 4");
+  assertEquals(withAttachmentNote("What's the mechanism?", null), "What's the mechanism?");
+});
+
+Deno.test("forcedResearchDecision: identical to chat-routing's own RESEARCH_PATTERN branch", () => {
+  assertEquals(forcedResearchDecision(), { model: "deepseek-reasoner", reasoningEffort: "high", route: "research", searchWeb: true });
 });
 
 Deno.test("nextDailyReset: next UTC midnight, never in the past", () => {

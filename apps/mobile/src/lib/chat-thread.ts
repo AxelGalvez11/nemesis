@@ -15,6 +15,23 @@ export interface ChatSource {
   description: string;
 }
 
+/** A deliverable/artifact attached to one turn or the whole thread — SAME shape
+ *  as web's SessionOutput (apps/web/lib/workspace/sessions-store.ts), persisted
+ *  into `chat_messages.meta.outputs` / `chat_threads.meta.outputs`. The phone
+ *  Chat surface never CREATES one of these (no recording composer, no tool
+ *  executor — see lib/chat-threads.ts's outputsFromMeta doc) — it only ever
+ *  displays artifacts web already synced down through the shared cloud tables. */
+export interface ChatOutput {
+  id: string;
+  kind: "flashcards" | "slides" | "test" | "report" | "recording" | "other";
+  title: string;
+  url?: string;
+  transcript?: string;
+  notes?: string;
+  durationSeconds?: number;
+  createdAt?: string;
+}
+
 export interface ChatMsg {
   role: ChatRole;
   content: string;
@@ -27,6 +44,9 @@ export interface ChatMsg {
   /** Web-search citations attached when the router decided this turn needed
    *  live results (persisted into the cloud row's `meta.sources`). */
   sources?: ChatSource[];
+  /** Deliverables recorded against this turn (persisted into the cloud row's
+   *  `meta.outputs`) — see ChatOutput's doc. */
+  outputs?: ChatOutput[];
 }
 
 export interface WireMsg {
@@ -143,6 +163,54 @@ export function chatErrorMessage(status: number, body: unknown): string {
     return "The answer engine is unreachable right now. Try again in a moment.";
   }
   return message || "Something went wrong sending that. Try again.";
+}
+
+/** A Library note picked from the composer's "+" → "Attach from Library" menu —
+ *  just enough to build a wire-only context block (see buildAttachmentContext). */
+export interface AttachedLibraryDoc {
+  title: string;
+  content: string;
+}
+
+/** Owner-specified clamp for the composer's attach feature (~8000 chars) — a
+ *  DIFFERENT budget than web's file-upload attachments (12,000/22,000, see
+ *  apps/web/lib/workspace/chat-attachments.ts), since the phone attaches at
+ *  most one Library document at a time via the picker rather than several
+ *  arbitrary files, so a single per-doc clamp is the only limit needed. */
+export const ATTACHMENT_CONTEXT_MAX_CHARS = 8000;
+
+/** Wire-only context block for one attached Library document, folded into the
+ *  prompt for a single turn (see api/chat.ts's sendChat). Prompt SHAPE mirrored
+ *  from web's chat-attachments.ts::prepareChatAttachments (the
+ *  `### Attachment: NAME` block) so an attach-grounded answer reads the same
+ *  either side — only the "Type:" line differs (a Library note has no MIME
+ *  type). NEVER persisted into the ChatMsg the UI stores/displays — see
+ *  withAttachmentNote below — so the full text isn't silently re-sent on every
+ *  later turn once it's part of the thread's history. */
+export function buildAttachmentContext(doc: AttachedLibraryDoc, maxChars = ATTACHMENT_CONTEXT_MAX_CHARS): string {
+  const clipped = doc.content.trim().slice(0, maxChars);
+  if (!clipped) return "";
+  return `### Attachment: ${doc.title}\nType: Library note\n\n${clipped}`;
+}
+
+/** The compact line appended to what's actually shown/persisted for a turn that
+ *  attached a document — mirrors web's attachmentSummary (chat-attachments.ts):
+ *  the transcript records THAT a document was attached, never its full text. */
+export function withAttachmentNote(text: string, title: string | null): string {
+  return title ? `${text}\n\nAttached: ${title}`.trim() : text;
+}
+
+/** The route decision forced when the composer's "Deep research" toggle is on,
+ *  bypassing classifyChatRequest's text-based inference entirely. IDENTICAL to
+ *  chat-routing.ts's own RESEARCH_PATTERN branch — reused rather than invented,
+ *  because web's own "Deep research" composer menu item
+ *  (apps/web/components/workspace/sessions/composer.tsx's AddMenu) turned out to
+ *  be an unwired stub with no onSelect handler and no valve-side flag to mirror.
+ *  Forcing the SAME route the classifier already infers from research language
+ *  is the closest fidelity available: fidelity to web's routing model over
+ *  inventing a new one. */
+export function forcedResearchDecision(): ChatRouteDecision {
+  return { model: "deepseek-reasoner", reasoningEffort: "high", route: "research", searchWeb: true };
 }
 
 /** Format live web-search results into a context block the model is told to
