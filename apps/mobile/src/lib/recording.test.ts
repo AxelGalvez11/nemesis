@@ -9,6 +9,7 @@ import {
   fullTranscript,
   hasTranscript,
   mergeOutputsMeta,
+  polishState,
 } from "./recording.ts";
 
 Deno.test("interim results rewrite in place until the utterance commits", () => {
@@ -68,4 +69,23 @@ Deno.test("mergeOutputsMeta appends, preserves other keys, and dedupes by id", (
   const replaced = mergeOutputsMeta({ outputs: [{ ...entry, title: "old title" }] }, entry);
   assertEquals((replaced.outputs as unknown[]).length, 1);
   assertEquals((replaced.outputs as { title: string }[])[0].title, "Recording · now");
+});
+
+Deno.test("draft folds live notes in; default stays empty", () => {
+  let t = emptyTranscript();
+  t = applyRecognitionResult(t, "Loop diuretics act on the ascending limb.", true);
+  const at = new Date("2026-07-21T15:30:00.000Z");
+  assertEquals(buildRecordingDraft(t, 10, at).notes, "");
+  assertEquals(buildRecordingDraft(t, 10, at, "one\ntwo").notes, "one\ntwo");
+});
+
+Deno.test("polish state: pending while fresh, silent once stale, done sticks", () => {
+  const now = new Date("2026-07-21T16:00:00.000Z");
+  const fresh = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+  const stale = new Date(now.getTime() - 46 * 60 * 1000).toISOString();
+  assertEquals(polishState({ createdAt: fresh, polish: "pending" }, now), "pending");
+  assertEquals(polishState({ createdAt: stale, polish: "pending" }, now), "none");
+  assertEquals(polishState({ createdAt: stale, polish: "done" }, now), "done");
+  assertEquals(polishState({ createdAt: fresh }, now), "none");
+  assertEquals(polishState({ polish: "pending" }, now), "pending");
 });

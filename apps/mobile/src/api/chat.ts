@@ -37,6 +37,7 @@ import {
   type WireMsg,
 } from "@/lib/chat-thread";
 import { classifyChatRequest, type ChatRouteDecision } from "@/lib/chat-routing";
+import { buildLiveNotesMessages, parseLiveNotes } from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import {
@@ -636,7 +637,40 @@ export async function saveRecordingArtifact(uid: string, threadId: string, draft
   return entry;
 }
 
+// Live notes ride the cheap conversational slot — never search, never the
+// reasoner. Same decision web's recorder uses (live-audio-insights.ts).
+const LIVE_NOTES_DECISION: ChatRouteDecision = { model: "deepseek-chat", route: "conversation", searchWeb: false };
+
+/** One notes pass for the Record screen: the growing transcript (plus what's
+ *  already on the board) in, up to six fresh bullets out. Metered like any
+ *  chat turn through the same valve. Returns null on any failure — the
+ *  recorder just tries again next interval. */
+export async function requestLiveNotes(uid: string, transcript: string, previousNotes: string[]): Promise<string[] | null> {
+  const reply = await postChatCompletion(uid, buildLiveNotesMessages(transcript, previousNotes), LIVE_NOTES_DECISION);
+  if (!reply.text) return null;
+  const notes = parseLiveNotes(reply.text);
+  return notes.length ? notes : null;
+}
+
 const APP_API_BASE = "https://app.enternemesis.com";
+
+/** Rewrite one recording's chip entry on the thread (same merge the save path
+ *  uses) — how the enhance pass below publishes its polish state and, at the
+ *  end, the sharper transcript. Best-effort: the artifact row stays the
+ *  durable source of truth. */
+async function writeChipEntry(uid: string, threadId: string, entry: ChatOutput): Promise<void> {
+  try {
+    const { data } = await supabase.from("chat_threads").select("meta").eq("id", threadId).eq("user_id", uid).maybeSingle();
+    if (!data) return;
+    await supabase
+      .from("chat_threads")
+      .update({ meta: mergeOutputsMeta(data.meta, entry) })
+      .eq("id", threadId)
+      .eq("user_id", uid);
+  } catch {
+    // best-effort — a missed state write only affects the indicator
+  }
+}
 
 /** Background "enhance transcript" pass (owner 2026-07-21): upload the kept
  *  on-device audio, run it through the server's batch transcription (top-
@@ -660,6 +694,11 @@ export async function enhanceRecordingArtifact(
     const session = data.session;
     if (!session || session.user.id !== uid) return;
     const token = session.access_token;
+    // Flag the chip "polishing" for the duration of the pass; every exit from
+    // this function rewrites the entry with the flag resolved (done) or
+    // dropped (failed/empty), and lib/recording.ts's polishState treats a
+    // stray pending flag as stale after 45 minutes.
+    await writeChipEntry(uid, threadId, { ...artifact, polish: "pending" });
     const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
     const storageBase = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/storage/v1/object/recordings`;
     const perFileSeconds = Math.max(15, Math.round(Math.max(elapsedSeconds, 15) / uris.length));
@@ -685,24 +724,21 @@ export async function enhanceRecordingArtifact(
       if (text) pieces.push(text.trim());
     }
     const enhanced = pieces.filter(Boolean).join("\n\n").trim();
-    if (!enhanced) return;
+    if (!enhanced) {
+      await writeChipEntry(uid, threadId, { ...artifact });
+      return;
+    }
 
     await supabase
       .from("chat_recording_artifacts")
       .update({ transcript: enhanced })
       .eq("id", artifact.id)
       .eq("user_id", uid);
-    const entry: ChatOutput = { ...artifact, transcript: enhanced };
-    const { data: thread } = await supabase.from("chat_threads").select("meta").eq("id", threadId).eq("user_id", uid).maybeSingle();
-    if (thread) {
-      await supabase
-        .from("chat_threads")
-        .update({ meta: mergeOutputsMeta(thread.meta, entry) })
-        .eq("id", threadId)
-        .eq("user_id", uid);
-    }
+    await writeChipEntry(uid, threadId, { ...artifact, polish: "done", transcript: enhanced });
   } catch (cause) {
     console.warn("transcript enhancement skipped:", cause instanceof Error ? cause.message : cause);
+    // Clear the "polishing" flag — the on-device transcript is what stands.
+    await writeChipEntry(uid, threadId, { ...artifact });
   } finally {
     for (const uri of uris) {
       try {

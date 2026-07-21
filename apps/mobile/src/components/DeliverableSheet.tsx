@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { SlideUpSheet } from "./StudySheet";
 import { MissionButton } from "./mission-ui";
 import type { ChatOutput } from "@/lib/chat-thread";
+import { polishState } from "@/lib/recording";
 import type { ThemeColors } from "@/theme/palette";
 import { useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -67,7 +68,11 @@ export function DeliverableChipRow({ outputs, onSelect }: { outputs: ChatOutput[
           onPress={() => onSelect(output)}
           testID={`chat-deliverable-chip-${output.id}`}
         >
-          <Text style={styles.chipText} numberOfLines={1}>{OUTPUT_CHIP_LABEL[output.kind]}</Text>
+          <Text style={styles.chipText} numberOfLines={1}>
+            {polishState(output, new Date()) === "pending"
+              ? `${OUTPUT_CHIP_LABEL[output.kind]} · Polishing…`
+              : OUTPUT_CHIP_LABEL[output.kind]}
+          </Text>
         </Pressable>
       ))}
     </View>
@@ -82,11 +87,21 @@ export function DeliverableSheet({ visible, onClose, output }: { visible: boolea
   // close fade (see its doc — "no first-open flicker"). Optional-chain every
   // field instead, same posture as UpgradeSheet's message fallback.
   const kindLabel = output ? OUTPUT_KIND_LABEL[output.kind] : "";
-  const meta = output ? [kindLabel, formatDuration(output.durationSeconds), formatCreatedAt(output.createdAt)].filter(Boolean).join(" · ") : "";
+  const polish = output ? polishState(output, new Date()) : "none";
+  const meta = output
+    ? [kindLabel, formatDuration(output.durationSeconds), formatCreatedAt(output.createdAt), polish === "done" ? "Polished" : ""]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
   return (
     <SlideUpSheet visible={visible} onClose={onClose} title={output?.title || kindLabel} testID="chat-deliverable-sheet">
       <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
         {meta ? <Text style={styles.meta}>{meta}</Text> : null}
+        {polish === "pending" ? (
+          <Text style={styles.polishLine} testID="chat-deliverable-polishing">
+            Polishing transcript — a high-accuracy version replaces this text automatically.
+          </Text>
+        ) : null}
         {output?.notes ? (
           <>
             <Text style={styles.sectionHead}>Notes</Text>
@@ -135,6 +150,7 @@ const createStyles = (c: ThemeColors) =>
     chipText: { ...type.small, color: c.accent, fontWeight: "600" },
     body: { maxHeight: 460 },
     meta: { ...type.micro, color: c.text3, marginBottom: space(3) },
+    polishLine: { ...type.small, color: c.accent, marginBottom: space(3), lineHeight: 19 },
     sectionHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(2), marginBottom: space(1) },
     contentText: { ...type.small, color: c.text, lineHeight: 22 },
     mutedText: { ...type.small, color: c.text3, paddingVertical: space(2) },
