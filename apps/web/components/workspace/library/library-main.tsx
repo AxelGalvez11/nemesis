@@ -43,6 +43,7 @@ import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { backlinksFor, extractLibraryLinks, findLibraryNote } from "@/lib/workspace/library-links";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
+import { useResponsiveSidebar } from "@/components/workspace/shell/use-responsive-sidebar";
 
 import { LibraryLiveEditor, type LibraryEditorApi } from "./library-live-editor";
 
@@ -106,8 +107,8 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [linksSidebarOpen, setLinksSidebarOpen] = useState(true);
   const narrowViewport = useMediaQuery("(max-width: 768px)");
+  const { open: linksSidebarOpen, setOpen: setLinksSidebarOpen } = useResponsiveSidebar(narrowViewport);
   const [draggedTab, setDraggedTab] = useState<string | null>(null);
   const [navigation, setNavigation] = useState<{ entries: string[]; index: number }>({ entries: [], index: -1 });
   const draftRef = useRef<NoteDraft | null>(null);
@@ -129,10 +130,6 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
     const available = new Set(notes.map((item) => item.path));
     setOpenPaths((paths) => paths.filter((path) => available.has(path)));
   }, [notes]);
-
-  useEffect(() => {
-    if (narrowViewport) setLinksSidebarOpen(false);
-  }, [narrowViewport]);
 
   useEffect(() => {
     const previous = draftRef.current;
