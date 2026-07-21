@@ -36,6 +36,7 @@ import { classifyChatRequest, type ChatRouteDecision } from "@/lib/chat-routing"
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import {
   chatMsgFromCloudRow,
+  deriveMessageId,
   emptyStore,
   ensureMessageIds,
   generateUuidV4,
@@ -289,12 +290,16 @@ async function readStore(uid: string): Promise<ThreadStore> {
 }
 
 // ── cloud sync (write-through + one-time migration) ─────────────────────────
-// Thread/message ids are stable client-generated uuids (see newThreadId/
-// newMessageId above), so every cloud write below is upsert / insert-with-
-// conflict-ignore: re-sending something already there is a harmless no-op.
-// That's what makes "fire-and-forget with one retry" safe — a dropped write
-// simply gets re-attempted (in full, if needed) the next time this thread is
-// saved, with no risk of duplicating a row.
+// Thread ids are stable client-generated uuids (see newThreadId above);
+// message ids are DERIVED deterministically from (threadId, role, at,
+// content) — see deriveMessageId in lib/chat-threads.ts — rather than
+// randomly minted, so re-deriving one for the same logical message (e.g. a
+// save that re-runs before the screen's own object ever learns its id)
+// converges on the same id instead of minting a new one. Combined with
+// insert-with-conflict-ignore, that's what makes "fire-and-forget with one
+// retry" safe — a dropped or repeated write simply gets re-attempted (in
+// full, if needed) the next time this thread is saved, with no risk of
+// duplicating a row.
 
 interface SupabaseResult {
   error: { message?: string } | null;
@@ -388,7 +393,13 @@ async function ensureMigrated(uid: string): Promise<void> {
   for (const thread of store.threads) {
     if (!isValidThreadId(thread.id)) store = remapThreadId(store, thread.id, newThreadId());
   }
-  store = { threads: store.threads.map((thread) => ({ ...thread, messages: ensureMessageIds(thread.messages, newMessageId) })), v: 2 };
+  store = {
+    threads: store.threads.map((thread) => ({
+      ...thread,
+      messages: ensureMessageIds(thread.messages, (message) => deriveMessageId(thread.id, message)),
+    })),
+    v: 2,
+  };
   await writeStore(uid, store);
 
   let ok = true;
@@ -485,7 +496,12 @@ export async function loadThreadMessages(uid: string, id: string): Promise<ChatM
  *  doesn't have one yet (always true for new messages built by the Chat
  *  screen — see chat.tsx). */
 export async function saveThreadMessages(uid: string, id: string, messages: ChatMsg[]): Promise<void> {
-  const withIds = ensureMessageIds(messages, newMessageId);
+  // deriveMessageId (not a random newMessageId()) so that calling this twice
+  // for the SAME logical still-id-less message — chat.tsx sends once on the
+  // user turn, again once the reply lands, both times off the same object —
+  // converges on the same id instead of double-inserting it. See
+  // deriveMessageId's doc in lib/chat-threads.ts.
+  const withIds = ensureMessageIds(messages, (message) => deriveMessageId(id, message));
   const before = await readStore(uid);
   const previousMessages = getThread(before, id)?.messages ?? [];
   const after = upsertThread(before, id, withIds, new Date().toISOString());
