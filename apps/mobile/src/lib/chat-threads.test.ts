@@ -5,6 +5,7 @@ import type { ChatMsg } from "./chat-thread.ts";
 import {
   chatMsgFromCloudRow,
   type CloudThreadMeta,
+  deriveMessageId,
   deriveThreadTitle,
   emptyStore,
   ensureMessageIds,
@@ -175,10 +176,67 @@ Deno.test("remapThreadId: renames a thread's id in place; unknown id is a no-op"
 
 Deno.test("ensureMessageIds: backfills only messages missing an id, leaves existing ids alone", () => {
   let n = 0;
-  const makeId = () => `gen-${++n}`;
+  const makeId = (_message: ChatMsg) => `gen-${++n}`;
   const withIds = ensureMessageIds([user("a", undefined, "kept"), bot("b"), user("c")], makeId);
   assertEquals(withIds.map((m) => m.id), ["kept", "gen-1", "gen-2"]);
   assertEquals(withIds[0].content, "a"); // untouched otherwise
+});
+
+Deno.test("ensureMessageIds: passes the message itself to makeId (deriveMessageId needs role/at/content)", () => {
+  const seen: string[] = [];
+  const withIds = ensureMessageIds([user("a")], (message) => {
+    seen.push(message.content);
+    return "id-1";
+  });
+  assertEquals(seen, ["a"]);
+  assertEquals(withIds[0].id, "id-1");
+});
+
+Deno.test("deriveMessageId: deterministic — same (threadId, role, at, content) always hashes to the same id", () => {
+  const a = deriveMessageId("t1", user("hello"));
+  const b = deriveMessageId("t1", user("hello"));
+  assertEquals(a, b);
+  assert(isValidThreadId(a)); // a valid Postgres uuid literal (chat_messages.id is `uuid`)
+});
+
+Deno.test("deriveMessageId: different thread, role, at, or content each change the id", () => {
+  const base = deriveMessageId("t1", user("hello", "2026-07-18T00:00:00Z"));
+  assert(base !== deriveMessageId("t2", user("hello", "2026-07-18T00:00:00Z"))); // different thread
+  assert(base !== deriveMessageId("t1", bot("hello", "2026-07-18T00:00:00Z"))); // different role
+  assert(base !== deriveMessageId("t1", user("hello", "2026-07-18T00:00:01Z"))); // different at
+  assert(base !== deriveMessageId("t1", user("bye", "2026-07-18T00:00:00Z"))); // different content
+});
+
+Deno.test("regression: saveThreadMessages' two-calls-per-turn pattern no longer double-syncs the user message", () => {
+  // Mirrors api/chat.ts's saveThreadMessages EXACTLY: chat.tsx calls it once
+  // with `base` (history + a still-id-less user message), then again with
+  // `next` (= [...base, assistantMsg]) — the SAME user-message object
+  // reference both times, still without an id, because chat.tsx never learns
+  // the id ensureMessageIds assigned inside the first call. Before
+  // deriveMessageId, the second call minted a NEW random id for that object,
+  // so newMessagesSince() saw it as "new" again and it was inserted twice —
+  // confirmed against prod (a thread with two identical role/content/
+  // created_at rows). This test fails if that regresses.
+  const threadId = "thread-1";
+  const question: ChatMsg = { at: "2026-07-18T00:00:00.000Z", content: "how does X compare to Y?", role: "user" };
+  const base = [question]; // what chat.tsx holds after the user sends
+
+  // Call 1: saveThreadMessages(uid, threadId, base)
+  const withIds1 = ensureMessageIds(base, (m) => deriveMessageId(threadId, m));
+  const new1 = newMessagesSince(withIds1, []); // previous store was empty
+  assertEquals(new1.length, 1);
+  const userRowId = new1[0].id;
+
+  // Call 2: saveThreadMessages(uid, threadId, next) — `next`'s user message
+  // is the SAME `question` object (still id-less); an assistant reply is appended.
+  const reply: ChatMsg = { at: "2026-07-18T00:00:03.000Z", content: "X does this, Y does that.", role: "assistant" };
+  const next = [...base, reply];
+  const withIds2 = ensureMessageIds(next, (m) => deriveMessageId(threadId, m));
+  const new2 = newMessagesSince(withIds2, withIds1); // previous = what call 1 persisted
+
+  // Only the assistant reply is new — the user message must NOT double-sync.
+  assertEquals(new2.map((m) => m.role), ["assistant"]);
+  assertEquals(withIds2[0].id, userRowId); // same id both times, not a fresh one
 });
 
 Deno.test("newMessagesSince: id-based diff — the common append-only case", () => {

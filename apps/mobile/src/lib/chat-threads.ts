@@ -204,10 +204,64 @@ export function remapThreadId(store: ThreadStore, oldId: string, newId: string):
 }
 
 /** Backfill a stable id on any message that predates the id field (cached by a
- *  build before this cloud-sync pivot). `makeId` is injected so this stays
- *  pure/deterministic in tests; api/chat.ts passes the real UUID generator. */
-export function ensureMessageIds(messages: ChatMsg[], makeId: () => string): ChatMsg[] {
-  return messages.map((message) => (message.id ? message : { ...message, id: makeId() }));
+ *  build before this cloud-sync pivot), or that a caller constructed without
+ *  one this turn. `makeId` receives the message itself — callers pass
+ *  `deriveMessageId` (below) rather than a random generator, and the
+ *  injection point stays so this remains pure/deterministic in tests. */
+export function ensureMessageIds(messages: ChatMsg[], makeId: (message: ChatMsg) => string): ChatMsg[] {
+  return messages.map((message) => (message.id ? message : { ...message, id: makeId(message) }));
+}
+
+/** Deterministic, dependency-free 32-hex-digit hash of a string: four
+ *  differently-salted 32-bit FNV-1a-style passes concatenated to 128 bits.
+ *  NOT cryptographic — the point is that equal inputs ALWAYS produce the
+ *  same output, never that the output is unguessable. No crypto dependency
+ *  needed (Hermes has no global crypto.subtle, and one is deliberately not
+ *  polyfilled — see generateUuidV4 above). */
+function hash32Hex(input: string): string {
+  const salts = [0x811c9dc5, 0x01000193, 0x9e3779b9, 0x85ebca77];
+  let out = "";
+  for (const salt of salts) {
+    let h = salt;
+    for (let i = 0; i < input.length; i++) {
+      h = Math.imul(h ^ input.charCodeAt(i), 0x01000193);
+    }
+    out += (h >>> 0).toString(16).padStart(8, "0");
+  }
+  return out;
+}
+
+/** A message's `chat_messages.id`, derived DETERMINISTICALLY from
+ *  (threadId, role, at, content) — the `makeId` ensureMessageIds() uses for
+ *  a message that doesn't have one yet, in place of a random generator.
+ *
+ *  Why determinism matters: the phone Chat screen (chat.tsx) calls
+ *  saveThreadMessages() TWICE per turn — once immediately with the new user
+ *  message, then again once the reply lands, with that SAME user-message
+ *  object appended into a longer array. The object never gets the id the
+ *  FIRST call assigned (that id only ever lived inside ensureMessageIds'
+ *  returned copy, not back on the screen's own object), so the SECOND call's
+ *  ensureMessageIds() sees a still-id-less message again. A random makeId()
+ *  would mint a DIFFERENT id than the first call did, and newMessagesSince()
+ *  — which by then compares by id, since every message already has one —
+ *  would treat the second copy as a brand-new message and sync it again:
+ *  one logical user turn ends up as TWO rows in chat_messages. This was a
+ *  real, shipped bug — confirmed against prod: a thread with two rows
+ *  sharing identical role/content/created_at. Hashing the same
+ *  (threadId, role, at, content) every time collapses both calls onto the
+ *  same id, so the second save's copy is recognized as already-synced and
+ *  never re-inserted.
+ *
+ *  Scoped by threadId (not just role/at/content) so two different threads —
+ *  even two different users, RLS aside — can't collide on a coincidentally
+ *  identical message; a collision would otherwise mean the second message
+ *  silently never syncs (insert-ignore keeps whichever row landed first). A
+ *  genuine collision requires an identical role+at+content within the SAME
+ *  thread, which — at millisecond timestamp resolution — only happens for
+ *  the exact repeat-call case this function exists to collapse. */
+export function deriveMessageId(threadId: string, message: Pick<ChatMsg, "role" | "at" | "content">): string {
+  const hex = hash32Hex(`${threadId}|${message.role}|${message.at}|${message.content}`);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
 /** Which of `current`'s messages are new relative to `previous` — an id-based

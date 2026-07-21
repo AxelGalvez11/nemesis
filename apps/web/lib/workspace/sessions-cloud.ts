@@ -163,7 +163,12 @@ function threadRow(uid: string, session: WorkspaceSession) {
   return {
     id: session.id,
     user_id: uid,
-    title: session.title,
+    // Clamped to the column's `char_length(title) <= 200` check constraint —
+    // titles here are normally short (titleFromPrompt caps at ~55), but a
+    // manual rename (chat-header.tsx) has no client-side cap, and an
+    // oversized value would otherwise fail the upsert silently (fire-and-
+    // forget) and never reach the other device.
+    title: session.title.slice(0, 200),
     pinned: Boolean(session.pinned),
     // Session-level artifacts (recordings etc.). Oversized meta fails the
     // row's size check server-side; the caller is fire-and-forget, so the
@@ -183,7 +188,12 @@ function messageRow(uid: string, threadId: string, message: SessionMessage) {
     thread_id: threadId,
     user_id: uid,
     role: message.role,
-    content: message.content,
+    // Clamped to the column's `char_length(content) <= 60000` check
+    // constraint, same as mobile's cloudMessageRow (api/chat.ts) — without
+    // this an oversized message fails the insert outright (permission/
+    // constraint errors look identical to the caller: a swallowed
+    // fire-and-forget failure) and never reaches the other device.
+    content: message.content.slice(0, 60_000),
     meta,
     created_at: message.at,
   };
@@ -201,16 +211,29 @@ export async function upsertThreadCloud(uid: string, session: WorkspaceSession):
 
 /** Thread upsert + message upsert, in order (the message row has an FK to the
  * thread row, so the thread must exist first). Used for every appended
- * message — user turns and the assistant's final (non-streaming) content. */
+ * message — user turns and the assistant's final (non-streaming) content.
+ *
+ * `ignoreDuplicates: true` is LOAD-BEARING, not an optimization: PostgREST's
+ * default upsert (ignoreDuplicates unset/false) compiles to
+ * `INSERT ... ON CONFLICT (id) DO UPDATE`, and Postgres requires UPDATE
+ * privilege on the target columns to plan that statement AT ALL — even for
+ * rows that never actually conflict. chat_messages intentionally has no
+ * UPDATE grant (immutable rows — see the migration), so every write here
+ * used to fail with a permission error on every single call, silently
+ * swallowed by cloudFireAndForget's try/catch (confirmed against prod: web
+ * threads had titles but zero rows in chat_messages). Message ids are always
+ * fresh (never reused), so this only ever needs `ON CONFLICT DO NOTHING` —
+ * matching mobile's cloudMessageRow upsert (api/chat.ts), which already uses
+ * ignoreDuplicates and works. */
 export async function appendMessageCloud(uid: string, session: WorkspaceSession, message: SessionMessage): Promise<void> {
   if (!message.id) return; // defensive — the store always assigns one before calling
   await upsertThreadCloud(uid, session);
-  const { error } = await supabase.from("chat_messages").upsert(messageRow(uid, session.id, message), { onConflict: "id" });
+  const { error } = await supabase.from("chat_messages").upsert(messageRow(uid, session.id, message), { onConflict: "id", ignoreDuplicates: true });
   if (error) throw new Error(error.message);
 }
 
 export async function renameThreadCloud(uid: string, id: string, title: string, updatedAt: string): Promise<void> {
-  const { error } = await supabase.from("chat_threads").update({ title, updated_at: updatedAt }).eq("id", id).eq("user_id", uid);
+  const { error } = await supabase.from("chat_threads").update({ title: title.slice(0, 200), updated_at: updatedAt }).eq("id", id).eq("user_id", uid);
   if (error) throw new Error(error.message);
 }
 
@@ -232,7 +255,12 @@ async function uploadOneSessionToCloud(uid: string, session: WorkspaceSession): 
   await upsertThreadCloud(uid, session);
   const rows = session.messages.flatMap((message) => (message.id ? [messageRow(uid, session.id, message)] : []));
   if (rows.length === 0) return;
-  const { error } = await supabase.from("chat_messages").upsert(rows, { onConflict: "id" });
+  // Same no-UPDATE-grant reasoning as appendMessageCloud above — without
+  // ignoreDuplicates this throws on every migration, which — because
+  // uploadLocalSessionsToCloud runs every session in parallel via
+  // Promise.all — rejects the whole migration before markSessionsMigrated()
+  // ever runs, so it silently retries in full on every later tab-focus.
+  const { error } = await supabase.from("chat_messages").upsert(rows, { onConflict: "id", ignoreDuplicates: true });
   if (error) throw new Error(error.message);
 }
 

@@ -196,7 +196,7 @@ const LIGHT_BASE = {
   glass: "rgba(22,24,29,0.045)",
   glassPanel: "rgba(250,251,255,0.78)",
   glassMenu: "rgba(250,251,255,0.96)",
-  pageShadow: "rgba(24,26,32,0.10)",
+  pageShadow: "rgba(24,26,32,0.16)",
   line: "rgba(22,24,29,0.10)",
   line2: "rgba(22,24,29,0.18)",
   lineMuted: "rgba(90,94,104,0.22)",
