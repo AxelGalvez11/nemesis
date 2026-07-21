@@ -30,9 +30,9 @@ export function SidebarBlankState({ onNewSession }: { onNewSession: () => void }
     <div className="grid min-h-0 flex-1 place-items-center px-4 text-center">
       <div className="flex flex-col items-center gap-2">
         <Codicon name="root-folder" size="1.25rem" className="text-(--ui-text-quaternary)" />
-        <p className="text-xs text-(--ui-text-tertiary)">No sessions yet</p>
+        <p className="text-xs text-(--ui-text-tertiary)">No chats yet</p>
         <Button size="sm" variant="ghost" className="mt-0.5 text-(--ui-text-secondary)" onClick={onNewSession}>
-          <Codicon name="add" size="0.75rem" /> New session
+          <Codicon name="add" size="0.75rem" /> New chat
         </Button>
       </div>
     </div>
@@ -53,7 +53,7 @@ export function SidebarPinnedEmptyState() {
 export function SidebarNoMatchState({ query }: { query: string }) {
   return (
     <div className="wrap-anywhere grid min-h-24 place-items-center rounded-lg px-2 text-center text-xs text-(--ui-text-tertiary)">
-      {`No sessions match “${query}”.`}
+      {`No chats match “${query}”.`}
     </div>
   );
 }
@@ -61,7 +61,7 @@ export function SidebarNoMatchState({ query }: { query: string }) {
 export function SidebarSessionsEmptyState({ allPinned }: { allPinned: boolean }) {
   return (
     <div className="grid min-h-16 place-items-center rounded-lg px-2 text-center text-xs text-(--ui-text-tertiary)">
-      {allPinned ? "Everything here is pinned. Unpin a chat to show it in recents." : "No sessions yet"}
+      {allPinned ? "Everything here is pinned. Unpin a chat to show it in recents." : "No chats yet"}
     </div>
   );
 }

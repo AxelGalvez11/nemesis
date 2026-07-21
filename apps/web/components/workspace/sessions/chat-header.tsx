@@ -29,10 +29,10 @@ const TITLEBAR_HEADER_TITLE_CLASS = "min-w-0 flex-1 overflow-hidden";
 
 export function ChatHeader({ session, onOpenRail, railOpen }: { session: WorkspaceSession | null; onOpenRail: () => void; railOpen: boolean }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const title = session?.title || "New session";
+  const title = session?.title || "New chat";
 
   const handleRename = () => {
-    const next = window.prompt("Rename session", title);
+    const next = window.prompt("Rename chat", title);
     if (session && next && next.trim().length > 0) sessionsStore.rename(session.id, next.trim());
   };
 
@@ -75,7 +75,7 @@ export function ChatHeader({ session, onOpenRail, railOpen }: { session: Workspa
         </DropdownMenu>
       </div>}
       {!railOpen && (
-        <Button aria-label="Open session sidebar" className="pointer-events-auto ml-auto shrink-0" onClick={onOpenRail} size="icon-xs" variant="ghost">
+        <Button aria-label="Open chat sidebar" className="pointer-events-auto ml-auto shrink-0" onClick={onOpenRail} size="icon-xs" variant="ghost">
           <IconLayoutSidebarRightExpand />
         </Button>
       )}

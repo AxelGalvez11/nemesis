@@ -83,7 +83,7 @@ const SELECT_CLASS = "h-9 min-w-44 rounded-lg border border-(--ui-stroke-seconda
 // Discrete scale presets replace the old slider (owner 2026-07-20 evening).
 const SCALE_PRESETS = [50, 75, 90, 100, 110, 125, 150] as const;
 const KEYBOARD_SHORTCUTS: Array<[string, string]> = [
-  ["New session", "⌘ N"],
+  ["New chat", "⌘ N"],
   ["Search", "⌘ K"],
   ["Send message", "Return"],
   ["New line", "Shift Return"],

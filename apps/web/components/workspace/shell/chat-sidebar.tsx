@@ -55,7 +55,7 @@ interface NavItem {
 
 // Student-build nav (STUDENT_HIDDEN_NAV already applied): exact order.
 const SIDEBAR_NAV: NavItem[] = [
-  { id: "new-session", label: "New session", codicon: "robot", action: "new-session" },
+  { id: "new-session", label: "New chat", codicon: "robot", action: "new-session" },
   { id: "study", label: "Study", codicon: "mortar-board", route: "/study" },
   { id: "library", label: "Library", codicon: "book", route: "/library" },
   { id: "notebooks", label: "Notebooks", codicon: "notebook", route: "/notebooks" },
@@ -111,7 +111,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
   };
 
   const confirmRemoveSession = (id: string, title: string) => {
-    if (window.confirm(`Are you sure you want to delete “${title || "New session"}”? This can't be undone.`)) remove(id);
+    if (window.confirm(`Are you sure you want to delete “${title || "New chat"}”? This can't be undone.`)) remove(id);
   };
 
   const showSessionSections = sessions.length > 0;
@@ -132,7 +132,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
         <div className="flex h-9 shrink-0 items-center gap-1 px-2 pt-1">
           <span className="min-w-0 flex-1 truncate text-sm font-semibold tracking-[0.13em] text-foreground">NEMESIS</span>
           <Button
-            aria-label={searchOpen ? "Close session search" : "Search sessions"}
+            aria-label={searchOpen ? "Close chat search" : "Search chats"}
             onClick={() => {
               setSearchOpen((value) => !value);
               if (searchOpen) setQuery("");
@@ -148,7 +148,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
         </div>
         {searchOpen && showSessionSections && (
           <div className="shrink-0 px-2 pb-1">
-            <SearchField aria-label="Search sessions" onChange={setQuery} placeholder="Search sessions…" value={query} />
+            <SearchField aria-label="Search chats" onChange={setQuery} placeholder="Search chats…" value={query} />
           </div>
         )}
 
@@ -266,7 +266,7 @@ export function ChatSidebar({ sidebarOpen, accountEmail, onCollapse, onNavigate 
                   {/* Sessions */}
                   <SidebarGroup className="min-h-32 flex-1 overflow-hidden p-0">
                     <SidebarSectionHeader
-                      label="Sessions"
+                      label="Chats"
                       meta={countLabel(recents.length, recents.length)}
                       onToggle={() => setSessionsOpen((v) => !v)}
                       open={sessionsOpen}
