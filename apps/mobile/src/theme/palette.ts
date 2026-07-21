@@ -134,10 +134,6 @@ export interface ThemeColors {
   /** Near-opaque backing for MENU panels — glass edge stays, but the page behind
    *  can no longer bleed through the panel (owner 2026-07-20). */
   glassMenu: string;
-  /** The drawer page's edge-shadow color (alpha baked in). Dark keeps the shipped
-   *  50% black; light is FAINT — at full strength it read as a gray vertical band
-   *  on the sidebar (owner 2026-07-20: keep the shadow, kill the band). */
-  pageShadow: string;
   line: string;
   line2: string;
   /** tokens.json `mutedBorder` twin. */
@@ -175,7 +171,6 @@ const DARK_BASE = {
   glass: "rgba(233,234,238,0.045)",
   glassPanel: "rgba(24,24,27,0.72)",
   glassMenu: "rgba(20,20,23,0.94)",
-  pageShadow: "rgba(0,0,0,0.5)",
   line: "rgba(233,234,238,0.09)",
   line2: "rgba(233,234,238,0.16)",
   lineMuted: "rgba(154,157,166,0.20)",
@@ -196,7 +191,6 @@ const LIGHT_BASE = {
   glass: "rgba(22,24,29,0.045)",
   glassPanel: "rgba(250,251,255,0.78)",
   glassMenu: "rgba(250,251,255,0.96)",
-  pageShadow: "rgba(24,26,32,0.16)",
   line: "rgba(22,24,29,0.10)",
   line2: "rgba(22,24,29,0.18)",
   lineMuted: "rgba(90,94,104,0.22)",

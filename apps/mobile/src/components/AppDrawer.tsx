@@ -407,18 +407,14 @@ const createStyles = (c: ThemeColors) =>
     underPanel: {
       position: "absolute", top: 0, bottom: 0, left: 0, overflow: "hidden",
     },
-    // The moving page. pageShadow carries the drop shadow (needs an opaque bg and NO
-    // overflow clip so the shadow can bleed onto the sidebar); pageClip rounds the
-    // actual content. Both round only the LEFT (facing) corners via edgeRadius.
-    // Owner 2026-07-20 round 2: shadow stays but must never read as a wide gray
-    // band — so the geometry is TIGHT (12pt blur hugging the edge, vs the composer's
-    // 18pt shadow.raise) and the color is themed (alpha baked into c.pageShadow;
-    // faint ink in light, the shipped 50% black in dark). opacity 1 = color's alpha.
-    pageShadow: {
-      flex: 1, backgroundColor: c.bg, borderCurve: "continuous",
-      shadowColor: c.pageShadow, shadowOpacity: 1, shadowRadius: 12,
-      shadowOffset: { width: 0, height: 6 }, elevation: 10,
-    },
+    // The moving page (opaque backing); pageClip rounds the actual content. Both
+    // round only the LEFT (facing) corners via edgeRadius. NO drop shadow — final
+    // owner call 2026-07-20 after two tuning rounds (50% black, then faint themed):
+    // ANY shadow paints some dark gray on the sidebar at the seam, and the owner
+    // wants that edge completely clean. The bg (page) vs bg2 (sidebar) tone
+    // difference alone separates the layers, ChatGPT-style. Don't re-add a shadow
+    // here in any strength.
+    pageShadow: { flex: 1, backgroundColor: c.bg, borderCurve: "continuous" },
     pageClip: { flex: 1, overflow: "hidden", borderCurve: "continuous" },
     panelSolid: { flex: 1, backgroundColor: c.bg2 },
     panelInner: { flex: 1 },
@@ -468,8 +464,8 @@ const createStyles = (c: ThemeColors) =>
     footerWrap: { paddingTop: space(2.5) },
     bottomRow: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      // Extra right padding so the gear clears the pushed page's ~18pt shadow that bleeds
-      // onto the sidebar's right edge (owner: the gear was "cutting out to the right").
+      // Extra right padding keeps the gear comfortably clear of the pushed page's edge
+      // (owner: the gear was "cutting out to the right"; kept after the shadow's removal).
       paddingLeft: space(3.5), paddingRight: space(6), paddingTop: space(1),
     },
     // Solid (not glass) squarish button that hugs its icon + label.
