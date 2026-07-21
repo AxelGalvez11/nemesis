@@ -81,6 +81,9 @@ export const deepseekApiKey = process.env.DEEPSEEK_API_KEY ?? "";
 export const assemblyAiApiKey = process.env.ASSEMBLYAI_API_KEY ?? "";
 export const assemblyAiSpeechModel =
   process.env.ASSEMBLYAI_SPEECH_MODEL ?? "universal-streaming-multilingual";
+// Primary engine for the enhance-transcript pass (batch Whisper at ~1/4 the
+// AssemblyAI price); unset key => AssemblyAI handles everything.
+export const groqApiKey = process.env.GROQ_API_KEY ?? "";
 export const balanceAlertEmail = process.env.BALANCE_ALERT_EMAIL ?? "axelgalvez1121@gmail.com";
 const rawBalanceThreshold = Number(process.env.DEEPSEEK_BALANCE_ALERT_USD ?? "5");
 export const deepseekBalanceAlertUsd = Number.isFinite(rawBalanceThreshold) ? rawBalanceThreshold : 5;
