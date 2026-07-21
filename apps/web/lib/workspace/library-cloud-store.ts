@@ -1,5 +1,6 @@
 "use client";
 
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -7,6 +8,16 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { supabase } from "@/lib/supabase";
 
 import { normalizeLibraryFolder, notePathFor, safeLibraryTitle } from "./library-links";
+import {
+  classifyLiveEvent,
+  folderPathsOf,
+  libraryRowToNote,
+  mergeLiveNotes,
+  removeLiveFolder,
+  repairSelection,
+  upsertLiveFolder,
+  type LiveAction,
+} from "./library-live";
 import { titleFromPath, type CloudLibraryNote } from "./library-tree";
 
 const PREVIEW_NOTES: CloudLibraryNote[] = [
@@ -54,6 +65,16 @@ let state: StoreState = EMPTY_STATE;
 let loadedForUserId: string | null = null;
 const listeners = new Set<() => void>();
 
+// Live refresh bookkeeping (module-level, like the store itself): one realtime
+// channel per signed-in user, shared by every component using useCloudLibrary.
+let folderRows: ReadonlyMap<string, string> = new Map();
+let liveChannel: RealtimeChannel | null = null;
+let liveUserId: string | null = null;
+let pendingTouchedNoteIds = new Set<string>();
+let touchTimer: ReturnType<typeof setTimeout> | null = null;
+let touchFlushInFlight = false;
+let resyncTimer: ReturnType<typeof setTimeout> | null = null;
+
 function emit() {
   for (const listener of listeners) listener();
 }
@@ -80,25 +101,27 @@ function isObj(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function toNote(raw: unknown): CloudLibraryNote | null {
-  if (!isObj(raw)) return null;
-  const id = typeof raw.id === "string" ? raw.id : "";
-  const path = typeof raw.path === "string" ? raw.path : "";
-  if (!id || !path) return null;
-  const rawTitle = typeof raw.title === "string" ? raw.title.trim() : "";
-  return {
-    id,
-    path,
-    title: rawTitle || titleFromPath(path),
-    content: typeof raw.content === "string" ? raw.content : "",
-    updatedAt: typeof raw.updated_at === "string" ? raw.updated_at : "",
-    createdAt:
-      typeof raw.created_at === "string"
-        ? raw.created_at
-        : typeof raw.updated_at === "string"
-          ? raw.updated_at
-          : "",
-  };
+// Row parsing lives in library-live.ts (libraryRowToNote) so the live refresh
+// path and these load/save paths can never drift apart.
+
+/** Shared by loadDocuments and the live resync: split a query result into notes
+ *  plus a folder-row map (id -> normalized path). Folders keep their row id here
+ *  because a live folder RENAME event only carries the new path — the id is the
+ *  only way to know which old path to drop. */
+function parseDocumentRows(data: unknown): { notes: CloudLibraryNote[]; folders: Map<string, string> } {
+  const rows = Array.isArray(data) ? data : [];
+  const notes: CloudLibraryNote[] = [];
+  const folders = new Map<string, string>();
+  for (const row of rows) {
+    if (!isObj(row)) continue;
+    if (row.kind === "note") {
+      const note = libraryRowToNote(row);
+      if (note) notes.push(note);
+    } else if (row.kind === "folder" && typeof row.id === "string" && typeof row.path === "string") {
+      folders.set(row.id, normalizeLibraryFolder(row.path));
+    }
+  }
+  return { notes, folders };
 }
 
 function uniqueNotePath(title: string, folder: string, excludeId?: string): string {
@@ -121,30 +144,27 @@ function noteCandidate(title: string, folder: string, suffix: number) {
   return { title: candidateTitle, path: notePathFor(candidateTitle, folder) };
 }
 
+function fetchDocuments(userId: string) {
+  return supabase
+    .from("readable_library_documents")
+    .select("id,user_id,path,kind,title,content,created_at,updated_at,deleted")
+    .eq("user_id", userId)
+    .eq("deleted", false)
+    .in("kind", ["note", "folder"])
+    .order("updated_at", { ascending: false });
+}
+
 async function loadDocuments(userId: string): Promise<void> {
   loadedForUserId = userId;
   setState({ status: "loading", error: null, notes: [], folders: [], selectedPath: null });
   try {
-    const { data, error } = await supabase
-      .from("readable_library_documents")
-      .select("id,user_id,path,kind,title,content,created_at,updated_at,deleted")
-      .eq("user_id", userId)
-      .eq("deleted", false)
-      .in("kind", ["note", "folder"])
-      .order("updated_at", { ascending: false });
+    const { data, error } = await fetchDocuments(userId);
     if (error) throw new Error(error.message);
-
-    const rows = Array.isArray(data) ? data : [];
-    const notes = rows.flatMap((row) => {
-      if (!isObj(row) || row.kind !== "note") return [];
-      const note = toNote(row);
-      return note ? [note] : [];
-    });
-    const folders = rows.flatMap((row) =>
-      isObj(row) && row.kind === "folder" && typeof row.path === "string" ? [normalizeLibraryFolder(row.path)] : [],
-    );
-    setState({ status: "loaded", error: null, notes, folders, selectedPath: notes[0]?.path ?? null });
+    const { notes, folders } = parseDocumentRows(data);
+    folderRows = folders;
+    setState({ status: "loaded", error: null, notes, folders: folderPathsOf(folders), selectedPath: notes[0]?.path ?? null });
   } catch (error) {
+    folderRows = new Map();
     setState({
       status: "error",
       error: error instanceof Error ? error.message : "Couldn't load your notes.",
@@ -155,11 +175,184 @@ async function loadDocuments(userId: string): Promise<void> {
   }
 }
 
+/** Quiet full re-sync for the LIVE refresh path: same query as loadDocuments,
+ *  but swaps the fresh data in place — no "loading" flash, no editor unmount,
+ *  and the selection survives (following a rename of the selected note when it
+ *  can). Used after realtime (re)connects and whenever an event looks odd. */
+async function refreshDocuments(userId: string): Promise<void> {
+  try {
+    const { data, error } = await fetchDocuments(userId);
+    if (error) throw new Error(error.message);
+    if (loadedForUserId !== userId) return;
+    const { notes, folders } = parseDocumentRows(data);
+    folderRows = folders;
+    setState({
+      status: "loaded",
+      error: null,
+      notes,
+      folders: folderPathsOf(folders),
+      selectedPath: repairSelection(state.notes, notes, state.selectedPath),
+    });
+  } catch {
+    // Background re-sync only: keep showing the last good data instead of an
+    // error flash — the next live event (or a manual reload) tries again.
+  }
+}
+
+// --- live refresh (Supabase realtime on readable_library_documents) ----------
+// Phone edits, other tabs, and agent tools all write the same table; these
+// events fold their changes into the store without a reload. Merge policy
+// (what an event means, how rows merge, how the selection survives) is the
+// pure, tested logic in library-live.ts — this block is just I/O and timing.
+
+function scheduleResync() {
+  if (resyncTimer) return;
+  resyncTimer = setTimeout(() => {
+    resyncTimer = null;
+    const userId = liveUserId;
+    if (userId && loadedForUserId === userId) void refreshDocuments(userId);
+  }, 400);
+}
+
+function scheduleTouchFlush() {
+  if (touchTimer) return;
+  touchTimer = setTimeout(() => {
+    touchTimer = null;
+    void flushTouchedNotes();
+  }, 250);
+}
+
+/** Re-fetch every touched note in ONE query and merge the fresh rows in. The
+ *  event payload itself is never trusted for content (realtime truncates large
+ *  rows); the fetch also returns the server-stamped updated_at. Single-flight:
+ *  flushes serialize, so an older fetch can never overwrite a newer one. */
+async function flushTouchedNotes(): Promise<void> {
+  if (touchFlushInFlight) return;
+  const userId = liveUserId;
+  if (!userId || pendingTouchedNoteIds.size === 0) return;
+  const ids = [...pendingTouchedNoteIds];
+  pendingTouchedNoteIds = new Set();
+  touchFlushInFlight = true;
+  try {
+    const { data, error } = await supabase
+      .from("readable_library_documents")
+      .select("id,path,title,content,created_at,updated_at")
+      .eq("user_id", userId)
+      .eq("deleted", false)
+      .eq("kind", "note")
+      .in("id", ids);
+    if (error) throw new Error(error.message);
+    if (liveUserId !== userId || state.status !== "loaded") return;
+    const rows = Array.isArray(data) ? data : [];
+    const fetched = rows.flatMap((row) => {
+      const note = libraryRowToNote(row);
+      return note ? [note] : [];
+    });
+    // A touched id the query didn't return was deleted in the meantime.
+    const returned = new Set(fetched.map((note) => note.id));
+    const removed = new Set(ids.filter((id) => !returned.has(id)));
+    const merged = mergeLiveNotes(state.notes, state.selectedPath, fetched, removed);
+    if (merged.changed) setState({ ...state, notes: merged.notes, selectedPath: merged.selectedPath });
+  } catch {
+    scheduleResync();
+  } finally {
+    touchFlushInFlight = false;
+    if (pendingTouchedNoteIds.size > 0) scheduleTouchFlush();
+  }
+}
+
+function applyLiveEvent(action: LiveAction) {
+  if (action.kind === "ignore") return;
+  if (state.status !== "loaded") {
+    // Initial load (or an errored one) is still the source of truth; one quiet
+    // re-sync after it settles beats merging into a half-built list.
+    scheduleResync();
+    return;
+  }
+  switch (action.kind) {
+    case "resync":
+      scheduleResync();
+      return;
+    case "remove": {
+      pendingTouchedNoteIds.delete(action.id);
+      const merged = mergeLiveNotes(state.notes, state.selectedPath, [], new Set([action.id]));
+      const removedFolderPath = folderRows.get(action.id) ?? null;
+      folderRows = removeLiveFolder(folderRows, action.id);
+      const folders = removedFolderPath ? state.folders.filter((path) => path !== removedFolderPath) : state.folders;
+      if (merged.changed || folders !== state.folders) {
+        setState({ ...state, notes: merged.notes, selectedPath: merged.selectedPath, folders });
+      }
+      return;
+    }
+    case "folder-upsert": {
+      const previousPath = folderRows.get(action.id) ?? null;
+      const nextFolderRows = upsertLiveFolder(folderRows, action.id, action.path);
+      if (nextFolderRows === folderRows) return;
+      folderRows = nextFolderRows;
+      // Rename: remap the old path in place. New folder: append if missing —
+      // additive so optimistic entries from createFolder (no id known yet)
+      // never flicker away while their own echo is still in flight.
+      const folders =
+        previousPath && previousPath !== action.path
+          ? [...new Set(state.folders.map((path) => (path === previousPath ? action.path : path)))]
+          : state.folders.includes(action.path)
+            ? state.folders
+            : [...state.folders, action.path];
+      if (folders !== state.folders) setState({ ...state, folders });
+      return;
+    }
+    case "note-touch":
+      pendingTouchedNoteIds.add(action.id);
+      scheduleTouchFlush();
+      return;
+  }
+}
+
+function stopLiveRefresh() {
+  if (touchTimer) clearTimeout(touchTimer);
+  touchTimer = null;
+  if (resyncTimer) clearTimeout(resyncTimer);
+  resyncTimer = null;
+  pendingTouchedNoteIds = new Set();
+  const channel = liveChannel;
+  liveChannel = null;
+  liveUserId = null;
+  if (channel) void supabase.removeChannel(channel);
+}
+
+/** Idempotent per user — every mounted consumer of useCloudLibrary calls this,
+ *  but only one channel exists. Kept open across page navigation (the store's
+ *  data outlives the Library page too); torn down on sign-out/user change. */
+function ensureLiveRefresh(userId: string) {
+  if (liveChannel && liveUserId === userId) return;
+  stopLiveRefresh();
+  liveUserId = userId;
+  liveChannel = supabase
+    .channel(`library-live-${userId}`)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "readable_library_documents", filter: `user_id=eq.${userId}` },
+      (payload) => {
+        if (liveUserId !== userId) return;
+        applyLiveEvent(classifyLiveEvent({ eventType: payload.eventType, newRow: payload.new, oldRow: payload.old }));
+      },
+    )
+    .subscribe((status) => {
+      if (liveUserId !== userId) return;
+      // First join races the initial load's snapshot; later joins mean a
+      // connection gap (sleep, bad wifi). Either way, one quiet re-sync
+      // closes any window where a write happened unheard.
+      if (status === "SUBSCRIBED") scheduleResync();
+    });
+}
+
 function select(path: string | null) {
   setState({ ...state, selectedPath: path });
 }
 
 function reset() {
+  stopLiveRefresh();
+  folderRows = new Map();
   loadedForUserId = null;
   setState(EMPTY_STATE);
 }
@@ -198,6 +391,7 @@ export function useCloudLibrary(): UseCloudLibraryApi {
 
   useEffect(() => {
     if (preview) {
+      stopLiveRefresh();
       if (loadedForUserId !== "__preview__" || state.status !== "loaded") {
         loadedForUserId = "__preview__";
         setState({ status: "loaded", error: null, notes: PREVIEW_NOTES, folders: [], selectedPath: PREVIEW_NOTES[0]?.path ?? null });
@@ -206,8 +400,10 @@ export function useCloudLibrary(): UseCloudLibraryApi {
     }
     if (!userId) {
       if (loadedForUserId) reset();
+      else stopLiveRefresh();
       return;
     }
+    ensureLiveRefresh(userId);
     if (loadedForUserId !== userId) void loadDocuments(userId);
   }, [preview, userId]);
 
@@ -250,7 +446,7 @@ export function useCloudLibrary(): UseCloudLibraryApi {
         .single();
       if (isUniquePathViolation(error)) continue;
       if (error) throw new Error(error.message);
-      const note = toNote(data);
+      const note = libraryRowToNote(data);
       if (!note) throw new Error("The note was saved but returned an invalid response.");
       setState({ ...state, notes: [note, ...state.notes], selectedPath: note.path });
       return note;

@@ -139,7 +139,18 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
     if (previous?.dirty && previous.id !== note?.id) {
       void saveNote({ id: previous.id, title: previous.title, content: previous.content });
     }
-    if (previous?.id === note?.id) return;
+    if (previous?.id === note?.id) {
+      // Live refresh changed the OPEN note (a phone edit or another tab).
+      // Adopt it only while nothing is unsaved here — local typing always
+      // wins, and the next autosave settles it (last write wins, same rule
+      // the phone editor documents).
+      if (note && previous && !previous.dirty && (previous.title !== note.title || previous.content !== note.content)) {
+        setTitle(note.title);
+        setContent(note.content);
+        draftRef.current = { id: note.id, title: note.title, content: note.content, dirty: false };
+      }
+      return;
+    }
     setTitle(note?.title ?? "");
     setContent(note?.content ?? "");
     setMessage(null);
