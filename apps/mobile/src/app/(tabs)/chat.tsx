@@ -36,7 +36,7 @@ import { Composer, COMPOSER_PILL_HEIGHT } from "@/components/Composer";
 import { ComposerPlusMenu } from "@/components/ComposerPlusMenu";
 import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
 import { GlassSurface } from "@/components/GlassSurface";
-import { CloseIcon } from "@/components/icons";
+import { CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
@@ -477,6 +477,17 @@ export default function ChatScreen() {
         <SourcesSheet visible={sourcesSheetFor !== null} onClose={() => setSourcesSheetFor(null)} sources={sourcesSheetFor ?? []} />
         <DeliverableSheet visible={deliverableSheetFor !== null} onClose={() => setDeliverableSheetFor(null)} output={deliverableSheetFor} />
         <View style={[styles.composerRow, { paddingBottom: keyboardUp ? space(3) : contentBottom - space(1) }]}>
+          {/* ChatGPT-style landing (owner 2026-07-20): on an empty chat, quiet starter
+              rows sit directly above the composer. They vanish the moment the first
+              message exists. */}
+          {!hasContent ? (
+            <StarterRows
+              onPick={(text) => {
+                setInput(text);
+                composerRef.current?.focus();
+              }}
+            />
+          ) : null}
           {attachedDoc ? <AttachedDocChip title={attachedDoc.title} onRemove={() => setAttachedDoc(null)} /> : null}
           <Composer
             value={input}
@@ -580,6 +591,39 @@ function DotsIcon({ size = 20, color }: { size?: number; color: string }) {
  *  the composer input while it's staged for the next send (owner spec:
  *  "show a small removable chip above the composer input"). Cleared
  *  automatically once that turn sends (see send()) or manually via the "x". */
+// The landing starters — icon + label rows in the ChatGPT reference's language
+// (owner 2026-07-20). Tapping one only PREFILLS the composer and focuses it;
+// nothing sends until the student does. Each maps to something this phone chat
+// genuinely delivers: conversational quizzing, an explanation, or a question the
+// router grounds with a live web search.
+const STARTERS = [
+  { key: "quiz", label: "Quiz me on a topic", prefill: "Quiz me on ", Icon: StudyIcon },
+  { key: "explain", label: "Explain a concept", prefill: "Explain ", Icon: SparkleIcon },
+  { key: "lookup", label: "Look something up", prefill: "Look up ", Icon: SearchIcon },
+] as const;
+
+function StarterRows({ onPick }: { onPick: (text: string) => void }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors: c } = useTheme();
+  return (
+    <View style={styles.starters} testID="chat-starters">
+      {STARTERS.map(({ key, label, prefill, Icon }) => (
+        <Pressable
+          key={key}
+          onPress={() => onPick(prefill)}
+          style={({ pressed }) => [styles.starterRow, pressed && styles.starterRowPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          testID={`chat-starter-${key}`}
+        >
+          <Icon size={19} color={c.text2} />
+          <Text style={styles.starterLabel}>{label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 function AttachedDocChip({ title, onRemove }: { title: string; onRemove: () => void }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -618,6 +662,21 @@ const createStyles = (c: ThemeColors) =>
     emptyWrap: { alignItems: "center", gap: space(2), paddingHorizontal: space(6) },
     emptyTitle: { ...type.title, color: c.text2, textAlign: "center" },
     composerRow: { paddingHorizontal: space(3), paddingTop: space(2) },
+    // Landing starter rows — plain (no glass, no borders) so they read as quiet
+    // suggestions on the page, not controls; generous air between rows like the
+    // ChatGPT reference.
+    starters: { paddingHorizontal: space(1), paddingBottom: space(3), gap: space(1.5) },
+    starterRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      alignSelf: "flex-start",
+      gap: space(3.5),
+      paddingVertical: space(2.5),
+      paddingHorizontal: space(2),
+      borderRadius: radius.md,
+    },
+    starterRowPressed: { backgroundColor: c.surface },
+    starterLabel: { ...type.body, color: c.text },
     // The attached-Library-doc chip staged above the composer input.
     attachChipRow: { marginBottom: space(1.5), paddingHorizontal: space(1) },
     attachChip: {
