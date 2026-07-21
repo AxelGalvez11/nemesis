@@ -177,24 +177,24 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
       if (!current) return;
-      if (event.key === " " || event.key === "Enter") {
+      if (event.key === " " || event.key === "Enter" || event.code === "Space") {
         event.preventDefault();
         if (revealed) void grade("good");
         else setRevealed(true);
         return;
       }
-      const byDigit = GRADE_KEYS[event.key];
+      const byDigit = GRADE_KEYS[event.key] ?? (event.code.startsWith("Digit") ? GRADE_KEYS[event.code.slice(5)] : undefined);
       if (byDigit && revealed) {
         event.preventDefault();
         void grade(byDigit);
         return;
       }
-      if (event.key === "z" || event.key === "Z") {
+      if (event.key === "z" || event.key === "Z" || event.code === "KeyZ") {
         event.preventDefault();
         void undo();
         return;
       }
-      if (event.key === "f" || event.key === "F") {
+      if (event.key === "f" || event.key === "F" || event.code === "KeyF") {
         event.preventDefault();
         void toggleFlag();
       }
@@ -204,6 +204,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   });
 
   return (
+    <>
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-none border-0 bg-background px-7 py-6" showCloseButton>
         <DialogTitle className="sr-only">{deck?.name ?? "Flashcard review"}</DialogTitle>
@@ -273,8 +274,12 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
             </div>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
 
-        <Dialog onOpenChange={setEditOpen} open={editOpen}>
+    {/* Sibling of the review dialog, not a child: a dialog nested inside the
+        review DialogContent gets dismissed by the closing dropdown menu. */}
+    <Dialog onOpenChange={setEditOpen} open={editOpen}>
           <DialogContent className="max-w-xl">
             <form className="grid gap-4" onSubmit={saveEdit}>
               <DialogHeader>
@@ -306,8 +311,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
               </DialogFooter>
             </form>
           </DialogContent>
-        </Dialog>
-      </DialogContent>
     </Dialog>
+    </>
   );
 }
