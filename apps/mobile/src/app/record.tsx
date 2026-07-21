@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useKeepAwake } from "expo-keep-awake";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
-import { saveRecordingArtifact } from "@/api/chat";
+import { enhanceRecordingArtifact, saveRecordingArtifact } from "@/api/chat";
 import { GlassSurface } from "@/components/GlassSurface";
 import { MicIcon } from "@/components/icons";
 import { MissionButton } from "@/components/mission-ui";
@@ -61,13 +61,16 @@ export default function RecordScreen() {
     setSaving(true);
     setSaveError(null);
     try {
-      await saveRecordingArtifact(uid, threadId, buildRecordingDraft(live.transcript, live.elapsedSeconds, new Date()));
+      const entry = await saveRecordingArtifact(uid, threadId, buildRecordingDraft(live.transcript, live.elapsedSeconds, new Date()));
+      // Enhance pass runs detached: the saved on-device transcript is already
+      // safe, and the sharper server transcript swaps in when it lands.
+      void enhanceRecordingArtifact(uid, threadId, entry, live.audioUris, live.elapsedSeconds);
       router.back();
     } catch (cause) {
       setSaveError(cause instanceof Error ? cause.message : "Couldn't save the recording — check your connection and try again.");
       setSaving(false);
     }
-  }, [uid, threadId, saving, live.transcript, live.elapsedSeconds]);
+  }, [uid, threadId, saving, live.transcript, live.elapsedSeconds, live.audioUris]);
 
   const statusLine =
     live.status === "denied"
@@ -78,7 +81,9 @@ export default function RecordScreen() {
           ? "Listening — speech is transcribed on this phone and never uploaded as audio."
           : live.status === "stopped" && !reviewable
             ? "Nothing was transcribed. Start again and speak close to the phone."
-            : "Transcribes on this phone as you record, then saves the transcript into this chat.";
+            : reviewable
+              ? "Saving keeps this transcript and runs a high-accuracy pass that sharpens it a few minutes later."
+              : "Transcribes on this phone as you record, then saves the transcript into this chat.";
 
   return (
     <View style={[styles.page, { paddingBottom: Math.max(insets.bottom, space(4)), paddingTop: space(4) }]}>
