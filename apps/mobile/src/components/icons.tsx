@@ -123,6 +123,36 @@ export function PlusIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
 }
 
 /** Closed folder outline — marks folder rows in Library/Study trees. */
+/** Spiral notebook — the Notebooks page (drawer nav). */
+export function NotebookIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="5.4" y="3.8" width="13.2" height="16.4" rx="1.8" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="9.4" y1="3.8" x2="9.4" y2="20.2" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="3.6" y1="7.6" x2="5.4" y2="7.6" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="3.6" y1="12" x2="5.4" y2="12" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="3.6" y1="16.4" x2="5.4" y2="16.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
+/** Power plug — the Plugins page (drawer nav). */
+export function PluginIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Line x1="9" y1="3.4" x2="9" y2="7.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Line x1="15" y1="3.4" x2="15" y2="7.4" stroke={color} strokeWidth={strokeWidth} {...base} />
+      <Path
+        d="M6.6 7.4h10.8v3.2a5.4 5.4 0 0 1-10.8 0Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        {...base}
+      />
+      <Line x1="12" y1="16" x2="12" y2="20.6" stroke={color} strokeWidth={strokeWidth} {...base} />
+    </Svg>
+  );
+}
+
 export function FolderIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">

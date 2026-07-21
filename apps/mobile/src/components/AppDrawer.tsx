@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentType } from "react";
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router, usePathname } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,11 +7,10 @@ import { useAuth } from "@/auth/AuthProvider";
 import { listThreads, newThreadId } from "@/api/chat";
 import type { ThreadSummary } from "@/lib/chat-threads";
 import Svg, { Path } from "react-native-svg";
-import { GlassSurface } from "./GlassSurface";
-import { CalendarIcon, GraphIcon, LibraryIcon, PlusIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
+import { CalendarIcon, GraphIcon, LibraryIcon, NotebookIcon, PluginIcon, PlusIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
-import { radius, shadow, space, type } from "@/theme/tokens";
+import { radius, space, type } from "@/theme/tokens";
 
 // ChatGPT/Claude-style side drawer + the app-shell context that drives it. Built on RN's built-in
 // Animated (no extra deps; renders identically under react-native-web for previews). The sidebar is
@@ -70,7 +69,13 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [headerTitle, setHeaderTitle] = useState<string | null>(null);
   const [headerRight, setHeaderRight] = useState<ReactNode>(null);
-  const openDrawer = useCallback(() => setOpen(true), []);
+  // Opening the drawer always drops the keyboard (owner 2026-07-20: swiping to the
+  // sidebar should put the keyboard away) — covers the TopBar menu button; the swipe
+  // path dismisses in DrawerShell's pan onStart so it drops the moment the drag begins.
+  const openDrawer = useCallback(() => {
+    Keyboard.dismiss();
+    setOpen(true);
+  }, []);
   const closeDrawer = useCallback(() => setOpen(false), []);
   // A fresh chat is a new thread id in the route param; the chat screen loads it
   // (empty) and persists it on the first send, so it shows up in this drawer.
@@ -157,6 +162,9 @@ function DrawerShell({
       .failOffsetY([-16, 16])
       .onStart(() => {
         progress.stopAnimation();
+        // Drawer drag begins -> keyboard goes away immediately (owner 2026-07-20),
+        // so the page isn't half-slid over a raised keyboard.
+        if (!open) Keyboard.dismiss();
       })
       .onUpdate((event) => {
         const next = Math.min(1, Math.max(0, startFrom + event.translationX / panelW));
@@ -280,8 +288,10 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
         <View style={styles.navGroup}>
           <NavRow Icon={StudyIcon} label="Study" onPress={() => go("/study")} />
           <NavRow Icon={LibraryIcon} label="Library" onPress={() => go("/library")} />
+          <NavRow Icon={NotebookIcon} label="Notebooks" onPress={() => go("/notebooks")} />
           <NavRow Icon={GraphIcon} label="Graph" onPress={() => go("/graph")} />
           <NavRow Icon={CalendarIcon} label="Calendar" onPress={() => go("/calendar")} />
+          <NavRow Icon={PluginIcon} label="Plugins" onPress={() => go("/plugins")} />
         </View>
 
         {searchOpen ? (
@@ -341,17 +351,15 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
             <Text style={styles.newChatText}>New chat</Text>
           </Pressable>
 
-          <GlassSurface style={styles.settingsBtn} fallbackColor={c.glassPanel}>
-            <Pressable
-              style={styles.settingsBtnInner}
-              onPress={() => router.push("/settings" as never)}
-              testID="drawer-settings"
-              accessibilityLabel="Settings"
-              hitSlop={8}
-            >
-              <SettingsIcon size={19} color={c.text2} />
-            </Pressable>
-          </GlassSurface>
+          <Pressable
+            style={({ pressed }) => [styles.settingsBtn, pressed && styles.settingsBtnPressed]}
+            onPress={() => router.push("/settings" as never)}
+            testID="drawer-settings"
+            accessibilityLabel="Settings"
+            hitSlop={8}
+          >
+            <SettingsIcon size={20} color={c.text2} />
+          </Pressable>
         </View>
       </View>
     </View>
@@ -402,10 +410,15 @@ const createStyles = (c: ThemeColors) =>
     // The moving page. pageShadow carries the drop shadow (needs an opaque bg and NO
     // overflow clip so the shadow can bleed onto the sidebar); pageClip rounds the
     // actual content. Both round only the LEFT (facing) corners via edgeRadius.
-    // Shadow color is themed (alpha in c.pageShadow, so opacity is 1 here): the flat
-    // 50%-black read as a gray vertical band on the LIGHT sidebar (owner 2026-07-20:
-    // keep the shadow, kill the band) — light mode now casts a faint one instead.
-    pageShadow: { flex: 1, backgroundColor: c.bg, borderCurve: "continuous", ...shadow.raise, shadowColor: c.pageShadow, shadowOpacity: 1 },
+    // Owner 2026-07-20 round 2: shadow stays but must never read as a wide gray
+    // band — so the geometry is TIGHT (12pt blur hugging the edge, vs the composer's
+    // 18pt shadow.raise) and the color is themed (alpha baked into c.pageShadow;
+    // faint ink in light, the shipped 50% black in dark). opacity 1 = color's alpha.
+    pageShadow: {
+      flex: 1, backgroundColor: c.bg, borderCurve: "continuous",
+      shadowColor: c.pageShadow, shadowOpacity: 1, shadowRadius: 12,
+      shadowOffset: { width: 0, height: 6 }, elevation: 10,
+    },
     pageClip: { flex: 1, overflow: "hidden", borderCurve: "continuous" },
     panelSolid: { flex: 1, backgroundColor: c.bg2 },
     panelInner: { flex: 1 },
@@ -468,7 +481,9 @@ const createStyles = (c: ThemeColors) =>
     newChatBtnPressed: { backgroundColor: c.surface2 },
     newChatText: { color: c.accent, fontSize: type.small.fontSize + 1, fontWeight: "600" },
 
-    // The gear sits fully inside the panel. Borderless (owner 2026-07-20).
-    settingsBtn: { width: 44, height: 44, borderRadius: 22 },
-    settingsBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
+    // The gear is a PLAIN icon like the rest of the sidebar — no glass circle
+    // (owner 2026-07-20: the white disc read as a floating blob on the light
+    // sidebar). Press feedback matches searchBtn's quiet fill.
+    settingsBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+    settingsBtnPressed: { backgroundColor: c.surface },
   });
