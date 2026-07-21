@@ -7,6 +7,7 @@ import {
   buildAnkiExportFile,
   countImageTags,
   escapeAnkiField,
+  NEEDS_IMAGE_TAG,
   normalizeAnkiDeckName,
   splitAnkiFields,
 } from "./anki-text";
@@ -39,11 +40,30 @@ test("deck names normalize both separator styles", () => {
 
 test("notes become cards with the right type", () => {
   const basic = ankiNoteToCard(["Warfarin", "Vitamin K antagonist"], " cardio  anticoag ", false);
-  assert.deepEqual(basic, { back: "Vitamin K antagonist", cardType: "basic", front: "Warfarin", tags: ["cardio", "anticoag"] });
+  assert.deepEqual(basic, { back: "Vitamin K antagonist", cardType: "basic", front: "Warfarin", needsImage: false, tags: ["cardio", "anticoag"] });
   assert.equal(ankiNoteToCard(["Warfarin", "Vitamin K antagonist"], "", true)?.cardType, "reversed");
   assert.equal(ankiNoteToCard(["{{c1::Lisinopril}} causes cough", "bradykinin"], "", true)?.cardType, "cloze");
   assert.equal(ankiNoteToCard(["<br>", "back only"], "", false), null);
   assert.equal(ankiNoteToCard(["front", "", "second extra"], "", false)?.back, "second extra");
+});
+
+test("picture-answer cards import flagged instead of blank", () => {
+  // Answer lived only in an image (the Captain Hook deck has ~800 of these).
+  const imageBack = ankiNoteToCard(["How do you convert Ka to Kb?", '<img src="eq.png">'], "chem", false);
+  assert.equal(imageBack?.needsImage, true);
+  assert.ok(imageBack?.back.includes("was a picture"));
+  assert.deepEqual(imageBack?.tags, ["chem", NEEDS_IMAGE_TAG]);
+
+  // Cloze whose blank held only an image renders as {{c1:: }} — same problem.
+  const emptyCloze = ankiNoteToCard(["The density of water is:<br>{{c1::<img src=\"x.png\">}}", ""], "", false);
+  assert.equal(emptyCloze?.needsImage, true);
+  assert.ok(emptyCloze?.tags.includes(NEEDS_IMAGE_TAG));
+
+  // A normal cloze with a real answer and no back is NOT flagged.
+  const goodCloze = ankiNoteToCard(["{{c1::Lisinopril}} causes cough", ""], "", false);
+  assert.equal(goodCloze?.needsImage, false);
+  assert.equal(goodCloze?.back, "");
+  assert.deepEqual(goodCloze?.tags, []);
 });
 
 test("export file carries headers, notetypes, and quoting Anki understands", () => {

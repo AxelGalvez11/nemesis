@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as zlib from "node:zlib";
 
 import { strToU8, zipSync } from "fflate";
 import initSqlJs from "sql.js";
@@ -17,9 +18,17 @@ function buildDb(SQL: Awaited<typeof enginePromise>, statements: string): Uint8A
   return bytes;
 }
 
-async function legacyApkg(): Promise<Uint8Array> {
+/** Anki's newest exports zstd-compress the collection; fzstd only decodes, so
+ *  the fixture compresses with Node's zlib to produce a genuine .anki21b.
+ *  (Runtime has zstdCompressSync since Node 22.15; @types/node here predates it.) */
+const zstdCompressSync = (zlib as unknown as { zstdCompressSync: (data: Uint8Array) => Buffer }).zstdCompressSync;
+function zstdCompress(bytes: Uint8Array): Uint8Array {
+  return new Uint8Array(zstdCompressSync(bytes));
+}
+
+async function legacyApkgDb(): Promise<Uint8Array> {
   const SQL = await enginePromise;
-  const bytes = buildDb(
+  return buildDb(
     SQL,
     `
     create table col (decks text);
@@ -40,7 +49,10 @@ async function legacyApkg(): Promise<Uint8Array> {
       (4, 1001, 0);
     `,
   );
-  return zipSync({ "collection.anki2": bytes, media: strToU8('{"0":"beep.mp3"}') });
+}
+
+async function legacyApkg(): Promise<Uint8Array> {
+  return zipSync({ "collection.anki2": await legacyApkgDb(), media: strToU8('{"0":"beep.mp3"}') });
 }
 
 test("legacy .apkg parses into decks of typed cards", async () => {
@@ -83,6 +95,50 @@ test("new-schema exports read the decks table and its separators", async () => {
   assert.deepEqual(result.decks.map((deck) => deck.name), ["Pharm::Respiratory"]);
   assert.equal(result.decks[0]?.cards[0]?.front, "Albuterol");
   assert.equal(result.mediaCount, 0);
+});
+
+test("the modern zstd database wins over a legacy upgrade-stub", async () => {
+  // Real Anki exports (e.g. the Captain Hook deck) ship collection.anki21b
+  // WITH a one-card collection.anki2 stub telling old clients to upgrade.
+  // Reading the stub would import 1 junk card instead of the whole deck.
+  const SQL = await enginePromise;
+  const stub = buildDb(
+    SQL,
+    `
+    create table col (decks text);
+    insert into col values ('{"1":{"name":"Default"}}');
+    create table notes (id integer, flds text, tags text);
+    create table cards (nid integer, did integer, ord integer);
+    insert into notes values (1, 'Please update to the latest Anki version, then import the .colpkg/.apkg file again.${U}', '');
+    insert into cards values (1, 1, 0);
+    `,
+  );
+  const real = buildDb(
+    SQL,
+    `
+    create table decks (id integer, name text);
+    insert into decks values (5, 'MCAT::Biochem');
+    create table notes (id integer, flds text, tags text);
+    create table cards (nid integer, did integer, ord integer);
+    insert into notes values (7, 'What is the electron transport chain?${U}Enzymes in the inner mitochondrial membrane', 'biochem');
+    insert into cards values (7, 5, 0);
+    `,
+  );
+  const result = parseAnkiPackage(zipSync({ "collection.anki2": stub, "collection.anki21b": zstdCompress(real) }), SQL);
+  assert.deepEqual(result.decks.map((deck) => deck.name), ["MCAT::Biochem"]);
+  assert.equal(result.cardCount, 1);
+  assert.equal(result.decks[0]?.cards[0]?.front, "What is the electron transport chain?");
+
+  // A stub with no modern sibling is itself the "re-export" signal.
+  assert.throws(() => parseAnkiPackage(zipSync({ "collection.anki2": stub }), SQL), /newest format/);
+});
+
+test("media entries are counted without being inflated", async () => {
+  const SQL = await enginePromise;
+  const files: Record<string, Uint8Array> = { "collection.anki2": (await legacyApkgDb()) };
+  for (let index = 0; index < 12; index += 1) files[String(index)] = new Uint8Array(64);
+  const result = parseAnkiPackage(zipSync(files), SQL);
+  assert.equal(result.mediaCount, 12);
 });
 
 test("junk input fails with a friendly message", async () => {

@@ -70,6 +70,19 @@ export interface AnkiImportCard {
   back: string;
   cardType: "basic" | "reversed" | "cloze";
   tags: string[];
+  /** True when the card's ANSWER was a picture we can't carry over, so the
+   *  card arrives flagged instead of silently blank. */
+  needsImage: boolean;
+}
+
+/** Tag applied to picture-answer cards so students can find them in one
+ *  filter and fix or delete them together. */
+export const NEEDS_IMAGE_TAG = "needs-image";
+const NEEDS_IMAGE_NOTE = "(This card's answer was a picture in Anki. Pictures don't come across yet — open the original deck to see it.)";
+
+/** A cloze whose blank is empty ({{c1:: }}) had its answer inside an image. */
+function hasEmptyCloze(text: string): boolean {
+  return /\{\{c\d+::\s*(?:::[^}]*)?\}\}/.test(text);
 }
 
 /** Turn one note's fields into an importable card. First field = front, the
@@ -81,7 +94,16 @@ export function ankiNoteToCard(fields: string[], rawTags: string, reversed: bool
   const back = rest.map(ankiFieldToText).filter(Boolean).join("\n\n");
   const tags = rawTags.trim().split(/\s+/).filter(Boolean);
   const cardType: AnkiImportCard["cardType"] = hasCloze(front) ? "cloze" : reversed ? "reversed" : "basic";
-  return { back, cardType, front, tags };
+  // Answer lost to a picture: an empty back where the raw fields had an
+  // image, or a cloze blank that held nothing but an image.
+  const lostToImage = (!back && rest.some((field) => countImageTags(field) > 0)) || hasEmptyCloze(front);
+  return {
+    back: lostToImage && !back ? NEEDS_IMAGE_NOTE : back,
+    cardType,
+    front,
+    needsImage: lostToImage,
+    tags: lostToImage ? [...tags, NEEDS_IMAGE_TAG] : tags,
+  };
 }
 
 export interface ExportableCard {

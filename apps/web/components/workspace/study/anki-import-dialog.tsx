@@ -14,7 +14,10 @@ import { parseAnkiPackage, type AnkiImportResult } from "@/lib/workspace/anki-pa
 import { loadSqlEngine } from "@/lib/workspace/sql-js-loader";
 import { useCloudStudy } from "@/lib/workspace/study-cloud-store";
 
-const MAX_FILE_BYTES = 250 * 1024 * 1024;
+// Media-heavy decks run large (the reference Captain Hook deck is 284 MB of
+// mostly images, which the parser skips without inflating) — the cap only
+// guards against files too big to hold in browser memory at all.
+const MAX_FILE_BYTES = 600 * 1024 * 1024;
 
 type Step = "pick" | "parsing" | "preview" | "importing" | "done";
 
@@ -145,18 +148,24 @@ export function AnkiImportDialog({ open, onOpenChange }: AnkiImportDialogProps) 
               ))}
             </div>
             <p className="text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)">
-              {result.cardCount} text cards found.
-              {result.mediaCount > 0 && ` ${result.mediaCount} media file${result.mediaCount === 1 ? "" : "s"} (images/audio) will be skipped.`}
+              {result.cardCount.toLocaleString()} text card{result.cardCount === 1 ? "" : "s"} found.
+              {result.mediaCount > 0 && ` ${result.mediaCount.toLocaleString()} picture/audio file${result.mediaCount === 1 ? "" : "s"} won't come across.`}
               {result.skippedNotes > 0 && ` ${result.skippedNotes} empty note${result.skippedNotes === 1 ? "" : "s"} skipped.`}
             </p>
+            {result.needsImageCount > 0 && (
+              <p className="rounded-lg bg-(--ui-bg-quaternary) px-3 py-2 text-[0.6875rem] leading-relaxed text-(--ui-text-secondary)">
+                {result.needsImageCount.toLocaleString()} of these card{result.needsImageCount === 1 ? " has its answer" : "s have their answers"} in a picture. They still import, tagged <span className="font-medium">#needs-image</span> so you can find them in Browse and fix or remove them together.
+              </p>
+            )}
           </div>
         )}
 
         {step === "importing" && (
           <div className="grid gap-2 py-4">
             <p className="text-center text-xs text-(--ui-text-secondary)" data-testid="anki-import-progress">
-              Importing {progress.done} of {progress.total} cards…
+              Importing {progress.done.toLocaleString()} of {progress.total.toLocaleString()} cards…
             </p>
+            <p className="text-center text-[0.6875rem] text-(--ui-text-tertiary)">Big decks take a minute. Keep this tab open.</p>
             <div className="h-1.5 overflow-hidden rounded-full bg-(--ui-bg-quaternary)">
               <div className="h-full rounded-full bg-[var(--theme-primary)] transition-[width]" style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%` }} />
             </div>
@@ -165,7 +174,7 @@ export function AnkiImportDialog({ open, onOpenChange }: AnkiImportDialogProps) 
 
         {step === "done" && (
           <p className="py-4 text-center text-xs text-(--ui-text-secondary)" data-testid="anki-import-done">
-            Imported {summary.cardCount} card{summary.cardCount === 1 ? "" : "s"} into {summary.deckCount} deck{summary.deckCount === 1 ? "" : "s"}.
+            Imported {summary.cardCount.toLocaleString()} card{summary.cardCount === 1 ? "" : "s"} into {summary.deckCount} deck{summary.deckCount === 1 ? "" : "s"}.
           </p>
         )}
 
@@ -176,7 +185,7 @@ export function AnkiImportDialog({ open, onOpenChange }: AnkiImportDialogProps) 
             <>
               <Button onClick={() => close(false)} type="button" variant="ghost">Cancel</Button>
               <Button data-testid="anki-import-confirm" disabled={chosenCount === 0} onClick={() => void runImport()} type="button" variant="secondary">
-                Import {chosenCount} card{chosenCount === 1 ? "" : "s"}
+                Import {chosenCount.toLocaleString()} card{chosenCount === 1 ? "" : "s"}
               </Button>
             </>
           ) : step === "done" ? (
