@@ -7,6 +7,7 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 
+import { useTheme } from "@/components/theme-provider";
 import { LibraryMain } from "@/components/workspace/library/library-main";
 import { LibrarySidebar } from "@/components/workspace/library/library-sidebar";
 import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
@@ -15,6 +16,10 @@ import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { cn } from "@/lib/utils";
 
 export default function LibraryPage() {
+  // Back is the exit from full-screen mode, so it only belongs there. With the
+  // nav rail kept on screen it would be a second, redundant way to the same
+  // place sitting right next to it.
+  const { libraryFullScreen } = useTheme();
   const narrowViewport = useMediaQuery("(max-width: 768px)");
   const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(narrowViewport);
   const searchParams = useSearchParams();
@@ -35,7 +40,10 @@ export default function LibraryPage() {
         <>
           {narrowViewport && <button aria-label="Close Library sidebar" className="absolute inset-0 z-30 bg-black/25" onClick={() => setSidebarOpen(false)} type="button" />}
           <div className={cn(narrowViewport ? "absolute inset-y-0 left-0 z-40 shadow-2xl" : "contents")}>
-            <LibrarySidebar onNavigate={() => narrowViewport && setSidebarOpen(false)} />
+            <LibrarySidebar
+              onNavigate={() => narrowViewport && setSidebarOpen(false)}
+              showBack={libraryFullScreen && !narrowViewport}
+            />
           </div>
         </>
       )}

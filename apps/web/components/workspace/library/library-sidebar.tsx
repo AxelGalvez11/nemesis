@@ -34,7 +34,7 @@ import { LibraryNoteRow, LibraryTreeView } from "./library-tree-view";
 import { LibraryTreeBlankState } from "./library-tree-blank-state";
 import { LibraryCreateDialog, type LibraryCreateKind } from "./library-create-dialog";
 
-export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
+export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: () => void; showBack?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const navigationRoot = pathname.startsWith("/dev-preview/workspace/") ? "/dev-preview/workspace" : "";
@@ -114,15 +114,17 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
             the same optical line as the "Library" title below it; the ghost
             hover fill reaching into the gutter matches the tree rows. py-1
             makes it 24px tall, the same as the tools button opposite it. */}
-        <Button
-          className="-ml-1.5 mb-1.5 py-1 text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
-          onClick={leaveLibrary}
-          size="xs"
-          type="button"
-          variant="ghost"
-        >
-          <IconChevronLeft /> Back
-        </Button>
+        {showBack && (
+          <Button
+            className="-ml-1.5 mb-1.5 py-1 text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
+            onClick={leaveLibrary}
+            size="xs"
+            type="button"
+            variant="ghost"
+          >
+            <IconChevronLeft /> Back
+          </Button>
+        )}
         {/* items-start, not items-center: the error line below the title makes
             this block two rows tall, and centering would drag the tools button
             down off the title it belongs to. */}
