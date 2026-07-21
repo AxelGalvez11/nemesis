@@ -37,6 +37,7 @@ import {
   type WireMsg,
 } from "@/lib/chat-thread";
 import { classifyChatRequest, type ChatRouteDecision } from "@/lib/chat-routing";
+import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
 import {
   chatMsgFromCloudRow,
@@ -562,9 +563,9 @@ export async function pinThread(uid: string, id: string, pinned: boolean): Promi
 
 /** Session-level deliverables (e.g. recordings) attached to a thread's own
  *  `chat_threads.meta.outputs` — written by web's Record-mode composer (see
- *  apps/web/lib/workspace/sessions-cloud.ts's threadRow). The phone Chat
- *  surface only ever READS these (no recording composer of its own); the chip
- *  row at the top of an open thread (chat.tsx) is this call's only consumer.
+ *  apps/web/lib/workspace/sessions-cloud.ts's threadRow) and by the phone's
+ *  own Record screen (saveRecordingArtifact below); the chip row at the top
+ *  of an open thread (chat.tsx) is this call's only consumer.
  *  Best-effort/offline-safe, same posture as isThreadPinned — a fetch failure
  *  just means the chip row stays empty until the thread is reopened online. */
 export async function loadThreadOutputs(uid: string, id: string): Promise<ChatOutput[]> {
@@ -575,4 +576,62 @@ export async function loadThreadOutputs(uid: string, id: string): Promise<ChatOu
   } catch {
     return [];
   }
+}
+
+/** Save a phone recording exactly the way web's Record mode does: a canonical
+ *  row in `chat_recording_artifacts` (web's right-rail source) plus a mirror
+ *  entry in the thread's `chat_threads.meta.outputs` (the chip row BOTH this
+ *  chat surface and web render — see loadThreadOutputs above). Recording into
+ *  a thread that never reached the cloud (no message sent yet) creates the
+ *  thread row so the chips have somewhere to live. The artifact insert is the
+ *  load-bearing write and throws on failure; the meta mirror is best-effort —
+ *  if it fails, the recording still exists server-side and web's rail shows
+ *  it, the chip just waits for the next successful meta write. */
+export async function saveRecordingArtifact(uid: string, threadId: string, draft: RecordingDraft): Promise<ChatOutput> {
+  const id = generateUuidV4();
+  const title = draft.title.slice(0, 200);
+  const entry: ChatOutput = {
+    id,
+    kind: "recording",
+    title,
+    transcript: draft.transcript,
+    ...(draft.notes ? { notes: draft.notes } : {}),
+    durationSeconds: draft.durationSeconds,
+    createdAt: draft.createdAt,
+  };
+  const { error } = await supabase.from("chat_recording_artifacts").insert({
+    id,
+    user_id: uid,
+    surface: "sessions",
+    context_id: threadId,
+    title,
+    transcript: draft.transcript,
+    notes: draft.notes,
+    duration_seconds: draft.durationSeconds,
+    created_at: draft.createdAt,
+  });
+  if (error) throw new Error(error.message);
+  try {
+    const { data } = await supabase.from("chat_threads").select("meta").eq("id", threadId).eq("user_id", uid).maybeSingle();
+    if (data) {
+      await supabase
+        .from("chat_threads")
+        .update({ meta: mergeOutputsMeta(data.meta, entry), updated_at: draft.createdAt })
+        .eq("id", threadId)
+        .eq("user_id", uid);
+    } else {
+      await supabase.from("chat_threads").insert({
+        id: threadId,
+        user_id: uid,
+        title,
+        pinned: false,
+        meta: { outputs: [entry] },
+        created_at: draft.createdAt,
+        updated_at: draft.createdAt,
+      });
+    }
+  } catch {
+    // best-effort mirror — see the doc comment
+  }
+  return entry;
 }

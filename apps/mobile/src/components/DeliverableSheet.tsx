@@ -11,13 +11,13 @@ import { radius, space, type } from "@/theme/tokens";
 // transcript for chat_threads.meta.outputs (session artifacts, e.g. a
 // Record-mode recording) and a per-message row under any assistant turn that
 // carries chat_messages.meta.outputs — plus the bottom-up sheet either kind
-// of chip opens. IMPORTANT SCOPE NOTE (owner task): the phone Chat surface
-// does not execute tools and has no recording composer of its own, so every
-// output rendered here was created and synced down by WEB — today that's
-// effectively only kind:"recording" (web's flashcards/slides/test/report
-// kinds are declared in the shared type but not yet produced by any chat
-// surface; see lib/chat-thread.ts's ChatOutput doc). This is a read-only
-// display layer, matching what actually exists — not a guess at what might.
+// of chip opens. SCOPE NOTE: the phone Chat surface does not execute tools,
+// so outputs here come from web's Record mode OR the phone's own Record
+// screen (app/record.tsx via api/chat.ts saveRecordingArtifact) — today
+// that's effectively only kind:"recording" (web's flashcards/slides/test/
+// report kinds are declared in the shared type but not yet produced by any
+// chat surface; see lib/chat-thread.ts's ChatOutput doc). This component
+// itself stays a display layer.
 
 const OUTPUT_CHIP_LABEL: Record<ChatOutput["kind"], string> = {
   flashcards: "Deck created",

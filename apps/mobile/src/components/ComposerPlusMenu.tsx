@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { GlassSurface } from "./GlassSurface";
-import { LibraryIcon, SearchIcon } from "./icons";
+import { LibraryIcon, MicIcon, SearchIcon } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -26,6 +26,7 @@ export function ComposerPlusMenu({
   onClose,
   bottomOffset,
   onAttach,
+  onRecord,
   deepResearchOn,
   onToggleDeepResearch,
 }: {
@@ -36,6 +37,8 @@ export function ComposerPlusMenu({
    *  row itself renders with (see Composer.tsx's COMPOSER_PILL_HEIGHT). */
   bottomOffset: number;
   onAttach: () => void;
+  /** Opens the Record screen (app/record.tsx) for the active thread. */
+  onRecord: () => void;
   deepResearchOn: boolean;
   onToggleDeepResearch: () => void;
 }) {
@@ -76,6 +79,15 @@ export function ComposerPlusMenu({
           >
             <LibraryIcon size={17} color={c.text2} />
             <Text style={styles.rowLabel}>Attach from Library</Text>
+          </Pressable>
+          <Pressable
+            testID="composer-plus-record"
+            onPress={() => pickAndClose(onRecord)}
+            style={({ pressed }) => [styles.row, styles.rowDivider, pressed && styles.rowPressed]}
+            accessibilityRole="button"
+          >
+            <MicIcon size={17} color={c.text2} />
+            <Text style={styles.rowLabel}>Record</Text>
           </Pressable>
           <Pressable
             testID="composer-plus-deep-research"

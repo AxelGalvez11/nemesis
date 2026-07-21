@@ -341,6 +341,15 @@ export default function ChatScreen() {
     }, []),
   );
 
+  // Refresh the deliverable chips when the screen regains focus — a recording
+  // saved on the Record modal (or on another device) appears without reopening
+  // the thread.
+  useFocusEffect(
+    useCallback(() => {
+      if (uid && threadId) void loadThreadOutputs(uid, threadId).then(setThreadOutputs);
+    }, [uid, threadId]),
+  );
+
   if (!uid) {
     return (
       <View
@@ -462,6 +471,9 @@ export default function ChatScreen() {
           onClose={() => setPlusMenuOpen(false)}
           bottomOffset={(keyboardUp ? space(3) : contentBottom - space(1)) + COMPOSER_PILL_HEIGHT + space(2)}
           onAttach={() => setLibraryPickerOpen(true)}
+          onRecord={() => {
+            if (threadId) router.push({ params: { c: threadId }, pathname: "/record" });
+          }}
           deepResearchOn={deepResearchOn}
           onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}
         />
