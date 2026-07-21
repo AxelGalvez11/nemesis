@@ -53,6 +53,7 @@ export function NoteListSheet({
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const progress = useRef(new Animated.Value(0)).current;
+  const inputRef = useRef<TextInput>(null);
   const sheetH = Math.round(height * 0.5);
 
   useEffect(() => {
@@ -67,6 +68,16 @@ export function NoteListSheet({
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height, 0] });
   const searchable = onSearchChange !== undefined;
 
+  // The sheet stays mounted (its close animation needs that), so a TextInput
+  // `autoFocus` would fire once at screen mount — never when the sheet actually
+  // opens. Focus explicitly each time `visible` flips true, after the slide-in
+  // has mostly landed so iOS doesn't fight the animation for the keyboard.
+  useEffect(() => {
+    if (!visible || !searchable) return;
+    const timer = setTimeout(() => inputRef.current?.focus(), 260);
+    return () => clearTimeout(timer);
+  }, [visible, searchable]);
+
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID={testID}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel={`Close ${title.toLowerCase()}`} />
@@ -78,12 +89,12 @@ export function NoteListSheet({
             <View style={styles.searchField}>
               <SearchIcon size={16} color={c.text3} />
               <TextInput
+                ref={inputRef}
                 style={styles.searchInput}
                 value={searchValue ?? ""}
                 onChangeText={onSearchChange}
                 placeholder={searchPlaceholder ?? "Search"}
                 placeholderTextColor={c.text3}
-                autoFocus
                 autoCorrect={false}
                 autoCapitalize="none"
                 returnKeyType="search"

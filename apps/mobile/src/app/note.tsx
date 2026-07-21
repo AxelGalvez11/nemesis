@@ -137,6 +137,7 @@ export default function NoteScreen() {
   const [recentsOpen, setRecentsOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
   // Browser-style note history (owner picked "browser-style" for the pill bar):
   // the ids opened on THIS visit, with a cursor. Navigating a wikilink / search
   // / recents pick pushes (dropping any forward tail, like a browser); the
@@ -330,15 +331,16 @@ export default function NoteScreen() {
 
   // Done: flush the pending save, then drop back to reading. If the save fails
   // the editor STAYS open with the draft intact — exiting would silently show a
-  // note the cloud doesn't have.
-  const doneEditing = useCallback(async () => {
+  // note the cloud doesn't have. Returns whether reading mode was reached, so
+  // callers that chain something after (the menu's Find) can wait for it.
+  const doneEditing = useCallback(async (): Promise<boolean> => {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
     const ok = await saveNow();
-    if (!ok) return;
-    setEditing(false);
+    if (ok) setEditing(false);
+    return ok;
   }, [saveNow]);
 
   const onChangeDraft = useCallback(
@@ -371,10 +373,17 @@ export default function NoteScreen() {
     (item: (typeof MENU_ITEMS)[number]) => {
       setMenuOpen(false);
       if (item.key === "find") {
-        // Mid-edit, save-and-exit first (doneEditing keeps the editor open if
-        // the save fails — the find bar over it is harmless until then).
-        if (editing) void doneEditing();
-        setFindOpen(true);
+        // Mid-edit, save-and-exit first and only open Find once reading mode is
+        // actually reached — opening it eagerly would drop an autofocused find
+        // bar on top of the still-open editor (and strand it there if the save
+        // failed and the editor stayed open). Review finding, 2026-07-21.
+        if (editing) {
+          void doneEditing().then((ok) => {
+            if (ok) setFindOpen(true);
+          });
+        } else {
+          setFindOpen(true);
+        }
         return;
       }
       // Delete / Rename / Replace: still web-app actions.
@@ -408,9 +417,13 @@ export default function NoteScreen() {
   );
 
   // ‹ : previous note in this visit's history; with nothing left to step back
-  // to, it leaves to the Library — one consistent "browser back".
+  // to, it leaves to the Library — one consistent "browser back". A non-null
+  // pendingIndex means a ‹ › move is already in flight (the noteId effect
+  // hasn't consumed it yet) — further taps wait, so two rapid opposite-
+  // direction taps can't compute off a stale cursor. Review finding, 2026-07-21.
   const goBack = useCallback(() => {
     const h = navRef.current;
+    if (h.pendingIndex !== null) return;
     if (h.index > 0) {
       h.pendingIndex = h.index - 1;
       router.setParams({ id: h.stack[h.index - 1] });
@@ -421,6 +434,7 @@ export default function NoteScreen() {
 
   const goForward = useCallback(() => {
     const h = navRef.current;
+    if (h.pendingIndex !== null) return;
     if (h.index < h.stack.length - 1) {
       h.pendingIndex = h.index + 1;
       router.setParams({ id: h.stack[h.index + 1] });
@@ -429,8 +443,12 @@ export default function NoteScreen() {
 
   // + : a real phone-side create (api/cloudLibrary.ts createNote — same
   // "Untitled note.md" convention as the web store), then swap this page to it.
+  // creatingRef is the synchronous re-entrancy lock (state alone leaves a
+  // same-frame double-tap window that could insert two rows — review finding,
+  // 2026-07-21); the `creating` state only dims the bar's "+".
   const newNote = useCallback(async () => {
-    if (!userId || creating) return;
+    if (!userId || creatingRef.current) return;
+    creatingRef.current = true;
     setCreating(true);
     try {
       const note = await createNote(userId);
@@ -439,9 +457,10 @@ export default function NoteScreen() {
     } catch (err) {
       flashNotice(err instanceof Error && err.message ? err.message : "Couldn't create a note — check your connection.");
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
-  }, [userId, creating, flashNotice]);
+  }, [userId, flashNotice]);
 
   const jumpToSection = useCallback((sectionIndex: number) => {
     setOutlineOpen(false);
