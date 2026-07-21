@@ -5,13 +5,15 @@
 // Groups come from real items + user folders only; deck names must NOT seed
 // folders across tabs (that read as "decks showing up under Tests").
 
-import { IconFolderPlus, IconTrash } from "@tabler/icons-react";
+import { IconFolderPlus, IconSparkles, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import { Input } from "@/components/desktop-ui/input";
 import { type StudyArtifactKind, useCloudStudy } from "@/lib/workspace/study-cloud-store";
+
+import { artifactScoreLabel, GenerateArtifactDialog, MindmapDialog, TakeTestDialog } from "./study-artifact-dialogs";
 
 interface GroupedStudyTabProps {
   kind: "tests" | "mindmaps";
@@ -30,6 +32,8 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
   }, [extraGroups, items]);
   const [groupOpen, setGroupOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [openedId, setOpenedId] = useState<string | null>(null);
   const [groupName, setGroupName] = useState("");
 
   const groupStorageKey = `nemesis.web.study-${kind}-groups`;
@@ -56,6 +60,7 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
       <nav className="mx-auto mb-4 mt-2 flex shrink-0 items-center rounded-2xl border border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
         <Button className="rounded-xl" onClick={() => { setGroupName(""); setGroupOpen(true); }} size="sm" variant="ghost"><IconFolderPlus size={14} /> New folder</Button>
         <Button disabled={items.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
+        <Button className="rounded-xl" data-testid="generate-artifact" onClick={() => setGenerateOpen(true)} size="sm" variant="secondary"><IconSparkles size={14} /> Generate</Button>
       </nav>
 
       <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
@@ -69,11 +74,11 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
               return (
                 <div key={group}>
                   <div className="grid grid-cols-[minmax(0,1fr)_6rem_6rem] items-center px-5 py-2 text-xs">
-                    <span className="truncate font-semibold">{group}</span><span className="text-center tabular-nums text-(--ui-text-secondary)">{grouped.length}</span><span className="text-center tabular-nums text-(--ui-text-quaternary)">{isTests ? "0%" : "—"}</span>
+                    <span className="truncate font-semibold">{group}</span><span className="text-center tabular-nums text-(--ui-text-secondary)">{grouped.length}</span><span className="text-center tabular-nums text-(--ui-text-quaternary)">—</span>
                   </div>
                   {grouped.map((item) => (
-                    <button className="grid w-full grid-cols-[minmax(0,1fr)_6rem_6rem] items-center px-5 py-2 text-left text-xs text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)" key={item.id} onClick={() => setBrowseOpen(true)} type="button">
-                      <span className="truncate pl-5">{item.title}</span><span className="text-center text-[0.6875rem] capitalize text-(--ui-text-quaternary)">{item.status}</span><span className="text-center tabular-nums text-(--ui-text-quaternary)">{isTests ? "0%" : new Date(item.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                    <button className="grid w-full grid-cols-[minmax(0,1fr)_6rem_6rem] items-center px-5 py-2 text-left text-xs text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)" data-testid={`artifact-${item.id}`} key={item.id} onClick={() => setOpenedId(item.id)} type="button">
+                      <span className="truncate pl-5">{item.title}</span><span className="text-center text-[0.6875rem] capitalize text-(--ui-text-quaternary)">{item.status}</span><span className="text-center tabular-nums text-(--ui-text-quaternary)">{isTests ? artifactScoreLabel(item) : new Date(item.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
                     </button>
                   ))}
                 </div>
@@ -86,6 +91,15 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
           </div>
         )}
       </section>
+
+      <GenerateArtifactDialog kind={artifactKind} onClose={() => setGenerateOpen(false)} open={generateOpen} />
+      {(() => {
+        const opened = items.find((item) => item.id === openedId);
+        if (!opened) return null;
+        return opened.kind === "test"
+          ? <TakeTestDialog artifact={opened} key={opened.id} onClose={() => setOpenedId(null)} />
+          : <MindmapDialog artifact={opened} key={opened.id} onClose={() => setOpenedId(null)} />;
+      })()}
 
       <Dialog onOpenChange={setGroupOpen} open={groupOpen}>
         <DialogContent className="max-w-sm">
