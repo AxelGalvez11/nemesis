@@ -100,7 +100,9 @@ export function parseMindmapContent(value: unknown): MindmapContent | null {
   return { outline: outline.trim() };
 }
 
-function jsonSlice(raw: string): Record<string, unknown> | null {
+/** Tolerant "find the JSON object in an LLM reply" extractor: strips code
+ *  fences and grabs the outermost brace pair. Shared with study-ai-extras. */
+export function jsonSlice(raw: string): Record<string, unknown> | null {
   const withoutFence = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   const start = withoutFence.indexOf("{");
   const end = withoutFence.lastIndexOf("}");

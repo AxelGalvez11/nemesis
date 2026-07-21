@@ -139,8 +139,9 @@ const PREVIEW_CARDS: StudyCard[] = [
     sourcePath: "Pharmacology/Cardiovascular/ACE inhibitors.md",
     dueAt: now,
     intervalDays: 0,
-    repetitions: 0,
-    lapses: 0,
+    repetitions: 11,
+    // Failed enough times to trip the leech radar in /dev-preview.
+    lapses: 9,
     suspended: false,
     flagged: false,
     tags: ["adverse-effects"],
@@ -287,6 +288,23 @@ function cardType(value: unknown): StudyCardType {
 
 export function normalizeStudyTags(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim().replace(/^#+/, "").toLowerCase()).filter(Boolean)));
+}
+
+/** Import never merges into an existing deck (re-imports would double every
+ *  card) — collisions get an "(imported)" suffix instead. Mutates `taken`. */
+function availableDeckName(base: string, taken: Set<string>): string {
+  const trimmed = base.trim() || "Imported deck";
+  if (!taken.has(trimmed.toLowerCase())) {
+    taken.add(trimmed.toLowerCase());
+    return trimmed;
+  }
+  for (let suffix = 1; ; suffix += 1) {
+    const candidate = suffix === 1 ? `${trimmed} (imported)` : `${trimmed} (imported ${suffix})`;
+    if (!taken.has(candidate.toLowerCase())) {
+      taken.add(candidate.toLowerCase());
+      return candidate;
+    }
+  }
 }
 
 function toDeck(raw: unknown): StudyDeck | null {
@@ -477,12 +495,23 @@ export interface CreateArtifactInput {
   status?: "draft" | "ready";
 }
 
+export interface ImportDeckInput {
+  name: string;
+  cards: { front: string; back: string; cardType: StudyCardType; tags: string[] }[];
+}
+
+export interface ImportDecksSummary {
+  deckCount: number;
+  cardCount: number;
+}
+
 export interface UseCloudStudyApi extends StoreState {
   selectDeck: (deckId: string | null) => void;
   reload: () => void;
   createDeck: (input: CreateDeckInput) => Promise<StudyDeck>;
   createCard: (input: CreateCardInput) => Promise<StudyCard>;
   createOcclusionCards: (input: CreateOcclusionInput) => Promise<StudyCard[]>;
+  importAnkiDecks: (decks: ImportDeckInput[], onProgress?: (done: number, total: number) => void) => Promise<ImportDecksSummary>;
   updateCard: (input: UpdateCardInput) => Promise<StudyCard>;
   createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
   gradeCard: (cardId: string, grade: StudyGrade) => Promise<StudyCard>;
@@ -675,6 +704,96 @@ export function useCloudStudy(): UseCloudStudyApi {
     if (cards.length === 0) throw new Error("The cards were saved but returned an invalid response.");
     setState({ ...state, cards: [...cards, ...state.cards], selectedDeckId: input.deckId });
     return cards;
+  }, [preview, userId]);
+
+  // Anki import lands whole decks at once: rows insert in chunks and the
+  // store updates once at the end. If a chunk fails partway, whatever already
+  // saved still merges into state before the error surfaces, so the UI never
+  // hides cards that made it to the database.
+  const importAnkiDecks = useCallback(async (input: ImportDeckInput[], onProgress?: (done: number, total: number) => void) => {
+    const total = input.reduce((sum, deck) => sum + deck.cards.length, 0);
+    if (total === 0) throw new Error("There are no cards to import.");
+    if (!preview && !userId) throw new Error("Sign in to import decks.");
+    const taken = new Set(state.decks.map((deck) => deck.name.toLowerCase()));
+    const timestamp = new Date().toISOString();
+    const newDecks: StudyDeck[] = [];
+    const newCards: StudyCard[] = [];
+    let done = 0;
+    const commit = () => {
+      if (newDecks.length === 0) return;
+      setState({
+        ...state,
+        decks: [...newDecks, ...state.decks],
+        cards: [...newCards, ...state.cards],
+        selectedDeckId: newDecks[0]?.id ?? state.selectedDeckId,
+      });
+    };
+    try {
+      for (const deck of input) {
+        const name = availableDeckName(deck.name, taken);
+        if (preview) {
+          const created: StudyDeck = { id: `preview-${crypto.randomUUID()}`, name, description: "Imported from Anki", sourcePath: null, createdAt: timestamp, updatedAt: timestamp };
+          newDecks.push(created);
+          for (const card of deck.cards) {
+            newCards.push({
+              id: `preview-${crypto.randomUUID()}`,
+              deckId: created.id,
+              front: card.front,
+              back: card.back,
+              cardType: card.cardType,
+              sourcePath: null,
+              dueAt: timestamp,
+              intervalDays: 0,
+              repetitions: 0,
+              lapses: 0,
+              suspended: false,
+              flagged: false,
+              tags: normalizeStudyTags(card.tags),
+              payload: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
+          }
+          done += deck.cards.length;
+          onProgress?.(done, total);
+          continue;
+        }
+        const { data, error } = await supabase
+          .from("study_decks")
+          .insert({ user_id: userId, name, description: "Imported from Anki", source_path: null })
+          .select("id,name,description,source_path,created_at,updated_at")
+          .single();
+        if (error) throw new Error(error.message);
+        const created = toDeck(data);
+        if (!created) throw new Error("The deck was saved but returned an invalid response.");
+        newDecks.push(created);
+        const CHUNK = 100;
+        for (let index = 0; index < deck.cards.length; index += CHUNK) {
+          const rows = deck.cards.slice(index, index + CHUNK).map((card) => ({
+            user_id: userId,
+            deck_id: created.id,
+            front: card.front,
+            back: card.back,
+            card_type: card.cardType,
+            source_path: null,
+            tags: normalizeStudyTags(card.tags),
+          }));
+          const inserted = await supabase.from("study_cards").insert(rows).select(CARD_COLUMNS);
+          if (inserted.error) throw new Error(inserted.error.message);
+          newCards.push(...(inserted.data ?? []).flatMap((row) => {
+            const card = toCard(row);
+            return card ? [card] : [];
+          }));
+          done += rows.length;
+          onProgress?.(done, total);
+        }
+      }
+    } catch (cause) {
+      commit();
+      throw cause instanceof Error ? cause : new Error("The import stopped partway.");
+    }
+    commit();
+    return { cardCount: newCards.length, deckCount: newDecks.length };
   }, [preview, userId]);
 
   const updateCard = useCallback(async (input: UpdateCardInput) => {
@@ -900,6 +1019,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     createDeck,
     createCard,
     createOcclusionCards,
+    importAnkiDecks,
     updateCard,
     createArtifact,
     updateArtifact,
