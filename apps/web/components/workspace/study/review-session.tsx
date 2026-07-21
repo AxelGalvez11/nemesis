@@ -4,7 +4,7 @@ import { IconDots, IconFlag, IconFlagFilled, IconPencil, IconPlayerPause } from 
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/desktop-ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
 import { Input } from "@/components/desktop-ui/input";
 import { Textarea } from "@/components/desktop-ui/textarea";
@@ -43,6 +43,8 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastGrade, setLastGrade] = useState<{ cardId: string; snapshot: StudyScheduleSnapshot } | null>(null);
+  // Editing swaps the card area for an inline form — no nested dialog, which
+  // Radix would dismiss during the dropdown-menu close sequence.
   const [editOpen, setEditOpen] = useState(false);
   const [editFront, setEditFront] = useState("");
   const [editBack, setEditBack] = useState("");
@@ -204,12 +206,43 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   });
 
   return (
-    <>
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-none border-0 bg-background px-7 py-6" showCloseButton>
         <DialogTitle className="sr-only">{deck?.name ?? "Flashcard review"}</DialogTitle>
         <DialogDescription className="sr-only">Review the front of the card, reveal its answer, then grade your recall.</DialogDescription>
-        {current ? (
+        {current && editOpen ? (
+          <div className="mx-auto grid min-h-0 w-full max-w-xl content-start gap-4 overflow-y-auto pt-6">
+            <div>
+              <h2 className="text-sm font-semibold">Edit card</h2>
+              <p className="mt-0.5 text-xs text-(--ui-text-tertiary)">Changes save to the card and show immediately in this review.</p>
+            </div>
+            <form className="grid gap-4" onSubmit={saveEdit}>
+              <label className="grid gap-1.5 text-xs font-medium">
+                Front
+                <Textarea autoFocus className="min-h-24 text-sm font-normal leading-relaxed" onChange={(event) => setEditFront(event.target.value)} value={editFront} />
+              </label>
+              <label className="grid gap-1.5 text-xs font-medium">
+                Back
+                <Textarea className="min-h-20 text-sm font-normal leading-relaxed" onChange={(event) => setEditBack(event.target.value)} value={editBack} />
+              </label>
+              <label className="grid gap-1.5 text-xs font-medium">
+                Tags
+                <Input onChange={(event) => setEditTags(event.target.value)} placeholder="#concept #exam-1" value={editTags} />
+              </label>
+              {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
+              <div className="flex justify-end gap-2">
+                <Button onClick={() => setEditOpen(false)} type="button" variant="ghost">Cancel</Button>
+                <Button
+                  disabled={saving || !editFront.trim() || (!editBack.trim() && current.cardType !== "cloze" && !hasCloze(editFront))}
+                  type="submit"
+                  variant="secondary"
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        ) : current ? (
           <div className="mx-auto grid min-h-0 w-full max-w-6xl grid-rows-[auto_minmax(0,1fr)_auto] gap-4 pt-1">
             <div className="flex items-center justify-between pr-10">
               <span className="text-xs tabular-nums text-(--ui-text-tertiary)">{queue.length} left</span>
@@ -276,42 +309,5 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
         )}
       </DialogContent>
     </Dialog>
-
-    {/* Sibling of the review dialog, not a child: a dialog nested inside the
-        review DialogContent gets dismissed by the closing dropdown menu. */}
-    <Dialog onOpenChange={setEditOpen} open={editOpen}>
-          <DialogContent className="max-w-xl">
-            <form className="grid gap-4" onSubmit={saveEdit}>
-              <DialogHeader>
-                <DialogTitle>Edit card</DialogTitle>
-                <DialogDescription>Changes save to the card and show immediately in this review.</DialogDescription>
-              </DialogHeader>
-              <label className="grid gap-1.5 text-xs font-medium">
-                Front
-                <Textarea autoFocus className="min-h-24 text-sm font-normal leading-relaxed" onChange={(event) => setEditFront(event.target.value)} value={editFront} />
-              </label>
-              <label className="grid gap-1.5 text-xs font-medium">
-                Back
-                <Textarea className="min-h-20 text-sm font-normal leading-relaxed" onChange={(event) => setEditBack(event.target.value)} value={editBack} />
-              </label>
-              <label className="grid gap-1.5 text-xs font-medium">
-                Tags
-                <Input onChange={(event) => setEditTags(event.target.value)} placeholder="#concept #exam-1" value={editTags} />
-              </label>
-              {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
-              <DialogFooter>
-                <Button onClick={() => setEditOpen(false)} type="button" variant="ghost">Cancel</Button>
-                <Button
-                  disabled={saving || !editFront.trim() || (!editBack.trim() && current?.cardType !== "cloze" && !hasCloze(editFront))}
-                  type="submit"
-                  variant="secondary"
-                >
-                  {saving ? "Saving…" : "Save changes"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-    </Dialog>
-    </>
   );
 }
