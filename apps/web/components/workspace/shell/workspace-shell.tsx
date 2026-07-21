@@ -5,7 +5,7 @@
 // statusbar. No drag regions, no hover-reveal, no resize, no right rail.
 // The [data-workspace] attribute scopes the entire desktop token/chrome layer.
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type * as React from "react";
 import { useEffect, useState } from "react";
 
@@ -23,6 +23,11 @@ import { useMediaQuery } from "./use-media-query";
 
 // SIDEBAR_COLLAPSE_BREAKPOINT_PX = 768 (desktop app/layout-constants.ts).
 const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
+// Focus-mode surfaces own the left rail: the workspace nav is suppressed so the
+// surface's own sidebar stands alone, and that sidebar carries the Back control
+// that leaves the surface. No floating nav-reopen control is offered here —
+// leaving the route is the only way back, which keeps the exit unambiguous.
+const FOCUS_MODE_ROUTES: ReadonlySet<string> = new Set(["/library", "/dev-preview/workspace/library"]);
 const SHELL_VARS: React.CSSProperties = {
   ["--sidebar-width" as string]: "var(--pane-chat-sidebar-width)",
   ["--titlebar-height" as string]: "0px",
@@ -57,8 +62,14 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   }, [preview, session, router]);
 
   const narrowViewport = useMediaQuery(NARROW_VIEWPORT_QUERY);
+  const pathname = usePathname();
+  // Narrow viewports are exempt: there both rails are overlays (never side by
+  // side, so nothing to declutter), and the surface collapses its own sidebar,
+  // which would leave no visible exit once the nav rail is suppressed too.
+  const focusMode = !narrowViewport && FOCUS_MODE_ROUTES.has(pathname.replace(/\/+$/, "") || "/");
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const sidebarVisible = sidebarOpen;
+  const sidebarVisible = sidebarOpen && !focusMode;
 
   useEffect(() => {
     if (narrowViewport) setSidebarOpen(false);
@@ -85,6 +96,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="scrollbar-dt flex h-screen min-h-0 w-full flex-col overflow-hidden bg-background"
+      data-shell-focus={focusMode ? "true" : undefined}
       data-sidebar-visible={sidebarVisible ? "true" : "false"}
       data-workspace=""
       style={{
@@ -95,7 +107,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       }}
     >
       <SettingsModalProvider>
-      {!sidebarVisible && <TitlebarControls onToggleSidebar={() => setSidebarOpen(true)} />}
+      {!sidebarVisible && !focusMode && <TitlebarControls onToggleSidebar={() => setSidebarOpen(true)} />}
       <main className="relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none">
         <div
           className="relative grid h-full min-h-0"

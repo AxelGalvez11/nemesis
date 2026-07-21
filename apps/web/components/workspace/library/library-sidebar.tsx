@@ -3,7 +3,7 @@
 // Cloud Library tree with persisted note/folder creation, search, selection,
 // and shared state for the editor and Graph surfaces.
 
-import { IconArrowsSort, IconDots, IconFileImport, IconFilePlus, IconFolderPlus, IconSearch } from "@tabler/icons-react";
+import { IconArrowsSort, IconChevronLeft, IconDots, IconFileImport, IconFilePlus, IconFolderPlus, IconSearch } from "@tabler/icons-react";
 import { useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -63,6 +63,15 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
     onNavigate?.();
   };
 
+  // Library runs in focus mode (WorkspaceShell hides the nav rail here), so
+  // this Back control is the surface's only exit. Push an explicit route rather
+  // than router.back(): a direct load or refresh of /library has no in-app
+  // history entry to return to.
+  const leaveLibrary = () => {
+    router.push(`${navigationRoot}/sessions`);
+    onNavigate?.();
+  };
+
   const openPath = (path: string) => {
     select(path);
     router.replace(`${navigationRoot}/library?note=${encodeURIComponent(path)}`);
@@ -100,48 +109,59 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height)">
-      <div className="workspace-page-header flex items-center justify-between gap-3 px-3 pb-2 pt-2.5">
-        <div className="min-w-0">
-          <h1 className="workspace-page-title">Library</h1>
-          {status === "error" && (
-            <p className="mt-0.5 text-[0.65rem] font-medium text-(--dt-destructive)">Couldn&rsquo;t load notes</p>
-          )}
-        </div>
-        <div className="flex gap-0.5">
-          <input
-            accept=".md,.markdown,.txt,text/markdown,text/plain"
-            className="hidden"
-            multiple
-            onChange={(event) => void importNotes(Array.from(event.target.files ?? []))}
-            ref={importInputRef}
-            type="file"
-          />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button aria-label="Library tools" size="icon-xs" title="Library tools" type="button" variant="ghost"><IconDots /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-44">
-              <DropdownMenuItem disabled={totalCount === 0} onSelect={() => {
-                setSearchOpen((value) => !value);
-                if (searchOpen) setQuery("");
-              }}><IconSearch /> {searchOpen ? "Hide search" : "Search notes"}</DropdownMenuItem>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger><IconArrowsSort /> Sort</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="min-w-40" sideOffset={6}>
-                  <DropdownMenuRadioGroup onValueChange={(value) => setSortMode(value as LibrarySortMode)} value={sortMode}>
-                    <DropdownMenuRadioItem value="az">Sort A–Z</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="za">Sort Z–A</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="modified">Date modified</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="added">Date added</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => void createBlankNote()}><IconFilePlus /> New note</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setCreateKind("folder")}><IconFolderPlus /> New folder</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => importInputRef.current?.click()}><IconFileImport /> Import notes</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+      <div className="workspace-page-header px-3 pb-2 pt-2.5">
+        <Button
+          className="-ml-1.5 mb-0.5 text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
+          onClick={leaveLibrary}
+          size="xs"
+          type="button"
+          variant="ghost"
+        >
+          <IconChevronLeft /> Back
+        </Button>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="workspace-page-title">Library</h1>
+            {status === "error" && (
+              <p className="mt-0.5 text-[0.65rem] font-medium text-(--dt-destructive)">Couldn&rsquo;t load notes</p>
+            )}
+          </div>
+          <div className="flex gap-0.5">
+            <input
+              accept=".md,.markdown,.txt,text/markdown,text/plain"
+              className="hidden"
+              multiple
+              onChange={(event) => void importNotes(Array.from(event.target.files ?? []))}
+              ref={importInputRef}
+              type="file"
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button aria-label="Library tools" size="icon-xs" title="Library tools" type="button" variant="ghost"><IconDots /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-44">
+                <DropdownMenuItem disabled={totalCount === 0} onSelect={() => {
+                  setSearchOpen((value) => !value);
+                  if (searchOpen) setQuery("");
+                }}><IconSearch /> {searchOpen ? "Hide search" : "Search notes"}</DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger><IconArrowsSort /> Sort</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="min-w-40" sideOffset={6}>
+                    <DropdownMenuRadioGroup onValueChange={(value) => setSortMode(value as LibrarySortMode)} value={sortMode}>
+                      <DropdownMenuRadioItem value="az">Sort A–Z</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="za">Sort Z–A</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="modified">Date modified</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="added">Date added</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void createBlankNote()}><IconFilePlus /> New note</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setCreateKind("folder")}><IconFolderPlus /> New folder</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => importInputRef.current?.click()}><IconFileImport /> Import notes</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 

@@ -39,13 +39,16 @@
   line-height: 1.5rem;
   letter-spacing: -0.02em;
 }
-[data-workspace][data-sidebar-visible='false'] .workspace-page-header {
+/* Focus-mode surfaces (data-shell-focus) hide the global rail without leaving a
+   floating toggle behind, so there is nothing for these insets to clear — they
+   would only strand the surface's own header content mid-row. */
+[data-workspace][data-sidebar-visible='false']:not([data-shell-focus]) .workspace-page-header {
   padding-left: max(3.5rem, env(safe-area-inset-left));
 }
-[data-workspace][data-sidebar-visible='false'] .workspace-page-header-floating {
+[data-workspace][data-sidebar-visible='false']:not([data-shell-focus]) .workspace-page-header-floating {
   left: max(3.5rem, env(safe-area-inset-left));
 }
-[data-workspace][data-sidebar-visible='false'] .workspace-inline-sidebar-toggle {
+[data-workspace][data-sidebar-visible='false']:not([data-shell-focus]) .workspace-inline-sidebar-toggle {
   left: max(3.5rem, env(safe-area-inset-left));
 }
 /* The Library tab strip already starts after its own open sidebar, so the
