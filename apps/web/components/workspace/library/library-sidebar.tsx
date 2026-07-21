@@ -110,8 +110,12 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) pt-(--titlebar-height)">
       <div className="workspace-page-header px-3 pb-2 pt-2.5">
+        {/* -ml-1.5 cancels the button's own left padding so the chevron sits on
+            the same optical line as the "Library" title below it; the ghost
+            hover fill reaching into the gutter matches the tree rows. py-1
+            makes it 24px tall, the same as the tools button opposite it. */}
         <Button
-          className="-ml-1.5 mb-0.5 text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
+          className="-ml-1.5 mb-1.5 py-1 text-(--ui-text-tertiary) hover:text-(--ui-text-primary)"
           onClick={leaveLibrary}
           size="xs"
           type="button"
@@ -119,7 +123,10 @@ export function LibrarySidebar({ onNavigate }: { onNavigate?: () => void }) {
         >
           <IconChevronLeft /> Back
         </Button>
-        <div className="flex items-center justify-between gap-3">
+        {/* items-start, not items-center: the error line below the title makes
+            this block two rows tall, and centering would drag the tools button
+            down off the title it belongs to. */}
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="workspace-page-title">Library</h1>
             {status === "error" && (
