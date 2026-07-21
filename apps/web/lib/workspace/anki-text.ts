@@ -41,6 +41,14 @@ export function ankiFieldToText(html: string): string {
   let text = html.slice(0, MAX_FIELD_CHARS * 2);
   text = text.replace(/\[sound:[^\]]*\]/gi, " ");
   text = text.replace(/<img\b[^>]*>/gi, " ");
+  // Anchors become markdown links so study resources (Khan Academy, YouTube)
+  // stay clickable instead of decaying into the words "YouTube Link".
+  text = text.replace(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (whole, href: string, label: string) => {
+    const url = href.trim();
+    if (!/^https?:\/\//i.test(url)) return label;
+    const clean = label.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    return clean ? `[${clean.replace(/[[\]]/g, "")}](${url})` : url;
+  });
   text = text.replace(/<br\s*\/?>/gi, "\n");
   text = text.replace(/<\/(?:div|p|li|tr|h[1-6]|ul|ol|table|blockquote)>/gi, "\n");
   text = text.replace(/<li\b[^>]*>/gi, "- ");
