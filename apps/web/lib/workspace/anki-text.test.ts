@@ -27,6 +27,19 @@ test("html fields become markdown-ish text", () => {
   assert.equal(ankiFieldToText("<br><div> </div>"), "");
 });
 
+test("study links survive as markdown instead of dead words", () => {
+  assert.equal(
+    ankiFieldToText('Enzymes<br><a href="https://youtu.be/abc">YouTube Link</a>'),
+    "Enzymes\n[YouTube Link](https://youtu.be/abc)",
+  );
+  // A bare anchor with no text keeps the URL itself.
+  assert.equal(ankiFieldToText('<a href="https://khanacademy.org/x"></a>'), "https://khanacademy.org/x");
+  // Non-http hrefs (Anki internal refs) degrade to their label.
+  assert.equal(ankiFieldToText('<a href="deck:1234">Related card</a>'), "Related card");
+  // Nested markup inside the label is flattened, brackets stripped.
+  assert.equal(ankiFieldToText('<a href="https://e.com"><b>See [this]</b></a>'), "[See this](https://e.com)");
+});
+
 test("image tags are counted before stripping", () => {
   assert.equal(countImageTags('a <img src="x"> b <IMG src="y">'), 2);
   assert.equal(countImageTags("no images"), 0);
