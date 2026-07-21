@@ -7,6 +7,7 @@ import { assert, assertEquals, assertNotEquals } from "https://deno.land/std@0.2
 import {
   buildNoteGraph,
   createLayoutSim,
+  extractMarkdownLinks,
   extractWikilinks,
   hashString,
   layoutNoteGraph,
@@ -27,21 +28,78 @@ Deno.test("extractWikilinks ignores empties and returns nothing without links", 
   assertEquals(extractWikilinks("[[ ]] [[|alias only]] [[#just-heading]]"), []);
 });
 
-Deno.test("buildNoteGraph links by title and basename, skipping unresolved and self-links", () => {
+Deno.test("buildNoteGraph links by title and basename, skipping self-links", () => {
   const graph = buildNoteGraph([
-    doc("Pharm/Beta Blockers.md", "Beta Blockers", "Pairs with [[Diuretics]] and [[Nope Missing]] and [[Beta Blockers]]."),
+    doc("Pharm/Beta Blockers.md", "Beta Blockers", "Pairs with [[Diuretics]] and [[Beta Blockers]]."),
     doc("Pharm/Diuretics.md", "Diuretics — Loop & Thiazide", "See [[Beta Blockers]]."),
     doc("Cardio/Heart Failure.md", "Heart Failure", "Treat with [[Diuretics.md]]."),
   ]);
   assertEquals(graph.nodes.length, 3);
   // Sorted by path: 0 = Cardio/Heart Failure, 1 = Pharm/Beta Blockers, 2 = Pharm/Diuretics.
   assertEquals(graph.nodes.map((n) => n.title), ["Heart Failure", "Beta Blockers", "Diuretics — Loop & Thiazide"]);
+  assertEquals(graph.nodes.map((n) => n.ghost), [false, false, false]);
   // Reciprocal Beta↔Diuretics dedupes to one edge; Heart Failure→Diuretics resolves via basename with .md.
   assertEquals(graph.edges, [
     { a: 0, b: 2 },
     { a: 1, b: 2 },
   ]);
   assertEquals(graph.nodes.map((n) => n.degree), [1, 1, 2]);
+});
+
+Deno.test("buildNoteGraph turns an unresolved link target into a ghost node instead of dropping it", () => {
+  const graph = buildNoteGraph([
+    doc("Pharm/Beta Blockers.md", "Beta Blockers", "Pairs with [[Diuretics]] and [[Nope Missing]] and [[Beta Blockers]]."),
+    doc("Pharm/Diuretics.md", "Diuretics — Loop & Thiazide", "See [[Beta Blockers]]."),
+    doc("Cardio/Heart Failure.md", "Heart Failure", "Treat with [[Diuretics.md]]."),
+  ]);
+  // 3 real notes (sorted: Heart Failure, Beta Blockers, Diuretics) + 1 ghost,
+  // ALWAYS appended after every real note regardless of where the link
+  // appeared, so real-note indices stay stable.
+  assertEquals(graph.nodes.length, 4);
+  assertEquals(graph.nodes.map((n) => n.title), [
+    "Heart Failure",
+    "Beta Blockers",
+    "Diuretics — Loop & Thiazide",
+    "Nope Missing",
+  ]);
+  assertEquals(graph.nodes.map((n) => n.ghost), [false, false, false, true]);
+  assertEquals(graph.nodes[3].pathHash, "ghost:nope missing");
+  // Same edges as the self-links-only test, plus Beta Blockers -> the ghost.
+  assertEquals(graph.edges, [
+    { a: 0, b: 2 },
+    { a: 1, b: 2 },
+    { a: 1, b: 3 },
+  ]);
+  assertEquals(graph.nodes.map((n) => n.degree), [1, 2, 2, 1]);
+});
+
+Deno.test("buildNoteGraph dedupes ghost nodes across notes and across case/whitespace variants", () => {
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "[[Missing Drug]]"),
+    doc("b.md", "B", "[[ missing drug ]]"),
+    doc("c.md", "C", "[[Missing Drug.md]]"),
+  ]);
+  const ghosts = graph.nodes.filter((n) => n.ghost);
+  assertEquals(ghosts.length, 1, "one ghost shared by every variant spelling");
+  assertEquals(ghosts[0].degree, 3, "all three notes count toward the shared ghost's degree");
+  assertEquals(graph.edges.length, 3);
+});
+
+Deno.test("extractMarkdownLinks resolves [label](Target.md) links, directory-prefixed and bare", () => {
+  assertEquals(
+    extractMarkdownLinks("See [ARBs](Cardio/ARBs.md) and [this one](Beta blockers.MD)."),
+    ["ARBs", "Beta blockers"],
+  );
+  assertEquals(extractMarkdownLinks("No markdown links, just [[a wikilink]]."), []);
+});
+
+Deno.test("buildNoteGraph resolves plain-markdown links the same as wikilinks", () => {
+  const graph = buildNoteGraph([
+    doc("a.md", "A", "See [ARBs](ARBs.md) for detail."),
+    doc("b.md", "ARBs", ""),
+  ]);
+  assertEquals(graph.edges, [{ a: 0, b: 1 }]);
+  assertEquals(graph.nodes.map((n) => n.degree), [1, 1]);
 });
 
 Deno.test("buildNoteGraph is order-independent (path-sorted internally)", () => {

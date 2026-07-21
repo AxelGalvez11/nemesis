@@ -2,6 +2,7 @@ import { memo, useRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector, type PanGesture } from "react-native-gesture-handler";
 import type { SharedValue } from "react-native-reanimated";
+import { graphNodeColor } from "@/lib/graph-palette";
 import type { GraphNode } from "@/lib/note-graph";
 import type { ThemeColors } from "@/theme/palette";
 
@@ -13,8 +14,24 @@ import type { ThemeColors } from "@/theme/palette";
 // drag/tap gesture has to be a real View; edges (no interactivity of their
 // own) stay in the SVG, in the same coordinate space.
 //
+// Color is a connectivity heatmap, not a fixed hub/non-hub binary — see
+// graph-palette.ts's graphNodeColor (ported from the web Graph's own
+// graph-palette.ts): hue pinned to the live theme accent, saturation/
+// lightness climbing with degree, so a hub reads brighter than a
+// lightly-linked note instead of just two flat colors. A "ghost" node (an
+// unresolved wikilink target — see note-graph.ts's buildNoteGraph) renders
+// in the same hue family but pale and part-transparent, with a thin outline
+// ring standing in for the web Graph's dashed ring: React Native's
+// `borderStyle: "dashed"` on a plain View is unreliable on Android (a known
+// RN limitation), so a solid low-emphasis ring is the cross-platform choice
+// here — GraphScene3D.tsx's SVG nodes use a real dashed stroke instead,
+// since react-native-svg's strokeDasharray isn't subject to that limitation.
+//
 // Tap opens the note; drag moves and pins it (see note-graph.ts's
-// LayoutSim.pin). Gesture.Race(pan, tap) tells RNGH to let whichever one
+// LayoutSim.pin). A ghost has no real note behind it, so opening one is a
+// no-op — see graph.tsx's openNode wrapper, which is why onOpen is handed
+// the whole node (not just a pathHash): it needs `node.ghost` to decide.
+// Gesture.Race(pan, tap) tells RNGH to let whichever one
 // actually recognizes the gesture first win and cancel the other: a finger
 // that lifts before crossing the pan's minDistance never activates the pan
 // at all, so the tap (which only checks its own maxDistance/duration at
@@ -37,8 +54,10 @@ import type { ThemeColors } from "@/theme/palette";
 const LABEL_W = 100;
 // The one fixed dot radius every node renders at (before the Node size slider's
 // multiplier). Smaller than the old degree-scaled 3.5–8.5 range, and uniform —
-// node importance is conveyed by hub color + halo, not by size.
-const BASE_NODE_R = 3;
+// node importance is conveyed by hub color + halo, not by size. Exported so
+// GraphScene3D.tsx's SVG nodes render at the same base size as this file's
+// View-based 2D nodes — one dial (the Node size slider), one visual scale.
+export const BASE_NODE_R = 3;
 
 export interface GraphNodeViewProps {
   node: GraphNode;
@@ -58,6 +77,10 @@ export interface GraphNodeViewProps {
    * below, so the tap target and hub halo scale right along with the visible
    * dot instead of needing their own multiplier. */
   sizeMultiplier: number;
+  /** Highest degree across the whole graph — the heatmap's top end (see
+   * graph-palette.ts's graphNodeColor). Computed once per graph, not per
+   * node, so every node's color is relative to the same scale. */
+  maxDegree: number;
   c: ThemeColors;
   /** Fired once when a drag gesture actually activates (crosses the pan's
    * minDistance) — before the first onDragTo. The caller starts the sim's
@@ -73,7 +96,10 @@ export interface GraphNodeViewProps {
    * state (see note-graph.ts's LayoutSim.endDrag); the node itself stays
    * pinned exactly as before. */
   onDragEnd: (index: number) => void;
-  onOpen: (pathHash: string) => void;
+  /** Fired on a successful tap with the WHOLE node (not just its pathHash)
+   * so the caller can no-op a ghost tap (see note-graph.ts's GraphNode.ghost
+   * doc comment) instead of trying to open a note that doesn't exist. */
+  onOpen: (node: GraphNode) => void;
 }
 
 export const GraphNodeView = memo(function GraphNodeView({
@@ -83,6 +109,7 @@ export const GraphNodeView = memo(function GraphNodeView({
   canvasPanGesture,
   showLabel,
   sizeMultiplier,
+  maxDegree,
   c,
   onDragStart,
   onDragTo,
@@ -109,9 +136,15 @@ export const GraphNodeView = memo(function GraphNodeView({
   // size). BASE_NODE_R is deliberately small; sizeMultiplier (Node size
   // slider) scales all nodes together, so they stay uniform at any setting.
   const r = BASE_NODE_R * sizeMultiplier;
-  const hub = node.degree >= 3;
+  // "Hub" here just means "worth a halo" — same degree>=2 cutoff the Labels
+  // panel's "Hubs" mode already uses (see graph.tsx's shouldShowLabel), kept
+  // in sync so a labeled node and a haloed node mean the same thing. Color
+  // itself is a continuous heatmap (graphNodeColor), not this binary.
+  const hub = !node.ghost && node.degree >= 2;
+  const density = maxDegree > 1 ? Math.min(1, (node.degree - 1) / (maxDegree - 1)) : node.degree > 0 ? 1 : 0;
+  const color = graphNodeColor(node, c.accent, maxDegree);
   const label = node.title.length > 18 ? `${node.title.slice(0, 17)}…` : node.title;
-  const haloR = r + 5;
+  const haloR = r + 5 + density * 4;
   // Generous tap target, independent of the visual dot radius — mirrors the
   // original SVG's invisible Math.max(16, r + 8) hit-circle.
   const hitR = Math.max(16, r + 8);
@@ -121,7 +154,7 @@ export const GraphNodeView = memo(function GraphNodeView({
     .runOnJS(true)
     .maxDistance(10)
     .onEnd((_event, success) => {
-      if (success) onOpen(node.pathHash);
+      if (success) onOpen(node);
     });
 
   const panGesture = Gesture.Pan()
@@ -147,7 +180,19 @@ export const GraphNodeView = memo(function GraphNodeView({
 
   return (
     <GestureDetector gesture={nodeGesture}>
-      <View style={{ position: "absolute", left: node.x - hitR, top: node.y - hitR, width: size, height: size }}>
+      <View
+        style={{
+          position: "absolute",
+          left: node.x - hitR,
+          top: node.y - hitR,
+          width: size,
+          height: size,
+          // Ghost = "mentioned but not written yet" — the whole node (halo,
+          // dot, and label) reads a little unreal, on top of its own pale
+          // heatmap-family color (graphNodeColor's ghost branch).
+          opacity: node.ghost ? 0.6 : 1,
+        }}
+      >
         {hub ? (
           <View
             pointerEvents="none"
@@ -158,7 +203,8 @@ export const GraphNodeView = memo(function GraphNodeView({
               width: haloR * 2,
               height: haloR * 2,
               borderRadius: haloR,
-              backgroundColor: c.accentFaint,
+              backgroundColor: color,
+              opacity: 0.16 + density * 0.24,
             }}
           />
         ) : null}
@@ -171,7 +217,12 @@ export const GraphNodeView = memo(function GraphNodeView({
             width: r * 2,
             height: r * 2,
             borderRadius: r,
-            backgroundColor: hub ? c.accent : c.text3,
+            backgroundColor: color,
+            // A solid outline ring stands in for the web Graph's dashed
+            // ghost ring — see the top-of-file comment for why this file
+            // uses a border instead of a dash pattern.
+            borderWidth: node.ghost ? 1 : 0,
+            borderColor: c.text3,
           }}
         />
         {showLabel ? (
