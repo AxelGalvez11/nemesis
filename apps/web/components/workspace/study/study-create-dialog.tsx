@@ -23,6 +23,7 @@ import {
 import { Input } from "@/components/desktop-ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/desktop-ui/select";
 import { Textarea } from "@/components/desktop-ui/textarea";
+import { OcclusionEditor } from "@/components/workspace/study/occlusion-editor";
 import { type StudyCardType, type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 
 export type StudyCreateKind = "deck" | "card";
@@ -109,6 +110,8 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Occlusion cards save through the editor's own button, not this form.
+    if (kind === "card" && cardType === "image_occlusion") return;
     setSaving(true);
     setError(null);
     try {
@@ -131,6 +134,7 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
   }
 
   const isDeck = kind === "deck";
+  const isOcclusion = !isDeck && cardType === "image_occlusion";
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className={isDeck ? "max-w-lg" : "max-w-2xl"}>
@@ -170,39 +174,57 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
                   <Select onValueChange={(value) => setCardType(value as StudyCardType)} value={cardType}><SelectTrigger className="h-10 w-full rounded-xl border border-(--ui-stroke-tertiary) bg-background px-3"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="basic">Basic (front/back)</SelectItem><SelectItem value="reversed">Basic reversed</SelectItem><SelectItem value="cloze">Cloze</SelectItem><SelectItem value="image_occlusion">Image occlusion</SelectItem></SelectContent></Select>
                 </label>
               </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  aria-label="Formatting toolbar"
-                  aria-pressed={toolbarOn}
-                  onClick={() => setToolbarOn((value) => !value)}
-                  size="icon-xs"
-                  title="Formatting toolbar"
-                  type="button"
-                  variant={toolbarOn ? "secondary" : "ghost"}
-                >
-                  <IconTypography />
-                </Button>
-                {toolbarOn && (
-                  <div aria-label="Card formatting" className="flex items-center gap-0.5 rounded-lg border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)] p-0.5" role="toolbar">
-                    {FORMAT_BUTTONS.map(({ format, label, icon }) => (
-                      <Button aria-label={label} key={format} onClick={() => applyFormat(format)} size="icon-xs" title={label} type="button" variant="ghost">{icon}</Button>
-                    ))}
+              {cardType === "image_occlusion" ? (
+                <>
+                  <label className="grid gap-1.5 text-xs font-medium">
+                    Tags <span className="font-normal text-muted-foreground">optional</span>
+                    <Input onChange={(event) => setTags(event.target.value)} placeholder="#pharmacology #exam-2" value={tags} />
+                  </label>
+                  <OcclusionEditor
+                    deckId={deckId}
+                    onCancel={() => onOpenChange(false)}
+                    onSaved={() => onOpenChange(false)}
+                    sourcePath={decks.find((item) => item.id === deckId)?.sourcePath ?? sourcePath ?? null}
+                    tags={tags}
+                  />
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      aria-label="Formatting toolbar"
+                      aria-pressed={toolbarOn}
+                      onClick={() => setToolbarOn((value) => !value)}
+                      size="icon-xs"
+                      title="Formatting toolbar"
+                      type="button"
+                      variant={toolbarOn ? "secondary" : "ghost"}
+                    >
+                      <IconTypography />
+                    </Button>
+                    {toolbarOn && (
+                      <div aria-label="Card formatting" className="flex items-center gap-0.5 rounded-lg border border-(--ui-stroke-tertiary) bg-[color-mix(in_srgb,var(--ui-base)_5%,transparent)] p-0.5" role="toolbar">
+                        {FORMAT_BUTTONS.map(({ format, label, icon }) => (
+                          <Button aria-label={label} key={format} onClick={() => applyFormat(format)} size="icon-xs" title={label} type="button" variant="ghost">{icon}</Button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <label className="grid gap-1.5 text-xs font-medium">
-                {cardType === "cloze" ? "Cloze text" : cardType === "image_occlusion" ? "Image or occlusion prompt" : "Front"}
-                <Textarea autoFocus className="min-h-28" onChange={(event) => setFront(event.target.value)} onFocus={() => { lastFieldRef.current = "front"; }} placeholder={cardType === "cloze" ? "The {{c1::mitochondria}} is the powerhouse of the cell." : cardType === "image_occlusion" ? "Paste an image URL or describe the hidden region" : "What should you recall?"} ref={frontRef} value={front} />
-              </label>
-              <label className="grid gap-1.5 text-xs font-medium">
-                {cardType === "image_occlusion" ? "Occluded answer" : cardType === "cloze" ? "Extra explanation" : "Back"}
-                {cardType === "cloze" && <span className="font-normal text-muted-foreground"> optional — the answers live inside the cloze text</span>}
-                <Textarea className="min-h-24" onChange={(event) => setBack(event.target.value)} onFocus={() => { lastFieldRef.current = "back"; }} placeholder="The concise answer or explanation" ref={backRef} value={back} />
-              </label>
-              <label className="grid gap-1.5 text-xs font-medium">
-                Tags <span className="font-normal text-muted-foreground">optional</span>
-                <Input onChange={(event) => setTags(event.target.value)} placeholder="#pharmacology #exam-2" value={tags} />
-              </label>
+                  <label className="grid gap-1.5 text-xs font-medium">
+                    {cardType === "cloze" ? "Cloze text" : "Front"}
+                    <Textarea autoFocus className="min-h-28" onChange={(event) => setFront(event.target.value)} onFocus={() => { lastFieldRef.current = "front"; }} placeholder={cardType === "cloze" ? "The {{c1::mitochondria}} is the powerhouse of the cell." : "What should you recall?"} ref={frontRef} value={front} />
+                  </label>
+                  <label className="grid gap-1.5 text-xs font-medium">
+                    {cardType === "cloze" ? "Extra explanation" : "Back"}
+                    {cardType === "cloze" && <span className="font-normal text-muted-foreground"> optional — the answers live inside the cloze text</span>}
+                    <Textarea className="min-h-24" onChange={(event) => setBack(event.target.value)} onFocus={() => { lastFieldRef.current = "back"; }} placeholder="The concise answer or explanation" ref={backRef} value={back} />
+                  </label>
+                  <label className="grid gap-1.5 text-xs font-medium">
+                    Tags <span className="font-normal text-muted-foreground">optional</span>
+                    <Input onChange={(event) => setTags(event.target.value)} placeholder="#pharmacology #exam-2" value={tags} />
+                  </label>
+                </>
+              )}
             </>
           )}
           {sourcePath && (
@@ -211,12 +233,14 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
             </p>
           )}
           {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
-          <DialogFooter>
-            <Button onClick={() => onOpenChange(false)} type="button" variant="ghost">Cancel</Button>
-            <Button disabled={saving || (isDeck ? !name.trim() : !front.trim() || (cardType !== "cloze" && !back.trim()))} type="submit" variant="secondary">
-              {saving ? "Saving…" : isDeck ? "Create deck" : "Add card"}
-            </Button>
-          </DialogFooter>
+          {!isOcclusion && (
+            <DialogFooter>
+              <Button onClick={() => onOpenChange(false)} type="button" variant="ghost">Cancel</Button>
+              <Button disabled={saving || (isDeck ? !name.trim() : !front.trim() || (cardType !== "cloze" && !back.trim()))} type="submit" variant="secondary">
+                {saving ? "Saving…" : isDeck ? "Create deck" : "Add card"}
+              </Button>
+            </DialogFooter>
+          )}
         </form>
       </DialogContent>
     </Dialog>

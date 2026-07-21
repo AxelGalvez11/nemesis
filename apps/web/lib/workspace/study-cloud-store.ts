@@ -7,6 +7,13 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { supabase } from "@/lib/supabase";
 
 import { hasCloze } from "./study-cloze";
+import {
+  occlusionCardFront,
+  parseOcclusionPayload,
+  type OcclusionMode,
+  type OcclusionPayload,
+  type OcclusionShape,
+} from "./study-occlusion";
 import { scheduleStudyCard, type StudyGrade } from "./study-scheduler";
 
 export interface StudyDeck {
@@ -32,11 +39,16 @@ export interface StudyCard {
   suspended: boolean;
   flagged: boolean;
   tags: string[];
+  /** Present only on image-occlusion cards; everything else stores null. */
+  payload: OcclusionPayload | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export type StudyCardType = "basic" | "reversed" | "cloze" | "image_occlusion";
+
+const CARD_COLUMNS =
+  "id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flagged,tags,payload,created_at,updated_at";
 
 export interface StudyReview {
   id: string;
@@ -70,6 +82,22 @@ interface StoreState {
 }
 
 const now = new Date().toISOString();
+// A self-contained sample diagram so /dev-preview can exercise occlusion
+// rendering with no storage round-trip: the image itself is an inline SVG.
+const PREVIEW_OCCLUSION_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="300" viewBox="0 0 480 300"><rect width="480" height="300" fill="#fafafa"/><text x="24" y="42" font-family="Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#18181b">Cardiac conduction system</text><path d="M150 96 C 210 70 268 84 292 128 C 312 176 276 232 210 248 C 148 236 112 188 118 142 C 122 116 132 104 150 96 Z" fill="#fee2e2" stroke="#fca5a5" stroke-width="2"/><circle cx="196" cy="126" r="7" fill="#dc2626"/><circle cx="216" cy="176" r="7" fill="#dc2626"/><circle cx="196" cy="222" r="6" fill="#dc2626"/><line x1="203" y1="126" x2="318" y2="112" stroke="#a1a1aa" stroke-width="1.5"/><line x1="223" y1="176" x2="318" y2="172" stroke="#a1a1aa" stroke-width="1.5"/><line x1="202" y1="222" x2="318" y2="232" stroke="#a1a1aa" stroke-width="1.5"/><rect x="322" y="98" width="128" height="28" rx="6" fill="#ffffff" stroke="#d4d4d8"/><text x="334" y="117" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#18181b">SA node</text><rect x="322" y="158" width="128" height="28" rx="6" fill="#ffffff" stroke="#d4d4d8"/><text x="334" y="177" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#18181b">AV node</text><rect x="322" y="218" width="128" height="28" rx="6" fill="#ffffff" stroke="#d4d4d8"/><text x="334" y="237" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#18181b">Purkinje fibers</text></svg>`;
+const PREVIEW_OCCLUSION_PAYLOAD: OcclusionPayload = {
+  kind: "occlusion",
+  image: `data:image/svg+xml;utf8,${encodeURIComponent(PREVIEW_OCCLUSION_SVG)}`,
+  width: 480,
+  height: 300,
+  mode: "hide-all",
+  shapes: [
+    { id: "sa", x: 322, y: 98, w: 128, h: 28, label: "SA node" },
+    { id: "av", x: 322, y: 158, w: 128, h: 28, label: "AV node" },
+    { id: "purkinje", x: 322, y: 218, w: 128, h: 28, label: "Purkinje fibers" },
+  ],
+  targetId: "sa",
+};
 const PREVIEW_DECKS: StudyDeck[] = [
   {
     id: "preview-cardiovascular",
@@ -95,6 +123,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     suspended: false,
     flagged: true,
     tags: ["pharmacology", "mechanisms"],
+    payload: null,
     createdAt: now,
     updatedAt: now,
   },
@@ -112,6 +141,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     suspended: false,
     flagged: false,
     tags: ["adverse-effects"],
+    payload: null,
     createdAt: now,
     updatedAt: now,
   },
@@ -129,6 +159,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     suspended: false,
     flagged: false,
     tags: ["pharmacology"],
+    payload: null,
     createdAt: now,
     updatedAt: now,
   },
@@ -146,6 +177,25 @@ const PREVIEW_CARDS: StudyCard[] = [
     suspended: true,
     flagged: false,
     tags: ["pharmacology"],
+    payload: null,
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "preview-card-occlusion",
+    deckId: "preview-cardiovascular",
+    front: "SA node",
+    back: "The sinoatrial node is the heart's pacemaker — it fires first and sets the rate.",
+    cardType: "image_occlusion",
+    sourcePath: null,
+    dueAt: now,
+    intervalDays: 0,
+    repetitions: 0,
+    lapses: 0,
+    suspended: false,
+    flagged: false,
+    tags: ["anatomy"],
+    payload: PREVIEW_OCCLUSION_PAYLOAD,
     createdAt: now,
     updatedAt: now,
   },
@@ -238,6 +288,7 @@ function toCard(raw: unknown): StudyCard | null {
     suspended: raw.suspended === true,
     flagged: raw.flagged === true,
     tags: Array.isArray(raw.tags) ? normalizeStudyTags(raw.tags.filter((value): value is string => typeof value === "string")) : [],
+    payload: parseOcclusionPayload(raw.payload),
     createdAt: text(raw.created_at),
     updatedAt: text(raw.updated_at),
   };
@@ -270,7 +321,7 @@ async function loadStudy(userId: string) {
         .order("updated_at", { ascending: false }),
       supabase
         .from("study_cards")
-        .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flagged,tags,created_at,updated_at")
+        .select(CARD_COLUMNS)
         .eq("user_id", userId)
         .order("due_at", { ascending: true }),
       supabase
@@ -344,9 +395,9 @@ export interface StudyScheduleSnapshot {
   lapses: number;
 }
 
-/** Cloze cards carry the answer inside the front, so the back is optional. */
+/** Cloze and occlusion cards carry the answer in the front, so the back is optional. */
 function requiresBack(front: string, type: StudyCardType | undefined): boolean {
-  return type !== "cloze" && !hasCloze(front);
+  return type !== "cloze" && type !== "image_occlusion" && !hasCloze(front);
 }
 
 export interface UpdateCardInput {
@@ -356,6 +407,37 @@ export interface UpdateCardInput {
   cardType: StudyCardType;
   flagged: boolean;
   tags: string[];
+}
+
+export interface CreateOcclusionInput {
+  deckId: string;
+  /** The chosen image file — required in cloud mode, unused in preview. */
+  file: File | null;
+  /** Inline data URL of the same image, used directly in preview mode. */
+  dataUrl: string;
+  width: number;
+  height: number;
+  mode: OcclusionMode;
+  shapes: OcclusionShape[];
+  /** Optional notes shown after reveal on every card in the batch. */
+  notes: string;
+  tags?: string[];
+  sourcePath?: string | null;
+}
+
+// Signed URLs for the private study-images bucket, cached until shortly
+// before they expire so a review session never re-signs per card flip.
+const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
+
+/** Resolves an occlusion payload image (storage path or inline URL) to something renderable. */
+export async function resolveStudyImageUrl(image: string): Promise<string> {
+  if (/^(data:|blob:|https?:)/.test(image)) return image;
+  const cached = signedUrlCache.get(image);
+  if (cached && cached.expiresAt > Date.now()) return cached.url;
+  const { data, error } = await supabase.storage.from("study-images").createSignedUrl(image, 3600);
+  if (error || !data?.signedUrl) throw new Error(error?.message ?? "Couldn't load the card image.");
+  signedUrlCache.set(image, { url: data.signedUrl, expiresAt: Date.now() + 3_300_000 });
+  return data.signedUrl;
 }
 
 export interface CreateArtifactInput {
@@ -369,6 +451,7 @@ export interface UseCloudStudyApi extends StoreState {
   reload: () => void;
   createDeck: (input: CreateDeckInput) => Promise<StudyDeck>;
   createCard: (input: CreateCardInput) => Promise<StudyCard>;
+  createOcclusionCards: (input: CreateOcclusionInput) => Promise<StudyCard[]>;
   updateCard: (input: UpdateCardInput) => Promise<StudyCard>;
   createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
   gradeCard: (cardId: string, grade: StudyGrade) => Promise<StudyCard>;
@@ -477,6 +560,7 @@ export function useCloudStudy(): UseCloudStudyApi {
         suspended: false,
         flagged: false,
         tags,
+        payload: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -487,13 +571,75 @@ export function useCloudStudy(): UseCloudStudyApi {
     const { data, error } = await supabase
       .from("study_cards")
       .insert({ user_id: userId, deck_id: input.deckId, front, back, card_type: input.cardType ?? "basic", source_path: input.sourcePath?.trim() || null, tags })
-      .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flagged,tags,created_at,updated_at")
+      .select(CARD_COLUMNS)
       .single();
     if (error) throw new Error(error.message);
     const card = toCard(data);
     if (!card) throw new Error("The card was saved but returned an invalid response.");
     setState({ ...state, cards: [card, ...state.cards], selectedDeckId: card.deckId });
     return card;
+  }, [preview, userId]);
+
+  // One image, many cards: the image uploads once and every mask becomes its
+  // own card pointing at that mask, so masks schedule independently.
+  const createOcclusionCards = useCallback(async (input: CreateOcclusionInput) => {
+    if (input.shapes.length === 0) throw new Error("Draw at least one mask over the image.");
+    if (!(input.width > 0) || !(input.height > 0)) throw new Error("The image failed to load — try another file.");
+    const tags = normalizeStudyTags(input.tags ?? []);
+    const notes = input.notes.trim();
+    const sourcePath = input.sourcePath?.trim() || null;
+    const timestamp = new Date().toISOString();
+    const base = { kind: "occlusion" as const, width: input.width, height: input.height, mode: input.mode, shapes: input.shapes };
+    if (preview) {
+      const cards: StudyCard[] = input.shapes.map((shape, index) => ({
+        id: `preview-${crypto.randomUUID()}`,
+        deckId: input.deckId,
+        front: occlusionCardFront(shape.label, index),
+        back: notes,
+        cardType: "image_occlusion",
+        sourcePath,
+        dueAt: timestamp,
+        intervalDays: 0,
+        repetitions: 0,
+        lapses: 0,
+        suspended: false,
+        flagged: false,
+        tags,
+        payload: { ...base, image: input.dataUrl, targetId: shape.id },
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }));
+      setState({ ...state, cards: [...cards, ...state.cards], selectedDeckId: input.deckId });
+      return cards;
+    }
+    if (!userId) throw new Error("Sign in to create cards.");
+    if (!input.file) throw new Error("Choose an image first.");
+    const extension =
+      input.file.type === "image/png" ? "png" : input.file.type === "image/webp" ? "webp" : input.file.type === "image/gif" ? "gif" : "jpg";
+    const path = `${userId}/${crypto.randomUUID()}.${extension}`;
+    const uploaded = await supabase.storage
+      .from("study-images")
+      .upload(path, input.file, { contentType: input.file.type || "image/jpeg", upsert: false });
+    if (uploaded.error) throw new Error(uploaded.error.message);
+    const rows = input.shapes.map((shape, index) => ({
+      user_id: userId,
+      deck_id: input.deckId,
+      front: occlusionCardFront(shape.label, index),
+      back: notes,
+      card_type: "image_occlusion",
+      source_path: sourcePath,
+      tags,
+      payload: { ...base, image: path, targetId: shape.id },
+    }));
+    const { data, error } = await supabase.from("study_cards").insert(rows).select(CARD_COLUMNS);
+    if (error) throw new Error(error.message);
+    const cards = (data ?? []).flatMap((row) => {
+      const card = toCard(row);
+      return card ? [card] : [];
+    });
+    if (cards.length === 0) throw new Error("The cards were saved but returned an invalid response.");
+    setState({ ...state, cards: [...cards, ...state.cards], selectedDeckId: input.deckId });
+    return cards;
   }, [preview, userId]);
 
   const updateCard = useCallback(async (input: UpdateCardInput) => {
@@ -512,7 +658,7 @@ export function useCloudStudy(): UseCloudStudyApi {
         .update({ front, back, card_type: input.cardType, flagged: input.flagged, tags, updated_at: updatedAt })
         .eq("id", input.id)
         .eq("user_id", userId)
-        .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flagged,tags,created_at,updated_at")
+        .select(CARD_COLUMNS)
         .single();
       if (error) throw new Error(error.message);
       const saved = toCard(data);
@@ -695,6 +841,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     reload,
     createDeck,
     createCard,
+    createOcclusionCards,
     updateCard,
     createArtifact,
     gradeCard,
