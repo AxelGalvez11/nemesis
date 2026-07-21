@@ -82,10 +82,12 @@ function buildDeckTree(decks: StudyDeck[], extraGroups: string[]): DeckTreeNode[
 }
 
 function countsForCards(cards: StudyCard[]): DeckCounts {
+  // Suspended cards sit outside the review rotation, so they count nowhere.
+  const active = cards.filter((card) => !card.suspended);
   return {
-    newCount: cards.filter((card) => card.repetitions === 0).length,
-    learnCount: cards.filter((card) => card.repetitions > 0 && card.intervalDays < 21 && !isCardDue(card)).length,
-    dueCount: cards.filter((card) => card.repetitions > 0 && isCardDue(card)).length,
+    newCount: active.filter((card) => card.repetitions === 0).length,
+    learnCount: active.filter((card) => card.repetitions > 0 && card.intervalDays < 21 && !isCardDue(card)).length,
+    dueCount: active.filter((card) => card.repetitions > 0 && isCardDue(card)).length,
   };
 }
 
