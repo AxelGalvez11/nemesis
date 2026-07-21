@@ -60,6 +60,7 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
   const [back, setBack] = useState("");
   const [deckId, setDeckId] = useState("");
   const [cardType, setCardType] = useState<StudyCardType>("basic");
+  const [tags, setTags] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toolbarOn, setToolbarOn] = useState(false);
@@ -76,6 +77,7 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
     setBack("");
     setDeckId(deck?.id ?? decks[0]?.id ?? "");
     setCardType("basic");
+    setTags("");
     setError(null);
     lastFieldRef.current = "front";
   }, [deck?.id, decks, open, sourcePath]);
@@ -116,8 +118,9 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
       } else {
         const targetDeck = decks.find((item) => item.id === deckId);
         if (!targetDeck) throw new Error("Choose a deck first.");
-        await createCard({ deckId: targetDeck.id, front, back, cardType, sourcePath: targetDeck.sourcePath ?? sourcePath });
-        if (cardType === "reversed") await createCard({ deckId: targetDeck.id, front: back, back: front, cardType, sourcePath: targetDeck.sourcePath ?? sourcePath });
+        const tagList = tags.split(/[\s,]+/);
+        await createCard({ deckId: targetDeck.id, front, back, cardType, sourcePath: targetDeck.sourcePath ?? sourcePath, tags: tagList });
+        if (cardType === "reversed") await createCard({ deckId: targetDeck.id, front: back, back: front, cardType, sourcePath: targetDeck.sourcePath ?? sourcePath, tags: tagList });
       }
       onOpenChange(false);
     } catch (cause) {
@@ -193,7 +196,12 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
                 {cardType === "image_occlusion" ? "Occluded answer" : cardType === "cloze" ? "Extra explanation" : "Back"}
+                {cardType === "cloze" && <span className="font-normal text-muted-foreground"> optional — the answers live inside the cloze text</span>}
                 <Textarea className="min-h-24" onChange={(event) => setBack(event.target.value)} onFocus={() => { lastFieldRef.current = "back"; }} placeholder="The concise answer or explanation" ref={backRef} value={back} />
+              </label>
+              <label className="grid gap-1.5 text-xs font-medium">
+                Tags <span className="font-normal text-muted-foreground">optional</span>
+                <Input onChange={(event) => setTags(event.target.value)} placeholder="#pharmacology #exam-2" value={tags} />
               </label>
             </>
           )}
@@ -205,7 +213,7 @@ export function StudyCreateDialog({ kind, open, onOpenChange, deck, sourcePath }
           {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
           <DialogFooter>
             <Button onClick={() => onOpenChange(false)} type="button" variant="ghost">Cancel</Button>
-            <Button disabled={saving || (isDeck ? !name.trim() : !front.trim() || !back.trim())} type="submit" variant="secondary">
+            <Button disabled={saving || (isDeck ? !name.trim() : !front.trim() || (cardType !== "cloze" && !back.trim()))} type="submit" variant="secondary">
               {saving ? "Saving…" : isDeck ? "Create deck" : "Add card"}
             </Button>
           </DialogFooter>

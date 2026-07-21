@@ -6,6 +6,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { supabase } from "@/lib/supabase";
 
+import { hasCloze } from "./study-cloze";
 import { scheduleStudyCard, type StudyGrade } from "./study-scheduler";
 
 export interface StudyDeck {
@@ -111,6 +112,40 @@ const PREVIEW_CARDS: StudyCard[] = [
     suspended: false,
     flagged: false,
     tags: ["adverse-effects"],
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "preview-card-cloze",
+    deckId: "preview-cardiovascular",
+    front: "{{c1::Beta blockers}} lower heart rate by blocking {{c2::beta-1::receptor subtype}} receptors in the {{c3::sinoatrial node}}.",
+    back: "Cardioselective agents such as metoprolol and atenolol prefer beta-1 at usual doses.",
+    cardType: "cloze",
+    sourcePath: null,
+    dueAt: now,
+    intervalDays: 0,
+    repetitions: 0,
+    lapses: 0,
+    suspended: false,
+    flagged: false,
+    tags: ["pharmacology"],
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "preview-card-suspended",
+    deckId: "preview-cardiovascular",
+    front: "Which ACE inhibitor is NOT a prodrug?",
+    back: "Lisinopril (and captopril) — the rest are prodrugs.",
+    cardType: "basic",
+    sourcePath: null,
+    dueAt: now,
+    intervalDays: 0,
+    repetitions: 0,
+    lapses: 0,
+    suspended: true,
+    flagged: false,
+    tags: ["pharmacology"],
     createdAt: now,
     updatedAt: now,
   },
@@ -298,6 +333,20 @@ export interface CreateCardInput {
   back: string;
   cardType?: StudyCardType;
   sourcePath?: string | null;
+  tags?: string[];
+}
+
+/** Card scheduling fields captured before a grade so the grade can be undone. */
+export interface StudyScheduleSnapshot {
+  dueAt: string;
+  intervalDays: number;
+  repetitions: number;
+  lapses: number;
+}
+
+/** Cloze cards carry the answer inside the front, so the back is optional. */
+function requiresBack(front: string, type: StudyCardType | undefined): boolean {
+  return type !== "cloze" && !hasCloze(front);
 }
 
 export interface UpdateCardInput {
@@ -323,6 +372,8 @@ export interface UseCloudStudyApi extends StoreState {
   updateCard: (input: UpdateCardInput) => Promise<StudyCard>;
   createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
   gradeCard: (cardId: string, grade: StudyGrade) => Promise<StudyCard>;
+  undoGrade: (cardId: string, snapshot: StudyScheduleSnapshot) => Promise<StudyCard>;
+  setCardSuspended: (cardId: string, suspended: boolean) => Promise<StudyCard>;
   moveDeck: (deckId: string, targetGroup: string) => Promise<void>;
   moveDeckGroup: (sourceGroup: string, targetGroup: string) => Promise<void>;
   deleteDeck: (deckId: string) => Promise<void>;
@@ -408,7 +459,8 @@ export function useCloudStudy(): UseCloudStudyApi {
   const createCard = useCallback(async (input: CreateCardInput) => {
     const front = input.front.trim();
     const back = input.back.trim();
-    if (!front || !back) throw new Error("Add both a prompt and an answer.");
+    if (!front || (!back && requiresBack(front, input.cardType))) throw new Error("Add both a prompt and an answer.");
+    const tags = normalizeStudyTags(input.tags ?? []);
     const timestamp = new Date().toISOString();
     if (preview) {
       const card: StudyCard = {
@@ -424,7 +476,7 @@ export function useCloudStudy(): UseCloudStudyApi {
         lapses: 0,
         suspended: false,
         flagged: false,
-        tags: [],
+        tags,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -434,7 +486,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     if (!userId) throw new Error("Sign in to create a card.");
     const { data, error } = await supabase
       .from("study_cards")
-      .insert({ user_id: userId, deck_id: input.deckId, front, back, card_type: input.cardType ?? "basic", source_path: input.sourcePath?.trim() || null })
+      .insert({ user_id: userId, deck_id: input.deckId, front, back, card_type: input.cardType ?? "basic", source_path: input.sourcePath?.trim() || null, tags })
       .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flagged,tags,created_at,updated_at")
       .single();
     if (error) throw new Error(error.message);
@@ -449,7 +501,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     if (!existing) throw new Error("That card is no longer available.");
     const front = input.front.trim();
     const back = input.back.trim();
-    if (!front || !back) throw new Error("Add both a prompt and an answer.");
+    if (!front || (!back && requiresBack(front, input.cardType))) throw new Error("Add both a prompt and an answer.");
     const updatedAt = new Date().toISOString();
     const tags = normalizeStudyTags(input.tags);
     let next: StudyCard = { ...existing, front, back, cardType: input.cardType, flagged: input.flagged, tags, updatedAt };
@@ -533,6 +585,49 @@ export function useCloudStudy(): UseCloudStudyApi {
     return nextCard;
   }, [preview, userId]);
 
+  // Restores the pre-grade schedule. The review-log row from the undone grade
+  // stays (the client can only insert logs by design), which at worst counts
+  // one extra review in stats — the card itself is fully restored.
+  const undoGrade = useCallback(async (cardId: string, snapshot: StudyScheduleSnapshot) => {
+    const card = state.cards.find((item) => item.id === cardId);
+    if (!card) throw new Error("That card is no longer available.");
+    const updatedAt = new Date().toISOString();
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to review cards.");
+      const { error } = await supabase
+        .from("study_cards")
+        .update({ due_at: snapshot.dueAt, interval_days: snapshot.intervalDays, repetitions: snapshot.repetitions, lapses: snapshot.lapses, updated_at: updatedAt })
+        .eq("id", cardId)
+        .eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    const restored: StudyCard = { ...card, ...snapshot, updatedAt };
+    const reviews = [...state.reviews];
+    const latest = reviews.findIndex((review) => review.cardId === cardId && review.id.startsWith("local-"));
+    if (latest !== -1) reviews.splice(latest, 1);
+    setState({ ...state, cards: state.cards.map((item) => (item.id === cardId ? restored : item)), reviews });
+    return restored;
+  }, [preview, userId]);
+
+  const setCardSuspended = useCallback(async (cardId: string, suspended: boolean) => {
+    const card = state.cards.find((item) => item.id === cardId);
+    if (!card) throw new Error("That card is no longer available.");
+    if (card.suspended === suspended) return card;
+    const updatedAt = new Date().toISOString();
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to edit a card.");
+      const { error } = await supabase
+        .from("study_cards")
+        .update({ suspended, updated_at: updatedAt })
+        .eq("id", cardId)
+        .eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    const next: StudyCard = { ...card, suspended, updatedAt };
+    setState({ ...state, cards: state.cards.map((item) => (item.id === cardId ? next : item)) });
+    return next;
+  }, [preview, userId]);
+
   const moveDeck = useCallback(async (deckId: string, rawTargetGroup: string) => {
     const deck = state.decks.find((item) => item.id === deckId);
     if (!deck) return;
@@ -603,6 +698,8 @@ export function useCloudStudy(): UseCloudStudyApi {
     updateCard,
     createArtifact,
     gradeCard,
+    undoGrade,
+    setCardSuspended,
     moveDeck,
     moveDeckGroup,
     deleteDeck,
