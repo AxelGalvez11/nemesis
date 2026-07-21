@@ -22,6 +22,8 @@ export interface AnkiImportResult {
   skippedNotes: number;
   /** Media files (audio/images) present in the package but not imported. */
   mediaCount: number;
+  /** Cards whose ANSWER was a picture — imported, but tagged needs-image. */
+  needsImageCount: number;
 }
 
 // The slice of sql.js we depend on — kept minimal so the loader can vend the
@@ -42,21 +44,25 @@ const BAD_FILE = "That file doesn't look like an Anki deck export (.apkg).";
 const NEW_FORMAT_FAILED =
   'This export uses Anki\'s newest format and couldn\'t be opened. In Anki, export again with "Support older Anki versions" checked.';
 
+// Modern Anki exports carry TWO databases: collection.anki21b (zstd, the real
+// data) plus a legacy collection.anki2 that is often just a one-card stub
+// telling old Anki versions to upgrade. The compressed one must win; the
+// legacy file is only trusted when it's all we have.
 function openCollection(files: Record<string, Uint8Array>, sql: SqlEngine): SqlDatabase {
+  const modern = files["collection.anki21b"];
   const plain = files["collection.anki21"] ?? files["collection.anki2"];
-  if (plain) {
+  if (modern) {
     try {
-      return new sql.Database(plain);
+      return new sql.Database(decompress(modern));
     } catch {
-      throw new Error(BAD_FILE);
+      if (!plain) throw new Error(NEW_FORMAT_FAILED);
     }
   }
-  const compressed = files["collection.anki21b"];
-  if (!compressed) throw new Error(BAD_FILE);
+  if (!plain) throw new Error(BAD_FILE);
   try {
-    return new sql.Database(decompress(compressed));
+    return new sql.Database(plain);
   } catch {
-    throw new Error(NEW_FORMAT_FAILED);
+    throw new Error(BAD_FILE);
   }
 }
 
@@ -87,24 +93,38 @@ function readDeckNames(db: SqlDatabase): Map<number, string> {
   return names;
 }
 
-function mediaEntryCount(files: Record<string, Uint8Array>): number {
+function mediaEntryCount(files: Record<string, Uint8Array>, zipEntryCount: number): number {
+  if (zipEntryCount > 0) return zipEntryCount;
   const media = files["media"];
   if (media) {
     try {
       const parsed = JSON.parse(new TextDecoder().decode(media)) as unknown;
       if (parsed && typeof parsed === "object") return Object.keys(parsed).length;
     } catch {
-      /* new format stores media as compressed protobuf — fall back to counting entries */
+      /* new format stores media as compressed protobuf — the zip count covers it */
     }
   }
-  return Object.keys(files).filter((name) => /^\d+$/.test(name)).length;
+  return 0;
 }
 
 /** Parse a .apkg/.colpkg byte buffer into importable decks of cards. */
 export function parseAnkiPackage(bytes: Uint8Array, sql: SqlEngine): AnkiImportResult {
+  // Real decks ship thousands of media files (the Captain Hook deck: 2,828
+  // images in 284 MB). Only the SQLite collection and the media manifest ever
+  // get inflated — media entries are counted from the zip directory and
+  // skipped, keeping memory flat no matter how image-heavy the deck is.
   let files: Record<string, Uint8Array>;
+  let skippedMediaEntries = 0;
   try {
-    files = unzipSync(bytes);
+    files = unzipSync(bytes, {
+      filter: (file) => {
+        if (/^\d+$/.test(file.name)) {
+          skippedMediaEntries += 1;
+          return false;
+        }
+        return file.name.startsWith("collection") || file.name === "media";
+      },
+    });
   } catch {
     throw new Error(BAD_FILE);
   }
@@ -130,6 +150,7 @@ export function parseAnkiPackage(bytes: Uint8Array, sql: SqlEngine): AnkiImportR
     let cardCount = 0;
     let skippedNotes = 0;
     let imageFields = 0;
+    let needsImageCount = 0;
     const noteRows = db.exec("select id, flds, tags from notes")[0];
     for (const [rawId, rawFlds, rawTags] of noteRows?.values ?? []) {
       const nid = Number(rawId);
@@ -150,15 +171,22 @@ export function parseAnkiPackage(bytes: Uint8Array, sql: SqlEngine): AnkiImportR
       if (bucket) bucket.push(card);
       else decks.set(deckName, [card]);
       cardCount += 1;
+      if (card.needsImage) needsImageCount += 1;
     }
     if (cardCount === 0) throw new Error("That export has no text cards Nemesis can import.");
+    // The legacy stub database contains exactly one "please upgrade" note.
+    const firstCard = decks.values().next().value?.[0];
+    if (cardCount === 1 && firstCard?.front.includes("Please update to the latest Anki version")) {
+      throw new Error(NEW_FORMAT_FAILED);
+    }
 
     return {
       cardCount,
       decks: Array.from(decks.entries())
         .map(([name, cards]) => ({ cards, name }))
         .sort((a, b) => a.name.localeCompare(b.name)),
-      mediaCount: Math.max(mediaEntryCount(files), imageFields > 0 ? 1 : 0),
+      mediaCount: Math.max(mediaEntryCount(files, skippedMediaEntries), imageFields > 0 ? 1 : 0),
+      needsImageCount,
       skippedNotes,
     };
   } finally {
