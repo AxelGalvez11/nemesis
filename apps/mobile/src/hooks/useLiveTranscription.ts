@@ -15,6 +15,14 @@ const RECOGNITION_OPTIONS = {
   interimResults: true,
   requiresOnDeviceRecognition: true,
   continuous: true,
+  // Keep the raw audio (16-bit/16kHz mono ≈ 115MB/hr instead of the 690MB/hr
+  // float default) so the enhance pass can re-transcribe it server-side after
+  // save. Files are deleted once enhancement finishes — or fails.
+  recordingOptions: {
+    persist: true,
+    outputEncoding: "pcmFormatInt16",
+    outputSampleRate: 16_000,
+  },
 } as const;
 
 // Errors that mean "recognition cannot run at all" — everything else (e.g.
@@ -28,6 +36,9 @@ export function useLiveTranscription() {
   const [status, setStatus] = useState<LiveTranscriptionStatus>("idle");
   const [transcript, setTranscript] = useState<LiveTranscript>(emptyTranscript());
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  // One audio file per recognition session — the silence/timeout auto-restart
+  // below starts a new session, so a long recording can span several files.
+  const [audioUris, setAudioUris] = useState<string[]>([]);
   const statusRef = useRef<LiveTranscriptionStatus>("idle");
   const startedAtRef = useRef<number | null>(null);
 
@@ -41,6 +52,11 @@ export function useLiveTranscription() {
     if (statusRef.current !== "recording") return;
     const text = event.results?.[0]?.transcript;
     if (typeof text === "string") setTranscript((current) => applyRecognitionResult(current, text, event.isFinal === true));
+  });
+
+  useSpeechRecognitionEvent("audioend", (event) => {
+    const uri = typeof event.uri === "string" ? event.uri : null;
+    if (uri) setAudioUris((current) => (current.includes(uri) ? current : [...current, uri]));
   });
 
   useSpeechRecognitionEvent("end", () => {
@@ -76,6 +92,7 @@ export function useLiveTranscription() {
       }
       setTranscript(emptyTranscript());
       setElapsedSeconds(0);
+      setAudioUris([]);
       startedAtRef.current = Date.now();
       ExpoSpeechRecognitionModule.start(RECOGNITION_OPTIONS);
       setStatus("recording");
@@ -102,6 +119,7 @@ export function useLiveTranscription() {
     setStatus("idle");
     setTranscript(emptyTranscript());
     setElapsedSeconds(0);
+    setAudioUris([]);
     startedAtRef.current = null;
   }, []);
 
@@ -117,5 +135,5 @@ export function useLiveTranscription() {
     };
   }, []);
 
-  return { status, transcript, elapsedSeconds, start, stop, reset };
+  return { status, transcript, elapsedSeconds, audioUris, start, stop, reset };
 }

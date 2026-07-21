@@ -635,3 +635,98 @@ export async function saveRecordingArtifact(uid: string, threadId: string, draft
   }
   return entry;
 }
+
+const APP_API_BASE = "https://app.enternemesis.com";
+
+/** Background "enhance transcript" pass (owner 2026-07-21): upload the kept
+ *  on-device audio, run it through the server's batch transcription (top-
+ *  accuracy engine, metered against the plan's monthly enhance allowance),
+ *  and swap the sharper transcript into the saved artifact + the thread's
+ *  chip entry. Fire-and-forget from the Record screen — any failure leaves
+ *  the on-device transcript standing, so this can only improve things. The
+ *  local audio files are deleted either way; the uploaded copy is deleted by
+ *  the server once the transcript is back. */
+export async function enhanceRecordingArtifact(
+  uid: string,
+  threadId: string,
+  artifact: ChatOutput,
+  audioUris: string[],
+  elapsedSeconds: number,
+): Promise<void> {
+  const uris = audioUris.slice(0, 8);
+  if (uris.length === 0) return;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const session = data.session;
+    if (!session || session.user.id !== uid) return;
+    const token = session.access_token;
+    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
+    const storageBase = `${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ""}/storage/v1/object/recordings`;
+    const perFileSeconds = Math.max(15, Math.round(Math.max(elapsedSeconds, 15) / uris.length));
+
+    const pieces: string[] = [];
+    for (const uri of uris) {
+      const path = `${uid}/${generateUuidV4()}.wav`;
+      // uploadAsync streams straight from disk — a 100MB lecture never has to
+      // fit in JS memory the way a base64 round-trip would force.
+      const upload = await FileSystem.uploadAsync(`${storageBase}/${path}`, uri, {
+        headers: { apikey: anonKey, Authorization: `Bearer ${token}`, "Content-Type": "audio/wav" },
+        httpMethod: "POST",
+      });
+      if (upload.status !== 200) throw new Error(`audio upload failed (${upload.status})`);
+      const submitRes = await fetch(`${APP_API_BASE}/api/transcription/submit`, {
+        body: JSON.stringify({ seconds: perFileSeconds, storagePath: path }),
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const submitBody = (await submitRes.json().catch(() => null)) as { jobId?: string; error?: string } | null;
+      if (!submitRes.ok || !submitBody?.jobId) throw new Error(submitBody?.error ?? `submit failed (${submitRes.status})`);
+      const text = await pollTranscription(token, submitBody.jobId);
+      if (text) pieces.push(text.trim());
+    }
+    const enhanced = pieces.filter(Boolean).join("\n\n").trim();
+    if (!enhanced) return;
+
+    await supabase
+      .from("chat_recording_artifacts")
+      .update({ transcript: enhanced })
+      .eq("id", artifact.id)
+      .eq("user_id", uid);
+    const entry: ChatOutput = { ...artifact, transcript: enhanced };
+    const { data: thread } = await supabase.from("chat_threads").select("meta").eq("id", threadId).eq("user_id", uid).maybeSingle();
+    if (thread) {
+      await supabase
+        .from("chat_threads")
+        .update({ meta: mergeOutputsMeta(thread.meta, entry) })
+        .eq("id", threadId)
+        .eq("user_id", uid);
+    }
+  } catch (cause) {
+    console.warn("transcript enhancement skipped:", cause instanceof Error ? cause.message : cause);
+  } finally {
+    for (const uri of uris) {
+      try {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+      } catch {
+        // best effort — a stray temp file is harmless
+      }
+    }
+  }
+}
+
+async function pollTranscription(token: string, jobId: string): Promise<string | null> {
+  // 5s cadence for up to 20 minutes — batch jobs run ~15-30% of audio length.
+  for (let attempt = 0; attempt < 240; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    const res = await fetch(`${APP_API_BASE}/api/transcription/status`, {
+      body: JSON.stringify({ jobId }),
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      method: "POST",
+    });
+    const body = (await res.json().catch(() => null)) as { status?: string; transcript?: string | null; error?: string } | null;
+    if (!body) continue;
+    if (body.status === "done") return typeof body.transcript === "string" ? body.transcript : null;
+    if (body.status === "error") throw new Error(body.error ?? "transcription failed");
+  }
+  throw new Error("transcription timed out");
+}
