@@ -202,3 +202,69 @@ Deno.test("buildLibraryRows: root notes aren't inside any folder, so they're una
     { type: "folder", path: "Anatomy", name: "Anatomy", depth: 0 },
   ]);
 });
+
+// --- buildLibraryRows with a sort key (owner 2026-07-21: sorting keeps the tree) ---
+
+const SORT_DOCS = [
+  { path: "zebra.md", title: "Zebra", updatedAt: "2026-07-01T00:00:00Z", createdAt: "2026-01-01T00:00:00Z" },
+  { path: "apple.md", title: "Apple", updatedAt: "2026-07-20T00:00:00Z", createdAt: "2026-06-01T00:00:00Z" },
+  { path: "Anatomy/heart.md", title: "Heart", updatedAt: "2026-07-10T00:00:00Z", createdAt: "2026-02-01T00:00:00Z" },
+  { path: "PHCY 1205/exam-2.md", title: "Exam 2", updatedAt: "2026-07-21T00:00:00Z", createdAt: "2026-03-01T00:00:00Z" },
+];
+
+Deno.test("buildLibraryRows: Z–A keeps folders, reversing notes and sibling folders", () => {
+  const rows = buildLibraryRows(SORT_DOCS, new Set(), "za");
+  assertEquals(rows.map((r) => (r.type === "folder" ? `[${r.name}]` : r.title)), [
+    "Zebra",
+    "Apple",
+    "[PHCY 1205]",
+    "Exam 2",
+    "[Anatomy]",
+    "Heart",
+  ]);
+});
+
+Deno.test("buildLibraryRows: Modified (new → old) ranks a folder by its newest note", () => {
+  // PHCY 1205 holds the most recently modified note (07-21), so it outranks
+  // Anatomy (07-10) — and the root notes order newest-first too.
+  const rows = buildLibraryRows(SORT_DOCS, new Set(), "mod-desc");
+  assertEquals(rows.map((r) => (r.type === "folder" ? `[${r.name}]` : r.title)), [
+    "Apple",
+    "Zebra",
+    "[PHCY 1205]",
+    "Exam 2",
+    "[Anatomy]",
+    "Heart",
+  ]);
+});
+
+Deno.test("buildLibraryRows: Created (old → new) ranks a folder by its oldest note", () => {
+  const rows = buildLibraryRows(SORT_DOCS, new Set(), "created-asc");
+  assertEquals(rows.map((r) => (r.type === "folder" ? `[${r.name}]` : r.title)), [
+    "Zebra",
+    "Apple",
+    "[Anatomy]",
+    "Heart",
+    "[PHCY 1205]",
+    "Exam 2",
+  ]);
+});
+
+Deno.test("buildLibraryRows: time sorts still respect collapse, and unstamped notes sink to the end", () => {
+  const rows = buildLibraryRows(
+    [
+      { path: "old.md", title: "Old", updatedAt: "2026-01-01T00:00:00Z", createdAt: "" },
+      { path: "unstamped.md", title: "Unstamped" },
+      { path: "new.md", title: "New", updatedAt: "2026-07-01T00:00:00Z", createdAt: "" },
+      { path: "Anatomy/heart.md", title: "Heart", updatedAt: "2026-06-01T00:00:00Z", createdAt: "" },
+    ],
+    new Set(["Anatomy"]),
+    "mod-desc",
+  );
+  assertEquals(rows.map((r) => (r.type === "folder" ? `[${r.name}]` : r.title)), [
+    "New",
+    "Old",
+    "Unstamped",
+    "[Anatomy]",
+  ]);
+});

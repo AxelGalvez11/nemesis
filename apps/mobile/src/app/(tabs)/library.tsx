@@ -269,18 +269,25 @@ export default function LibraryScreen() {
   const trimmed = query.trim();
   const searching = trimmed.length > 0;
   const needle = trimmed.toLowerCase();
-  // Flat, globally-sorted list whenever the user is searching OR has picked a sort
-  // other than the default. Otherwise the familiar collapsible folder tree (A–Z is
-  // exactly that tree, so choosing "A–Z" in the sheet is the way back to it).
-  const flat = searching || sort !== "az";
+  // Flat, globally-sorted list ONLY while searching. Picking a sort used to
+  // flatten the tree too — which read as "my folders disappeared" (owner bug
+  // report 2026-07-21) — so now every sort order reorders the folder tree in
+  // place instead: notes within their folder, folders among their siblings.
+  const flat = searching;
   const filtered = searching
     ? notes.filter((n) => n.title.toLowerCase().includes(needle) || n.path.toLowerCase().includes(needle))
     : notes;
   const rows: LibraryRow[] = flat
     ? sortNotes(filtered, sort).map((n) => ({ type: "note", path: n.path, title: n.title, depth: 0 }))
-    : buildLibraryRows(notes.map((d) => ({ path: d.path, title: d.title })), collapsed);
+    : buildLibraryRows(
+        notes.map((d) => ({ path: d.path, title: d.title, updatedAt: d.updatedAt, createdAt: d.createdAt })),
+        collapsed,
+        sort,
+      );
 
-  const flatHeader = searching ? `${rows.length} result${rows.length === 1 ? "" : "s"}` : sortLabel(sort);
+  // Context line above the list: match count while searching, else which
+  // non-default sort is on (nothing for the everyday A–Z tree).
+  const listHeader = searching ? `${rows.length} result${rows.length === 1 ? "" : "s"}` : sort !== "az" ? sortLabel(sort) : null;
 
   return (
     <View style={styles.flex} testID="library-screen">
@@ -345,9 +352,9 @@ export default function LibraryScreen() {
           />
         }
         ListHeaderComponent={
-          flat ? (
+          listHeader ? (
             <Text style={styles.sectionHead} testID="library-list-header">
-              {flatHeader}
+              {listHeader}
             </Text>
           ) : null
         }

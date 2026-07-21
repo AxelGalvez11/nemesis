@@ -205,6 +205,42 @@ export async function fetchNote(
   return note;
 }
 
+/** True when an insert bounced off the (user_id, path) unique constraint —
+ *  same detection the web store uses, so both clients retry with a suffix
+ *  instead of surfacing a raw Postgres error. */
+function isUniquePathViolation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "23505" || /readable_library_documents_user_id_path_key|duplicate key value/i.test(error.message ?? "");
+}
+
+/** Create a fresh "Untitled note" at the library root — the phone's second
+ *  library write (owner 2026-07-21: the note screen's pill bar grows a "+").
+ *  Mirrors the web store's createNote exactly: same `Title.md` path
+ *  convention (library-links.ts notePathFor), same `# Title` starter content,
+ *  and the same suffix retry ("Untitled note 2", 3, …) when the (user_id,
+ *  path) constraint objects — which also covers soft-deleted rows still
+ *  holding a path. Returns the server row and upserts it into the offline
+ *  cache like every other write here. */
+export async function createNote(uid: string): Promise<CloudLibraryNote> {
+  const now = new Date().toISOString();
+  for (let suffix = 1; suffix <= 999; suffix += 1) {
+    const title = suffix === 1 ? "Untitled note" : `Untitled note ${suffix}`;
+    const { data, error } = await supabase
+      .from("readable_library_documents")
+      .insert({ user_id: uid, path: `${title}.md`, kind: "note", title, content: `# ${title}\n\n`, deleted: false, updated_at: now })
+      .select("id,path,kind,title,content,created_at,updated_at")
+      .single();
+    if (isUniquePathViolation(error)) continue;
+    if (error) throw new Error(error.message);
+    const note = toNote(data);
+    if (!note) throw new Error("The note was saved but came back unreadable.");
+    const cache = await readDiskCache(uid);
+    await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [note.id]: note } });
+    return note;
+  }
+  throw new Error("Couldn't find an available name for a new note.");
+}
+
 /** Save one note's edited content — the phone's first library WRITE (owner
  *  2026-07-20: real on-phone editing). Mirrors the web store's saveNote UPDATE
  *  (apps/web/lib/workspace/library-cloud-store.ts) with two deliberate

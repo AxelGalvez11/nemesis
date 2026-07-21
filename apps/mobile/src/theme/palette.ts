@@ -185,17 +185,18 @@ const DARK_BASE = {
   scrim: "rgba(0,0,0,0.58)",
 } as const;
 
-// Light = the same monochrome identity on paper, tuned around the desktop's
-// light background seed (#f8faff).
+// Light = the same monochrome identity on paper. Pure white page (owner
+// 2026-07-21: match ChatGPT's plain white, not the old bluish #f8faff seed);
+// secondary fills are neutral grays so cards/menus still read on white.
 const LIGHT_BASE = {
-  bg: "#f8faff",
-  bg2: "#eef0f6",
+  bg: "#ffffff",
+  bg2: "#f4f4f5",
   surface: "#ffffff",
-  surface2: "#f1f3f8",
+  surface2: "#f2f2f3",
   raised: "#ffffff",
-  glass: "rgba(22,24,29,0.045)",
-  glassPanel: "rgba(250,251,255,0.78)",
-  glassMenu: "rgba(250,251,255,0.96)",
+  glass: "rgba(20,21,24,0.05)",
+  glassPanel: "rgba(255,255,255,0.8)",
+  glassMenu: "rgba(255,255,255,0.96)",
   pageShadow: "rgba(24,26,32,0.16)",
   line: "rgba(22,24,29,0.10)",
   line2: "rgba(22,24,29,0.18)",

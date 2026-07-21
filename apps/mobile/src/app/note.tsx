@@ -16,14 +16,17 @@ import {
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle } from "react-native-svg";
+import Svg, { Circle, Path } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock } from "@/components/mission-ui";
 import { CloseIcon, SearchIcon, type IconProps } from "@/components/icons";
-import { fetchNote, findCachedNote, loadCachedLibrary, updateNoteContent, type CloudLibraryNote } from "@/api/cloudLibrary";
+import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
+import { NotePillBar } from "@/components/NotePillBar";
+import { createNote, fetchNote, findCachedNote, loadCachedLibrary, updateNoteContent, type CloudLibraryNote } from "@/api/cloudLibrary";
 import { fileKindOf } from "@/lib/library-row-meta";
 import { cycleHeading, toggleLinePrefix, wrapInline, type EditSel } from "@/lib/note-edit";
+import { outlineOf, splitSections } from "@/lib/note-outline";
 import { buildNoteResolver, isExternalUrl, preprocessWikilinks, resolveInternalHref } from "@/lib/wikilinks";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
@@ -50,22 +53,25 @@ import { radius, space, type } from "@/theme/tokens";
 // Find IS wired (read-safe): while a query is present the body renders as plain text
 // with every match highlighted, plus a live match count.
 
-// The "…" menu — lives in a lower-left glass button (owner 2026-07-20: Edit moved
-// off the top bar into this menu, and the menu into the bottom-left corner,
-// matching the Library tab's actions button). Edit and Find are REAL; Rename /
-// Replace / Delete still flash the "on the web app" note. `enabled` here is the
-// template value — Edit's is decided per-note at render (markdown only).
+// The note's chrome (owner 2026-07-21, matching their Obsidian/Safari reference
+// crops): a glass pill in the UPPER-RIGHT holds the read/edit mode toggle
+// (pencil while reading — tap to edit; book while editing — tap to save and
+// read, Obsidian's exact language) plus the "…" menu; a floating pill bar sits
+// CENTERED AT THE BOTTOM with browser-style controls — back/forward through
+// the notes you've opened, search your notes, new note, recent-notes switcher,
+// and a heading outline. The old lower-left corner button is gone; its menu
+// moved into the top-right dots. Find is REAL; Rename / Replace / Delete still
+// flash the "on the web app" note.
 const MENU_ITEMS = [
-  { key: "edit", label: "Edit", enabled: true },
   { key: "find", label: "Find", enabled: true },
   { key: "rename", label: "Rename", enabled: false },
   { key: "replace", label: "Replace", enabled: false },
   { key: "delete", label: "Delete", enabled: false },
 ] as const;
 
-// Same size as the Library tab's lower-left actions button — the two screens'
-// corner controls should read as one family.
-const FAB_SIZE = 48;
+// The bottom pill bar's rendered height — the reading body's bottom spacer
+// clears it so the last lines stay readable above the floating bar.
+const PILL_BAR_HEIGHT = 52;
 
 const EDIT_ON_WEB = "That happens on the web app for now.";
 const CANT_EDIT_KIND = "PDF and Word files can't be edited here — their text is extracted from the original file.";
@@ -112,6 +118,10 @@ export default function NoteScreen() {
   const insets = useSafeAreaInsets();
   const [doc, setDoc] = useState<CloudLibraryNote | null | undefined>(undefined);
   const [resolver, setResolver] = useState<Map<string, string>>(() => new Map());
+  // Every cached note's id/title/path — feeds the pill bar's Search sheet and
+  // the Recents switcher's labels. Refreshed from the same cache read the
+  // resolver already does, so it costs no extra I/O.
+  const [notesIndex, setNotesIndex] = useState<{ id: string; title: string; path: string }[]>([]);
   // Transient "couldn't find that note" / "edit on the web app" line.
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,6 +130,26 @@ export default function NoteScreen() {
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const scrollRef = useRef<ScrollView>(null);
+  // Pill-bar state: which of its three sheets is up, the Search sheet's query,
+  // and the one-at-a-time guard for "+" (new note).
+  const [searchSheetOpen, setSearchSheetOpen] = useState(false);
+  const [searchSheetQuery, setSearchSheetQuery] = useState("");
+  const [recentsOpen, setRecentsOpen] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
+  // Browser-style note history (owner picked "browser-style" for the pill bar):
+  // the ids opened on THIS visit, with a cursor. Navigating a wikilink / search
+  // / recents pick pushes (dropping any forward tail, like a browser); the
+  // bar's ‹ › move the cursor via pendingIndex so the noteId effect below can
+  // tell a history move from a fresh navigation. Component-scoped on purpose —
+  // all note-to-note movement happens through router.setParams on this one
+  // mounted screen, and leaving to the Library unmounts it (history over).
+  const navRef = useRef<{ stack: string[]; index: number; pendingIndex: number | null }>({ index: -1, pendingIndex: null, stack: [] });
+  const [nav, setNav] = useState({ canForward: false, recentIds: [] as string[] });
+  // Measured y of each rendered section (index-aligned with `sections` below) —
+  // what makes the outline's "jump to heading" an exact scroll.
+  const sectionYs = useRef<number[]>([]);
   // Edit-mode state. `draft` drives the editor; refs shadow the latest draft +
   // dirtiness so the debounced autosave and the unmount flush never read stale
   // closures. `forcedSel` is set ONLY right after a toolbar transform (to place
@@ -150,12 +180,40 @@ export default function NoteScreen() {
     setDoc(undefined);
     // A wikilink tap swaps this page's note in place (setParams) — reset the
     // per-note chrome so the new note starts clean: no stale Find query, no
-    // half-scrolled body, and (defensively — links aren't tappable while
-    // editing) no editor left open against the wrong note.
+    // half-scrolled body, no sheet left up, and (defensively — the pill bar and
+    // links only exist in reading mode) no editor open against the wrong note.
     setFindOpen(false);
     setFindQuery("");
     setEditing(false);
+    setSearchSheetOpen(false);
+    setRecentsOpen(false);
+    setOutlineOpen(false);
+    sectionYs.current = [];
     scrollRef.current?.scrollTo({ y: 0, animated: false });
+    // Browser-style history bookkeeping: a ‹ › move (pendingIndex) just shifts
+    // the cursor; anything else — first open, wikilink, search/recents pick, a
+    // fresh "+" note — pushes onto the stack and drops the forward tail.
+    if (noteId) {
+      const h = navRef.current;
+      if (h.pendingIndex !== null && h.stack[h.pendingIndex] === noteId) {
+        h.index = h.pendingIndex;
+      } else if (h.stack[h.index] !== noteId) {
+        h.stack = [...h.stack.slice(0, h.index + 1), noteId];
+        h.index = h.stack.length - 1;
+      }
+      h.pendingIndex = null;
+      // Recents = distinct ids, most recently visited first (current note included).
+      const seen = new Set<string>();
+      const recentIds: string[] = [];
+      for (let i = h.stack.length - 1; i >= 0; i -= 1) {
+        const id = h.stack[i];
+        if (!seen.has(id)) {
+          seen.add(id);
+          recentIds.push(id);
+        }
+      }
+      setNav({ canForward: h.index < h.stack.length - 1, recentIds });
+    }
     void (async () => {
       if (!userId || !noteId) {
         if (alive) setDoc(null);
@@ -166,6 +224,7 @@ export default function NoteScreen() {
       const cached = await loadCachedLibrary(userId);
       if (!alive) return;
       setResolver(buildNoteResolver(cached.notes.map((d) => ({ path: d.path, pathHash: d.id, title: d.title }))));
+      setNotesIndex(cached.notes.map((d) => ({ id: d.id, path: d.path, title: d.title })));
       const cachedNote = findCachedNote(cached, { id: noteId });
       if (cachedNote) setDoc(cachedNote);
 
@@ -186,7 +245,10 @@ export default function NoteScreen() {
     };
   }, [userId, noteId]);
 
-  const rendered = useMemo(() => (doc ? preprocessWikilinks(doc.content) : ""), [doc]);
+  // The reading body renders one <Markdown> per heading-led section so each
+  // section's y falls out of onLayout — that's what the outline jumps to.
+  const sections = useMemo(() => (doc ? splitSections(doc.content) : []), [doc]);
+  const outline = useMemo(() => outlineOf(sections), [sections]);
 
   const findActive = findOpen && findQuery.trim().length > 0;
   const segments = useMemo(
@@ -269,15 +331,16 @@ export default function NoteScreen() {
 
   // Done: flush the pending save, then drop back to reading. If the save fails
   // the editor STAYS open with the draft intact — exiting would silently show a
-  // note the cloud doesn't have.
-  const doneEditing = useCallback(async () => {
+  // note the cloud doesn't have. Returns whether reading mode was reached, so
+  // callers that chain something after (the menu's Find) can wait for it.
+  const doneEditing = useCallback(async (): Promise<boolean> => {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
     const ok = await saveNow();
-    if (!ok) return;
-    setEditing(false);
+    if (ok) setEditing(false);
+    return ok;
   }, [saveNow]);
 
   const onChangeDraft = useCallback(
@@ -309,25 +372,126 @@ export default function NoteScreen() {
   const onMenuSelect = useCallback(
     (item: (typeof MENU_ITEMS)[number]) => {
       setMenuOpen(false);
-      if (item.key === "edit") {
-        if (canEdit) enterEdit();
-        else flashNotice(CANT_EDIT_KIND);
-        return;
-      }
       if (item.key === "find") {
-        setFindOpen(true);
+        // Mid-edit, save-and-exit first and only open Find once reading mode is
+        // actually reached — opening it eagerly would drop an autofocused find
+        // bar on top of the still-open editor (and strand it there if the save
+        // failed and the editor stayed open). Review finding, 2026-07-21.
+        if (editing) {
+          void doneEditing().then((ok) => {
+            if (ok) setFindOpen(true);
+          });
+        } else {
+          setFindOpen(true);
+        }
         return;
       }
       // Delete / Rename / Replace: still web-app actions.
       flashNotice(EDIT_ON_WEB);
     },
-    [flashNotice, canEdit, enterEdit],
+    [flashNotice, editing, doneEditing],
   );
+
+  // The mode pill's left half: pencil (reading → edit) / book (editing → save
+  // + read), Obsidian's exact toggle language. PDF/Word rows explain instead.
+  const onToggleMode = useCallback(() => {
+    if (editing) {
+      void doneEditing();
+      return;
+    }
+    if (canEdit) enterEdit();
+    else flashNotice(CANT_EDIT_KIND);
+  }, [editing, doneEditing, canEdit, enterEdit, flashNotice]);
 
   const closeFind = useCallback(() => {
     setFindOpen(false);
     setFindQuery("");
   }, []);
+
+  // --- pill-bar actions -----------------------------------------------------
+  const openNoteId = useCallback(
+    (id: string) => {
+      if (id !== noteId) router.setParams({ id });
+    },
+    [noteId],
+  );
+
+  // ‹ : previous note in this visit's history; with nothing left to step back
+  // to, it leaves to the Library — one consistent "browser back". A non-null
+  // pendingIndex means a ‹ › move is already in flight (the noteId effect
+  // hasn't consumed it yet) — further taps wait, so two rapid opposite-
+  // direction taps can't compute off a stale cursor. Review finding, 2026-07-21.
+  const goBack = useCallback(() => {
+    const h = navRef.current;
+    if (h.pendingIndex !== null) return;
+    if (h.index > 0) {
+      h.pendingIndex = h.index - 1;
+      router.setParams({ id: h.stack[h.index - 1] });
+    } else {
+      router.back();
+    }
+  }, []);
+
+  const goForward = useCallback(() => {
+    const h = navRef.current;
+    if (h.pendingIndex !== null) return;
+    if (h.index < h.stack.length - 1) {
+      h.pendingIndex = h.index + 1;
+      router.setParams({ id: h.stack[h.index + 1] });
+    }
+  }, []);
+
+  // + : a real phone-side create (api/cloudLibrary.ts createNote — same
+  // "Untitled note.md" convention as the web store), then swap this page to it.
+  // creatingRef is the synchronous re-entrancy lock (state alone leaves a
+  // same-frame double-tap window that could insert two rows — review finding,
+  // 2026-07-21); the `creating` state only dims the bar's "+".
+  const newNote = useCallback(async () => {
+    if (!userId || creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
+    try {
+      const note = await createNote(userId);
+      setNotesIndex((prev) => [{ id: note.id, path: note.path, title: note.title }, ...prev.filter((n) => n.id !== note.id)]);
+      router.setParams({ id: note.id });
+    } catch (err) {
+      flashNotice(err instanceof Error && err.message ? err.message : "Couldn't create a note — check your connection.");
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
+    }
+  }, [userId, flashNotice]);
+
+  const jumpToSection = useCallback((sectionIndex: number) => {
+    setOutlineOpen(false);
+    const y = sectionYs.current[sectionIndex];
+    if (typeof y === "number") scrollRef.current?.scrollTo({ animated: true, y: Math.max(0, y - space(2)) });
+  }, []);
+
+  // Sheet rows. Search filters the cached index by title or folder path;
+  // Recents maps this visit's ids to titles (falling back to the open doc's own
+  // title, then a quiet placeholder, if the cache hasn't seen an id yet).
+  const searchRows = useMemo<NoteSheetRow[]>(() => {
+    const q = searchSheetQuery.trim().toLowerCase();
+    const matches = q
+      ? notesIndex.filter((n) => n.title.toLowerCase().includes(q) || n.path.toLowerCase().includes(q))
+      : notesIndex;
+    return matches.slice(0, 60).map((n) => {
+      const cut = n.path.lastIndexOf("/");
+      return { active: n.id === noteId, key: n.id, label: n.title, ...(cut > 0 ? { sublabel: n.path.slice(0, cut) } : {}) };
+    });
+  }, [notesIndex, searchSheetQuery, noteId]);
+
+  const recentRows = useMemo<NoteSheetRow[]>(() => {
+    const titles = new Map(notesIndex.map((n) => [n.id, n.title]));
+    if (doc) titles.set(doc.id, doc.title);
+    return nav.recentIds.map((id) => ({ active: id === noteId, key: id, label: titles.get(id) ?? "Note" }));
+  }, [nav.recentIds, notesIndex, doc, noteId]);
+
+  const outlineRows = useMemo<NoteSheetRow[]>(
+    () => outline.map((h) => ({ indent: Math.min(h.level - 1, 4), key: String(h.sectionIndex), label: h.text })),
+    [outline],
+  );
 
   // Any in-note link — a [[wikilink]] OR a bare relative markdown link — opens the
   // target note when it resolves to something in the library. setParams (not push)
@@ -362,9 +526,9 @@ export default function NoteScreen() {
   return (
     <View style={[styles.flex, { paddingTop: insets.top + space(2) }]} testID="note-screen">
       <Stack.Screen options={{ headerShown: false }} />
-      {/* Top bar: the back button, plus — while editing — a Done pill on the right
-          (with a quiet "Saving…" hint beside it). Back steps OUT OF EDIT first
-          (saving), then out of the note; the "…" menu stays in the lower-left. */}
+      {/* Top bar: the back button on the left; on the right, the glass mode pill
+          (owner's reference crop): pencil/book read–edit toggle + the "…" menu.
+          Back steps OUT OF EDIT first (saving), then out of the note. */}
       <View style={styles.topRow}>
         <Pressable
           onPress={() => {
@@ -381,20 +545,32 @@ export default function NoteScreen() {
           </GlassSurface>
         </Pressable>
 
-        {editing ? (
-          <View style={styles.doneCluster}>
+        {doc ? (
+          <View style={styles.topRight}>
             {saving ? <Text style={styles.saveHint}>Saving…</Text> : null}
-            <Pressable
-              onPress={() => void doneEditing()}
-              hitSlop={10}
-              testID="note-edit-done"
-              accessibilityRole="button"
-              accessibilityLabel="Done editing"
-            >
-              <GlassSurface style={styles.donePill} fallbackColor={c.glassPanel}>
-                <Text style={styles.doneLabel}>Done</Text>
-              </GlassSurface>
-            </Pressable>
+            <GlassSurface style={styles.modePill} fallbackColor={c.glassPanel} tint={menuOpen ? c.accentFaint : undefined}>
+              <Pressable
+                style={({ pressed }) => [styles.modePillBtn, pressed && styles.modePillBtnPressed]}
+                onPress={onToggleMode}
+                hitSlop={6}
+                testID="note-mode-toggle"
+                accessibilityRole="button"
+                accessibilityLabel={editing ? "Done editing — back to reading" : "Edit this note"}
+              >
+                {editing ? <BookIcon size={19} color={c.text} /> : <PencilIcon size={17} color={canEdit ? c.text : c.text3} />}
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.modePillBtn, pressed && styles.modePillBtnPressed]}
+                onPress={() => setMenuOpen((v) => !v)}
+                hitSlop={6}
+                testID="note-menu-btn"
+                accessibilityRole="button"
+                accessibilityLabel="Note actions"
+                accessibilityState={{ expanded: menuOpen }}
+              >
+                <DotsIcon size={19} color={menuOpen ? c.accent : c.text} />
+              </Pressable>
+            </GlassSurface>
           </View>
         ) : null}
       </View>
@@ -498,71 +674,119 @@ export default function NoteScreen() {
               )}
             </Text>
           ) : (
-            <Markdown style={markdownStyles} onLinkPress={onLinkPress}>{rendered}</Markdown>
+            // One <Markdown> per heading-led section, each wrapped in a measured
+            // View — the outline sheet scrolls straight to a section's real y.
+            sections.map((section, i) => (
+              <View
+                key={`${doc.id}-${i}`}
+                onLayout={(e) => {
+                  sectionYs.current[i] = e.nativeEvent.layout.y;
+                }}
+              >
+                <Markdown style={markdownStyles} onLinkPress={onLinkPress}>{preprocessWikilinks(section.body)}</Markdown>
+              </View>
+            ))
           )}
-          {/* Clears the lower-left "…" button so the last lines stay readable. */}
-          <View style={{ height: FAB_SIZE + space(10) }} />
+          {/* Clears the floating pill bar so the last lines stay readable. */}
+          <View style={{ height: PILL_BAR_HEIGHT + space(12) }} />
         </ScrollView>
       )}
 
-      {/* "…" menu — rises from the lower-left corner button (owner 2026-07-20).
-          Always mounted so the close fade plays; a transparent tap-catcher dismisses
-          it (no page blur — the menu's own glass is the only blur). Edit renders
-          disabled (no "Web" tag — it's not a web action, it's a file-kind limit)
-          for pdf/doc rows. */}
+      {/* "…" menu — drops from the top-right mode pill (owner 2026-07-21; it used
+          to rise off a lower-left corner button). Always mounted so the close fade
+          plays; a transparent tap-catcher dismisses it (no page blur — the menu's
+          own glass is the only blur). */}
       <View style={StyleSheet.absoluteFill} pointerEvents={menuOpen ? "auto" : "none"} testID="note-menu">
         <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} accessibilityLabel="Close menu" />
         <Animated.View
           style={[
             styles.menuWrap,
             {
-              bottom: insets.bottom + space(1) + FAB_SIZE + space(3),
+              top: insets.top + space(2) + 40 + space(1.5),
               opacity: menuProgress,
-              transform: [{ translateY: menuProgress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+              transform: [{ translateY: menuProgress.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
             },
           ]}
         >
           <GlassSurface style={styles.menu} fallbackColor={c.glassPanel} opaque>
-            {MENU_ITEMS.map((item, i) => {
-              const enabled = item.key === "edit" ? canEdit : item.enabled;
-              return (
-                <Pressable
-                  key={item.key}
-                  testID={`note-menu-${item.key}`}
-                  onPress={() => onMenuSelect(item)}
-                  style={({ pressed }) => [styles.menuRow, i > 0 && styles.menuDivider, pressed && styles.menuRowPressed]}
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: !enabled }}
-                >
-                  <Text style={[styles.menuLabel, !enabled && styles.menuLabelDisabled]}>{item.label}</Text>
-                  {enabled || item.key === "edit" ? null : <Text style={styles.menuTag}>Web</Text>}
-                </Pressable>
-              );
-            })}
+            {MENU_ITEMS.map((item, i) => (
+              <Pressable
+                key={item.key}
+                testID={`note-menu-${item.key}`}
+                onPress={() => onMenuSelect(item)}
+                style={({ pressed }) => [styles.menuRow, i > 0 && styles.menuDivider, pressed && styles.menuRowPressed]}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !item.enabled }}
+              >
+                <Text style={[styles.menuLabel, !item.enabled && styles.menuLabelDisabled]}>{item.label}</Text>
+                {item.enabled ? null : <Text style={styles.menuTag}>Web</Text>}
+              </Pressable>
+            ))}
           </GlassSurface>
         </Animated.View>
       </View>
 
-      {/* Lower-left "…" glass button — same corner + size as the Library tab's, so
-          the library and its notes share one control language. Only in reading mode
-          with a real note loaded (the editor's controls are Done + the toolbar). */}
+      {/* The floating bottom pill bar (reading mode only — the editor's bottom is
+          the keyboard toolbar) + the three sheets its buttons open. */}
       {doc && !editing ? (
-        <View style={[styles.fabWrap, { bottom: insets.bottom + space(1) }]} pointerEvents="box-none">
-          <GlassSurface style={styles.fab} fallbackColor={c.glassPanel} tint={menuOpen ? c.accentFaint : undefined}>
-            <Pressable
-              style={styles.fabInner}
-              onPress={() => setMenuOpen((v) => !v)}
-              hitSlop={8}
-              testID="note-menu-btn"
-              accessibilityRole="button"
-              accessibilityLabel="Note actions"
-              accessibilityState={{ expanded: menuOpen }}
-            >
-              <DotsIcon size={20} color={menuOpen ? c.accent : c.text2} />
-            </Pressable>
-          </GlassSurface>
+        <View style={[styles.pillBarWrap, { bottom: insets.bottom + space(2) }]} pointerEvents="box-none">
+          <NotePillBar
+            canForward={nav.canForward}
+            recentCount={nav.recentIds.length}
+            busy={creating}
+            onBack={goBack}
+            onForward={goForward}
+            onSearch={() => {
+              setSearchSheetQuery("");
+              setSearchSheetOpen(true);
+            }}
+            onNew={() => void newNote()}
+            onRecents={() => setRecentsOpen(true)}
+            onOutline={() => {
+              // Sections only render (and measure) outside Find mode.
+              if (findOpen) closeFind();
+              setOutlineOpen(true);
+            }}
+          />
         </View>
       ) : null}
+
+      <NoteListSheet
+        visible={searchSheetOpen}
+        title="Search notes"
+        rows={searchRows}
+        emptyText={searchSheetQuery.trim() ? "Nothing in your library matches that." : "No notes here yet."}
+        onPick={(id) => {
+          setSearchSheetOpen(false);
+          openNoteId(id);
+        }}
+        onClose={() => setSearchSheetOpen(false)}
+        searchValue={searchSheetQuery}
+        onSearchChange={setSearchSheetQuery}
+        searchPlaceholder="Search notes"
+        testID="note-search-sheet"
+      />
+      <NoteListSheet
+        visible={recentsOpen}
+        title="Recent notes"
+        rows={recentRows}
+        emptyText="Notes you open show up here."
+        onPick={(id) => {
+          setRecentsOpen(false);
+          openNoteId(id);
+        }}
+        onClose={() => setRecentsOpen(false)}
+        testID="note-recents-sheet"
+      />
+      <NoteListSheet
+        visible={outlineOpen}
+        title="Outline"
+        rows={outlineRows}
+        emptyText="No headings in this note yet."
+        onPick={(key) => jumpToSection(Number(key))}
+        onClose={() => setOutlineOpen(false)}
+        testID="note-outline-sheet"
+      />
 
       {/* iOS: the formatting toolbar rides on top of the keyboard. (Android pins
           the same toolbar under the editor instead — see the edit branch above.) */}
@@ -620,6 +844,39 @@ function DotsIcon({ size = 23, color }: IconProps) {
   );
 }
 
+/** Open book — the "switch to reading" half of the mode toggle (Obsidian's
+ * language, and the owner's reference crop). Local like DotsIcon above. */
+function BookIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M12 6.2C10.6 4.9 8.7 4.4 6.3 4.4c-.9 0-1.7.1-2.3.3v13.1c.6-.2 1.4-.3 2.3-.3 2.4 0 4.3.6 5.7 1.9 1.4-1.3 3.3-1.9 5.7-1.9.9 0 1.7.1 2.3.3V4.7c-.6-.2-1.4-.3-2.3-.3-2.4 0-4.3.5-5.7 1.8Zm0 0v13.2"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+/** Pencil — the "switch to editing" half of the mode toggle. */
+function PencilIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="m14.2 5.9 3.9 3.9M5.2 18.8l.9-3.9L15.6 5.4a1.9 1.9 0 0 1 2.7 0l.3.3a1.9 1.9 0 0 1 0 2.7l-9.5 9.5-3.9.9Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
@@ -635,17 +892,21 @@ const createStyles = (c: ThemeColors) =>
     // 40x40 liquid-glass icon button, radius.md — same shape review.tsx uses.
     iconGlass: { width: 40, height: 40, borderRadius: radius.md, alignItems: "center", justifyContent: "center", overflow: "hidden" },
     backChevron: { fontSize: 26, lineHeight: 28, color: c.text, marginTop: -2 },
-    doneCluster: { flexDirection: "row", alignItems: "center", gap: space(2.5) },
+    topRight: { flexDirection: "row", alignItems: "center", gap: space(2.5) },
     saveHint: { ...type.micro, color: c.text3 },
-    donePill: {
-      height: 40,
-      paddingHorizontal: space(4),
-      borderRadius: radius.md,
+    // The upper-right glass pill: [pencil|book mode toggle][… menu] — the
+    // owner's reference crop. Two 44pt targets sharing one 40pt-tall pill.
+    modePill: {
+      flexDirection: "row",
       alignItems: "center",
-      justifyContent: "center",
+      height: 40,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: c.line,
       overflow: "hidden",
     },
-    doneLabel: { ...type.bodyStrong, color: c.accent },
+    modePillBtn: { width: 44, height: 40, alignItems: "center", justifyContent: "center" },
+    modePillBtnPressed: { backgroundColor: c.surface },
 
     // Edit mode: static title above a flex-filling source-markdown input; the
     // input scrolls itself and the KeyboardAvoidingView keeps the caret visible.
@@ -709,13 +970,12 @@ const createStyles = (c: ThemeColors) =>
     },
     noticeText: { ...type.small, color: c.text2 },
 
-    // "…" menu popup (bottom-anchored, rises off the corner button) + the button
-    // itself — geometry mirrors the Library tab's ActionsFab exactly.
-    menuWrap: { position: "absolute", left: space(4), minWidth: 184 },
+    // "…" menu popup — drops from just under the top-right mode pill (same
+    // anchoring math as the chat screen's actions menu).
+    menuWrap: { position: "absolute", right: space(3), minWidth: 184 },
     menu: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
-    fabWrap: { position: "absolute", left: space(4), alignItems: "flex-start" },
-    fab: { width: FAB_SIZE, height: FAB_SIZE, borderRadius: FAB_SIZE / 2, borderWidth: 1, borderColor: c.line },
-    fabInner: { flex: 1, alignItems: "center", justifyContent: "center" },
+    // The floating bottom pill bar's centering rail.
+    pillBarWrap: { position: "absolute", left: 0, right: 0, alignItems: "center" },
     menuRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: space(3), paddingHorizontal: space(4) },
     menuDivider: { borderTopWidth: 1, borderTopColor: c.line },
     menuRowPressed: { backgroundColor: c.surface },

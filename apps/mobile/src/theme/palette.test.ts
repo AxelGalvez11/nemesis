@@ -49,7 +49,8 @@ Deno.test("unknown accent ids fall back to the default swatch", () => {
 
 Deno.test("light mode swaps surfaces to paper and keeps text dark", () => {
   const light = buildColors("light", DEFAULT_ACCENT_ID);
-  assertEquals(light.bg, "#f8faff");
+  // Pure white page (owner 2026-07-21: ChatGPT-style white, not the old #f8faff tint).
+  assertEquals(light.bg, "#ffffff");
   assertEquals(light.surface, "#ffffff");
   assertEquals(contrastRatio(light.text, light.bg) >= 10, true);
 });
