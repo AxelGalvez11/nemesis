@@ -1,10 +1,10 @@
 "use client";
 
-import { IconCards, IconChevronDown, IconChevronRight, IconDots, IconFlag, IconFolder, IconPlayerPause, IconTags, IconTrash } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { IconAlertTriangle, IconCards, IconChevronDown, IconChevronRight, IconDots, IconDownload, IconFlag, IconFolder, IconPlayerPause, IconSparkles, IconTags, IconTrash } from "@tabler/icons-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/desktop-ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +16,10 @@ import {
 } from "@/components/desktop-ui/dropdown-menu";
 import { Input } from "@/components/desktop-ui/input";
 import { Textarea } from "@/components/desktop-ui/textarea";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
+import { buildAnkiExportFile } from "@/lib/workspace/anki-text";
+import { postChatCompletion } from "@/lib/workspace/chat-api";
+import { autoTagTargets, buildAutoTagMessages, isLeechCard, parseAutoTags, previewAutoTags } from "@/lib/workspace/study-ai-extras";
 import { type StudyCard, type StudyCardType, type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import { cn } from "@/lib/utils";
 
@@ -77,7 +81,8 @@ function buildRailEntries(decks: StudyDeck[], collapsed: ReadonlySet<string>): R
 }
 
 export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, onAddCard, onDeleteDeck }: StudyBrowserProps) {
-  const { updateCard, setCardSuspended } = useCloudStudy();
+  const { updateCard, setCardSuspended, userId } = useCloudStudy();
+  const previewMode = useWorkspacePreview();
   const [scope, setScope] = useState(`deck:${initialDeckId ?? decks[0]?.id ?? ""}`);
   const [decksOpen, setDecksOpen] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(true);
@@ -90,6 +95,7 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
     if (scope === "all") return cards;
     if (scope === "flagged") return cards.filter((card) => card.flagged);
     if (scope === "suspended") return cards.filter((card) => card.suspended);
+    if (scope === "leeches") return cards.filter(isLeechCard);
     if (scope.startsWith("tag:")) {
       const tag = scope.slice(4);
       return cards.filter((card) => card.tags.includes(tag));
@@ -121,9 +127,20 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
   const [tags, setTags] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [autoTagOpen, setAutoTagOpen] = useState(false);
+  const [autoTagBusy, setAutoTagBusy] = useState(false);
+  const [autoTagResult, setAutoTagResult] = useState<string | null>(null);
 
+  // Reset the view only when the dialog OPENS — not on every card change,
+  // or saving/tagging a card would snap the sidebar back to the initial deck.
+  const wasOpenRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      wasOpenRef.current = false;
+      return;
+    }
+    if (wasOpenRef.current) return;
+    wasOpenRef.current = true;
     const nextDeck = initialDeckId ?? decks[0]?.id ?? null;
     setScope(`deck:${nextDeck ?? ""}`);
     setCardId(cards.find((card) => card.deckId === nextDeck)?.id ?? null);
@@ -169,6 +186,68 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
       setMessage(cause instanceof Error ? cause.message : "Couldn't update the card.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Download the active deck as an Anki-importable text file. Cloze and
+  // reversed cards keep their note types via the #notetype column header.
+  function exportDeck() {
+    if (!activeDeck) return;
+    const { exported, skipped, text } = buildAnkiExportFile(cards.filter((card) => card.deckId === activeDeck.id));
+    if (exported === 0) {
+      setMessage("This deck only has image cards — there's nothing to export as text.");
+      return;
+    }
+    const leaf = activeDeck.name.split("::").pop()?.trim() || "deck";
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${leaf}.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    const exportedLabel = `${exported} card${exported === 1 ? "" : "s"}`;
+    setMessage(skipped > 0 ? `Exported ${exportedLabel} (${skipped} image card${skipped === 1 ? "" : "s"} stay behind).` : `Exported ${exportedLabel}.`);
+  }
+
+  const untaggedInDeck = activeDeck ? autoTagTargets(cards.filter((card) => card.deckId === activeDeck.id)).length : 0;
+
+  // One metered engine call tags every untagged card in the deck; existing
+  // tags are never touched. Preview mode uses the deterministic local tagger.
+  async function runAutoTag() {
+    if (!activeDeck || autoTagBusy) return;
+    const targets = autoTagTargets(cards.filter((card) => card.deckId === activeDeck.id));
+    if (targets.length === 0) {
+      setAutoTagResult("Every card in this deck already has tags.");
+      return;
+    }
+    setAutoTagBusy(true);
+    setAutoTagResult(null);
+    try {
+      let assigned: Map<string, string[]>;
+      if (previewMode) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        assigned = previewAutoTags(targets);
+      } else {
+        if (!userId) throw new Error("Sign in to use AI tagging.");
+        const reply = await postChatCompletion(userId, buildAutoTagMessages(targets), {
+          decision: { model: "deepseek-chat", route: "conversation", searchWeb: false },
+        });
+        if (!reply.text) throw new Error(reply.errorText ?? "The engine couldn't tag these cards. Try again.");
+        assigned = parseAutoTags(reply.text, targets.map((card) => card.id));
+        if (assigned.size === 0) throw new Error("The engine's reply wasn't usable. Try again.");
+      }
+      let tagged = 0;
+      for (const card of targets) {
+        const tags = assigned.get(card.id);
+        if (!tags) continue;
+        await updateCard({ id: card.id, front: card.front, back: card.back, cardType: card.cardType, flagged: card.flagged, tags });
+        tagged += 1;
+      }
+      setAutoTagResult(`Tagged ${tagged} card${tagged === 1 ? "" : "s"}.`);
+    } catch (cause) {
+      setAutoTagResult(cause instanceof Error ? cause.message : "Couldn't tag the cards.");
+    } finally {
+      setAutoTagBusy(false);
     }
   }
 
@@ -249,6 +328,9 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
               <button className={rowClass(scope === "suspended")} onClick={() => selectScope("suspended")} type="button">
                 <IconPlayerPause className="shrink-0 text-(--ui-text-tertiary)" size={14} /><span className="flex-1">Suspended</span><span className="text-(--ui-text-quaternary)">{cards.filter((card) => card.suspended).length}</span>
               </button>
+              <button className={rowClass(scope === "leeches")} data-testid="filter-leeches" onClick={() => selectScope("leeches")} title="Cards you've failed 8+ times — rewrite, split, or suspend them" type="button">
+                <IconAlertTriangle className="shrink-0 text-(--ui-text-tertiary)" size={14} /><span className="flex-1">Leeches</span><span className="text-(--ui-text-quaternary)">{cards.filter(isLeechCard).length}</span>
+              </button>
             </div>}
 
             <button className={cn(sectionToggleClass, "pt-3")} onClick={() => setTagsOpen((value) => !value)} type="button">
@@ -292,7 +374,13 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={() => setFlagged((value) => !value)}><IconFlag /> {flagged ? "Remove flag" : "Flag card"}</DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => void toggleSuspended()}><IconPlayerPause /> {activeCard.suspended ? "Unsuspend card" : "Suspend card"}</DropdownMenuItem>
-                      {deckId && <><DropdownMenuSeparator /><DropdownMenuItem onSelect={() => onDeleteDeck(deckId)} variant="destructive"><IconTrash /> Delete deck</DropdownMenuItem></>}
+                      {deckId && <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem data-testid="auto-tag-open" onSelect={() => { setAutoTagResult(null); setAutoTagOpen(true); }}><IconSparkles /> Auto-tag deck</DropdownMenuItem>
+                        <DropdownMenuItem data-testid="export-deck" onSelect={exportDeck}><IconDownload /> Export deck (Anki)</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => onDeleteDeck(deckId)} variant="destructive"><IconTrash /> Delete deck</DropdownMenuItem>
+                      </>}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -305,13 +393,34 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
                   <Button disabled={saving || !front.trim() || (!back.trim() && cardType !== "cloze" && cardType !== "image_occlusion")} onClick={() => void saveActiveCard()} size="sm" variant="secondary">{saving ? "Saving…" : "Save changes"}</Button>
                 </div>
                 <dl className="grid grid-cols-2 gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-[rgb(247_247_248)] p-4 text-xs dark:bg-[rgb(29_29_31)]">
-                  <Stat label="Interval" value={`${activeCard.intervalDays} days`} /><Stat label="Repetitions" value={String(activeCard.repetitions)} /><Stat label="Lapses" value={String(activeCard.lapses)} /><Stat label="Status" value={activeCard.suspended ? "Suspended" : "Active"} />
+                  <Stat label="Interval" value={`${activeCard.intervalDays} days`} /><Stat label="Repetitions" value={String(activeCard.repetitions)} /><Stat label="Lapses" value={String(activeCard.lapses)} /><Stat label="Status" value={activeCard.suspended ? "Suspended" : isLeechCard(activeCard) ? "Leech" : "Active"} />
                 </dl>
                 {activeCard.sourcePath && <p className="rounded-lg bg-[rgb(247_247_248)] px-3 py-2 text-xs text-(--ui-text-tertiary) dark:bg-[rgb(29_29_31)]">Source: {activeCard.sourcePath}</p>}
               </div>
             ) : <div className="grid h-full place-items-center text-xs text-(--ui-text-tertiary)">Select a card to inspect it.</div>}
           </section>
         </div>
+
+        <Dialog onOpenChange={(next) => { if (!autoTagBusy) { setAutoTagOpen(next); if (!next) setAutoTagResult(null); } }} open={autoTagOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Auto-tag this deck</DialogTitle>
+              <DialogDescription>
+                Nemesis reads the untagged cards in “{activeDeck?.name.split("::").pop() ?? "this deck"}” and adds short topic tags. Cards that already have tags are never touched.
+              </DialogDescription>
+            </DialogHeader>
+            <p className="text-xs text-(--ui-text-secondary)">
+              {untaggedInDeck === 0 ? "Every card in this deck already has tags." : `${untaggedInDeck} untagged card${untaggedInDeck === 1 ? "" : "s"} will get tags.`}
+            </p>
+            {autoTagResult && <p className="rounded-lg bg-(--ui-bg-quaternary) px-3 py-2 text-xs text-(--ui-text-secondary)" data-testid="auto-tag-result" role="status">{autoTagResult}</p>}
+            <DialogFooter>
+              <Button disabled={autoTagBusy} onClick={() => { setAutoTagOpen(false); setAutoTagResult(null); }} type="button" variant="ghost">Close</Button>
+              <Button data-testid="auto-tag-run" disabled={autoTagBusy || untaggedInDeck === 0} onClick={() => void runAutoTag()} type="button" variant="secondary">
+                {autoTagBusy ? "Tagging…" : "Add tags"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

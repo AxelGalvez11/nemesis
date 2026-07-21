@@ -1,14 +1,17 @@
 "use client";
 
-import { IconDots, IconFlag, IconFlagFilled, IconPencil, IconPlayerPause } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { IconDots, IconFlag, IconFlagFilled, IconPencil, IconPlayerPause, IconSparkles } from "@tabler/icons-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/desktop-ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
 import { Input } from "@/components/desktop-ui/input";
 import { Textarea } from "@/components/desktop-ui/textarea";
+import { useWorkspacePreview } from "@/components/workspace/preview-context";
+import { postChatCompletion } from "@/lib/workspace/chat-api";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
+import { buildExplainMessages, stripClozeMarkers } from "@/lib/workspace/study-ai-extras";
 import { activeClozeNumber, hasCloze, renderCloze } from "@/lib/workspace/study-cloze";
 import { type StudyCard, type StudyDeck, type StudyScheduleSnapshot, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import { buildReviewQueue } from "@/lib/workspace/study-review-queue";
@@ -36,7 +39,8 @@ interface ReviewSessionProps {
 }
 
 export function ReviewSession({ cards, deck, open, onOpenChange, settings }: ReviewSessionProps) {
-  const { gradeCard, undoGrade, updateCard, setCardSuspended } = useCloudStudy();
+  const { gradeCard, undoGrade, updateCard, setCardSuspended, userId } = useCloudStudy();
+  const previewMode = useWorkspacePreview();
   const [passedIds, setPassedIds] = useState<string[]>([]);
   const [retryIds, setRetryIds] = useState<string[]>([]);
   const [priorityId, setPriorityId] = useState<string | null>(null);
@@ -50,6 +54,12 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   const [editFront, setEditFront] = useState("");
   const [editBack, setEditBack] = useState("");
   const [editTags, setEditTags] = useState("");
+  // Explain-this-card: one metered call per card, cached for the session so
+  // re-opening the panel (or retrying the card) never bills twice.
+  const explainCacheRef = useRef(new Map<string, string>());
+  const [explainFor, setExplainFor] = useState<string | null>(null);
+  const [explainText, setExplainText] = useState("");
+  const [explainBusy, setExplainBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -67,6 +77,12 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     [cards, deck?.id, passedIds, retryIds, priorityId],
   );
   const current = queue[0] ?? null;
+  const currentId = current?.id ?? null;
+
+  // A new card on deck closes the previous card's explanation.
+  useEffect(() => {
+    setExplainFor(null);
+  }, [currentId]);
 
   // Occlusion cards render their image with masks; the payload is only ever
   // non-null when it validated, so anything malformed falls back to text.
@@ -148,6 +164,46 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
       setError(cause instanceof Error ? cause.message : "Couldn't suspend the card.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function explainCurrent() {
+    if (!current || explainBusy) return;
+    if (explainFor === current.id) {
+      setExplainFor(null);
+      return;
+    }
+    const cached = explainCacheRef.current.get(current.id);
+    if (cached) {
+      setExplainText(cached);
+      setExplainFor(current.id);
+      return;
+    }
+    setExplainFor(current.id);
+    setExplainText("");
+    setExplainBusy(true);
+    setError(null);
+    try {
+      let text: string;
+      if (previewMode) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const front = stripClozeMarkers(current.front);
+        text = `**The idea:** ${front}\n\n**Why it works:** ${stripClozeMarkers(current.back) || "The answer sits inside the highlighted part of the card."}\n\n**Hook:** tie it to a patient story you remember.`;
+      } else {
+        if (!userId) throw new Error("Sign in to use AI explanations.");
+        const reply = await postChatCompletion(userId, buildExplainMessages(current), {
+          decision: { model: "deepseek-chat", route: "conversation", searchWeb: false },
+        });
+        if (!reply.text) throw new Error(reply.errorText ?? "The engine couldn't explain this card. Try again.");
+        text = reply.text;
+      }
+      explainCacheRef.current.set(current.id, text);
+      setExplainText(text);
+    } catch (cause) {
+      setExplainFor(null);
+      setError(cause instanceof Error ? cause.message : "Couldn't explain this card.");
+    } finally {
+      setExplainBusy(false);
     }
   }
 
@@ -257,6 +313,18 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                   </Button>
                 )}
                 <Button
+                  aria-pressed={explainFor === current.id}
+                  className="text-xs"
+                  data-testid="explain-card"
+                  disabled={explainBusy}
+                  onClick={() => void explainCurrent()}
+                  size="sm"
+                  title="Have Nemesis explain this card"
+                  variant="ghost"
+                >
+                  <IconSparkles size={13} /> Explain
+                </Button>
+                <Button
                   aria-label={current.flagged ? "Remove flag" : "Flag card"}
                   aria-pressed={current.flagged}
                   disabled={saving}
@@ -288,6 +356,16 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                 {showBack && (
                   <div className={cn("mt-8 border-t border-(--ui-stroke-secondary) pt-8", settings.flipAnimation && "animate-in fade-in-0 slide-in-from-bottom-1 duration-300")}>
                     <AssistantMarkdown className="text-lg leading-8 text-foreground" text={current.back} />
+                  </div>
+                )}
+                {explainFor === current.id && (
+                  <div className="mx-auto mt-8 max-w-2xl rounded-2xl border border-(--ui-stroke-secondary) bg-[rgb(247_247_248)] p-5 text-left dark:bg-[rgb(29_29_31)]" data-testid="explain-panel">
+                    <p className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-tertiary)">Nemesis explains</p>
+                    <div className="mt-2">
+                      {explainBusy
+                        ? <p className="text-xs text-(--ui-text-tertiary)">Thinking through this card…</p>
+                        : <AssistantMarkdown className="text-sm leading-relaxed" text={explainText} />}
+                    </div>
                   </div>
                 )}
               </div>
