@@ -77,9 +77,20 @@ test("classifyLiveEvent maps live note inserts/updates to note-touch", () => {
   for (const eventType of ["INSERT", "UPDATE"]) {
     assert.deepEqual(
       classifyLiveEvent({ eventType, newRow: { id: "n1", kind: "note", deleted: false }, oldRow: {} }),
-      { kind: "note-touch", id: "n1" },
+      { kind: "note-touch", id: "n1", updatedAt: "" },
     );
   }
+});
+
+test("classifyLiveEvent carries the event's server stamp on note-touch", () => {
+  assert.deepEqual(
+    classifyLiveEvent({
+      eventType: "UPDATE",
+      newRow: { id: "n1", kind: "note", deleted: false, updated_at: "2026-07-21T12:00:00.000Z" },
+      oldRow: {},
+    }),
+    { kind: "note-touch", id: "n1", updatedAt: "2026-07-21T12:00:00.000Z" },
+  );
 });
 
 test("classifyLiveEvent normalizes folder paths on folder upserts", () => {

@@ -40,7 +40,10 @@ export function libraryRowToNote(raw: unknown): CloudLibraryNote | null {
 export type LiveAction =
   | { kind: "remove"; id: string }
   | { kind: "folder-upsert"; id: string; path: string }
-  | { kind: "note-touch"; id: string }
+  /** updatedAt is the event's server stamp ("" if absent) — the store uses it
+   *  to skip re-fetching rows it already holds at that exact version (echoes
+   *  of merges this tab already applied). */
+  | { kind: "note-touch"; id: string; updatedAt: string }
   | { kind: "resync" }
   | { kind: "ignore" };
 
@@ -63,7 +66,9 @@ export function classifyLiveEvent({ eventType, newRow, oldRow }: LiveEventShape)
     const path = typeof newRow.path === "string" ? normalizeLibraryFolder(newRow.path) : "";
     return path ? { kind: "folder-upsert", id: newRow.id, path } : { kind: "resync" };
   }
-  if (newRow.kind === "note") return { kind: "note-touch", id: newRow.id };
+  if (newRow.kind === "note") {
+    return { kind: "note-touch", id: newRow.id, updatedAt: typeof newRow.updated_at === "string" ? newRow.updated_at : "" };
+  }
   return { kind: "ignore" };
 }
 

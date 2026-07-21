@@ -137,7 +137,13 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   useEffect(() => {
     const previous = draftRef.current;
     if (previous?.dirty && previous.id !== note?.id) {
-      void saveNote({ id: previous.id, title: previous.title, content: previous.content });
+      // This switch-away save can now fail without any user action: a live
+      // event may have removed the note (deleted on the phone or another tab)
+      // while it was open here with unsaved edits. Say so instead of dropping
+      // the edit silently with an uncaught error.
+      saveNote({ id: previous.id, title: previous.title, content: previous.content }).catch(() => {
+        setMessage(`"${previous.title}" couldn't keep its last unsaved edit — it may have been deleted on another device.`);
+      });
     }
     if (previous?.id === note?.id) {
       // Live refresh changed the OPEN note (a phone edit or another tab).
