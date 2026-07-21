@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { assemblyAiApiKey } from "@/lib/env";
+import { assemblyAiApiKey, groqApiKey } from "@/lib/env";
 import { adminClient, json, verifyBearer } from "@/lib/server";
 
 export const runtime = "nodejs";
+// The Groq path transcribes synchronously inside this request (~200x real
+// time, so even a 2h file finishes in well under a minute) — give the route
+// headroom beyond the platform default.
+export const maxDuration = 120;
 
 // Longest single recording accepted for an enhance pass (the recordings
 // bucket caps files at 250MB ≈ 2h of 16-bit/16kHz mono anyway).
@@ -21,13 +25,18 @@ interface ReserveResult {
  * Enhance-transcript submit: the phone (or web, later) records with the free
  * on-device engine, uploads the audio to the private `recordings` bucket, and
  * posts the storage path here. This route meters the request against the
- * plan's monthly transcription allowance, hands AssemblyAI a short-lived
- * signed URL, and returns a job id for /api/transcription/status polling.
+ * plan's monthly transcription allowance, then transcribes Groq-first —
+ * synchronous Whisper turbo at ~1/4 the AssemblyAI price, parking the text on
+ * the job row for the first /api/transcription/status poll to collect. Any
+ * Groq failure (file over its size cap, rate limit, outage) falls back to the
+ * asynchronous AssemblyAI flow, which /status polls to completion.
  */
 export async function POST(request: Request) {
   const user = await verifyBearer(request);
   if (!user) return json({ error: "Sign in to enhance transcripts." }, 401);
-  if (!assemblyAiApiKey) return json({ error: "Transcript enhancement is not configured yet." }, 503);
+  if (!assemblyAiApiKey && !groqApiKey) {
+    return json({ error: "Transcript enhancement is not configured yet." }, 503);
+  }
 
   const body = await request.json().catch(() => ({})) as { storagePath?: unknown; seconds?: unknown };
   const storagePath = typeof body.storagePath === "string" ? body.storagePath.trim() : "";
@@ -60,13 +69,45 @@ export async function POST(request: Request) {
       usedSeconds: reservation.used ?? 0,
     }, 429);
   }
+  const usage = {
+    limitSeconds: Number(reservation.limit) || 0,
+    plan: reservation.plan ?? "free",
+    usedSeconds: Number(reservation.used) || seconds,
+  };
 
   // Signed URL outlives the AssemblyAI queue comfortably; the object itself
-  // is deleted by the status route once the transcript is back.
+  // is deleted once the transcript is back (below for Groq, by the status
+  // route for AssemblyAI).
   const signed = await admin.storage.from("recordings").createSignedUrl(storagePath, 6 * 60 * 60);
   if (signed.error || !signed.data?.signedUrl) {
     await admin.rpc("finalize_transcription_job", { p_error: "missing audio object", p_job_id: jobId, p_status: "error" });
     return json({ error: "The uploaded audio could not be found." }, 404);
+  }
+
+  if (groqApiKey) {
+    const groq = await transcribeWithGroq(signed.data.signedUrl);
+    if (groq) {
+      // Transcript first, settle the meter second: if the finalize call ever
+      // failed the user would still get their text (the status route serves
+      // any parked transcript) while the meter keeps the conservative
+      // reservation.
+      await admin
+        .from("transcription_jobs")
+        .update(groq.text ? { provider: "groq", transcript: groq.text } : { provider: "groq" })
+        .eq("id", jobId);
+      await admin.rpc("finalize_transcription_job", {
+        p_actual_seconds: groq.seconds || seconds,
+        p_job_id: jobId,
+        p_status: "done",
+      });
+      await admin.storage.from("recordings").remove([storagePath]);
+      return json({ jobId, usage });
+    }
+  }
+
+  if (!assemblyAiApiKey) {
+    await admin.rpc("finalize_transcription_job", { p_error: "provider rejected the job", p_job_id: jobId, p_status: "error" });
+    return json({ error: "The transcription provider is unavailable. Try again in a moment." }, 502);
   }
 
   const submitted = await fetch("https://api.assemblyai.com/v2/transcript", {
@@ -92,12 +133,42 @@ export async function POST(request: Request) {
     p_status: "processing",
   });
 
-  return json({
-    jobId,
-    usage: {
-      limitSeconds: Number(reservation.limit) || 0,
-      plan: reservation.plan ?? "free",
-      usedSeconds: Number(reservation.used) || seconds,
-    },
-  });
+  return json({ jobId, usage });
+}
+
+/** One synchronous Groq Whisper pass over a remote audio URL. Returns null on
+ *  any failure so the caller can fall back to AssemblyAI — never throws. */
+async function transcribeWithGroq(audioUrl: string): Promise<{ text: string; seconds: number } | null> {
+  try {
+    const form = new FormData();
+    form.set("url", audioUrl);
+    form.set("model", "whisper-large-v3-turbo");
+    form.set("response_format", "verbose_json");
+    form.set("temperature", "0");
+    const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      body: form,
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${groqApiKey}` },
+      method: "POST",
+    });
+    const resBody = await res.json().catch(() => null) as {
+      text?: unknown;
+      duration?: unknown;
+      error?: { message?: unknown } | unknown;
+    } | null;
+    if (!res.ok || typeof resBody?.text !== "string") {
+      const reason = resBody && typeof resBody.error === "object" && resBody.error !== null
+        ? (resBody.error as { message?: unknown }).message
+        : undefined;
+      console.warn("Groq transcription unavailable, falling back to AssemblyAI", res.status, reason);
+      return null;
+    }
+    return {
+      text: resBody.text.trim(),
+      seconds: Math.max(0, Math.round(Number(resBody.duration) || 0)),
+    };
+  } catch (cause) {
+    console.warn("Groq transcription failed, falling back to AssemblyAI", cause instanceof Error ? cause.message : cause);
+    return null;
+  }
 }
