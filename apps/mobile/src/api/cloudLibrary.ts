@@ -204,3 +204,34 @@ export async function fetchNote(
   await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [note.id]: note } });
   return note;
 }
+
+/** Save one note's edited content — the phone's first library WRITE (owner
+ *  2026-07-20: real on-phone editing). Mirrors the web store's saveNote UPDATE
+ *  (apps/web/lib/workspace/library-cloud-store.ts) with two deliberate
+ *  differences:
+ *  - only `content` is written: the phone editor doesn't touch titles or paths,
+ *    so it must never clobber a rename made on the web moments earlier (the web
+ *    sends title too because its editor owns a title field);
+ *  - the row is selected BACK: a DB trigger stamps updated_at with the server
+ *    clock, so the returned row — not an optimistic client guess — is what goes
+ *    in the cache (the web store has a known staleness quirk here).
+ *  Throws a student-readable message on failure; on success upserts the fresh
+ *  row into the offline cache (same pattern as fetchNote) and returns it. */
+export async function updateNoteContent(uid: string, noteId: string, content: string): Promise<CloudLibraryNote> {
+  const { data, error } = await supabase
+    .from("readable_library_documents")
+    .update({ content })
+    .eq("id", noteId)
+    .eq("user_id", uid)
+    .eq("kind", "note")
+    .eq("deleted", false)
+    .select("id,path,kind,title,content,created_at,updated_at")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const note = toNote(data);
+  if (!note) throw new Error("This note was deleted on another device.");
+
+  const cache = await readDiskCache(uid);
+  await writeDiskCache(uid, { ...cache, notes: { ...cache.notes, [note.id]: note } });
+  return note;
+}
