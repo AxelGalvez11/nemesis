@@ -56,7 +56,7 @@ function GlassButton({
   children: ReactNode;
 }) {
   return (
-    <GlassSurface style={styles.glassBtn} fallbackColor={fallback}>
+    <GlassSurface style={styles.glassBtn} fallbackColor={fallback} shadow>
       <Pressable style={styles.glassBtnInner} onPress={onPress} hitSlop={8} accessibilityLabel={label}>
         {children}
       </Pressable>

@@ -3,7 +3,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "r
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronIcon, PlusIcon } from "@/components/icons";
+import { ChevronIcon, FolderIcon, PlusIcon } from "@/components/icons";
 import { useAuth } from "@/auth/AuthProvider";
 import { useShell } from "@/components/AppDrawer";
 import { useShellPadding } from "@/components/shell-chrome";
@@ -20,7 +20,7 @@ import {
   type CloudStudyDeck,
   type DeckCounts,
 } from "@/api/cloudStudy";
-import { deckMastery, type DeckMastery } from "@/lib/study-progress";
+import { deckRetention } from "@/lib/study-progress";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -40,13 +40,16 @@ import { radius, space, type } from "@/theme/tokens";
 // focus/pull-to-refresh, so a folder the student just opened never
 // re-collapses under them mid-session.
 //
-// New/Learn/Due counts are the exact web cards-tab.tsx math (countsForCards),
-// recomputed live from the fetched cards — nothing here is guessed. Each deck
-// row also gets a thin "learned ratio" progress bar (lib/study-progress.ts) —
-// Study's own PROGRESS identity, distinct from Library's plain document rows
-// (owner 2026-07-20) — computed the same honest way: mature (repetitions>0,
-// interval>=21d) over total cards in the deck, skipped entirely on an empty
-// deck rather than showing a fake 0%.
+// Deck rows are Anki-style CARDS now (owner 2026-07-21, matching their
+// AnkiMobile reference crop): title + a "percent retention" line underneath,
+// with the deck's due (green) and new (blue) counts stacked on the right —
+// both always shown, zeros included, in Anki's own color language (owner
+// picked it over brand colors). Retention is REAL math, not a guess
+// (lib/study-progress.ts deckRetention): the grade RPC counts every review in
+// `repetitions` and every "again" in `lapses`, so correct/total falls
+// straight out of already-fetched card data. Counts stay the exact web
+// cards-tab.tsx math (countsForCards); the amber "learn" number and the old
+// mature-ratio bar left with this restyle (git history has both).
 //
 // The Cards/Tests/Mindmaps switcher is now an INLINE segmented toggle
 // (StudyModeMenu), not a popup — the owner asked it to "show which section
@@ -64,7 +67,9 @@ interface DeckRow {
   deck: CloudStudyDeck;
   leaf: string;
   counts: DeckCounts;
-  mastery: DeckMastery;
+  /** Percent of reviews answered correctly (0..1), null before any review. */
+  retention: number | null;
+  cardCount: number;
 }
 
 interface FolderGroup {
@@ -101,7 +106,7 @@ function groupDecks(decks: DeckRow[]): { folders: FolderGroup[]; loose: DeckRow[
       group,
       decks: groupDecksList,
       actionable: groupDecksList.reduce((sum, d) => sum + d.counts.newCount + d.counts.dueCount, 0),
-      total: groupDecksList.reduce((sum, d) => sum + d.mastery.total, 0),
+      total: groupDecksList.reduce((sum, d) => sum + d.cardCount, 0),
     }));
   return { folders, loose };
 }
@@ -232,7 +237,7 @@ export default function StudyScreen() {
     .map((deck) => {
       const { leaf } = deckGroupInfo(deck.name);
       const deckCards = cards.filter((card) => card.deckId === deck.id);
-      return { counts: countsForCards(deckCards), mastery: deckMastery(deckCards), deck, leaf };
+      return { cardCount: deckCards.length, counts: countsForCards(deckCards), deck, leaf, retention: deckRetention(deckCards) };
     })
     .sort(
       (a, b) =>
@@ -302,13 +307,15 @@ export default function StudyScreen() {
                     <View style={item.collapsed ? null : styles.chevronOpen}>
                       <ChevronIcon size={13} color={c.text2} strokeWidth={2.2} />
                     </View>
+                    {/* Folder glyph so groups read as folders at a glance (owner 2026-07-21). */}
+                    <FolderIcon size={15} color={c.text2} strokeWidth={1.9} />
                     <Text style={styles.folderName} numberOfLines={1}>{item.group}</Text>
                     <View style={styles.folderTrail}>
                       {/* Muted card total (owner ask 4: "group headers with card
                           totals"), then the existing accent due+new badge —
                           same bare-colored-number language the deck rows use. */}
                       <Text style={styles.folderTotal}>{item.total}</Text>
-                      {item.actionable > 0 ? <Text style={styles.due}>{item.actionable}</Text> : null}
+                      {item.actionable > 0 ? <Text style={styles.folderDue}>{item.actionable}</Text> : null}
                     </View>
                   </Pressable>
                 </Animated.View>
@@ -324,31 +331,23 @@ export default function StudyScreen() {
                     onPress={() => router.push({ pathname: "/review", params: { deckId: item.deck.deck.id } })}
                     style={({ pressed }) => [styles.row, item.nested && styles.rowNested, pressed && styles.rowPressed]}
                   >
-                    <View style={styles.deckRowTop}>
+                    <View style={styles.deckText}>
                       <Text style={styles.deckName} numberOfLines={1}>{item.deck.leaf}</Text>
-                      {/* Trailing: New (text2) / Learn (amber) / Due (accent) — numbers only
-                          (owner 2026-07-19 kept this compact), then a '›'. ✓ when nothing
-                          is new or due right now (Learn is a leading indicator, not actionable). */}
-                      <View style={styles.deckTrail}>
-                        {item.deck.counts.newCount + item.deck.counts.dueCount === 0 ? (
-                          <Text style={styles.done}>✓</Text>
-                        ) : (
-                          <>
-                            {item.deck.counts.newCount > 0 ? <Text style={styles.newCount}>{item.deck.counts.newCount}</Text> : null}
-                            {item.deck.counts.learnCount > 0 ? <Text style={styles.learnCount}>{item.deck.counts.learnCount}</Text> : null}
-                            {item.deck.counts.dueCount > 0 ? <Text style={styles.due}>{item.deck.counts.dueCount}</Text> : null}
-                          </>
-                        )}
-                        <Text style={styles.deckChevron}>›</Text>
-                      </View>
+                      {/* Real retention (deckRetention: correct reviews / total reviews),
+                          or an honest "No reviews yet" — never a fake 0%. */}
+                      <Text style={styles.deckRetention} numberOfLines={1}>
+                        {item.deck.retention === null ? "No reviews yet" : `${Math.round(item.deck.retention * 100)}% retention`}
+                      </Text>
                     </View>
-                    {/* Study's own PROGRESS identity (owner ask 4): a thin learned-ratio
-                        bar, skipped entirely on an empty deck (no cards = no honest ratio). */}
-                    {item.deck.mastery.ratio !== null ? (
-                      <View style={styles.progressTrack}>
-                        <View style={[styles.progressFill, { width: `${Math.round(item.deck.mastery.ratio * 100)}%` }]} />
+                    {/* Anki's own color language (owner picked it over brand colors):
+                        due stacked over new, green over blue, zeros included. */}
+                    <View style={styles.deckTrail}>
+                      <View style={styles.countStack}>
+                        <Text style={styles.dueStackCount}>{item.deck.counts.dueCount}</Text>
+                        <Text style={styles.newStackCount}>{item.deck.counts.newCount}</Text>
                       </View>
-                    ) : null}
+                      <Text style={styles.deckChevron}>›</Text>
+                    </View>
                   </Pressable>
                 </Animated.View>
               ),
@@ -368,7 +367,7 @@ export default function StudyScreen() {
           cards / Browse, all inside StudyAddSheet's own step stack. */}
       <View style={[styles.fabWrap, { bottom: insets.bottom + space(1) }]} pointerEvents="box-none">
         <Pressable onPress={() => setAddSheetOpen(true)} hitSlop={8} accessibilityLabel="Add to Study" testID="study-add-fab">
-          <GlassSurface style={styles.fab} fallbackColor={c.glassPanel}>
+          <GlassSurface style={styles.fab} fallbackColor={c.glassPanel} shadow>
             <View style={styles.fabInner}>
               <PlusIcon size={22} color={c.text} />
             </View>
@@ -412,36 +411,38 @@ const createStyles = (c: ThemeColors) =>
     toggleRow: { alignItems: "center", paddingBottom: space(3) },
 
     listBody: { padding: space(4), flexGrow: 1 },
-    // Column now: the name+trail row on top, an optional progress bar below it.
-    row: { paddingVertical: space(2.5), paddingHorizontal: space(2), borderRadius: radius.sm, gap: space(1.5) },
-    deckRowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(2) },
-    // Nested under a folder header — indented like a file tree's children.
-    rowNested: { paddingLeft: space(6) },
-    rowPressed: { backgroundColor: c.surface },
-    deckName: { ...type.body, color: c.text, flex: 1, minWidth: 0 },
-    due: { ...type.small, fontWeight: "700", color: c.accent, fontVariant: ["tabular-nums"] },
-    // "New" reads muted/informational (owner ask 4: "new counts in text2");
-    // "Learn" keeps its own amber so the three counts still read apart.
-    newCount: { ...type.small, fontWeight: "700", color: c.text2, fontVariant: ["tabular-nums"] },
-    learnCount: { ...type.small, fontWeight: "700", color: c.warn, fontVariant: ["tabular-nums"] },
-    done: { ...type.small, color: c.good },
-    // The trailing cluster: counts (or ✓) then the '›' affordance.
+    // Anki-style deck CARD (owner 2026-07-21): a soft rounded surface holding
+    // title + retention on the left, stacked due/new counts on the right.
+    row: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: space(2),
+      paddingVertical: space(3), paddingHorizontal: space(3.5),
+      borderRadius: radius.lg, backgroundColor: c.surface2, marginBottom: space(2),
+    },
+    // Nested under a folder header — the whole card indents like a tree child.
+    rowNested: { marginLeft: space(5) },
+    // Cards dim as a whole when pressed (a bg swap would erase the card fill).
+    rowPressed: { opacity: 0.65 },
+    deckText: { flex: 1, minWidth: 0, gap: 2 },
+    deckName: { ...type.body, color: c.text },
+    deckRetention: { ...type.micro, color: c.text2 },
+    // The trailing cluster: the due-over-new stack, then the '›' affordance.
+    // Anki's colors on purpose (owner 2026-07-21): green due, blue new — the
+    // palette's contrast-guarded good/info, so both read on either mode.
     deckTrail: { flexDirection: "row", alignItems: "center", gap: space(2) },
+    countStack: { alignItems: "flex-end" },
+    dueStackCount: { ...type.small, fontWeight: "700", color: c.good, fontVariant: ["tabular-nums"] },
+    newStackCount: { ...type.small, fontWeight: "700", color: c.info, fontVariant: ["tabular-nums"] },
     deckChevron: { ...type.body, color: c.text3, marginLeft: space(0.5) },
     emptyWrap: { paddingTop: space(10) },
 
-    // Study's PROGRESS identity (owner ask 4) — a thin learned-ratio bar under
-    // each deck row; skipped entirely when the deck has no cards to rate.
-    progressTrack: { height: 3, borderRadius: 2, backgroundColor: c.line2, overflow: "hidden" },
-    progressFill: { height: "100%", borderRadius: 2, backgroundColor: c.accent },
-
-    // Collapsible folder header row — now carries a muted card total
-    // alongside the existing accent due+new badge (owner ask 4).
+    // Collapsible folder header row — chevron + folder glyph + name, with the
+    // muted card total and the accent due+new badge trailing.
     chevronOpen: { transform: [{ rotate: "90deg" }] },
     folderRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingVertical: space(2.5), paddingHorizontal: space(2), borderRadius: radius.sm },
     folderName: { ...type.bodyStrong, color: c.text2, flex: 1, minWidth: 0, textTransform: "uppercase", letterSpacing: 0.4, fontSize: type.micro.fontSize },
     folderTrail: { flexDirection: "row", alignItems: "center", gap: space(2) },
     folderTotal: { ...type.small, fontWeight: "600", color: c.text3, fontVariant: ["tabular-nums"] },
+    folderDue: { ...type.small, fontWeight: "700", color: c.accent, fontVariant: ["tabular-nums"] },
 
     // Inline Tests/Mindmaps placeholder (owner ask 1) — replaces the deck list
     // area while one of those two is the active segment.

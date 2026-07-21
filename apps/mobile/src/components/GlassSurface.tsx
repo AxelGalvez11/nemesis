@@ -41,10 +41,15 @@ export interface GlassSurfaceProps {
   fallbackColor?: string;
   /** Near-opaque menu backing — kills page bleed-through on both glass paths. */
   opaque?: boolean;
+  /** Soft drop shadow underneath — for floating glass BUTTONS and button bars
+   *  (owner 2026-07-21: "all liquid glass buttons should have shadow underneath
+   *  them"). Rides an OUTER wrapper view: both glass paths clip to their radius
+   *  (masksToBounds), which would swallow a shadow set on the glass itself. */
+  shadow?: boolean;
   testID?: string;
 }
 
-export function GlassSurface({ children, style, variant = "regular", tint, fallbackColor, opaque = false, testID }: GlassSurfaceProps) {
+export function GlassSurface({ children, style, variant = "regular", tint, fallbackColor, opaque = false, shadow = false, testID }: GlassSurfaceProps) {
   const { colors: c, resolvedMode } = useTheme();
 
   // Near-opaque backing for menu panels: painted OVER the glass material but UNDER the
@@ -56,8 +61,23 @@ export function GlassSurface({ children, style, variant = "regular", tint, fallb
     <View style={[StyleSheet.absoluteFill, { backgroundColor: c.glassMenu }]} pointerEvents="none" />
   ) : null;
 
+  // The shadow wraps whichever glass renders below. No background on the
+  // wrapper (an opaque fill behind translucent glass would show through and
+  // flatten the material) — iOS derives the shadow from the composited
+  // content's silhouette instead, which is fine for button-sized views.
+  // Android's elevation needs a fill to paint, so this is an iOS refinement;
+  // the Android fallback simply stays shadowless.
+  const wrapShadow = (core: ReactNode) =>
+    shadow ? (
+      <View style={resolvedMode === "dark" ? styles.shadowDark : styles.shadowLight} pointerEvents="box-none">
+        {core}
+      </View>
+    ) : (
+      core
+    );
+
   if (LIQUID_GLASS) {
-    return (
+    return wrapShadow(
       <GlassView
         style={[opaque ? styles.clip : null, style]}
         glassEffectStyle={variant}
@@ -69,7 +89,7 @@ export function GlassSurface({ children, style, variant = "regular", tint, fallb
       >
         {backing}
         {children}
-      </GlassView>
+      </GlassView>,
     );
   }
 
@@ -80,16 +100,20 @@ export function GlassSurface({ children, style, variant = "regular", tint, fallb
   const intensity = variant === "clear" ? 18 : 34;
   const fill = fallbackColor ?? c.glass;
 
-  return (
+  return wrapShadow(
     <BlurView tint={blurTint} intensity={intensity} style={[styles.clip, style]} testID={testID}>
       <View style={[StyleSheet.absoluteFill, { backgroundColor: fill }]} pointerEvents="none" />
       {tint ? <View style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} pointerEvents="none" /> : null}
       {backing}
       {children}
-    </BlurView>
+    </BlurView>,
   );
 }
 
 const styles = StyleSheet.create({
   clip: { overflow: "hidden" },
+  // Quiet in light (faint ink), deeper in dark where only a strong shadow
+  // reads at all. Same tight geometry as AppDrawer's page shadow.
+  shadowLight: { shadowColor: "#101218", shadowOpacity: 0.16, shadowRadius: 10, shadowOffset: { height: 5, width: 0 } },
+  shadowDark: { shadowColor: "#000000", shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { height: 6, width: 0 } },
 });

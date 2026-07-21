@@ -23,10 +23,12 @@ import { EmptyBlock } from "@/components/mission-ui";
 import { CloseIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
 import { NotePillBar } from "@/components/NotePillBar";
+import { NoteTabsSheet, type NoteTab } from "@/components/NoteTabsSheet";
 import { createNote, fetchNote, findCachedNote, loadCachedLibrary, updateNoteContent, type CloudLibraryNote } from "@/api/cloudLibrary";
 import { fileKindOf } from "@/lib/library-row-meta";
 import { cycleHeading, toggleLinePrefix, wrapInline, type EditSel } from "@/lib/note-edit";
 import { outlineOf, splitSections } from "@/lib/note-outline";
+import { arriveAt, closeTab, noteNavHolder, openTabIds, previewOf, selectTab } from "@/lib/note-tabs";
 import { buildNoteResolver, isExternalUrl, preprocessWikilinks, resolveInternalHref } from "@/lib/wikilinks";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
@@ -58,8 +60,9 @@ import { radius, space, type } from "@/theme/tokens";
 // (pencil while reading — tap to edit; book while editing — tap to save and
 // read, Obsidian's exact language) plus the "…" menu; a floating pill bar sits
 // CENTERED AT THE BOTTOM with browser-style controls — back/forward through
-// the notes you've opened, search your notes, new note, recent-notes switcher,
-// and a heading outline. The old lower-left corner button is gone; its menu
+// the notes you've opened, search your notes, new note, an Obsidian-style TAB
+// VIEWER (NoteTabsSheet + lib/note-tabs.ts, owner 2026-07-21), and a heading
+// outline. The old lower-left corner button is gone; its menu
 // moved into the top-right dots. Find is REAL; Rename / Replace / Delete still
 // flash the "on the web app" note.
 const MENU_ITEMS = [
@@ -118,10 +121,10 @@ export default function NoteScreen() {
   const insets = useSafeAreaInsets();
   const [doc, setDoc] = useState<CloudLibraryNote | null | undefined>(undefined);
   const [resolver, setResolver] = useState<Map<string, string>>(() => new Map());
-  // Every cached note's id/title/path — feeds the pill bar's Search sheet and
-  // the Recents switcher's labels. Refreshed from the same cache read the
-  // resolver already does, so it costs no extra I/O.
-  const [notesIndex, setNotesIndex] = useState<{ id: string; title: string; path: string }[]>([]);
+  // Every cached note's id/title/path (+ a stripped preview snippet) — feeds
+  // the pill bar's Search sheet and the tab viewer's cards. Refreshed from the
+  // same cache read the resolver already does, so it costs no extra I/O.
+  const [notesIndex, setNotesIndex] = useState<{ id: string; title: string; path: string; preview: string }[]>([]);
   // Transient "couldn't find that note" / "edit on the web app" line.
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,19 +137,18 @@ export default function NoteScreen() {
   // and the one-at-a-time guard for "+" (new note).
   const [searchSheetOpen, setSearchSheetOpen] = useState(false);
   const [searchSheetQuery, setSearchSheetQuery] = useState("");
-  const [recentsOpen, setRecentsOpen] = useState(false);
+  const [tabsOpen, setTabsOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const creatingRef = useRef(false);
-  // Browser-style note history (owner picked "browser-style" for the pill bar):
-  // the ids opened on THIS visit, with a cursor. Navigating a wikilink / search
-  // / recents pick pushes (dropping any forward tail, like a browser); the
-  // bar's ‹ › move the cursor via pendingIndex so the noteId effect below can
-  // tell a history move from a fresh navigation. Component-scoped on purpose —
-  // all note-to-note movement happens through router.setParams on this one
-  // mounted screen, and leaving to the Library unmounts it (history over).
-  const navRef = useRef<{ stack: string[]; index: number; pendingIndex: number | null }>({ index: -1, pendingIndex: null, stack: [] });
-  const [nav, setNav] = useState({ canForward: false, recentIds: [] as string[] });
+  // Browser-style note history (owner picked "browser-style" for the pill
+  // bar), now held in lib/note-tabs.ts's MODULE-scoped noteNavHolder (owner
+  // 2026-07-21: the numbered square opens a real tab viewer, so open tabs
+  // survive leaving to the Library and back). ‹ › and tab switches move the
+  // cursor via pendingIndex so the noteId effect below can tell a history
+  // move from a fresh navigation; everything else pushes. This state mirrors
+  // the holder for rendering: forward-arrow enablement + the open-tab ids.
+  const [nav, setNav] = useState({ canForward: false, tabIds: [] as string[] });
   // Measured y of each rendered section (index-aligned with `sections` below) —
   // what makes the outline's "jump to heading" an exact scroll.
   const sectionYs = useRef<number[]>([]);
@@ -186,33 +188,17 @@ export default function NoteScreen() {
     setFindQuery("");
     setEditing(false);
     setSearchSheetOpen(false);
-    setRecentsOpen(false);
+    setTabsOpen(false);
     setOutlineOpen(false);
     sectionYs.current = [];
     scrollRef.current?.scrollTo({ y: 0, animated: false });
-    // Browser-style history bookkeeping: a ‹ › move (pendingIndex) just shifts
-    // the cursor; anything else — first open, wikilink, search/recents pick, a
-    // fresh "+" note — pushes onto the stack and drops the forward tail.
+    // History bookkeeping now lives in lib/note-tabs.ts (pure + tested):
+    // a ‹ ›/tab-switch move (pendingIndex) shifts the cursor; anything else
+    // pushes and drops the forward tail. Mirror the holder into render state.
     if (noteId) {
-      const h = navRef.current;
-      if (h.pendingIndex !== null && h.stack[h.pendingIndex] === noteId) {
-        h.index = h.pendingIndex;
-      } else if (h.stack[h.index] !== noteId) {
-        h.stack = [...h.stack.slice(0, h.index + 1), noteId];
-        h.index = h.stack.length - 1;
-      }
-      h.pendingIndex = null;
-      // Recents = distinct ids, most recently visited first (current note included).
-      const seen = new Set<string>();
-      const recentIds: string[] = [];
-      for (let i = h.stack.length - 1; i >= 0; i -= 1) {
-        const id = h.stack[i];
-        if (!seen.has(id)) {
-          seen.add(id);
-          recentIds.push(id);
-        }
-      }
-      setNav({ canForward: h.index < h.stack.length - 1, recentIds });
+      noteNavHolder.current = arriveAt(noteNavHolder.current, noteId);
+      const h = noteNavHolder.current;
+      setNav({ canForward: h.index < h.stack.length - 1, tabIds: openTabIds(h.stack) });
     }
     void (async () => {
       if (!userId || !noteId) {
@@ -224,7 +210,7 @@ export default function NoteScreen() {
       const cached = await loadCachedLibrary(userId);
       if (!alive) return;
       setResolver(buildNoteResolver(cached.notes.map((d) => ({ path: d.path, pathHash: d.id, title: d.title }))));
-      setNotesIndex(cached.notes.map((d) => ({ id: d.id, path: d.path, title: d.title })));
+      setNotesIndex(cached.notes.map((d) => ({ id: d.id, path: d.path, preview: previewOf(d.content), title: d.title })));
       const cachedNote = findCachedNote(cached, { id: noteId });
       if (cachedNote) setDoc(cachedNote);
 
@@ -416,16 +402,17 @@ export default function NoteScreen() {
     [noteId],
   );
 
-  // ‹ : previous note in this visit's history; with nothing left to step back
-  // to, it leaves to the Library — one consistent "browser back". A non-null
-  // pendingIndex means a ‹ › move is already in flight (the noteId effect
-  // hasn't consumed it yet) — further taps wait, so two rapid opposite-
-  // direction taps can't compute off a stale cursor. Review finding, 2026-07-21.
+  // ‹ : previous note in the (now app-lifetime) history; with nothing left to
+  // step back to, it leaves to the Library — one consistent "browser back". A
+  // non-null pendingIndex means a ‹ ›/tab move is already in flight (the
+  // noteId effect hasn't consumed it yet) — further taps wait, so two rapid
+  // opposite-direction taps can't compute off a stale cursor. Review finding,
+  // 2026-07-21.
   const goBack = useCallback(() => {
-    const h = navRef.current;
+    const h = noteNavHolder.current;
     if (h.pendingIndex !== null) return;
     if (h.index > 0) {
-      h.pendingIndex = h.index - 1;
+      noteNavHolder.current = { ...h, pendingIndex: h.index - 1 };
       router.setParams({ id: h.stack[h.index - 1] });
     } else {
       router.back();
@@ -433,11 +420,43 @@ export default function NoteScreen() {
   }, []);
 
   const goForward = useCallback(() => {
-    const h = navRef.current;
+    const h = noteNavHolder.current;
     if (h.pendingIndex !== null) return;
     if (h.index < h.stack.length - 1) {
-      h.pendingIndex = h.index + 1;
+      noteNavHolder.current = { ...h, pendingIndex: h.index + 1 };
       router.setParams({ id: h.stack[h.index + 1] });
+    }
+  }, []);
+
+  // Tab viewer actions (owner 2026-07-21). Picking an open tab moves the
+  // CURSOR to that note's latest visit (selectTab -> pendingIndex) instead of
+  // pushing a duplicate; closing a tab strips it from history — closing the
+  // one you're on navigates to where back would have gone, and closing the
+  // last tab leaves to the Library.
+  const onPickTab = useCallback(
+    (id: string) => {
+      setTabsOpen(false);
+      if (id === noteId) return;
+      noteNavHolder.current = selectTab(noteNavHolder.current, id);
+      router.setParams({ id });
+    },
+    [noteId],
+  );
+
+  const onCloseTab = useCallback((id: string) => {
+    const { nav: nextNav, nextId } = closeTab(noteNavHolder.current, id);
+    noteNavHolder.current = nextNav;
+    if (nextNav.stack.length === 0) {
+      setTabsOpen(false);
+      router.back();
+      return;
+    }
+    if (nextId) {
+      // Closed the current tab: navigate; the noteId effect re-mirrors nav.
+      router.setParams({ id: nextId });
+    } else {
+      // Closed a background tab: no navigation happens, so re-mirror here.
+      setNav({ canForward: nextNav.index < nextNav.stack.length - 1, tabIds: openTabIds(nextNav.stack) });
     }
   }, []);
 
@@ -452,7 +471,10 @@ export default function NoteScreen() {
     setCreating(true);
     try {
       const note = await createNote(userId);
-      setNotesIndex((prev) => [{ id: note.id, path: note.path, title: note.title }, ...prev.filter((n) => n.id !== note.id)]);
+      setNotesIndex((prev) => [
+        { id: note.id, path: note.path, preview: previewOf(note.content), title: note.title },
+        ...prev.filter((n) => n.id !== note.id),
+      ]);
       router.setParams({ id: note.id });
     } catch (err) {
       flashNotice(err instanceof Error && err.message ? err.message : "Couldn't create a note — check your connection.");
@@ -482,11 +504,17 @@ export default function NoteScreen() {
     });
   }, [notesIndex, searchSheetQuery, noteId]);
 
-  const recentRows = useMemo<NoteSheetRow[]>(() => {
-    const titles = new Map(notesIndex.map((n) => [n.id, n.title]));
-    if (doc) titles.set(doc.id, doc.title);
-    return nav.recentIds.map((id) => ({ active: id === noteId, key: id, label: titles.get(id) ?? "Note" }));
-  }, [nav.recentIds, notesIndex, doc, noteId]);
+  // Tab cards: the open doc supplies its own (freshest) title + preview; every
+  // other tab reads the cached index, with a quiet fallback for ids the cache
+  // hasn't seen yet.
+  const tabRows = useMemo<NoteTab[]>(() => {
+    const byId = new Map(notesIndex.map((n) => [n.id, n]));
+    return nav.tabIds.map((id) => {
+      if (doc && id === doc.id) return { id, preview: previewOf(doc.content), title: doc.title };
+      const known = byId.get(id);
+      return { id, preview: known?.preview ?? "", title: known?.title ?? "Note" };
+    });
+  }, [nav.tabIds, notesIndex, doc]);
 
   const outlineRows = useMemo<NoteSheetRow[]>(
     () => outline.map((h) => ({ indent: Math.min(h.level - 1, 4), key: String(h.sectionIndex), label: h.text })),
@@ -540,7 +568,7 @@ export default function NoteScreen() {
           accessibilityRole="button"
           accessibilityLabel={editing ? "Stop editing" : "Back to library"}
         >
-          <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel}>
+          <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel} shadow>
             <Text style={styles.backChevron}>‹</Text>
           </GlassSurface>
         </Pressable>
@@ -548,7 +576,7 @@ export default function NoteScreen() {
         {doc ? (
           <View style={styles.topRight}>
             {saving ? <Text style={styles.saveHint}>Saving…</Text> : null}
-            <GlassSurface style={styles.modePill} fallbackColor={c.glassPanel} tint={menuOpen ? c.accentFaint : undefined}>
+            <GlassSurface style={styles.modePill} fallbackColor={c.glassPanel} tint={menuOpen ? c.accentFaint : undefined} shadow>
               <Pressable
                 style={({ pressed }) => [styles.modePillBtn, pressed && styles.modePillBtnPressed]}
                 onPress={onToggleMode}
@@ -732,7 +760,7 @@ export default function NoteScreen() {
         <View style={[styles.pillBarWrap, { bottom: insets.bottom + space(2) }]} pointerEvents="box-none">
           <NotePillBar
             canForward={nav.canForward}
-            recentCount={nav.recentIds.length}
+            recentCount={nav.tabIds.length}
             busy={creating}
             onBack={goBack}
             onForward={goForward}
@@ -741,7 +769,7 @@ export default function NoteScreen() {
               setSearchSheetOpen(true);
             }}
             onNew={() => void newNote()}
-            onRecents={() => setRecentsOpen(true)}
+            onRecents={() => setTabsOpen(true)}
             onOutline={() => {
               // Sections only render (and measure) outside Find mode.
               if (findOpen) closeFind();
@@ -766,17 +794,18 @@ export default function NoteScreen() {
         searchPlaceholder="Search notes"
         testID="note-search-sheet"
       />
-      <NoteListSheet
-        visible={recentsOpen}
-        title="Recent notes"
-        rows={recentRows}
-        emptyText="Notes you open show up here."
-        onPick={(id) => {
-          setRecentsOpen(false);
-          openNoteId(id);
+      <NoteTabsSheet
+        visible={tabsOpen}
+        tabs={tabRows}
+        activeId={noteId ?? null}
+        busy={creating}
+        onPick={onPickTab}
+        onCloseTab={onCloseTab}
+        onNew={() => {
+          setTabsOpen(false);
+          void newNote();
         }}
-        onClose={() => setRecentsOpen(false)}
-        testID="note-recents-sheet"
+        onClose={() => setTabsOpen(false)}
       />
       <NoteListSheet
         visible={outlineOpen}

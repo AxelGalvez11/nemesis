@@ -557,7 +557,7 @@ function ActionsFab({
       </Animated.View>
 
       <View style={[styles.actionsFabWrap, { bottom: insetBottom }]} pointerEvents="box-none">
-        <GlassSurface style={styles.actionsFab} fallbackColor={c.glassPanel} tint={open ? c.accentFaint : undefined}>
+        <GlassSurface style={styles.actionsFab} fallbackColor={c.glassPanel} tint={open ? c.accentFaint : undefined} shadow>
           <Pressable
             style={styles.actionsFabInner}
             onPress={() => setOpen((v) => !v)}

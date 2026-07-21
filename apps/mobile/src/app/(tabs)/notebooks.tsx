@@ -141,7 +141,7 @@ export default function NotebooksScreen() {
   // "+" lives in the shared TopBar right slot (same slot chat.tsx's "…" uses).
   useEffect(() => {
     setHeaderRight(
-      <GlassSurface style={styles.headerBtn} fallbackColor={c.glassPanel}>
+      <GlassSurface style={styles.headerBtn} fallbackColor={c.glassPanel} shadow>
         <Pressable
           style={styles.headerBtnInner}
           onPress={() => setCreateOpen(true)}

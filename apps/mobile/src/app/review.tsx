@@ -153,7 +153,7 @@ export default function ReviewScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.topRow}>
         <Pressable onPress={() => router.back()} hitSlop={10} testID="review-back">
-          <GlassSurface style={styles.backGlass}>
+          <GlassSurface style={styles.backGlass} shadow>
             <Text style={styles.backChevron}>‹</Text>
           </GlassSurface>
         </Pressable>

@@ -7,7 +7,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { listThreads, newThreadId } from "@/api/chat";
 import type { ThreadSummary } from "@/lib/chat-threads";
 import Svg, { Path } from "react-native-svg";
-import { CalendarIcon, GraphIcon, LibraryIcon, NotebookIcon, PluginIcon, PlusIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
+import { CalendarIcon, GraphIcon, LibraryIcon, NotebookIcon, PluginIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -329,38 +329,40 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
 
       </ScrollView>
 
-      {/* Footer: a single bottom row — a SOLID "New chat" button lower-left, gear-only
-          Settings lower-right (owner call 2026-07-18: no identity row, no divider).
-          Settings deliberately skips onClose(): unlike go() (used by every nav/chat/
-          session row, which SHOULD close the drawer on navigation), pushing /settings
-          without closing means the drawer stays `open` underneath and the modal sheet
-          slides up OVER it — so dismissing Settings lands you right back on the still-
-          open drawer instead of a closed one. See TopBar.tsx / settings.tsx. */}
-      <View style={[styles.footerWrap, { paddingBottom: insets.bottom + space(2.5) }]}>
-        <View style={styles.bottomRow}>
-          <Pressable
-            style={({ pressed }) => [styles.newChatBtn, pressed && styles.newChatBtnPressed]}
-            onPress={() => {
-              onNewChat();
-              onClose();
-            }}
-            testID="drawer-new-chat"
-            accessibilityLabel="New chat"
-          >
-            <PlusIcon size={17} color={c.accent} />
-            <Text style={styles.newChatText}>New chat</Text>
-          </Pressable>
+      {/* Footer (owner 2026-07-21, matching their ChatGPT reference crop): a
+          FLOATING bottom row hovering over the chat list — a solid ACCENT "Chat"
+          pill (compose icon + label; its color follows the appearance setting's
+          accent swatch) that starts a new chat, and a raised circular Settings
+          gear. Settings deliberately skips onClose(): unlike go() (used by every
+          nav/chat row, which SHOULD close the drawer on navigation), pushing
+          /settings without closing keeps the drawer `open` underneath, so
+          dismissing the sheet lands right back on the still-open drawer. See
+          TopBar.tsx / settings.tsx. */}
+      <View style={[styles.footerFloat, { bottom: insets.bottom + space(2.5) }]} pointerEvents="box-none">
+        <Pressable
+          style={({ pressed }) => [styles.chatPill, pressed && styles.chatPillPressed]}
+          onPress={() => {
+            onNewChat();
+            onClose();
+          }}
+          testID="drawer-new-chat"
+          accessibilityRole="button"
+          accessibilityLabel="New chat"
+        >
+          <ComposeIcon size={18} color={c.onAccent} strokeWidth={1.9} />
+          <Text style={styles.chatPillText}>Chat</Text>
+        </Pressable>
 
-          <Pressable
-            style={({ pressed }) => [styles.settingsBtn, pressed && styles.settingsBtnPressed]}
-            onPress={() => router.push("/settings" as never)}
-            testID="drawer-settings"
-            accessibilityLabel="Settings"
-            hitSlop={8}
-          >
-            <SettingsIcon size={20} color={c.text2} />
-          </Pressable>
-        </View>
+        <Pressable
+          style={({ pressed }) => [styles.gearFloat, pressed && styles.gearFloatPressed]}
+          onPress={() => router.push("/settings" as never)}
+          testID="drawer-settings"
+          accessibilityRole="button"
+          accessibilityLabel="Settings"
+          hitSlop={8}
+        >
+          <SettingsIcon size={21} color={c.text} />
+        </Pressable>
       </View>
     </View>
   );
@@ -376,6 +378,23 @@ function NavRow({ Icon, label, onPress }: { Icon: ComponentType<IconProps>; labe
       </View>
       <Text style={styles.navLabel}>{label}</Text>
     </Pressable>
+  );
+}
+
+/** Pencil-in-square "compose" glyph — the floating Chat pill's icon (the
+ * ChatGPT-style mark the owner's crop shows). */
+function ComposeIcon({ size = 23, color, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M11.3 5.4H7.1A2.6 2.6 0 0 0 4.5 8v8.9a2.6 2.6 0 0 0 2.6 2.6H16a2.6 2.6 0 0 0 2.6-2.6v-4.2M18.9 3.8l1.3 1.3a1.7 1.7 0 0 1 0 2.4l-7.5 7.5-3.9 1 1-3.9 7.5-7.5a1.7 1.7 0 0 1 2.4 0Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
   );
 }
 
@@ -428,7 +447,9 @@ const createStyles = (c: ThemeColors) =>
     // footer then pins to the BOTTOM (owner 2026-07-18: bottom buttons had empty space
     // below them) instead of floating up beneath short content.
     scroll: { flex: 1 },
-    scrollBody: { paddingBottom: space(2) },
+    // Bottom padding clears the floating Chat pill + gear row (46pt buttons +
+    // breathing room) so the last chat rows can scroll out from under it.
+    scrollBody: { paddingBottom: space(2) + 72 },
 
     brandRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(4), paddingBottom: space(3) },
     brand: { color: c.text, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
@@ -465,27 +486,35 @@ const createStyles = (c: ThemeColors) =>
     rowTime: { color: c.text3, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },
     emptyRows: { color: c.text3, ...type.small, paddingHorizontal: space(4), paddingVertical: space(2) },
 
-    // Footer block — a single bottom row (New chat lower-left, Settings gear
-    // lower-right). No identity row, no divider (owner call 2026-07-18).
-    footerWrap: { paddingTop: space(2.5) },
-    bottomRow: {
+    // Footer — a FLOATING row over the chat list (owner 2026-07-21, ChatGPT
+    // style; replaces the in-flow "New chat"/plain-gear row). Extra right
+    // padding so the gear clears the pushed page's shadow that bleeds onto the
+    // sidebar's right edge (owner: the gear was "cutting out to the right").
+    footerFloat: {
+      position: "absolute", left: 0, right: 0,
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      // Extra right padding so the gear clears the pushed page's ~18pt shadow that bleeds
-      // onto the sidebar's right edge (owner: the gear was "cutting out to the right").
-      paddingLeft: space(3.5), paddingRight: space(6), paddingTop: space(1),
+      paddingLeft: space(3.5), paddingRight: space(6),
     },
-    // Solid (not glass) squarish button that hugs its icon + label.
-    newChatBtn: {
+    // The Chat pill: solid ACCENT fill (the appearance setting's swatch drives
+    // it), onAccent content, soft drop shadow (c.pageShadow bakes the alpha).
+    chatPill: {
       flexDirection: "row", alignItems: "center", gap: space(1.75),
-      paddingVertical: space(2.5), paddingHorizontal: space(3.5),
-      backgroundColor: c.raised, borderRadius: radius.lg,
+      height: 46, paddingHorizontal: space(4.5), borderRadius: 23,
+      backgroundColor: c.accent,
+      shadowColor: c.pageShadow, shadowOpacity: 1, shadowRadius: 10,
+      shadowOffset: { height: 5, width: 0 }, elevation: 8,
     },
-    newChatBtnPressed: { backgroundColor: c.surface2 },
-    newChatText: { color: c.accent, fontSize: type.small.fontSize + 1, fontWeight: "600" },
+    chatPillPressed: { backgroundColor: c.accentDeep },
+    chatPillText: { color: c.onAccent, fontSize: type.small.fontSize + 2, fontWeight: "700" },
 
-    // The gear is a PLAIN icon like the rest of the sidebar — no glass circle
-    // (owner 2026-07-20: the white disc read as a floating blob on the light
-    // sidebar). Press feedback matches searchBtn's quiet fill.
-    settingsBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-    settingsBtnPressed: { backgroundColor: c.surface },
+    // The gear rides its own raised disc now (owner's crop shows a circled
+    // gear floating beside the pill — supersedes the 2026-07-20 plain-icon
+    // call; the shadow makes the disc deliberate instead of a stray blob).
+    gearFloat: {
+      width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center",
+      backgroundColor: c.raised, borderWidth: 1, borderColor: c.line,
+      shadowColor: c.pageShadow, shadowOpacity: 1, shadowRadius: 10,
+      shadowOffset: { height: 5, width: 0 }, elevation: 8,
+    },
+    gearFloatPressed: { backgroundColor: c.surface2 },
   });

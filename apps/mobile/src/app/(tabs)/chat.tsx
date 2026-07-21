@@ -297,7 +297,7 @@ export default function ChatScreen() {
     const hasThread = messages.length > 0;
     setHeaderRight(
       hasThread ? (
-        <GlassSurface style={styles.actionsBtn} fallbackColor={c.glassPanel} tint={menuOpen ? c.accentFaint : undefined}>
+        <GlassSurface style={styles.actionsBtn} fallbackColor={c.glassPanel} tint={menuOpen ? c.accentFaint : undefined} shadow>
           <Pressable
             style={styles.actionsBtnInner}
             onPress={() => setMenuOpen((v) => !v)}
