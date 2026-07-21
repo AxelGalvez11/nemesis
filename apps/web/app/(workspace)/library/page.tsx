@@ -5,17 +5,18 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { LibraryMain } from "@/components/workspace/library/library-main";
 import { LibrarySidebar } from "@/components/workspace/library/library-sidebar";
 import { useMediaQuery } from "@/components/workspace/shell/use-media-query";
+import { useResponsiveSidebar } from "@/components/workspace/shell/use-responsive-sidebar";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { cn } from "@/lib/utils";
 
 export default function LibraryPage() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const narrowViewport = useMediaQuery("(max-width: 768px)");
+  const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(narrowViewport);
   const searchParams = useSearchParams();
   const { notes, select } = useCloudLibrary();
   const requestedPath = searchParams.get("note");
@@ -27,10 +28,6 @@ export default function LibraryPage() {
       select(requestedPath);
     }
   }, [notes, requestedPath, select]);
-
-  useEffect(() => {
-    if (narrowViewport) setSidebarOpen(false);
-  }, [narrowViewport]);
 
   return (
     <div className="relative flex h-full min-h-0 overflow-hidden bg-(--ui-editor-surface-background)">
