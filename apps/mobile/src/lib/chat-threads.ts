@@ -20,7 +20,7 @@
 // upsert/insert-with-conflict-ignore keyed on `id`, so a message can safely be
 // re-sent after a dropped connection without ever duplicating a row.
 
-import type { ChatMsg, ChatRole, ChatSource } from "./chat-thread.ts";
+import type { ChatMsg, ChatOutput, ChatRole, ChatSource } from "./chat-thread.ts";
 
 export interface ChatThread {
   id: string;
@@ -346,6 +346,43 @@ function sourcesFromMeta(meta: unknown): ChatSource[] {
   return sources;
 }
 
+/** The kinds SessionOutput/ChatOutput allows — mirrors web's toSessionOutput
+ *  validation set exactly (sessions-cloud.ts) so a malformed/future kind never
+ *  round-trips into a value the UI doesn't know how to render. */
+const OUTPUT_KINDS = new Set(["flashcards", "slides", "test", "report", "recording", "other"]);
+
+/** Tolerant parse of the `meta` jsonb column's `{ outputs?: [...] }` shape —
+ *  used for BOTH `chat_messages.meta.outputs` (per-turn deliverables) and
+ *  `chat_threads.meta.outputs` (session-level artifacts, e.g. recordings) —
+ *  same field shape as web's SessionOutput (sessions-store.ts), ported from
+ *  its toSessionOutput row parser. The phone Chat surface never WRITES one of
+ *  these itself (no recording composer, and api/chat.ts's postChatCompletion
+ *  never sends `tools` to the valve, so no tool-created artifact ever exists
+ *  locally either) — this is a read-only mirror of whatever web already
+ *  synced into the shared cloud tables. */
+export function outputsFromMeta(meta: unknown): ChatOutput[] {
+  if (typeof meta !== "object" || meta === null) return [];
+  const raw = (meta as Record<string, unknown>).outputs;
+  if (!Array.isArray(raw)) return [];
+  const outputs: ChatOutput[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { id, title, kind, url, transcript, notes, durationSeconds, createdAt } = entry as Record<string, unknown>;
+    if (typeof id !== "string" || typeof title !== "string" || typeof kind !== "string" || !OUTPUT_KINDS.has(kind)) continue;
+    outputs.push({
+      id,
+      kind: kind as ChatOutput["kind"],
+      title,
+      ...(typeof url === "string" ? { url } : {}),
+      ...(typeof transcript === "string" ? { transcript } : {}),
+      ...(typeof notes === "string" ? { notes } : {}),
+      ...(typeof durationSeconds === "number" && Number.isFinite(durationSeconds) ? { durationSeconds } : {}),
+      ...(typeof createdAt === "string" ? { createdAt } : {}),
+    });
+  }
+  return outputs;
+}
+
 /** Map one `chat_messages` row into a ChatMsg. Rows with role='system' (never
  *  written by this client, but the column allows it) are dropped — only
  *  user/assistant turns ever render in the transcript. `created_at` is
@@ -360,12 +397,14 @@ export function chatMsgFromCloudRow(row: CloudMessageRow): ChatMsg | null {
   if (Number.isNaN(parsed.getTime())) return null; // toISOString() throws on an invalid Date
   const at = parsed.toISOString();
   const sources = sourcesFromMeta(row.meta);
+  const outputs = outputsFromMeta(row.meta);
   return {
     at,
     content: row.content,
     ...(typeof row.id === "string" ? { id: row.id } : {}),
     role: row.role,
     ...(sources.length ? { sources } : {}),
+    ...(outputs.length ? { outputs } : {}),
   };
 }
 

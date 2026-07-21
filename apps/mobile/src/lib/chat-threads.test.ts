@@ -16,6 +16,7 @@ import {
   mergeCloudThreadList,
   mergeMessages,
   newMessagesSince,
+  outputsFromMeta,
   parseThreadStore,
   remapThreadId,
   removeThread,
@@ -304,6 +305,49 @@ Deno.test("chatMsgFromCloudRow: maps a valid row, normalizes the timestamp, drop
   // meta with a malformed source entry is dropped, not the whole message.
   const tolerant = chatMsgFromCloudRow({ content: "x", created_at: "2026-07-18T01:00:00Z", id: "1", meta: { sources: [{ url: 5 }] }, role: "user" });
   assertEquals(tolerant?.sources, undefined);
+});
+
+Deno.test("chatMsgFromCloudRow: round-trips message-level outputs (deliverable pills) alongside sources", () => {
+  const withOutputs = chatMsgFromCloudRow({
+    content: "Recording captured — transcript and notes are ready.",
+    created_at: "2026-07-18T01:00:00Z",
+    id: "row-2",
+    meta: {
+      outputs: [
+        { createdAt: "2026-07-18T00:55:00Z", durationSeconds: 312, id: "art-1", kind: "recording", notes: "Key points.", title: "Lecture recap", transcript: "Today we covered..." },
+      ],
+    },
+    role: "assistant",
+  });
+  assertEquals(withOutputs?.outputs, [
+    { createdAt: "2026-07-18T00:55:00Z", durationSeconds: 312, id: "art-1", kind: "recording", notes: "Key points.", title: "Lecture recap", transcript: "Today we covered..." },
+  ]);
+
+  // No outputs in meta → the field is omitted entirely (not an empty array), same
+  // posture as sources — callers gate on `.length` / truthiness.
+  const without = chatMsgFromCloudRow({ content: "x", created_at: "2026-07-18T01:00:00Z", id: "1", meta: null, role: "user" });
+  assertEquals(without?.outputs, undefined);
+});
+
+Deno.test("outputsFromMeta: validates kind against the SessionOutput set, tolerates malformed entries and missing meta", () => {
+  assertEquals(outputsFromMeta(null), []);
+  assertEquals(outputsFromMeta({}), []);
+  assertEquals(outputsFromMeta({ outputs: "not-an-array" }), []);
+  // A malformed entry (missing id) is dropped; a valid sibling survives.
+  const mixed = outputsFromMeta({
+    outputs: [
+      { id: "keep-1", kind: "flashcards", title: "Cardiology deck" },
+      { kind: "flashcards", title: "Missing id — dropped" },
+      { id: "keep-2", kind: "not-a-real-kind", title: "Unknown kind — dropped" },
+    ],
+  });
+  assertEquals(mixed.map((o) => o.id), ["keep-1"]);
+  assertEquals(mixed[0].kind, "flashcards");
+  // Every documented kind round-trips.
+  for (const kind of ["flashcards", "slides", "test", "report", "recording", "other"] as const) {
+    const [output] = outputsFromMeta({ outputs: [{ id: `id-${kind}`, kind, title: `A ${kind}` }] });
+    assertEquals(output.kind, kind);
+  }
 });
 
 Deno.test("mergeMessages: de-dupes by id (cloud copy wins), sorts chronologically, keeps both local-only and cloud-only tails", () => {

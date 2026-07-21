@@ -21,12 +21,23 @@ export interface GraphNode {
   title: string;
   /** Top-level folder ("" for vault root) — the course grouping, roughly. */
   folder: string;
-  /** Number of distinct connections; drives hub highlighting (accent + halo)
-   * and label visibility. NOT node size — every node renders at one uniform
-   * radius (see GraphNodeView). */
+  /** Number of distinct connections; drives the connectivity-heatmap color
+   * (graph-palette.ts) and label visibility. NOT node size — every node
+   * renders at one uniform radius (see GraphNodeView / GraphScene3D). */
   degree: number;
   x: number;
   y: number;
+  /** True for a wikilink/markdown-link target that doesn't resolve to any
+   * real note in the library — mirrors the web Graph's ghost nodes
+   * (apps/web/components/workspace/graph/graph-notes.ts): a preview of a
+   * link you've mentioned but haven't written yet. `pathHash` for a ghost is
+   * a synthetic `ghost:<normalized target>` id, deduplicated across every
+   * note that mentions the same missing title — never a real cloud note id.
+   * Opening a ghost is a no-op on the phone (see graph.tsx's openNote): web
+   * creates the note on click, but the mobile cloudLibrary API this screen
+   * uses (fetchLibrary/loadCachedLibrary) has no create-note call to wire up
+   * here, so ghosts are shown but not yet actionable. */
+  ghost: boolean;
 }
 
 /** Edge as a pair of node indices, a < b, deduplicated. */
@@ -41,6 +52,14 @@ export interface NoteGraph {
 }
 
 const WIKILINK_RE = /\[\[([^\[\]]+)\]\]/g;
+// Standard markdown links that point at another vault file — `[Beta](Beta
+// blockers.md)` — the second link shape the web Graph also indexes
+// (graph-notes.ts's MD_LINK_RE). Wikilinks stay the primary shape; this
+// just widens resolution to notes that got linked the plain-markdown way.
+const MD_LINK_RE = /\[[^\]]*\]\(([^)]+\.md)\)/gi;
+// Extensions link targets/paths get stripped of before comparison — widened
+// from .md-only to match web's normalizeRef (graph-notes.ts).
+const EXT_RE = /\.(md|markdown|txt)$/i;
 
 /** Every wikilink target in a markdown body, in order of appearance.
  * `[[Target|label]]` → "Target"; `[[Target#heading]]` → "Target". */
@@ -53,13 +72,30 @@ export function extractWikilinks(markdown: string): string[] {
   return out;
 }
 
+/** Every `[label](Target.md)`-style markdown link target, in order of
+ * appearance — the link TEXT (not the label) is returned, .md-stripped and
+ * with any directory prefix removed, e.g. `[Beta](Cardio/Beta blockers.md)`
+ * → "Beta blockers". Mirrors web's graph-notes.ts MD_LINK_RE handling. */
+export function extractMarkdownLinks(markdown: string): string[] {
+  const out: string[] = [];
+  for (const match of markdown.matchAll(MD_LINK_RE)) {
+    const raw = match[1];
+    if (!raw) continue;
+    const base = raw.split("/").pop() ?? raw;
+    const title = base.replace(EXT_RE, "").trim();
+    if (title) out.push(title);
+  }
+  return out;
+}
+
 const norm = (s: string): string => s.trim().toLowerCase();
 
-/** Last path segment without its .md extension — how Obsidian-style links resolve. */
+/** Last path segment without its .md/.markdown/.txt extension — how
+ * Obsidian-style links resolve. */
 function basenameNoExt(path: string): string {
   const segments = path.split("/");
   const last = segments[segments.length - 1] ?? "";
-  return last.replace(/\.md$/i, "");
+  return last.replace(EXT_RE, "");
 }
 
 function topFolder(path: string): string {
@@ -68,9 +104,20 @@ function topFolder(path: string): string {
 }
 
 /** Build nodes + deduplicated edges from decrypted notes. Link targets resolve by
- * full path (minus .md), then file basename, then note title — first match wins;
- * unresolved links and self-links are dropped. Input order does not matter: docs
- * are sorted by path first so the graph (and the layout seeded from it) is stable. */
+ * full path (minus .md/.markdown/.txt), then file basename, then note title —
+ * first match wins; self-links are dropped. An unresolved target becomes a
+ * "ghost" node (mirrors the web Graph's graph-notes.ts) instead of being
+ * dropped — one per distinct normalized target, however many notes mention
+ * it. Input order does not matter: docs are sorted by path first so the
+ * graph (and the layout seeded from it) is stable, and ghosts are always
+ * appended after every real note, so real-note indices never shift based on
+ * which links happen to be unresolved.
+ *
+ * Reciprocal links (A mentions B AND B mentions A) still collapse to ONE
+ * edge, same as before — deliberately NOT matching web's graph-notes.ts,
+ * which keeps both directions as separate links and so double-counts degree
+ * for any note pair that links each other. An undirected note graph
+ * shouldn't weigh a mutual mention twice; see note-graph.test.ts. */
 export function buildNoteGraph(docs: NoteRef[]): NoteGraph {
   const sorted = [...docs].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
@@ -79,6 +126,7 @@ export function buildNoteGraph(docs: NoteRef[]): NoteGraph {
     title: doc.title || basenameNoExt(doc.path) || doc.path,
     folder: topFolder(doc.path),
     degree: 0,
+    ghost: false,
     x: 0,
     y: 0,
   }));
@@ -88,7 +136,7 @@ export function buildNoteGraph(docs: NoteRef[]): NoteGraph {
   const byBasename = new Map<string, number>();
   const byTitle = new Map<string, number>();
   sorted.forEach((doc, i) => {
-    const pathKey = norm(doc.path.replace(/\.md$/i, ""));
+    const pathKey = norm(doc.path.replace(EXT_RE, ""));
     if (!byPath.has(pathKey)) byPath.set(pathKey, i);
     const baseKey = norm(basenameNoExt(doc.path));
     if (baseKey && !byBasename.has(baseKey)) byBasename.set(baseKey, i);
@@ -96,13 +144,34 @@ export function buildNoteGraph(docs: NoteRef[]): NoteGraph {
     if (titleKey && !byTitle.has(titleKey)) byTitle.set(titleKey, i);
   });
 
+  // Ghost nodes are appended to `nodes` lazily, on first mention, and reused
+  // by every later note that mentions the same (normalized) missing target —
+  // keyed the same way real-note resolution is, so "Foo", "foo.md", and
+  // "FOO" all collapse onto one ghost, exactly like they'd collapse onto one
+  // real note if "Foo" existed.
+  const ghostIndexByKey = new Map<string, number>();
+
   const seen = new Set<string>();
   const edges: GraphEdge[] = [];
   sorted.forEach((doc, i) => {
-    for (const target of extractWikilinks(doc.content)) {
-      const key = norm(target.replace(/\.md$/i, ""));
-      const j = byPath.get(key) ?? byBasename.get(key) ?? byTitle.get(key);
-      if (j === undefined || j === i) continue;
+    const targets = [...extractWikilinks(doc.content), ...extractMarkdownLinks(doc.content)];
+    for (const target of targets) {
+      const key = norm(target.replace(EXT_RE, ""));
+      if (!key) continue;
+      let j = byPath.get(key) ?? byBasename.get(key) ?? byTitle.get(key);
+      if (j === undefined) {
+        let ghostIndex = ghostIndexByKey.get(key);
+        if (ghostIndex === undefined) {
+          ghostIndex = nodes.length;
+          nodes.push({ degree: 0, folder: "", ghost: true, pathHash: `ghost:${key}`, title: target.trim(), x: 0, y: 0 });
+          ghostIndexByKey.set(key, ghostIndex);
+        }
+        j = ghostIndex;
+      }
+      // Ghost indices are always >= sorted.length > every real-note i, so
+      // this only ever guards a real self-link (a note linking its own
+      // title/path) — a ghost can never equal the linking note itself.
+      if (j === i) continue;
       const a = Math.min(i, j);
       const b = Math.max(i, j);
       const edgeKey = `${a}:${b}`;
@@ -221,7 +290,10 @@ export interface LayoutSim {
   endDrag(): void;
 }
 
-const GOLDEN_ANGLE = 2.399963229728653;
+// Exported so graph-layout-3d.ts's seed (a Fibonacci-sphere spread, the 3D
+// analog of this file's flat spiral) reuses the exact same constant instead
+// of a second, driftable copy of the same number.
+export const GOLDEN_ANGLE = 2.399963229728653;
 
 /** Normalize simulated positions into the canvas: scale the extent to fit
  * (never upscale), then clamp. Shared by createLayoutSim's snapshot() and
