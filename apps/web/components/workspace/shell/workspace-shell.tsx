@@ -7,7 +7,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import type * as React from "react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
@@ -20,6 +20,7 @@ import { ChatSidebar } from "./chat-sidebar";
 import { SettingsModalProvider } from "./settings-modal";
 import { TitlebarControls } from "./titlebar-controls";
 import { useMediaQuery } from "./use-media-query";
+import { useResponsiveSidebar } from "./use-responsive-sidebar";
 
 // SIDEBAR_COLLAPSE_BREAKPOINT_PX = 768 (desktop app/layout-constants.ts).
 const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
@@ -68,12 +69,8 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   // which would leave no visible exit once the nav rail is suppressed too.
   const focusMode = !narrowViewport && FOCUS_MODE_ROUTES.has(pathname.replace(/\/+$/, "") || "/");
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(narrowViewport);
   const sidebarVisible = sidebarOpen && !focusMode;
-
-  useEffect(() => {
-    if (narrowViewport) setSidebarOpen(false);
-  }, [narrowViewport]);
 
   useEffect(() => {
     const addHoverDescriptions = (root: ParentNode) => {
