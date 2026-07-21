@@ -184,6 +184,45 @@ export interface GradeFailure {
 }
 export type GradeResult = GradeSuccess | GradeFailure;
 
+/** Creates a new, empty deck named EXACTLY what the caller passes — Study has
+ *  no separate "group" entity server-side (see deckGroupInfo above): a
+ *  "Group::Subgroup::Leaf" name is the only thing that makes a deck render
+ *  under a folder. Mirrors the web workspace's createDeck insert shape
+ *  (lib/workspace/study-cloud-store.ts) with description/source_path left
+ *  blank — the mobile "New group" flow only ever collects a name. */
+export async function createStudyDeck(userId: string, name: string): Promise<CloudStudyDeck> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Enter a name.");
+  const { data, error } = await supabase
+    .from("study_decks")
+    .insert({ user_id: userId, name: trimmed, description: "", source_path: null })
+    .select("id,name,description,source_path,created_at,updated_at")
+    .single();
+  if (error) throw new Error(error.message);
+  const deck = toDeck(data);
+  if (!deck) throw new Error("The group was saved but returned an invalid response.");
+  return deck;
+}
+
+/** Adds one basic front/back card to an existing deck. Mirrors the web
+ *  workspace's createCard insert shape (lib/workspace/study-cloud-store.ts)
+ *  — card_type is always "basic" here; the mobile "New cards" flow doesn't
+ *  offer the reversed/cloze/image-occlusion types web's dialog does. */
+export async function createStudyCard(userId: string, deckId: string, front: string, back: string): Promise<CloudStudyCard> {
+  const trimmedFront = front.trim();
+  const trimmedBack = back.trim();
+  if (!trimmedFront || !trimmedBack) throw new Error("Add both a front and a back.");
+  const { data, error } = await supabase
+    .from("study_cards")
+    .insert({ user_id: userId, deck_id: deckId, front: trimmedFront, back: trimmedBack, card_type: "basic", source_path: null })
+    .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
+    .single();
+  if (error) throw new Error(error.message);
+  const card = toCard(data);
+  if (!card) throw new Error("The card was saved but returned an invalid response.");
+  return card;
+}
+
 /** Grades one card via the shared server RPC (server computes the next
  *  interval and writes study_review_logs atomically). Never throws — the
  *  caller (review.tsx) must NOT advance its session on `ok: false`, so the
