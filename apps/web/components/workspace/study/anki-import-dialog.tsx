@@ -60,7 +60,9 @@ export function AnkiImportDialog({ open, onOpenChange }: AnkiImportDialogProps) 
     setStep("parsing");
     try {
       const [engine, buffer] = await Promise.all([loadSqlEngine(), file.arrayBuffer()]);
-      const parsed = parseAnkiPackage(new Uint8Array(buffer), engine);
+      // Cards that embed images straight off the web keep them; packaged
+      // media still needs hosting, so those stay flagged for now.
+      const parsed = parseAnkiPackage(new Uint8Array(buffer), engine, { resolveImage: (src) => (/^https?:\/\//i.test(src) ? src : null) });
       setResult(parsed);
       setExcluded(new Set());
       setStep("preview");

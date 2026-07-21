@@ -40,6 +40,30 @@ test("study links survive as markdown instead of dead words", () => {
   assert.equal(ankiFieldToText('<a href="https://e.com"><b>See [this]</b></a>'), "[See this](https://e.com)");
 });
 
+test("an image resolver carries pictures over as markdown", () => {
+  const resolve = (src: string) => (src === "heart.jpg" ? "https://cdn/m1.jpg" : null);
+  assert.equal(ankiFieldToText('Anatomy<br><img src="heart.jpg">', resolve), "Anatomy\n![](https://cdn/m1.jpg)");
+  // Unresolved images still drop.
+  assert.equal(ankiFieldToText('x <img src="gone.png"> y', resolve), "x y");
+  // Entity-encoded src decodes before lookup.
+  const resolveAmp = (src: string) => (src === "a&b.png" ? "https://cdn/m2.png" : null);
+  assert.equal(ankiFieldToText('<img src="a&amp;b.png">', resolveAmp), "![](https://cdn/m2.png)");
+  // An image wrapped in a link keeps the image and drops the wrapper.
+  assert.equal(ankiFieldToText('<a href="https://e.com"><img src="heart.jpg"></a>', resolve), "![](https://cdn/m1.jpg)");
+});
+
+test("picture-answer cards import whole when images resolve", () => {
+  const resolve = () => "https://cdn/eq.png";
+  const card = ankiNoteToCard(["How do you convert Ka to Kb?", '<img src="eq.png">'], "chem", false, resolve);
+  assert.equal(card?.back, "![](https://cdn/eq.png)");
+  assert.equal(card?.needsImage, false);
+  assert.deepEqual(card?.tags, ["chem"]);
+  // Cloze blank holding only an image now keeps a real answer.
+  const cloze = ankiNoteToCard(["Density of water: {{c1::<img src=\"x.png\">}}", ""], "", false, resolve);
+  assert.equal(cloze?.needsImage, false);
+  assert.ok(cloze?.front.includes("{{c1:: ![](https://cdn/eq.png) }}"));
+});
+
 test("image tags are counted before stripping", () => {
   assert.equal(countImageTags('a <img src="x"> b <IMG src="y">'), 2);
   assert.equal(countImageTags("no images"), 0);
