@@ -15,6 +15,7 @@ import { buildReviewQueue } from "@/lib/workspace/study-review-queue";
 import type { StudyGrade } from "@/lib/workspace/study-scheduler";
 import { cn } from "@/lib/utils";
 
+import { OcclusionCardView } from "./occlusion-card";
 import type { StudyReviewSettings } from "./study-chrome";
 
 const GRADES: { grade: StudyGrade; label: string; hint: string; variant: "outline" | "secondary" }[] = [
@@ -67,13 +68,16 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   );
   const current = queue[0] ?? null;
 
+  // Occlusion cards render their image with masks; the payload is only ever
+  // non-null when it validated, so anything malformed falls back to text.
+  const occlusionPayload = current?.cardType === "image_occlusion" ? current.payload : null;
   // Cloze cards transform in place: the active blank is masked until revealed.
   // Auto-detect covers cards typed as basic that still contain {{cN::…}}.
   const clozeCard = current ? current.cardType === "cloze" || hasCloze(current.front) : false;
   const frontText = current && clozeCard
     ? renderCloze(current.front, activeClozeNumber(current.front, current.repetitions), revealed)
     : current?.front ?? "";
-  const showBack = Boolean(current) && revealed && (!clozeCard || Boolean(current?.back.trim()));
+  const showBack = Boolean(current) && revealed && ((!clozeCard && !occlusionPayload) || Boolean(current?.back.trim()));
 
   async function grade(value: StudyGrade) {
     if (!current || saving) return;
@@ -218,11 +222,11 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
             </div>
             <form className="grid gap-4" onSubmit={saveEdit}>
               <label className="grid gap-1.5 text-xs font-medium">
-                Front
+                {current.cardType === "image_occlusion" ? "Label" : "Front"}
                 <Textarea autoFocus className="min-h-24 text-sm font-normal leading-relaxed" onChange={(event) => setEditFront(event.target.value)} value={editFront} />
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
-                Back
+                {current.cardType === "image_occlusion" ? "Notes" : "Back"}
                 <Textarea className="min-h-20 text-sm font-normal leading-relaxed" onChange={(event) => setEditBack(event.target.value)} value={editBack} />
               </label>
               <label className="grid gap-1.5 text-xs font-medium">
@@ -233,7 +237,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
               <div className="flex justify-end gap-2">
                 <Button onClick={() => setEditOpen(false)} type="button" variant="ghost">Cancel</Button>
                 <Button
-                  disabled={saving || !editFront.trim() || (!editBack.trim() && current.cardType !== "cloze" && !hasCloze(editFront))}
+                  disabled={saving || !editFront.trim() || (!editBack.trim() && current.cardType !== "cloze" && current.cardType !== "image_occlusion" && !hasCloze(editFront))}
                   type="submit"
                   variant="secondary"
                 >
@@ -276,7 +280,11 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
             </div>
             <section className={cn("grid min-h-0 place-items-start overflow-y-auto bg-background px-4 py-12 text-center", settings.flashcardOutline && "rounded-3xl border border-(--ui-stroke-secondary) shadow-sm")}>
               <div className={cn("mx-auto w-full max-w-5xl", settings.flipAnimation && "animate-in fade-in-0 duration-300")}>
-                <AssistantMarkdown className="text-lg font-medium leading-8" text={frontText} />
+                {occlusionPayload ? (
+                  <OcclusionCardView payload={occlusionPayload} revealed={revealed} />
+                ) : (
+                  <AssistantMarkdown className="text-lg font-medium leading-8" text={frontText} />
+                )}
                 {showBack && (
                   <div className={cn("mt-8 border-t border-(--ui-stroke-secondary) pt-8", settings.flipAnimation && "animate-in fade-in-0 slide-in-from-bottom-1 duration-300")}>
                     <AssistantMarkdown className="text-lg leading-8 text-foreground" text={current.back} />

@@ -19,6 +19,8 @@ import { Textarea } from "@/components/desktop-ui/textarea";
 import { type StudyCard, type StudyCardType, type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import { cn } from "@/lib/utils";
 
+import { OcclusionCardView } from "./occlusion-card";
+
 interface StudyBrowserProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -294,12 +296,13 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <CardField label={cardType === "cloze" ? "Cloze text" : cardType === "image_occlusion" ? "Image or occlusion prompt" : "Front"} onChange={setFront} value={front} />
-                <CardField label={cardType === "cloze" ? "Extra explanation" : cardType === "image_occlusion" ? "Occluded answer" : "Back"} onChange={setBack} value={back} />
+                {activeCard.payload && <OcclusionCardView className="max-h-60" payload={activeCard.payload} revealed />}
+                <CardField label={cardType === "cloze" ? "Cloze text" : cardType === "image_occlusion" ? "Label" : "Front"} onChange={setFront} value={front} />
+                <CardField label={cardType === "cloze" ? "Extra explanation" : cardType === "image_occlusion" ? "Notes" : "Back"} onChange={setBack} value={back} />
                 <label className="grid gap-1.5 text-xs font-semibold">Tags<input className="h-9 rounded-lg border border-(--ui-stroke-secondary) bg-background px-3 font-normal outline-none focus:border-(--ui-text-tertiary)" onChange={(event) => setTags(event.target.value)} placeholder="#concept #exam-1" value={tags} /></label>
                 <div className="flex items-center justify-between gap-3">
                   <span aria-live="polite" className="text-[0.6875rem] text-(--ui-text-tertiary)">{message}</span>
-                  <Button disabled={saving || !front.trim() || (!back.trim() && cardType !== "cloze")} onClick={() => void saveActiveCard()} size="sm" variant="secondary">{saving ? "Saving…" : "Save changes"}</Button>
+                  <Button disabled={saving || !front.trim() || (!back.trim() && cardType !== "cloze" && cardType !== "image_occlusion")} onClick={() => void saveActiveCard()} size="sm" variant="secondary">{saving ? "Saving…" : "Save changes"}</Button>
                 </div>
                 <dl className="grid grid-cols-2 gap-3 rounded-xl border border-(--ui-stroke-tertiary) bg-[rgb(247_247_248)] p-4 text-xs dark:bg-[rgb(29_29_31)]">
                   <Stat label="Interval" value={`${activeCard.intervalDays} days`} /><Stat label="Repetitions" value={String(activeCard.repetitions)} /><Stat label="Lapses" value={String(activeCard.lapses)} /><Stat label="Status" value={activeCard.suspended ? "Suspended" : "Active"} />
