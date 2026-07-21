@@ -367,7 +367,7 @@ export function outputsFromMeta(meta: unknown): ChatOutput[] {
   const outputs: ChatOutput[] = [];
   for (const entry of raw) {
     if (typeof entry !== "object" || entry === null) continue;
-    const { id, title, kind, url, transcript, notes, durationSeconds, createdAt } = entry as Record<string, unknown>;
+    const { id, title, kind, url, transcript, notes, durationSeconds, createdAt, polish } = entry as Record<string, unknown>;
     if (typeof id !== "string" || typeof title !== "string" || typeof kind !== "string" || !OUTPUT_KINDS.has(kind)) continue;
     outputs.push({
       id,
@@ -378,6 +378,7 @@ export function outputsFromMeta(meta: unknown): ChatOutput[] {
       ...(typeof notes === "string" ? { notes } : {}),
       ...(typeof durationSeconds === "number" && Number.isFinite(durationSeconds) ? { durationSeconds } : {}),
       ...(typeof createdAt === "string" ? { createdAt } : {}),
+      ...(polish === "pending" || polish === "done" ? { polish } : {}),
     });
   }
   return outputs;

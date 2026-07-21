@@ -59,14 +59,32 @@ export interface RecordingDraft {
   createdAt: string;
 }
 
-export function buildRecordingDraft(current: LiveTranscript, elapsedSeconds: number, at: Date): RecordingDraft {
+export function buildRecordingDraft(current: LiveTranscript, elapsedSeconds: number, at: Date, notesText = ""): RecordingDraft {
   return {
     title: recordingTitle(at),
     transcript: fullTranscript(current),
-    notes: "",
+    notes: notesText,
     durationSeconds: Math.max(0, Math.round(elapsedSeconds)),
     createdAt: at.toISOString(),
   };
+}
+
+// A pending flag older than this reads as abandoned (app killed mid-enhance,
+// poll timed out without the clearing write landing) — the indicator must
+// never say "polishing" forever.
+const POLISH_STALE_MS = 45 * 60 * 1000;
+
+export type PolishState = "pending" | "done" | "none";
+
+/** What the chip/sheet should say about the enhance pass for one recording
+ *  entry. Reads the `polish` flag api/chat.ts maintains on the chip entry,
+ *  with a staleness cutoff so an interrupted pass degrades to silence. */
+export function polishState(entry: Pick<ChatOutput, "polish" | "createdAt">, now: Date): PolishState {
+  if (entry.polish === "done") return "done";
+  if (entry.polish !== "pending") return "none";
+  const createdAt = entry.createdAt ? new Date(entry.createdAt).getTime() : Number.NaN;
+  if (!Number.isFinite(createdAt)) return "pending";
+  return now.getTime() - createdAt > POLISH_STALE_MS ? "none" : "pending";
 }
 
 /**

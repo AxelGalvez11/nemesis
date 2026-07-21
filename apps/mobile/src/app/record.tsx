@@ -8,7 +8,9 @@ import { enhanceRecordingArtifact, saveRecordingArtifact } from "@/api/chat";
 import { GlassSurface } from "@/components/GlassSurface";
 import { MicIcon } from "@/components/icons";
 import { MissionButton } from "@/components/mission-ui";
-import { buildRecordingDraft, formatRecordingClock, hasTranscript } from "@/lib/recording";
+import { liveNotesText } from "@/lib/live-notes";
+import { buildRecordingDraft, formatRecordingClock, fullTranscript, hasTranscript } from "@/lib/recording";
+import { useLiveNotes } from "@/hooks/useLiveNotes";
 import { useLiveTranscription } from "@/hooks/useLiveTranscription";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -36,9 +38,11 @@ export default function RecordScreen() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const notesScrollRef = useRef<ScrollView>(null);
 
   const recording = live.status === "recording";
   const reviewable = live.status === "stopped" && hasTranscript(live.transcript);
+  const liveNotes = useLiveNotes(uid, fullTranscript(live.transcript), recording);
 
   // Keep the newest words in view as they stream in.
   useEffect(() => {
@@ -61,7 +65,11 @@ export default function RecordScreen() {
     setSaving(true);
     setSaveError(null);
     try {
-      const entry = await saveRecordingArtifact(uid, threadId, buildRecordingDraft(live.transcript, live.elapsedSeconds, new Date()));
+      const entry = await saveRecordingArtifact(
+        uid,
+        threadId,
+        buildRecordingDraft(live.transcript, live.elapsedSeconds, new Date(), liveNotesText(liveNotes.notes)),
+      );
       // Enhance pass runs detached: the saved on-device transcript is already
       // safe, and the sharper server transcript swaps in when it lands.
       void enhanceRecordingArtifact(uid, threadId, entry, live.audioUris, live.elapsedSeconds);
@@ -70,7 +78,7 @@ export default function RecordScreen() {
       setSaveError(cause instanceof Error ? cause.message : "Couldn't save the recording — check your connection and try again.");
       setSaving(false);
     }
-  }, [uid, threadId, saving, live.transcript, live.elapsedSeconds, live.audioUris]);
+  }, [uid, threadId, saving, live.transcript, live.elapsedSeconds, live.audioUris, liveNotes.notes]);
 
   const statusLine =
     live.status === "denied"
@@ -82,7 +90,7 @@ export default function RecordScreen() {
           : live.status === "stopped" && !reviewable
             ? "Nothing was transcribed. Start again and speak close to the phone."
             : reviewable
-              ? "Saving keeps this transcript and runs a high-accuracy pass that sharpens it a few minutes later."
+              ? "Saving keeps this transcript and runs a high-accuracy pass that sharpens it moments later."
               : "Transcribes on this phone as you record, then saves the transcript into this chat.";
 
   return (
@@ -118,6 +126,24 @@ export default function RecordScreen() {
         )}
       </ScrollView>
 
+      {liveNotes.notes.length > 0 && (
+        <View style={styles.notesPanel} testID="record-live-notes">
+          <Text style={styles.notesHead}>Live notes</Text>
+          <ScrollView
+            contentContainerStyle={styles.notesContent}
+            onContentSizeChange={() => {
+              if (recording) notesScrollRef.current?.scrollToEnd({ animated: true });
+            }}
+            ref={notesScrollRef}
+            style={styles.notesScroll}
+          >
+            {liveNotes.notes.map((note, index) => (
+              <Text key={index} style={styles.noteLine}>{`- ${note}`}</Text>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
       <Text style={styles.statusLine}>{statusLine}</Text>
       {saveError ? <Text style={styles.errorLine}>{saveError}</Text> : null}
 
@@ -142,7 +168,10 @@ export default function RecordScreen() {
             <MissionButton
               disabled={!uid || !threadId || live.status === "denied"}
               label="Start recording"
-              onPress={() => void live.start()}
+              onPress={() => {
+                liveNotes.reset();
+                void live.start();
+              }}
               testID="record-start"
               variant="primary"
             />
@@ -165,6 +194,11 @@ const createStyles = (c: ThemeColors) =>
     paragraph: { ...type.body, color: c.text },
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(6) },
     emptyText: { ...type.body, color: c.text3, textAlign: "center", fontSize: 15, lineHeight: 22 },
+    notesPanel: { marginTop: space(3), borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, backgroundColor: c.surface, maxHeight: 190 },
+    notesHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", paddingHorizontal: space(4), paddingTop: space(3) },
+    notesScroll: { flexGrow: 0 },
+    notesContent: { paddingHorizontal: space(4), paddingTop: space(2), paddingBottom: space(3), gap: space(1.5) },
+    noteLine: { ...type.small, color: c.text, lineHeight: 20 },
     statusLine: { color: c.text3, fontSize: 12.5, lineHeight: 18, paddingVertical: space(3), textAlign: "center" },
     errorLine: { color: c.accent, fontSize: 12.5, lineHeight: 18, paddingBottom: space(2), textAlign: "center" },
     controls: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden", padding: space(3) },

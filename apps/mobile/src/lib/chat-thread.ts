@@ -30,6 +30,11 @@ export interface ChatOutput {
   notes?: string;
   durationSeconds?: number;
   createdAt?: string;
+  /** Enhance-pass state for recordings (api/chat.ts maintains it on the chip
+   *  entry): "pending" while the server transcript is being produced, "done"
+   *  once it replaced the on-device text. Absent for non-recordings, for saves
+   *  that kept no audio, and after a failed pass. */
+  polish?: "pending" | "done";
 }
 
 export interface ChatMsg {
