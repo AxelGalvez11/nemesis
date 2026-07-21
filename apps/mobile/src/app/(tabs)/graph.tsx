@@ -773,7 +773,7 @@ export default function GraphScreen() {
   useEffect(() => {
     setHeaderRight(
       hasGraph ? (
-        <GlassSurface style={styles.gearGlass} fallbackColor={c.glassPanel} tint={settingsOpen ? c.accentFaint : undefined}>
+        <GlassSurface style={styles.gearGlass} fallbackColor={c.glassPanel} tint={settingsOpen ? c.accentFaint : undefined} shadow>
           <Pressable
             accessibilityLabel="Graph settings"
             accessibilityRole="button"

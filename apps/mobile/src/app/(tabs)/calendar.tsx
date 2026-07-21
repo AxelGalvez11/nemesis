@@ -619,7 +619,7 @@ function ViewSwitcher({
       </Animated.View>
 
       <View style={[styles.fabWrap, { bottom: insetBottom + FAB_BOTTOM }]} pointerEvents="box-none">
-        <GlassSurface style={styles.fab} fallbackColor={c.glassPanel} testID="calendar-view-fab">
+        <GlassSurface style={styles.fab} fallbackColor={c.glassPanel} testID="calendar-view-fab" shadow>
           <Pressable
             style={styles.fabInner}
             onPress={onToggleMenu}
@@ -643,7 +643,7 @@ function AddEventFab({ insetBottom, onPress }: { insetBottom: number; onPress: (
   const { colors: c } = useTheme();
   return (
     <View style={[styles.addFabWrap, { bottom: insetBottom + FAB_BOTTOM }]} pointerEvents="box-none">
-      <GlassSurface style={styles.addFab} fallbackColor={c.glassPanel} testID="calendar-add-fab">
+      <GlassSurface style={styles.addFab} fallbackColor={c.glassPanel} testID="calendar-add-fab" shadow>
         <Pressable
           style={styles.addFabInner}
           onPress={onPress}

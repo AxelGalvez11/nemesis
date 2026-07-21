@@ -147,7 +147,7 @@ export default function RecordScreen() {
       <Text style={styles.statusLine}>{statusLine}</Text>
       {saveError ? <Text style={styles.errorLine}>{saveError}</Text> : null}
 
-      <GlassSurface fallbackColor={c.glassPanel} style={styles.controls}>
+      <GlassSurface fallbackColor={c.glassPanel} style={styles.controls} shadow>
         {recording ? (
           <View style={styles.controlRow}>
             <View style={styles.liveDot} />

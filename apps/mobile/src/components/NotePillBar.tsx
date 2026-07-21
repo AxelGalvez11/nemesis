@@ -13,10 +13,10 @@ import { radius, space } from "@/theme/tokens";
 // note.tsx, which owns the history stack and the sheets the buttons open.
 //
 // Semantics (owner picked "browser-style"): ‹ › step through the notes you've
-// opened on this visit (‹ leaves to the Library once there's nothing left to
-// step back to), the magnifier searches your notes, + starts a new note, the
-// numbered square switches between recently opened notes, and ≡ jumps to a
-// heading in this note.
+// opened (‹ leaves to the Library once there's nothing left to step back to),
+// the magnifier searches your notes, + starts a new note, the numbered square
+// opens the TAB VIEWER (owner 2026-07-21 — NoteTabsSheet's card grid), and ≡
+// jumps to a heading in this note.
 
 const BUTTON = 44;
 
@@ -32,7 +32,7 @@ export function NotePillBar({
   onOutline,
 }: {
   canForward: boolean;
-  /** Distinct notes opened this visit — the count inside the recents square. */
+  /** Open tabs (distinct notes in history) — the count inside the square. */
   recentCount: number;
   /** True while "+" is mid-create; dims the button and ignores re-taps. */
   busy?: boolean;
@@ -50,11 +50,11 @@ export function NotePillBar({
     { child: <ChevronGlyph direction="right" color={canForward ? c.text : c.text3} />, disabled: !canForward, key: "forward", label: "Forward", onPress: onForward },
     { child: <SearchIcon size={19} color={c.text} strokeWidth={1.9} />, key: "search", label: "Search notes", onPress: onSearch },
     { child: <PlusIcon size={21} color={busy ? c.text3 : c.text} strokeWidth={1.8} />, disabled: busy, key: "new", label: "New note", onPress: onNew },
-    { child: <RecentsGlyph color={c.text} count={recentCount} countStyle={styles.recentsCount} />, key: "recents", label: "Recent notes", onPress: onRecents },
+    { child: <RecentsGlyph color={c.text} count={recentCount} countStyle={styles.recentsCount} />, key: "recents", label: "Note tabs", onPress: onRecents },
     { child: <OutlineGlyph color={c.text} />, key: "outline", label: "Note outline", onPress: onOutline },
   ];
   return (
-    <GlassSurface style={styles.bar} fallbackColor={c.glassPanel}>
+    <GlassSurface style={styles.bar} fallbackColor={c.glassPanel} shadow>
       {buttons.map((btn) => (
         <Pressable
           key={btn.key}

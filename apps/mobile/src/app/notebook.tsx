@@ -410,7 +410,7 @@ export default function NotebookScreen() {
           accessibilityRole="button"
           accessibilityLabel={view === "chat" ? "Back to notebook" : "Back to notebooks"}
         >
-          <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel}>
+          <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel} shadow>
             <Text style={styles.backChevron}>‹</Text>
           </GlassSurface>
         </Pressable>
@@ -423,7 +423,7 @@ export default function NotebookScreen() {
             accessibilityRole="button"
             accessibilityLabel="Notebook actions"
           >
-            <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel}>
+            <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel} shadow>
               <DotsIcon size={19} color={c.text} />
             </GlassSurface>
           </Pressable>
@@ -865,7 +865,7 @@ function ContentViewerOverlay({
     <View style={[styles.viewerOverlay, { paddingTop: insets.top + space(2) }]} testID="notebook-content-viewer">
       <View style={styles.topRow}>
         <Pressable onPress={onClose} hitSlop={10} testID="notebook-viewer-close" accessibilityRole="button" accessibilityLabel="Close">
-          <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel}>
+          <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel} shadow>
             <Text style={styles.backChevron}>‹</Text>
           </GlassSurface>
         </Pressable>
