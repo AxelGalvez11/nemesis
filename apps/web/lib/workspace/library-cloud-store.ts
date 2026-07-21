@@ -84,7 +84,14 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+// Every state write bumps this. Async fetchers (initial load, quiet re-sync,
+// touched-note flush) capture it when their QUERY starts and stand down if it
+// moved by the time they resolve — a late-finishing fetch must never overwrite
+// data a newer merge already applied (it retries against fresh state instead).
+let dataGeneration = 0;
+
 function setState(next: StoreState) {
+  dataGeneration += 1;
   state = next;
   emit();
 }
@@ -157,13 +164,28 @@ function fetchDocuments(userId: string) {
 async function loadDocuments(userId: string): Promise<void> {
   loadedForUserId = userId;
   setState({ status: "loading", error: null, notes: [], folders: [], selectedPath: null });
+  const generation = dataGeneration;
   try {
     const { data, error } = await fetchDocuments(userId);
     if (error) throw new Error(error.message);
+    if (loadedForUserId !== userId) return; // the user switched mid-flight
     const { notes, folders } = parseDocumentRows(data);
     folderRows = folders;
+    if (dataGeneration !== generation) {
+      // Something else (a live merge or re-sync) applied while this load was in
+      // flight — apply gently like a re-sync instead of resetting the selection.
+      setState({
+        status: "loaded",
+        error: null,
+        notes,
+        folders: folderPathsOf(folders),
+        selectedPath: repairSelection(state.notes, notes, state.selectedPath),
+      });
+      return;
+    }
     setState({ status: "loaded", error: null, notes, folders: folderPathsOf(folders), selectedPath: notes[0]?.path ?? null });
   } catch (error) {
+    if (loadedForUserId !== userId) return;
     folderRows = new Map();
     setState({
       status: "error",
@@ -180,10 +202,17 @@ async function loadDocuments(userId: string): Promise<void> {
  *  and the selection survives (following a rename of the selected note when it
  *  can). Used after realtime (re)connects and whenever an event looks odd. */
 async function refreshDocuments(userId: string): Promise<void> {
+  const generation = dataGeneration;
   try {
     const { data, error } = await fetchDocuments(userId);
     if (error) throw new Error(error.message);
     if (loadedForUserId !== userId) return;
+    if (dataGeneration !== generation) {
+      // Newer data was applied while this snapshot was in flight; this one may
+      // be staler than what's on screen. Drop it and take a fresh one.
+      scheduleResync();
+      return;
+    }
     const { notes, folders } = parseDocumentRows(data);
     folderRows = folders;
     setState({
@@ -233,6 +262,7 @@ async function flushTouchedNotes(): Promise<void> {
   const ids = [...pendingTouchedNoteIds];
   pendingTouchedNoteIds = new Set();
   touchFlushInFlight = true;
+  const generation = dataGeneration;
   try {
     const { data, error } = await supabase
       .from("readable_library_documents")
@@ -243,6 +273,12 @@ async function flushTouchedNotes(): Promise<void> {
       .in("id", ids);
     if (error) throw new Error(error.message);
     if (liveUserId !== userId || state.status !== "loaded") return;
+    if (dataGeneration !== generation) {
+      // State moved while this fetch was in flight — requeue these ids and let
+      // the next flush read them against the fresh baseline.
+      for (const id of ids) pendingTouchedNoteIds.add(id);
+      return;
+    }
     const rows = Array.isArray(data) ? data : [];
     const fetched = rows.flatMap((row) => {
       const note = libraryRowToNote(row);
@@ -301,10 +337,15 @@ function applyLiveEvent(action: LiveAction) {
       if (folders !== state.folders) setState({ ...state, folders });
       return;
     }
-    case "note-touch":
+    case "note-touch": {
+      // Echo skip: if we already hold this row at the event's exact server
+      // stamp (a merge this tab just applied), there's nothing new to fetch.
+      const existing = action.updatedAt ? state.notes.find((note) => note.id === action.id) : undefined;
+      if (existing && existing.updatedAt === action.updatedAt) return;
       pendingTouchedNoteIds.add(action.id);
       scheduleTouchFlush();
       return;
+    }
   }
 }
 
@@ -317,7 +358,8 @@ function stopLiveRefresh() {
   const channel = liveChannel;
   liveChannel = null;
   liveUserId = null;
-  if (channel) void supabase.removeChannel(channel);
+  // Best-effort teardown — a failed unsubscribe leaves nothing to recover.
+  if (channel) void supabase.removeChannel(channel).catch(() => {});
 }
 
 /** Idempotent per user — every mounted consumer of useCloudLibrary calls this,
