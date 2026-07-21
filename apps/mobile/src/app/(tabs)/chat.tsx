@@ -507,7 +507,7 @@ export default function ChatScreen() {
             onSend={send}
             onPlus={() => setPlusMenuOpen((v) => !v)}
             sending={sending}
-            placeholder="Ask Nemesis…"
+            placeholder="Ask Nemesis"
             inputRef={composerRef}
             testID="chat-input"
           />

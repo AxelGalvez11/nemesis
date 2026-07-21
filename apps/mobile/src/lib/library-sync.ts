@@ -156,10 +156,31 @@ export type LibraryRow =
   | { type: "folder"; path: string; name: string; depth: number }
   | { type: "note"; path: string; title: string; depth: number };
 
+/** The tree view's sort orders (owner 2026-07-21: sorting must KEEP the folder
+ * tree — it used to flatten to a folder-less list, which read as "my folders
+ * disappeared"). Same six orders the Sort sheet offers. */
+export type LibrarySortKey = "az" | "za" | "mod-asc" | "mod-desc" | "created-asc" | "created-desc";
+
+/** A doc as the tree builder consumes it. Timestamps are optional so existing
+ * title-only callers (and the A–Z/Z–A orders, which never read them) still work. */
+export interface LibraryTreeDoc {
+  path: string;
+  title: string;
+  updatedAt?: string;
+  createdAt?: string;
+}
+
+interface TreeNote {
+  path: string;
+  title: string;
+  updatedAt: string;
+  createdAt: string;
+}
+
 interface FolderNode {
   name: string;
   path: string;
-  notes: { path: string; title: string }[];
+  notes: TreeNote[];
   subfolders: Map<string, FolderNode>;
 }
 
@@ -167,22 +188,68 @@ function folderNode(name: string, path: string): FolderNode {
   return { name, notes: [], path, subfolders: new Map() };
 }
 
-/** Flatten `node`'s own notes + subfolders (both alphabetical, notes before
- * folders — the same convention the root bucket already used, sorting first)
- * into `depth`-tagged rows. A folder's subtree is omitted entirely when ITS
+/** Order two notes for `sort`. ISO timestamps from one Postgres compare
+ * lexicographically; notes with no timestamp sort to the end in title order
+ * (same defensive rule the flat list has always used). */
+function compareNotes(a: TreeNote, b: TreeNote, sort: LibrarySortKey): number {
+  if (sort === "az") return a.title.localeCompare(b.title);
+  if (sort === "za") return b.title.localeCompare(a.title);
+  const field = sort === "created-asc" || sort === "created-desc" ? "createdAt" : "updatedAt";
+  const ascending = sort === "mod-asc" || sort === "created-asc";
+  const av = a[field];
+  const bv = b[field];
+  if (!av && !bv) return a.title.localeCompare(b.title);
+  if (!av) return 1;
+  if (!bv) return -1;
+  return (ascending ? av.localeCompare(bv) : bv.localeCompare(av)) || a.title.localeCompare(b.title);
+}
+
+/** A folder's own stamp for the time-based orders: the newest (desc) or oldest
+ * (asc) timestamp anywhere in its subtree — so "Modified (new → old)" floats the
+ * folder you just worked in to the top, the same aggregation the web sidebar
+ * uses. "" when the subtree has no stamped note at all. */
+function folderStamp(node: FolderNode, field: "updatedAt" | "createdAt", newest: boolean): string {
+  let best = "";
+  for (const note of node.notes) {
+    const v = note[field];
+    if (v && (best === "" || (newest ? v > best : v < best))) best = v;
+  }
+  for (const sub of node.subfolders.values()) {
+    const v = folderStamp(sub, field, newest);
+    if (v && (best === "" || (newest ? v > best : v < best))) best = v;
+  }
+  return best;
+}
+
+function compareFolders(a: FolderNode, b: FolderNode, sort: LibrarySortKey): number {
+  if (sort === "az") return a.name.localeCompare(b.name);
+  if (sort === "za") return b.name.localeCompare(a.name);
+  const field = sort === "created-asc" || sort === "created-desc" ? "createdAt" : "updatedAt";
+  const ascending = sort === "mod-asc" || sort === "created-asc";
+  const av = folderStamp(a, field, !ascending);
+  const bv = folderStamp(b, field, !ascending);
+  if (!av && !bv) return a.name.localeCompare(b.name);
+  if (!av) return 1;
+  if (!bv) return -1;
+  return (ascending ? av.localeCompare(bv) : bv.localeCompare(av)) || a.name.localeCompare(b.name);
+}
+
+/** Flatten `node`'s own notes + subfolders (notes before folders — the same
+ * convention the root bucket already used — each ordered by `sort`) into
+ * `depth`-tagged rows. A folder's subtree is omitted entirely when ITS
  * path is in `collapsed` — that's what makes nested folders collapse
  * independently: hiding a parent's children never touches the children's own
  * collapsed state, so re-expanding the parent reveals whatever state its
  * descendants were already in. */
-function flattenFolder(node: FolderNode, depth: number, collapsed: ReadonlySet<string>): LibraryRow[] {
+function flattenFolder(node: FolderNode, depth: number, collapsed: ReadonlySet<string>, sort: LibrarySortKey): LibraryRow[] {
   const rows: LibraryRow[] = [];
-  for (const note of [...node.notes].sort((a, b) => a.title.localeCompare(b.title))) {
+  for (const note of [...node.notes].sort((a, b) => compareNotes(a, b, sort))) {
     rows.push({ type: "note", path: note.path, title: note.title, depth });
   }
-  const subfolders = [...node.subfolders.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const subfolders = [...node.subfolders.values()].sort((a, b) => compareFolders(a, b, sort));
   for (const sub of subfolders) {
     rows.push({ type: "folder", path: sub.path, name: sub.name, depth });
-    if (!collapsed.has(sub.path)) rows.push(...flattenFolder(sub, depth + 1, collapsed));
+    if (!collapsed.has(sub.path)) rows.push(...flattenFolder(sub, depth + 1, collapsed, sort));
   }
   return rows;
 }
@@ -191,12 +258,15 @@ function flattenFolder(node: FolderNode, depth: number, collapsed: ReadonlySet<s
  * ("/"-separated, arbitrary depth) plus the set of currently-collapsed folder
  * paths (full path per folder, e.g. "PHCY 1205/Unit 1"). Root-level notes (no
  * "/" in their path) come first at depth 0 — the bucket the screen has always
- * labeled "Library" — followed by top-level folders alphabetically, each
- * one's subtree flattened in place. Pure and Deno-testable like the rest of
- * this module; the screen owns the `collapsed` Set as React state and
- * re-derives this list on every toggle. Additive alongside `buildSections`
- * (unchanged above) rather than replacing it. */
-export function buildLibraryRows(docs: { path: string; title: string }[], collapsed: ReadonlySet<string>): LibraryRow[] {
+ * labeled "Library" — followed by top-level folders, each one's subtree
+ * flattened in place. `sort` (default A–Z, the historical order) applies at
+ * EVERY level — notes within their folder, folders among their siblings (time
+ * orders rank a folder by the newest/oldest note anywhere inside it) — so
+ * picking a sort reorders the tree instead of flattening it. Pure and
+ * Deno-testable like the rest of this module; the screen owns the `collapsed`
+ * Set as React state and re-derives this list on every toggle. Additive
+ * alongside `buildSections` (unchanged above) rather than replacing it. */
+export function buildLibraryRows(docs: LibraryTreeDoc[], collapsed: ReadonlySet<string>, sort: LibrarySortKey = "az"): LibraryRow[] {
   const root = folderNode("", "");
   for (const doc of docs) {
     const segments = doc.path.split("/").filter(Boolean);
@@ -213,7 +283,7 @@ export function buildLibraryRows(docs: { path: string; title: string }[], collap
       }
       node = child;
     }
-    node.notes.push({ path: doc.path, title: doc.title });
+    node.notes.push({ path: doc.path, title: doc.title, updatedAt: doc.updatedAt ?? "", createdAt: doc.createdAt ?? "" });
   }
-  return flattenFolder(root, 0, collapsed);
+  return flattenFolder(root, 0, collapsed, sort);
 }
