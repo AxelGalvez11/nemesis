@@ -392,9 +392,13 @@ export default function LibraryScreen() {
                 if (id) router.push({ pathname: "/note", params: { id } });
               }}
             >
-              <View style={styles.rowIcon}>
-                <FileKindGlyph kind={kind} size={14} color={c.text3} />
-              </View>
+              {/* Plain notes carry NO leading icon (owner 2026-07-20, Obsidian-style:
+                  text only); pdf/doc attachments keep their identity glyph. */}
+              {kind === "note" ? null : (
+                <View style={styles.rowIcon}>
+                  <FileKindGlyph kind={kind} size={14} color={c.text3} />
+                </View>
+              )}
               <View style={styles.rowTextCol}>
                 <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
                 {parent ? (
@@ -676,7 +680,8 @@ function SortIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   );
 }
 
-// Per-row "document identity" glyphs (owner 2026-07-20) — note/pdf/doc, one shared
+// Per-row "document identity" glyphs (owner 2026-07-20) — pdf/doc only (plain
+// notes are icon-free, same owner, later the same day), one shared
 // page-outline silhouette (same folded-corner language as the shared FileIcon in
 // components/icons.tsx, redrawn small so the three variants can share one outline
 // and differ only in their interior mark). Local to this screen on purpose.
@@ -690,17 +695,6 @@ function PageOutline({ color, strokeWidth }: { color: string; strokeWidth: numbe
       strokeLinecap="round"
       strokeLinejoin="round"
     />
-  );
-}
-
-/** Plain note: page + two short lines (a light paragraph). */
-function NoteGlyph({ size = 14, color, strokeWidth = 1.6 }: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <PageOutline color={color} strokeWidth={strokeWidth} />
-      <Line x1="8.1" y1="12.3" x2="14.9" y2="12.3" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
-      <Line x1="8.1" y1="15.6" x2="13.1" y2="15.6" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
-    </Svg>
   );
 }
 
@@ -729,10 +723,13 @@ function PdfGlyph({ size = 14, color, strokeWidth = 1.6 }: IconProps) {
   );
 }
 
+// Notes render with no glyph at all (see renderItem) — this only ever receives
+// the two attachment kinds, but returns null defensively for "note" so a future
+// call site can't accidentally resurrect the icon the owner removed.
 function FileKindGlyph({ kind, size, color }: { kind: FileKind; size: number; color: string }) {
   if (kind === "pdf") return <PdfGlyph size={size} color={color} />;
   if (kind === "doc") return <DocGlyph size={size} color={color} />;
-  return <NoteGlyph size={size} color={color} />;
+  return null;
 }
 
 const createStyles = (c: ThemeColors) =>
@@ -763,8 +760,8 @@ const createStyles = (c: ThemeColors) =>
     // render as folderRow below, each with its own name + chevron. In flat mode this
     // same slot carries the "N results" / "Sorted · …" context line.
     sectionHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(3), marginBottom: space(1.5) },
-    // Notes: still no cards (owner call) — just a leading file-kind glyph (document
-    // identity, owner 2026-07-20) + title, airier vertical padding than before.
+    // Notes: still no cards (owner call) — title only, no leading icon (owner
+    // 2026-07-20); pdf/doc attachments alone keep a small identity glyph.
     row: {
       flexDirection: "row",
       alignItems: "flex-start",

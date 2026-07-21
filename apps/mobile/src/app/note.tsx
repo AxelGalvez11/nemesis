@@ -3,7 +3,7 @@ import { Animated, Easing, Linking, Pressable, ScrollView, StyleSheet, Text, Tex
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle, Line, Path } from "react-native-svg";
+import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock } from "@/components/mission-ui";
@@ -17,43 +17,37 @@ import { radius, space, type } from "@/theme/tokens";
 
 // Read-only note view (cloud-first pivot, docs/design/nemesis-cloud-first-phone-2026-07.md
 // §7): renders one note straight from your account's library. The web app is the only
-// author for now, so every write-shaped control here is inert by design — the "…" menu's
-// Delete / Rename / Replace and the book icon's "edit" all only explain that editing
-// happens on the web app; phone editing isn't wired up yet. The last-cached copy of this
+// author for now, so every write-shaped control here is inert by design — the lower-left
+// "…" menu's Edit / Delete / Rename / Replace all only explain that editing happens on
+// the web app; phone editing isn't wired up yet. The last-cached copy of this
 // note (and the rest of the library, for wikilink resolution) renders instantly, then a
 // fresh fetch refreshes its content, so an already-opened note keeps working offline.
 // [[wikilinks]] are tappable: preprocessed into markdown links and resolved against every
-// cached note (by title / basename / path) to jump between notes.
+// cached note (by title / basename / path). Tapping one SWAPS this page to the target
+// note (router.setParams — owner 2026-07-20: links change the note page rather than
+// stacking a new screen on top, so back always returns straight to the Library).
 // Find IS wired (read-safe): while a query is present the body renders as plain text
 // with every match highlighted, plus a live match count — the one genuinely useful,
 // non-destructive action of the four.
 
-// The "…" menu. Only Find is actionable on a read-only copy; the rest flash the
-// "edit on the web app" note instead of pretending to mutate the library.
+// The "…" menu — lives in a lower-left glass button now (owner 2026-07-20: Edit
+// moved off the top bar into this menu, and the menu moved to the bottom-left
+// corner, matching the Library tab's actions button). Only Find is actionable on
+// a read-only copy; Edit and the rest flash the "edit on the web app" note
+// instead of pretending to mutate the library.
 const MENU_ITEMS = [
-  { key: "delete", label: "Delete", enabled: false },
-  { key: "rename", label: "Rename", enabled: false },
+  { key: "edit", label: "Edit", enabled: false },
   { key: "find", label: "Find", enabled: true },
+  { key: "rename", label: "Rename", enabled: false },
   { key: "replace", label: "Replace", enabled: false },
+  { key: "delete", label: "Delete", enabled: false },
 ] as const;
 
-const EDIT_ON_WEB = "Editing happens on the web app — this phone shows a read-only copy.";
+// Same size as the Library tab's lower-left actions button — the two screens'
+// corner controls should read as one family.
+const FAB_SIZE = 48;
 
-/** Short relative age ("3d ago" / a short date past a week) — same small helper each
- * screen that shows one keeps locally (see app/(tabs)/index.tsx, components/AppDrawer.tsx). */
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (diffSec < 60) return "just now";
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.round(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+const EDIT_ON_WEB = "Editing happens on the web app — this phone shows a read-only copy.";
 
 /** Split `text` into ordered runs, flagging the ones that match `query` (case-
  * insensitive). Pure, so the highlighted body and the match count derive from the
@@ -96,6 +90,7 @@ export default function NoteScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
+  const scrollRef = useRef<ScrollView>(null);
   // "…" menu open/close animation (fade + small rise) — matches every other glass menu
   // in the app (owner 2026-07-18: menu-openers should animate).
   const menuProgress = useRef(new Animated.Value(0)).current;
@@ -111,6 +106,12 @@ export default function NoteScreen() {
   useEffect(() => {
     let alive = true;
     setDoc(undefined);
+    // A wikilink tap swaps this page's note in place (setParams) — reset the
+    // per-note chrome so the new note starts clean: no stale Find query, no
+    // half-scrolled body.
+    setFindOpen(false);
+    setFindQuery("");
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
     void (async () => {
       if (!userId || !noteId) {
         if (alive) setDoc(null);
@@ -180,14 +181,16 @@ export default function NoteScreen() {
   }, []);
 
   // Any in-note link — a [[wikilink]] OR a bare relative markdown link — opens the
-  // target note when it resolves to something in the library. Real web links open in
-  // the browser; an internal link that matches no known note flashes a notice rather
-  // than doing nothing. (return false = we handled it; don't let the default open.)
+  // target note when it resolves to something in the library. setParams (not push)
+  // CHANGES this page's note in place — owner 2026-07-20 — so hopping across five
+  // links never buries the Library under five stacked screens. Real web links open
+  // in the browser; an internal link that matches no known note flashes a notice
+  // rather than doing nothing. (return false = we handled it; don't let the default open.)
   const onLinkPress = useCallback(
     (url: string): boolean => {
       const targetId = resolveInternalHref(url, resolver);
       if (targetId) {
-        router.push({ pathname: "/note", params: { id: targetId } });
+        if (targetId !== noteId) router.setParams({ id: targetId });
         return false;
       }
       if (isExternalUrl(url)) {
@@ -204,12 +207,15 @@ export default function NoteScreen() {
       flashNotice(`"${name}" isn't in your library yet.`);
       return false;
     },
-    [resolver, flashNotice],
+    [resolver, flashNotice, noteId],
   );
 
   return (
     <View style={[styles.flex, { paddingTop: insets.top + space(2) }]} testID="note-screen">
       <Stack.Screen options={{ headerShown: false }} />
+      {/* Top bar is JUST the back button now (owner 2026-07-20, Obsidian-style
+          chrome): the read/edit affordance and the "…" menu both moved into the
+          lower-left corner button below. */}
       <View style={styles.topRow}>
         <Pressable
           onPress={() => router.back()}
@@ -222,36 +228,6 @@ export default function NoteScreen() {
             <Text style={styles.backChevron}>‹</Text>
           </GlassSurface>
         </Pressable>
-
-        {/* Book (read/edit) then "…" — only shown once a real note is loaded. Read is
-            the only real mode; tapping "edit" explains it's a web-app action. */}
-        {doc ? (
-          <>
-            <Pressable
-              onPress={() => flashNotice(EDIT_ON_WEB)}
-              hitSlop={10}
-              testID="note-mode-toggle"
-              accessibilityRole="button"
-              accessibilityLabel="Reading mode — switch to editing on the web app"
-            >
-              <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel}>
-                <BookIcon size={19} color={c.text} />
-              </GlassSurface>
-            </Pressable>
-
-            <Pressable
-              onPress={() => setMenuOpen(true)}
-              hitSlop={10}
-              testID="note-menu-btn"
-              accessibilityRole="button"
-              accessibilityLabel="Note actions"
-            >
-              <GlassSurface style={styles.iconGlass} fallbackColor={c.glassPanel}>
-                <DotsIcon size={19} color={c.text} />
-              </GlassSurface>
-            </Pressable>
-          </>
-        ) : null}
       </View>
 
       {findOpen ? (
@@ -294,12 +270,15 @@ export default function NoteScreen() {
           />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.body}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Obsidian-style page (owner 2026-07-20): big bold inline title, then the
+              content straight away — no path/updated metadata line between them. */}
           <Text style={styles.title}>{doc.title}</Text>
-          <Text style={styles.meta}>
-            {doc.path}
-            {doc.updatedAt ? ` · updated ${relativeTime(doc.updatedAt)}` : ""}
-          </Text>
           {findActive && segments ? (
             // Find mode: render the note's own text so matches can actually be
             // highlighted (the markdown renderer builds its own nodes and can't be).
@@ -317,22 +296,23 @@ export default function NoteScreen() {
           ) : (
             <Markdown style={markdownStyles} onLinkPress={onLinkPress}>{rendered}</Markdown>
           )}
-          <View style={{ height: space(10) }} />
+          {/* Clears the lower-left "…" button so the last lines stay readable. */}
+          <View style={{ height: FAB_SIZE + space(10) }} />
         </ScrollView>
       )}
 
-      {/* "…" menu — anchored under the top-row cluster. Always mounted so the close fade
-          plays; a transparent tap-catcher dismisses it (no page blur — the menu's own
-          glass is the only blur). Fade + small rise, like every other glass menu. */}
+      {/* "…" menu — rises from the lower-left corner button (owner 2026-07-20).
+          Always mounted so the close fade plays; a transparent tap-catcher dismisses
+          it (no page blur — the menu's own glass is the only blur). */}
       <View style={StyleSheet.absoluteFill} pointerEvents={menuOpen ? "auto" : "none"} testID="note-menu">
         <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} accessibilityLabel="Close menu" />
         <Animated.View
           style={[
             styles.menuWrap,
             {
-              top: insets.top + space(2) + 40 + space(1.5),
+              bottom: insets.bottom + space(1) + FAB_SIZE + space(3),
               opacity: menuProgress,
-              transform: [{ translateY: menuProgress.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
+              transform: [{ translateY: menuProgress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
             },
           ]}
         >
@@ -353,29 +333,33 @@ export default function NoteScreen() {
           </GlassSurface>
         </Animated.View>
       </View>
+
+      {/* Lower-left "…" glass button — same corner + size as the Library tab's, so
+          the library and its notes share one control language. Only once a real
+          note is loaded (nothing to act on before that). */}
+      {doc ? (
+        <View style={[styles.fabWrap, { bottom: insets.bottom + space(1) }]} pointerEvents="box-none">
+          <GlassSurface style={styles.fab} fallbackColor={c.glassPanel} tint={menuOpen ? c.accentFaint : undefined}>
+            <Pressable
+              style={styles.fabInner}
+              onPress={() => setMenuOpen((v) => !v)}
+              hitSlop={8}
+              testID="note-menu-btn"
+              accessibilityRole="button"
+              accessibilityLabel="Note actions"
+              accessibilityState={{ expanded: menuOpen }}
+            >
+              <DotsIcon size={20} color={menuOpen ? c.accent : c.text2} />
+            </Pressable>
+          </GlassSurface>
+        </View>
+      ) : null}
     </View>
   );
 }
 
-// Local glyphs (components/icons.tsx has no book / dots yet, and it's out of scope
-// to edit here) — thin strokes / round caps to match that set's language.
-function BookIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M6.4 3.8h9.8a1.4 1.4 0 0 1 1.4 1.4v13.6a1.4 1.4 0 0 0-1.4-1.4H6.4A1.5 1.5 0 0 1 4.9 17.5V5.3A1.5 1.5 0 0 1 6.4 3.8Z"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Line x1="8.3" y1="7.7" x2="14" y2="7.7" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
-      <Line x1="8.3" y1="10.6" x2="12.4" y2="10.6" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
+// Local glyph (components/icons.tsx has no dots yet, and it's out of scope to
+// edit here) — matches the Library tab's identical local DotsIcon.
 function DotsIcon({ size = 23, color }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
@@ -389,17 +373,16 @@ function DotsIcon({ size = 23, color }: IconProps) {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
-    // Back · Book · "…" — a left cluster of equal glass icon buttons. Book/dots sit to
-    // the RIGHT of back, so the read/edit toggle stays left of the "…" menu.
-    topRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(3), paddingBottom: space(2) },
-    // 40x40 liquid-glass icon buttons, radius.md — same shape review.tsx uses, shared
-    // across the whole cluster so back / book / dots read as one control strip.
+    // Just the back button now — Edit and "…" both live in the lower-left corner.
+    topRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: space(3), paddingBottom: space(2) },
+    // 40x40 liquid-glass icon button, radius.md — same shape review.tsx uses.
     iconGlass: { width: 40, height: 40, borderRadius: radius.md, alignItems: "center", justifyContent: "center", overflow: "hidden" },
     backChevron: { fontSize: 26, lineHeight: 28, color: c.text, marginTop: -2 },
 
-    body: { paddingHorizontal: space(5) },
-    title: { ...type.h1, color: c.text, marginBottom: space(1) },
-    meta: { ...type.micro, color: c.text2, marginBottom: space(4) },
+    body: { paddingHorizontal: space(5), paddingTop: space(2) },
+    // Obsidian-style inline title: the h1 alone at the top of the page, a full
+    // breath of air before the content starts (no metadata line in between).
+    title: { ...type.h1, color: c.text, marginBottom: space(4) },
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6) },
 
     // Find bar + highlighted body.
@@ -433,9 +416,13 @@ const createStyles = (c: ThemeColors) =>
     },
     noticeText: { ...type.small, color: c.text2 },
 
-    // "…" menu popup.
-    menuWrap: { position: "absolute", left: space(3), minWidth: 184 },
+    // "…" menu popup (bottom-anchored, rises off the corner button) + the button
+    // itself — geometry mirrors the Library tab's ActionsFab exactly.
+    menuWrap: { position: "absolute", left: space(4), minWidth: 184 },
     menu: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
+    fabWrap: { position: "absolute", left: space(4), alignItems: "flex-start" },
+    fab: { width: FAB_SIZE, height: FAB_SIZE, borderRadius: FAB_SIZE / 2, borderWidth: 1, borderColor: c.line },
+    fabInner: { flex: 1, alignItems: "center", justifyContent: "center" },
     menuRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: space(3), paddingHorizontal: space(4) },
     menuDivider: { borderTopWidth: 1, borderTopColor: c.line },
     menuRowPressed: { backgroundColor: c.surface },
