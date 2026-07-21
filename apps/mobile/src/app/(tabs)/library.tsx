@@ -20,8 +20,9 @@ import { useShell } from "@/components/AppDrawer";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
-import { fetchLibrary, loadCachedLibrary, type CloudLibrarySnapshot } from "@/api/cloudLibrary";
+import { fetchLibrary, loadCachedLibrary, type CloudLibraryNote, type CloudLibrarySnapshot } from "@/api/cloudLibrary";
 import { buildLibraryRows, type LibraryRow } from "@/lib/library-sync";
+import { fileKindOf, firstContentLine, folderNoteCounts, type FileKind } from "@/lib/library-row-meta";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -38,7 +39,18 @@ import { radius, space, type } from "@/theme/tokens";
 // each one collapses independently — buildLibraryRows() (lib/library-sync.ts) turns
 // the flat doc-path list into a depth-tagged row list every render; `collapsed` (a
 // Set of full folder paths, e.g. "PHCY 1205/Unit 1") is the only state that drives
-// it, so collapsing a parent never disturbs a child's own remembered state.
+// it, so collapsing a parent never disturbs a child's own remembered state. Every
+// folder starts collapsed on a fresh open of this screen (owner 2026-07-20) — see
+// collapsedOverride below for the mechanism and why it's mount-scoped, not just
+// "empty by default": AppDrawer navigates here with router.push (not navigate),
+// which always mounts a brand-new screen instance, so "fresh open" and "fresh
+// mount" are the same event in this app.
+//
+// Document identity (owner 2026-07-20, distinct from Study's progress identity):
+// each note row gets a small file-kind glyph and, in the default tree view only,
+// a one-line content preview under the title — both sourced from lib/library-
+// row-meta.ts, pure helpers reading data this screen already has in memory (see
+// notesByPath below). Folder headers show a recursive item count.
 //
 // Read-only controls (this screen owns the UI, never the data): a Search that filters
 // the list, a Sort half-sheet that reorders it, and New note / New folder buttons that
@@ -110,7 +122,18 @@ export default function LibraryScreen() {
   const [snapshot, setSnapshot] = useState<CloudLibrarySnapshot>({ folders: [], notes: [] });
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  // Folders start COLLAPSED on every fresh open (owner 2026-07-20). `null` = "no
+  // manual choice yet this mount" — the render below then derives a fully-collapsed
+  // Set straight from the CURRENT note paths, synchronously, in the same pass that
+  // first paints real rows. That matters for Reanimated's itemLayoutAnimation on
+  // this list: seeding collapse via a follow-up effect/setState would paint the
+  // rows expanded for one frame and then animate them shut — exactly the
+  // first-render fight with the animation the owner flagged. Deriving it inline
+  // instead means the rows are simply born collapsed, nothing to animate away.
+  // The moment the reader taps ANY folder (toggleFolder below), a real Set is
+  // materialized from that same baseline and this screen stops ever auto-touching
+  // collapse state again for the rest of the visit — plain useState from then on.
+  const [collapsedOverride, setCollapsedOverride] = useState<Set<string> | null>(null);
   // Read-only control state — all declared here, above the early returns, so the
   // hook order never changes between the loading / signed-out / signed-in renders.
   const [searchOpen, setSearchOpen] = useState(false);
@@ -153,17 +176,25 @@ export default function LibraryScreen() {
   // Toggle ONE folder by its full path — never mutates the previous Set, always
   // builds a fresh one, so a folder's collapsed-ness is independent of its
   // siblings and its ancestors' own toggles.
-  const toggleFolder = useCallback((path: string) => {
-    // Collapse/expand animates via the list's itemLayoutAnimation (reanimated
-    // LinearTransition on Reanimated.FlatList): the rows below slide to their new
-    // positions. (LayoutAnimation didn't fire inside the virtualized FlatList.)
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  }, []);
+  const toggleFolder = useCallback(
+    (path: string) => {
+      // Collapse/expand animates via the list's itemLayoutAnimation (reanimated
+      // LinearTransition on Reanimated.FlatList): the rows below slide to their new
+      // positions. (LayoutAnimation didn't fire inside the virtualized FlatList.)
+      //
+      // First-ever toggle this mount: collapsedOverride is still null, so seed a
+      // real Set from the SAME fully-collapsed baseline the render below is
+      // already showing — only the tapped folder then flips, nothing else jumps.
+      setCollapsedOverride((prev) => {
+        const base = prev ?? new Set(folderNoteCounts(snapshot.notes.map((n) => n.path)).keys());
+        const next = new Set(base);
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+        return next;
+      });
+    },
+    [snapshot],
+  );
 
   // Fresh cloud pull for `uid`, replacing the snapshot wholesale on success (see
   // cloudLibrary.ts's fetchLibrary — the right behavior so a delete/rename made on
@@ -226,6 +257,14 @@ export default function LibraryScreen() {
 
   const notes = snapshot.notes;
   const pathToId = new Map(notes.map((n) => [n.path, n.id]));
+  // Explicit value type: a mixed [string, CloudLibraryNote][] would otherwise infer
+  // as (string | CloudLibraryNote)[] and widen the Map to the union on both sides.
+  const notesByPath = new Map<string, CloudLibraryNote>(notes.map((n) => [n.path, n]));
+  // Recursive per-folder note counts — also doubles as "every folder path known
+  // right now," which is the fully-collapsed default whenever the reader hasn't
+  // manually toggled anything yet this mount (see collapsedOverride above).
+  const folderCounts = folderNoteCounts(notes.map((n) => n.path));
+  const collapsed = collapsedOverride ?? new Set(folderCounts.keys());
 
   const trimmed = query.trim();
   const searching = trimmed.length > 0;
@@ -316,12 +355,13 @@ export default function LibraryScreen() {
           const indent = item.depth > 0 ? { paddingLeft: space(2) + item.depth * space(4) } : null;
           if (item.type === "folder") {
             const isCollapsed = collapsed.has(item.path);
+            const count = folderCounts.get(item.path) ?? 0;
             return (
               <Pressable
                 style={({ pressed }) => [styles.folderRow, indent, pressed && styles.rowPressed]}
                 testID={`folder-${item.path}`}
                 accessibilityRole="button"
-                accessibilityLabel={`${item.name} folder`}
+                accessibilityLabel={`${item.name} folder, ${count} item${count === 1 ? "" : "s"}`}
                 accessibilityState={{ expanded: !isCollapsed }}
                 onPress={() => toggleFolder(item.path)}
               >
@@ -331,10 +371,18 @@ export default function LibraryScreen() {
                 </View>
                 <FolderIcon size={16} color={c.text2} strokeWidth={1.9} />
                 <Text style={styles.folderName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.folderCount}>{count}</Text>
               </Pressable>
             );
           }
+          // Note row: parent-path breadcrumb (flat/search & sort views, unchanged
+          // behavior) OR a one-line content preview (default tree view, new) — the
+          // two never show together, so a row always has at most one secondary
+          // line under the title, same as before.
           const parent = flat ? folderOf(item.path) : "";
+          const note = notesByPath.get(item.path);
+          const kind: FileKind = note ? fileKindOf(note.path) : "note";
+          const preview = !flat && note ? firstContentLine(note.content, item.title) : "";
           return (
             <Pressable
               style={({ pressed }) => [styles.row, indent, pressed && styles.rowPressed]}
@@ -344,10 +392,17 @@ export default function LibraryScreen() {
                 if (id) router.push({ pathname: "/note", params: { id } });
               }}
             >
-              <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
-              {parent ? (
-                <Text style={styles.rowFolder} numberOfLines={1}>{parent}</Text>
-              ) : null}
+              <View style={styles.rowIcon}>
+                <FileKindGlyph kind={kind} size={14} color={c.text3} />
+              </View>
+              <View style={styles.rowTextCol}>
+                <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
+                {parent ? (
+                  <Text style={styles.rowMeta} numberOfLines={1}>{parent}</Text>
+                ) : preview ? (
+                  <Text style={styles.rowMeta} numberOfLines={1}>{preview}</Text>
+                ) : null}
+              </View>
             </Pressable>
           );
         }}
@@ -621,6 +676,65 @@ function SortIcon({ size = 23, color, strokeWidth = 1.7 }: IconProps) {
   );
 }
 
+// Per-row "document identity" glyphs (owner 2026-07-20) — note/pdf/doc, one shared
+// page-outline silhouette (same folded-corner language as the shared FileIcon in
+// components/icons.tsx, redrawn small so the three variants can share one outline
+// and differ only in their interior mark). Local to this screen on purpose.
+function PageOutline({ color, strokeWidth }: { color: string; strokeWidth: number }) {
+  return (
+    <Path
+      d="M6.5 3.4h6.2L18 8.6V19a1.4 1.4 0 0 1-1.4 1.4H6.5A1.4 1.4 0 0 1 5.1 19V4.8A1.4 1.4 0 0 1 6.5 3.4Z"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  );
+}
+
+/** Plain note: page + two short lines (a light paragraph). */
+function NoteGlyph({ size = 14, color, strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <PageOutline color={color} strokeWidth={strokeWidth} />
+      <Line x1="8.1" y1="12.3" x2="14.9" y2="12.3" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="8.1" y1="15.6" x2="13.1" y2="15.6" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/** Doc (.doc/.docx): page + three lines (a denser paragraph than a note). */
+function DocGlyph({ size = 14, color, strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <PageOutline color={color} strokeWidth={strokeWidth} />
+      <Line x1="8.1" y1="11.3" x2="14.9" y2="11.3" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="8.1" y1="14.1" x2="14.9" y2="14.1" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="8.1" y1="16.9" x2="12.3" y2="16.9" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/** PDF: page + a small filled tag dot (fixed-format cue, same filled-accent
+ * language as the dot in the shared CalendarIcon). */
+function PdfGlyph({ size = 14, color, strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <PageOutline color={color} strokeWidth={strokeWidth} />
+      <Line x1="8.1" y1="11.6" x2="14.9" y2="11.6" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Circle cx="8.6" cy="15.6" r="1.15" fill={color} stroke="none" />
+      <Line x1="11.1" y1="15.6" x2="14.9" y2="15.6" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function FileKindGlyph({ kind, size, color }: { kind: FileKind; size: number; color: string }) {
+  if (kind === "pdf") return <PdfGlyph size={size} color={color} />;
+  if (kind === "doc") return <DocGlyph size={size} color={color} />;
+  return <NoteGlyph size={size} color={color} />;
+}
+
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
@@ -649,24 +763,41 @@ const createStyles = (c: ThemeColors) =>
     // render as folderRow below, each with its own name + chevron. In flat mode this
     // same slot carries the "N results" / "Sorted · …" context line.
     sectionHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(3), marginBottom: space(1.5) },
-    // Notes are still just names (owner call) — no cards, no chevrons on notes.
-    row: { paddingVertical: space(2.5), paddingHorizontal: space(2), borderRadius: radius.sm },
+    // Notes: still no cards (owner call) — just a leading file-kind glyph (document
+    // identity, owner 2026-07-20) + title, airier vertical padding than before.
+    row: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: space(2),
+      paddingVertical: space(3),
+      paddingHorizontal: space(2),
+      borderRadius: radius.sm,
+    },
     rowPressed: { backgroundColor: c.surface },
+    // Nudges the glyph down from the row's top edge to sit level with the title's
+    // cap-height rather than the row's full (possibly 2-line) height.
+    rowIcon: { marginTop: 3 },
+    rowTextCol: { flex: 1 },
     rowTitle: { ...type.body, color: c.text },
-    // Only shown in the flat (search / sort) list, where a note is out of its folder.
-    rowFolder: { ...type.micro, color: c.text3, marginTop: 2 },
+    // Shared "secondary line" style: the flat/search parent-path breadcrumb and the
+    // tree-view content preview are mutually exclusive (never both shown on one
+    // row), so one style covers both.
+    rowMeta: { ...type.micro, color: c.text3, marginTop: 2 },
     // Folders ARE collapsible, so they get the chevron notes deliberately don't.
     chevronOpen: { transform: [{ rotate: "90deg" }] },
     folderRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: space(1.5),
-      paddingVertical: space(2.5),
+      paddingVertical: space(3),
       paddingHorizontal: space(2),
-      marginTop: space(3),
+      marginTop: space(3.5),
       borderRadius: radius.sm,
     },
-    folderName: { ...type.bodyStrong, color: c.text, flexShrink: 1 },
+    folderName: { ...type.bodyStrong, color: c.text, flex: 1 },
+    // Recursive item count (owner 2026-07-20) — flex:1 on folderName above pushes
+    // this flush to the row's trailing edge.
+    folderCount: { ...type.micro, color: c.text3 },
     warn: { marginHorizontal: space(4), marginTop: space(1), padding: space(3) },
     warnText: { ...type.small, color: c.text2 },
     emptyWrap: { paddingTop: space(10), gap: space(4) },
