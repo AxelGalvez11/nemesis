@@ -49,6 +49,9 @@ function markdownComponents(
       if (href === "#nemesis-highlight") {
         return <mark className="rounded-[0.2rem] bg-[color-mix(in_srgb,var(--theme-primary)_24%,transparent)] px-0.5 text-inherit">{children}</mark>;
       }
+      if (href === "#nemesis-underline") {
+        return <span className="underline underline-offset-[0.2em]">{children}</span>;
+      }
       const tag = href?.startsWith("#nemesis-tag=")
         ? decodeURIComponent(href.slice("#nemesis-tag=".length))
         : null;
@@ -151,13 +154,18 @@ function markdownComponents(
     ),
     p: ({ children }) => <p className="wrap-anywhere leading-(--dt-line-height)">{children}</p>,
     pre: ({ children }) => (
-      <pre className="aui-md-code-block my-2 overflow-x-auto rounded-[0.375rem] border border-border bg-muted/35 p-2.5">
+      // text-foreground: typography's default pre-code color is a light gray
+      // meant for dark code backgrounds — on this light bg-muted/35 box it
+      // rendered plain (language-less) code blocks near-invisible.
+      <pre className="aui-md-code-block my-2 overflow-x-auto rounded-[0.375rem] border border-border bg-muted/35 p-2.5 text-foreground">
         {children}
       </pre>
     ),
     table: ({ children }) => (
       <div className="aui-md-table my-2 max-w-full overflow-x-auto rounded-[0.375rem] border border-border">
-        <table className="m-0 w-full min-w-[18rem] border-collapse text-[0.8125rem] [&_tr]:border-b [&_tr]:border-border last:[&_tr]:border-0">
+        {/* !m-0: typography's table margin survives a bare m-0 here and drew
+            an empty band between the wrapper border and the header row. */}
+        <table className="!m-0 w-full min-w-[18rem] border-collapse text-[0.8125rem] [&_tr]:border-b [&_tr]:border-border last:[&_tr]:border-0">
           {children}
         </table>
       </div>
@@ -185,6 +193,7 @@ export function AssistantMarkdown({
   externalLinksInNewTab = true,
   obsidianHighlights = false,
   obsidianTags = false,
+  obsidianUnderline = false,
 }: {
   className?: string;
   text: string;
@@ -193,11 +202,19 @@ export function AssistantMarkdown({
   externalLinksInNewTab?: boolean;
   obsidianHighlights?: boolean;
   obsidianTags?: boolean;
+  /** Render `<u>…</u>` as underlined text (react-markdown escapes raw HTML,
+   *  so notes written with the editor's Underline button showed the literal
+   *  tags). Same safe pre-process trick as obsidianHighlights — never
+   *  rehype-raw. */
+  obsidianUnderline?: boolean;
 }) {
   const taggedMarkdown = obsidianTags ? obsidianTagsToMarkdown(text) : text;
-  const markdown = obsidianHighlights
+  const highlighted = obsidianHighlights
     ? taggedMarkdown.replace(/==([^=\n]+)==/g, (_match, value: string) => `[${value.replace(/([\]\\])/g, "\\$1")}](#nemesis-highlight)`)
     : taggedMarkdown;
+  const markdown = obsidianUnderline
+    ? highlighted.replace(/<u>([^<\n]+)<\/u>/g, (_match, value: string) => `[${value.replace(/([\]\\])/g, "\\$1")}](#nemesis-underline)`)
+    : highlighted;
   return (
     <div className={cn(MARKDOWN_CONTAINER_CLASS_NAME, className)}>
       <ReactMarkdown

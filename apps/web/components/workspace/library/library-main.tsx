@@ -383,7 +383,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
             {mode === "edit" ? (
               <LibraryLiveEditor apiRef={editorApiRef} autoFocus={note.content.trim().length === 0} key={note.id} onChange={(next) => updateDraft({ content: next })} showToolbar={editingBarOpen} value={content} />
             ) : (
-              <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown className="[&_h1]:!mb-3 [&_h1]:!mt-7 [&_h1]:!text-4xl [&_h1]:!font-bold [&_h2]:!mb-2.5 [&_h2]:!mt-6 [&_h2]:!text-2xl [&_h3]:!mb-2 [&_h3]:!mt-5 [&_h3]:!text-xl [&_h4]:!mt-4 [&_h4]:!text-base" externalLinksInNewTab={false} isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} obsidianHighlights obsidianTags onWikiLink={(target) => void openWikiTarget(target)} text={content} /></article>
+              <article className="min-h-[28rem] bg-transparent p-1"><AssistantMarkdown className="[&_h1]:!mb-3 [&_h1]:!mt-7 [&_h1]:!text-4xl [&_h1]:!font-bold [&_h2]:!mb-2.5 [&_h2]:!mt-6 [&_h2]:!text-2xl [&_h3]:!mb-2 [&_h3]:!mt-5 [&_h3]:!text-xl [&_h4]:!mt-4 [&_h4]:!text-base" externalLinksInNewTab={false} isWikiLinkAvailable={(target) => Boolean(findLibraryNote(notes, target))} obsidianHighlights obsidianTags obsidianUnderline onWikiLink={(target) => void openWikiTarget(target)} text={content} /></article>
             )}
           </div>
         </div>

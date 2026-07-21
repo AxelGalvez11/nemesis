@@ -1,10 +1,8 @@
 "use client";
 
 import { indentLess, indentMore } from "@codemirror/commands";
-import { syntaxTree } from "@codemirror/language";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { StateField, type EditorState, type Range } from "@codemirror/state";
-import { Decoration, EditorView, keymap, ViewPlugin, type DecorationSet, type ViewUpdate, WidgetType } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import {
   IconBlockquote,
   IconBold,
@@ -26,6 +24,9 @@ import type { ReactNode, RefObject } from "react";
 import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
+import { toggleInlineFormat, type ToggleFormat } from "@/lib/workspace/library-inline-format";
+
+import { livePreview, liveTables } from "./library-preview-decorations";
 
 /** Imperative surface the parent uses to drive the editor (TOC clicks). */
 export interface LibraryEditorApi {
@@ -39,246 +40,6 @@ interface LibraryLiveEditorProps {
   showToolbar?: boolean;
   apiRef?: RefObject<LibraryEditorApi | null>;
 }
-
-const HIDDEN_MARKS = new Set([
-  "BlockquoteMark",
-  "CodeMark",
-  "EmphasisMark",
-  "HeaderMark",
-  "LinkMark",
-  "StrikethroughMark",
-  "StrongEmphasisMark",
-]);
-
-const hiddenSyntax = Decoration.replace({});
-const wikiLink = Decoration.mark({ class: "cm-wiki-link" });
-const obsidianTag = Decoration.mark({ class: "cm-obsidian-tag" });
-const obsidianHighlight = Decoration.mark({ class: "cm-obsidian-highlight" });
-
-/** Strip inline markdown marks for table-cell display (the widget is
- *  read-only; clicking it reveals the raw syntax for editing). */
-function displayCellText(raw: string): string {
-  return raw
-    .trim()
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/==([^=]+)==/g, "$1")
-    .replace(/\[\[([^\]]+)\]\]/g, "$1")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/<\/?u>/g, "");
-}
-
-/** Split one markdown table row into cells (leading/trailing pipes dropped,
- *  escaped pipes kept). */
-function splitTableRow(line: string): string[] {
-  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
-  const cells: string[] = [];
-  let current = "";
-  for (let index = 0; index < trimmed.length; index += 1) {
-    const char = trimmed[index];
-    if (char === "\\" && trimmed[index + 1] === "|") {
-      current += "|";
-      index += 1;
-    } else if (char === "|") {
-      cells.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-  cells.push(current);
-  return cells;
-}
-
-function columnAlignments(delimiter: string): Array<"left" | "center" | "right"> {
-  return splitTableRow(delimiter).map((cell) => {
-    const spec = cell.trim();
-    if (spec.startsWith(":") && spec.endsWith(":")) return "center";
-    if (spec.endsWith(":")) return "right";
-    return "left";
-  });
-}
-
-/** Rendered GFM table shown while the cursor is OUTSIDE the table block.
- *  Clicking a row moves the cursor to that row, which swaps back to syntax. */
-class MarkdownTableWidget extends WidgetType {
-  constructor(private readonly source: string, private readonly from: number) { super(); }
-
-  override eq(other: MarkdownTableWidget) {
-    return other.source === this.source && other.from === this.from;
-  }
-
-  toDOM(view: EditorView) {
-    const lines = this.source.split("\n");
-    const aligns = columnAlignments(lines[1] ?? "");
-    const wrap = document.createElement("div");
-    wrap.className = "cm-md-table";
-    const table = document.createElement("table");
-
-    let offset = 0;
-    lines.forEach((line, lineIndex) => {
-      if (lineIndex === 1 && /^\s*\|?[\s:|-]+\|?\s*$/.test(line)) {
-        offset += line.length + 1;
-        return;
-      }
-      const row = document.createElement("tr");
-      row.dataset.offset = String(offset);
-      for (const [cellIndex, cell] of splitTableRow(line).entries()) {
-        const el = document.createElement(lineIndex === 0 ? "th" : "td");
-        el.textContent = displayCellText(cell);
-        el.style.textAlign = aligns[cellIndex] ?? "left";
-        row.appendChild(el);
-      }
-      (lineIndex === 0 ? table.createTHead() : table.tBodies[0] ?? table.createTBody()).appendChild(row);
-      offset += line.length + 1;
-    });
-
-    wrap.appendChild(table);
-    wrap.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-      const rowEl = (event.target as HTMLElement).closest("tr");
-      const rowOffset = Number(rowEl?.dataset.offset ?? 0);
-      const anchor = Math.min(this.from + rowOffset, view.state.doc.length);
-      view.dispatch({ selection: { anchor } });
-      view.focus();
-    });
-    return wrap;
-  }
-}
-
-function tableDecorations(state: EditorState): DecorationSet {
-  const ranges: Range<Decoration>[] = [];
-  syntaxTree(state).iterate({
-    enter(node) {
-      if (node.name !== "Table") return;
-      const touched = state.selection.ranges.some((range) => range.from <= node.to && range.to >= node.from);
-      if (touched) return;
-      const source = state.doc.sliceString(node.from, node.to);
-      ranges.push(Decoration.replace({ block: true, widget: new MarkdownTableWidget(source, node.from) }).range(node.from, node.to));
-    },
-  });
-  return Decoration.set(ranges, true);
-}
-
-// Block replacements must come from a StateField (view plugins may not supply
-// block decorations). Recomputed on doc/selection changes AND when the async
-// markdown parse advances (tree identity changes), so a table that finishes
-// parsing after mount still renders without user input.
-const liveTables = StateField.define<DecorationSet>({
-  create: tableDecorations,
-  update(value, tr) {
-    if (tr.docChanged || tr.selection || syntaxTree(tr.state) !== syntaxTree(tr.startState)) return tableDecorations(tr.state);
-    return value;
-  },
-  provide: (field) => EditorView.decorations.from(field),
-});
-
-class HorizontalRuleWidget extends WidgetType {
-  toDOM() {
-    const rule = document.createElement("span");
-    rule.className = "cm-horizontal-rule";
-    rule.setAttribute("aria-hidden", "true");
-    return rule;
-  }
-}
-
-class ListMarkerWidget extends WidgetType {
-  constructor(private readonly label: string) { super(); }
-
-  toDOM() {
-    const marker = document.createElement("span");
-    marker.className = "cm-list-marker";
-    marker.textContent = /^\d/.test(this.label) ? this.label.replace(/[.)]$/, ".") : "•";
-    marker.setAttribute("aria-hidden", "true");
-    return marker;
-  }
-}
-
-function selectedLines(view: EditorView): Set<number> {
-  const lines = new Set<number>();
-  for (const range of view.state.selection.ranges) {
-    const start = view.state.doc.lineAt(range.from).number;
-    const end = view.state.doc.lineAt(range.to).number;
-    for (let line = start; line <= end; line += 1) lines.add(line);
-  }
-  return lines;
-}
-
-function previewDecorations(view: EditorView): DecorationSet {
-  const ranges: Range<Decoration>[] = [];
-  const activeLines = selectedLines(view);
-  const doc = view.state.doc;
-
-  syntaxTree(view.state).iterate({
-    enter(node) {
-      const line = doc.lineAt(node.from);
-      const active = activeLines.has(line.number);
-
-      if (/^ATXHeading[1-6]$/.test(node.name)) {
-        ranges.push(Decoration.line({ attributes: { class: `cm-${node.name.toLowerCase()}` } }).range(line.from));
-      }
-
-      if (active) return;
-      if (HIDDEN_MARKS.has(node.name)) ranges.push(hiddenSyntax.range(node.from, node.to));
-      if (node.name === "HorizontalRule") {
-        ranges.push(Decoration.replace({ widget: new HorizontalRuleWidget(), block: false }).range(node.from, node.to));
-      }
-      if (node.name === "ListMark") {
-        const raw = doc.sliceString(node.from, node.to);
-        ranges.push(Decoration.replace({ widget: new ListMarkerWidget(raw) }).range(node.from, node.to));
-      }
-    },
-  });
-
-  for (let lineNumber = 1; lineNumber <= doc.lines; lineNumber += 1) {
-    if (activeLines.has(lineNumber)) continue;
-    const line = doc.line(lineNumber);
-    const raw = line.text;
-
-    for (const match of raw.matchAll(/\[\[([^\]]+)\]\]/g)) {
-      if (match.index === undefined || !match[1]) continue;
-      const from = line.from + match.index;
-      ranges.push(hiddenSyntax.range(from, from + 2));
-      ranges.push(wikiLink.range(from + 2, from + 2 + match[1].length));
-      ranges.push(hiddenSyntax.range(from + match[0].length - 2, from + match[0].length));
-    }
-
-    for (const match of raw.matchAll(/(?:^|\s)(#[\p{L}\d_-]+)/gu)) {
-      if (match.index === undefined || !match[1]) continue;
-      const from = line.from + match.index + match[0].length - match[1].length;
-      ranges.push(obsidianTag.range(from, from + match[1].length));
-    }
-
-    for (const match of raw.matchAll(/==([^=\n]+)==/g)) {
-      if (match.index === undefined || !match[1]) continue;
-      const from = line.from + match.index;
-      ranges.push(hiddenSyntax.range(from, from + 2));
-      ranges.push(obsidianHighlight.range(from + 2, from + 2 + match[1].length));
-      ranges.push(hiddenSyntax.range(from + match[0].length - 2, from + match[0].length));
-    }
-  }
-
-  ranges.sort((a, b) => a.from - b.from || a.to - b.to);
-  return Decoration.set(ranges, true);
-}
-
-const livePreview = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet;
-
-    constructor(view: EditorView) {
-      this.decorations = previewDecorations(view);
-    }
-
-    update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
-        this.decorations = previewDecorations(update.view);
-      }
-    }
-  },
-  { decorations: (plugin) => plugin.decorations },
-);
 
 const editorTheme = EditorView.theme({
   "&": {
@@ -305,15 +66,19 @@ const editorTheme = EditorView.theme({
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
     backgroundColor: "color-mix(in srgb, var(--theme-primary) 22%, transparent) !important",
   },
-  ".cm-atxheading1": { fontSize: "2rem", fontWeight: "750", lineHeight: "1.2", paddingTop: "0.9rem", paddingBottom: "0.4rem" },
-  ".cm-atxheading2": { fontSize: "1.55rem", fontWeight: "720", lineHeight: "1.25", paddingTop: "0.75rem", paddingBottom: "0.3rem" },
-  ".cm-atxheading3": { fontSize: "1.25rem", fontWeight: "700", lineHeight: "1.3", paddingTop: "0.6rem", paddingBottom: "0.25rem" },
-  ".cm-atxheading4": { fontSize: "1.08rem", fontWeight: "680", lineHeight: "1.35", paddingTop: "0.45rem" },
-  ".cm-atxheading5, .cm-atxheading6": { fontSize: "1rem", fontWeight: "650", paddingTop: "0.35rem" },
+  // Heading sizes/weights measured off read mode (library-main's overrides:
+  // h1 text-4xl bold, h2 2xl, h3 xl, h4 base) so the two modes match.
+  ".cm-atxheading1": { fontSize: "2.25rem", fontWeight: "700", lineHeight: "1.15", paddingTop: "0.9rem", paddingBottom: "0.4rem" },
+  ".cm-atxheading2": { fontSize: "1.5rem", fontWeight: "700", lineHeight: "1.25", paddingTop: "0.75rem", paddingBottom: "0.3rem" },
+  ".cm-atxheading3": { fontSize: "1.25rem", fontWeight: "600", lineHeight: "1.3", paddingTop: "0.6rem", paddingBottom: "0.25rem" },
+  ".cm-atxheading4": { fontSize: "1rem", fontWeight: "600", lineHeight: "1.35", paddingTop: "0.45rem" },
+  ".cm-atxheading5, .cm-atxheading6": { fontSize: "1rem", fontWeight: "600", paddingTop: "0.35rem" },
   ".cm-atxheading1, .cm-atxheading2, .cm-atxheading3, .cm-atxheading4, .cm-atxheading5, .cm-atxheading6, .cm-atxheading1 *, .cm-atxheading2 *, .cm-atxheading3 *, .cm-atxheading4 *, .cm-atxheading5 *, .cm-atxheading6 *": {
     textDecoration: "none !important",
   },
   ".cm-wiki-link": { color: "var(--theme-primary)", textDecoration: "underline", textDecorationThickness: "1.5px", textUnderlineOffset: "0.2em" },
+  ".cm-md-link": { color: "var(--theme-primary)", textDecoration: "underline", textDecorationThickness: "1.5px", textUnderlineOffset: "0.2em" },
+  ".cm-underline": { textDecoration: "underline", textUnderlineOffset: "0.2em" },
   ".cm-obsidian-tag": {
     backgroundColor: "color-mix(in srgb, var(--theme-primary) 13%, transparent)",
     borderRadius: "999px",
@@ -327,6 +92,41 @@ const editorTheme = EditorView.theme({
     boxDecorationBreak: "clone",
     padding: "0.04rem 0.12rem",
   },
+  // Read-mode parity, measured off the rendered article (chat-markdown.tsx).
+  // The app's --border/--muted-foreground variables are HSL component
+  // triples, so every use needs the hsl() wrapper.
+  ".cm-blockquote": {
+    borderInlineStart: "2px solid hsl(var(--border))",
+    color: "hsl(var(--muted-foreground))",
+    fontStyle: "italic",
+    paddingInlineStart: "0.75rem",
+  },
+  ".cm-codeblock": {
+    backgroundColor: "color-mix(in srgb, var(--ui-base) 5%, transparent)",
+    borderLeft: "1px solid hsl(var(--border))",
+    borderRight: "1px solid hsl(var(--border))",
+    fontFamily: "var(--font-mono), ui-monospace, monospace",
+    fontSize: "0.8em",
+    paddingInline: "0.625rem",
+  },
+  ".cm-codeblock-first": {
+    borderTop: "1px solid hsl(var(--border))",
+    borderTopLeftRadius: "0.375rem",
+    borderTopRightRadius: "0.375rem",
+    marginTop: "0.5rem",
+  },
+  ".cm-codeblock-last": {
+    borderBottom: "1px solid hsl(var(--border))",
+    borderBottomLeftRadius: "0.375rem",
+    borderBottomRightRadius: "0.375rem",
+    marginBottom: "0.5rem",
+  },
+  // Read mode's inline code is mono with no fill (prose-code) — match it.
+  ".cm-inline-code": {
+    fontFamily: "var(--font-mono), ui-monospace, monospace",
+    fontSize: "0.9em",
+    padding: "0 0.1875rem",
+  },
   ".cm-horizontal-rule": {
     borderTop: "1px solid var(--ui-stroke-secondary)",
     display: "inline-block",
@@ -334,21 +134,56 @@ const editorTheme = EditorView.theme({
     width: "100%",
   },
   ".cm-list-marker": { color: "var(--ui-text-secondary)", display: "inline-block", minWidth: "0.85rem" },
-  ".cm-md-table": { cursor: "pointer", overflowX: "auto", padding: "0.35rem 0" },
-  ".cm-md-table table": { borderCollapse: "collapse", fontSize: "0.925em", width: "100%" },
+  // Table skin copied from read mode: bordered rounded wrapper, header wash,
+  // horizontal row separators only — no vertical cell grid.
+  ".cm-md-table": {
+    border: "1px solid hsl(var(--border))",
+    borderRadius: "0.375rem",
+    margin: "0.45rem 0",
+    overflowX: "auto",
+  },
+  ".cm-md-table table": { borderCollapse: "collapse", fontSize: "0.8125rem", width: "100%" },
+  ".cm-md-table thead": { backgroundColor: "color-mix(in srgb, var(--ui-base) 5%, transparent)" },
+  ".cm-md-table tr": { borderBottom: "1px solid hsl(var(--border))" },
+  ".cm-md-table tbody tr:last-child": { borderBottom: "none" },
   ".cm-md-table th, .cm-md-table td": {
-    border: "1px solid var(--ui-stroke-secondary)",
-    padding: "0.4rem 0.65rem",
+    minWidth: "2.5rem",
+    padding: "0.375rem 0.625rem",
     verticalAlign: "top",
   },
   ".cm-md-table th": {
-    backgroundColor: "color-mix(in srgb, var(--ui-base) 5%, transparent)",
-    fontWeight: "650",
+    color: "hsl(var(--muted-foreground))",
+    fontSize: "0.75rem",
+    fontWeight: "500",
+    whiteSpace: "nowrap",
   },
-  ".cm-md-table tr:hover td": { backgroundColor: "color-mix(in srgb, var(--ui-base) 3%, transparent)" },
+  // The per-cell <input> disappears into the cell until focused.
+  ".cm-md-table th input, .cm-md-table td input": {
+    backgroundColor: "transparent",
+    border: "none",
+    color: "inherit",
+    fontFamily: "inherit",
+    fontSize: "inherit",
+    fontWeight: "inherit",
+    outline: "none",
+    padding: "0",
+    width: "100%",
+  },
+  ".cm-md-table th:focus-within, .cm-md-table td:focus-within": {
+    outline: "2px solid color-mix(in srgb, var(--theme-primary) 55%, transparent)",
+    outlineOffset: "-2px",
+  },
 });
 
-type InlineFormat = "bold" | "italic" | "underline" | "link" | "code" | "highlight";
+function runToggle(view: EditorView, format: ToggleFormat) {
+  const result = toggleInlineFormat(view.state, format);
+  view.dispatch({
+    changes: result.changes,
+    scrollIntoView: true,
+    selection: { anchor: result.selection.anchor, head: result.selection.head ?? result.selection.anchor },
+  });
+  view.focus();
+}
 
 function wrapSelection(view: EditorView, before: string, after: string, placeholder: string) {
   const range = view.state.selection.main;
@@ -390,15 +225,6 @@ function insertBlock(view: EditorView, block: string) {
   view.focus();
 }
 
-function formatInline(view: EditorView, format: InlineFormat) {
-  if (format === "bold") wrapSelection(view, "**", "**", "bold text");
-  else if (format === "italic") wrapSelection(view, "*", "*", "italic text");
-  else if (format === "underline") wrapSelection(view, "<u>", "</u>", "underlined text");
-  else if (format === "code") wrapSelection(view, "`", "`", "code");
-  else if (format === "highlight") wrapSelection(view, "==", "==", "highlighted text");
-  else wrapSelection(view, "[", "](https://)", "link text");
-}
-
 function EditingToolbar({ viewRef }: { viewRef: RefObject<EditorView | null> }) {
   const run = (action: (view: EditorView) => void) => {
     const view = viewRef.current;
@@ -412,15 +238,15 @@ function EditingToolbar({ viewRef }: { viewRef: RefObject<EditorView | null> }) 
       <ToolbarButton label="Heading 2" onClick={() => run((view) => applyLinePrefix(view, "## "))}><IconH2 /></ToolbarButton>
       <ToolbarButton label="Heading 3" onClick={() => run((view) => applyLinePrefix(view, "### "))}><IconH3 /></ToolbarButton>
       <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-(--ui-stroke-tertiary)" />
-      <ToolbarButton label="Bold" onClick={() => run((view) => formatInline(view, "bold"))}><IconBold /></ToolbarButton>
-      <ToolbarButton label="Italic" onClick={() => run((view) => formatInline(view, "italic"))}><IconItalic /></ToolbarButton>
-      <ToolbarButton label="Underline" onClick={() => run((view) => formatInline(view, "underline"))}><IconUnderline /></ToolbarButton>
-      <ToolbarButton label="Highlight" onClick={() => run((view) => formatInline(view, "highlight"))}><IconHighlight /></ToolbarButton>
+      <ToolbarButton label="Bold" onClick={() => run((view) => runToggle(view, "bold"))}><IconBold /></ToolbarButton>
+      <ToolbarButton label="Italic" onClick={() => run((view) => runToggle(view, "italic"))}><IconItalic /></ToolbarButton>
+      <ToolbarButton label="Underline" onClick={() => run((view) => runToggle(view, "underline"))}><IconUnderline /></ToolbarButton>
+      <ToolbarButton label="Highlight" onClick={() => run((view) => runToggle(view, "highlight"))}><IconHighlight /></ToolbarButton>
       <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-(--ui-stroke-tertiary)" />
       <ToolbarButton label="Bulleted list" onClick={() => run((view) => applyLinePrefix(view, "- "))}><IconList /></ToolbarButton>
       <ToolbarButton label="Numbered list" onClick={() => run((view) => applyLinePrefix(view, "", true))}><IconListNumbers /></ToolbarButton>
-      <ToolbarButton label="Link" onClick={() => run((view) => formatInline(view, "link"))}><IconLink /></ToolbarButton>
-      <ToolbarButton label="Inline code" onClick={() => run((view) => formatInline(view, "code"))}><IconCode /></ToolbarButton>
+      <ToolbarButton label="Link" onClick={() => run((view) => wrapSelection(view, "[", "](https://)", "link text"))}><IconLink /></ToolbarButton>
+      <ToolbarButton label="Inline code" onClick={() => run((view) => runToggle(view, "code"))}><IconCode /></ToolbarButton>
       <ToolbarButton label="Quote" onClick={() => run((view) => applyLinePrefix(view, "> "))}><IconBlockquote /></ToolbarButton>
       <ToolbarButton label="Divider" onClick={() => run((view) => insertBlock(view, "\n---\n"))}><IconMinus /></ToolbarButton>
       <ToolbarButton label="Table" onClick={() => run((view) => insertBlock(view, "| Column 1 | Column 2 |\n| --- | --- |\n| Cell | Cell |"))}><IconTable /></ToolbarButton>
@@ -429,11 +255,29 @@ function EditingToolbar({ viewRef }: { viewRef: RefObject<EditorView | null> }) 
 }
 
 function ToolbarButton({ children, label, onClick }: { children: ReactNode; label: string; onClick: () => void }) {
-  return <Button aria-label={label} className="shrink-0" onClick={onClick} size="icon-xs" title={label} type="button" variant="ghost">{children}</Button>;
+  return (
+    <Button
+      aria-label={label}
+      className="shrink-0"
+      onClick={onClick}
+      // Keep focus (and the selection the command acts on) in the editor —
+      // otherwise every toolbar press blurs it, which also flashes the
+      // live preview's unfocused fully-rendered state.
+      onMouseDown={(event) => event.preventDefault()}
+      size="icon-xs"
+      title={label}
+      type="button"
+      variant="ghost"
+    >
+      {children}
+    </Button>
+  );
 }
 
-/** Obsidian-style Live Preview: Markdown is stored losslessly, but formatting
- * marks are concealed everywhere except the line containing the selection. */
+/** Obsidian-style Live Preview: Markdown is stored losslessly, but syntax is
+ * concealed everywhere except the ELEMENT the selection touches — see
+ * library-preview-decorations.ts. Tables render (and edit) in place — see
+ * library-table-widget.ts. */
 export function LibraryLiveEditor({ value, onChange, autoFocus = false, showToolbar = false, apiRef }: LibraryLiveEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
