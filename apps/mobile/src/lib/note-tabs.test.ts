@@ -106,3 +106,10 @@ Deno.test("previewOf strips markdown noise into one prose run", () => {
 Deno.test("previewOf caps the snippet length", () => {
   assertEquals(previewOf("word ".repeat(200)).length <= 220, true);
 });
+
+Deno.test("previewOf looks past a syntax wall at the top of the note", () => {
+  // A code block longer than the first slice would strip to nothing — the
+  // deeper second pass should still find the prose below it.
+  const content = "```\n" + "x".repeat(1200) + "\n```\n\nReal prose starts here.";
+  assertEquals(previewOf(content), "Real prose starts here.");
+});

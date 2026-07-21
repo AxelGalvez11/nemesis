@@ -282,7 +282,11 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
       <ScrollView
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollBody}
+        // Bottom padding tracks the floating Chat pill + gear's REAL footprint
+        // (insets.bottom + 10 gap + 46 button + breathing room) — a flat
+        // constant undershot it on home-indicator iPhones and the last chat
+        // row slid under the buttons (review finding, 2026-07-21).
+        contentContainerStyle={{ paddingBottom: insets.bottom + space(2.5) + 46 + space(4) }}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.navGroup}>
@@ -447,9 +451,6 @@ const createStyles = (c: ThemeColors) =>
     // footer then pins to the BOTTOM (owner 2026-07-18: bottom buttons had empty space
     // below them) instead of floating up beneath short content.
     scroll: { flex: 1 },
-    // Bottom padding clears the floating Chat pill + gear row (46pt buttons +
-    // breathing room) so the last chat rows can scroll out from under it.
-    scrollBody: { paddingBottom: space(2) + 72 },
 
     brandRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(4), paddingBottom: space(3) },
     brand: { color: c.text, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },

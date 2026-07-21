@@ -10,6 +10,7 @@ import {
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/api/supabase";
 import { identify, resetAnalyticsUser } from "@/lib/analytics";
+import { EMPTY_NOTE_NAV, noteNavHolder } from "@/lib/note-tabs";
 import { registerForPush } from "@/lib/push";
 
 interface AuthState {
@@ -62,6 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } else {
         resetAnalyticsUser(); // sign-out → clear the analytics identity
+        // Sign-out also clears the note screen's app-lifetime tab history —
+        // module-scoped state would otherwise show the previous account's
+        // ghost tabs to the next sign-in (review finding, 2026-07-21; content
+        // itself is server-scoped per user, this is state hygiene).
+        noteNavHolder.current = EMPTY_NOTE_NAV;
       }
     });
     return () => sub.subscription.unsubscribe();

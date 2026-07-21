@@ -110,20 +110,25 @@ export function closeTab(nav: NoteNavState, closeId: string): { nav: NoteNavStat
 
 /** The tab card's body snippet: the note's opening text with markdown noise
  *  stripped, flattened to one run of prose. Slices FIRST so running it over a
- *  whole cached library stays cheap even with huge notes. */
+ *  whole cached library stays cheap even with huge notes; a note that OPENS
+ *  with a wall of syntax (a long code block, say) can strip its whole first
+ *  slice to nothing, so one deeper look runs before giving up (review
+ *  finding, 2026-07-21). */
 export function previewOf(content: string, max = 220): string {
-  return content
-    .slice(0, max * 4)
-    .replace(/```[\s\S]*?(```|$)/g, " ")
-    .replace(/^#{1,6}\s.*$/gm, " ")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, target: string, alias?: string) => alias ?? target)
-    .replace(/(\*\*|__|~~|==|`)/g, "")
-    .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
-    .replace(/^\s*>\s?/gm, "")
-    .replace(/\|/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, max);
+  const strip = (chars: number) =>
+    content
+      .slice(0, chars)
+      .replace(/```[\s\S]*?(```|$)/g, " ")
+      .replace(/^#{1,6}\s.*$/gm, " ")
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, target: string, alias?: string) => alias ?? target)
+      .replace(/(\*\*|__|~~|==|`)/g, "")
+      .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
+      .replace(/^\s*>\s?/gm, "")
+      .replace(/\|/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const first = strip(max * 4);
+  return (first || strip(max * 16)).slice(0, max);
 }

@@ -437,6 +437,7 @@ export default function NoteScreen() {
     (id: string) => {
       setTabsOpen(false);
       if (id === noteId) return;
+      if (noteNavHolder.current.pendingIndex !== null) return; // move in flight — same guard as ‹ ›
       noteNavHolder.current = selectTab(noteNavHolder.current, id);
       router.setParams({ id });
     },
@@ -444,6 +445,7 @@ export default function NoteScreen() {
   );
 
   const onCloseTab = useCallback((id: string) => {
+    if (noteNavHolder.current.pendingIndex !== null) return; // move in flight — same guard as ‹ ›
     const { nav: nextNav, nextId } = closeTab(noteNavHolder.current, id);
     noteNavHolder.current = nextNav;
     if (nextNav.stack.length === 0) {
