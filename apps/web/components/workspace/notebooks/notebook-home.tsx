@@ -163,7 +163,7 @@ export function NotebookHome() {
       setStartError(null);
       void (async () => {
         try {
-          const chat = preview ? (chats[0] ?? null) : await notebooks.startChat(selected.id, "Recorded session");
+          const chat = preview ? (chats[0] ?? null) : await notebooks.startChat(selected.id, "Recording");
           if (!chat) {
             setStartError("Couldn't start a recording — check your connection and that you're signed in.");
             return;

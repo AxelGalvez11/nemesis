@@ -53,13 +53,13 @@ export function SidebarSessionRow({
   onRename,
   onResume,
 }: SidebarSessionRowProps) {
-  const title = session.title || "New session";
+  const title = session.title || "New chat";
   const age = formatAge(session.updatedAt);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const handleRename = () => {
     // Simple prompt-based rename for v1 (desktop uses an inline dialog).
-    const next = window.prompt("Rename session", title);
+    const next = window.prompt("Rename chat", title);
     if (next && next.trim().length > 0) onRename(next.trim());
   };
 
