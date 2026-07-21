@@ -149,7 +149,11 @@ export function buildLiveAudioInsightMessages(
       role: "system",
       content:
         "You are Nemesis's live learning copilot. Support any subject, discipline, major, profession, meeting, interview, or research conversation; never assume a biomedical context. " +
-        "Extract only what the speaker actually established. Separate uncertainty from fact. Return strict JSON with exactly these string-array keys: notes (up to 6 concise new note bullets), suggestions (up to 3 useful things the user could say or ask next), explore (up to 3 concepts or questions worth investigating). " +
+        // Notes only (owner 2026-07-21): the Explore/suggestions panel was cut
+        // from the recorder, so generating those bullets would waste tokens.
+        // parseLiveAudioInsights still tolerates the extra keys if a model
+        // returns them.
+        "Extract only what the speaker actually established. Separate uncertainty from fact. Return strict JSON with exactly one string-array key: notes (up to 6 concise new note bullets). " +
         "Do not repeat prior notes. Do not include markdown fences or any text outside the JSON object.",
     },
     {

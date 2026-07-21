@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { MessageResponse } from "@/components/ai-elements/message";
 import { Codicon } from "@/components/desktop-ui/codicon";
-import { SegmentedControl } from "@/components/desktop-ui/segmented-control";
 import { cn } from "@/lib/utils";
 import { formatLiveDuration } from "@/lib/workspace/live-audio-contract";
 import type { RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
@@ -23,11 +22,6 @@ interface RecordWorkspaceProps {
   onFinished?: (draft: RecordingArtifactDraft) => void;
 }
 
-type InsightMode = "notes" | "explore";
-const INSIGHT_MODES = [
-  { id: "notes", label: "Notes" },
-  { id: "explore", label: "Explore" },
-] as const;
 function statusCopy(status: ReturnType<typeof useLiveAudioSession>["status"]) {
   switch (status) {
     case "connecting": return "Connecting";
@@ -70,7 +64,6 @@ export function RecordWorkspace({
   onFinished,
 }: RecordWorkspaceProps) {
   const live = useLiveAudioSession({ accessToken, active, context, contextId, keyterms, surface, uid });
-  const [insightMode, setInsightMode] = useState<InsightMode>("notes");
   const activeListening = live.status === "listening";
   const used = live.usage?.usedSeconds ?? 0;
   const limit = live.usage?.limitSeconds ?? 0;
@@ -149,44 +142,18 @@ export function RecordWorkspace({
         )}
       </div>
 
+      {/* Notes-only panel (owner 2026-07-21): the Explore/suggestions tab was
+          meeting-copilot UX, not lecture UX — cut, and the insight prompt now
+          generates notes only. */}
       <div className="flex min-h-0 flex-col">
-        <header className="flex min-h-[3.125rem] shrink-0 items-center border-b border-(--ui-stroke-tertiary) px-5 py-2.5">
-          <SegmentedControl className="bg-(--ui-bg-quaternary)" onChange={setInsightMode} options={INSIGHT_MODES} value={insightMode} />
+        <header className="flex shrink-0 items-center gap-3 border-b border-(--ui-stroke-tertiary) px-5 py-3.5">
+          <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">Live notes</h2>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {insightMode === "notes" ? (
-            live.insights.notes.length ? (
-              <MessageResponse className="text-sm leading-relaxed">{live.insights.notes.map((note) => `- ${note}`).join("\n")}</MessageResponse>
-            ) : (
-              <div className="grid h-full min-h-40 place-items-center text-center"><p className="max-w-64 text-xs leading-relaxed text-(--ui-text-quaternary)">Nemesis will build concise live notes once enough context has been spoken.</p></div>
-            )
-          ) : live.insights.suggestions.length || live.insights.explore.length ? (
-            <div className="space-y-6">
-              {live.insights.suggestions.length > 0 && (
-                <section>
-                  <h3 className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">What to ask or say next</h3>
-                  <div className="space-y-2">
-                    {live.insights.suggestions.map((suggestion) => (
-                      <div className="rounded-xl border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) px-3 py-2.5" key={suggestion}>
-                        <MessageResponse className="text-xs leading-relaxed">{suggestion}</MessageResponse>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-              {live.insights.explore.length > 0 && (
-                <section>
-                  <h3 className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-[0.12em] text-(--ui-text-secondary)">Explore</h3>
-                  <MessageResponse className="text-xs leading-relaxed text-(--ui-text-secondary)">{live.insights.explore.map((item) => `- ${item}`).join("\n")}</MessageResponse>
-                </section>
-              )}
-            </div>
+          {live.insights.notes.length ? (
+            <MessageResponse className="text-sm leading-relaxed">{live.insights.notes.map((note) => `- ${note}`).join("\n")}</MessageResponse>
           ) : (
-            <div className="grid h-full min-h-40 place-items-center text-center">
-              <p className="max-w-64 text-xs leading-relaxed text-(--ui-text-quaternary)">
-                Suggestions and related directions will appear as the conversation develops.
-              </p>
-            </div>
+            <div className="grid h-full min-h-40 place-items-center text-center"><p className="max-w-64 text-xs leading-relaxed text-(--ui-text-quaternary)">Nemesis will build concise live notes once enough context has been spoken.</p></div>
           )}
         </div>
       </div>
