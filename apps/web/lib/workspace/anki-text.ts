@@ -35,17 +35,30 @@ function decodeEntities(text: string): string {
   });
 }
 
+/** Resolves an Anki `<img src>` value to a hosted URL, or null to drop it. */
+export type ResolveImage = (src: string) => string | null;
+
 /** Convert one Anki HTML field to plain text, keeping cloze markers and
- *  translating bold/italic to markdown. Media references are dropped. */
-export function ankiFieldToText(html: string): string {
+ *  translating bold/italic to markdown. Media references are dropped unless
+ *  a resolver maps them to hosted URLs, in which case images survive as
+ *  markdown the card renderer already displays. */
+export function ankiFieldToText(html: string, resolveImage?: ResolveImage): string {
   let text = html.slice(0, MAX_FIELD_CHARS * 2);
   text = text.replace(/\[sound:[^\]]*\]/gi, " ");
-  text = text.replace(/<img\b[^>]*>/gi, " ");
+  text = text.replace(/<img\b[^>]*>/gi, (tag) => {
+    if (!resolveImage) return " ";
+    const src = /\bsrc\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1];
+    const url = src ? resolveImage(decodeEntities(src.trim())) : null;
+    return url ? ` ![](${url}) ` : " ";
+  });
   // Anchors become markdown links so study resources (Khan Academy, YouTube)
   // stay clickable instead of decaying into the words "YouTube Link".
   text = text.replace(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (whole, href: string, label: string) => {
     const url = href.trim();
     if (!/^https?:\/\//i.test(url)) return label;
+    // A carried-over image inside the anchor can't nest in a markdown link —
+    // keep the image and drop the wrapper.
+    if (/!\[\]\(/.test(label)) return label;
     const clean = label.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
     return clean ? `[${clean.replace(/[[\]]/g, "")}](${url})` : url;
   });
@@ -58,6 +71,7 @@ export function ankiFieldToText(html: string): string {
   text = decodeEntities(text);
   return text
     .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim()
@@ -95,11 +109,11 @@ function hasEmptyCloze(text: string): boolean {
 
 /** Turn one note's fields into an importable card. First field = front, the
  *  rest join into the back. Returns null when the front is empty. */
-export function ankiNoteToCard(fields: string[], rawTags: string, reversed: boolean): AnkiImportCard | null {
+export function ankiNoteToCard(fields: string[], rawTags: string, reversed: boolean, resolveImage?: ResolveImage): AnkiImportCard | null {
   const [rawFront, ...rest] = fields;
-  const front = ankiFieldToText(rawFront ?? "");
+  const front = ankiFieldToText(rawFront ?? "", resolveImage);
   if (!front) return null;
-  const back = rest.map(ankiFieldToText).filter(Boolean).join("\n\n");
+  const back = rest.map((field) => ankiFieldToText(field, resolveImage)).filter(Boolean).join("\n\n");
   const tags = rawTags.trim().split(/\s+/).filter(Boolean);
   const cardType: AnkiImportCard["cardType"] = hasCloze(front) ? "cloze" : reversed ? "reversed" : "basic";
   // Answer lost to a picture: an empty back where the raw fields had an

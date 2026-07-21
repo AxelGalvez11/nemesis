@@ -1,6 +1,6 @@
 "use client";
 
-import { IconCards, IconChevronDown, IconChevronRight, IconFileUpload, IconFolderPlus, IconSquarePlus } from "@tabler/icons-react";
+import { IconBooks, IconCards, IconChevronDown, IconChevronRight, IconFileUpload, IconFolderPlus, IconSquarePlus } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -12,6 +12,7 @@ import { isCardDue, type StudyCard, type StudyDeck, useCloudStudy } from "@/lib/
 import { cn } from "@/lib/utils";
 
 import { AnkiImportDialog } from "./anki-import-dialog";
+import { StarterDeckDialog } from "./starter-deck-dialog";
 import { ReviewSession } from "./review-session";
 import { StudyBrowser } from "./study-browser";
 import { StudyCreateDialog, type StudyCreateKind } from "./study-create-dialog";
@@ -118,6 +119,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
   const [extraGroups, setExtraGroups] = useState<string[]>([]);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [starterOpen, setStarterOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [dragItem, setDragItem] = useState<DeckDragItem | null>(null);
@@ -317,6 +319,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
             <DropdownMenuItem onSelect={() => setGroupDialogOpen(true)}><IconFolderPlus /> New group</DropdownMenuItem>
             <DropdownMenuItem disabled={decks.length === 0} onSelect={() => setCreateKind("card")}><IconSquarePlus /> New card</DropdownMenuItem>
             <DropdownMenuItem data-testid="import-anki" onSelect={() => setImportOpen(true)}><IconFileUpload /> Import from Anki</DropdownMenuItem>
+            <DropdownMenuItem data-testid="starter-decks" onSelect={() => setStarterOpen(true)}><IconBooks /> Starter decks</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <Button disabled={decks.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
@@ -329,6 +332,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
               <div className="flex flex-wrap justify-center gap-2">
                 <Button onClick={() => setCreateKind("deck")} variant="secondary">Create your first deck</Button>
                 <Button className="bg-background" onClick={() => setImportOpen(true)} variant="outline"><IconFileUpload size={14} /> Import from Anki</Button>
+                <Button className="bg-background" onClick={() => setStarterOpen(true)} variant="outline"><IconBooks size={14} /> Starter decks</Button>
               </div>
             }
             description={sourcePath ? "Turn this Library note into a linked cloud deck." : "Create a deck to start building a durable review habit."}
@@ -356,6 +360,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
 
       <StudyCreateDialog deck={selectedDeck} kind={createKind ?? "deck"} onOpenChange={(open) => !open && setCreateKind(null)} open={createKind !== null} sourcePath={sourcePath} />
       <AnkiImportDialog onOpenChange={setImportOpen} open={importOpen} />
+      <StarterDeckDialog onOpenChange={setStarterOpen} open={starterOpen} />
       <Dialog onOpenChange={(open) => !open && setMerge(null)} open={merge !== null}>
         <DialogContent className="max-w-sm">
           <form className="grid gap-4" onSubmit={mergeIntoGroup}>

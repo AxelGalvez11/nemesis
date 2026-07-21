@@ -7,7 +7,13 @@
 import { unzipSync } from "fflate";
 import { decompress } from "fzstd";
 
-import { ankiNoteToCard, countImageTags, normalizeAnkiDeckName, splitAnkiFields, type AnkiImportCard } from "./anki-text";
+import { ankiNoteToCard, countImageTags, normalizeAnkiDeckName, splitAnkiFields, type AnkiImportCard, type ResolveImage } from "./anki-text";
+
+export interface ParseAnkiOptions {
+  /** When set, `<img>` references resolve to hosted URLs and survive as
+   *  markdown images instead of being dropped. */
+  resolveImage?: ResolveImage;
+}
 
 export interface AnkiImportDeck {
   name: string;
@@ -108,7 +114,7 @@ function mediaEntryCount(files: Record<string, Uint8Array>, zipEntryCount: numbe
 }
 
 /** Parse a .apkg/.colpkg byte buffer into importable decks of cards. */
-export function parseAnkiPackage(bytes: Uint8Array, sql: SqlEngine): AnkiImportResult {
+export function parseAnkiPackage(bytes: Uint8Array, sql: SqlEngine, options?: ParseAnkiOptions): AnkiImportResult {
   // Real decks ship thousands of media files (the Captain Hook deck: 2,828
   // images in 284 MB). Only the SQLite collection and the media manifest ever
   // get inflated — media entries are counted from the zip directory and
@@ -162,7 +168,7 @@ export function parseAnkiPackage(bytes: Uint8Array, sql: SqlEngine): AnkiImportR
         continue;
       }
       imageFields += countImageTags(flds);
-      const card = ankiNoteToCard(splitAnkiFields(flds), typeof rawTags === "string" ? rawTags : "", (noteOrdinals.get(nid) ?? 1) > 1);
+      const card = ankiNoteToCard(splitAnkiFields(flds), typeof rawTags === "string" ? rawTags : "", (noteOrdinals.get(nid) ?? 1) > 1, options?.resolveImage);
       if (!card) {
         skippedNotes += 1;
         continue;
