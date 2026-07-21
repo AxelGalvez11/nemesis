@@ -398,9 +398,11 @@ function PinIcon({ size = 12, color }: { size?: number; color: string }) {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     // Push shell: the sidebar sits UNDER the page at the left; the page slides right to
-    // reveal it. shellRoot's bg shows only behind the page's rounded left edge when open
-    // (near-black, reads as background).
-    shellRoot: { flex: 1, backgroundColor: c.bg, overflow: "hidden" },
+    // reveal it. shellRoot's bg shows only behind the page's ROUNDED CORNERS when open —
+    // it MUST match the sidebar's bg2, not bg (owner 2026-07-20: with bg it peeked
+    // through as a white wedge between the gray sidebar and the rounded page in light
+    // mode; matching bg2 makes the corner read as the page curving over the sidebar).
+    shellRoot: { flex: 1, backgroundColor: c.bg2, overflow: "hidden" },
     // Square (owner 2026-07-18: the sidebar has no rounded corners). overflow:hidden still
     // clips the glass to the panel rect; with no rounded bottom-right corner the footer gear
     // is no longer nipped on its right side (owner: the gear was cutting off).
