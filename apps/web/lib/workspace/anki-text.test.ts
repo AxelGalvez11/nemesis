@@ -126,3 +126,11 @@ test("field escaping only quotes when needed", () => {
   assert.equal(escapeAnkiField('say "hi"'), '"say ""hi"""');
   assert.equal(escapeAnkiField("a\r\nb"), '"a\nb"');
 });
+
+test("inline styling converts only paired tags with markers hugging the text", () => {
+  assert.equal(ankiFieldToText("a<b> bold</b>z"), "a **bold**z");
+  assert.equal(ankiFieldToText("<b>never closed"), "never closed");
+  assert.equal(ankiFieldToText('H<sub style="x">2</sub>O and E=mc<sup>2</sup>'), "H<sub>2</sub>O and E=mc<sup>2</sup>");
+  assert.equal(ankiFieldToText("<b>H<sub>2</sub>O</b>"), "**H<sub>2</sub>O**");
+  assert.equal(ankiFieldToText("<u>key term</u>"), "<u>key term</u>");
+});

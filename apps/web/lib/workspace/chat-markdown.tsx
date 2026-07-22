@@ -52,6 +52,12 @@ function markdownComponents(
       if (href === "#nemesis-underline") {
         return <span className="underline underline-offset-[0.2em]">{children}</span>;
       }
+      if (href === "#nemesis-sub") {
+        return <sub>{children}</sub>;
+      }
+      if (href === "#nemesis-sup") {
+        return <sup>{children}</sup>;
+      }
       const tag = href?.startsWith("#nemesis-tag=")
         ? decodeURIComponent(href.slice("#nemesis-tag=".length))
         : null;
@@ -194,6 +200,7 @@ export function AssistantMarkdown({
   obsidianHighlights = false,
   obsidianTags = false,
   obsidianUnderline = false,
+  htmlSubSup = false,
 }: {
   className?: string;
   text: string;
@@ -207,14 +214,23 @@ export function AssistantMarkdown({
    *  tags). Same safe pre-process trick as obsidianHighlights — never
    *  rehype-raw. */
   obsidianUnderline?: boolean;
+  /** Render `<sub>…</sub>`/`<sup>…</sup>` as real sub/superscripts — study
+   *  cards imported from Anki keep chemistry formatting (H<sub>2</sub>O) as
+   *  bare tags. Same safe pre-process trick, never rehype-raw. */
+  htmlSubSup?: boolean;
 }) {
   const taggedMarkdown = obsidianTags ? obsidianTagsToMarkdown(text) : text;
   const highlighted = obsidianHighlights
     ? taggedMarkdown.replace(/==([^=\n]+)==/g, (_match, value: string) => `[${value.replace(/([\]\\])/g, "\\$1")}](#nemesis-highlight)`)
     : taggedMarkdown;
-  const markdown = obsidianUnderline
+  const underlined = obsidianUnderline
     ? highlighted.replace(/<u>([^<\n]+)<\/u>/g, (_match, value: string) => `[${value.replace(/([\]\\])/g, "\\$1")}](#nemesis-underline)`)
     : highlighted;
+  const markdown = htmlSubSup
+    ? underlined
+        .replace(/<sub>([^<\n]+)<\/sub>/gi, (_match, value: string) => `[${value.replace(/([\]\\])/g, "\\$1")}](#nemesis-sub)`)
+        .replace(/<sup>([^<\n]+)<\/sup>/gi, (_match, value: string) => `[${value.replace(/([\]\\])/g, "\\$1")}](#nemesis-sup)`)
+    : underlined;
   return (
     <div className={cn(MARKDOWN_CONTAINER_CLASS_NAME, className)}>
       <ReactMarkdown

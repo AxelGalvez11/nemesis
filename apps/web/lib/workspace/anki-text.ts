@@ -65,9 +65,23 @@ export function ankiFieldToText(html: string, resolveImage?: ResolveImage): stri
   text = text.replace(/<br\s*\/?>/gi, "\n");
   text = text.replace(/<\/(?:div|p|li|tr|h[1-6]|ul|ol|table|blockquote)>/gi, "\n");
   text = text.replace(/<li\b[^>]*>/gi, "- ");
-  text = text.replace(/<\/?(?:b|strong)(?:\s[^>]*)?>/gi, "**");
-  text = text.replace(/<\/?(?:i|em)(?:\s[^>]*)?>/gi, "*");
-  text = text.replace(/<[^>]+>/g, "");
+  // Inline styling converts only when the tag PAIR sits on one line, with the
+  // markers hugging the text — a lone <b> or "** bold**" would otherwise leak
+  // literal asterisks into the card. Unpaired tags fall through to the strip.
+  const wrapPaired = (source: string, tags: string, marker: string) =>
+    source.replace(new RegExp(`<(?:${tags})\\b[^>]*>([^\\n]*?)</(?:${tags})\\s*>`, "gi"), (_whole, body: string) => {
+      const inner = body.replace(/<(\/?)(sub|sup|u)\b[^>]*>/gi, "<$1$2>").replace(/<(?!\/?(?:sub|sup|u)>)[^>]+>/g, "").trim();
+      if (!inner) return " ";
+      const lead = /^\s/.test(body) ? " " : "";
+      const tail = /\s$/.test(body) ? " " : "";
+      return `${lead}${marker}${inner}${marker}${tail}`;
+    });
+  text = wrapPaired(text, "i|em", "*");
+  text = wrapPaired(text, "b|strong", "**");
+  // Chemistry and physics formatting: keep sub/sup/u as bare tags — the card
+  // renderer turns them back into real subscripts and superscripts.
+  text = text.replace(/<(\/?)(sub|sup|u)\b[^>]*>/gi, "<$1$2>");
+  text = text.replace(/<(?!\/?(?:sub|sup|u)>)[^>]+>/g, "");
   text = decodeEntities(text);
   return text
     .replace(/[ \t]+\n/g, "\n")

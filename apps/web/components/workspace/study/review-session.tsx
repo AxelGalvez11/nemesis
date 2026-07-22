@@ -79,6 +79,21 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
   const current = queue[0] ?? null;
   const currentId = current?.id ?? null;
 
+  // Anki-style remaining counts for the footer: cards failed this sitting
+  // count as learning, untouched cards as new, the rest as due reviews.
+  const remaining = useMemo(() => {
+    let newCount = 0;
+    let learnCount = 0;
+    let dueCount = 0;
+    for (const card of queue) {
+      if (retryIds.includes(card.id)) learnCount += 1;
+      else if (card.repetitions === 0) newCount += 1;
+      else dueCount += 1;
+    }
+    return { dueCount, learnCount, newCount };
+  }, [queue, retryIds]);
+  const currentBucket = current ? (retryIds.includes(current.id) ? "learn" : current.repetitions === 0 ? "new" : "due") : null;
+
   // A new card on deck closes the previous card's explanation.
   useEffect(() => {
     setExplainFor(null);
@@ -267,7 +282,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-none border-0 bg-background px-7 py-6" showCloseButton>
+      <DialogContent className="review-stage left-0 top-0 h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-none border-0 px-7 py-6" showCloseButton>
         <DialogTitle className="sr-only">{deck?.name ?? "Flashcard review"}</DialogTitle>
         <DialogDescription className="sr-only">Review the front of the card, reveal its answer, then grade your recall.</DialogDescription>
         {current && editOpen ? (
@@ -305,7 +320,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
         ) : current ? (
           <div className="mx-auto grid min-h-0 w-full max-w-6xl grid-rows-[auto_minmax(0,1fr)_auto] gap-4 pt-1">
             <div className="flex items-center justify-between pr-10">
-              <span className="text-xs tabular-nums text-(--ui-text-tertiary)">{queue.length} left</span>
+              <span className="min-w-0 truncate text-xs text-(--ui-text-tertiary)">{deck ? deck.name.split("::").at(-1) : "All decks"}</span>
               <div className="flex items-center gap-1">
                 {lastGrade && (
                   <Button className="text-xs" disabled={saving} onClick={() => void undo()} size="sm" title="Undo last grade (Z)" variant="ghost">
@@ -351,11 +366,11 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                 {occlusionPayload ? (
                   <OcclusionCardView payload={occlusionPayload} revealed={revealed} />
                 ) : (
-                  <AssistantMarkdown className="text-lg font-medium leading-8" text={frontText} />
+                  <AssistantMarkdown className="text-lg font-medium leading-8" htmlSubSup obsidianUnderline text={frontText} />
                 )}
                 {showBack && (
                   <div className={cn("mt-8 border-t border-(--ui-stroke-secondary) pt-8", settings.flipAnimation && "animate-in fade-in-0 slide-in-from-bottom-1 duration-300")}>
-                    <AssistantMarkdown className="text-lg leading-8 text-foreground" text={current.back} />
+                    <AssistantMarkdown className="text-lg leading-8 text-foreground" htmlSubSup obsidianUnderline text={current.back} />
                   </div>
                 )}
                 {explainFor === current.id && (
@@ -364,25 +379,32 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                     <div className="mt-2">
                       {explainBusy
                         ? <p className="text-xs text-(--ui-text-tertiary)">Thinking through this card…</p>
-                        : <AssistantMarkdown className="text-sm leading-relaxed" text={explainText} />}
+                        : <AssistantMarkdown className="text-sm leading-relaxed" htmlSubSup obsidianUnderline text={explainText} />}
                     </div>
                   </div>
                 )}
               </div>
             </section>
             {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">{error}</p>}
-            {!revealed ? (
-              <Button className="justify-self-center bg-foreground text-background hover:bg-foreground/90" onClick={() => setRevealed(true)} size="lg" title="Show answer (Space)" variant="ghost">Show answer</Button>
-            ) : (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {GRADES.map(({ grade: value, hint, label, variant }) => (
-                  <Button className="h-auto flex-col gap-0.5 bg-background py-2 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]" disabled={saving} key={value} onClick={() => void grade(value)} variant={variant}>
-                    <span>{label}</span>
-                    <span className="text-[0.625rem] font-normal opacity-70">{hint}</span>
-                  </Button>
-                ))}
+            <div className="grid justify-items-center gap-3">
+              <div className="flex items-center justify-center gap-4 text-xs font-medium tabular-nums" data-testid="review-counts" title="New · Learning · Due left in this session">
+                <span className={cn("text-sky-500", currentBucket === "new" && "underline underline-offset-4")}>{remaining.newCount}</span>
+                <span className={cn("text-amber-500", currentBucket === "learn" && "underline underline-offset-4")}>{remaining.learnCount}</span>
+                <span className={cn("text-emerald-500", currentBucket === "due" && "underline underline-offset-4")}>{remaining.dueCount}</span>
               </div>
-            )}
+              {!revealed ? (
+                <Button className="bg-foreground text-background hover:bg-foreground/90" onClick={() => setRevealed(true)} size="lg" title="Show answer (Space)" variant="ghost">Show answer</Button>
+              ) : (
+                <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4">
+                  {GRADES.map(({ grade: value, hint, label, variant }) => (
+                    <Button className="h-auto flex-col gap-0.5 bg-background py-2 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]" disabled={saving} key={value} onClick={() => void grade(value)} variant={variant}>
+                      <span>{label}</span>
+                      <span className="text-[0.625rem] font-normal opacity-70">{hint}</span>
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="grid min-h-56 place-items-center bg-background p-8 text-center">
