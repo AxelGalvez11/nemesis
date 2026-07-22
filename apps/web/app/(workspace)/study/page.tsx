@@ -11,6 +11,9 @@ import { useCloudStudy } from "@/lib/workspace/study-cloud-store";
 
 export default function StudyPage() {
   const [activeTab, setActiveTab] = useState<StudyTabId>("cards");
+  // The settings gear is gone from the header (owner 2026-07-22) but the
+  // settings themselves are not: they still load from localStorage and still
+  // drive ReviewSession, so a student's saved preference keeps applying.
   const [reviewSettings, setReviewSettings] = useState<StudyReviewSettings>({ flipAnimation: true, flashcardOutline: false });
   const searchParams = useSearchParams();
   const sourcePath = searchParams.get("source");
@@ -25,14 +28,9 @@ export default function StudyPage() {
     }
   }, []);
 
-  function updateReviewSettings(next: StudyReviewSettings) {
-    setReviewSettings(next);
-    try { window.localStorage.setItem("nemesis.web.study-review-settings", JSON.stringify(next)); } catch { /* best effort */ }
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <StudyChrome activeTab={activeTab} counts={{ cards: cards.length, tests: artifacts.filter((item) => item.kind === "test").length, maps: artifacts.filter((item) => item.kind === "mindmap").length, stats: reviews.length }} onReviewSettingsChange={updateReviewSettings} onTabChange={setActiveTab} reviewSettings={reviewSettings} />
+      <StudyChrome activeTab={activeTab} counts={{ cards: cards.length, tests: artifacts.filter((item) => item.kind === "test").length, maps: artifacts.filter((item) => item.kind === "mindmap").length, stats: reviews.length }} onTabChange={setActiveTab} />
       {activeTab === "cards" && <CardsTab reviewSettings={reviewSettings} sourcePath={sourcePath} />}
       {activeTab === "tests" && <GroupedStudyTab kind="tests" />}
       {activeTab === "maps" && <GroupedStudyTab kind="mindmaps" />}

@@ -315,8 +315,8 @@ export function NotebookHome() {
 
             <section className="flex flex-col gap-2 p-3">
               <h2 className="text-[0.8rem] font-semibold uppercase tracking-wide text-foreground">Create</h2>
-              <div className="grid grid-cols-3 gap-2">
-                {(["flashcards", "test", "slides"] as const).map((kind) => (
+              <div className="grid grid-cols-2 gap-2">
+                {(["flashcards", "test", "slides", "mindmap"] as const).map((kind) => (
                   <button
                     className="flex flex-col items-center gap-1.5 rounded-xl border border-(--ui-stroke-tertiary) bg-background px-2 py-3 text-[0.76rem] text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) hover:text-foreground disabled:opacity-55"
                     disabled={Boolean(generating[kind]) || wireSources.length === 0}

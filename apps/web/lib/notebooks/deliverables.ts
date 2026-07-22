@@ -10,6 +10,7 @@ import { createNotebookOutput, updateNotebookOutput, type NotebookOutput, type N
 
 export const DELIVERABLE_META: Record<NotebookOutputKind, { label: string; icon: string }> = {
   flashcards: { icon: "layers", label: "Flashcards" },
+  mindmap: { icon: "type-hierarchy-sub", label: "Mindmap" },
   slides: { icon: "preview", label: "Slides" },
   test: { icon: "checklist", label: "Test" },
 };
@@ -30,6 +31,14 @@ function deliverablePrompt(kind: NotebookOutputKind): string {
     return "Create a practice test from the sources below. Start with '## Practice test — <topic>'. Write 8-15 numbered " +
       "multiple-choice questions (options A-D) that probe understanding, not recall alone. After the questions add an " +
       "'## Answer key' section listing each number, the correct letter, and a one-sentence explanation grounded in the sources.";
+  }
+  // Markdown, like every other notebook deliverable — this is a notebook_outputs
+  // row, NOT a study_artifacts mindmap (which carries a parsed outline object).
+  if (kind === "mindmap") {
+    return "Create a mind map from the sources below as a nested markdown outline. Start with '## Mind map — <topic>'. " +
+      "Use one '- ' bullet per idea and indent two spaces per level, 3-4 levels deep: the central topic's main branches " +
+      "first, then their sub-ideas, then concrete details, numbers, or examples at the leaves. Keep every bullet under " +
+      "10 words so the structure stays readable, and group branches so siblings are genuinely parallel.";
   }
   return "Create a slide outline from the sources below. Start with '## Slide deck — <topic>'. Then one '### Slide N: <title>' " +
     "section per slide (8-14 slides) with 3-5 tight bullet points each, building a logical teaching arc: hook, core concepts, " +

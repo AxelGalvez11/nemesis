@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { EmptyState } from "@/components/desktop-ui/empty-state";
 import { Input } from "@/components/desktop-ui/input";
 import { isCardDue, type StudyCard, type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
+import { isWithinGroup, normalizeGroupPath, renamedGroupPath } from "@/lib/workspace/study-tree";
 import { cn } from "@/lib/utils";
 
 import { AnkiImportDialog } from "./anki-import-dialog";
@@ -17,6 +18,7 @@ import { ReviewSession } from "./review-session";
 import { StudyBrowser } from "./study-browser";
 import { StudyCreateDialog, type StudyCreateKind } from "./study-create-dialog";
 import type { StudyReviewSettings } from "./study-chrome";
+import { StudyRowMenu, StudyRowRename, useRowClick } from "./study-row-actions";
 
 const DECK_GROUPS_KEY = "nemesis.web.study-deck-groups";
 
@@ -41,15 +43,11 @@ interface DeckCounts {
 
 type DeckDragItem = { kind: "deck"; id: string } | { kind: "group"; path: string };
 
-function normalizeGroup(value: string): string {
-  return value.split("::").map((part) => part.trim()).filter(Boolean).join("::");
-}
-
 function buildDeckTree(decks: StudyDeck[], extraGroups: string[]): DeckTreeNode[] {
   const roots: DeckTreeNode[] = [];
 
   function ensureGroup(path: string): DeckTreeNode | null {
-    const parts = normalizeGroup(path).split("::").filter(Boolean);
+    const parts = normalizeGroupPath(path).split("::").filter(Boolean);
     if (parts.length === 0) return null;
     let siblings = roots;
     let currentPath = "";
@@ -105,14 +103,14 @@ function countsForNode(node: DeckTreeNode, cards: StudyCard[]): DeckCounts {
 function loadGroups(): string[] {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(DECK_GROUPS_KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string").map(normalizeGroup).filter(Boolean) : [];
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string").map(normalizeGroupPath).filter(Boolean) : [];
   } catch {
     return [];
   }
 }
 
 export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
-  const { cards, decks, deleteDeck, error, moveDeck, moveDeckGroup, reload, selectDeck, selectedDeckId, status } = useCloudStudy();
+  const { cards, decks, deleteDeck, deleteDeckGroup, error, moveDeck, moveDeckGroup, reload, renameDeck, renameDeckGroup, selectDeck, selectedDeckId, status } = useCloudStudy();
   const [createKind, setCreateKind] = useState<StudyCreateKind | null>(null);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
@@ -134,6 +132,8 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
   const ignoreClickUntilRef = useRef(0);
   const pointerCleanupRef = useRef<(() => void) | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Tree-node id ("deck:<id>" / "group:<path>") currently showing its rename field.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const selectedDeck = decks.find((deck) => deck.id === selectedDeckId) ?? null;
   const tree = useMemo(() => buildDeckTree(decks, extraGroups), [decks, extraGroups]);
 
@@ -141,7 +141,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
   useEffect(() => () => pointerCleanupRef.current?.(), []);
 
   function persistGroups(next: string[]) {
-    const unique = Array.from(new Set(next.map(normalizeGroup).filter(Boolean)));
+    const unique = Array.from(new Set(next.map(normalizeGroupPath).filter(Boolean)));
     setExtraGroups(unique);
     try { window.localStorage.setItem(DECK_GROUPS_KEY, JSON.stringify(unique)); } catch { /* best effort */ }
   }
@@ -154,6 +154,42 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
       setBrowseOpen(false);
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Couldn't delete the deck.");
+    }
+  }
+
+  // Deleting a folder takes its decks (and their cards) with it — there is no
+  // folder row to delete on its own, so spell the cost out before confirming.
+  async function removeGroup(path: string) {
+    const doomed = decks.filter((deck) => isWithinGroup(deck.name, path));
+    const leaf = path.split("::").pop() ?? path;
+    const tally = doomed.length === 0
+      ? "It has no decks in it."
+      : `It holds ${doomed.length} deck${doomed.length === 1 ? "" : "s"} and ${cards.filter((card) => doomed.some((deck) => deck.id === card.deckId)).length} card${cards.filter((card) => doomed.some((deck) => deck.id === card.deckId)).length === 1 ? "" : "s"}, which are deleted too.`;
+    if (!window.confirm(`Are you sure you want to delete the folder “${leaf}”? ${tally} This can't be undone.`)) return;
+    setActionError(null);
+    try {
+      await deleteDeckGroup(path);
+      persistGroups(extraGroups.filter((group) => !isWithinGroup(group, path)));
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Couldn't delete the folder.");
+    }
+  }
+
+  async function commitRename(node: DeckTreeNode, next: string) {
+    setRenamingId(null);
+    setActionError(null);
+    try {
+      if (node.deck) {
+        await renameDeck(node.deck.id, next);
+        return;
+      }
+      // Folders live only in deck names, so a rename that touches no deck still
+      // has to move the remembered empty folder itself.
+      await renameDeckGroup(node.groupPath, next);
+      const destination = renamedGroupPath(node.groupPath, next);
+      persistGroups(extraGroups.map((group) => isWithinGroup(group, node.groupPath) ? `${destination}${group.slice(node.groupPath.length)}` : group));
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Couldn't rename that.");
     }
   }
 
@@ -269,7 +305,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
 
   function createGroup(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const next = normalizeGroup(groupName);
+    const next = normalizeGroupPath(groupName);
     if (!next) return;
     persistGroups([...extraGroups, next]);
     setGroupName("");
@@ -281,7 +317,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
   async function mergeIntoGroup(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!merge) return;
-    const name = normalizeGroup(mergeName);
+    const name = normalizeGroupPath(mergeName);
     const target = decks.find((deck) => deck.id === merge.targetId);
     if (!name || !target) return;
     const parent = target.name.split("::").map((part) => part.trim()).filter(Boolean).slice(0, -1).join("::");
@@ -310,7 +346,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
+    <div className="scrollbar-study flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6">
       <nav className="mx-auto mb-4 mt-2 flex shrink-0 items-center rounded-2xl border border-(--ui-stroke-tertiary) bg-background p-1 shadow-sm">
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button className="rounded-xl" size="sm" variant="ghost">Add <IconChevronDown size={13} /></Button></DropdownMenuTrigger>
@@ -347,12 +383,30 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
           )}
           data-study-drop-group=""
         >
-          <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem_5rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold">
-            <span className="pl-[19px]">Deck</span><span className="text-center">New</span><span className="text-center">Learn</span><span className="text-center">Due</span>
+          <div className="grid grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold">
+            <span className="pl-[19px]">Deck</span><span className="text-center">New</span><span className="text-center">Learn</span><span className="text-center">Due</span><span />
           </div>
           <div className="py-1.5">
             {tree.map((node) => (
-              <DeckRow cards={cards} collapsed={collapsed} depth={0} dragItem={dragItem} dropDeckId={dropDeckId} dropTarget={dropTarget} key={node.id} node={node} onOpenDeck={openDeck} onPointerClick={() => performance.now() < ignoreClickUntilRef.current} onPointerDragStart={beginPointerDrag} onToggle={toggleGroup} />
+              <DeckRow
+                cards={cards}
+                collapsed={collapsed}
+                depth={0}
+                dragItem={dragItem}
+                dropDeckId={dropDeckId}
+                dropTarget={dropTarget}
+                key={node.id}
+                node={node}
+                onCancelRename={() => setRenamingId(null)}
+                onCommitRename={(target, next) => void commitRename(target, next)}
+                onDelete={(target) => void (target.deck ? removeDeck(target.deck.id) : removeGroup(target.groupPath))}
+                onOpenDeck={openDeck}
+                onPointerClick={() => performance.now() < ignoreClickUntilRef.current}
+                onPointerDragStart={beginPointerDrag}
+                onStartRename={setRenamingId}
+                onToggle={toggleGroup}
+                renamingId={renamingId}
+              />
             ))}
           </div>
         </section>
@@ -376,7 +430,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
               </DialogDescription>
             </DialogHeader>
             <label className="grid gap-1.5 text-xs font-medium">Group name<Input autoFocus onChange={(event) => setMergeName(event.target.value)} placeholder="Cardio decks" value={mergeName} /></label>
-            <DialogFooter><Button onClick={() => setMerge(null)} type="button" variant="ghost">Cancel</Button><Button disabled={!normalizeGroup(mergeName)} type="submit" variant="secondary">Create group</Button></DialogFooter>
+            <DialogFooter><Button onClick={() => setMerge(null)} type="button" variant="ghost">Cancel</Button><Button disabled={!normalizeGroupPath(mergeName)} type="submit" variant="secondary">Create group</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -385,7 +439,7 @@ export function CardsTab({ sourcePath, reviewSettings }: CardsTabProps) {
           <form className="grid gap-4" onSubmit={createGroup}>
             <DialogHeader><DialogTitle>New deck group</DialogTitle><DialogDescription>Groups can contain decks or other groups.</DialogDescription></DialogHeader>
             <Input autoFocus onChange={(event) => setGroupName(event.target.value)} placeholder="Pharmacy School::Exam 7" value={groupName} />
-            <DialogFooter><Button onClick={() => setGroupDialogOpen(false)} type="button" variant="ghost">Cancel</Button><Button disabled={!normalizeGroup(groupName)} type="submit" variant="secondary">Create group</Button></DialogFooter>
+            <DialogFooter><Button onClick={() => setGroupDialogOpen(false)} type="button" variant="ghost">Cancel</Button><Button disabled={!normalizeGroupPath(groupName)} type="submit" variant="secondary">Create group</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -405,48 +459,81 @@ interface DeckRowProps {
   dragItem: DeckDragItem | null;
   dropTarget: string | null;
   dropDeckId: string | null;
+  renamingId: string | null;
   onOpenDeck: (id: string) => void;
   onToggle: (id: string) => void;
   onPointerDragStart: (event: React.PointerEvent, item: DeckDragItem) => void;
   onPointerClick: () => boolean;
+  onStartRename: (nodeId: string) => void;
+  onCommitRename: (node: DeckTreeNode, next: string) => void;
+  onCancelRename: () => void;
+  onDelete: (node: DeckTreeNode) => void;
 }
 
-function DeckRow({ node, depth, cards, collapsed, dragItem, dropTarget, dropDeckId, onOpenDeck, onToggle, onPointerDragStart, onPointerClick }: DeckRowProps) {
+function DeckRow(props: DeckRowProps) {
+  const { node, depth, cards, collapsed, dragItem, dropTarget, dropDeckId, renamingId, onOpenDeck, onToggle, onPointerDragStart, onPointerClick, onStartRename, onCommitRename, onCancelRename, onDelete } = props;
   const counts = countsForNode(node, cards);
   const group = !node.deck;
   const isCollapsed = collapsed.has(node.id);
+  const renaming = renamingId === node.id;
+  const rowClick = useRowClick();
   const invalidTarget = group && dragItem?.kind === "group" && (dragItem.path === node.groupPath || node.groupPath.startsWith(`${dragItem.path}::`));
   const highlighted = (group && !invalidTarget && dropTarget === node.groupPath)
     || (Boolean(node.deck) && node.deck?.id === dropDeckId && dragItem?.kind === "deck" && dragItem.id !== node.deck?.id);
   const item: DeckDragItem = node.deck ? { kind: "deck", id: node.deck.id } : { kind: "group", path: node.groupPath };
 
+  function activate() {
+    if (group) onToggle(node.id);
+    else if (node.deck) onOpenDeck(node.deck.id);
+  }
+
   return (
     <>
-      <button
+      {/* A div, not a button: the row has to contain the "…" trigger, and a
+          button inside a button is invalid HTML that browsers silently unnest. */}
+      <div
+        aria-label={node.label}
         className={cn(
-          "grid w-full cursor-grab grid-cols-[minmax(0,1fr)_5rem_5rem_5rem] items-center px-5 py-2 text-left text-xs transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
+          "grid w-full cursor-grab grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center px-5 py-2 text-left text-xs transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
           highlighted && "outline outline-2 -outline-offset-2 outline-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)]",
           ((dragItem?.kind === "deck" && node.deck?.id === dragItem.id) || (dragItem?.kind === "group" && node.groupPath === dragItem.path)) && "opacity-50",
         )}
         data-study-drop-deck={node.deck ? node.deck.id : undefined}
         data-study-drop-group={group ? node.groupPath : undefined}
         onClick={() => {
-          if (onPointerClick()) return;
-          if (group) onToggle(node.id);
-          else if (node.deck) onOpenDeck(node.deck.id);
+          if (renaming || onPointerClick()) return;
+          rowClick.click(activate);
         }}
-        onPointerDown={(event) => onPointerDragStart(event, item)}
-        type="button"
+        onDoubleClick={() => {
+          rowClick.cancel();
+          if (!renaming && !onPointerClick()) onStartRename(node.id);
+        }}
+        onKeyDown={(event) => {
+          if (renaming) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activate();
+          } else if (event.key === "F2") {
+            event.preventDefault();
+            onStartRename(node.id);
+          }
+        }}
+        onPointerDown={(event) => { if (!renaming) onPointerDragStart(event, item); }}
+        role="button"
+        tabIndex={0}
       >
         <span className={cn("flex min-w-0 items-center gap-1.5", group && "font-semibold")} style={{ paddingLeft: `${depth * 1.1}rem` }}>
           {group ? (isCollapsed ? <IconChevronRight size={13} /> : <IconChevronDown size={13} />) : <span className="w-[13px] shrink-0" />}
-          <span className="truncate">{node.label}</span>
+          {renaming
+            ? <StudyRowRename onCancel={onCancelRename} onCommit={(next) => onCommitRename(node, next)} value={node.label} />
+            : <span className="truncate">{node.label}</span>}
         </span>
         <span className="text-center font-medium tabular-nums text-sky-500">{counts.newCount || 0}</span>
         <span className="text-center font-medium tabular-nums text-amber-500">{counts.learnCount || 0}</span>
         <span className="text-center font-medium tabular-nums text-emerald-500">{counts.dueCount || 0}</span>
-      </button>
-      {!isCollapsed && node.children.map((child) => <DeckRow cards={cards} collapsed={collapsed} depth={depth + 1} dragItem={dragItem} dropDeckId={dropDeckId} dropTarget={dropTarget} key={child.id} node={child} onOpenDeck={onOpenDeck} onPointerClick={onPointerClick} onPointerDragStart={onPointerDragStart} onToggle={onToggle} />)}
+        <StudyRowMenu kindLabel={group ? "Folder" : "Deck"} onDelete={() => onDelete(node)} onRename={() => onStartRename(node.id)} />
+      </div>
+      {!isCollapsed && node.children.map((child) => <DeckRow {...props} depth={depth + 1} key={child.id} node={child} />)}
     </>
   );
 }

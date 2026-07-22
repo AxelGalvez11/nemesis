@@ -1,18 +1,21 @@
 "use client";
 
-// Study page chrome — compact title/settings plus a centered page selector.
+// Study page chrome — compact title plus a centered page selector.
+//
+// The settings gear was pulled from this header (owner 2026-07-22). Only the
+// CONTROL is gone: StudyReviewSettings still ships to ReviewSession and is
+// still persisted by the page, so card flip animation and the flashcard
+// outline keep behaving exactly as the student last left them.
 
 import { IconCards, IconChartBar, IconChecklist, IconChevronDown, IconSitemap } from "@tabler/icons-react";
 
 import { Button } from "@/components/desktop-ui/button";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
-import { Settings } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
 export type StudyTabId = "cards" | "tests" | "maps" | "stats";
@@ -32,16 +35,14 @@ interface StudyChromeProps {
   activeTab: StudyTabId;
   counts: Record<StudyTabId, number>;
   onTabChange: (tab: StudyTabId) => void;
-  reviewSettings: StudyReviewSettings;
-  onReviewSettingsChange: (settings: StudyReviewSettings) => void;
 }
 
-export function StudyChrome({ activeTab, counts, onTabChange, reviewSettings, onReviewSettingsChange }: StudyChromeProps) {
+export function StudyChrome({ activeTab, counts, onTabChange }: StudyChromeProps) {
   const active = TABS.find((tab) => tab.id === activeTab) ?? TABS[0]!;
   const ActiveIcon = active.icon;
 
   return (
-    <header className="workspace-page-header relative flex min-h-12 shrink-0 items-center justify-between gap-3 px-6 py-2.5 max-sm:px-4">
+    <header className="workspace-page-header relative flex min-h-12 shrink-0 items-center gap-3 px-6 py-2.5 max-sm:px-4">
       <h1 className="workspace-page-title">Study</h1>
 
       <DropdownMenu>
@@ -69,22 +70,6 @@ export function StudyChrome({ activeTab, counts, onTabChange, reviewSettings, on
               {counts[id] > 0 && <span className="ml-auto tabular-nums text-(--ui-text-quaternary)">{counts[id]}</span>}
             </DropdownMenuItem>
           ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button aria-label="Study settings" className="size-9 rounded-xl" size="icon" variant="ghost">
-            <Settings className="size-5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuCheckboxItem checked={reviewSettings.flipAnimation} onCheckedChange={(checked) => onReviewSettingsChange({ ...reviewSettings, flipAnimation: checked })}>
-            Card flip animation
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem checked={reviewSettings.flashcardOutline} onCheckedChange={(checked) => onReviewSettingsChange({ ...reviewSettings, flashcardOutline: checked })}>
-            Flashcard outline
-          </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </header>

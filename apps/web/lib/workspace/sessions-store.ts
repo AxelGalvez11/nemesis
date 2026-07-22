@@ -58,7 +58,9 @@ export interface SessionSource {
 
 export interface SessionOutput {
   id: string;
-  kind: "flashcards" | "slides" | "test" | "report" | "recording" | "other";
+  /** Keep in step with NotebookOutputKind — notebook deliverables are listed
+   *  through this type, so a kind missing here is silently dropped on read. */
+  kind: "flashcards" | "slides" | "test" | "mindmap" | "report" | "recording" | "other";
   title: string;
   url?: string;
   transcript?: string;
@@ -156,7 +158,7 @@ function inferSourcesFromContent(content: string): SessionSource[] {
 function sanitizeOutput(rawOutput: unknown): SessionOutput | null {
   if (!rawOutput || typeof rawOutput !== "object") return null;
   const output = rawOutput as Record<string, unknown>;
-  const kinds = new Set(["flashcards", "slides", "test", "report", "recording", "other"]);
+  const kinds = new Set(["flashcards", "slides", "test", "mindmap", "report", "recording", "other"]);
   if (typeof output.id !== "string" || typeof output.title !== "string" || typeof output.kind !== "string" || !kinds.has(output.kind)) return null;
   return {
     id: output.id,

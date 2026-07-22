@@ -40,7 +40,7 @@ function RetentionGraph({ reviews }: { reviews: StudyReview[] }) {
 
 export function StatsTab({ reviews }: { reviews: StudyReview[] }) {
   return (
-    <main className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto px-6 py-10">
+    <main className="scrollbar-study flex min-h-0 flex-1 items-start justify-center overflow-y-auto px-6 py-10">
       <div className="grid w-full max-w-4xl gap-5">
         <section className="rounded-3xl bg-[color-mix(in_srgb,var(--ui-base)_3%,transparent)] px-6 py-7 sm:px-8">
           <div className="mb-7">

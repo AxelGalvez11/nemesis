@@ -5,7 +5,7 @@
 import { isPreviewMode } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 
-export type NotebookOutputKind = "flashcards" | "test" | "slides";
+export type NotebookOutputKind = "flashcards" | "test" | "slides" | "mindmap";
 export type NotebookOutputStatus = "pending" | "ready" | "failed";
 
 export interface NotebookOutput {
@@ -28,7 +28,7 @@ function toOutput(row: Record<string, unknown>): NotebookOutput | null {
   const kind = row.kind;
   const status = row.status;
   if (typeof row.id !== "string" || typeof row.notebook_id !== "string") return null;
-  if (kind !== "flashcards" && kind !== "test" && kind !== "slides") return null;
+  if (kind !== "flashcards" && kind !== "test" && kind !== "slides" && kind !== "mindmap") return null;
   if (status !== "pending" && status !== "ready" && status !== "failed") return null;
   return {
     content: typeof row.content === "string" ? row.content : "",
