@@ -1,8 +1,13 @@
 "use client";
 
 // Composer — desktop src/app/chat/composer/index.tsx (shell spec §B7), v1:
-// contenteditable input, Chat/Record mode, attachment/deep-research menu,
-// dictation, and send/stop/record controls.
+// contenteditable input, attachment/deep-research menu, dictation, and
+// send/stop/record controls.
+//
+// Mode vs effort (owner 2026-07-22): the pill next to the send button is the
+// ANSWER EFFORT dial (Instant/Medium/High) — the thing a student changes often.
+// Recording is a rarely-flipped mode, so it moved into the "+" menu and
+// announces itself with a removable Record chip instead of occupying the pill.
 
 import type { KeyboardEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -17,6 +22,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
+import {
+  CHAT_EFFORT_HINT,
+  CHAT_EFFORT_LABEL,
+  CHAT_EFFORTS,
+  DEFAULT_CHAT_EFFORT,
+  isChatEffort,
+  type ChatEffort,
+} from "@/lib/workspace/chat-effort";
 import { ChevronDown } from "@/lib/workspace/icons";
 import { Mic } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
@@ -24,8 +37,7 @@ import { cn } from "@/lib/utils";
 export type ComposerMode = "chat" | "record";
 
 const COMPOSER_MODE_STORAGE_KEY = "nemesis.web.composer-mode";
-const COMPOSER_MODE_LABEL: Record<ComposerMode, string> = { chat: "Chat", record: "Record" };
-const COMPOSER_MODES: ComposerMode[] = ["chat", "record"];
+const COMPOSER_EFFORT_STORAGE_KEY = "nemesis.web.composer-effort";
 
 function isComposerMode(value: string | null): value is ComposerMode {
   return value === "chat" || value === "record";
@@ -37,6 +49,12 @@ function readStoredComposerMode(): ComposerMode {
   return isComposerMode(stored) ? stored : "chat";
 }
 
+function readStoredEffort(): ChatEffort {
+  if (typeof window === "undefined") return DEFAULT_CHAT_EFFORT;
+  const stored = window.localStorage.getItem(COMPOSER_EFFORT_STORAGE_KEY);
+  return isChatEffort(stored) ? stored : DEFAULT_CHAT_EFFORT;
+}
+
 interface ComposerProps {
   busy: boolean;
   centered?: boolean;
@@ -44,6 +62,9 @@ interface ComposerProps {
   placeholder: string;
   mode?: ComposerMode;
   onModeChange?: (mode: ComposerMode) => void;
+  /** Told the stored level on mount, then on every change, so the sender can
+   *  apply it to the turn. */
+  onEffortChange?: (effort: ChatEffort) => void;
   onRecordingChange?: (recording: boolean) => void;
   onSubmit: (text: string, files: File[]) => void;
   onStop: () => void;
@@ -52,7 +73,7 @@ interface ComposerProps {
   belowStart?: ReactNode;
 }
 
-export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
+export function Composer({ busy, centered = false, placement = "floating", placeholder, mode, onModeChange, onEffortChange, onRecordingChange, onSubmit, onStop, showRecordCompanion = true, belowStart }: ComposerProps) {
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasText, setHasText] = useState(false);
@@ -60,7 +81,22 @@ export function Composer({ busy, centered = false, placement = "floating", place
   const [listening, setListening] = useState(false);
   const [recording, setRecording] = useState(false);
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
+  const [effort, setEffortState] = useState<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const activeMode = mode ?? composerMode;
+
+  useEffect(() => {
+    const stored = readStoredEffort();
+    setEffortState(stored);
+    onEffortChange?.(stored);
+    // Read once on mount; the parent is told so its first turn uses it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const setEffort = (next: ChatEffort) => {
+    setEffortState(next);
+    onEffortChange?.(next);
+    try { window.localStorage.setItem(COMPOSER_EFFORT_STORAGE_KEY, next); } catch { /* best-effort */ }
+  };
 
   useEffect(() => {
     if (mode) return;
@@ -179,6 +215,22 @@ export function Composer({ busy, centered = false, placement = "floating", place
             className="relative z-1 flex min-h-0 w-full flex-col gap-1.5 overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y)"
             data-slot="composer-fade"
           >
+            {activeMode === "record" && (
+              <div className="flex flex-wrap gap-1 px-1">
+                <span className="flex items-center gap-1.5 rounded-full bg-(--ui-bg-quaternary) px-2.5 py-1 text-[0.6875rem] font-medium text-(--ui-text-secondary)" data-testid="record-chip">
+                  <Codicon name="record" size="0.6rem" />
+                  Record
+                  <button
+                    aria-label="Leave record mode"
+                    className="rounded-full p-0.5 hover:bg-(--chrome-action-hover)"
+                    onClick={() => setMode("chat")}
+                    type="button"
+                  >
+                    <Codicon name="close" size="0.65rem" />
+                  </button>
+                </span>
+              </div>
+            )}
             {activeMode === "chat" && files.length > 0 && (
               <div className="flex flex-wrap gap-1 px-1">
                 {files.map((file, index) => (
@@ -194,7 +246,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
                 {activeMode === "chat" && (
                   <>
                     <input className="sr-only" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} ref={fileInputRef} type="file" />
-                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} />
+                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onRecord={() => setMode("record")} />
                   </>
                 )}
               </div>
@@ -217,7 +269,7 @@ export function Composer({ busy, centered = false, placement = "floating", place
               </div>
               <div className="flex items-center justify-end [grid-area:controls]">
                 <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
-                  <ModePill mode={activeMode} onChange={setMode} />
+                  {activeMode === "chat" && <EffortPill effort={effort} onChange={setEffort} />}
                   {activeMode === "chat" && <Button aria-label="Dictate" aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>}
                   {activeMode === "record" ? (
                     <Button
@@ -297,7 +349,7 @@ export function RecordCompanionPanel() {
   );
 }
 
-function AddMenu({ onChooseFiles }: { onChooseFiles: () => void }) {
+function AddMenu({ onChooseFiles, onRecord }: { onChooseFiles: () => void; onRecord: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -314,36 +366,43 @@ function AddMenu({ onChooseFiles }: { onChooseFiles: () => void }) {
           <Codicon name="search" size="0.875rem" />
           Deep research
         </DropdownMenuItem>
+        <DropdownMenuItem data-testid="add-menu-record" onSelect={onRecord}>
+          <Codicon name="record" size="0.875rem" />
+          Record
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
-function ModePill({ mode, onChange }: { mode: ComposerMode; onChange: (mode: ComposerMode) => void }) {
+function EffortPill({ effort, onChange }: { effort: ChatEffort; onChange: (effort: ChatEffort) => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
+          aria-label={`Answer effort: ${CHAT_EFFORT_LABEL[effort]}`}
           className="h-(--composer-control-size) max-w-40 shrink-0 gap-1 rounded-md px-2 text-xs font-normal text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground"
+          data-testid="effort-pill"
           size="sm"
           variant="ghost"
         >
-          <span className="truncate">{COMPOSER_MODE_LABEL[mode]}</span>
+          <span className="truncate">{CHAT_EFFORT_LABEL[effort]}</span>
           <ChevronDown className="size-2.5 shrink-0 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-32 p-1" side="top">
+      <DropdownMenuContent align="start" className="w-52 p-1" side="top">
         <div className="flex flex-col gap-0.5">
-          {COMPOSER_MODES.map((option) => (
+          {CHAT_EFFORTS.map((option) => (
             <DropdownMenuItem
               className={cn(
-                "rounded-md px-2.5 py-1.5 text-left text-sm font-medium",
-                option === mode ? "bg-(--ui-control-active-background) text-foreground" : "text-foreground hover:bg-(--ui-control-hover-background)",
+                "flex-col items-start gap-0 rounded-md px-2.5 py-1.5 text-left",
+                option === effort ? "bg-(--ui-control-active-background) text-foreground" : "text-foreground hover:bg-(--ui-control-hover-background)",
               )}
               key={option}
               onSelect={() => onChange(option)}
             >
-              {COMPOSER_MODE_LABEL[option]}
+              <span className="text-sm font-medium">{CHAT_EFFORT_LABEL[option]}</span>
+              <span className="text-[0.6875rem] font-normal text-(--ui-text-tertiary)">{CHAT_EFFORT_HINT[option]}</span>
             </DropdownMenuItem>
           ))}
         </div>
