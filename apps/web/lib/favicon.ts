@@ -17,6 +17,20 @@ export function hostnameOf(url: string | null | undefined): string | null {
   }
 }
 
+// Leading host labels that identify a mirror/language rather than the source itself, so a pill
+// reads "Wikipedia" instead of "En".
+const GENERIC_HOST_LABELS = new Set(["www", "en", "m", "amp", "mobile"]);
+
+/** Short display name for a source pill: fifa.com -> "Fifa", en.wikipedia.org -> "Wikipedia",
+ *  pubmed.ncbi.nlm.nih.gov -> "Pubmed". Falls back to null when the URL has no usable host. */
+export function sourceLabel(url: string | null | undefined): string | null {
+  const host = hostnameOf(url);
+  if (!host) return null;
+  const name = host.split(".").filter((part) => !GENERIC_HOST_LABELS.has(part))[0];
+  if (!name) return null;
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
 // The engine's fixed search surface, shown as chips while a search is still running (the real
 // per-answer domains replace these once citations arrive).
 export const SEARCH_DOMAINS = [

@@ -55,7 +55,7 @@
   /* surfaces & lines — the desktop light family (paper, not ChatGPT white) */
   --bg: #f8faff; --bg-2: #eef0f6; --surface: #f1f3f8; --surface-2: #e9ecf2; --raised: #ffffff;
   --line: rgba(22, 24, 29, 0.10); --line-2: rgba(22, 24, 29, 0.18);
-  --text: #16181d; --text-2: #5a5e68; --text-3: #8b8f99;
+  --text: #000000; --text-2: #5a5e68; --text-3: #8b8f99;
   --rail-bg: #eef0f6;
   /* hover/active fills — accent-tinted at desktop accentMixes strengths (rowHover 4 / rowActive 8). */
   --fill-hover: rgba(204, 31, 51, 0.05); --fill-active: rgba(204, 31, 51, 0.08);
@@ -95,7 +95,7 @@
   --line-acid: rgba(204, 31, 51, 0.26); --placeholder: var(--text-3); --button-text: var(--on-acid);
 
   /* shadcn HSL triplets (same colors as the hex tokens above) */
-  --background: 220 100% 99%; --foreground: 225 14% 10%;
+  --background: 220 100% 99%; --foreground: 0 0% 0%;
   --card: 0 0% 100%; --card-foreground: 225 14% 10%;
   --popover: 0 0% 100%; --popover-foreground: 225 14% 10%;
   --primary: 353 76% 46%; --primary-foreground: 10 100% 98%;
@@ -114,10 +114,10 @@
      page #0e0e0e · card #141414 · popover #181818 · muted #1e1e1e · secondary
      #262626 · sidebar #0a0a0a / border #202020 · border/input #2a2a2a. Mapped
      by elevation onto this app's surface roles. */
-  --bg: #0e0e0e; --bg-2: #141414; --surface: #181818; --surface-2: #1e1e1e; --raised: #262626;
+  --bg: #000000; --bg-2: #141414; --surface: #181818; --surface-2: #1e1e1e; --raised: #262626;
   --line: #202020; --line-2: #2a2a2a;
-  --text: #eaeaea; --text-2: #9a9a9a; --text-3: #808080;
-  --rail-bg: #0a0a0a;
+  --text: #ffffff; --text-2: #9a9a9a; --text-3: #808080;
+  --rail-bg: #000000;
   /* Accent-tinted hover/active fills (desktop accentMixes rowHover 4 / rowActive 8). */
   --fill-hover: rgba(255, 39, 64, 0.06); --fill-active: rgba(255, 39, 64, 0.09);
   --composer-border: #2a2a2a; --composer-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
@@ -139,7 +139,7 @@
   --shadow-menu: 0 8px 16px rgba(0, 0, 0, 0.32), inset 0 0 1px rgba(255, 255, 255, 0.2);
   --line-acid: rgba(255, 39, 64, 0.28);
 
-  --background: 0 0% 5%; --foreground: 0 0% 92%;
+  --background: 0 0% 0%; --foreground: 0 0% 100%;
   --card: 0 0% 8%; --card-foreground: 0 0% 92%;
   --popover: 0 0% 9%; --popover-foreground: 0 0% 92%;
   --primary: 353 100% 58%; --primary-foreground: 10 100% 98%;

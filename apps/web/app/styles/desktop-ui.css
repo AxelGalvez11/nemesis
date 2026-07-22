@@ -169,7 +169,7 @@
    unaffected in precedence; names are disjoint from the portal token set. */
 @layer base {
   :root {
-    --theme-foreground: #161616;
+    --theme-foreground: #000000;
     --theme-primary: #cc1f33;
     --theme-secondary: #fbeff1;
     --theme-accent-soft: #fae9eb;
@@ -284,7 +284,7 @@
       var(--ui-accent) var(--theme-control-active-accent-mix),
       color-mix(in srgb, var(--ui-base) 5%, transparent)
     );
-    --ui-text-primary: color-mix(in srgb, var(--ui-base) 94%, transparent);
+    --ui-text-primary: color-mix(in srgb, var(--ui-base) 100%, transparent);
     --ui-text-secondary: color-mix(in srgb, var(--ui-base) 74%, transparent);
     --ui-text-tertiary: color-mix(in srgb, var(--ui-base) 54%, transparent);
     --ui-text-quaternary: color-mix(in srgb, var(--ui-base) 36%, transparent);
@@ -432,14 +432,14 @@
 
   /* DARK — the nemesis skin verbatim (crimson tint is a no-op on #0e0e0e). */
   :root[data-theme='dark'] {
-    --theme-foreground: #eaeaea;
+    --theme-foreground: #ffffff;
     --theme-primary: #ff2740;
     --theme-secondary: #1f1012;
     --theme-accent-soft: #261113;
     --theme-midground: #ff2740;
     --theme-warm: #ff2740;
-    --theme-background-seed: #0e0e0e;
-    --theme-sidebar-seed: #0a0a0a;
+    --theme-background-seed: #000000;
+    --theme-sidebar-seed: #000000;
     --theme-card-seed: #141414;
     --theme-elevated-seed: #181818;
     --theme-bubble-seed: #1f1717;
@@ -447,8 +447,8 @@
     --theme-mix-card: 38%;
     --theme-mix-elevated: 46%;
     --theme-mix-bubble: 46%;
-    --theme-neutral-chrome: #0d0d0e;
-    --theme-neutral-sidebar: #0a0a0b;
+    --theme-neutral-chrome: #000000;
+    --theme-neutral-sidebar: #000000;
     --theme-neutral-card: #161618;
 
     /* Dark-only accent palette overrides. */

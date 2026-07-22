@@ -10,7 +10,9 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 
+import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { cn } from "@/lib/utils";
+import { citationsToMarkdown } from "@/lib/workspace/chat-citations";
 import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/library-links";
 import { normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
 
@@ -26,6 +28,13 @@ const MARKDOWN_CONTAINER_CLASS_NAME =
   "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>*+*]:mt-(--paragraph-gap)";
 
 const CODE_BLOCK_LANGUAGE_RE = /language-/;
+
+/** A web result the answer can cite. Structural, so SessionSource fits as-is. */
+export interface CitationSource {
+  title: string;
+  url: string;
+}
+
 
 export function slugifyHeading(value: string): string {
   return value
@@ -43,6 +52,7 @@ function markdownComponents(
   onWikiLink?: (target: string) => void,
   isWikiLinkAvailable?: (target: string) => boolean,
   externalLinksInNewTab = true,
+  sources?: ReadonlyArray<CitationSource>,
 ): Components {
   return {
     a: ({ children, href }) => {
@@ -69,6 +79,32 @@ function markdownComponents(
           >
             #{tag}
           </span>
+        );
+      }
+      const citeIndex = href?.startsWith("#nemesis-cite=")
+        ? Number.parseInt(href.slice("#nemesis-cite=".length), 10)
+        : null;
+      if (citeIndex !== null) {
+        const source = sources?.[citeIndex - 1];
+        // Pre-processing only emits in-range markers, so a miss means stale
+        // markup (an edited/replayed answer) — drop the chip rather than leave
+        // a bare number sitting in the prose.
+        if (!source) return null;
+        const host = hostnameOf(source.url);
+        return (
+          <a
+            className="mx-0.5 inline-flex items-center gap-1 rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) px-1.5 py-px align-baseline text-[0.78em] font-medium text-(--ui-text-secondary) no-underline hover:bg-(--ui-control-hover-background)"
+            href={source.url}
+            rel="noopener noreferrer"
+            target="_blank"
+            title={source.title || source.url}
+          >
+            {host && (
+              // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
+              <img alt="" className="size-3 rounded-full" src={faviconUrl(host)} />
+            )}
+            {sourceLabel(source.url) ?? host}
+          </a>
         );
       }
       const wikiTarget = href?.startsWith("#nemesis-note=")
@@ -194,6 +230,7 @@ function markdownComponents(
 export function AssistantMarkdown({
   className,
   text,
+  sources,
   onWikiLink,
   isWikiLinkAvailable,
   externalLinksInNewTab = true,
@@ -204,6 +241,9 @@ export function AssistantMarkdown({
 }: {
   className?: string;
   text: string;
+  /** Numbered web results backing this answer. Supplying them turns the answer's
+   *  [n] markers into inline source pills; omitting them leaves the text as-is. */
+  sources?: ReadonlyArray<CitationSource>;
   onWikiLink?: (target: string) => void;
   isWikiLinkAvailable?: (target: string) => boolean;
   externalLinksInNewTab?: boolean;
@@ -231,14 +271,15 @@ export function AssistantMarkdown({
         .replace(/<sub>([^<\n]+)<\/sub>/gi, (_match, value: string) => `[${value.replace(/([\]\\])/g, "\\$1")}](#nemesis-sub)`)
         .replace(/<sup>([^<\n]+)<\/sup>/gi, (_match, value: string) => `[${value.replace(/([\]\\])/g, "\\$1")}](#nemesis-sup)`)
     : underlined;
+  const cited = citationsToMarkdown(markdown, sources?.length ?? 0);
   return (
     <div className={cn(MARKDOWN_CONTAINER_CLASS_NAME, className)}>
       <ReactMarkdown
-        components={markdownComponents(onWikiLink, isWikiLinkAvailable, externalLinksInNewTab)}
+        components={markdownComponents(onWikiLink, isWikiLinkAvailable, externalLinksInNewTab, sources)}
         rehypePlugins={[rehypeKatex]}
         remarkPlugins={[remarkGfm, remarkMath]}
       >
-        {normalizeMathDelimiters(onWikiLink ? wikiLinksToMarkdown(markdown) : markdown)}
+        {normalizeMathDelimiters(onWikiLink ? wikiLinksToMarkdown(cited) : cited)}
       </ReactMarkdown>
     </div>
   );
