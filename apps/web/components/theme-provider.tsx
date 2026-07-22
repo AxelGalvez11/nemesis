@@ -8,6 +8,13 @@ export type AccentPreference = "crimson" | "blue" | "green" | "orange" | "purple
 const STORAGE_KEY = "pharmaorb-theme";
 const ACCENT_STORAGE_KEY = "nemesis.web.accent";
 const SCALE_STORAGE_KEY = "nemesis.web.scale";
+// Library chrome mode. Lives here rather than in the assistant-preferences blob
+// because two surfaces read it live — WorkspaceShell (whether to suppress the
+// nav rail) and the Library sidebar (whether to offer the Back exit) — and the
+// settings modal renders over the workspace, so a change must apply without a
+// reload. Same shape as theme/accent/scale, which are app-chrome for the same
+// reason. Default true keeps the shipped full-screen behaviour.
+const LIBRARY_FULL_SCREEN_STORAGE_KEY = "nemesis.web.library-full-screen";
 const ACCENT_COLORS: Record<Exclude<AccentPreference, "crimson">, string> = {
   blue: "#2563eb",
   green: "#16865c",
@@ -30,9 +37,12 @@ interface ThemeContextValue {
   theme: Theme;
   accent: AccentPreference;
   scale: number;
+  /** Library takes over the left side, hiding the workspace nav rail. */
+  libraryFullScreen: boolean;
   setTheme: (t: ThemePreference) => void;
   setAccent: (accent: AccentPreference) => void;
   setScale: (scale: number) => void;
+  setLibraryFullScreen: (fullScreen: boolean) => void;
   toggle: () => void;
 }
 
@@ -41,9 +51,11 @@ const ThemeContext = createContext<ThemeContextValue>({
   theme: "light",
   accent: "crimson",
   scale: 110,
+  libraryFullScreen: true,
   setTheme: () => {},
   setAccent: () => {},
   setScale: () => {},
+  setLibraryFullScreen: () => {},
   toggle: () => {},
 });
 
@@ -72,6 +84,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
   const [accent, setAccentState] = useState<AccentPreference>("crimson");
   const [scale, setScaleState] = useState(110);
+  const [libraryFullScreen, setLibraryFullScreenState] = useState(true);
 
   useEffect(() => {
     // Resolve the stored preference (stored → OS → dark) and make it AUTHORITATIVE on the DOM.
@@ -95,6 +108,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setScaleState(nextScale);
     applyAccent(nextAccent);
     document.documentElement.style.fontSize = `${nextScale}%`;
+    // Only an explicit "false" opts out; anything else (unset, malformed) keeps
+    // the shipped full-screen default.
+    setLibraryFullScreenState(localStorage.getItem(LIBRARY_FULL_SCREEN_STORAGE_KEY) !== "false");
   }, []);
 
   useEffect(() => {
@@ -134,10 +150,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     try { localStorage.setItem(SCALE_STORAGE_KEY, String(clamped)); } catch { /* best effort */ }
   };
 
+  const setLibraryFullScreen = (next: boolean) => {
+    setLibraryFullScreenState(next);
+    try { localStorage.setItem(LIBRARY_FULL_SCREEN_STORAGE_KEY, String(next)); } catch { /* best effort */ }
+  };
+
   // The topbar button toggles light ↔ dark; Settings offers System/Light/Dark explicitly.
   const toggle = () => setTheme(theme === "light" ? "dark" : "light");
 
-  return <ThemeContext.Provider value={{ preference, theme, accent, scale, setTheme, setAccent, setScale, toggle }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ preference, theme, accent, scale, libraryFullScreen, setTheme, setAccent, setScale, setLibraryFullScreen, toggle }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): ThemeContextValue {

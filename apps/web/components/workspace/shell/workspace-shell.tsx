@@ -10,6 +10,7 @@ import type * as React from "react";
 import { useEffect } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import { useTheme } from "@/components/theme-provider";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { OutputViewerDialog } from "@/components/workspace/sessions/output-viewer-dialog";
 import { UpgradePromptDialog } from "@/components/workspace/upgrade-prompt-dialog";
@@ -67,7 +68,9 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   // Narrow viewports are exempt: there both rails are overlays (never side by
   // side, so nothing to declutter), and the surface collapses its own sidebar,
   // which would leave no visible exit once the nav rail is suppressed too.
-  const focusMode = !narrowViewport && FOCUS_MODE_ROUTES.has(pathname.replace(/\/+$/, "") || "/");
+  // Settings → General can opt out entirely ("Keep Nemesis sidebar").
+  const { libraryFullScreen } = useTheme();
+  const focusMode = libraryFullScreen && !narrowViewport && FOCUS_MODE_ROUTES.has(pathname.replace(/\/+$/, "") || "/");
 
   const { open: sidebarOpen, setOpen: setSidebarOpen } = useResponsiveSidebar(narrowViewport);
   const sidebarVisible = sidebarOpen && !focusMode;

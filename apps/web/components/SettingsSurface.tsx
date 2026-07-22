@@ -96,7 +96,7 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
   const [preferences, setPreferences] = useState<AssistantPreferences>(DEFAULT_PREFERENCES);
   const [usageBars, setUsageBars] = useState<UsageBar[] | null>(null);
   const [storage, setStorage] = useState<{ used: number; quota: number } | null>(null);
-  const { preference, accent, scale, setTheme, setAccent, setScale } = useTheme();
+  const { preference, accent, scale, libraryFullScreen, setTheme, setAccent, setScale, setLibraryFullScreen } = useTheme();
   const router = useRouter();
 
   useEffect(() => {
@@ -164,12 +164,28 @@ export function SettingsSurface({ initialSection = "general" }: { initialSection
 
       <main className="min-h-0 overflow-y-auto px-7 py-6 max-sm:px-4 max-sm:py-5">
         {section === "general" && (
-          <SettingsPage title="General" description="Shape how Nemesis writes and addresses you.">
+          <SettingsPage title="General" description="Shape how Nemesis writes to you, addresses you, and lays itself out.">
             <SettingsCard>
               <SettingsRow label="Language"><select className={SELECT_CLASS} onChange={(event) => updatePreferences({ language: event.target.value })} value={preferences.language}><option>English</option><option>Spanish</option><option>French</option><option>German</option><option>Portuguese</option></select></SettingsRow>
               <SettingsRow label="Base style and tone"><select className={SELECT_CLASS} onChange={(event) => updatePreferences({ baseStyle: event.target.value })} value={preferences.baseStyle}><option>Clear and direct</option><option>Warm and encouraging</option><option>Academic and precise</option><option>Socratic tutor</option></select></SettingsRow>
               <SettingsRow label="Headers and lists"><FrequencyControl onChange={(value) => updatePreferences({ headersAndLists: value })} value={preferences.headersAndLists} /></SettingsRow>
               <SettingsRow label="Emoji"><FrequencyControl onChange={(value) => updatePreferences({ emoji: value })} value={preferences.emoji} /></SettingsRow>
+            </SettingsCard>
+            <SettingsCard>
+              <SettingsRow
+                description="Full screen gives Library the whole left side and offers a Back button to leave. Keep Nemesis sidebar leaves the Study/Library/Calendar rail in place alongside it."
+                label="Library mode"
+              >
+                <select
+                  aria-label="Library mode"
+                  className={SELECT_CLASS}
+                  onChange={(event) => setLibraryFullScreen(event.target.value === "full-screen")}
+                  value={libraryFullScreen ? "full-screen" : "keep-sidebar"}
+                >
+                  <option value="full-screen">Full screen</option>
+                  <option value="keep-sidebar">Keep Nemesis sidebar</option>
+                </select>
+              </SettingsRow>
             </SettingsCard>
             <SettingsCard>
               <SettingsRow description="Optional. Used when examples involve pets." label="Pet"><input className={SELECT_CLASS} onChange={(event) => updatePreferences({ pet: event.target.value })} placeholder="e.g. Luna, a cat" value={preferences.pet} /></SettingsRow>
