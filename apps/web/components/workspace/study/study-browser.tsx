@@ -1,6 +1,6 @@
 "use client";
 
-import { IconAlertTriangle, IconCards, IconChevronDown, IconChevronRight, IconDots, IconDownload, IconFlag, IconFolder, IconPlayerPause, IconSparkles, IconTags, IconTrash } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCards, IconChevronDown, IconChevronRight, IconDots, IconDownload, IconFlag, IconFlagFilled, IconFolder, IconPlayerPause, IconSparkles, IconTags, IconTrash } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
@@ -12,6 +12,9 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 import { Input } from "@/components/desktop-ui/input";
@@ -22,6 +25,7 @@ import { postChatCompletion } from "@/lib/workspace/chat-api";
 import { autoTagTargets, buildAutoTagMessages, isLeechCard, parseAutoTags, previewAutoTags } from "@/lib/workspace/study-ai-extras";
 import { cardListPreview } from "@/lib/workspace/study-card-preview";
 import { type StudyCard, type StudyCardType, type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
+import { STUDY_FLAG_COLORS, studyFlagColor } from "@/lib/workspace/study-flags";
 import { cn } from "@/lib/utils";
 
 import { OcclusionCardView } from "./occlusion-card";
@@ -94,7 +98,11 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
 
   const cardsForScope = useMemo(() => {
     if (scope === "all") return cards;
-    if (scope === "flagged") return cards.filter((card) => card.flagged);
+    if (scope === "flagged") return cards.filter((card) => card.flag > 0);
+    if (scope.startsWith("flag:")) {
+      const value = Number(scope.slice(5));
+      return cards.filter((card) => card.flag === value);
+    }
     if (scope === "suspended") return cards.filter((card) => card.suspended);
     if (scope === "leeches") return cards.filter(isLeechCard);
     if (scope.startsWith("tag:")) {
@@ -124,7 +132,7 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [cardType, setCardType] = useState<StudyCardType>("basic");
-  const [flagged, setFlagged] = useState(false);
+  const [flag, setFlag] = useState(0);
   const [tags, setTags] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -152,10 +160,10 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
     setFront(activeCard?.front ?? "");
     setBack(activeCard?.back ?? "");
     setCardType(activeCard?.cardType ?? "basic");
-    setFlagged(activeCard?.flagged ?? false);
+    setFlag(activeCard?.flag ?? 0);
     setTags(activeCard?.tags.map((tag) => `#${tag}`).join(" ") ?? "");
     setMessage(null);
-  }, [activeCard?.id, activeCard?.front, activeCard?.back, activeCard?.cardType, activeCard?.flagged, activeCard?.tags]);
+  }, [activeCard?.id, activeCard?.front, activeCard?.back, activeCard?.cardType, activeCard?.flag, activeCard?.tags]);
 
   const selectScope = (nextScope: string) => {
     setScope(nextScope);
@@ -181,7 +189,7 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
     setSaving(true);
     setMessage(null);
     try {
-      await updateCard({ id: activeCard.id, front, back, cardType, flagged, tags: tags.split(/[\s,]+/) });
+      await updateCard({ id: activeCard.id, front, back, cardType, flag, tags: tags.split(/[\s,]+/) });
       setMessage("Saved");
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Couldn't update the card.");
@@ -241,7 +249,7 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
       for (const card of targets) {
         const tags = assigned.get(card.id);
         if (!tags) continue;
-        await updateCard({ id: card.id, front: card.front, back: card.back, cardType: card.cardType, flagged: card.flagged, tags });
+        await updateCard({ id: card.id, front: card.front, back: card.back, cardType: card.cardType, flag: card.flag, tags });
         tagged += 1;
       }
       setAutoTagResult(`Tagged ${tagged} card${tagged === 1 ? "" : "s"}.`);
@@ -323,8 +331,13 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
             </button>
             {filtersOpen && <div className="grid gap-0.5">
               <button className={rowClass(scope === "flagged")} onClick={() => selectScope("flagged")} type="button">
-                <IconFlag className="shrink-0 text-(--ui-text-tertiary)" size={14} /><span className="flex-1">Flagged</span><span className="text-(--ui-text-quaternary)">{cards.filter((card) => card.flagged).length}</span>
+                <IconFlag className="shrink-0 text-(--ui-text-tertiary)" size={14} /><span className="flex-1">Flagged</span><span className="text-(--ui-text-quaternary)">{cards.filter((card) => card.flag > 0).length}</span>
               </button>
+              {STUDY_FLAG_COLORS.filter((color) => cards.some((card) => card.flag === color.value)).map((color) => (
+                <button className={cn(rowClass(scope === `flag:${color.value}`), "pl-6")} key={color.value} onClick={() => selectScope(`flag:${color.value}`)} type="button">
+                  <IconFlagFilled className={cn("shrink-0", color.className)} size={14} /><span className="flex-1">{color.name}</span><span className="text-(--ui-text-quaternary)">{cards.filter((card) => card.flag === color.value).length}</span>
+                </button>
+              ))}
               <button className={rowClass(scope === "suspended")} onClick={() => selectScope("suspended")} type="button">
                 <IconPlayerPause className="shrink-0 text-(--ui-text-tertiary)" size={14} /><span className="flex-1">Suspended</span><span className="text-(--ui-text-quaternary)">{cards.filter((card) => card.suspended).length}</span>
               </button>
@@ -355,7 +368,10 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
             </div>
             {visibleCards.length === 0 ? <p className="p-6 text-center text-xs text-(--ui-text-tertiary)">No cards match this view.</p> : visibleCards.map((card) => (
               <button className={cn("grid w-full grid-cols-[minmax(0,1fr)_5rem] border-b border-(--ui-stroke-tertiary) px-3 py-2.5 text-left text-xs hover:bg-black/[0.04] dark:hover:bg-white/[0.06]", activeCard?.id === card.id && "bg-black/[0.055] dark:bg-white/[0.08]")} key={card.id} onClick={() => setCardId(card.id)} type="button">
-                <span className="truncate pr-3">{cardListPreview(card.front)}</span><span className="truncate text-[0.68rem] text-(--ui-text-tertiary)">{new Date(card.dueAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                <span className="flex min-w-0 items-center gap-1.5 pr-3">
+                  {card.flag > 0 && <IconFlagFilled className={cn("shrink-0", studyFlagColor(card.flag)?.className)} size={12} />}
+                  <span className="min-w-0 truncate">{cardListPreview(card.front)}</span>
+                </span><span className="truncate text-[0.68rem] text-(--ui-text-tertiary)">{new Date(card.dueAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
               </button>
             ))}
           </section>
@@ -372,7 +388,24 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
                         {CARD_TYPES.map((type) => <DropdownMenuRadioItem key={type.id} value={type.id}>{type.label}</DropdownMenuRadioItem>)}
                       </DropdownMenuRadioGroup>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => setFlagged((value) => !value)}><IconFlag /> {flagged ? "Remove flag" : "Flag card"}</DropdownMenuItem>
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          {flag > 0 ? <IconFlagFilled className={studyFlagColor(flag)?.className} /> : <IconFlag />} Flag
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="min-w-36">
+                          {STUDY_FLAG_COLORS.map((color) => (
+                            <DropdownMenuItem
+                              className={cn(flag === color.value && "bg-black/[0.055] dark:bg-white/[0.08]")}
+                              key={color.value}
+                              onSelect={() => setFlag((value) => (value === color.value ? 0 : color.value))}
+                            >
+                              <IconFlagFilled className={color.className} /> {color.name}
+                            </DropdownMenuItem>
+                          ))}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem disabled={flag === 0} onSelect={() => setFlag(0)}><IconFlag /> Remove flag</DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
                       <DropdownMenuItem onSelect={() => void toggleSuspended()}><IconPlayerPause /> {activeCard.suspended ? "Unsuspend card" : "Suspend card"}</DropdownMenuItem>
                       {deckId && <>
                         <DropdownMenuSeparator />

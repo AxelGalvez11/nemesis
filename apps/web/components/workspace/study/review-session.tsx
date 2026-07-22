@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/desktop-ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/desktop-ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/desktop-ui/dropdown-menu";
 import { Input } from "@/components/desktop-ui/input";
 import { Textarea } from "@/components/desktop-ui/textarea";
 import { useWorkspacePreview } from "@/components/workspace/preview-context";
@@ -14,8 +14,10 @@ import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
 import { buildExplainMessages, stripClozeMarkers } from "@/lib/workspace/study-ai-extras";
 import { activeClozeNumber, hasCloze, renderCloze } from "@/lib/workspace/study-cloze";
 import { type StudyCard, type StudyDeck, type StudyScheduleSnapshot, useCloudStudy } from "@/lib/workspace/study-cloud-store";
+import { STUDY_FLAG_COLORS, studyFlagColor } from "@/lib/workspace/study-flags";
 import { buildReviewQueue } from "@/lib/workspace/study-review-queue";
 import type { StudyGrade } from "@/lib/workspace/study-scheduler";
+import { decideSessionGrade } from "@/lib/workspace/study-session-steps";
 import { cn } from "@/lib/utils";
 
 import { OcclusionCardView } from "./occlusion-card";
@@ -39,15 +41,18 @@ interface ReviewSessionProps {
 }
 
 export function ReviewSession({ cards, deck, open, onOpenChange, settings }: ReviewSessionProps) {
-  const { gradeCard, undoGrade, updateCard, setCardSuspended, userId } = useCloudStudy();
+  const { gradeCard, undoGrade, updateCard, setCardSuspended, setCardFlag, logStudyPress, userId } = useCloudStudy();
   const previewMode = useWorkspacePreview();
   const [passedIds, setPassedIds] = useState<string[]>([]);
   const [retryIds, setRetryIds] = useState<string[]>([]);
+  // Successful learning passes per card this sitting (study-session-steps):
+  // new cards graduate after two, so they never vanish after one look.
+  const [progressById, setProgressById] = useState<Record<string, number>>({});
   const [priorityId, setPriorityId] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastGrade, setLastGrade] = useState<{ cardId: string; snapshot: StudyScheduleSnapshot } | null>(null);
+  const [lastGrade, setLastGrade] = useState<{ cardId: string; snapshot: StudyScheduleSnapshot | null; progress: number; wasRetry: boolean } | null>(null);
   // Editing swaps the card area for an inline form — no nested dialog, which
   // Radix would dismiss during the dropdown-menu close sequence.
   const [editOpen, setEditOpen] = useState(false);
@@ -65,6 +70,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     if (!open) return;
     setPassedIds([]);
     setRetryIds([]);
+    setProgressById({});
     setPriorityId(null);
     setRevealed(false);
     setError(null);
@@ -86,13 +92,15 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     let learnCount = 0;
     let dueCount = 0;
     for (const card of queue) {
-      if (retryIds.includes(card.id)) learnCount += 1;
+      if (retryIds.includes(card.id) || (progressById[card.id] ?? 0) > 0) learnCount += 1;
       else if (card.repetitions === 0) newCount += 1;
       else dueCount += 1;
     }
     return { dueCount, learnCount, newCount };
-  }, [queue, retryIds]);
-  const currentBucket = current ? (retryIds.includes(current.id) ? "learn" : current.repetitions === 0 ? "new" : "due") : null;
+  }, [progressById, queue, retryIds]);
+  const currentBucket = current
+    ? retryIds.includes(current.id) || (progressById[current.id] ?? 0) > 0 ? "learn" : current.repetitions === 0 ? "new" : "due"
+    : null;
 
   // A new card on deck closes the previous card's explanation.
   useEffect(() => {
@@ -116,12 +124,23 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     setSaving(true);
     setError(null);
     try {
-      const snapshot: StudyScheduleSnapshot = { dueAt: graded.dueAt, intervalDays: graded.intervalDays, repetitions: graded.repetitions, lapses: graded.lapses };
-      await gradeCard(graded.id, value);
-      setLastGrade({ cardId: graded.id, snapshot });
+      const progress = progressById[graded.id] ?? 0;
+      const wasRetry = retryIds.includes(graded.id);
+      const decision = decideSessionGrade({ inRetry: wasRetry, progress, repetitions: graded.repetitions }, value);
+      let snapshot: StudyScheduleSnapshot | null = null;
+      if (decision.write) {
+        snapshot = { dueAt: graded.dueAt, intervalDays: graded.intervalDays, repetitions: graded.repetitions, lapses: graded.lapses };
+        await gradeCard(graded.id, value);
+      } else {
+        // Session-only learning step: nothing schedules, but the press still
+        // counts in stats — Anki logs every answer.
+        logStudyPress(graded.id, value);
+      }
+      setLastGrade({ cardId: graded.id, snapshot, progress, wasRetry });
       setPriorityId((id) => (id === graded.id ? null : id));
-      if (value === "again") {
-        // Failed cards come back later in this same sitting, Anki-style.
+      setProgressById((map) => ((map[graded.id] ?? 0) === decision.progress ? map : { ...map, [graded.id]: decision.progress }));
+      if (decision.requeue) {
+        // The card hasn't finished this sitting — it re-enters at the back.
         setRetryIds((ids) => [...ids.filter((id) => id !== graded.id), graded.id]);
         setPassedIds((ids) => ids.filter((id) => id !== graded.id));
       } else {
@@ -138,13 +157,15 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
 
   async function undo() {
     if (!lastGrade || saving) return;
-    const { cardId, snapshot } = lastGrade;
+    const { cardId, snapshot, progress, wasRetry } = lastGrade;
     setSaving(true);
     setError(null);
     try {
-      await undoGrade(cardId, snapshot);
+      // Session-only presses (null snapshot) never wrote — only unwind state.
+      if (snapshot) await undoGrade(cardId, snapshot);
       setPassedIds((ids) => ids.filter((id) => id !== cardId));
-      setRetryIds((ids) => ids.filter((id) => id !== cardId));
+      setRetryIds((ids) => (wasRetry ? (ids.includes(cardId) ? ids : [...ids, cardId]) : ids.filter((id) => id !== cardId)));
+      setProgressById((map) => ({ ...map, [cardId]: progress }));
       setPriorityId(cardId);
       setLastGrade(null);
       setRevealed(false);
@@ -155,12 +176,12 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     }
   }
 
-  async function toggleFlag() {
+  async function setFlag(value: number) {
     if (!current || saving) return;
     setSaving(true);
     setError(null);
     try {
-      await updateCard({ id: current.id, front: current.front, back: current.back, cardType: current.cardType, flagged: !current.flagged, tags: current.tags });
+      await setCardFlag(current.id, value);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't update the card.");
     } finally {
@@ -236,7 +257,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
     setSaving(true);
     setError(null);
     try {
-      await updateCard({ id: current.id, front: editFront, back: editBack, cardType: current.cardType, flagged: current.flagged, tags: editTags.split(/[\s,]+/) });
+      await updateCard({ id: current.id, front: editFront, back: editBack, cardType: current.cardType, flag: current.flag, tags: editTags.split(/[\s,]+/) });
       setEditOpen(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't update the card.");
@@ -273,7 +294,7 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
       }
       if (event.key === "f" || event.key === "F" || event.code === "KeyF") {
         event.preventDefault();
-        void toggleFlag();
+        void setFlag(current.flag > 0 ? 0 : 1);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -339,17 +360,35 @@ export function ReviewSession({ cards, deck, open, onOpenChange, settings }: Rev
                 >
                   <IconSparkles size={13} /> Explain
                 </Button>
-                <Button
-                  aria-label={current.flagged ? "Remove flag" : "Flag card"}
-                  aria-pressed={current.flagged}
-                  disabled={saving}
-                  onClick={() => void toggleFlag()}
-                  size="icon-xs"
-                  title={current.flagged ? "Remove flag (F)" : "Flag card (F)"}
-                  variant="ghost"
-                >
-                  {current.flagged ? <IconFlagFilled /> : <IconFlag />}
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      aria-label={current.flag > 0 ? `Flagged ${studyFlagColor(current.flag)?.name ?? ""}` : "Flag card"}
+                      aria-pressed={current.flag > 0}
+                      disabled={saving}
+                      size="icon-xs"
+                      title={current.flag > 0 ? `Flagged ${studyFlagColor(current.flag)?.name ?? ""} (F clears)` : "Flag card (F)"}
+                      variant="ghost"
+                    >
+                      {current.flag > 0 ? <IconFlagFilled className={studyFlagColor(current.flag)?.className} /> : <IconFlag />}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-40">
+                    {STUDY_FLAG_COLORS.map((color) => (
+                      <DropdownMenuItem
+                        className={cn(current.flag === color.value && "bg-black/[0.055] dark:bg-white/[0.08]")}
+                        key={color.value}
+                        onSelect={() => void setFlag(current.flag === color.value ? 0 : color.value)}
+                      >
+                        <IconFlagFilled className={color.className} /> {color.name}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem disabled={current.flag === 0} onSelect={() => void setFlag(0)}>
+                      <IconFlag /> Remove flag
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button aria-label="Card actions" size="icon-xs" variant="ghost"><IconDots /></Button>

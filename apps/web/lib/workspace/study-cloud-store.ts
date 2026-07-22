@@ -7,6 +7,7 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { supabase } from "@/lib/supabase";
 
 import { hasCloze } from "./study-cloze";
+import { normalizeStudyFlag } from "./study-flags";
 import {
   occlusionCardFront,
   parseOcclusionPayload,
@@ -37,7 +38,8 @@ export interface StudyCard {
   repetitions: number;
   lapses: number;
   suspended: boolean;
-  flagged: boolean;
+  /** Anki-style colored flag — 0 none, 1-7 per STUDY_FLAG_COLORS. */
+  flag: number;
   tags: string[];
   /** Present only on image-occlusion cards; everything else stores null. */
   payload: OcclusionPayload | null;
@@ -48,28 +50,13 @@ export interface StudyCard {
 export type StudyCardType = "basic" | "reversed" | "cloze" | "image_occlusion";
 
 const CARD_COLUMNS =
-  "id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flagged,tags,payload,created_at,updated_at";
+  "id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flag,tags,payload,created_at,updated_at";
 
 export interface StudyReview {
   id: string;
   cardId: string;
   grade: StudyGrade;
   reviewedAt: string;
-}
-
-export type StudyArtifactKind = "test" | "mindmap";
-
-export interface StudyArtifact {
-  id: string;
-  kind: StudyArtifactKind;
-  groupName: string;
-  title: string;
-  status: "draft" | "ready" | "archived";
-  /** Raw jsonb payload — parse with study-artifact-content.ts (test
-   *  questions/attempts or a mindmap outline). Null for legacy shells. */
-  content: unknown;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export type StudyLoadStatus = "idle" | "loading" | "loaded" | "error";
@@ -80,7 +67,6 @@ interface StoreState {
   decks: StudyDeck[];
   cards: StudyCard[];
   reviews: StudyReview[];
-  artifacts: StudyArtifact[];
   selectedDeckId: string | null;
 }
 
@@ -124,7 +110,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     repetitions: 0,
     lapses: 0,
     suspended: false,
-    flagged: true,
+    flag: 1,
     tags: ["pharmacology", "mechanisms"],
     payload: null,
     createdAt: now,
@@ -143,7 +129,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     // Failed enough times to trip the leech radar in /dev-preview.
     lapses: 9,
     suspended: false,
-    flagged: false,
+    flag: 0,
     tags: ["adverse-effects"],
     payload: null,
     createdAt: now,
@@ -161,7 +147,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     repetitions: 0,
     lapses: 0,
     suspended: false,
-    flagged: false,
+    flag: 0,
     tags: ["pharmacology"],
     payload: null,
     createdAt: now,
@@ -179,7 +165,7 @@ const PREVIEW_CARDS: StudyCard[] = [
     repetitions: 0,
     lapses: 0,
     suspended: true,
-    flagged: false,
+    flag: 0,
     tags: ["pharmacology"],
     payload: null,
     createdAt: now,
@@ -197,51 +183,19 @@ const PREVIEW_CARDS: StudyCard[] = [
     repetitions: 0,
     lapses: 0,
     suspended: false,
-    flagged: false,
+    flag: 0,
     tags: ["anatomy"],
     payload: PREVIEW_OCCLUSION_PAYLOAD,
     createdAt: now,
     updatedAt: now,
   },
 ];
-const PREVIEW_TEST_CONTENT = {
-  attempts: [],
-  questions: [
-    {
-      answer: 1,
-      options: ["Vasoconstriction", "A dry cough", "Hyperglycemia", "Tachycardia"],
-      q: "Which classic side effect is bradykinin-mediated with ACE inhibitors?",
-      why: "ACE also degrades bradykinin - blocking it lets bradykinin build up in the airways.",
-    },
-    {
-      answer: 0,
-      options: ["Lisinopril", "Enalapril", "Ramipril", "Fosinopril"],
-      q: "Which ACE inhibitor is NOT a prodrug?",
-      why: "Lisinopril (and captopril) are active as given; the rest need hepatic activation.",
-    },
-    {
-      answer: 2,
-      options: ["Potassium loss", "Neutropenia", "Angioedema", "QT prolongation"],
-      q: "Which rare but dangerous reaction contraindicates future ACE inhibitor use?",
-      why: "Angioedema can be airway-threatening and recurs on rechallenge.",
-    },
-  ],
-};
-const PREVIEW_MAP_CONTENT = {
-  outline: "# RAAS pathway\n- Renin release\n  - Juxtaglomerular cells\n  - Triggered by low perfusion\n- Angiotensin II\n  - Vasoconstriction\n  - Aldosterone release\n- Drug targets\n  - ACE inhibitors\n  - ARBs",
-};
-const PREVIEW_ARTIFACTS: StudyArtifact[] = [
-  { id: "preview-test", kind: "test", groupName: "Cardiovascular pharmacology", title: "ACE inhibitor practice test", status: "ready", content: PREVIEW_TEST_CONTENT, createdAt: now, updatedAt: now },
-  { id: "preview-map", kind: "mindmap", groupName: "Cardiovascular pharmacology", title: "RAAS pathway", status: "ready", content: PREVIEW_MAP_CONTENT, createdAt: now, updatedAt: now },
-];
-
 const EMPTY_STATE: StoreState = {
   status: "idle",
   error: null,
   decks: [],
   cards: [],
   reviews: [],
-  artifacts: [],
   selectedDeckId: null,
 };
 let state: StoreState = EMPTY_STATE;
@@ -333,7 +287,7 @@ function toCard(raw: unknown): StudyCard | null {
     repetitions: number(raw.repetitions),
     lapses: number(raw.lapses),
     suspended: raw.suspended === true,
-    flagged: raw.flagged === true,
+    flag: normalizeStudyFlag(raw.flag),
     tags: Array.isArray(raw.tags) ? normalizeStudyTags(raw.tags.filter((value): value is string => typeof value === "string")) : [],
     payload: parseOcclusionPayload(raw.payload),
     createdAt: text(raw.created_at),
@@ -348,19 +302,13 @@ function toReview(raw: unknown): StudyReview | null {
   return { id: raw.id, cardId: raw.card_id, grade, reviewedAt: text(raw.reviewed_at) };
 }
 
-function toArtifact(raw: unknown): StudyArtifact | null {
-  if (!isObject(raw) || typeof raw.id !== "string" || (raw.kind !== "test" && raw.kind !== "mindmap") || typeof raw.title !== "string") return null;
-  const status = raw.status === "ready" || raw.status === "archived" ? raw.status : "draft";
-  return { id: raw.id, kind: raw.kind, groupName: text(raw.group_name), title: raw.title, status, content: "content" in raw ? raw.content : null, createdAt: text(raw.created_at), updatedAt: text(raw.updated_at) };
-}
-
 async function loadStudy(userId: string) {
   loadedForUserId = userId;
   setState({ ...EMPTY_STATE, status: "loading" });
   try {
     const reviewFloor = new Date();
     reviewFloor.setFullYear(reviewFloor.getFullYear() - 1);
-    const [deckResult, cardResult, reviewResult, artifactResult] = await Promise.all([
+    const [deckResult, cardResult, reviewResult] = await Promise.all([
       supabase
         .from("study_decks")
         .select("id,name,description,source_path,created_at,updated_at")
@@ -377,16 +325,10 @@ async function loadStudy(userId: string) {
         .eq("user_id", userId)
         .gte("reviewed_at", reviewFloor.toISOString())
         .order("reviewed_at", { ascending: false }),
-      supabase
-        .from("study_artifacts")
-        .select("id,kind,group_name,title,status,content,created_at,updated_at")
-        .eq("user_id", userId)
-        .order("updated_at", { ascending: false }),
     ]);
     if (deckResult.error) throw new Error(deckResult.error.message);
     if (cardResult.error) throw new Error(cardResult.error.message);
     if (reviewResult.error) throw new Error(reviewResult.error.message);
-    if (artifactResult.error) throw new Error(artifactResult.error.message);
 
     const decks = (deckResult.data ?? []).flatMap((row) => {
       const deck = toDeck(row);
@@ -400,11 +342,7 @@ async function loadStudy(userId: string) {
       const review = toReview(row);
       return review ? [review] : [];
     });
-    const artifacts = (artifactResult.data ?? []).flatMap((row) => {
-      const artifact = toArtifact(row);
-      return artifact ? [artifact] : [];
-    });
-    setState({ status: "loaded", error: null, decks, cards, reviews, artifacts, selectedDeckId: decks[0]?.id ?? null });
+    setState({ status: "loaded", error: null, decks, cards, reviews, selectedDeckId: decks[0]?.id ?? null });
   } catch (cause) {
     setState({
       ...EMPTY_STATE,
@@ -452,7 +390,7 @@ export interface UpdateCardInput {
   front: string;
   back: string;
   cardType: StudyCardType;
-  flagged: boolean;
+  flag: number;
   tags: string[];
 }
 
@@ -487,14 +425,6 @@ export async function resolveStudyImageUrl(image: string): Promise<string> {
   return data.signedUrl;
 }
 
-export interface CreateArtifactInput {
-  kind: StudyArtifactKind;
-  groupName?: string;
-  title: string;
-  content?: unknown;
-  status?: "draft" | "ready";
-}
-
 export interface ImportDeckInput {
   name: string;
   cards: { front: string; back: string; cardType: StudyCardType; tags: string[] }[];
@@ -513,18 +443,18 @@ export interface UseCloudStudyApi extends StoreState {
   createOcclusionCards: (input: CreateOcclusionInput) => Promise<StudyCard[]>;
   importAnkiDecks: (decks: ImportDeckInput[], onProgress?: (done: number, total: number) => void) => Promise<ImportDecksSummary>;
   updateCard: (input: UpdateCardInput) => Promise<StudyCard>;
-  createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
   gradeCard: (cardId: string, grade: StudyGrade) => Promise<StudyCard>;
   undoGrade: (cardId: string, snapshot: StudyScheduleSnapshot) => Promise<StudyCard>;
   setCardSuspended: (cardId: string, suspended: boolean) => Promise<StudyCard>;
+  setCardFlag: (cardId: string, flag: number) => Promise<StudyCard>;
+  /** Record a session-only learning press in stats (no scheduling change). */
+  logStudyPress: (cardId: string, grade: StudyGrade) => void;
   moveDeck: (deckId: string, targetGroup: string) => Promise<void>;
   moveDeckGroup: (sourceGroup: string, targetGroup: string) => Promise<void>;
   deleteDeck: (deckId: string) => Promise<void>;
-  deleteArtifact: (artifactId: string) => Promise<void>;
-  /** Signed-in user id (null in preview / signed-out) — generation needs it
-   *  for the metered completion call. */
+  /** Signed-in user id (null in preview / signed-out) — the AI card helpers
+   *  need it for the metered completion call. */
   userId: string | null;
-  updateArtifact: (artifactId: string, patch: { title?: string; content?: unknown; status?: "draft" | "ready" | "archived" }) => Promise<void>;
 }
 
 export function isCardDue(card: StudyCard, at = new Date()): boolean {
@@ -547,7 +477,6 @@ export function useCloudStudy(): UseCloudStudyApi {
           decks: PREVIEW_DECKS,
           cards: PREVIEW_CARDS,
           reviews: [],
-          artifacts: PREVIEW_ARTIFACTS,
           selectedDeckId: PREVIEW_DECKS[0]?.id ?? null,
         });
       }
@@ -622,7 +551,7 @@ export function useCloudStudy(): UseCloudStudyApi {
         repetitions: 0,
         lapses: 0,
         suspended: false,
-        flagged: false,
+        flag: 0,
         tags,
         payload: null,
         createdAt: timestamp,
@@ -667,7 +596,7 @@ export function useCloudStudy(): UseCloudStudyApi {
         repetitions: 0,
         lapses: 0,
         suspended: false,
-        flagged: false,
+        flag: 0,
         tags,
         payload: { ...base, image: input.dataUrl, targetId: shape.id },
         createdAt: timestamp,
@@ -747,7 +676,7 @@ export function useCloudStudy(): UseCloudStudyApi {
               repetitions: 0,
               lapses: 0,
               suspended: false,
-              flagged: false,
+              flag: 0,
               tags: normalizeStudyTags(card.tags),
               payload: null,
               createdAt: timestamp,
@@ -804,12 +733,12 @@ export function useCloudStudy(): UseCloudStudyApi {
     if (!front || (!back && requiresBack(front, input.cardType))) throw new Error("Add both a prompt and an answer.");
     const updatedAt = new Date().toISOString();
     const tags = normalizeStudyTags(input.tags);
-    let next: StudyCard = { ...existing, front, back, cardType: input.cardType, flagged: input.flagged, tags, updatedAt };
+    let next: StudyCard = { ...existing, front, back, cardType: input.cardType, flag: input.flag, tags, updatedAt };
     if (!preview) {
       if (!userId) throw new Error("Sign in to edit a card.");
       const { data, error } = await supabase
         .from("study_cards")
-        .update({ front, back, card_type: input.cardType, flagged: input.flagged, tags, updated_at: updatedAt })
+        .update({ front, back, card_type: input.cardType, flag: input.flag, flagged: input.flag > 0, tags, updated_at: updatedAt })
         .eq("id", input.id)
         .eq("user_id", userId)
         .select(CARD_COLUMNS)
@@ -822,52 +751,6 @@ export function useCloudStudy(): UseCloudStudyApi {
     setState({ ...state, cards: state.cards.map((item) => item.id === next.id ? next : item) });
     return next;
   }, [preview, userId]);
-
-  const createArtifact = useCallback(async (input: CreateArtifactInput) => {
-    const title = input.title.trim();
-    const groupName = input.groupName?.trim() ?? "";
-    if (!title) throw new Error("Enter a title.");
-    const timestamp = new Date().toISOString();
-    if (preview) {
-      const artifact: StudyArtifact = { id: `preview-${crypto.randomUUID()}`, kind: input.kind, groupName, title, status: input.status ?? "draft", content: input.content ?? null, createdAt: timestamp, updatedAt: timestamp };
-      setState({ ...state, artifacts: [artifact, ...state.artifacts] });
-      return artifact;
-    }
-    if (!userId) throw new Error("Sign in to create study material.");
-    const { data, error } = await supabase
-      .from("study_artifacts")
-      .insert({ user_id: userId, kind: input.kind, group_name: groupName, title, content: input.content ?? null, status: input.status ?? "draft" })
-      .select("id,kind,group_name,title,status,content,created_at,updated_at")
-      .single();
-    if (error) throw new Error(error.message);
-    const artifact = toArtifact(data);
-    if (!artifact) throw new Error("The study item was saved but returned an invalid response.");
-    setState({ ...state, artifacts: [artifact, ...state.artifacts] });
-    return artifact;
-  }, [preview, userId]);
-
-  const updateArtifact = useCallback(async (artifactId: string, patch: { title?: string; content?: unknown; status?: "draft" | "ready" | "archived" }) => {
-    const timestamp = new Date().toISOString();
-    const apply = (artifact: StudyArtifact): StudyArtifact => ({
-      ...artifact,
-      ...(patch.title !== undefined ? { title: patch.title } : {}),
-      ...(patch.content !== undefined ? { content: patch.content } : {}),
-      ...(patch.status !== undefined ? { status: patch.status } : {}),
-      updatedAt: timestamp,
-    });
-    if (preview) {
-      setState({ ...state, artifacts: state.artifacts.map((artifact) => (artifact.id === artifactId ? apply(artifact) : artifact)) });
-      return;
-    }
-    if (!userId) throw new Error("Sign in to update study material.");
-    const row: Record<string, unknown> = {};
-    if (patch.title !== undefined) row.title = patch.title;
-    if (patch.content !== undefined) row.content = patch.content;
-    if (patch.status !== undefined) row.status = patch.status;
-    const { error } = await supabase.from("study_artifacts").update(row).eq("id", artifactId).eq("user_id", userId);
-    if (error) throw new Error(error.message);
-    setState({ ...state, artifacts: state.artifacts.map((artifact) => (artifact.id === artifactId ? apply(artifact) : artifact)) });
-  }, [preview, state, userId]);
 
   const gradeCard = useCallback(async (cardId: string, grade: StudyGrade) => {
     const card = state.cards.find((item) => item.id === cardId);
@@ -951,6 +834,49 @@ export function useCloudStudy(): UseCloudStudyApi {
     return next;
   }, [preview, userId]);
 
+  const setCardFlag = useCallback(async (cardId: string, flag: number) => {
+    const card = state.cards.find((item) => item.id === cardId);
+    if (!card) throw new Error("That card is no longer available.");
+    if (card.flag === flag) return card;
+    const updatedAt = new Date().toISOString();
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to edit a card.");
+      const { error } = await supabase
+        .from("study_cards")
+        .update({ flag, flagged: flag > 0, updated_at: updatedAt })
+        .eq("id", cardId)
+        .eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    const next: StudyCard = { ...card, flag, updatedAt };
+    setState({ ...state, cards: state.cards.map((item) => (item.id === cardId ? next : item)) });
+    return next;
+  }, [preview, userId]);
+
+  // Session-only learning presses (no scheduler write) still count in stats —
+  // Anki logs every answer. Best-effort by design: a lost row only
+  // under-counts the heatmap, so a failure never interrupts the review.
+  const logStudyPress = useCallback((cardId: string, grade: StudyGrade) => {
+    const card = state.cards.find((item) => item.id === cardId);
+    if (!card) return;
+    const review: StudyReview = { id: `local-${crypto.randomUUID()}`, cardId, grade, reviewedAt: new Date().toISOString() };
+    setState({ ...state, reviews: [review, ...state.reviews] });
+    if (preview || !userId) return;
+    void supabase
+      .from("study_review_logs")
+      .insert({
+        user_id: userId,
+        card_id: cardId,
+        grade,
+        previous_due: card.dueAt,
+        next_due: card.dueAt,
+        interval_days: Math.min(36500, Math.max(1, Math.round(card.intervalDays))),
+      })
+      .then(({ error }) => {
+        if (error) console.warn("Study press log skipped:", error.message);
+      });
+  }, [preview, userId]);
+
   const moveDeck = useCallback(async (deckId: string, rawTargetGroup: string) => {
     const deck = state.decks.find((item) => item.id === deckId);
     if (!deck) return;
@@ -1003,15 +929,6 @@ export function useCloudStudy(): UseCloudStudyApi {
     });
   }, [preview, userId]);
 
-  const deleteArtifact = useCallback(async (artifactId: string) => {
-    if (!preview) {
-      if (!userId) throw new Error("Sign in to delete study material.");
-      const { error } = await supabase.from("study_artifacts").delete().eq("id", artifactId).eq("user_id", userId);
-      if (error) throw new Error(error.message);
-    }
-    setState({ ...state, artifacts: state.artifacts.filter((artifact) => artifact.id !== artifactId) });
-  }, [preview, userId]);
-
   return {
     ...snapshot,
     selectDeck: useCallback((deckId: string | null) => setState({ ...state, selectedDeckId: deckId }), []),
@@ -1021,15 +938,14 @@ export function useCloudStudy(): UseCloudStudyApi {
     createOcclusionCards,
     importAnkiDecks,
     updateCard,
-    createArtifact,
-    updateArtifact,
     userId,
     gradeCard,
     undoGrade,
     setCardSuspended,
+    setCardFlag,
+    logStudyPress,
     moveDeck,
     moveDeckGroup,
     deleteDeck,
-    deleteArtifact,
   };
 }

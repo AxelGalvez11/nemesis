@@ -5,7 +5,19 @@
 
 import type { WireMsg } from "@/lib/workspace/chat-api";
 
-import { jsonSlice } from "./study-artifact-content";
+/** Tolerant "find the JSON object in an LLM reply" extractor: strips code
+ *  fences and grabs the outermost brace pair. */
+export function jsonSlice(raw: string): Record<string, unknown> | null {
+  const withoutFence = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const start = withoutFence.indexOf("{");
+  const end = withoutFence.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(withoutFence.slice(start, end + 1)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
 
 // Same normalization the store applies on save (study-cloud-store's
 // normalizeStudyTags) — duplicated here so this module stays node-testable

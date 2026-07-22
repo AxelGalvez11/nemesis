@@ -2,7 +2,7 @@
 
 // Study page chrome — compact title/settings plus a centered page selector.
 
-import { IconCards, IconChartBar, IconChecklist, IconChevronDown, IconSitemap } from "@tabler/icons-react";
+import { IconCards, IconChartBar, IconChevronDown } from "@tabler/icons-react";
 
 import { Button } from "@/components/desktop-ui/button";
 import {
@@ -15,7 +15,7 @@ import {
 import { Settings } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
 
-export type StudyTabId = "cards" | "tests" | "maps" | "stats";
+export type StudyTabId = "cards" | "stats";
 export interface StudyReviewSettings {
   flipAnimation: boolean;
   flashcardOutline: boolean;
@@ -23,8 +23,6 @@ export interface StudyReviewSettings {
 
 const TABS: { id: StudyTabId; label: string; icon: typeof IconCards }[] = [
   { id: "cards", label: "Cards", icon: IconCards },
-  { id: "tests", label: "Tests", icon: IconChecklist },
-  { id: "maps", label: "Mindmaps", icon: IconSitemap },
   { id: "stats", label: "Stats", icon: IconChartBar },
 ];
 
