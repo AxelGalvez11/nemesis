@@ -189,7 +189,10 @@ const createStyles = (c: ThemeColors) =>
 
     // Shared across both sizes.
     dayToday: { backgroundColor: c.accent },
-    dayOut: { color: c.text3, opacity: 0.5 },
+    // Owner 2026-07-22: no faded text anywhere. Neighbouring-month days used to
+    // sit at 50% opacity; they now read at full strength like every other
+    // number, so the month boundary shows through position alone.
+    dayOut: { color: c.text3 },
     dayTodayNum: { color: c.onAccent, fontWeight: "700" },
     dayDot: { borderRadius: 3, marginTop: 2 },
     dayDotLarge: { width: 6, height: 6 },

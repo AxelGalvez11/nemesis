@@ -33,10 +33,18 @@ export const ACCENT_SWATCHES: readonly AccentSwatch[] = [
 
 export const DEFAULT_ACCENT_ID = "crimson";
 const BRAND_CRIMSON = "#ff2740";
-const ACCENT_SAT = 0.82;
-const ACCENT_DARK_L = 0.66;
-const ACCENT_LIGHT_L = 0.46;
+// Owner 2026-07-22: "the colors in appearance settings should be bright colors
+// not darkish colors." Saturation and lightness both went up, but the real
+// culprit was the contrast floor: forcing every accent past 4.5:1 on white
+// dragged the light-mode picks down to muddy values (teal landed on #0d8080,
+// amber on a brown #aa6311). Accents get their own, lower floor — 3.5:1, above
+// the 3:1 that WCAG asks of UI components and large text — while the status
+// colors below keep the stricter 4.5:1, since those carry warnings.
+const ACCENT_SAT = 0.86;
+const ACCENT_DARK_L = 0.7;
+const ACCENT_LIGHT_L = 0.52;
 const MIN_TEXT_CONTRAST = 4.5;
+const MIN_ACCENT_CONTRAST = 3.5;
 
 // --- color math (ported from the desktop's themes/color.ts) -----------------
 
@@ -112,9 +120,11 @@ function rgba(hex: string, alpha: number): string {
   return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
 }
 
-/** Vivid, mode-independent chip color for the accent picker (desktop parity). */
+/** Vivid, mode-independent chip color for the accent picker (desktop parity).
+ *  Brightened 2026-07-22 alongside the applied accent — the old 0.74/0.52 pair
+ *  read deep rather than bright in the picker. */
 export function accentSwatchHex(hue: number): string {
-  return hslToHex(hue, 0.74, 0.52);
+  return hslToHex(hue, 0.85, 0.6);
 }
 
 // --- the palette -------------------------------------------------------------
@@ -138,6 +148,12 @@ export interface ThemeColors {
    *  50% black; light is FAINT — at full strength it read as a gray vertical band
    *  on the sidebar (owner 2026-07-20: keep the shadow, kill the band). */
   pageShadow: string;
+  /** Wash laid over the pushed page as the drawer opens (owner 2026-07-22:
+   *  "the page being swiped should gradually turn a grayish color"). Dark mode
+   *  pages are true black, so the wash has to be WHITE to lift them toward
+   *  gray — a black scrim would be invisible. Light mode stays transparent:
+   *  those pages are pure white by owner mandate and dimming them fights it. */
+  pageDim: string;
   line: string;
   line2: string;
   /** tokens.json `mutedBorder` twin. */
@@ -183,6 +199,7 @@ const DARK_BASE = {
   glassPanel: "rgba(10,10,10,0.72)",
   glassMenu: "rgba(8,8,8,0.94)",
   pageShadow: "rgba(0,0,0,0.5)",
+  pageDim: "rgba(255,255,255,0.11)",
   line: "rgba(233,234,238,0.09)",
   line2: "rgba(233,234,238,0.16)",
   lineMuted: "rgba(154,157,166,0.20)",
@@ -207,6 +224,7 @@ const LIGHT_BASE = {
   glassPanel: "rgba(255,255,255,0.8)",
   glassMenu: "rgba(255,255,255,0.96)",
   pageShadow: "rgba(24,26,32,0.16)",
+  pageDim: "transparent",
   line: "rgba(22,24,29,0.10)",
   line2: "rgba(22,24,29,0.18)",
   lineMuted: "rgba(90,94,104,0.22)",
@@ -238,7 +256,7 @@ function accentFamily(accentId: string, dark: boolean, bg: string): Pick<
   const swatch = ACCENT_SWATCHES.find((entry) => entry.id === accentId) ?? ACCENT_SWATCHES[0];
   const base =
     swatch.id === DEFAULT_ACCENT_ID ? BRAND_CRIMSON : hslToHex(swatch.hue, ACCENT_SAT, dark ? ACCENT_DARK_L : ACCENT_LIGHT_L);
-  const accent = ensureContrast(base, bg, MIN_TEXT_CONTRAST);
+  const accent = ensureContrast(base, bg, MIN_ACCENT_CONTRAST);
   const onAccent = contrastRatio("#ffffff", accent) >= contrastRatio("#1a1a1a", accent) ? "#ffffff" : "#1a1a1a";
 
   return {

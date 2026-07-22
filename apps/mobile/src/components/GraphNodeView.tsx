@@ -184,10 +184,6 @@ export const GraphNodeView = memo(function GraphNodeView({
           top: node.y - hitR,
           width: size,
           height: size,
-          // Ghost = "mentioned but not written yet" — the whole node (halo,
-          // dot, and label) reads a little unreal, on top of its own pale
-          // heatmap-family color (graphNodeColor's ghost branch).
-          opacity: node.ghost ? 0.6 : 1,
         }}
       >
         {hub ? (
@@ -215,6 +211,12 @@ export const GraphNodeView = memo(function GraphNodeView({
             height: r * 2,
             borderRadius: r,
             backgroundColor: color,
+            // Ghost = "mentioned but not written yet". The fade lives on the DOT
+            // alone, never on the node's wrapper — a wrapper opacity dragged the
+            // label down with it, and owner 2026-07-22 wants text at full
+            // strength everywhere. The ring plus graphNodeColor's paler ghost
+            // branch still mark it out.
+            opacity: node.ghost ? 0.6 : 1,
             // A solid outline ring stands in for the web Graph's dashed
             // ghost ring — see the top-of-file comment for why this file
             // uses a border instead of a dash pattern.

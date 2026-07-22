@@ -3,6 +3,7 @@ import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useKeepAwake } from "expo-keep-awake";
 import { enhanceRecordingArtifact, saveRecordingArtifact } from "@/api/chat";
 import { GlassSurface } from "@/components/GlassSurface";
+import { LiveWaveform } from "@/components/LiveWaveform";
 import { MicIcon } from "@/components/icons";
 import { MissionButton } from "@/components/mission-ui";
 import { liveNotesText } from "@/lib/live-notes";
@@ -128,6 +129,8 @@ export function RecordSession({ userId, threadId, onDone, onRecordingStateChange
         <Text style={[styles.clock, recording && { color: c.accent }]}>{formatRecordingClock(live.elapsedSeconds)}</Text>
       </View>
 
+      {recording ? <LiveWaveform active height={26} testID="record-waveform" /> : null}
+
       <ScrollView
         contentContainerStyle={styles.transcriptContent}
         onContentSizeChange={() => {
@@ -151,9 +154,20 @@ export function RecordSession({ userId, threadId, onDone, onRecordingStateChange
         )}
       </ScrollView>
 
-      {liveNotes.notes.length > 0 && (
+      {/* Shown from the moment recording starts, not only once notes exist.
+          Notes need a fair chunk of speech before there's anything worth
+          summarising, and an empty screen during that wait reads as broken. */}
+      {(recording || liveNotes.notes.length > 0) && (
         <View style={styles.notesPanel} testID="record-live-notes">
-          <Text style={styles.notesHead}>Live notes</Text>
+          <View style={styles.notesHeadRow}>
+            <Text style={styles.notesHead}>Live notes</Text>
+            {liveNotes.writing ? <Text style={styles.notesWorking}>Writing…</Text> : null}
+          </View>
+          {liveNotes.notes.length === 0 ? (
+            <Text style={styles.notesWaiting} testID="record-live-notes-waiting">
+              {liveNotes.writing ? "Pulling out the key points…" : "Keep talking — notes start once there's enough to summarise."}
+            </Text>
+          ) : null}
           <ScrollView
             contentContainerStyle={styles.notesContent}
             onContentSizeChange={() => {
@@ -223,7 +237,10 @@ const createStyles = (c: ThemeColors) =>
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(6) },
     emptyText: { ...type.body, color: c.text3, textAlign: "center", fontSize: 15, lineHeight: 22 },
     notesPanel: { marginTop: space(3), borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, backgroundColor: c.surface, maxHeight: 190 },
+    notesHeadRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: space(4) },
     notesHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", paddingHorizontal: space(4), paddingTop: space(3) },
+    notesWorking: { ...type.micro, color: c.accent, paddingTop: space(3) },
+    notesWaiting: { ...type.small, color: c.text2, paddingHorizontal: space(4), paddingVertical: space(2.5) },
     notesScroll: { flexGrow: 0 },
     notesContent: { paddingHorizontal: space(4), paddingTop: space(2), paddingBottom: space(3), gap: space(1.5) },
     noteLine: { ...type.small, color: c.text, lineHeight: 20 },

@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
-import Markdown from "react-native-markdown-display";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
-import { GlassSurface } from "@/components/GlassSurface";
+import { MessageBody } from "@/components/MessageBody";
 import {
   fetchCloudStudy,
   gradeStudyCard,
   isCardDue,
+  MATURE_INTERVAL_DAYS,
   type CloudStudyCard,
   type CloudStudyDeck,
   type StudyGrade,
 } from "@/api/cloudStudy";
+import { normalizeCardText } from "@/lib/card-text";
 import { clozeParts } from "@/lib/study-session";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
@@ -99,19 +100,35 @@ export default function ReviewScreen() {
     [cards, completedIds],
   );
   const current = queue[0] ?? null;
-  // Remaining-in-queue counts (not the deck-list's New/Learn/Due triple):
-  // every card left here is already due, so "Learn" (explicitly NOT due) can
-  // never apply to a review queue — showing it would describe cards you
-  // aren't reviewing.
-  const remainingNew = queue.filter((card) => card.repetitions === 0).length;
-  const remainingDue = queue.length - remainingNew;
+  // Anki's three-number footer, counted over what's LEFT in this sitting.
+  // Every card here is already due, so the split can't reuse the deck list's
+  // Learn rule (which is defined as NOT due); it splits by how established the
+  // card is instead — never studied, still young, or mature — while keeping
+  // the same 21-day line so the two screens agree on what "young" means.
+  // The three always sum to the cards remaining.
+  const counts = useMemo(() => {
+    let fresh = 0;
+    let learn = 0;
+    for (const card of queue) {
+      if (card.repetitions === 0) fresh += 1;
+      else if (card.intervalDays < MATURE_INTERVAL_DAYS) learn += 1;
+    }
+    return { due: queue.length - fresh - learn, fresh, learn };
+  }, [queue]);
+
+  // Anki-imported cards keep a few bare HTML tags the phone's markdown
+  // renderer can't read (an <img> among them, which is why a card could show a
+  // raw image URL as words). Normalizing first means every surface below —
+  // markdown, math, and the plain-Text cloze line — sees the same clean text.
+  const front = useMemo(() => normalizeCardText(current?.front ?? ""), [current?.front]);
+  const back = useMemo(() => normalizeCardText(current?.back ?? ""), [current?.back]);
 
   // Cloze cards arrive as author-written "front"/"back" text (web's Study
   // browser); clozeParts only lights up when the two align as a blanked/full
   // mirror pair (the historic Mac format). It safely falls through to plain
   // Q/A markdown otherwise — that's expected for freshly-authored cloud cloze
   // cards, not a bug.
-  const clozeSplit = current && current.cardType === "cloze" ? clozeParts(current.front, current.back) : null;
+  const clozeSplit = current && current.cardType === "cloze" ? clozeParts(front, back) : null;
 
   // Duplicate-touch latch: a doubled native press event can call grade() twice
   // against the same closure before React re-renders. A ref is synchronous
@@ -150,14 +167,10 @@ export default function ReviewScreen() {
 
   return (
     <View style={[styles.flex, { paddingTop: insets.top + space(2) }]} testID="review-screen">
+      {/* No back button (owner 2026-07-22) — the card is the whole screen.
+          Leaving mid-session is the iOS edge-swipe; finishing one surfaces the
+          Done button below. */}
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={styles.topRow}>
-        <Pressable onPress={() => router.back()} hitSlop={10} testID="review-back">
-          <GlassSurface style={styles.backGlass} shadow>
-            <Text style={styles.backChevron}>‹</Text>
-          </GlassSurface>
-        </Pressable>
-      </View>
 
       {deck === undefined ? null : deck === null ? (
         <View style={styles.emptyWrap}>
@@ -198,7 +211,7 @@ export default function ReviewScreen() {
                 // phone in v1 (do NOT attempt image rendering). Still gradable:
                 // the student can recall-and-grade from memory, or skip to web.
                 <View testID="review-image-fallback">
-                  <Text style={promptStyles.body as object}>{current.front || "Image card"}</Text>
+                  <Text style={promptStyles.body as object}>{front || "Image card"}</Text>
                   <Text style={styles.imageFallbackNote}>Open on web for image cards.</Text>
                 </View>
               ) : clozeSplit ? (
@@ -213,11 +226,14 @@ export default function ReviewScreen() {
                 </>
               ) : (
                 <>
-                  <Markdown style={promptStyles}>{current.front}</Markdown>
+                  {/* MessageBody, not a bare Markdown block: it splits LaTeX out
+                      and draws it as SVG. Chat already rendered math this way;
+                      flashcards were still showing the raw $…$ source. */}
+                  <MessageBody content={front} styles={promptStyles} />
                   {revealed ? (
                     <View style={styles.answerBlock} testID="review-answer">
                       <View style={styles.divider} />
-                      <Markdown style={markdownStyles}>{current.back}</Markdown>
+                      <MessageBody content={back} styles={markdownStyles} />
                     </View>
                   ) : null}
                 </>
@@ -229,8 +245,9 @@ export default function ReviewScreen() {
             {gradeError ? <Text style={styles.gradeErrorText} accessibilityRole="alert">{gradeError}</Text> : null}
             <View style={styles.counts} testID="review-counts">
               {[
-                { color: c.info, label: "New", value: remainingNew },
-                { color: c.accent, label: "Due", value: remainingDue },
+                { color: c.info, label: "New", value: counts.fresh },
+                { color: c.warn, label: "Learn", value: counts.learn },
+                { color: c.accent, label: "Due", value: counts.due },
               ].map((item) => (
                 <View key={item.label} style={styles.countItem}>
                   <Text style={[styles.countNum, { color: item.color }]}>{item.value}</Text>
@@ -268,23 +285,7 @@ export default function ReviewScreen() {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
-    topRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: space(3),
-      paddingBottom: space(2),
-    },
-    backGlass: {
-      width: 40,
-      height: 40,
-      borderRadius: radius.md,
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden",
-    },
-    backChevron: { fontSize: 26, lineHeight: 28, color: c.text, marginTop: -2 },
-    // New / Due tallies for what's LEFT in this session's queue.
+    // New / Learn / Due tallies for what's LEFT in this session's queue.
     counts: { flexDirection: "row", gap: space(4), justifyContent: "center", marginBottom: space(3) },
     countItem: { alignItems: "center" },
     countNum: { ...type.bodyStrong, fontVariant: ["tabular-nums"], lineHeight: 20 },

@@ -20,6 +20,7 @@ import { CalendarIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { MonthGrid, monthCardHeight, WeekdayStripe } from "@/components/month-grid";
+import { Skeleton } from "@/components/Skeleton";
 import { useShellPadding } from "@/components/shell-chrome";
 import { SlideUpSheet } from "@/components/StudySheet";
 import { useAuth } from "@/auth/AuthProvider";
@@ -301,7 +302,13 @@ export default function CalendarScreen() {
     );
   }
 
-  if (!loaded) return <View style={styles.flex} testID="calendar-loading" />;
+  if (!loaded) {
+    return (
+      <View style={styles.flex} testID="calendar-loading">
+        <CalendarSkeleton view={view} styles={styles} contentTop={contentTop} contentBottom={contentBottom} />
+      </View>
+    );
+  }
 
   const todayKey = dayKeyFromDate(new Date());
   const dayEvents = eventsForDay(events, shownDay);
@@ -454,6 +461,94 @@ export default function CalendarScreen() {
         onDelete={handleDeleteEvent}
         styles={styles}
       />
+    </View>
+  );
+}
+
+// Loading skeleton (replaces the old blank View while `loaded` is still false —
+// see the useFocusEffect above), shaped to whichever view is about to render.
+// `view` already carries its default ("monthly") this early — nothing else could
+// have switched it yet, since the view-switcher itself only appears once real
+// content has rendered.
+function CalendarSkeleton({
+  view,
+  styles,
+  contentTop,
+  contentBottom,
+}: {
+  view: CalendarView;
+  styles: Styles;
+  contentTop: number;
+  contentBottom: number;
+}) {
+  if (view === "daily") {
+    return (
+      <View style={{ paddingTop: contentTop + space(2) }} testID="calendar-skeleton">
+        <View style={styles.dayNav}>
+          <Skeleton width={20} height={20} radius={10} />
+          <Skeleton width={140} height={22} />
+          <Skeleton width={20} height={20} radius={10} />
+        </View>
+        <View style={[styles.dayWeekdayWrap, styles.skeletonWeekdayRow]}>
+          {Array.from({ length: 7 }, (_, i) => (
+            <Skeleton key={i} width={16} height={12} />
+          ))}
+        </View>
+        <View style={[styles.listBody, { paddingBottom: contentBottom }]}>
+          {[0, 1, 2].map((i) => (
+            <View key={i} style={styles.eventCard}>
+              <Skeleton width={8} height={8} radius={4} style={styles.skeletonDot} />
+              <View style={styles.eventText}>
+                <Skeleton width="70%" height={16} />
+                <Skeleton width="40%" height={12} />
+              </View>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  if (view === "yearly") {
+    return (
+      <View style={[styles.yearBody, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]} testID="calendar-skeleton">
+        <View style={styles.dayNav}>
+          <Skeleton width={20} height={20} radius={10} />
+          <Skeleton width={70} height={22} />
+          <Skeleton width={20} height={20} radius={10} />
+        </View>
+        <View style={styles.yearGrid}>
+          {Array.from({ length: 12 }, (_, i) => (
+            <View key={i} style={styles.skeletonMiniCard}>
+              <Skeleton width="55%" height={12} style={styles.skeletonMiniLabel} />
+              <Skeleton width="100%" height={64} radius={radius.sm} />
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  // Monthly (also the default before real data has decided otherwise).
+  return (
+    <View style={[styles.monthListBody, { paddingTop: contentTop + space(2), paddingBottom: contentBottom }]} testID="calendar-skeleton">
+      {[0, 1].map((i) => (
+        <View key={i} style={styles.skeletonMonthCard}>
+          <Skeleton width={150} height={26} style={styles.skeletonMonthLabel} />
+          <View style={styles.skeletonWeekdayRow}>
+            {Array.from({ length: 7 }, (_, wd) => (
+              <Skeleton key={wd} width={16} height={12} />
+            ))}
+          </View>
+          {[0, 1, 2, 3, 4].map((week) => (
+            <View key={week} style={styles.skeletonDayRow}>
+              {Array.from({ length: 7 }, (_, day) => (
+                <Skeleton key={day} width={32} height={32} radius={16} />
+              ))}
+            </View>
+          ))}
+        </View>
+      ))}
     </View>
   );
 }
@@ -892,6 +987,16 @@ const createStyles = (c: ThemeColors) =>
     monthListBody: { paddingHorizontal: space(4), flexGrow: 1 },
     yearBody: { paddingHorizontal: space(4), flexGrow: 1 },
     yearGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+
+    // Loading skeleton (CalendarSkeleton) — mirrors monthListBody/yearGrid's own
+    // rhythm so the placeholder settles into the exact spot the real grid lands in.
+    skeletonMonthCard: { marginBottom: space(6) },
+    skeletonMonthLabel: { marginBottom: space(3) },
+    skeletonWeekdayRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: space(2.5) },
+    skeletonDayRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: space(3) },
+    skeletonMiniCard: { width: "48%", marginBottom: space(5) },
+    skeletonMiniLabel: { alignSelf: "center", marginBottom: space(1.5) },
+    skeletonDot: { marginTop: 7 },
 
     dayNav: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(4), paddingBottom: space(2) },
     dayWeekdayWrap: { paddingHorizontal: space(4), paddingBottom: space(2.5) },

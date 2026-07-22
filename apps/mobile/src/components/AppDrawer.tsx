@@ -232,6 +232,13 @@ function DrawerShell({
             style={[styles.pageClip, { borderTopLeftRadius: edgeRadius, borderBottomLeftRadius: edgeRadius }]}
           >
             {children}
+            {/* Rides the SAME `progress` value as the push, so the page greys in
+                step with the finger rather than snapping at the settled state.
+                pointerEvents="none" keeps the tap-catcher below reachable. */}
+            <Animated.View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFill, { backgroundColor: c.pageDim, opacity: progress }]}
+            />
             {open ? (
               <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu" />
             ) : null}

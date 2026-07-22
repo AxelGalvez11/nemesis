@@ -7,6 +7,7 @@ import { useShellPadding } from "@/components/shell-chrome";
 import { GlassSurface } from "@/components/GlassSurface";
 import { SlideUpSheet } from "@/components/StudySheet";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { Skeleton } from "@/components/Skeleton";
 import { NotebookIcon, PlusIcon } from "@/components/icons";
 import { createNotebook, deleteNotebookById, listNotebooks, renameNotebookById, type Notebook } from "@/api/notebooks";
 import type { ThemeColors } from "@/theme/palette";
@@ -166,7 +167,13 @@ export default function NotebooksScreen() {
     );
   }
 
-  if (status === "idle" || status === "loading") return <View style={styles.flex} testID="notebooks-loading" />;
+  if (status === "idle" || status === "loading") {
+    return (
+      <View style={styles.flex} testID="notebooks-loading">
+        <NotebooksSkeleton contentTop={contentTop} contentBottom={contentBottom} />
+      </View>
+    );
+  }
 
   if (status === "error") {
     return (
@@ -279,6 +286,26 @@ export default function NotebooksScreen() {
         onClose={() => setRenameTarget(null)}
         onSubmit={handleRename}
       />
+    </View>
+  );
+}
+
+// Loading skeleton (replaces the old blank View while `status` is idle/loading) —
+// a handful of card-shaped rows reusing the REAL `row`/iconTile styles, so it lines
+// up exactly with the notebook cards that land under it.
+function NotebooksSkeleton({ contentTop, contentBottom }: { contentTop: number; contentBottom: number }) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View
+      style={[styles.listBody, { paddingTop: contentTop + space(2), paddingBottom: contentBottom + space(4) }]}
+      testID="notebooks-skeleton"
+    >
+      {[0, 1, 2, 3].map((i) => (
+        <View key={i} style={styles.row}>
+          <Skeleton width={36} height={36} radius={radius.md} />
+          <Skeleton width="50%" height={17} />
+        </View>
+      ))}
     </View>
   );
 }

@@ -22,7 +22,10 @@ import { useTheme } from "@/theme/ThemeProvider";
 // message as plain Markdown rather than emit something garbled. A lone `$` is
 // treated as currency (not math) unless it passes the guard in matchDollarMath.
 
-type MarkdownStyles = ReturnType<typeof createMarkdownStyles>;
+// Callers may scale a tier — the flashcard prompt enlarges `body` and centers
+// its text — so accept any object per key rather than the literal types
+// createMarkdownStyles infers, which would otherwise lock those callers out.
+type MarkdownStyles = { [K in keyof ReturnType<typeof createMarkdownStyles>]: object };
 
 // Match the Markdown body size so inline math sits at the same scale as prose.
 const MATH_FONT_SIZE = 15.5;

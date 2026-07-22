@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { fetchLibrary, loadCachedLibrary, type CloudLibraryNote } from "@/api/cloudLibrary";
 import { SearchIcon } from "@/components/icons";
+import { Skeleton } from "@/components/Skeleton";
 import { SlideUpSheet } from "@/components/StudySheet";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -70,7 +71,16 @@ export function AttachLibrarySheet({
       </View>
       <ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
         {notes === null ? (
-          <Text style={styles.mutedText}>Loading your library…</Text>
+          <View testID="attach-library-skeleton">
+            {[0, 1, 2, 3].map((i) => (
+              <View key={i} style={styles.row}>
+                <View style={styles.rowTextCol}>
+                  <Skeleton width="55%" height={16} />
+                  <Skeleton width="35%" height={12} />
+                </View>
+              </View>
+            ))}
+          </View>
         ) : filtered.length === 0 ? (
           <Text style={styles.mutedText}>{notesList.length === 0 ? "Your library is empty." : "No notes match that search."}</Text>
         ) : (

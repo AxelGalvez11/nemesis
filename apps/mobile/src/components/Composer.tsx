@@ -1,50 +1,46 @@
 import type { ReactNode, RefObject } from "react";
-import { useEffect, useRef } from "react";
-// Plain RN Animated (aliased — reanimated's default export below already
-// claims the name `Animated`) drives the record-mode waveform's looping
-// stagger; Reanimated's shared values drive Bounce's spring-on-press. Two
-// animation systems in one file, on purpose — the waveform is a background
-// loop with no gesture to respond to, exactly the "RN Animated" the owner
-// spec called for, not the press-responsive job Reanimated is doing above it.
-import { Animated as RNAnimated, Easing, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useRef } from "react";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
-import { ArrowUpIcon, ChevronIcon, MicIcon, PlusIcon } from "./icons";
+import { ArrowUpIcon, MicIcon, PlusIcon } from "./icons";
+import { LiveWaveform } from "./LiveWaveform";
 import { useSpeechInput } from "@/hooks/useSpeechInput";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
-// The one composer — a ChatGPT-style two-row card (owner 2026-07-21, "exactly
-// like ChatGPT"): the text field spans the top row on its own; the controls sit
-// on a row below it — "+" bottom-left, and bottom-right EITHER a mic (field
-// empty — tap to dictate) OR the upward-arrow send circle (once there's text).
-// Opaque surface card (not glass): ChatGPT's composer is a plain white card on
-// a white page, hairline border and all; dark mode gets the same card in the
-// dark surface color. The buttons spring on press (owner: smoother
+// The one composer — a ChatGPT-style card (owner 2026-07-21, "exactly like
+// ChatGPT"). Opaque surface card (not glass): ChatGPT's composer is a plain
+// white card on a white page, hairline border and all; dark mode gets the same
+// card in the dark surface color. The buttons spring on press (owner: smoother
 // micro-animations for sending).
 //
-// Chat/Record mode pill (owner 2026-07-21, "chat/recorder toggle from the
-// webapp"): mirrors web's composer.tsx ModePill — a small bordered pill at
-// the controls row's bottom-right, just left of the send/mic circle, that
-// flips between "Chat" and "Record". Only rendered when a caller wires
-// `onModeChange` (chat.tsx does; notebook.tsx's composer calls don't, so its
-// two Composer usages render exactly as before — no pill, no layout change).
-// In record mode the field is replaced by a decorative waveform strip; the
-// "+" and send/mic circle both disappear (nothing to attach or send while
-// recording — Record's own control bar, not this composer, drives
-// start/stop/save). The waveform row (21px) and the mode pill (36px, same
-// height as the round buttons) are sized so the card's TOTAL height is
-// identical in both modes — see COMPOSER_PILL_HEIGHT below, which stays
-// accurate without any mode-conditional math.
+// TWO LAYOUTS (owner 2026-07-22). The tall two-row card — field alone on top,
+// "+" and mic/send on a row beneath — is the EMPTY-chat landing presentation.
+// Once a conversation is underway the caller passes `compact` and it collapses
+// to a single row ("+", field, mic/send), so the messages own the screen. The
+// two heights are exported below; a caller anchoring anything above the
+// composer must pick the one matching the layout it rendered.
+//
+// RECORD MODE (owner 2026-07-22, replacing the Chat/Record pill that briefly
+// lived here): record mode is entered from the "+" menu, not from a toggle on
+// the card. While it's on, the card shows a "Record ✕" chip — which names the
+// mode and is the way back out — beside a waveform of the audio actually
+// coming in (components/LiveWaveform.tsx). There's no field, "+" or send
+// button in this mode: RecordSession's own control bar drives start/stop/save.
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-/** The card's own rendered height when the field holds one line (top padding 10
- *  + one 21px input line + row gap 4 + the 36px controls row + bottom padding 8
- *  + 2px of border) — exported so a caller anchoring something ABOVE the
- *  composer (chat.tsx's ComposerPlusMenu) sizes off the same number this card
- *  actually renders at, same precedent as StudyModeMenu.tsx's exported FAB_SIZE. */
+/** The TALL card's rendered height with a one-line field (top padding 10 + one
+ *  21px input line + row gap 4 + the 36px controls row + bottom padding 8 + 2px
+ *  of border) — exported so a caller anchoring something ABOVE the composer
+ *  (chat.tsx's ComposerPlusMenu) sizes off the same number this card actually
+ *  renders at, same precedent as StudyModeMenu.tsx's exported FAB_SIZE. */
 export const COMPOSER_PILL_HEIGHT = 81;
+
+/** The COMPACT card's rendered height: 4px top padding + a 36px control row +
+ *  4px bottom padding + 2px of border. */
+export const COMPOSER_COMPACT_HEIGHT = 46;
 
 // A press target that springs down slightly on touch and back on release — reanimated
 // on the UI thread, so it stays smooth regardless of JS-thread load.
@@ -103,6 +99,7 @@ export function Composer({
   onModeChange,
   modeLocked = false,
   recordingActive = false,
+  compact = false,
 }: {
   value: string;
   onChangeText: (text: string) => void;
@@ -117,16 +114,19 @@ export function Composer({
   mode?: ComposerMode;
   /** Wiring this in is what turns the mode pill on (see file-header note). */
   onModeChange?: (mode: ComposerMode) => void;
-  /** True while a recording is live or awaiting Save — the pill stops
-   *  responding to taps so flipping modes can't strand/destroy it. */
+  /** True while a recording is live or awaiting Save — the chip's ✕ stops
+   *  responding to taps so leaving record mode can't strand/destroy it. */
   modeLocked?: boolean;
-  /** True only while actually recording — pulses the waveform strip. */
+  /** True only while actually recording — drives the live waveform. */
   recordingActive?: boolean;
+  /** Single-row layout. The tall two-row card is the empty-chat landing
+   *  presentation; once a conversation is underway the composer shrinks back
+   *  to one row so the messages own the screen (owner 2026-07-22). */
+  compact?: boolean;
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
   const canSend = value.trim().length > 0 && !sending;
-  const showModePill = !!onModeChange;
   const isRecordMode = mode === "record";
 
   // Voice dictation: the transcript is merged onto whatever was already typed when
@@ -146,118 +146,83 @@ export function Composer({
     void start();
   };
 
-  return (
-    <View style={styles.card}>
-      {isRecordMode ? (
-        <WaveformStrip active={recordingActive} />
-      ) : (
-        <TextInput
-          ref={inputRef}
-          testID={testID}
-          style={styles.input}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={c.text3}
-          multiline
-          editable={!sending}
-        />
-      )}
-      <View style={styles.controls}>
-        {isRecordMode ? null : (
-          <Bounce style={styles.round} onPress={onPlus} disabled={!onPlus} hitSlop={6} accessibilityLabel="New" testID="composer-plus">
-            <PlusIcon size={22} color={c.text} strokeWidth={1.9} />
+  // Record mode owns the whole card: the chip says what mode you're in and its
+  // ✕ is the way out, so there's nothing to type or send here. Record's own
+  // control bar (RecordSession) still drives start/stop/save.
+  if (isRecordMode) {
+    return (
+      <View style={styles.card}>
+        <View style={styles.recordRow}>
+          <Bounce
+            style={styles.recordChip}
+            onPress={() => onModeChange?.("chat")}
+            disabled={modeLocked}
+            accessibilityLabel="Leave record mode"
+            testID="composer-record-chip"
+          >
+            <Text style={styles.recordChipLabel}>Record</Text>
+            <Text style={[styles.recordChipClose, modeLocked && styles.recordChipCloseOff]}>✕</Text>
           </Bounce>
-        )}
-        <View style={styles.trailing}>
-          {showModePill && (
-            <Bounce
-              style={styles.modePill}
-              onPress={() => onModeChange?.(isRecordMode ? "chat" : "record")}
-              disabled={modeLocked}
-              accessibilityLabel={isRecordMode ? "Switch to Chat mode" : "Switch to Record mode"}
-              testID="composer-mode-pill"
-            >
-              <Text style={styles.modeLabel}>{isRecordMode ? "Record" : "Chat"}</Text>
-              <View style={styles.modeChevron}>
-                <ChevronIcon size={10} color={c.text} strokeWidth={2} />
-              </View>
-            </Bounce>
-          )}
-          {!isRecordMode &&
-            (canSend ? (
-              <Bounce style={[styles.round, styles.sendOn]} onPress={onSend} accessibilityLabel="Send" testID="composer-send">
-                <ArrowUpIcon size={18} color={c.onAccent} />
-              </Bounce>
-            ) : (
-              <Bounce
-                style={[styles.round, listening && styles.micOn]}
-                onPress={onMic}
-                accessibilityLabel={listening ? "Stop dictation" : "Dictate"}
-                testID="composer-mic"
-              >
-                <MicIcon size={20} color={listening ? c.onAccent : c.text} />
-              </Bounce>
-            ))}
+          <View style={styles.recordWave}>
+            <LiveWaveform active={recordingActive} height={22} testID="composer-waveform" />
+          </View>
         </View>
       </View>
-    </View>
-  );
-}
-
-const WAVEFORM_BARS = 24;
-
-/** Decorative strip that replaces the text field in record mode (owner spec:
- *  "a row of ~24 short rounded bars"). Idle: static, low opacity. Active:
- *  each bar loops opacity+scaleY on a staggered delay via plain RN Animated
- *  (useNativeDriver — 24 concurrent loops cost nothing once handed to the
- *  native thread). Purely decorative — no testID, per the repo convention of
- *  testIDs on interactive elements only. */
-function WaveformStrip({ active }: { active: boolean }) {
-  const styles = useThemedStyles(createStyles);
-  const anims = useRef(Array.from({ length: WAVEFORM_BARS }, () => new RNAnimated.Value(0))).current;
-
-  useEffect(() => {
-    if (!active) {
-      anims.forEach((value) => {
-        value.stopAnimation();
-        value.setValue(0);
-      });
-      return;
-    }
-    const loops = anims.map((value, index) =>
-      RNAnimated.loop(
-        RNAnimated.sequence([
-          RNAnimated.delay((index % 8) * 70),
-          RNAnimated.timing(value, { duration: 260, easing: Easing.inOut(Easing.quad), toValue: 1, useNativeDriver: true }),
-          RNAnimated.timing(value, { duration: 260, easing: Easing.inOut(Easing.quad), toValue: 0, useNativeDriver: true }),
-        ]),
-      ),
     );
-    loops.forEach((loop) => loop.start());
-    return () => loops.forEach((loop) => loop.stop());
-  }, [active, anims]);
+  }
+
+  const plusButton = (
+    <Bounce style={styles.round} onPress={onPlus} disabled={!onPlus} hitSlop={6} accessibilityLabel="New" testID="composer-plus">
+      <PlusIcon size={22} color={c.text} strokeWidth={1.9} />
+    </Bounce>
+  );
+  const sendButton = canSend ? (
+    <Bounce style={[styles.round, styles.sendOn]} onPress={onSend} accessibilityLabel="Send" testID="composer-send">
+      <ArrowUpIcon size={18} color={c.onAccent} />
+    </Bounce>
+  ) : (
+    <Bounce
+      style={[styles.round, listening && styles.micOn]}
+      onPress={onMic}
+      accessibilityLabel={listening ? "Stop dictation" : "Dictate"}
+      testID="composer-mic"
+    >
+      <MicIcon size={20} color={listening ? c.onAccent : c.text} />
+    </Bounce>
+  );
+  const field = (
+    <TextInput
+      ref={inputRef}
+      testID={testID}
+      style={[styles.input, compact && styles.inputCompact]}
+      value={value}
+      onChangeText={onChangeText}
+      placeholder={placeholder}
+      placeholderTextColor={c.text3}
+      multiline
+      editable={!sending}
+    />
+  );
+
+  if (compact) {
+    return (
+      <View style={[styles.card, styles.cardCompact]}>
+        <View style={styles.compactRow}>
+          {plusButton}
+          {field}
+          {sendButton}
+        </View>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.waveform}>
-      {anims.map((value, index) => {
-        const baseHeight = 5 + ((index * 7) % 13);
-        return (
-          <RNAnimated.View
-            key={index}
-            style={[
-              styles.waveBar,
-              { height: baseHeight },
-              active
-                ? {
-                    opacity: value.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }),
-                    transform: [{ scaleY: value.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] }) }],
-                  }
-                : styles.waveBarIdle,
-            ]}
-          />
-        );
-      })}
+    <View style={styles.card}>
+      {field}
+      <View style={styles.controls}>
+        {plusButton}
+        <View style={styles.trailing}>{sendButton}</View>
+      </View>
     </View>
   );
 }
@@ -297,23 +262,27 @@ const createStyles = (c: ThemeColors) =>
     trailing: { flexDirection: "row", alignItems: "center", gap: space(1.5), marginLeft: "auto" },
     // Same 36px height as `round` so the controls row's height — and so
     // COMPOSER_PILL_HEIGHT — doesn't shift between chat and record mode.
-    modePill: {
-      height: 36,
+    // One row: "+", field, then mic-or-send. Vertically centered on the field's
+    // first line so a growing multi-line draft pushes upward, not the buttons.
+    cardCompact: { paddingTop: space(1), paddingBottom: space(1), gap: 0 },
+    compactRow: { flexDirection: "row", alignItems: "flex-end", gap: space(1) },
+    inputCompact: { flex: 1, paddingBottom: space(1.5), paddingHorizontal: space(1) },
+    recordRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(1) },
+    recordChip: {
+      height: 34,
       flexDirection: "row",
       alignItems: "center",
-      gap: space(1),
-      paddingHorizontal: space(2.5),
+      gap: space(1.5),
+      paddingHorizontal: space(3),
       borderRadius: radius.pill,
       borderWidth: 1,
-      borderColor: c.line,
+      borderColor: c.accentLine,
+      backgroundColor: c.accentFaint,
     },
-    modeLabel: { fontSize: 13, fontWeight: "600", color: c.text },
-    // ChevronIcon points right by default; rotated to point down, read as a
-    // "pick one of two" affordance rather than a disclosure/expand arrow.
-    modeChevron: { transform: [{ rotate: "90deg" }] },
-    // Same 21px as `input`'s lineHeight so record mode's row matches chat
-    // mode's row exactly — see the file-header note on COMPOSER_PILL_HEIGHT.
-    waveform: { height: 21, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(2) },
-    waveBar: { width: 3, borderRadius: 1.5, backgroundColor: c.text },
-    waveBarIdle: { opacity: 0.25 },
+    recordChipLabel: { fontSize: 13, fontWeight: "600", color: c.accent },
+    recordChipClose: { fontSize: 13, fontWeight: "700", color: c.accent },
+    // Dimmed, not hidden: while a recording is live the ✕ is deliberately inert
+    // so leaving can't silently bin an unsaved transcript.
+    recordChipCloseOff: { opacity: 0.4 },
+    recordWave: { flex: 1 },
   });

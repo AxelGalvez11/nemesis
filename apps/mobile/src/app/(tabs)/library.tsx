@@ -19,6 +19,7 @@ import { useShellPadding } from "@/components/shell-chrome";
 import { useShell } from "@/components/AppDrawer";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
+import { Skeleton } from "@/components/Skeleton";
 import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { fetchLibrary, loadCachedLibrary, type CloudLibraryNote, type CloudLibrarySnapshot } from "@/api/cloudLibrary";
 import { buildLibraryRows, type LibraryRow } from "@/lib/library-sync";
@@ -240,7 +241,13 @@ export default function LibraryScreen() {
     }, [userId, refresh]),
   );
 
-  if (!dataReady) return <View style={styles.flex} testID="library-loading" />;
+  if (!dataReady) {
+    return (
+      <View style={styles.flex} testID="library-loading">
+        <LibrarySkeleton contentTop={contentTop} />
+      </View>
+    );
+  }
 
   if (!userId) {
     return (
@@ -466,6 +473,31 @@ export default function LibraryScreen() {
           setSortOpen(false);
         }}
       />
+    </View>
+  );
+}
+
+// Loading skeleton (replaces the old blank View while the first cache read is in
+// flight — see `dataReady` above): one folder-shaped row then a handful of
+// note-shaped rows, reusing the REAL row styles (folderRow/row/rowTextCol) so the
+// placeholder lines up exactly with the content that lands under it.
+const SKELETON_NOTE_WIDTHS = ["78%", "54%", "68%", "45%", "60%"] as const;
+
+function LibrarySkeleton({ contentTop }: { contentTop: number }) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View style={[styles.listBody, { paddingTop: contentTop + space(3) }]} testID="library-skeleton">
+      <View style={styles.folderRow}>
+        <Skeleton width={16} height={16} radius={4} />
+        <Skeleton width="35%" height={16} />
+      </View>
+      {SKELETON_NOTE_WIDTHS.map((w, i) => (
+        <View key={i} style={styles.row}>
+          <View style={styles.rowTextCol}>
+            <Skeleton width={w} height={16} />
+          </View>
+        </View>
+      ))}
     </View>
   );
 }

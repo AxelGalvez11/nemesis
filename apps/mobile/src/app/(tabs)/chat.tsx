@@ -22,6 +22,7 @@ import Svg, { Circle } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
 import {
   deleteThread,
+  hasCachedThread,
   isThreadPinned,
   listThreads,
   loadThreadMessages,
@@ -34,7 +35,7 @@ import {
 import type { CloudLibraryNote } from "@/api/cloudLibrary";
 import { drawerOpenGuard, useShell } from "@/components/AppDrawer";
 import { AttachLibrarySheet } from "@/components/AttachLibrarySheet";
-import { Composer, COMPOSER_PILL_HEIGHT, type ComposerMode } from "@/components/Composer";
+import { Composer, COMPOSER_COMPACT_HEIGHT, COMPOSER_PILL_HEIGHT, type ComposerMode } from "@/components/Composer";
 import { ComposerPlusMenu } from "@/components/ComposerPlusMenu";
 import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
 import { GlassSurface } from "@/components/GlassSurface";
@@ -42,10 +43,12 @@ import { CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icon
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { RecordSession, type RecordingSessionState } from "@/components/RecordSession";
+import { Skeleton } from "@/components/Skeleton";
 import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
-import { ThinkingDots } from "@/components/ThinkingDots";
+import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { withAttachmentNote, type BudgetResetKind, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
+import type { ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
@@ -64,10 +67,11 @@ import { radius, space, type } from "@/theme/tokens";
 // epoch guard means a user switch, a thread switch, or an unmount can never
 // resurrect a stale thread's messages onto the screen.
 //
-// Chat/Record mode (owner 2026-07-21, "chat/recorder toggle from the webapp"):
-// the composer's new mode pill (Composer.tsx) swaps this screen's whole
-// messages/thread area for RecordSession.tsx inline — mirrors web's
-// composer.tsx ModePill swapping in record-workspace.tsx. `composerMode`
+// Record mode: entered from the composer "+" menu's Record row (owner
+// 2026-07-22 moved it there from a toggle pill on the composer itself) and
+// left via the "Record ✕" chip the composer shows while it's on. It swaps this
+// screen's whole messages/thread area for RecordSession.tsx inline — mirrors
+// web's record-workspace.tsx. `composerMode`
 // never persists (always starts "chat", same as web's per-tab default) and,
 // per the epoch-guard discipline above, resets alongside everything else on a
 // thread/user switch — flipping composerMode back to "chat" unmounts
@@ -102,6 +106,13 @@ export default function ChatScreen() {
 
   const [threadId, setThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  // True while the active thread's history is being fetched — messages alone
+  // can't tell "genuinely empty" apart from "not loaded yet" since it starts at
+  // [] either way (see the load effect below and its ListEmptyComponent).
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  // What the in-flight turn is actually doing, for the thinking line. Reset to
+  // "routing" per send so a new question never inherits the last one's stage.
+  const [phase, setPhase] = useState<ThinkingPhase>({ kind: "routing" });
   const [lastError, setLastError] = useState<null | string>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -157,6 +168,11 @@ export default function ChatScreen() {
     setSending(false);
     setStreamingText("");
     setMessages([]);
+    // Uncertain until the load below resolves one way or the other. Starting
+    // true (not false) means a thread switch never has a frame where messages
+    // is [] and loading is false at once — that gap is exactly the false-empty
+    // "Welcome back" flash this fixes.
+    setMessagesLoading(true);
     setLastError(null);
     setInput("");
     setPinned(false);
@@ -176,21 +192,40 @@ export default function ChatScreen() {
     setRecordingState("idle");
     if (!uid) {
       setThreadId(null);
+      setMessagesLoading(false);
       return;
     }
     const epoch = epochRef.current;
     let alive = true;
     void (async () => {
       let id = routeThreadId ?? null;
-      if (!id) {
+      // A route id already names an exact thread — either an existing one (its
+      // row can only be tapped in the drawer once listThreads has cached its
+      // metadata locally) or a just-minted "New chat" id nothing has ever
+      // written anywhere (AppDrawer.tsx's newChat). hasCachedThread tells them
+      // apart with a local-only read, so a deliberately fresh chat lands on the
+      // welcome state immediately instead of skeleton-flashing first.
+      let knownExisting: boolean;
+      if (id) {
+        knownExisting = await hasCachedThread(uid, id);
+      } else {
         const summaries = await listThreads(uid);
         if (!alive || epochRef.current !== epoch) return;
         id = summaries[0]?.id ?? newThreadId();
+        knownExisting = summaries.length > 0;
+      }
+      if (!alive || epochRef.current !== epoch) return;
+      if (!knownExisting) {
+        setThreadId(id);
+        setMessages([]);
+        setMessagesLoading(false);
+        return;
       }
       const loaded = await loadThreadMessages(uid, id);
       if (!alive || epochRef.current !== epoch) return;
       setThreadId(id);
       setMessages(loaded);
+      setMessagesLoading(false);
       void isThreadPinned(uid, id).then((p) => {
         if (alive && epochRef.current === epoch) setPinned(p);
       });
@@ -252,6 +287,7 @@ export default function ChatScreen() {
     setAttachedDoc(null);
     setSending(true);
     setStreamingText("");
+    setPhase({ kind: "routing" });
     // Persist the user turn immediately so the thread shows in the sidebar even
     // if the reply never lands.
     void saveThreadMessages(uid, id, base);
@@ -262,6 +298,9 @@ export default function ChatScreen() {
         // Renders live into the assistant row as chunks arrive; stale turns
         // (thread/user switched mid-stream) are dropped by the epoch guard.
         if (epochRef.current === epoch) setStreamingText(accumulated);
+      },
+      onPhase: (next) => {
+        if (epochRef.current === epoch) setPhase(next);
       },
     })
       .then((reply) => {
@@ -360,13 +399,12 @@ export default function ChatScreen() {
     };
   }, [composerMode, recordingState, exitRecordMode]);
 
-  // The composer pill's onModeChange. Entering record mirrors the "+" menu's
-  // own Record-row guard (ComposerPlusMenu's onRecord) — no thread yet, no
-  // recording; the pill just stays put rather than opening onto nothing. The
-  // plus menu is force-closed too: it can only have been opened from the "+"
-  // button, which Composer.tsx hides in record mode, so a stale open menu
-  // would otherwise hang over the record workspace with no way to have been
-  // reopened.
+  // Entering record comes from the "+" menu's Record row; leaving comes from
+  // the composer's "Record ✕" chip. No thread yet means nothing to record
+  // into, so the tap is a no-op rather than opening onto nothing. The plus menu
+  // is force-closed too: the "+" button is hidden in record mode, so a stale
+  // open menu would otherwise hang over the record workspace with no way to
+  // have been reopened.
   const handleComposerModeChange = useCallback(
     (next: ComposerMode) => {
       if (next === "record") {
@@ -467,6 +505,10 @@ export default function ChatScreen() {
     );
   }
   const hasContent = rows.length > 0;
+  // The tall two-row composer is the empty-chat landing look; once the
+  // conversation has anything in it the composer shrinks to a single row so the
+  // messages own the screen (owner 2026-07-22).
+  const composerCompact = hasContent;
   // The newest user-message row — what the scroll effect pins to the top. Computed here
   // in render and stashed in a ref so that effect needn't depend on `rows`.
   lastUserRowIndexRef.current = rows.reduce(
@@ -509,7 +551,7 @@ export default function ChatScreen() {
             renderItem={({ item }) =>
               item.kind === "thinking" ? (
                 <View style={styles.assistantRow} testID="chat-thinking">
-                  <ThinkingDots color={c.text2} />
+                  <ThinkingLine phase={phase} testID="chat-thinking-line" />
                 </View>
               ) : item.kind === "error" ? (
                 <View style={styles.errorBubble} testID="chat-error">
@@ -540,15 +582,22 @@ export default function ChatScreen() {
               threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={setDeliverableSheetFor} /> : null
             }
             ListEmptyComponent={
-              // Minimal greeting — ONE line, no explainer (owner 2026-07-20: "remove the
-              // 'what are we working on today...' because its too noisy. just a simple
-              // welcome back"). Rendered directly (not the shared EmptyBlock, which is
-              // flex:1 + centered) so it still anchors NEAR THE TOP, not vertically
-              // centered (prior owner call this preserves). The list's own paddingTop
-              // already clears the glass TopBar, so this only adds a little more.
-              <View style={[styles.emptyWrap, { paddingTop: space(4), paddingBottom: contentBottom }]}>
-                <Text style={styles.emptyTitle}>Welcome back</Text>
-              </View>
+              messagesLoading ? (
+                // History is still being fetched — messages is [] either way (loading or
+                // genuinely empty), so without this the greeting below would flash on
+                // screen a beat before real history replaces it. See messagesLoading.
+                <ChatSkeleton />
+              ) : (
+                // Minimal greeting — ONE line, no explainer (owner 2026-07-20: "remove the
+                // 'what are we working on today...' because its too noisy. just a simple
+                // welcome back"). Rendered directly (not the shared EmptyBlock, which is
+                // flex:1 + centered) so it still anchors NEAR THE TOP, not vertically
+                // centered (prior owner call this preserves). The list's own paddingTop
+                // already clears the glass TopBar, so this only adds a little more.
+                <View style={[styles.emptyWrap, { paddingTop: space(4), paddingBottom: contentBottom }]}>
+                  <Text style={styles.emptyTitle}>Welcome back</Text>
+                </View>
+              )
             }
             ListFooterComponent={
               // Bottom spacer so the last exchange can scroll up until the question sits at
@@ -574,11 +623,16 @@ export default function ChatScreen() {
         <ComposerPlusMenu
           visible={plusMenuOpen}
           onClose={() => setPlusMenuOpen(false)}
-          bottomOffset={(keyboardUp ? space(3) : contentBottom - space(1)) + COMPOSER_PILL_HEIGHT + space(2)}
+          bottomOffset={
+            (keyboardUp ? space(3) : contentBottom - space(1)) +
+            (composerCompact ? COMPOSER_COMPACT_HEIGHT : COMPOSER_PILL_HEIGHT) +
+            space(2)
+          }
           onAttach={() => setLibraryPickerOpen(true)}
-          onRecord={() => {
-            if (threadId) router.push({ params: { c: threadId }, pathname: "/record" });
-          }}
+          // Record is entered from HERE now (owner 2026-07-22), not from a
+          // toggle on the composer, and it opens the inline workspace rather
+          // than the modal route — so the chat stays put underneath it.
+          onRecord={() => handleComposerModeChange("record")}
           deepResearchOn={deepResearchOn}
           onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}
         />
@@ -599,7 +653,7 @@ export default function ChatScreen() {
               message exists — and, same as the attached-doc chip below, while the
               record workspace has replaced the message area (nothing to prefill
               into a composer that isn't showing its text field right now). */}
-          {composerMode === "chat" && !hasContent ? (
+          {composerMode === "chat" && !hasContent && !messagesLoading ? (
             <StarterRows
               onPick={(text) => {
                 setInput(text);
@@ -619,12 +673,11 @@ export default function ChatScreen() {
             testID="chat-input"
             mode={composerMode}
             onModeChange={handleComposerModeChange}
-            // Locked mid-recording/reviewable (can't flip away and strand an
-            // unsaved recording) and while there's no thread yet to record
-            // into (mirrors handleComposerModeChange's own guard, so the pill
-            // doesn't invite a tap that silently does nothing).
-            modeLocked={recordingState !== "idle" || !threadId}
+            // Locked mid-recording/reviewable so the chip's ✕ can't strand an
+            // unsaved recording.
+            modeLocked={recordingState !== "idle"}
             recordingActive={recordingState === "recording"}
+            compact={composerCompact}
           />
         </View>
       </View>
@@ -751,6 +804,32 @@ function StarterRows({ onPick }: { onPick: (text: string) => void }) {
   );
 }
 
+/** Loading skeleton for ListEmptyComponent (messagesLoading, above) — a couple of
+ *  exchanges shaped like the real transcript (user bubble + full-width assistant
+ *  block), so it reads as "your history is coming" rather than a generic loader. */
+function ChatSkeleton() {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View style={styles.chatSkeletonWrap} testID="chat-skeleton">
+      <View style={[styles.bubble, styles.userBubble]}>
+        <Skeleton width={150} height={16} />
+      </View>
+      <View style={styles.assistantRow}>
+        <Skeleton width="88%" height={16} style={styles.skeletonLine} />
+        <Skeleton width="72%" height={16} style={styles.skeletonLine} />
+        <Skeleton width="50%" height={16} />
+      </View>
+      <View style={[styles.bubble, styles.userBubble]}>
+        <Skeleton width={110} height={16} />
+      </View>
+      <View style={styles.assistantRow}>
+        <Skeleton width="80%" height={16} style={styles.skeletonLine} />
+        <Skeleton width="60%" height={16} />
+      </View>
+    </View>
+  );
+}
+
 function AttachedDocChip({ title, onRemove }: { title: string; onRemove: () => void }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -788,6 +867,10 @@ const createStyles = (c: ThemeColors) =>
     // 2026-07-20: ONE short line only, muted (text2) — no explainer sentence.
     emptyWrap: { alignItems: "center", gap: space(2), paddingHorizontal: space(6) },
     emptyTitle: { ...type.title, color: c.text2, textAlign: "center" },
+    // Loading skeleton (ChatSkeleton, above) — spacing between its two exchanges;
+    // skeletonLine spaces an exchange's own wrapped bars.
+    chatSkeletonWrap: { gap: space(2) },
+    skeletonLine: { marginBottom: space(2) },
     composerRow: { paddingHorizontal: space(3), paddingTop: space(2) },
     // Landing starter rows — plain (no glass, no borders) so they read as quiet
     // suggestions on the page, not controls; generous air between rows like the

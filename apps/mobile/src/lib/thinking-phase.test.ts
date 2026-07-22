@@ -1,0 +1,61 @@
+// Deno unit tests (repo convention) for the chat thinking-preview phrases.
+// Run: deno test --no-check apps/mobile/src/lib/thinking-phase.test.ts
+import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { phaseLabel, settledLabel, shortQuery } from "./thinking-phase.ts";
+
+Deno.test("each phase reads as a plain-English line", () => {
+  assertEquals(phaseLabel({ kind: "routing" }), "Working out how to answer");
+  assertEquals(phaseLabel({ kind: "thinking", deep: true }), "Thinking it through");
+  assertEquals(phaseLabel({ kind: "thinking", deep: false }), "Putting this together");
+});
+
+Deno.test("the search line echoes the real question back", () => {
+  assertEquals(
+    phaseLabel({ kind: "searching", query: "metformin dosing in renal impairment" }),
+    "Searching the web for “metformin dosing in renal impairment”",
+  );
+});
+
+Deno.test("a blank query still produces a sensible search line", () => {
+  assertEquals(phaseLabel({ kind: "searching", query: "   " }), "Searching the web");
+});
+
+Deno.test("source counts are singular/plural correct", () => {
+  assertEquals(phaseLabel({ kind: "reading", sources: 1 }), "Reading 1 source");
+  assertEquals(phaseLabel({ kind: "reading", sources: 6 }), "Reading 6 sources");
+});
+
+Deno.test("finding nothing says so instead of claiming to read sources", () => {
+  const label = phaseLabel({ kind: "reading", sources: 0 });
+  assertEquals(label, "No sources came back — answering from what I know");
+});
+
+Deno.test("the writing phase shows nothing — the answer speaks for itself", () => {
+  assertEquals(phaseLabel({ kind: "writing" }), "");
+});
+
+Deno.test("shortQuery collapses whitespace and leaves short questions alone", () => {
+  assertEquals(shortQuery("  what   is\n a beta blocker "), "what is a beta blocker");
+});
+
+Deno.test("shortQuery trims long questions at a word boundary", () => {
+  const long = "compare the cardiovascular outcomes of ACE inhibitors versus angiotensin receptor blockers";
+  const out = shortQuery(long);
+  assertEquals(out.endsWith("…"), true);
+  assertEquals(out.length <= 43, true, `too long: ${out.length}`);
+  // Cut at a space, so the echo never ends mid-word.
+  assertEquals(long.startsWith(out.slice(0, -1)), true);
+});
+
+Deno.test("shortQuery on a single very long word still fits", () => {
+  const out = shortQuery("a".repeat(80));
+  assertEquals(out.length <= 43, true);
+  assertEquals(out.endsWith("…"), true);
+});
+
+Deno.test("settled label rounds seconds and stays quiet on instant turns", () => {
+  assertEquals(settledLabel(0), "");
+  assertEquals(settledLabel(400), "");
+  assertEquals(settledLabel(1000), "Thought for 1s");
+  assertEquals(settledLabel(6400), "Thought for 6s");
+});
