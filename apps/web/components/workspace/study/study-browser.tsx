@@ -20,6 +20,7 @@ import { useWorkspacePreview } from "@/components/workspace/preview-context";
 import { buildAnkiExportFile } from "@/lib/workspace/anki-text";
 import { postChatCompletion } from "@/lib/workspace/chat-api";
 import { autoTagTargets, buildAutoTagMessages, isLeechCard, parseAutoTags, previewAutoTags } from "@/lib/workspace/study-ai-extras";
+import { cardListPreview } from "@/lib/workspace/study-card-preview";
 import { type StudyCard, type StudyCardType, type StudyDeck, useCloudStudy } from "@/lib/workspace/study-cloud-store";
 import { cn } from "@/lib/utils";
 
@@ -308,7 +309,6 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
                   </div>
                 ) : (
                   <button className={rowClass(scope === `deck:${entry.deck?.id}`)} key={entry.deck?.id} onClick={() => entry.deck && selectScope(`deck:${entry.deck.id}`)} style={{ paddingLeft: `${0.625 + entry.depth * 0.65}rem` }} type="button">
-                    <IconCards className="shrink-0 text-(--ui-text-tertiary)" size={14} />
                     <span className="min-w-0 flex-1 truncate">{entry.label}</span>
                     <span className="text-(--ui-text-quaternary)">{cards.filter((card) => card.deckId === entry.deck?.id).length}</span>
                   </button>
@@ -355,7 +355,7 @@ export function StudyBrowser({ open, onOpenChange, decks, cards, initialDeckId, 
             </div>
             {visibleCards.length === 0 ? <p className="p-6 text-center text-xs text-(--ui-text-tertiary)">No cards match this view.</p> : visibleCards.map((card) => (
               <button className={cn("grid w-full grid-cols-[minmax(0,1fr)_5rem] border-b border-(--ui-stroke-tertiary) px-3 py-2.5 text-left text-xs hover:bg-black/[0.04] dark:hover:bg-white/[0.06]", activeCard?.id === card.id && "bg-black/[0.055] dark:bg-white/[0.08]")} key={card.id} onClick={() => setCardId(card.id)} type="button">
-                <span className="truncate pr-3">{card.front}</span><span className="truncate text-[0.68rem] text-(--ui-text-tertiary)">{new Date(card.dueAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                <span className="truncate pr-3">{cardListPreview(card.front)}</span><span className="truncate text-[0.68rem] text-(--ui-text-tertiary)">{new Date(card.dueAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
               </button>
             ))}
           </section>
