@@ -12,6 +12,7 @@ import remarkMath from "remark-math";
 
 import { faviconUrl, hostnameOf, sourceLabel } from "@/lib/favicon";
 import { cn } from "@/lib/utils";
+import { citationsToMarkdown } from "@/lib/workspace/chat-citations";
 import { obsidianTagsToMarkdown, wikiLinksToMarkdown } from "@/lib/workspace/library-links";
 import { normalizeMathDelimiters } from "@/lib/workspace/markdown-math";
 
@@ -34,27 +35,6 @@ export interface CitationSource {
   url: string;
 }
 
-// Answers ground themselves on numbered search results and cite them as [1]..[5].
-// Turn those markers into links the `a` renderer paints as favicon pills. Fenced
-// blocks and inline code are skipped so an array index in a snippet stays literal,
-// and `[1](...)` is left alone because it is already a markdown link.
-const CITE_MARKER_RE = /\[(\d{1,2})\](?!\()/g;
-const CODE_SEGMENT_RE = /(```[\s\S]*?```|`[^`\n]*`)/g;
-
-function citationsToMarkdown(text: string, sourceCount: number): string {
-  if (sourceCount <= 0) return text;
-  return text
-    .split(CODE_SEGMENT_RE)
-    .map((chunk, index) =>
-      index % 2 === 1
-        ? chunk
-        : chunk.replace(CITE_MARKER_RE, (match, digits: string) => {
-            const n = Number.parseInt(digits, 10);
-            return n >= 1 && n <= sourceCount ? `[${n}](#nemesis-cite=${n})` : match;
-          }),
-    )
-    .join("");
-}
 
 export function slugifyHeading(value: string): string {
   return value
