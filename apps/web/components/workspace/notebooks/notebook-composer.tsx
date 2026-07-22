@@ -6,6 +6,7 @@
 
 import type { ComposerMode } from "@/components/workspace/sessions/composer";
 import { Composer } from "@/components/workspace/sessions/composer";
+import type { ChatEffort } from "@/lib/workspace/chat-effort";
 
 interface NotebookComposerProps {
   onSubmit: (text: string, files: File[]) => void;
@@ -15,6 +16,7 @@ interface NotebookComposerProps {
   autoFocus?: boolean;
   large?: boolean;
   onModeChange?: (mode: ComposerMode) => void;
+  onEffortChange?: (effort: ChatEffort) => void;
   onRecordingChange?: (recording: boolean) => void;
   showRecordCompanion?: boolean;
   mode?: ComposerMode;
@@ -26,6 +28,7 @@ export function NotebookComposer({
   working = false,
   placeholder = "Ask a question",
   onModeChange,
+  onEffortChange,
   onRecordingChange,
   showRecordCompanion,
   mode,
@@ -34,6 +37,7 @@ export function NotebookComposer({
     <Composer
       busy={Boolean(disabled || working)}
       mode={mode}
+      onEffortChange={onEffortChange}
       onModeChange={onModeChange}
       onRecordingChange={onRecordingChange}
       onStop={() => undefined}

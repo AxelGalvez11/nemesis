@@ -4,7 +4,7 @@
 // transcript, shared right rail, and composer. Reads the active chat from the store and sends turns
 // through the cloud-backed orchestrator. Preview builds return a canned reply.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconLayoutSidebarRightExpand } from "@tabler/icons-react";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -15,6 +15,7 @@ import { notebookChatStore, sendNotebookTurn, useNotebookChat, type NotebookWire
 import { appendMessage } from "@/lib/notebooks/chats-api";
 import { consumeNotebookRecording } from "@/lib/notebooks/record-intent";
 import { prepareChatAttachments } from "@/lib/workspace/chat-attachments";
+import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/workspace/chat-effort";
 import { useRecordingArtifacts, type RecordingArtifactDraft } from "@/lib/workspace/recording-artifacts";
 
 import { NotebookComposer } from "./notebook-composer";
@@ -37,6 +38,7 @@ export function NotebookChatView() {
   const [rightRailOpen, setRightRailOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<SessionRailPanel>("sources");
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
+  const effortRef = useRef<ChatEffort>(DEFAULT_CHAT_EFFORT);
   const [recording, setRecording] = useState(false);
   const [recordCanvasOpen, setRecordCanvasOpen] = useState(false);
   const { artifacts: recordingArtifacts, createArtifact } = useRecordingArtifacts({ contextId: activeChatId, preview, surface: "notebook", userId: uid });
@@ -123,7 +125,7 @@ export function NotebookChatView() {
         notebookChatStore.append(activeChatId, { role: "assistant", content: "Sign in to chat about this notebook.", at: new Date().toISOString() });
         return;
       }
-      void sendNotebookTurn({ uid, notebookId, chatId: activeChatId, instructions, sources: wireSources, userText: prepared.wireText, displayText: prepared.displayText });
+      void sendNotebookTurn({ uid, notebookId, chatId: activeChatId, effort: effortRef.current, instructions, sources: wireSources, userText: prepared.wireText, displayText: prepared.displayText });
     },
     [activeChatId, notebookId, preview, uid, instructions, wireSources],
   );
@@ -168,6 +170,7 @@ export function NotebookChatView() {
             <div className="mx-auto w-full max-w-3xl">
               <NotebookComposer
                 autoFocus
+                onEffortChange={(effort) => { effortRef.current = effort; }}
                 onModeChange={setComposerMode}
                 onRecordingChange={handleRecordingChange}
                 onSubmit={submit}
