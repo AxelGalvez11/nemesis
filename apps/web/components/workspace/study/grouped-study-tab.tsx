@@ -185,9 +185,8 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
 
   async function removeGroup(group: string) {
     const inside = items.filter((entry) => (entry.groupName || UNGROUPED) === group);
-    const tally = inside.length === 0
-      ? "It's empty."
-      : `The ${inside.length} ${inside.length === 1 ? label.toLowerCase().replace(/s$/, "") : label.toLowerCase()} inside are deleted too.`;
+    const noun = inside.length === 1 ? `${label.toLowerCase().replace(/s$/, "")} inside is` : `${label.toLowerCase()} inside are`;
+    const tally = inside.length === 0 ? "It's empty." : `The ${inside.length} ${noun} deleted too.`;
     if (!window.confirm(`Are you sure you want to delete the folder “${group}”? ${tally} This can't be undone.`)) return;
     setActionError(null);
     try {
