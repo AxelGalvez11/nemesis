@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { GlassSurface } from "./GlassSurface";
-import { LibraryIcon, MicIcon, SearchIcon } from "./icons";
+import { LibraryIcon, SearchIcon } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -16,6 +16,12 @@ import { radius, space, type } from "@/theme/tokens";
 //    stays on across sends until the student turns it off again, unlike the
 //    attach flow's one-shot chip (owner spec calls it a "toggle row", which
 //    reads as a mode rather than a per-message action).
+//
+// A third row briefly opened Record from here (owner 2026-07-22, morning).
+// Record moved OUT the same day: it's the round accent button on the composer
+// itself now (Composer.tsx's file header has the layout), so recording is one
+// tap from the card rather than two through a menu. Only the row left — record
+// mode itself is untouched.
 // Mirrors web's own "+" AddMenu (apps/web/components/workspace/sessions/
 // composer.tsx) in spirit — same two concepts, "Files"→"Attach from Library"
 // and "Deep research" verbatim (right down to reusing a search-glyph icon for
@@ -26,7 +32,6 @@ export function ComposerPlusMenu({
   onClose,
   bottomOffset,
   onAttach,
-  onRecord,
   deepResearchOn,
   onToggleDeepResearch,
 }: {
@@ -37,8 +42,6 @@ export function ComposerPlusMenu({
    *  row itself renders with (see Composer.tsx's COMPOSER_PILL_HEIGHT). */
   bottomOffset: number;
   onAttach: () => void;
-  /** Opens the Record screen (app/record.tsx) for the active thread. */
-  onRecord: () => void;
   deepResearchOn: boolean;
   onToggleDeepResearch: () => void;
 }) {
@@ -79,15 +82,6 @@ export function ComposerPlusMenu({
           >
             <LibraryIcon size={17} color={c.text2} />
             <Text style={styles.rowLabel}>Attach from Library</Text>
-          </Pressable>
-          <Pressable
-            testID="composer-plus-record"
-            onPress={() => pickAndClose(onRecord)}
-            style={({ pressed }) => [styles.row, styles.rowDivider, pressed && styles.rowPressed]}
-            accessibilityRole="button"
-          >
-            <MicIcon size={17} color={c.text2} />
-            <Text style={styles.rowLabel}>Record</Text>
           </Pressable>
           <Pressable
             testID="composer-plus-deep-research"

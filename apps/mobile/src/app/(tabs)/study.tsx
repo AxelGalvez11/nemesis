@@ -10,6 +10,7 @@ import { useShellPadding } from "@/components/shell-chrome";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { GlassSurface } from "@/components/GlassSurface";
 import { SlideUpSheet } from "@/components/StudySheet";
+import { TOP_BAR_BUTTON, TOP_BAR_PAD_TOP } from "@/components/TopBar";
 import { StudyAddSheet } from "@/components/StudyAddSheet";
 import {
   StudyModeMenu,
@@ -72,11 +73,14 @@ import { radius, space, type } from "@/theme/tokens";
 //
 // The Cards/Tests/Mindmaps switcher is a liquid-glass DROPDOWN (owner
 // 2026-07-22) whose trigger reads out the section you're in — "Cards ⌄" — so
-// the control stays one tap wide. Tests/Mindmaps aren't built yet, so
-// selecting them swaps the deck list for an inline "coming soon" panel rather
-// than routing anywhere. Stats rides in the same menu as a trailing row;
-// tapping it still opens the same numbers-only SlideUpSheet as before
-// (due/new/total/decks — no invented streak metric).
+// the control stays one tap wide. It IS this screen's header: it's published
+// into the TopBar's center slot, where the word "Study" used to sit (same
+// owner, later the same day), so the list gets that whole row back.
+// Tests/Mindmaps aren't built yet, so selecting them swaps the deck list for
+// an inline "coming soon" panel rather than routing anywhere. Stats rides in
+// the same menu as a trailing row; tapping it still opens the same
+// numbers-only SlideUpSheet as before (due/new/total/decks — no invented
+// streak metric).
 //
 // The one remaining FAB (lower-left) opens StudyAddSheet — New group / New
 // cards / Browse, all backed by real study_decks/study_cards inserts mirrored
@@ -107,16 +111,9 @@ export default function StudyScreen() {
   const styles = useThemedStyles(createStyles);
   const { contentTop, contentBottom } = useShellPadding();
   const insets = useSafeAreaInsets();
-  const { setHeaderTitle } = useShell();
+  const { setHeaderCenter } = useShell();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
-
-  // Centered "Study" label in the shared TopBar (owner 2026-07-18) — same slot
-  // Library/Chat drive; cleared on unmount so it never leaks to another screen.
-  useEffect(() => {
-    setHeaderTitle("Study");
-    return () => setHeaderTitle(null);
-  }, [setHeaderTitle]);
 
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -152,6 +149,19 @@ export default function StudyScreen() {
   // the sheet's own content is unchanged.
   const [statsOpen, setStatsOpen] = useState(false);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
+
+  // The section dropdown IS this screen's header (owner 2026-07-22: "remove
+  // 'study' text and move the toggle for 'cards/tests/mindmaps' in its place").
+  // It goes into the TopBar's center slot — where the "Study" label used to sit
+  // — instead of a row of its own beneath the bar, which hands a whole row of
+  // vertical space back to the deck list. The trigger already reads out the
+  // section you're on ("Cards ⌄"), so dropping the word "Study" costs nothing:
+  // the drawer is what says which tab you're in. Cleared on unmount so it never
+  // leaks onto another screen.
+  useEffect(() => {
+    setHeaderCenter(<StudyModeMenu active={activeMode} open={modeMenuOpen} onToggle={() => setModeMenuOpen((v) => !v)} />);
+    return () => setHeaderCenter(null);
+  }, [activeMode, modeMenuOpen, setHeaderCenter]);
 
   const load = useCallback(async (uid: string) => {
     setStatus((prev) => (prev === "loaded" ? prev : "loading"));
@@ -238,13 +248,10 @@ export default function StudyScreen() {
 
   return (
     <View style={styles.flex} testID="study-screen">
-      {/* Section switcher (owner ask 1) — always visible, clears the shared
-          glass TopBar itself, then pushes the list down. Its menu is rendered
-          at the screen root below, so it can hang over the deck list. */}
-      <View style={[styles.toggleRow, { paddingTop: contentTop }]}>
-        <StudyModeMenu active={activeMode} open={modeMenuOpen} onToggle={() => setModeMenuOpen((v) => !v)} />
-      </View>
-
+      {/* The section switcher lives in the TopBar now (see the setHeaderCenter
+          effect above), so the list starts straight under the glass bar. Its
+          menu is still rendered at this screen's root below, so it can hang
+          over the deck list. */}
       {activeMode === "cards" ? (
         // A ScrollView (not FlatList) so reanimated's entering/exiting/layout animations
         // actually fire on collapse — every row renders (this list is small). Each deck row
@@ -252,7 +259,7 @@ export default function StudyScreen() {
         <ScrollView
           style={styles.flex}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.listBody, { paddingTop: space(1), paddingBottom: insets.bottom + FAB_SIZE + space(4) }]}
+          contentContainerStyle={[styles.listBody, { paddingTop: contentTop, paddingBottom: insets.bottom + FAB_SIZE + space(4) }]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -342,7 +349,7 @@ export default function StudyScreen() {
           )}
         </ScrollView>
       ) : (
-        <Animated.View key={activeMode} entering={FadeIn.duration(160)} style={styles.comingSoonWrap} testID={`study-mode-panel-${activeMode}`}>
+        <Animated.View key={activeMode} entering={FadeIn.duration(160)} style={[styles.comingSoonWrap, { paddingTop: contentTop }]} testID={`study-mode-panel-${activeMode}`}>
           <EmptyBlock
             title={COMING_SOON_LABEL[activeMode]}
             body={`${COMING_SOON_LABEL[activeMode]} mode is coming soon. Cards has your due decks covered for now.`}
@@ -365,7 +372,11 @@ export default function StudyScreen() {
       <StudyModePopup
         visible={modeMenuOpen}
         active={activeMode}
-        topOffset={contentTop + TRIGGER_HEIGHT + space(1.5)}
+        // Hangs just under the trigger, which now sits in the TopBar: the bar's
+        // top padding, plus the gap above a TRIGGER_HEIGHT control centered in a
+        // TOP_BAR_BUTTON-tall row, plus the trigger itself. Derived from the
+        // bar's own exported numbers so the two can't drift apart.
+        topOffset={insets.top + TOP_BAR_PAD_TOP + (TOP_BAR_BUTTON + TRIGGER_HEIGHT) / 2 + space(1.5)}
         onSelect={setActiveMode}
         onStats={() => setStatsOpen(true)}
         onClose={() => setModeMenuOpen(false)}
@@ -402,9 +413,6 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
     centerWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(4), backgroundColor: c.bg },
-
-    // Inline segmented toggle row (owner ask 1) — centered, sized to content.
-    toggleRow: { alignItems: "center", paddingBottom: space(3) },
 
     listBody: { padding: space(4), flexGrow: 1 },
     // Anki-style deck CARD (owner 2026-07-21): a soft rounded surface holding
