@@ -1,9 +1,10 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Animated, Easing, Keyboard, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassSurface } from "./GlassSurface";
 import { CloseIcon } from "./icons";
+import { useSheetExpand } from "./useSheetExpand";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -21,15 +22,13 @@ import { radius, space, type } from "@/theme/tokens";
 //    not native modals, so the OS gives them no z-guarantee over it).
 //  - The header carries a grabber and a drag gesture: pull UP to expand the
 //    sheet toward (near) full screen, pull DOWN to collapse it back — or flick
-//    down from collapsed to close. Expansion works by animating the BODY's
-//    maxHeight between a collapsed cap and the full window (minus the top
-//    inset), so consumers must NOT hard-cap their own scroll areas — the sheet
-//    is the one owner of "how tall".
-
-// How many pixels of upward drag count as the full collapsed→expanded ride.
-const EXPAND_DRAG_DISTANCE = 260;
-// Flicking down faster than this (px/s) from collapsed closes the sheet.
-const CLOSE_VELOCITY = 700;
+//    down from collapsed to close. Consumers must NOT hard-cap their own scroll
+//    areas — the sheet is the one owner of "how tall".
+//
+// That drag lives in useSheetExpand.ts as of 2026-07-22, when the owner asked
+// for it on EVERY bottom sheet — NoteListSheet and NoteTabsSheet are
+// hand-rolled panels that never rode this component, so the behaviour had to
+// move somewhere all three could reach.
 
 export function SlideUpSheet({
   visible,
@@ -49,90 +48,11 @@ export function SlideUpSheet({
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const progress = useRef(new Animated.Value(0)).current;
-  // 0 = collapsed, 1 = expanded. Drives the body's maxHeight (a layout prop,
-  // so this value can never ride the native driver — separate from `progress`,
-  // which stays native for the cheap slide transform).
-  const expand = useRef(new Animated.Value(0)).current;
-  // JS-side mirrors for gesture math (Animated.Value has no sync read).
-  const expandNowRef = useRef(0);
-  const dragStartRef = useRef(0);
-
-  useEffect(() => {
-    if (visible) {
-      // The keyboard would otherwise sit ABOVE this inline sheet (it's not a
-      // native modal). One central dismiss fixes every consumer; sheets that
-      // contain their own input re-focus it after their slide-in lands
-      // (NoteListSheet's 260ms pattern), which re-opens the keyboard cleanly.
-      Keyboard.dismiss();
-    } else {
-      // Reopen always starts collapsed.
-      expand.stopAnimation();
-      expand.setValue(0);
-      expandNowRef.current = 0;
-    }
-    Animated.timing(progress, {
-      toValue: visible ? 1 : 0,
-      duration: visible ? 260 : 200,
-      easing: visible ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [visible, progress, expand]);
-
-  const settleExpand = (to: 0 | 1) => {
-    expandNowRef.current = to;
-    Animated.timing(expand, {
-      toValue: to,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  };
-
-  // Header drag: up expands, down collapses/closes. runOnJS because it drives
-  // RN Animated values (JS-side), same pattern GraphNodeView's drag uses.
-  const headerPan = Gesture.Pan()
-    .runOnJS(true)
-    .minDistance(8)
-    .onStart(() => {
-      dragStartRef.current = expandNowRef.current;
-    })
-    .onUpdate((event) => {
-      const next = Math.min(1, Math.max(0, dragStartRef.current - event.translationY / EXPAND_DRAG_DISTANCE));
-      expandNowRef.current = next;
-      expand.setValue(next);
-    })
-    .onEnd((event) => {
-      const flickDown = event.velocityY > CLOSE_VELOCITY;
-      if (flickDown && dragStartRef.current === 0) {
-        // Collapsed + hard flick down = close (the sheet idiom).
-        settleExpand(0);
-        onClose();
-        return;
-      }
-      if (flickDown) {
-        settleExpand(0);
-        return;
-      }
-      if (event.velocityY < -CLOSE_VELOCITY) {
-        settleExpand(1);
-        return;
-      }
-      settleExpand(expandNowRef.current >= 0.5 ? 1 : 0);
-    });
+  const { bodyMaxHeight, headerPan } = useSheetExpand({ visible, onClose });
 
   // Slides off the bottom of the window, not just its own height, so it starts
   // fully offscreen regardless of how tall the content ends up being.
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height, 0] });
-  // Body height budget: collapsed keeps the familiar part-screen sheet;
-  // expanded runs to just under the status bar.
-  const collapsedMax = Math.min(Math.round(height * 0.55), 500);
-  const expandedMax = Math.max(collapsedMax, height - insets.top - space(14));
-  const bodyMaxHeight = expand.interpolate({
-    inputRange: [0, 1],
-    outputRange: [collapsedMax, expandedMax],
-    extrapolate: "clamp",
-  });
-
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID={testID}>
       {/* Transparent tap-catcher — dismiss on an outside tap WITHOUT blurring the page.

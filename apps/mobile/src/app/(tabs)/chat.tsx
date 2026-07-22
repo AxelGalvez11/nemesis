@@ -37,6 +37,7 @@ import { drawerOpenGuard, useShell } from "@/components/AppDrawer";
 import { AttachLibrarySheet } from "@/components/AttachLibrarySheet";
 import { Composer, COMPOSER_COMPACT_HEIGHT, COMPOSER_PILL_HEIGHT, type ComposerMode } from "@/components/Composer";
 import { ComposerPlusMenu } from "@/components/ComposerPlusMenu";
+import { EffortPopup } from "@/components/ComposerEffortMenu";
 import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
 import { GlassSurface } from "@/components/GlassSurface";
 import { CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
@@ -48,6 +49,7 @@ import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
 import { ThinkingLine } from "@/components/ThinkingLine";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
 import { withAttachmentNote, type BudgetResetKind, type ChatMsg, type ChatOutput, type ChatSource } from "@/lib/chat-thread";
+import { DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/chat-effort";
 import type { ThinkingPhase } from "@/lib/thinking-phase";
 import { UpgradeSheet } from "@/components/UpgradeSheet";
 import { createMarkdownStyles } from "@/theme/markdown";
@@ -98,7 +100,7 @@ export default function ChatScreen() {
   const markdownStyles = useThemedStyles(createMarkdownStyles);
   const { contentTop, contentBottom } = useShellPadding();
   const keyboardUp = useKeyboardVisible();
-  const { setHeaderTitle, newChat, setHeaderRight } = useShell();
+  const { setHeaderTitle, newChat, setHeaderRight, setImmersive } = useShell();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
 
@@ -141,6 +143,11 @@ export default function ChatScreen() {
   // opposite: a persistent toggle the student switches off themselves.
   const [attachedDoc, setAttachedDoc] = useState<{ title: string; content: string } | null>(null);
   const [deepResearchOn, setDeepResearchOn] = useState(false);
+  // Instant/Medium/High — the "+" menu's intelligence dial (owner 2026-07-22).
+  // Like Deep research it PERSISTS across sends within a thread rather than
+  // resetting per turn: it's a working preference, not a per-message action.
+  const [effort, setEffort] = useState<ChatEffort>(DEFAULT_CHAT_EFFORT);
+  const [effortMenuOpen, setEffortMenuOpen] = useState(false);
   // Chat/Record mode pill: which area fills the screen (messages vs. the
   // inline RecordSession) and the three-state UI RecordSession last reported
   // — mirrored here only so the composer can lock the pill mid-recording
@@ -188,6 +195,8 @@ export default function ChatScreen() {
     setLibraryPickerOpen(false);
     setAttachedDoc(null);
     setDeepResearchOn(false);
+    setEffort(DEFAULT_CHAT_EFFORT);
+    setEffortMenuOpen(false);
     setSourcesSheetFor(null);
     setDeliverableSheetFor(null);
     // A thread/user switch must not leave RecordSession mounted against the
@@ -285,6 +294,7 @@ export default function ChatScreen() {
     // never into the persisted/displayed ChatMsg.content itself.
     const doc = attachedDoc;
     const research = deepResearchOn;
+    const chosenEffort = effort;
     const userMsg: ChatMsg = { at: new Date().toISOString(), content: withAttachmentNote(text, doc?.title ?? null), role: "user" };
     const base = [...history, userMsg];
     setMessages(base);
@@ -299,6 +309,7 @@ export default function ChatScreen() {
     void saveThreadMessages(uid, id, base);
     void sendChat(uid, history, text, {
       attachedDoc: doc ? { content: doc.content, title: doc.title } : undefined,
+      effort: chosenEffort,
       forceResearch: research,
       onDelta: (_delta, accumulated) => {
         // Renders live into the assistant row as chunks arrive; stale turns
@@ -340,7 +351,7 @@ export default function ChatScreen() {
           setStreamingText("");
         }
       });
-  }, [input, messages, uid, threadId, attachedDoc, deepResearchOn]);
+  }, [input, messages, uid, threadId, attachedDoc, deepResearchOn, effort]);
 
   // "…" menu actions.
   const handleDelete = useCallback(() => {
@@ -404,6 +415,15 @@ export default function ChatScreen() {
       drawerOpenGuard.current = null;
     };
   }, [composerMode, recordingState, exitRecordMode]);
+
+  // Record mode takes the whole screen (owner 2026-07-22): the TopBar and the
+  // status-bar blur stop rendering and the drawer's open-swipe switches off, so
+  // a lecture can't be swiped away mid-sentence. Cleared on leaving record mode
+  // AND on unmount — a stuck `true` would leave every other tab chrome-less.
+  useEffect(() => {
+    setImmersive(composerMode === "record");
+    return () => setImmersive(false);
+  }, [composerMode, setImmersive]);
 
   // The composer's record button, in the "+" slot: start a recording, or stop
   // the running one. Never fires in the reviewable state — the composer keeps
@@ -536,12 +556,11 @@ export default function ChatScreen() {
         {composerMode === "record" ? (
           // Inline record workspace (owner 2026-07-21): swaps in for the whole
           // messages area, same spot/size the FlatList fills below — mirrors
-          // web's composer.tsx swapping in record-workspace.tsx. contentTop
-          // clears the glass TopBar the same way the FlatList's paddingTop
-          // does (that one adds a further space(2) of list-specific breathing
-          // room on top; RecordSession supplies its own via `session`'s
-          // paddingTop instead, so this stays just the TopBar clearance).
-          <View style={[styles.flex, { paddingTop: contentTop }]} testID="chat-record-workspace">
+          // web's composer.tsx swapping in record-workspace.tsx. Only the
+          // status-bar inset here, NOT contentTop: record mode is immersive
+          // (see the setImmersive effect), so there's no TopBar left to clear
+          // and padding for one would just waste a strip of the transcript.
+          <View style={[styles.flex, { paddingTop: insets.top }]} testID="chat-record-workspace">
             <RecordSession
               ref={recordRef}
               userId={uid}
@@ -652,6 +671,20 @@ export default function ChatScreen() {
           deepResearchOn={deepResearchOn}
           onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}
         />
+        {/* The intelligence pill's dropdown — anchored above the composer off
+            the same measurements the "+" menu uses, so the two hang at exactly
+            the same height whichever one is open. */}
+        <EffortPopup
+          visible={effortMenuOpen}
+          effort={effort}
+          bottomOffset={
+            (keyboardUp ? space(3) : contentBottom - space(1)) +
+            (composerCompact ? COMPOSER_COMPACT_HEIGHT : COMPOSER_PILL_HEIGHT) +
+            space(2)
+          }
+          onSelect={setEffort}
+          onClose={() => setEffortMenuOpen(false)}
+        />
         <AttachLibrarySheet
           visible={libraryPickerOpen}
           onClose={() => setLibraryPickerOpen(false)}
@@ -682,7 +715,10 @@ export default function ChatScreen() {
             value={input}
             onChangeText={setInput}
             onSend={send}
-            onPlus={() => setPlusMenuOpen((v) => !v)}
+            onPlus={() => {
+              setEffortMenuOpen(false);
+              setPlusMenuOpen((v) => !v);
+            }}
             sending={sending}
             placeholder="Ask Nemesis"
             inputRef={composerRef}
@@ -696,6 +732,14 @@ export default function ChatScreen() {
             modeLocked={recordingState !== "idle"}
             recordingActive={recordingState === "recording"}
             compact={composerCompact}
+            effort={effort}
+            effortMenuOpen={effortMenuOpen}
+            // Opening one composer menu closes the other — they anchor to the
+            // same spot, so both open at once would stack.
+            onEffortToggle={() => {
+              setPlusMenuOpen(false);
+              setEffortMenuOpen((v) => !v);
+            }}
           />
         </View>
       </View>

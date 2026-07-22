@@ -443,7 +443,12 @@ const createStyles = (c: ThemeColors) =>
     // muted card total and the accent due+new badge trailing.
     chevronOpen: { transform: [{ rotate: "90deg" }] },
     folderRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingVertical: space(2.5), paddingHorizontal: space(2), borderRadius: radius.sm },
-    folderName: { ...type.bodyStrong, color: c.text2, flex: 1, minWidth: 0, textTransform: "uppercase", letterSpacing: 0.4, fontSize: type.micro.fontSize },
+    // Same text SIZE as a deck row's title (owner 2026-07-22: "consistent text
+    // size for folders and decks") — it used to be micro-sized. The uppercase +
+    // letterSpacing went with the size bump: those exist to keep tiny label
+    // text legible, and at full body size they just shout. A folder still
+    // reads as a folder from its chevron, its glyph and the muted tone.
+    folderName: { ...type.bodyStrong, color: c.text2, flex: 1, minWidth: 0 },
     folderTrail: { flexDirection: "row", alignItems: "center", gap: space(2) },
     folderTotal: { ...type.small, fontWeight: "600", color: c.text3, fontVariant: ["tabular-nums"] },
     folderDue: { ...type.small, fontWeight: "700", color: c.accent, fontVariant: ["tabular-nums"] },

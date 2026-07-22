@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
-import { Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, Keyboard, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassSurface } from "./GlassSurface";
 import { SearchIcon } from "./icons";
+import { useSheetExpand } from "./useSheetExpand";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -55,6 +57,9 @@ export function NoteListSheet({
   const progress = useRef(new Animated.Value(0)).current;
   const inputRef = useRef<TextInput>(null);
   const sheetH = Math.round(height * 0.5);
+  // Rows sit under a drag-to-expand cap now; the sheet keeps its minHeight so a
+  // one-result search still looks like a sheet rather than a strip.
+  const { bodyMaxHeight, headerPan } = useSheetExpand({ visible, onClose });
 
   useEffect(() => {
     // Inline sheet, not a native modal — the keyboard would sit ABOVE it, so
@@ -87,9 +92,21 @@ export function NoteListSheet({
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID={testID}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel={`Close ${title.toLowerCase()}`} />
       <Animated.View style={[styles.sheetWrap, { transform: [{ translateY }] }]}>
-        <GlassSurface style={[styles.sheet, { minHeight: sheetH, maxHeight: Math.round(height * 0.72) }]} fallbackColor={c.bg2}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>{title}</Text>
+        <GlassSurface style={[styles.sheet, { minHeight: sheetH }]} fallbackColor={c.bg2}>
+          {/* Grabber + title are the drag target (owner 2026-07-22: "any popup
+              menu from the bottom should allow the user to swipe/drag it up to
+              expand its size"). The search field is NOT inside it — a pan over
+              a text input would fight the caret. The sheet's own maxHeight came
+              off: the hook animates the row area's instead, and a cap out here
+              would override it. */}
+          <GestureDetector gesture={headerPan}>
+            <View>
+              <View style={styles.handleRow}>
+                <View style={styles.sheetHandle} />
+              </View>
+              <Text style={styles.sheetTitle}>{title}</Text>
+            </View>
+          </GestureDetector>
           {searchable ? (
             <View style={styles.searchField}>
               <SearchIcon size={16} color={c.text3} />
@@ -107,7 +124,11 @@ export function NoteListSheet({
               />
             </View>
           ) : null}
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: insets.bottom + space(4) }}>
+          <Animated.ScrollView
+            style={{ maxHeight: bodyMaxHeight }}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: insets.bottom + space(4) }}
+          >
             {rows.length === 0 ? (
               <Text style={styles.emptyText}>{emptyText}</Text>
             ) : (
@@ -138,7 +159,7 @@ export function NoteListSheet({
                 </Pressable>
               ))
             )}
-          </ScrollView>
+          </Animated.ScrollView>
         </GlassSurface>
       </Animated.View>
     </View>
@@ -157,7 +178,10 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: space(4),
       paddingTop: space(3),
     },
-    sheetHandle: { alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: c.line2, marginBottom: space(3) },
+    // The grabber's row is the drag target, padded so there's a real touch
+    // area around a 4pt bar rather than a hairline nobody can catch.
+    handleRow: { paddingTop: space(1), paddingBottom: space(3) },
+    sheetHandle: { alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: c.line2 },
     sheetTitle: { ...type.title, color: c.text, marginBottom: space(2) },
     searchField: {
       flexDirection: "row",
