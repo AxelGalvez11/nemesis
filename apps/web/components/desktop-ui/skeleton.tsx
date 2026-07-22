@@ -2,9 +2,11 @@ import type * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-/** Loading placeholders are NEUTRAL on purpose. `bg-accent` reads as the brand
- *  crimson (--accent resolves to --acid, #cc1f33), which made every sidebar
- *  loader flash red as if something had failed. */
+/** Loading placeholders are NEUTRAL on purpose. `bg-accent` compiles to
+ *  --dt-accent → --theme-accent-soft (#fae9eb light / #261113 dark) — a
+ *  crimson tint, not a gray — so every sidebar loader flashed red as if
+ *  something had failed. (Not the --accent → --acid chain in globals.css;
+ *  that legacy alias is unrelated to this Tailwind utility.) */
 function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
