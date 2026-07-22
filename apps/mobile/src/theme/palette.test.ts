@@ -63,3 +63,22 @@ Deno.test("light mode = pure white paper, pure black text", () => {
   assertEquals(light.text3, "#000000");
   assertEquals(contrastRatio(light.text, light.bg) >= 10, true);
 });
+
+Deno.test("textHint is the ONLY muted text tone, in both modes (owner 2026-07-22)", () => {
+  for (const mode of ["dark", "light"] as const) {
+    const colors = buildColors(mode, DEFAULT_ACCENT_ID);
+    // It is genuinely gray — not another alias of the flat tier.
+    assertEquals(colors.textHint !== colors.text, true);
+    assertEquals(colors.textHint !== colors.text2, true);
+    assertEquals(colors.textHint !== colors.text3, true);
+    // ...and it sits BETWEEN the page and the body text, so it reads as a
+    // hint rather than as content, but is never invisible.
+    const hint = contrastRatio(colors.textHint, colors.bg);
+    assertEquals(hint > 1.5, true);
+    assertEquals(hint < contrastRatio(colors.text, colors.bg), true);
+    // The global flatten is untouched — this token is an addition, not a
+    // re-introduction of the old three-tier gray ramp.
+    assertEquals(colors.text, colors.text2);
+    assertEquals(colors.text2, colors.text3);
+  }
+});

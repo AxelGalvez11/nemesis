@@ -796,7 +796,10 @@ function StarterRows({ onPick }: { onPick: (text: string) => void }) {
           accessibilityLabel={label}
           testID={`chat-starter-${key}`}
         >
-          <Icon size={19} color={c.text2} />
+          {/* Gray on purpose (owner 2026-07-22) — the other exception to the
+              flat text: these are prompts for a question the student hasn't
+              asked yet, so they sit back from real conversation text. */}
+          <Icon size={19} color={c.textHint} />
           <Text style={styles.starterLabel}>{label}</Text>
         </Pressable>
       ))}
@@ -886,7 +889,9 @@ const createStyles = (c: ThemeColors) =>
       borderRadius: radius.md,
     },
     starterRowPressed: { backgroundColor: c.surface },
-    starterLabel: { ...type.body, color: c.text },
+    // Muted with its icon — see the StarterRows comment on why these two spots
+    // keep gray when the rest of the app went pure black/white.
+    starterLabel: { ...type.body, color: c.textHint },
     // The attached-Library-doc chip staged above the composer input.
     attachChipRow: { marginBottom: space(1.5), paddingHorizontal: space(1) },
     attachChip: {

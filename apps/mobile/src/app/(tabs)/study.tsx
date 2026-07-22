@@ -26,6 +26,7 @@ import {
   type CloudStudyDeck,
   type DeckCounts,
 } from "@/api/cloudStudy";
+import { allGroupPaths, buildDeckTree, flattenDeckTree, type DeckTreeRow } from "@/lib/deck-tree";
 import { deckRetention } from "@/lib/study-progress";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -38,13 +39,25 @@ import { radius, space, type } from "@/theme/tokens";
 // tab, or come back from a review) and on pull-to-refresh.
 //
 // Folders (owner ask, ported from web): decks group by their OWN name's
-// "Group::Subgroup::Leaf" convention (deckGroupInfo) — replacing the old
-// Mac-authored "# course:" header the desktop card-generation skill used to
-// write. Group-less decks render ungrouped at the list's end. Folders start
-// COLLAPSED the first time this screen loads data (owner 2026-07-20, "same in
-// library") — a one-time seed keyed off the FIRST successful load, not every
-// focus/pull-to-refresh, so a folder the student just opened never
-// re-collapses under them mid-session.
+// "Group::Subgroup::Leaf" convention — replacing the old Mac-authored
+// "# course:" header the desktop card-generation skill used to write.
+// Group-less decks render ungrouped at the list's end.
+//
+// The tree is NESTED, every level of it (lib/deck-tree.ts, owner bug
+// 2026-07-22). This screen used to flatten everything above the leaf into one
+// label, so "Pharm::Cardio::Beta blockers" sat under a single folder called
+// "Pharm::Cardio" with no "Pharm" parent at all. Now each segment is its own
+// folder, missing parents are auto-created, a folder's counts sum every
+// descendant (not just the decks directly inside it), and collapsing takes the
+// whole subtree with it. Collapse state keys off the FULL path, never the
+// label, since two parents can each hold a "Cardio".
+//
+// Folders start COLLAPSED the first time this screen loads data (owner
+// 2026-07-20, "same in library") — a one-time seed keyed off the FIRST
+// successful load, not every focus/pull-to-refresh, so a folder the student
+// just opened never re-collapses under them mid-session. The seed covers every
+// ancestor path (allGroupPaths), or expanding a root would reveal inner
+// folders that were never collapsed.
 //
 // Deck rows are Anki-style CARDS now (owner 2026-07-21, matching their
 // AnkiMobile reference crop): title + a "percent retention" line underneath,
@@ -78,63 +91,9 @@ interface DeckRow {
   cardCount: number;
 }
 
-interface FolderGroup {
-  group: string;
-  decks: DeckRow[];
-  /** Sum of newCount+dueCount across the folder's decks — "actionable right
-   *  now" (Learn cards aren't due yet, so they don't count toward this). */
-  actionable: number;
-  /** Sum of every card across the folder's decks — "group headers with card
-   *  totals" (owner 2026-07-20). Muted/informational rather than accent
-   *  since a total isn't actionable on its own the way a due count is. */
-  total: number;
-}
-
-/** Bucket decks by the group prefix of their OWN name; decks with no "::"
- *  fall out as "loose". Folders sort alphabetically; each folder's decks keep
- *  the caller's own order (the screen already sorts decks due-first). Pure. */
-function groupDecks(decks: DeckRow[]): { folders: FolderGroup[]; loose: DeckRow[] } {
-  const byGroup = new Map<string, DeckRow[]>();
-  const loose: DeckRow[] = [];
-  for (const row of decks) {
-    const { group } = deckGroupInfo(row.deck.name);
-    if (!group) {
-      loose.push(row);
-      continue;
-    }
-    const bucket = byGroup.get(group);
-    if (bucket) bucket.push(row);
-    else byGroup.set(group, [row]);
-  }
-  const folders = [...byGroup.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([group, groupDecksList]) => ({
-      group,
-      decks: groupDecksList,
-      actionable: groupDecksList.reduce((sum, d) => sum + d.counts.newCount + d.counts.dueCount, 0),
-      total: groupDecksList.reduce((sum, d) => sum + d.cardCount, 0),
-    }));
-  return { folders, loose };
-}
-
-type StudyRow =
-  | { type: "folder"; group: string; actionable: number; total: number; collapsed: boolean }
-  | { type: "deck"; deck: DeckRow; nested: boolean };
-
-/** Flatten folders + loose decks into the ScrollView's actual row list,
- *  skipping a folder's children while it's collapsed. Pure. */
-function buildStudyRows(folders: FolderGroup[], loose: DeckRow[], collapsed: Set<string>): StudyRow[] {
-  const rows: StudyRow[] = [];
-  for (const folder of folders) {
-    const isCollapsed = collapsed.has(folder.group);
-    rows.push({ type: "folder", group: folder.group, actionable: folder.actionable, total: folder.total, collapsed: isCollapsed });
-    if (!isCollapsed) {
-      for (const deck of folder.decks) rows.push({ type: "deck", deck, nested: true });
-    }
-  }
-  for (const deck of loose) rows.push({ type: "deck", deck, nested: false });
-  return rows;
-}
+/** One indent step per tree level. Read by both row kinds so a folder and the
+ *  decks inside it line up on the same left edge. */
+const INDENT_STEP = 14;
 
 const COMING_SOON_LABEL: Record<Exclude<StudyModeKey, "cards">, string> = {
   tests: "Tests",
@@ -165,16 +124,18 @@ export default function StudyScreen() {
   const [cards, setCards] = useState<CloudStudyCard[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Folder collapse state — defaults to collapsed on first load (see
-  // appliedDefaultCollapseRef in load() below); a tap on a folder's chevron
-  // toggles membership from there.
+  // Folder collapse state — a set of FULL folder paths ("Pharm",
+  // "Pharm::Cardio"), never labels: sibling subtrees can both hold a "Cardio",
+  // and collapsing one must not shut the other. Defaults to collapsed on first
+  // load (see appliedDefaultCollapseRef in load() below); a tap on a folder's
+  // chevron toggles membership from there.
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
   const appliedDefaultCollapseRef = useRef(false);
-  const toggleFolder = useCallback((group: string) => {
+  const toggleFolder = useCallback((path: string) => {
     setCollapsedFolders((prev) => {
       const next = new Set(prev);
-      if (next.has(group)) next.delete(group);
-      else next.add(group);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
       return next;
     });
   }, []);
@@ -203,11 +164,12 @@ export default function StudyScreen() {
       // Folders default to collapsed, ONCE per fresh open of this screen —
       // seeded off the first successful load's own folder set, never
       // reapplied on a later focus or pull-to-refresh, so it can't fight a
-      // folder the student already opened this session.
+      // folder the student already opened this session. allGroupPaths returns
+      // EVERY ancestor, so opening a root doesn't spill already-expanded
+      // inner folders.
       if (!appliedDefaultCollapseRef.current) {
         appliedDefaultCollapseRef.current = true;
-        const groups = new Set(nextDecks.map((deck) => deckGroupInfo(deck.name).group).filter(Boolean));
-        setCollapsedFolders(groups);
+        setCollapsedFolders(new Set(allGroupPaths(nextDecks.map((deck) => deck.name))));
       }
     } catch (cause) {
       setStatus("error");
@@ -241,21 +203,28 @@ export default function StudyScreen() {
     );
   }
 
-  const deckRows: DeckRow[] = decks
-    .map((deck) => {
-      const { leaf } = deckGroupInfo(deck.name);
-      const deckCards = cards.filter((card) => card.deckId === deck.id);
-      return { cardCount: deckCards.length, counts: countsForCards(deckCards), deck, leaf, retention: deckRetention(deckCards) };
-    })
-    .sort(
-      (a, b) =>
-        b.counts.newCount + b.counts.dueCount - (a.counts.newCount + a.counts.dueCount) || a.leaf.localeCompare(b.leaf),
-    );
+  // Unsorted on purpose: buildDeckTree owns ordering now (folders alphabetical,
+  // decks due-first within their own level), so sorting here would just be
+  // thrown away a line later.
+  const deckRows: DeckRow[] = decks.map((deck) => {
+    const { leaf } = deckGroupInfo(deck.name);
+    const deckCards = cards.filter((card) => card.deckId === deck.id);
+    return { cardCount: deckCards.length, counts: countsForCards(deckCards), deck, leaf, retention: deckRetention(deckCards) };
+  });
 
   const totalActionable = deckRows.reduce((sum, d) => sum + d.counts.newCount + d.counts.dueCount, 0);
   const totalNew = deckRows.reduce((sum, d) => sum + d.counts.newCount, 0);
-  const { folders, loose } = groupDecks(deckRows);
-  const rows = buildStudyRows(folders, loose, collapsedFolders);
+  const rows: DeckTreeRow<DeckRow>[] = flattenDeckTree(
+    buildDeckTree(
+      deckRows.map((row) => ({
+        actionable: row.counts.newCount + row.counts.dueCount,
+        deck: row,
+        name: row.deck.name,
+        total: row.cardCount,
+      })),
+    ),
+    collapsedFolders,
+  );
 
   // Stats sheet numbers: every one is summed from data this screen already
   // fetched — nothing here is guessed. "Streak" has no source of truth yet,
@@ -305,11 +274,15 @@ export default function StudyScreen() {
           ) : (
             rows.map((item) =>
               item.type === "folder" ? (
-                <Animated.View key={`folder:${item.group}`} layout={LinearTransition.duration(220)}>
+                <Animated.View key={`folder:${item.path}`} layout={LinearTransition.duration(220)}>
                   <Pressable
-                    testID={`study-folder-${item.group}`}
-                    onPress={() => toggleFolder(item.group)}
-                    style={({ pressed }) => [styles.folderRow, pressed && styles.rowPressed]}
+                    testID={`study-folder-${item.path}`}
+                    onPress={() => toggleFolder(item.path)}
+                    style={({ pressed }) => [
+                      styles.folderRow,
+                      { marginLeft: item.depth * INDENT_STEP },
+                      pressed && styles.rowPressed,
+                    ]}
                   >
                     {/* Chevron points right when collapsed, down when open (owner 2026-07-20). */}
                     <View style={item.collapsed ? null : styles.chevronOpen}>
@@ -317,7 +290,9 @@ export default function StudyScreen() {
                     </View>
                     {/* Folder glyph so groups read as folders at a glance (owner 2026-07-21). */}
                     <FolderIcon size={15} color={c.text2} strokeWidth={1.9} />
-                    <Text style={styles.folderName} numberOfLines={1}>{item.group}</Text>
+                    {/* This folder's OWN segment — "Cardio", not "Pharm::Cardio".
+                        The full path lives on item.path and keys the collapse set. */}
+                    <Text style={styles.folderName} numberOfLines={1}>{item.label}</Text>
                     <View style={styles.folderTrail}>
                       {/* Muted card total (owner ask 4: "group headers with card
                           totals"), then the existing accent due+new badge —
@@ -337,7 +312,11 @@ export default function StudyScreen() {
                   <Pressable
                     testID={`deck-${item.deck.deck.id}`}
                     onPress={() => router.push({ pathname: "/review", params: { deckId: item.deck.deck.id } })}
-                    style={({ pressed }) => [styles.row, item.nested && styles.rowNested, pressed && styles.rowPressed]}
+                    style={({ pressed }) => [
+                      styles.row,
+                      { marginLeft: item.depth * INDENT_STEP },
+                      pressed && styles.rowPressed,
+                    ]}
                   >
                     <View style={styles.deckText}>
                       <Text style={styles.deckName} numberOfLines={1}>{item.deck.leaf}</Text>
@@ -435,8 +414,8 @@ const createStyles = (c: ThemeColors) =>
       paddingVertical: space(3), paddingHorizontal: space(3.5),
       borderRadius: radius.lg, backgroundColor: c.surface2, marginBottom: space(2),
     },
-    // Nested under a folder header — the whole card indents like a tree child.
-    rowNested: { marginLeft: space(5) },
+    // Tree indent is applied inline per row (depth * INDENT_STEP) rather than
+    // as a style, since it varies with how deep the folder nests.
     // Cards dim as a whole when pressed (a bg swap would erase the card fill).
     rowPressed: { opacity: 0.65 },
     deckText: { flex: 1, minWidth: 0, gap: 2 },
