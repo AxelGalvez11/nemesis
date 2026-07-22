@@ -282,7 +282,7 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
 
   if (!note) {
     return (
-      <main className="relative flex h-full min-w-0 flex-1 flex-col items-center justify-center overflow-hidden bg-(--ui-bg-editor)">
+      <main className="relative flex h-full min-w-0 flex-1 flex-col items-center justify-center overflow-hidden bg-(--ui-bg-chrome)">
         {!leftSidebarOpen && <Button aria-label="Expand Library sidebar" className="workspace-inline-sidebar-toggle absolute left-2 top-2" onClick={onExpandLeft} size="icon-xs" variant="ghost"><IconLayoutSidebarLeftExpand size={14} stroke={1.7} /></Button>}
         <EmptyState description="Create a note, then connect ideas with [[double brackets]]." title="No note open" />
         <Button onClick={() => void createBlankNote()} size="sm" variant="secondary">New note</Button>
@@ -291,10 +291,14 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
   }
 
   return (
-    <main className="relative flex h-full min-w-0 flex-1 overflow-hidden bg-(--ui-bg-editor)">
+    // A note is a PAGE, not a card (owner 2026-07-22): it reads on
+    // --ui-bg-chrome (pure black in dark mode), never --ui-bg-editor, which is
+    // the CARD colour (~#151516) and is what --dt-card is built from. Boxes and
+    // pills inside the note keep that card colour and stay lifted.
+    <main className="relative flex h-full min-w-0 flex-1 overflow-hidden bg-(--ui-bg-chrome)">
       <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div
-          className="library-tab-strip workspace-page-header flex h-9 shrink-0 items-end gap-0.5 overflow-x-auto overflow-y-hidden border-b border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-text-primary)_5%,var(--ui-bg-editor))] px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="library-tab-strip workspace-page-header flex h-9 shrink-0 items-end gap-0.5 overflow-x-auto overflow-y-hidden border-b border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-text-primary)_5%,var(--ui-bg-chrome))] px-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           data-library-sidebar-open={leftSidebarOpen ? "true" : "false"}
         >
           <Button
@@ -317,7 +321,10 @@ export function LibraryMain({ leftSidebarOpen, onCollapseLeft, onExpandLeft }: L
                   className={cn(
                     "group relative -mb-px flex h-8 min-w-32 max-w-52 items-center gap-1.5 rounded-t-[1rem] border px-3 text-xs before:pointer-events-none before:absolute before:-left-2 before:bottom-0 before:size-2 before:rounded-br-[0.65rem] after:pointer-events-none after:absolute after:-right-2 after:bottom-0 after:size-2 after:rounded-bl-[0.65rem]",
                     active
-                      ? "z-10 border-(--ui-stroke-secondary) border-b-(--ui-bg-editor) bg-(--ui-bg-editor) text-foreground before:shadow-[3px_3px_0_var(--ui-bg-editor)] after:shadow-[-3px_3px_0_var(--ui-bg-editor)]"
+                      // Tracks the pane below so the active tab still merges
+                      // into it — these four must stay the same token as the
+                      // <main> above, or the tab floats as a grey box on black.
+                      ? "z-10 border-(--ui-stroke-secondary) border-b-(--ui-bg-chrome) bg-(--ui-bg-chrome) text-foreground before:shadow-[3px_3px_0_var(--ui-bg-chrome)] after:shadow-[-3px_3px_0_var(--ui-bg-chrome)]"
                       : "border-transparent bg-transparent text-(--ui-text-tertiary) hover:bg-(--ui-control-hover-background) hover:text-foreground",
                     draggedTab === path && "opacity-55",
                   )}

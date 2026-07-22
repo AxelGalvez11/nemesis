@@ -15,6 +15,7 @@ import {
   type LiveTranscriptSegment,
 } from "@/lib/workspace/live-audio-contract";
 import { requestLiveAudioInsights } from "@/lib/workspace/live-audio-insights";
+import { publishMicLevel, resetMicLevel } from "@/lib/workspace/mic-level";
 
 const EMPTY_INSIGHTS: LiveAudioInsights = { explore: [], notes: [], suggestions: [] };
 const INSIGHT_MIN_CHARS = 160;
@@ -146,6 +147,10 @@ export function useLiveAudioSession(options: UseLiveAudioOptions) {
       for (const track of nodes.stream.getTracks()) track.stop();
       void nodes.context.close().catch(() => undefined);
     }
+    // Outside the updateState guard on purpose: unmount and the error path both
+    // release without touching state, and a waveform left holding the last
+    // reading would keep drawing bars for a microphone that is already closed.
+    resetMicLevel();
     if (updateState && mountedRef.current) {
       setLevel(0);
       setStatus("idle");
@@ -308,7 +313,12 @@ export function useLiveAudioSession(options: UseLiveAudioOptions) {
         const now = performance.now();
         if (now - lastLevelAtRef.current > 90 && mountedRef.current) {
           lastLevelAtRef.current = now;
-          setLevel(audioLevel(samples));
+          const next = audioLevel(samples);
+          setLevel(next);
+          // Same reading, published to the composer's waveform, which is a
+          // sibling of this recorder rather than a child — see lib/workspace/
+          // mic-level.ts for why it is a channel and not React state.
+          publishMicLevel(next);
         }
       };
 
