@@ -60,6 +60,14 @@ const editorTheme = EditorView.theme({
   // outside it — blurring the editor and hiding the caret. With the min-height
   // here, that click hits the content and places the caret at the end.
   ".cm-content": { caretColor: "hsl(var(--foreground))", minHeight: "38rem", padding: "0.25rem" },
+  // The caretColor above is defensive only: basicSetup bundles drawSelection,
+  // which hides the native caret (caret-color: transparent !important) and
+  // paints its own .cm-cursor instead. That cursor's colour comes from
+  // CodeMirror's light/dark flag, and this theme is never marked dark, so CM
+  // fell back to its light default — a BLACK cursor, invisible on a dark page.
+  // Drive it from --foreground so it tracks the app theme (white on dark,
+  // black on light). !important because CM's own rule is equally specific.
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "hsl(var(--foreground)) !important" },
   ".cm-line": { padding: "0", transition: "font-size 120ms ease, line-height 120ms ease" },
   ".cm-gutters": { display: "none" },
   ".cm-activeLine": { backgroundColor: "transparent" },
