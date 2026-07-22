@@ -511,6 +511,9 @@ export default function GraphScreen() {
   return (
     <View style={styles.flex} testID="graph-screen">
       {status === "loading" ? (
+        // Kept as a spinner, not a skeleton: a force-directed layout only gets node
+        // positions once createLayoutSim seeds it from the real graph, so there is no
+        // shape to preview ahead of that — a placeholder canvas would just be guessing.
         <View style={[styles.centered, { paddingTop: contentTop, paddingBottom: contentBottom }]} testID="graph-loading">
           <ActivityIndicator color={c.text2} />
         </View>

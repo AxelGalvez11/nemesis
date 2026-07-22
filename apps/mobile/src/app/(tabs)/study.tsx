@@ -11,7 +11,13 @@ import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { GlassSurface } from "@/components/GlassSurface";
 import { SlideUpSheet } from "@/components/StudySheet";
 import { StudyAddSheet } from "@/components/StudyAddSheet";
-import { StudyModeMenu, FAB_SIZE, type StudyModeKey } from "@/components/StudyModeMenu";
+import {
+  StudyModeMenu,
+  StudyModePopup,
+  FAB_SIZE,
+  TRIGGER_HEIGHT,
+  type StudyModeKey,
+} from "@/components/StudyModeMenu";
 import {
   countsForCards,
   deckGroupInfo,
@@ -51,13 +57,13 @@ import { radius, space, type } from "@/theme/tokens";
 // cards-tab.tsx math (countsForCards); the amber "learn" number and the old
 // mature-ratio bar left with this restyle (git history has both).
 //
-// The Cards/Tests/Mindmaps switcher is now an INLINE segmented toggle
-// (StudyModeMenu), not a popup — the owner asked it to "show which section
-// user is in". Tests/Mindmaps aren't built yet, so selecting them swaps the
-// deck list for an inline "coming soon" panel rather than routing anywhere.
-// Stats moved OFF its own FAB and into that same toggle as a trailing
-// icon-segment; tapping it still opens the same numbers-only SlideUpSheet as
-// before (due/new/total/decks — no invented streak metric).
+// The Cards/Tests/Mindmaps switcher is a liquid-glass DROPDOWN (owner
+// 2026-07-22) whose trigger reads out the section you're in — "Cards ⌄" — so
+// the control stays one tap wide. Tests/Mindmaps aren't built yet, so
+// selecting them swaps the deck list for an inline "coming soon" panel rather
+// than routing anywhere. Stats rides in the same menu as a trailing row;
+// tapping it still opens the same numbers-only SlideUpSheet as before
+// (due/new/total/decks — no invented streak metric).
 //
 // The one remaining FAB (lower-left) opens StudyAddSheet — New group / New
 // cards / Browse, all backed by real study_decks/study_cards inserts mirrored
@@ -173,8 +179,9 @@ export default function StudyScreen() {
     });
   }, []);
 
-  // Cards/Tests/Mindmaps — an inline segmented toggle now (StudyModeMenu),
-  // not a popup; `activeMode` decides which content area below renders.
+  // Cards/Tests/Mindmaps — a glass dropdown (StudyModeMenu) whose trigger
+  // reads out the current section; `activeMode` decides which content area
+  // below renders.
   const [activeMode, setActiveMode] = useState<StudyModeKey>("cards");
 
   // The lower-left Add FAB — New group / New cards / Browse in one sheet.
@@ -183,6 +190,7 @@ export default function StudyScreen() {
   // Stats — moved off its own FAB into the toggle's trailing icon-segment;
   // the sheet's own content is unchanged.
   const [statsOpen, setStatsOpen] = useState(false);
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
 
   const load = useCallback(async (uid: string) => {
     setStatus((prev) => (prev === "loaded" ? prev : "loading"));
@@ -261,11 +269,11 @@ export default function StudyScreen() {
 
   return (
     <View style={styles.flex} testID="study-screen">
-      {/* Inline segmented toggle (owner ask 1) — always visible, clears the
-          shared glass TopBar itself, then pushes the list down. Nothing
-          scrolls behind it, so it's a plain bordered surface, not glass. */}
+      {/* Section switcher (owner ask 1) — always visible, clears the shared
+          glass TopBar itself, then pushes the list down. Its menu is rendered
+          at the screen root below, so it can hang over the deck list. */}
       <View style={[styles.toggleRow, { paddingTop: contentTop }]}>
-        <StudyModeMenu active={activeMode} onSelect={setActiveMode} onStats={() => setStatsOpen(true)} />
+        <StudyModeMenu active={activeMode} open={modeMenuOpen} onToggle={() => setModeMenuOpen((v) => !v)} />
       </View>
 
       {activeMode === "cards" ? (
@@ -374,6 +382,15 @@ export default function StudyScreen() {
           </GlassSurface>
         </Pressable>
       </View>
+
+      <StudyModePopup
+        visible={modeMenuOpen}
+        active={activeMode}
+        topOffset={contentTop + TRIGGER_HEIGHT + space(1.5)}
+        onSelect={setActiveMode}
+        onStats={() => setStatsOpen(true)}
+        onClose={() => setModeMenuOpen(false)}
+      />
 
       <StudyAddSheet
         visible={addSheetOpen}

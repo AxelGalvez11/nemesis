@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { fetchUsageSummary, usagePercent, type UsageErrorKind, type UsageSummary } from "@/api/usage";
+import { Skeleton } from "@/components/Skeleton";
 import type { ThemeColors } from "@/theme/palette";
-import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
+import { useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
 
 // Usage — phone half of the cloud-first settings port (build spec §11). Real
@@ -44,7 +45,6 @@ function errorCopy(kind: UsageErrorKind): string {
 export default function UsageScreen() {
   const insets = useSafeAreaInsets();
   const styles = useThemedStyles(createStyles);
-  const { colors: c } = useTheme();
   const { session } = useAuth();
   const uid = session?.user.id ?? null;
 
@@ -76,8 +76,22 @@ export default function UsageScreen() {
         {!uid ? (
           <Text style={styles.guest} testID="usage-guest">You're not signed in.</Text>
         ) : state.kind === "loading" ? (
-          <View style={styles.centerBox} testID="usage-loading">
-            <ActivityIndicator color={c.accent} />
+          <View testID="usage-loading">
+            <View testID="usage-skeleton">
+              <View style={styles.planPill}>
+                <Skeleton width={80} height={13} />
+              </View>
+              {["today", "month"].map((key) => (
+                <View key={key} style={styles.usageCard}>
+                  <View style={styles.usageTop}>
+                    <Skeleton width={70} height={14} />
+                    <Skeleton width={30} height={14} />
+                  </View>
+                  <Skeleton width="100%" height={8} radius={radius.pill} />
+                  <Skeleton width={140} height={12} />
+                </View>
+              ))}
+            </View>
           </View>
         ) : state.kind === "error" ? (
           <View style={styles.centerBox} testID="usage-error">

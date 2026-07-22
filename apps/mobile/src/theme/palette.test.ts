@@ -26,12 +26,16 @@ Deno.test("dark mode = pure black pages, pure white text (owner 2026-07-21)", ()
   assertEquals(colors.line, "rgba(233,234,238,0.09)");
 });
 
-Deno.test("every accent clears 4.5:1 against both backgrounds", () => {
+// 3.5, not 4.5: the owner asked for brighter accents on 2026-07-22, and the
+// stricter floor was what forced the light-mode picks down into muddy territory.
+// 3.5 still clears WCAG's 3:1 bar for UI components and large text. The status
+// colors keep 4.5 in the test below — they carry warnings, so they stay strict.
+Deno.test("every accent clears 3.5:1 against both backgrounds", () => {
   for (const swatch of ACCENT_SWATCHES) {
     for (const mode of ["dark", "light"] as const) {
       const colors = buildColors(mode, swatch.id);
       const ratio = contrastRatio(colors.accent, colors.bg);
-      assertEquals(ratio >= 4.5, true, `${swatch.id} on ${mode} bg: ${ratio.toFixed(2)}`);
+      assertEquals(ratio >= 3.5, true, `${swatch.id} on ${mode} bg: ${ratio.toFixed(2)}`);
     }
   }
 });

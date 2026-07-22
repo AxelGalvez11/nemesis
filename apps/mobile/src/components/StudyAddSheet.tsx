@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SlideUpSheet } from "./StudySheet";
+import { MessageBody } from "./MessageBody";
 import { MissionButton } from "./mission-ui";
 import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon } from "./icons";
 import { createStudyCard, createStudyDeck, type CloudStudyCard, type CloudStudyDeck } from "@/api/cloudStudy";
+import { normalizeCardText } from "@/lib/card-text";
+import { previewOf } from "@/lib/note-tabs";
 import { buildBrowseRows, filterBrowseRows } from "@/lib/study-browse";
+import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -67,6 +71,7 @@ export function StudyAddSheet({
   onChanged: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
+  const cardStyles = useThemedStyles(createMarkdownStyles);
   const { colors: c } = useTheme();
   const { height } = useWindowDimensions();
   const [step, setStep] = useState<Step>("menu");
@@ -324,16 +329,24 @@ export function StudyAddSheet({
                     accessibilityRole="button"
                     accessibilityState={{ expanded }}
                   >
-                    <Text style={styles.browseFront} numberOfLines={expanded ? undefined : 1}>
-                      {row.card.front}
-                    </Text>
+                    {/* Collapsed rows stay a single clamped line, so they show a
+                        plain-text preview — numberOfLines can't clamp a rendered
+                        markdown tree. Expanding swaps in the real renderer, which
+                        is what stops an image card from reading out its URL. */}
+                    {expanded ? (
+                      <MessageBody content={normalizeCardText(row.card.front)} styles={cardStyles} />
+                    ) : (
+                      <Text style={styles.browseFront} numberOfLines={1}>
+                        {previewOf(normalizeCardText(row.card.front), 160)}
+                      </Text>
+                    )}
                     <Text style={styles.browseDeck} numberOfLines={1}>
                       {row.deckName}
                     </Text>
                     {expanded ? (
                       <View style={styles.browseAnswerBlock} testID={`study-add-browse-card-${row.card.id}-answer`}>
                         <View style={styles.browseDivider} />
-                        <Text style={styles.browseBack}>{row.card.back}</Text>
+                        <MessageBody content={normalizeCardText(row.card.back)} styles={cardStyles} />
                       </View>
                     ) : null}
                   </Pressable>

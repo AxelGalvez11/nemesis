@@ -19,6 +19,7 @@ import Svg, { Circle, Path } from "react-native-svg";
 import { useAuth } from "@/auth/AuthProvider";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock } from "@/components/mission-ui";
+import { Skeleton } from "@/components/Skeleton";
 import { CloseIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { NoteBlockEditor } from "@/components/NoteBlockEditor";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
@@ -83,6 +84,10 @@ const SAVE_FAILED = "Couldn't save — check your connection and try Done again.
 // Debounce for autosave-while-typing: long enough to batch a sentence, short
 // enough that closing the app mid-thought almost never loses more than a beat.
 const AUTOSAVE_MS = 1400;
+
+// Loading skeleton (doc === undefined, below) — paragraph-line widths, varied so
+// the placeholder doesn't read as a row of identical bars.
+const NOTE_SKELETON_LINE_WIDTHS = ["94%", "88%", "70%", "92%", "60%", "84%", "76%"] as const;
 
 /** Split `text` into ordered runs, flagging the ones that match `query` (case-
  * insensitive). Pure, so the highlighted body and the match count derive from the
@@ -616,7 +621,14 @@ export default function NoteScreen() {
         </View>
       ) : null}
 
-      {doc === undefined ? null : doc === null ? (
+      {doc === undefined ? (
+        <View style={styles.body} testID="note-skeleton">
+          <Skeleton width="65%" height={30} style={styles.skeletonTitle} />
+          {NOTE_SKELETON_LINE_WIDTHS.map((w, i) => (
+            <Skeleton key={i} width={w} height={16} style={styles.skeletonLine} />
+          ))}
+        </View>
+      ) : doc === null ? (
         <View style={styles.emptyWrap}>
           <EmptyBlock
             title="Note unavailable"
@@ -864,6 +876,10 @@ const createStyles = (c: ThemeColors) =>
     // breath of air before the content starts (no metadata line in between).
     title: { ...type.h1, color: c.text, marginBottom: space(4) },
     emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6) },
+    // Loading skeleton — same body padding as the real title/content above, so
+    // it settles into place without a layout jump once doc resolves.
+    skeletonTitle: { marginBottom: space(4) },
+    skeletonLine: { marginBottom: space(3) },
 
     // Find bar + highlighted body.
     findBar: {

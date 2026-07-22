@@ -14,6 +14,10 @@ const TICK_MS = 5_000;
 
 export function useLiveNotes(uid: string | null, transcript: string, active: boolean) {
   const [notes, setNotes] = useState<string[]>([]);
+  // Surfaced so the panel can say it's working. Without it, the stretch before
+  // the first note came back was indistinguishable from the feature being
+  // broken — which is exactly how it was reported.
+  const [writing, setWriting] = useState(false);
   const notesRef = useRef<string[]>([]);
   const transcriptRef = useRef(transcript);
   const inFlightRef = useRef(false);
@@ -46,6 +50,7 @@ export function useLiveNotes(uid: string | null, transcript: string, active: boo
         return;
       }
       inFlightRef.current = true;
+      setWriting(true);
       lastAtRef.current = Date.now();
       lastLengthRef.current = text.length;
       requestLiveNotes(uid, text, notesRef.current)
@@ -57,6 +62,7 @@ export function useLiveNotes(uid: string | null, transcript: string, active: boo
         })
         .finally(() => {
           inFlightRef.current = false;
+          setWriting(false);
         });
     }, TICK_MS);
     return () => clearInterval(timer);
@@ -65,9 +71,10 @@ export function useLiveNotes(uid: string | null, transcript: string, active: boo
   // A fresh recording starts with a clean board.
   const reset = useCallback(() => {
     setNotes([]);
+    setWriting(false);
     lastAtRef.current = 0;
     lastLengthRef.current = 0;
   }, []);
 
-  return { notes, reset };
+  return { notes, reset, writing };
 }

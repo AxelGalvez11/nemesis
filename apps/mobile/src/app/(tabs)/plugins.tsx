@@ -222,7 +222,9 @@ const createStyles = (c: ThemeColors) =>
       borderRadius: radius.md,
       borderWidth: 1,
       borderColor: c.line,
-      opacity: 0.55,
+      // The chip reads "disabled" through its own muted fill, NOT by fading the
+      // label — owner 2026-07-22 wants text at full strength everywhere.
+      backgroundColor: c.surface2,
     },
     unavailableText: { ...type.micro, color: c.text2 },
   });

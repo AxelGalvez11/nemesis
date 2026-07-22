@@ -18,6 +18,7 @@ import { Composer } from "@/components/Composer";
 import { MessageBody } from "@/components/MessageBody";
 import { ThinkingDots } from "@/components/ThinkingDots";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { Skeleton } from "@/components/Skeleton";
 import { SlideUpSheet } from "@/components/StudySheet";
 import { useKeyboardVisible } from "@/components/shell-chrome";
 import { FileIcon, LibraryIcon, SearchIcon } from "@/components/icons";
@@ -443,7 +444,9 @@ export default function NotebookScreen() {
         )}
       </View>
 
-      {notebook === undefined ? null : notebook === null ? (
+      {notebook === undefined ? (
+        <NotebookSkeleton />
+      ) : notebook === null ? (
         <View style={styles.emptyWrap}>
           <EmptyBlock title="Notebook unavailable" body="It may have been deleted, or hasn't reached this phone yet." />
         </View>
@@ -545,6 +548,35 @@ export default function NotebookScreen() {
       />
 
       <ContentViewerOverlay content={viewer} markdownStyles={markdownStyles} onClose={() => setViewer(null)} />
+    </View>
+  );
+}
+
+// Loading skeleton (notebook === undefined, above) — shaped like the default
+// landing (HomeTabs + ChatsHome: composer pill + a "Recents" list), since that's
+// what a resolved notebook renders into first.
+function NotebookSkeleton() {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View testID="notebook-skeleton">
+      <View style={styles.tabsRow}>
+        {[0, 1, 2].map((i) => (
+          <View key={i} style={styles.tabBtn}>
+            <Skeleton width="60%" height={12} />
+          </View>
+        ))}
+      </View>
+      <View style={styles.homeBody}>
+        <Skeleton width="100%" height={48} radius={radius.lg} />
+        <View style={{ height: space(2) }} />
+        <Skeleton width={110} height={12} />
+        {[0, 1, 2].map((i) => (
+          <View key={i} style={styles.listRow}>
+            <Skeleton width="55%" height={16} />
+            <Skeleton width={36} height={12} />
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -734,7 +766,16 @@ function ChatThread({
     <View style={styles.flex}>
       <ScrollView ref={scrollRef} style={styles.flex} contentContainerStyle={styles.chatBody} keyboardShouldPersistTaps="handled">
         {messagesLoading && messages.length === 0 ? (
-          <Text style={styles.mutedText}>Loading…</Text>
+          <View testID="notebook-chat-skeleton">
+            <View style={[styles.bubble, styles.userBubble]}>
+              <Skeleton width={160} height={16} />
+            </View>
+            <View style={styles.assistantRow}>
+              <Skeleton width="90%" height={16} style={styles.skeletonLine} />
+              <Skeleton width="75%" height={16} style={styles.skeletonLine} />
+              <Skeleton width="55%" height={16} />
+            </View>
+          </View>
         ) : messages.length === 0 ? (
           <Text style={styles.mutedText}>Ask something below — the answer comes from this notebook's sources.</Text>
         ) : (
@@ -831,7 +872,16 @@ function LibraryPickerSheet({
       </View>
       <ScrollView style={styles.pickerList} keyboardShouldPersistTaps="handled">
         {notes === null ? (
-          <Text style={styles.mutedText}>Loading your library…</Text>
+          <View testID="notebook-source-picker-skeleton">
+            {[0, 1, 2, 3].map((i) => (
+              <View key={i} style={styles.listRow}>
+                <View style={styles.sourceTextCol}>
+                  <Skeleton width="55%" height={16} />
+                  <Skeleton width="35%" height={12} />
+                </View>
+              </View>
+            ))}
+          </View>
         ) : filtered.length === 0 ? (
           <Text style={styles.mutedText}>{available.length === 0 ? "Every note is already a source, or your library is empty." : "No notes match that search."}</Text>
         ) : (
@@ -945,6 +995,8 @@ const createStyles = (c: ThemeColors) =>
     userText: { ...type.body, color: c.text },
     assistantRow: { alignSelf: "stretch", paddingHorizontal: space(0.5), paddingVertical: space(1) },
     composerRow: { paddingHorizontal: space(3), paddingTop: space(2) },
+    // Chat-thread loading skeleton (messagesLoading, ChatThread above).
+    skeletonLine: { marginBottom: space(2) },
 
     sheetRow: { paddingVertical: space(3.5), paddingHorizontal: space(1) },
     sheetRowPressed: { backgroundColor: c.surface },

@@ -40,6 +40,7 @@ import { classifyChatRequest, type ChatRouteDecision } from "@/lib/chat-routing"
 import { buildLiveNotesMessages, parseLiveNotes } from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
+import type { ThinkingPhase } from "@/lib/thinking-phase";
 import {
   chatMsgFromCloudRow,
   deriveMessageId,
@@ -231,6 +232,10 @@ async function postChatCompletion(
 
 export interface SendChatOptions {
   onDelta?: CompletionDeltaHandler;
+  /** Reports what this turn is ACTUALLY doing, so the screen can show a
+   *  thinking line instead of anonymous dots. Every phase corresponds to a
+   *  real step below — no phase is emitted for work that isn't happening. */
+  onPhase?: (phase: ThinkingPhase) => void;
   /** Set when the composer's "Deep research" toggle was on for this turn —
    *  forces forcedResearchDecision() instead of classifyChatRequest's
    *  text-based inference. See that function's doc for why. */
@@ -256,20 +261,40 @@ export async function sendChat(
   userText: string,
   options: SendChatOptions = {},
 ): Promise<ChatReply> {
-  const { attachedDoc, forceResearch, onDelta } = options;
+  const { attachedDoc, forceResearch, onDelta, onPhase } = options;
+  onPhase?.({ kind: "routing" });
   const decision = forceResearch ? forcedResearchDecision() : classifyChatRequest(userText);
   const attachmentContext = attachedDoc ? buildAttachmentContext(attachedDoc) : "";
   let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
   let sources: ChatSource[] = [];
   if (decision.searchWeb) {
     const query = decision.route === "current" ? withFreshDateAnchor(userText) : userText;
+    // The phase echoes the student's OWN words, not `query` — the "current"
+    // route staples a freshness date onto the wire query, and showing that
+    // back would read like the app invented part of the question.
+    onPhase?.({ kind: "searching", query: userText });
     const result = await searchWebContext(uid, query);
     sources = result.sources;
+    onPhase?.({ kind: "reading", sources: sources.length });
     groundedText = result.context
       ? `${groundedText}\n\n${result.context}`
       : `${groundedText}\n\nLive search was requested but returned no verifiable sources. Do not guess a current result; say clearly that it could not be verified.`;
   }
-  const reply = await postChatCompletion(uid, buildWireMessages(history, groundedText, decision), decision, onDelta);
+  onPhase?.({ kind: "thinking", deep: decision.model === "deepseek-reasoner" });
+  // The preview's job ends the moment real words appear, so the first delta
+  // flips it to "writing" and the screen drops the line.
+  let announcedWriting = false;
+  const relayDelta: CompletionDeltaHandler | undefined =
+    onDelta || onPhase
+      ? (delta, accumulated) => {
+          if (!announcedWriting) {
+            announcedWriting = true;
+            onPhase?.({ kind: "writing" });
+          }
+          onDelta?.(delta, accumulated);
+        }
+      : undefined;
+  const reply = await postChatCompletion(uid, buildWireMessages(history, groundedText, decision), decision, relayDelta);
   return { ...reply, sources };
 }
 
@@ -493,6 +518,18 @@ export async function listThreads(uid: string): Promise<ThreadSummary[]> {
     // offline/error — the local cache already has last-known-good summaries
   }
   return threadSummaries(store);
+}
+
+/** Whether the on-device cache already has ANY record of this thread id — set the
+ *  moment listThreads first merges a thread's metadata in, well before its row is
+ *  tappable in the drawer. A local-only (no network) read, so chat.tsx can use it
+ *  to tell an existing thread apart from a just-minted id (e.g. AppDrawer's "New
+ *  chat" — see newThreadId) without waiting on a round trip: a fresh id can never
+ *  have a cache entry yet, so there is nothing to wait for before landing on the
+ *  empty state. */
+export async function hasCachedThread(uid: string, id: string): Promise<boolean> {
+  const store = await readStore(uid);
+  return getThread(store, id) !== null;
 }
 
 /** One thread's messages, merged with whatever the cloud has (so a message

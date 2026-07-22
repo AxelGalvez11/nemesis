@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
+import { normalizeMicLevel, publishMicLevel, resetMicLevel } from "@/lib/mic-level";
 import { applyRecognitionResult, emptyTranscript, type LiveTranscript } from "@/lib/recording";
 
 // Long-form live transcription for the Record screen (lectures, study
@@ -22,6 +23,13 @@ const RECOGNITION_OPTIONS = {
     persist: true,
     outputEncoding: "pcmFormatInt16",
     outputSampleRate: 16_000,
+  },
+  // Off by default in the library. Without this the recorder has no way to
+  // know how loud the room is, which is why the waveform used to be a canned
+  // animation rather than a picture of the audio actually coming in.
+  volumeChangeEventOptions: {
+    enabled: true,
+    intervalMillis: 80,
   },
 } as const;
 
@@ -52,6 +60,13 @@ export function useLiveTranscription() {
     if (statusRef.current !== "recording") return;
     const text = event.results?.[0]?.transcript;
     if (typeof text === "string") setTranscript((current) => applyRecognitionResult(current, text, event.isFinal === true));
+  });
+
+  // Published rather than held in state: this fires ~12×/second, and putting
+  // it through React would re-render the whole recording screen each time.
+  useSpeechRecognitionEvent("volumechange", (event) => {
+    if (statusRef.current !== "recording") return;
+    publishMicLevel(normalizeMicLevel(typeof event.value === "number" ? event.value : 0));
   });
 
   useSpeechRecognitionEvent("audioend", (event) => {
@@ -107,6 +122,7 @@ export function useLiveTranscription() {
     // Order matters: leaving "recording" first keeps the resulting "end"
     // event from auto-restarting recognition.
     setStatus("stopped");
+    resetMicLevel();
     if (startedAtRef.current !== null) setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
     try {
       ExpoSpeechRecognitionModule.stop();
@@ -117,6 +133,7 @@ export function useLiveTranscription() {
 
   const reset = useCallback(() => {
     setStatus("idle");
+    resetMicLevel();
     setTranscript(emptyTranscript());
     setElapsedSeconds(0);
     setAudioUris([]);
@@ -127,6 +144,7 @@ export function useLiveTranscription() {
   useEffect(() => {
     return () => {
       statusRef.current = "idle";
+      resetMicLevel();
       try {
         ExpoSpeechRecognitionModule.stop();
       } catch {

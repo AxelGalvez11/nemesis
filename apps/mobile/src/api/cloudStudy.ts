@@ -127,6 +127,11 @@ export function isCardDue(card: Pick<CloudStudyCard, "dueAt" | "suspended">, at:
   return !card.suspended && new Date(card.dueAt).getTime() <= at.getTime();
 }
 
+/** Anki's threshold between a "young" card still bedding in and a "mature"
+ *  one. Shared so the deck list and the review screen draw the Learn/Due line
+ *  in the same place. */
+export const MATURE_INTERVAL_DAYS = 21;
+
 export interface DeckCounts {
   newCount: number;
   learnCount: number;
@@ -135,15 +140,18 @@ export interface DeckCounts {
 
 /** New / Learn / Due tallies for a set of cards — ported verbatim from the web
  *  workspace's cards-tab.tsx (countsForCards). "Learn" cards are still young
- *  (interval < 21 days) but NOT currently due, so they never appear in a
- *  review queue — the number is a leading indicator only, shown on the deck
- *  list, not during an active review session. */
+ *  but NOT currently due, so they never appear in a review queue — the number
+ *  is a leading indicator only, shown on the deck list, not during an active
+ *  review session. (review.tsx splits its own queue differently for exactly
+ *  this reason: everything in a queue is due by definition.) */
 export function countsForCards(
   cards: readonly Pick<CloudStudyCard, "repetitions" | "intervalDays" | "dueAt" | "suspended">[],
 ): DeckCounts {
   return {
     newCount: cards.filter((card) => card.repetitions === 0).length,
-    learnCount: cards.filter((card) => card.repetitions > 0 && card.intervalDays < 21 && !isCardDue(card)).length,
+    learnCount: cards.filter(
+      (card) => card.repetitions > 0 && card.intervalDays < MATURE_INTERVAL_DAYS && !isCardDue(card),
+    ).length,
     dueCount: cards.filter((card) => card.repetitions > 0 && isCardDue(card)).length,
   };
 }
