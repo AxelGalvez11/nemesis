@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   AppState,
   Easing,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -30,15 +32,16 @@ import {
   sendChat,
 } from "@/api/chat";
 import type { CloudLibraryNote } from "@/api/cloudLibrary";
-import { useShell } from "@/components/AppDrawer";
+import { drawerOpenGuard, useShell } from "@/components/AppDrawer";
 import { AttachLibrarySheet } from "@/components/AttachLibrarySheet";
-import { Composer, COMPOSER_PILL_HEIGHT } from "@/components/Composer";
+import { Composer, COMPOSER_PILL_HEIGHT, type ComposerMode } from "@/components/Composer";
 import { ComposerPlusMenu } from "@/components/ComposerPlusMenu";
 import { DeliverableChipRow, DeliverableSheet } from "@/components/DeliverableSheet";
 import { GlassSurface } from "@/components/GlassSurface";
 import { CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
+import { RecordSession, type RecordingSessionState } from "@/components/RecordSession";
 import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
 import { ThinkingDots } from "@/components/ThinkingDots";
 import { useKeyboardVisible, useShellPadding } from "@/components/shell-chrome";
@@ -60,6 +63,17 @@ import { radius, space, type } from "@/theme/tokens";
 // State rules (review findings): everything is keyed to the signed-in user; an
 // epoch guard means a user switch, a thread switch, or an unmount can never
 // resurrect a stale thread's messages onto the screen.
+//
+// Chat/Record mode (owner 2026-07-21, "chat/recorder toggle from the webapp"):
+// the composer's new mode pill (Composer.tsx) swaps this screen's whole
+// messages/thread area for RecordSession.tsx inline — mirrors web's
+// composer.tsx ModePill swapping in record-workspace.tsx. `composerMode`
+// never persists (always starts "chat", same as web's per-tab default) and,
+// per the epoch-guard discipline above, resets alongside everything else on a
+// thread/user switch — flipping composerMode back to "chat" unmounts
+// RecordSession, which is what actually stops the mic (see its cleanup
+// effect); leaving it mounted across a thread switch would keep recording
+// into a thread the user isn't even looking at anymore.
 
 const THINKING_ID = "__thinking__";
 
@@ -114,6 +128,13 @@ export default function ChatScreen() {
   // opposite: a persistent toggle the student switches off themselves.
   const [attachedDoc, setAttachedDoc] = useState<{ title: string; content: string } | null>(null);
   const [deepResearchOn, setDeepResearchOn] = useState(false);
+  // Chat/Record mode pill: which area fills the screen (messages vs. the
+  // inline RecordSession) and the three-state UI RecordSession last reported
+  // — mirrored here only so the composer can lock the pill mid-recording
+  // (see handleComposerModeChange below); RecordSession itself owns the real
+  // recording state.
+  const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
+  const [recordingState, setRecordingState] = useState<RecordingSessionState>("idle");
   // Which message's sources/deliverable is showing in its bottom-up sheet, if any.
   const [sourcesSheetFor, setSourcesSheetFor] = useState<ChatSource[] | null>(null);
   const [deliverableSheetFor, setDeliverableSheetFor] = useState<ChatOutput | null>(null);
@@ -147,6 +168,12 @@ export default function ChatScreen() {
     setDeepResearchOn(false);
     setSourcesSheetFor(null);
     setDeliverableSheetFor(null);
+    // A thread/user switch must not leave RecordSession mounted against the
+    // thread that's no longer open — that would keep the mic running and,
+    // on Save, write into the wrong thread. Flipping back to "chat" unmounts
+    // it, which is what actually stops recognition (see its cleanup effect).
+    setComposerMode("chat");
+    setRecordingState("idle");
     if (!uid) {
       setThreadId(null);
       return;
@@ -289,6 +316,71 @@ export default function ChatScreen() {
     void pinThread(uid, threadId, next);
   }, [uid, threadId, pinned]);
 
+  // Leaves record mode: RecordSession's onDone (fires after Save/Discard/
+  // Close) and the mode pill's own toggle-back-to-chat path both land here.
+  // Resetting recordingState alongside composerMode matters — without it, a
+  // stale "reviewable"/"recording" value would leave the pill permanently
+  // locked (see Composer's modeLocked) even after RecordSession has unmounted.
+  const exitRecordMode = useCallback(() => {
+    setComposerMode("chat");
+    setRecordingState("idle");
+  }, []);
+
+  // While a recording is live (recording OR stopped-but-unsaved), opening the
+  // drawer is the one navigation surface that could silently unmount
+  // RecordSession and lose the transcript (drawer → tap another thread —
+  // review finding 2026-07-21). Install the drawer's confirm-gate for exactly
+  // that window; cleared the moment recording ends or this screen unmounts.
+  useEffect(() => {
+    if (composerMode !== "record" || recordingState === "idle") {
+      drawerOpenGuard.current = null;
+      return;
+    }
+    drawerOpenGuard.current = (proceed) => {
+      Alert.alert(
+        "Recording in progress",
+        recordingState === "recording"
+          ? "Leaving this chat stops the recording and discards the transcript."
+          : "This recording isn't saved yet — leaving discards it. Save it to the chat first if you want to keep it.",
+        [
+          { style: "cancel", text: "Stay" },
+          {
+            onPress: () => {
+              exitRecordMode();
+              proceed();
+            },
+            style: "destructive",
+            text: "Discard and leave",
+          },
+        ],
+      );
+    };
+    return () => {
+      drawerOpenGuard.current = null;
+    };
+  }, [composerMode, recordingState, exitRecordMode]);
+
+  // The composer pill's onModeChange. Entering record mirrors the "+" menu's
+  // own Record-row guard (ComposerPlusMenu's onRecord) — no thread yet, no
+  // recording; the pill just stays put rather than opening onto nothing. The
+  // plus menu is force-closed too: it can only have been opened from the "+"
+  // button, which Composer.tsx hides in record mode, so a stale open menu
+  // would otherwise hang over the record workspace with no way to have been
+  // reopened.
+  const handleComposerModeChange = useCallback(
+    (next: ComposerMode) => {
+      if (next === "record") {
+        if (!threadId) return;
+        Keyboard.dismiss();
+        setPlusMenuOpen(false);
+        setComposerMode("record");
+        return;
+      }
+      exitRecordMode();
+    },
+    [threadId, exitRecordMode],
+  );
+
   // Publish the "…" actions button into the TopBar's right slot once the thread has
   // messages (an empty new chat has nothing to pin/delete). It toggles `menuOpen`; the
   // dropdown itself renders below in the page layer, so it stays crisp under the
@@ -385,73 +477,86 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>
       <View style={styles.flex} testID="chat-screen">
-        <FlatList
-          ref={listRef}
-          data={rows}
-          keyExtractor={(row) => row.id}
-          contentContainerStyle={[styles.listBody, { paddingTop: contentTop + space(2) }]}
-          keyboardShouldPersistTaps="handled"
-          onScrollToIndexFailed={(info) => {
-            // A row wasn't measured yet: jump near it by estimate, then retry once settled.
-            listRef.current?.scrollToOffset({ animated: false, offset: info.averageItemLength * info.index });
-            setTimeout(() => {
-              try {
-                listRef.current?.scrollToIndex({ animated: true, index: info.index, viewPosition: 0 });
-              } catch {
-                // give up quietly — content is still readable, just not auto-pinned
-              }
-            }, 120);
-          }}
-          renderItem={({ item }) =>
-            item.kind === "thinking" ? (
-              <View style={styles.assistantRow} testID="chat-thinking">
-                <ThinkingDots color={c.text2} />
+        {composerMode === "record" ? (
+          // Inline record workspace (owner 2026-07-21): swaps in for the whole
+          // messages area, same spot/size the FlatList fills below — mirrors
+          // web's composer.tsx swapping in record-workspace.tsx. contentTop
+          // clears the glass TopBar the same way the FlatList's paddingTop
+          // does (that one adds a further space(2) of list-specific breathing
+          // room on top; RecordSession supplies its own via `session`'s
+          // paddingTop instead, so this stays just the TopBar clearance).
+          <View style={[styles.flex, { paddingTop: contentTop }]} testID="chat-record-workspace">
+            <RecordSession userId={uid} threadId={threadId} onDone={exitRecordMode} onRecordingStateChange={setRecordingState} />
+          </View>
+        ) : (
+          <FlatList
+            ref={listRef}
+            data={rows}
+            keyExtractor={(row) => row.id}
+            contentContainerStyle={[styles.listBody, { paddingTop: contentTop + space(2) }]}
+            keyboardShouldPersistTaps="handled"
+            onScrollToIndexFailed={(info) => {
+              // A row wasn't measured yet: jump near it by estimate, then retry once settled.
+              listRef.current?.scrollToOffset({ animated: false, offset: info.averageItemLength * info.index });
+              setTimeout(() => {
+                try {
+                  listRef.current?.scrollToIndex({ animated: true, index: info.index, viewPosition: 0 });
+                } catch {
+                  // give up quietly — content is still readable, just not auto-pinned
+                }
+              }, 120);
+            }}
+            renderItem={({ item }) =>
+              item.kind === "thinking" ? (
+                <View style={styles.assistantRow} testID="chat-thinking">
+                  <ThinkingDots color={c.text2} />
+                </View>
+              ) : item.kind === "error" ? (
+                <View style={styles.errorBubble} testID="chat-error">
+                  <Text style={styles.errorText}>{item.errorText}</Text>
+                </View>
+              ) : item.msg!.role === "user" ? (
+                <View style={[styles.bubble, styles.userBubble]}>
+                  <Text style={styles.userText}>{item.msg!.content}</Text>
+                </View>
+              ) : (
+                // Assistant: full-width markdown (with LaTeX/math), NO bubble. Fades in as
+                // it arrives (owner 2026-07-19). A "Sources · N" pill (when the router
+                // grounded this turn with a web search) and any deliverable chips this
+                // turn carries render underneath.
+                <Reanimated.View entering={FadeIn.duration(350)} style={styles.assistantRow}>
+                  <MessageBody content={item.msg!.content} styles={markdownStyles} />
+                  {item.msg!.sources?.length ? (
+                    <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
+                  ) : null}
+                  {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={setDeliverableSheetFor} /> : null}
+                </Reanimated.View>
+              )
+            }
+            ListHeaderComponent={
+              // Session-level deliverables (e.g. a web Record-mode recording synced
+              // onto this thread) — a chip row at the very top of the transcript,
+              // separate from any PER-MESSAGE chips rendered in renderItem above.
+              threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={setDeliverableSheetFor} /> : null
+            }
+            ListEmptyComponent={
+              // Minimal greeting — ONE line, no explainer (owner 2026-07-20: "remove the
+              // 'what are we working on today...' because its too noisy. just a simple
+              // welcome back"). Rendered directly (not the shared EmptyBlock, which is
+              // flex:1 + centered) so it still anchors NEAR THE TOP, not vertically
+              // centered (prior owner call this preserves). The list's own paddingTop
+              // already clears the glass TopBar, so this only adds a little more.
+              <View style={[styles.emptyWrap, { paddingTop: space(4), paddingBottom: contentBottom }]}>
+                <Text style={styles.emptyTitle}>Welcome back</Text>
               </View>
-            ) : item.kind === "error" ? (
-              <View style={styles.errorBubble} testID="chat-error">
-                <Text style={styles.errorText}>{item.errorText}</Text>
-              </View>
-            ) : item.msg!.role === "user" ? (
-              <View style={[styles.bubble, styles.userBubble]}>
-                <Text style={styles.userText}>{item.msg!.content}</Text>
-              </View>
-            ) : (
-              // Assistant: full-width markdown (with LaTeX/math), NO bubble. Fades in as
-              // it arrives (owner 2026-07-19). A "Sources · N" pill (when the router
-              // grounded this turn with a web search) and any deliverable chips this
-              // turn carries render underneath.
-              <Reanimated.View entering={FadeIn.duration(350)} style={styles.assistantRow}>
-                <MessageBody content={item.msg!.content} styles={markdownStyles} />
-                {item.msg!.sources?.length ? (
-                  <SourcesPill count={item.msg!.sources.length} onPress={() => setSourcesSheetFor(item.msg!.sources ?? null)} />
-                ) : null}
-                {item.msg!.outputs?.length ? <DeliverableChipRow outputs={item.msg!.outputs} onSelect={setDeliverableSheetFor} /> : null}
-              </Reanimated.View>
-            )
-          }
-          ListHeaderComponent={
-            // Session-level deliverables (e.g. a web Record-mode recording synced
-            // onto this thread) — a chip row at the very top of the transcript,
-            // separate from any PER-MESSAGE chips rendered in renderItem above.
-            threadOutputs.length ? <DeliverableChipRow outputs={threadOutputs} onSelect={setDeliverableSheetFor} /> : null
-          }
-          ListEmptyComponent={
-            // Minimal greeting — ONE line, no explainer (owner 2026-07-20: "remove the
-            // 'what are we working on today...' because its too noisy. just a simple
-            // welcome back"). Rendered directly (not the shared EmptyBlock, which is
-            // flex:1 + centered) so it still anchors NEAR THE TOP, not vertically
-            // centered (prior owner call this preserves). The list's own paddingTop
-            // already clears the glass TopBar, so this only adds a little more.
-            <View style={[styles.emptyWrap, { paddingTop: space(4), paddingBottom: contentBottom }]}>
-              <Text style={styles.emptyTitle}>Welcome back</Text>
-            </View>
-          }
-          ListFooterComponent={
-            // Bottom spacer so the last exchange can scroll up until the question sits at
-            // the top of the viewport (ChatGPT-style). Only when there's content.
-            hasContent ? <View style={{ height: Math.round(windowHeight * 0.5) }} /> : null
-          }
-        />
+            }
+            ListFooterComponent={
+              // Bottom spacer so the last exchange can scroll up until the question sits at
+              // the top of the viewport (ChatGPT-style). Only when there's content.
+              hasContent ? <View style={{ height: Math.round(windowHeight * 0.5) }} /> : null
+            }
+          />
+        )}
         <ChatActionsPopup
           visible={menuOpen}
           onClose={() => setMenuOpen(false)}
@@ -491,8 +596,10 @@ export default function ChatScreen() {
         <View style={[styles.composerRow, { paddingBottom: keyboardUp ? space(3) : contentBottom - space(1) }]}>
           {/* ChatGPT-style landing (owner 2026-07-20): on an empty chat, quiet starter
               rows sit directly above the composer. They vanish the moment the first
-              message exists. */}
-          {!hasContent ? (
+              message exists — and, same as the attached-doc chip below, while the
+              record workspace has replaced the message area (nothing to prefill
+              into a composer that isn't showing its text field right now). */}
+          {composerMode === "chat" && !hasContent ? (
             <StarterRows
               onPick={(text) => {
                 setInput(text);
@@ -500,7 +607,7 @@ export default function ChatScreen() {
               }}
             />
           ) : null}
-          {attachedDoc ? <AttachedDocChip title={attachedDoc.title} onRemove={() => setAttachedDoc(null)} /> : null}
+          {composerMode === "chat" && attachedDoc ? <AttachedDocChip title={attachedDoc.title} onRemove={() => setAttachedDoc(null)} /> : null}
           <Composer
             value={input}
             onChangeText={setInput}
@@ -510,6 +617,14 @@ export default function ChatScreen() {
             placeholder="Ask Nemesis"
             inputRef={composerRef}
             testID="chat-input"
+            mode={composerMode}
+            onModeChange={handleComposerModeChange}
+            // Locked mid-recording/reviewable (can't flip away and strand an
+            // unsaved recording) and while there's no thread yet to record
+            // into (mirrors handleComposerModeChange's own guard, so the pill
+            // doesn't invite a tap that silently does nothing).
+            modeLocked={recordingState !== "idle" || !threadId}
+            recordingActive={recordingState === "recording"}
           />
         </View>
       </View>

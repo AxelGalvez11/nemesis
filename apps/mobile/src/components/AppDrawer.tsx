@@ -65,6 +65,19 @@ export function useShell(): ShellState {
   return ctx;
 }
 
+/** While an inline recording is live on the chat screen, the drawer is the one
+ * navigation surface that can silently destroy it (open drawer → tap another
+ * thread/New chat → the chat screen's reset effect unmounts RecordSession and
+ * the unsaved transcript is gone — review finding 2026-07-21). The chat screen
+ * installs a confirm-gate here while a recording is live; openDrawer routes
+ * every open path (menu button AND edge swipe, both funnel through onOpen)
+ * through it. Module-scoped holder like note-tabs' noteNavHolder; it carries a
+ * callback only (no user data), and the chat screen's effect cleanup clears it
+ * whenever recording ends or the screen unmounts. */
+export const drawerOpenGuard = {
+  current: null as null | ((proceed: () => void) => void),
+};
+
 export function DrawerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [headerTitle, setHeaderTitle] = useState<string | null>(null);
@@ -72,9 +85,16 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
   // Opening the drawer always drops the keyboard (owner 2026-07-20: swiping to the
   // sidebar should put the keyboard away) — covers the TopBar menu button; the swipe
   // path dismisses in DrawerShell's pan onStart so it drops the moment the drag begins.
+  // While a recording is live, the open routes through drawerOpenGuard's
+  // confirm first (see its doc comment) — declining leaves the drawer shut.
   const openDrawer = useCallback(() => {
-    Keyboard.dismiss();
-    setOpen(true);
+    const finishOpen = () => {
+      Keyboard.dismiss();
+      setOpen(true);
+    };
+    const guard = drawerOpenGuard.current;
+    if (guard) guard(finishOpen);
+    else finishOpen();
   }, []);
   const closeDrawer = useCallback(() => setOpen(false), []);
   // A fresh chat is a new thread id in the route param; the chat screen loads it

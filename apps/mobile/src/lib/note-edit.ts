@@ -113,6 +113,80 @@ export function toggleLinePrefix(state: EditSel, prefix: string): EditSel {
   return current;
 }
 
+const NUMBERED_RE = /^\d+[.)] /;
+
+/**
+ * Toggle a numbered list across the touched lines (web editor parity, owner
+ * 2026-07-21). If every touched line already carries an `N. ` marker they all
+ * lose it; otherwise every line gains a sequential `1. `, `2. `, … marker
+ * (existing markers are renumbered so a partial selection comes out uniform).
+ */
+export function toggleNumberedList(state: EditSel): EditSel {
+  let current = normalize(state);
+  const starts = touchedLineStarts(current.text, current.start, current.end);
+  const allNumbered = starts.every((at) => NUMBERED_RE.test(current.text.slice(at)));
+
+  // Walk back-to-front so earlier line-start offsets stay valid; number by
+  // position within the selection (last line gets the highest number).
+  for (let i = starts.length - 1; i >= 0; i -= 1) {
+    const at = starts[i];
+    const existing = NUMBERED_RE.exec(current.text.slice(at))?.[0].length ?? 0;
+    if (allNumbered) current = editAtLineStart(current, at, existing, "");
+    else current = editAtLineStart(current, at, existing, `${i + 1}. `);
+  }
+  return current;
+}
+
+/**
+ * Wrap the selection as a markdown link. With text selected the caret lands on
+ * the url placeholder, selected, ready to be replaced; with a bare caret an
+ * empty link skeleton is inserted with the caret in the label.
+ */
+export function insertLink(state: EditSel): EditSel {
+  const { text, start, end } = normalize(state);
+  const sel = text.slice(start, end);
+  if (sel) {
+    const before = `${text.slice(0, start)}[${sel}](`;
+    return { text: `${before}url)${text.slice(end)}`, start: before.length, end: before.length + 3 };
+  }
+  return { text: `${text.slice(0, start)}[](url)${text.slice(end)}`, start: start + 1, end: start + 1 };
+}
+
+/** Insert `blockText` as its own paragraph-level block at the caret: pushed
+ * past the end of the current line, blank-line separated on both sides (only
+ * where a separator is actually missing). Caret lands at `caretInBlock`
+ * offsets within the inserted text. */
+function insertBlock(state: EditSel, blockText: string, caretInBlock: { start: number; end: number }): EditSel {
+  const { text, end } = normalize(state);
+  const lineEnd = (() => {
+    const nl = text.indexOf("\n", end);
+    return nl === -1 ? text.length : nl;
+  })();
+  const before = text.slice(0, lineEnd);
+  const after = text.slice(lineEnd);
+  const lead = before === "" ? "" : before.endsWith("\n\n") ? "" : before.endsWith("\n") ? "\n" : "\n\n";
+  const trail = after.startsWith("\n\n") || after === "" ? "" : after.startsWith("\n") ? "\n" : "\n\n";
+  const insertAt = before.length + lead.length;
+  return {
+    text: before + lead + blockText + trail + after,
+    start: insertAt + caretInBlock.start,
+    end: insertAt + caretInBlock.end,
+  };
+}
+
+/** Insert a horizontal rule below the current line (web toolbar's Divider). */
+export function insertDivider(state: EditSel): EditSel {
+  return insertBlock(state, "---", { end: 3, start: 3 });
+}
+
+const TABLE_SKELETON = "| Column | Column |\n| --- | --- |\n|  |  |";
+
+/** Insert an empty 2x2 GFM table below the current line (web toolbar's
+ * Table). Caret lands selecting the first header cell's placeholder word. */
+export function insertTable(state: EditSel): EditSel {
+  return insertBlock(state, TABLE_SKELETON, { end: 8, start: 2 });
+}
+
 const HEADING_RE = /^(#{1,6}) /;
 
 /**

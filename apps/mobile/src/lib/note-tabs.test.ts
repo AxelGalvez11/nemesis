@@ -113,3 +113,12 @@ Deno.test("previewOf looks past a syntax wall at the top of the note", () => {
   const content = "```\n" + "x".repeat(1200) + "\n```\n\nReal prose starts here.";
   assertEquals(previewOf(content), "Real prose starts here.");
 });
+
+Deno.test("previewOf drops YAML frontmatter instead of leaking '---' and keys", () => {
+  const content = "---\ntitle: Cardio\ntags: [exam]\n---\n\nReal prose starts here.";
+  assertEquals(previewOf(content), "Real prose starts here.");
+});
+
+Deno.test("previewOf drops horizontal-rule lines mid-note", () => {
+  assertEquals(previewOf("Above the rule.\n\n---\n\nBelow the rule."), "Above the rule. Below the rule.");
+});

@@ -142,7 +142,10 @@ export interface ThemeColors {
   line2: string;
   /** tokens.json `mutedBorder` twin. */
   lineMuted: string;
-  // text
+  // text — since 2026-07-21 all three tiers resolve to pure #000 (light) /
+  // #fff (dark) (owner: no gray text anywhere). The 3-token split survives
+  // so the 200+ existing call sites didn't have to churn, and so a future
+  // re-introduction of hierarchy is a 2-line palette change.
   text: string;
   text2: string;
   text3: string;
@@ -165,29 +168,35 @@ export interface ThemeColors {
   scrim: string;
 }
 
-// Dark surfaces = the shipped constants, verbatim (no visual change by default).
+// Dark = pure black (owner 2026-07-21: "dark mode should be completely black
+// for all pages", OLED-style). Pages sit at true #000000; cards/menus get
+// only a whisper of lift and lean on the existing hairline borders for their
+// edges. ALL text is pure white — same owner ask killed every gray text tier
+// (the old #e9eaee/#9a9da6/#6f7278 ramp is in git history).
 const DARK_BASE = {
-  bg: "#0e0e0e",
-  bg2: "#0a0a0a",
-  surface: "#161617",
-  surface2: "#1b1b1d",
-  raised: "#202023",
+  bg: "#000000",
+  bg2: "#000000",
+  surface: "#0a0a0a",
+  surface2: "#101010",
+  raised: "#141414",
   glass: "rgba(233,234,238,0.045)",
-  glassPanel: "rgba(24,24,27,0.72)",
-  glassMenu: "rgba(20,20,23,0.94)",
+  glassPanel: "rgba(10,10,10,0.72)",
+  glassMenu: "rgba(8,8,8,0.94)",
   pageShadow: "rgba(0,0,0,0.5)",
   line: "rgba(233,234,238,0.09)",
   line2: "rgba(233,234,238,0.16)",
   lineMuted: "rgba(154,157,166,0.20)",
-  text: "#e9eaee",
-  text2: "#9a9da6",
-  text3: "#6f7278",
+  text: "#ffffff",
+  text2: "#ffffff",
+  text3: "#ffffff",
   scrim: "rgba(0,0,0,0.58)",
 } as const;
 
 // Light = the same monochrome identity on paper. Pure white page (owner
 // 2026-07-21: match ChatGPT's plain white, not the old bluish #f8faff seed);
 // secondary fills are neutral grays so cards/menus still read on white.
+// ALL text is pure black — same owner ask killed every gray text tier
+// (the old #16181d/#5a5e68/#8b8f99 ramp is in git history).
 const LIGHT_BASE = {
   bg: "#ffffff",
   bg2: "#f4f4f5",
@@ -201,9 +210,9 @@ const LIGHT_BASE = {
   line: "rgba(22,24,29,0.10)",
   line2: "rgba(22,24,29,0.18)",
   lineMuted: "rgba(90,94,104,0.22)",
-  text: "#16181d",
-  text2: "#5a5e68",
-  text3: "#8b8f99",
+  text: "#000000",
+  text2: "#000000",
+  text3: "#000000",
   scrim: "rgba(0,0,0,0.35)",
 } as const;
 

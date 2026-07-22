@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ForceSlider } from "@/components/ForceSlider";
-import type { GraphMode, LabelMode } from "@/lib/graph-settings";
+import type { LabelMode } from "@/lib/graph-settings";
 import { LABEL_MODES } from "@/lib/graph-settings";
 import type { ThemeColors } from "@/theme/palette";
 import { radius, space, type } from "@/theme/tokens";
@@ -9,14 +9,11 @@ import { radius, space, type } from "@/theme/tokens";
 // that file stays focused on data/physics/gesture orchestration (see its
 // top-of-file comment for why the panel is a FLOATING overlay, not in-flow).
 //
-// Mirrors the web Graph's controls-panel.tsx: a mode toggle (2D | 3D — the
-// web version keeps this same segmented-button shape at the top of its own
-// panel) plus the same handful of sliders web exposes, translated to what's
-// cheap on a phone screen:
-//   - Node size, Gravity, Repulsion, Link distance/Spread — direct 1:1 ports
-//     (graph.tsx's existing ForceSlider rows), present in both modes.
-//   - Rotation speed — 3D-only (auto-orbit strength), shown only when
-//     mode==="3d".
+// Mirrors the web Graph's controls-panel.tsx, translated to what's cheap on
+// a phone screen (the 2D/3D mode toggle and Rotation-speed slider were
+// removed with 3D mode itself, owner ask 2026-07-21 — git history has them):
+//   - Node size, Gravity, Repulsion, Link distance — direct 1:1 ports
+//     (graph.tsx's existing ForceSlider rows).
 //   - Labels — kept as the existing All/Hubs/None 3-way segment rather than
 //     web's separate boolean "Node names" switch + numeric "Label size"
 //     slider: two more controls would crowd a panel this narrow, and the
@@ -32,8 +29,6 @@ import { radius, space, type } from "@/theme/tokens";
 interface GraphSettingsPanelProps {
   c: ThemeColors;
   top: number;
-  mode: GraphMode;
-  onModeChange: (mode: GraphMode) => void;
   gravity: number;
   onGravityChange: (value: number) => void;
   repulsion: number;
@@ -42,23 +37,14 @@ interface GraphSettingsPanelProps {
   onNodeSizeChange: (value: number) => void;
   linkDistance: number;
   onLinkDistanceChange: (value: number) => void;
-  rotationSpeed: number;
-  onRotationSpeedChange: (value: number) => void;
   labelMode: LabelMode;
   onLabelModeChange: (mode: LabelMode) => void;
   onReset: () => void;
 }
 
-const MODES: { id: GraphMode; label: string }[] = [
-  { id: "2d", label: "2D" },
-  { id: "3d", label: "3D" },
-];
-
 export function GraphSettingsPanel({
   c,
   top,
-  mode,
-  onModeChange,
   gravity,
   onGravityChange,
   repulsion,
@@ -67,8 +53,6 @@ export function GraphSettingsPanel({
   onNodeSizeChange,
   linkDistance,
   onLinkDistanceChange,
-  rotationSpeed,
-  onRotationSpeedChange,
   labelMode,
   onLabelModeChange,
   onReset,
@@ -76,37 +60,10 @@ export function GraphSettingsPanel({
   const styles = panelStyles(c);
   return (
     <View style={[styles.panel, { top }]} testID="graph-settings-panel">
-      <View style={styles.labelsRow}>
-        <Text style={styles.panelLabel}>Mode</Text>
-        <View style={styles.segment} testID="graph-mode-toggle">
-          {MODES.map((entry) => (
-            <Pressable
-              key={entry.id}
-              onPress={() => onModeChange(entry.id)}
-              style={[styles.segmentItem, mode === entry.id && styles.segmentItemActive]}
-              testID={`graph-mode-${entry.id}`}
-            >
-              <Text style={[styles.segmentText, mode === entry.id && styles.segmentTextActive]}>{entry.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-
       <ForceSlider c={c} label="Gravity" max={3} min={0} onChange={onGravityChange} step={0.1} value={gravity} />
       <ForceSlider c={c} label="Repulsion" max={4} min={0.2} onChange={onRepulsionChange} step={0.1} value={repulsion} />
       <ForceSlider c={c} label="Node size" max={2} min={0.5} onChange={onNodeSizeChange} step={0.1} value={nodeSize} />
-      <ForceSlider
-        c={c}
-        label={mode === "3d" ? "Spread" : "Link distance"}
-        max={2}
-        min={0.5}
-        onChange={onLinkDistanceChange}
-        step={0.1}
-        value={linkDistance}
-      />
-      {mode === "3d" ? (
-        <ForceSlider c={c} label="Rotation speed" max={3} min={0} onChange={onRotationSpeedChange} step={0.2} value={rotationSpeed} />
-      ) : null}
+      <ForceSlider c={c} label="Link distance" max={2} min={0.5} onChange={onLinkDistanceChange} step={0.1} value={linkDistance} />
 
       <View style={styles.labelsRow}>
         <Text style={styles.panelLabel}>Labels</Text>

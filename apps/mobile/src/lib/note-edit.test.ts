@@ -2,7 +2,15 @@
 // selection-aware markdown transforms behind the phone note editor's toolbar.
 // Run: deno test --no-check apps/mobile/src/lib/note-edit.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { cycleHeading, toggleLinePrefix, wrapInline } from "./note-edit.ts";
+import {
+  cycleHeading,
+  insertDivider,
+  insertLink,
+  insertTable,
+  toggleLinePrefix,
+  toggleNumberedList,
+  wrapInline,
+} from "./note-edit.ts";
 
 // --- wrapInline (bold / italic / wikilink) -----------------------------------
 
@@ -98,4 +106,51 @@ Deno.test("cycleHeading: multi-line selection applies the first line's next leve
 
 Deno.test("cycleHeading: only the caret's line changes, not its neighbors", () => {
   assertEquals(cycleHeading({ text: "a\nb\nc", start: 2, end: 2 }), { text: "a\n# b\nc", start: 4, end: 4 });
+});
+
+// --- web-parity additions (owner 2026-07-21) ---------------------------------
+
+Deno.test("toggleNumberedList: numbers a multi-line selection sequentially", () => {
+  assertEquals(toggleNumberedList({ text: "a\nb\nc", start: 0, end: 5 }).text, "1. a\n2. b\n3. c");
+});
+
+Deno.test("toggleNumberedList: fully-numbered selection unNumbers", () => {
+  assertEquals(toggleNumberedList({ text: "1. a\n2. b", start: 0, end: 9 }).text, "a\nb");
+});
+
+Deno.test("toggleNumberedList: partially-numbered selection renumbers uniformly", () => {
+  assertEquals(toggleNumberedList({ text: "5. a\nb", start: 0, end: 6 }).text, "1. a\n2. b");
+});
+
+Deno.test("insertLink: selection becomes the label, url placeholder selected", () => {
+  const out = insertLink({ text: "see docs now", start: 4, end: 8 });
+  assertEquals(out.text, "see [docs](url) now");
+  assertEquals(out.text.slice(out.start, out.end), "url");
+});
+
+Deno.test("insertLink: bare caret inserts a skeleton with the caret in the label", () => {
+  const out = insertLink({ text: "ab", start: 1, end: 1 });
+  assertEquals(out.text, "a[](url)b");
+  assertEquals(out.start, 2);
+  assertEquals(out.end, 2);
+});
+
+Deno.test("insertDivider: lands below the current line, blank-line separated", () => {
+  const out = insertDivider({ text: "para one\npara two", start: 2, end: 2 });
+  assertEquals(out.text, "para one\n\n---\n\npara two");
+  assertEquals(out.text.slice(0, out.start), "para one\n\n---");
+});
+
+Deno.test("insertDivider: at the end of the document adds no dangling gap", () => {
+  assertEquals(insertDivider({ text: "para", start: 4, end: 4 }).text, "para\n\n---");
+});
+
+Deno.test("insertDivider: in an empty document inserts just the rule", () => {
+  assertEquals(insertDivider({ text: "", start: 0, end: 0 }).text, "---");
+});
+
+Deno.test("insertTable: skeleton lands as its own block, first header cell selected", () => {
+  const out = insertTable({ text: "above", start: 5, end: 5 });
+  assertEquals(out.text, "above\n\n| Column | Column |\n| --- | --- |\n|  |  |");
+  assertEquals(out.text.slice(out.start, out.end), "Column");
 });

@@ -62,7 +62,11 @@ const createStyles = (c: ThemeColors) =>
     },
     pillPressed: { backgroundColor: c.surface2 },
     pillText: { ...type.small, color: c.text2 },
-    list: { maxHeight: 420 },
+    // No height cap of its own — SlideUpSheet's body owns the sheet height
+    // (collapsed cap + drag-up-to-expand, owner 2026-07-21). flexShrink lets
+    // the scroll area compress to the body's animated maxHeight instead of
+    // overflowing it.
+    list: { flexShrink: 1 },
     row: { paddingVertical: space(3) },
     rowDivider: { borderTopWidth: 1, borderTopColor: c.line },
     rowPressed: { backgroundColor: c.surface },

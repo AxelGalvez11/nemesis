@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassSurface } from "./GlassSurface";
 import { CloseIcon, PlusIcon } from "./icons";
@@ -50,6 +50,9 @@ export function NoteTabsSheet({
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    // Inline sheet, not a native modal — the keyboard would sit ABOVE it, so
+    // drop the keyboard whenever the sheet opens (owner 2026-07-21).
+    if (visible) Keyboard.dismiss();
     Animated.timing(progress, {
       toValue: visible ? 1 : 0,
       duration: visible ? 240 : 180,

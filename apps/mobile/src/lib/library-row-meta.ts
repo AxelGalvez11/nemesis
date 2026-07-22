@@ -1,10 +1,11 @@
 // Pure per-row presentation helpers for the phone Library list (library.tsx):
-// which small glyph a note gets, its one-line content preview, and how many notes
-// sit under a folder. Dependency-free like library-sync.ts (no react-native, no
-// supabase client) so it loads clean under Deno (`deno test --no-check src/`).
-// Deliberately its OWN module rather than an addition to library-sync.ts — that
-// file is shared with study-session.ts, note-graph.ts, and agenda.ts, and none of
-// them need any of this.
+// which small glyph a note gets and how many notes sit under a folder.
+// Dependency-free like library-sync.ts (no react-native, no supabase client)
+// so it loads clean under Deno (`deno test --no-check src/`). Deliberately its
+// OWN module rather than an addition to library-sync.ts — that file is shared
+// with study-session.ts, note-graph.ts, and agenda.ts, and none of them need
+// any of this. (firstContentLine, the old one-line row preview, was removed
+// with the preview itself — owner 2026-07-21, title-only rows; git history.)
 
 /** The three glyphs the owner asked for. Everything the cloud Library holds today
  * is kind:"note" with markdown/plain content (see api/cloudLibrary.ts's
@@ -21,40 +22,6 @@ export function fileKindOf(path: string): FileKind {
   if (ext === "pdf") return "pdf";
   if (ext === "doc" || ext === "docx") return "doc";
   return "note";
-}
-
-/** First non-empty line of a note's markdown content, common leading markup
- * stripped (heading/bullet/numbered/blockquote markers) so a row preview reads
- * as plain text rather than raw syntax. Scans with indexOf rather than
- * content.split("\n") so one very long note never allocates an array of every
- * line just to read its first one.
- *
- * `skipIfMatches` (the row's own title) skips a leading "# Title" heading that
- * would otherwise just repeat the title already shown above the preview — a
- * common shape for notes whose first line is their own H1. Returns "" when the
- * document has no usable line (empty, whitespace-only, or nothing left after
- * skipping the title line), so the caller can simply omit the row. */
-export function firstContentLine(content: string, skipIfMatches?: string): string {
-  const skip = skipIfMatches?.trim().toLowerCase();
-  const len = content.length;
-  let start = 0;
-  while (start <= len) {
-    let end = content.indexOf("\n", start);
-    if (end === -1) end = len;
-    const raw = content.slice(start, end).trim();
-    start = end + 1;
-    if (raw) {
-      const cleaned = raw
-        .replace(/^#{1,6}\s+/, "")
-        .replace(/^[-*+]\s+/, "")
-        .replace(/^\d+[.)]\s+/, "")
-        .replace(/^>\s+/, "")
-        .trim();
-      if (cleaned && cleaned.toLowerCase() !== skip) return cleaned;
-    }
-    if (end >= len) break;
-  }
-  return "";
 }
 
 /** Recursive note count per folder path: every ancestor folder of every note

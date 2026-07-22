@@ -22,7 +22,7 @@ import { EmptyBlock, MissionButton, Surface } from "@/components/mission-ui";
 import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { fetchLibrary, loadCachedLibrary, type CloudLibraryNote, type CloudLibrarySnapshot } from "@/api/cloudLibrary";
 import { buildLibraryRows, type LibraryRow } from "@/lib/library-sync";
-import { fileKindOf, firstContentLine, folderNoteCounts, type FileKind } from "@/lib/library-row-meta";
+import { fileKindOf, folderNoteCounts, type FileKind } from "@/lib/library-row-meta";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -47,10 +47,12 @@ import { radius, space, type } from "@/theme/tokens";
 // mount" are the same event in this app.
 //
 // Document identity (owner 2026-07-20, distinct from Study's progress identity):
-// each note row gets a small file-kind glyph and, in the default tree view only,
-// a one-line content preview under the title — both sourced from lib/library-
-// row-meta.ts, pure helpers reading data this screen already has in memory (see
-// notesByPath below). Folder headers show a recursive item count.
+// each note row gets a small file-kind glyph, sourced from lib/library-row-
+// meta.ts. Note rows are TITLE-ONLY (owner 2026-07-21 — the old one-line
+// content preview leaked frontmatter "---" delimiters and is gone); the only
+// secondary line left is the folder breadcrumb in flat/search & sort views,
+// which disambiguates same-named notes. Folder headers show a recursive item
+// count.
 //
 // Read-only controls (this screen owns the UI, never the data): a Search that filters
 // the list, a Sort half-sheet that reorders it, and New note / New folder buttons that
@@ -382,14 +384,12 @@ export default function LibraryScreen() {
               </Pressable>
             );
           }
-          // Note row: parent-path breadcrumb (flat/search & sort views, unchanged
-          // behavior) OR a one-line content preview (default tree view, new) — the
-          // two never show together, so a row always has at most one secondary
-          // line under the title, same as before.
+          // Note row: title only (owner 2026-07-21). The parent-path breadcrumb
+          // survives in flat/search & sort views — it's location, not a
+          // description, and it disambiguates same-named notes across folders.
           const parent = flat ? folderOf(item.path) : "";
           const note = notesByPath.get(item.path);
           const kind: FileKind = note ? fileKindOf(note.path) : "note";
-          const preview = !flat && note ? firstContentLine(note.content, item.title) : "";
           return (
             <Pressable
               style={({ pressed }) => [styles.row, indent, pressed && styles.rowPressed]}
@@ -408,11 +408,7 @@ export default function LibraryScreen() {
               )}
               <View style={styles.rowTextCol}>
                 <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
-                {parent ? (
-                  <Text style={styles.rowMeta} numberOfLines={1}>{parent}</Text>
-                ) : preview ? (
-                  <Text style={styles.rowMeta} numberOfLines={1}>{preview}</Text>
-                ) : null}
+                {parent ? <Text style={styles.rowMeta} numberOfLines={1}>{parent}</Text> : null}
               </View>
             </Pressable>
           );
