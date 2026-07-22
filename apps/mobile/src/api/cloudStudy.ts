@@ -162,10 +162,15 @@ export interface DeckGroupInfo {
   leaf: string;
 }
 
-/** Splits a deck's `Group::Subgroup::Leaf` name — replaces the old Mac
- *  `snapshot.course` folder key. Everything before the LAST "::" becomes one
- *  flat group label (no recursive sub-tree, matching this screen's existing
- *  single-level folder-collapse UI). */
+/** Splits a deck's `Group::Subgroup::Leaf` name into "everything before the
+ *  last ::" and the leaf — replaces the old Mac `snapshot.course` folder key.
+ *
+ *  `group` is the deck's whole parent path as ONE string ("Pharm::Cardio"),
+ *  which is what callers that just need "where does this deck live" want
+ *  (StudyAddSheet's group picker, the Study screen's leaf label). It is NOT a
+ *  folder label — rendering it as one is the bug fixed on 2026-07-22. The
+ *  Study screen builds its real nested tree from raw deck names via
+ *  lib/deck-tree.ts; use that whenever you need per-level folders. */
 export function deckGroupInfo(name: string): DeckGroupInfo {
   const parts = name.split("::").map((part) => part.trim()).filter(Boolean);
   if (parts.length <= 1) return { group: "", leaf: parts[0] ?? name };

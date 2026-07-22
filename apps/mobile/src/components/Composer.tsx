@@ -198,7 +198,10 @@ export function Composer({
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}
-      placeholderTextColor={c.text3}
+      // Gray on purpose (owner 2026-07-22) — one of only two exceptions to the
+      // flat pure-black/white text, since a placeholder at full strength reads
+      // as a message the student already typed.
+      placeholderTextColor={c.textHint}
       multiline
       editable={!sending}
     />

@@ -165,6 +165,15 @@ export interface ThemeColors {
   text: string;
   text2: string;
   text3: string;
+  /** The ONE deliberately-muted text tone (owner 2026-07-22). The flatten
+   *  above is global and stays that way; this token exists for the two places
+   *  the owner asked to keep gray — the chat composer's placeholder and the
+   *  landing chat suggestions — because both are prompts for text that isn't
+   *  there yet, and at full strength they read as content the student wrote.
+   *  Hint text is exempt from the body contrast floor by design; do NOT route
+   *  it through the accent/status contrast machinery, and do NOT reach for it
+   *  as a general "secondary text" shade — that's what the flatten removed. */
+  textHint: string;
   // accent family
   accent: string;
   accentDim: string;
@@ -206,6 +215,8 @@ const DARK_BASE = {
   text: "#ffffff",
   text2: "#ffffff",
   text3: "#ffffff",
+  // The old mid-gray tier, kept alive for hint text only (see textHint).
+  textHint: "#9a9da6",
   scrim: "rgba(0,0,0,0.58)",
 } as const;
 
@@ -231,6 +242,8 @@ const LIGHT_BASE = {
   text: "#000000",
   text2: "#000000",
   text3: "#000000",
+  // The old mid-gray tier, kept alive for hint text only (see textHint).
+  textHint: "#8b8f99",
   scrim: "rgba(0,0,0,0.35)",
 } as const;
 
