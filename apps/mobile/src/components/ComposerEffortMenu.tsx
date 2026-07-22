@@ -30,7 +30,7 @@ import { radius, space, type } from "@/theme/tokens";
  *  its own layout maths reads it from here rather than guessing. */
 export const EFFORT_PILL_HEIGHT = 36;
 
-export function EffortPill({
+export function EffortLabel({
   effort,
   open,
   onToggle,
@@ -40,20 +40,20 @@ export function EffortPill({
   onToggle: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
-  const { colors: c } = useTheme();
 
   return (
     <Pressable
       onPress={onToggle}
-      hitSlop={6}
+      hitSlop={8}
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
       accessibilityLabel={`Intelligence: ${CHAT_EFFORT_LABEL[effort]}`}
       testID="composer-effort-pill"
+      style={styles.label}
     >
-      <GlassSurface style={[styles.pill, open && styles.pillOpen]} fallbackColor={c.glassPanel}>
-        <Text style={styles.pillLabel} numberOfLines={1}>{CHAT_EFFORT_LABEL[effort]}</Text>
-      </GlassSurface>
+      <Text style={[styles.labelText, open && styles.labelTextOpen]} numberOfLines={1}>
+        {CHAT_EFFORT_LABEL[effort]}
+      </Text>
     </Pressable>
   );
 }
@@ -140,30 +140,17 @@ function CheckIcon({ size = 16, color }: { size?: number; color: string }) {
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-    // Tight on purpose, and it had to get tighter: in the compact one-row
-    // composer this pill shares the row with "+", the field and two round
-    // buttons, and the first screenshot pass showed a three-word draft wrapping
-    // onto a second line because the field had been squeezed to ~130pt. So the
-    // chevron went (the glass edge, and the accent edge when open, carry the
-    // affordance) and the label dropped to 13pt. "Instant", the longest label,
-    // now costs ~58pt instead of ~84 — the difference lands in the draft field.
-    // flexShrink:0 keeps the pill from being the thing that collapses instead.
-    pill: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      flexShrink: 0,
-      height: EFFORT_PILL_HEIGHT,
-      paddingHorizontal: space(2),
-      borderRadius: radius.pill,
-      borderWidth: 1,
-      borderColor: c.line,
-    },
-    pillOpen: { borderColor: c.accentLine, backgroundColor: c.accentFaint },
-    pillLabel: { fontSize: 13, lineHeight: 17, color: c.text, fontWeight: "600" },
-    // Left-aligned with the composer's own inset so the menu hangs under the
-    // pill rather than floating in the middle of the screen.
-    menuWrap: { position: "absolute", left: space(3), minWidth: 176 },
+    // BARE TEXT, no box (owner reference screenshot 2026-07-22 — the level
+    // reads as a quiet label just left of the mic, exactly where ChatGPT puts
+    // its own). It was a bordered glass pill for one revision; the box made it
+    // compete with the round buttons beside it and cost width the draft field
+    // needed. flexShrink:0 so it's never the thing that collapses.
+    label: { flexShrink: 0, justifyContent: "center", height: EFFORT_PILL_HEIGHT, paddingHorizontal: space(1) },
+    labelText: { fontSize: 15, lineHeight: 20, color: c.text2, fontWeight: "500" },
+    labelTextOpen: { color: c.accent, fontWeight: "600" },
+    // Hangs under the RIGHT end of the composer now that the label lives there
+    // — a left-anchored menu would point at the "+" instead.
+    menuWrap: { position: "absolute", right: space(3), minWidth: 176 },
     menu: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden" },
     row: { flexDirection: "row", alignItems: "center", gap: space(2.5), paddingVertical: space(3), paddingHorizontal: space(4) },
     rowDivider: { borderTopWidth: 1, borderTopColor: c.line },

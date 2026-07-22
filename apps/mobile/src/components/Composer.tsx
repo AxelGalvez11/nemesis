@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import Svg, { Circle, Line, Rect } from "react-native-svg";
 import { ArrowUpIcon, CloseIcon, MicIcon, PlusIcon } from "./icons";
-import { EffortPill } from "./ComposerEffortMenu";
+import { EffortLabel } from "./ComposerEffortMenu";
 import { LiveWaveform } from "./LiveWaveform";
 import type { ChatEffort } from "@/lib/chat-effort";
 import { useSpeechInput } from "@/hooks/useSpeechInput";
@@ -30,9 +30,9 @@ import { radius, space, type } from "@/theme/tokens";
 // Record now lives on the composer itself, laid out like ChatGPT's voice
 // button, and the composer is the ONLY control surface for it:
 //
-//   chat, empty   "+" [Medium ⌄]  field      mic        (∿) enter record
-//   chat, draft   "+" [Medium ⌄]  field      mic        (↑) send
-//   record mode   (●) start       live waveform         (✕) leave record
+//   chat, empty   "+"        field     Medium · mic · (∿) enter record
+//   chat, draft   "+"        field     Medium · mic · (↑) send
+//   record mode   (●) start  live waveform        · (✕) leave record
 //
 // Every transformation the owner asked for is in that table: the round accent
 // button swaps its wave glyph for an ✕ to escape, "+" becomes the record
@@ -46,11 +46,11 @@ import { radius, space, type } from "@/theme/tokens";
 // Send and record — never both at once, since two accent-filled circles side
 // by side read as one control split in half.
 //
-// The Instant/Medium/High intelligence dial is the PILL right of "+" (owner
-// 2026-07-22: "it should have its own pill box"). It spent one revision as
-// three rows inside the "+" menu and came back out, so the current level reads
-// off the row without opening anything. The pill renders here;
-// ComposerEffortMenu.tsx explains why its dropdown belongs to the caller.
+// The Instant/Medium/High intelligence dial is the BARE TEXT label in the
+// trailing cluster, just left of the mic — the owner's reference screenshot
+// (2026-07-22) puts it exactly there. It has moved twice: three rows inside the
+// "+" menu, then a bordered pill left of the field, now this. The label renders
+// here; ComposerEffortMenu.tsx explains why its dropdown belongs to the caller.
 //
 // The accent circle is ACCENT-colored, never a hardcoded green — it follows
 // whatever swatch the student picked in Appearance settings (owner
@@ -286,12 +286,12 @@ export function Composer({
       <PlusIcon size={22} color={c.text} strokeWidth={1.9} />
     </Bounce>
   );
-  // The intelligence pill, immediately right of "+" — its own control on the
-  // row rather than a row inside the "+" menu (owner 2026-07-22). The menu it
-  // opens is the CALLER's to render, at the screen root; see
-  // ComposerEffortMenu.tsx for why it can't live inside this card.
-  const effortPill = effort && onEffortToggle ? (
-    <EffortPill effort={effort} open={effortMenuOpen} onToggle={onEffortToggle} />
+  // The intelligence level, as bare text just left of the mic — the owner's
+  // reference screenshot puts it there, in the trailing cluster, not on the
+  // left beside "+" where it spent one revision. The menu it opens is the
+  // CALLER's to render, at the screen root; see ComposerEffortMenu.tsx.
+  const effortLabel = effort && onEffortToggle ? (
+    <EffortLabel effort={effort} open={effortMenuOpen} onToggle={onEffortToggle} />
   ) : null;
   // Dictation is ALWAYS on the card (owner 2026-07-22: "also add dictation to
   // the chat composer"). It used to share the trailing slot with Send and so
@@ -352,8 +352,8 @@ export function Composer({
       <View style={[styles.card, styles.cardCompact]}>
         <View style={styles.compactRow}>
           {plusButton}
-          {effortPill}
           {field}
+          {effortLabel}
           {micButton}
           {sendOrRecordButton}
         </View>
@@ -366,8 +366,8 @@ export function Composer({
       {field}
       <View style={styles.controls}>
         {plusButton}
-        {effortPill}
         <View style={styles.trailing}>
+          {effortLabel}
           {micButton}
           {sendOrRecordButton}
         </View>

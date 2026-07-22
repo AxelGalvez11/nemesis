@@ -16,6 +16,7 @@ import {
 } from "@/api/cloudStudy";
 import { normalizeCardText } from "@/lib/card-text";
 import { clozeParts } from "@/lib/study-session";
+import { activeClozeNumber, hasCloze, renderCloze } from "@/lib/study-cloze";
 import { createMarkdownStyles } from "@/theme/markdown";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -123,12 +124,29 @@ export default function ReviewScreen() {
   const front = useMemo(() => normalizeCardText(current?.front ?? ""), [current?.front]);
   const back = useMemo(() => normalizeCardText(current?.back ?? ""), [current?.back]);
 
-  // Cloze cards arrive as author-written "front"/"back" text (web's Study
-  // browser); clozeParts only lights up when the two align as a blanked/full
-  // mirror pair (the historic Mac format). It safely falls through to plain
-  // Q/A markdown otherwise — that's expected for freshly-authored cloud cloze
-  // cards, not a bug.
-  const clozeSplit = current && current.cardType === "cloze" ? clozeParts(front, back) : null;
+  // TWO different cloze formats reach this screen, and they need opposite
+  // treatment — check the Anki one FIRST.
+  //
+  // 1. Anki syntax, `{{c1::answer}}`, sitting raw in the card's own text (every
+  //    .apkg import, the Captain Hook starter deck included). study-cloze.ts
+  //    rewrites it to markdown: a bold [...] until revealed, the answer after.
+  //    Until 2026-07-22 nothing on the phone parsed this at all, so the braces
+  //    reached the screen as literal text (owner screenshot).
+  // 2. The historic Mac format: an author-written blanked front mirroring a
+  //    full back, which clozeParts recovers by aligning the two strings.
+  //
+  // Format 1 must win, because clozeParts FALSE-FIRES on it: its guard only
+  // asks whether the front contains "[", and every one of these cards opens
+  // with a markdown image — `![](…)` — so it "aligned" two unrelated strings
+  // and rendered the garbage through a plain <Text>, which is also why the
+  // images and *emphasis* stayed literal. Anything with {{c}} skips it.
+  const ankiCloze = hasCloze(front);
+  const activeCloze = ankiCloze ? activeClozeNumber(front, current?.repetitions ?? 0) : null;
+  // What the prompt actually renders — markdown either way, so images and
+  // emphasis work. Never a bare <Text>: the answer to one of these blanks is
+  // itself usually an image.
+  const promptText = ankiCloze ? renderCloze(front, activeCloze, revealed) : front;
+  const clozeSplit = current && current.cardType === "cloze" && !ankiCloze ? clozeParts(front, back) : null;
 
   // Duplicate-touch latch: a doubled native press event can call grade() twice
   // against the same closure before React re-renders. A ref is synchronous
@@ -228,8 +246,10 @@ export default function ReviewScreen() {
                 <>
                   {/* MessageBody, not a bare Markdown block: it splits LaTeX out
                       and draws it as SVG. Chat already rendered math this way;
-                      flashcards were still showing the raw $…$ source. */}
-                  <MessageBody content={front} styles={promptStyles} />
+                      flashcards were still showing the raw $…$ source. For an
+                      Anki cloze card promptText is the blanked/revealed
+                      rewrite — see the two-formats note above. */}
+                  <MessageBody content={promptText} styles={promptStyles} />
                   {revealed ? (
                     <View style={styles.answerBlock} testID="review-answer">
                       <View style={styles.divider} />
