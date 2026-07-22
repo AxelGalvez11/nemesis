@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
-import { Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, Keyboard, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassSurface } from "./GlassSurface";
 import { CloseIcon, PlusIcon } from "./icons";
+import { useSheetExpand } from "./useSheetExpand";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { radius, space, type } from "@/theme/tokens";
@@ -48,6 +50,9 @@ export function NoteTabsSheet({
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const progress = useRef(new Animated.Value(0)).current;
+  // The card grid starts taller than a list sheet would (0.7 of the window):
+  // two-up cards need the room to show more than one row before you drag.
+  const { bodyMaxHeight, headerPan } = useSheetExpand({ visible, onClose, collapsedRatio: 0.7, collapsedCap: 620 });
 
   useEffect(() => {
     // Inline sheet, not a native modal — the keyboard would sit ABOVE it, so
@@ -67,9 +72,22 @@ export function NoteTabsSheet({
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"} testID="note-tabs-sheet">
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close tabs" />
       <Animated.View style={[styles.sheetWrap, { transform: [{ translateY }] }]}>
-        <GlassSurface style={[styles.sheet, { maxHeight: Math.round(height * 0.78) }]} fallbackColor={c.bg2}>
-          <View style={styles.sheetHandle} />
-          <ScrollView contentContainerStyle={styles.grid} showsVerticalScrollIndicator={false}>
+        <GlassSurface style={styles.sheet} fallbackColor={c.bg2}>
+          {/* Drag the grabber to resize (owner 2026-07-22: "any popup menu from
+              the bottom should allow the user to swipe/drag it up to expand its
+              size"). The height cap moved off this surface and onto the scroll
+              area below, because the hook animates the BODY's maxHeight — a
+              fixed cap out here would just override it. */}
+          <GestureDetector gesture={headerPan}>
+            <View style={styles.handleRow}>
+              <View style={styles.sheetHandle} />
+            </View>
+          </GestureDetector>
+          <Animated.ScrollView
+            style={{ maxHeight: bodyMaxHeight }}
+            contentContainerStyle={styles.grid}
+            showsVerticalScrollIndicator={false}
+          >
             {tabs.map((tab) => {
               const active = tab.id === activeId;
               return (
@@ -107,7 +125,7 @@ export function NoteTabsSheet({
                 </View>
               );
             })}
-          </ScrollView>
+          </Animated.ScrollView>
           <View style={[styles.footer, { paddingBottom: insets.bottom + space(3) }]}>
             <Pressable
               onPress={onNew}
@@ -151,7 +169,10 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: space(4),
       paddingTop: space(3),
     },
-    sheetHandle: { alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: c.line2, marginBottom: space(3) },
+    // The grabber's row is the drag target, padded so there's a real touch
+    // area around a 4pt bar rather than a hairline nobody can catch.
+    handleRow: { paddingTop: space(1), paddingBottom: space(3) },
+    sheetHandle: { alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: c.line2 },
 
     // Two-up card grid; each cell = the preview card plus its label underneath
     // (the reference crop's layout).

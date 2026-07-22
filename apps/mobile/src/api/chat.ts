@@ -37,6 +37,7 @@ import {
   type WireMsg,
 } from "@/lib/chat-thread";
 import { classifyChatRequest, type ChatRouteDecision } from "@/lib/chat-routing";
+import { applyChatEffort, DEFAULT_CHAT_EFFORT, type ChatEffort } from "@/lib/chat-effort";
 import { buildLiveNotesMessages, parseLiveNotes } from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
@@ -246,6 +247,10 @@ export interface SendChatOptions {
    *  records into the persisted ChatMsg it builds for its own history (see
    *  chat.tsx's send(), which uses withAttachmentNote for that). */
   attachedDoc?: AttachedLibraryDoc;
+  /** The composer "+" menu's Instant/Medium/High choice for this turn. An
+   *  explicit pick BEATS the route's own guess (see lib/chat-effort.ts);
+   *  omitted means Medium, which is the classifier's untouched behaviour. */
+  effort?: ChatEffort;
 }
 
 /** One routed completion turn for the signed-in user `uid`: classifies the
@@ -261,9 +266,11 @@ export async function sendChat(
   userText: string,
   options: SendChatOptions = {},
 ): Promise<ChatReply> {
-  const { attachedDoc, forceResearch, onDelta, onPhase } = options;
+  const { attachedDoc, effort = DEFAULT_CHAT_EFFORT, forceResearch, onDelta, onPhase } = options;
   onPhase?.({ kind: "routing" });
-  const decision = forceResearch ? forcedResearchDecision() : classifyChatRequest(userText);
+  // Route first (what KIND of question is this), then let the student's own
+  // dial override how hard to think about it — never the other way round.
+  const decision = applyChatEffort(forceResearch ? forcedResearchDecision() : classifyChatRequest(userText), effort);
   const attachmentContext = attachedDoc ? buildAttachmentContext(attachedDoc) : "";
   let groundedText = attachmentContext ? `${userText}\n\n${attachmentContext}` : userText;
   let sources: ChatSource[] = [];

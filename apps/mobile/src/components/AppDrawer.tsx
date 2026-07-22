@@ -62,6 +62,15 @@ interface ShellState {
    *  so it stays crisp and lines up exactly with the left menu button (owner 2026-07-18). */
   headerRight: ReactNode;
   setHeaderRight: (node: ReactNode) => void;
+  /** Full-screen mode: the page owns the whole display. The TopBar and the
+   *  status-bar blur stop rendering and the drawer's open-swipe is switched
+   *  OFF entirely — not merely confirmed like drawerOpenGuard, which still
+   *  lets the sidebar take over the screen. Chat turns this on for record mode
+   *  (owner 2026-07-22: "the chat page should become full screen, removing the
+   *  ability to swipe away to sidebar"). The way out is the composer's own ✕,
+   *  which stays on screen throughout. */
+  immersive: boolean;
+  setImmersive: (immersive: boolean) => void;
 }
 
 const ShellContext = createContext<ShellState | undefined>(undefined);
@@ -90,6 +99,7 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
   const [headerTitle, setHeaderTitle] = useState<string | null>(null);
   const [headerCenter, setHeaderCenter] = useState<ReactNode>(null);
   const [headerRight, setHeaderRight] = useState<ReactNode>(null);
+  const [immersive, setImmersive] = useState(false);
   // Opening the drawer always drops the keyboard (owner 2026-07-20: swiping to the
   // sidebar should put the keyboard away) — covers the TopBar menu button; the swipe
   // path dismisses in DrawerShell's pan onStart so it drops the moment the drag begins.
@@ -117,13 +127,14 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
       headerTitle, setHeaderTitle,
       headerCenter, setHeaderCenter,
       headerRight, setHeaderRight,
+      immersive, setImmersive,
     }),
-    [open, openDrawer, closeDrawer, newChat, headerTitle, headerCenter, headerRight],
+    [open, openDrawer, closeDrawer, newChat, headerTitle, headerCenter, headerRight, immersive],
   );
 
   return (
     <ShellContext.Provider value={value}>
-      <DrawerShell open={open} onOpen={openDrawer} onClose={closeDrawer} onNewChat={newChat}>
+      <DrawerShell open={open} onOpen={openDrawer} onClose={closeDrawer} onNewChat={newChat} immersive={immersive}>
         {children}
       </DrawerShell>
     </ShellContext.Provider>
@@ -143,12 +154,15 @@ function DrawerShell({
   onOpen,
   onClose,
   onNewChat,
+  immersive,
   children,
 }: {
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
   onNewChat: () => void;
+  /** Switches the open-swipe off outright — see ShellState.immersive. */
+  immersive: boolean;
   children: ReactNode;
 }) {
   const styles = useThemedStyles(createStyles);
@@ -220,8 +234,13 @@ function DrawerShell({
     if (open) pan.activeOffsetX(-14);
     else if (edgeOnly) pan.hitSlop({ left: 0, width: EDGE_WIDTH }).activeOffsetX(12);
     else pan.activeOffsetX(16);
+    // Full-screen page: no swipe to the sidebar at all. Gated only while the
+    // drawer is CLOSED — if it were somehow open, killing the gesture would
+    // trap the student behind a sidebar they can't swipe back (the tap-catcher
+    // still works, but a dead drag reads as a frozen app).
+    if (immersive && !open) pan.enabled(false);
     return pan;
-  }, [open, edgeOnly, onOpen, onClose, progress, panelW, animateTo]);
+  }, [open, edgeOnly, immersive, onOpen, onClose, progress, panelW, animateTo]);
 
   return (
     <View style={styles.shellRoot}>

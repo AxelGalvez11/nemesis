@@ -22,6 +22,12 @@ import { radius, space, type } from "@/theme/tokens";
 // itself now (Composer.tsx's file header has the layout), so recording is one
 // tap from the card rather than two through a menu. Only the row left — record
 // mode itself is untouched.
+//
+// The Instant/Medium/High intelligence dial spent one revision as three rows
+// in here and moved straight back out (owner 2026-07-22: "move the
+// intelligence picker out of the '+' menu, it should have its own pill box").
+// It's ComposerEffortMenu.tsx now — a pill on the composer row itself. Don't
+// re-add it here; the menu is for one-off actions, not the standing dial.
 // Mirrors web's own "+" AddMenu (apps/web/components/workspace/sessions/
 // composer.tsx) in spirit — same two concepts, "Files"→"Attach from Library"
 // and "Deep research" verbatim (right down to reusing a search-glyph icon for

@@ -23,8 +23,9 @@ import { Skeleton } from "@/components/Skeleton";
 import { CloseIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { NoteBlockEditor } from "@/components/NoteBlockEditor";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
-import { NotePillBar } from "@/components/NotePillBar";
+import { NotePillBar, NOTE_PILL_BAR_HEIGHT } from "@/components/NotePillBar";
 import { NoteTabsSheet, type NoteTab } from "@/components/NoteTabsSheet";
+import { StatusBarBlur } from "@/components/StatusBarBlur";
 import { createNote, fetchNote, findCachedNote, loadCachedLibrary, updateNoteContent, type CloudLibraryNote } from "@/api/cloudLibrary";
 import { fileKindOf } from "@/lib/library-row-meta";
 import { outlineOf, splitSections } from "@/lib/note-outline";
@@ -75,7 +76,9 @@ const MENU_ITEMS = [
 
 // The bottom pill bar's rendered height — the reading body's bottom spacer
 // clears it so the last lines stay readable above the floating bar.
-const PILL_BAR_HEIGHT = 52;
+// Re-exported from the bar itself so growing the buttons (owner 2026-07-22)
+// can't leave this spacer short and clip the note's last lines behind it.
+const PILL_BAR_HEIGHT = NOTE_PILL_BAR_HEIGHT;
 
 const EDIT_ON_WEB = "That happens on the web app for now.";
 const CANT_EDIT_KIND = "PDF and Word files can't be edited here — their text is extracted from the original file.";
@@ -132,6 +135,11 @@ export default function NoteScreen() {
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Reading-mode chrome state.
   const [menuOpen, setMenuOpen] = useState(false);
+  // Measured height of the floating chrome column, used as the body's top
+  // inset — see the chrome View's own comment for why it's measured and not a
+  // constant. 0 until the first layout, which is one frame with the title
+  // under the blur and no jump after (the column is above the fold either way).
+  const [chromeHeight, setChromeHeight] = useState(0);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const scrollRef = useRef<ScrollView>(null);
@@ -538,8 +546,30 @@ export default function NoteScreen() {
   );
 
   return (
-    <View style={[styles.flex, { paddingTop: insets.top + space(2) }]} testID="note-screen">
+    <View style={styles.flex} testID="note-screen">
       <Stack.Screen options={{ headerShown: false }} />
+      {/* The blur itself — the same component every tab screen gets from
+          (tabs)/_layout, which this route never had (it lives outside that
+          layout). Strongest under the status bar, eased to fully clear below
+          it, and it never takes touches. Its own zIndex (5) puts it over the
+          note text and under the chrome (10), so source order doesn't matter. */}
+      <StatusBarBlur />
+      {/* The note's chrome FLOATS over the page (owner 2026-07-22: "remove the
+          top header border, and just replace with a fade to blur in the
+          notes"). It used to be a solid band in normal flow, so the note began
+          on a hard horizontal edge — the one screen in the Library flow that
+          did, since note.tsx lives outside (tabs) and never got that layout's
+          StatusBarBlur. Now the text runs up underneath a blur that fades to
+          nothing, exactly like every tab.
+
+          Height is MEASURED rather than assumed: the find bar and the link
+          notice join this column only sometimes, and a hardcoded inset would
+          either clip the title or leave a gap whenever they appear. */}
+      <View
+        style={[styles.chrome, { paddingTop: insets.top + space(2) }]}
+        onLayout={(e) => setChromeHeight(e.nativeEvent.layout.height)}
+        pointerEvents="box-none"
+      >
       {/* Top bar: the back button on the left; on the right, the glass mode pill
           (owner's reference crop): pencil/book read–edit toggle + the "…" menu.
           Back steps OUT OF EDIT first (saving), then out of the note. */}
@@ -620,16 +650,17 @@ export default function NoteScreen() {
           <Text style={styles.noticeText}>{notice}</Text>
         </View>
       ) : null}
+      </View>
 
       {doc === undefined ? (
-        <View style={styles.body} testID="note-skeleton">
+        <View style={[styles.body, { paddingTop: chromeHeight }]} testID="note-skeleton">
           <Skeleton width="65%" height={30} style={styles.skeletonTitle} />
           {NOTE_SKELETON_LINE_WIDTHS.map((w, i) => (
             <Skeleton key={i} width={w} height={16} style={styles.skeletonLine} />
           ))}
         </View>
       ) : doc === null ? (
-        <View style={styles.emptyWrap}>
+        <View style={[styles.emptyWrap, { paddingTop: chromeHeight }]}>
           <EmptyBlock
             title="Note unavailable"
             body="It may have been deleted, or hasn't reached this phone yet — pull to refresh from the Library tab."
@@ -642,7 +673,10 @@ export default function NoteScreen() {
         // shrinks the editor so the caret can't hide under the keyboard (same
         // pattern as the chat screen).
         <KeyboardAvoidingView
-          style={styles.flexGrow}
+          // Padded, not scrolled-under: the caret has to stay put while you
+          // type, so edit mode starts BELOW the floating chrome rather than
+          // running beneath it the way reading mode does.
+          style={[styles.flexGrow, { paddingTop: chromeHeight }]}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           keyboardVerticalOffset={0}
         >
@@ -655,7 +689,10 @@ export default function NoteScreen() {
       ) : (
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={styles.body}
+          // The note runs UP under the floating chrome and fades out behind the
+          // blur — that hand-off is the whole point of the change, so this pad
+          // is the chrome's own measured height and nothing more.
+          contentContainerStyle={[styles.body, { paddingTop: chromeHeight }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -844,6 +881,13 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     flex: { flex: 1, backgroundColor: c.bg },
     flexGrow: { flex: 1 },
+    // The floating chrome column (back button + mode pill, plus the find bar
+    // and link notice when they're up). Above StatusBarBlur's zIndex 5 so the
+    // controls stay crisp instead of being frosted by it — same arrangement,
+    // and the same reason, as TopBar's overlay in the tab shell. "box-none" on
+    // the element itself, so taps land on the buttons and everything else
+    // falls through to the note underneath.
+    chrome: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 },
     // Back on the left; while editing, the Done pill (+ "Saving…" hint) on the right.
     topRow: {
       flexDirection: "row",

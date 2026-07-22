@@ -206,6 +206,11 @@ const createStyles = (c: ThemeColors) =>
     // Sized to its content, not stretched — study.tsx centers this row itself
     // ("compact pill-row", owner's words) rather than this component assuming
     // its own placement.
+    // Borderless (owner 2026-07-22: "remove the pill border at the top of the
+    // study page"). The glass fill alone carries the shape now, so the header
+    // reads as a label you can tap rather than a boxed control sitting on the
+    // page. Open state tints the LABEL instead of an outline that no longer
+    // exists — see triggerOpen below.
     trigger: {
       flexDirection: "row",
       alignItems: "center",
@@ -213,10 +218,8 @@ const createStyles = (c: ThemeColors) =>
       height: TRIGGER_HEIGHT,
       paddingHorizontal: space(4),
       borderRadius: radius.pill,
-      borderWidth: 1,
-      borderColor: c.line,
     },
-    triggerOpen: { borderColor: c.accentLine },
+    triggerOpen: { backgroundColor: c.accentFaint },
     triggerLabel: { ...type.body, color: c.text, fontWeight: "600" },
     menuWrap: { position: "absolute", alignSelf: "center", minWidth: 200 },
     menu: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden" },

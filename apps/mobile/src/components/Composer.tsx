@@ -4,7 +4,9 @@ import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import Svg, { Circle, Line, Rect } from "react-native-svg";
 import { ArrowUpIcon, CloseIcon, MicIcon, PlusIcon } from "./icons";
+import { EffortPill } from "./ComposerEffortMenu";
 import { LiveWaveform } from "./LiveWaveform";
+import type { ChatEffort } from "@/lib/chat-effort";
 import { useSpeechInput } from "@/hooks/useSpeechInput";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
@@ -28,14 +30,27 @@ import { radius, space, type } from "@/theme/tokens";
 // Record now lives on the composer itself, laid out like ChatGPT's voice
 // button, and the composer is the ONLY control surface for it:
 //
-//   chat mode    "+"          field          mic        (◉) enter record
-//   record mode  (●) start    live waveform             (✕) leave record
+//   chat, empty   "+" [Medium ⌄]  field      mic        (∿) enter record
+//   chat, draft   "+" [Medium ⌄]  field      mic        (↑) send
+//   record mode   (●) start       live waveform         (✕) leave record
 //
 // Every transformation the owner asked for is in that table: the round accent
 // button swaps its wave glyph for an ✕ to escape, "+" becomes the record
-// start/stop control, the dictation mic disappears (you are already talking to
-// the microphone), and the field's slot is taken by a waveform of the audio
-// ACTUALLY coming in (LiveWaveform, fed by lib/mic-level.ts).
+// start/stop control, and the field's slot is taken by a waveform of the audio
+// ACTUALLY coming in (LiveWaveform, fed by lib/mic-level.ts). In record mode
+// the dictation mic steps aside — you are already talking to the microphone.
+//
+// The mic holds its own slot in BOTH chat rows (owner 2026-07-22, "also add
+// dictation to the chat composer"): it used to hand that slot to Send and so
+// disappeared the instant you typed. Only the LAST slot swaps now, between
+// Send and record — never both at once, since two accent-filled circles side
+// by side read as one control split in half.
+//
+// The Instant/Medium/High intelligence dial is the PILL right of "+" (owner
+// 2026-07-22: "it should have its own pill box"). It spent one revision as
+// three rows inside the "+" menu and came back out, so the current level reads
+// off the row without opening anything. The pill renders here;
+// ComposerEffortMenu.tsx explains why its dropdown belongs to the caller.
 //
 // The accent circle is ACCENT-colored, never a hardcoded green — it follows
 // whatever swatch the student picked in Appearance settings (owner
@@ -160,6 +175,9 @@ export function Composer({
   modeLocked = false,
   recordingActive = false,
   compact = false,
+  effort,
+  effortMenuOpen = false,
+  onEffortToggle,
 }: {
   value: string;
   onChangeText: (text: string) => void;
@@ -191,6 +209,13 @@ export function Composer({
    *  to one row so the messages own the screen (owner 2026-07-22). Ignored in
    *  record mode, which is one row either way. */
   compact?: boolean;
+  /** The Instant/Medium/High level to show on the pill. Pair it with
+   *  onEffortToggle — without BOTH, no pill renders (every non-chat caller). */
+  effort?: ChatEffort;
+  /** Whether the caller's EffortPopup is currently showing — only spins the
+   *  pill's chevron; the menu itself is the caller's to render. */
+  effortMenuOpen?: boolean;
+  onEffortToggle?: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors: c } = useTheme();
@@ -261,27 +286,40 @@ export function Composer({
       <PlusIcon size={22} color={c.text} strokeWidth={1.9} />
     </Bounce>
   );
-  const sendButton = canSend ? (
-    <Bounce style={[styles.round, styles.sendOn]} onPress={onSend} accessibilityLabel="Send" testID="composer-send">
-      <ArrowUpIcon size={18} color={c.onAccent} />
-    </Bounce>
-  ) : (
+  // The intelligence pill, immediately right of "+" — its own control on the
+  // row rather than a row inside the "+" menu (owner 2026-07-22). The menu it
+  // opens is the CALLER's to render, at the screen root; see
+  // ComposerEffortMenu.tsx for why it can't live inside this card.
+  const effortPill = effort && onEffortToggle ? (
+    <EffortPill effort={effort} open={effortMenuOpen} onToggle={onEffortToggle} />
+  ) : null;
+  // Dictation is ALWAYS on the card (owner 2026-07-22: "also add dictation to
+  // the chat composer"). It used to share the trailing slot with Send and so
+  // vanished the moment you typed a character — which is exactly when someone
+  // reaching for it has already given up on typing. It now holds its own slot
+  // in every state; only its FILL changes, going accent while listening.
+  const micButton = (
     <Bounce
       style={[styles.round, listening && styles.micOn]}
       onPress={onMic}
+      hitSlop={6}
       accessibilityLabel={listening ? "Stop dictation" : "Dictate"}
       testID="composer-mic"
     >
       <MicIcon size={20} color={listening ? c.onAccent : c.text} />
     </Bounce>
   );
-  // The record entry point, right of the mic — ChatGPT's voice button in the
-  // same spot (owner reference crop, 2026-07-22). Only rendered where record
-  // mode is actually wired up, and only while the field is EMPTY: once there's
-  // a draft the trailing slot is about sending it, and two accent-filled
-  // circles side by side read as one control split in half. Same rule the
-  // dictation mic already follows — it gives its slot up to Send too.
-  const recordButton = onModeChange && !canSend ? (
+  // The last slot is whichever action the draft calls for: Send once there's
+  // something to send, otherwise the record entry point — ChatGPT's voice
+  // button in the same spot (owner reference crop, 2026-07-22). They SWAP
+  // rather than stack, because both are accent-filled and two accent circles
+  // side by side read as one control split in half. Record only appears where
+  // record mode is actually wired up; other callers just get Send-or-nothing.
+  const sendOrRecordButton = canSend ? (
+    <Bounce style={[styles.round, styles.sendOn]} onPress={onSend} accessibilityLabel="Send" testID="composer-send">
+      <ArrowUpIcon size={18} color={c.onAccent} />
+    </Bounce>
+  ) : onModeChange ? (
     <Bounce
       style={[styles.round, styles.recordCircle]}
       onPress={() => onModeChange("record")}
@@ -314,9 +352,10 @@ export function Composer({
       <View style={[styles.card, styles.cardCompact]}>
         <View style={styles.compactRow}>
           {plusButton}
+          {effortPill}
           {field}
-          {sendButton}
-          {recordButton}
+          {micButton}
+          {sendOrRecordButton}
         </View>
       </View>
     );
@@ -327,9 +366,10 @@ export function Composer({
       {field}
       <View style={styles.controls}>
         {plusButton}
+        {effortPill}
         <View style={styles.trailing}>
-          {sendButton}
-          {recordButton}
+          {micButton}
+          {sendOrRecordButton}
         </View>
       </View>
     </View>
@@ -386,7 +426,10 @@ const createStyles = (c: ThemeColors) =>
     // upward, not the buttons.
     cardCompact: { paddingTop: space(1), paddingBottom: space(1), gap: 0 },
     compactRow: { flexDirection: "row", alignItems: "flex-end", gap: space(1) },
-    inputCompact: { flex: 1, paddingBottom: space(1.5), paddingHorizontal: space(1) },
+    // minWidth:0 lets the field be the thing that gives way as the row fills —
+    // without it a long draft pushes the row wider than the card and the
+    // trailing buttons drift off the edge.
+    inputCompact: { flex: 1, minWidth: 0, paddingBottom: space(1.5), paddingHorizontal: space(1) },
     recordRow: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(1) },
     // The waveform takes the field's slot — it is what you watch while
     // recording, so it gets all the room the two buttons don't.

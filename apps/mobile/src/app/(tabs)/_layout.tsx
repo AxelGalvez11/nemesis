@@ -1,7 +1,7 @@
 import { Redirect, Slot } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@/auth/AuthProvider";
-import { DrawerProvider } from "@/components/AppDrawer";
+import { DrawerProvider, useShell } from "@/components/AppDrawer";
 import { StatusBarBlur } from "@/components/StatusBarBlur";
 import { TopBar } from "@/components/TopBar";
 import { useTheme } from "@/theme/ThemeProvider";
@@ -31,11 +31,28 @@ export default function AppShellLayout() {
 
   return (
     <DrawerProvider>
-      <View style={{ flex: 1, backgroundColor: c.bg }}>
-        <Slot />
-        <StatusBarBlur />
-        <TopBar />
-      </View>
+      <ShellFrame />
     </DrawerProvider>
+  );
+}
+
+/** The page plus its floating chrome. Split out of the layout above only so it
+ *  can read useShell() — the hook needs a provider ABOVE it, and the layout is
+ *  the component rendering that provider. Chrome disappears in immersive mode
+ *  (chat's record workspace, owner 2026-07-22: "the chat page should become
+ *  full screen"); the page itself never unmounts, so nothing reloads. */
+function ShellFrame() {
+  const { colors: c } = useTheme();
+  const { immersive } = useShell();
+  return (
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
+      <Slot />
+      {immersive ? null : (
+        <>
+          <StatusBarBlur />
+          <TopBar />
+        </>
+      )}
+    </View>
   );
 }

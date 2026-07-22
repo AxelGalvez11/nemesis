@@ -18,7 +18,15 @@ import { radius, space } from "@/theme/tokens";
 // opens the TAB VIEWER (owner 2026-07-21 — NoteTabsSheet's card grid), and ≡
 // jumps to a heading in this note.
 
-const BUTTON = 44;
+// Owner 2026-07-22: "make the buttons bigger in the notes library, because
+// they look a bit small". 44 was the bare iOS minimum target and the glyphs
+// inside it were smaller still, so the bar read as a row of hints rather than
+// buttons. 52 across six buttons plus the bar's padding is 324pt — comfortably
+// inside the narrowest phone this ships to, so nothing has to wrap or shrink.
+const BUTTON = 52;
+/** The bar's own height, exported so note.tsx's bottom scroll spacer clears
+ *  the real control rather than a number that drifts from it. */
+export const NOTE_PILL_BAR_HEIGHT = 62;
 
 export function NotePillBar({
   canForward,
@@ -48,8 +56,8 @@ export function NotePillBar({
   const buttons: { key: string; label: string; disabled?: boolean; onPress: () => void; child: ReactNode }[] = [
     { child: <ChevronGlyph direction="left" color={c.text} />, key: "back", label: "Back", onPress: onBack },
     { child: <ChevronGlyph direction="right" color={canForward ? c.text : c.text3} />, disabled: !canForward, key: "forward", label: "Forward", onPress: onForward },
-    { child: <SearchIcon size={19} color={c.text} strokeWidth={1.9} />, key: "search", label: "Search notes", onPress: onSearch },
-    { child: <PlusIcon size={21} color={busy ? c.text3 : c.text} strokeWidth={1.8} />, disabled: busy, key: "new", label: "New note", onPress: onNew },
+    { child: <SearchIcon size={22} color={c.text} strokeWidth={1.9} />, key: "search", label: "Search notes", onPress: onSearch },
+    { child: <PlusIcon size={24} color={busy ? c.text3 : c.text} strokeWidth={1.8} />, disabled: busy, key: "new", label: "New note", onPress: onNew },
     { child: <RecentsGlyph color={c.text} count={recentCount} countStyle={styles.recentsCount} />, key: "recents", label: "Note tabs", onPress: onRecents },
     { child: <OutlineGlyph color={c.text} />, key: "outline", label: "Note outline", onPress: onOutline },
   ];
@@ -77,7 +85,7 @@ export function NotePillBar({
 function ChevronGlyph({ direction, color }: { direction: "left" | "right"; color: string }) {
   const d = direction === "left" ? "M14.4 5.6 8 12l6.4 6.4" : "M9.6 5.6 16 12l-6.4 6.4";
   return (
-    <Svg width={21} height={21} viewBox="0 0 24 24">
+    <Svg width={24} height={24} viewBox="0 0 24 24">
       <Path d={d} stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
@@ -87,7 +95,7 @@ function ChevronGlyph({ direction, color }: { direction: "left" | "right"; color
 function RecentsGlyph({ color, count, countStyle }: { color: string; count: number; countStyle: object }) {
   return (
     <View style={{ alignItems: "center", justifyContent: "center" }}>
-      <Svg width={21} height={21} viewBox="0 0 24 24">
+      <Svg width={24} height={24} viewBox="0 0 24 24">
         <Rect x="4.2" y="4.2" width="15.6" height="15.6" rx="4" stroke={color} strokeWidth={1.9} fill="none" />
       </Svg>
       <Text style={[countStyle, { color }]}>{count > 9 ? "9+" : Math.max(count, 1)}</Text>
@@ -98,7 +106,7 @@ function RecentsGlyph({ color, count, countStyle }: { color: string; count: numb
 /** ≡ with a shorter middle line — reads as "contents", not a hamburger menu. */
 function OutlineGlyph({ color }: { color: string }) {
   return (
-    <Svg width={21} height={21} viewBox="0 0 24 24">
+    <Svg width={24} height={24} viewBox="0 0 24 24">
       <Line x1="5" y1="7.2" x2="19" y2="7.2" stroke={color} strokeWidth={1.9} strokeLinecap="round" />
       <Line x1="5" y1="12" x2="15.4" y2="12" stroke={color} strokeWidth={1.9} strokeLinecap="round" />
       <Line x1="5" y1="16.8" x2="19" y2="16.8" stroke={color} strokeWidth={1.9} strokeLinecap="round" />
@@ -112,7 +120,7 @@ const createStyles = (c: ThemeColors) =>
       flexDirection: "row",
       alignItems: "center",
       paddingHorizontal: space(1.5),
-      height: 52,
+      height: NOTE_PILL_BAR_HEIGHT,
       borderRadius: radius.pill,
       borderWidth: 1,
       borderColor: c.line,
@@ -120,5 +128,5 @@ const createStyles = (c: ThemeColors) =>
     },
     btn: { width: BUTTON, height: BUTTON, borderRadius: BUTTON / 2, alignItems: "center", justifyContent: "center" },
     btnPressed: { backgroundColor: c.surface },
-    recentsCount: { position: "absolute", fontSize: 9.5, fontWeight: "700", fontVariant: ["tabular-nums"], letterSpacing: -0.2 },
+    recentsCount: { position: "absolute", fontSize: 11, fontWeight: "700", fontVariant: ["tabular-nums"], letterSpacing: -0.2 },
   });
