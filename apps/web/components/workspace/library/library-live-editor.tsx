@@ -44,7 +44,7 @@ interface LibraryLiveEditorProps {
 const editorTheme = EditorView.theme({
   "&": {
     backgroundColor: "transparent",
-    color: "var(--foreground)",
+    color: "hsl(var(--foreground))",
     fontSize: "var(--conversation-text-font-size)",
     minHeight: "38rem",
   },
@@ -59,7 +59,7 @@ const editorTheme = EditorView.theme({
   // editable region is one line tall and a click in the empty area below lands
   // outside it — blurring the editor and hiding the caret. With the min-height
   // here, that click hits the content and places the caret at the end.
-  ".cm-content": { caretColor: "var(--foreground)", minHeight: "38rem", padding: "0.25rem" },
+  ".cm-content": { caretColor: "hsl(var(--foreground))", minHeight: "38rem", padding: "0.25rem" },
   ".cm-line": { padding: "0", transition: "font-size 120ms ease, line-height 120ms ease" },
   ".cm-gutters": { display: "none" },
   ".cm-activeLine": { backgroundColor: "transparent" },

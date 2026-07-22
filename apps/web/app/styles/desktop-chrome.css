@@ -744,11 +744,14 @@
 }
 
 [data-slot='composer-root'] {
-  --composer-fill: color-mix(in srgb, var(--dt-card) 72%, transparent);
+  /* Raised card weight (was 72% / 48%) so the composer keeps its old ~#12/#11
+     shade once the page canvas goes pure black — a bg-relative mix would drag
+     it down to the black page and collapse the "composer stays lighter" intent. */
+  --composer-fill: color-mix(in srgb, var(--dt-card) 90%, transparent);
 }
 
 [data-slot='composer-root'][data-thread-scrolled-up] {
-  --composer-fill: color-mix(in srgb, var(--dt-card) 48%, transparent);
+  --composer-fill: color-mix(in srgb, var(--dt-card) 85%, transparent);
 }
 
 /* ── ChatGPT-style activity narration (student build) ─────────────────────── */

@@ -1306,16 +1306,16 @@
    (globals.css :root / [data-theme="dark"]): Nemesis paper light, desktop near-black dark,
    crimson accent dot. "system" previews as a split light/dark swatch. */
 [data-theme-preview="system"] { color: #dadada; }
-[data-theme-preview="system"] .tp-rail { background: linear-gradient(90deg, #eef0f6 0 50%, #0a0a0a 50% 100%); }
-[data-theme-preview="system"] .tp-page { background: linear-gradient(90deg, #f8faff 0 50%, #0e0e0e 50% 100%); }
+[data-theme-preview="system"] .tp-rail { background: linear-gradient(90deg, #eef0f6 0 50%, #000000 50% 100%); }
+[data-theme-preview="system"] .tp-page { background: linear-gradient(90deg, #f8faff 0 50%, #000000 50% 100%); }
 [data-theme-preview="system"] .tp-dot { background: #ff2740; }
 [data-theme-preview="light"] { color: #16181d; }
 [data-theme-preview="light"] .tp-rail { background: #eef0f6; }
 [data-theme-preview="light"] .tp-page { background: #f8faff; }
 [data-theme-preview="light"] .tp-dot { background: #cc1f33; }
-[data-theme-preview="dark"] { color: #eaeaea; }
-[data-theme-preview="dark"] .tp-rail { background: #0a0a0a; }
-[data-theme-preview="dark"] .tp-page { background: #0e0e0e; }
+[data-theme-preview="dark"] { color: #ffffff; }
+[data-theme-preview="dark"] .tp-rail { background: #000000; }
+[data-theme-preview="dark"] .tp-page { background: #000000; }
 [data-theme-preview="dark"] .tp-dot { background: #ff2740; }
 /* the consolidated Settings modal is wider so the left nav + content sit comfortably side by side */
 .app-modal-wide { width: min(840px, calc(100vw - 32px)); height: min(86vh, 580px); }
