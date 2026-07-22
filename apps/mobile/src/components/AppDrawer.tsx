@@ -50,6 +50,13 @@ interface ShellState {
   /** The TopBar's center label: null → blank (owner call 2026-07-18, no logo/wordmark chrome); a string → that title. */
   headerTitle: string | null;
   setHeaderTitle: (title: string | null) => void;
+  /** A CONTROL in the TopBar's center slot, in place of the title — Study puts
+   *  its Cards/Tests/Mindmaps dropdown here (owner 2026-07-22: "remove 'study'
+   *  text and move the toggle in its place"), buying back the whole row the
+   *  switcher used to occupy under the bar. Wins over headerTitle when both
+   *  are set, and unlike the title slot it accepts taps. */
+  headerCenter: ReactNode;
+  setHeaderCenter: (node: ReactNode) => void;
   /** Optional right-side TopBar chrome — a screen's own action (Graph's gear, Chat's
    *  "…" menu). Rendered in the top-right slot, which paints ABOVE the status-bar blur,
    *  so it stays crisp and lines up exactly with the left menu button (owner 2026-07-18). */
@@ -81,6 +88,7 @@ export const drawerOpenGuard = {
 export function DrawerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [headerTitle, setHeaderTitle] = useState<string | null>(null);
+  const [headerCenter, setHeaderCenter] = useState<ReactNode>(null);
   const [headerRight, setHeaderRight] = useState<ReactNode>(null);
   // Opening the drawer always drops the keyboard (owner 2026-07-20: swiping to the
   // sidebar should put the keyboard away) — covers the TopBar menu button; the swipe
@@ -104,8 +112,13 @@ export function DrawerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<ShellState>(
-    () => ({ open, openDrawer, closeDrawer, newChat, headerTitle, setHeaderTitle, headerRight, setHeaderRight }),
-    [open, openDrawer, closeDrawer, newChat, headerTitle, headerRight],
+    () => ({
+      open, openDrawer, closeDrawer, newChat,
+      headerTitle, setHeaderTitle,
+      headerCenter, setHeaderCenter,
+      headerRight, setHeaderRight,
+    }),
+    [open, openDrawer, closeDrawer, newChat, headerTitle, headerCenter, headerRight],
   );
 
   return (

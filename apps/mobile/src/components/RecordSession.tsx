@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useKeepAwake } from "expo-keep-awake";
 import { enhanceRecordingArtifact, saveRecordingArtifact } from "@/api/chat";
 import { GlassSurface } from "@/components/GlassSurface";
 import { LiveWaveform } from "@/components/LiveWaveform";
-import { MicIcon } from "@/components/icons";
 import { MissionButton } from "@/components/mission-ui";
 import { liveNotesText } from "@/lib/live-notes";
 import { buildRecordingDraft, formatRecordingClock, fullTranscript, hasTranscript } from "@/lib/recording";
@@ -21,23 +20,44 @@ import { radius, space, type } from "@/theme/tokens";
 // engine as chat dictation) and no transcription minutes are billed.
 //
 // Extracted out of app/record.tsx (owner 2026-07-21, "chat/recorder toggle
-// from the webapp") so the SAME session — header, transcript, live notes,
-// status line, three-state control bar — can render two ways: standalone as
-// the full-screen modal (app/record.tsx, still routed via the "+" menu's
-// "Record" row, unchanged) AND inline as chat.tsx's swapped-in record
-// workspace when the composer's mode pill flips to "Record" (mirrors web's
-// composer.tsx ModePill swapping in record-workspace.tsx). This component
-// owns every hook and every testID from the original screen; it does NOT own
-// "screen chrome" — safe-area insets and outer background differ per host, so
-// callers wrap it in their own padded View (see both call sites).
+// from the webapp") so the SAME session — transcript, live notes, status line
+// — could render both as a full-screen modal and inline inside chat.tsx
+// (mirrors web's composer.tsx swapping in record-workspace.tsx). The modal
+// half is gone as of 2026-07-22: nothing had routed to it since record moved
+// inline, and with start/stop now living on the composer it would have been a
+// screen with no way to begin a recording. chat.tsx is the one host.
+//
+// This component owns every hook and every testID from the original screen; it
+// does NOT own "screen chrome" — safe-area insets and outer background belong
+// to the host, which wraps it in its own padded View.
+//
+// THE COMPOSER DRIVES START/STOP AND EXIT NOW (owner 2026-07-22): "remove the
+// 'close' and 'stop recording' box, remove the 'record' and the microphone
+// icon in the upper left". Those three controls moved onto the composer card
+// (Composer.tsx's file header has the layout), so this workspace no longer
+// draws its own header lockup, its idle Close/Start bar, or its Stop bar — the
+// host calls start()/stop() through the ref below instead.
+//
+// What deliberately STAYED is the reviewable bar: once there's a transcript,
+// Discard-vs-Save is a real decision with consequences, and a one-row composer
+// is no place for it. Dropping it too would leave every finished recording
+// with no way to keep it.
 export type RecordingSessionState = "idle" | "recording" | "reviewable";
+
+/** Imperative start/stop, for a host that renders its own record controls
+ *  (chat.tsx's composer). Commands come DOWN this ref; the resulting state
+ *  goes back UP through onRecordingStateChange — this component stays the one
+ *  owner of the transcription hook either way. */
+export interface RecordSessionHandle {
+  start: () => void;
+  stop: () => void;
+}
 
 export interface RecordSessionProps {
   userId: string | null;
   threadId: string | null;
-  /** Fires once, after Save lands, after a confirmed Discard, or after Close —
-   *  the host's cue to leave record mode (router.back() for the modal,
-   *  flip composerMode back to "chat" for the inline case). */
+  /** Fires once, after Save lands or after a confirmed Discard — the host's cue
+   *  to leave record mode (chat.tsx flips composerMode back to "chat"). */
   onDone: () => void;
   /** Fires whenever the three-state UI transitions — lets a host (chat.tsx)
    *  lock its own mode-switch control while a recording is live or has an
@@ -45,7 +65,10 @@ export interface RecordSessionProps {
   onRecordingStateChange?: (state: RecordingSessionState) => void;
 }
 
-export function RecordSession({ userId, threadId, onDone, onRecordingStateChange }: RecordSessionProps) {
+export const RecordSession = forwardRef<RecordSessionHandle, RecordSessionProps>(function RecordSession(
+  { userId, threadId, onDone, onRecordingStateChange },
+  ref,
+) {
   // A lecture is longer than the auto-lock timeout; keep the screen on while
   // this is mounted, since backgrounding would stop recognition.
   useKeepAwake();
@@ -74,6 +97,22 @@ export function RecordSession({ userId, threadId, onDone, onRecordingStateChange
   useEffect(() => {
     onRecordingStateChange?.(sessionState);
   }, [sessionState, onRecordingStateChange]);
+
+  // The host's record button (chat.tsx's composer) reaches start/stop through
+  // here. Starting resets live notes first, exactly as the old in-workspace
+  // "Start recording" button did — otherwise the previous take's bullets would
+  // still be on screen while the new one warms up.
+  useImperativeHandle(
+    ref,
+    () => ({
+      start: () => {
+        liveNotes.reset();
+        void live.start();
+      },
+      stop: live.stop,
+    }),
+    [liveNotes, live],
+  );
 
   const discard = useCallback(() => {
     if (recording || hasTranscript(live.transcript)) {
@@ -121,11 +160,11 @@ export function RecordSession({ userId, threadId, onDone, onRecordingStateChange
 
   return (
     <View style={styles.session}>
+      {/* Clock only (owner 2026-07-22: "remove the 'record' and the microphone
+          icon in the upper left"). The composer's record button already says
+          what mode this is and whether it's running, so the title lockup was
+          repeating it; the elapsed time is the one thing nothing else shows. */}
       <View style={styles.header}>
-        <View style={styles.headerLead}>
-          <MicIcon color={recording ? c.accent : c.text2} size={19} />
-          <Text style={styles.title}>Record</Text>
-        </View>
         <Text style={[styles.clock, recording && { color: c.accent }]}>{formatRecordingClock(live.elapsedSeconds)}</Text>
       </View>
 
@@ -186,40 +225,22 @@ export function RecordSession({ userId, threadId, onDone, onRecordingStateChange
       <Text style={styles.statusLine}>{statusLine}</Text>
       {saveError ? <Text style={styles.errorLine}>{saveError}</Text> : null}
 
-      <GlassSurface fallbackColor={c.glassPanel} style={styles.controls} shadow>
-        {recording ? (
-          <View style={styles.controlRow}>
-            <View style={styles.liveDot} />
-            <Text style={styles.controlHint}>Recording</Text>
-            <View style={styles.controlSpacer} />
-            <MissionButton label="Stop" onPress={live.stop} testID="record-stop" variant="primary" />
-          </View>
-        ) : reviewable ? (
+      {/* ONE bar left, and only once there's something to decide about. Start,
+          Stop, Close and the "Recording" hint all moved to the composer
+          (see this file's header note); Discard-vs-Save stays because losing
+          it would mean a finished transcript with nowhere to go. */}
+      {reviewable ? (
+        <GlassSurface fallbackColor={c.glassPanel} style={styles.controls} shadow>
           <View style={styles.controlRow}>
             <MissionButton label="Discard" onPress={discard} testID="record-discard" variant="secondary" />
             <View style={styles.controlSpacer} />
             <MissionButton busy={saving} label={saving ? "Saving…" : "Save to chat"} onPress={() => void save()} testID="record-save" variant="primary" />
           </View>
-        ) : (
-          <View style={styles.controlRow}>
-            <MissionButton label="Close" onPress={discard} testID="record-close" variant="secondary" />
-            <View style={styles.controlSpacer} />
-            <MissionButton
-              disabled={!userId || !threadId || live.status === "denied"}
-              label="Start recording"
-              onPress={() => {
-                liveNotes.reset();
-                void live.start();
-              }}
-              testID="record-start"
-              variant="primary"
-            />
-          </View>
-        )}
-      </GlassSurface>
+        </GlassSurface>
+      ) : null}
     </View>
   );
-}
+});
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
@@ -227,9 +248,10 @@ const createStyles = (c: ThemeColors) =>
     // and differs per host (full-screen modal vs. inline chat panel); see both
     // call sites (app/record.tsx, app/(tabs)/chat.tsx).
     session: { flex: 1, backgroundColor: c.bg, paddingHorizontal: space(4), paddingTop: space(3) },
-    header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: space(3) },
-    headerLead: { flexDirection: "row", alignItems: "center", gap: space(2) },
-    title: { ...type.title, color: c.text },
+    // Just the elapsed clock since the mic + "Record" lockup left (owner
+    // 2026-07-22) — centered, because a lone value pinned to the right edge
+    // read as a leftover rather than a heading.
+    header: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingBottom: space(3) },
     clock: { fontSize: 16, fontVariant: ["tabular-nums"], color: c.text2, fontWeight: "600" },
     transcript: { flex: 1, borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, backgroundColor: c.surface },
     transcriptContent: { padding: space(4), gap: space(3), flexGrow: 1 },
@@ -249,6 +271,4 @@ const createStyles = (c: ThemeColors) =>
     controls: { borderRadius: radius.lg, borderWidth: 1, borderColor: c.line, overflow: "hidden", padding: space(3) },
     controlRow: { flexDirection: "row", alignItems: "center", gap: space(3) },
     controlSpacer: { flex: 1 },
-    liveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: c.accent },
-    controlHint: { ...type.body, color: c.text2, fontSize: 15 },
   });

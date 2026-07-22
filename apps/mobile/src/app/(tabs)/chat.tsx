@@ -42,7 +42,7 @@ import { GlassSurface } from "@/components/GlassSurface";
 import { CloseIcon, SearchIcon, SparkleIcon, StudyIcon } from "@/components/icons";
 import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
-import { RecordSession, type RecordingSessionState } from "@/components/RecordSession";
+import { RecordSession, type RecordingSessionState, type RecordSessionHandle } from "@/components/RecordSession";
 import { Skeleton } from "@/components/Skeleton";
 import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
 import { ThinkingLine } from "@/components/ThinkingLine";
@@ -67,11 +67,13 @@ import { radius, space, type } from "@/theme/tokens";
 // epoch guard means a user switch, a thread switch, or an unmount can never
 // resurrect a stale thread's messages onto the screen.
 //
-// Record mode: entered from the composer "+" menu's Record row (owner
-// 2026-07-22 moved it there from a toggle pill on the composer itself) and
-// left via the "Record ✕" chip the composer shows while it's on. It swaps this
-// screen's whole messages/thread area for RecordSession.tsx inline — mirrors
-// web's record-workspace.tsx. `composerMode`
+// Record mode: entered and left from the ONE round accent button on the
+// composer (owner 2026-07-22 — it started as a toggle pill, spent a morning as
+// a "+"-menu row, and landed here where ChatGPT's voice button sits). That
+// same button wears an ✕ once record mode is on; the composer's "+" slot turns
+// into start/stop, which reaches into RecordSession through recordRef below.
+// Record mode swaps this screen's whole messages/thread area for
+// RecordSession.tsx inline — mirrors web's record-workspace.tsx. `composerMode`
 // never persists (always starts "chat", same as web's per-tab default) and,
 // per the epoch-guard discipline above, resets alongside everything else on a
 // thread/user switch — flipping composerMode back to "chat" unmounts
@@ -146,6 +148,10 @@ export default function ChatScreen() {
   // recording state.
   const [composerMode, setComposerMode] = useState<ComposerMode>("chat");
   const [recordingState, setRecordingState] = useState<RecordingSessionState>("idle");
+  // Start/stop now live on the composer, but the transcription hook still
+  // belongs to RecordSession — commands go DOWN this ref, state comes back UP
+  // through setRecordingState above.
+  const recordRef = useRef<RecordSessionHandle>(null);
   // Which message's sources/deliverable is showing in its bottom-up sheet, if any.
   const [sourcesSheetFor, setSourcesSheetFor] = useState<ChatSource[] | null>(null);
   const [deliverableSheetFor, setDeliverableSheetFor] = useState<ChatOutput | null>(null);
@@ -399,12 +405,20 @@ export default function ChatScreen() {
     };
   }, [composerMode, recordingState, exitRecordMode]);
 
-  // Entering record comes from the "+" menu's Record row; leaving comes from
-  // the composer's "Record ✕" chip. No thread yet means nothing to record
-  // into, so the tap is a no-op rather than opening onto nothing. The plus menu
-  // is force-closed too: the "+" button is hidden in record mode, so a stale
-  // open menu would otherwise hang over the record workspace with no way to
-  // have been reopened.
+  // The composer's record button, in the "+" slot: start a recording, or stop
+  // the running one. Never fires in the reviewable state — the composer keeps
+  // that button inert there, since re-starting would clobber a transcript
+  // nobody has saved yet (Composer.tsx's recordDisabled).
+  const handleRecordToggle = useCallback(() => {
+    if (recordingState === "recording") recordRef.current?.stop();
+    else recordRef.current?.start();
+  }, [recordingState]);
+
+  // Entering and leaving record mode both come from the composer's round accent
+  // button. No thread yet means nothing to record into, so the tap is a no-op
+  // rather than opening onto nothing. The plus menu is force-closed too: the
+  // "+" button becomes start/stop in record mode, so a stale open menu would
+  // otherwise hang over the record workspace with no way to have been reopened.
   const handleComposerModeChange = useCallback(
     (next: ComposerMode) => {
       if (next === "record") {
@@ -528,7 +542,13 @@ export default function ChatScreen() {
           // room on top; RecordSession supplies its own via `session`'s
           // paddingTop instead, so this stays just the TopBar clearance).
           <View style={[styles.flex, { paddingTop: contentTop }]} testID="chat-record-workspace">
-            <RecordSession userId={uid} threadId={threadId} onDone={exitRecordMode} onRecordingStateChange={setRecordingState} />
+            <RecordSession
+              ref={recordRef}
+              userId={uid}
+              threadId={threadId}
+              onDone={exitRecordMode}
+              onRecordingStateChange={setRecordingState}
+            />
           </View>
         ) : (
           <FlatList
@@ -629,10 +649,6 @@ export default function ChatScreen() {
             space(2)
           }
           onAttach={() => setLibraryPickerOpen(true)}
-          // Record is entered from HERE now (owner 2026-07-22), not from a
-          // toggle on the composer, and it opens the inline workspace rather
-          // than the modal route — so the chat stays put underneath it.
-          onRecord={() => handleComposerModeChange("record")}
           deepResearchOn={deepResearchOn}
           onToggleDeepResearch={() => setDeepResearchOn((v) => !v)}
         />
@@ -673,8 +689,10 @@ export default function ChatScreen() {
             testID="chat-input"
             mode={composerMode}
             onModeChange={handleComposerModeChange}
-            // Locked mid-recording/reviewable so the chip's ✕ can't strand an
-            // unsaved recording.
+            onRecordToggle={handleRecordToggle}
+            // Locked mid-recording/reviewable so the ✕ can't strand an unsaved
+            // recording. Combined with recordingActive below it also tells the
+            // composer which of the three session states it's in.
             modeLocked={recordingState !== "idle"}
             recordingActive={recordingState === "recording"}
             compact={composerCompact}

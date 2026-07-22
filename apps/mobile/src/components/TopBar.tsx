@@ -10,15 +10,27 @@ import { space, type } from "@/theme/tokens";
 // The top chrome — no bar, no border (owner call): ONE floating liquid-glass menu
 // button top-left, and a centered label that appears once the student has asked
 // something (screens drive it via useShell().setHeaderTitle) — blank otherwise.
+// A screen can put a live CONTROL in that center slot instead of a label with
+// setHeaderCenter (Study's section dropdown, owner 2026-07-22).
 // Owner call 2026-07-18: dropped the Nemesis logo/wordmark and the '+' button from
 // every page's top chrome (the drawer's own "New chat" button, plus the new
 // edge-swipe-to-open gesture, cover that job now). A same-size invisible spacer
 // sits top-right purely so the center label stays visually centered between two
 // equal-width slots. Content scrolls freely underneath. Chrome stays neutral —
 // crimson is for primary actions.
+/** The round glass buttons' diameter — also the bar row's height, since they're
+ *  its tallest children. Exported so a screen that publishes a control into the
+ *  center slot can work out where that control's bottom edge lands (Study hangs
+ *  its dropdown from there) instead of hardcoding a guess. */
+export const TOP_BAR_BUTTON = 44;
+
+/** The bar's own top padding below the status-bar inset — the other half of
+ *  that same calculation. */
+export const TOP_BAR_PAD_TOP = space(2);
+
 export function TopBar() {
   const insets = useSafeAreaInsets();
-  const { openDrawer, headerTitle, headerRight } = useShell();
+  const { openDrawer, headerTitle, headerCenter, headerRight } = useShell();
   const { colors: c } = useTheme();
   const styles = useThemedStyles(createStyles);
 
@@ -30,8 +42,13 @@ export function TopBar() {
         <View style={styles.bun} />
       </GlassButton>
 
-      <View style={styles.center} pointerEvents="none">
-        {headerTitle ? <Text style={styles.title} numberOfLines={1}>{headerTitle}</Text> : null}
+      {/* Center slot: a plain title by default, or a screen's own CONTROL when it
+          publishes one (Study's Cards/Tests/Mindmaps dropdown). A label can't be
+          tapped, so it stays pointerEvents="none" and lets swipes through to the
+          page; a control has to receive taps, so the slot switches to "box-none"
+          — which passes touches through the empty space around it either way. */}
+      <View style={styles.center} pointerEvents={headerCenter ? "box-none" : "none"}>
+        {headerCenter ?? (headerTitle ? <Text style={styles.title} numberOfLines={1}>{headerTitle}</Text> : null)}
       </View>
 
       {/* Right slot: a screen's own action (Graph gear, Chat "…") when set — it paints
@@ -95,16 +112,18 @@ const createStyles = (c: ThemeColors) =>
       position: "absolute", top: 0, left: 0, right: 0,
       flexDirection: "row", alignItems: "center", gap: space(2),
       paddingHorizontal: space(3), paddingBottom: space(2),
+      // paddingTop is applied inline (it adds the live safe-area inset); the
+      // constant half of it is TOP_BAR_PAD_TOP above.
       // Above StatusBarBlur (zIndex 5) so the menu button, title and headerRight action
       // paint ON TOP of the blur/black-fade instead of getting frosted by it.
       zIndex: 10,
     },
-    glassBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: c.line },
+    glassBtn: { width: TOP_BAR_BUTTON, height: TOP_BAR_BUTTON, borderRadius: TOP_BAR_BUTTON / 2, borderWidth: 1, borderColor: c.line },
     glassBtnInner: { flex: 1, alignItems: "center", justifyContent: "center" },
     bun: { width: 18, height: 2, borderRadius: 2.5, backgroundColor: c.text2, marginVertical: 2 },
     center: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: space(1) },
     title: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "600", letterSpacing: -0.2 },
     // Right slot — holds a screen's headerRight action (Graph gear / Chat "…") when set,
     // else an empty same-size box so the center label stays centered between two equal slots.
-    spacer: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+    spacer: { width: TOP_BAR_BUTTON, height: TOP_BAR_BUTTON, alignItems: "center", justifyContent: "center" },
   });

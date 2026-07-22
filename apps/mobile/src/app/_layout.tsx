@@ -80,7 +80,6 @@ function ThemedApp() {
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }}>
         {/* Settings slides up from the bottom as a sheet (ChatGPT-style), owner call. */}
         <Stack.Screen name="settings" options={{ presentation: "modal" }} />
-        <Stack.Screen name="record" options={{ presentation: "modal" }} />
       </Stack>
       <OfflineBanner />
       <StatusBar style={resolvedMode === "dark" ? "light" : "dark"} />
