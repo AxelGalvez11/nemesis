@@ -266,7 +266,10 @@ function FrequencyControl({ value, onChange }: { value: Frequency; onChange: (va
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
   // Knob travel: 40px track − 2px borders − 16px knob − 2px gap = 20px (translate-x-5).
   // The old translate-x-4 left the knob mid-track, so "on" and "off" looked alike.
-  return <button aria-checked={checked} className={cn("relative h-6 w-10 cursor-pointer rounded-full border transition-colors", checked ? "border-(--theme-primary) bg-(--theme-primary)" : "border-(--ui-stroke-secondary) bg-(--ui-bg-quaternary)")} onClick={() => onChange(!checked)} role="switch" type="button"><span className={cn("absolute top-0.5 left-0 size-4 rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-5" : "translate-x-0.5")} /></button>;
+  // Off-track rides --dt-input (a fixed elevated grey), not the accent-tinted
+  // --ui-bg-quaternary: that tint is ~9% alpha, so against the pure-black page
+  // it collapsed to near-black and the track read as part of the background.
+  return <button aria-checked={checked} className={cn("relative h-6 w-10 cursor-pointer rounded-full border transition-colors", checked ? "border-(--theme-primary) bg-(--theme-primary)" : "border-(--ui-stroke-secondary) bg-(--dt-input)")} onClick={() => onChange(!checked)} role="switch" type="button"><span className={cn("absolute top-0.5 left-0 size-4 rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-5" : "translate-x-0.5")} /></button>;
 }
 
 function UsageSettings({ bars }: { bars: UsageBar[] | null }) {
