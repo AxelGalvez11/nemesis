@@ -10,6 +10,7 @@ import type { SessionMessage } from "@/lib/workspace/sessions-store";
 import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
 import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
+import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
 import { showUpgradePrompt, type UpgradeResetKind } from "@/lib/workspace/upgrade-prompt";
 
@@ -31,7 +32,9 @@ export interface WireMsg {
 }
 
 /** Nemesis speaks for itself here (same soul rules as the desktop agent):
- *  plain, concise, no emojis, never a different product's name. */
+ *  plain, concise, no emojis, never a different product's name.
+ *  Universal rigor lives here because it rides every turn at no marginal cost;
+ *  task-specific craft lives in chat-skills.ts and is injected only on match. */
 export const CHAT_SYSTEM_PROMPT =
   "You are Nemesis, a rigorous study and research partner for learners in any discipline, major, or profession. " +
   "Never assume the user's field or level; infer it from context and adapt. Answer directly before expanding. " +
@@ -42,7 +45,10 @@ export const CHAT_SYSTEM_PROMPT =
   "You can see and edit this student's Nemesis workspace through your tools: search and read their Library notes, create notes, " +
   "list flashcard decks and add cards, and list or add calendar events. Use the tools whenever a question involves their own notes, " +
   "decks, or schedule, or when they ask you to save something — read their real data instead of guessing, and never invent what a " +
-  "note or calendar says. After any write, state plainly what you created or changed. School portals are still handled by the Mac app's missions.";
+  "note or calendar says. After any write, state plainly what you created or changed. School portals are still handled by the Mac app's missions. " +
+  "Check your own work before you answer: verify every number, unit, name, and date you are about to state, and re-read the question to confirm you " +
+  "answered what was actually asked. If a step does not hold up, fix it before replying rather than hedging afterwards. When you are unsure, say what " +
+  "you are unsure about and what would settle it — never fill a gap with something that merely sounds right.";
 
 /** Keep the upstream payload bounded: the most recent messages whose combined
  *  length fits the budget (always at least the latest message, even if huge —
@@ -90,9 +96,13 @@ export function buildWireMessages(
   const liveClock = `The current date is ${now.toISOString().slice(0, 10)} and the user's time zone is ${timeZone}. You do have this clock context; never claim you cannot know today's date.`;
   const kept = trimHistory(history);
   const continuityAnchor = buildContinuityAnchor(history, kept);
+  // Skills go last among the system messages so their procedure is the most
+  // recent instruction the model reads before the conversation itself.
+  const skills = buildSkillMessage(selectChatSkills(userText));
   return [
     { content: `${CHAT_SYSTEM_PROMPT}\n\n${routeInstruction(decision.route)}\n\n${liveClock}`, role: "system" },
     ...(continuityAnchor ? [{ content: continuityAnchor, role: "system" as const }] : []),
+    ...(skills ? [{ content: skills, role: "system" as const }] : []),
     ...kept.map((msg) => ({ content: msg.content, role: msg.role })),
     { content: userText, role: "user" },
   ];
