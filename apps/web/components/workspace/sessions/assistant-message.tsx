@@ -10,9 +10,10 @@ import { useState } from "react";
 import { Button } from "@/components/desktop-ui/button";
 import { Codicon } from "@/components/desktop-ui/codicon";
 import { Tip } from "@/components/desktop-ui/tooltip";
+import { citationDomains, faviconUrl } from "@/lib/favicon";
 import type { ChatErrorKind } from "@/lib/workspace/chat-api";
 import { AssistantMarkdown } from "@/lib/workspace/chat-markdown";
-import type { SessionMessage } from "@/lib/workspace/sessions-store";
+import type { SessionMessage, SessionSource } from "@/lib/workspace/sessions-store";
 
 import { ActivityStrip } from "./activity-strip";
 import { OutputCard } from "./output-card";
@@ -51,7 +52,7 @@ export function AssistantMessage({ message, animateReveal = false, pending, live
         data-slot="aui_assistant-message-content"
       >
         {!pending && <ActivityStrip placement="header" seconds={durationSeconds} />}
-        {visibleText && <AssistantMarkdown text={visibleText} />}
+        {visibleText && <AssistantMarkdown sources={message?.sources} text={visibleText} />}
         {message?.outputs && message.outputs.length > 0 && (
           <div className="mt-2 flex flex-col gap-2">
             {message.outputs.map((output) => <OutputCard key={output.id} output={output} />)}
@@ -60,7 +61,7 @@ export function AssistantMessage({ message, animateReveal = false, pending, live
         {pending && <ActivityStrip placement="live" seconds={liveSeconds} />}
         {error && <AssistantErrorRow error={error} />}
       </div>
-      {visibleText && <AssistantFooter onOpenSources={onOpenSources} sourceCount={message?.sources?.length ?? 0} text={visibleText} />}
+      {visibleText && <AssistantFooter onOpenSources={onOpenSources} sources={message?.sources ?? []} text={visibleText} />}
     </div>
   );
 }
@@ -86,7 +87,7 @@ function AssistantErrorRow({ error }: { error: TurnError }) {
   );
 }
 
-function AssistantFooter({ text, sourceCount, onOpenSources }: { text: string; sourceCount: number; onOpenSources?: () => void }) {
+function AssistantFooter({ text, sources, onOpenSources }: { text: string; sources: ReadonlyArray<SessionSource>; onOpenSources?: () => void }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -103,9 +104,16 @@ function AssistantFooter({ text, sourceCount, onOpenSources }: { text: string; s
 
   return (
     <div className="flex min-h-6 flex-row items-center justify-between gap-2 pr-(--message-text-indent) pl-(--message-text-indent)">
-      {sourceCount > 0 && (
+      {sources.length > 0 && (
         <Button className="h-6 gap-1.5 rounded-full border border-(--ui-stroke-tertiary) bg-(--ui-bg-secondary) px-2.5 text-[0.6875rem] text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)" onClick={onOpenSources} size="xs" variant="ghost">
-          <Codicon name="references" size="0.72rem" /> {sourceCount} {sourceCount === 1 ? "source" : "sources"}
+          {/* Stacked favicons of the real sources, ChatGPT-style, in place of the old generic icon + count. */}
+          <span className="flex -space-x-1">
+            {citationDomains(sources).slice(0, 3).map((host) => (
+              // eslint-disable-next-line @next/next/no-img-element -- remote favicon service, not a static asset.
+              <img alt="" className="size-3.5 rounded-full ring-1 ring-(--ui-bg-secondary)" key={host} src={faviconUrl(host)} />
+            ))}
+          </span>
+          Sources
         </Button>
       )}
       <div

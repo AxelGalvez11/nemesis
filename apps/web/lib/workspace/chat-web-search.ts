@@ -31,11 +31,18 @@ export function buildFreshSearchQuery(query: string, now = new Date()): string {
   return `${query.trim()} current as of ${date}`;
 }
 
+/** The results that actually reach the model, in the exact order they are numbered in the prompt.
+ *  The sources stored on the message MUST come from this same list: the answer's inline [n] markers
+ *  are resolved positionally, so a list filtered differently would point a pill at the wrong source. */
+export function usableWebResults(results: ChatWebResult[]): ChatWebResult[] {
+  return results.filter((result) => result.url && (result.title || result.description)).slice(0, 5);
+}
+
 export function formatWebSearchContext(results: ChatWebResult[]): string {
-  const usable = results.filter((result) => result.url && (result.title || result.description)).slice(0, 5);
+  const usable = usableWebResults(results);
   if (usable.length === 0) return "";
   return [
-    "Live web search results (use these for current facts and cite the relevant URL in the answer):",
+    "Live web search results. Use these for current facts. When a sentence relies on one of them, end that sentence with that result's number in square brackets, like [1]. Only cite a number for a fact that actually came from these results, use at most one number per sentence, and never write the raw URL in the prose.",
     ...usable.map((result, index) => `${index + 1}. ${result.title || result.url}\nURL: ${result.url}\n${result.description}`),
   ].join("\n\n");
 }

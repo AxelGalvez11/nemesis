@@ -8,7 +8,7 @@ import { supabaseUrl } from "@/lib/env";
 import { supabase } from "@/lib/supabase";
 import type { SessionMessage } from "@/lib/workspace/sessions-store";
 import { AGENT_TOOLS, executeAgentTool, type AgentToolCall } from "@/lib/workspace/agent-tools";
-import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, type ChatWebResult } from "@/lib/workspace/chat-web-search";
+import { buildFreshSearchQuery, formatWebSearchContext, shouldSearchWeb, usableWebResults, type ChatWebResult } from "@/lib/workspace/chat-web-search";
 import { classifyChatRequest, routeInstruction, type ChatRouteDecision } from "@/lib/workspace/chat-routing";
 import { buildSkillMessage, selectChatSkills } from "@/lib/workspace/chat-skills";
 import { readCompletionStreamFull, type CompletionDeltaHandler } from "@/lib/workspace/chat-stream";
@@ -390,7 +390,9 @@ export async function searchWebContext(uid: string, query: string, signal?: Abor
     });
     if (!response.ok) return { context: "", sources: [] };
     const body = (await response.json()) as { data?: { web?: ChatWebResult[] } };
-    const sources = (body.data?.web ?? []).filter((source) => source.url).slice(0, 5);
+    // Same list the prompt numbers, so an inline [n] in the answer resolves to
+    // the source the model actually cited.
+    const sources = usableWebResults(body.data?.web ?? []);
     return { context: formatWebSearchContext(sources), sources };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
