@@ -1,8 +1,10 @@
 import { useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import Markdown from "react-native-markdown-display";
+import type { ASTNode } from "react-native-markdown-display";
 import { MathJaxSvg } from "react-native-mathjax-html-to-svg";
 
+import { MarkdownImage } from "./MarkdownImage";
 import { createMarkdownStyles } from "@/theme/markdown";
 import { useTheme } from "@/theme/ThemeProvider";
 
@@ -30,6 +32,22 @@ type MarkdownStyles = { [K in keyof ReturnType<typeof createMarkdownStyles>]: ob
 // Match the Markdown body size so inline math sits at the same scale as prose.
 const MATH_FONT_SIZE = 15.5;
 
+// Render `![](url)` through MarkdownImage instead of the library's built-in
+// rule, which hands a remote URL to <Image> with no dimensions — and a remote
+// <Image> with no width/height collapses to zero in React Native, so the
+// picture never appears. MarkdownImage measures first, then draws. Shared by
+// both <Markdown> call sites below so chat answers and flashcards behave the
+// same way.
+const MARKDOWN_RULES = {
+  image: (node: ASTNode) => (
+    <MarkdownImage
+      key={node.key}
+      src={String(node.attributes?.src ?? "")}
+      alt={typeof node.attributes?.alt === "string" ? node.attributes.alt : undefined}
+    />
+  ),
+};
+
 type Segment =
   | { type: "markdown"; text: string }
   | { type: "display"; tex: string }
@@ -47,7 +65,7 @@ export function MessageBody({ content, styles }: MessageBodyProps) {
   // No real math (or unbalanced delimiters → fallback): render the message as a
   // single plain Markdown block with NO wrapper, byte-identical to before.
   if (!segments) {
-    return <Markdown style={styles}>{content}</Markdown>;
+    return <Markdown style={styles} rules={MARKDOWN_RULES}>{content}</Markdown>;
   }
 
   return (
@@ -55,7 +73,7 @@ export function MessageBody({ content, styles }: MessageBodyProps) {
       {segments.map((seg, index) => {
         if (seg.type === "markdown") {
           return (
-            <Markdown key={index} style={styles}>
+            <Markdown key={index} style={styles} rules={MARKDOWN_RULES}>
               {seg.text}
             </Markdown>
           );
