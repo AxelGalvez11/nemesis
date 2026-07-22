@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
-  InputAccessoryView,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -21,12 +20,12 @@ import { useAuth } from "@/auth/AuthProvider";
 import { GlassSurface } from "@/components/GlassSurface";
 import { EmptyBlock } from "@/components/mission-ui";
 import { CloseIcon, SearchIcon, type IconProps } from "@/components/icons";
+import { NoteBlockEditor } from "@/components/NoteBlockEditor";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
 import { NotePillBar } from "@/components/NotePillBar";
 import { NoteTabsSheet, type NoteTab } from "@/components/NoteTabsSheet";
 import { createNote, fetchNote, findCachedNote, loadCachedLibrary, updateNoteContent, type CloudLibraryNote } from "@/api/cloudLibrary";
 import { fileKindOf } from "@/lib/library-row-meta";
-import { cycleHeading, toggleLinePrefix, wrapInline, type EditSel } from "@/lib/note-edit";
 import { outlineOf, splitSections } from "@/lib/note-outline";
 import { arriveAt, closeTab, noteNavHolder, openTabIds, previewOf, selectTab } from "@/lib/note-tabs";
 import { buildNoteResolver, isExternalUrl, preprocessWikilinks, resolveInternalHref } from "@/lib/wikilinks";
@@ -37,9 +36,10 @@ import { radius, space, type } from "@/theme/tokens";
 
 // Note view + editor (cloud-first pivot, docs/design/nemesis-cloud-first-phone-2026-07.md
 // §7): renders one note straight from your account's library, and — owner 2026-07-20
-// ("work on the edit mode") — now EDITS it too. Edit (lower-left "…" menu) opens a
-// source-markdown editor for .md notes with a small formatting toolbar riding the
-// keyboard; saves go to the same readable_library_documents row the web app writes
+// ("work on the edit mode") — EDITS it too. Edit mode is the LIVE-PREVIEW block
+// editor (components/NoteBlockEditor.tsx, owner 2026-07-21: web-editor parity —
+// markdown syntax hidden unless the cursor reveals it, formatting pill above the
+// keyboard); saves go to the same readable_library_documents row the web app writes
 // (content column only — titles/paths stay web-owned, so a web-side rename can never
 // be clobbered from here), debounced while typing and flushed on Done. updated_at is
 // stamped by a DB trigger, so the saved row is selected back and becomes the local
@@ -79,9 +79,6 @@ const PILL_BAR_HEIGHT = 52;
 const EDIT_ON_WEB = "That happens on the web app for now.";
 const CANT_EDIT_KIND = "PDF and Word files can't be edited here — their text is extracted from the original file.";
 const SAVE_FAILED = "Couldn't save — check your connection and try Done again.";
-
-// iOS keyboard-accessory hook-up id for the formatting toolbar.
-const TOOLBAR_ID = "note-edit-toolbar";
 
 // Debounce for autosave-while-typing: long enough to batch a sentence, short
 // enough that closing the app mid-thought almost never loses more than a beat.
@@ -152,16 +149,14 @@ export default function NoteScreen() {
   // Measured y of each rendered section (index-aligned with `sections` below) —
   // what makes the outline's "jump to heading" an exact scroll.
   const sectionYs = useRef<number[]>([]);
-  // Edit-mode state. `draft` drives the editor; refs shadow the latest draft +
-  // dirtiness so the debounced autosave and the unmount flush never read stale
-  // closures. `forcedSel` is set ONLY right after a toolbar transform (to place
-  // the caret) and released on the next selection event — leaving the TextInput's
-  // selection uncontrolled the rest of the time, which iOS needs to behave.
+  // Edit-mode state. `draft` is only the document AS EDIT MODE OPENED — it
+  // seeds NoteBlockEditor and deliberately never updates per keystroke (the
+  // editor owns live block state; a per-keystroke prop change would reset
+  // it). Refs shadow the LATEST text + dirtiness so the debounced autosave
+  // and the unmount flush never read stale closures.
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
-  const [forcedSel, setForcedSel] = useState<{ start: number; end: number } | null>(null);
-  const selRef = useRef({ end: 0, start: 0 });
   const draftRef = useRef("");
   const dirtyRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -309,9 +304,7 @@ export default function NoteScreen() {
     setFindQuery("");
     draftRef.current = doc.content;
     dirtyRef.current = false;
-    selRef.current = { end: 0, start: 0 };
     setDraft(doc.content);
-    setForcedSel(null);
     setEditing(true);
   }, [doc]);
 
@@ -329,27 +322,13 @@ export default function NoteScreen() {
     return ok;
   }, [saveNow]);
 
+  // Every editor change (keystroke or toolbar action) reports the full joined
+  // document — refs only, no state: re-rendering this screen per keystroke
+  // would also reset the block editor via its `content` prop.
   const onChangeDraft = useCallback(
     (text: string) => {
       draftRef.current = text;
       dirtyRef.current = true;
-      setDraft(text);
-      scheduleAutosave();
-    },
-    [scheduleAutosave],
-  );
-
-  // Toolbar buttons run a pure transform over (text, selection) and force the
-  // caret to where the transform says it belongs; the next real selection event
-  // releases control back to the native input.
-  const applyTool = useCallback(
-    (transform: (s: EditSel) => EditSel) => {
-      const next = transform({ text: draftRef.current, ...selRef.current });
-      draftRef.current = next.text;
-      dirtyRef.current = true;
-      selRef.current = { end: next.end, start: next.start };
-      setDraft(next.text);
-      setForcedSel({ end: next.end, start: next.start });
       scheduleAutosave();
     },
     [scheduleAutosave],
@@ -645,39 +624,21 @@ export default function NoteScreen() {
           />
         </View>
       ) : editing ? (
-        // EDIT MODE — source markdown in a plain input (Obsidian's source view),
-        // title static above it, formatting toolbar riding the keyboard. The
-        // KeyboardAvoidingView shrinks the input so the caret can't hide under
-        // the keyboard (same pattern as the chat screen).
+        // EDIT MODE — the live-preview block editor (NoteBlockEditor): every
+        // block renders as markdown, the tapped block reveals its raw source,
+        // and the formatting pill rides the keyboard. The KeyboardAvoidingView
+        // shrinks the editor so the caret can't hide under the keyboard (same
+        // pattern as the chat screen).
         <KeyboardAvoidingView
           style={styles.flexGrow}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           keyboardVerticalOffset={0}
         >
-          <View style={styles.editorWrap}>
-            <Text style={styles.title}>{doc.title}</Text>
-            <TextInput
-              style={styles.editor}
-              value={draft}
-              onChangeText={onChangeDraft}
-              onSelectionChange={(e) => {
-                selRef.current = e.nativeEvent.selection;
-                if (forcedSel) setForcedSel(null);
-              }}
-              selection={forcedSel ?? undefined}
-              multiline
-              autoFocus
-              scrollEnabled
-              textAlignVertical="top"
-              placeholder="Start writing…"
-              placeholderTextColor={c.text3}
-              inputAccessoryViewID={Platform.OS === "ios" ? TOOLBAR_ID : undefined}
-              testID="note-editor"
-            />
-            {/* Android has no InputAccessoryView — pin the toolbar under the
-                editor instead (the KeyboardAvoidingView keeps it above the keys). */}
-            {Platform.OS !== "ios" ? <EditToolbar onAction={applyTool} /> : null}
-          </View>
+          <NoteBlockEditor
+            content={draft}
+            header={<Text style={styles.title}>{doc.title}</Text>}
+            onChangeText={onChangeDraft}
+          />
         </KeyboardAvoidingView>
       ) : (
         <ScrollView
@@ -818,48 +779,7 @@ export default function NoteScreen() {
         onClose={() => setOutlineOpen(false)}
         testID="note-outline-sheet"
       />
-
-      {/* iOS: the formatting toolbar rides on top of the keyboard. (Android pins
-          the same toolbar under the editor instead — see the edit branch above.) */}
-      {Platform.OS === "ios" ? (
-        <InputAccessoryView nativeID={TOOLBAR_ID} backgroundColor="transparent">
-          <EditToolbar onAction={applyTool} />
-        </InputAccessoryView>
-      ) : null}
     </View>
-  );
-}
-
-// The keyboard formatting toolbar: wikilink · heading · bold · italic · list.
-// Text glyphs (styled to preview their effect) instead of bespoke SVGs — same
-// quiet language as the app's other small controls. Each button feeds a pure
-// transform from lib/note-edit into the editor.
-function EditToolbar({ onAction }: { onAction: (transform: (s: EditSel) => EditSel) => void }) {
-  const styles = useThemedStyles(createStyles);
-  const { colors: c } = useTheme();
-  const buttons: { key: string; glyph: string; label: string; style?: object; transform: (s: EditSel) => EditSel }[] = [
-    { glyph: "[[ ]]", key: "wikilink", label: "Wiki link", transform: (s) => wrapInline(s, "[[", "]]") },
-    { glyph: "H", key: "heading", label: "Heading", transform: cycleHeading },
-    { glyph: "B", key: "bold", label: "Bold", style: { fontWeight: "800" as const }, transform: (s) => wrapInline(s, "**") },
-    { glyph: "I", key: "italic", label: "Italic", style: { fontStyle: "italic" as const }, transform: (s) => wrapInline(s, "*") },
-    { glyph: "•", key: "list", label: "Bullet list", transform: (s) => toggleLinePrefix(s, "- ") },
-  ];
-  return (
-    <GlassSurface style={styles.toolbar} fallbackColor={c.glassMenu} opaque>
-      {buttons.map((btn) => (
-        <Pressable
-          key={btn.key}
-          onPress={() => onAction(btn.transform)}
-          style={({ pressed }) => [styles.toolBtn, pressed && styles.toolBtnPressed]}
-          hitSlop={6}
-          accessibilityRole="button"
-          accessibilityLabel={btn.label}
-          testID={`note-tool-${btn.key}`}
-        >
-          <Text style={[styles.toolGlyph, btn.style]}>{btn.glyph}</Text>
-        </Pressable>
-      ))}
-    </GlassSurface>
   );
 }
 
@@ -938,31 +858,6 @@ const createStyles = (c: ThemeColors) =>
     },
     modePillBtn: { width: 44, height: 40, alignItems: "center", justifyContent: "center" },
     modePillBtnPressed: { backgroundColor: c.surface },
-
-    // Edit mode: static title above a flex-filling source-markdown input; the
-    // input scrolls itself and the KeyboardAvoidingView keeps the caret visible.
-    editorWrap: { flex: 1, paddingHorizontal: space(5), paddingTop: space(2) },
-    editor: { flex: 1, ...type.body, color: c.text, padding: 0, paddingBottom: space(4) },
-    // Keyboard formatting toolbar (iOS: accessory view; Android: pinned under the
-    // editor). Full-width bar, hairline top edge, buttons spread evenly.
-    toolbar: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-evenly",
-      paddingVertical: space(1.5),
-      borderTopWidth: 1,
-      borderTopColor: c.line,
-    },
-    toolBtn: {
-      minWidth: 44,
-      height: 40,
-      paddingHorizontal: space(2),
-      borderRadius: radius.md,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    toolBtnPressed: { backgroundColor: c.surface },
-    toolGlyph: { ...type.title, color: c.text },
 
     body: { paddingHorizontal: space(5), paddingTop: space(2) },
     // Obsidian-style inline title: the h1 alone at the top of the page, a full

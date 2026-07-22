@@ -24,8 +24,7 @@ import type { ThemeColors } from "@/theme/palette";
 // ring standing in for the web Graph's dashed ring: React Native's
 // `borderStyle: "dashed"` on a plain View is unreliable on Android (a known
 // RN limitation), so a solid low-emphasis ring is the cross-platform choice
-// here — GraphScene3D.tsx's SVG nodes use a real dashed stroke instead,
-// since react-native-svg's strokeDasharray isn't subject to that limitation.
+// here.
 //
 // Tap opens the note; drag moves and pins it (see note-graph.ts's
 // LayoutSim.pin). A ghost has no real note behind it, so opening one is a
@@ -54,10 +53,8 @@ import type { ThemeColors } from "@/theme/palette";
 const LABEL_W = 100;
 // The one fixed dot radius every node renders at (before the Node size slider's
 // multiplier). Smaller than the old degree-scaled 3.5–8.5 range, and uniform —
-// node importance is conveyed by hub color + halo, not by size. Exported so
-// GraphScene3D.tsx's SVG nodes render at the same base size as this file's
-// View-based 2D nodes — one dial (the Node size slider), one visual scale.
-export const BASE_NODE_R = 3;
+// node importance is conveyed by hub color + halo, not by size.
+const BASE_NODE_R = 3;
 
 export interface GraphNodeViewProps {
   node: GraphNode;

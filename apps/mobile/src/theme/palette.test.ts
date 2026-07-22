@@ -8,12 +8,14 @@ import {
   DEFAULT_ACCENT_ID,
 } from "./palette.ts";
 
-Deno.test("default dark = the shipped constants, byte for byte", () => {
+Deno.test("dark mode = pure black pages, pure white text (owner 2026-07-21)", () => {
   const colors = buildColors("dark", DEFAULT_ACCENT_ID);
-  assertEquals(colors.bg, "#0e0e0e");
-  assertEquals(colors.bg2, "#0a0a0a");
-  assertEquals(colors.surface, "#161617");
-  assertEquals(colors.text, "#e9eaee");
+  assertEquals(colors.bg, "#000000");
+  assertEquals(colors.bg2, "#000000");
+  assertEquals(colors.text, "#ffffff");
+  assertEquals(colors.text2, "#ffffff");
+  assertEquals(colors.text3, "#ffffff");
+  // The brand crimson family is still byte-identical to what shipped.
   assertEquals(colors.accent, "#ff2740");
   assertEquals(colors.accentDim, "#ff5165");
   assertEquals(colors.accentDeep, "#cc1f33");
@@ -47,10 +49,13 @@ Deno.test("unknown accent ids fall back to the default swatch", () => {
   assertEquals(colors.accent, buildColors("dark", DEFAULT_ACCENT_ID).accent);
 });
 
-Deno.test("light mode swaps surfaces to paper and keeps text dark", () => {
+Deno.test("light mode = pure white paper, pure black text", () => {
   const light = buildColors("light", DEFAULT_ACCENT_ID);
   // Pure white page (owner 2026-07-21: ChatGPT-style white, not the old #f8faff tint).
   assertEquals(light.bg, "#ffffff");
   assertEquals(light.surface, "#ffffff");
+  assertEquals(light.text, "#000000");
+  assertEquals(light.text2, "#000000");
+  assertEquals(light.text3, "#000000");
   assertEquals(contrastRatio(light.text, light.bg) >= 10, true);
 });

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassSurface } from "./GlassSurface";
 import { SearchIcon } from "./icons";
@@ -57,6 +57,11 @@ export function NoteListSheet({
   const sheetH = Math.round(height * 0.5);
 
   useEffect(() => {
+    // Inline sheet, not a native modal — the keyboard would sit ABOVE it, so
+    // drop any open keyboard first (owner 2026-07-21). The searchable
+    // variant re-focuses its own input 260ms later (effect below), which
+    // brings the keyboard back cleanly UNDER-then-over the landed sheet.
+    if (visible) Keyboard.dismiss();
     Animated.timing(progress, {
       toValue: visible ? 1 : 0,
       duration: visible ? 240 : 180,

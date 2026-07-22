@@ -23,7 +23,7 @@ export interface GraphNode {
   folder: string;
   /** Number of distinct connections; drives the connectivity-heatmap color
    * (graph-palette.ts) and label visibility. NOT node size — every node
-   * renders at one uniform radius (see GraphNodeView / GraphScene3D). */
+   * renders at one uniform radius (see GraphNodeView). */
   degree: number;
   x: number;
   y: number;
@@ -290,10 +290,7 @@ export interface LayoutSim {
   endDrag(): void;
 }
 
-// Exported so graph-layout-3d.ts's seed (a Fibonacci-sphere spread, the 3D
-// analog of this file's flat spiral) reuses the exact same constant instead
-// of a second, driftable copy of the same number.
-export const GOLDEN_ANGLE = 2.399963229728653;
+const GOLDEN_ANGLE = 2.399963229728653;
 
 /** Normalize simulated positions into the canvas: scale the extent to fit
  * (never upscale), then clamp. Shared by createLayoutSim's snapshot() and

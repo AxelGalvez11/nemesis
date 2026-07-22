@@ -148,7 +148,10 @@ const createStyles = (c: ThemeColors) =>
     chip: { paddingVertical: space(1), paddingHorizontal: space(2.5), borderRadius: radius.pill, borderWidth: 1, borderColor: c.accentLine, backgroundColor: c.accentFaint },
     chipPressed: { backgroundColor: c.surface2 },
     chipText: { ...type.small, color: c.accent, fontWeight: "600" },
-    body: { maxHeight: 460 },
+    // Height is owned by SlideUpSheet's body (collapsed cap + drag-up-to-
+    // expand, owner 2026-07-21); flexShrink lets the scroll area compress to
+    // that animated cap instead of overflowing it.
+    body: { flexShrink: 1 },
     meta: { ...type.micro, color: c.text3, marginBottom: space(3) },
     polishLine: { ...type.small, color: c.accent, marginBottom: space(3), lineHeight: 19 },
     sectionHead: { ...type.micro, color: c.text2, letterSpacing: 1.1, textTransform: "uppercase", marginTop: space(2), marginBottom: space(1) },

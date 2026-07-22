@@ -1,11 +1,15 @@
 import type { ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { c, space, type } from "@/theme/tokens";
+import type { ThemeColors } from "@/theme/palette";
+import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
+import { space, type } from "@/theme/tokens";
 
 // The doc-06 8-state matrix as reusable primitives. Screens compose these so every
 // state (load/empty/error/no-source/outdated/paywall/guest/offline) has one source
 // of truth. Empty-state copy that doc-06 specifies verbatim is passed in by the
-// screen (e.g. the Watchlist empty copy).
+// screen (e.g. the Watchlist empty copy). Colors come from the live theme
+// (useTheme), not the legacy static tokens — this file's one live consumer
+// (profile/delete-account.tsx's ErrorState) must follow light/dark mode.
 
 function StateBox({
   testID,
@@ -18,6 +22,7 @@ function StateBox({
   body?: string;
   children?: ReactNode;
 }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.box} testID={testID}>
       {title ? <Text style={styles.title}>{title}</Text> : null}
@@ -28,6 +33,8 @@ function StateBox({
 }
 
 export function LoadingState({ testID = "state-loading" }: { testID?: string }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors: c } = useTheme();
   return (
     <View style={styles.box} testID={testID}>
       <ActivityIndicator color={c.accent} />
@@ -113,8 +120,9 @@ export function OfflineState({
   return <StateBox testID={testID} title="Offline" body={body} />;
 }
 
-const styles = StyleSheet.create({
-  box: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(2) },
-  title: { ...type.h2, color: c.text, textAlign: "center" },
-  body: { ...type.small, color: c.text2, textAlign: "center", maxWidth: 360 },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    box: { flex: 1, alignItems: "center", justifyContent: "center", padding: space(6), gap: space(2) },
+    title: { ...type.h2, color: c.text, textAlign: "center" },
+    body: { ...type.small, color: c.text2, textAlign: "center", maxWidth: 360 },
+  });

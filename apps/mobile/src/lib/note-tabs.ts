@@ -118,6 +118,11 @@ export function previewOf(content: string, max = 220): string {
   const strip = (chars: number) =>
     content
       .slice(0, chars)
+      // Leading YAML frontmatter block, then any stray horizontal-rule /
+      // frontmatter-fence lines — otherwise a note that opens with "---"
+      // shows literal dashes (and its metadata keys) as its "prose" snippet.
+      .replace(/^---\s*\n[\s\S]*?\n---\s*(\n|$)/, " ")
+      .replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, " ")
       .replace(/```[\s\S]*?(```|$)/g, " ")
       .replace(/^#{1,6}\s.*$/gm, " ")
       .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")

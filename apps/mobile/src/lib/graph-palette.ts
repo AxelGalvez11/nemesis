@@ -17,7 +17,7 @@
 // React Native Views and react-native-svg both support real alpha (View
 // `opacity`/rgba backgroundColor, SVG `opacity`/`fillOpacity`), so ghost-node
 // translucency is plain opacity at the call site instead — see
-// GraphNodeView.tsx / GraphScene3D.tsx.
+// GraphNodeView.tsx.
 //
 // Dependency-free, like note-graph.ts, so this Deno-tests.
 

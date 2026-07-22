@@ -149,6 +149,17 @@ export default function NotebookScreen() {
   const epochRef = useRef(0);
   const sendingRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
+  const renameInputRef = useRef<TextInput>(null);
+
+  // The rename sheet is always mounted (SlideUpSheet keeps children rendered
+  // for its close animation), so `autoFocus` would fire at SCREEN mount and
+  // pop the keyboard the moment the page opens. Focus when the sheet actually
+  // opens instead (same pattern as NoteListSheet).
+  useEffect(() => {
+    if (!renameOpen) return;
+    const timer = setTimeout(() => renameInputRef.current?.focus(), 260);
+    return () => clearTimeout(timer);
+  }, [renameOpen]);
 
   // ── Initial load: the notebook row + its sources/chats/outputs, in parallel. Sources
   // (with content) are ready by the time `notebook` resolves, so a grounded turn is never
@@ -503,12 +514,12 @@ export default function NotebookScreen() {
 
       <SlideUpSheet visible={renameOpen} onClose={() => setRenameOpen(false)} title="Rename notebook" testID="notebook-rename-sheet">
         <TextInput
+          ref={renameInputRef}
           style={styles.promptInput}
           value={renameValue}
           onChangeText={setRenameValue}
           placeholder="Notebook title"
           placeholderTextColor={c.text3}
-          autoFocus
           maxLength={200}
           returnKeyType="done"
           onSubmitEditing={() => void handleRename()}

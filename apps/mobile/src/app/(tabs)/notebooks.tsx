@@ -315,6 +315,17 @@ function TitlePromptSheet({
     if (visible) setValue(initialValue);
   }, [visible, initialValue]);
 
+  // The sheet is always mounted (SlideUpSheet keeps children rendered for its
+  // close animation), so `autoFocus` would fire at SCREEN mount and pop the
+  // keyboard the moment the page opens. Focus explicitly when the sheet
+  // actually opens, after the slide-in has mostly landed (same pattern as
+  // NoteListSheet).
+  useEffect(() => {
+    if (!visible) return;
+    const timer = setTimeout(() => inputRef.current?.focus(), 260);
+    return () => clearTimeout(timer);
+  }, [visible]);
+
   return (
     <SlideUpSheet visible={visible} onClose={onClose} title={title} testID="notebook-title-sheet">
       <TextInput
@@ -324,7 +335,6 @@ function TitlePromptSheet({
         onChangeText={setValue}
         placeholder={placeholder}
         placeholderTextColor={c.text3}
-        autoFocus
         maxLength={200}
         returnKeyType="done"
         onSubmitEditing={() => value.trim() && onSubmit(value.trim())}

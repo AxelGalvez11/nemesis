@@ -98,7 +98,10 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     searchField: { flexDirection: "row", alignItems: "center", gap: space(2), paddingHorizontal: space(3), height: 40, backgroundColor: c.surface, borderRadius: radius.md, borderWidth: 1, borderColor: c.line, marginBottom: space(3) },
     searchInput: { flex: 1, color: c.text, fontSize: type.small.fontSize, padding: 0 },
-    list: { maxHeight: 420 },
+    // Height is owned by SlideUpSheet's body (collapsed cap + drag-up-to-
+    // expand, owner 2026-07-21); flexShrink lets the list compress to that
+    // animated cap instead of overflowing it.
+    list: { flexShrink: 1 },
     mutedText: { ...type.small, color: c.text3, paddingVertical: space(2) },
     row: { borderRadius: radius.md, borderWidth: 1, borderColor: c.line, backgroundColor: c.surface, paddingVertical: space(3), paddingHorizontal: space(3.5), marginBottom: space(2) },
     rowPressed: { backgroundColor: c.surface2 },
