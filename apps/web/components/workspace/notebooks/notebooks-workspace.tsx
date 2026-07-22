@@ -11,7 +11,9 @@ import { useNotebooks } from "./notebooks-store";
 export function NotebooksWorkspace() {
   const { selectedId } = useNotebooks();
   return (
-    <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-(--ui-bg-editor)">
+    // Page, not a card — --ui-bg-chrome (pure black in dark mode). The card
+    // colour lives on the notebook cards inside, which stay lifted.
+    <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-(--ui-bg-chrome)">
       {selectedId ? <NotebookDetail /> : <NotebooksLanding />}
     </div>
   );

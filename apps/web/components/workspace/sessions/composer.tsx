@@ -6,8 +6,21 @@
 //
 // Mode vs effort (owner 2026-07-22): the pill next to the send button is the
 // ANSWER EFFORT dial (Instant/Medium/High) — the thing a student changes often.
-// Recording is a rarely-flipped mode, so it moved into the "+" menu and
-// announces itself with a removable Record chip instead of occupying the pill.
+//
+// RECORD MODE (owner 2026-07-22, second pass). Recording is no longer buried in
+// the "+" menu and no longer takes the composer away:
+//   - the primary button is the way IN when there is nothing to send (waveform
+//     icon), and the same button turns into an ✕ that is the way OUT;
+//   - the field's slot becomes a live meter — nothing to type while recording;
+//   - "+" becomes the record control (start, then stop) — it is what actually
+//     drives the recorder, via onRecordingChange → RecordWorkspace's `active`;
+//   - dictation is hidden, because a live microphone is already captured.
+// The meter is real: levels come from the recorder's own AudioContext through
+// lib/workspace/mic-level.ts, so nothing here opens a second microphone stream.
+//
+// The primary button is --theme-primary, the accent the student picked in
+// Appearance settings (crimson by default, green/blue/orange/purple if chosen)
+// — never a hardcoded color.
 
 import type { KeyboardEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -30,6 +43,7 @@ import {
   isChatEffort,
   type ChatEffort,
 } from "@/lib/workspace/chat-effort";
+import { subscribeMicLevel } from "@/lib/workspace/mic-level";
 import { ChevronDown } from "@/lib/workspace/icons";
 import { Mic } from "@/lib/workspace/icons";
 import { cn } from "@/lib/utils";
@@ -215,22 +229,6 @@ export function Composer({ busy, centered = false, placement = "floating", place
             className="relative z-1 flex min-h-0 w-full flex-col gap-1.5 overflow-hidden rounded-[inherit] px-(--composer-surface-pad-x) py-(--composer-surface-pad-y)"
             data-slot="composer-fade"
           >
-            {activeMode === "record" && (
-              <div className="flex flex-wrap gap-1 px-1">
-                <span className="flex items-center gap-1.5 rounded-full bg-(--ui-bg-quaternary) px-2.5 py-1 text-[0.6875rem] font-medium text-(--ui-text-secondary)" data-testid="record-chip">
-                  <Codicon name="record" size="0.6rem" />
-                  Record
-                  <button
-                    aria-label="Leave record mode"
-                    className="rounded-full p-0.5 hover:bg-(--chrome-action-hover)"
-                    onClick={() => setMode("chat")}
-                    type="button"
-                  >
-                    <Codicon name="close" size="0.65rem" />
-                  </button>
-                </span>
-              </div>
-            )}
             {activeMode === "chat" && files.length > 0 && (
               <div className="flex flex-wrap gap-1 px-1">
                 {files.map((file, index) => (
@@ -243,14 +241,42 @@ export function Composer({ busy, centered = false, placement = "floating", place
             )}
             <div className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-(--composer-control-gap) [grid-template-areas:'menu_input_controls']">
               <div className="flex items-center self-center [grid-area:menu]">
-                {activeMode === "chat" && (
+                {activeMode === "chat" ? (
                   <>
                     <input className="sr-only" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} ref={fileInputRef} type="file" />
-                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} onRecord={() => setMode("record")} />
+                    <AddMenu onChooseFiles={() => fileInputRef.current?.click()} />
                   </>
+                ) : (
+                  // The "+" slot becomes the record control: this is the button
+                  // that actually starts and stops capture (RecordWorkspace
+                  // listens to onRecordingChange), not a decoration.
+                  <Button
+                    aria-label={recording ? "Stop recording" : "Start recording"}
+                    aria-pressed={recording}
+                    className={cn(
+                      "size-(--composer-control-size) shrink-0 rounded-full",
+                      recording
+                        ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        : "text-(--theme-primary) hover:bg-(--chrome-action-hover)",
+                    )}
+                    data-testid="composer-record-toggle"
+                    onClick={() => {
+                      const next = !recording;
+                      setRecording(next);
+                      onRecordingChange?.(next);
+                    }}
+                    size="icon"
+                    type="button"
+                    variant={recording ? "default" : "ghost"}
+                  >
+                    <Codicon name={recording ? "debug-stop" : "record"} size="1rem" />
+                  </Button>
                 )}
               </div>
               <div className="min-w-0 [grid-area:input]">
+                {/* Record mode takes the field's slot for the meter (owner
+                    2026-07-22) — there is nothing to type while recording, and
+                    this keeps web identical to the phone's record row. */}
                 {activeMode === "chat" ? (
                   <div
                     aria-multiline="true"
@@ -269,24 +295,26 @@ export function Composer({ busy, centered = false, placement = "floating", place
               </div>
               <div className="flex items-center justify-end [grid-area:controls]">
                 <div className="ml-auto flex shrink-0 items-center gap-(--composer-control-gap)">
-                  {activeMode === "chat" && <EffortPill effort={effort} onChange={setEffort} />}
+                  <EffortPill effort={effort} onChange={setEffort} />
+                  {/* Dictation is hidden in record mode: a live microphone is
+                      already being captured, so a second one is nonsense. */}
                   {activeMode === "chat" && <Button aria-label="Dictate" aria-pressed={listening} className={cn("size-(--composer-control-size) rounded-full", listening && "bg-(--ui-control-active-background) text-foreground")} onClick={startDictation} size="icon" variant="ghost"><Mic size={15} /></Button>}
                   {activeMode === "record" ? (
+                    // The waveform button turned into this ✕ — the way out.
+                    // Mid-capture, setMode's guard turns the press into a stop
+                    // first rather than binning an unsaved transcript; the mode
+                    // then closes on its own when RecordWorkspace has saved and
+                    // fired onFinished. Either way this button means "leave",
+                    // which is why it says so — "+" is the stop control.
                     <Button
-                      aria-label={recording ? "Stop recording" : "Start recording"}
-                      aria-pressed={recording}
-                      className={cn(
-                        "size-(--composer-control-primary-size) shrink-0 rounded-full p-0",
-                        recording ? "bg-destructive text-destructive-foreground" : "bg-foreground text-background hover:bg-foreground/90",
-                      )}
-                      onClick={() => {
-                        const next = !recording;
-                        setRecording(next);
-                        onRecordingChange?.(next);
-                      }}
+                      aria-label="Leave record mode"
+                      className="size-(--composer-control-primary-size) shrink-0 rounded-full bg-(--theme-primary) p-0 text-white hover:opacity-90"
+                      data-testid="composer-record-exit"
+                      onClick={() => setMode("chat")}
                       size="icon"
+                      type="button"
                     >
-                      <Codicon name={recording ? "debug-stop" : "record"} size="0.875rem" />
+                      <Codicon name="close" size="0.875rem" />
                     </Button>
                   ) : busy ? (
                     <Button
@@ -297,15 +325,27 @@ export function Composer({ busy, centered = false, placement = "floating", place
                     >
                       <span className="block size-2.5 rounded-[0.1875rem] bg-current" />
                     </Button>
-                  ) : (
+                  ) : hasText || files.length > 0 ? (
                     <Button
                       aria-label="Send"
-                      className="size-(--composer-control-primary-size) shrink-0 rounded-full bg-foreground p-0 text-background hover:bg-foreground/90 disabled:bg-foreground/30 disabled:text-background disabled:opacity-100"
-                      disabled={!hasText && files.length === 0}
+                      className="size-(--composer-control-primary-size) shrink-0 rounded-full bg-foreground p-0 text-background hover:bg-foreground/90"
                       onClick={submit}
                       size="icon"
                     >
                       <Codicon name="arrow-up" size="0.875rem" />
+                    </Button>
+                  ) : (
+                    // Nothing to send, so the primary button is the way INTO
+                    // record mode rather than a dead greyed-out Send.
+                    <Button
+                      aria-label="Record"
+                      className="size-(--composer-control-primary-size) shrink-0 rounded-full bg-(--theme-primary) p-0 text-white hover:opacity-90"
+                      data-testid="composer-record-enter"
+                      onClick={() => setMode("record")}
+                      size="icon"
+                      type="button"
+                    >
+                      <WaveformMark />
                     </Button>
                   )}
                 </div>
@@ -320,14 +360,73 @@ export function Composer({ busy, centered = false, placement = "floating", place
   );
 }
 
-function AudioWaveform({ active }: { active: boolean }) {
+/** The four-bar audio mark on the record button. Drawn here rather than pulled
+ *  from the codicon set so it matches the meter above the field exactly. */
+function WaveformMark() {
   return (
-    <div aria-label={active ? "Recording audio waveform" : "Audio waveform ready"} className="flex h-(--composer-input-min-height) min-w-36 items-center justify-center gap-[3px]" role="img">
-      {Array.from({ length: 18 }, (_, index) => (
+    <span aria-hidden className="flex h-3.5 items-center gap-[2px]">
+      {[0.5, 1, 0.7, 0.35].map((scale, index) => (
+        <span className="w-[2px] rounded-full bg-current" key={index} style={{ height: `${scale * 100}%` }} />
+      ))}
+    </span>
+  );
+}
+
+const WAVEFORM_BAR_COUNT = 24;
+/** Floor so a silent room still shows a thin line of bars rather than an empty
+ *  gap, which reads as "broken" rather than "quiet". */
+const WAVEFORM_MIN_SCALE = 0.12;
+
+// The bars show the audio ACTUALLY coming in, replacing the canned pulse this
+// drew before. Levels arrive from the recorder's own AudioContext via
+// lib/workspace/mic-level.ts.
+//
+// It scrolls: each new reading enters at the right and every older one shifts a
+// bar left, so the strip reads as the last couple of seconds rather than bars
+// pulsing in unison. Heights are written straight to the DOM — no React state,
+// so a live meter costs the chat around it exactly zero re-renders (same reason
+// the mobile waveform drives Animated values imperatively).
+function AudioWaveform({ active }: { active: boolean }) {
+  const barsRef = useRef<(HTMLSpanElement | null)[]>([]);
+  const historyRef = useRef<number[]>(Array.from({ length: WAVEFORM_BAR_COUNT }, () => WAVEFORM_MIN_SCALE));
+
+  useEffect(() => {
+    const paint = () => {
+      for (let index = 0; index < barsRef.current.length; index += 1) {
+        const bar = barsRef.current[index];
+        if (bar) bar.style.transform = `scaleY(${historyRef.current[index]})`;
+      }
+    };
+    if (!active) {
+      historyRef.current = historyRef.current.map(() => WAVEFORM_MIN_SCALE);
+      paint();
+      return;
+    }
+    return subscribeMicLevel((level) => {
+      historyRef.current = [
+        ...historyRef.current.slice(1),
+        WAVEFORM_MIN_SCALE + level * (1 - WAVEFORM_MIN_SCALE),
+      ];
+      paint();
+    });
+  }, [active]);
+
+  return (
+    <div
+      aria-label={active ? "Recording audio waveform" : "Microphone idle"}
+      className="flex h-(--composer-input-min-height) w-full items-center gap-[3px]"
+      data-testid="composer-waveform"
+      role="img"
+    >
+      {Array.from({ length: WAVEFORM_BAR_COUNT }, (_, index) => (
         <span
-          className={cn("w-[2px] rounded-full bg-foreground/65", active ? "animate-pulse" : "opacity-45")}
+          className={cn(
+            "h-full max-w-1 flex-1 rounded-full bg-(--theme-primary) transition-transform duration-100 ease-out",
+            active ? "opacity-100" : "opacity-40",
+          )}
           key={index}
-          style={{ animationDelay: `${(index % 6) * 85}ms`, animationDuration: `${620 + (index % 5) * 90}ms`, height: `${7 + ((index * 7) % 17)}px` }}
+          ref={(node) => { barsRef.current[index] = node; }}
+          style={{ transform: `scaleY(${WAVEFORM_MIN_SCALE})` }}
         />
       ))}
     </div>
@@ -349,7 +448,9 @@ export function RecordCompanionPanel() {
   );
 }
 
-function AddMenu({ onChooseFiles, onRecord }: { onChooseFiles: () => void; onRecord: () => void }) {
+// Record is deliberately absent here (owner 2026-07-22): it lives on the
+// primary button now, so the menu is attachments-only.
+function AddMenu({ onChooseFiles }: { onChooseFiles: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -365,10 +466,6 @@ function AddMenu({ onChooseFiles, onRecord }: { onChooseFiles: () => void; onRec
         <DropdownMenuItem>
           <Codicon name="search" size="0.875rem" />
           Deep research
-        </DropdownMenuItem>
-        <DropdownMenuItem data-testid="add-menu-record" onSelect={onRecord}>
-          <Codicon name="record" size="0.875rem" />
-          Record
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
