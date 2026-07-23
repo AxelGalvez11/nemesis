@@ -16,6 +16,7 @@ import {
   type OcclusionShape,
 } from "./study-occlusion";
 import { scheduleStudyCard, type StudyGrade } from "./study-scheduler";
+import { decksInGroup, isWithinGroup, normalizeGroupPath, renamedGroupPath, rewriteGroupPrefix } from "./study-tree";
 
 export interface StudyDeck {
   id: string;
@@ -497,6 +498,14 @@ export interface CreateArtifactInput {
   status?: "draft" | "ready";
 }
 
+export interface UpdateArtifactPatch {
+  title?: string;
+  content?: unknown;
+  status?: "draft" | "ready" | "archived";
+  /** Folder this item sits in; "" moves it back to Ungrouped. */
+  groupName?: string;
+}
+
 export interface ImportDeckInput {
   name: string;
   cards: { front: string; back: string; cardType: StudyCardType; tags: string[] }[];
@@ -516,7 +525,7 @@ export interface UseCloudStudyApi extends StoreState {
   importAnkiDecks: (decks: ImportDeckInput[], onProgress?: (done: number, total: number) => void) => Promise<ImportDecksSummary>;
   updateCard: (input: UpdateCardInput) => Promise<StudyCard>;
   createArtifact: (input: CreateArtifactInput) => Promise<StudyArtifact>;
-  updateArtifact: (artifactId: string, patch: { title?: string; content?: unknown; status?: "draft" | "ready" | "archived" }) => Promise<void>;
+  updateArtifact: (artifactId: string, patch: UpdateArtifactPatch) => Promise<void>;
   deleteArtifact: (artifactId: string) => Promise<void>;
   gradeCard: (cardId: string, grade: StudyGrade) => Promise<StudyCard>;
   undoGrade: (cardId: string, snapshot: StudyScheduleSnapshot) => Promise<StudyCard>;
@@ -526,6 +535,12 @@ export interface UseCloudStudyApi extends StoreState {
   logStudyPress: (cardId: string, grade: StudyGrade) => void;
   moveDeck: (deckId: string, targetGroup: string) => Promise<void>;
   moveDeckGroup: (sourceGroup: string, targetGroup: string) => Promise<void>;
+  /** Rename a deck in place — its folder path is untouched. */
+  renameDeck: (deckId: string, nextLeaf: string) => Promise<void>;
+  /** Rename a folder in place, rewriting every deck name beneath it. */
+  renameDeckGroup: (group: string, nextLeaf: string) => Promise<void>;
+  /** Delete a folder AND every deck (and card) beneath it. */
+  deleteDeckGroup: (group: string) => Promise<void>;
   deleteDeck: (deckId: string) => Promise<void>;
   /** Signed-in user id (null in preview / signed-out) — the AI card helpers
    *  need it for the metered completion call. */
@@ -851,13 +866,14 @@ export function useCloudStudy(): UseCloudStudyApi {
     return artifact;
   }, [preview, userId]);
 
-  const updateArtifact = useCallback(async (artifactId: string, patch: { title?: string; content?: unknown; status?: "draft" | "ready" | "archived" }) => {
+  const updateArtifact = useCallback(async (artifactId: string, patch: UpdateArtifactPatch) => {
     const timestamp = new Date().toISOString();
     const apply = (artifact: StudyArtifact): StudyArtifact => ({
       ...artifact,
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.content !== undefined ? { content: patch.content } : {}),
       ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.groupName !== undefined ? { groupName: patch.groupName } : {}),
       updatedAt: timestamp,
     });
     if (preview) {
@@ -869,6 +885,7 @@ export function useCloudStudy(): UseCloudStudyApi {
     if (patch.title !== undefined) row.title = patch.title;
     if (patch.content !== undefined) row.content = patch.content;
     if (patch.status !== undefined) row.status = patch.status;
+    if (patch.groupName !== undefined) row.group_name = patch.groupName;
     const { error } = await supabase.from("study_artifacts").update(row).eq("id", artifactId).eq("user_id", userId);
     if (error) throw new Error(error.message);
     setState({ ...state, artifacts: state.artifacts.map((artifact) => (artifact.id === artifactId ? apply(artifact) : artifact)) });
@@ -1045,6 +1062,66 @@ export function useCloudStudy(): UseCloudStudyApi {
     setState({ ...state, decks: state.decks.map((deck) => names.has(deck.id) ? { ...deck, name: names.get(deck.id)!, updatedAt: new Date().toISOString() } : deck) });
   }, [preview, userId]);
 
+  // Rename in place: swap the deck's own leaf, keep whatever folder it sits in.
+  const renameDeck = useCallback(async (deckId: string, rawLeaf: string) => {
+    const deck = state.decks.find((item) => item.id === deckId);
+    if (!deck) return;
+    const name = renamedGroupPath(deck.name, rawLeaf);
+    if (!name || name === deck.name) return;
+    if (state.decks.some((item) => item.id !== deckId && item.name.toLowerCase() === name.toLowerCase())) {
+      throw new Error("A deck with that name already exists in this folder.");
+    }
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to rename a deck.");
+      const { error } = await supabase.from("study_decks").update({ name }).eq("id", deckId).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    setState({ ...state, decks: state.decks.map((item) => item.id === deckId ? { ...item, name, updatedAt: new Date().toISOString() } : item) });
+  }, [preview, userId]);
+
+  // Renaming a folder rewrites the shared prefix on every deck beneath it —
+  // there is no folder row to update.
+  const renameDeckGroup = useCallback(async (rawGroup: string, rawLeaf: string) => {
+    const source = normalizeGroupPath(rawGroup);
+    const destination = renamedGroupPath(source, rawLeaf);
+    if (!source || !destination || destination === source) return;
+    const renamed = decksInGroup(state.decks, source).flatMap((deck) => {
+      const name = rewriteGroupPrefix(deck.name, source, destination);
+      return name ? [{ deck, name }] : [];
+    });
+    const taken = new Set(state.decks.filter((deck) => !isWithinGroup(deck.name, source)).map((deck) => deck.name.toLowerCase()));
+    if (renamed.some(({ name }) => taken.has(name.toLowerCase()))) {
+      throw new Error("A deck with that name already exists in the destination folder.");
+    }
+    if (!preview) {
+      if (!userId) throw new Error("Sign in to rename a folder.");
+      const results = await Promise.all(renamed.map(({ deck, name }) => supabase.from("study_decks").update({ name }).eq("id", deck.id).eq("user_id", userId)));
+      const failure = results.find((result) => result.error)?.error;
+      if (failure) throw new Error(failure.message);
+    }
+    const names = new Map(renamed.map(({ deck, name }) => [deck.id, name]));
+    setState({ ...state, decks: state.decks.map((deck) => names.has(deck.id) ? { ...deck, name: names.get(deck.id)!, updatedAt: new Date().toISOString() } : deck) });
+  }, [preview, userId]);
+
+  const deleteDeckGroup = useCallback(async (rawGroup: string) => {
+    const group = normalizeGroupPath(rawGroup);
+    if (!group) return;
+    const doomed = decksInGroup(state.decks, group);
+    if (!preview && doomed.length > 0) {
+      if (!userId) throw new Error("Sign in to delete a folder.");
+      const { error } = await supabase.from("study_decks").delete().in("id", doomed.map((deck) => deck.id)).eq("user_id", userId);
+      if (error) throw new Error(error.message);
+    }
+    const removed = new Set(doomed.map((deck) => deck.id));
+    const decks = state.decks.filter((deck) => !removed.has(deck.id));
+    setState({
+      ...state,
+      decks,
+      cards: state.cards.filter((card) => !removed.has(card.deckId)),
+      selectedDeckId: state.selectedDeckId && removed.has(state.selectedDeckId) ? (decks[0]?.id ?? null) : state.selectedDeckId,
+    });
+  }, [preview, userId]);
+
   const deleteDeck = useCallback(async (deckId: string) => {
     if (!preview) {
       if (!userId) throw new Error("Sign in to delete a deck.");
@@ -1079,6 +1156,9 @@ export function useCloudStudy(): UseCloudStudyApi {
     setCardFlag,
     logStudyPress,
     moveDeck,
+    renameDeck,
+    renameDeckGroup,
+    deleteDeckGroup,
     moveDeckGroup,
     deleteDeck,
   };

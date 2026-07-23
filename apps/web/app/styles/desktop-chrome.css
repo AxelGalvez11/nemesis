@@ -570,6 +570,38 @@
   .dt-portal-scrollbar::-webkit-scrollbar-button {
     display: none;
   }
+
+  /* Study's lists (owner 2026-07-22: "there is no scroll bar for when items
+     exceed page length"). They always scrolled — but .scrollbar-dt paints the
+     thumb at 18% over 4 visible px, which on a wide page reads as no scrollbar
+     at all. Overriding here rather than raising .scrollbar-dt globally keeps
+     every other surface on the quiet default. Higher specificity than
+     ".scrollbar-dt *" so the shell rule doesn't win. */
+  .scrollbar-dt .scrollbar-study,
+  .scrollbar-study {
+    scrollbar-width: auto;
+    scrollbar-color: color-mix(in srgb, var(--ui-base) 34%, transparent) transparent;
+  }
+
+  .scrollbar-dt .scrollbar-study::-webkit-scrollbar,
+  .scrollbar-study::-webkit-scrollbar {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+
+  .scrollbar-dt .scrollbar-study::-webkit-scrollbar-thumb,
+  .scrollbar-study::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--ui-base) 34%, transparent);
+    border-radius: 9999rem;
+    border: 0.1875rem solid transparent;
+    background-clip: padding-box;
+  }
+
+  .scrollbar-dt .scrollbar-study::-webkit-scrollbar-thumb:hover,
+  .scrollbar-study::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--ui-base) 58%, transparent);
+    background-clip: padding-box;
+  }
 }
 
 /* ── Conversation/message layout CSS (assistant-ui data-slot contract) ────── */

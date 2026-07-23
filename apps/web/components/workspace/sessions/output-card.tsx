@@ -9,6 +9,7 @@ import type { SessionOutput } from "@/lib/workspace/sessions-store";
 
 const KIND_LABEL: Record<SessionOutput["kind"], string> = {
   flashcards: "Flashcards",
+  mindmap: "Mindmap",
   other: "Output",
   recording: "Recording",
   report: "Report",
@@ -18,6 +19,7 @@ const KIND_LABEL: Record<SessionOutput["kind"], string> = {
 
 const KIND_ICON: Record<SessionOutput["kind"], string> = {
   flashcards: "layers",
+  mindmap: "type-hierarchy-sub",
   other: "file",
   recording: "mic",
   report: "file",
