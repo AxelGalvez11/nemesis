@@ -966,8 +966,17 @@ export default function ChatScreen() {
             on its way down instead of being cut off on a hard line. Sits
             between the list and the composer in the tree, which is exactly
             where it belongs visually. Not in record mode — that screen is
-            immersive and has no transcript to fade. */}
-        {composerMode === "chat" ? <BottomFadeBlur height={composerBlockH} /> : null}
+            immersive and has no transcript to fade.
+
+            And NOT on the empty landing screen (owner 2026-07-23, screenshot).
+            A blur has to have something behind it to blur; over a blank white
+            page a chrome-material blur is just a flat grey wash, and its
+            ease-in ramp reads as a hard-edged band floating in mid-air. The
+            landing screen is also where the block is TALLEST — composerBlockH
+            includes the three starter rows — so the artifact covered the bottom
+            third of the screen and washed out the starter rows themselves.
+            Nothing to fade means nothing to draw. */}
+        {composerMode === "chat" && hasContent ? <BottomFadeBlur height={composerBlockH} /> : null}
         <View
           style={[styles.composerRow, styles.composerFloat, { paddingBottom: composerBottomPad }]}
           onLayout={(e) => {
