@@ -7,6 +7,7 @@
 // the agent can never see or touch another account's data.
 
 import { supabase } from "@/lib/supabase";
+import { mergeLibraryHits, type LexicalHit, type SemanticHit } from "./library-search-merge";
 
 const MAX_NOTE_CHARS = 8_000;
 const MAX_LIST = 30;
@@ -139,25 +140,56 @@ function str(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-async function searchLibrary(query: string) {
-  const q = query.trim();
-  if (!q) return { error: "Empty query." };
-  const escaped = q.replaceAll("%", "\\%").replaceAll("_", "\\_");
+/** Today's substring arm — also the fallback whenever the semantic arm is unavailable. */
+export async function lexicalLibrarySearch(query: string): Promise<LexicalHit[]> {
+  const escaped = query.replaceAll("%", "\\%").replaceAll("_", "\\_");
   const { data, error } = await supabase
     .from("readable_library_documents")
     .select("path,title,content")
     .eq("deleted", false)
     .or(`title.ilike.%${escaped}%,content.ilike.%${escaped}%`)
     .limit(MAX_LIST);
-  if (error) return { error: error.message };
-  return {
-    notes: (data ?? []).map((row) => {
-      const content = str(row.content);
-      const at = content.toLowerCase().indexOf(q.toLowerCase());
-      const snippet = at >= 0 ? content.slice(Math.max(0, at - 80), at + 160) : content.slice(0, 160);
-      return { path: str(row.path), snippet: snippet.trim(), title: str(row.title) };
-    }),
-  };
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => {
+    const content = str(row.content);
+    const at = content.toLowerCase().indexOf(query.toLowerCase());
+    const snippet = at >= 0 ? content.slice(Math.max(0, at - 80), at + 160) : content.slice(0, 160);
+    return { path: str(row.path), snippet: snippet.trim(), title: str(row.title) };
+  });
+}
+
+/** Semantic arm. Returns [] on ANY failure — search must never go dark. */
+async function semanticLibrarySearch(query: string): Promise<SemanticHit[]> {
+  try {
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+    if (!token) return [];
+    const res = await fetch("/api/v1/library/search", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query, limit: 8 }),
+    });
+    if (!res.ok) return [];
+    const json = (await res.json()) as { hits?: SemanticHit[] };
+    return Array.isArray(json.hits) ? json.hits : [];
+  } catch {
+    return [];
+  }
+}
+
+async function searchLibrary(query: string) {
+  const q = query.trim();
+  if (!q) return { error: "Empty query." };
+  try {
+    const [semantic, lexical] = await Promise.all([
+      semanticLibrarySearch(q),
+      lexicalLibrarySearch(q).catch(() => [] as LexicalHit[]),
+    ]);
+    const hits = mergeLibraryHits(semantic, lexical, MAX_LIST);
+    return { notes: hits.map(({ path, snippet, title }) => ({ path, snippet, title })) };
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : "Search failed." };
+  }
 }
 
 async function readLibraryNote(path: string) {
