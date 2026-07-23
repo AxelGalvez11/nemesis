@@ -146,7 +146,7 @@ const createStyles = (c: ThemeColors) =>
     // compete with the round buttons beside it and cost width the draft field
     // needed. flexShrink:0 so it's never the thing that collapses.
     label: { flexShrink: 0, justifyContent: "center", height: EFFORT_PILL_HEIGHT, paddingHorizontal: space(1) },
-    labelText: { fontSize: 15, lineHeight: 20, color: c.text2, fontWeight: "500" },
+    labelText: { ...type.small, fontWeight: "500", color: c.text2 },
     labelTextOpen: { color: c.accent, fontWeight: "600" },
     // Hangs under the RIGHT end of the composer now that the label lives there
     // — a left-anchored menu would point at the "+" instead.

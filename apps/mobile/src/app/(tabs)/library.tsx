@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/Skeleton";
 import { ChevronIcon, CloseIcon, FolderIcon, PlusIcon, SearchIcon, type IconProps } from "@/components/icons";
 import { DragChip } from "@/components/DragChip";
 import { FolderPickerSheet, RowActionsSheet, TextPromptSheet, type RowAction } from "@/components/RowActionSheets";
+import { RootDropZone } from "@/components/RootDropZone";
 import { useRowDrag } from "@/components/useRowDrag";
 import {
   deleteFolder,
@@ -686,6 +687,17 @@ export default function LibraryScreen() {
         onClose={closeRowSheets}
         testID="library-rename-prompt"
       />
+      {/* Drop here to pull something out of every folder. The key's suffix is
+          "" — the empty destination moveNote/moveFolder already read as the
+          library root — so it needs no special case in onRowDrop. */}
+      <RootDropZone
+        ref={rowDrag.registerRow("root:", true)}
+        label="Move out of folders"
+        active={rowDrag.activeKey !== null}
+        over={rowDrag.overKey === "root:"}
+        top={contentTop}
+      />
+
       {/* Rides the finger during a drag; the row itself stays put and dims. */}
       <DragChip
         visible={rowDrag.activeKey !== null}

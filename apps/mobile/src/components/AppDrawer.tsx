@@ -512,7 +512,7 @@ const createStyles = (c: ThemeColors) =>
     scroll: { flex: 1 },
 
     brandRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: space(4), paddingBottom: space(3) },
-    brand: { color: c.text, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
+    brand: { ...type.h2, color: c.text, letterSpacing: -0.3 },
     searchBtn: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
     searchBtnActive: { backgroundColor: c.surface },
     // Borderless (owner 2026-07-20: "remove the sidebar borders") — fills only.
