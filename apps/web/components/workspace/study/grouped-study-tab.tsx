@@ -204,7 +204,10 @@ export function GroupedStudyTab({ kind }: GroupedStudyTabProps) {
         <Button disabled={items.length === 0} onClick={() => setBrowseOpen(true)} size="sm" variant="ghost">Browse</Button>
       </nav>
 
-      <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
+      {/* shrink-0: same flex trap as the Cards tab — see cards-tab.tsx. Without it
+          `overflow-hidden` zeroes this item's automatic minimum size, so a long
+          list is clipped instead of scrolling its parent. */}
+      <section className="mx-auto w-full max-w-3xl shrink-0 overflow-hidden rounded-2xl border border-(--ui-stroke-tertiary) bg-background shadow-[0_3px_12px_rgba(0,0,0,0.04)]">
         <div className={cn("grid items-center border-b border-(--ui-stroke-tertiary) px-5 py-3 text-xs font-semibold", ROW_GRID)}>
           <span>Folder</span><span className="text-center">Items</span><span className="text-center">{isTests ? "Score" : "Updated"}</span><span />
         </div>
