@@ -3,6 +3,7 @@
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildLiveNotesMessages,
+  countNotes,
   FINAL_NOTES_MAX_KEPT,
   FINAL_NOTES_MAX_WINDOWS,
   FINAL_NOTES_WINDOW_CHARS,
@@ -13,6 +14,7 @@ import {
   mergeLiveNotes,
   parseLiveNotes,
   planFinalNotesWindows,
+  shouldReplaceNotes,
   shouldRequestLiveNotes,
 } from "./live-notes.ts";
 
@@ -97,8 +99,11 @@ Deno.test("a long transcript splits into ordered windows within the size cap", (
   const paragraph = `${"lecture content ".repeat(500)}\n\n`; // 8000 chars
   const windows = planFinalNotesWindows(paragraph.repeat(6)); // ~48k chars
   assert(windows.length > 1, "expected more than one window");
+  // The final window may carry a folded-in sliver, so the true bound is the
+  // window size plus one separator plus a sub-minimum tail.
+  const bound = FINAL_NOTES_WINDOW_CHARS + 1 + LIVE_NOTES_MIN_CHARS;
   for (const window of windows) {
-    assert(window.length <= FINAL_NOTES_WINDOW_CHARS, `window of ${window.length} exceeded the cap`);
+    assert(window.length <= bound, `window of ${window.length} exceeded ${bound}`);
   }
 });
 
@@ -208,4 +213,55 @@ Deno.test("the rebuild's note ceiling is actually reachable", () => {
   // A ceiling below what the windows can produce is a dead constant, and the
   // test pinning it would be validating a state production never enters.
   assert(FINAL_NOTES_MAX_WINDOWS * 6 >= FINAL_NOTES_MAX_KEPT);
+});
+
+// --- Not spending a call on a sliver, not trading away coverage -------------
+
+Deno.test("a sliver of a tail rides along instead of costing a model call", () => {
+  // Text that cuts cleanly at a window boundary and leaves a few words over.
+  const body = `${"a".repeat(FINAL_NOTES_WINDOW_CHARS - 2)}\n\n`;
+  const windows = planFinalNotesWindows(`${body}and then`);
+  assertEquals(windows.length, 1);
+  assert(windows[0]?.endsWith("and then"), "the sliver was dropped instead of folded in");
+});
+
+Deno.test("a real tail still gets its own window", () => {
+  const body = `${"a".repeat(FINAL_NOTES_WINDOW_CHARS - 2)}\n\n`;
+  const tail = "b".repeat(LIVE_NOTES_MIN_CHARS + 10);
+  const windows = planFinalNotesWindows(`${body}${tail}`);
+  assertEquals(windows.length, 2);
+  assertEquals(windows[1], tail);
+});
+
+Deno.test("a short recording is still summarized even if it is a sliver", () => {
+  assertEquals(planFinalNotesWindows("short thought"), ["short thought"]);
+});
+
+Deno.test("countNotes counts bullets in a saved notes blob", () => {
+  assertEquals(countNotes("one\ntwo\nthree"), 3);
+  assertEquals(countNotes("one\n\n  \ntwo"), 2);
+  assertEquals(countNotes(""), 0);
+  assertEquals(countNotes(undefined), 0);
+  assertEquals(countNotes(null), 0);
+});
+
+Deno.test("a thinner rebuild never replaces fuller saved notes", () => {
+  const existing = Array.from({ length: 18 }, (_, i) => `live ${i}`).join("\n");
+  assertEquals(shouldReplaceNotes(["sharp 1", "sharp 2"], existing), false);
+});
+
+Deno.test("an equal or fuller rebuild does replace", () => {
+  const existing = "live 1\nlive 2";
+  assertEquals(shouldReplaceNotes(["sharp 1", "sharp 2"], existing), true);
+  assertEquals(shouldReplaceNotes(["a", "b", "c"], existing), true);
+});
+
+Deno.test("an empty rebuild never replaces, even against no saved notes", () => {
+  assertEquals(shouldReplaceNotes([], undefined), false);
+  assertEquals(shouldReplaceNotes([], "live 1"), false);
+});
+
+Deno.test("a rebuild replaces when there were no saved notes at all", () => {
+  assertEquals(shouldReplaceNotes(["sharp 1"], undefined), true);
+  assertEquals(shouldReplaceNotes(["sharp 1"], ""), true);
 });

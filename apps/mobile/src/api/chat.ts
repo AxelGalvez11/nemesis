@@ -46,6 +46,7 @@ import {
   mergeLiveNotes,
   parseLiveNotes,
   planFinalNotesWindows,
+  shouldReplaceNotes,
 } from "@/lib/live-notes";
 import { mergeOutputsMeta, type RecordingDraft } from "@/lib/recording";
 import { readCompletionStream, type CompletionDeltaHandler } from "@/lib/chat-stream";
@@ -765,7 +766,11 @@ async function writeChipEntry(uid: string, threadId: string, entry: ChatOutput):
  *  the joined result, or null when nothing came back so the existing notes
  *  stand. Never throws: requestLiveNotes already resolves null on failure, and
  *  a window that comes back empty just contributes nothing. */
-async function rebuildNotesFromTranscript(uid: string, transcript: string): Promise<string | null> {
+async function rebuildNotesFromTranscript(
+  uid: string,
+  transcript: string,
+  existingNotes: string | undefined,
+): Promise<string | null> {
   const windows = planFinalNotesWindows(transcript);
   if (windows.length === 0) return null;
   if (windows.length === FINAL_NOTES_MAX_WINDOWS) {
@@ -782,7 +787,7 @@ async function rebuildNotesFromTranscript(uid: string, transcript: string): Prom
     if (!fresh) return null;
     notes = mergeLiveNotes(notes, fresh, FINAL_NOTES_MAX_KEPT);
   }
-  return notes.length ? liveNotesText(notes) : null;
+  return shouldReplaceNotes(notes, existingNotes) ? liveNotesText(notes) : null;
 }
 
 /** Background "enhance transcript" pass (owner 2026-07-21): upload the kept
@@ -860,7 +865,7 @@ export async function enhanceRecordingArtifact(
     // fail on its own (offline, out of tokens), and losing better notes must
     // never cost the better transcript — or reset the chip out of "done".
     try {
-      const notes = await rebuildNotesFromTranscript(uid, enhanced);
+      const notes = await rebuildNotesFromTranscript(uid, enhanced, artifact.notes);
       if (notes) {
         const { error: notesError } = await supabase
           .from("chat_recording_artifacts")

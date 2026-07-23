@@ -135,7 +135,21 @@ export function planFinalNotesWindows(transcript: string): string[] {
   let cursor = 0;
   while (cursor < text.length && windows.length < FINAL_NOTES_MAX_WINDOWS) {
     if (text.length - cursor <= FINAL_NOTES_WINDOW_CHARS) {
-      windows.push(text.slice(cursor).trim());
+      const tail = text.slice(cursor).trim();
+      if (!tail) break;
+      const previous = windows.pop();
+      if (previous === undefined) {
+        windows.push(tail);
+      } else if (tail.length < LIVE_NOTES_MIN_CHARS) {
+        // A sliver left over after the last boundary cut is not worth its own
+        // metered model call, so it rides along with the window before it.
+        // NEVER dropped — a lecture's closing words are often its point. This
+        // is the one window that may exceed FINAL_NOTES_WINDOW_CHARS, which is
+        // why that constant sits at half the prompt builder's clip.
+        windows.push(`${previous} ${tail}`);
+      } else {
+        windows.push(previous, tail);
+      }
       break;
     }
     const end = cursor + windowEnd(text.slice(cursor, cursor + FINAL_NOTES_WINDOW_CHARS));
@@ -143,6 +157,24 @@ export function planFinalNotesWindows(transcript: string): string[] {
     cursor = end;
   }
   return windows.filter(Boolean);
+}
+
+/** How many bullets a saved notes blob holds (the artifact stores them as one
+ *  newline-joined string — see liveNotesText). */
+export function countNotes(text: string | undefined | null): number {
+  return (text ?? "").split("\n").filter((line) => line.trim()).length;
+}
+
+/** Whether a finished rebuild should REPLACE the notes already saved.
+ *
+ *  The rebuild's bullets come from the sharper transcript, so they are more
+ *  accurate — but the live pass summarized a rolling window every 45s and can
+ *  end up denser over a short recording. Handing the student fewer bullets is
+ *  a loss of ground covered, however much better the words are, so a thinner
+ *  rebuild is discarded and the live notes stand. */
+export function shouldReplaceNotes(rebuilt: string[], existing: string | undefined | null): boolean {
+  if (rebuilt.length === 0) return false;
+  return rebuilt.length >= countNotes(existing);
 }
 
 /** Offset just past the last natural break in the window, or its full length
