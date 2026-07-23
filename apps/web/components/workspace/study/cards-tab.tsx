@@ -18,7 +18,7 @@ import { ReviewSession } from "./review-session";
 import { StudyBrowser } from "./study-browser";
 import { StudyCreateDialog, type StudyCreateKind } from "./study-create-dialog";
 import type { StudyReviewSettings } from "./study-chrome";
-import { StudyRowMenu, StudyRowRename, useRowClick } from "./study-row-actions";
+import { StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
 
 const DECK_GROUPS_KEY = "nemesis.web.study-deck-groups";
 
@@ -476,7 +476,6 @@ function DeckRow(props: DeckRowProps) {
   const group = !node.deck;
   const isCollapsed = collapsed.has(node.id);
   const renaming = renamingId === node.id;
-  const rowClick = useRowClick();
   const invalidTarget = group && dragItem?.kind === "group" && (dragItem.path === node.groupPath || node.groupPath.startsWith(`${dragItem.path}::`));
   const highlighted = (group && !invalidTarget && dropTarget === node.groupPath)
     || (Boolean(node.deck) && node.deck?.id === dropDeckId && dragItem?.kind === "deck" && dragItem.id !== node.deck?.id);
@@ -490,49 +489,49 @@ function DeckRow(props: DeckRowProps) {
   return (
     <>
       {/* A div, not a button: the row has to contain the "…" trigger, and a
-          button inside a button is invalid HTML that browsers silently unnest. */}
-      <div
-        aria-label={node.label}
-        className={cn(
-          "grid w-full cursor-grab grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center px-5 py-2 text-left text-xs transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
-          highlighted && "outline outline-2 -outline-offset-2 outline-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)]",
-          ((dragItem?.kind === "deck" && node.deck?.id === dragItem.id) || (dragItem?.kind === "group" && node.groupPath === dragItem.path)) && "opacity-50",
-        )}
-        data-study-drop-deck={node.deck ? node.deck.id : undefined}
-        data-study-drop-group={group ? node.groupPath : undefined}
-        onClick={() => {
-          if (renaming || onPointerClick()) return;
-          rowClick.click(activate);
-        }}
-        onDoubleClick={() => {
-          rowClick.cancel();
-          if (!renaming && !onPointerClick()) onStartRename(node.id);
-        }}
-        onKeyDown={(event) => {
-          if (renaming) return;
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
+          button inside a button is invalid HTML that browsers silently unnest.
+          Clicking opens immediately — there is no double-click gesture to
+          disambiguate against, so no grace delay is needed. */}
+      <StudyRowContextMenu onDelete={() => onDelete(node)} onRename={() => onStartRename(node.id)}>
+        <div
+          aria-label={node.label}
+          className={cn(
+            "grid w-full cursor-grab grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_2.25rem] items-center px-5 py-2 text-left text-xs transition-colors hover:bg-black/[0.04] active:cursor-grabbing dark:hover:bg-white/[0.06]",
+            highlighted && "outline outline-2 -outline-offset-2 outline-[var(--theme-primary)] bg-[color-mix(in_srgb,var(--theme-primary)_8%,transparent)]",
+            ((dragItem?.kind === "deck" && node.deck?.id === dragItem.id) || (dragItem?.kind === "group" && node.groupPath === dragItem.path)) && "opacity-50",
+          )}
+          data-study-drop-deck={node.deck ? node.deck.id : undefined}
+          data-study-drop-group={group ? node.groupPath : undefined}
+          onClick={() => {
+            if (renaming || onPointerClick()) return;
             activate();
-          } else if (event.key === "F2") {
-            event.preventDefault();
-            onStartRename(node.id);
-          }
-        }}
-        onPointerDown={(event) => { if (!renaming) onPointerDragStart(event, item); }}
-        role="button"
-        tabIndex={0}
-      >
-        <span className={cn("flex min-w-0 items-center gap-1.5", group && "font-semibold")} style={{ paddingLeft: `${depth * 1.1}rem` }}>
-          {group ? (isCollapsed ? <IconChevronRight size={13} /> : <IconChevronDown size={13} />) : <span className="w-[13px] shrink-0" />}
-          {renaming
-            ? <StudyRowRename onCancel={onCancelRename} onCommit={(next) => onCommitRename(node, next)} value={node.label} />
-            : <span className="truncate">{node.label}</span>}
-        </span>
-        <span className="text-center font-medium tabular-nums text-sky-500">{counts.newCount || 0}</span>
-        <span className="text-center font-medium tabular-nums text-amber-500">{counts.learnCount || 0}</span>
-        <span className="text-center font-medium tabular-nums text-emerald-500">{counts.dueCount || 0}</span>
-        <StudyRowMenu kindLabel={group ? "Folder" : "Deck"} onDelete={() => onDelete(node)} onRename={() => onStartRename(node.id)} />
-      </div>
+          }}
+          onKeyDown={(event) => {
+            if (renaming) return;
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              activate();
+            } else if (event.key === "F2") {
+              event.preventDefault();
+              onStartRename(node.id);
+            }
+          }}
+          onPointerDown={(event) => { if (!renaming) onPointerDragStart(event, item); }}
+          role="button"
+          tabIndex={0}
+        >
+          <span className={cn("flex min-w-0 items-center gap-1.5", group && "font-semibold")} style={{ paddingLeft: `${depth * 1.1}rem` }}>
+            {group ? (isCollapsed ? <IconChevronRight size={13} /> : <IconChevronDown size={13} />) : <span className="w-[13px] shrink-0" />}
+            {renaming
+              ? <StudyRowRename onCancel={onCancelRename} onCommit={(next) => onCommitRename(node, next)} value={node.label} />
+              : <span className="truncate">{node.label}</span>}
+          </span>
+          <span className="text-center font-medium tabular-nums text-sky-500">{counts.newCount || 0}</span>
+          <span className="text-center font-medium tabular-nums text-amber-500">{counts.learnCount || 0}</span>
+          <span className="text-center font-medium tabular-nums text-emerald-500">{counts.dueCount || 0}</span>
+          <StudyRowMenu kindLabel={group ? "Folder" : "Deck"} onDelete={() => onDelete(node)} onRename={() => onStartRename(node.id)} />
+        </div>
+      </StudyRowContextMenu>
       {!isCollapsed && node.children.map((child) => <DeckRow {...props} depth={depth + 1} key={child.id} node={child} />)}
     </>
   );

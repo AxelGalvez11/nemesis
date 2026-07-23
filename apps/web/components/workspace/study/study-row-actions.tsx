@@ -1,21 +1,32 @@
 "use client";
 
 // Shared row affordances for Study's lists (owner ask 2026-07-22): every item —
-// deck, folder, test, mindmap — gets a "…" menu at the right end and renames on
-// double-click.
+// deck, folder, test, mindmap — gets a "…" menu at the right end and the same
+// Rename/Delete on right-click. Obsidian's graph does the same thing ("Right-
+// click a note to open a context menu"), so the gesture is consistent.
 //
-// Two collisions make this trickier than it looks, so both are handled here
-// once rather than in each tab:
-//  1. Rows already act on a single click (open a deck, collapse a folder, open a
-//     test). A double click fires that single click FIRST, so renaming a deck
-//     would open the review session on the way. useRowClick defers the row's
-//     normal action just long enough to see whether a second click lands.
-//  2. Rows own pointerdown for drag-and-drop. The "…" trigger sits inside the
-//     row, so without stopPropagation, opening the menu starts a drag.
+// Right-click, NOT double-click: a double click fires the row's single-click
+// action first, so renaming a deck would open the review session on the way.
+// Disambiguating that needs a delay on every single click — which taxes the
+// common action (opening a deck) to pay for the rare one. Right-click has no
+// such collision and needs no delay.
+//
+// The one trap worth knowing: menu content is portaled to <body>, but React
+// bubbles synthetic events through the REACT tree, not the DOM tree. Without
+// stopPropagation on the content, choosing "Rename" also fires the row's
+// onClick and opens the deck behind the rename field — and a native listener on
+// the row never sees it, so it looks like the row was never clicked at all.
+// This applies to BOTH menus.
 
 import { IconDots, IconPencil, IconTrash } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/desktop-ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,40 +34,33 @@ import {
   DropdownMenuTrigger,
 } from "@/components/desktop-ui/dropdown-menu";
 
-/** Long enough to catch a deliberate double click, short enough that opening a
- *  deck still feels immediate. */
-export const ROW_CLICK_GRACE_MS = 250;
+/** Both menus render these — one definition so they can't drift apart. */
+type MenuItemComponent = React.ComponentType<{
+  children: React.ReactNode;
+  onSelect: () => void;
+  variant?: "default" | "destructive";
+}>;
 
-export interface RowClickHandler {
-  /** Run `action` unless a second click arrives within the grace window. */
-  click: (action: () => void) => void;
-  /** Called by the double-click handler to swallow the pending single click. */
-  cancel: () => void;
+function RowActionItems({ Item, onRename, onDelete }: { Item: MenuItemComponent; onRename: () => void; onDelete: () => void }) {
+  return (
+    <>
+      <Item onSelect={onRename}><IconPencil /> Rename</Item>
+      <Item onSelect={onDelete} variant="destructive"><IconTrash /> Delete</Item>
+    </>
+  );
 }
 
-export function useRowClick(): RowClickHandler {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clear = () => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-  useEffect(() => clear, []);
-  return {
-    cancel: clear,
-    click(action) {
-      clear();
-      timerRef.current = setTimeout(() => {
-        timerRef.current = null;
-        action();
-      }, ROW_CLICK_GRACE_MS);
-    },
-  };
-}
+/** Guards every portaled menu surface — see the React-tree note above. */
+const menuSurfaceProps = {
+  onClick: (event: React.MouseEvent) => event.stopPropagation(),
+  // Radix returns focus to the trigger on close, yanking it straight back out
+  // of the rename field that just mounted.
+  onCloseAutoFocus: (event: Event) => event.preventDefault(),
+  onPointerDown: (event: React.PointerEvent) => event.stopPropagation(),
+} as const;
 
 interface StudyRowMenuProps {
-  /** Spoken name of the thing being acted on, e.g. "deck" or "folder". */
+  /** Spoken name of the thing being acted on, e.g. "Deck" or "Folder". */
   kindLabel: string;
   onRename: () => void;
   onDelete: () => void;
@@ -73,32 +77,28 @@ export function StudyRowMenu({ kindLabel, onRename, onDelete }: StudyRowMenuProp
           className="grid size-6 shrink-0 place-items-center justify-self-end rounded-md text-(--ui-text-quaternary) transition-colors hover:bg-black/[0.06] hover:text-foreground data-[state=open]:bg-black/[0.06] data-[state=open]:text-foreground dark:hover:bg-white/[0.09] dark:data-[state=open]:bg-white/[0.09]"
           data-testid="study-row-menu"
           onClick={(event) => event.stopPropagation()}
-          onDoubleClick={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
           type="button"
         >
           <IconDots size={14} />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="min-w-36"
-        // The menu is portaled to <body>, but React bubbles synthetic events
-        // through the REACT tree, not the DOM tree — so without this, choosing
-        // "Rename" also fires the row's onClick and opens the deck behind the
-        // rename field. A native listener on the row never sees it, which makes
-        // this look like the row was never clicked at all.
-        onClick={(event) => event.stopPropagation()}
-        // Radix returns focus to the trigger on close, which yanks it straight
-        // back out of the rename field that just mounted.
-        onCloseAutoFocus={(event) => event.preventDefault()}
-        onDoubleClick={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <DropdownMenuItem onSelect={onRename}><IconPencil /> Rename</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onDelete} variant="destructive"><IconTrash /> Delete</DropdownMenuItem>
+      <DropdownMenuContent align="end" className="min-w-36" {...menuSurfaceProps}>
+        <RowActionItems Item={DropdownMenuItem} onDelete={onDelete} onRename={onRename} />
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** Wraps a row so right-clicking it offers the same Rename/Delete. */
+export function StudyRowContextMenu({ children, onRename, onDelete }: { children: React.ReactNode; onRename: () => void; onDelete: () => void }) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent className="min-w-36" {...menuSurfaceProps}>
+        <RowActionItems Item={ContextMenuItem} onDelete={onDelete} onRename={onRename} />
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -139,7 +139,7 @@ export function StudyRowRename({ value, onCommit, onCancel }: StudyRowRenameProp
       onBlur={commit}
       onChange={(event) => setDraft(event.target.value)}
       onClick={(event) => event.stopPropagation()}
-      onDoubleClick={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.key === "Enter") {

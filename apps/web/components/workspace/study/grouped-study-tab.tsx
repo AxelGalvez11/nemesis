@@ -24,7 +24,7 @@ import { normalizeGroupPath } from "@/lib/workspace/study-tree";
 import { cn } from "@/lib/utils";
 
 import { artifactScoreLabel, MindmapDialog, TakeTestDialog } from "./study-artifact-dialogs";
-import { StudyRowMenu, StudyRowRename, useRowClick } from "./study-row-actions";
+import { StudyRowContextMenu, StudyRowMenu, StudyRowRename } from "./study-row-actions";
 
 interface GroupedStudyTabProps {
   kind: "tests" | "mindmaps";
@@ -310,10 +310,10 @@ interface GroupRowProps {
 
 function GroupRow({ label, count, grid, renaming, onStartRename, onCommitRename, onCancelRename, onDelete }: GroupRowProps) {
   // "Ungrouped" is a placeholder for "no folder", not a folder anyone made —
-  // renaming or deleting it would be renaming nothing.
+  // renaming or deleting it would be renaming nothing, so it gets no menus.
   const real = label !== UNGROUPED;
-  return (
-    <div className={cn("grid items-center px-5 py-2 text-xs", grid)} onDoubleClick={() => real && !renaming && onStartRename()}>
+  const row = (
+    <div className={cn("grid items-center px-5 py-2 text-xs", grid)}>
       <span className="flex min-w-0 items-center gap-1.5 font-semibold">
         <IconFolder className="shrink-0 text-(--ui-text-tertiary)" size={13} />
         {renaming
@@ -325,6 +325,8 @@ function GroupRow({ label, count, grid, renaming, onStartRename, onCommitRename,
       {real ? <StudyRowMenu kindLabel="Folder" onDelete={onDelete} onRename={onStartRename} /> : <span />}
     </div>
   );
+  if (!real) return row;
+  return <StudyRowContextMenu onDelete={onDelete} onRename={onStartRename}>{row}</StudyRowContextMenu>;
 }
 
 interface ItemRowProps {
@@ -343,46 +345,43 @@ interface ItemRowProps {
 }
 
 function ItemRow({ item, meta, grid, dragging, renaming, onOpen, onStartRename, onCommitRename, onCancelRename, onDelete, onPointerDragStart, suppressClick }: ItemRowProps) {
-  const rowClick = useRowClick();
   return (
-    <div
-      aria-label={item.title}
-      className={cn(
-        "grid w-full cursor-grab items-center px-5 py-2 text-left text-xs text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) active:cursor-grabbing",
-        grid,
-        dragging && "opacity-50",
-      )}
-      data-testid={`artifact-${item.id}`}
-      onClick={() => {
-        if (renaming || suppressClick()) return;
-        rowClick.click(onOpen);
-      }}
-      onDoubleClick={() => {
-        rowClick.cancel();
-        if (!renaming && !suppressClick()) onStartRename();
-      }}
-      onKeyDown={(event) => {
-        if (renaming) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
+    <StudyRowContextMenu onDelete={onDelete} onRename={onStartRename}>
+      <div
+        aria-label={item.title}
+        className={cn(
+          "grid w-full cursor-grab items-center px-5 py-2 text-left text-xs text-(--ui-text-secondary) transition-colors hover:bg-(--ui-control-hover-background) active:cursor-grabbing",
+          grid,
+          dragging && "opacity-50",
+        )}
+        data-testid={`artifact-${item.id}`}
+        onClick={() => {
+          if (renaming || suppressClick()) return;
           onOpen();
-        } else if (event.key === "F2") {
-          event.preventDefault();
-          onStartRename();
-        }
-      }}
-      onPointerDown={(event) => { if (!renaming) onPointerDragStart(event, item.id); }}
-      role="button"
-      tabIndex={0}
-    >
-      <span className="flex min-w-0 items-center pl-5">
-        {renaming
-          ? <StudyRowRename onCancel={onCancelRename} onCommit={onCommitRename} value={item.title} />
-          : <span className="truncate">{item.title}</span>}
-      </span>
-      <span className="text-center text-[0.6875rem] capitalize text-(--ui-text-quaternary)">{item.status}</span>
-      <span className="text-center tabular-nums text-(--ui-text-quaternary)">{meta}</span>
-      <StudyRowMenu kindLabel={item.kind === "test" ? "Test" : "Mindmap"} onDelete={onDelete} onRename={onStartRename} />
-    </div>
+        }}
+        onKeyDown={(event) => {
+          if (renaming) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onOpen();
+          } else if (event.key === "F2") {
+            event.preventDefault();
+            onStartRename();
+          }
+        }}
+        onPointerDown={(event) => { if (!renaming) onPointerDragStart(event, item.id); }}
+        role="button"
+        tabIndex={0}
+      >
+        <span className="flex min-w-0 items-center pl-5">
+          {renaming
+            ? <StudyRowRename onCancel={onCancelRename} onCommit={onCommitRename} value={item.title} />
+            : <span className="truncate">{item.title}</span>}
+        </span>
+        <span className="text-center text-[0.6875rem] capitalize text-(--ui-text-quaternary)">{item.status}</span>
+        <span className="text-center tabular-nums text-(--ui-text-quaternary)">{meta}</span>
+        <StudyRowMenu kindLabel={item.kind === "test" ? "Test" : "Mindmap"} onDelete={onDelete} onRename={onStartRename} />
+      </div>
+    </StudyRowContextMenu>
   );
 }
