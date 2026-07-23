@@ -4,9 +4,9 @@ import { deviceKey } from "@/lib/workspace/chat-api";
 
 const MAX_ATTACHMENT_CHARS = 12_000;
 const MAX_TOTAL_CHARS = 22_000;
-const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx"];
+export const DOCUMENT_EXTENSIONS = [".pdf", ".docx", ".pptx"];
 
-function isDocument(file: File) {
+export function isDocument(file: File) {
   const name = file.name.toLowerCase();
   return DOCUMENT_EXTENSIONS.some((extension) => name.endsWith(extension));
 }
@@ -16,7 +16,7 @@ function isReadableText(file: File) {
   return /\.(md|mdx|txt|csv|json|ts|tsx|js|jsx|py|java|c|cpp|h|css|html|xml|yaml|yml|sql)$/i.test(file.name);
 }
 
-async function extractDocument(file: File, uid: string | null): Promise<string> {
+export async function extractDocument(file: File, uid: string | null): Promise<string> {
   const key = uid ? await deviceKey(uid) : null;
   if (!key) throw new Error("Sign in to read this attachment.");
   const form = new FormData();
