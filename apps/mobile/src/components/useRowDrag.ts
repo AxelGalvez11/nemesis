@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import type { View } from "react-native";
 import { Gesture } from "react-native-gesture-handler";
 import { useSharedValue, type SharedValue } from "react-native-reanimated";
+import { hapticHoldRegistered } from "@/lib/haptics";
 
 // Hold-then-drag a row onto a folder (owner 2026-07-23: "allow users to hold
 // down on items to drag or drop, or long hold to open up minimenu"). Shared by
@@ -154,6 +155,11 @@ export function useRowDrag({
         .onStart((event) => {
           fingerX.value = event.absoluteX;
           fingerY.value = event.absoluteY;
+          // The gesture only reaches onStart after HOLD_MS, so this IS the
+          // moment the hold registers — the same instant the row lifts. Skipped
+          // when the hold leads nowhere (select mode switches both off), because
+          // a tap promising something that never happens is worse than none.
+          if (opts.draggable || (opts.holdForMenu ?? true)) hapticHoldRegistered();
           if (!opts.draggable) return;
           measureRows();
           setActiveKey(key);
