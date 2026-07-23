@@ -8,6 +8,7 @@ import {
   FINAL_NOTES_WINDOW_CHARS,
   LIVE_NOTES_INTERVAL_MS,
   LIVE_NOTES_MIN_CHARS,
+  LIVE_NOTES_TRANSCRIPT_CHARS,
   liveNotesText,
   mergeLiveNotes,
   parseLiveNotes,
@@ -131,4 +132,80 @@ Deno.test("the rebuild keeps more notes than one live pass, still deduped", () =
 Deno.test("the live pass ceiling is unchanged when no cap is passed", () => {
   const previous = Array.from({ length: 30 }, (_, i) => `note ${i}`);
   assertEquals(mergeLiveNotes(previous, ["fresh"]).length, 18);
+});
+
+// --- The invariant that makes the rebuild mean anything ---------------------
+// buildLiveNotesMessages keeps only the LAST LIVE_NOTES_TRANSCRIPT_CHARS of
+// whatever it is handed. A window wider than that clip is not summarized, it
+// is silently truncated -- the rebuild would appear to work while most of the
+// lecture never reached the model. Shipped that way once; never again.
+
+Deno.test("a full-size window reaches the model uncut", () => {
+  assert(
+    FINAL_NOTES_WINDOW_CHARS <= LIVE_NOTES_TRANSCRIPT_CHARS,
+    `a ${FINAL_NOTES_WINDOW_CHARS}-char window is clipped to ${LIVE_NOTES_TRANSCRIPT_CHARS} by the prompt builder`,
+  );
+  const window = "z".repeat(FINAL_NOTES_WINDOW_CHARS);
+  const prompt = buildLiveNotesMessages(window, ["prior note"]).map((m) => m.content).join("\n");
+  assert(prompt.includes(window), "the prompt builder dropped part of a full-size window");
+});
+
+Deno.test("every planned window reaches the model uncut, for a real-length lecture", () => {
+  const lecture = "the patient presents with resistant hypertension. ".repeat(1000); // ~50k chars
+  for (const window of planFinalNotesWindows(lecture)) {
+    const prompt = buildLiveNotesMessages(window, []).map((m) => m.content).join("\n");
+    assert(prompt.includes(window), `a ${window.length}-char window was clipped by the prompt builder`);
+  }
+});
+
+// --- Boundary-choice behaviour (each pinned so a mutation cannot pass) -------
+
+Deno.test("a break in the window's first half is ignored, so windows stay full", () => {
+  const early = `head\n\n${"word ".repeat(FINAL_NOTES_WINDOW_CHARS)}`;
+  const [first] = planFinalNotesWindows(early);
+  assert(first !== undefined);
+  assert(
+    first.length > FINAL_NOTES_WINDOW_CHARS / 2,
+    `an early break shrank the window to ${first.length}`,
+  );
+});
+
+Deno.test("break marks are preferred paragraph > line > sentence > space", () => {
+  const filler = (n: number) => "x".repeat(n);
+  const at = Math.floor(FINAL_NOTES_WINDOW_CHARS * 0.6);
+  // A paragraph break at 60% competes with a sentence end and a space later on.
+  const text = `${filler(at)}\n\n${filler(100)}. ${filler(100)} ${filler(FINAL_NOTES_WINDOW_CHARS)}`;
+  const [first] = planFinalNotesWindows(text);
+  assertEquals(first, filler(at));
+});
+
+Deno.test("no window starts or ends on stray whitespace", () => {
+  const text = `${"alpha bravo\n\ncharlie delta\n".repeat(3000)}`;
+  for (const window of planFinalNotesWindows(text)) {
+    assert(!/^\s/.test(window), `window started with whitespace: ${JSON.stringify(window.slice(0, 8))}`);
+    assert(!/\s$/.test(window), `window ended with whitespace: ${JSON.stringify(window.slice(-8))}`);
+  }
+});
+
+Deno.test("window count follows the size constant exactly", () => {
+  const chunk = `${"a".repeat(FINAL_NOTES_WINDOW_CHARS - 2)}\n\n`;
+  assertEquals(planFinalNotesWindows(chunk.repeat(5)).length, 5);
+  assertEquals(planFinalNotesWindows(chunk).length, 1);
+});
+
+Deno.test("the window budget spans a longer recording than the server will accept", () => {
+  // The transcription route caps a recording at 3 hours; speech runs roughly
+  // 750 chars/minute. The rebuild must reach past that, or long lectures get
+  // silently half-summarized.
+  const threeHoursOfChars = 750 * 60 * 3;
+  assert(
+    FINAL_NOTES_WINDOW_CHARS * FINAL_NOTES_MAX_WINDOWS > threeHoursOfChars,
+    `budget of ${FINAL_NOTES_WINDOW_CHARS * FINAL_NOTES_MAX_WINDOWS} chars cannot cover ${threeHoursOfChars}`,
+  );
+});
+
+Deno.test("the rebuild's note ceiling is actually reachable", () => {
+  // A ceiling below what the windows can produce is a dead constant, and the
+  // test pinning it would be validating a state production never enters.
+  assert(FINAL_NOTES_MAX_WINDOWS * 6 >= FINAL_NOTES_MAX_KEPT);
 });

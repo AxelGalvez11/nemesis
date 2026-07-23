@@ -14,7 +14,10 @@ import type { WireMsg } from "./chat-thread.ts";
 export const LIVE_NOTES_MIN_CHARS = 160;
 export const LIVE_NOTES_INTERVAL_MS = 45_000;
 export const LIVE_NOTES_MIN_GROWTH_CHARS = 40;
-const LIVE_NOTES_TRANSCRIPT_CHARS = 8_000;
+/** How much transcript buildLiveNotesMessages actually sends. Exported ONLY so
+ *  the rebuild below can size its windows against it — a window bigger than
+ *  this is silently truncated by the prompt builder, not summarized. */
+export const LIVE_NOTES_TRANSCRIPT_CHARS = 8_000;
 const MAX_NEW_NOTES = 6;
 const MAX_KEPT_NOTES = 18;
 const MAX_NOTE_LENGTH = 240;
@@ -98,12 +101,23 @@ export function liveNotesText(notes: string[]): string {
 //
 // So the rebuild walks the finished transcript in order and re-runs the SAME
 // prompt per window: each call sees the notes already on the board and is told
-// not to repeat them, exactly as the live pass sees a growing transcript. One
-// call per window (three or so for an hour of lecture) against the ~80 the
-// live pass already spent — cheap enough to be unconditional.
+// not to repeat them, exactly as the live pass sees a growing transcript.
+// ~12 calls for an hour of lecture against the ~80 the live pass already
+// spent — cheap enough to be unconditional.
 
-export const FINAL_NOTES_WINDOW_CHARS = 20_000;
-export const FINAL_NOTES_MAX_WINDOWS = 6;
+// A window is deliberately HALF of LIVE_NOTES_TRANSCRIPT_CHARS. The prompt
+// builder keeps only the LAST LIVE_NOTES_TRANSCRIPT_CHARS of whatever it is
+// handed, so a window larger than that clip is not summarized — it is silently
+// truncated, and most of the lecture never reaches the model. Half rather than
+// exactly equal also keeps note density proportionate: one pass of up to
+// MAX_NEW_NOTES bullets per ~5 minutes of speech. The test suite pins
+// `FINAL_NOTES_WINDOW_CHARS <= LIVE_NOTES_TRANSCRIPT_CHARS` so the two can
+// never drift apart again.
+export const FINAL_NOTES_WINDOW_CHARS = LIVE_NOTES_TRANSCRIPT_CHARS / 2;
+/** ~4 hours of speech, comfortably above the 3h ceiling the server's
+ *  transcription route enforces — so the truncation branch should be
+ *  unreachable in practice. It still logs if it is ever hit. */
+export const FINAL_NOTES_MAX_WINDOWS = 45;
 export const FINAL_NOTES_MAX_KEPT = 40;
 
 /** Break marks tried in order of preference when choosing where a window ends. */
