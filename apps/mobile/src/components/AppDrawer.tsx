@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
 import { listThreads, newThreadId } from "@/api/chat";
 import type { ThreadSummary } from "@/lib/chat-threads";
+import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
 import Svg, { Path } from "react-native-svg";
 import { CalendarIcon, GraphIcon, LibraryIcon, NotebookIcon, PluginIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
@@ -351,7 +352,10 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
         <View style={styles.navGroup}>
           <NavRow Icon={StudyIcon} label="Study" onPress={() => go("/study")} />
           <NavRow Icon={LibraryIcon} label="Library" onPress={() => go("/library")} />
-          <NavRow Icon={NotebookIcon} label="Notebooks" onPress={() => go("/notebooks")} />
+          {/* Notebooks retired — see lib/notebooks-retired.ts. */}
+          {NOTEBOOKS_RETIRED ? null : (
+            <NavRow Icon={NotebookIcon} label="Notebooks" onPress={() => go("/notebooks")} />
+          )}
           <NavRow Icon={GraphIcon} label="Graph" onPress={() => go("/graph")} />
           <NavRow Icon={CalendarIcon} label="Calendar" onPress={() => go("/calendar")} />
           <NavRow Icon={PluginIcon} label="Plugins" onPress={() => go("/plugins")} />

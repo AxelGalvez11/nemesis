@@ -45,6 +45,7 @@ import { MessageBody } from "@/components/MessageBody";
 import { EmptyBlock, MissionButton } from "@/components/mission-ui";
 import { NoteListSheet, type NoteSheetRow } from "@/components/NoteListSheet";
 import { importChatThreadIntoNotebook, listNotebooks, type Notebook } from "@/api/notebooks";
+import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
 import { RecordSession, type RecordingSessionState, type RecordSessionHandle } from "@/components/RecordSession";
 import { Skeleton } from "@/components/Skeleton";
 import { SourcesPill, SourcesSheet } from "@/components/SourcesSheet";
@@ -971,14 +972,18 @@ function ChatActionsPopup({
           >
             <Text style={styles.actionsLabel}>{pinned ? "Unpin" : "Pin"}</Text>
           </Pressable>
-          <Pressable
-            testID="chat-action-move-notebook"
-            onPress={() => pick(onMoveToNotebook)}
-            style={({ pressed }) => [styles.actionsRow, styles.actionsDivider, pressed && styles.actionsRowPressed]}
-            accessibilityRole="button"
-          >
-            <Text style={styles.actionsLabel}>Move to notebook</Text>
-          </Pressable>
+          {/* Notebooks retired — see lib/notebooks-retired.ts. Moving a chat
+              into a hidden surface would be a one-way trip. */}
+          {NOTEBOOKS_RETIRED ? null : (
+            <Pressable
+              testID="chat-action-move-notebook"
+              onPress={() => pick(onMoveToNotebook)}
+              style={({ pressed }) => [styles.actionsRow, styles.actionsDivider, pressed && styles.actionsRowPressed]}
+              accessibilityRole="button"
+            >
+              <Text style={styles.actionsLabel}>Move to notebook</Text>
+            </Pressable>
+          )}
           <Pressable
             testID="chat-action-delete"
             onPress={() => pick(onDelete)}
