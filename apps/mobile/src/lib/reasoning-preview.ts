@@ -29,10 +29,17 @@ const GLIMPSE_MAX = 140;
 const MIN_FRAGMENT = 24;
 
 /** Flatten the raw stream to a single display line: markdown emphasis and
- *  headings are noise at this size, and newlines would break the layout. */
+ *  headings are noise at this size, and newlines would break the layout.
+ *
+ *  ONLY `*`, `#` and backtick are stripped. It is tempting to add `>` and `_`
+ *  (blockquote and italic markers), and it would be wrong: this app's reasoning
+ *  is full of "keep SBP > 140" and "CrCl > 50", and dropping the operator turns
+ *  a threshold into a number with no meaning — silently, on exactly the
+ *  quantitative turns where the preview is most worth reading. Blockquote `>` is
+ *  line-start only and stops mattering the moment everything is one line. */
 function clean(raw: string): string {
   return raw
-    .replace(/[*#`_>]/g, "")
+    .replace(/[*#`]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }

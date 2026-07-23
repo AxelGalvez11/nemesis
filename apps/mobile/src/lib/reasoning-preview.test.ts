@@ -53,6 +53,18 @@ Deno.test("markdown noise and newlines are flattened to one line", () => {
   );
 });
 
+Deno.test("comparison operators SURVIVE the markdown clean-up", () => {
+  // Regression: stripping "greater than" as if it were a blockquote marker turns
+  // a threshold into a bare number, and does it silently — on exactly the
+  // clinical turns where this line is worth reading.
+  assertEquals(
+    reasoningGlimpse("Keep SBP > 140 and CrCl > 50 in range."),
+    "Keep SBP > 140 and CrCl > 50 in range.",
+  );
+  // Underscores likewise: they carry meaning in names and identifiers.
+  assertEquals(reasoningGlimpse("The half_life value matters here"), "The half_life value matters here");
+});
+
 Deno.test("segments split on real sentence ends only", () => {
   assertEquals(reasoningSegments("One. Two! Three? Four"), ["One.", "Two!", "Three?", "Four"]);
 });
