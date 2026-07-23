@@ -61,19 +61,37 @@ function joinPath(parts: readonly string[]): string {
   return parts.join("::");
 }
 
-/** Orders one level: folders first (alphabetical), then decks (due-first,
- *  ties alphabetical). See the file header on why this differs from web. */
-function compareNodes<T>(a: DeckTreeNode<T>, b: DeckTreeNode<T>): number {
-  const aIsDeck = a.deck !== null ? 1 : 0;
-  const bIsDeck = b.deck !== null ? 1 : 0;
-  if (aIsDeck !== bIsDeck) return aIsDeck - bIsDeck;
-  if (aIsDeck === 0) return a.label.localeCompare(b.label);
-  return b.actionable - a.actionable || a.label.localeCompare(b.label);
+/** How a level's DECKS are ordered (owner 2026-07-23 "…" menu → Sorting).
+ *  Folders always sort alphabetically, except "cards" also orders folders by
+ *  their rolled-up total. "due" is the default and matches the pre-sort order. */
+export type DeckSort = "due" | "alpha" | "cards";
+
+/** Orders one level: folders first, then decks, keyed by the chosen sort. */
+function makeComparer<T>(sort: DeckSort): (a: DeckTreeNode<T>, b: DeckTreeNode<T>) => number {
+  return (a, b) => {
+    const aIsDeck = a.deck !== null ? 1 : 0;
+    const bIsDeck = b.deck !== null ? 1 : 0;
+    if (aIsDeck !== bIsDeck) return aIsDeck - bIsDeck; // folders before decks
+    if (aIsDeck === 0) {
+      // Folders: alphabetical, but "cards" sorts by rolled-up total first.
+      if (sort === "cards") return b.total - a.total || a.label.localeCompare(b.label);
+      return a.label.localeCompare(b.label);
+    }
+    // Decks.
+    switch (sort) {
+      case "alpha":
+        return a.label.localeCompare(b.label);
+      case "cards":
+        return b.total - a.total || a.label.localeCompare(b.label);
+      default:
+        return b.actionable - a.actionable || a.label.localeCompare(b.label);
+    }
+  };
 }
 
-function sortTree<T>(nodes: DeckTreeNode<T>[]): void {
-  nodes.sort(compareNodes);
-  for (const node of nodes) sortTree(node.children);
+function sortTree<T>(nodes: DeckTreeNode<T>[], cmp: (a: DeckTreeNode<T>, b: DeckTreeNode<T>) => number): void {
+  nodes.sort(cmp);
+  for (const node of nodes) sortTree(node.children, cmp);
 }
 
 /** Walks bottom-up so a folder's badge includes grandchildren, not just the
@@ -93,8 +111,9 @@ function rollUp<T>(node: DeckTreeNode<T>): { actionable: number; total: number }
 }
 
 /** Builds the folder tree. Input is never mutated — the nodes are new objects
- *  and only they are sorted/summed in place while being assembled. */
-export function buildDeckTree<T>(items: readonly DeckTreeItem<T>[]): DeckTreeNode<T>[] {
+ *  and only they are sorted/summed in place while being assembled. `sort`
+ *  chooses how decks within a level are ordered (default "due"). */
+export function buildDeckTree<T>(items: readonly DeckTreeItem<T>[], sort: DeckSort = "due"): DeckTreeNode<T>[] {
   const roots: DeckTreeNode<T>[] = [];
 
   /** Walks/creates each level of `parts` and returns the child list a deck at
@@ -133,7 +152,7 @@ export function buildDeckTree<T>(items: readonly DeckTreeItem<T>[]): DeckTreeNod
   });
 
   for (const root of roots) rollUp(root);
-  sortTree(roots);
+  sortTree(roots, makeComparer<T>(sort));
   return roots;
 }
 
