@@ -21,7 +21,23 @@ import {
   renamedGroupPath,
   rewriteGroupPrefix,
 } from "@/lib/study-tree";
+import { normalizeStudyFlag } from "@/lib/study-flags";
 import { supabase } from "./supabase";
+
+/** Trim, drop blanks, lowercase, de-duplicate a card's tag list — mirrors web's
+ *  normalizeStudyTags so the two surfaces store tags identically. */
+function normalizeStudyTags(tags: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const tag of tags) {
+    const clean = tag.trim().toLowerCase();
+    if (clean && !seen.has(clean)) {
+      seen.add(clean);
+      out.push(clean);
+    }
+  }
+  return out;
+}
 
 export interface CloudStudyDeck {
   id: string;
@@ -46,6 +62,9 @@ export interface CloudStudyCard {
   repetitions: number;
   lapses: number;
   suspended: boolean;
+  /** Anki color flag, 0 = none, 1-7 per STUDY_FLAG_COLORS (owner 2026-07-23 Browse). */
+  flag: number;
+  tags: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -94,6 +113,8 @@ function toCard(raw: unknown): CloudStudyCard | null {
     repetitions: numberField(raw.repetitions),
     lapses: numberField(raw.lapses),
     suspended: raw.suspended === true,
+    flag: normalizeStudyFlag(raw.flag),
+    tags: Array.isArray(raw.tags) ? raw.tags.filter((tag): tag is string => typeof tag === "string") : [],
     createdAt: text(raw.created_at),
     updatedAt: text(raw.updated_at),
   };
@@ -111,7 +132,7 @@ export async function fetchCloudStudy(userId: string): Promise<{ decks: CloudStu
       .order("updated_at", { ascending: false }),
     supabase
       .from("study_cards")
-      .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,created_at,updated_at")
+      .select("id,deck_id,front,back,card_type,source_path,due_at,interval_days,repetitions,lapses,suspended,flag,tags,created_at,updated_at")
       .eq("user_id", userId)
       .order("due_at", { ascending: true }),
   ]);
@@ -407,5 +428,63 @@ export async function deleteStudyGroup(
     .delete()
     .in("id", doomed.map((deck) => deck.id))
     .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+}
+
+// --- per-card edits (owner 2026-07-23: the Browse sheet's edit panel) --------
+// Ported from web's study-cloud-store.ts updateCard/setCardFlag/setCardSuspended.
+// Card-type change, image-occlusion editing, and Anki (.apkg) export are NOT
+// here yet — the phone Browse covers text/flag/suspend/tags/delete; those three
+// are the web panel's heavier extras, left for a follow-up.
+
+/** Edit a card's front/back text. */
+export async function updateStudyCard(userId: string, cardId: string, front: string, back: string): Promise<void> {
+  const trimmedFront = front.trim();
+  const trimmedBack = back.trim();
+  if (!trimmedFront || !trimmedBack) throw new Error("Add both a front and a back.");
+  const { error } = await supabase
+    .from("study_cards")
+    .update({ front: trimmedFront, back: trimmedBack })
+    .eq("id", cardId)
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+}
+
+/** Set (flag 1-7) or clear (flag 0) a card's Anki color flag. Writes the legacy
+ *  `flagged` boolean alongside so older readers stay correct — same as web. */
+export async function setStudyCardFlag(userId: string, cardId: string, flag: number): Promise<void> {
+  const value = normalizeStudyFlag(flag);
+  const { error } = await supabase
+    .from("study_cards")
+    .update({ flag: value, flagged: value > 0 })
+    .eq("id", cardId)
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+}
+
+/** Suspend or unsuspend a card (a suspended card never comes up for review). */
+export async function setStudyCardSuspended(userId: string, cardId: string, suspended: boolean): Promise<void> {
+  const { error } = await supabase
+    .from("study_cards")
+    .update({ suspended })
+    .eq("id", cardId)
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+}
+
+/** Replace a card's tag list (trimmed, lowercased, de-duplicated). */
+export async function setStudyCardTags(userId: string, cardId: string, tags: readonly string[]): Promise<void> {
+  const { error } = await supabase
+    .from("study_cards")
+    .update({ tags: normalizeStudyTags(tags) })
+    .eq("id", cardId)
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+}
+
+/** Delete ONE card — leaves the deck and its other cards intact (unlike
+ *  deleteStudyDeck, which cascades). Permanent. */
+export async function deleteStudyCard(userId: string, cardId: string): Promise<void> {
+  const { error } = await supabase.from("study_cards").delete().eq("id", cardId).eq("user_id", userId);
   if (error) throw new Error(error.message);
 }

@@ -20,6 +20,7 @@ import {
   parseThreadStore,
   remapThreadId,
   removeThread,
+  renameThreadTitle,
   setThreadMessages,
   setThreadPinned,
   threadSummaries,
@@ -54,6 +55,27 @@ Deno.test("upsertThread: inserts, updates in place, refreshes title/updatedAt, k
   assertEquals(store.threads[0].updatedAt, "2026-07-18T02:00:00Z");
   assertEquals(store.threads[0].createdAt, "2026-07-18T01:00:00Z");
   assertEquals(store.threads[0].messages.length, 3);
+});
+
+Deno.test("renameThreadTitle: sets a manual title; blank / unknown id is a no-op", () => {
+  let store = upsertThread(emptyStore(), "t1", [user("First question")], "2026-07-18T01:00:00Z");
+  store = renameThreadTitle(store, "t1", "  Beta blockers exam  ");
+  assertEquals(getThread(store, "t1")?.title, "Beta blockers exam"); // trimmed
+  store = renameThreadTitle(store, "t1", "   "); // blank → unchanged
+  assertEquals(getThread(store, "t1")?.title, "Beta blockers exam");
+  const before = store;
+  store = renameThreadTitle(store, "missing", "nope"); // unknown id → no-op
+  assertEquals(store.threads.length, before.threads.length);
+});
+
+Deno.test("upsertThread: a manual rename SURVIVES the next message (no title clobber)", () => {
+  let store = upsertThread(emptyStore(), "t1", [user("First question")], "2026-07-18T01:00:00Z");
+  store = renameThreadTitle(store, "t1", "Renamed by hand");
+  // A new message used to re-derive the title from the first message, reverting
+  // the rename. It must now be preserved.
+  store = upsertThread(store, "t1", [user("First question"), bot("answer"), user("Follow up")], "2026-07-18T02:00:00Z");
+  assertEquals(getThread(store, "t1")?.title, "Renamed by hand");
+  assertEquals(getThread(store, "t1")?.messages.length, 3); // messages still updated
 });
 
 Deno.test("upsertThread: newest thread sorts first; store caps at MAX_THREADS", () => {

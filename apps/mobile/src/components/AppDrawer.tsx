@@ -1,14 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type ComponentType } from "react";
-import { Animated, Easing, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Alert, Animated, AppState, Easing, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { router, usePathname } from "expo-router";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/AuthProvider";
-import { listThreads, newThreadId } from "@/api/chat";
+import { deleteThread, listThreads, newThreadId, pinThread, renameThread } from "@/api/chat";
 import type { ThreadSummary } from "@/lib/chat-threads";
 import { NOTEBOOKS_RETIRED } from "@/lib/notebooks-retired";
 import Svg, { Path } from "react-native-svg";
-import { CalendarIcon, GraphIcon, LibraryIcon, NotebookIcon, PluginIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
+import { RowActionsSheet, TextPromptSheet, type RowAction } from "./RowActionSheets";
+import { CalendarIcon, ChevronIcon, GraphIcon, LibraryIcon, NotebookIcon, PluginIcon, SearchIcon, SettingsIcon, StudyIcon, type IconProps } from "./icons";
 import type { ThemeColors } from "@/theme/palette";
 import { useTheme, useThemedStyles } from "@/theme/ThemeProvider";
 import { control, radius, space, type } from "@/theme/tokens";
@@ -306,10 +307,39 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
   const [chats, setChats] = useState<ThreadSummary[]>([]);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  // Pinned chats get their own collapsible block above the main list (owner
+  // 2026-07-23). Expanded by default; the chevron rotates open exactly like the
+  // folder rows on the Library/Study trees.
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
+  // Long-press a chat row → a mini menu (owner 2026-07-23: "hold down on chats
+  // in the side bar to open up minimenu for delete chat, rename, pin"). Reuses
+  // the SAME RowActionsSheet + TextPromptSheet the Library and Study trees use.
+  const [actionTarget, setActionTarget] = useState<ThreadSummary | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ThreadSummary | null>(null);
 
-  // Refresh chats each time the drawer opens (cheap; keeps it current).
+  // Count of in-flight local mutations (pin/rename/delete). A refresh while one
+  // is still writing to the cloud would re-read the STALE row and
+  // mergeCloudThreadList (cloud-wins) would revert the optimistic change — the
+  // just-deleted chat reappears, or a rename/pin snaps back (review finding). So
+  // every refresh path skips while this is non-zero.
+  const pendingRef = useRef(0);
+  const withPending = useCallback(async (work: () => Promise<unknown>) => {
+    pendingRef.current += 1;
+    try {
+      await work();
+    } finally {
+      pendingRef.current -= 1;
+    }
+  }, []);
+  const refresh = useCallback(() => {
+    if (!uid || pendingRef.current > 0) return;
+    void listThreads(uid).then(setChats).catch(() => {});
+  }, [uid]);
+
+  // Refresh chats each time the drawer opens (cheap; keeps it current) — unless
+  // a local write is still in flight (see pendingRef).
   useEffect(() => {
-    if (!open || !uid) return;
+    if (!open || !uid || pendingRef.current > 0) return;
     let alive = true;
     void listThreads(uid).then((rows) => alive && setChats(rows)).catch(() => {});
     return () => {
@@ -317,13 +347,104 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
     };
   }, [open, uid]);
 
+  // …and again whenever the app returns to the foreground while the drawer is
+  // open, so a chat started on the web (or another device) appears without
+  // having to close and reopen the sidebar (owner 2026-07-23: "chats still
+  // arent synced with the webapp"). This is the drawer's half of the
+  // refresh-on-foreground story; the open chat thread refreshes itself the same
+  // way — see chat.tsx.
+  useEffect(() => {
+    if (!open || !uid) return;
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") refresh();
+    });
+    return () => sub.remove();
+  }, [open, uid, refresh]);
+
+  // The long-press menu / rename dialog must not survive the drawer closing:
+  // dismissing via the dimmed page taps the drawer's OWN close-catcher, not the
+  // sheet's, so without this the menu would silently reappear on the next open.
+  useEffect(() => {
+    if (!open) {
+      setActionTarget(null);
+      setRenameTarget(null);
+    }
+  }, [open]);
+
   const go = (path: string) => {
     onClose();
     router.push(path as never);
   };
 
+  const togglePin = (chat: ThreadSummary) => {
+    setActionTarget(null);
+    const next = !chat.pinned;
+    // Optimistic — the row jumps between the Pinned block and the main list at
+    // once; the cloud write is best-effort. withPending blocks a refresh from
+    // reverting it before the write lands.
+    setChats((rows) => rows.map((row) => (row.id === chat.id ? { ...row, pinned: next } : row)));
+    if (uid) void withPending(() => pinThread(uid, chat.id, next));
+  };
+
+  const confirmDelete = (chat: ThreadSummary) => {
+    setActionTarget(null);
+    Alert.alert("Delete chat?", `"${chat.title}" will be removed from your chats on every device.`, [
+      { style: "cancel", text: "Cancel" },
+      {
+        onPress: () => {
+          setChats((rows) => rows.filter((row) => row.id !== chat.id));
+          if (uid) void withPending(() => deleteThread(uid, chat.id));
+        },
+        style: "destructive",
+        text: "Delete",
+      },
+    ]);
+  };
+
+  const confirmRename = (value: string) => {
+    const chat = renameTarget;
+    setRenameTarget(null);
+    const clean = value.trim();
+    if (!chat || !uid || !clean) return;
+    setChats((rows) => rows.map((row) => (row.id === chat.id ? { ...row, title: clean } : row)));
+    void withPending(() => renameThread(uid, chat.id, clean));
+  };
+
+  const rowActions: RowAction[] = actionTarget
+    ? [
+        { key: "pin", label: actionTarget.pinned ? "Unpin" : "Pin", onPress: () => togglePin(actionTarget) },
+        {
+          key: "rename",
+          label: "Rename",
+          onPress: () => {
+            const target = actionTarget;
+            setActionTarget(null);
+            setRenameTarget(target);
+          },
+        },
+        { key: "delete", label: "Delete", destructive: true, onPress: () => confirmDelete(actionTarget) },
+      ]
+    : [];
+
   const trimmed = query.trim().toLowerCase();
   const shownChats = trimmed ? chats.filter((chat) => chat.title.toLowerCase().includes(trimmed)) : chats;
+  const pinnedChats = shownChats.filter((chat) => chat.pinned);
+  const otherChats = shownChats.filter((chat) => !chat.pinned);
+
+  const renderChatRow = (chat: ThreadSummary) => (
+    <Pressable
+      key={chat.id}
+      testID={`drawer-chat-${chat.id}`}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      onPress={() => go(`/chat?c=${chat.id}`)}
+      onLongPress={() => setActionTarget(chat)}
+      delayLongPress={300}
+      accessibilityHint="Touch and hold to rename, pin, or delete this chat."
+    >
+      <Text style={styles.rowTitle} numberOfLines={1}>{chat.title}</Text>
+      <Text style={styles.rowTime}>{relTime(chat.updatedAt)}</Text>
+    </Pressable>
+  );
 
   return (
     <View style={[styles.panelInner, { paddingTop: insets.top + space(2) }]}>
@@ -376,22 +497,33 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
           </View>
         ) : null}
 
-        <Text style={styles.sectionLabel}>Chats</Text>
-        {shownChats.length === 0 ? (
-          <Text style={styles.emptyRows}>{trimmed ? "No matches" : "No chats yet"}</Text>
-        ) : (
-          shownChats.map((chat) => (
+        {pinnedChats.length > 0 ? (
+          <>
             <Pressable
-              key={chat.id}
-              testID={`drawer-chat-${chat.id}`}
-              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-              onPress={() => go(`/chat?c=${chat.id}`)}
+              style={({ pressed }) => [styles.sectionHeader, pressed && styles.rowPressed]}
+              onPress={() => setPinnedCollapsed((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel="Pinned chats"
+              accessibilityState={{ expanded: !pinnedCollapsed }}
+              testID="drawer-pinned-header"
             >
-              {chat.pinned ? <PinIcon size={12} color={c.accent} /> : null}
-              <Text style={styles.rowTitle} numberOfLines={1}>{chat.title}</Text>
-              <Text style={styles.rowTime}>{relTime(chat.updatedAt)}</Text>
+              <View style={pinnedCollapsed ? undefined : styles.chevronOpen}>
+                <ChevronIcon size={12} color={c.text2} strokeWidth={2.2} />
+              </View>
+              <Text style={styles.sectionHeaderLabel}>Pinned</Text>
+              <Text style={styles.sectionCount}>{pinnedChats.length}</Text>
             </Pressable>
-          ))
+            {pinnedCollapsed ? null : pinnedChats.map(renderChatRow)}
+          </>
+        ) : null}
+
+        <Text style={styles.sectionLabel}>Chats</Text>
+        {otherChats.length === 0 ? (
+          <Text style={styles.emptyRows}>
+            {trimmed ? "No matches" : pinnedChats.length ? "No other chats" : "No chats yet"}
+          </Text>
+        ) : (
+          otherChats.map(renderChatRow)
         )}
 
       </ScrollView>
@@ -431,6 +563,42 @@ function DrawerContent({ open, onClose, onNewChat }: { open: boolean; onClose: (
           <SettingsIcon size={21} color={c.text} />
         </Pressable>
       </View>
+
+      {/* Long-press chat menu + rename dialog (owner 2026-07-23). Wrapped in a
+          Modal so they present FULL-SCREEN above the app: the drawer panel is
+          only ~330pt wide with its overflow clipped, and SlideUpSheet positions
+          itself relative to its parent — inline, these would be a cramped
+          sidebar-width strip. The Modal escapes that; GestureHandlerRootView
+          keeps SlideUpSheet's drag-to-expand working inside it. Same reusable
+          pieces the Library and Study row menus use. */}
+      <Modal
+        transparent
+        animationType="none"
+        visible={actionTarget !== null || renameTarget !== null}
+        onRequestClose={() => {
+          setActionTarget(null);
+          setRenameTarget(null);
+        }}
+      >
+        <GestureHandlerRootView style={StyleSheet.absoluteFill}>
+          <RowActionsSheet
+            visible={actionTarget !== null}
+            title={actionTarget?.title ?? ""}
+            actions={rowActions}
+            onClose={() => setActionTarget(null)}
+            testID="drawer-chat-actions"
+          />
+          <TextPromptSheet
+            visible={renameTarget !== null}
+            title="Rename chat"
+            placeholder="Chat name"
+            initialValue={renameTarget?.title ?? ""}
+            onConfirm={confirmRename}
+            onClose={() => setRenameTarget(null)}
+            testID="drawer-chat-rename"
+          />
+        </GestureHandlerRootView>
+      </Modal>
     </View>
   );
 }
@@ -457,22 +625,6 @@ function ComposeIcon({ size = 23, color, strokeWidth = 1.8 }: IconProps) {
         d="M11.3 5.4H7.1A2.6 2.6 0 0 0 4.5 8v8.9a2.6 2.6 0 0 0 2.6 2.6H16a2.6 2.6 0 0 0 2.6-2.6v-4.2M18.9 3.8l1.3 1.3a1.7 1.7 0 0 1 0 2.4l-7.5 7.5-3.9 1 1-3.9 7.5-7.5a1.7 1.7 0 0 1 2.4 0Z"
         stroke={color}
         strokeWidth={strokeWidth}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-/** Small pushpin marking a pinned chat row. */
-function PinIcon({ size = 12, color }: { size?: number; color: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M12 17v5 M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"
-        stroke={color}
-        strokeWidth={1.8}
         fill="none"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -539,6 +691,18 @@ const createStyles = (c: ThemeColors) =>
     navLabel: { color: c.text, fontSize: type.bodyStrong.fontSize, fontWeight: "500", flex: 1 },
 
     sectionLabel: { color: c.text2, fontSize: type.micro.fontSize, fontWeight: "700", paddingHorizontal: space(4), marginTop: space(3), marginBottom: space(1.5) },
+
+    // Collapsible "Pinned" header — a tappable row with a chevron that rotates
+    // open (owner 2026-07-23). Same chevron idiom as the Library/Study folder rows.
+    sectionHeader: {
+      flexDirection: "row", alignItems: "center", gap: space(1.5),
+      paddingHorizontal: space(4), marginTop: space(3), marginBottom: space(1.5),
+      paddingVertical: space(1), borderRadius: radius.sm, marginHorizontal: space(2),
+    },
+    sectionHeaderLabel: { color: c.text2, fontSize: type.micro.fontSize, fontWeight: "700", flex: 1 },
+    sectionCount: { color: c.text3, fontSize: type.micro.fontSize, fontVariant: ["tabular-nums"] },
+    // ChevronIcon points right by default; rotate it down for the expanded state.
+    chevronOpen: { transform: [{ rotate: "90deg" }] },
 
     // Chat rows share one compact row style.
     row: {

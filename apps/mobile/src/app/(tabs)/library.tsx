@@ -692,7 +692,6 @@ export default function LibraryScreen() {
           library root — so it needs no special case in onRowDrop. */}
       <RootDropZone
         ref={rowDrag.registerRow("root:", true)}
-        label="Move out of folders"
         active={rowDrag.activeKey !== null}
         over={rowDrag.overKey === "root:"}
         top={contentTop}
