@@ -650,6 +650,29 @@ export default function ChatScreen() {
     }, [uid, threadId]),
   );
 
+  // Keep the OPEN thread live-ish without Realtime (owner 2026-07-23: "chats
+  // still arent synced with the webapp"). Realtime isn't enabled on these tables
+  // in prod, so instead: pull the thread's messages when the screen regains
+  // focus, then gently re-pull while it stays focused, so a message sent from
+  // web shows up within a few seconds rather than only on a cold reopen. Never
+  // runs mid-send (loadThreadMessages merges local+cloud, but skipping avoids
+  // churn over the optimistic turn) and the interval stops on blur/unmount.
+  useFocusEffect(
+    useCallback(() => {
+      if (!uid || !threadId) return;
+      const epoch = epochRef.current;
+      const pull = () => {
+        if (sendingRef.current) return;
+        void loadThreadMessages(uid, threadId).then((loaded) => {
+          if (epochRef.current === epoch) setMessages(loaded);
+        });
+      };
+      pull();
+      const timer = setInterval(pull, 30000);
+      return () => clearInterval(timer);
+    }, [uid, threadId]),
+  );
+
   if (!uid) {
     return (
       <View

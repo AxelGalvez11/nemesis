@@ -59,6 +59,7 @@ import {
   parseThreadStore,
   remapThreadId,
   removeThread,
+  renameThreadTitle,
   setThreadMessages,
   setThreadPinned,
   threadSummaries,
@@ -604,6 +605,18 @@ export async function pinThread(uid: string, id: string, pinned: boolean): Promi
   void withOneRetry(() =>
     supabase.from("chat_threads").update({ pinned, updated_at: new Date().toISOString() }).eq("id", id).eq("user_id", uid),
   );
+}
+
+/** Rename a thread (owner 2026-07-23 sidebar long-press menu). Writes the new
+ *  title to the local cache, then to the cloud `chat_threads.title` — the same
+ *  column web reads, so the rename shows up there too. upsertThread now
+ *  preserves a set title, so a following message no longer reverts it. Blank
+ *  title / unknown id is a no-op. Best-effort cloud write, same posture as pin. */
+export async function renameThread(uid: string, id: string, title: string): Promise<void> {
+  const clean = title.trim().slice(0, 80);
+  if (!clean) return;
+  await writeStore(uid, renameThreadTitle(await readStore(uid), id, clean));
+  void withOneRetry(() => supabase.from("chat_threads").update({ title: clean }).eq("id", id).eq("user_id", uid));
 }
 
 /** Session-level deliverables (e.g. recordings) attached to a thread's own

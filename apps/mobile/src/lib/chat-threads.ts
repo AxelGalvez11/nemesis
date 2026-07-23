@@ -93,16 +93,24 @@ export function getThread(store: ThreadStore, id: string): ChatThread | null {
   return store.threads.find((thread) => thread.id === id) ?? null;
 }
 
-/** Upsert a thread's messages: refresh title + updatedAt, cap message count, keep
- *  the store within MAX_THREADS (oldest evicted). Preserves createdAt. Pure. */
+/** Upsert a thread's messages: cap message count, bump updatedAt, keep the store
+ *  within MAX_THREADS (oldest evicted). Preserves createdAt. Pure.
+ *
+ *  Title rule (owner 2026-07-23: rename must stick): derive the title ONLY while
+ *  the thread is still untitled ("New chat"). Once it has a real title — the
+ *  first-message derivation, a manual rename (renameThreadTitle below), or a
+ *  title synced down from web — that title is PRESERVED across later saves. The
+ *  old behavior re-derived on every save, which silently reverted any rename the
+ *  moment the next message was sent. */
 export function upsertThread(store: ThreadStore, id: string, messages: ChatMsg[], nowIso: string): ThreadStore {
   const capped = messages.slice(-MAX_MESSAGES_PER_THREAD);
   const existing = store.threads.find((thread) => thread.id === id);
+  const keepTitle = existing && existing.title.length > 0 && existing.title !== UNTITLED_THREAD;
   const updated: ChatThread = {
     createdAt: existing?.createdAt ?? nowIso,
     id,
     messages: capped,
-    title: deriveThreadTitle(capped),
+    title: keepTitle ? existing.title : deriveThreadTitle(capped),
     updatedAt: nowIso,
     // Pinned state survives new messages (owner 2026-07-18).
     ...(existing?.pinned ? { pinned: true } : {}),
@@ -110,6 +118,18 @@ export function upsertThread(store: ThreadStore, id: string, messages: ChatMsg[]
   const rest = store.threads.filter((thread) => thread.id !== id);
   const threads = [updated, ...rest].sort(byUpdatedDesc).slice(0, MAX_THREADS);
   return { threads, v: 2 };
+}
+
+/** Set a thread's title to a manual value (owner 2026-07-23 sidebar rename).
+ *  Trimmed and capped; a blank title or unknown id is a no-op. upsertThread
+ *  preserves this on later saves, so a following message won't revert it. Pure. */
+export function renameThreadTitle(store: ThreadStore, id: string, title: string): ThreadStore {
+  const clean = title.trim().slice(0, 80);
+  if (!clean) return store;
+  return {
+    threads: store.threads.map((thread) => (thread.id === id ? { ...thread, title: clean } : thread)),
+    v: 2,
+  };
 }
 
 export function removeThread(store: ThreadStore, id: string): ThreadStore {
