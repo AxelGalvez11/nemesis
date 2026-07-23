@@ -23,8 +23,11 @@ import {
 } from "@/components/desktop-ui/dropdown-menu";
 import { Skeleton } from "@/components/desktop-ui/skeleton";
 import { SearchField } from "@/components/desktop-ui/search-field";
+import { useAuth } from "@/components/AuthProvider";
 import { useCloudLibrary } from "@/lib/workspace/library-cloud-store";
 import { buildLibraryTree, countLibraryNotes, type LibrarySortMode } from "@/lib/workspace/library-tree";
+import { extractDocument, isDocument } from "@/lib/workspace/chat-attachments";
+import { composeImportedNote, findRelatedTitles, importedTitleFrom } from "@/lib/workspace/library-import";
 import { cn } from "@/lib/utils";
 import { GROUP_BODY, SCROLL_Y, SidebarRowStack } from "@/components/workspace/shell/sidebar-primitives";
 
@@ -43,7 +46,10 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
   const [sortMode, setSortMode] = useState<LibrarySortMode>("az");
   const [createKind, setCreateKind] = useState<LibraryCreateKind | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const { session } = useAuth();
+  const uid = session?.user.id ?? null;
   const { status, notes, folders, error, selectedPath, select, reload, createNote, createFolder, deleteNote, deleteFolder, moveNote, moveFolder, renameNote, renameFolder } = useCloudLibrary();
 
   const tree = useMemo(() => buildLibraryTree(notes, folders, sortMode), [folders, notes, sortMode]);
@@ -89,22 +95,41 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
     onNavigate?.();
   };
 
+  // Import handles two kinds of file. Markdown/text is read in the browser and saved
+  // verbatim, exactly as before. PDF/Word/PowerPoint is sent to the server extractor
+  // (/api/notebooks/extract/file) for its text, filed under an "Imported" folder, and
+  // auto-linked into the knowledge graph via a `## Related` section pointing at any
+  // existing notes it mentions. Per-file try/catch so one unreadable file (too large,
+  // signed out) does not abandon the rest of the batch.
   const importNotes = async (files: File[]) => {
     if (files.length === 0) return;
     setImportError(null);
-    try {
-      let lastPath: string | null = null;
-      for (const file of files) {
-        const title = file.name.replace(/\.(?:md|markdown|txt)$/i, "").trim() || "Untitled note";
-        const note = await createNote({ title, folder: "", content: await file.text() });
-        lastPath = note.path;
+    setImporting(true);
+    const failures: string[] = [];
+    let lastPath: string | null = null;
+    for (const file of files) {
+      try {
+        if (isDocument(file)) {
+          const text = await extractDocument(file, uid);
+          const note = await createNote({
+            title: importedTitleFrom(file.name),
+            folder: "Imported",
+            content: composeImportedNote(text, findRelatedTitles(text, notes)),
+          });
+          lastPath = note.path;
+        } else {
+          const title = file.name.replace(/\.(?:md|markdown|txt)$/i, "").trim() || "Untitled note";
+          const note = await createNote({ title, folder: "", content: await file.text() });
+          lastPath = note.path;
+        }
+      } catch (cause) {
+        failures.push(`${file.name}: ${cause instanceof Error ? cause.message : "couldn't import"}`);
       }
-      if (lastPath) openPath(lastPath);
-    } catch (cause) {
-      setImportError(cause instanceof Error ? cause.message : "Couldn't import those notes.");
-    } finally {
-      if (importInputRef.current) importInputRef.current.value = "";
     }
+    setImporting(false);
+    if (lastPath) openPath(lastPath);
+    if (failures.length) setImportError(failures.join(" · "));
+    if (importInputRef.current) importInputRef.current.value = "";
   };
 
   return (
@@ -137,7 +162,7 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
           </div>
           <div className="flex gap-0.5">
             <input
-              accept=".md,.markdown,.txt,text/markdown,text/plain"
+              accept=".md,.markdown,.txt,.pdf,.docx,.pptx,text/markdown,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation"
               className="hidden"
               multiple
               onChange={(event) => void importNotes(Array.from(event.target.files ?? []))}
@@ -167,7 +192,7 @@ export function LibrarySidebar({ onNavigate, showBack = true }: { onNavigate?: (
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => void createBlankNote()}><IconFilePlus /> New note</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setCreateKind("folder")}><IconFolderPlus /> New folder</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => importInputRef.current?.click()}><IconFileImport /> Import notes</DropdownMenuItem>
+                <DropdownMenuItem disabled={importing} onSelect={() => importInputRef.current?.click()}><IconFileImport /> {importing ? "Importing…" : "Import notes or documents"}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
