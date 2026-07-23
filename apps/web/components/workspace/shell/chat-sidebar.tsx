@@ -54,11 +54,17 @@ interface NavItem {
 }
 
 // Student-build nav (STUDENT_HIDDEN_NAV already applied): exact order.
+//
+// Notebooks is RETIRED (owner 2026-07-23), not deleted: lecture slides and
+// school documents belong in the Library, and the chat composer's "+ → Library"
+// picker is how a thread reaches them now. The route, its store and both
+// /api/notebooks/extract/* endpoints all stay — the extract endpoints are still
+// what reads a PDF/DOCX/PPTX dropped straight onto the composer. Bringing the
+// surface back is putting this one row back.
 const SIDEBAR_NAV: NavItem[] = [
   { id: "new-session", label: "New chat", codicon: "robot", action: "new-session" },
   { id: "study", label: "Study", codicon: "mortar-board", route: "/study" },
   { id: "library", label: "Library", codicon: "book", route: "/library" },
-  { id: "notebooks", label: "Notebooks", codicon: "notebook", route: "/notebooks" },
   { id: "calendar", label: "Calendar", codicon: "calendar", route: "/calendar" },
 ];
 

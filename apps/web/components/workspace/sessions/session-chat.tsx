@@ -47,6 +47,14 @@ function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
 }
 
+// The "Notebooks" half-pill under a fresh thread's composer is the last doorway
+// into the retired Notebooks surface (owner 2026-07-23) — its "New notebook"
+// lands on a page nothing else links to any more. Hidden behind a flag rather
+// than torn out: with no pill, `projectId` can never leave null, so the
+// notebook-turn branch below simply stops being reachable and comes back intact
+// the day the flag flips. Typed `boolean` so the branch still type-checks.
+const NOTEBOOKS_RETIRED: boolean = true;
+
 const PREVIEW_REPLY =
   "This is a preview build — replies here are canned. Sign in on the real app to chat with Nemesis.";
 
@@ -276,14 +284,14 @@ export function SessionChat() {
           )}
           <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-24 bg-linear-to-t from-(--ui-chat-surface-background) via-[color-mix(in_srgb,var(--ui-chat-surface-background)_82%,transparent)] to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_top,black_35%,transparent)]" />
           <Composer
-            belowStart={isFreshThread ? (
+            belowStart={NOTEBOOKS_RETIRED || !isFreshThread ? undefined : (
               <ProjectPill
                 notebooks={notebooks.notebooks}
                 onChange={setProjectId}
                 onNewProject={() => router.push(`${navigationRoot}/notebooks`)}
                 value={projectId}
               />
-            ) : undefined}
+            )}
             busy={busy}
             centered={isFreshThread && composerMode === "chat"}
             mode={composerMode}
